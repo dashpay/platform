@@ -1,0 +1,10 @@
+.gradle/
+build/
+local.properties
+.idea/
+.kotlin/
+captures/
+.externalNativeBuild/
+.cxx/
+# Native build output — produced by build_android.sh, never committed.
+sdk/src/main/jniLibs/

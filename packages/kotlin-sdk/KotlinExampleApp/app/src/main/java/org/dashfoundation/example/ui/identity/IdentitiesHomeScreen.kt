@@ -1,0 +1,202 @@
+package org.dashfoundation.example.ui.identity
+
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material3.Card
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.navigation.NavHostController
+import org.dashfoundation.example.di.LocalAppContainer
+import org.dashfoundation.example.di.LocalAppState
+import org.dashfoundation.example.navigation.CreateIdentity
+import org.dashfoundation.example.navigation.IdentityDetail
+import org.dashfoundation.example.navigation.LoadIdentity
+import org.dashfoundation.example.navigation.SearchWalletsForIdentities
+import org.dashfoundation.example.navigation.StateTransitions
+import org.dashfoundation.example.ui.funding.PendingAssetLocksList
+import org.dashfoundation.example.ui.wallet.toHexString
+
+/**
+ * Identities tab root — port of `IdentitiesContentView.swift`: a
+ * pending-registrations section (live controllers from the coordinator), the
+ * network-scoped identity list (Room), and a toolbar menu for Create / Load /
+ * Search. The resumable-asset-lock section is deferred with the asset-lock
+ * funding path (see B-M3 deferrals).
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun IdentitiesHomeScreen(navController: NavHostController) {
+    val container = LocalAppContainer.current
+    val appState = LocalAppState.current
+    val network by appState.currentNetwork.collectAsStateWithLifecycle()
+    val coordinator = container.registrationCoordinator
+
+    val identitiesFlow = remember(network) {
+        container.database.identityDao().observeByNetwork(network.ffiValue)
+    }
+    val identities by identitiesFlow.collectAsStateWithLifecycle(initialValue = emptyList())
+    val controllers by coordinator.controllers.collectAsStateWithLifecycle()
+    val addressFundControllers by container.addressFundCoordinator.controllers
+        .collectAsStateWithLifecycle()
+    var menuExpanded by remember { mutableStateOf(false) }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Identities") },
+                actions = {
+                    IconButton(
+                        onClick = { menuExpanded = true },
+                        modifier = Modifier.testTag("identities.addMenu"),
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = "Identity actions")
+                    }
+                    DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
+                        DropdownMenuItem(
+                            text = { Text("Create Identity") },
+                            modifier = Modifier.testTag("identities.createIdentity"),
+                            onClick = {
+                                menuExpanded = false
+                                navController.navigate(CreateIdentity)
+                            },
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Load Identity") },
+                            modifier = Modifier.testTag("identities.loadIdentity"),
+                            onClick = {
+                                menuExpanded = false
+                                navController.navigate(LoadIdentity)
+                            },
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Search Wallets for Identities") },
+                            modifier = Modifier.testTag("identities.searchWallets"),
+                            onClick = {
+                                menuExpanded = false
+                                navController.navigate(SearchWalletsForIdentities)
+                            },
+                        )
+                        DropdownMenuItem(
+                            text = { Text("State Transitions") },
+                            modifier = Modifier.testTag("identities.stateTransitions"),
+                            onClick = {
+                                menuExpanded = false
+                                navController.navigate(StateTransitions)
+                            },
+                        )
+}
+                },
+            )
+        },
+    ) { padding ->
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            val active = coordinator.activeControllers()
+            if (active.isNotEmpty()) {
+                item {
+                    Text(
+                        "PENDING REGISTRATIONS",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                items(active, key = { it.slotRowId }) { controller ->
+                    PendingRegistrationRow(controller, navController)
+                }
+            }
+
+            val activeFundings = container.addressFundCoordinator.activeControllers()
+            if (activeFundings.isNotEmpty()) {
+                item { PendingAssetLocksList(activeFundings, navController) }
+            }
+
+            if (identities.isEmpty() && active.isEmpty()) {
+                item {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(24.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterVertically),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Text("No Identities", style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            "Register or load an identity on ${network.displayName}.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            } else {
+                if (identities.isNotEmpty()) {
+                    item {
+                        Text(
+                            "IDENTITIES",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                items(identities, key = { it.identityId.toHexString() }) { identity ->
+                    Card(
+                        modifier = Modifier
+                            .testTag("identities.row.${identity.identityId.toHexString()}")
+                            .clickable {
+                                navController.navigate(IdentityDetail(identity.identityId.toHexString()))
+                            },
+                    ) {
+                        ListItem(
+                            headlineContent = {
+                                Text(
+                                    identity.mainDpnsName
+                                        ?: identity.alias
+                                        ?: identity.identityId.toHexString().take(16),
+                                )
+                            },
+                            supportingContent = {
+                                Text(
+                                    if (identity.isLocal) {
+                                        "${identity.balance} credits"
+                                    } else {
+                                        "${identity.balance} credits · loaded"
+                                    },
+                                )
+                            },
+                        )
+                    }
+                }
+            }
+        }
+    }
+}

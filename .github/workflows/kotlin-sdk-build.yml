@@ -1,0 +1,117 @@
+name: Build and test Kotlin SDK
+
+on:
+  workflow_call:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'packages/kotlin-sdk/**'
+      - 'packages/rs-unified-sdk-jni/**'
+      - 'packages/rs-sdk-ffi/**'
+      - 'packages/rs-platform-wallet-ffi/**'
+      - '.github/workflows/kotlin-sdk-build.yml'
+
+concurrency:
+  group: kotlin-sdk-${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  kotlin-sdk-build:
+    name: Kotlin SDK build + tests (x86_64 emulator)
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android/sdk/ndk /opt/ghc
+          df -h /
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: >-
+            platforms;android-35
+            build-tools;35.0.0
+            ndk;28.1.13356709
+            platform-tools
+
+      - name: Set up Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-linux-android
+
+      - name: Restore cargo cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: kotlin-sdk-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            kotlin-sdk-cargo-
+
+      - name: Install cargo-ndk
+        run: cargo install cargo-ndk --locked
+
+      - name: Install protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+
+      - name: Build native library (x86_64, dev profile)
+        working-directory: packages/kotlin-sdk
+        env:
+          ANDROID_NDK_HOME: ${{ env.ANDROID_SDK_ROOT }}/ndk/28.1.13356709
+        run: ./build_android.sh --abi x86_64 --profile dev --verify
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Build SDK and run unit tests
+        working-directory: packages/kotlin-sdk
+        run: ./gradlew :sdk:assembleDebug :sdk:testDebugUnitTest --stacktrace
+
+      - name: Build KotlinExampleApp and run app unit tests
+        working-directory: packages/kotlin-sdk
+        run: ./gradlew :app:assembleDebug :app:testDebugUnitTest --stacktrace
+
+      - name: Compile instrumented test sources (incl. testnet-tagged)
+        working-directory: packages/kotlin-sdk
+        run: ./gradlew :sdk:compileDebugAndroidTestKotlin --stacktrace
+
+      - name: Enable KVM for emulator
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Run instrumented FFI smoke test (API 35 emulator)
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          emulator-options: -no-snapshot -no-window -no-audio -no-boot-anim -camera-back none
+          working-directory: packages/kotlin-sdk
+          script: ./gradlew :sdk:connectedDebugAndroidTest --stacktrace
+
+      - name: Upload test reports on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kotlin-sdk-test-reports
+          path: |
+            packages/kotlin-sdk/sdk/build/reports
+            packages/kotlin-sdk/sdk/build/outputs/androidTest-results
+            packages/kotlin-sdk/KotlinExampleApp/app/build/reports

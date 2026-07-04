@@ -1,0 +1,594 @@
+package org.dashfoundation.dashsdk.ffi
+
+/**
+ * The receiving side of the platform-wallet-ffi `PersistenceCallbacks`
+ * vtable, reached from Rust via JNI trampolines in
+ * `rs-unified-sdk-jni/src/persistence.rs`.
+ *
+ * ## Why an abstract class, not an interface
+ *
+ * The Rust trampolines resolve each method with a single `GetMethodID`
+ * against this concrete class. A `class` hierarchy keeps that lookup
+ * stable and lets `PersistenceNative.createCallbacks` cache the method
+ * ids off one `FindClass`. Every method has a base implementation here so
+ * a subclass only overrides the slots it cares about; the defaults are
+ * no-ops that return the success sentinel.
+ *
+ * ## The 32 vtable slots
+ *
+ * Each method maps 1:1 onto a `PersistenceCallbacks` slot (names kept
+ * verbatim modulo camelCase). The exact JNI descriptor the Rust side
+ * uses to resolve the method is documented next to each declaration —
+ * these MUST stay byte-for-byte in sync with `persistence.rs`.
+ *
+ * ## Marshalling conventions
+ *
+ * - `walletId` and every other id is a 32-byte (`ByteArray`) copy made
+ *   inside the trampoline before the Rust-owned pointer expires.
+ * - Array-of-struct persist payloads are delivered **one bridge call per
+ *   entry** with flat primitive + `ByteArray` args (spec option (a)),
+ *   except the deeply nested wallet changeset which is decomposed into
+ *   per-account / per-utxo / per-transaction calls bracketed by
+ *   [onWalletChangesetAccountBegin] / [onWalletChangesetAccountEnd].
+ * - Persist slots return `Int` (0 = ok, non-zero flips the round's
+ *   success flag so [onChangesetEnd] delivers the rollback).
+ * - Load slots return flattened representations (`Array<...>` / typed
+ *   holder objects) that the trampoline re-packs into Rust-owned FFI
+ *   structs; Kotlin never allocates native memory.
+ *
+ * ## Threading
+ *
+ * Callbacks arrive **synchronously** on Rust Tokio worker threads and
+ * must complete before returning. Subclasses that touch Room do so with
+ * `runBlocking` on a dedicated dispatcher (see
+ * `PlatformWalletPersistenceHandler`).
+ */
+abstract class NativePersistenceBridge {
+
+    // ── Transactional bracketing ──────────────────────────────────────
+
+    /** `on_changeset_begin_fn` — descriptor `([B)I`. */
+    open fun onChangesetBegin(walletId: ByteArray): Int = 0
+
+    /** `on_changeset_end_fn` — descriptor `([BZ)I`. */
+    open fun onChangesetEnd(walletId: ByteArray, success: Boolean): Int = 0
+
+    /** `on_store_fn` — descriptor `([B)I`. */
+    open fun onStore(walletId: ByteArray): Int = 0
+
+    /** `on_flush_fn` — descriptor `([B)I`. */
+    open fun onFlush(walletId: ByteArray): Int = 0
+
+    // ── Platform address balances ─────────────────────────────────────
+
+    /**
+     * `on_persist_address_balances_fn`, one call per `AddressBalanceEntryFFI`.
+     * Descriptor `([BB[BJIII)I`.
+     *
+     * @param addressType 0 = P2PKH, 1 = P2SH
+     * @param addressHash 20-byte platform-address hash
+     */
+    open fun onPersistAddressBalance(
+        walletId: ByteArray,
+        addressType: Byte,
+        addressHash: ByteArray,
+        balance: Long,
+        nonce: Int,
+        accountIndex: Int,
+        addressIndex: Int,
+    ): Int = 0
+
+    // ── Sync state ────────────────────────────────────────────────────
+
+    /** `on_persist_sync_state_fn` — descriptor `([BJJJ)I`. */
+    open fun onPersistSyncState(
+        walletId: ByteArray,
+        syncHeight: Long,
+        syncTimestamp: Long,
+        lastKnownRecentBlock: Long,
+    ): Int = 0
+
+    // ── Wallet metadata ───────────────────────────────────────────────
+
+    /**
+     * `on_persist_wallet_metadata_fn` — descriptor `([BI[BI)I`.
+     *
+     * @param network FFINetwork ordinal (0 Mainnet, 1 Testnet, 2 Devnet, 3 Regtest)
+     * @param walletGroupId 32-byte network-independent group id
+     */
+    open fun onPersistWalletMetadata(
+        walletId: ByteArray,
+        network: Int,
+        walletGroupId: ByteArray,
+        birthHeight: Int,
+    ): Int = 0
+
+    // ── Account registrations ─────────────────────────────────────────
+
+    /**
+     * `on_persist_account_registrations_fn`, one call per `AccountSpecFFI`.
+     * Descriptor `([BBBIII[B[B[B)I`.
+     *
+     * @param typeTag AccountTypeTagFFI raw value
+     * @param standardTag StandardAccountTypeTagFFI raw value
+     * @param userIdentityId 32-byte id (Dashpay variants), else 32 zero bytes
+     * @param friendIdentityId 32-byte id (Dashpay variants), else 32 zero bytes
+     * @param accountXpubBytes bincode `ExtendedPubKey`, or empty
+     */
+    open fun onPersistAccountRegistration(
+        walletId: ByteArray,
+        typeTag: Byte,
+        standardTag: Byte,
+        index: Int,
+        registrationIndex: Int,
+        keyClass: Int,
+        userIdentityId: ByteArray,
+        friendIdentityId: ByteArray,
+        accountXpubBytes: ByteArray,
+    ): Int = 0
+
+    // ── Account address pools ─────────────────────────────────────────
+
+    /**
+     * `on_persist_account_address_pools_fn`, one call per
+     * `CoreAddressEntryFFI` inside each `AccountAddressPoolFFI`. The owning
+     * account spec fields are flattened onto every row so the handler can
+     * resolve the parent account. Descriptor
+     * `([BBBIII[B[BB[BZBIZJLjava/lang/String;Ljava/lang/String;)I`.
+     *
+     * @param poolTypeTag AddressPoolTypeTagFFI raw value
+     * @param publicKey 33-byte compressed pubkey (valid iff hasPublicKey)
+     */
+    @Suppress("LongParameterList")
+    open fun onPersistAccountAddressPoolEntry(
+        walletId: ByteArray,
+        accountTypeTag: Byte,
+        accountStandardTag: Byte,
+        accountIndex: Int,
+        accountRegistrationIndex: Int,
+        accountKeyClass: Int,
+        accountUserIdentityId: ByteArray,
+        accountFriendIdentityId: ByteArray,
+        poolTypeTag: Byte,
+        publicKey: ByteArray,
+        hasPublicKey: Boolean,
+        addressPoolTypeTag: Byte,
+        addressIndex: Int,
+        isUsed: Boolean,
+        balance: Long,
+        addressBase58: String,
+        derivationPath: String,
+    ): Int = 0
+
+    // ── Wallet (core) changeset ───────────────────────────────────────
+
+    /**
+     * `on_persist_wallet_changeset_fn` chain / balance / chainlock header.
+     * Fired once before the per-account decomposition. Descriptor
+     * `([BZIZJJJJ[B)I`.
+     */
+    open fun onWalletChangesetHeader(
+        walletId: ByteArray,
+        hasSyncedHeight: Boolean,
+        syncedHeight: Int,
+        hasBalance: Boolean,
+        confirmedDelta: Long,
+        unconfirmedDelta: Long,
+        immatureDelta: Long,
+        lockedDelta: Long,
+        lastAppliedChainLockBytes: ByteArray,
+    ): Int = 0
+
+    /**
+     * One `AccountChangeSetFFI` — the account row itself. UTXO adds/spends
+     * and transactions follow via the calls below, then
+     * [onWalletChangesetAccountEnd]. Descriptor
+     * `([BIBBII[B[BIZIZ)I`.
+     */
+    open fun onWalletChangesetAccountBegin(
+        walletId: ByteArray,
+        accountIndex: Int,
+        typeTag: Byte,
+        standardTag: Byte,
+        registrationIndex: Int,
+        keyClass: Int,
+        userIdentityId: ByteArray,
+        friendIdentityId: ByteArray,
+        externalHighestUsed: Int,
+        hasExternalHighestUsed: Boolean,
+        internalHighestUsed: Int,
+        hasInternalHighestUsed: Boolean,
+    ): Int = 0
+
+    /** One `UtxoEntryFFI` added on the current account. Descriptor `([B[BIJLjava/lang/String;[BIZZZZ)I`. */
+    @Suppress("LongParameterList")
+    open fun onWalletChangesetUtxoAdded(
+        walletId: ByteArray,
+        txid: ByteArray,
+        vout: Int,
+        amount: Long,
+        address: String,
+        scriptPubKey: ByteArray,
+        height: Int,
+        isCoinbase: Boolean,
+        isConfirmed: Boolean,
+        isInstantLocked: Boolean,
+        isLocked: Boolean,
+    ): Int = 0
+
+    /** One `SpentOutPointFFI` on the current account. Descriptor `([B[BI[B)I`. */
+    open fun onWalletChangesetUtxoSpent(
+        walletId: ByteArray,
+        txid: ByteArray,
+        vout: Int,
+        spendingTxid: ByteArray,
+    ): Int = 0
+
+    /** One `TransactionRecordFFI` on the current account. Descriptor `([B[B[BII[BIIILjava/lang/String;IJJZLjava/lang/String;J)I`. */
+    @Suppress("LongParameterList")
+    open fun onWalletChangesetTransaction(
+        walletId: ByteArray,
+        txid: ByteArray,
+        txData: ByteArray,
+        context: Int,
+        blockHeight: Int,
+        blockHash: ByteArray,
+        blockTimestamp: Int,
+        direction: Int,
+        transactionType: String,
+        transactionTypeKind: Int,
+        netAmount: Long,
+        fee: Long,
+        hasFee: Boolean,
+        label: String,
+        firstSeen: Long,
+    ): Int = 0
+
+    /** Close the current account bucket. Descriptor `([BI)I`. */
+    open fun onWalletChangesetAccountEnd(walletId: ByteArray, accountIndex: Int): Int = 0
+
+    // ── Identities ────────────────────────────────────────────────────
+
+    /**
+     * One `IdentityEntryFFI` upsert. DPNS labels + acquired-at timestamps
+     * ride as parallel arrays. Descriptor
+     * `([B[BJJZIBZ[B[Ljava/lang/String;[JZLjava/lang/String;Ljava/lang/String;Ljava/lang/String;[BZ[BZLjava/lang/String;)I`.
+     */
+    @Suppress("LongParameterList")
+    open fun onPersistIdentityUpsert(
+        walletId: ByteArray,
+        identityId: ByteArray,
+        balance: Long,
+        revision: Long,
+        identityIndexIsSome: Boolean,
+        identityIndex: Int,
+        status: Byte,
+        walletIdIsSome: Boolean,
+        identityWalletId: ByteArray,
+        dpnsNames: Array<String>,
+        dpnsNamesAcquiredAt: LongArray,
+        dashpayProfilePresent: Boolean,
+        dashpayDisplayName: String?,
+        dashpayBio: String?,
+        dashpayAvatarUrl: String?,
+        dashpayAvatarHash: ByteArray,
+        dashpayAvatarHashPresent: Boolean,
+        dashpayAvatarFingerprint: ByteArray,
+        dashpayAvatarFingerprintPresent: Boolean,
+        dashpayPublicMessage: String?,
+    ): Int = 0
+
+    /** One identity-id removal. Descriptor `([B[B)I`. */
+    open fun onPersistIdentityRemoval(walletId: ByteArray, identityId: ByteArray): Int = 0
+
+    // ── Identity keys ─────────────────────────────────────────────────
+
+    /** One `IdentityKeyEntryFFI` upsert. Descriptor `([B[BIBBBZZJ[B[BZ[BZIIB[BLjava/lang/String;)I`. */
+    @Suppress("LongParameterList")
+    open fun onPersistIdentityKeyUpsert(
+        walletId: ByteArray,
+        identityId: ByteArray,
+        keyId: Int,
+        purpose: Byte,
+        securityLevel: Byte,
+        keyType: Byte,
+        readOnly: Boolean,
+        disabledAtIsSome: Boolean,
+        disabledAt: Long,
+        publicKeyData: ByteArray,
+        publicKeyHash: ByteArray,
+        walletIdIsSome: Boolean,
+        keyWalletId: ByteArray,
+        derivationIndicesIsSome: Boolean,
+        identityIndex: Int,
+        keyIndex: Int,
+        contractBoundsKind: Byte,
+        contractBoundsId: ByteArray,
+        contractBoundsDocumentType: String?,
+    ): Int = 0
+
+    /** One `(identityId, keyId)` removal. Descriptor `([B[BI)I`. */
+    open fun onPersistIdentityKeyRemoval(walletId: ByteArray, identityId: ByteArray, keyId: Int): Int = 0
+
+    // ── Token balances ────────────────────────────────────────────────
+
+    /** One `TokenBalanceUpsertFFI`. Descriptor `([B[B[BJ)I`. */
+    open fun onPersistTokenBalanceUpsert(
+        walletId: ByteArray,
+        identityId: ByteArray,
+        tokenId: ByteArray,
+        balance: Long,
+    ): Int = 0
+
+    /** One `TokenBalanceRemovalFFI`. Descriptor `([B[B[B)I`. */
+    open fun onPersistTokenBalanceRemoval(
+        walletId: ByteArray,
+        identityId: ByteArray,
+        tokenId: ByteArray,
+    ): Int = 0
+
+    // ── Contacts ──────────────────────────────────────────────────────
+
+    /** One `ContactRequestFFI` upsert. Descriptor `([B[B[BZIII[B[B[BIJ)I`. */
+    @Suppress("LongParameterList")
+    open fun onPersistContactUpsert(
+        walletId: ByteArray,
+        ownerId: ByteArray,
+        contactId: ByteArray,
+        isOutgoing: Boolean,
+        senderKeyIndex: Int,
+        recipientKeyIndex: Int,
+        accountReference: Int,
+        encryptedPublicKey: ByteArray,
+        encryptedAccountLabel: ByteArray?,
+        autoAcceptProof: ByteArray?,
+        coreHeightCreatedAt: Int,
+        createdAt: Long,
+    ): Int = 0
+
+    /** One sent-side `ContactRequestRemovalFFI`. Descriptor `([B[B[B)I`. */
+    open fun onPersistContactRemovalSent(
+        walletId: ByteArray,
+        ownerId: ByteArray,
+        contactId: ByteArray,
+    ): Int = 0
+
+    /** One incoming-side `ContactRequestRemovalFFI`. Descriptor `([B[B[B)I`. */
+    open fun onPersistContactRemovalIncoming(
+        walletId: ByteArray,
+        ownerId: ByteArray,
+        contactId: ByteArray,
+    ): Int = 0
+
+    // ── Asset locks ───────────────────────────────────────────────────
+
+    /** One `AssetLockEntryFFI` upsert. Descriptor `([B[B[BIBIJB[B)I`. */
+    @Suppress("LongParameterList")
+    open fun onPersistAssetLockUpsert(
+        walletId: ByteArray,
+        outPoint: ByteArray,
+        transactionBytes: ByteArray,
+        accountIndex: Int,
+        fundingType: Byte,
+        identityIndex: Int,
+        amountDuffs: Long,
+        status: Byte,
+        proofBytes: ByteArray?,
+    ): Int = 0
+
+    /** One 36-byte outpoint removal. Descriptor `([B[B)I`. */
+    open fun onPersistAssetLockRemoval(walletId: ByteArray, outPoint: ByteArray): Int = 0
+
+    // ── Shielded persist ──────────────────────────────────────────────
+
+    /** One `ShieldedNoteFFI`. Descriptor `([B[BIJ[B[BJBJ[B)I`. */
+    @Suppress("LongParameterList")
+    open fun onPersistShieldedNote(
+        walletId: ByteArray,
+        noteWalletId: ByteArray,
+        accountIndex: Int,
+        position: Long,
+        cmx: ByteArray,
+        nullifier: ByteArray,
+        blockHeight: Long,
+        isSpent: Byte,
+        value: Long,
+        noteData: ByteArray,
+    ): Int = 0
+
+    /** One `ShieldedNullifierSpentFFI`. Descriptor `([B[BI[B)I`. */
+    open fun onPersistShieldedNullifierSpent(
+        walletId: ByteArray,
+        noteWalletId: ByteArray,
+        accountIndex: Int,
+        nullifier: ByteArray,
+    ): Int = 0
+
+    /** One `ShieldedOutgoingNoteFFI`. Descriptor `([B[BI[B[BJJ[B)I`. */
+    @Suppress("LongParameterList")
+    open fun onPersistShieldedOutgoingNote(
+        walletId: ByteArray,
+        noteWalletId: ByteArray,
+        accountIndex: Int,
+        cmx: ByteArray,
+        recipient: ByteArray,
+        value: Long,
+        blockHeight: Long,
+        memo: ByteArray,
+    ): Int = 0
+
+    /** One `ShieldedSyncedIndexFFI`. Descriptor `([B[BIJ)I`. */
+    open fun onPersistShieldedSyncedIndex(
+        walletId: ByteArray,
+        noteWalletId: ByteArray,
+        accountIndex: Int,
+        lastSyncedIndex: Long,
+    ): Int = 0
+
+    /** One `ShieldedActivityFFI`. Descriptor `([B[BI[BBBBJJZJZJ[BZ[B[B[B)I`. */
+    @Suppress("LongParameterList")
+    open fun onPersistShieldedActivity(
+        walletId: ByteArray,
+        noteWalletId: ByteArray,
+        accountIndex: Int,
+        entryId: ByteArray,
+        kindTag: Byte,
+        direction: Byte,
+        status: Byte,
+        amount: Long,
+        fee: Long,
+        hasFee: Boolean,
+        blockHeight: Long,
+        hasBlockHeight: Boolean,
+        createdAtMs: Long,
+        identityId: ByteArray,
+        hasIdentityId: Boolean,
+        counterparty: ByteArray,
+        memo: ByteArray,
+        noteCmxs: ByteArray,
+        spentNullifiers: ByteArray,
+    ): Int = 0
+
+    // ── Load callbacks ────────────────────────────────────────────────
+
+    /**
+     * `on_load_wallet_list_fn`. Returns the persisted wallet list as an
+     * array of flat holders; the Rust trampoline re-packs each into a
+     * `WalletRestoreEntryFFI` (plus nested arrays) in Rust-owned memory,
+     * freed by the paired free callback. Descriptor
+     * `()[Lorg/dashfoundation/dashsdk/ffi/WalletRestoreData;`.
+     *
+     * A minimal-but-correct restore populates `accounts` (with xpub
+     * bytes) and the platform / core sync watermarks; the richer nested
+     * arrays (identities, utxos, tracked asset locks) are optional for
+     * this milestone and default to empty.
+     */
+    open fun onLoadWalletList(): Array<WalletRestoreData> = emptyArray()
+
+    /** `on_load_shielded_notes_fn`. Descriptor `()[Lorg/dashfoundation/dashsdk/ffi/ShieldedNoteData;`. */
+    open fun onLoadShieldedNotes(): Array<ShieldedNoteData> = emptyArray()
+
+    /** `on_load_shielded_outgoing_notes_fn`. Descriptor `()[Lorg/dashfoundation/dashsdk/ffi/ShieldedOutgoingNoteData;`. */
+    open fun onLoadShieldedOutgoingNotes(): Array<ShieldedOutgoingNoteData> = emptyArray()
+
+    /** `on_load_shielded_sync_states_fn`. Descriptor `()[Lorg/dashfoundation/dashsdk/ffi/ShieldedSyncStateData;`. */
+    open fun onLoadShieldedSyncStates(): Array<ShieldedSyncStateData> = emptyArray()
+
+    /** `on_load_shielded_activity_fn`. Descriptor `()[Lorg/dashfoundation/dashsdk/ffi/ShieldedActivityData;`. */
+    open fun onLoadShieldedActivity(): Array<ShieldedActivityData> = emptyArray()
+
+    /**
+     * `on_get_core_tx_record_fn`. Returns the record for `txid` or `null`
+     * if no row exists. Descriptor
+     * `([B[B)Lorg/dashfoundation/dashsdk/ffi/CoreTxRecordData;`.
+     */
+    open fun onGetCoreTxRecord(walletId: ByteArray, txid: ByteArray): CoreTxRecordData? = null
+}
+
+// ── Flat data holders for the load callbacks ──────────────────────────
+//
+// These are plain value classes the Rust trampolines read field-by-field
+// via GetFieldID; keeping them primitive keeps the JNI reflection cheap
+// and the native re-pack allocation-free on the Kotlin side.
+
+/**
+ * Minimal wallet-restore row. Mirrors the subset of
+ * `WalletRestoreEntryFFI` this milestone rehydrates: identity of the
+ * wallet, its accounts, and the sync watermarks.
+ *
+ * @param accountSpecs each `AccountSpecData` becomes one `AccountSpecFFI`
+ */
+class WalletRestoreData(
+    @JvmField val walletId: ByteArray,
+    /** FFINetwork ordinal (0 Mainnet, 1 Testnet, 2 Devnet, 3 Regtest). */
+    @JvmField val network: Int,
+    @JvmField val accountSpecs: Array<AccountSpecData>,
+    @JvmField val platformSyncHeight: Long,
+    @JvmField val platformSyncTimestamp: Long,
+    @JvmField val platformLastKnownRecentBlock: Long,
+    @JvmField val birthHeight: Int,
+    @JvmField val syncedHeight: Int,
+    @JvmField val lastProcessedHeight: Int,
+    @JvmField val lastSynced: Long,
+)
+
+/** One flat account spec — mirror of `AccountSpecFFI`. */
+class AccountSpecData(
+    @JvmField val typeTag: Byte,
+    @JvmField val standardTag: Byte,
+    @JvmField val index: Int,
+    @JvmField val registrationIndex: Int,
+    @JvmField val keyClass: Int,
+    @JvmField val userIdentityId: ByteArray,
+    @JvmField val friendIdentityId: ByteArray,
+    /** bincode `ExtendedPubKey`; empty when unavailable. */
+    @JvmField val accountXpubBytes: ByteArray,
+)
+
+/** Mirror of `ShieldedNoteRestoreFFI`. */
+class ShieldedNoteData(
+    @JvmField val walletId: ByteArray,
+    @JvmField val accountIndex: Int,
+    @JvmField val position: Long,
+    @JvmField val cmx: ByteArray,
+    @JvmField val nullifier: ByteArray,
+    @JvmField val blockHeight: Long,
+    @JvmField val isSpent: Byte,
+    @JvmField val value: Long,
+    @JvmField val noteData: ByteArray,
+)
+
+/** Mirror of `ShieldedOutgoingNoteRestoreFFI`. */
+class ShieldedOutgoingNoteData(
+    @JvmField val walletId: ByteArray,
+    @JvmField val accountIndex: Int,
+    @JvmField val cmx: ByteArray,
+    @JvmField val recipient: ByteArray,
+    @JvmField val value: Long,
+    @JvmField val blockHeight: Long,
+    @JvmField val memo: ByteArray,
+)
+
+/** Mirror of `ShieldedSubwalletSyncStateFFI`. */
+class ShieldedSyncStateData(
+    @JvmField val walletId: ByteArray,
+    @JvmField val accountIndex: Int,
+    @JvmField val lastSyncedIndex: Long,
+)
+
+/** Mirror of `ShieldedActivityRestoreFFI`. */
+class ShieldedActivityData(
+    @JvmField val walletId: ByteArray,
+    @JvmField val accountIndex: Int,
+    @JvmField val entryId: ByteArray,
+    @JvmField val kindTag: Byte,
+    @JvmField val direction: Byte,
+    @JvmField val status: Byte,
+    @JvmField val amount: Long,
+    @JvmField val fee: Long,
+    @JvmField val hasFee: Boolean,
+    @JvmField val blockHeight: Long,
+    @JvmField val hasBlockHeight: Boolean,
+    @JvmField val createdAtMs: Long,
+    @JvmField val identityId: ByteArray,
+    @JvmField val hasIdentityId: Boolean,
+    @JvmField val counterparty: ByteArray,
+    @JvmField val memo: ByteArray,
+    @JvmField val noteCmxs: ByteArray,
+    @JvmField val spentNullifiers: ByteArray,
+)
+
+/**
+ * Mirror of the `on_get_core_tx_record_fn` output triad. `contextKind`
+ * uses the `TransactionContext` discriminants (0 Mempool, 1 InstantSend,
+ * 2 InBlock, 3 InChainLockedBlock); block fields are meaningful only for
+ * kinds 2 and 3.
+ */
+class CoreTxRecordData(
+    @JvmField val contextKind: Byte,
+    @JvmField val blockHeight: Int,
+    @JvmField val blockHash: ByteArray,
+    @JvmField val blockTimestamp: Int,
+    /** Raw transaction bytes, or empty if the row exists without them. */
+    @JvmField val txBytes: ByteArray,
+)

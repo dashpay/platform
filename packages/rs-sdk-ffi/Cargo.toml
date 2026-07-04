@@ -69,7 +69,12 @@ zeroize = "1.8"
 once_cell = "1.20"
 
 # HTTP client for diagnostics
-reqwest = { version = "0.12", features = ["json", "rustls-tls-native-roots"] }
+# default-features off: the default `native-tls` backend needs OpenSSL on
+# Android (unbuildable there) and the Security framework on iOS. rustls with
+# the bundled Mozilla roots matches dapi-grpc's `tls-webpki-roots` choice and
+# behaves identically on every mobile target (rustls-native-certs cannot read
+# Android's system cert store).
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls-webpki-roots"] }
 
 [build-dependencies]
 cbindgen = "0.27"

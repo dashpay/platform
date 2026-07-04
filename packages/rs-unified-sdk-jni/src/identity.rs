@@ -1,0 +1,766 @@
+//! JNI bridge for identity registration, discovery, key preview and
+//! DPNS name registration on the platform-wallet `IdentityWallet`.
+//!
+//! Kotlin counterpart: `org.dashfoundation.dashsdk.ffi.IdentityNative`,
+//! driven by `org.dashfoundation.dashsdk.identity.IdentityRegistration`.
+//!
+//! ## What lives here (and what deliberately doesn't)
+//!
+//! Every export is a thin marshaler over a SINGLE `platform-wallet-ffi`
+//! entry point — no stitching of multiple Rust calls, per
+//! `packages/kotlin-sdk/CLAUDE.md`. The wallet-balance-funded
+//! registration (`platform_wallet_register_identity_with_funding_signer`)
+//! is the one call the app's `RegistrationCoordinator` body invokes; the
+//! asset-lock-resume, shielded-pool, and platform-address funding paths
+//! are separate FFI entry points left for later milestones.
+//!
+//! ## Result convention
+//!
+//! These entry points return [`PlatformWalletFFIResult`] (platform-wallet's
+//! own error enum), so errors go through [`take_pwffi_error`] — the same
+//! mapping `wallet_manager.rs` uses — rather than `rs-sdk-ffi`'s
+//! `DashSDKResult` path in `results.rs`.
+//!
+//! ## Copy-before-return
+//!
+//! The key-preview and discovery entry points hand back heap arrays owned
+//! by Rust; every trampoline copies the payload into JVM objects and then
+//! calls the paired `*_free` (which also zeroizes the private-key material)
+//! before returning, so no Rust allocation escapes the call.
+
+#![allow(clippy::missing_safety_doc)]
+
+use crate::support::{guard, throw_sdk_exception};
+use jni::objects::{JByteArray, JClass, JString};
+use jni::sys::{jbyteArray, jint, jlong};
+use jni::JNIEnv;
+use platform_wallet_ffi::error::{
+    platform_wallet_ffi_result_free, PlatformWalletFFIResult, PlatformWalletFFIResultCode,
+};
+use platform_wallet_ffi::handle::Handle;
+use platform_wallet_ffi::identity_discovery::DiscoveredIdentityIdsFFI;
+use platform_wallet_ffi::identity_key_preview::{IdentityKeyPreviewFFI, IdentityKeyPreviewsFFI};
+use platform_wallet_ffi::identity_private_key_at_slot::IdentityPrivateKeyFFI;
+use platform_wallet_ffi::identity_registration_with_signer::IdentityPubkeyFFI;
+use platform_wallet_ffi::types::FFINetwork;
+use rs_sdk_ffi::{MnemonicResolverHandle, SignerHandle};
+use std::ffi::{CStr, CString};
+use std::os::raw::c_char;
+use std::ptr;
+
+// ── Result → exception ────────────────────────────────────────────────
+
+/// If `result` carries a non-`Success` code: throw `DashSDKException`,
+/// free its message, and return `true` (the caller bails with its
+/// default). Mirrors `wallet_manager::take_pwffi_error` exactly — kept
+/// as a local copy so `identity.rs` stays self-contained (the shared
+/// helper is private to `wallet_manager`).
+fn take_pwffi_error(env: &mut JNIEnv, mut result: PlatformWalletFFIResult) -> bool {
+    if result.code == PlatformWalletFFIResultCode::Success {
+        return false;
+    }
+    let message = if result.message.is_null() {
+        format!("platform-wallet error (code {})", result.code as i32)
+    } else {
+        // SAFETY: non-null message is a valid CString produced by the FFI.
+        unsafe { CStr::from_ptr(result.message) }
+            .to_string_lossy()
+            .into_owned()
+    };
+    throw_sdk_exception(env, result.code as i32, &message);
+    // SAFETY: `result` is a fresh PlatformWalletFFIResult; free its message.
+    unsafe { platform_wallet_ffi_result_free(&mut result) };
+    true
+}
+
+/// Read a required 32-byte id from a Java `byte[]`; throws + returns None
+/// on the wrong length or a JNI error.
+fn read_id32(env: &mut JNIEnv, arr: &JByteArray, field: &str) -> Option<[u8; 32]> {
+    let bytes = match env.convert_byte_array(arr) {
+        Ok(b) => b,
+        Err(_) => {
+            let _ = env.exception_clear();
+            throw_sdk_exception(env, 1, &format!("{field} byte[] was null/invalid"));
+            return None;
+        }
+    };
+    if bytes.len() != 32 {
+        throw_sdk_exception(
+            env,
+            1,
+            &format!("{field} must be 32 bytes, got {}", bytes.len()),
+        );
+        return None;
+    }
+    let mut id = [0u8; 32];
+    id.copy_from_slice(&bytes);
+    Some(id)
+}
+
+// ── Key preview ───────────────────────────────────────────────────────
+
+/// Derive the first `count` MASTER identity-authentication keypairs the
+/// wallet would probe during a discovery scan, starting at
+/// `startIndex` — a pure-compute view with no Platform RPCs.
+///
+/// Returns a flat `byte[]` BLOB the Kotlin side decodes into key-preview
+/// rows (marshalling only — the policy / derivation lives entirely in
+/// Rust). Layout (all integers big-endian):
+///
+/// ```text
+/// u32  row_count
+/// repeat row_count times:
+///   u32  identity_index
+///   u16  path_len
+///   u8[path_len]  derivation_path (UTF-8)
+///   u8[33]        compressed public key
+///   u8[32]        raw private-key scalar
+/// ```
+///
+/// The Rust preview buffer (including the sensitive private material) is
+/// freed via `platform_wallet_preview_identity_registration_keys_free`
+/// — which zeroizes the scalars — before this returns. `count < 0` uses
+/// the Rust gap-limit default.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_previewRegistrationKeys(
+    mut env: JNIEnv,
+    _class: JClass,
+    wallet_handle: jlong,
+    resolver_handle: jlong,
+    start_index: jint,
+    count: jint,
+) -> jbyteArray {
+    guard(&mut env, ptr::null_mut(), |env| {
+        let mut previews = IdentityKeyPreviewsFFI {
+            items: ptr::null_mut(),
+            count: 0,
+        };
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_preview_identity_registration_keys(
+                wallet_handle as Handle,
+                resolver_handle as *mut MnemonicResolverHandle,
+                start_index.max(0) as u32,
+                count,
+                &mut previews as *mut IdentityKeyPreviewsFFI,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return ptr::null_mut();
+        }
+
+        let blob = unsafe { encode_preview_rows(&previews) };
+        // Free (and zeroize) the Rust-owned preview buffer now that the
+        // payload lives in `blob`.
+        unsafe {
+            platform_wallet_ffi::platform_wallet_preview_identity_registration_keys_free(
+                &mut previews as *mut IdentityKeyPreviewsFFI,
+            )
+        };
+
+        env.byte_array_from_slice(&blob)
+            .map(|a| a.into_raw())
+            .unwrap_or(ptr::null_mut())
+    })
+}
+
+/// Serialize the preview rows into the BLOB layout documented on
+/// [`Java_..._previewRegistrationKeys`]. Copies every field out of the
+/// FFI buffer so the caller can free it immediately after.
+///
+/// # Safety
+/// `previews` must be a populated `IdentityKeyPreviewsFFI` with `count`
+/// valid rows (or an empty struct).
+unsafe fn encode_preview_rows(previews: &IdentityKeyPreviewsFFI) -> Vec<u8> {
+    let mut out = Vec::new();
+    if previews.items.is_null() || previews.count == 0 {
+        out.extend_from_slice(&0u32.to_be_bytes());
+        return out;
+    }
+    let rows = std::slice::from_raw_parts(previews.items, previews.count);
+    out.extend_from_slice(&(rows.len() as u32).to_be_bytes());
+    for row in rows {
+        out.extend_from_slice(&row.identity_index.to_be_bytes());
+
+        let path = if row.derivation_path.is_null() {
+            Vec::new()
+        } else {
+            CStr::from_ptr(row.derivation_path).to_bytes().to_vec()
+        };
+        // Paths are short (`m/9'/…`); a u16 length is ample.
+        let path_len = path.len().min(u16::MAX as usize) as u16;
+        out.extend_from_slice(&path_len.to_be_bytes());
+        out.extend_from_slice(&path[..path_len as usize]);
+
+        // Public key: always 33 bytes; copy exactly what the row reports.
+        let pub_len = row.public_key_len.min(33);
+        let mut pubkey = [0u8; 33];
+        if !row.public_key.is_null() && pub_len > 0 {
+            let src = std::slice::from_raw_parts(row.public_key, pub_len);
+            pubkey[..pub_len].copy_from_slice(src);
+        }
+        out.extend_from_slice(&pubkey);
+
+        // Raw private-key scalar (inline in the row).
+        out.extend_from_slice(&row.private_key_bytes);
+    }
+    out
+}
+
+// ── Single-slot private-key derivation ────────────────────────────────
+
+/// Derive the ready-to-persist 32-byte ECDSA private-key scalar for the
+/// identity key at `(identityIndex, keyIndex)` on the wallet behind
+/// `walletHandle`, and return it as a JVM `byte[32]`.
+///
+/// This is the JNI bridge over
+/// `platform_wallet_derive_identity_private_key_at_slot` — the single
+/// Rust entry point that performs the whole `mnemonic → seed → path →
+/// key` derivation on the Rust side (the CLAUDE.md "one allowed
+/// exception" shape). The Kotlin persistence handler then just encrypts
+/// the returned bytes into Keystore-backed storage; it never derives.
+///
+/// The derivation source (resident wallet vs. resolver-provided mnemonic)
+/// is chosen by the wallet's capability; `resolverHandle` is consulted
+/// only for external-signable / watch-only wallets and may be `0` (null)
+/// otherwise. The network + path shape are read from the wallet handle,
+/// so Kotlin decides nothing.
+///
+/// The Rust-owned buffer (including the sensitive scalar) is zeroized and
+/// freed via `platform_wallet_derive_identity_private_key_at_slot_free`
+/// before this returns — the only copy that escapes is the JVM `byte[]`,
+/// which the Kotlin caller is expected to scrub after storing.
+///
+/// Returns the 32-byte scalar on success, or `null` (with a
+/// `DashSDKException` thrown) on any derivation / marshalling error.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_deriveIdentityPrivateKey(
+    mut env: JNIEnv,
+    _class: JClass,
+    wallet_handle: jlong,
+    resolver_handle: jlong,
+    identity_index: jint,
+    key_index: jint,
+) -> jbyteArray {
+    guard(&mut env, ptr::null_mut(), |env| {
+        let mut out_key = IdentityPrivateKeyFFI::empty();
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_derive_identity_private_key_at_slot(
+                wallet_handle as Handle,
+                resolver_handle as *mut MnemonicResolverHandle,
+                identity_index.max(0) as u32,
+                key_index.max(0) as u32,
+                &mut out_key as *mut IdentityPrivateKeyFFI,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            // Free even on the error path — the FFI pre-clears to empty,
+            // so this is a safe no-op, but keep the pairing explicit.
+            unsafe {
+                platform_wallet_ffi::platform_wallet_derive_identity_private_key_at_slot_free(
+                    &mut out_key as *mut IdentityPrivateKeyFFI,
+                )
+            };
+            return ptr::null_mut();
+        }
+
+        // Copy the scalar out into a JVM byte[] before freeing the
+        // Rust-owned (soon-to-be-zeroized) buffer.
+        let scalar = out_key.private_key_bytes;
+        let jarr = env
+            .byte_array_from_slice(&scalar)
+            .map(|a| a.into_raw())
+            .unwrap_or(ptr::null_mut());
+
+        // Zeroize + free the Rust-owned buffer (scrubs the scalar and
+        // reclaims the path string).
+        unsafe {
+            platform_wallet_ffi::platform_wallet_derive_identity_private_key_at_slot_free(
+                &mut out_key as *mut IdentityPrivateKeyFFI,
+            )
+        };
+
+        jarr
+    })
+}
+
+/// FFINetwork ordinal → the crate's `FFINetwork` enum
+/// (0=Mainnet, 2=Devnet, 3=Regtest, else Testnet). Kept in step with
+/// `persistence::net_from_ord`.
+fn net_from_ord(ord: i32) -> FFINetwork {
+    match ord {
+        0 => FFINetwork::Mainnet,
+        2 => FFINetwork::Devnet,
+        3 => FFINetwork::Regtest,
+        _ => FFINetwork::Testnet,
+    }
+}
+
+/// Resolver-keyed sibling of [`Java_..._deriveIdentityPrivateKey`] for the
+/// **persistence-callback** path.
+///
+/// The identity-key persistence callback fires synchronously from inside
+/// a platform-wallet operation that holds the wallet-manager **write**
+/// lock (`registration.rs` persists the identity changeset under
+/// `wallet_manager.write().await`). Any derive that re-locks the wallet
+/// manager — including the handle-keyed
+/// `platform_wallet_derive_identity_private_key_at_slot`, whose
+/// capability check does a `blocking_read` — would deadlock on that same
+/// RwLock. This variant routes through
+/// `dash_sdk_derive_identity_key_at_slot_with_resolver`, which is
+/// **pure** (resolver → mnemonic → master → derive) and never touches the
+/// wallet-manager registry, so it is safe to call from the callback.
+///
+/// The network + `walletId` are passed explicitly because the callback
+/// has no wallet handle. The resolver resolves the mnemonic keyed by
+/// `walletId`. Returns the 32-byte scalar; the Rust row (incl. WIF +
+/// scalar) is zeroized + freed before return.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_deriveIdentityPrivateKeyWithResolver(
+    mut env: JNIEnv,
+    _class: JClass,
+    network_ord: jint,
+    wallet_id: JByteArray,
+    resolver_handle: jlong,
+    identity_index: jint,
+    key_index: jint,
+) -> jbyteArray {
+    guard(&mut env, ptr::null_mut(), |env| {
+        let Some(wid) = read_id32(env, &wallet_id, "walletId") else {
+            return ptr::null_mut();
+        };
+
+        let mut out_row = IdentityKeyPreviewFFI::empty();
+        let result = unsafe {
+            platform_wallet_ffi::dash_sdk_derive_identity_key_at_slot_with_resolver(
+                net_from_ord(network_ord),
+                wid.as_ptr(),
+                resolver_handle as *mut MnemonicResolverHandle,
+                identity_index.max(0) as u32,
+                key_index.max(0) as u32,
+                &mut out_row as *mut IdentityKeyPreviewFFI,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            unsafe {
+                platform_wallet_ffi::dash_sdk_derive_identity_key_at_slot_free(
+                    &mut out_row as *mut IdentityKeyPreviewFFI,
+                )
+            };
+            return ptr::null_mut();
+        }
+
+        let scalar = out_row.private_key_bytes;
+        let jarr = env
+            .byte_array_from_slice(&scalar)
+            .map(|a| a.into_raw())
+            .unwrap_or(ptr::null_mut());
+
+        unsafe {
+            platform_wallet_ffi::dash_sdk_derive_identity_key_at_slot_free(
+                &mut out_row as *mut IdentityKeyPreviewFFI,
+            )
+        };
+
+        jarr
+    })
+}
+
+// ── Registration (wallet-balance funded) ──────────────────────────────
+
+/// Register a new identity funded from the wallet's Core balance, driven
+/// by an external identity signer plus a mnemonic resolver for the
+/// asset-lock's credit-spend signature.
+///
+/// This is the single FFI entry point the app's `RegistrationCoordinator`
+/// invokes — no orchestration on the Kotlin side. The caller (Kotlin) has
+/// already derived + persisted the identity keys via
+/// [`Java_..._previewRegistrationKeys`], so `pubkeysBlob` is the same flat
+/// layout `previewRegistrationKeys` produced, trimmed to the keys being
+/// registered (row `identity_index` is ignored here — the pubkey rows are
+/// read positionally as `keyId = index`).
+///
+/// `pubkeysBlob` layout (big-endian):
+/// ```text
+/// u32 row_count
+/// repeat: u32 keyId, u16 pubkey_len, u8[pubkey_len] compressed pubkey
+/// ```
+/// Every key is registered as an ECDSA_SECP256K1 / AUTHENTICATION key at
+/// the security level implied by its position (row 0 = MASTER). The Rust
+/// side validates the security-level layout.
+///
+/// Returns the 32-byte identity id as a `byte[]`. The `ManagedIdentity`
+/// handle the FFI produces is destroyed here — Room learns of the new
+/// identity through the persistence changeset, not through this handle.
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_registerIdentityWithFunding(
+    mut env: JNIEnv,
+    _class: JClass,
+    wallet_handle: jlong,
+    amount_duffs: jlong,
+    account_index: jint,
+    identity_index: jint,
+    pubkeys_blob: JByteArray,
+    signer_handle: jlong,
+    core_signer_handle: jlong,
+) -> jbyteArray {
+    guard(&mut env, ptr::null_mut(), |env| {
+        // Decode the pubkey rows into owned buffers that outlive the FFI
+        // call (the FFI borrows `pubkey_bytes` for the call duration).
+        let Some(decoded) = decode_pubkeys_blob(env, &pubkeys_blob) else {
+            return ptr::null_mut();
+        };
+        if decoded.is_empty() {
+            throw_sdk_exception(env, 1, "pubkeysBlob contained no keys");
+            return ptr::null_mut();
+        }
+
+        // Build the FFI rows referencing the owned buffers. `read_only`
+        // false, no contract bounds (auth keys). Security level is derived
+        // Rust-side from the key layout, so we pass MASTER(0) for row 0 and
+        // HIGH(2) for the rest, matching the identity-key defaults the
+        // preview path produces.
+        let ffi_rows: Vec<IdentityPubkeyFFI> = decoded
+            .iter()
+            .map(|(key_id, bytes)| IdentityPubkeyFFI {
+                key_id: *key_id,
+                key_type: 0,                                      // ECDSA_SECP256K1
+                purpose: 0,                                       // AUTHENTICATION
+                security_level: if *key_id == 0 { 0 } else { 2 }, // MASTER / HIGH
+                pubkey_bytes: bytes.as_ptr(),
+                pubkey_len: bytes.len(),
+                read_only: false,
+                contract_bounds_kind: 0,
+                contract_bounds_id: ptr::null(),
+                contract_bounds_document_type: ptr::null(),
+            })
+            .collect();
+
+        let mut out_id = [0u8; 32];
+        let mut out_managed: Handle = 0;
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_register_identity_with_funding_signer(
+                wallet_handle as Handle,
+                amount_duffs.max(0) as u64,
+                account_index.max(0) as u32,
+                identity_index.max(0) as u32,
+                ffi_rows.as_ptr(),
+                ffi_rows.len(),
+                signer_handle as *mut SignerHandle,
+                core_signer_handle as *mut MnemonicResolverHandle,
+                &mut out_id as *mut [u8; 32],
+                &mut out_managed as *mut Handle,
+            )
+        };
+        // `decoded` / `ffi_rows` own the pubkey buffers the pointers
+        // referenced; they stay in scope through the FFI call above.
+        if take_pwffi_error(env, result) {
+            return ptr::null_mut();
+        }
+
+        // The new identity is folded into Rust's IdentityManager and lands
+        // in Room via the persister changeset; the standalone managed
+        // handle would otherwise leak, so drop it.
+        if out_managed != 0 {
+            let mut destroy = unsafe { platform_wallet_ffi::managed_identity_destroy(out_managed) };
+            unsafe { platform_wallet_ffi_result_free(&mut destroy) };
+        }
+
+        env.byte_array_from_slice(&out_id)
+            .map(|a| a.into_raw())
+            .unwrap_or(ptr::null_mut())
+    })
+}
+
+/// Decode the registration pubkeys BLOB into `(keyId, bytes)` rows whose
+/// buffers the caller keeps alive across the FFI call. Throws + returns
+/// None on a malformed blob.
+fn decode_pubkeys_blob(env: &mut JNIEnv, arr: &JByteArray) -> Option<Vec<(u32, Vec<u8>)>> {
+    let bytes = match env.convert_byte_array(arr) {
+        Ok(b) => b,
+        Err(_) => {
+            let _ = env.exception_clear();
+            throw_sdk_exception(env, 1, "pubkeysBlob was null/invalid");
+            return None;
+        }
+    };
+    let mut cursor = 0usize;
+    let read = |cursor: &mut usize, n: usize| -> Option<&[u8]> {
+        if *cursor + n > bytes.len() {
+            return None;
+        }
+        let s = &bytes[*cursor..*cursor + n];
+        *cursor += n;
+        Some(s)
+    };
+    let Some(count_bytes) = read(&mut cursor, 4) else {
+        throw_sdk_exception(env, 1, "pubkeysBlob truncated (row count)");
+        return None;
+    };
+    let count = u32::from_be_bytes(count_bytes.try_into().ok()?) as usize;
+    let mut rows = Vec::with_capacity(count);
+    for i in 0..count {
+        let Some(id_bytes) = read(&mut cursor, 4) else {
+            throw_sdk_exception(env, 1, &format!("pubkeysBlob truncated at row {i} keyId"));
+            return None;
+        };
+        let key_id = u32::from_be_bytes(id_bytes.try_into().ok()?);
+        let Some(len_bytes) = read(&mut cursor, 2) else {
+            throw_sdk_exception(env, 1, &format!("pubkeysBlob truncated at row {i} len"));
+            return None;
+        };
+        let len = u16::from_be_bytes(len_bytes.try_into().ok()?) as usize;
+        let Some(pubkey) = read(&mut cursor, len) else {
+            throw_sdk_exception(env, 1, &format!("pubkeysBlob truncated at row {i} pubkey"));
+            return None;
+        };
+        rows.push((key_id, pubkey.to_vec()));
+    }
+    Some(rows)
+}
+
+// ── Discovery ─────────────────────────────────────────────────────────
+
+/// Scan the wallet's identity-authentication tree for registered
+/// identities (gap-limit walk on the Rust side). Returns a `byte[]`
+/// holding the concatenated 32-byte identity ids (length is a multiple of
+/// 32); the Kotlin side splits them. `startIndex < 0` uses the Rust
+/// default start; `gapLimit` bounds the consecutive-miss window.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_discoverIdentities(
+    mut env: JNIEnv,
+    _class: JClass,
+    wallet_handle: jlong,
+    resolver_handle: jlong,
+    start_index: jint,
+    gap_limit: jint,
+) -> jbyteArray {
+    guard(&mut env, ptr::null_mut(), |env| {
+        let mut found = DiscoveredIdentityIdsFFI {
+            ids: ptr::null_mut(),
+            count: 0,
+        };
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_discover_identities(
+                wallet_handle as Handle,
+                resolver_handle as *mut MnemonicResolverHandle,
+                start_index as i64,
+                gap_limit.max(0) as u32,
+                &mut found as *mut DiscoveredIdentityIdsFFI,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return ptr::null_mut();
+        }
+
+        // Copy the ids out before freeing the Rust buffer.
+        let mut flat = Vec::with_capacity(found.count * 32);
+        if !found.ids.is_null() && found.count > 0 {
+            let ids = unsafe { std::slice::from_raw_parts(found.ids, found.count) };
+            for id in ids {
+                flat.extend_from_slice(id);
+            }
+        }
+        unsafe {
+            platform_wallet_ffi::platform_wallet_discover_identities_free(
+                &mut found as *mut DiscoveredIdentityIdsFFI,
+            )
+        };
+
+        env.byte_array_from_slice(&flat)
+            .map(|a| a.into_raw())
+            .unwrap_or(ptr::null_mut())
+    })
+}
+
+// ── DPNS name registration ────────────────────────────────────────────
+
+/// Register a DPNS name for an identity, signed via the external signer.
+/// Works on watch-only wallets (no seed Rust-side). Returns the full
+/// domain name (e.g. `"alice.dash"`).
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_registerDpnsName(
+    mut env: JNIEnv,
+    _class: JClass,
+    wallet_handle: jlong,
+    identity_id: JByteArray,
+    label: JString,
+    signer_handle: jlong,
+) -> jni::sys::jstring {
+    guard(&mut env, ptr::null_mut(), |env| {
+        let Some(id) = read_id32(env, &identity_id, "identityId") else {
+            return ptr::null_mut();
+        };
+        let label_str: String = match env.get_string(&label) {
+            Ok(s) => s.into(),
+            Err(_) => {
+                let _ = env.exception_clear();
+                throw_sdk_exception(env, 1, "label string was null/invalid");
+                return ptr::null_mut();
+            }
+        };
+        let c_label = match CString::new(label_str) {
+            Ok(c) => c,
+            Err(_) => {
+                throw_sdk_exception(env, 1, "label contained an interior NUL");
+                return ptr::null_mut();
+            }
+        };
+
+        let mut out_full: *mut c_char = ptr::null_mut();
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_register_dpns_name_with_signer(
+                wallet_handle as Handle,
+                id.as_ptr(),
+                c_label.as_ptr(),
+                signer_handle as *mut SignerHandle,
+                &mut out_full as *mut *mut c_char,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return ptr::null_mut();
+        }
+
+        if out_full.is_null() {
+            throw_sdk_exception(env, 99, "DPNS register returned success but no domain name");
+            return ptr::null_mut();
+        }
+        // Copy the name out, then free the Rust string.
+        let full = unsafe { CStr::from_ptr(out_full) }
+            .to_string_lossy()
+            .into_owned();
+        unsafe { platform_wallet_ffi::platform_wallet_string_free(out_full) };
+
+        env.new_string(full)
+            .map(|s| s.into_raw())
+            .unwrap_or(ptr::null_mut())
+    })
+}
+
+// ── Data-contract create ──────────────────────────────────────────────
+
+/// Read an optional JVM string into an owned `CString`. `None` (a null
+/// `JString` or an empty string) marshals to a null `*const c_char` so
+/// the FFI treats the section as omitted. Returns `Err(())` (after
+/// throwing) on a JNI read error or an interior-NUL string.
+fn read_optional_cstring(
+    env: &mut JNIEnv,
+    s: &JString,
+    field: &str,
+) -> Result<Option<CString>, ()> {
+    if s.is_null() {
+        return Ok(None);
+    }
+    let raw: String = match env.get_string(s) {
+        Ok(js) => js.into(),
+        Err(_) => {
+            let _ = env.exception_clear();
+            throw_sdk_exception(env, 1, &format!("{field} string was invalid"));
+            return Err(());
+        }
+    };
+    if raw.is_empty() {
+        return Ok(None);
+    }
+    match CString::new(raw) {
+        Ok(c) => Ok(Some(c)),
+        Err(_) => {
+            throw_sdk_exception(env, 1, &format!("{field} contained an interior NUL"));
+            Err(())
+        }
+    }
+}
+
+/// Create + broadcast a new data contract owned by `ownerIdentityId`,
+/// signed via the external signer. Thin marshaler over
+/// `platform_wallet_create_data_contract_with_signer` — the whole
+/// build/validate/broadcast pipeline lives in platform-wallet.
+///
+/// `documentsSchemaJson` is required; `tokens`/`groups`/`keywords`/
+/// `description`/`config` are optional (null or empty ⇒ omitted).
+/// Returns the 32-byte created contract id.
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_createDataContract(
+    mut env: JNIEnv,
+    _class: JClass,
+    wallet_handle: jlong,
+    owner_identity_id: JByteArray,
+    documents_schema_json: JString,
+    tokens_schema_json: JString,
+    groups_schema_json: JString,
+    keywords_json: JString,
+    description: JString,
+    config_json: JString,
+    signer_handle: jlong,
+) -> jbyteArray {
+    guard(&mut env, ptr::null_mut(), |env| {
+        let Some(owner) = read_id32(env, &owner_identity_id, "ownerIdentityId") else {
+            return ptr::null_mut();
+        };
+
+        // Documents schema is required.
+        if documents_schema_json.is_null() {
+            throw_sdk_exception(env, 1, "documentsSchemaJson is required");
+            return ptr::null_mut();
+        }
+        let documents: String = match env.get_string(&documents_schema_json) {
+            Ok(s) => s.into(),
+            Err(_) => {
+                let _ = env.exception_clear();
+                throw_sdk_exception(env, 1, "documentsSchemaJson was invalid");
+                return ptr::null_mut();
+            }
+        };
+        let Ok(documents_c) = CString::new(documents) else {
+            throw_sdk_exception(env, 1, "documentsSchemaJson contained an interior NUL");
+            return ptr::null_mut();
+        };
+
+        let (tokens, groups, keywords, desc, config) = {
+            let Ok(t) = read_optional_cstring(env, &tokens_schema_json, "tokensSchemaJson") else {
+                return ptr::null_mut();
+            };
+            let Ok(g) = read_optional_cstring(env, &groups_schema_json, "groupsSchemaJson") else {
+                return ptr::null_mut();
+            };
+            let Ok(k) = read_optional_cstring(env, &keywords_json, "keywordsJson") else {
+                return ptr::null_mut();
+            };
+            let Ok(d) = read_optional_cstring(env, &description, "description") else {
+                return ptr::null_mut();
+            };
+            let Ok(c) = read_optional_cstring(env, &config_json, "configJson") else {
+                return ptr::null_mut();
+            };
+            (t, g, k, d, c)
+        };
+
+        let opt_ptr = |c: &Option<CString>| -> *const c_char {
+            c.as_ref().map_or(ptr::null(), |s| s.as_ptr())
+        };
+
+        let mut out_contract_id = [0u8; 32];
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_create_data_contract_with_signer(
+                wallet_handle as Handle,
+                owner.as_ptr(),
+                documents_c.as_ptr(),
+                opt_ptr(&tokens),
+                opt_ptr(&groups),
+                opt_ptr(&keywords),
+                opt_ptr(&desc),
+                opt_ptr(&config),
+                signer_handle as *mut SignerHandle,
+                out_contract_id.as_mut_ptr(),
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return ptr::null_mut();
+        }
+
+        env.byte_array_from_slice(&out_contract_id)
+            .map(|a| a.into_raw())
+            .unwrap_or(ptr::null_mut())
+    })
+}

@@ -1,0 +1,115 @@
+package org.dashfoundation.dashsdk.security
+
+import android.content.Context
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.preferencesDataStore
+import kotlinx.coroutines.flow.first
+import java.util.Base64
+
+private val Context.secretsStore: DataStore<Preferences> by preferencesDataStore(
+    name = "org.dashfoundation.wallet.secrets",
+)
+
+/**
+ * Encrypted-at-rest secret storage — the Android counterpart of
+ * `WalletStorage.swift` (iOS Keychain items under service
+ * `org.dashfoundation.wallet`).
+ *
+ * Values are AES-GCM ciphertext under [KeystoreManager]'s non-exportable
+ * master keys, stored base64 in a dedicated Preferences DataStore.
+ * Key layout mirrors the iOS account naming:
+ * - `mnemonic.<walletIdHex>` — wallet mnemonics (master alias)
+ * - `privkey.<pubkeyHex>` — identity private keys (auth-gated keys alias)
+ */
+class WalletStorage(
+    context: Context,
+    private val keystore: KeystoreManager = KeystoreManager(),
+) {
+    private val store = context.secretsStore
+
+    // ── Mnemonics ─────────────────────────────────────────────────────
+
+    suspend fun storeMnemonic(walletId: ByteArray, mnemonic: String) {
+        val blob = keystore.encrypt(mnemonic.encodeToByteArray())
+        store.edit { it[mnemonicKey(walletId)] = encode(blob) }
+    }
+
+    suspend fun retrieveMnemonic(walletId: ByteArray): String? {
+        val encoded = store.data.first()[mnemonicKey(walletId)] ?: return null
+        val plain = keystore.decrypt(decode(encoded))
+        val phrase = plain.decodeToString()
+        plain.fill(0)
+        return phrase
+    }
+
+    suspend fun deleteMnemonic(walletId: ByteArray) {
+        store.edit { it.remove(mnemonicKey(walletId)) }
+    }
+
+    /** Wallet ids (hex) that have a stored mnemonic — drives orphan detection. */
+    suspend fun listWalletIdsWithMnemonic(): List<String> =
+        store.data.first().asMap().keys
+            .map { it.name }
+            .filter { it.startsWith(MNEMONIC_PREFIX) }
+            .map { it.removePrefix(MNEMONIC_PREFIX) }
+
+    // ── Identity private keys ─────────────────────────────────────────
+
+    /**
+     * Store raw private-key bytes for [pubkeyHex] under the auth-gated
+     * keys alias. Per the CLAUDE.md doctrine this is the one allowed
+     * Kotlin-side persistence of key material: Rust derives, we encrypt.
+     */
+    suspend fun storePrivateKey(pubkeyHex: String, privateKey: ByteArray) {
+        val blob = keystore.encrypt(privateKey, alias = KeystoreManager.KEYS_ALIAS)
+        store.edit { it[privateKeyKey(pubkeyHex)] = encode(blob) }
+    }
+
+    /**
+     * Decrypt the private key for [pubkeyHex]. Throws
+     * `UserNotAuthenticatedException` when the auth window expired — the
+     * caller (KeystoreSigner) routes through [BiometricGate] and retries.
+     * Callers must zero the returned array after use.
+     */
+    suspend fun retrievePrivateKey(pubkeyHex: String): ByteArray? {
+        val encoded = store.data.first()[privateKeyKey(pubkeyHex)] ?: return null
+        return keystore.decrypt(decode(encoded), alias = KeystoreManager.KEYS_ALIAS)
+    }
+
+    suspend fun deletePrivateKey(pubkeyHex: String) {
+        store.edit { it.remove(privateKeyKey(pubkeyHex)) }
+    }
+
+    suspend fun hasPrivateKey(pubkeyHex: String): Boolean =
+        store.data.first().contains(privateKeyKey(pubkeyHex))
+
+    /** All entry names (masked listing for the Keystore Explorer screen). */
+    suspend fun listEntryNames(): List<String> =
+        store.data.first().asMap().keys.map { it.name }.sorted()
+
+    suspend fun deleteAll() {
+        store.edit { it.clear() }
+    }
+
+    private fun mnemonicKey(walletId: ByteArray) =
+        stringPreferencesKey(MNEMONIC_PREFIX + walletId.toHex())
+
+    private fun privateKeyKey(pubkeyHex: String) =
+        stringPreferencesKey(PRIVKEY_PREFIX + pubkeyHex.lowercase())
+
+    private fun encode(blob: KeystoreManager.EncryptedBlob): String =
+        Base64.getEncoder().encodeToString(blob.encode())
+
+    private fun decode(value: String): KeystoreManager.EncryptedBlob =
+        KeystoreManager.EncryptedBlob.decode(Base64.getDecoder().decode(value))
+
+    private companion object {
+        const val MNEMONIC_PREFIX = "mnemonic."
+        const val PRIVKEY_PREFIX = "privkey."
+
+        fun ByteArray.toHex(): String = joinToString("") { "%02x".format(it) }
+    }
+}
