@@ -550,6 +550,10 @@ fn established_contact(owner: u8, contact: u8) -> EstablishedContact {
         // so the read path always reconstructs it as `None`; keep the
         // fixture `None` to match through the round-trip.
         contact_account_label: None,
+        // This backend has no column for the rotation self-heal marker, so
+        // the read path always reconstructs it as `None`; keep the fixture
+        // `None` to match through the round-trip.
+        external_account_reference: None,
     }
 }
 
