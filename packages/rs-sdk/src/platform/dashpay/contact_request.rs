@@ -152,7 +152,12 @@ fn sender_key_purpose_is_valid(purpose: Purpose) -> bool {
 /// DECRYPTION key (our original convention); the dominant mobile cohort has no
 /// DECRYPTION key and references its ENCRYPTION key. Accept either; reject
 /// AUTHENTICATION/MASTER/TRANSFER.
-fn recipient_key_purpose_is_valid(purpose: Purpose) -> bool {
+///
+/// This is the single source of truth for the recipient-key cohort membership
+/// policy. The pre-send validator (`rs-platform-wallet` `validate_contact_request`)
+/// and the recipient-key selector (`select_recipient_key_index`) both defer to
+/// it so the accepted cohort cannot drift between the SDK and wallet layers.
+pub fn recipient_key_purpose_is_valid(purpose: Purpose) -> bool {
     matches!(purpose, Purpose::DECRYPTION | Purpose::ENCRYPTION)
 }
 
