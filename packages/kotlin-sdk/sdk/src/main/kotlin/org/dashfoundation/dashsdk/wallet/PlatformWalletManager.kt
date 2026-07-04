@@ -418,6 +418,20 @@ class PlatformWalletManager(
         mapNativeErrors { WalletManagerNative.platformAddressSyncIsRunning(managerHandle) }
     }
 
+    /**
+     * Reset the platform-address (BLAST) sync state — the native side of the
+     * Sync tab's "Clear" action (#3959), port of Swift
+     * `resetPlatformAddressSyncState()`. Quiesces the loop (leaves it
+     * restartable, does NOT auto-restart), then clears each wallet's credit
+     * balances and the provider watermark/seed so the next start rescans from
+     * scratch; the durable address derivation state is preserved. The
+     * caller (`PlatformBalanceSyncService.clearLocalState`) runs this FIRST,
+     * fail-closed, before clearing the Room mirror.
+     */
+    suspend fun resetPlatformAddressSyncState() = withContext(Dispatchers.IO) {
+        mapNativeErrors { WalletManagerNative.platformAddressSyncReset(managerHandle) }
+    }
+
     suspend fun startIdentitySync() = withContext(Dispatchers.IO) {
         mapNativeErrors { WalletManagerNative.identitySyncStart(managerHandle) }
     }

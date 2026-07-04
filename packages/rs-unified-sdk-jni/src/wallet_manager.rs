@@ -31,52 +31,28 @@
 //! ## Result convention
 //!
 //! platform-wallet-ffi returns [`PlatformWalletFFIResult`] (its own error
-//! enum), not `rs-sdk-ffi`'s `DashSDKResult`. [`take_pwffi_error`] maps a
-//! non-`Success` code to a thrown `DashSDKException` and frees the
-//! result's message, mirroring `results::take_error`.
+//! enum), not `rs-sdk-ffi`'s `DashSDKResult`. The shared
+//! [`crate::support::take_pwffi_error`] maps a non-`Success` code to a
+//! thrown `DashSDKException` (namespaced by
+//! [`crate::support::PWFFI_CODE_OFFSET`]) and frees the result's message,
+//! mirroring `results::take_error`.
 
 #![allow(clippy::missing_safety_doc)]
 
 use crate::events::{build_event_vtable, KotlinEventCtx};
 use crate::persistence::{build_vtable, KotlinPersistenceCtx};
-use crate::support::{guard, throw_sdk_exception};
+use crate::support::{guard, take_pwffi_error, throw_sdk_exception};
 use jni::objects::{JByteArray, JClass, JObject, JObjectArray, JString};
 use jni::sys::{jboolean, jbyteArray, jdoubleArray, jlong, jlongArray, JNI_FALSE, JNI_TRUE};
 use jni::JNIEnv;
-use platform_wallet_ffi::error::{
-    platform_wallet_ffi_result_free, PlatformWalletFFIResult, PlatformWalletFFIResultCode,
-};
+use platform_wallet_ffi::error::platform_wallet_ffi_result_free;
 use platform_wallet_ffi::event_handler::EventHandlerCallbacks;
 use platform_wallet_ffi::handle::Handle;
 use platform_wallet_ffi::persistence::PersistenceCallbacks;
-use std::ffi::{c_void, CStr};
+use std::ffi::c_void;
 use std::ptr;
 
 use rs_sdk_ffi::{dash_sdk_get_inner_sdk_ptr, SDKHandle};
-
-// ── Result → exception ────────────────────────────────────────────────
-
-/// If `result` carries a non-`Success` code: throw `DashSDKException`,
-/// free the message, and return `true` (the caller bails with its
-/// default). On `Success` frees nothing (message is null) and returns
-/// `false`.
-fn take_pwffi_error(env: &mut JNIEnv, mut result: PlatformWalletFFIResult) -> bool {
-    if result.code == PlatformWalletFFIResultCode::Success {
-        return false;
-    }
-    let message = if result.message.is_null() {
-        format!("platform-wallet error (code {})", result.code as i32)
-    } else {
-        // SAFETY: non-null message is a valid CString produced by the FFI.
-        unsafe { CStr::from_ptr(result.message) }
-            .to_string_lossy()
-            .into_owned()
-    };
-    throw_sdk_exception(env, result.code as i32, &message);
-    // SAFETY: `result` is a fresh PlatformWalletFFIResult; free its message.
-    unsafe { platform_wallet_ffi_result_free(&mut result) };
-    true
-}
 
 // ── Manager bundle ────────────────────────────────────────────────────
 
@@ -776,6 +752,75 @@ fn decode_funding_recipients(
     Some((entries, fee_rows))
 }
 
+/// Decode the credit-outputs BLOB for a wallet-signed platform-address
+/// transfer into `AddressBalanceEntryFFI` rows.
+///
+/// BLOB layout (big-endian): `u32 rowCount` then per row
+/// `u8 addressType (0 P2PKH only), u8[20] hash, u64 credits`. The row's
+/// `balance` carries the credits to route to that recipient; `nonce` /
+/// `account_index` / `address_index` are left `0` (the FFI only reads the
+/// address + amount for a transfer output). Returns `None` (after throwing)
+/// on a malformed / truncated blob.
+fn decode_credit_outputs(
+    env: &mut JNIEnv,
+    arr: &JByteArray,
+) -> Option<Vec<platform_wallet_ffi::AddressBalanceEntryFFI>> {
+    let bytes = match env.convert_byte_array(arr) {
+        Ok(b) => b,
+        Err(_) => {
+            let _ = env.exception_clear();
+            throw_sdk_exception(env, 1, "outputs blob was null/invalid");
+            return None;
+        }
+    };
+    let mut cursor = 0usize;
+    let read = |cursor: &mut usize, n: usize| -> Option<Vec<u8>> {
+        if *cursor + n > bytes.len() {
+            return None;
+        }
+        let s = bytes[*cursor..*cursor + n].to_vec();
+        *cursor += n;
+        Some(s)
+    };
+    let Some(count_bytes) = read(&mut cursor, 4) else {
+        throw_sdk_exception(env, 1, "outputs blob truncated (row count)");
+        return None;
+    };
+    let count = u32::from_be_bytes(count_bytes.as_slice().try_into().ok()?) as usize;
+    let mut outputs = Vec::with_capacity(count);
+    for i in 0..count {
+        let Some(type_byte) = read(&mut cursor, 1) else {
+            throw_sdk_exception(env, 1, &format!("outputs blob truncated at row {i} type"));
+            return None;
+        };
+        let Some(hash_bytes) = read(&mut cursor, 20) else {
+            throw_sdk_exception(env, 1, &format!("outputs blob truncated at row {i} hash"));
+            return None;
+        };
+        let Some(credit_bytes) = read(&mut cursor, 8) else {
+            throw_sdk_exception(
+                env,
+                1,
+                &format!("outputs blob truncated at row {i} credits"),
+            );
+            return None;
+        };
+        let mut hash = [0u8; 20];
+        hash.copy_from_slice(&hash_bytes);
+        outputs.push(platform_wallet_ffi::AddressBalanceEntryFFI {
+            address: platform_wallet_ffi::PlatformAddressFFI {
+                address_type: type_byte[0],
+                hash,
+            },
+            balance: u64::from_be_bytes(credit_bytes.as_slice().try_into().ok()?),
+            nonce: 0,
+            account_index: 0,
+            address_index: 0,
+        });
+    }
+    Some(outputs)
+}
+
 /// Serialize a `PlatformAddressChangeSetFFI` into a `byte[]` blob:
 /// `u32 rowCount` then per row `u8 addressType, u8[20] hash, u64 balance`.
 ///
@@ -990,6 +1035,320 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
     })
 }
 
+// ── Wallet-signed Platform-address credit movement (ADDR-02/04, #3923) ─
+//
+// Transfer / withdraw platform-address credits, signed by the wallet's
+// platform-address signer (NOT an identity key). Each is a composite
+// mirroring `walletFundFromAssetLock`: resolve the transient
+// platform-address wallet handle (`platform_wallet_get_platform`), call the
+// single Rust entry point, free the changeset, destroy the transient
+// handle. Input selection is AUTO (null explicit inputs) and the fee
+// strategy is left null (the FFI defaults to `[DeductFromInput(0)]`); Rust
+// owns selection / balancing / nonces / signing — the exact shape Swift's
+// rewritten `ManagedPlatformAddressWallet.transfer` / `.withdraw` performs.
+// The Rust side polls the transition on an 8 MB-stack worker thread, so the
+// GroveDB proof-verification recursion survives regardless of the JNI
+// thread's stack; we call it synchronously here (Kotlin confines the call
+// to `Dispatchers.IO`).
+
+/// Transfer platform-address credits to [outputs] recipients, wallet-signed.
+///
+/// `outputs_blob` (big-endian): `u32 rowCount` then per row
+/// `u8 addressType (0 P2PKH only), u8[20] hash, u64 credits`. Only P2PKH
+/// (type 0) is honored on the way in (the FFI rejects P2SH). Returns the
+/// resulting changeset blob (`u32 rowCount` then per row
+/// `u8 addressType, u8[20] hash, u64 balance`).
+///
+/// `signer_handle` is the platform-address per-input `SignerHandle`
+/// (`PlatformWalletManager.signerHandle`).
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_walletPlatformAddressTransfer(
+    mut env: JNIEnv,
+    _class: JClass,
+    wallet_handle: jlong,
+    account_index: jni::sys::jint,
+    outputs_blob: JByteArray,
+    signer_handle: jlong,
+) -> jbyteArray {
+    guard(&mut env, ptr::null_mut(), |env| {
+        let Some(outputs) = decode_credit_outputs(env, &outputs_blob) else {
+            return ptr::null_mut();
+        };
+
+        let mut addr_handle: Handle = 0;
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_get_platform(
+                wallet_handle as Handle,
+                &mut addr_handle as *mut Handle,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return ptr::null_mut();
+        }
+
+        let mut changeset = platform_wallet_ffi::PlatformAddressChangeSetFFI {
+            updated: ptr::null_mut(),
+            updated_count: 0,
+        };
+        let transfer_result = unsafe {
+            platform_wallet_ffi::platform_address_wallet_transfer(
+                addr_handle,
+                account_index.max(0) as u32,
+                platform_wallet_ffi::InputSelectionType::Auto,
+                ptr::null(),
+                0,
+                ptr::null(),
+                0,
+                outputs.as_ptr(),
+                outputs.len(),
+                ptr::null(),
+                0,
+                signer_handle as *mut rs_sdk_ffi::SignerHandle,
+                &mut changeset as *mut platform_wallet_ffi::PlatformAddressChangeSetFFI,
+            )
+        };
+
+        let out = if take_pwffi_error(env, transfer_result) {
+            ptr::null_mut()
+        } else {
+            let blob = unsafe { encode_changeset(&changeset) };
+            unsafe {
+                platform_wallet_ffi::platform_address_wallet_free_changeset(
+                    &changeset as *const platform_wallet_ffi::PlatformAddressChangeSetFFI,
+                )
+            };
+            env.byte_array_from_slice(&blob)
+                .map(|a| a.into_raw())
+                .unwrap_or(ptr::null_mut())
+        };
+
+        let destroy_result =
+            unsafe { platform_wallet_ffi::platform_address_wallet_destroy(addr_handle) };
+        if !env.exception_check().unwrap_or(false) {
+            let _ = take_pwffi_error(env, destroy_result);
+        } else {
+            unsafe { platform_wallet_ffi_result_free(&mut { destroy_result }) };
+        }
+
+        out
+    })
+}
+
+/// Withdraw platform-address credits (full account balance, AUTO input
+/// selection) to a Core L1 address, wallet-signed. The address is
+/// network-checked Rust-side against the wallet's own network. Returns the
+/// resulting changeset blob (same layout as [`walletPlatformAddressTransfer`]).
+///
+/// `core_address` is a base58 Core address; `core_fee_per_byte` must be a
+/// Fibonacci-sequence value (DPP rejects non-Fibonacci rates). `signer_handle`
+/// is the platform-address per-input `SignerHandle`.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_walletPlatformAddressWithdraw(
+    mut env: JNIEnv,
+    _class: JClass,
+    wallet_handle: jlong,
+    account_index: jni::sys::jint,
+    core_address: JString,
+    core_fee_per_byte: jni::sys::jint,
+    signer_handle: jlong,
+) -> jbyteArray {
+    guard(&mut env, ptr::null_mut(), |env| {
+        let Some(core_address_c) = read_cstring_required(env, &core_address, "core_address") else {
+            return ptr::null_mut();
+        };
+
+        let mut addr_handle: Handle = 0;
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_get_platform(
+                wallet_handle as Handle,
+                &mut addr_handle as *mut Handle,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return ptr::null_mut();
+        }
+
+        let mut changeset = platform_wallet_ffi::PlatformAddressChangeSetFFI {
+            updated: ptr::null_mut(),
+            updated_count: 0,
+        };
+        let withdraw_result = unsafe {
+            platform_wallet_ffi::platform_address_wallet_withdraw_to_address(
+                addr_handle,
+                account_index.max(0) as u32,
+                platform_wallet_ffi::InputSelectionType::Auto,
+                ptr::null(),
+                0,
+                ptr::null(),
+                0,
+                core_address_c.as_ptr(),
+                core_fee_per_byte.max(0) as u32,
+                ptr::null(),
+                0,
+                signer_handle as *mut rs_sdk_ffi::SignerHandle,
+                &mut changeset as *mut platform_wallet_ffi::PlatformAddressChangeSetFFI,
+            )
+        };
+
+        let out = if take_pwffi_error(env, withdraw_result) {
+            ptr::null_mut()
+        } else {
+            let blob = unsafe { encode_changeset(&changeset) };
+            unsafe {
+                platform_wallet_ffi::platform_address_wallet_free_changeset(
+                    &changeset as *const platform_wallet_ffi::PlatformAddressChangeSetFFI,
+                )
+            };
+            env.byte_array_from_slice(&blob)
+                .map(|a| a.into_raw())
+                .unwrap_or(ptr::null_mut())
+        };
+
+        let destroy_result =
+            unsafe { platform_wallet_ffi::platform_address_wallet_destroy(addr_handle) };
+        if !env.exception_check().unwrap_or(false) {
+            let _ = take_pwffi_error(env, destroy_result);
+        } else {
+            unsafe { platform_wallet_ffi_result_free(&mut { destroy_result }) };
+        }
+
+        out
+    })
+}
+
+/// Preflight an AUTO withdrawal WITHOUT signing / broadcasting / consuming a
+/// Core address. Returns a `long[3]` = `[canWithdraw (0/1), netWithdrawable,
+/// estimatedFee]`; the figures are `0` when `canWithdraw == 0`. The "can't
+/// fund" reason is a Success-coded message Rust-side (never thrown), so the
+/// UI gates purely on the `canWithdraw` flag — the authoritative signal.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_walletPlatformAddressPreflightWithdrawal(
+    mut env: JNIEnv,
+    _class: JClass,
+    wallet_handle: jlong,
+    account_index: jni::sys::jint,
+    core_fee_per_byte: jni::sys::jint,
+) -> jlongArray {
+    guard(&mut env, ptr::null_mut(), |env| {
+        let mut addr_handle: Handle = 0;
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_get_platform(
+                wallet_handle as Handle,
+                &mut addr_handle as *mut Handle,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return ptr::null_mut();
+        }
+
+        let mut preflight = platform_wallet_ffi::WithdrawalPreflightFFI {
+            can_withdraw: false,
+            net_withdrawable: 0,
+            estimated_fee: 0,
+        };
+        let preflight_result = unsafe {
+            platform_wallet_ffi::platform_address_wallet_preflight_withdrawal(
+                addr_handle,
+                account_index.max(0) as u32,
+                core_fee_per_byte.max(0) as u32,
+                &mut preflight as *mut platform_wallet_ffi::WithdrawalPreflightFFI,
+            )
+        };
+
+        let out = if take_pwffi_error(env, preflight_result) {
+            ptr::null_mut()
+        } else {
+            let triple = [
+                if preflight.can_withdraw { 1 } else { 0 },
+                preflight.net_withdrawable as jlong,
+                preflight.estimated_fee as jlong,
+            ];
+            let Ok(arr) = env.new_long_array(3) else {
+                return ptr::null_mut();
+            };
+            if env.set_long_array_region(&arr, 0, &triple).is_err() {
+                return ptr::null_mut();
+            }
+            arr.into_raw()
+        };
+
+        let destroy_result =
+            unsafe { platform_wallet_ffi::platform_address_wallet_destroy(addr_handle) };
+        if !env.exception_check().unwrap_or(false) {
+            let _ = take_pwffi_error(env, destroy_result);
+        } else {
+            unsafe { platform_wallet_ffi_result_free(&mut { destroy_result }) };
+        }
+
+        out
+    })
+}
+
+/// The version-locked minimum input / output amounts (credits) that gate the
+/// platform-address transfer/withdraw UI, as a `long[2]` = `[minInput,
+/// minOutput]`. Two getters folded into one composite (get-platform → read
+/// both → destroy-handle) so the UI needs one JNI hop.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_walletPlatformAddressMinAmounts(
+    mut env: JNIEnv,
+    _class: JClass,
+    wallet_handle: jlong,
+) -> jlongArray {
+    guard(&mut env, ptr::null_mut(), |env| {
+        let mut addr_handle: Handle = 0;
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_get_platform(
+                wallet_handle as Handle,
+                &mut addr_handle as *mut Handle,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return ptr::null_mut();
+        }
+
+        let mut min_input: u64 = 0;
+        let mut min_output: u64 = 0;
+        let input_result = unsafe {
+            platform_wallet_ffi::platform_address_wallet_min_input_amount(
+                addr_handle,
+                &mut min_input as *mut u64,
+            )
+        };
+        let out = if take_pwffi_error(env, input_result) {
+            ptr::null_mut()
+        } else {
+            let output_result = unsafe {
+                platform_wallet_ffi::platform_address_wallet_min_output_amount(
+                    addr_handle,
+                    &mut min_output as *mut u64,
+                )
+            };
+            if take_pwffi_error(env, output_result) {
+                ptr::null_mut()
+            } else {
+                let pair = [min_input as jlong, min_output as jlong];
+                let Ok(arr) = env.new_long_array(2) else {
+                    return ptr::null_mut();
+                };
+                if env.set_long_array_region(&arr, 0, &pair).is_err() {
+                    return ptr::null_mut();
+                }
+                arr.into_raw()
+            }
+        };
+
+        let destroy_result =
+            unsafe { platform_wallet_ffi::platform_address_wallet_destroy(addr_handle) };
+        if !env.exception_check().unwrap_or(false) {
+            let _ = take_pwffi_error(env, destroy_result);
+        } else {
+            unsafe { platform_wallet_ffi_result_free(&mut { destroy_result }) };
+        }
+
+        out
+    })
+}
+
 /// Destroy a `PlatformWallet` handle (drops the manager's `Arc` clone).
 #[no_mangle]
 pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_walletDestroy(
@@ -1058,6 +1417,29 @@ sync_start_stop!(
     platform_wallet_ffi::platform_wallet_manager_platform_address_sync_stop,
     platform_wallet_ffi::platform_wallet_manager_platform_address_sync_is_running
 );
+
+/// Reset the platform-address (BLAST) sync state — the native half of the
+/// Sync tab's "Clear" action (#3959). Quiesces the sync loop (stops it,
+/// leaves it restartable — does NOT auto-restart), then per wallet clears
+/// the managed-account credit balances and the provider's watermark +
+/// found/absent seed, preserving the durable address bijection. The next
+/// start is therefore a full rescan. Mirrors Swift's
+/// `PlatformWalletManager.resetPlatformAddressSyncState()`.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_platformAddressSyncReset(
+    mut env: JNIEnv,
+    _class: JClass,
+    manager_handle: jlong,
+) {
+    guard(&mut env, (), |env| {
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_manager_platform_address_sync_reset(
+                manager_handle as Handle,
+            )
+        };
+        let _ = take_pwffi_error(env, result);
+    })
+}
 
 sync_start_stop!(
     Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_identitySyncStart,

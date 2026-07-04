@@ -153,6 +153,66 @@ internal object WalletManagerNative {
         coreSignerHandle: Long,
     ): ByteArray
 
+    // ── Wallet-signed Platform-address credit movement (ADDR-02/04) ───
+
+    /**
+     * Transfer platform-address credits to recipients, wallet-signed (AUTO
+     * input selection; Rust owns selection/balancing/nonces/signing).
+     * Composite Rust call (get-platform → `platform_address_wallet_transfer`
+     * → free-changeset → destroy-handle). Returns the changeset blob (`u32
+     * rowCount` then per row `u8 addressType, u8[20] hash, u64 balance`).
+     *
+     * @param outputsBlob big-endian: `u32 rowCount` then per row
+     *   `u8 addressType (0 P2PKH only), u8[20] hash, u64 credits`.
+     * @param signerHandle the platform-address per-input `SignerHandle`.
+     */
+    external fun walletPlatformAddressTransfer(
+        walletHandle: Long,
+        accountIndex: Int,
+        outputsBlob: ByteArray,
+        signerHandle: Long,
+    ): ByteArray
+
+    /**
+     * Withdraw platform-address credits (full account balance, AUTO input
+     * selection) to a Core L1 address, wallet-signed. The address is
+     * network-checked Rust-side. Composite Rust call (get-platform →
+     * `platform_address_wallet_withdraw_to_address` → free-changeset →
+     * destroy-handle). Returns the changeset blob (same layout as
+     * [walletPlatformAddressTransfer]).
+     *
+     * @param coreAddress base58 Core address.
+     * @param coreFeePerByte must be a Fibonacci-sequence value (DPP rejects
+     *   non-Fibonacci rates).
+     * @param signerHandle the platform-address per-input `SignerHandle`.
+     */
+    external fun walletPlatformAddressWithdraw(
+        walletHandle: Long,
+        accountIndex: Int,
+        coreAddress: String,
+        coreFeePerByte: Int,
+        signerHandle: Long,
+    ): ByteArray
+
+    /**
+     * Preflight an AUTO withdrawal without signing / broadcasting / consuming
+     * a Core address. Returns `long[3]` = `[canWithdraw (0/1),
+     * netWithdrawable, estimatedFee]` (figures 0 unless canWithdraw). The UI
+     * gates on the canWithdraw flag (the authoritative signal).
+     */
+    external fun walletPlatformAddressPreflightWithdrawal(
+        walletHandle: Long,
+        accountIndex: Int,
+        coreFeePerByte: Int,
+    ): LongArray
+
+    /**
+     * The version-locked minimum input / output amounts (credits) that gate
+     * the transfer/withdraw UI, as `long[2]` = `[minInput, minOutput]`.
+     * Composite (get-platform → read both → destroy-handle).
+     */
+    external fun walletPlatformAddressMinAmounts(walletHandle: Long): LongArray
+
     /** Destroy a `PlatformWallet` handle. */
     external fun walletDestroy(walletHandle: Long)
 
@@ -161,6 +221,15 @@ internal object WalletManagerNative {
     external fun platformAddressSyncStart(managerHandle: Long)
     external fun platformAddressSyncStop(managerHandle: Long)
     external fun platformAddressSyncIsRunning(managerHandle: Long): Boolean
+
+    /**
+     * Reset the platform-address (BLAST) sync state — the native half of the
+     * Sync tab's "Clear" action (#3959). Quiesces the loop (leaves it
+     * restartable, does NOT auto-restart), then clears each wallet's credit
+     * balances + the provider watermark/seed so the next start is a full
+     * rescan; the durable address bijection is preserved.
+     */
+    external fun platformAddressSyncReset(managerHandle: Long)
 
     external fun identitySyncStart(managerHandle: Long)
     external fun identitySyncStop(managerHandle: Long)

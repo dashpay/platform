@@ -126,6 +126,18 @@ import kotlinx.serialization.Serializable
 @Serializable data class FundFromAssetLock(val walletIdHex: String)
 
 /**
+ * Wallet-signed transfer of Platform-address (DIP-17) credits
+ * (← `TransferPlatformAddressView.swift`, ADDR-02). Wallet-scoped.
+ */
+@Serializable data class TransferPlatformAddress(val walletIdHex: String)
+
+/**
+ * Wallet-signed withdrawal of Platform-address (DIP-17) credits to a Core
+ * L1 address (← `WithdrawPlatformAddressView.swift`, ADDR-04). Wallet-scoped.
+ */
+@Serializable data class WithdrawPlatformAddress(val walletIdHex: String)
+
+/**
  * Live address-funding progress (← `AddressFundFromAssetLockProgressView.swift`).
  * Resolves its controller from the coordinator by
  * `(walletId, platformAccountIndex, recipientHash)`; dismissal-safe.

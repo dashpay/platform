@@ -32,8 +32,10 @@ class DashSdkErrorTest {
     }
 
     @Test
-    fun unknownCodesFallBackToInternalError() {
-        val mapped = DashSdkError.fromNative(DashSDKException(1234, "?"))
+    fun unknownNativeCodesFallBackToInternalError() {
+        // A code in the rs-sdk-ffi range (< the platform-wallet offset) with
+        // no dedicated mapping stays an InternalError.
+        val mapped = DashSdkError.fromNative(DashSDKException(234, "?"))
         assertTrue(mapped is DashSdkError.InternalError)
     }
 
@@ -42,6 +44,46 @@ class DashSdkErrorTest {
         assertTrue(DashSdkError.NetworkError("x").isRetryable)
         assertTrue(DashSdkError.Timeout("x").isRetryable)
         assertFalse(DashSdkError.InvalidParameter("x").isRetryable)
+    }
+
+    @Test
+    fun platformWalletCodesMapToPlatformWalletSubtree() {
+        val offset = DashSdkError.PLATFORM_WALLET_CODE_OFFSET
+        // Retry-semantics-bearing + typed platform-wallet codes.
+        val invalidHandle = DashSdkError.fromNative(DashSDKException(offset + 1, "bad handle"))
+        assertTrue(invalidHandle is DashSdkError.PlatformWallet.InvalidHandle)
+
+        val walletOp = DashSdkError.fromNative(DashSDKException(offset + 6, "op failed"))
+        assertTrue(walletOp is DashSdkError.PlatformWallet.WalletOperation)
+        // Distinct from the rs-sdk-ffi CryptoError that shares raw code 6.
+        assertFalse(walletOp is DashSdkError.CryptoError)
+
+        val noAnchor = DashSdkError.fromNative(DashSDKException(offset + 19, "mid-block tree"))
+        assertTrue(noAnchor is DashSdkError.PlatformWallet.ShieldedNoRecordedAnchor)
+        assertTrue("ShieldedNoRecordedAnchor is retryable", noAnchor.isRetryable)
+
+        val broadcastUnconfirmed =
+            DashSdkError.fromNative(DashSDKException(offset + 20, "ambiguous broadcast"))
+        assertTrue(
+            broadcastUnconfirmed is DashSdkError.PlatformWallet.TransactionBroadcastUnconfirmed,
+        )
+        assertFalse(
+            "TransactionBroadcastUnconfirmed must NOT be retryable",
+            broadcastUnconfirmed.isRetryable,
+        )
+        // The message must warn against retrying (distinct from the anchor case).
+        assertTrue(broadcastUnconfirmed.message!!.contains("do NOT retry"))
+    }
+
+    @Test
+    fun unmappedPlatformWalletCodesFallBackToGeneric() {
+        val offset = DashSdkError.PLATFORM_WALLET_CODE_OFFSET
+        // ErrorUnknown = 99 has no dedicated type → Generic carrying the code.
+        val mapped = DashSdkError.fromNative(DashSDKException(offset + 99, "boom"))
+        assertTrue(mapped is DashSdkError.PlatformWallet.Generic)
+        assertEquals(99, (mapped as DashSdkError.PlatformWallet.Generic).nativeCode)
+        assertEquals("boom", mapped.message)
+        assertFalse("Generic platform-wallet errors are not retryable", mapped.isRetryable)
     }
 
     @Test

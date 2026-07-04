@@ -160,7 +160,13 @@ class PlatformWalletPersistenceHandler(
             // Update-only: the row is seeded by the address-pool emit
             // path (persistAccountAddressPools). Skip if it doesn't exist,
             // matching `persistAddressBalances`.
-            val row = db.platformAddressDao().getByAddressHash(addressHash) ?: return@stage
+            //
+            // Scope by walletId + hash: a hash-only predicate can match
+            // another wallet's row in a multi-wallet store (same seed
+            // imported on coin-type-sharing networks, watch-only
+            // duplicates) — the same fix the Swift handler carries.
+            val row = db.platformAddressDao()
+                .getByWalletAndAddressHash(walletId, addressHash) ?: return@stage
             db.platformAddressDao().upsert(
                 row.copy(
                     accountIndex = accountIndex,

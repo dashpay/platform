@@ -38,7 +38,9 @@ import org.dashfoundation.example.ui.identity.SearchWalletsForIdentitiesScreen
 import org.dashfoundation.example.ui.identity.SelectMainNameScreen
 import org.dashfoundation.example.ui.credits.TopUpIdentityScreen
 import org.dashfoundation.example.ui.credits.TransferCreditsScreen
+import org.dashfoundation.example.ui.credits.TransferPlatformAddressScreen
 import org.dashfoundation.example.ui.credits.WithdrawCreditsScreen
+import org.dashfoundation.example.ui.credits.WithdrawPlatformAddressScreen
 import org.dashfoundation.example.ui.transitions.StateTransitionsScreen
 import org.dashfoundation.example.ui.transitions.TransitionCategoryScreen
 import org.dashfoundation.example.ui.transitions.TransitionDetailScreen
@@ -203,6 +205,20 @@ fun AppNavHost(
 
         composable<FundFromAssetLock> { entry ->
             FundFromAssetLockScreen(entry.toRoute<FundFromAssetLock>().walletIdHex, navController)
+        }
+
+        composable<TransferPlatformAddress> { entry ->
+            TransferPlatformAddressScreen(
+                entry.toRoute<TransferPlatformAddress>().walletIdHex,
+                navController,
+            )
+        }
+
+        composable<WithdrawPlatformAddress> { entry ->
+            WithdrawPlatformAddressScreen(
+                entry.toRoute<WithdrawPlatformAddress>().walletIdHex,
+                navController,
+            )
         }
 
         composable<AddressFundProgress> { entry ->

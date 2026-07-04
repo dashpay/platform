@@ -47,7 +47,9 @@ import org.dashfoundation.dashsdk.wallet.ManagedPlatformWallet
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.di.LocalAppState
 import org.dashfoundation.example.navigation.SendTransaction
+import org.dashfoundation.example.navigation.TransferPlatformAddress
 import org.dashfoundation.example.navigation.WalletTransactions
+import org.dashfoundation.example.navigation.WithdrawPlatformAddress
 import org.dashfoundation.example.ui.components.ErrorAlertDialog
 import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.LabeledContent
@@ -237,6 +239,29 @@ fun WalletDetailScreen(
                     Icon(Icons.AutoMirrored.Filled.List, contentDescription = null)
                     Text("  View All Transactions")
                     if (transactionCount > 0) Text("  ($transactionCount)")
+                }
+            }
+
+            // Platform Credits (← the ADDR-02/04 wallet-signed DIP-17
+            // transfer / withdraw actions added in #3923).
+            FormSection(title = "Platform Credits") {
+                TextButton(
+                    onClick = { navController.navigate(TransferPlatformAddress(walletIdHex)) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("walletDetail.transferPlatformButton"),
+                ) {
+                    Icon(Icons.Default.ArrowUpward, contentDescription = null)
+                    Text("  Transfer Platform Credits")
+                }
+                TextButton(
+                    onClick = { navController.navigate(WithdrawPlatformAddress(walletIdHex)) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("walletDetail.withdrawPlatformButton"),
+                ) {
+                    Icon(Icons.Default.ArrowDownward, contentDescription = null)
+                    Text("  Withdraw Platform Credits")
                 }
             }
 

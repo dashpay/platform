@@ -258,8 +258,147 @@ class ManagedPlatformWallet internal constructor(
         decodeChangeset(blob)
     }
 
+    // ── Wallet-signed Platform-address credit movement (ADDR-02/04) ───
+
+    /** One recipient of a wallet-signed platform-address transfer. */
+    data class CreditOutput(val addressType: Int, val hash: ByteArray, val credits: Long) {
+        init {
+            require(hash.size == 20) { "CreditOutput.hash must be 20 bytes, got ${hash.size}" }
+            require(credits > 0) { "CreditOutput.credits must be positive" }
+        }
+
+        override fun equals(other: Any?): Boolean =
+            other is CreditOutput &&
+                addressType == other.addressType &&
+                hash.contentEquals(other.hash) &&
+                credits == other.credits
+
+        override fun hashCode(): Int =
+            (31 * addressType + hash.contentHashCode()) * 31 + credits.hashCode()
+    }
+
+    /** Version-locked minimum transfer/withdraw amounts (credits). */
+    data class MinAmounts(val minInput: Long, val minOutput: Long)
+
+    /** Result of a withdrawal preflight (mirror of `WithdrawalPreflightFFI`). */
+    data class WithdrawalPreflight(
+        val canWithdraw: Boolean,
+        val netWithdrawable: Long,
+        val estimatedFee: Long,
+    )
+
+    /**
+     * Transfer platform-address credits to [outputs], signed by the wallet's
+     * platform-address signer — port of Swift's rewritten
+     * `ManagedPlatformAddressWallet.transfer`. AUTO input selection: Rust
+     * owns selection / balancing / nonces / signing; Kotlin only marshals the
+     * recipient list. Returns the resulting per-address updated balances.
+     *
+     * @param signerHandle the platform-address per-input `SignerHandle`
+     *   (`PlatformWalletManager.signerHandle`).
+     */
+    suspend fun transferCredits(
+        outputs: List<CreditOutput>,
+        signerHandle: Long,
+        accountIndex: Int = 0,
+    ): List<UpdatedBalance> = withContext(Dispatchers.IO) {
+        val blob = mapNativeErrors {
+            WalletManagerNative.walletPlatformAddressTransfer(
+                walletHandle = handle,
+                accountIndex = accountIndex,
+                outputsBlob = encodeCreditOutputs(outputs),
+                signerHandle = signerHandle,
+            )
+        }
+        decodeChangeset(blob)
+    }
+
+    /**
+     * Withdraw the account's full platform-address credit balance to a Core
+     * L1 address, signed by the wallet's platform-address signer — port of
+     * Swift's `ManagedPlatformAddressWallet.withdraw`. The address is
+     * network-checked Rust-side. Returns the resulting per-address updated
+     * balances.
+     *
+     * @param coreFeePerByte a Fibonacci-sequence core fee rate (DPP rejects
+     *   non-Fibonacci values).
+     * @param signerHandle the platform-address per-input `SignerHandle`.
+     */
+    suspend fun withdrawCredits(
+        coreAddress: String,
+        coreFeePerByte: Int,
+        signerHandle: Long,
+        accountIndex: Int = 0,
+    ): List<UpdatedBalance> = withContext(Dispatchers.IO) {
+        val blob = mapNativeErrors {
+            WalletManagerNative.walletPlatformAddressWithdraw(
+                walletHandle = handle,
+                accountIndex = accountIndex,
+                coreAddress = coreAddress,
+                coreFeePerByte = coreFeePerByte,
+                signerHandle = signerHandle,
+            )
+        }
+        decodeChangeset(blob)
+    }
+
+    /**
+     * Preflight an AUTO withdrawal WITHOUT signing / broadcasting / consuming
+     * a Core address — port of Swift's `preflightWithdrawal`. Reads the
+     * account's on-chain balances and sizes the plan the spend would use, so
+     * gating a submit button on [WithdrawalPreflight.canWithdraw] keeps it in
+     * lockstep with what the spend accepts. Runs on [Dispatchers.IO] (the
+     * Rust side polls a proof query on an 8 MB-stack worker).
+     */
+    suspend fun preflightWithdrawal(
+        accountIndex: Int = 0,
+        coreFeePerByte: Int = 0,
+    ): WithdrawalPreflight = withContext(Dispatchers.IO) {
+        val triple = mapNativeErrors {
+            WalletManagerNative.walletPlatformAddressPreflightWithdrawal(
+                walletHandle = handle,
+                accountIndex = accountIndex,
+                coreFeePerByte = coreFeePerByte,
+            )
+        }
+        WithdrawalPreflight(
+            canWithdraw = triple.getOrElse(0) { 0L } != 0L,
+            netWithdrawable = triple.getOrElse(1) { 0L },
+            estimatedFee = triple.getOrElse(2) { 0L },
+        )
+    }
+
+    /**
+     * The version-locked minimum input / output amounts (credits) that gate
+     * the transfer/withdraw UI — port of Swift's `minInputAmount()` /
+     * `minOutputAmount()`, folded into one composite call.
+     */
+    suspend fun minAmounts(): MinAmounts = withContext(Dispatchers.IO) {
+        val pair = mapNativeErrors { WalletManagerNative.walletPlatformAddressMinAmounts(handle) }
+        MinAmounts(
+            minInput = pair.getOrElse(0) { 0L },
+            minOutput = pair.getOrElse(1) { 0L },
+        )
+    }
+
     override fun close() {
         cleanable.clean()
+    }
+
+    /**
+     * Encode [outputs] to the credit-outputs blob the transfer FFI reads:
+     * `u32 rowCount` then per row `u8 addressType, u8[20] hash, u64 credits`.
+     */
+    private fun encodeCreditOutputs(outputs: List<CreditOutput>): ByteArray {
+        val out = java.io.ByteArrayOutputStream()
+        val dos = java.io.DataOutputStream(out)
+        dos.writeInt(outputs.size)
+        for (o in outputs) {
+            dos.writeByte(o.addressType)
+            dos.write(o.hash)
+            dos.writeLong(o.credits)
+        }
+        return out.toByteArray()
     }
 
     /**

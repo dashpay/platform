@@ -1,5 +1,6 @@
 package org.dashfoundation.dashsdk.services
 
+import androidx.room.withTransaction
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -182,6 +183,72 @@ class PlatformBalanceSyncService(private val database: DashDatabase) {
         } catch (e: Exception) {
             _state.value = PlatformSyncState.Error(e.message ?: "manual sync failed")
         }
+    }
+
+    /**
+     * Clear all synced platform-address data for [network] — port of Swift
+     * `PlatformBalanceSyncService.clearLocalState(...)`, the Sync-tab "Clear"
+     * action (#3959). **Fail-closed**, in strict order:
+     *
+     * 1. **Native reset first** — [PlatformWalletManager.resetPlatformAddressSyncState]
+     *    quiesces the loop and drops each wallet's balances + the provider
+     *    watermark/seed. If it throws, surface the error and clear NOTHING
+     *    else (leaving the display and disk intact so the state stays
+     *    consistent). When no manager is bound this step is skipped (matching
+     *    Swift's `if let walletManager`).
+     * 2. **Room clear** — zero the active network's address rows in place
+     *    (preserving derivation metadata) and delete the active network's
+     *    sync-state watermark; other networks are untouched. If it throws,
+     *    surface the error and skip the display clear.
+     * 3. **Display clear** — only on full success, reset [state] to
+     *    [PlatformSyncState.Idle]; the balance/active-address Room `Flow`s
+     *    settle to zero automatically from the disk clear.
+     *
+     * The loop is deliberately left stopped — data stays cleared until the
+     * user explicitly resyncs (via [manualSync] / start).
+     *
+     * @param network the active network whose synced data to clear.
+     * @param walletIdsOnNetwork the 32-byte ids of wallets on [network]
+     *   (address rows carry no network column, so they are scoped by this
+     *   wallet-id pivot — mirror of Swift's `walletIdsOnNetwork`).
+     */
+    suspend fun clearLocalState(
+        network: org.dashfoundation.dashsdk.Network,
+        walletIdsOnNetwork: List<ByteArray>,
+    ) {
+        // 1. Native reset first (fail-closed).
+        val m = manager
+        if (m != null) {
+            try {
+                m.resetPlatformAddressSyncState()
+            } catch (e: Exception) {
+                _state.value = PlatformSyncState.Error(
+                    e.message ?: "failed to reset platform-address sync state",
+                )
+                return
+            }
+        }
+
+        // 2. Room clear (fail-closed): zero the active-network address rows in
+        //    place + delete the active-network watermark, in one transaction
+        //    (mirror of Swift's single `save()`).
+        try {
+            database.withTransaction {
+                database.platformAddressDao().zeroBalancesForWallets(
+                    walletIdsOnNetwork,
+                    System.currentTimeMillis(),
+                )
+                database.platformAddressDao().deleteSyncStatesByNetwork(network.ffiValue)
+            }
+        } catch (e: Exception) {
+            _state.value = PlatformSyncState.Error(
+                e.message ?: "failed to clear platform-address data",
+            )
+            return
+        }
+
+        // 3. Display clear — only on full success.
+        _state.value = PlatformSyncState.Idle
     }
 
     /**

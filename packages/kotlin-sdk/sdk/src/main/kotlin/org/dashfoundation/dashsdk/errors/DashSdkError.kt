@@ -55,10 +55,90 @@ sealed class DashSdkError(
     class InternalError(message: String, cause: Throwable? = null) :
         DashSdkError(message, cause)
 
+    /**
+     * Errors raised by the `platform-wallet-ffi` layer (its own
+     * `PlatformWalletFFIResultCode` enum), surfaced through the JNI bridge's
+     * shared `take_pwffi_error` with the native code shifted by
+     * [PLATFORM_WALLET_CODE_OFFSET] so it never collides with the
+     * rs-sdk-ffi `DashSDKErrorCode` range decoded above.
+     *
+     * The Android analog of Swift's `PlatformWalletError` enum
+     * (`PlatformWalletResult.swift`). Only the retry-semantics-bearing codes
+     * get dedicated types; everything else falls through to the
+     * [PlatformWallet] catch-all which still carries the native code + Rust
+     * message.
+     */
+    sealed class PlatformWallet(
+        message: String,
+        cause: Throwable? = null,
+    ) : DashSdkError(message, cause) {
+
+        /** `ErrorInvalidHandle` (native code 1). A stale/closed wallet handle. */
+        class InvalidHandle(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause)
+
+        /**
+         * `ErrorWalletOperation` (native code 6). A generic wallet-operation
+         * failure — the platform-wallet catch-all mapping, distinct from the
+         * rs-sdk-ffi `CryptoError` that shares raw code 6.
+         */
+        class WalletOperation(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause)
+
+        /**
+         * `ErrorShieldedNoRecordedAnchor` (native code 19). A shielded spend
+         * could not be built against a Platform-recorded anchor because the
+         * local commitment tree is mid-block. Nothing was broadcast and the
+         * notes were released, so this **is** retryable once the next
+         * shielded sync advances the tree onto a recorded boundary. Distinct
+         * from [TransactionBroadcastUnconfirmed], which must NOT be retried.
+         */
+        class ShieldedNoRecordedAnchor(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause) {
+            override val isRetryable: Boolean get() = true
+        }
+
+        /**
+         * `ErrorTransactionBroadcastUnconfirmed` (native code 20). A core
+         * transaction broadcast had an AMBIGUOUS outcome — it may already be
+         * on the network. The wallet keeps the spent inputs reserved so a
+         * retry can't double-spend; the reservation TTL or a later sync
+         * reconciles the outcome. Do **NOT** auto-retry.
+         */
+        class TransactionBroadcastUnconfirmed(message: String, cause: Throwable? = null) :
+            PlatformWallet(
+                "$message (do NOT retry: the transaction may already be on the network; " +
+                    "the wallet keeps its inputs reserved until a sync reconciles the outcome)",
+                cause,
+            )
+
+        /**
+         * Any other `PlatformWalletFFIResultCode` without a dedicated type.
+         * Carries the platform-wallet [nativeCode] (already de-offset) and
+         * the Rust-supplied message.
+         */
+        class Generic(
+            val nativeCode: Int,
+            message: String,
+            cause: Throwable? = null,
+        ) : PlatformWallet(message, cause)
+    }
+
     companion object {
+        /**
+         * Offset the JNI bridge adds to a `PlatformWalletFFIResultCode`
+         * before throwing it as a `DashSDKException`, keeping it clear of the
+         * rs-sdk-ffi `DashSDKErrorCode` range (1–10). Must stay in lockstep
+         * with `support::PWFFI_CODE_OFFSET` in `rs-unified-sdk-jni`.
+         */
+        const val PLATFORM_WALLET_CODE_OFFSET = 1000
+
         /** Map a native error code + message into the public hierarchy. */
         fun fromNative(e: DashSDKException): DashSdkError {
             val message = e.message ?: "Unknown SDK error"
+            if (e.code >= PLATFORM_WALLET_CODE_OFFSET) {
+                return fromPlatformWalletNative(e.code - PLATFORM_WALLET_CODE_OFFSET, message, e)
+            }
             return when (e.code) {
                 1 -> InvalidParameter(message, e)
                 2 -> InvalidState(message, e)
@@ -72,6 +152,26 @@ sealed class DashSdkError(
                 10 -> DriveInternalError(message, e)
                 else -> InternalError(message, e)
             }
+        }
+
+        /**
+         * Map a de-offset `PlatformWalletFFIResultCode` value into the
+         * [PlatformWallet] subtree — mirror of Swift's
+         * `PlatformWalletError(result:)` construction. Retry-semantics-bearing
+         * codes get dedicated types; the rest fall through to
+         * [PlatformWallet.Generic].
+         */
+        private fun fromPlatformWalletNative(
+            code: Int,
+            message: String,
+            cause: Throwable?,
+        ): DashSdkError = when (code) {
+            // PlatformWalletFFIResultCode variants (platform-wallet-ffi/src/error.rs)
+            1 -> PlatformWallet.InvalidHandle(message, cause) // ErrorInvalidHandle
+            6 -> PlatformWallet.WalletOperation(message, cause) // ErrorWalletOperation
+            19 -> PlatformWallet.ShieldedNoRecordedAnchor(message, cause) // ErrorShieldedNoRecordedAnchor
+            20 -> PlatformWallet.TransactionBroadcastUnconfirmed(message, cause) // ErrorTransactionBroadcastUnconfirmed
+            else -> PlatformWallet.Generic(code, message, cause)
         }
     }
 }

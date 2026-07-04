@@ -19,49 +19,21 @@
 //!
 //! ## Result convention
 //!
-//! These entry points return [`PlatformWalletFFIResult`], so errors go
-//! through [`take_pwffi_error`] — the same mapping `identity.rs` /
-//! `wallet_manager.rs` use.
+//! These entry points return `PlatformWalletFFIResult`, so errors go
+//! through the shared [`crate::support::take_pwffi_error`] — the same
+//! mapping `identity.rs` / `wallet_manager.rs` use.
 
 #![allow(clippy::missing_safety_doc)]
 
-use crate::support::{guard, throw_sdk_exception};
+use crate::support::{guard, take_pwffi_error, throw_sdk_exception};
 use jni::objects::{JByteArray, JClass, JString};
 use jni::sys::jlong;
 use jni::JNIEnv;
-use platform_wallet_ffi::error::{
-    platform_wallet_ffi_result_free, PlatformWalletFFIResult, PlatformWalletFFIResultCode,
-};
 use platform_wallet_ffi::handle::Handle;
 use platform_wallet_ffi::identity_registration::IdentityFundingInputFFI;
 use platform_wallet_ffi::identity_transfer::PlatformAddressCreditOutputFFI;
 use rs_sdk_ffi::SignerHandle;
 use std::ffi::CString;
-
-// ── Result → exception ────────────────────────────────────────────────
-
-/// If `result` carries a non-`Success` code: throw `DashSDKException`,
-/// free its message, and return `true` (the caller bails with its
-/// default). Mirrors `identity::take_pwffi_error` exactly — kept as a
-/// local copy so `credits.rs` stays self-contained (the shared helper is
-/// private to each module).
-fn take_pwffi_error(env: &mut JNIEnv, mut result: PlatformWalletFFIResult) -> bool {
-    if result.code == PlatformWalletFFIResultCode::Success {
-        return false;
-    }
-    let message = if result.message.is_null() {
-        format!("platform-wallet error (code {})", result.code as i32)
-    } else {
-        // SAFETY: non-null message is a valid CString produced by the FFI.
-        unsafe { std::ffi::CStr::from_ptr(result.message) }
-            .to_string_lossy()
-            .into_owned()
-    };
-    throw_sdk_exception(env, result.code as i32, &message);
-    // SAFETY: `result` is a fresh PlatformWalletFFIResult; free its message.
-    unsafe { platform_wallet_ffi_result_free(&mut result) };
-    true
-}
 
 /// Read a required 32-byte id from a Java `byte[]`; throws + returns None
 /// on the wrong length or a JNI error.

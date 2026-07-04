@@ -38,6 +38,23 @@ interface PlatformAddressDao {
     @Query("SELECT * FROM platform_addresses WHERE addressHash = :addressHash")
     suspend fun getByAddressHash(addressHash: ByteArray): PlatformAddressEntity?
 
+    /**
+     * Wallet-scoped BLAST balance lookup — the balance-callback upsert key
+     * after the multi-wallet-collision fix (`$0.walletId == walletId &&
+     * $0.addressHash == addressHash`). A hash-only predicate can match
+     * another wallet's row in a multi-wallet store (same seed imported on
+     * coin-type-sharing networks, watch-only duplicates), so the balance
+     * persister must narrow by walletId too. Mirror of the Swift
+     * `PlatformWalletPersistenceHandler.persistAddressBalances` fix.
+     */
+    @Query(
+        "SELECT * FROM platform_addresses WHERE walletId = :walletId AND addressHash = :addressHash",
+    )
+    suspend fun getByWalletAndAddressHash(
+        walletId: ByteArray,
+        addressHash: ByteArray,
+    ): PlatformAddressEntity?
+
     @Upsert
     suspend fun upsert(address: PlatformAddressEntity)
 
@@ -49,6 +66,25 @@ interface PlatformAddressDao {
 
     @Query("DELETE FROM platform_addresses")
     suspend fun deleteAll()
+
+    /**
+     * Zero the synced (BLAST) balance fields of every address owned by a
+     * wallet in [walletIds] **in place**, preserving the durable derivation
+     * metadata (`address`, `addressHash`, `publicKey`, `accountIndex`,
+     * `addressIndex`, `derivationPath`). Backs the Sync-tab "Clear" action:
+     * deleting the rows would empty the UI until an app restart (no in-session
+     * sync re-emits the address pool), so we reset the sync-derived state
+     * only. Mirror of the Swift `clearLocalState` in-place zero.
+     *
+     * @param nowMillis epoch-millis stamp for `lastUpdated` (Room stores
+     *   `Date` as epoch millis).
+     */
+    @Query(
+        "UPDATE platform_addresses SET balance = 0, nonce = 0, isUsed = 0, " +
+            "firstSeenHeight = 0, lastSeenHeight = 0, lastUpdated = :nowMillis " +
+            "WHERE walletId IN (:walletIds)",
+    )
+    suspend fun zeroBalancesForWallets(walletIds: List<ByteArray>, nowMillis: Long)
 
     /** StorageExplorer row count. */
     @Query("SELECT COUNT(*) FROM platform_addresses")
@@ -72,6 +108,15 @@ interface PlatformAddressDao {
 
     @Query("DELETE FROM platform_addresses_sync_states WHERE walletId = :walletId")
     suspend fun deleteSyncState(walletId: ByteArray)
+
+    /**
+     * Delete the sync-state watermark row(s) for one network — the Sync-tab
+     * "Clear" action deletes the watermark so the next pass is a full rescan
+     * (mirror of the Swift `clearLocalState` sync-state delete, scoped by
+     * `networkRaw`). Other networks' watermarks are left untouched.
+     */
+    @Query("DELETE FROM platform_addresses_sync_states WHERE networkRaw = :networkRaw")
+    suspend fun deleteSyncStatesByNetwork(networkRaw: Int)
 
     @Query("DELETE FROM platform_addresses_sync_states")
     suspend fun deleteAllSyncStates()

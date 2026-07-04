@@ -37,40 +37,16 @@
 #![allow(clippy::missing_safety_doc)]
 #![cfg(feature = "shielded")]
 
-use crate::support::{guard, throw_sdk_exception, JVM};
+use crate::support::{guard, take_pwffi_error, throw_sdk_exception, JVM};
 use jni::objects::{GlobalRef, JByteArray, JClass, JObject};
 use jni::sys::{jboolean, jint, jlong, JNI_FALSE, JNI_TRUE};
 use jni::JNIEnv;
-use platform_wallet_ffi::error::{
-    platform_wallet_ffi_result_free, PlatformWalletFFIResult, PlatformWalletFFIResultCode,
-};
 use platform_wallet_ffi::handle::Handle;
 use std::os::raw::c_void;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::ptr;
 
 use rs_sdk_ffi::MnemonicResolverHandle;
-
-/// If `result` carries a non-`Success` code: throw `DashSDKException`,
-/// free its message, and return `true`. Local copy of the shared
-/// `identity::take_pwffi_error` mapping.
-fn take_pwffi_error(env: &mut JNIEnv, mut result: PlatformWalletFFIResult) -> bool {
-    if result.code == PlatformWalletFFIResultCode::Success {
-        return false;
-    }
-    let message = if result.message.is_null() {
-        format!("platform-wallet error (code {})", result.code as i32)
-    } else {
-        // SAFETY: non-null message is a valid CString produced by the FFI.
-        unsafe { std::ffi::CStr::from_ptr(result.message) }
-            .to_string_lossy()
-            .into_owned()
-    };
-    throw_sdk_exception(env, result.code as i32, &message);
-    // SAFETY: `result` is a fresh PlatformWalletFFIResult; free its message.
-    unsafe { platform_wallet_ffi_result_free(&mut result) };
-    true
-}
 
 /// Kick the Halo 2 proving-key build onto a background thread so the
 /// first shielded transition doesn't pay the ~30s cost inline. Idempotent

@@ -21,10 +21,12 @@
 //!
 //! ## Result convention
 //!
-//! Every entry point returns [`PlatformWalletFFIResult`] by value (consumed
-//! inside Rust — it never crosses JNI). [`take_pwffi_error`] maps a
-//! non-`Success` code to a thrown `DashSDKException` and frees the message,
-//! mirroring `wallet_manager::take_pwffi_error` and `results::take_error`.
+//! Every entry point returns `PlatformWalletFFIResult` by value (consumed
+//! inside Rust — it never crosses JNI). The shared
+//! [`crate::support::take_pwffi_error`] maps a non-`Success` code to a
+//! thrown `DashSDKException` (namespaced by
+//! [`crate::support::PWFFI_CODE_OFFSET`]) and frees the message, mirroring
+//! `results::take_error`.
 //!
 //! ## Handle / argument marshalling
 //!
@@ -40,45 +42,18 @@
 
 #![allow(clippy::missing_safety_doc)]
 
-use crate::support::{guard, throw_sdk_exception};
+use crate::support::{guard, take_pwffi_error, throw_sdk_exception};
 use jni::objects::{JByteArray, JClass, JString};
 use jni::sys::{jboolean, jbyteArray, jint, jlong, jstring, JNI_TRUE};
 use jni::JNIEnv;
 use platform_wallet_ffi::dashpay_profile::DashPayProfileFFI;
-use platform_wallet_ffi::error::{
-    platform_wallet_ffi_result_free, PlatformWalletFFIResult, PlatformWalletFFIResultCode,
-};
+use platform_wallet_ffi::error::{platform_wallet_ffi_result_free, PlatformWalletFFIResultCode};
 use platform_wallet_ffi::handle::Handle;
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 use std::ptr;
 
 use rs_sdk_ffi::SignerHandle;
-
-// ── Result → exception ────────────────────────────────────────────────
-
-/// If `result` carries a non-`Success` code: throw `DashSDKException`,
-/// free the message, and return `true` (the caller bails with its
-/// default). On `Success` frees nothing (message is null) and returns
-/// `false`. Mirrors `wallet_manager::take_pwffi_error` (kept local so this
-/// module owns no cross-module `pub` surface).
-fn take_pwffi_error(env: &mut JNIEnv, mut result: PlatformWalletFFIResult) -> bool {
-    if result.code == PlatformWalletFFIResultCode::Success {
-        return false;
-    }
-    let message = if result.message.is_null() {
-        format!("platform-wallet error (code {})", result.code as i32)
-    } else {
-        // SAFETY: non-null message is a valid CString produced by the FFI.
-        unsafe { CStr::from_ptr(result.message) }
-            .to_string_lossy()
-            .into_owned()
-    };
-    throw_sdk_exception(env, result.code as i32, &message);
-    // SAFETY: `result` is a fresh PlatformWalletFFIResult; free its message.
-    unsafe { platform_wallet_ffi_result_free(&mut result) };
-    true
-}
 
 // ── Argument marshalling helpers ──────────────────────────────────────
 

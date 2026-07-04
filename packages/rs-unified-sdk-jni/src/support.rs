@@ -2,8 +2,59 @@
 
 use jni::objects::JThrowable;
 use jni::{JNIEnv, JavaVM};
+use platform_wallet_ffi::error::{
+    platform_wallet_ffi_result_free, PlatformWalletFFIResult, PlatformWalletFFIResultCode,
+};
+use std::ffi::CStr;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::OnceLock;
+
+/// Offset added to every `PlatformWalletFFIResultCode` before it is thrown
+/// as a `DashSDKException` code — see [`take_pwffi_error`].
+///
+/// platform-wallet-ffi's result codes (`PlatformWalletFFIResultCode`, 0–20 +
+/// 98/99) occupy the SAME small-integer range as rs-sdk-ffi's
+/// `DashSDKErrorCode` (1–10), which Kotlin's `DashSdkError.fromNative`
+/// interprets. Throwing a raw platform-wallet code would collide: e.g.
+/// `ErrorWalletOperation` (6) would surface to Kotlin as `CryptoError` (6),
+/// and the retry-semantics-bearing codes (`ErrorShieldedNoRecordedAnchor`
+/// = 19 retryable, `ErrorTransactionBroadcastUnconfirmed` = 20 do-NOT-retry)
+/// would flatten into the `else -> InternalError` bucket, losing their
+/// contract. Shifting into a dedicated `>= 1000` namespace lets
+/// `DashSdkError.fromNative` route these to a distinct `PlatformWallet`
+/// subtree (by subtracting the offset) while the native rs-sdk-ffi codes
+/// stay in 1–10. Must stay in lockstep with
+/// `DashSdkError.PLATFORM_WALLET_CODE_OFFSET` on the Kotlin side.
+pub const PWFFI_CODE_OFFSET: i32 = 1000;
+
+/// If `result` carries a non-`Success` code: throw `DashSDKException`,
+/// free its message, and return `true` (the caller bails with its
+/// default). On `Success` frees nothing (message is null) and returns
+/// `false`.
+///
+/// The thrown exception code is the `PlatformWalletFFIResultCode` value
+/// shifted by [`PWFFI_CODE_OFFSET`] so it never collides with the native
+/// rs-sdk-ffi `DashSDKErrorCode` range Kotlin's `DashSdkError.fromNative`
+/// also decodes. This is the single shared mapping used by every JNI module
+/// that calls a platform-wallet-ffi entry point (mirrors `results::take_error`
+/// for the rs-sdk-ffi side).
+pub fn take_pwffi_error(env: &mut JNIEnv, mut result: PlatformWalletFFIResult) -> bool {
+    if result.code == PlatformWalletFFIResultCode::Success {
+        return false;
+    }
+    let message = if result.message.is_null() {
+        format!("platform-wallet error (code {})", result.code as i32)
+    } else {
+        // SAFETY: non-null message is a valid CString produced by the FFI.
+        unsafe { CStr::from_ptr(result.message) }
+            .to_string_lossy()
+            .into_owned()
+    };
+    throw_sdk_exception(env, result.code as i32 + PWFFI_CODE_OFFSET, &message);
+    // SAFETY: `result` is a fresh PlatformWalletFFIResult; free its message.
+    unsafe { platform_wallet_ffi_result_free(&mut result) };
+    true
+}
 
 /// The process-wide JVM, cached in [`crate::JNI_OnLoad`]. Callback
 /// trampolines use this to attach Tokio worker threads.

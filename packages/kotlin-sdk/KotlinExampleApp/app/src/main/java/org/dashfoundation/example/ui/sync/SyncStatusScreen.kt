@@ -215,6 +215,28 @@ fun SyncStatusScreen() {
                     enabled = state !is PlatformSyncState.Syncing,
                     modifier = Modifier.testTag("sync.platformSyncNow"),
                 ) { Text("Sync Now") }
+
+                // ← CoreContentView.swift "Clear": actually clears synced data
+                // (#3959) — native reset + Room clear, fail-closed. Disabled
+                // mid-pass so we never clear underneath a running sync.
+                val platformManager = manager
+                OutlinedButton(
+                    onClick = {
+                        val mgr = platformManager ?: return@OutlinedButton
+                        scope.launch {
+                            try {
+                                container.platformBalanceSyncService.clearLocalState(
+                                    network = network,
+                                    walletIdsOnNetwork = mgr.wallets.value.values.map { it.walletId },
+                                )
+                            } catch (e: Exception) {
+                                error = e.message ?: "Failed to clear platform sync data"
+                            }
+                        }
+                    },
+                    enabled = platformManager != null && state !is PlatformSyncState.Syncing,
+                    modifier = Modifier.testTag("sync.platformClear"),
+                ) { Text("Clear") }
             }
         }
 
