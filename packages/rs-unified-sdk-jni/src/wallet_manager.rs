@@ -269,22 +269,40 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_c
             return ptr::null_mut();
         }
         // Publish the wallet handle out-param, then the id return value.
-        // The handle is owned: if it cannot reach a Kotlin owner (null
-        // out-param, region-write failure), destroy it here — otherwise
-        // the registry entry leaks with no one able to call walletDestroy.
+        // The wallet is already REGISTERED in the native manager (and the
+        // persistence callbacks may have written rows), so a failure to
+        // reach a Kotlin owner must roll back the registration too —
+        // remove_wallet runs the persistence cascade; destroying only the
+        // handle would leave an orphan for the next load to resurrect.
+        let rollback = |wallet_handle: jlong| unsafe {
+            let _ = platform_wallet_ffi::platform_wallet_manager_remove_wallet(
+                manager_handle as Handle,
+                &wallet_id as *const [u8; 32],
+            );
+            platform_wallet_ffi::platform_wallet_destroy(wallet_handle as Handle);
+        };
         let published = !out_wallet_handle.is_null() && {
             let one = [wallet_handle as jlong];
             env.set_long_array_region(&out_wallet_handle, 0, &one)
                 .is_ok()
         };
         if !published {
-            unsafe { platform_wallet_ffi::platform_wallet_destroy(wallet_handle as Handle) };
+            rollback(wallet_handle as jlong);
             throw_sdk_exception(env, 1, "outWalletHandle must be a non-null long[1]");
             return ptr::null_mut();
         }
-        env.byte_array_from_slice(&wallet_id)
-            .map(|a| a.into_raw())
-            .unwrap_or(ptr::null_mut())
+        match env.byte_array_from_slice(&wallet_id) {
+            Ok(array) => array.into_raw(),
+            Err(_) => {
+                // The handle was already published, but Kotlin observes a
+                // thrown exception (not a silent null id) and never adopts
+                // it — roll the registration back here.
+                rollback(wallet_handle as jlong);
+                let _ = env.exception_clear();
+                throw_sdk_exception(env, 1, "failed to allocate wallet id byte[]");
+                ptr::null_mut()
+            }
+        }
     })
 }
 
