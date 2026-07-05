@@ -67,7 +67,16 @@ pub unsafe fn unwrap_string<'l>(env: &mut JNIEnv<'l>, r: DashSDKResult) -> Optio
     if r.data.is_null() {
         return None;
     }
-    debug_assert!(matches!(r.data_type, DashSDKResultDataType::String));
+    // `data_type` is advisory: `DashSDKResult::success()` tags every payload
+    // `NoData` regardless of its real shape (43 FFI call sites use it, e.g.
+    // `dash_sdk_data_contract_fetch_json` for a `char*`). The unwrap is chosen
+    // by the caller per the FFI function it invoked, so accept the untyped
+    // sentinel alongside the typed tag — a mismatch here would false-panic in
+    // dev while release (no debug_assert) proceeds fine.
+    debug_assert!(matches!(
+        r.data_type,
+        DashSDKResultDataType::String | DashSDKResultDataType::NoData
+    ));
     let c_str = r.data as *mut c_char;
     let value = CStr::from_ptr(c_str).to_string_lossy().into_owned();
     dash_sdk_string_free(c_str);
@@ -88,7 +97,12 @@ pub unsafe fn unwrap_binary<'l>(env: &mut JNIEnv<'l>, r: DashSDKResult) -> Optio
     if r.data.is_null() {
         return None;
     }
-    debug_assert!(matches!(r.data_type, DashSDKResultDataType::BinaryData));
+    // See `unwrap_string` — `data_type` is advisory (untyped `success()` tags
+    // `NoData`), so accept it alongside the typed tag.
+    debug_assert!(matches!(
+        r.data_type,
+        DashSDKResultDataType::BinaryData | DashSDKResultDataType::NoData
+    ));
     let binary = r.data as *mut DashSDKBinaryData;
     let slice = std::slice::from_raw_parts((*binary).data, (*binary).len);
     let array = env.byte_array_from_slice(slice).ok();
@@ -204,7 +218,11 @@ pub unsafe fn unwrap_address_info<'l>(
     if r.data.is_null() {
         return None;
     }
-    debug_assert!(matches!(r.data_type, DashSDKResultDataType::AddressInfo));
+    // `data_type` is advisory (untyped `success()` tags `NoData`); accept it.
+    debug_assert!(matches!(
+        r.data_type,
+        DashSDKResultDataType::AddressInfo | DashSDKResultDataType::NoData
+    ));
     let info = r.data as *mut DashSDKAddressInfo;
     let mut json = String::new();
     write_address_json(
@@ -235,7 +253,11 @@ pub unsafe fn unwrap_address_info_map<'l>(
     }
     let mut json = String::from("[");
     if !r.data.is_null() {
-        debug_assert!(matches!(r.data_type, DashSDKResultDataType::AddressInfoMap));
+        // `data_type` is advisory (untyped `success()` tags `NoData`); accept it.
+        debug_assert!(matches!(
+            r.data_type,
+            DashSDKResultDataType::AddressInfoMap | DashSDKResultDataType::NoData
+        ));
         let map = r.data as *mut DashSDKAddressInfoMap;
         if !(*map).entries.is_null() && (*map).count > 0 {
             let entries = std::slice::from_raw_parts((*map).entries, (*map).count);
@@ -278,9 +300,10 @@ pub unsafe fn unwrap_identity_balance_map<'l>(
     }
     let mut json = String::from("[");
     if !r.data.is_null() {
+        // `data_type` is advisory (untyped `success()` tags `NoData`); accept it.
         debug_assert!(matches!(
             r.data_type,
-            DashSDKResultDataType::IdentityBalanceMap
+            DashSDKResultDataType::IdentityBalanceMap | DashSDKResultDataType::NoData
         ));
         let map = r.data as *mut DashSDKIdentityBalanceMap;
         if !(*map).entries.is_null() && (*map).count > 0 {
