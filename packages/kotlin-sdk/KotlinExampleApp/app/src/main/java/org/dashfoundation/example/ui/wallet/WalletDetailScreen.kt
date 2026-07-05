@@ -228,8 +228,12 @@ fun WalletDetailScreen(
                 // Empty-wallet placeholder (← WalletDetailView.swift:1085-1094
                 // allZero branch): a wallet with zero Core + Platform +
                 // Shielded shows the single label instead of three zero rows.
+                // Includes immature (a row this screen renders that the
+                // Swift surface doesn't) so mined-but-unmatured funds are
+                // never hidden behind the placeholder.
                 val allZero = (core?.confirmed ?: 0) == 0L &&
                     (core?.unconfirmed ?: 0) == 0L &&
+                    (core?.immature ?: 0) == 0L &&
                     platformBalance == 0L &&
                     shieldedBalance == 0L
                 if (allZero) {
