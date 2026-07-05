@@ -27,7 +27,7 @@
 
 use crate::wallet::asset_lock::orchestration::{
     out_point_from_proof, submit_with_cl_height_retry, AssetLockFunding, FundingResolution,
-    ResolvedFunding, CL_FALLBACK_TIMEOUT,
+    ResolvedFunding,
 };
 use crate::wallet::PlatformAddressWallet;
 use crate::{error::is_instant_lock_proof_invalid, PlatformAddressChangeSet, PlatformWalletError};
@@ -86,12 +86,17 @@ impl PlatformAddressWallet {
     ///
     /// # Latency budget
     ///
-    /// Worst-case wall time stacks at ~690s on the IS-rejection
-    /// branch:
+    /// There is intentionally **no ceiling** on this call: a broadcast
+    /// asset lock is committed on-chain, and its ChainLock is
+    /// deterministic finality that will eventually arrive, so the flow
+    /// waits for finality however long it takes rather than reporting a
+    /// spurious failure. The components are:
     /// - 300s IS-wait inside the resolver's
     ///   `create_funded_asset_lock_proof` (`AssetLockManager`'s
-    ///   fixed window before falling back to ChainLock).
-    /// - 180s CL fallback (`CL_FALLBACK_TIMEOUT`) per `upgrade_to_chain_lock_proof` call.
+    ///   InstantSend-preference window before falling back to ChainLock).
+    /// - **Unbounded** ChainLock fallback
+    ///   (`upgrade_to_chain_lock_proof(None)`) — waits for the ChainLock
+    ///   indefinitely (testnet ChainLocks can take ~15min).
     /// - 210s CL-height retry budget (`CL_HEIGHT_RETRY_BUDGET`) per
     ///   `submit_with_cl_height_retry` wrapper.
     /// - Up to two passes through the submit wrapper on the
@@ -100,7 +105,10 @@ impl PlatformAddressWallet {
     ///
     /// Happy-path wall time on a healthy testnet is single-digit
     /// seconds (IS-lock typically arrives within 3s of broadcast,
-    /// CL-height retry never fires).
+    /// CL-height retry never fires). The unbounded wait only bites when
+    /// InstantSend never propagates and the caller must wait out the
+    /// slower ChainLock. Callers run this off the main thread and never
+    /// cancel it (see the Cancellation note below).
     ///
     /// # Cancellation
     ///
@@ -173,16 +181,13 @@ impl PlatformAddressWallet {
                 );
                 let chain_proof = self
                     .asset_locks
-                    .upgrade_to_chain_lock_proof(&out_point, CL_FALLBACK_TIMEOUT)
+                    .upgrade_to_chain_lock_proof(&out_point, None)
                     .await?;
                 // Re-derive the credit-output path. The lock is now
                 // CL-attached; `resume_asset_lock` short-circuits to
                 // the existing-proof branch and just hands the path
                 // back.
-                let (_, path) = self
-                    .asset_locks
-                    .resume_asset_lock(&out_point, CL_FALLBACK_TIMEOUT)
-                    .await?;
+                let (_, path) = self.asset_locks.resume_asset_lock(&out_point, None).await?;
                 ResolvedFunding {
                     proof: chain_proof,
                     path,
@@ -220,7 +225,7 @@ impl PlatformAddressWallet {
                 );
                 let chain_proof = self
                     .asset_locks
-                    .upgrade_to_chain_lock_proof(&out_point, CL_FALLBACK_TIMEOUT)
+                    .upgrade_to_chain_lock_proof(&out_point, None)
                     .await?;
                 // Advance the tracked status from `InstantSendLocked`
                 // to `ChainLocked` with the upgraded proof attached
@@ -302,11 +307,40 @@ impl PlatformAddressWallet {
         // forcing the next pass to full-scan-reconcile — the automated
         // equivalent of the manual Sync-tab "Clear" + "Sync Now".
         let credited_outputs = super::credited_outputs_set(addresses.keys());
-        let cs = self
-            .reconcile_address_infos(&address_infos, &credited_outputs, "fund from asset lock")
+        // Use the persistence-reporting variant: marking the lock
+        // `Consumed` below is irreversible, so it MUST be gated on the
+        // reconciled balances actually reaching disk. `persisted` is
+        // false ONLY when the in-memory balances were updated but the
+        // durable write failed — exactly the case where a Consumed lock
+        // would pair with stale rows and under-budget the next spend
+        // after a restart.
+        let (cs, persisted) = self
+            .reconcile_address_infos_with_persistence(
+                &address_infos,
+                &credited_outputs,
+                "fund from asset lock",
+            )
             .await;
 
         if let Some(out_point) = tracked_out_point {
+            if !persisted {
+                // The proof-attested balances were applied in memory but
+                // did not reach disk. Leave the lock non-Consumed: it
+                // stays in the Resumable Funding list, and a user Resume
+                // gets Platform's deterministic "lock already consumed"
+                // rejection — the same benign recovery path as a failed
+                // consume below — while the next platform-address sync
+                // repairs the stale rows. Consuming here would strand the
+                // lock as Consumed over durable balances that under-report
+                // the credit.
+                tracing::error!(
+                    outpoint = %out_point,
+                    "skipping consume_asset_lock: the reconciled balance changeset \
+                     was not durably stored; the lock stays non-Consumed (Resumable) \
+                     rather than pairing a Consumed lock with stale balance rows on disk"
+                );
+                return Ok(cs);
+            }
             // Platform DID accept the top-up — propagating an Err
             // here would misreport the protocol outcome, since the
             // caller's recipient(s) already have credits attested

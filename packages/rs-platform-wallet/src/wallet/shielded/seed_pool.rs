@@ -32,7 +32,7 @@ use dash_sdk::platform::types::shielded::fetch_shielded_notes_count;
 use dpp::address_funds::OrchardAddress;
 use dpp::balances::credits::CREDITS_PER_DUFF;
 
-use crate::wallet::asset_lock::orchestration::AssetLockFunding;
+use crate::wallet::asset_lock::orchestration::{AssetLockFunding, CL_FALLBACK_TIMEOUT};
 use crate::wallet::shielded::fund_from_asset_lock::shield_from_asset_lock_num_actions;
 use crate::wallet::shielded::CachedOrchardProver;
 use crate::wallet::PlatformWallet;
@@ -285,6 +285,9 @@ impl PlatformWallet {
                         None,
                         dummy_outputs,
                         settings,
+                        // Bounded: a ChainLock timeout here is the deliberate
+                        // unconfirmed-ancestor pacing signal this loop retries on.
+                        Some(CL_FALLBACK_TIMEOUT),
                     )
                     .await
                 {

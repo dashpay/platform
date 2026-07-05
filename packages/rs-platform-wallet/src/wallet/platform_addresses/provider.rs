@@ -109,14 +109,45 @@ impl PerAccountPlatformAddressState {
     }
 
     /// Seed one persisted address/funds entry into the account state.
+    ///
+    /// Guards the `index <-> address` bijection against an
+    /// index-conflicting *removal remnant*.
+    /// [`commit_reconciliation`](PlatformPaymentAddressProvider::commit_reconciliation)
+    /// can zero an address whose pool-resolved `address_index` equals a
+    /// *funded* address's true index; it leaves the in-memory bijection
+    /// untouched but still emits the zero, so the durable store can hold
+    /// two rows claiming one index. On restore those rows seed the account
+    /// one at a time, and a plain [`BiBTreeMap::insert`] drops conflicting
+    /// pairs — so, depending on fetch order, the zeroed row could evict the
+    /// funded `(index -> address)` pairing and orphan its balance from
+    /// [`current_balances`](AddressProvider::current_balances).
+    ///
+    /// A zero-balance/zero-nonce row can't be told apart from a legitimate
+    /// freshly-derived, never-funded address by its funds alone (both are
+    /// `{0, 0}`), and the latter must still restore into `found` and the
+    /// bijection. So `found` is seeded for *every* row exactly as before;
+    /// the guard is only on the bijection, and only bites on a collision:
+    /// a zeroed row inserts via `insert_no_overwrite` (it can never evict
+    /// an incumbent pairing), while a funded row keeps overwrite semantics
+    /// (it wins its slot, displacing a stale zero remnant that grabbed it
+    /// first — that remnant's dangling `found` entry is inert, since
+    /// `current_balances` only yields addresses still paired in the
+    /// bijection). For the common case of unique indices this is identical
+    /// to the previous unconditional insert.
     pub fn insert_persisted_entry(
         &mut self,
         address_index: AddressIndex,
         address: PlatformP2PKHAddress,
         funds: AddressFunds,
     ) {
-        self.addresses.insert(address_index, address);
         self.found.insert(address, funds);
+        if funds.balance == 0 && funds.nonce == 0 {
+            // Never evict an incumbent pairing (funded, or another zero).
+            let _ = self.addresses.insert_no_overwrite(address_index, address);
+        } else {
+            // Funded rows are authoritative for their index.
+            self.addresses.insert(address_index, address);
+        }
     }
 
     /// Read-only view of the persisted `(address, funds)` entries.
@@ -1061,29 +1092,63 @@ impl PlatformPaymentAddressProvider {
                     }
                 }
             }
+            // Derivation-index conflict: `entry.address` isn't yet in the
+            // bijection, but its `address_index` already maps to a
+            // DIFFERENT address. Detected BEFORE the `found` mutation
+            // because a conflicting credit must not be half-applied.
+            let index_conflict = state.addresses.get_by_right(&entry.address).is_none()
+                && state.addresses.contains_left(&entry.address_index);
+
+            if index_conflict && !is_removal {
+                // A credit under a conflicting index: dropping it outright
+                // is the only safe response. Inserting the pairing would
+                // evict the existing one (`BiBTreeMap::insert` drops
+                // conflicting pairs, orphaning the other address's `found`
+                // entry); NOT inserting it would commit a `found` balance
+                // downstream can't pair with a derivation index, so
+                // `current_balances` couldn't round-trip the committed
+                // seed. The address stays unresolved until `initialize` /
+                // `add_provider` re-snapshots the account set.
+                tracing::error!(
+                    account_index = entry.account_index,
+                    address_index = entry.address_index,
+                    address = %entry.address,
+                    "commit_reconciliation: derivation index already maps to a \
+                     different address — dropping the credit reconciliation entry \
+                     to avoid corrupting the bijection"
+                );
+                continue;
+            }
+
             if is_removal {
                 state.found.remove(&entry.address);
             } else {
                 state.found.insert(entry.address, entry.funds);
             }
-            // Merge pool-resolved addresses into the bijection so
-            // `current_balances` can pair the fresh funds with a
-            // derivation index. Never overwrite an existing pairing —
-            // `BiBTreeMap::insert` evicts conflicting pairs, which
-            // would orphan another address's `found` entry.
-            if state.addresses.get_by_right(&entry.address).is_none() {
-                if state.addresses.contains_left(&entry.address_index) {
-                    tracing::error!(
-                        account_index = entry.account_index,
-                        address_index = entry.address_index,
-                        address = %entry.address,
-                        "commit_reconciliation: derivation index already \
-                         maps to a different address — state drift; \
-                         leaving the bijection untouched"
-                    );
-                } else {
-                    state.addresses.insert(entry.address_index, entry.address);
-                }
+
+            if index_conflict {
+                // A removal under a conflicting index: the credit case
+                // already `continue`d above, so this is a zero-out. It
+                // MUST still zero `found` (done) and be emitted (below) so
+                // the durable persister writes the zero — otherwise a
+                // stale persisted balance for this address resurrects
+                // after restart. Only the bijection merge is skipped, so
+                // the pre-existing `(index -> other address)` pairing
+                // survives.
+                tracing::warn!(
+                    account_index = entry.account_index,
+                    address_index = entry.address_index,
+                    address = %entry.address,
+                    "commit_reconciliation: derivation index already maps to a \
+                     different address — applying the removal without touching \
+                     the bijection so a stale persisted balance can't resurrect"
+                );
+            } else if state.addresses.get_by_right(&entry.address).is_none() {
+                // Merge pool-resolved addresses into the bijection so
+                // `current_balances` can pair the fresh funds with a
+                // derivation index. The conflict guard above ruled out an
+                // eviction, so this insert is always a fresh pairing.
+                state.addresses.insert(entry.address_index, entry.address);
             }
             outcome.entries.push(entry);
         }
@@ -1856,6 +1921,225 @@ mod tests {
         let seed: Vec<_> = provider.current_balances().collect();
         assert_eq!(seed.len(), 1);
         assert_eq!(seed[0].2, funds(700, 5));
+    }
+
+    /// A zero-funds removal that pool-resolves to an `address_index`
+    /// already paired to a DIFFERENT address in the bijection must still
+    /// zero the in-memory `found` row AND be emitted downstream —
+    /// otherwise a durable persister row for the removed address would
+    /// resurrect after restart. The bijection stays untouched so the
+    /// pre-existing `(index -> other addr)` pairing isn't evicted.
+    #[test]
+    fn commit_reconciliation_index_conflict_still_emits_removal() {
+        let owned = p2pkh(0x11);
+        let conflicting = p2pkh(0x77);
+        let mut provider = provider_with_one_funded_address(owned, funds(700, 3));
+        {
+            let state = provider
+                .per_wallet
+                .get_mut(&WALLET)
+                .and_then(|s| s.get_mut(&ACCOUNT))
+                .expect("account state present");
+            // Pin `conflicting` at index 5 with a balance we must protect.
+            state.insert_persisted_entry(5, conflicting, funds(200, 1));
+            // Stale `found` row for the address that will be removed,
+            // seeded at the SAME index 5 to force the conflict.
+            state.found.insert(p2pkh(0x22), funds(999, 4));
+        }
+
+        // The removed address pool-resolves to index 5 — a DIFFERENT
+        // address than the bijection holds there.
+        let removed = p2pkh(0x22);
+        let removed_addr = PlatformAddress::P2pkh([0x22; 20]);
+        let mut pool_indexes = BTreeMap::new();
+        pool_indexes.insert(removed, (ACCOUNT, 5u32));
+
+        let mut address_infos = AddressInfos::new();
+        // Fully-consumed input: Drive elides the info → removal entry.
+        address_infos.insert(removed_addr, None);
+
+        let outcome = provider.commit_reconciliation(&WALLET, &address_infos, &pool_indexes);
+
+        // The removal is emitted so the durable persister writes the zero.
+        assert_eq!(outcome.entries.len(), 1, "removal survives the guard");
+        assert_eq!(outcome.entries[0].address, removed);
+        assert_eq!(outcome.entries[0].funds, funds(0, 0));
+
+        let state = provider
+            .per_wallet
+            .get(&WALLET)
+            .and_then(|s| s.get(&ACCOUNT))
+            .expect("account state present");
+        // In-memory `found` for the removed address is dropped.
+        assert!(!state.found.contains_key(&removed));
+        // The bijection is unchanged — pre-existing pairing survives.
+        assert_eq!(
+            state.addresses.get_by_left(&5u32).copied(),
+            Some(conflicting)
+        );
+        assert!(state.addresses.get_by_right(&removed).is_none());
+        // The protected address's balance is untouched.
+        assert_eq!(state.found.get(&conflicting).copied(), Some(funds(200, 1)));
+    }
+
+    /// A CREDIT (non-zero funds) that pool-resolves to an already-taken
+    /// derivation index must be dropped outright: neither applied to
+    /// `found` nor emitted, and the bijection untouched. Committing it
+    /// would either evict the existing pairing or persist a seed
+    /// `current_balances` can't round-trip.
+    #[test]
+    fn commit_reconciliation_index_conflict_drops_credit() {
+        use dash_sdk::query_types::AddressInfo;
+
+        let owned = p2pkh(0x11);
+        let conflicting = p2pkh(0x77);
+        let mut provider = provider_with_one_funded_address(owned, funds(700, 3));
+        {
+            let state = provider
+                .per_wallet
+                .get_mut(&WALLET)
+                .and_then(|s| s.get_mut(&ACCOUNT))
+                .expect("account state present");
+            state.insert_persisted_entry(5, conflicting, funds(200, 1));
+        }
+
+        // A credit for a fresh address that pool-resolves to the taken
+        // index 5.
+        let credited = p2pkh(0x33);
+        let credited_addr = PlatformAddress::P2pkh([0x33; 20]);
+        let mut pool_indexes = BTreeMap::new();
+        pool_indexes.insert(credited, (ACCOUNT, 5u32));
+
+        let mut address_infos = AddressInfos::new();
+        address_infos.insert(
+            credited_addr,
+            Some(AddressInfo {
+                address: credited_addr,
+                nonce: 2,
+                balance: 5_000,
+            }),
+        );
+
+        let outcome = provider.commit_reconciliation(&WALLET, &address_infos, &pool_indexes);
+
+        assert!(
+            outcome.entries.is_empty(),
+            "a credit under a conflicting index is dropped, not emitted"
+        );
+        let state = provider
+            .per_wallet
+            .get(&WALLET)
+            .and_then(|s| s.get(&ACCOUNT))
+            .expect("account state present");
+        // `found` never gained the conflicting credit.
+        assert!(!state.found.contains_key(&credited));
+        // Bijection untouched: index 5 still → conflicting, and the
+        // credited address was not inserted.
+        assert_eq!(
+            state.addresses.get_by_left(&5u32).copied(),
+            Some(conflicting)
+        );
+        assert!(state.addresses.get_by_right(&credited).is_none());
+        assert_eq!(state.found.get(&conflicting).copied(), Some(funds(200, 1)));
+    }
+
+    /// Restore-side guard for the index-conflicting removal. The write
+    /// side is [`commit_reconciliation`](PlatformPaymentAddressProvider::commit_reconciliation):
+    /// when a reconcile removal pool-resolves to an index already owned by
+    /// a different, funded address it leaves the in-memory bijection
+    /// untouched but still emits the zero so the balance can't resurrect —
+    /// which persists a zeroed row that can collide with the funded row on
+    /// disk. A durable store can therefore hold a funded row and a zeroed
+    /// *removal remnant* that both claim the same derivation index. On
+    /// restart the rows load in arbitrary fetch order and seed the account
+    /// bijection one at a time; a naive `BiBTreeMap::insert` would let the
+    /// zero remnant evict the funded `(index -> address)` pairing,
+    /// orphaning its balance from `current_balances` for one of the two
+    /// orders. `insert_persisted_entry` must land on the same correct state
+    /// in BOTH orders: the funded pairing survives, so the balance the
+    /// engine reads back (the intersection of `found` and the bijection,
+    /// i.e. what `current_balances` yields) is exactly the funded one — the
+    /// remnant's inert zero `found` row is never paired, so it can't be
+    /// yielded.
+    #[test]
+    fn insert_persisted_entry_removal_remnant_never_orphans_funded_pairing() {
+        let funded = p2pkh(0x77);
+        let remnant = p2pkh(0x22);
+        const INDEX: AddressIndex = 5;
+
+        for funded_first in [true, false] {
+            let mut state = PerAccountPlatformAddressState::from_persisted(
+                test_xpub(),
+                BiBTreeMap::new(),
+                BTreeMap::new(),
+            );
+
+            // Same two durable rows, opposite restore (fetch) order.
+            if funded_first {
+                state.insert_persisted_entry(INDEX, funded, funds(200, 3));
+                state.insert_persisted_entry(INDEX, remnant, funds(0, 0));
+            } else {
+                state.insert_persisted_entry(INDEX, remnant, funds(0, 0));
+                state.insert_persisted_entry(INDEX, funded, funds(200, 3));
+            }
+
+            // The funded pairing survives in the bijection...
+            assert_eq!(
+                state.addresses.get_by_left(&INDEX).copied(),
+                Some(funded),
+                "funded (index -> address) pairing must survive (funded_first={funded_first})"
+            );
+            // ...and the zero remnant never holds the slot it would have to
+            // evict the funded pairing to take.
+            assert!(
+                state.addresses.get_by_right(&remnant).is_none(),
+                "removal remnant must not hold a bijection slot (funded_first={funded_first})"
+            );
+
+            // What the engine actually reads back is the intersection of
+            // `found` and the bijection — precisely `current_balances`. It
+            // must be exactly the funded balance; the remnant's inert zero
+            // `found` row is unpaired and therefore never yielded.
+            let restored: Vec<_> = state
+                .found
+                .iter()
+                .filter_map(|(addr, &f)| state.addresses.get_by_right(addr).map(|_| (*addr, f)))
+                .collect();
+            assert_eq!(
+                restored,
+                vec![(funded, funds(200, 3))],
+                "only the funded balance may round-trip (funded_first={funded_first})"
+            );
+        }
+    }
+
+    /// A zero-balance/zero-nonce row is indistinguishable from a legitimate
+    /// freshly-derived, never-funded address (both are `{0, 0}`). With a
+    /// free index it must restore *normally* — into both `found` and the
+    /// bijection — so the guard against index-conflicting removals never
+    /// swallows a real unfunded address. (The `platform-wallet-storage`
+    /// SQLite reconstruction test pins the same expectation end to end.)
+    #[test]
+    fn insert_persisted_entry_unfunded_derived_address_restores_normally() {
+        let unfunded = p2pkh(0x22);
+        let mut state = PerAccountPlatformAddressState::from_persisted(
+            test_xpub(),
+            BiBTreeMap::new(),
+            BTreeMap::new(),
+        );
+
+        state.insert_persisted_entry(7, unfunded, funds(0, 0));
+
+        assert_eq!(
+            state.found.get(&unfunded).copied(),
+            Some(funds(0, 0)),
+            "a never-funded derived address must still seed found (balance 0)"
+        );
+        assert_eq!(
+            state.addresses.get_by_left(&7u32).copied(),
+            Some(unfunded),
+            "a free-slot row extends the bijection normally"
+        );
     }
 
     /// An entry identical to the committed seed is a no-op and is dropped
