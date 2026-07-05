@@ -29,8 +29,9 @@ class WalletManagerCacheTest {
     private val built = ArrayList<FakeManager>()
     private var nextId = 0
 
-    private fun newCache(): WalletManagerCache<FakeManager> =
+    private fun newCache(): WalletManagerCache<Long, FakeManager> =
         WalletManagerCache(
+            handleOf = { it },
             isClosedOf = { it.closed },
             closeOf = { m ->
                 m.closed = true
@@ -45,8 +46,8 @@ class WalletManagerCacheTest {
     @Test
     fun cachesPerNetworkAndIsIdempotentOnSameHandle() = runTest {
         val cache = newCache()
-        val a1 = cache.activate(Network.TESTNET, sdkHandle = 100L, makeActive = true)
-        val a2 = cache.activate(Network.TESTNET, sdkHandle = 100L, makeActive = true)
+        val a1 = cache.activate(Network.TESTNET, sdk = 100L, makeActive = true)
+        val a2 = cache.activate(Network.TESTNET, sdk = 100L, makeActive = true)
         assertSame("same network + handle must reuse the cached manager", a1, a2)
         assertEquals("only one manager built", 1, built.size)
         assertSame(a1, cache.activeManager.value)
@@ -72,8 +73,8 @@ class WalletManagerCacheTest {
     @Test
     fun staleHandleRebuildsAndClosesOld() = runTest {
         val cache = newCache()
-        val old = cache.activate(Network.TESTNET, sdkHandle = 100L, makeActive = true)
-        val fresh = cache.activate(Network.TESTNET, sdkHandle = 999L, makeActive = true)
+        val old = cache.activate(Network.TESTNET, sdk = 100L, makeActive = true)
+        val fresh = cache.activate(Network.TESTNET, sdk = 999L, makeActive = true)
         assertFalse("rebuilt to a new instance", old === fresh)
         assertTrue("stale manager closed on rebuild", old.closed)
         assertSame(fresh, cache.manager(Network.TESTNET))

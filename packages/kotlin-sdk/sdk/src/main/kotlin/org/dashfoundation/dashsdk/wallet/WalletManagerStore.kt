@@ -24,14 +24,22 @@ import org.dashfoundation.dashsdk.security.WalletStorage
  * and published to [activeManager] BEFORE any superseded manager is
  * closed, so no observer ever sees a closed manager as active.
  *
+ * The SDK context `S` is passed per activate() call and reaches the
+ * factory inside the mutex — never through shared mutable state — so
+ * concurrent activations can never build a manager from another call's
+ * SDK.
+ *
  * @param isClosedOf probe: has this manager been closed?
  * @param closeOf tear down a manager.
- * @param factory build a manager for `(network, sdkHandle)`.
+ * @param handleOf the native handle identifying an SDK context (a
+ *   rebuilt SDK changes handle, invalidating the cached manager).
+ * @param factory build a manager for `(network, sdk)`.
  */
-internal class WalletManagerCache<M>(
+internal class WalletManagerCache<S, M>(
     private val isClosedOf: (M) -> Boolean,
     private val closeOf: (M) -> Unit,
-    private val factory: (network: Network, sdkHandle: Long) -> M,
+    private val handleOf: (S) -> Long,
+    private val factory: (network: Network, sdk: S) -> M,
 ) {
     private val lock = Mutex()
     private val managers = HashMap<Network, M>()
@@ -40,8 +48,9 @@ internal class WalletManagerCache<M>(
     private val _activeManager = MutableStateFlow<M?>(null)
     val activeManager: StateFlow<M?> = _activeManager.asStateFlow()
 
-    suspend fun activate(network: Network, sdkHandle: Long, makeActive: Boolean): M =
+    suspend fun activate(network: Network, sdk: S, makeActive: Boolean): M =
         lock.withLock {
+            val sdkHandle = handleOf(sdk)
             val cached = managers[network]
             val cachedHandle = managerSdkHandles[network]
             if (cached != null && !isClosedOf(cached) && cachedHandle == sdkHandle) {
@@ -50,7 +59,7 @@ internal class WalletManagerCache<M>(
             }
 
             val stale = cached
-            val manager = factory(network, sdkHandle)
+            val manager = factory(network, sdk)
             managers[network] = manager
             managerSdkHandles[network] = sdkHandle
 
@@ -115,15 +124,11 @@ class WalletManagerStore(
     private val walletStorage: WalletStorage,
     private val biometricGate: BiometricGate? = null,
 ) {
-    // Managers are built lazily from the SDK captured at activate() time.
-    private var pendingSdk: Sdk? = null
-
-    private val cache = WalletManagerCache<PlatformWalletManager>(
+    private val cache = WalletManagerCache<Sdk, PlatformWalletManager>(
         isClosedOf = { it.isClosed },
         closeOf = { it.close() },
-        factory = { network, _ ->
-            val sdk = pendingSdk
-                ?: error("WalletManagerStore: no SDK captured for $network activation")
+        handleOf = { it.handle },
+        factory = { network, sdk ->
             PlatformWalletManager(sdk, network, database, walletStorage, biometricGate)
         },
     )
@@ -147,8 +152,7 @@ class WalletManagerStore(
         require(sdk.network == network) {
             "activate: sdk.network=${sdk.network} does not match requested network=$network"
         }
-        pendingSdk = sdk
-        return cache.activate(network, sdk.handle, makeActive)
+        return cache.activate(network, sdk, makeActive)
     }
 
     /** The cached manager for [network], or null if none is activated. */
