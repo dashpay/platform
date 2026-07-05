@@ -1,12 +1,14 @@
 package org.dashfoundation.example.ui.wallet
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -15,8 +17,11 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -36,6 +41,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
@@ -48,6 +54,7 @@ import org.dashfoundation.dashsdk.security.BiometricGate
 import org.dashfoundation.dashsdk.wallet.ManagedPlatformWallet
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.di.LocalAppState
+import org.dashfoundation.example.navigation.FundFromAssetLock
 import org.dashfoundation.example.navigation.SendTransaction
 import org.dashfoundation.example.navigation.TransferPlatformAddress
 import org.dashfoundation.example.navigation.WalletTransactions
@@ -209,30 +216,27 @@ fun WalletDetailScreen(
                 )
             }
 
-            // Balance card (← BalanceCardView).
+            // Balance breakdown (← BalanceCardView): Core / Platform / Shielded,
+            // each shown in DASH. The Platform row's actions (Top Up from Core,
+            // Transfer, Withdraw) live in its trailing overflow menu, iOS-style —
+            // no separate "Platform Credits" section.
             FormSection(title = "Balances") {
                 val core = coreBalance
-                val coreTotal = (core?.confirmed ?: 0) + (core?.unconfirmed ?: 0)
-                val allZero = coreTotal == 0L && platformBalance == 0L && shieldedBalance == 0L
-                if (allZero) {
-                    Text(
-                        "Empty Wallet",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(vertical = 8.dp),
-                    )
-                } else {
-                    LabeledContent("Core Balance", formatDuffs(core?.confirmed ?: 0))
-                    if ((core?.unconfirmed ?: 0) > 0) {
-                        LabeledContent("Incoming", "+${formatDuffs(core!!.unconfirmed)}")
-                    }
-                    if ((core?.immature ?: 0) > 0) {
-                        LabeledContent("Immature", formatDuffs(core!!.immature))
-                    }
-                    LabeledContent("Platform Balance", formatCredits(platformBalance))
-                    if (hasShielded) {
-                        LabeledContent("Shielded Balance", formatCredits(shieldedBalance))
-                    }
+                LabeledContent("Core Balance", formatDuffs(core?.confirmed ?: 0))
+                if ((core?.unconfirmed ?: 0) > 0) {
+                    LabeledContent("Incoming", "+${formatDuffs(core!!.unconfirmed)}")
+                }
+                if ((core?.immature ?: 0) > 0) {
+                    LabeledContent("Immature", formatDuffs(core!!.immature))
+                }
+                PlatformBalanceRow(
+                    value = formatCredits(platformBalance),
+                    onTopUp = { navController.navigate(FundFromAssetLock(walletIdHex)) },
+                    onTransfer = { navController.navigate(TransferPlatformAddress(walletIdHex)) },
+                    onWithdraw = { navController.navigate(WithdrawPlatformAddress(walletIdHex)) },
+                )
+                if (hasShielded) {
+                    LabeledContent("Shielded Balance", formatCredits(shieldedBalance))
                 }
             }
 
@@ -275,31 +279,6 @@ fun WalletDetailScreen(
                         Spacer(Modifier.width(4.dp))
                         Text("($transactionCount)")
                     }
-                }
-            }
-
-            // Platform Credits (← the ADDR-02/04 wallet-signed DIP-17
-            // transfer / withdraw actions added in #3923).
-            FormSection(title = "Platform Credits") {
-                TextButton(
-                    onClick = { navController.navigate(TransferPlatformAddress(walletIdHex)) },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("walletDetail.transferPlatformButton"),
-                ) {
-                    Icon(Icons.Default.ArrowUpward, contentDescription = null)
-                    Spacer(Modifier.width(8.dp))
-                    Text("Transfer Platform Credits")
-                }
-                TextButton(
-                    onClick = { navController.navigate(WithdrawPlatformAddress(walletIdHex)) },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("walletDetail.withdrawPlatformButton"),
-                ) {
-                    Icon(Icons.Default.ArrowDownward, contentDescription = null)
-                    Spacer(Modifier.width(8.dp))
-                    Text("Withdraw Platform Credits")
                 }
             }
 
@@ -404,4 +383,81 @@ fun WalletDetailScreen(
     }
 
     ErrorAlertDialog(message = error, onDismiss = { error = null })
+}
+
+/**
+ * Platform Balance row — the DASH value with a trailing overflow menu:
+ * Top Up (Core→Platform), Transfer, Withdraw to Core. Mirrors the iOS
+ * `BalanceCardView` Platform row and replaces the old "Platform Credits"
+ * section; the transfer/withdraw testTags carry over for UAT parity.
+ */
+@Composable
+private fun PlatformBalanceRow(
+    value: String,
+    onTopUp: () -> Unit,
+    onTransfer: () -> Unit,
+    onWithdraw: () -> Unit,
+) {
+    var menuOpen by remember { mutableStateOf(false) }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 7.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            "Platform Balance",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        Text(
+            value,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.End,
+            modifier = Modifier
+                .weight(1f)
+                .padding(end = 4.dp),
+        )
+        Box {
+            IconButton(
+                onClick = { menuOpen = true },
+                modifier = Modifier
+                    .size(28.dp)
+                    .testTag("walletDetail.platformBalanceMenu"),
+            ) {
+                Icon(
+                    Icons.Default.MoreVert,
+                    contentDescription = "Platform Balance actions",
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+            }
+            DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                DropdownMenuItem(
+                    text = { Text("Top Up from Core") },
+                    onClick = {
+                        menuOpen = false
+                        onTopUp()
+                    },
+                    modifier = Modifier.testTag("walletDetail.topUpPlatformButton"),
+                )
+                DropdownMenuItem(
+                    text = { Text("Transfer") },
+                    onClick = {
+                        menuOpen = false
+                        onTransfer()
+                    },
+                    modifier = Modifier.testTag("walletDetail.transferPlatformButton"),
+                )
+                DropdownMenuItem(
+                    text = { Text("Withdraw to Core") },
+                    onClick = {
+                        menuOpen = false
+                        onWithdraw()
+                    },
+                    modifier = Modifier.testTag("walletDetail.withdrawPlatformButton"),
+                )
+            }
+        }
+    }
 }
