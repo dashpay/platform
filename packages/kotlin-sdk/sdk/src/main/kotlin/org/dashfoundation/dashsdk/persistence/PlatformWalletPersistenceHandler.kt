@@ -84,6 +84,16 @@ class PlatformWalletPersistenceHandler(
         Executors.newSingleThreadExecutor { r -> Thread(r, "dash-persistence") }
             .asCoroutineDispatcher(),
     private val privateKeyDeriver: PrivateKeyDeriver? = null,
+    /**
+     * Network the owning manager is locked to. Load callbacks that hydrate
+     * the Rust manager MUST scope to it (← Swift
+     * `PlatformWalletPersistenceHandler.loadWalletList()`'s `self.network`
+     * filter) — the Rust loader inserts every returned row unconditionally,
+     * so an unscoped list either registers foreign-network wallets or
+     * aborts the transactional load on the first cross-network row.
+     * Null = unscoped (unit tests exercising raw persistence only).
+     */
+    private val network: org.dashfoundation.dashsdk.Network? = null,
 ) : NativePersistenceBridge() {
 
     /**
@@ -1034,8 +1044,11 @@ class PlatformWalletPersistenceHandler(
 
     override fun onLoadWalletList(): Array<WalletRestoreData> = guardedLoad(emptyArray()) {
         runBlockingResult {
-            // Restorable = wallet with ≥1 account carrying an xpub.
-            val wallets = database.walletDao().observeAll().first()
+            // Restorable = wallet with ≥1 account carrying an xpub,
+            // scoped to the manager's network (see the constructor doc).
+            val wallets = network
+                ?.let { database.walletDao().getByNetwork(it.ffiValue) }
+                ?: database.walletDao().observeAll().first()
             val out = ArrayList<WalletRestoreData>()
             for (w in wallets) {
                 val accounts = database.accountDao().observeByWallet(w.walletId).first()

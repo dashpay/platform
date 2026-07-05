@@ -546,6 +546,33 @@ class PlatformWalletPersistenceHandlerTest {
         assertTrue(handler.onLoadWalletList().isEmpty())
     }
 
+    @Test
+    fun loadWalletListScopesToTheHandlerNetwork() = runTest {
+        // A network-scoped handler must never hand the Rust loader a
+        // foreign-network row — the loader inserts unconditionally, and a
+        // single cross-network row aborts the whole transactional load.
+        val scoped = PlatformWalletPersistenceHandler(
+            db,
+            Dispatchers.Unconfined,
+            network = org.dashfoundation.dashsdk.Network.TESTNET,
+        )
+        val xpub = ByteArray(78) { 30 }
+        scoped.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+        scoped.onPersistAccountRegistration(
+            walletId, 0, 0, 0, 0, 0, ByteArray(0), ByteArray(0), xpub,
+        )
+        val mainnetWallet = ByteArray(32) { 9 }
+        val mainnet = org.dashfoundation.dashsdk.Network.MAINNET.ffiValue
+        scoped.onPersistWalletMetadata(mainnetWallet, mainnet, groupId, 0)
+        scoped.onPersistAccountRegistration(
+            mainnetWallet, 0, 0, 0, 0, 0, ByteArray(0), ByteArray(0), xpub,
+        )
+
+        val list = scoped.onLoadWalletList()
+        assertEquals(1, list.size)
+        assertTrue(walletId.contentEquals(list[0].walletId))
+    }
+
     // ── Free-function encoders ────────────────────────────────────────
 
     @Test

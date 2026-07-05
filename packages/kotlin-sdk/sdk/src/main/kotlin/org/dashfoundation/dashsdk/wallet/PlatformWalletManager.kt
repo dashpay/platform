@@ -233,6 +233,7 @@ class PlatformWalletManager(
     private val persistenceHandler = PlatformWalletPersistenceHandler(
         database = database,
         privateKeyDeriver = identityKeyDeriver,
+        network = network,
     )
 
     /** `MnemonicResolverHandle` for FFI calls that derive from a stored mnemonic. */
