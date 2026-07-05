@@ -1317,9 +1317,10 @@ unsafe fn take_identifier_array_blob(
 
 /// Sync incoming contact requests from Platform for every managed identity
 /// on the wallet (bridges `platform_wallet_sync_contact_requests`). Applies
-/// them to the wallet's in-memory state (the side effect [`getManagedIdentity`]
-/// + the id readers then observe); the returned handle array is freed here
-/// (the underlying `ContactRequest` handles stay in native storage). Blocking.
+/// them to the wallet's in-memory state (the side effect that
+/// [`getManagedIdentity`] and the id readers then observe); the returned
+/// handle array is freed here (the underlying `ContactRequest` handles stay
+/// in native storage). Blocking.
 #[no_mangle]
 pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TokensNative_syncContactRequests(
     mut env: JNIEnv,

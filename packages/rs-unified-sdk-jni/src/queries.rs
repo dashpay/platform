@@ -673,7 +673,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_QueriesNative_address
         let ptrs: Vec<*const u8> = (0..count)
             .map(|i| unsafe { bytes.as_ptr().add(i * addr_len) })
             .collect();
-        let lengths: Vec<usize> = std::iter::repeat(addr_len).take(count).collect();
+        let lengths: Vec<usize> = std::iter::repeat_n(addr_len, count).collect();
         // SAFETY: `bytes`, `ptrs`, and `lengths` all outlive the call.
         let result = unsafe {
             dash_sdk_addresses_fetch_infos(

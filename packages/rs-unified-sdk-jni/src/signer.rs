@@ -45,8 +45,9 @@ struct PendingSign {
 // reclaims the Box in completeSign, exactly once.
 unsafe impl Send for PendingSign {}
 
-/// Fire a parked completion with an error message. Consumes the pending box.
-unsafe fn complete_with_error(pending: Box<PendingSign>, message: &str) {
+/// Fire a parked completion with an error message. Consumes the pending
+/// completion (callers deref the reconstituted box exactly once).
+unsafe fn complete_with_error(pending: PendingSign, message: &str) {
     let c_message = CString::new(message)
         .unwrap_or_else(|_| CString::new("signing failed").expect("static string"));
     (pending.completion)(pending.completion_ctx, ptr::null(), 0, c_message.as_ptr());
@@ -118,7 +119,7 @@ unsafe extern "C" fn sign_async_trampoline(
 
     match outcome {
         Ok(Ok(())) => {}
-        Ok(Err(pending)) => complete_with_error(pending, "JNI signer dispatch failed"),
+        Ok(Err(pending)) => complete_with_error(*pending, "JNI signer dispatch failed"),
         // The pending box was moved into the closure; on panic before the
         // token leak it was dropped — nothing left to complete. Rust's
         // 5-minute completion timeout bounds the damage of this edge.
@@ -242,7 +243,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_SignerNative_complete
                 return;
             }
             let _ = env.exception_clear();
-            unsafe { complete_with_error(pending, "signature marshalling failed") };
+            unsafe { complete_with_error(*pending, "signature marshalling failed") };
             return;
         }
 
@@ -256,7 +257,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_SignerNative_complete
                     String::from("signing failed")
                 })
         };
-        unsafe { complete_with_error(pending, &message) };
+        unsafe { complete_with_error(*pending, &message) };
     });
 }
 

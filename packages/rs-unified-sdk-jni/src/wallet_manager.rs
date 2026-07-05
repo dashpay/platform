@@ -2,7 +2,7 @@
 //! and per-wallet accessors.
 //!
 //! Kotlin counterpart: `org.dashfoundation.dashsdk.ffi.WalletManagerNative`
-//! + `NativeWalletEventBridge`, driven by
+//! and `NativeWalletEventBridge`, driven by
 //! `org.dashfoundation.dashsdk.wallet.PlatformWalletManager`.
 //!
 //! ## What the manager takes at construction

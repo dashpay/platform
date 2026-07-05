@@ -1538,17 +1538,17 @@ unsafe extern "C" fn tramp_load_wallet_list_free(
         if entries.is_null() || count == 0 {
             return;
         }
-        let boxed: Box<[WalletRestoreEntryFFI]> = Box::from_raw(std::slice::from_raw_parts_mut(
-            entries as *mut WalletRestoreEntryFFI,
-            count,
-        ));
+        let boxed: Box<[WalletRestoreEntryFFI]> = Box::from_raw(
+            std::ptr::slice_from_raw_parts_mut(entries as *mut WalletRestoreEntryFFI, count),
+        );
         for e in boxed.iter() {
             // accounts + nested xpub buffers.
             if !e.accounts.is_null() && e.accounts_count > 0 {
-                let specs: Box<[AccountSpecFFI]> = Box::from_raw(std::slice::from_raw_parts_mut(
-                    e.accounts as *mut AccountSpecFFI,
-                    e.accounts_count,
-                ));
+                let specs: Box<[AccountSpecFFI]> =
+                    Box::from_raw(std::ptr::slice_from_raw_parts_mut(
+                        e.accounts as *mut AccountSpecFFI,
+                        e.accounts_count,
+                    ));
                 for s in specs.iter() {
                     free_raw_bytes(s.account_xpub_bytes, s.account_xpub_bytes_len);
                 }
@@ -1947,7 +1947,7 @@ fn vec_into_raw<T>(v: Vec<T>) -> (*const T, usize) {
 /// Free a `Box<[u8]>` created by [`read_bytes_field_into_raw`]. No-op on null/0.
 unsafe fn free_raw_bytes(ptr: *const u8, len: usize) {
     if !ptr.is_null() && len > 0 {
-        drop(Box::from_raw(std::slice::from_raw_parts_mut(
+        drop(Box::from_raw(std::ptr::slice_from_raw_parts_mut(
             ptr as *mut u8,
             len,
         )));
@@ -1964,7 +1964,8 @@ unsafe fn free_boxed_slice<T>(ptr: *const T, count: usize, per_entry: impl Fn(&T
         if ptr.is_null() || count == 0 {
             return;
         }
-        let boxed: Box<[T]> = Box::from_raw(std::slice::from_raw_parts_mut(ptr as *mut T, count));
+        let boxed: Box<[T]> =
+            Box::from_raw(std::ptr::slice_from_raw_parts_mut(ptr as *mut T, count));
         for e in boxed.iter() {
             per_entry(e);
         }
