@@ -269,8 +269,12 @@ fun WalletDetailScreen(
                         .testTag("walletDetail.transactionsLink"),
                 ) {
                     Icon(Icons.AutoMirrored.Filled.List, contentDescription = null)
-                    Text("  View All Transactions")
-                    if (transactionCount > 0) Text("  ($transactionCount)")
+                    Spacer(Modifier.width(8.dp))
+                    Text("View All Transactions")
+                    if (transactionCount > 0) {
+                        Spacer(Modifier.width(4.dp))
+                        Text("($transactionCount)")
+                    }
                 }
             }
 
@@ -284,7 +288,8 @@ fun WalletDetailScreen(
                         .testTag("walletDetail.transferPlatformButton"),
                 ) {
                     Icon(Icons.Default.ArrowUpward, contentDescription = null)
-                    Text("  Transfer Platform Credits")
+                    Spacer(Modifier.width(8.dp))
+                    Text("Transfer Platform Credits")
                 }
                 TextButton(
                     onClick = { navController.navigate(WithdrawPlatformAddress(walletIdHex)) },
@@ -293,7 +298,8 @@ fun WalletDetailScreen(
                         .testTag("walletDetail.withdrawPlatformButton"),
                 ) {
                     Icon(Icons.Default.ArrowDownward, contentDescription = null)
-                    Text("  Withdraw Platform Credits")
+                    Spacer(Modifier.width(8.dp))
+                    Text("Withdraw Platform Credits")
                 }
             }
 
