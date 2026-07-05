@@ -98,7 +98,7 @@ pub fn apply_pending_contact_crypto(
 /// the `payload` blob.
 ///
 /// The production consumer is the `load()` restore into each identity's
-/// `ManagedIdentity.pending_contact_crypto`, fanned out by `owner_identity_id`
+/// each identity's `DashPayState.pending_contact_crypto`, fanned out by `owner_identity_id`
 /// (this reader returns entries grouped by `wallet_id`; the restore must apply
 /// the wallet's identities BEFORE routing each entry to its owner's queue, or an
 /// entry whose owner isn't resident yet is dropped). It is blocked on the

@@ -727,7 +727,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
 }
 
 /// QR-scan send lives in a non-generic `impl` block because it resolves a DPNS
-/// name via [`Self::resolve_name`], which is defined on `impl IdentityWallet`.
+/// name via [`IdentityWallet::resolve_name`] (reached through the view's
+/// `Deref`), which is defined on the non-generic `impl IdentityWallet`.
 impl DashPayView<'_> {
     /// Send a contact request from a scanned DIP-15 auto-accept QR
     /// (`dash:?du=<username>&dapk=<key_blob>`).
@@ -1274,7 +1275,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 //       and enqueue it for teardown + rebuild alongside the
                 //       in-pass rotations. Idempotent: once rebuilt the marker is
                 //       stamped, so the next sweep sees a match and skips it.
-                //       Accesses `managed.established_contacts` and
+                //       Accesses the managed identity's established contacts and
                 //       `info.core_wallet` as DISJOINT fields of `info` via a
                 //       plain `for` loop (the same split the teardown loop below
                 //       relies on) — a closure capturing whole `info` would

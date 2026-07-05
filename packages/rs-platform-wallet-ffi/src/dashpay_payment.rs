@@ -1,7 +1,7 @@
 //! FFI getter for per-contact DashPay payment history.
 //!
 //! Swift's `ContactDetailView` renders a payment list per contact
-//! (`PaymentEntry` on `ManagedIdentity.dashpay_payments`, keyed by
+//! (`PaymentEntry` on the managed identity's `DashPayState.payments`, keyed by
 //! txid). This module exposes that map off an existing
 //! [`ManagedIdentity`](platform_wallet::ManagedIdentity) handle (the
 //! one the host already obtains via

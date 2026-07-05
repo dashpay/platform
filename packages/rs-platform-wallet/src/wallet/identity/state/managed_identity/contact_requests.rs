@@ -752,7 +752,7 @@ impl ManagedIdentity {
     /// Reproduce a persisted un-ignore. Does NOT rewind the receive cursor —
     /// the live [`Self::unignore_sender`] already did, and on a cold load the
     /// cursor starts at `None` anyway.
-    pub fn apply_unignored_sender(&mut self, sender_id: &Identifier) {
+    pub(crate) fn apply_unignored_sender(&mut self, sender_id: &Identifier) {
         self.dashpay.ignored_senders.remove(sender_id);
     }
 }

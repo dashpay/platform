@@ -315,7 +315,7 @@ pub struct IdentityRestoreEntryFFI {
     pub payments_count: usize,
     /// DashPay ignored senders (per-sender mute, local-only) owned by this
     /// identity, assembled from the persisted ignored-sender rows. Restores
-    /// `ManagedIdentity.ignored_senders` at load — **without this the ignore
+    /// the managed identity's ignored-senders set at load — **without this the ignore
     /// set starts empty on every relaunch, so the still-on-platform
     /// immutable `contactRequest` documents of a previously-ignored sender
     /// re-ingest on the next sync sweep and the ignored sender resurfaces**
@@ -328,7 +328,7 @@ pub struct IdentityRestoreEntryFFI {
     pub ignored_senders_count: usize,
     /// DashPay cached **contact** profiles owned by this identity,
     /// assembled from the per-identity `PersistentDashpayContactProfile`
-    /// SwiftData rows. Restores `ManagedIdentity.contact_profiles`
+    /// SwiftData rows. Restores the managed identity's contact-profile cache
     /// (present entries only) at load — without this the contact-profile
     /// cache starts empty on every relaunch and the requests/contacts UI
     /// shows raw identity ids until the next profile sweep re-fetches
@@ -343,7 +343,7 @@ pub struct IdentityRestoreEntryFFI {
 }
 
 /// One DashPay payment-history row to rehydrate into
-/// `ManagedIdentity.dashpay_payments` (keyed by `txid`) at load.
+/// the managed identity's payments map (keyed by `txid`) at load.
 ///
 /// `direction_raw` / `status_raw` mirror the `PaymentDirection` /
 /// `PaymentStatus` discriminants (direction: 0=Sent, 1=Received;
@@ -367,7 +367,7 @@ pub struct PaymentRestoreEntryFFI {
 }
 
 /// One cached **contact** profile row to rehydrate into
-/// `ManagedIdentity.contact_profiles` (keyed by the contact's identity
+/// the managed identity's contact-profile cache (keyed by the contact's identity
 /// id) at load. Mirrors the persist-side
 /// [`crate::identity_persistence::ContactProfileRowFFI`] field-for-field
 /// (the leading `contact_id` key, the five public profile fields with

@@ -87,7 +87,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// been rescanned yet — the filter manager (`dash-spv`) then re-downloads
     /// nothing it already has, re-matches the now-larger script set, and
     /// re-requests the matching blocks. Each contact is recorded in
-    /// [`ManagedIdentity::dashpay_rescan_triggered`] so the recurring sweep does
+    /// [`DashPayState::rescan_triggered`](crate::wallet::identity::DashPayState) so the recurring sweep does
     /// not re-lower the height every pass (which would reset the in-flight
     /// backfill and keep it from ever completing). The guard is in-memory, so a
     /// relaunch — where `synced_height` is restored at its high-water — safely

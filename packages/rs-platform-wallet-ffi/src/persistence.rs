@@ -3750,7 +3750,7 @@ unsafe fn restore_dashpay_ignored(spec: &IdentityRestoreEntryFFI, managed: &mut 
     apply_ignored_rows(rows, managed);
 }
 
-/// Fold a slice of 32-byte sender ids into `managed.ignored_senders`.
+/// Fold a slice of 32-byte sender ids into the managed identity's ignored set.
 /// Split out from [`restore_dashpay_ignored`] so the decode is
 /// unit-testable without a full `IdentityRestoreEntryFFI`.
 fn apply_ignored_rows(rows: &[[u8; 32]], managed: &mut ManagedIdentity) {
@@ -3760,7 +3760,7 @@ fn apply_ignored_rows(rows: &[[u8; 32]], managed: &mut ManagedIdentity) {
 }
 
 /// Fold a slice of [`PaymentRestoreEntryFFI`] rows into
-/// `managed.dashpay_payments`. Split out from [`restore_dashpay_payments`]
+/// the managed identity's payments map. Split out from [`restore_dashpay_payments`]
 /// so the discriminant mapping + c-string decode is unit-testable
 /// without a full `IdentityRestoreEntryFFI`.
 ///
@@ -3859,7 +3859,7 @@ fn is_valid_avatar_url(url: &str) -> bool {
 }
 
 /// Fold a slice of [`ContactProfileRestoreEntryFFI`] rows into
-/// `managed.contact_profiles`. Split out from
+/// the managed identity's contact-profile cache. Split out from
 /// [`restore_contact_profiles`] so the c-string decode + avatar-url
 /// re-validation is unit-testable without a full
 /// [`IdentityRestoreEntryFFI`].

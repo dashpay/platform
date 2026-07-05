@@ -124,6 +124,10 @@ impl ManagedIdentity {
     }
 
     /// Mutable access to the cached contact profiles.
+    ///
+    /// Replay/restore surface: bypasses persistence on purpose (the
+    /// changeset being applied is already durable). The live writer is
+    /// the profile sync sweep, which persists a snapshot after writing.
     pub fn dashpay_contact_profiles_mut(
         &mut self,
     ) -> &mut std::collections::BTreeMap<
@@ -134,6 +138,9 @@ impl ManagedIdentity {
     }
 
     /// Mutable access to the per-session contact-rescan guard set.
+    ///
+    /// In-memory only — never persisted; see the field docs on
+    /// [`DashPayState::rescan_triggered`] for the self-healing contract.
     pub fn dashpay_rescan_triggered_mut(
         &mut self,
     ) -> &mut std::collections::BTreeSet<dpp::prelude::Identifier> {

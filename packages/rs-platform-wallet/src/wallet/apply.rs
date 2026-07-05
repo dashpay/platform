@@ -178,11 +178,12 @@ impl PlatformWalletInfo {
 
         // 3. Contacts. Each entry routes to its owning ManagedIdentity by
         //    `(owner, contact)` key; orphans (owner not in the wallet)
-        //    are logged and skipped. Trivial map ops (sent / incoming
-        //    insert and remove) are inlined here — no helper earns its
-        //    name for a single `insert` / `shift_remove` call. Only
-        //    `apply_established_contact` is a method because it has
-        //    real logic (drops both pending sides per the contract).
+        //    are logged and skipped. Every map mutation goes through the
+        //    `apply_*` replay methods — the relationship maps are sealed
+        //    to the state layer, and the replay methods reproduce
+        //    persisted state without re-running the live invariants
+        //    (`apply_established_contact` additionally drops both
+        //    pending sides per the contract).
         if let Some(contact_cs) = contacts {
             let crate::changeset::ContactChangeSet {
                 sent_requests,
