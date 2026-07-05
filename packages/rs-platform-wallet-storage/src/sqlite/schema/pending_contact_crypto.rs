@@ -97,10 +97,13 @@ pub fn apply_pending_contact_crypto(
 /// Every wallet's deferred-crypto queue, grouped by `wallet_id`, decoded from
 /// the `payload` blob.
 ///
-/// The production consumer is the `load()` restore into
-/// `PlatformWalletInfo.pending_contact_crypto`, which is blocked on the upstream
-/// per-wallet state restore (`LOAD_UNIMPLEMENTED: ClientStartState::wallets` — see
-/// `persister.rs`). Until that lands this reader is exercised only by the
+/// The production consumer is the `load()` restore into each identity's
+/// `ManagedIdentity.pending_contact_crypto`, fanned out by `owner_identity_id`
+/// (this reader returns entries grouped by `wallet_id`; the restore must apply
+/// the wallet's identities BEFORE routing each entry to its owner's queue, or an
+/// entry whose owner isn't resident yet is dropped). It is blocked on the
+/// upstream per-wallet state restore (`LOAD_UNIMPLEMENTED: ClientStartState::wallets`
+/// — see `persister.rs`). Until that lands this reader is exercised only by the
 /// round-trip test, so it is `cfg(test)`-gated to keep both the lib and the
 /// `__test-helpers` builds dead-code-clean; widen to
 /// `any(test, feature = "__test-helpers")` when the load restore consumes it.

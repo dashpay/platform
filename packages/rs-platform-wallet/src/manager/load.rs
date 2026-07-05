@@ -99,19 +99,6 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 balance: Arc::clone(&balance),
                 identity_manager: IdentityManager::from(identity_manager),
                 tracked_asset_locks,
-                // The deferred-crypto queue is NOT restored here (the storage
-                // layer persists it but the per-wallet load restore does not
-                // consume it yet). Starting empty is safe: the recurring sweep
-                // rediscovers + re-enqueues every established contact whose
-                // external account is missing OR stale — a rotation whose
-                // rebuild was queued but not drained before restart is caught
-                // by the sweep's `external_account_needs_rebuild` self-heal
-                // (the persisted, tombstone-less account row rebuilds the old
-                // xpub while `incoming_request` tracks the new reference; the
-                // sweep tears it down + re-queues the rebuild). So the queue is
-                // reconstructible without a restore, and the rotation teardown
-                // survives a restart.
-                pending_contact_crypto: Vec::new(),
             };
 
             // Insert into `wallet_manager` first so we have a wallet

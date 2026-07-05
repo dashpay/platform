@@ -2736,7 +2736,7 @@ mod tests {
         use crate::changeset::{PendingContactCrypto, PendingContactCryptoOp};
         use crate::wallet::identity::network::contact_requests::SeedCryptoProvider;
 
-        let (manager, _persister, wallet_id) = make_watch_only_wallet().await;
+        let (manager, persister, wallet_id) = make_watch_only_wallet().await;
         let wallet_arc = manager.get_wallet(&wallet_id).await.expect("wallet");
         let iw = wallet_arc.identity();
 
@@ -2750,16 +2750,29 @@ mod tests {
             mnemonic.to_seed("")
         };
 
-        // Enqueue a RegisterReceiving op (as the seedless sweep would).
+        // Register the owner, then enqueue a RegisterReceiving op (as the
+        // seedless sweep would) onto its per-identity queue.
         {
             let mut wm = iw.wallet_manager.write().await;
             let info = wm.get_wallet_info_mut(&wallet_id).expect("info");
-            info.pending_contact_crypto.push(PendingContactCrypto {
-                owner_identity_id: owner,
-                contact_id: contact,
-                op: PendingContactCryptoOp::RegisterReceiving,
-                enqueued_at_ms: 0,
-            });
+            info.identity_manager
+                .add_identity(
+                    bare_identity([0x11; 32]),
+                    0,
+                    wallet_id,
+                    &WalletPersister::new(wallet_id, Arc::clone(&persister) as _),
+                )
+                .expect("add owner");
+            info.identity_manager
+                .managed_identity_mut(&owner)
+                .expect("owner resident")
+                .pending_contact_crypto
+                .push(PendingContactCrypto {
+                    owner_identity_id: owner,
+                    contact_id: contact,
+                    op: PendingContactCryptoOp::RegisterReceiving,
+                    enqueued_at_ms: 0,
+                });
         }
 
         let provider = SeedCryptoProvider::from_seed(seed, Network::Testnet);
@@ -2769,7 +2782,11 @@ mod tests {
         let wm = iw.wallet_manager.read().await;
         let info = wm.get_wallet_info(&wallet_id).expect("info");
         assert!(
-            info.pending_contact_crypto.is_empty(),
+            info.identity_manager
+                .managed_identity(&owner)
+                .expect("owner resident")
+                .pending_contact_crypto
+                .is_empty(),
             "the queue must be cleared after a successful drain"
         );
         use key_wallet::account::account_collection::DashpayAccountKey;
@@ -2787,6 +2804,132 @@ mod tests {
         );
     }
 
+    /// `pending_contact_crypto_count` (the "waiting to finish setup" banner
+    /// source) MUST sum across BOTH identity buckets. An `AutoAccept` op can
+    /// legitimately sit on an out-of-wallet identity, so a count walking only the
+    /// wallet-owned bucket would silently under-count it — the R1 regression the
+    /// per-identity move risks. Calls the real async method (not an inlined copy),
+    /// so a bucket-dropping regression fails HERE.
+    #[tokio::test]
+    async fn pending_contact_crypto_count_method_spans_both_identity_buckets() {
+        use crate::changeset::{PendingContactCrypto, PendingContactCryptoOp};
+
+        let (manager, persister, wallet_id) = make_watch_only_wallet().await;
+        let wallet_arc = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet_arc.identity();
+
+        let owned = Identifier::from([0x41; 32]);
+        let watched = Identifier::from([0x42; 32]);
+        {
+            let mut wm = iw.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("info");
+            // Owned identity with a RegisterReceiving op.
+            info.identity_manager
+                .add_identity(
+                    bare_identity([0x41; 32]),
+                    0,
+                    wallet_id,
+                    &WalletPersister::new(wallet_id, Arc::clone(&persister) as _),
+                )
+                .expect("add owned");
+            info.identity_manager
+                .managed_identity_mut(&owned)
+                .expect("owned resident")
+                .pending_contact_crypto
+                .push(PendingContactCrypto {
+                    owner_identity_id: owned,
+                    contact_id: Identifier::from([0x01; 32]),
+                    op: PendingContactCryptoOp::RegisterReceiving,
+                    enqueued_at_ms: 0,
+                });
+            // OUT-OF-WALLET identity with an AutoAccept op — the case an
+            // owned-bucket-only count would silently miss.
+            info.identity_manager
+                .add_out_of_wallet_identity(
+                    bare_identity([0x42; 32]),
+                    &WalletPersister::new(wallet_id, Arc::clone(&persister) as _),
+                )
+                .expect("add out-of-wallet");
+            info.identity_manager
+                .managed_identity_mut(&watched)
+                .expect("watched resident")
+                .pending_contact_crypto
+                .push(PendingContactCrypto {
+                    owner_identity_id: watched,
+                    contact_id: Identifier::from([0x02; 32]),
+                    op: PendingContactCryptoOp::AutoAccept,
+                    enqueued_at_ms: 0,
+                });
+        }
+
+        assert_eq!(
+            iw.pending_contact_crypto_count().await,
+            2,
+            "count must aggregate across both identity buckets, including the \
+             out-of-wallet AutoAccept"
+        );
+    }
+
+    /// The drain snapshot MUST reach BOTH identity buckets. A `RegisterReceiving`
+    /// op on an OUT-OF-WALLET identity (the provider-only drain completes it with
+    /// no signer; its arm doesn't gate on the HD index) must be processed and
+    /// cleared — if the drain snapshotted only the wallet-owned bucket, this entry
+    /// would be silently skipped (`drained == 0`). Pins the drain half of R1.
+    #[tokio::test]
+    async fn drain_processes_out_of_wallet_identity_queue() {
+        use crate::changeset::{PendingContactCrypto, PendingContactCryptoOp};
+        use crate::wallet::identity::network::contact_requests::SeedCryptoProvider;
+
+        let (manager, persister, wallet_id) = make_watch_only_wallet().await;
+        let wallet_arc = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet_arc.identity();
+
+        let watched = Identifier::from([0x42; 32]);
+        let contact = Identifier::from([0x22; 32]);
+        let seed = Mnemonic::from_phrase(TEST_MNEMONIC, Language::English)
+            .expect("valid mnemonic")
+            .to_seed("");
+
+        {
+            let mut wm = iw.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("info");
+            info.identity_manager
+                .add_out_of_wallet_identity(
+                    bare_identity([0x42; 32]),
+                    &WalletPersister::new(wallet_id, Arc::clone(&persister) as _),
+                )
+                .expect("add out-of-wallet");
+            info.identity_manager
+                .managed_identity_mut(&watched)
+                .expect("watched resident")
+                .pending_contact_crypto
+                .push(PendingContactCrypto {
+                    owner_identity_id: watched,
+                    contact_id: contact,
+                    op: PendingContactCryptoOp::RegisterReceiving,
+                    enqueued_at_ms: 0,
+                });
+        }
+
+        let provider = SeedCryptoProvider::from_seed(seed, Network::Testnet);
+        let drained = iw.drain_pending_contact_crypto(&provider).await;
+        assert_eq!(
+            drained, 1,
+            "the drain must snapshot the out-of-wallet bucket and process its entry"
+        );
+
+        let wm = iw.wallet_manager.read().await;
+        let info = wm.get_wallet_info(&wallet_id).expect("info");
+        assert!(
+            info.identity_manager
+                .managed_identity(&watched)
+                .expect("watched resident")
+                .pending_contact_crypto
+                .is_empty(),
+            "the out-of-wallet identity's queue must be cleared after the drain"
+        );
+    }
+
     /// A `RegisterExternal` entry the drain cannot complete (here: the owner
     /// isn't wallet-owned, so no HD index → it bails before any network fetch)
     /// must be **left queued**, never dropped or crashed — so a later drain can
@@ -2797,27 +2940,38 @@ mod tests {
         use crate::changeset::{PendingContactCrypto, PendingContactCryptoOp};
         use crate::wallet::identity::network::contact_requests::ContactCryptoProvider;
 
-        let (manager, _persister, wallet_id) = make_wallet().await;
+        let (manager, persister, wallet_id) = make_wallet().await;
         let wallet_arc = manager.get_wallet(&wallet_id).await.expect("wallet");
         let iw = wallet_arc.identity();
         let owner = Identifier::from([0x11; 32]);
         let contact = Identifier::from([0x22; 32]);
 
-        // Owner is NOT added as a managed identity → identity_index lookup
-        // fails → the drain leaves the entry before reaching the fetch.
+        // Owner is resident but OUT-OF-WALLET (no HD index), so the
+        // RegisterExternal drain bails before reaching the fetch, leaving the
+        // entry queued.
         {
             let mut wm = iw.wallet_manager.write().await;
             let info = wm.get_wallet_info_mut(&wallet_id).expect("info");
-            info.pending_contact_crypto.push(PendingContactCrypto {
-                owner_identity_id: owner,
-                contact_id: contact,
-                op: PendingContactCryptoOp::RegisterExternal {
-                    encrypted_public_key: vec![7u8; 96],
-                    our_decryption_key_index: 0,
-                    contact_encryption_key_index: 0,
-                },
-                enqueued_at_ms: 0,
-            });
+            info.identity_manager
+                .add_out_of_wallet_identity(
+                    bare_identity([0x11; 32]),
+                    &WalletPersister::new(wallet_id, Arc::clone(&persister) as _),
+                )
+                .expect("add out-of-wallet owner");
+            info.identity_manager
+                .managed_identity_mut(&owner)
+                .expect("owner resident")
+                .pending_contact_crypto
+                .push(PendingContactCrypto {
+                    owner_identity_id: owner,
+                    contact_id: contact,
+                    op: PendingContactCryptoOp::RegisterExternal {
+                        encrypted_public_key: vec![7u8; 96],
+                        our_decryption_key_index: 0,
+                        contact_encryption_key_index: 0,
+                    },
+                    enqueued_at_ms: 0,
+                });
         }
 
         struct UnusedProvider;
@@ -2899,7 +3053,11 @@ mod tests {
         let wm = iw.wallet_manager.read().await;
         let info = wm.get_wallet_info(&wallet_id).expect("info");
         assert_eq!(
-            info.pending_contact_crypto.len(),
+            info.identity_manager
+                .managed_identity(&owner)
+                .expect("owner resident")
+                .pending_contact_crypto
+                .len(),
             1,
             "the deferred entry must remain in the queue for a later drain"
         );
@@ -2960,10 +3118,12 @@ mod tests {
         let wm = iw.wallet_manager.read().await;
         let info = wm.get_wallet_info(&wallet_id).expect("info");
         assert!(
-            info.pending_contact_crypto.iter().any(|e| {
-                e.owner_identity_id == owner
-                    && e.op.kind() == PendingContactCryptoKind::ContactInfoDecrypt
-            }),
+            info.identity_manager
+                .managed_identity(&owner)
+                .expect("owner resident")
+                .pending_contact_crypto
+                .iter()
+                .any(|e| e.op.kind() == PendingContactCryptoKind::ContactInfoDecrypt),
             "the seedless sweep must enqueue a ContactInfoDecrypt op for the owner"
         );
     }
@@ -3035,12 +3195,16 @@ mod tests {
                 )
                 .expect("add owner");
             // A RegisterReceiving op the provider-only drain can complete.
-            info.pending_contact_crypto.push(PendingContactCrypto {
-                owner_identity_id: owner,
-                contact_id: queued_contact,
-                op: PendingContactCryptoOp::RegisterReceiving,
-                enqueued_at_ms: 0,
-            });
+            info.identity_manager
+                .managed_identity_mut(&owner)
+                .expect("owner resident")
+                .pending_contact_crypto
+                .push(PendingContactCrypto {
+                    owner_identity_id: owner,
+                    contact_id: queued_contact,
+                    op: PendingContactCryptoOp::RegisterReceiving,
+                    enqueued_at_ms: 0,
+                });
         }
 
         // A signer + provider derived from the same test seed — the production
@@ -3075,6 +3239,9 @@ mod tests {
         );
         assert!(
             !info
+                .identity_manager
+                .managed_identity(&owner)
+                .expect("owner resident")
                 .pending_contact_crypto
                 .iter()
                 .any(|e| e.contact_id == queued_contact),
