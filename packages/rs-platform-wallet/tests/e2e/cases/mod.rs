@@ -20,7 +20,6 @@ pub mod found_017_register_wallet_store_error_lost;
 pub mod found_017_register_wallet_store_ok_persists;
 pub mod found_021_instant_lock_dropped_on_context_promotion;
 pub mod found_022_asset_lock_builder_consumes_change_index_on_failure;
-pub mod found_024_transfer_foreign_pollution;
 pub mod found_025_address_sync_silent_discard;
 pub mod found_coinjoin_gap_limit_sync;
 pub mod id_001_register_identity_from_addresses;

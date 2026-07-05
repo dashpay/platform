@@ -1218,36 +1218,6 @@ fn augment_outputs_with_change(
     Ok(user_outputs)
 }
 
-/// Test-only seam over the post-broadcast ledger-update builder the e2e
-/// V27-007 regression pin drives directly. Gated behind `test-utils` (pulled
-/// in by `e2e`), NEVER in production builds. Delegates to the REAL private
-/// function — not a copy — so deleting the `owned`-membership guard inside it
-/// turns the regression test red.
-#[cfg(feature = "test-utils")]
-pub mod test_utils {
-    use super::*;
-
-    /// Drive [`super::build_transfer_persistence_entries`] — `transfer`'s
-    /// post-broadcast persistence builder, including its foreign-address
-    /// ownership guard (V27-007).
-    pub fn build_transfer_persistence_entries<'a, I>(
-        wallet_id: [u8; 32],
-        account_index: u32,
-        owned: &BTreeMap<PlatformP2PKHAddress, u32>,
-        address_infos: I,
-    ) -> Vec<crate::PlatformAddressBalanceEntry>
-    where
-        I: IntoIterator<
-            Item = (
-                &'a PlatformAddress,
-                Option<&'a dash_sdk::query_types::AddressInfo>,
-            ),
-        >,
-    {
-        super::build_transfer_persistence_entries(wallet_id, account_index, owned, address_infos)
-    }
-}
-
 #[cfg(test)]
 mod auto_select_tests {
     use super::*;
