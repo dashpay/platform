@@ -164,6 +164,18 @@ fn checked_signing_key_id(env: &mut JNIEnv, value: jint) -> Option<u32> {
     Some(value as u32)
 }
 
+/// Range-check a `jint` group-info kind tag into the `u8` the FFI takes;
+/// throws + returns `None` outside `0..=2` (none / this-signer /
+/// other-signer — the tags `group_info.rs` accepts). A raw `as u8` would
+/// wrap a Kotlin `-1` to 255 and fail downstream with a less clear error.
+fn checked_group_info_kind(env: &mut JNIEnv, value: jint) -> Option<u8> {
+    if !(0..=2).contains(&value) {
+        throw_sdk_exception(env, 1, "groupInfoKind must be 0, 1, or 2");
+        return None;
+    }
+    Some(value as u8)
+}
+
 /// Consume a Rust-owned C string out-param produced by a platform-wallet
 /// entry point (freed with `platform_wallet_string_free`), copy it into a
 /// Java `String`, and free the Rust buffer. Null → null jstring.
@@ -261,6 +273,9 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TokensNative_tokenMin
         let Some(signing_key_id) = checked_signing_key_id(env, signing_key_id) else {
             return;
         };
+        let Some(group_info_kind) = checked_group_info_kind(env, group_info_kind) else {
+            return;
+        };
         let result = unsafe {
             platform_wallet_ffi::platform_wallet_token_mint(
                 wallet_handle as Handle,
@@ -270,7 +285,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TokensNative_tokenMin
                 recipient.as_ref().map_or(ptr::null(), |r| r.as_ptr()),
                 amount as u64,
                 opt_c_ptr(&note),
-                group_info_kind as u8,
+                group_info_kind,
                 group_info_position,
                 action.as_ref().map_or(ptr::null(), |a| a.as_ptr()),
                 group_info_action_is_proposer == JNI_TRUE,
@@ -333,6 +348,9 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TokensNative_tokenBur
         let Some(signing_key_id) = checked_signing_key_id(env, signing_key_id) else {
             return ptr::null_mut();
         };
+        let Some(group_info_kind) = checked_group_info_kind(env, group_info_kind) else {
+            return ptr::null_mut();
+        };
         let mut out_json: *mut c_char = ptr::null_mut();
         let result = unsafe {
             platform_wallet_ffi::platform_wallet_token_burn(
@@ -342,7 +360,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TokensNative_tokenBur
                 token_position,
                 amount as u64,
                 opt_c_ptr(&note),
-                group_info_kind as u8,
+                group_info_kind,
                 group_info_position,
                 action.as_ref().map_or(ptr::null(), |a| a.as_ptr()),
                 group_info_action_is_proposer == JNI_TRUE,
@@ -470,6 +488,9 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TokensNative_tokenFre
         let Some(signing_key_id) = checked_signing_key_id(env, signing_key_id) else {
             return;
         };
+        let Some(group_info_kind) = checked_group_info_kind(env, group_info_kind) else {
+            return;
+        };
         let result = unsafe {
             platform_wallet_ffi::platform_wallet_token_freeze(
                 wallet_handle as Handle,
@@ -478,7 +499,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TokensNative_tokenFre
                 token_position,
                 frozen.as_ptr(),
                 opt_c_ptr(&note),
-                group_info_kind as u8,
+                group_info_kind,
                 group_info_position,
                 action.as_ref().map_or(ptr::null(), |a| a.as_ptr()),
                 group_info_action_is_proposer == JNI_TRUE,
@@ -537,6 +558,9 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TokensNative_tokenUnf
         let Some(signing_key_id) = checked_signing_key_id(env, signing_key_id) else {
             return;
         };
+        let Some(group_info_kind) = checked_group_info_kind(env, group_info_kind) else {
+            return;
+        };
         let result = unsafe {
             platform_wallet_ffi::platform_wallet_token_unfreeze(
                 wallet_handle as Handle,
@@ -545,7 +569,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TokensNative_tokenUnf
                 token_position,
                 frozen.as_ptr(),
                 opt_c_ptr(&note),
-                group_info_kind as u8,
+                group_info_kind,
                 group_info_position,
                 action.as_ref().map_or(ptr::null(), |a| a.as_ptr()),
                 group_info_action_is_proposer == JNI_TRUE,
@@ -604,6 +628,9 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TokensNative_tokenDes
         let Some(signing_key_id) = checked_signing_key_id(env, signing_key_id) else {
             return;
         };
+        let Some(group_info_kind) = checked_group_info_kind(env, group_info_kind) else {
+            return;
+        };
         let result = unsafe {
             platform_wallet_ffi::platform_wallet_token_destroy_frozen_funds(
                 wallet_handle as Handle,
@@ -612,7 +639,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TokensNative_tokenDes
                 token_position,
                 frozen.as_ptr(),
                 opt_c_ptr(&note),
-                group_info_kind as u8,
+                group_info_kind,
                 group_info_position,
                 action.as_ref().map_or(ptr::null(), |a| a.as_ptr()),
                 group_info_action_is_proposer == JNI_TRUE,
@@ -667,6 +694,9 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TokensNative_tokenPau
         let Some(signing_key_id) = checked_signing_key_id(env, signing_key_id) else {
             return;
         };
+        let Some(group_info_kind) = checked_group_info_kind(env, group_info_kind) else {
+            return;
+        };
         let result = unsafe {
             platform_wallet_ffi::platform_wallet_token_pause(
                 wallet_handle as Handle,
@@ -674,7 +704,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TokensNative_tokenPau
                 contract.as_ptr(),
                 token_position,
                 opt_c_ptr(&note),
-                group_info_kind as u8,
+                group_info_kind,
                 group_info_position,
                 action.as_ref().map_or(ptr::null(), |a| a.as_ptr()),
                 group_info_action_is_proposer == JNI_TRUE,
@@ -729,6 +759,9 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TokensNative_tokenRes
         let Some(signing_key_id) = checked_signing_key_id(env, signing_key_id) else {
             return;
         };
+        let Some(group_info_kind) = checked_group_info_kind(env, group_info_kind) else {
+            return;
+        };
         let result = unsafe {
             platform_wallet_ffi::platform_wallet_token_resume(
                 wallet_handle as Handle,
@@ -736,7 +769,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TokensNative_tokenRes
                 contract.as_ptr(),
                 token_position,
                 opt_c_ptr(&note),
-                group_info_kind as u8,
+                group_info_kind,
                 group_info_position,
                 action.as_ref().map_or(ptr::null(), |a| a.as_ptr()),
                 group_info_action_is_proposer == JNI_TRUE,
@@ -799,6 +832,9 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TokensNative_tokenSet
         let Some(signing_key_id) = checked_signing_key_id(env, signing_key_id) else {
             return;
         };
+        let Some(group_info_kind) = checked_group_info_kind(env, group_info_kind) else {
+            return;
+        };
         let result = unsafe {
             platform_wallet_ffi::platform_wallet_token_set_price(
                 wallet_handle as Handle,
@@ -807,7 +843,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TokensNative_tokenSet
                 token_position,
                 price_per_token as u64,
                 opt_c_ptr(&note),
-                group_info_kind as u8,
+                group_info_kind,
                 group_info_position,
                 action.as_ref().map_or(ptr::null(), |a| a.as_ptr()),
                 group_info_action_is_proposer == JNI_TRUE,
@@ -976,6 +1012,9 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TokensNative_tokenUpd
         let Some(signing_key_id) = checked_signing_key_id(env, signing_key_id) else {
             return;
         };
+        let Some(group_info_kind) = checked_group_info_kind(env, group_info_kind) else {
+            return;
+        };
         let result = unsafe {
             platform_wallet_ffi::platform_wallet_token_update_config(
                 wallet_handle as Handle,
@@ -985,7 +1024,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TokensNative_tokenUpd
                 change_item_tag as u8,
                 opt_c_ptr(&payload),
                 opt_c_ptr(&note),
-                group_info_kind as u8,
+                group_info_kind,
                 group_info_position,
                 action.as_ref().map_or(ptr::null(), |a| a.as_ptr()),
                 group_info_action_is_proposer == JNI_TRUE,

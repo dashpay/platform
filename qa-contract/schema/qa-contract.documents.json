@@ -88,7 +88,7 @@
         "minLength": 1,
         "maxLength": 32,
         "position": 1,
-        "description": "Feature-area / Domain name (Core, Identity, DPNS, Token, Shielded, MultiWallet, ...)."
+        "description": "Feature-area / Domain name (Core, Identity, DPNS, Token, Shielded, System, ...)."
       }
     },
     "required": ["code", "name"],
@@ -185,6 +185,12 @@
         "maxLength": 64,
         "position": 10,
         "description": "git commit of the source plan this testCase was seeded from."
+      },
+      "tags": {
+        "type": "string",
+        "maxLength": 256,
+        "position": 11,
+        "description": "Comma-separated cross-cutting tags (canonical vocabulary in src/codes.mjs, e.g. multiwallet,withdrawal)."
       }
     },
     "required": ["testId", "app", "tier", "category", "title", "layer", "implStatus"],
