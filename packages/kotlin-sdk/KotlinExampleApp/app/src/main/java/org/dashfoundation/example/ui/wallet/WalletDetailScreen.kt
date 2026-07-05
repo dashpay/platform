@@ -222,6 +222,22 @@ fun WalletDetailScreen(
             // no separate "Platform Credits" section.
             FormSection(title = "Balances") {
                 val core = coreBalance
+                // Empty-wallet placeholder (← WalletDetailView.swift:1085-1094
+                // allZero branch): a wallet with zero Core + Platform +
+                // Shielded shows the single label instead of three zero rows.
+                val allZero = (core?.confirmed ?: 0) == 0L &&
+                    (core?.unconfirmed ?: 0) == 0L &&
+                    platformBalance == 0L &&
+                    shieldedBalance == 0L
+                if (allZero) {
+                    Text(
+                        "Empty Wallet",
+                        style = MaterialTheme.typography.headlineMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.testTag("walletDetail.emptyWallet"),
+                    )
+                    return@FormSection
+                }
                 LabeledContent("Core Balance", formatDuffs(core?.confirmed ?: 0))
                 if ((core?.unconfirmed ?: 0) > 0) {
                     LabeledContent("Incoming", "+${formatDuffs(core!!.unconfirmed)}")
