@@ -91,8 +91,10 @@ required-features = ["shielded"]
 drive-proof-verifier = { path = "../rs-drive-proof-verifier" }
 # `test-utils` exposes key-wallet's `TestWalletContext` + `Address::dummy`
 # (via `dashcore/test-utils`) for building funded, signable test wallets.
+# `keep-finalized-transactions` retains finalized txs in RAM, which the
+# in-memory test runs (NoPlatformPersistence) require.
 # Dev-only, so the production build stays on the leaner default features.
-key-wallet = { workspace = true, features = ["test-utils"] }
+key-wallet = { workspace = true, features = ["test-utils", "keep-finalized-transactions"] }
 rand = "0.8"
 # Drives the parallel decrypt benchmark in `shielded_decrypt_bench.rs`.
 rayon = "1.10"
@@ -143,10 +145,9 @@ tokio-util = { version = "0.7", features = ["rt"] }
 # (Task #15). Also used by `examples/shielded_sync_paloma.rs` to run
 # against a remote devnet without a reachable Core RPC.
 rs-sdk-trusted-context-provider = { path = "../rs-sdk-trusted-context-provider", features = ["dpns-contract"] }
-# In-memory test runs (NoPlatformPersistence) need finalized txs retained in RAM.
-# Re-declaring here enables the feature for the test target only; production
-# builds pay no memory overhead. Per upstream rust-dashcore maintainer guidance.
-key-wallet = { workspace = true, features = ["keep-finalized-transactions"] }
+# `keep-finalized-transactions` retains finalized txs in RAM for the
+# in-memory test runs (NoPlatformPersistence); dev-only, so production
+# builds pay no memory overhead.
 key-wallet-manager = { workspace = true, features = ["keep-finalized-transactions"] }
 
 [features]
