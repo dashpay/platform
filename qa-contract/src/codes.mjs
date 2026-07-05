@@ -28,8 +28,7 @@ export const CATEGORIES = [
   { code: 7, name: 'Token' },
   { code: 8, name: 'Shielded' },
   { code: 9, name: 'DashPay' },
-  { code: 10, name: 'Group' },
-  { code: 11, name: 'System' },
+  { code: 10, name: 'System' },
   { code: 12, name: 'MultiWallet' },
 ];
 

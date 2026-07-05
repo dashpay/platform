@@ -250,16 +250,7 @@ Shielded notes/balance/activity have **no read-side FFI** by design — Rust pus
 | DP-05 | View profile / contacts / requests | Platform | Common | ✅ | `FriendsScreen`, `EstablishedContactEntity` (Room). |
 | DP-06 | Reject contact request | Platform | Thorough | ✅ | `FriendsScreen` → `wallet.rejectContactRequest`. |
 
-### 4.11 Group — `Domain=Group`
-
-| ID | Action | Layer | Tier | Status | Entry point & test notes |
-|---|---|---|---|---|---|
-| GRP-01 | View group info / members | Platform | Thorough | ✅ | `GroupDetailScreen` (drill into member identities; live open-proposals via `Groups.pendingActions`). |
-| GRP-02 | Group queries (info / infos / actions / signers) | Platform | Thorough | ✅ | `QueriesListScreen` group category → `dash_sdk_group_get_*`. |
-| GRP-03 | Token group action — propose / co-sign | Platform | Uncommon | ✅ | Same as `TOK-15` / `TOK-16`. |
-| GRP-04 | Standalone group lifecycle management | Platform | — | ➖ | Retired — not implemented anywhere; groups exist only as a token access-control construct. |
-
-### 4.12 System / Protocol / Diagnostics — `Domain=System`
+### 4.11 System / Protocol / Diagnostics — `Domain=System`
 
 | ID | Action | Layer | Tier | Status | Entry point & test notes |
 |---|---|---|---|---|---|
@@ -270,7 +261,7 @@ Shielded notes/balance/activity have **no read-side FFI** by design — Rust pus
 | SYS-05 | Storage / Keystore / Wallet-memory explorers | — | Thorough | ✅ | `StorageExplorerScreen`, `KeystoreExplorerScreen`, `WalletMemoryExplorerScreen` (Settings; debug tooling). |
 | SYS-06 | Path elements (raw GroveDB) | Platform | Uncommon | 🧪 | **Get GroveDB Path Elements** read view → `dash_sdk_system_get_path_elements`. Enter `path` + `keys` JSON array; returns `[{key, element, type}]`. Use a **bounded** path. |
 
-### 4.13 Multi-wallet on-device Platform scenarios (same network) — `Domain=MultiWallet`
+### 4.12 Multi-wallet on-device Platform scenarios (same network) — `Domain=MultiWallet`
 
 | ID | Action | Layer | Tier | Status | Entry point & test notes |
 |---|---|---|---|---|---|
@@ -325,8 +316,7 @@ Membership of each feature category across **all** sections (primary section mem
 - **Voting** — `VOTE-01..07`, `DPNS-05`, `MW-05`
 - **Contract** — `DC-01..04`
 - **Document** — `DOC-01..14`, `MW-04`
-- **Token** — `TOK-01..16`, `MW-02`, `GRP-03`
+- **Token** — `TOK-01..16`, `MW-02`
 - **Shielded** — `SH-01..13`, `CORE-21`, `MW-06`, `MW-07`, `MW-11`
 - **DashPay** — `DP-01..06`, `MW-03`
-- **Group** — `GRP-01..04`, `TOK-15`, `TOK-16`
 - **System / Diagnostics** — `SYS-01..06`
