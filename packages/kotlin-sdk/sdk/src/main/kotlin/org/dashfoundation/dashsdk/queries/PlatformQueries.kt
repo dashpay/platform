@@ -685,7 +685,10 @@ class Documents internal constructor(private val sdk: Sdk) {
         whereJson: String? = null,
         orderByJson: String? = null,
         groupByJson: String? = null,
-        limit: Long = 0,
+        // -1 = server default (no cap). Drive rejects an explicit limit of 0
+        // on aggregate queries ("zero-cap query is structurally meaningless"),
+        // and these forms have no limit control, so default to the server cap.
+        limit: Long = -1,
     ): String? = withContext(Dispatchers.IO) {
         mapNativeErrors {
             QueriesNative.documentCount(
@@ -702,7 +705,10 @@ class Documents internal constructor(private val sdk: Sdk) {
         whereJson: String? = null,
         orderByJson: String? = null,
         groupByJson: String? = null,
-        limit: Long = 0,
+        // -1 = server default (no cap). Drive rejects an explicit limit of 0
+        // on aggregate queries ("zero-cap query is structurally meaningless"),
+        // and these forms have no limit control, so default to the server cap.
+        limit: Long = -1,
     ): String? = withContext(Dispatchers.IO) {
         mapNativeErrors {
             QueriesNative.documentSum(
@@ -720,7 +726,10 @@ class Documents internal constructor(private val sdk: Sdk) {
         whereJson: String? = null,
         orderByJson: String? = null,
         groupByJson: String? = null,
-        limit: Long = 0,
+        // -1 = server default (no cap). Drive rejects an explicit limit of 0
+        // on aggregate queries ("zero-cap query is structurally meaningless"),
+        // and these forms have no limit control, so default to the server cap.
+        limit: Long = -1,
     ): String? = withContext(Dispatchers.IO) {
         mapNativeErrors {
             QueriesNative.documentAverage(
