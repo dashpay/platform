@@ -452,3 +452,127 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         Ok(derivation_path)
     }
 }
+
+#[cfg(test)]
+mod found_013_tests {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
+
+    use dashcore::{OutPoint, Transaction, Txid};
+    use key_wallet::account::account_type::StandardAccountType;
+    use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
+    use tokio::sync::Notify;
+
+    use crate::changeset::{
+        ClientStartState, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
+    };
+    use crate::test_support::{funded_wallet_manager, AlwaysRejectedBroadcaster};
+    use crate::wallet::asset_lock::manager::AssetLockManager;
+    use crate::wallet::persister::WalletPersister;
+    use crate::wallet::platform_wallet::WalletId;
+
+    /// Persister whose `store` always fails, counting attempts so the test
+    /// can prove the recovery path actually tried (and failed) to persist.
+    struct FailingStorePersistence {
+        store_attempts: AtomicUsize,
+    }
+
+    impl PlatformWalletPersistence for FailingStorePersistence {
+        fn store(
+            &self,
+            _wallet_id: WalletId,
+            _changeset: PlatformWalletChangeSet,
+        ) -> Result<(), PersistenceError> {
+            self.store_attempts.fetch_add(1, Ordering::SeqCst);
+            Err(PersistenceError::backend("simulated store failure"))
+        }
+
+        fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+
+        fn load(&self) -> Result<ClientStartState, PersistenceError> {
+            Ok(ClientStartState::default())
+        }
+    }
+
+    // Found-013 (RED-by-design): recover_asset_lock_blocking swallows every
+    // failure — here a persister store error — leaving a memory-only tracked
+    // lock and returning `()` as if recovery fully succeeded.
+    #[test]
+    fn found_013_recover_asset_lock_blocking_swallows_persist_error() {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("tokio runtime");
+        let (wallet_manager, wallet_id, _balance, _signer) =
+            rt.block_on(funded_wallet_manager(StandardAccountType::BIP44Account));
+
+        let persistence = Arc::new(FailingStorePersistence {
+            store_attempts: AtomicUsize::new(0),
+        });
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let manager = AssetLockManager::new(
+            sdk,
+            wallet_manager,
+            wallet_id,
+            Arc::new(Notify::new()),
+            Arc::new(AlwaysRejectedBroadcaster),
+            WalletPersister::new(
+                wallet_id,
+                Arc::clone(&persistence) as Arc<dyn PlatformWalletPersistence>,
+            ),
+        );
+
+        let out_point = OutPoint::new(Txid::from([0xAB; 32]), 0);
+        let tx = Transaction {
+            version: 1,
+            lock_time: 0,
+            input: Vec::new(),
+            output: Vec::new(),
+            special_transaction_payload: None,
+        };
+        // A provided proof skips the in-memory/persister status lookup, so the
+        // only persister interaction is the phase-3 changeset store.
+        let proof = dpp::prelude::AssetLockProof::Chain(
+            dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof {
+                core_chain_locked_height: 1,
+                out_point,
+            },
+        );
+
+        // Blocking API — called outside the tokio runtime, matching the
+        // synchronous evo-tool call sites it exists for.
+        manager.recover_asset_lock_blocking(
+            tx,
+            1_000_000,
+            0,
+            AssetLockFundingType::IdentityRegistration,
+            0,
+            out_point,
+            Some(proof),
+        );
+
+        assert!(
+            persistence.store_attempts.load(Ordering::SeqCst) > 0,
+            "precondition: recovery must have attempted to persist the tracked lock"
+        );
+
+        let tracked_in_memory = manager
+            .list_tracked_locks_blocking()
+            .iter()
+            .any(|l| l.out_point == out_point);
+
+        // Correct behavior: a persist failure must fail closed — surface the
+        // error to the caller and/or roll back the in-memory insert (the same
+        // contract register_wallet enforces for its registration changeset).
+        // A memory-only tracked lock silently disappears on restart.
+        assert!(
+            !tracked_in_memory,
+            "recover_asset_lock_blocking swallowed a persister store failure: \
+             the asset lock is tracked in memory but was never persisted, and \
+             the caller received `()` (implicit success). Expected the store \
+             error to surface and/or the in-memory insert to roll back."
+        );
+    }
+}

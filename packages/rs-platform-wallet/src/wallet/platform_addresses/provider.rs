@@ -2384,4 +2384,47 @@ mod tests {
         assert_eq!(seed[0].1, addr);
         assert_eq!(seed[0].2, funds(294_627_247_940, 5));
     }
+
+    // Found-032 (RED-by-design): update_sync_state copies the sync result
+    // verbatim; a successful pass with an EMPTY incremental delta carries
+    // last_known_recent_block == 0 (rs-sdk only sets it from actually
+    // returned recent-tree entries), so the previously stored watermark
+    // regresses to 0 and sync_watermark() reads None after every quiet pass.
+    #[tokio::test]
+    async fn found_032_empty_delta_must_not_regress_recent_block_watermark() {
+        use dash_sdk::platform::address_sync::AddressSyncResult;
+
+        let addr = p2pkh(1);
+        let mut provider = provider_with_one_funded_address(addr, funds(100, 1));
+
+        // A previous pass observed a recent-tree boundary at block 42 and
+        // persisted the full watermark triple (the persistence layer keeps
+        // it via its `> 0` gate and `.max()` merge — both assume the
+        // in-memory value is monotonic too).
+        provider.set_stored_sync_state(100, 1_700_000_000, 42);
+        assert_eq!(provider.last_known_recent_block(), 42);
+
+        // A later pass succeeds but returns zero new entries — the shape
+        // rs-sdk's incremental_catch_up produces on a quiet chain: the tip
+        // advances (new_sync_height/new_sync_timestamp non-zero) while
+        // last_known_recent_block stays 0 because no recent entry was seen.
+        let mut result: AddressSyncResult<PlatformAddressTag, PlatformP2PKHAddress> =
+            AddressSyncResult::new();
+        result.new_sync_height = 110;
+        result.new_sync_timestamp = 1_700_000_015;
+        result.last_known_recent_block = 0;
+
+        provider.update_sync_state(&result);
+
+        let watermark = provider.last_known_recent_block();
+        assert!(
+            watermark >= 42,
+            "an empty incremental delta must not regress the recent-block \
+             watermark: stored 42 before the pass, got {watermark} after. \
+             The in-memory watermark now disagrees with the persisted one \
+             (kept at 42 by the changeset `> 0` gate) and \
+             PlatformAddressWallet::sync_watermark() reports None on every \
+             quiet pass."
+        );
+    }
 }

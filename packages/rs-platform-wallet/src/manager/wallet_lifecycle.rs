@@ -694,3 +694,154 @@ mod register_wallet_duplicate_tests {
         );
     }
 }
+
+#[cfg(test)]
+mod pr3549_repro_tests {
+    use std::collections::BTreeSet;
+    use std::sync::Arc;
+
+    use key_wallet::account::account_collection::PlatformPaymentAccountKey;
+    use key_wallet::account::AccountType;
+    use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+    use key_wallet::Network;
+
+    use crate::changeset::{
+        ClientStartState, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
+    };
+    use crate::events::{EventHandler, PlatformEventHandler};
+    use crate::wallet::platform_wallet::WalletId;
+    use crate::wallet::PlatformWallet;
+    use crate::PlatformWalletManager;
+
+    struct NoopPersister;
+
+    impl PlatformWalletPersistence for NoopPersister {
+        fn store(
+            &self,
+            _wallet_id: WalletId,
+            _changeset: PlatformWalletChangeSet,
+        ) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+
+        fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+
+        fn load(&self) -> Result<ClientStartState, PersistenceError> {
+            Ok(ClientStartState::default())
+        }
+    }
+
+    struct NoopEventHandler;
+    impl EventHandler for NoopEventHandler {}
+    impl PlatformEventHandler for NoopEventHandler {}
+
+    /// Manager over a mock SDK + no-op persister; `Some(0)` birth height
+    /// skips the SPV-tip lookup so registration never touches the network
+    /// (the best-effort identity sync inside is logged-and-ignored).
+    async fn registered_wallet() -> Arc<PlatformWallet> {
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let persister = Arc::new(NoopPersister);
+        let event_handler: Arc<dyn PlatformEventHandler> = Arc::new(NoopEventHandler);
+        let manager = Arc::new(PlatformWalletManager::new(sdk, persister, event_handler));
+        manager
+            .create_wallet_from_seed_bytes(
+                Network::Testnet,
+                [7u8; 64],
+                WalletAccountCreationOptions::Default,
+                Some(0),
+            )
+            .await
+            .expect("wallet registration on mock sdk must succeed")
+    }
+
+    // Found-031 (RED-by-design): register_wallet downgrades the wallet to
+    // ExternalSignable (root key stripped) before per-identity IdentityTopUp
+    // accounts can be provisioned, so add_account(IdentityTopUp, None) — the
+    // only way to provision one lazily — always fails afterwards.
+    #[tokio::test]
+    async fn found_031_identity_topup_account_provisionable_after_registration() {
+        let wallet = registered_wallet().await;
+        let wallet_id = wallet.wallet_id();
+
+        let mut wm = wallet.wallet_manager().write().await;
+        let (kw, _info) = wm
+            .get_wallet_mut_and_info_mut(&wallet_id)
+            .expect("registered wallet present in WalletManager");
+
+        // IdentityTopUp accounts are keyed by identity registration index and
+        // are inherently lazy (one per identity), so they cannot all be
+        // pre-created at wallet creation. Asset-lock-funded identity top-up
+        // (`top_up_identity_with_funding` → `create_funded_asset_lock_proof`)
+        // requires the account for the target index to exist.
+        let already_provisioned = kw.accounts.identity_topup.contains_key(&0);
+        let add_result = if already_provisioned {
+            Ok(())
+        } else {
+            kw.add_account(
+                AccountType::IdentityTopUp {
+                    registration_index: 0,
+                },
+                None,
+            )
+        };
+
+        assert!(
+            add_result.is_ok(),
+            "a wallet registered through PlatformWalletManager must be able to \
+             provision an IdentityTopUp account (asset-lock top-up funding path \
+             depends on it), but provisioning failed: {:?}. register_wallet \
+             calls downgrade_to_external_signable() before any per-identity \
+             account can be derived, stripping the root private key that \
+             add_account(.., None) needs for hardened derivation.",
+            add_result.err()
+        );
+    }
+
+    // Found-026 (RED-by-design): next_unused_receive_address has no
+    // reservation state — every concurrent caller is handed the same "next
+    // unused" index until on-chain funding marks it used, so concurrent
+    // funding flows collide on one address. The reservation fix (PR #3658,
+    // AddressReservations) was merged to the retired v3.1-dev line only and
+    // is absent from mainline.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn found_026_concurrent_next_unused_receive_addresses_are_distinct() {
+        const CALLERS: usize = 8;
+
+        let wallet = registered_wallet().await;
+        let key = PlatformPaymentAccountKey {
+            account: 0,
+            key_class: 0,
+        };
+
+        let mut handles = Vec::with_capacity(CALLERS);
+        for _ in 0..CALLERS {
+            let w = Arc::clone(&wallet);
+            handles.push(tokio::spawn(async move {
+                w.platform()
+                    .next_unused_receive_address(key)
+                    .await
+                    .expect("next_unused_receive_address")
+            }));
+        }
+
+        let mut addresses = Vec::with_capacity(CALLERS);
+        for handle in handles {
+            addresses.push(handle.await.expect("derivation task panicked"));
+        }
+
+        let distinct: BTreeSet<_> = addresses.iter().copied().collect();
+        assert_eq!(
+            distinct.len(),
+            addresses.len(),
+            "concurrent next_unused_receive_address callers must each receive \
+             a distinct address (each intends to fund it), but {} callers got \
+             only {} distinct address(es): the address pool hands out the same \
+             unused index to everyone because nothing reserves it until \
+             on-chain funding marks it used.",
+            addresses.len(),
+            distinct.len()
+        );
+    }
+}

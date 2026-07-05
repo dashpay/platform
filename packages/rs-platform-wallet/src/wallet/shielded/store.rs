@@ -1388,4 +1388,37 @@ mod tests {
             "a reservation with no recorded anchor must not surface as stale"
         );
     }
+
+    // Found-027 (RED-by-design): InMemoryShieldedStore::witness_at_depth
+    // unconditionally returns Err, so every spend against an in-memory-backed
+    // wallet fails even for a marked, witnessable note (file-backed works).
+    #[test]
+    fn found_027_inmemory_witness_returns_path_for_marked_position() {
+        let mut store = InMemoryShieldedStore::new();
+
+        // A commitment appended with `marked = true` is exactly the shape the
+        // sync path produces for every note position; depth 0 witnesses the
+        // current tree state, so no checkpoint history is required.
+        store
+            .append_commitment(&[0xAA; 32], true)
+            .expect("append marked commitment");
+        store.checkpoint_tree(0).expect("checkpoint tree");
+
+        // The ShieldedStore contract: a marked position at depth 0 yields
+        // Ok(Some(path)); Ok(None) is reserved for unmarked/pruned positions.
+        match store.witness(0) {
+            Ok(Some(_path)) => {}
+            Ok(None) => panic!(
+                "witness(0) returned Ok(None) for a marked position — the \
+                 in-memory store must produce an authentication path so \
+                 spends work against it"
+            ),
+            Err(e) => panic!(
+                "witness(0) must return Ok(Some(path)) for a marked position \
+                 so in-memory-backed wallets can spend; got Err({e}). The \
+                 in-memory store silently lacks the witness capability the \
+                 file-backed store provides."
+            ),
+        }
+    }
 }
