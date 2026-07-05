@@ -37,6 +37,7 @@ import org.dashfoundation.example.di.LocalAppState
 import org.dashfoundation.example.ui.components.ErrorAlertDialog
 import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.LabeledContent
+import org.dashfoundation.example.ui.theme.appStatusColors
 import org.dashfoundation.example.util.formatCredits
 import org.dashfoundation.example.util.formatRelative
 import java.io.File
@@ -71,6 +72,7 @@ fun SyncStatusScreen() {
     val manager by container.walletManagerStore.activeManager.collectAsStateWithLifecycle()
 
     var error by remember { mutableStateOf<String?>(null) }
+    val successColor = appStatusColors.success
 
     Column(
         modifier = Modifier
@@ -118,7 +120,11 @@ fun SyncStatusScreen() {
                         formatRelative(Date(tipUnixSeconds * 1000)),
                     )
                 }
-                LabeledContent("State", if (isRunning) "Running" else "Stopped")
+                LabeledContent(
+                    "State",
+                    if (isRunning) "Running" else "Stopped",
+                    valueColor = if (isRunning) successColor else null,
+                )
 
                 Row(
                     modifier = Modifier
@@ -184,7 +190,7 @@ fun SyncStatusScreen() {
                 is PlatformSyncState.Idle -> LabeledContent("State", "Not synced yet")
                 is PlatformSyncState.Syncing -> LabeledContent("State", "Syncing…")
                 is PlatformSyncState.Synced -> {
-                    LabeledContent("State", "Synced")
+                    LabeledContent("State", "Synced", valueColor = successColor)
                     if (s.syncHeight > 0) {
                         LabeledContent("Sync Height", s.syncHeight.toString())
                     }
@@ -196,7 +202,11 @@ fun SyncStatusScreen() {
                     }
                 }
 
-                is PlatformSyncState.Error -> LabeledContent("State", "Error: ${s.message}")
+                is PlatformSyncState.Error -> LabeledContent(
+                    "State",
+                    "Error: ${s.message}",
+                    valueColor = MaterialTheme.colorScheme.error,
+                )
             }
 
             LabeledContent("Platform Balance", formatCredits(totalBalance))

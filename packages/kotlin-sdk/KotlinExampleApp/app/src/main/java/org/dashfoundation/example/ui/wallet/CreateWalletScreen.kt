@@ -34,8 +34,10 @@ import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.di.LocalAppState
 import org.dashfoundation.example.navigation.SeedBackup
 import org.dashfoundation.example.navigation.WalletsHome
+import androidx.compose.material3.MaterialTheme
 import org.dashfoundation.example.ui.components.ErrorAlertDialog
 import org.dashfoundation.example.ui.components.FormSection
+import org.dashfoundation.example.ui.components.LabeledContent
 import org.dashfoundation.example.ui.components.SubmitButton
 
 /**
@@ -80,6 +82,13 @@ fun CreateWalletScreen(navController: NavHostController) {
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
+            Text(
+                "Name your wallet. A new 12-word recovery phrase will be " +
+                    "generated on the next screen for you to back up.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+
             FormSection(title = "New Wallet") {
                 OutlinedTextField(
                     value = name,
@@ -91,7 +100,7 @@ fun CreateWalletScreen(navController: NavHostController) {
                         .padding(vertical = 8.dp)
                         .testTag("createWallet.name"),
                 )
-                Text("Network: ${network.displayName}")
+                LabeledContent("Network", network.displayName)
             }
 
             SubmitButton(

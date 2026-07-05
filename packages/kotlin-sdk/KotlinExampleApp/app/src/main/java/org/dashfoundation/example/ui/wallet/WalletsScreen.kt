@@ -1,18 +1,27 @@
 package org.dashfoundation.example.ui.wallet
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -22,13 +31,15 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
-import kotlinx.coroutines.flow.map
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.di.LocalAppState
+import org.dashfoundation.example.navigation.CreateWallet
 import org.dashfoundation.example.navigation.WalletDetail
 
 /**
@@ -52,7 +63,7 @@ fun WalletsScreen(navController: NavHostController) {
         topBar = { TopAppBar(title = { Text("Wallets") }) },
         floatingActionButton = {
             FloatingActionButton(
-                onClick = { navController.navigate(org.dashfoundation.example.navigation.CreateWallet) },
+                onClick = { navController.navigate(CreateWallet) },
                 modifier = Modifier.testTag("wallets.add"),
             ) {
                 Icon(Icons.Default.Add, contentDescription = "Create wallet")
@@ -65,15 +76,35 @@ fun WalletsScreen(navController: NavHostController) {
                     .fillMaxSize()
                     .padding(padding)
                     .padding(24.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterVertically),
+                verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Text("No Wallets", style = MaterialTheme.typography.titleMedium)
+                Box(
+                    modifier = Modifier
+                        .size(72.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.primaryContainer),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        Icons.Filled.AccountBalanceWallet,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.size(36.dp),
+                    )
+                }
+                Text("No Wallets", style = MaterialTheme.typography.titleLarge)
                 Text(
                     "Create a wallet to get started on ${network.displayName}.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                Button(
+                    onClick = { navController.navigate(CreateWallet) },
+                    modifier = Modifier.testTag("wallets.empty.createWalletButton"),
+                ) {
+                    Text("Create Wallet")
+                }
             }
         } else {
             LazyColumn(
@@ -81,18 +112,60 @@ fun WalletsScreen(navController: NavHostController) {
                     .fillMaxSize()
                     .padding(padding),
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 items(wallets, key = { it.walletId.toHexString() }) { wallet ->
+                    val hex = wallet.walletId.toHexString()
                     Card(
-                        onClick = {
-                            navController.navigate(WalletDetail(wallet.walletId.toHexString()))
-                        },
+                        onClick = { navController.navigate(WalletDetail(hex)) },
+                        modifier = Modifier.testTag("wallets.walletRow.$hex"),
+                        shape = MaterialTheme.shapes.large,
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                        ),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
                     ) {
                         ListItem(
-                            headlineContent = { Text(wallet.name ?: "Wallet") },
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                            leadingContent = {
+                                Box(
+                                    modifier = Modifier
+                                        .size(44.dp)
+                                        .clip(CircleShape)
+                                        .background(MaterialTheme.colorScheme.primaryContainer),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Icon(
+                                        Icons.Filled.AccountBalanceWallet,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                        modifier = Modifier.size(24.dp),
+                                    )
+                                }
+                            },
+                            headlineContent = {
+                                Text(
+                                    wallet.name ?: "Wallet",
+                                    style = MaterialTheme.typography.titleMedium,
+                                )
+                            },
                             supportingContent = {
-                                Text("Synced height: ${wallet.syncedHeight}")
+                                Text(
+                                    if (wallet.syncedHeight > 0) {
+                                        "Synced to block %,d".format(wallet.syncedHeight)
+                                    } else {
+                                        "Not yet synced"
+                                    },
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            },
+                            trailingContent = {
+                                Icon(
+                                    Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
                             },
                         )
                     }
