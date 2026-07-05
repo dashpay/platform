@@ -118,7 +118,7 @@ impl RegisterExternalError {
 // Established contacts accessor
 // ---------------------------------------------------------------------------
 
-impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
+impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     // TODO: We don't want to clone all contacts on get - it's terrible.
     /// Get all established contacts across every identity managed by this wallet.
     ///
@@ -152,7 +152,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
 // Contact xpub and payment address derivation (DIP-14 / DIP-15)
 // ---------------------------------------------------------------------------
 
-impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
+impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// Register a DashPay contact account in the wallet's `ManagedWalletInfo`.
     ///
     /// Creates a `DashpayReceivingFunds` managed account with address pools
@@ -376,7 +376,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
 // External contact account registration (sending)
 // ---------------------------------------------------------------------------
 
-impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
+impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// Register a watch-only `DashpayExternalAccount` for sending payments
     /// to a contact. Uses the contact's decrypted xpub from their
     /// `contactRequest.encrypted_public_key`.

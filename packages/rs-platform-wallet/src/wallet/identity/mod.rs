@@ -29,7 +29,7 @@ pub use crypto::{
     derive_contact_payment_addresses, derive_contact_xpub, pubkey_binds_expected_key_data,
     unmask_account_reference, ContactXpubData, DEFAULT_CONTACT_GAP_LIMIT,
 };
-pub use network::IdentityWallet;
+pub use network::{DashPayView, IdentityWallet};
 pub use state::{
     BlockTime, DashPayState, IdentityLocation, IdentityManager, ManagedIdentity, RegistrationIndex,
 };

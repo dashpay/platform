@@ -91,6 +91,7 @@ pub unsafe extern "C" fn platform_wallet_set_dashpay_contact_info_with_signer(
         block_on_worker(async move {
             let signer: &VTableSigner = &*(signer_addr as *const VTableSigner);
             identity_wallet
+                .dashpay()
                 .set_contact_info_with_external_signer(
                     &identity,
                     &contact,

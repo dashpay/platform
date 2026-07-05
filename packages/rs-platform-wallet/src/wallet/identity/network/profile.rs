@@ -21,7 +21,7 @@ use crate::wallet::identity::{ContactProfileEntry, DashPayProfile};
 // Sync profiles
 // ---------------------------------------------------------------------------
 
-impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
+impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// Fetch DashPay profile documents from Platform for all managed
     /// identities and cache them on [`ManagedIdentity`].
     ///
@@ -103,7 +103,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
 // Profile create / update — external-signer variants
 // ---------------------------------------------------------------------------
 
-impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
+impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// Create a DashPay profile document using an externally-supplied
     /// signer.
     ///
@@ -535,7 +535,7 @@ fn apply_fetched_profile(
     changed
 }
 
-impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
+impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// Fetch and cache **contact** profiles — established contacts + pending
     /// incoming-request senders — so the UI can show their name/avatar.
     ///

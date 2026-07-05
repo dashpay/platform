@@ -343,7 +343,7 @@ impl AutoAcceptProofSource {
     }
 }
 
-impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
+impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// Send a contact request to another identity using an
     /// externally-supplied signer for the document state-transition.
     ///
@@ -503,7 +503,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         // keys BOTH the ECDH shared secret (step 6) and the accountReference
         // mask (step 4b); the signer derives at exactly this path and the raw
         // scalar never returns here.
-        let sender_enc_path = Self::identity_auth_derivation_path(
+        let sender_enc_path = IdentityWallet::<B>::identity_auth_derivation_path(
             self.sdk.network,
             key_wallet::bip32::KeyDerivationType::ECDSA,
             identity_index,
@@ -728,7 +728,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
 
 /// QR-scan send lives in a non-generic `impl` block because it resolves a DPNS
 /// name via [`Self::resolve_name`], which is defined on `impl IdentityWallet`.
-impl IdentityWallet {
+impl DashPayView<'_> {
     /// Send a contact request from a scanned DIP-15 auto-accept QR
     /// (`dash:?du=<username>&dapk=<key_blob>`).
     ///
@@ -985,7 +985,7 @@ fn count_account_build_ops(queue: &[crate::changeset::PendingContactCrypto]) -> 
         .count()
 }
 
-impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
+impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// Fetch and process contact requests from the platform for all local identities.
     ///
     /// For every identity in the local manager this method, per sweep:
@@ -1862,7 +1862,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                     };
 
                     // ECDH path, built in Rust (path provenance stays here).
-                    let path = match Self::identity_auth_derivation_path(
+                    let path = match IdentityWallet::<B>::identity_auth_derivation_path(
                         self.sdk.network,
                         key_wallet::bip32::KeyDerivationType::ECDSA,
                         identity_index,
@@ -2626,7 +2626,7 @@ struct AccountBuildCandidate {
 // Accept an incoming contact request
 // ---------------------------------------------------------------------------
 
-impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
+impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// Accept an incoming contact request using an externally-supplied
     /// signer.
     ///
@@ -2870,7 +2870,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         // against the contact's encryption pubkey, computed in the signer. The
         // resolved shared secret is handed to the register call so its resident
         // derivation path is never taken.
-        let our_dec_path = Self::identity_auth_derivation_path(
+        let our_dec_path = IdentityWallet::<B>::identity_auth_derivation_path(
             self.sdk.network,
             key_wallet::bip32::KeyDerivationType::ECDSA,
             identity_index,
@@ -2965,7 +2965,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
 // Sent contact requests query
 // ---------------------------------------------------------------------------
 
-impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
+impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// Fetch sent contact requests for a specific identity from Platform.
     ///
     /// Queries the DashPay contract for `contactRequest` documents where
@@ -3078,7 +3078,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
 // Ignore / un-ignore a contact sender (per-sender mute, local-only)
 // ---------------------------------------------------------------------------
 
-impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
+impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// Ignore a contact sender (per-sender mute, = block, reversible).
     ///
     /// Drops the sender's pending incoming request from local state AND
@@ -3324,7 +3324,7 @@ mod sweep_tests {
         let (_wallet, info) = info_with_established_contact(our, contact);
 
         let candidates =
-            IdentityWallet::<SpvBroadcaster>::collect_account_build_candidates(&info, &our_id);
+            DashPayView::<SpvBroadcaster>::collect_account_build_candidates(&info, &our_id);
 
         assert_eq!(
             candidates.len(),
@@ -3362,7 +3362,7 @@ mod sweep_tests {
             .payment_channel_broken = true;
 
         let candidates =
-            IdentityWallet::<SpvBroadcaster>::collect_account_build_candidates(&info, &our_id);
+            DashPayView::<SpvBroadcaster>::collect_account_build_candidates(&info, &our_id);
         assert!(
             candidates.is_empty(),
             "a permanently-broken contact must not be retried by the sweep"
@@ -3736,7 +3736,7 @@ mod sweep_tests {
         });
 
         let parsed =
-            IdentityWallet::<SpvBroadcaster>::parse_contact_request_doc(&doc, sender, recipient)
+            DashPayView::<SpvBroadcaster>::parse_contact_request_doc(&doc, sender, recipient)
                 .expect("a complete contactRequest doc must parse");
         assert_eq!(
             parsed.encrypted_account_label,

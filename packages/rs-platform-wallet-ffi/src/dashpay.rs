@@ -176,7 +176,7 @@ pub unsafe extern "C" fn platform_wallet_sync_contact_requests(
 
     let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
         let identity = wallet.identity().clone();
-        block_on_worker(async move { identity.sync_contact_requests().await })
+        block_on_worker(async move { identity.dashpay().sync_contact_requests().await })
     });
     let result = unwrap_option_or_return!(option);
     let list = unwrap_result_or_return!(result);
@@ -275,6 +275,7 @@ pub unsafe extern "C" fn platform_wallet_send_contact_request_with_signer(
         block_on_worker(async move {
             let signer: &VTableSigner = &*(signer_addr as *const VTableSigner);
             identity
+                .dashpay()
                 .send_contact_request_with_external_signer(
                     &sender,
                     &recipient,
@@ -339,6 +340,7 @@ pub unsafe extern "C" fn platform_wallet_send_contact_request_from_qr(
         block_on_worker(async move {
             let signer: &VTableSigner = &*(signer_addr as *const VTableSigner);
             identity
+                .dashpay()
                 .send_contact_request_from_qr(&sender, &uri, signer, &provider)
                 .await
         })
@@ -403,6 +405,7 @@ pub unsafe extern "C" fn platform_wallet_accept_contact_request_with_signer(
         block_on_worker(async move {
             let signer: &VTableSigner = &*(signer_addr as *const VTableSigner);
             identity
+                .dashpay()
                 .accept_contact_request_with_external_signer(&request, signer, &provider)
                 .await
         })
@@ -437,7 +440,12 @@ pub unsafe extern "C" fn platform_wallet_ignore_contact_sender(
 
     let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
         let identity = wallet.identity().clone();
-        block_on_worker(async move { identity.ignore_contact_sender(&our_id, &contact_id).await })
+        block_on_worker(async move {
+            identity
+                .dashpay()
+                .ignore_contact_sender(&our_id, &contact_id)
+                .await
+        })
     });
     let result = unwrap_option_or_return!(option);
     unwrap_result_or_return!(result);
@@ -462,7 +470,12 @@ pub unsafe extern "C" fn platform_wallet_unignore_contact_sender(
 
     let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
         let identity = wallet.identity().clone();
-        block_on_worker(async move { identity.unignore_contact_sender(&our_id, &contact_id).await })
+        block_on_worker(async move {
+            identity
+                .dashpay()
+                .unignore_contact_sender(&our_id, &contact_id)
+                .await
+        })
     });
     let result = unwrap_option_or_return!(option);
     unwrap_result_or_return!(result);
@@ -485,7 +498,7 @@ pub unsafe extern "C" fn platform_wallet_fetch_sent_contact_requests(
 
     let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
         let identity = wallet.identity().clone();
-        block_on_worker(async move { identity.sent_contact_requests(&id).await })
+        block_on_worker(async move { identity.dashpay().sent_contact_requests(&id).await })
     });
     let result = unwrap_option_or_return!(option);
     let list = unwrap_result_or_return!(result);
@@ -563,6 +576,7 @@ pub unsafe extern "C" fn platform_wallet_send_dashpay_payment(
         };
         block_on_worker(async move {
             identity
+                .dashpay()
                 .send_payment(&from_id, &to_id, amount_duffs, memo_str, &signer, &provider)
                 .await
         })
@@ -761,12 +775,18 @@ pub unsafe extern "C" fn platform_wallet_drain_pending_contact_crypto(
             )
         };
         block_on_worker(async move {
-            let drained = identity.drain_pending_contact_crypto(&provider).await;
+            let drained = identity
+                .dashpay()
+                .drain_pending_contact_crypto(&provider)
+                .await;
             // The auto-accept pass needs the identity signer for the reciprocal;
             // skip it when no identity signer was supplied.
             let accepted = if signer_addr != 0 {
                 let signer: &VTableSigner = &*(signer_addr as *const VTableSigner);
-                identity.drain_auto_accepts(signer, &provider).await
+                identity
+                    .dashpay()
+                    .drain_auto_accepts(signer, &provider)
+                    .await
             } else {
                 0
             };
@@ -803,7 +823,7 @@ pub unsafe extern "C" fn platform_wallet_pending_contact_crypto_count(
 
     let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
         let identity = wallet.identity().clone();
-        block_on_worker(async move { identity.pending_contact_crypto_count().await })
+        block_on_worker(async move { identity.dashpay().pending_contact_crypto_count().await })
     });
     let count = unwrap_option_or_return!(option);
     unsafe {
@@ -868,6 +888,7 @@ pub unsafe extern "C" fn platform_wallet_build_auto_accept_qr(
         };
         block_on_worker(async move {
             identity
+                .dashpay()
                 .build_auto_accept_qr(&owner, &username, &provider)
                 .await
         })

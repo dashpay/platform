@@ -18,7 +18,7 @@ use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 // Incoming payment recording + reconcile
 // ---------------------------------------------------------------------------
 
-impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
+impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// Derive missing `Received` [`PaymentEntry`]s from the wallet's
     /// `DashpayReceivingFunds` accounts' UTXO sets.
     ///
@@ -325,9 +325,9 @@ pub(crate) async fn record_incoming_dashpay_payments(
 
     let mut totals: BTreeMap<(Identifier, Identifier), u64> = BTreeMap::new();
     for (address, value) in candidates {
-        if let Some(m) = IdentityWallet::<crate::broadcaster::SpvBroadcaster>::match_in_collection(
-            info, &address,
-        ) {
+        if let Some(m) =
+            DashPayView::<crate::broadcaster::SpvBroadcaster>::match_in_collection(info, &address)
+        {
             *totals
                 .entry((m.user_identity_id, m.friend_identity_id))
                 .or_default() += value;
@@ -503,7 +503,7 @@ async fn confirm_sent_payment_by_txid(
 // Send payment to contact
 // ---------------------------------------------------------------------------
 
-impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
+impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// Send a Core payment to a DashPay contact.
     ///
     /// Derives the next payment address from the contact's `DashpayExternalAccount`
@@ -1141,6 +1141,7 @@ mod tests {
             let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
             wallet
                 .identity()
+                .dashpay()
                 .register_contact_account(
                     &owner,
                     &contact,
@@ -1179,6 +1180,7 @@ mod tests {
             let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
             wallet
                 .identity()
+                .dashpay()
                 .register_contact_account(
                     &owner,
                     &contact,
@@ -1209,7 +1211,13 @@ mod tests {
         {
             let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
             let iw = wallet.identity();
-            iw.register_contact_account(&owner, &contact, 0, test_receiving_xpub(&owner, &contact))
+            iw.dashpay()
+                .register_contact_account(
+                    &owner,
+                    &contact,
+                    0,
+                    test_receiving_xpub(&owner, &contact),
+                )
                 .await
                 .expect("register_contact_account");
             // The owner identity must be managed for the entry to land.
@@ -1231,6 +1239,7 @@ mod tests {
         let iw = wallet.identity();
 
         let recorded = iw
+            .dashpay()
             .reconcile_incoming_payments()
             .await
             .expect("reconcile pass");
@@ -1258,6 +1267,7 @@ mod tests {
 
         // Idempotency: a second pass records nothing new.
         let recorded_again = iw
+            .dashpay()
             .reconcile_incoming_payments()
             .await
             .expect("second reconcile pass");
@@ -1276,7 +1286,13 @@ mod tests {
         {
             let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
             let iw = wallet.identity();
-            iw.register_contact_account(&owner, &contact, 0, test_receiving_xpub(&owner, &contact))
+            iw.dashpay()
+                .register_contact_account(
+                    &owner,
+                    &contact,
+                    0,
+                    test_receiving_xpub(&owner, &contact),
+                )
                 .await
                 .expect("register_contact_account");
             let mut wm = iw.wallet_manager.write().await;
@@ -1317,6 +1333,7 @@ mod tests {
         }
 
         let recorded = iw
+            .dashpay()
             .reconcile_incoming_payments()
             .await
             .expect("reconcile pass");
@@ -1497,7 +1514,7 @@ mod tests {
             .armed
             .store(true, std::sync::atomic::Ordering::SeqCst);
         let iw = wallet.identity();
-        let result = iw.ignore_contact_sender(&owner, &contact).await;
+        let result = iw.dashpay().ignore_contact_sender(&owner, &contact).await;
         assert!(
             matches!(result, Err(PlatformWalletError::Persistence(_))),
             "ignore must propagate a persist failure (got {result:?}), \
@@ -1524,7 +1541,8 @@ mod tests {
         let iw = wallet.identity();
         let p = WalletPersister::new(wallet_id, Arc::clone(&persister) as _);
 
-        iw.register_contact_account(&owner, &contact, 0, test_receiving_xpub(&owner, &contact))
+        iw.dashpay()
+            .register_contact_account(&owner, &contact, 0, test_receiving_xpub(&owner, &contact))
             .await
             .expect("register receival account");
 
@@ -1546,7 +1564,10 @@ mod tests {
         }
 
         assert_eq!(
-            iw.reconcile_dashpay_rescan().await.expect("rescan"),
+            iw.dashpay()
+                .reconcile_dashpay_rescan()
+                .await
+                .expect("rescan"),
             Some(100),
             "first pass lowers to min(outgoing, incoming) funding height"
         );
@@ -1563,7 +1584,10 @@ mod tests {
         }
 
         assert_eq!(
-            iw.reconcile_dashpay_rescan().await.expect("rescan 2"),
+            iw.dashpay()
+                .reconcile_dashpay_rescan()
+                .await
+                .expect("rescan 2"),
             None,
             "already-rescanned contact must not re-trigger (no backfill thrash)"
         );
@@ -1596,7 +1620,8 @@ mod tests {
         let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
         let iw = wallet.identity();
         let p = WalletPersister::new(wallet_id, Arc::clone(persister) as _);
-        iw.register_contact_account(&owner, &contact, 0, test_receiving_xpub(&owner, &contact))
+        iw.dashpay()
+            .register_contact_account(&owner, &contact, 0, test_receiving_xpub(&owner, &contact))
             .await
             .expect("register receival account");
         let mut wm = iw.wallet_manager.write().await;
@@ -1662,6 +1687,7 @@ mod tests {
         assert_eq!(
             iw_wallet
                 .identity()
+                .dashpay()
                 .reconcile_dashpay_rescan()
                 .await
                 .expect("rescan"),
@@ -1680,6 +1706,7 @@ mod tests {
         assert_eq!(
             iw_wallet
                 .identity()
+                .dashpay()
                 .reconcile_dashpay_rescan()
                 .await
                 .expect("rescan 2"),
@@ -1714,6 +1741,7 @@ mod tests {
         assert_eq!(
             iw_wallet
                 .identity()
+                .dashpay()
                 .reconcile_dashpay_rescan()
                 .await
                 .expect("rescan"),
@@ -1726,6 +1754,7 @@ mod tests {
         assert_eq!(
             iw_wallet
                 .identity()
+                .dashpay()
                 .reconcile_dashpay_rescan()
                 .await
                 .expect("rescan 2"),
@@ -1738,6 +1767,7 @@ mod tests {
         assert_eq!(
             iw_wallet
                 .identity()
+                .dashpay()
                 .reconcile_dashpay_rescan()
                 .await
                 .expect("rescan 3"),
@@ -1748,6 +1778,7 @@ mod tests {
         assert_eq!(
             iw_wallet
                 .identity()
+                .dashpay()
                 .reconcile_dashpay_rescan()
                 .await
                 .expect("rescan 4"),
@@ -1772,6 +1803,7 @@ mod tests {
         assert_eq!(
             iw_wallet
                 .identity()
+                .dashpay()
                 .reconcile_dashpay_rescan()
                 .await
                 .expect("rescan"),
@@ -2374,7 +2406,11 @@ mod tests {
             );
         }
 
-        let n = iw.reconcile_sent_payments().await.expect("reconcile");
+        let n = iw
+            .dashpay()
+            .reconcile_sent_payments()
+            .await
+            .expect("reconcile");
         assert_eq!(n, 1, "only the mined payment is confirmed this pass");
 
         {
@@ -2409,7 +2445,10 @@ mod tests {
         // Idempotent: a second pass confirms nothing new (the mined entry
         // is already Confirmed, the mempool one is still not final).
         assert_eq!(
-            iw.reconcile_sent_payments().await.expect("second pass"),
+            iw.dashpay()
+                .reconcile_sent_payments()
+                .await
+                .expect("second pass"),
             0,
             "reconcile must be idempotent"
         );
@@ -2475,6 +2514,7 @@ mod tests {
         // encryption key (the signer derives the secret out-of-crate).
         let contact = bare_identity([0x22; 32]);
         let registration = iw
+            .dashpay()
             .register_external_contact_account(
                 &owner_id,
                 &contact,
@@ -2580,6 +2620,7 @@ mod tests {
             let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
             wallet
                 .identity()
+                .dashpay()
                 .store_contact_account_label(&owner, &contact, &shared)
                 .await;
         };
@@ -2612,6 +2653,7 @@ mod tests {
         let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
         wallet
             .identity()
+            .dashpay()
             .store_contact_account_label(&owner, &contact, &shared)
             .await;
 
@@ -2631,6 +2673,7 @@ mod tests {
         let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
         wallet
             .identity()
+            .dashpay()
             .store_contact_account_label(&owner, &contact, &shared)
             .await;
 
@@ -2652,6 +2695,7 @@ mod tests {
         let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
         wallet
             .identity()
+            .dashpay()
             .store_contact_account_label(&owner, &contact, &shared)
             .await;
 
@@ -2679,6 +2723,7 @@ mod tests {
         let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
         wallet
             .identity()
+            .dashpay()
             .store_contact_account_label(&owner, &contact, &shared)
             .await;
 
@@ -2706,7 +2751,8 @@ mod tests {
         // A valid ExtendedPubKey to supply as the signer would.
         let supplied_xpub = test_receiving_xpub(&owner, &contact);
 
-        iw.register_contact_account(&owner, &contact, 0, supplied_xpub)
+        iw.dashpay()
+            .register_contact_account(&owner, &contact, 0, supplied_xpub)
             .await
             .expect("register receiving account with a precomputed xpub");
 
@@ -2778,7 +2824,7 @@ mod tests {
         }
 
         let provider = SeedCryptoProvider::from_seed(seed, Network::Testnet);
-        let drained = iw.drain_pending_contact_crypto(&provider).await;
+        let drained = iw.dashpay().drain_pending_contact_crypto(&provider).await;
         assert_eq!(drained, 1, "the RegisterReceiving entry must be drained");
 
         let wm = iw.wallet_manager.read().await;
@@ -2866,7 +2912,7 @@ mod tests {
         }
 
         assert_eq!(
-            iw.pending_contact_crypto_count().await,
+            iw.dashpay().pending_contact_crypto_count().await,
             2,
             "count must aggregate across both identity buckets, including the \
              out-of-wallet AutoAccept"
@@ -2915,7 +2961,7 @@ mod tests {
         }
 
         let provider = SeedCryptoProvider::from_seed(seed, Network::Testnet);
-        let drained = iw.drain_pending_contact_crypto(&provider).await;
+        let drained = iw.dashpay().drain_pending_contact_crypto(&provider).await;
         assert_eq!(
             drained, 1,
             "the drain must snapshot the out-of-wallet bucket and process its entry"
@@ -3049,7 +3095,10 @@ mod tests {
             }
         }
 
-        let drained = iw.drain_pending_contact_crypto(&UnusedProvider).await;
+        let drained = iw
+            .dashpay()
+            .drain_pending_contact_crypto(&UnusedProvider)
+            .await;
         assert_eq!(
             drained, 0,
             "an un-completable RegisterExternal entry must not be counted as drained"
@@ -3084,6 +3133,7 @@ mod tests {
         let provider = SeedCryptoProvider::from_seed(seed, Network::Testnet);
         let not_ours = Identifier::from([0x99; 32]);
         let err = iw
+            .dashpay()
             .drain_contact_info_decrypt(&not_ours, &provider)
             .await
             .expect_err("a non-owned identity must be rejected");
@@ -3115,7 +3165,7 @@ mod tests {
                 )
                 .expect("add owner");
         }
-        let applied = iw.sync_contact_infos().await.expect("sync");
+        let applied = iw.dashpay().sync_contact_infos().await.expect("sync");
         assert_eq!(
             applied, 0,
             "seedless sweep applies nothing inline — it defers"
@@ -3221,6 +3271,7 @@ mod tests {
         // The send fails (no external account for `pay_contact`), but the drain
         // it runs first must have completed the queued RegisterReceiving op.
         let result = iw
+            .dashpay()
             .send_payment(&owner, &pay_contact, 10_000, None, &signer, &provider)
             .await;
         assert!(
@@ -3312,14 +3363,15 @@ mod tests {
         let encrypted =
             platform_encryption::encrypt_extended_public_key(&shared_key, &iv, &compact);
         let contact = bare_identity([0x22; 32]);
-        iw.register_external_contact_account(
-            &owner_id,
-            &contact,
-            &encrypted,
-            zeroize::Zeroizing::new(shared_key),
-        )
-        .await
-        .expect("register external account");
+        iw.dashpay()
+            .register_external_contact_account(
+                &owner_id,
+                &contact,
+                &encrypted,
+                zeroize::Zeroizing::new(shared_key),
+            )
+            .await
+            .expect("register external account");
 
         let seed = Mnemonic::from_phrase(TEST_MNEMONIC, Language::English)
             .expect("valid mnemonic")
@@ -3328,6 +3380,7 @@ mod tests {
         let signer = SeedSigner::new(seed, Network::Testnet);
 
         let err = iw
+            .dashpay()
             .send_payment(&owner_id, &contact_id, 10_000, None, &signer, &provider)
             .await
             .expect_err("seedless test wallet has no UTXOs, so the build must fail");

@@ -307,7 +307,7 @@ pub unsafe extern "C" fn platform_wallet_sync_dashpay_profiles(
 ) -> PlatformWalletFFIResult {
     let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
         let identity = wallet.identity().clone();
-        block_on_worker(async move { identity.sync_profiles().await })
+        block_on_worker(async move { identity.dashpay().sync_profiles().await })
     });
     let result = unwrap_option_or_return!(option);
     let count = unwrap_result_or_return!(result);
@@ -362,10 +362,12 @@ pub unsafe extern "C" fn platform_wallet_create_or_update_dashpay_profile_with_s
             let signer: &VTableSigner = &*(signer_addr as *const VTableSigner);
             if do_create {
                 identity
+                    .dashpay()
                     .create_profile_with_external_signer(&id, input, signer)
                     .await
             } else {
                 identity
+                    .dashpay()
                     .update_profile_with_external_signer(&id, input, signer)
                     .await
             }

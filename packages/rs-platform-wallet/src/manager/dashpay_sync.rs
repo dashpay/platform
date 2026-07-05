@@ -352,7 +352,7 @@ impl DashPaySyncManager {
         let wallet_id = wallet.wallet_id();
 
         // Contact requests first — may establish new contacts.
-        let contact_result = identity.sync_contact_requests().await;
+        let contact_result = identity.dashpay().sync_contact_requests().await;
         if let Err(e) = &contact_result {
             tracing::warn!(
                 wallet_id = %hex::encode(wallet_id),
@@ -362,7 +362,7 @@ impl DashPaySyncManager {
         }
 
         // Own-identity profiles — attempted even if the contact step failed.
-        let profile_result = identity.sync_profiles().await;
+        let profile_result = identity.dashpay().sync_profiles().await;
         if let Err(e) = &profile_result {
             tracing::warn!(
                 wallet_id = %hex::encode(wallet_id),
@@ -373,7 +373,7 @@ impl DashPaySyncManager {
 
         // Contact profiles (established contacts + pending senders) for the UI.
         // Distinct target set/cache from own profiles; display-only.
-        if let Err(e) = identity.sync_contact_profiles().await {
+        if let Err(e) = identity.dashpay().sync_contact_profiles().await {
             tracing::warn!(
                 wallet_id = %hex::encode(wallet_id),
                 error = %e,
@@ -382,7 +382,7 @@ impl DashPaySyncManager {
         }
 
         // contactInfo (alias/note/hidden) — cross-device metadata.
-        if let Err(e) = identity.sync_contact_infos().await {
+        if let Err(e) = identity.dashpay().sync_contact_infos().await {
             tracing::warn!(
                 wallet_id = %hex::encode(wallet_id),
                 error = %e,
@@ -392,7 +392,7 @@ impl DashPaySyncManager {
 
         // Local-only: derive missing `Received` entries from receival-account
         // UTXOs. After the contact step so newly established accounts exist.
-        if let Err(e) = identity.reconcile_incoming_payments().await {
+        if let Err(e) = identity.dashpay().reconcile_incoming_payments().await {
             tracing::warn!(
                 wallet_id = %hex::encode(wallet_id),
                 error = %e,
@@ -406,7 +406,7 @@ impl DashPaySyncManager {
         // offline-accept→pay). After the reconcile above so newly established
         // receival accounts are visible; a per-contact guard prevents
         // re-triggering and thrashing the in-flight backfill.
-        if let Err(e) = identity.reconcile_dashpay_rescan().await {
+        if let Err(e) = identity.dashpay().reconcile_dashpay_rescan().await {
             tracing::warn!(
                 wallet_id = %hex::encode(wallet_id),
                 error = %e,
@@ -416,7 +416,7 @@ impl DashPaySyncManager {
 
         // Local-only: confirm `Pending` `Sent` payments the persisted core
         // record reports final (mined or InstantSend-locked).
-        if let Err(e) = identity.reconcile_sent_payments().await {
+        if let Err(e) = identity.dashpay().reconcile_sent_payments().await {
             tracing::warn!(
                 wallet_id = %hex::encode(wallet_id),
                 error = %e,

@@ -1,19 +1,23 @@
 //! Network-facing handle — a single façade over the shared
 //! `WalletManager` + the Platform SDK.
 //!
-//! `IdentityWallet<B>` covers both the identity lifecycle (register,
-//! top-up, transfer, withdraw, update, discovery, DPNS, loading) and
-//! the DashPay-contract operations that live on the same identity
-//! (contact requests, contacts, profile, payments, account labels).
+//! `IdentityWallet<B>` covers the identity lifecycle (register,
+//! top-up, transfer, withdraw, update, discovery, DPNS, loading); the
+//! DashPay-contract operations that live on the same identity (contact
+//! requests, contacts, profile, payments, account labels) are
+//! namespaced behind the zero-cost borrowing view
+//! [`DashPayView`] reached via `IdentityWallet::dashpay()`.
 //!
-//! Historically DashPay lived on a separate `DashPayWallet<B>` facade,
-//! but both views operated on the same underlying state (a single
-//! `ManagedIdentity` carries both identity fields and DashPay fields).
-//! The two facades were merged to cut handle-juggling at the FFI
-//! boundary and so DashPay ops can reuse the same signer / asset-lock
-//! plumbing the identity lifecycle already owns. `B` picks the
-//! transaction broadcaster used by DashPay `send_payment`; it defaults
-//! to `SpvBroadcaster` so most call sites don't need to name it.
+//! Historically DashPay lived on a separate owned `DashPayWallet<B>`
+//! facade, but both views operated on the same underlying state (a
+//! single `ManagedIdentity` carries both identity fields and DashPay
+//! fields). The two facades were merged to cut handle-juggling at the
+//! FFI boundary and so DashPay ops can reuse the same signer /
+//! asset-lock plumbing the identity lifecycle already owns; the
+//! borrowing view restores the call-site namespace without
+//! reintroducing a second handle. `B` picks the transaction
+//! broadcaster used by DashPay `send_payment`; it defaults to
+//! `SpvBroadcaster` so most call sites don't need to name it.
 
 // Core handle + identity-lifecycle operations.
 mod contract;
@@ -31,10 +35,11 @@ mod transfer_to_addresses;
 mod update;
 mod withdrawal;
 
-// DashPay-contract operations (same `IdentityWallet` impl blocks).
+// DashPay-contract operations, namespaced behind `IdentityWallet::dashpay()`.
 mod contact_info;
 mod contact_requests;
 mod contacts;
+mod dashpay_view;
 mod payment_handler;
 pub(crate) use payment_handler::DashPayPaymentHandler;
 // Re-exported for the payments unit tests, which drive the hooks
@@ -59,6 +64,7 @@ pub use contact_info::ContactInfoPublishOutcome;
 pub use contact_requests::{
     AutoAcceptProofSource, ContactCryptoProvider, ContactInfoOpened, ContactInfoSealed,
 };
+pub use dashpay_view::DashPayView;
 pub use discovery::IdentityDiscoveryOptions;
 pub use dpns::{ContestContender, ContestVoteState, ContestWinner};
 pub use identity_handle::{

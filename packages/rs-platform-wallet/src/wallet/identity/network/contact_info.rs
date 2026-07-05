@@ -73,7 +73,7 @@ pub enum ContactInfoPublishOutcome {
     SkippedWatchOnly,
 }
 
-impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
+impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// Paginated owner-scoped scan of `contactInfo` documents — fetch + parse the
     /// **public, key-free** fields. Returns the raw docs that carry all public
     /// fields PLUS a `rootEncryptionKeyIndex → max(derivationEncryptionKeyIndex)`
