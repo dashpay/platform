@@ -147,6 +147,10 @@ platform-wallet: &platform_wallet
   - *platform_encryption
   - *sdk
 
+platform-wallet-storage:
+  - packages/rs-platform-wallet-storage/**
+  - *platform_wallet
+
 platform-wallet-ffi: &platform_wallet_ffi
   - packages/rs-platform-wallet-ffi/**
   - *platform_wallet

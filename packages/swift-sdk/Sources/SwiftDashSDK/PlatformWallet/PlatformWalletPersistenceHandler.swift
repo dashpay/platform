@@ -105,8 +105,14 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     ) {
         onQueue {
             for (_, addressHash, balance, nonce, accountIndex, addressIndex) in entries {
+                // Scope by walletId + hash: a hash-only predicate can match
+                // another wallet's row in a multi-wallet store (same seed
+                // imported on coin-type-sharing networks, watch-only
+                // duplicates) — the same fix the view-level upserts carry.
                 let descriptor = FetchDescriptor<PersistentPlatformAddress>(
-                    predicate: #Predicate { $0.addressHash == addressHash }
+                    predicate: #Predicate {
+                        $0.walletId == walletId && $0.addressHash == addressHash
+                    }
                 )
                 guard let existing = try? backgroundContext.fetch(descriptor).first else {
                     continue

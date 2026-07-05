@@ -4,12 +4,13 @@ import Combine
 import DashSDKFFI
 
 /// Lock-guarded monotonic generation counter, safe to read and bump from
-/// any thread. Used to drop shielded sync completion events that belong
-/// to a generation already superseded by a `stop`/`clear`, even when a
+/// any thread. Used to drop sync completion events that belong to a
+/// generation already superseded by a `stop`/`clear`/`reset`, even when a
 /// restart happens in the same `@MainActor` turn (a plain boolean gate
 /// can't, because the restart re-opens the gate before the stale,
-/// previously-enqueued completion task runs).
-final class ShieldedSyncGenerationCounter: @unchecked Sendable {
+/// previously-enqueued completion task runs). Shared by the shielded and
+/// platform-address sync paths.
+final class SyncGenerationCounter: @unchecked Sendable {
     private let lock = NSLock()
     private var value: UInt64 = 0
     func current() -> UInt64 { lock.withLock { value } }
@@ -148,7 +149,16 @@ public class PlatformWalletManager: ObservableObject {
     ///
     /// `nonisolated` + lock-guarded so the FFI callback thread can snapshot
     /// it without hopping onto the main actor first.
-    nonisolated let shieldedSyncGeneration = ShieldedSyncGenerationCounter()
+    nonisolated let shieldedSyncGeneration = SyncGenerationCounter()
+
+    /// Generation guard for platform-address (BLAST/DIP-17) sync
+    /// completion events, mirroring [`shieldedSyncGeneration`]. The FFI
+    /// completion callback snapshots this on its own thread before the
+    /// main-actor hop; `stopPlatformAddressSync` / `resetPlatformAddressSyncState`
+    /// bump it so a trailing completion the main actor delivers *after*
+    /// the stop/reset is dropped instead of repainting the just-cleared
+    /// sync-status UI.
+    nonisolated let platformAddressSyncGeneration = SyncGenerationCounter()
 
     /// All wallets currently held by the Rust-side
     /// `PlatformWalletManager`, keyed by the 32-byte wallet id.
@@ -1173,5 +1183,20 @@ public class PlatformWalletManager: ObservableObject {
                 try? await Task.sleep(for: .seconds(1))
             }
         }
+    }
+
+    /// Drop the platform-address published mirror after a reset/clear so a
+    /// later `configure()` re-subscribe — which Combine replays the current
+    /// `@Published` value to a fresh subscriber — can't repaint stale sync
+    /// state over a just-cleared UI.
+    ///
+    /// Lives here (not in the `…AddressSync` extension) because
+    /// `platformAddressSyncIsSyncing` is `private(set)`; the generation guard
+    /// only blocks *future* stale callbacks and can't un-publish a value
+    /// already held on these `@Published` properties. Called by
+    /// `resetPlatformAddressSyncState` after the Rust drain returns.
+    func resetPlatformAddressPublishedMirror() {
+        lastPlatformAddressSyncEvent = nil
+        platformAddressSyncIsSyncing = false
     }
 }

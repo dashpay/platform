@@ -674,12 +674,17 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             (payment_address, tx)
         };
 
-        // --- 3. Broadcast the transaction. ---
-        let txid = self
-            .broadcaster
-            .broadcast(&tx)
-            .await
-            .map_err(|e| PlatformWalletError::TransactionBroadcast(e.to_string()))?;
+        // --- 3. Broadcast the transaction, releasing the build's UTXO
+        // reservation if the broadcast is definitively rejected pre-send. ---
+        let txid = crate::wallet::reservations::broadcast_releasing_on_rejection(
+            self.broadcaster.as_ref(),
+            &self.wallet_manager,
+            &self.wallet_id,
+            key_wallet::account::account_type::StandardAccountType::BIP44Account,
+            0,
+            &tx,
+        )
+        .await?;
 
         tracing::info!(
             from_identity = %from_identity_id,
