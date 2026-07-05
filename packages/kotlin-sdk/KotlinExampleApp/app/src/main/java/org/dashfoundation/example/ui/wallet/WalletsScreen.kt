@@ -11,17 +11,12 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
-import androidx.compose.material3.ListItem
-import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -32,7 +27,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -41,6 +35,7 @@ import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.di.LocalAppState
 import org.dashfoundation.example.navigation.CreateWallet
 import org.dashfoundation.example.navigation.WalletDetail
+import org.dashfoundation.example.ui.components.EntityRow
 
 /**
  * Wallets tab root — port of `WalletsContentView.swift`: the persisted
@@ -116,59 +111,17 @@ fun WalletsScreen(navController: NavHostController) {
             ) {
                 items(wallets, key = { it.walletId.toHexString() }) { wallet ->
                     val hex = wallet.walletId.toHexString()
-                    Card(
+                    EntityRow(
+                        icon = Icons.Filled.AccountBalanceWallet,
+                        title = wallet.name ?: "Wallet",
+                        subtitle = if (wallet.syncedHeight > 0) {
+                            "Synced to block %,d".format(wallet.syncedHeight)
+                        } else {
+                            "Not yet synced"
+                        },
                         onClick = { navController.navigate(WalletDetail(hex)) },
                         modifier = Modifier.testTag("wallets.walletRow.$hex"),
-                        shape = MaterialTheme.shapes.large,
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-                        ),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-                    ) {
-                        ListItem(
-                            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                            leadingContent = {
-                                Box(
-                                    modifier = Modifier
-                                        .size(44.dp)
-                                        .clip(CircleShape)
-                                        .background(MaterialTheme.colorScheme.primaryContainer),
-                                    contentAlignment = Alignment.Center,
-                                ) {
-                                    Icon(
-                                        Icons.Filled.AccountBalanceWallet,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                                        modifier = Modifier.size(24.dp),
-                                    )
-                                }
-                            },
-                            headlineContent = {
-                                Text(
-                                    wallet.name ?: "Wallet",
-                                    style = MaterialTheme.typography.titleMedium,
-                                )
-                            },
-                            supportingContent = {
-                                Text(
-                                    if (wallet.syncedHeight > 0) {
-                                        "Synced to block %,d".format(wallet.syncedHeight)
-                                    } else {
-                                        "Not yet synced"
-                                    },
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            },
-                            trailingContent = {
-                                Icon(
-                                    Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            },
-                        )
-                    }
+                    )
                 }
             }
         }

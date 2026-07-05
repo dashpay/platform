@@ -1,21 +1,25 @@
 package org.dashfoundation.example.ui.contracts
 
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.automirrored.filled.List
-import androidx.compose.material3.Card
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.MonetizationOn
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -25,6 +29,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -36,9 +41,10 @@ import org.dashfoundation.example.navigation.LocalContracts
 import org.dashfoundation.example.navigation.QueriesList
 import org.dashfoundation.example.navigation.QuickBasicToken
 import org.dashfoundation.example.navigation.RegisterContractSource
-import org.dashfoundation.example.util.toHex
 import org.dashfoundation.example.navigation.TokenSearch
 import org.dashfoundation.example.navigation.TokensHome
+import org.dashfoundation.example.ui.components.EntityRow
+import org.dashfoundation.example.ui.components.SectionHeader
 import org.dashfoundation.example.util.Base58
 import org.dashfoundation.example.util.formatRelative
 import org.dashfoundation.example.util.toHex
@@ -98,16 +104,32 @@ fun ContractsHomeScreen(navController: NavHostController) {
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding)
-                    .padding(24.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 TokensEntrySection(navController, registerOwnerIdHex)
                 Column(
-                    modifier = Modifier.padding(top = 24.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(top = 40.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    Text("No Contracts", style = MaterialTheme.typography.titleMedium)
+                    Box(
+                        modifier = Modifier
+                            .size(72.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.primaryContainer),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            Icons.Filled.Description,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier.size(36.dp),
+                        )
+                    }
+                    Text("No Contracts", style = MaterialTheme.typography.titleLarge)
                     Text(
                         "Fetch a data contract to browse its documents and tokens.",
                         style = MaterialTheme.typography.bodyMedium,
@@ -121,47 +143,36 @@ fun ContractsHomeScreen(navController: NavHostController) {
                     .fillMaxSize()
                     .padding(padding),
                 contentPadding = PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 // Tokens live under the Contracts tab, mirroring how
                 // `ContractsTabView.swift` hosts the token surfaces.
                 item { TokensEntrySection(navController, registerOwnerIdHex) }
-                item {
-                    Text(
-                        "CONTRACTS",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
+                item { SectionHeader("Contracts") }
                 items(
                     contracts.sortedByDescending { it.lastAccessedAt },
                     key = { it.id.toHex() },
                 ) { contract ->
-                    Card(
-                        modifier = Modifier
-                            .clickable {
-                                navController.navigate(ContractDetail(contract.id.toHex()))
+                    EntityRow(
+                        icon = Icons.Filled.Description,
+                        title = contract.name,
+                        onClick = { navController.navigate(ContractDetail(contract.id.toHex())) },
+                        modifier = Modifier.testTag("contracts.row.${Base58.encode(contract.id)}"),
+                        subtitleContent = {
+                            Column {
+                                Text(
+                                    Base58.encode(contract.id),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    maxLines = 1,
+                                )
+                                Text(
+                                    "Last used: ${formatRelative(contract.lastAccessedAt)}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
                             }
-                            .testTag("contracts.row.${Base58.encode(contract.id)}"),
-                    ) {
-                        ListItem(
-                            headlineContent = { Text(contract.name) },
-                            supportingContent = {
-                                Column {
-                                    Text(
-                                        Base58.encode(contract.id),
-                                        style = MaterialTheme.typography.bodySmall,
-                                        maxLines = 1,
-                                    )
-                                    Text(
-                                        "Last used: ${formatRelative(contract.lastAccessedAt)}",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                }
-                            },
-                        )
-                    }
+                        },
+                    )
                 }
             }
         }
@@ -178,55 +189,37 @@ private fun TokensEntrySection(
     navController: NavHostController,
     registerOwnerIdHex: String?,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(
-            "TOKENS",
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        SectionHeader("Tokens")
+        EntityRow(
+            icon = Icons.Filled.MonetizationOn,
+            title = "Tokens",
+            subtitle = "Balances and actions per identity",
+            onClick = { navController.navigate(TokensHome) },
+            modifier = Modifier.testTag("contracts.tokens"),
         )
-        Card(
-            modifier = Modifier
-                .clickable { navController.navigate(TokensHome) }
-                .testTag("contracts.tokens"),
-        ) {
-            ListItem(
-                headlineContent = { Text("Tokens") },
-                supportingContent = { Text("Balances and actions per identity") },
-            )
-        }
-        Card(
-            modifier = Modifier
-                .clickable { navController.navigate(TokenSearch) }
-                .testTag("contracts.tokenSearch"),
-        ) {
-            ListItem(
-                headlineContent = { Text("Token Search") },
-                supportingContent = { Text("Filter local tokens by capability") },
-            )
-        }
-        Card(
-            modifier = Modifier
-                .clickable { navController.navigate(QuickBasicToken) }
-                .testTag("contracts.quickBasicToken"),
-        ) {
-            ListItem(
-                headlineContent = { Text("Quick Basic Token") },
-                supportingContent = { Text("Register a single-token contract") },
-            )
-        }
+        EntityRow(
+            icon = Icons.Filled.Search,
+            title = "Token Search",
+            subtitle = "Filter local tokens by capability",
+            onClick = { navController.navigate(TokenSearch) },
+            modifier = Modifier.testTag("contracts.tokenSearch"),
+        )
+        EntityRow(
+            icon = Icons.Filled.Add,
+            title = "Quick Basic Token",
+            subtitle = "Register a single-token contract",
+            onClick = { navController.navigate(QuickBasicToken) },
+            modifier = Modifier.testTag("contracts.quickBasicToken"),
+        )
         if (registerOwnerIdHex != null) {
-            Card(
-                modifier = Modifier
-                    .clickable {
-                        navController.navigate(RegisterContractSource(registerOwnerIdHex))
-                    }
-                    .testTag("contracts.registerContract"),
-            ) {
-                ListItem(
-                    headlineContent = { Text("Register Contract (JSON)") },
-                    supportingContent = { Text("Broadcast a contract from raw JSON") },
-                )
-            }
+            EntityRow(
+                icon = Icons.Filled.Description,
+                title = "Register Contract (JSON)",
+                subtitle = "Broadcast a contract from raw JSON",
+                onClick = { navController.navigate(RegisterContractSource(registerOwnerIdHex)) },
+                modifier = Modifier.testTag("contracts.registerContract"),
+            )
         }
     }
 }
