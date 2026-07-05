@@ -445,6 +445,17 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
     core_signer_handle: jlong,
 ) -> jbyteArray {
     guard(&mut env, ptr::null_mut(), |env| {
+        // Reject negatives at the boundary — they would otherwise bit-cast
+        // to huge u32s on the FFI call.
+        if account_type < 0 {
+            throw_sdk_exception(env, 1, "accountType must be non-negative");
+            return ptr::null_mut();
+        }
+        if account_index < 0 {
+            throw_sdk_exception(env, 1, "accountIndex must be non-negative");
+            return ptr::null_mut();
+        }
+
         // Resolve the transient core-wallet handle from the platform wallet.
         let mut core_handle: Handle = 0;
         let result = unsafe {
@@ -479,6 +490,12 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
                 .is_err()
             {
                 throw_sdk_exception(env, 1, "failed to read amounts array");
+                return ptr::null_mut();
+            }
+            // Reject non-positive amounts before the sign-losing cast — a
+            // negative jlong would otherwise bit-cast to a huge u64.
+            if amount_buf.iter().any(|&v| v <= 0) {
+                throw_sdk_exception(env, 1, "amounts must be positive duff values");
                 return ptr::null_mut();
             }
             let amounts_u64: Vec<u64> = amount_buf.iter().map(|&v| v as u64).collect();
@@ -528,8 +545,8 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
             let send_result = unsafe {
                 platform_wallet_ffi::core_wallet_send_to_addresses(
                     core_handle,
-                    account_type.max(0) as u32,
-                    account_index.max(0) as u32,
+                    account_type as u32,
+                    account_index as u32,
                     addr_ptrs.as_ptr(),
                     amounts_u64.as_ptr(),
                     count,
@@ -880,6 +897,21 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
     core_signer_handle: jlong,
 ) -> jbyteArray {
     guard(&mut env, ptr::null_mut(), |env| {
+        // Reject sign errors at the boundary — negatives would otherwise
+        // bit-cast to huge unsigned values on the FFI call.
+        if amount_duffs <= 0 {
+            throw_sdk_exception(env, 1, "amountDuffs must be positive");
+            return ptr::null_mut();
+        }
+        if account_index < 0 {
+            throw_sdk_exception(env, 1, "accountIndex must be non-negative");
+            return ptr::null_mut();
+        }
+        if platform_account_index < 0 {
+            throw_sdk_exception(env, 1, "platformAccountIndex must be non-negative");
+            return ptr::null_mut();
+        }
+
         let Some((entries, fee_rows)) = decode_funding_recipients(env, &recipients_blob) else {
             return ptr::null_mut();
         };
@@ -903,9 +935,9 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
         let fund_result = unsafe {
             platform_wallet_ffi::platform_address_wallet_fund_from_asset_lock_signer(
                 addr_handle,
-                amount_duffs.max(0) as u64,
-                account_index.max(0) as u32,
-                platform_account_index.max(0) as u32,
+                amount_duffs as u64,
+                account_index as u32,
+                platform_account_index as u32,
                 entries.as_ptr(),
                 entries.len(),
                 fee_rows.as_ptr(),
@@ -962,6 +994,17 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
     core_signer_handle: jlong,
 ) -> jbyteArray {
     guard(&mut env, ptr::null_mut(), |env| {
+        // Reject sign errors at the boundary — negatives would otherwise
+        // bit-cast to huge u32s on the FFI call.
+        if out_point_vout < 0 {
+            throw_sdk_exception(env, 1, "outPointVout must be non-negative");
+            return ptr::null_mut();
+        }
+        if platform_account_index < 0 {
+            throw_sdk_exception(env, 1, "platformAccountIndex must be non-negative");
+            return ptr::null_mut();
+        }
+
         let txid = match env.convert_byte_array(&out_point_txid) {
             Ok(b) if b.len() == 32 => b,
             Ok(_) => {
@@ -978,7 +1021,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
         txid_arr.copy_from_slice(&txid);
         let out_point = platform_wallet_ffi::OutPointFFI {
             txid: txid_arr,
-            vout: out_point_vout.max(0) as u32,
+            vout: out_point_vout as u32,
         };
 
         let Some((entries, fee_rows)) = decode_funding_recipients(env, &recipients_blob) else {
@@ -1004,7 +1047,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
             platform_wallet_ffi::platform_address_wallet_resume_fund_from_asset_lock_signer(
                 addr_handle,
                 &out_point as *const platform_wallet_ffi::OutPointFFI,
-                platform_account_index.max(0) as u32,
+                platform_account_index as u32,
                 entries.as_ptr(),
                 entries.len(),
                 fee_rows.as_ptr(),
@@ -1077,6 +1120,13 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
     signer_handle: jlong,
 ) -> jbyteArray {
     guard(&mut env, ptr::null_mut(), |env| {
+        // Reject a negative account index at the boundary — it would
+        // otherwise bit-cast to a huge u32 on the FFI call.
+        if account_index < 0 {
+            throw_sdk_exception(env, 1, "accountIndex must be non-negative");
+            return ptr::null_mut();
+        }
+
         let Some(outputs) = decode_credit_outputs(env, &outputs_blob) else {
             return ptr::null_mut();
         };
@@ -1099,7 +1149,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
         let transfer_result = unsafe {
             platform_wallet_ffi::platform_address_wallet_transfer(
                 addr_handle,
-                account_index.max(0) as u32,
+                account_index as u32,
                 platform_wallet_ffi::InputSelectionType::Auto,
                 ptr::null(),
                 0,
@@ -1159,6 +1209,17 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
     signer_handle: jlong,
 ) -> jbyteArray {
     guard(&mut env, ptr::null_mut(), |env| {
+        // Reject sign errors at the boundary — negatives would otherwise
+        // bit-cast to huge u32s on the FFI call.
+        if account_index < 0 {
+            throw_sdk_exception(env, 1, "accountIndex must be non-negative");
+            return ptr::null_mut();
+        }
+        if core_fee_per_byte < 0 {
+            throw_sdk_exception(env, 1, "coreFeePerByte must be non-negative");
+            return ptr::null_mut();
+        }
+
         let Some(core_address_c) = read_cstring_required(env, &core_address, "core_address") else {
             return ptr::null_mut();
         };
@@ -1181,14 +1242,14 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
         let withdraw_result = unsafe {
             platform_wallet_ffi::platform_address_wallet_withdraw_to_address(
                 addr_handle,
-                account_index.max(0) as u32,
+                account_index as u32,
                 platform_wallet_ffi::InputSelectionType::Auto,
                 ptr::null(),
                 0,
                 ptr::null(),
                 0,
                 core_address_c.as_ptr(),
-                core_fee_per_byte.max(0) as u32,
+                core_fee_per_byte as u32,
                 ptr::null(),
                 0,
                 signer_handle as *mut rs_sdk_ffi::SignerHandle,
@@ -1236,6 +1297,17 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
     core_fee_per_byte: jni::sys::jint,
 ) -> jlongArray {
     guard(&mut env, ptr::null_mut(), |env| {
+        // Reject sign errors at the boundary — negatives would otherwise
+        // bit-cast to huge u32s on the FFI call.
+        if account_index < 0 {
+            throw_sdk_exception(env, 1, "accountIndex must be non-negative");
+            return ptr::null_mut();
+        }
+        if core_fee_per_byte < 0 {
+            throw_sdk_exception(env, 1, "coreFeePerByte must be non-negative");
+            return ptr::null_mut();
+        }
+
         let mut addr_handle: Handle = 0;
         let result = unsafe {
             platform_wallet_ffi::platform_wallet_get_platform(
@@ -1255,12 +1327,15 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
         let preflight_result = unsafe {
             platform_wallet_ffi::platform_address_wallet_preflight_withdrawal(
                 addr_handle,
-                account_index.max(0) as u32,
-                core_fee_per_byte.max(0) as u32,
+                account_index as u32,
+                core_fee_per_byte as u32,
                 &mut preflight as *mut platform_wallet_ffi::WithdrawalPreflightFFI,
             )
         };
 
+        // Every branch funnels into `out` so the transient handle is
+        // destroyed unconditionally below — no early returns past this
+        // point (they would leak `addr_handle`).
         let out = if take_pwffi_error(env, preflight_result) {
             ptr::null_mut()
         } else {
@@ -1269,13 +1344,16 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
                 preflight.net_withdrawable as jlong,
                 preflight.estimated_fee as jlong,
             ];
-            let Ok(arr) = env.new_long_array(3) else {
-                return ptr::null_mut();
-            };
-            if env.set_long_array_region(&arr, 0, &triple).is_err() {
-                return ptr::null_mut();
+            match env.new_long_array(3) {
+                Ok(arr) => {
+                    if env.set_long_array_region(&arr, 0, &triple).is_err() {
+                        ptr::null_mut()
+                    } else {
+                        arr.into_raw()
+                    }
+                }
+                Err(_) => ptr::null_mut(),
             }
-            arr.into_raw()
         };
 
         let destroy_result =
@@ -1320,6 +1398,9 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
                 &mut min_input as *mut u64,
             )
         };
+        // Every branch funnels into `out` so the transient handle is
+        // destroyed unconditionally below — no early returns past this
+        // point (they would leak `addr_handle`).
         let out = if take_pwffi_error(env, input_result) {
             ptr::null_mut()
         } else {
@@ -1333,13 +1414,16 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
                 ptr::null_mut()
             } else {
                 let pair = [min_input as jlong, min_output as jlong];
-                let Ok(arr) = env.new_long_array(2) else {
-                    return ptr::null_mut();
-                };
-                if env.set_long_array_region(&arr, 0, &pair).is_err() {
-                    return ptr::null_mut();
+                match env.new_long_array(2) {
+                    Ok(arr) => {
+                        if env.set_long_array_region(&arr, 0, &pair).is_err() {
+                            ptr::null_mut()
+                        } else {
+                            arr.into_raw()
+                        }
+                    }
+                    Err(_) => ptr::null_mut(),
                 }
-                arr.into_raw()
             }
         };
 
@@ -2124,6 +2208,17 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
     core_fee_per_byte: jint,
 ) -> jstring {
     guard(&mut env, ptr::null_mut(), |env| {
+        // Reject sign errors at the boundary — negatives would otherwise
+        // bit-cast to huge u32s on the FFI call.
+        if account_index < 0 {
+            throw_sdk_exception(env, 1, "accountIndex must be non-negative");
+            return ptr::null_mut();
+        }
+        if core_fee_per_byte < 0 {
+            throw_sdk_exception(env, 1, "coreFeePerByte must be non-negative");
+            return ptr::null_mut();
+        }
+
         let mut addr_handle: Handle = 0;
         let result = unsafe {
             platform_wallet_ffi::platform_wallet_get_platform(
@@ -2143,8 +2238,8 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
         let mut preflight_result = unsafe {
             platform_wallet_ffi::platform_address_wallet_preflight_withdrawal(
                 addr_handle,
-                account_index.max(0) as u32,
-                core_fee_per_byte.max(0) as u32,
+                account_index as u32,
+                core_fee_per_byte as u32,
                 &mut preflight as *mut platform_wallet_ffi::WithdrawalPreflightFFI,
             )
         };

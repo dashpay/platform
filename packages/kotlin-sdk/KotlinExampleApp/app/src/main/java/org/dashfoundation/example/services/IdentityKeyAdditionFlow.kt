@@ -6,6 +6,7 @@ import org.dashfoundation.dashsdk.identity.KeyPurpose
 import org.dashfoundation.dashsdk.identity.KeyType
 import org.dashfoundation.dashsdk.identity.SecurityLevel
 import org.dashfoundation.dashsdk.security.WalletStorage
+import org.dashfoundation.example.util.Ripemd160
 
 /**
  * Shared "add a key to an existing identity" plumbing — port of
@@ -105,11 +106,18 @@ object IdentityKeyAdditionFlow {
 
     /**
      * Derive each requested key, pre-persist its private scalar to
-     * Keystore-backed [walletStorage] (keyed by public-key hex so
-     * `KeystoreSigner` can find it), and build the matching
+     * Keystore-backed [walletStorage], and build the matching
      * [IdentityPubkey] rows — without broadcasting. Port of
      * `IdentityKeyAddition.prepareKeys`; slots are assigned via
      * [nextKeyId] so they never collide.
+     *
+     * The on-chain `pubkeyBytes` payload and the Keystore key follow the
+     * key type, mirroring the Swift flow: for [KeyType.ECDSA_HASH160] both
+     * are the 20-byte HASH160 = RIPEMD160(SHA256(compressed pubkey)) —
+     * that hash is what Rust hands `KeystoreSigner.signAsync` as the
+     * identity key's public bytes at signing time, so the scalar must be
+     * stored under the hash160 hex — for every other type they are the
+     * 33-byte compressed pubkey.
      *
      * @throws KeyAdditionException when a spec fails [validationError] or
      *   the deriver cannot produce the keypair (see [UnbridgedSlotDeriver]).
@@ -129,11 +137,24 @@ object IdentityKeyAdditionFlow {
             freeKeyId += 1
 
             val derived = deriver.derive(identityIndex, keyId)
-            val pubkeyHex = derived.publicKey.joinToString("") { "%02x".format(it) }
+            // For ECDSA_HASH160 the on-chain payload is the 20-byte
+            // HASH160 of the compressed pubkey, not the pubkey itself —
+            // `IdentityKeyAddition.prepareKeys` steps 3-4 in Swift.
+            val pubkeyBytesForChain =
+                if (spec.keyType == KeyType.ECDSA_HASH160) {
+                    Ripemd160.hash160(derived.publicKey)
+                } else {
+                    derived.publicKey
+                }
+            // Key the Keystore entry by the same bytes: at signing time
+            // Rust passes the identity key's on-chain public bytes to the
+            // signer, and `KeystoreSigner.storageKeyFor` looks the scalar
+            // up by exactly that hex (Swift's metadata.publicKey choice).
+            val storageKeyHex = pubkeyBytesForChain.joinToString("") { "%02x".format(it) }
             try {
                 // The one allowed Kotlin persist step (kotlin-sdk/CLAUDE.md):
                 // Rust derived; we only encrypt the scalar into the Keystore.
-                walletStorage.storePrivateKey(pubkeyHex, derived.privateKey)
+                walletStorage.storePrivateKey(storageKeyHex, derived.privateKey)
             } finally {
                 derived.privateKey.fill(0)
             }
@@ -144,7 +165,7 @@ object IdentityKeyAdditionFlow {
                     keyType = spec.keyType,
                     purpose = spec.purpose,
                     securityLevel = spec.securityLevel,
-                    pubkeyBytes = derived.publicKey,
+                    pubkeyBytes = pubkeyBytesForChain,
                     contractBounds = spec.contractBounds,
                 ),
             )

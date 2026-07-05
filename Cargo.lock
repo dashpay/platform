@@ -6449,6 +6449,7 @@ dependencies = [
  "log",
  "platform-wallet-ffi",
  "rs-sdk-ffi",
+ "zeroize",
 ]
 
 [[package]]

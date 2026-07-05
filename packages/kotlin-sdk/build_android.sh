@@ -81,7 +81,8 @@ if [[ -z "${ANDROID_NDK_HOME:-}" ]]; then
     # Try the default sdkmanager install location, newest first.
     NDK_ROOT="${ANDROID_HOME:-$HOME/Library/Android/sdk}/ndk"
     if [[ -d "$NDK_ROOT" ]]; then
-        ANDROID_NDK_HOME="$NDK_ROOT/$(ls "$NDK_ROOT" | sort -V | tail -1)"
+        # BSD sort has no -V; numeric-sort the dotted version components.
+        ANDROID_NDK_HOME="$NDK_ROOT/$(find "$NDK_ROOT" -mindepth 1 -maxdepth 1 -type d -exec basename {} \; | sort -t. -k1,1n -k2,2n -k3,3n | tail -1)"
         export ANDROID_NDK_HOME
     fi
 fi

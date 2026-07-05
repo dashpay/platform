@@ -237,11 +237,11 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_derive
             return ptr::null_mut();
         }
 
-        // Copy the scalar out into a JVM byte[] before freeing the
-        // Rust-owned (soon-to-be-zeroized) buffer.
-        let scalar = out_key.private_key_bytes;
+        // Build the JVM byte[] straight from the Rust-owned buffer BEFORE
+        // freeing it — no independent stack copy of the scalar is left
+        // behind for the free's zeroize pass to miss.
         let jarr = env
-            .byte_array_from_slice(&scalar)
+            .byte_array_from_slice(&out_key.private_key_bytes)
             .map(|a| a.into_raw())
             .unwrap_or(ptr::null_mut());
 
@@ -323,9 +323,11 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_derive
             return ptr::null_mut();
         }
 
-        let scalar = out_row.private_key_bytes;
+        // Build the JVM byte[] straight from the Rust-owned row BEFORE
+        // freeing it — no independent stack copy of the scalar is left
+        // behind for the free's zeroize pass to miss.
         let jarr = env
-            .byte_array_from_slice(&scalar)
+            .byte_array_from_slice(&out_row.private_key_bytes)
             .map(|a| a.into_raw())
             .unwrap_or(ptr::null_mut());
 
@@ -380,8 +382,10 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_derive
             return ptr::null_mut();
         }
 
-        // Copy BOTH halves before the free (callback-window rule).
-        let scalar = out_row.private_key_bytes;
+        // Copy BOTH halves before the free (callback-window rule). The
+        // private half is wrapped in `Zeroizing` so the stack copy is
+        // scrubbed on drop (the pubkey copy is public — plain Vec is fine).
+        let scalar = zeroize::Zeroizing::new(out_row.private_key_bytes);
         let pubkey: Vec<u8> = if out_row.public_key.is_null() || out_row.public_key_len == 0 {
             Vec::new()
         } else {
@@ -404,7 +408,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_derive
         }
 
         let build = (|| -> Result<jni::sys::jobjectArray, jni::errors::Error> {
-            let priv_arr = env.byte_array_from_slice(&scalar)?;
+            let priv_arr = env.byte_array_from_slice(&*scalar)?;
             let pub_arr = env.byte_array_from_slice(&pubkey)?;
             let byte_array_class = env.find_class("[B")?;
             let result =

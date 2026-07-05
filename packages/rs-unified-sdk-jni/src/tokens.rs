@@ -204,6 +204,12 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TokensNative_tokenMin
     signer_handle: jlong,
 ) {
     guard(&mut env, (), |env| {
+        // Reject a non-positive amount at the boundary — a negative jlong
+        // would otherwise bit-cast to a huge u64.
+        if amount <= 0 {
+            throw_sdk_exception(env, 1, "amount must be positive");
+            return;
+        }
         let Some(id) = read_id32(env, &identity_id, "identityId") else {
             return;
         };
@@ -263,6 +269,12 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TokensNative_tokenBur
     signer_handle: jlong,
 ) -> jstring {
     guard(&mut env, ptr::null_mut(), |env| {
+        // Reject a non-positive amount at the boundary — a negative jlong
+        // would otherwise bit-cast to a huge u64.
+        if amount <= 0 {
+            throw_sdk_exception(env, 1, "amount must be positive");
+            return ptr::null_mut();
+        }
         let Some(id) = read_id32(env, &identity_id, "identityId") else {
             return ptr::null_mut();
         };
@@ -320,6 +332,12 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TokensNative_tokenTra
     signer_handle: jlong,
 ) -> jstring {
     guard(&mut env, ptr::null_mut(), |env| {
+        // Reject a non-positive amount at the boundary — a negative jlong
+        // would otherwise bit-cast to a huge u64.
+        if amount <= 0 {
+            throw_sdk_exception(env, 1, "amount must be positive");
+            return ptr::null_mut();
+        }
         let Some(id) = read_id32(env, &identity_id, "identityId") else {
             return ptr::null_mut();
         };
@@ -645,6 +663,12 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TokensNative_tokenSet
     signer_handle: jlong,
 ) {
     guard(&mut env, (), |env| {
+        // Zero is legal (clears the schedule) but a negative price would
+        // bit-cast to a huge u64 — reject it at the boundary.
+        if price_per_token < 0 {
+            throw_sdk_exception(env, 1, "pricePerToken must be non-negative");
+            return;
+        }
         let Some(id) = read_id32(env, &identity_id, "identityId") else {
             return;
         };
@@ -695,6 +719,17 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TokensNative_tokenPur
     signer_handle: jlong,
 ) {
     guard(&mut env, (), |env| {
+        // Reject sign errors at the boundary — negatives would bit-cast to
+        // huge u64s. The expected total cost may legitimately be quoted as
+        // zero, so only its sign is checked.
+        if amount <= 0 {
+            throw_sdk_exception(env, 1, "amount must be positive");
+            return;
+        }
+        if expected_total_cost < 0 {
+            throw_sdk_exception(env, 1, "expectedTotalCost must be non-negative");
+            return;
+        }
         let Some(id) = read_id32(env, &identity_id, "identityId") else {
             return;
         };

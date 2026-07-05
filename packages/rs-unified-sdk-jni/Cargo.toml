@@ -18,6 +18,7 @@ platform-wallet-ffi = { path = "../rs-platform-wallet-ffi" }
 key-wallet-ffi = { workspace = true }
 dash-network = { workspace = true, features = ["ffi"] }
 log = "0.4"
+zeroize = "1"
 
 [target.'cfg(target_os = "android")'.dependencies]
 android_logger = "0.14"

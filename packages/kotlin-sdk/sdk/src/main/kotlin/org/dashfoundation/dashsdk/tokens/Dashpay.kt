@@ -1,5 +1,6 @@
 package org.dashfoundation.dashsdk.tokens
 
+import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.dashfoundation.dashsdk.errors.mapNativeErrors
@@ -224,28 +225,28 @@ class Dashpay internal constructor(private val walletHandle: Long) {
 
 /** Owned native `ContactRequest` handle from [Dashpay.sendContactRequest]. */
 class ContactRequestRef internal constructor(handle: Long) : AutoCloseable {
-    private var handle: Long = handle
+    private val handleRef = AtomicLong(handle)
 
     internal val value: Long
-        get() = handle.also { check(it != 0L) { "ContactRequestRef has been closed" } }
+        get() = handleRef.get().also { check(it != 0L) { "ContactRequestRef has been closed" } }
 
+    /** Idempotent: the [AtomicLong] swap destroys the handle exactly once. */
     override fun close() {
-        val h = handle
-        handle = 0
+        val h = handleRef.getAndSet(0)
         if (h != 0L) TokensNative.contactRequestDestroy(h)
     }
 }
 
 /** Owned native `EstablishedContact` handle from [Dashpay.acceptContactRequest]. */
 class EstablishedContactRef internal constructor(handle: Long) : AutoCloseable {
-    private var handle: Long = handle
+    private val handleRef = AtomicLong(handle)
 
     internal val value: Long
-        get() = handle.also { check(it != 0L) { "EstablishedContactRef has been closed" } }
+        get() = handleRef.get().also { check(it != 0L) { "EstablishedContactRef has been closed" } }
 
+    /** Idempotent: the [AtomicLong] swap destroys the handle exactly once. */
     override fun close() {
-        val h = handle
-        handle = 0
+        val h = handleRef.getAndSet(0)
         if (h != 0L) TokensNative.establishedContactDestroy(h)
     }
 }

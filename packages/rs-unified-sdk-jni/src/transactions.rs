@@ -74,6 +74,37 @@ fn read_id32(env: &mut JNIEnv, arr: &JByteArray, field: &str) -> Option<[u8; 32]
     Some(id)
 }
 
+/// Secret-key sibling of [`read_id32`]: same contract, but the returned
+/// 32-byte buffer is wrapped in [`zeroize::Zeroizing`] (scrubbed on drop)
+/// and the intermediate JNI copy is zeroized before it is dropped. Use for
+/// private-key material only.
+fn read_key32_zeroizing(
+    env: &mut JNIEnv,
+    arr: &JByteArray,
+    field: &str,
+) -> Option<zeroize::Zeroizing<[u8; 32]>> {
+    use zeroize::Zeroize;
+
+    let mut bytes = match env.convert_byte_array(arr) {
+        Ok(b) => b,
+        Err(_) => {
+            let _ = env.exception_clear();
+            throw_sdk_exception(env, 1, &format!("{field} byte[] was null/invalid"));
+            return None;
+        }
+    };
+    if bytes.len() != 32 {
+        let len = bytes.len();
+        bytes.zeroize();
+        throw_sdk_exception(env, 1, &format!("{field} must be 32 bytes, got {len}"));
+        return None;
+    }
+    let mut key = zeroize::Zeroizing::new([0u8; 32]);
+    key.copy_from_slice(&bytes);
+    bytes.zeroize();
+    Some(key)
+}
+
 /// Read a required JVM string into an owned `CString`; throws + returns None
 /// on a JNI read error or an interior-NUL byte.
 fn read_cstring(env: &mut JNIEnv, s: &JString, field: &str) -> Option<CString> {
@@ -406,6 +437,18 @@ fn document_price_op<'l>(
     signing_key_id: jint,
     signer_handle: jlong,
 ) -> jstring {
+    // Reject negatives at the boundary rather than clamping: a silently
+    // clamped-to-zero price would post a document anyone can buy for free,
+    // and a negative key id would bit-cast to a bogus huge key index.
+    if price < 0 {
+        throw_sdk_exception(env, 1, "price must be non-negative");
+        return ptr::null_mut();
+    }
+    if signing_key_id < 0 {
+        throw_sdk_exception(env, 1, "signingKeyId must be non-negative");
+        return ptr::null_mut();
+    }
+
     let actor_field = if purchase { "purchaserId" } else { "ownerId" };
     let Some(actor) = read_id32(env, &actor_id, actor_field) else {
         return ptr::null_mut();
@@ -430,8 +473,8 @@ fn document_price_op<'l>(
                 contract.as_ptr(),
                 doc_type.as_ptr(),
                 doc_id.as_ptr(),
-                price.max(0) as u64,
-                signing_key_id.max(0) as u32,
+                price as u64,
+                signing_key_id as u32,
                 signer_handle as *mut SignerHandle,
                 out_id.as_mut_ptr(),
                 &mut out_json as *mut *mut c_char,
@@ -443,8 +486,8 @@ fn document_price_op<'l>(
                 contract.as_ptr(),
                 doc_type.as_ptr(),
                 doc_id.as_ptr(),
-                price.max(0) as u64,
-                signing_key_id.max(0) as u32,
+                price as u64,
+                signing_key_id as u32,
                 signer_handle as *mut SignerHandle,
                 out_id.as_mut_ptr(),
                 &mut out_json as *mut *mut c_char,
@@ -602,7 +645,11 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_ca
         let Some(pro_tx_hash) = read_id32(env, &voter_pro_tx_hash, "voterProTxHash") else {
             return;
         };
-        let Some(voting_key) = read_id32(env, &voting_private_key, "votingPrivateKey") else {
+        // The voting key is a masternode private key: read it through the
+        // zeroizing variant so neither the returned buffer nor the JNI
+        // intermediate copy outlives this call unscrubbed.
+        let Some(voting_key) = read_key32_zeroizing(env, &voting_private_key, "votingPrivateKey")
+        else {
             return;
         };
 

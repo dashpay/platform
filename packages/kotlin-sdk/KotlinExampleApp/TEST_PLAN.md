@@ -127,10 +127,10 @@ Most Platform actions have hard preconditions. Establish these fixtures before s
 | ID-05 | Top up identity (asset lock) | Cross | Common | ✅ | `TopUpIdentityScreen` (dialog from `IdentityDetailScreen`). |
 | ID-06 | Top up identity (from Platform addresses) | Cross | Common | ✅ | `AddressQueriesScreen` → TopUpIdentityFromAddresses → `dash_sdk_identity_top_up_from_addresses`. |
 | ID-07 | Update identity — add public key | Platform | Common | ✅ | `AddIdentityKeyScreen` (from `KeysListScreen`) → `updateIdentity(addPublicKeys:)`. |
-| ID-08 | Create identity (from Platform addresses) | Cross | Common | ✅ | `AddressQueriesScreen` → CreateIdentityFromAddresses → `dash_sdk_identity_create_from_addresses`. |
+| ID-08 | Create identity (from Platform addresses) | Cross | Common | 🔌 | `dash_sdk_identity_create_from_addresses` exists in rs-sdk-ffi but is not bridged to Android — no JNI export or Kotlin caller yet. |
 | ID-09 | Set / edit local alias | Platform | Common | ✅ | `IdentityDetailScreen` (Add Alias). Local only — persists across relaunch; no broadcast. |
 | ID-10 | Withdraw credits → Dash L1 address | Cross | Common | ✅ | `IdentityDetailScreen` → **Withdraw Credits** (dialog, `WithdrawCreditsScreen`) → `platform_wallet_withdraw_credits_with_signer` (Keystore-signed). Destination L1 address typed in + validated. |
-| ID-11 | Transfer credits → Platform addresses | Platform | Common | ✅ | `AddressQueriesScreen` → TransferIdentityToAddresses → `dash_sdk_identity_transfer_credits_to_addresses`. |
+| ID-11 | Transfer credits → Platform addresses | Platform | Common | 🔌 | `dash_sdk_identity_transfer_credits_to_addresses` exists in rs-sdk-ffi but is not bridged to Android — no JNI export or Kotlin caller yet. |
 | ID-12 | Update identity — disable key | Platform | Thorough | ✅ | `KeyDetailScreen` (drill into a key from `KeysListScreen`) → **Key Status → Disable Key** → confirm → `platform_wallet_update_identity_with_signer` (Keystore-signed). Gated to match consensus. |
 | ID-13 | Top up identity (builder path) | Cross | — | ➖ | Retired — builder entry is a stub; covered by `ID-05`/`ID-06`. |
 
@@ -288,7 +288,7 @@ Counts are of rows reachable in the app (Status `✅`/`🧪`/`⚠️`); `🔌`/`
 | Tier | Count (approx.) | Automatable? |
 |---|---|---|
 | Essential | 21 | yes |
-| Common | 31 | yes |
+| Common | 29 | yes |
 | Thorough | 35 | yes |
 | Uncommon | 25 | yes |
 | Manual | 1 (`CORE-08`) | no — physical device |
@@ -298,8 +298,8 @@ Counts are of rows reachable in the app (Status `✅`/`🧪`/`⚠️`); `🔌`/`
 | Layer | Count (approx.) |
 |---|---|
 | Core | 17 |
-| Platform | ~72 |
-| Cross | 7 |
+| Platform | ~71 |
+| Cross | 6 |
 | Shielded | 16 |
 
 ---

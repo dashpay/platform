@@ -1,5 +1,6 @@
 package org.dashfoundation.dashsdk.queries
 
+import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.dashfoundation.dashsdk.Sdk
@@ -618,14 +619,14 @@ data class ContractWithSerialization(
 
 /** Owned native data-contract handle. */
 class DataContractRef internal constructor(handle: Long) : AutoCloseable {
-    private var handle: Long = handle
+    private val handleRef = AtomicLong(handle)
 
     internal val value: Long
-        get() = handle.also { check(it != 0L) { "DataContractRef has been closed" } }
+        get() = handleRef.get().also { check(it != 0L) { "DataContractRef has been closed" } }
 
+    /** Idempotent: the [AtomicLong] swap destroys the handle exactly once. */
     override fun close() {
-        val h = handle
-        handle = 0
+        val h = handleRef.getAndSet(0)
         if (h != 0L) QueriesNative.dataContractDestroy(h)
     }
 }
