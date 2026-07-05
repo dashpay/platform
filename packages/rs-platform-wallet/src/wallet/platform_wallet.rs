@@ -1,6 +1,6 @@
 //! The main PlatformWallet struct combining core, identity (+DashPay), and platform sub-wallets.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 
@@ -258,8 +258,14 @@ impl PlatformWallet {
             .identity
             .top_up_from_addresses(identity_id, inputs, address_signer, settings)
             .await?;
+        // `credited_outputs` is empty: an identity top-up only DRAINS
+        // platform addresses (absolute `SetBalanceToAddress` ops,
+        // idempotent under incremental re-apply) — it has no change
+        // output. If one is ever added, pass it via
+        // `platform_addresses::credited_outputs_set` so the seam's
+        // ADDR-09 watermark gate covers it.
         self.platform
-            .reconcile_address_infos(&address_infos, "identity top-up")
+            .reconcile_address_infos(&address_infos, &BTreeSet::new(), "identity top-up")
             .await;
         Ok(new_balance)
     }
@@ -291,6 +297,14 @@ impl PlatformWallet {
         IS: Signer<IdentityPublicKey>,
         AS: Signer<PlatformAddress> + Send + Sync,
     {
+        // The optional refund-style `output` is credited on-chain via an
+        // `AddBalanceToAddress` DELTA; when it lands on a wallet-owned
+        // address, the seam's ADDR-09 watermark gate must know about it or
+        // the next incremental BLAST pass would re-apply the delta on top
+        // of the reconciled absolute balance (double-count). Capture it
+        // before `output` moves into the identity call.
+        let credited_outputs =
+            super::platform_addresses::credited_outputs_set(output.iter().map(|(addr, _)| addr));
         let (registered_identity, address_infos) = self
             .identity
             .register_from_addresses(
@@ -304,7 +318,7 @@ impl PlatformWallet {
             )
             .await?;
         self.platform
-            .reconcile_address_infos(&address_infos, "identity registration")
+            .reconcile_address_infos(&address_infos, &credited_outputs, "identity registration")
             .await;
         Ok(registered_identity)
     }
@@ -330,6 +344,15 @@ impl PlatformWallet {
     where
         S: Signer<IdentityPublicKey> + Send + Sync,
     {
+        // Every recipient is credited on-chain via an `AddBalanceToAddress`
+        // DELTA — and the primary use of this flow is consolidating identity
+        // credits into the wallet's OWN platform addresses, so the seam's
+        // ADDR-09 watermark gate must know the recipient set or the next
+        // incremental BLAST pass would re-apply the delta on top of the
+        // reconciled absolute balance (double-count). Capture it before
+        // `recipient_addresses` moves into the identity call.
+        let credited_outputs =
+            super::platform_addresses::credited_outputs_set(recipient_addresses.keys());
         let (address_infos, new_balance) = self
             .identity
             .transfer_credits_to_addresses_with_external_signer(
@@ -340,7 +363,11 @@ impl PlatformWallet {
             )
             .await?;
         self.platform
-            .reconcile_address_infos(&address_infos, "credit transfer to addresses")
+            .reconcile_address_infos(
+                &address_infos,
+                &credited_outputs,
+                "credit transfer to addresses",
+            )
             .await;
         Ok(new_balance)
     }

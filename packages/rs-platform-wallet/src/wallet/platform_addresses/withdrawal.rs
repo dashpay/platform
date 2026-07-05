@@ -190,8 +190,20 @@ impl PlatformAddressWallet {
         // persisted index bijection (with live-pool fallback), so a
         // restored address that is no longer in a live derived pool keeps
         // its real derivation index instead of corrupting index 0.
+        //
+        // `credited_outputs` is empty (ADDR-09 watermark gate stays off):
+        // every owned address a withdrawal touches is an INPUT, recorded
+        // on-chain as `SetBalanceToAddress` (an absolute `SetCredits` op in
+        // the recent tree); re-applying an absolute op on the next
+        // incremental pass is idempotent, so there is no delta to
+        // double-count. The only op that *would* be a delta
+        // (`AddBalanceToAddress`) is the change output, and every
+        // `withdraw_address_funds` call above passes `None` for it — the
+        // account is drained in full with no change. If a future change
+        // output is ever wired up here, pass it via
+        // `super::credited_outputs_set` so the seam's gate covers it.
         Ok(self
-            .reconcile_address_infos(&address_infos, "address withdrawal")
+            .reconcile_address_infos(&address_infos, &BTreeSet::new(), "address withdrawal")
             .await)
     }
 

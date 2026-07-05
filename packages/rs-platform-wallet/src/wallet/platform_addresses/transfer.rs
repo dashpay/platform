@@ -212,6 +212,14 @@ impl PlatformAddressWallet {
         // gate and the spend path diverge on a non-latest-pinned SDK.
         let version = platform_version.unwrap_or_else(|| self.sdk.version());
 
+        // Capture the credited output addresses BEFORE `outputs` is moved
+        // into the SDK call below. Transfer outputs are recorded on-chain
+        // as `AddBalanceToAddress` DELTAS (a same-wallet output — e.g. a
+        // change address — is the ADDR-09 double-count shape); the seam's
+        // watermark gate needs to know them. See
+        // `reconcile_address_infos` for the full mechanism.
+        let credited_outputs = super::credited_outputs_set(outputs.keys());
+
         let address_infos = match input_selection {
             InputSelection::Explicit(inputs) => {
                 if inputs.is_empty() {
@@ -265,9 +273,13 @@ impl PlatformAddressWallet {
         // `transfer_address_funds` returns address info for the full
         // `inputs ∪ outputs` set, including external recipients the wallet
         // does not own — the shared seam filters those out, applies the
-        // proof-attested balances, updates the sync seed, and persists.
+        // proof-attested balances, updates the sync seed, persists, and
+        // (when a wallet-owned output in `credited_outputs` was committed)
+        // invalidates the incremental sync watermark so the next BLAST
+        // pass full-scan-reconciles instead of re-applying the on-chain
+        // credit delta on top of the absolute seed (ADDR-09).
         Ok(self
-            .reconcile_address_infos(&address_infos, "address transfer")
+            .reconcile_address_infos(&address_infos, &credited_outputs, "address transfer")
             .await)
     }
 
