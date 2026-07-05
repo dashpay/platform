@@ -289,54 +289,22 @@ impl PlatformAddressWallet {
         // Persistence errors are logged inside the seam rather than
         // propagated: Platform already accepted the transition, and a
         // persistence hiccup shouldn't mask that.
-        let cs = self
-            .reconcile_address_infos(&address_infos, "fund from asset lock")
-            .await;
-
-        // ADDR-09: force the next BLAST sync to full-scan-reconcile
-        // instead of applying an incremental delta.
         //
-        // `reconcile_address_infos` above set the provider's committed
-        // `found` seed to the proof-attested ABSOLUTE balance `X`, but the
-        // top-up is recorded on-chain as a DELTA (`AddBalanceToAddress` →
-        // `AddToCredits`) in Drive's recent-address-balance-changes tree,
-        // and we did NOT advance the incremental watermark. An incremental
-        // next pass would seed `result.found` from `current_balances()`
-        // (already `X`) and then re-apply that recent `AddToCredits(X)`
-        // delta from the stale watermark, landing at `X + X = 2X` — the
-        // ADDR-09 double-count. Zeroing the in-memory watermark makes
-        // `last_sync_timestamp()` return `None`, so the next pass full-scans
-        // (absolute seed from the tree, catch-up from the fresh checkpoint)
-        // and reconciles to the correct `X`. This is the automated
+        // ADDR-09: every recipient of an asset-lock top-up is credited via
+        // an on-chain `AddBalanceToAddress` DELTA, so the whole recipient
+        // set goes into the seam's `credited_outputs` gate. Committing
+        // their proof-attested ABSOLUTE balances while the incremental
+        // watermark stayed stale would let the next incremental BLAST pass
+        // re-apply the delta on top → `X + X = 2X`, the ADDR-09
+        // double-count. The seam invalidates the watermark inside its own
+        // critical section (see `reconcile_address_infos` and
+        // `PlatformPaymentAddressProvider::invalidate_sync_watermark`),
+        // forcing the next pass to full-scan-reconcile — the automated
         // equivalent of the manual Sync-tab "Clear" + "Sync Now".
-        //
-        // Unlike transfer/withdrawal (which also route through the seam),
-        // an asset-lock top-up credits its recipient with a pure additive
-        // delta and no offsetting input for that same address, so updating
-        // the `found` seed alone does not neutralize the re-applied delta —
-        // hence this path-specific watermark invalidation.
-        //
-        // DURABILITY: in-memory only. The persisted sync watermark cannot
-        // be reset to 0 through the normal changeset —
-        // `PlatformAddressChangeSet::merge` combines `sync_height` with
-        // `.max()` and the persister only fires `on_persist_sync_state_fn`
-        // when a component is `> 0` — so a durable zero would have to fight
-        // both the merge and the `> 0` gate. Instead we rely on the
-        // in-session BLAST cadence (~15s): the next pass full-scans,
-        // reconciles to `X`, and persists a correct FORWARD watermark, so
-        // durable state self-corrects within ~15s. The only residual gap is
-        // an app kill inside that ~15s window; a restart then resumes
-        // incremental sync from the stale persisted watermark and the
-        // double-count could briefly reappear until the next full rescan
-        // (or a manual Clear). That narrow window is accepted here rather
-        // than over-engineering a durable invalidation against the
-        // `.max()` merge / `> 0` gate.
-        {
-            let mut guard = self.provider.write().await;
-            if let Some(provider) = guard.as_mut() {
-                provider.invalidate_sync_watermark();
-            }
-        }
+        let credited_outputs = super::credited_outputs_set(addresses.keys());
+        let cs = self
+            .reconcile_address_infos(&address_infos, &credited_outputs, "fund from asset lock")
+            .await;
 
         if let Some(out_point) = tracked_out_point {
             // Platform DID accept the top-up — propagating an Err
