@@ -60,6 +60,9 @@ class IdentityRegistration internal constructor() {
         signerHandle: Long,
         coreSignerHandle: Long,
     ): ByteArray = withContext(Dispatchers.IO) {
+        require(amountDuffs > 0) { "amountDuffs must be positive, got $amountDuffs" }
+        require(accountIndex >= 0) { "accountIndex must be non-negative, got $accountIndex" }
+        require(identityIndex >= 0) { "identityIndex must be non-negative, got $identityIndex" }
         mapNativeErrors {
             IdentityNative.registerIdentityWithFunding(
                 walletHandle,

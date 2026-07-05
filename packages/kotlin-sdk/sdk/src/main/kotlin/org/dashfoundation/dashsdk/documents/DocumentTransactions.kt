@@ -43,6 +43,8 @@ class DocumentTransactions internal constructor() {
         require(purchaserId.size == 32) { "purchaserId must be 32 bytes" }
         require(contractId.size == 32) { "contractId must be 32 bytes" }
         require(documentId.size == 32) { "documentId must be 32 bytes" }
+        require(price > 0) { "price must be positive, got $price" }
+        require(signingKeyId >= 0) { "signingKeyId must be non-negative, got $signingKeyId" }
         mapNativeErrors {
             TransactionsNative.documentPurchase(
                 walletHandle,
@@ -79,6 +81,8 @@ class DocumentTransactions internal constructor() {
         require(ownerId.size == 32) { "ownerId must be 32 bytes" }
         require(contractId.size == 32) { "contractId must be 32 bytes" }
         require(documentId.size == 32) { "documentId must be 32 bytes" }
+        require(price >= 0) { "price must be non-negative, got $price" }
+        require(signingKeyId >= 0) { "signingKeyId must be non-negative, got $signingKeyId" }
         mapNativeErrors {
             TransactionsNative.documentSetPrice(
                 walletHandle,

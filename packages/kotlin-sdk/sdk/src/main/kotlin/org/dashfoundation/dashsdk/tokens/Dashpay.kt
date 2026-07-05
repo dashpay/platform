@@ -85,6 +85,7 @@ class Dashpay internal constructor(private val walletHandle: Long) {
         amountDuffs: Long,
         memo: String? = null,
     ): ByteArray? = withContext(Dispatchers.IO) {
+        require(amountDuffs > 0) { "amountDuffs must be positive, got $amountDuffs" }
         mapNativeErrors {
             TokensNative.sendDashPayPayment(
                 walletHandle, fromIdentityId, toContactIdentityId, amountDuffs, memo,

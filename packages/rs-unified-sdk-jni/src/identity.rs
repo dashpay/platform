@@ -216,13 +216,23 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_derive
     key_index: jint,
 ) -> jbyteArray {
     guard(&mut env, ptr::null_mut(), |env| {
+        // Reject negative slot indices at the boundary — a clamped 0 would
+        // silently derive (and persist) the wrong slot's key material.
+        if identity_index < 0 {
+            throw_sdk_exception(env, 1, "identityIndex must be non-negative");
+            return ptr::null_mut();
+        }
+        if key_index < 0 {
+            throw_sdk_exception(env, 1, "keyIndex must be non-negative");
+            return ptr::null_mut();
+        }
         let mut out_key = IdentityPrivateKeyFFI::empty();
         let result = unsafe {
             platform_wallet_ffi::platform_wallet_derive_identity_private_key_at_slot(
                 wallet_handle as Handle,
                 resolver_handle as *mut MnemonicResolverHandle,
-                identity_index.max(0) as u32,
-                key_index.max(0) as u32,
+                identity_index as u32,
+                key_index as u32,
                 &mut out_key as *mut IdentityPrivateKeyFFI,
             )
         };
@@ -299,6 +309,16 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_derive
     key_index: jint,
 ) -> jbyteArray {
     guard(&mut env, ptr::null_mut(), |env| {
+        // Reject negative slot indices at the boundary — a clamped 0 would
+        // silently derive (and persist) the wrong slot's key material.
+        if identity_index < 0 {
+            throw_sdk_exception(env, 1, "identityIndex must be non-negative");
+            return ptr::null_mut();
+        }
+        if key_index < 0 {
+            throw_sdk_exception(env, 1, "keyIndex must be non-negative");
+            return ptr::null_mut();
+        }
         let Some(wid) = read_id32(env, &wallet_id, "walletId") else {
             return ptr::null_mut();
         };
@@ -309,8 +329,8 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_derive
                 net_from_ord(network_ord),
                 wid.as_ptr(),
                 resolver_handle as *mut MnemonicResolverHandle,
-                identity_index.max(0) as u32,
-                key_index.max(0) as u32,
+                identity_index as u32,
+                key_index as u32,
                 &mut out_row as *mut IdentityKeyPreviewFFI,
             )
         };
@@ -358,6 +378,16 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_derive
     key_index: jint,
 ) -> jni::sys::jobjectArray {
     guard(&mut env, ptr::null_mut(), |env| {
+        // Reject negative slot indices at the boundary — a clamped 0 would
+        // silently derive (and persist) the wrong slot's key material.
+        if identity_index < 0 {
+            throw_sdk_exception(env, 1, "identityIndex must be non-negative");
+            return ptr::null_mut();
+        }
+        if key_index < 0 {
+            throw_sdk_exception(env, 1, "keyIndex must be non-negative");
+            return ptr::null_mut();
+        }
         let Some(wid) = read_id32(env, &wallet_id, "walletId") else {
             return ptr::null_mut();
         };
@@ -368,8 +398,8 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_derive
                 net_from_ord(network_ord),
                 wid.as_ptr(),
                 resolver_handle as *mut MnemonicResolverHandle,
-                identity_index.max(0) as u32,
-                key_index.max(0) as u32,
+                identity_index as u32,
+                key_index as u32,
                 &mut out_row as *mut IdentityKeyPreviewFFI,
             )
         };
@@ -465,6 +495,22 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_regist
     core_signer_handle: jlong,
 ) -> jbyteArray {
     guard(&mut env, ptr::null_mut(), |env| {
+        // Reject sign errors at the boundary — a negative amount / index
+        // would otherwise bit-cast to a huge unsigned value (and a clamped
+        // 0 amount would post a meaningless 0-duff registration).
+        if amount_duffs <= 0 {
+            throw_sdk_exception(env, 1, "amountDuffs must be positive");
+            return ptr::null_mut();
+        }
+        if account_index < 0 {
+            throw_sdk_exception(env, 1, "accountIndex must be non-negative");
+            return ptr::null_mut();
+        }
+        if identity_index < 0 {
+            throw_sdk_exception(env, 1, "identityIndex must be non-negative");
+            return ptr::null_mut();
+        }
+
         // Decode the pubkey rows into owned buffers that outlive the FFI
         // call (the FFI borrows `pubkey_bytes` for the call duration).
         let Some(decoded) = decode_pubkeys_blob(env, &pubkeys_blob) else {
@@ -501,9 +547,9 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_regist
         let result = unsafe {
             platform_wallet_ffi::platform_wallet_register_identity_with_funding_signer(
                 wallet_handle as Handle,
-                amount_duffs.max(0) as u64,
-                account_index.max(0) as u32,
-                identity_index.max(0) as u32,
+                amount_duffs as u64,
+                account_index as u32,
+                identity_index as u32,
                 ffi_rows.as_ptr(),
                 ffi_rows.len(),
                 signer_handle as *mut SignerHandle,
@@ -565,6 +611,16 @@ fn decode_pubkeys_blob(env: &mut JNIEnv, arr: &JByteArray) -> Option<Vec<(u32, V
             return None;
         };
         let key_id = u32::from_be_bytes(id_bytes.try_into().ok()?);
+        // The Kotlin encoder writes this field with writeInt (signed); a
+        // set sign bit means a negative key id crossed the boundary.
+        if key_id > i32::MAX as u32 {
+            throw_sdk_exception(
+                env,
+                1,
+                &format!("pubkeysBlob row {i} keyId must be non-negative"),
+            );
+            return None;
+        }
         let Some(len_bytes) = read(&mut cursor, 2) else {
             throw_sdk_exception(env, 1, &format!("pubkeysBlob truncated at row {i} len"));
             return None;

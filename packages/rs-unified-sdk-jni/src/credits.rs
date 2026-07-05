@@ -78,6 +78,13 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_CreditsNative_transfe
     signer_handle: jlong,
 ) {
     guard(&mut env, (), |env| {
+        // Reject a non-positive amount at the boundary — a negative jlong
+        // would otherwise bit-cast to a huge u64 (and a clamped 0 would
+        // post a meaningless 0-credit transition).
+        if amount <= 0 {
+            throw_sdk_exception(env, 1, "amount must be positive");
+            return;
+        }
         let Some(from_id) = read_id32(env, &from_identity_id, "fromIdentityId") else {
             return;
         };
@@ -89,7 +96,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_CreditsNative_transfe
                 wallet_handle as Handle,
                 from_id.as_ptr(),
                 to_id.as_ptr(),
-                amount.max(0) as u64,
+                amount as u64,
                 signer_handle as *mut SignerHandle,
             )
         };
@@ -117,6 +124,13 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_CreditsNative_withdra
     signer_handle: jlong,
 ) {
     guard(&mut env, (), |env| {
+        // Reject a non-positive amount at the boundary — a negative jlong
+        // would otherwise bit-cast to a huge u64 (and a clamped 0 would
+        // post a meaningless 0-credit withdrawal).
+        if amount <= 0 {
+            throw_sdk_exception(env, 1, "amount must be positive");
+            return;
+        }
         let Some(id) = read_id32(env, &identity_id, "identityId") else {
             return;
         };
@@ -139,7 +153,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_CreditsNative_withdra
             platform_wallet_ffi::platform_wallet_withdraw_credits_with_signer(
                 wallet_handle as Handle,
                 id.as_ptr(),
-                amount.max(0) as u64,
+                amount as u64,
                 c_addr.as_ptr(),
                 signer_handle as *mut SignerHandle,
             )
@@ -242,6 +256,17 @@ fn decode_inputs_blob(env: &mut JNIEnv, arr: &JByteArray) -> Option<Vec<Identity
             return None;
         };
         let credits = u64::from_be_bytes(credits_bytes.try_into().ok()?);
+        // The Kotlin encoder writes this field from a signed long; a set
+        // sign bit means a negative amount crossed the boundary — reject
+        // rather than treat it as a huge unsigned credit value.
+        if credits & (1 << 63) != 0 {
+            throw_sdk_exception(
+                env,
+                1,
+                &format!("inputsBlob row {i} credits amount out of range"),
+            );
+            return None;
+        }
         rows.push(IdentityFundingInputFFI {
             address_type,
             hash,

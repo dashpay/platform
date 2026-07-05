@@ -213,6 +213,13 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_up
                         let _ = env.exception_clear();
                         Vec::new()
                     } else {
+                        // Reject negative entries before the sign-losing
+                        // cast — a negative int would otherwise bit-cast
+                        // to a bogus huge u32 key id.
+                        if buf.iter().any(|&i| i < 0) {
+                            throw_sdk_exception(env, 1, "keyIds must be non-negative");
+                            return;
+                        }
                         buf.into_iter().map(|i| i as u32).collect()
                     }
                 }
@@ -334,6 +341,16 @@ fn decode_update_pubkeys_blob(env: &mut JNIEnv, arr: &JByteArray) -> Option<Vec<
             return None;
         };
         let key_id = u32::from_be_bytes([fixed[0], fixed[1], fixed[2], fixed[3]]);
+        // The Kotlin encoder writes this field with writeInt (signed); a
+        // set sign bit means a negative key id crossed the boundary.
+        if key_id > i32::MAX as u32 {
+            throw_sdk_exception(
+                env,
+                1,
+                &format!("addPubkeysBlob row {i} keyId must be non-negative"),
+            );
+            return None;
+        }
         let key_type = fixed[4];
         let purpose = fixed[5];
         let security_level = fixed[6];

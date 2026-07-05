@@ -207,6 +207,12 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shielde
     account: jint,
 ) -> jni::sys::jbyteArray {
     guard(&mut env, ptr::null_mut(), |env| {
+        // Reject a negative account index at the boundary — it would
+        // otherwise bit-cast to a huge u32 on the FFI call.
+        if account < 0 {
+            throw_sdk_exception(env, 1, "account must be non-negative");
+            return ptr::null_mut();
+        }
         let Some(wid) = read_id32(env, &wallet_id, "walletId") else {
             return ptr::null_mut();
         };
@@ -216,7 +222,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shielde
             platform_wallet_ffi::platform_wallet_manager_shielded_default_address(
                 manager_handle as Handle,
                 wid.as_ptr(),
-                account.max(0) as u32,
+                account as u32,
                 out_bytes.as_mut_ptr(),
                 &mut present as *mut bool,
             )
@@ -259,6 +265,17 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shielde
     core_signer_handle: jlong,
 ) {
     guard(&mut env, (), |env| {
+        // Reject sign errors at the boundary — negatives would otherwise
+        // bit-cast to huge unsigned values (and a clamped 0 amount would
+        // build a meaningless 0-duff asset lock).
+        if amount_duffs <= 0 {
+            throw_sdk_exception(env, 1, "amountDuffs must be positive");
+            return;
+        }
+        if funding_account_index < 0 {
+            throw_sdk_exception(env, 1, "fundingAccountIndex must be non-negative");
+            return;
+        }
         let Some(wid) = read_id32(env, &wallet_id, "walletId") else {
             return;
         };
@@ -276,8 +293,8 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shielde
             platform_wallet_ffi::platform_wallet_manager_shielded_fund_from_asset_lock(
                 manager_handle as Handle,
                 wid.as_ptr(),
-                funding_account_index.max(0) as u32,
-                amount_duffs.max(0) as u64,
+                funding_account_index as u32,
+                amount_duffs as u64,
                 recipient.as_ptr(),
                 surplus_ptr,
                 surplus_len,
@@ -309,6 +326,12 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shielde
     core_signer_handle: jlong,
 ) {
     guard(&mut env, (), |env| {
+        // Reject a negative vout at the boundary — it would otherwise
+        // bit-cast to a huge u32 on the FFI call.
+        if out_point_vout < 0 {
+            throw_sdk_exception(env, 1, "outPointVout must be non-negative");
+            return;
+        }
         let Some(wid) = read_id32(env, &wallet_id, "walletId") else {
             return;
         };
@@ -327,7 +350,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shielde
             .map_or((ptr::null(), 0usize), |v| (v.as_ptr(), v.len()));
         let out_point = platform_wallet_ffi::OutPointFFI {
             txid,
-            vout: out_point_vout.max(0) as u32,
+            vout: out_point_vout as u32,
         };
         let result = unsafe {
             platform_wallet_ffi::platform_wallet_manager_shielded_resume_fund_from_asset_lock(
@@ -417,6 +440,21 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shielde
     progress_bridge: JObject,
 ) {
     guard(&mut env, (), |env| {
+        // Reject sign errors at the boundary — negatives would otherwise
+        // bit-cast to huge unsigned values. A target of 0 is legal (the
+        // Rust side treats an already-met target as a no-op success).
+        if account < 0 {
+            throw_sdk_exception(env, 1, "account must be non-negative");
+            return;
+        }
+        if target_total_notes < 0 {
+            throw_sdk_exception(env, 1, "targetTotalNotes must be non-negative");
+            return;
+        }
+        if funding_account_index < 0 {
+            throw_sdk_exception(env, 1, "fundingAccountIndex must be non-negative");
+            return;
+        }
         let Some(wid) = read_id32(env, &wallet_id, "walletId") else {
             return;
         };
@@ -450,9 +488,9 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shielde
             platform_wallet_ffi::platform_wallet_manager_shielded_seed_pool_notes(
                 manager_handle as Handle,
                 wid.as_ptr(),
-                account.max(0) as u32,
-                target_total_notes.max(0) as u64,
-                funding_account_index.max(0) as u32,
+                account as u32,
+                target_total_notes as u64,
+                funding_account_index as u32,
                 core_signer_handle as *mut MnemonicResolverHandle,
                 progress_fn,
                 progress_ctx,

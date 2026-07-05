@@ -464,6 +464,7 @@ class TokenQueries internal constructor(private val sdk: Sdk) {
      */
     suspend fun calculateTokenId(contractId: String, position: Int): String? =
         withContext(Dispatchers.IO) {
+            require(position in 0..0xFFFF) { "position must be in 0..65535, got $position" }
             mapNativeErrors { QueriesNative.calculateTokenId(contractId, position) }
         }
 

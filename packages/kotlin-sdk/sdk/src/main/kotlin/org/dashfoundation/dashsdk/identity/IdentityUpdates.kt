@@ -107,6 +107,10 @@ data class IdentityPubkey(
     val readOnly: Boolean = false,
     val contractBounds: ContractBounds? = null,
 ) {
+    init {
+        require(keyId >= 0) { "keyId must be non-negative, got $keyId" }
+    }
+
     override fun equals(other: Any?): Boolean =
         other is IdentityPubkey &&
             keyId == other.keyId &&
@@ -177,6 +181,9 @@ class IdentityUpdates internal constructor() {
         }
         require(addPublicKeys.isNotEmpty() || disablePublicKeyIds.isNotEmpty()) {
             "updateIdentity needs at least one key to add or disable"
+        }
+        require(disablePublicKeyIds.all { it >= 0 }) {
+            "every disabled key id must be non-negative, got $disablePublicKeyIds"
         }
         mapNativeErrors {
             TransactionsNative.updateIdentity(

@@ -122,6 +122,10 @@ class ManagedPlatformWallet internal constructor(
         accountType: AccountType = AccountType.BIP44,
         accountIndex: Int = 0,
     ): ByteArray = withContext(Dispatchers.IO) {
+        require(accountIndex >= 0) { "accountIndex must be non-negative, got $accountIndex" }
+        require(recipients.all { it.second > 0 }) {
+            "every recipient amount must be positive"
+        }
         val addresses = recipients.map { it.first }.toTypedArray()
         val amounts = recipients.map { it.second }.toLongArray()
         mapNativeErrors {
@@ -170,6 +174,9 @@ class ManagedPlatformWallet internal constructor(
     ) {
         init {
             require(hash.size == 20) { "FundRecipient.hash must be 20 bytes, got ${hash.size}" }
+            require(credits == null || credits > 0) {
+                "FundRecipient.credits must be positive (or null for the remainder recipient), got $credits"
+            }
         }
 
         override fun equals(other: Any?): Boolean =
@@ -214,6 +221,13 @@ class ManagedPlatformWallet internal constructor(
         signerHandle: Long,
         coreSignerHandle: Long,
     ): List<UpdatedBalance> = withContext(Dispatchers.IO) {
+        require(amountDuffs > 0) { "amountDuffs must be positive, got $amountDuffs" }
+        require(fundingAccountIndex >= 0) {
+            "fundingAccountIndex must be non-negative, got $fundingAccountIndex"
+        }
+        require(platformAccountIndex >= 0) {
+            "platformAccountIndex must be non-negative, got $platformAccountIndex"
+        }
         val blob = mapNativeErrors {
             WalletManagerNative.walletFundFromAssetLock(
                 walletHandle = handle,
@@ -244,6 +258,10 @@ class ManagedPlatformWallet internal constructor(
     ): List<UpdatedBalance> = withContext(Dispatchers.IO) {
         require(outPointTxid.size == 32) {
             "outPointTxid must be exactly 32 bytes, got ${outPointTxid.size}"
+        }
+        require(outPointVout >= 0) { "outPointVout must be non-negative, got $outPointVout" }
+        require(platformAccountIndex >= 0) {
+            "platformAccountIndex must be non-negative, got $platformAccountIndex"
         }
         val blob = mapNativeErrors {
             WalletManagerNative.walletResumeFundFromAssetLock(
@@ -303,6 +321,7 @@ class ManagedPlatformWallet internal constructor(
         signerHandle: Long,
         accountIndex: Int = 0,
     ): List<UpdatedBalance> = withContext(Dispatchers.IO) {
+        require(accountIndex >= 0) { "accountIndex must be non-negative, got $accountIndex" }
         val blob = mapNativeErrors {
             WalletManagerNative.walletPlatformAddressTransfer(
                 walletHandle = handle,
@@ -331,6 +350,7 @@ class ManagedPlatformWallet internal constructor(
         signerHandle: Long,
         accountIndex: Int = 0,
     ): List<UpdatedBalance> = withContext(Dispatchers.IO) {
+        require(accountIndex >= 0) { "accountIndex must be non-negative, got $accountIndex" }
         val blob = mapNativeErrors {
             WalletManagerNative.walletPlatformAddressWithdraw(
                 walletHandle = handle,

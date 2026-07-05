@@ -44,6 +44,8 @@ class Tokens internal constructor(private val walletHandle: Long) {
         signingKeyId: Int,
         signerHandle: Long,
     ): Unit = withContext(Dispatchers.IO) {
+        validateSelectors(tokenPosition, signingKeyId)
+        require(amount > 0) { "amount must be positive, got $amount" }
         val g = groupAction.flatten()
         mapNativeErrors {
             TokensNative.tokenMint(
@@ -66,6 +68,8 @@ class Tokens internal constructor(private val walletHandle: Long) {
         signingKeyId: Int,
         signerHandle: Long,
     ): String? = withContext(Dispatchers.IO) {
+        validateSelectors(tokenPosition, signingKeyId)
+        require(amount > 0) { "amount must be positive, got $amount" }
         val g = groupAction.flatten()
         mapNativeErrors {
             TokensNative.tokenBurn(
@@ -88,6 +92,8 @@ class Tokens internal constructor(private val walletHandle: Long) {
         signingKeyId: Int,
         signerHandle: Long,
     ): String? = withContext(Dispatchers.IO) {
+        validateSelectors(tokenPosition, signingKeyId)
+        require(amount > 0) { "amount must be positive, got $amount" }
         mapNativeErrors {
             TokensNative.tokenTransfer(
                 walletHandle, identityId, tokenContractId, tokenPosition,
@@ -107,6 +113,7 @@ class Tokens internal constructor(private val walletHandle: Long) {
         signingKeyId: Int,
         signerHandle: Long,
     ): Unit = withContext(Dispatchers.IO) {
+        validateSelectors(tokenPosition, signingKeyId)
         val g = groupAction.flatten()
         mapNativeErrors {
             TokensNative.tokenFreeze(
@@ -129,6 +136,7 @@ class Tokens internal constructor(private val walletHandle: Long) {
         signingKeyId: Int,
         signerHandle: Long,
     ): Unit = withContext(Dispatchers.IO) {
+        validateSelectors(tokenPosition, signingKeyId)
         val g = groupAction.flatten()
         mapNativeErrors {
             TokensNative.tokenUnfreeze(
@@ -151,6 +159,7 @@ class Tokens internal constructor(private val walletHandle: Long) {
         signingKeyId: Int,
         signerHandle: Long,
     ): Unit = withContext(Dispatchers.IO) {
+        validateSelectors(tokenPosition, signingKeyId)
         val g = groupAction.flatten()
         mapNativeErrors {
             TokensNative.tokenDestroyFrozenFunds(
@@ -172,6 +181,7 @@ class Tokens internal constructor(private val walletHandle: Long) {
         signingKeyId: Int,
         signerHandle: Long,
     ): Unit = withContext(Dispatchers.IO) {
+        validateSelectors(tokenPosition, signingKeyId)
         val g = groupAction.flatten()
         mapNativeErrors {
             TokensNative.tokenPause(
@@ -192,6 +202,7 @@ class Tokens internal constructor(private val walletHandle: Long) {
         signingKeyId: Int,
         signerHandle: Long,
     ): Unit = withContext(Dispatchers.IO) {
+        validateSelectors(tokenPosition, signingKeyId)
         val g = groupAction.flatten()
         mapNativeErrors {
             TokensNative.tokenResume(
@@ -213,6 +224,10 @@ class Tokens internal constructor(private val walletHandle: Long) {
         signingKeyId: Int,
         signerHandle: Long,
     ): Unit = withContext(Dispatchers.IO) {
+        validateSelectors(tokenPosition, signingKeyId)
+        require(pricePerToken >= 0) {
+            "pricePerToken must be non-negative (0 disables direct purchase), got $pricePerToken"
+        }
         val g = groupAction.flatten()
         mapNativeErrors {
             TokensNative.tokenSetPrice(
@@ -234,6 +249,11 @@ class Tokens internal constructor(private val walletHandle: Long) {
         signingKeyId: Int,
         signerHandle: Long,
     ): Unit = withContext(Dispatchers.IO) {
+        validateSelectors(tokenPosition, signingKeyId)
+        require(amount > 0) { "amount must be positive, got $amount" }
+        require(expectedTotalCost > 0) {
+            "expectedTotalCost must be positive, got $expectedTotalCost"
+        }
         mapNativeErrors {
             TokensNative.tokenPurchase(
                 walletHandle, identityId, tokenContractId, tokenPosition,
@@ -252,6 +272,7 @@ class Tokens internal constructor(private val walletHandle: Long) {
         signingKeyId: Int,
         signerHandle: Long,
     ): Unit = withContext(Dispatchers.IO) {
+        validateSelectors(tokenPosition, signingKeyId)
         mapNativeErrors {
             TokensNative.tokenClaim(
                 walletHandle, identityId, tokenContractId, tokenPosition,
@@ -275,6 +296,7 @@ class Tokens internal constructor(private val walletHandle: Long) {
         signingKeyId: Int,
         signerHandle: Long,
     ): Unit = withContext(Dispatchers.IO) {
+        validateSelectors(tokenPosition, signingKeyId)
         val g = groupAction.flatten()
         mapNativeErrors {
             TokensNative.tokenUpdateConfig(
@@ -284,6 +306,18 @@ class Tokens internal constructor(private val walletHandle: Long) {
                 signingKeyId, signerHandle,
             )
         }
+    }
+
+    /**
+     * Validate the selectors every token action carries before they cross
+     * JNI: [tokenPosition] is a u16 contract position and [signingKeyId] an
+     * identity key id (u32) — both signed ints Kotlin-side.
+     */
+    private fun validateSelectors(tokenPosition: Int, signingKeyId: Int) {
+        require(tokenPosition in 0..0xFFFF) {
+            "tokenPosition must be in 0..65535, got $tokenPosition"
+        }
+        require(signingKeyId >= 0) { "signingKeyId must be non-negative, got $signingKeyId" }
     }
 }
 

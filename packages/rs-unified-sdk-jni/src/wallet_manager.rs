@@ -755,13 +755,25 @@ fn decode_funding_recipients(
         if !has_balance && remainder_index.is_none() {
             remainder_index = Some(i as u16);
         }
+        let balance = u64::from_be_bytes(balance_bytes.as_slice().try_into().ok()?);
+        // The Kotlin encoder writes this field from a signed long; a set
+        // sign bit means a negative amount crossed the boundary — reject
+        // rather than treat it as a huge unsigned credit value.
+        if balance & (1 << 63) != 0 {
+            throw_sdk_exception(
+                env,
+                1,
+                &format!("recipients blob row {i} credits amount out of range"),
+            );
+            return None;
+        }
         entries.push(platform_wallet_ffi::FundingAddressEntryFFI {
             address: platform_wallet_ffi::PlatformAddressFFI {
                 address_type: type_byte[0],
                 hash,
             },
             has_balance,
-            balance: u64::from_be_bytes(balance_bytes.as_slice().try_into().ok()?),
+            balance,
         });
     }
     // Exactly one remainder recipient must be present (the fee-absorbing
@@ -830,12 +842,24 @@ fn decode_credit_outputs(
         };
         let mut hash = [0u8; 20];
         hash.copy_from_slice(&hash_bytes);
+        let credits = u64::from_be_bytes(credit_bytes.as_slice().try_into().ok()?);
+        // The Kotlin encoder writes this field from a signed long; a set
+        // sign bit means a negative amount crossed the boundary — reject
+        // rather than treat it as a huge unsigned credit value.
+        if credits & (1 << 63) != 0 {
+            throw_sdk_exception(
+                env,
+                1,
+                &format!("outputs blob row {i} credits amount out of range"),
+            );
+            return None;
+        }
         outputs.push(platform_wallet_ffi::AddressBalanceEntryFFI {
             address: platform_wallet_ffi::PlatformAddressFFI {
                 address_type: type_byte[0],
                 hash,
             },
-            balance: u64::from_be_bytes(credit_bytes.as_slice().try_into().ok()?),
+            balance: credits,
             nonce: 0,
             account_index: 0,
             address_index: 0,
@@ -1580,6 +1604,21 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_s
     llmq_devnet_threshold: jni::sys::jint,
 ) {
     guard(&mut env, (), |env| {
+        // Reject sign errors at the boundary — negatives would otherwise
+        // bit-cast to huge u32s on the FFI call.
+        if start_from_height < 0 {
+            throw_sdk_exception(env, 1, "startFromHeight must be non-negative");
+            return;
+        }
+        if llmq_devnet_size < 0 {
+            throw_sdk_exception(env, 1, "llmqDevnetSize must be non-negative");
+            return;
+        }
+        if llmq_devnet_threshold < 0 {
+            throw_sdk_exception(env, 1, "llmqDevnetThreshold must be non-negative");
+            return;
+        }
+
         // data_dir is required.
         let Some(data_dir_c) = read_cstring_required(env, &data_dir, "data_dir") else {
             return;

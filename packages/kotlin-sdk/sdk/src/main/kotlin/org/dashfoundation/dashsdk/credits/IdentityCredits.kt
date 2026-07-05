@@ -21,6 +21,7 @@ data class FundingInput(
 ) {
     init {
         require(hash.size == 20) { "FundingInput.hash must be 20 bytes, got ${hash.size}" }
+        require(credits > 0) { "FundingInput.credits must be positive, got $credits" }
     }
 
     override fun equals(other: Any?): Boolean =
@@ -75,6 +76,7 @@ class IdentityCredits internal constructor() {
         amount: Long,
         signerHandle: Long,
     ) = withContext(Dispatchers.IO) {
+        require(amount > 0) { "amount must be positive, got $amount" }
         mapNativeErrors {
             CreditsNative.transferCredits(
                 walletHandle,
@@ -97,6 +99,7 @@ class IdentityCredits internal constructor() {
         toAddress: String,
         signerHandle: Long,
     ) = withContext(Dispatchers.IO) {
+        require(amount > 0) { "amount must be positive, got $amount" }
         mapNativeErrors {
             CreditsNative.withdrawCredits(
                 walletHandle,

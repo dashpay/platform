@@ -260,12 +260,16 @@ class PlatformWalletManager(
         publicKeyData: ByteArray,
         identityIndex: Int,
         keyIndex: Int,
-    ): String? = identityKeyDeriver.deriveAndStore(
-        walletId = walletId,
-        publicKeyData = publicKeyData,
-        identityIndex = identityIndex,
-        keyIndex = keyIndex,
-    )
+    ): String? {
+        require(identityIndex >= 0) { "identityIndex must be non-negative, got $identityIndex" }
+        require(keyIndex >= 0) { "keyIndex must be non-negative, got $keyIndex" }
+        return identityKeyDeriver.deriveAndStore(
+            walletId = walletId,
+            publicKeyData = publicKeyData,
+            identityIndex = identityIndex,
+            keyIndex = keyIndex,
+        )
+    }
 
     /**
      * Derive the full keypair at an identity key slot — the add-key path
@@ -278,6 +282,8 @@ class PlatformWalletManager(
         identityIndex: Int,
         keyIndex: Int,
     ): Pair<ByteArray, ByteArray> = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        require(identityIndex >= 0) { "identityIndex must be non-negative, got $identityIndex" }
+        require(keyIndex >= 0) { "keyIndex must be non-negative, got $keyIndex" }
         val pair = org.dashfoundation.dashsdk.errors.mapNativeErrors {
             org.dashfoundation.dashsdk.ffi.IdentityNative.deriveIdentityKeyPairWithResolver(
                 network.ffiValue,
@@ -531,6 +537,7 @@ class PlatformWalletManager(
         walletId: ByteArray,
         account: Int = 0,
     ): ByteArray? = withContext(Dispatchers.IO) {
+        require(account >= 0) { "account must be non-negative, got $account" }
         mapNativeErrors {
             FundingNative.shieldedDefaultAddress(managerHandle, walletId, account)
         }
@@ -556,6 +563,10 @@ class PlatformWalletManager(
         fundingAccountIndex: Int = 0,
         surplusOutput: ByteArray? = null,
     ): Unit = withContext(Dispatchers.IO) {
+        require(amountDuffs > 0) { "amountDuffs must be positive, got $amountDuffs" }
+        require(fundingAccountIndex >= 0) {
+            "fundingAccountIndex must be non-negative, got $fundingAccountIndex"
+        }
         mapNativeErrors {
             FundingNative.shieldedFundFromAssetLock(
                 managerHandle,
@@ -585,6 +596,7 @@ class PlatformWalletManager(
         require(outPointTxid.size == 32) {
             "outPointTxid must be exactly 32 bytes, got ${outPointTxid.size}"
         }
+        require(outPointVout >= 0) { "outPointVout must be non-negative, got $outPointVout" }
         mapNativeErrors {
             FundingNative.shieldedResumeFundFromAssetLock(
                 managerHandle,
@@ -617,6 +629,13 @@ class PlatformWalletManager(
         fundingAccountIndex: Int = 0,
         onProgress: ((batchIndex: Long, batchesTotalEstimate: Long, poolNotesNow: Long, target: Long) -> Unit)? = null,
     ): Unit = withContext(Dispatchers.IO) {
+        require(targetTotalNotes > 0) {
+            "targetTotalNotes must be positive, got $targetTotalNotes"
+        }
+        require(account >= 0) { "account must be non-negative, got $account" }
+        require(fundingAccountIndex >= 0) {
+            "fundingAccountIndex must be non-negative, got $fundingAccountIndex"
+        }
         val bridge = onProgress?.let { cb ->
             object : org.dashfoundation.dashsdk.ffi.SeedPoolProgressBridge() {
                 override fun onProgress(
