@@ -1,5 +1,6 @@
 package org.dashfoundation.example.services.faucet
 
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -56,8 +57,12 @@ internal object CapSolver {
      * Brute-force the smallest non-negative `nonce` such that
      * lowercase-hex(`SHA256(salt + nonce)`) starts with [target]. Compares
      * against the raw digest bytes rather than materializing the hex string.
+     * Suspend: checks cancellation every 0x10000 attempts so the caller's
+     * `withTimeout` can actually preempt a slow challenge (← Swift
+     * `CapSolver.solve`'s `Task.checkCancellation()` cadence — a worst-case
+     * solve must not pin a core after the sheet already gave up).
      */
-    fun solve(salt: String, target: String): Long {
+    suspend fun solve(salt: String, target: String): Long {
         val fullBytes = target.length / 2
         val hasNibble = target.length % 2 == 1
         val prefix = ByteArray(fullBytes) { i ->
@@ -75,6 +80,9 @@ internal object CapSolver {
             val digest = md.digest()
             if (digestHasPrefix(digest, prefix, nibble, hasNibble)) return nonce
             nonce++
+            if (nonce and 0xFFFF == 0L) {
+                kotlin.coroutines.coroutineContext.ensureActive()
+            }
         }
     }
 

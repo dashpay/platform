@@ -37,6 +37,12 @@
 //! shim allocate the FFI structs (`Box::into_raw` on a boxed slice) and
 //! the paired free trampoline reconstruct+drop that exact `Box`. Kotlin
 //! only ever returns flat holder objects; it never touches native memory.
+//!
+//! Ownership invariant on partial failure: a load trampoline stages every
+//! JNI read in owned Rust values (`Vec`s) first and mints the raw buffers
+//! the paired free trampoline expects only after the *entire* load has
+//! succeeded. An `ERR_JNI` return (whose free trampoline never runs)
+//! therefore never strands a Rust-owned buffer.
 
 #![allow(clippy::missing_safety_doc)]
 
@@ -1383,6 +1389,44 @@ unsafe extern "C" fn tramp_persist_shielded_activity(
 
 // ── Load: wallet list ─────────────────────────────────────────────────
 
+/// Staged wallet-list row: all JNI reads land in owned Rust memory, so a
+/// mid-load failure drops plain `Vec`s and never strands a raw buffer.
+/// [`seal_wallet_entries`] mints the raw pointers once the whole load
+/// succeeded.
+struct WalletRestoreStaged {
+    /// FFI row with `accounts` still null / 0 until sealed.
+    entry: WalletRestoreEntryFFI,
+    specs: Vec<AccountSpecStaged>,
+}
+
+/// Staged account spec: FFI struct with a null xpub pointer plus the
+/// owned xpub bytes.
+struct AccountSpecStaged {
+    /// FFI spec with `account_xpub_bytes` still null / 0 until sealed.
+    spec: AccountSpecFFI,
+    xpub: Vec<u8>,
+}
+
+/// Mint the raw FFI pointers for a fully staged wallet list. Infallible:
+/// runs only after every JNI read succeeded; every pointer minted here is
+/// freed by [`tramp_load_wallet_list_free`].
+fn seal_wallet_entries(staged: Vec<WalletRestoreStaged>) -> Vec<WalletRestoreEntryFFI> {
+    staged
+        .into_iter()
+        .map(|WalletRestoreStaged { mut entry, specs }| {
+            let specs: Vec<AccountSpecFFI> = specs
+                .into_iter()
+                .map(|AccountSpecStaged { mut spec, xpub }| {
+                    (spec.account_xpub_bytes, spec.account_xpub_bytes_len) = vec_into_raw(xpub);
+                    spec
+                })
+                .collect();
+            (entry.accounts, entry.accounts_count) = vec_into_raw(specs);
+            entry
+        })
+        .collect()
+}
+
 unsafe extern "C" fn tramp_load_wallet_list(
     context: *mut c_void,
     out_entries: *mut *const WalletRestoreEntryFFI,
@@ -1399,11 +1443,11 @@ unsafe extern "C" fn tramp_load_wallet_list(
             .l()?;
         let arr: jni::objects::JObjectArray = holders.into();
         let len = env.get_array_length(&arr)? as usize;
-        let mut out: Vec<WalletRestoreEntryFFI> = Vec::with_capacity(len);
+        let mut out: Vec<WalletRestoreStaged> = Vec::with_capacity(len);
         for i in 0..len {
             let entry = env.with_local_frame(
                 64,
-                |env| -> Result<WalletRestoreEntryFFI, jni::errors::Error> {
+                |env| -> Result<WalletRestoreStaged, jni::errors::Error> {
                     let h = env.get_object_array_element(&arr, i as i32)?;
                     build_wallet_restore_entry(env, &h)
                 },
@@ -1414,7 +1458,8 @@ unsafe extern "C" fn tramp_load_wallet_list(
     });
 
     match built {
-        Some(entries) => {
+        Some(staged) => {
+            let entries = seal_wallet_entries(staged);
             let count = entries.len();
             let boxed = entries.into_boxed_slice();
             let ptr = Box::into_raw(boxed) as *const WalletRestoreEntryFFI;
@@ -1430,15 +1475,15 @@ unsafe extern "C" fn tramp_load_wallet_list(
     }
 }
 
-/// Rebuild one `WalletRestoreEntryFFI` from a Kotlin `WalletRestoreData`.
-/// Every pointer field is a fresh Rust allocation freed in
-/// [`tramp_load_wallet_list_free`]. Nested arrays we don't rehydrate this
-/// milestone (identities, utxos, tracked locks, address pools, platform
-/// balances) are null / 0.
-unsafe fn build_wallet_restore_entry(
+/// Rebuild one wallet row from a Kotlin `WalletRestoreData` into a
+/// [`WalletRestoreStaged`] (owned buffers only; raw pointers are minted by
+/// [`seal_wallet_entries`] and freed in [`tramp_load_wallet_list_free`]).
+/// Nested arrays we don't rehydrate this milestone (identities, utxos,
+/// tracked locks, address pools, platform balances) are null / 0.
+fn build_wallet_restore_entry(
     env: &mut JNIEnv,
     holder: &JObject,
-) -> Result<WalletRestoreEntryFFI, jni::errors::Error> {
+) -> Result<WalletRestoreStaged, jni::errors::Error> {
     let wallet_id = read_id32_field(env, holder, "walletId")?;
     let network_ord = env.get_field(holder, "network", "I")?.i()?;
     let platform_sync_height = env.get_field(holder, "platformSyncHeight", "J")?.j()? as u64;
@@ -1461,7 +1506,7 @@ unsafe fn build_wallet_restore_entry(
         .l()?;
     let specs_arr: jni::objects::JObjectArray = specs_obj.into();
     let specs_len = env.get_array_length(&specs_arr)? as usize;
-    let mut specs: Vec<AccountSpecFFI> = Vec::with_capacity(specs_len);
+    let mut specs: Vec<AccountSpecStaged> = Vec::with_capacity(specs_len);
     for i in 0..specs_len {
         let spec = env.with_local_frame(32, |env| {
             let s = env.get_object_array_element(&specs_arr, i as i32)?;
@@ -1469,13 +1514,12 @@ unsafe fn build_wallet_restore_entry(
         })?;
         specs.push(spec);
     }
-    let (accounts_ptr, accounts_count) = vec_into_raw(specs);
 
-    Ok(WalletRestoreEntryFFI {
+    let entry = WalletRestoreEntryFFI {
         wallet_id,
         network: net_from_ord(network_ord),
-        accounts: accounts_ptr,
-        accounts_count,
+        accounts: ptr::null(),
+        accounts_count: 0,
         platform_address_balances: ptr::null(),
         platform_address_balances_count: 0,
         platform_sync_height,
@@ -1497,16 +1541,18 @@ unsafe fn build_wallet_restore_entry(
         core_address_pools_count: 0,
         last_applied_chain_lock_bytes: ptr::null(),
         last_applied_chain_lock_bytes_len: 0,
-    })
+    };
+    Ok(WalletRestoreStaged { entry, specs })
 }
 
-/// Rebuild one `AccountSpecFFI` from a Kotlin `AccountSpecData`. The xpub
-/// buffer is a fresh Rust `Box<[u8]>` freed in the wallet-list free
-/// trampoline; id fields are 32-byte owned buffers likewise freed there.
-unsafe fn build_account_spec(
+/// Rebuild one account spec from a Kotlin `AccountSpecData` into an
+/// [`AccountSpecStaged`]. The xpub stays an owned `Vec<u8>` here; the raw
+/// buffer the wallet-list free trampoline frees is minted by
+/// [`seal_wallet_entries`] only once the whole load succeeded.
+fn build_account_spec(
     env: &mut JNIEnv,
     holder: &JObject,
-) -> Result<AccountSpecFFI, jni::errors::Error> {
+) -> Result<AccountSpecStaged, jni::errors::Error> {
     let type_tag = env.get_field(holder, "typeTag", "B")?.b()? as u8;
     let standard_tag = env.get_field(holder, "standardTag", "B")?.b()? as u8;
     let index = env.get_field(holder, "index", "I")?.i()? as u32;
@@ -1514,17 +1560,20 @@ unsafe fn build_account_spec(
     let key_class = env.get_field(holder, "keyClass", "I")?.i()? as u32;
     let user_identity_id = read_optional_id32_field(env, holder, "userIdentityId")?;
     let friend_identity_id = read_optional_id32_field(env, holder, "friendIdentityId")?;
-    let (xpub_ptr, xpub_len) = read_bytes_field_into_raw(env, holder, "accountXpubBytes")?;
-    Ok(AccountSpecFFI {
-        type_tag,
-        standard_tag,
-        index,
-        registration_index,
-        key_class,
-        user_identity_id,
-        friend_identity_id,
-        account_xpub_bytes: xpub_ptr,
-        account_xpub_bytes_len: xpub_len,
+    let xpub = read_bytes_field_vec(env, holder, "accountXpubBytes")?;
+    Ok(AccountSpecStaged {
+        spec: AccountSpecFFI {
+            type_tag,
+            standard_tag,
+            index,
+            registration_index,
+            key_class,
+            user_identity_id,
+            friend_identity_id,
+            account_xpub_bytes: ptr::null(),
+            account_xpub_bytes_len: 0,
+        },
+        xpub,
     })
 }
 
@@ -1578,11 +1627,13 @@ unsafe extern "C" fn tramp_load_shielded_notes(
             .l()?
             .into();
         let len = env.get_array_length(&arr)? as usize;
-        let mut out: Vec<ShieldedNoteRestoreFFI> = Vec::with_capacity(len);
+        // Staged rows: raw buffers are minted only after every JNI read
+        // succeeded, so a mid-load failure drops owned Vecs and leaks nothing.
+        let mut out: Vec<(ShieldedNoteRestoreFFI, Vec<u8>)> = Vec::with_capacity(len);
         for i in 0..len {
             let entry = env.with_local_frame(
                 64,
-                |env| -> Result<ShieldedNoteRestoreFFI, jni::errors::Error> {
+                |env| -> Result<(ShieldedNoteRestoreFFI, Vec<u8>), jni::errors::Error> {
                     let h = env.get_object_array_element(&arr, i as i32)?;
                     let wallet_id = read_id32_field(env, &h, "walletId")?;
                     let account_index = env.get_field(&h, "accountIndex", "I")?.i()? as u32;
@@ -1592,27 +1643,39 @@ unsafe extern "C" fn tramp_load_shielded_notes(
                     let block_height = env.get_field(&h, "blockHeight", "J")?.j()? as u64;
                     let is_spent = env.get_field(&h, "isSpent", "B")?.b()? as u8;
                     let value = env.get_field(&h, "value", "J")?.j()? as u64;
-                    let (note_data_ptr, note_data_len) =
-                        read_bytes_field_into_raw(env, &h, "noteData")?;
-                    Ok(ShieldedNoteRestoreFFI {
-                        wallet_id,
-                        account_index,
-                        position,
-                        cmx,
-                        nullifier,
-                        block_height,
-                        is_spent,
-                        value,
-                        note_data_ptr,
-                        note_data_len,
-                    })
+                    let note_data = read_bytes_field_vec(env, &h, "noteData")?;
+                    Ok((
+                        ShieldedNoteRestoreFFI {
+                            wallet_id,
+                            account_index,
+                            position,
+                            cmx,
+                            nullifier,
+                            block_height,
+                            is_spent,
+                            value,
+                            note_data_ptr: ptr::null(),
+                            note_data_len: 0,
+                        },
+                        note_data,
+                    ))
                 },
             )?;
             out.push(entry);
         }
         Ok(out)
     });
-    finish_load(built, out_entries, out_count)
+    // Seal: every raw buffer minted here is freed by
+    // [`tramp_load_shielded_notes_free`].
+    let sealed = built.map(|rows| {
+        rows.into_iter()
+            .map(|(mut e, note_data)| {
+                (e.note_data_ptr, e.note_data_len) = vec_into_raw(note_data);
+                e
+            })
+            .collect()
+    });
+    finish_load(sealed, out_entries, out_count)
 }
 
 #[cfg(feature = "shielded")]
@@ -1643,11 +1706,13 @@ unsafe extern "C" fn tramp_load_shielded_outgoing_notes(
             .l()?
             .into();
         let len = env.get_array_length(&arr)? as usize;
-        let mut out: Vec<ShieldedOutgoingNoteRestoreFFI> = Vec::with_capacity(len);
+        // Staged rows: raw buffers are minted only after every JNI read
+        // succeeded, so a mid-load failure drops owned Vecs and leaks nothing.
+        let mut out: Vec<(ShieldedOutgoingNoteRestoreFFI, Vec<u8>)> = Vec::with_capacity(len);
         for i in 0..len {
             let entry = env.with_local_frame(
                 64,
-                |env| -> Result<ShieldedOutgoingNoteRestoreFFI, jni::errors::Error> {
+                |env| -> Result<(ShieldedOutgoingNoteRestoreFFI, Vec<u8>), jni::errors::Error> {
                     let h = env.get_object_array_element(&arr, i as i32)?;
                     let wallet_id = read_id32_field(env, &h, "walletId")?;
                     let account_index = env.get_field(&h, "accountIndex", "I")?.i()? as u32;
@@ -1655,24 +1720,37 @@ unsafe extern "C" fn tramp_load_shielded_outgoing_notes(
                     let recipient = read_bytes_field_fixed::<43>(env, &h, "recipient")?;
                     let value = env.get_field(&h, "value", "J")?.j()? as u64;
                     let block_height = env.get_field(&h, "blockHeight", "J")?.j()? as u64;
-                    let (memo_ptr, memo_len) = read_bytes_field_into_raw(env, &h, "memo")?;
-                    Ok(ShieldedOutgoingNoteRestoreFFI {
-                        wallet_id,
-                        account_index,
-                        cmx,
-                        recipient,
-                        value,
-                        block_height,
-                        memo_ptr,
-                        memo_len,
-                    })
+                    let memo = read_bytes_field_vec(env, &h, "memo")?;
+                    Ok((
+                        ShieldedOutgoingNoteRestoreFFI {
+                            wallet_id,
+                            account_index,
+                            cmx,
+                            recipient,
+                            value,
+                            block_height,
+                            memo_ptr: ptr::null(),
+                            memo_len: 0,
+                        },
+                        memo,
+                    ))
                 },
             )?;
             out.push(entry);
         }
         Ok(out)
     });
-    finish_load(built, out_entries, out_count)
+    // Seal: every raw buffer minted here is freed by
+    // [`tramp_load_shielded_outgoing_notes_free`].
+    let sealed = built.map(|rows| {
+        rows.into_iter()
+            .map(|(mut e, memo)| {
+                (e.memo_ptr, e.memo_len) = vec_into_raw(memo);
+                e
+            })
+            .collect()
+    });
+    finish_load(sealed, out_entries, out_count)
 }
 
 #[cfg(feature = "shielded")]
@@ -1733,6 +1811,17 @@ unsafe extern "C" fn tramp_load_shielded_sync_states_free(
     free_boxed_slice(entries, count, |_| {});
 }
 
+/// Owned staging for the four variable-length buffers of one shielded
+/// activity row; raw pointers are minted only after the whole load
+/// succeeded, so a mid-load failure drops plain `Vec`s and leaks nothing.
+#[cfg(feature = "shielded")]
+struct ShieldedActivityBuffersStaged {
+    counterparty: Vec<u8>,
+    memo: Vec<u8>,
+    note_cmxs: Vec<u8>,
+    spent_nullifiers: Vec<u8>,
+}
+
 #[cfg(feature = "shielded")]
 unsafe extern "C" fn tramp_load_shielded_activity(
     context: *mut c_void,
@@ -1750,11 +1839,11 @@ unsafe extern "C" fn tramp_load_shielded_activity(
             .l()?
             .into();
         let len = env.get_array_length(&arr)? as usize;
-        let mut out: Vec<ShieldedActivityRestoreFFI> = Vec::with_capacity(len);
+        type StagedActivity = (ShieldedActivityRestoreFFI, ShieldedActivityBuffersStaged);
+        let mut out: Vec<StagedActivity> = Vec::with_capacity(len);
         for i in 0..len {
-            let entry = env.with_local_frame(
-                80,
-                |env| -> Result<ShieldedActivityRestoreFFI, jni::errors::Error> {
+            let entry =
+                env.with_local_frame(80, |env| -> Result<StagedActivity, jni::errors::Error> {
                     let h = env.get_object_array_element(&arr, i as i32)?;
                     let wallet_id = read_id32_field(env, &h, "walletId")?;
                     let account_index = env.get_field(&h, "accountIndex", "I")?.i()? as u32;
@@ -1774,44 +1863,70 @@ unsafe extern "C" fn tramp_load_shielded_activity(
                     } else {
                         [0u8; 32]
                     };
-                    let (counterparty_ptr, counterparty_len) =
-                        read_bytes_field_into_raw(env, &h, "counterparty")?;
-                    let (memo_ptr, memo_len) = read_bytes_field_into_raw(env, &h, "memo")?;
-                    let (note_cmxs_ptr, cmxs_bytes) =
-                        read_bytes_field_into_raw(env, &h, "noteCmxs")?;
-                    let (spent_nullifiers_ptr, nulls_bytes) =
-                        read_bytes_field_into_raw(env, &h, "spentNullifiers")?;
-                    Ok(ShieldedActivityRestoreFFI {
-                        wallet_id,
-                        account_index,
-                        entry_id,
-                        kind_tag,
-                        direction,
-                        status,
-                        amount,
-                        fee,
-                        has_fee,
-                        block_height,
-                        has_block_height,
-                        created_at_ms,
-                        identity_id,
-                        has_identity_id,
-                        counterparty_ptr,
-                        counterparty_len,
-                        memo_ptr,
-                        memo_len,
-                        note_cmxs_ptr,
-                        note_cmxs_count: cmxs_bytes / 32,
-                        spent_nullifiers_ptr,
-                        spent_nullifiers_count: nulls_bytes / 32,
-                    })
-                },
-            )?;
+                    let buffers = ShieldedActivityBuffersStaged {
+                        counterparty: read_bytes_field_vec(env, &h, "counterparty")?,
+                        memo: read_bytes_field_vec(env, &h, "memo")?,
+                        note_cmxs: read_bytes_field_vec(env, &h, "noteCmxs")?,
+                        spent_nullifiers: read_bytes_field_vec(env, &h, "spentNullifiers")?,
+                    };
+                    Ok((
+                        ShieldedActivityRestoreFFI {
+                            wallet_id,
+                            account_index,
+                            entry_id,
+                            kind_tag,
+                            direction,
+                            status,
+                            amount,
+                            fee,
+                            has_fee,
+                            block_height,
+                            has_block_height,
+                            created_at_ms,
+                            identity_id,
+                            has_identity_id,
+                            counterparty_ptr: ptr::null(),
+                            counterparty_len: 0,
+                            memo_ptr: ptr::null(),
+                            memo_len: 0,
+                            note_cmxs_ptr: ptr::null(),
+                            note_cmxs_count: 0,
+                            spent_nullifiers_ptr: ptr::null(),
+                            spent_nullifiers_count: 0,
+                        },
+                        buffers,
+                    ))
+                })?;
             out.push(entry);
         }
         Ok(out)
     });
-    finish_load(built, out_entries, out_count)
+    // Seal: every raw buffer minted here is freed by
+    // [`tramp_load_shielded_activity_free`].
+    let sealed = built.map(|rows| {
+        rows.into_iter()
+            .map(|(mut e, bufs)| {
+                (e.counterparty_ptr, e.counterparty_len) = vec_into_raw(bufs.counterparty);
+                (e.memo_ptr, e.memo_len) = vec_into_raw(bufs.memo);
+                (e.note_cmxs_ptr, e.note_cmxs_count) = vec_into_raw_32byte_items(bufs.note_cmxs);
+                (e.spent_nullifiers_ptr, e.spent_nullifiers_count) =
+                    vec_into_raw_32byte_items(bufs.spent_nullifiers);
+                e
+            })
+            .collect()
+    });
+    finish_load(sealed, out_entries, out_count)
+}
+
+/// `Vec<u8>` of packed 32-byte items → `(*const u8, item_count)`. The free
+/// trampoline reconstructs a `count * 32`-byte allocation, so any ragged
+/// tail is trimmed to keep the allocation exactly that size.
+#[cfg(feature = "shielded")]
+fn vec_into_raw_32byte_items(mut bytes: Vec<u8>) -> (*const u8, usize) {
+    let count = bytes.len() / 32;
+    bytes.truncate(count * 32);
+    let (ptr, _len) = vec_into_raw(bytes);
+    (ptr, count)
 }
 
 #[cfg(feature = "shielded")]
@@ -1868,14 +1983,15 @@ unsafe extern "C" fn tramp_get_core_tx_record(
         let block_height = env.get_field(&obj, "blockHeight", "I")?.i()? as u32;
         let block_hash = read_id32_field(env, &obj, "blockHash")?;
         let block_timestamp = env.get_field(&obj, "blockTimestamp", "I")?.i()? as u32;
-        let (tx_ptr, tx_len) = read_bytes_field_into_raw(env, &obj, "txBytes")?;
+        // Staged as an owned Vec: the raw buffer is minted only in the
+        // all-reads-succeeded arm below, so a JNI failure leaks nothing.
+        let tx_bytes = read_bytes_field_vec(env, &obj, "txBytes")?;
         Ok(Some((
             context_kind,
             block_height,
             block_hash,
             block_timestamp,
-            tx_ptr,
-            tx_len,
+            tx_bytes,
         )))
     });
 
@@ -1887,7 +2003,7 @@ unsafe extern "C" fn tramp_get_core_tx_record(
             // No row for this txid.
             0
         }
-        Some(Some((kind, height, hash, ts, tx_ptr, tx_len))) => {
+        Some(Some((kind, height, hash, ts, tx_bytes))) => {
             *out_found = true;
             *out_context_kind = kind;
             *out_block_height = height;
@@ -1895,8 +2011,9 @@ unsafe extern "C" fn tramp_get_core_tx_record(
             if !out_block_hash.is_null() {
                 ptr::copy_nonoverlapping(hash.as_ptr(), out_block_hash, 32);
             }
-            *out_tx_bytes = tx_ptr;
-            *out_tx_bytes_len = tx_len;
+            // Raw buffer minted only now; freed by
+            // [`tramp_get_core_tx_record_free`].
+            (*out_tx_bytes, *out_tx_bytes_len) = vec_into_raw(tx_bytes);
             0
         }
     }
@@ -1938,7 +2055,9 @@ unsafe fn slice_or_empty<'a, T>(ptr: *const T, count: usize) -> &'a [T] {
     }
 }
 
-/// `Vec<T>` → `(*const T, len)`; empty vec yields `(null, 0)`.
+/// `Vec<T>` → `(*const T, len)`; empty vec yields `(null, 0)`. A non-null
+/// pointer is a leaked `Box<[T]>` the matching load-free trampoline
+/// reconstructs and drops — mint it only once the whole load succeeded.
 fn vec_into_raw<T>(v: Vec<T>) -> (*const T, usize) {
     if v.is_empty() {
         (ptr::null(), 0)
@@ -1948,7 +2067,7 @@ fn vec_into_raw<T>(v: Vec<T>) -> (*const T, usize) {
     }
 }
 
-/// Free a `Box<[u8]>` created by [`read_bytes_field_into_raw`]. No-op on null/0.
+/// Free a `Box<[u8]>` buffer minted by [`vec_into_raw`]. No-op on null/0.
 unsafe fn free_raw_bytes(ptr: *const u8, len: usize) {
     if !ptr.is_null() && len > 0 {
         drop(Box::from_raw(std::ptr::slice_from_raw_parts_mut(
@@ -1978,6 +2097,9 @@ unsafe fn free_boxed_slice<T>(ptr: *const T, count: usize, per_entry: impl Fn(&T
 }
 
 /// Common tail for load trampolines: publish the boxed vec or signal miss.
+///
+/// # Safety
+/// `out_entries` and `out_count` must be valid for writes.
 #[cfg_attr(not(feature = "shielded"), allow(dead_code))]
 unsafe fn finish_load<T>(
     built: Option<Vec<T>>,
@@ -2063,27 +2185,27 @@ fn read_bytes_field_fixed<const N: usize>(
     Ok(out)
 }
 
-/// Read a `ByteArray` field into a fresh Rust `Box<[u8]>`, returning
-/// `(*const u8, len)`. Empty / null → `(null, 0)`. The buffer is freed by
-/// the matching load-free trampoline via [`free_raw_bytes`].
-fn read_bytes_field_into_raw(
+/// Read a `ByteArray` field into an owned `Vec<u8>`; null / empty → empty
+/// vec. Load trampolines stage variable-length fields through this and
+/// mint the raw buffer via [`vec_into_raw`] (which maps empty back to
+/// `(null, 0)`) only after the whole load succeeded.
+fn read_bytes_field_vec(
     env: &mut JNIEnv,
     holder: &JObject,
     field: &str,
-) -> Result<(*const u8, usize), jni::errors::Error> {
+) -> Result<Vec<u8>, jni::errors::Error> {
     let obj = env.get_field(holder, field, "[B")?.l()?;
     if obj.is_null() {
-        return Ok((ptr::null(), 0));
+        return Ok(Vec::new());
     }
     let arr: JByteArray = obj.into();
     let len = env.get_array_length(&arr)? as usize;
     if len == 0 {
-        return Ok((ptr::null(), 0));
+        return Ok(Vec::new());
     }
     let mut buf = vec![0i8; len];
     env.get_byte_array_region(&arr, 0, &mut buf)?;
-    let bytes: Vec<u8> = buf.into_iter().map(|b| b as u8).collect();
-    Ok((Box::into_raw(bytes.into_boxed_slice()) as *const u8, len))
+    Ok(buf.into_iter().map(|b| b as u8).collect())
 }
 
 // Anchor the imports that are only referenced from inside `unsafe extern`
