@@ -1995,9 +1995,9 @@ unsafe fn finish_load<T>(
     }
 }
 
-/// Read a `ByteArray` field into a fixed `[u8; 32]`; short arrays are
-/// zero-padded, long arrays truncated (defensive — the Kotlin holders
-/// always supply 32).
+/// Read a `ByteArray` field into a fixed `[u8; 32]`. Null stays the
+/// all-zero absent sentinel; any other length fails the load (see
+/// [`read_bytes_field_fixed`]).
 fn read_id32_field(
     env: &mut JNIEnv,
     holder: &JObject,
@@ -2018,13 +2018,20 @@ fn read_bytes_field_fixed<const N: usize>(
     }
     let arr: JByteArray = obj.into();
     let len = env.get_array_length(&arr)? as usize;
-    let n = len.min(N);
-    if n > 0 {
-        let mut buf = vec![0i8; n];
-        env.get_byte_array_region(&arr, 0, &mut buf)?;
-        for (i, b) in buf.iter().enumerate() {
-            out[i] = *b as u8;
-        }
+    // A wrong-length id must fail the load (surfaced as ERR_JNI by the
+    // load trampoline) — zero-padding or truncating would silently
+    // rehydrate the row under an altered fixed-size key.
+    if len != N {
+        log::error!("load: field `{field}` expected {N} bytes, got {len}");
+        return Err(jni::errors::Error::WrongJValueType(
+            "byte[] of expected fixed length",
+            "byte[] of mismatched length",
+        ));
+    }
+    let mut buf = vec![0i8; N];
+    env.get_byte_array_region(&arr, 0, &mut buf)?;
+    for (i, b) in buf.iter().enumerate() {
+        out[i] = *b as u8;
     }
     Ok(out)
 }
