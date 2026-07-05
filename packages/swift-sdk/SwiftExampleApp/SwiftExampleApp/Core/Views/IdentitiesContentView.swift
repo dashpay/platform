@@ -342,23 +342,16 @@ struct IdentitiesContentView: View {
     /// SwiftData, but the "Pending Registrations" section above
     /// only reflects the in-memory coordinator state.
     ///
-    /// Each row's trailing affordance is staged on the lock's
-    /// `statusRaw`:
-    /// - `1` Broadcast: spinner + "Waiting for InstantSendLock or
-    ///   ChainLock…" — the lock can't fund a Platform identity
-    ///   until the masternodes sign either lock type. For
-    ///   freshly broadcast funding txs the IS lock typically
-    ///   arrives within seconds; for aged stuck locks (catch-up
-    ///   case) the IS quorum has rotated so only a ChainLock
-    ///   can resolve them. Either path lands as
-    ///   `statusRaw = 2` or `3`. SPV is running; the persister
-    ///   will flip the row when the event arrives, and
-    ///   SwiftData `@Query` re-renders the row into the
-    ///   actionable state without any extra wiring.
-    /// - `2` / `3` InstantSendLocked / ChainLocked: Resume
-    ///   button. Tapping opens `CreateIdentityView` pre-configured
-    ///   for the `.unusedAssetLock` funding path with this lock
-    ///   pinned.
+    /// Every row now renders a Resume button (see PR #4010): tapping
+    /// opens `CreateIdentityView` pre-configured for the
+    /// `.unusedAssetLock` funding path with this lock pinned.
+    /// - `1` Broadcast: no proof yet — `resume_asset_lock` re-broadcasts
+    ///   the tx and re-enters the finality wait (indefinite ChainLock
+    ///   wait). Without a Resume path a broadcast-but-interrupted lock
+    ///   (app killed mid-wait, or an aged lock whose IS quorum has
+    ///   rotated) would sit forever with no in-app recovery.
+    /// - `2` / `3` InstantSendLocked / ChainLocked: the lock is
+    ///   fund-ready; Resume submits IdentityCreate directly.
     ///
     /// Empty when there are no orphan locks; collapses to nothing
     /// in that case so the rest of the screen isn't pushed down by
@@ -387,6 +380,8 @@ struct IdentitiesContentView: View {
 
     /// Pure anti-join across all wallets. A lock is *visible* on the
     /// Resumable Registrations surface iff
+    /// - `fundingTypeRaw` is in `0...2` (generic identity-resume variants:
+    ///   IdentityRegistration / IdentityTopUp / IdentityTopUpNotBound), AND
     /// - `statusRaw` is in `1...3` (Broadcast through ChainLocked), AND
     /// - no `(walletId, identityIndex)` slot is in `usedSlots`.
     ///
@@ -402,14 +397,28 @@ struct IdentitiesContentView: View {
     ///    the in-memory Pending Registrations list, letting the
     ///    user race a duplicate Resume tap against the original.
     ///
+    /// The funding-type whitelist keeps every incompatible asset lock
+    /// off this surface. IdentityInvitation (3) is a bearer voucher whose
+    /// key is shared in the invitation link. Generic Resume must not
+    /// consume it into an unrelated local identity and invalidate the
+    /// invitee's claim; only the Invitations reclaim flow may authorize
+    /// that consumption with `consumeInvitationVoucher: true`, and the
+    /// Rust funding resolver enforces the same restriction.
+    /// AssetLockAddressTopUp (4) and
+    /// AssetLockShieldedAddressTopUp (5) target the platform-address and
+    /// shielded-address flows and are tracked by their own surfaces.
+    /// Explicitly whitelisting 0...2 also rejects negative and unknown
+    /// future discriminators fail-closed.
+    ///
     /// The status floor (`>= 1`, Broadcast) is intentionally low:
     /// a lock at Broadcast (1) is in mid-handoff — SPV will
     /// deliver the InstantSendLock shortly and the persister will
-    /// flip it to (2), at which point the row's trailing affordance
-    /// flips from a spinner to a Resume button automatically
-    /// (SwiftData `@Query` is reactive). Hiding (1) entirely would
-    /// create a UX asymmetry where the just-broadcast lock vanishes
-    /// from the UI then reappears seconds later at (2).
+    /// flip it to (2). Hiding (1) entirely would create a UX
+    /// asymmetry where the just-broadcast lock vanishes from the UI
+    /// then reappears seconds later at (2). Since PR #4010 the
+    /// trailing affordance is a Resume button for every row —
+    /// tapping Broadcast re-enters the finality wait via
+    /// `resume_asset_lock`.
     ///
     /// `statusRaw == 0` (Built but never broadcast) is filtered
     /// out: a tight crash window between TX build and broadcast
@@ -423,9 +432,9 @@ struct IdentitiesContentView: View {
     /// slot), but the local-only delete-identity action removes
     /// the identity row WITHOUT the asset-lock row, which frees the
     /// slot in the anti-join. Without this upper bound a Consumed
-    /// lock would re-surface as a perpetual-spinner row whose
-    /// "Resume" path can't advance — `resume_asset_lock` rejects
-    /// Consumed entries with "already Consumed — nothing to resume".
+    /// lock would re-surface as a Resume row that can't advance —
+    /// `resume_asset_lock` rejects Consumed entries with
+    /// "already Consumed — nothing to resume".
     ///
     /// Generic over `AssetLockResumeRow` so the pure filter is
     /// unit-testable without a SwiftData container.
@@ -434,16 +443,8 @@ struct IdentitiesContentView: View {
         usedSlots: Set<UsedSlot>
     ) -> [R] {
         locks.filter { lock in
+            guard lock.fundingTypeRaw >= 0 && lock.fundingTypeRaw <= 2 else { return false }
             guard lock.statusRaw >= 1 && lock.statusRaw <= 3 else { return false }
-            // Invitation vouchers (fundingTypeRaw 3, IdentityInvitation) are
-            // bearer locks whose key is shared in the invitation link — they
-            // are reclaimed via the Invitations screen, never resumed as a
-            // local registration (which would consume the voucher into an
-            // unrelated identity and kill the invitee's claim). Their nominal
-            // identity slot is 0, so without this exclusion an unclaimed
-            // voucher surfaces here whenever slot 0 is free. The Rust funding
-            // resolver refuses them too; this keeps the row from rendering.
-            guard lock.fundingTypeRaw != 3 else { return false }
             let slot = UInt32(bitPattern: lock.identityIndexRaw)
             return !usedSlots.contains(
                 UsedSlot(walletId: lock.walletId, slot: slot)
