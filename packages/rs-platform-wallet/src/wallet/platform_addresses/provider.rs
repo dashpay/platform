@@ -525,17 +525,39 @@ impl PlatformPaymentAddressProvider {
     /// cached `found` seed (unlike [`reset_sync_state`](Self::reset_sync_state),
     /// which is the "Clear" flow).
     ///
-    /// WHY (ADDR-09): the asset-lock top-up path reconciles the
+    /// WHY (ADDR-09): every flow that credits a wallet-owned address via
+    /// an on-chain `AddBalanceToAddress` DELTA (`AddToCredits` in Drive's
+    /// recent-address-balance-changes tree) — asset-lock top-up recipients,
+    /// same-wallet transfer outputs, identity-registration change,
+    /// identity→address credit-transfer recipients — reconciles the
     /// proof-attested ABSOLUTE balance `X` into both the managed account
-    /// and the provider's committed `found` seed, but the on-chain credit
-    /// is recorded as a DELTA (`AddBalanceToAddress` → `AddToCredits`) in
-    /// Drive's recent-address-balance-changes tree. If the next pass ran
+    /// and the provider's committed `found` seed. If the next pass ran
     /// INCREMENTALLY it would seed `result.found` from `current_balances()`
     /// (already `X`) and then re-apply that recent `AddToCredits(X)` delta
     /// from the stale watermark, landing at `X + X = 2X` — the ADDR-09
     /// double-count. An optimistic absolute write is fundamentally
     /// inconsistent with incremental delta re-application, so we force the
-    /// very next pass to full-scan-reconcile.
+    /// very next pass to full-scan-reconcile. The single call site is the
+    /// gate inside `PlatformAddressWallet::reconcile_address_infos`, which
+    /// fires when a committed entry matches the caller-declared
+    /// `credited_outputs` set — inside the seam's provider-lock critical
+    /// section, so no sync pass can interleave between the seed commit and
+    /// this invalidation with the stale watermark.
+    ///
+    /// DURABILITY: in-memory only. The persisted sync watermark cannot be
+    /// reset to 0 through the normal changeset —
+    /// `PlatformAddressChangeSet::merge` combines `sync_height` with
+    /// `.max()` and the FFI persister only fires `on_persist_sync_state_fn`
+    /// when a component is `> 0` — so a durable zero would have to fight
+    /// both the merge and the `> 0` gate. Instead we rely on the in-session
+    /// BLAST cadence (~15s): the next pass full-scans, reconciles to `X`,
+    /// and persists a correct FORWARD watermark, so durable state
+    /// self-corrects within ~15s. The only residual gap is an app kill
+    /// inside that window; a restart then resumes incremental sync from the
+    /// stale persisted watermark and the double-count could briefly
+    /// reappear until the next full rescan (or a manual Clear). That narrow
+    /// window is accepted rather than over-engineering a durable
+    /// invalidation against the `.max()` merge / `> 0` gate.
     ///
     /// With `sync_timestamp == 0`, [`last_sync_timestamp`](Self::last_sync_timestamp)
     /// returns `None`, which makes `sync_address_balances` choose the
@@ -1521,33 +1543,27 @@ mod tests {
         }
     }
 
-    /// Integration regression for the reconciliation *contract* — not
-    /// just the pure entry builder. `reconcile_address_infos` must build
-    /// AND **persist** a `PlatformAddressChangeSet` carrying the proof's
-    /// post-spend balance for a spent address resolved via the provider's
-    /// persisted state. The reported bug was the *missing persist* (the SDK's
-    /// `address_infos` were discarded), so this pins that `store` actually
-    /// fires with the decremented entry — a helper-only test would still pass
-    /// if `reconcile_address_infos` stopped persisting.
-    #[tokio::test]
-    async fn reconcile_address_infos_persists_decremented_balance() {
+    /// Wallet wired to a capturing persister — the shared fixture for the
+    /// reconciliation-seam tests below. `reconcile_address_infos` only
+    /// touches provider / wallet_manager / persister; the rest mirrors the
+    /// short-circuit fixture.
+    async fn reconcile_seam_wallet(
+        recorder: Arc<CapturingPersister>,
+    ) -> (
+        crate::wallet::platform_addresses::PlatformAddressWallet,
+        Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+    ) {
         use crate::broadcaster::SpvBroadcaster;
         use crate::events::PlatformEventManager;
         use crate::spv::SpvRuntime;
         use crate::wallet::asset_lock::manager::AssetLockManager;
         use crate::wallet::persister::WalletPersister;
         use crate::wallet::platform_addresses::PlatformAddressWallet;
-        use dash_sdk::query_types::AddressInfo;
         use tokio::sync::Notify;
 
-        let recorder = Arc::new(CapturingPersister::default());
-
-        // Wallet wired to the capturing persister. The rest mirrors the
-        // short-circuit fixture — `reconcile_address_infos` only touches
-        // provider / wallet_manager / persister.
         let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
         let wallet_manager = Arc::new(RwLock::new(WalletManager::new(sdk.network)));
-        let persister = WalletPersister::new(WALLET, recorder.clone());
+        let persister = WalletPersister::new(WALLET, recorder);
         let event_manager = Arc::new(PlatformEventManager::new(Vec::new()));
         let spv = Arc::new(SpvRuntime::new(Arc::clone(&wallet_manager), event_manager));
         let broadcaster = Arc::new(SpvBroadcaster::new(spv));
@@ -1566,6 +1582,23 @@ mod tests {
             asset_locks,
             persister,
         );
+        (wallet, wallet_manager)
+    }
+
+    /// Integration regression for the reconciliation *contract* — not
+    /// just the pure entry builder. `reconcile_address_infos` must build
+    /// AND **persist** a `PlatformAddressChangeSet` carrying the proof's
+    /// post-spend balance for a spent address resolved via the provider's
+    /// persisted state. The reported bug was the *missing persist* (the SDK's
+    /// `address_infos` were discarded), so this pins that `store` actually
+    /// fires with the decremented entry — a helper-only test would still pass
+    /// if `reconcile_address_infos` stopped persisting.
+    #[tokio::test]
+    async fn reconcile_address_infos_persists_decremented_balance() {
+        use dash_sdk::query_types::AddressInfo;
+
+        let recorder = Arc::new(CapturingPersister::default());
+        let (wallet, wallet_manager) = reconcile_seam_wallet(recorder.clone()).await;
 
         // The provider knows the spent address via its persisted bijection
         // (pre-spend balance 100).
@@ -1587,7 +1620,7 @@ mod tests {
         );
 
         wallet
-            .reconcile_address_infos(&address_infos, "test top-up")
+            .reconcile_address_infos(&address_infos, &BTreeSet::new(), "test top-up")
             .await;
 
         // The reconciliation must have PERSISTED the decremented entry — the
@@ -1625,6 +1658,166 @@ mod tests {
             seed[0].2,
             funds(5, 4),
             "committed found seed must carry the reconciled funds"
+        );
+    }
+
+    /// ADDR-09 watermark gate, credit side: when the seam COMMITS an entry
+    /// for an address the caller declared as a delta-credited output, it
+    /// must invalidate the incremental sync watermark INSIDE its critical
+    /// section (forcing the next BLAST pass to full-scan-reconcile instead
+    /// of re-applying the on-chain `AddToCredits` delta on top of the
+    /// just-committed absolute seed) — while KEEPING the reconciled `found`
+    /// seed visible for display / input budgeting.
+    #[tokio::test]
+    async fn reconcile_invalidates_watermark_when_credited_output_committed() {
+        use dash_sdk::query_types::AddressInfo;
+
+        let recorder = Arc::new(CapturingPersister::default());
+        let (wallet, wallet_manager) = reconcile_seam_wallet(recorder).await;
+
+        // Mid-incremental-sync provider: non-zero watermark, pre-credit
+        // seed balance 100 at nonce 1.
+        let addr = p2pkh(0x11);
+        let mut provider =
+            provider_tracking_address(Arc::clone(&wallet_manager), WALLET, addr, funds(100, 1));
+        provider.set_stored_sync_state(10, 20, 30);
+        *wallet.provider.write().await = Some(provider);
+
+        // A transition credited the address (delta on-chain); the proof
+        // attests the post-credit ABSOLUTE balance 600. Output credits
+        // leave the address nonce untouched, so it stays at 1.
+        let credited = PlatformAddress::P2pkh([0x11; 20]);
+        let mut address_infos = AddressInfos::new();
+        address_infos.insert(
+            credited,
+            Some(AddressInfo {
+                address: credited,
+                nonce: 1,
+                balance: 600,
+            }),
+        );
+        let credited_outputs: BTreeSet<PlatformP2PKHAddress> = [addr].into_iter().collect();
+
+        let cs = wallet
+            .reconcile_address_infos(&address_infos, &credited_outputs, "test credit")
+            .await;
+        assert_eq!(cs.addresses.len(), 1, "the credit must be committed");
+
+        let guard = wallet.provider.read().await;
+        let provider = guard.as_ref().expect("provider present");
+        assert_eq!(
+            provider.last_sync_timestamp(),
+            None,
+            "committed credited output must zero the watermark so the next \
+             pass takes the full-scan branch (the ADDR-09 gate)"
+        );
+        assert_eq!(provider.last_sync_height(), 0);
+        assert_eq!(provider.last_known_recent_block(), 0);
+        // The reconciled seed survives the invalidation.
+        let seed: Vec<_> = provider.current_balances().collect();
+        assert_eq!(seed.len(), 1);
+        assert_eq!(
+            seed[0].2,
+            funds(600, 1),
+            "invalidation must not drop the just-reconciled found seed"
+        );
+    }
+
+    /// ADDR-09 watermark gate, drain side: a reconciliation that only
+    /// touches INPUT addresses (empty `credited_outputs` — e.g. an
+    /// external-recipient transfer or a withdrawal) must PRESERVE the
+    /// incremental watermark. Inputs are recorded on-chain as absolute
+    /// `SetBalanceToAddress` ops, idempotent under incremental re-apply,
+    /// so forcing a full scan would only burn the fast cadence.
+    #[tokio::test]
+    async fn reconcile_keeps_watermark_without_credited_outputs() {
+        use dash_sdk::query_types::AddressInfo;
+
+        let recorder = Arc::new(CapturingPersister::default());
+        let (wallet, wallet_manager) = reconcile_seam_wallet(recorder).await;
+
+        let addr = p2pkh(0x11);
+        let mut provider =
+            provider_tracking_address(Arc::clone(&wallet_manager), WALLET, addr, funds(100, 1));
+        provider.set_stored_sync_state(10, 20, 30);
+        *wallet.provider.write().await = Some(provider);
+
+        // A spend drained the address: absolute post-spend balance 5,
+        // bumped input nonce 4. No credited outputs declared.
+        let spent = PlatformAddress::P2pkh([0x11; 20]);
+        let mut address_infos = AddressInfos::new();
+        address_infos.insert(
+            spent,
+            Some(AddressInfo {
+                address: spent,
+                nonce: 4,
+                balance: 5,
+            }),
+        );
+
+        let cs = wallet
+            .reconcile_address_infos(&address_infos, &BTreeSet::new(), "test drain")
+            .await;
+        assert_eq!(cs.addresses.len(), 1, "the drain must be committed");
+
+        let guard = wallet.provider.read().await;
+        let provider = guard.as_ref().expect("provider present");
+        assert_eq!(
+            provider.last_sync_timestamp(),
+            Some(20),
+            "input-only reconciliation must keep the incremental watermark"
+        );
+        assert_eq!(provider.last_sync_height(), 10);
+        assert_eq!(provider.last_known_recent_block(), 30);
+    }
+
+    /// ADDR-09 watermark gate keys on entries actually COMMITTED, not
+    /// merely requested: a credited output whose proof entry matches the
+    /// committed seed exactly (`unchanged_skipped` — a background sync
+    /// already applied this credit and advanced the watermark past it)
+    /// must NOT trigger invalidation.
+    #[tokio::test]
+    async fn reconcile_keeps_watermark_when_credited_output_not_committed() {
+        use dash_sdk::query_types::AddressInfo;
+
+        let recorder = Arc::new(CapturingPersister::default());
+        let (wallet, wallet_manager) = reconcile_seam_wallet(recorder).await;
+
+        // Seed already carries the post-credit state (600, nonce 1) — the
+        // background sync applied the credit before this reconcile ran.
+        let addr = p2pkh(0x11);
+        let mut provider =
+            provider_tracking_address(Arc::clone(&wallet_manager), WALLET, addr, funds(600, 1));
+        provider.set_stored_sync_state(10, 20, 30);
+        *wallet.provider.write().await = Some(provider);
+
+        let credited = PlatformAddress::P2pkh([0x11; 20]);
+        let mut address_infos = AddressInfos::new();
+        address_infos.insert(
+            credited,
+            Some(AddressInfo {
+                address: credited,
+                nonce: 1,
+                balance: 600,
+            }),
+        );
+        let credited_outputs: BTreeSet<PlatformP2PKHAddress> = [addr].into_iter().collect();
+
+        let cs = wallet
+            .reconcile_address_infos(&address_infos, &credited_outputs, "test unchanged")
+            .await;
+        assert!(
+            cs.addresses.is_empty(),
+            "unchanged entry must be skipped, not re-committed"
+        );
+
+        let guard = wallet.provider.read().await;
+        let provider = guard.as_ref().expect("provider present");
+        assert_eq!(
+            provider.last_sync_timestamp(),
+            Some(20),
+            "a credit the sync already applied (and advanced the watermark \
+             past) must not force a full rescan"
         );
     }
 
