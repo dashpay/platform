@@ -134,7 +134,11 @@ class ShieldedServiceTest {
     @Test
     fun progressAndTreeEventsUpdateLiveCounters() {
         service.reduce(walletId, WalletSyncEvent.ShieldedProgress(4_096, 12_345))
-        assertEquals(4_096L, service.state.value.totalScanned)
+        // Progress feeds the LIVE counter only — the lifetime total must
+        // not move until the pass completes (a progress+result pair would
+        // otherwise double-count the pass).
+        assertEquals(4_096L, service.state.value.currentSyncScanned)
+        assertEquals(0L, service.state.value.totalScanned)
         service.reduce(walletId, WalletSyncEvent.ShieldedTreeProgress(500, 1_000))
         assertEquals(500L, service.state.value.treeLeavesCommitted)
         assertEquals(1_000L, service.state.value.treeTotalTarget)

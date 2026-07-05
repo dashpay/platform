@@ -62,6 +62,13 @@ class ShieldedService(private val database: DashDatabase) {
         val lastNewlySpent: Int = 0,
         val totalScanned: Long = 0,
         val totalNewNotes: Long = 0,
+        /**
+         * Live in-pass cumulative scan counter (Rust progress callback) —
+         * distinct from the lifetime [totalScanned], which only grows on
+         * successful completion (← Swift `currentShieldedSyncScanned` vs
+         * `totalScanned`, ShieldedService.swift:335/756).
+         */
+        val currentSyncScanned: Long = 0,
         val syncCountSinceLaunch: Int = 0,
         val treeLeavesCommitted: Long = 0,
         val treeTotalTarget: Long = 0,
@@ -183,6 +190,7 @@ class ShieldedService(private val database: DashDatabase) {
                         lastNewlySpent = event.newlySpent,
                         totalScanned = s.totalScanned + event.totalScanned,
                         totalNewNotes = s.totalNewNotes + event.newNotes,
+                        currentSyncScanned = 0,
                     )
                 }
             }
@@ -192,7 +200,7 @@ class ShieldedService(private val database: DashDatabase) {
             }
 
             is WalletSyncEvent.ShieldedProgress -> {
-                _state.update { it.copy(totalScanned = event.cumulativeScanned) }
+                _state.update { it.copy(currentSyncScanned = event.cumulativeScanned) }
             }
 
             is WalletSyncEvent.ShieldedTreeProgress -> {

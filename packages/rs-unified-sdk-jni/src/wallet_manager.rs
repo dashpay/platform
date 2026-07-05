@@ -269,9 +269,18 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_c
             return ptr::null_mut();
         }
         // Publish the wallet handle out-param, then the id return value.
-        if !out_wallet_handle.is_null() {
+        // The handle is owned: if it cannot reach a Kotlin owner (null
+        // out-param, region-write failure), destroy it here — otherwise
+        // the registry entry leaks with no one able to call walletDestroy.
+        let published = !out_wallet_handle.is_null() && {
             let one = [wallet_handle as jlong];
-            let _ = env.set_long_array_region(&out_wallet_handle, 0, &one);
+            env.set_long_array_region(&out_wallet_handle, 0, &one)
+                .is_ok()
+        };
+        if !published {
+            unsafe { platform_wallet_ffi::platform_wallet_destroy(wallet_handle as Handle) };
+            throw_sdk_exception(env, 1, "outWalletHandle must be a non-null long[1]");
+            return ptr::null_mut();
         }
         env.byte_array_from_slice(&wallet_id)
             .map(|a| a.into_raw())
