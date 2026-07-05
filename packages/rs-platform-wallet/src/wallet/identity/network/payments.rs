@@ -96,9 +96,10 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     /// `synced_height` may regress here: that is safe because it is the
     /// filter-scan checkpoint, decoupled from the monotonic
     /// `last_processed_height`, and every persisted sync cursor is monotonic-max
-    /// guarded (see `docs/dashpay/CORE_HEIGHT_RESCAN_SPEC.md` §3.4). Only the
-    /// **receival** account matters — `DashpayExternalAccount` is outbound and
-    /// never receives. Returns the floor the height was lowered to, or `None`.
+    /// guarded, so a transient rewind cannot corrupt state or persist a lower
+    /// cursor. Only the **receival** account matters — `DashpayExternalAccount`
+    /// is outbound and never receives. Returns the floor the height was lowered
+    /// to, or `None`.
     pub async fn reconcile_dashpay_rescan(&self) -> Result<Option<u32>, PlatformWalletError> {
         use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 

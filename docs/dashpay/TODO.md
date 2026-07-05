@@ -62,8 +62,8 @@ audit (`DIP_CONFORMANCE_GAPS.md`). Prioritized; check off as done.
 - [~] **coreHeight block-rescan — DIP-15 §8.7 + §12.6 (NEW, payment-loss).** Tasks A+B
   IMPLEMENTED + reviewed + pushed (`cba515aaf1`, `18483e4232`); only the funding-gated
   `dp_*` e2e (C) and the optional durability breadcrumb (D) remain.
-  Surfaced by the re-audit (`DIP_CONFORMANCE_GAPS.md` §1.1). **Spec
-  `docs/dashpay/CORE_HEIGHT_RESCAN_SPEC.md` — REVIEWED (4 lenses), implemented.**
+  Surfaced by the re-audit (`DIP_CONFORMANCE_GAPS.md` §1.1). **REVIEWED (4 lenses),
+  implemented; as-built note folded into SPEC.md Milestone 1.**
   An incoming payment that landed on a contact's receival address **before** that address
   was watched is silently missed. The review reshaped the fix (see spec §0): the dash-spv
   `FiltersManager` already backfills when a wallet's `synced_height` drops below the scan
@@ -123,8 +123,8 @@ audit (`DIP_CONFORMANCE_GAPS.md`). Prioritized; check off as done.
   duplicated the convention). Red→green test
   `account_label_is_always_a_valid_48_to_80_byte_field` pins both bounds + multi-byte +
   the exact-48 edge. (No live SDK change needed — it calls the primitive.)
-  - [~] **Receive-side label surfacing — IMPLEMENTED (2026-06-24).** Spec
-    `ACCOUNT_LABEL_SURFACING_SPEC.md` (5-lens reviewed; must-fixes folded). The
+  - [~] **Receive-side label surfacing — IMPLEMENTED (2026-06-24).** 5-lens reviewed;
+    must-fixes folded; as-built note in SPEC.md Milestone 3. The
     contact's label is now decrypted in Rust at the two signer-bearing register sites
     (the drain `RegisterExternal` Ok-branch + `accept_register_external_validated`,
     where the ECDH `shared` already lives) via `store_contact_account_label`, stored on
@@ -337,7 +337,7 @@ audit (`DIP_CONFORMANCE_GAPS.md`). Prioritized; check off as done.
     panic-window guard; neutral drain log; SeedMismatch-vs-transient unlock branch; doc/spec
     fixes). Deferred:
     - [x] **needs-unlock / verify-failed UI signal — DONE** (`9963923e05` Rust+FFI,
-      `841802c587` Swift). Spec + 4-lens review in `NEEDS_UNLOCK_SIGNAL_SPEC.md`.
+      `841802c587` Swift). 4-lens reviewed; as-built note folded into SPEC.md Part 6.
       Diverged from "through persistence like `paymentChannelBroken`" (the review found
       that path isn't buildable today — the per-wallet restore is blocked upstream — and
       would persist self-healing state): instead a pollable FFI count getter + a per-wallet

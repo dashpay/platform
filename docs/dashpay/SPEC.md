@@ -702,6 +702,22 @@ Ordered so the test seam exists before the TDD-gated tasks that need it.
    **Not M1-exit-gating** (Part 7.4): M1 exits on tasks 1–5; this task is tracked
    on #3549 and lands when the framework does.
 
+**coreHeight backfill rescan (DIP-15 §8.7/§12.6) — DONE (2026-06-24).** Surfaced by
+the re-audit after M1's original plan: an incoming payment to a contact's receival
+address that landed *before* the address was watched (restore-from-seed, second
+device, or the offline-accept→pay window) was silently missed. Fixed by (a) re-import
+scanning from birth-height `Some(0)` (`cba515aaf1`) so on-chain history isn't skipped,
+and (b) `reconcile_dashpay_rescan` (`18483e4232`, a local-only step of `dashpay_sync`
+in `manager/dashpay_sync.rs`) that lowers the wallet's SPV `synced_height` toward
+`min($coreHeightCreatedAt)` over established receival contacts so dash-spv's filter
+manager re-matches the now-watched addresses against blocks it already scanned. It uses
+the inner unconditional height setter (no upstream change) with a per-contact
+`dashpay_rescan_triggered` one-shot guard so the recurring sweep doesn't re-lower the
+height every pass. The regression is safe (`synced_height` is the filter-scan
+checkpoint, decoupled from the monotonic `last_processed_height`); the floor is clamped
+to the engine's header/birth floor, and the one SPV caveat is that a rewind into a
+never-stored filter range is retried silently every 30s rather than erroring.
+
 ### Milestone 2 — Swift UI (first-class, polished) + Swift tests
 
 See Part 6 for the screen design. Tasks:
@@ -791,6 +807,21 @@ See Part 6 for the screen design. Tasks:
     `ManagedPlatformWallet.setDashPayContactInfo`; ContactsView hidden
     filter + alias display moved off the UserDefaults meta store (which
     now only keeps the add-time DPNS hint); labels updated.
+
+**Receive-side `encryptedAccountLabel` surfacing (DIP-15 §8.5) — DONE (2026-06-24).**
+The send side already length-normalizes the label; the receive side now decrypts and
+shows it. Decrypted in Rust at the two signer-bearing register sites (the drain
+`RegisterExternal` Ok-branch + `accept_register_external_validated`, where the ECDH
+`shared` key lives) by `store_contact_account_label` (`network/contact_requests.rs`),
+stored on the derived `EstablishedContact.contact_account_label` field (reset in `new`,
+`reestablish_preserving_metadata`, and `apply_rotated_incoming_request` so it never
+goes stale). It is surfaced **incoming-only** — it is the contact's label for *their*
+account, so it is derived strictly from the incoming request and projected onto the
+incoming FFI row only (the outgoing row's label is one *we* sent and is never shown),
+via `contact_persistence.rs`. Decrypt failures / garbage / control-chars sanitize to
+`None` (cosmetic — never breaks the channel), and it resets on rotation. Renders as a
+read-only "Their account" row through Swift `contactAccountLabel` → `ContactDetailView`.
+
 15. **G4 design-only:** specify the FFI ECDH hook (shared-secret-only across the
     ABI — never a raw private key; see G4) so M4's implementation doesn't churn
     the wallet API.
@@ -1074,6 +1105,18 @@ From `research/05` §5 / `SwiftExampleApp/CLAUDE.md`:
 - **Broken payment channel** (surfaces G1(c)) — ContactsView row shows a warning
   badge; ContactDetailView disables Send Dash with "Payment channel broken — ask
   the contact to send a new request" (re-enables when a new request arrives).
+- **Needs-unlock / verify-failed banner** (seedless wallets) — **DONE (2026-06-23;
+  `9963923e05` Rust+FFI, `841802c587` Swift).** A signerless sweep enqueues
+  contact-crypto ops it can't finish while the Keychain is locked;
+  `pending_contact_crypto_count` (`network/contact_requests.rs`) → FFI
+  `platform_wallet_pending_contact_crypto_count` (`dashpay.rs`) feeds the ~1 Hz Swift
+  poller into a per-wallet `DashPayUnlockStatus` / `@Published dashPayUnlockStatus`,
+  rendered as a banner in `DashPayTabView.swift` (orange "N contact(s) waiting to
+  finish setup" + Unlock, red on seed-mismatch). The count **excludes**
+  `ContactInfoDecrypt` ops — those re-enqueue every sweep, so counting them would
+  falsely re-trip the banner ~15s after every unlock; only the account-build ops
+  (`RegisterReceiving`/`RegisterExternal`) converge to 0 once the payment account is
+  built.
 - **Profile save flow** — on save: disable Save + inline `ProgressView`; success →
   dismiss the editor sheet; failure → re-enable Save + red caption below the form.
 - **Payment history list** — empty state "No payments yet"; loading = single
