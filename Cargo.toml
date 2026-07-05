@@ -50,15 +50,14 @@ members = [
 ]
 
 [workspace.dependencies]
-# TEMPORARY: pinned to dashpay/rust-dashcore#808 (Core 23 platform addresses). Revert to branch = "dev" once #808 merges to dev.
-dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "7f1b46b9c7b264cb9887725da7e3567c204141a3" }
-dash-network-seeds = { git = "https://github.com/dashpay/rust-dashcore", rev = "7f1b46b9c7b264cb9887725da7e3567c204141a3" }
-dash-spv = { git = "https://github.com/dashpay/rust-dashcore", rev = "7f1b46b9c7b264cb9887725da7e3567c204141a3" }
-key-wallet = { git = "https://github.com/dashpay/rust-dashcore", rev = "7f1b46b9c7b264cb9887725da7e3567c204141a3" }
-key-wallet-ffi = { git = "https://github.com/dashpay/rust-dashcore", rev = "7f1b46b9c7b264cb9887725da7e3567c204141a3" }
-key-wallet-manager = { git = "https://github.com/dashpay/rust-dashcore", rev = "7f1b46b9c7b264cb9887725da7e3567c204141a3" }
-dash-network = { git = "https://github.com/dashpay/rust-dashcore", rev = "7f1b46b9c7b264cb9887725da7e3567c204141a3" }
-dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", rev = "7f1b46b9c7b264cb9887725da7e3567c204141a3" }
+dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "c88264e77f0af05c7a7f45efe72c87572e80a67a" }
+dash-network-seeds = { git = "https://github.com/dashpay/rust-dashcore", rev = "c88264e77f0af05c7a7f45efe72c87572e80a67a" }
+dash-spv = { git = "https://github.com/dashpay/rust-dashcore", rev = "c88264e77f0af05c7a7f45efe72c87572e80a67a" }
+key-wallet = { git = "https://github.com/dashpay/rust-dashcore", rev = "c88264e77f0af05c7a7f45efe72c87572e80a67a" }
+key-wallet-ffi = { git = "https://github.com/dashpay/rust-dashcore", rev = "c88264e77f0af05c7a7f45efe72c87572e80a67a" }
+key-wallet-manager = { git = "https://github.com/dashpay/rust-dashcore", rev = "c88264e77f0af05c7a7f45efe72c87572e80a67a" }
+dash-network = { git = "https://github.com/dashpay/rust-dashcore", rev = "c88264e77f0af05c7a7f45efe72c87572e80a67a" }
+dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", rev = "c88264e77f0af05c7a7f45efe72c87572e80a67a" }
 
 tokio-metrics = "0.5"
 
@@ -111,5 +110,5 @@ opt-level = 3
 
 [workspace.package]
 
-version = "4.0.0-rc.2"
+version = "4.0.0"
 rust-version = "1.92"

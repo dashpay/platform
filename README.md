@@ -11,8 +11,8 @@
 
 <p align="center">
   <a href="https://github.com/dashpay/platform/actions/workflows/tests.yml"><img alt="CI" src="https://github.com/dashpay/platform/actions/workflows/tests.yml/badge.svg"></a>
-  <a href="https://github.com/dashpay/platform/blob/v3.1-dev/NIGHTLY_STATUS.md"><img alt="Nightly Tests" src="https://img.shields.io/github/actions/workflow/status/dashpay/platform/tests.yml?event=schedule&label=Nightly%20Tests" title="Nightly test status"></a>
-  <a href="https://codecov.io/gh/dashpay/platform"><img alt="codecov" src="https://codecov.io/gh/dashpay/platform/branch/v3.1-dev/graph/badge.svg"></a>
+  <a href="https://github.com/dashpay/platform/blob/v4.1-dev/NIGHTLY_STATUS.md"><img alt="Nightly Tests" src="https://img.shields.io/github/actions/workflow/status/dashpay/platform/tests.yml?event=schedule&label=Nightly%20Tests" title="Nightly test status"></a>
+  <a href="https://codecov.io/gh/dashpay/platform"><img alt="codecov" src="https://codecov.io/gh/dashpay/platform/branch/v4.1-dev/graph/badge.svg"></a>
   <a href="https://github.com/dashpay/platform/graphs/commit-activity"><img alt="commit activity" src="https://img.shields.io/github/commit-activity/m/dashpay/platform"></a>
   <a href="https://github.com/dashpay/platform/commits"><img alt="last commit" src="https://img.shields.io/github/last-commit/dashpay/platform"></a>
   <a href="https://discordapp.com/invite/PXbUxJB"><img alt="General Chat" src="https://img.shields.io/badge/discord-General_chat-738adb"></a>
@@ -24,10 +24,10 @@
 
 | Crate | Lines | Coverage |
 |-------|------:|----------|
-| [rs-dpp](./packages/rs-dpp) | 129k | [![codecov](https://codecov.io/gh/dashpay/platform/branch/v3.1-dev/graph/badge.svg?component=dpp)](https://codecov.io/gh/dashpay/platform/component/dpp) |
-| [rs-drive](./packages/rs-drive) | 171k | [![codecov](https://codecov.io/gh/dashpay/platform/branch/v3.1-dev/graph/badge.svg?component=drive)](https://codecov.io/gh/dashpay/platform/component/drive) |
-| [rs-drive-abci](./packages/rs-drive-abci) | 125k | [![codecov](https://codecov.io/gh/dashpay/platform/branch/v3.1-dev/graph/badge.svg?component=drive-abci)](https://codecov.io/gh/dashpay/platform/component/drive-abci) |
-| [rs-sdk](./packages/rs-sdk) | 23k | [![codecov](https://codecov.io/gh/dashpay/platform/branch/v3.1-dev/graph/badge.svg?component=sdk)](https://codecov.io/gh/dashpay/platform/component/sdk) |
+| [rs-dpp](./packages/rs-dpp) | 129k | [![codecov](https://codecov.io/gh/dashpay/platform/branch/v4.1-dev/graph/badge.svg?component=dpp)](https://codecov.io/gh/dashpay/platform/component/dpp) |
+| [rs-drive](./packages/rs-drive) | 171k | [![codecov](https://codecov.io/gh/dashpay/platform/branch/v4.1-dev/graph/badge.svg?component=drive)](https://codecov.io/gh/dashpay/platform/component/drive) |
+| [rs-drive-abci](./packages/rs-drive-abci) | 125k | [![codecov](https://codecov.io/gh/dashpay/platform/branch/v4.1-dev/graph/badge.svg?component=drive-abci)](https://codecov.io/gh/dashpay/platform/component/drive-abci) |
+| [rs-sdk](./packages/rs-sdk) | 23k | [![codecov](https://codecov.io/gh/dashpay/platform/branch/v4.1-dev/graph/badge.svg?component=sdk)](https://codecov.io/gh/dashpay/platform/component/sdk) |
 
 </details>
 

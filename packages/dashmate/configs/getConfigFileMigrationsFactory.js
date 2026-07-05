@@ -1520,6 +1520,47 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
 
         return configFile;
       },
+      '4.0.0-rc.3': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            // Bump the default Tenderdash image to the 1.6.0 line. Pulled DRY from
+            // the base config so it tracks whatever the base config pins.
+            // Keyed at the next release (4.0.0-rc.3), not the already-released
+            // rc.2: the runner skips fromVersion===toVersion, so a key equal to
+            // an operator's current version never fires.
+            options.platform.drive.tenderdash.docker.image = base.get('platform.drive.tenderdash.docker.image');
+
+            // Add responseHeaders toggle to rate limiter (default true so existing
+            // deployments keep emitting RateLimit-* headers; rs-dapi-client depends
+            // on RateLimit-Reset to apply precise ban windows instead of the
+            // exponential health-ban ladder).
+            // Keyed at the next release (4.0.0-rc.3), not the already-released
+            // rc.2: the runner skips fromVersion===toVersion, so a key equal to
+            // an operator's current version never fires. Backfill runs once the
+            // package bumps to rc.3 (mirrors the 3.1.0 migration added at 3.1.0-dev.1).
+            if (options.platform?.gateway?.rateLimiter
+              && typeof options.platform.gateway.rateLimiter.responseHeaders === 'undefined') {
+              options.platform.gateway.rateLimiter.responseHeaders = base.get('platform.gateway.rateLimiter.responseHeaders');
+            }
+          });
+
+        return configFile;
+      },
+      '4.0.0': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            // The drive and rs-dapi image tags are derived from the package
+            // major version. Re-pin them from the base config so operators
+            // upgrading from a prerelease of this major, or from an older
+            // major, move off their stale tag onto the current stable images.
+            // The legacy 0.25.x migrations already do this, but only fire for
+            // configs old enough to cross them; recent upgraders need it here.
+            options.platform.drive.abci.docker.image = base.get('platform.drive.abci.docker.image');
+            options.platform.dapi.rsDapi.docker.image = base.get('platform.dapi.rsDapi.docker.image');
+          });
+
+        return configFile;
+      },
     };
   }
 

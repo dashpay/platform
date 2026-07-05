@@ -290,6 +290,42 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         Ok(())
     }
 
+    /// Reset the platform-address (BLAST/DIP-17) incremental-sync
+    /// watermark and drop every cached balance across **all**
+    /// registered wallets, forcing a full rescan on the next sync.
+    ///
+    /// Backs the SwiftExampleApp "Clear" button. Manager-level (not
+    /// per-wallet) to match [`clear_shielded`](Self::clear_shielded):
+    /// the host's persistence delete is global, so a per-wallet reset
+    /// would leave sibling wallets' in-memory watermarks to
+    /// re-populate the deleted rows on the next sync.
+    ///
+    /// Quiesces the platform-address sync manager first so no in-flight
+    /// pass can call `update_sync_state` and re-write the watermark (or
+    /// re-seed balances) *after* the reset. Does NOT restart the loop —
+    /// manual "Sync Now" works without it, and leaving it stopped is
+    /// the desired UX: data stays cleared until the user explicitly
+    /// resyncs. `quiesce` leaves the manager stopped-but-restartable.
+    pub async fn reset_platform_address_sync_state(
+        &self,
+    ) -> Result<(), crate::error::PlatformWalletError> {
+        self.platform_address_sync_manager.quiesce().await;
+
+        // Snapshot Arc clones under a short read lock; never hold the
+        // `wallets` read guard across the per-wallet `.await`s below —
+        // that would block registration and invite lock-ordering
+        // issues against each wallet's `wallet_manager` lock.
+        let wallets: Vec<Arc<PlatformWallet>> = {
+            let guard = self.wallets.read().await;
+            guard.values().cloned().collect()
+        };
+
+        for wallet in wallets {
+            wallet.platform().reset_sync_state().await;
+        }
+        Ok(())
+    }
+
     /// Stop all background tasks and wait for them to exit.
     ///
     /// **Quiesces** the periodic coordinators
