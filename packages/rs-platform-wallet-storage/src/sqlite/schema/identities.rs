@@ -234,6 +234,10 @@ fn managed_identity_from_entry(
         // In-memory verify-failed auto-accept markers; transient, so a cold
         // restore starts empty and a bad proof is retried once next launch.
         auto_accept_verify_failed: Default::default(),
+        // The deferred contact-crypto queue is not persisted yet (a
+        // signerless sweep re-enqueues its ops on load), so a cold
+        // restore starts it empty.
+        pending_contact_crypto: Vec::new(),
     }
 }
 
