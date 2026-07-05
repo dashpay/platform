@@ -44,6 +44,20 @@ struct PendingPlatformFundFromAssetLocksList: View {
 
     var body: some View {
         let inFlight = activeControllersForWallet
+        // Whether a funding is actively driving an asset lock on this
+        // wallet right now. A fresh-build fund sits at `Broadcast`
+        // (statusRaw 1) for the entire finality wait (unbounded, since a
+        // ChainLock is guaranteed finality), so its lock co-renders as an
+        // orphan row. We must NOT offer Resume on a Broadcast row while
+        // this is true — the outpoint isn't exposed by the controller, so
+        // we can't tell the in-flight lock from a genuinely-orphaned one,
+        // and resuming the in-flight one would spawn a second consuming
+        // flow on the same outpoint. Gating on "no active funding" is the
+        // safe superset: active controllers are transient, so a truly
+        // orphaned Broadcast lock always becomes resumable once they
+        // clear. `.completed`/`.failed` controllers aren't consuming, so
+        // only `.isActive` (`.inFlight`) counts.
+        let hasActiveFunding = inFlight.contains { $0.phase.isActive }
         let orphans = resumableLocks(excludingControllerOutpoints: Set(inFlight.compactMap { _ in
             // Controllers don't currently store the outpoint of the
             // asset lock they're driving. The de-dupe set therefore
@@ -78,6 +92,7 @@ struct PendingPlatformFundFromAssetLocksList: View {
                     ForEach(Array(orphans.enumerated()), id: \.element.id) { idx, lock in
                         ResumablePlatformFundFromAssetLockRow(
                             lock: lock,
+                            hasActiveFunding: hasActiveFunding,
                             onResume: { resumingAssetLock = lock }
                         )
                         .padding(.horizontal)
@@ -225,6 +240,12 @@ struct PendingPlatformFundFromAssetLockRow: View {
 /// the outpoint.
 struct ResumablePlatformFundFromAssetLockRow: View {
     let lock: PersistentAssetLock
+    /// `true` when some funding is actively in flight on this wallet.
+    /// Suppresses the Resume affordance on a `Broadcast` (statusRaw 1)
+    /// row — that lock might be the one the in-flight funding is
+    /// driving, and resuming it would race a second consume on the same
+    /// outpoint. See `PendingPlatformFundFromAssetLocksList.body`.
+    let hasActiveFunding: Bool
     let onResume: () -> Void
 
     var body: some View {
@@ -258,14 +279,21 @@ struct ResumablePlatformFundFromAssetLockRow: View {
             // it encodes — `statusRaw ∈ {2, 3}` — is exactly the
             // "lock has a usable IS or CL proof" gate the address-
             // funding submit path needs. Naming carryover only.
-            Button(action: onResume) {
-                Label("Resume", systemImage: "arrow.clockwise")
-                    .labelStyle(.titleAndIcon)
-                    .font(.callout)
-            }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.small)
+            resumeButton
+        } else if !hasActiveFunding {
+            // Broadcast (statusRaw 1) with no funding in flight on this
+            // wallet: the lock is genuinely orphaned (app killed mid-wait,
+            // or a prior attempt failed), so it has no driver and would
+            // otherwise be a permanent "Waiting…" dead end. Offer Resume —
+            // `resume_asset_lock` picks the Broadcast lock back up and
+            // waits for finality (now unbounded, since a ChainLock is
+            // guaranteed). Safe here precisely because nothing else is
+            // driving this outpoint.
+            resumeButton
         } else {
+            // Broadcast while a funding is in flight — this row may be the
+            // lock that funding is driving. Keep the non-interactive
+            // spinner so the user can't spawn a duplicate consume on it.
             HStack(spacing: 6) {
                 ProgressView()
                     .controlSize(.small)
@@ -274,6 +302,16 @@ struct ResumablePlatformFundFromAssetLockRow: View {
                     .foregroundColor(.secondary)
             }
         }
+    }
+
+    private var resumeButton: some View {
+        Button(action: onResume) {
+            Label("Resume", systemImage: "arrow.clockwise")
+                .labelStyle(.titleAndIcon)
+                .font(.callout)
+        }
+        .buttonStyle(.borderedProminent)
+        .controlSize(.small)
     }
 
     private func formatDuffs(_ amountDuffs: Int64) -> String {
