@@ -520,6 +520,46 @@ impl PlatformPaymentAddressProvider {
         }
     }
 
+    /// Zero the incremental-sync watermark ONLY, so the next
+    /// `sync_balances` takes the full-scan branch — WITHOUT dropping the
+    /// cached `found` seed (unlike [`reset_sync_state`](Self::reset_sync_state),
+    /// which is the "Clear" flow).
+    ///
+    /// WHY (ADDR-09): the asset-lock top-up path reconciles the
+    /// proof-attested ABSOLUTE balance `X` into both the managed account
+    /// and the provider's committed `found` seed, but the on-chain credit
+    /// is recorded as a DELTA (`AddBalanceToAddress` → `AddToCredits`) in
+    /// Drive's recent-address-balance-changes tree. If the next pass ran
+    /// INCREMENTALLY it would seed `result.found` from `current_balances()`
+    /// (already `X`) and then re-apply that recent `AddToCredits(X)` delta
+    /// from the stale watermark, landing at `X + X = 2X` — the ADDR-09
+    /// double-count. An optimistic absolute write is fundamentally
+    /// inconsistent with incremental delta re-application, so we force the
+    /// very next pass to full-scan-reconcile.
+    ///
+    /// With `sync_timestamp == 0`, [`last_sync_timestamp`](Self::last_sync_timestamp)
+    /// returns `None`, which makes `sync_address_balances` choose the
+    /// full-scan branch: `result.found` is re-seeded ABSOLUTELY from the
+    /// tree (the `found` seed is only consulted on the incremental branch,
+    /// which is skipped), and incremental catch-up runs from the fresh
+    /// full-scan checkpoint rather than the stale height, so no recent
+    /// delta is re-applied. `last_known_recent_block` is zeroed too since
+    /// catch-up reads it as its recent-tree boundary.
+    ///
+    /// The `found` seed is deliberately KEPT (not cleared): a full scan
+    /// ignores it as a seed, and preserving it means display and
+    /// `auto_select_inputs` budgeting keep the just-applied balance `X`
+    /// visible during the ~15s until the reconciling scan completes,
+    /// instead of the momentary zero `reset_sync_state` would show.
+    ///
+    /// This is the in-memory equivalent of the manual Sync-tab
+    /// "Clear" + "Sync Now" that also fixes the double-count.
+    pub(crate) fn invalidate_sync_watermark(&mut self) {
+        self.sync_height = 0;
+        self.sync_timestamp = 0;
+        self.last_known_recent_block = 0;
+    }
+
     /// Diagnostic snapshot counts used by the read-only memory
     /// explorer surface on
     /// [`crate::manager::PlatformWalletManager::platform_address_provider_state_blocking`].
@@ -1821,5 +1861,50 @@ mod tests {
             0,
             "reset must drop the cached `found` seed"
         );
+    }
+
+    /// ADDR-09: after an asset-lock top-up reconciles an absolute balance,
+    /// the fund path calls `invalidate_sync_watermark` to force the next
+    /// BLAST pass into full-scan mode. Unlike `reset_sync_state`, it must
+    /// zero all three watermark scalars (so `last_sync_timestamp()` returns
+    /// `None`, the full-scan trigger) WITHOUT dropping the freshly
+    /// reconciled `found` seed — display and input budgeting rely on the
+    /// balance staying visible until the reconciling scan completes.
+    #[tokio::test]
+    async fn invalidate_sync_watermark_forces_full_scan_keeps_seed() {
+        let addr = p2pkh(1);
+        let mut provider = provider_with_one_funded_address(addr, funds(294_627_247_940, 5));
+
+        // Simulate a wallet mid-incremental-sync: non-zero watermark and a
+        // populated balance seed (the just-reconciled top-up balance `X`).
+        provider.set_stored_sync_state(10, 20, 30);
+        assert_eq!(provider.last_sync_height(), 10);
+        assert_eq!(provider.last_sync_timestamp(), Some(20));
+        assert_eq!(provider.last_known_recent_block(), 30);
+        assert_eq!(provider.current_balances().count(), 1);
+
+        provider.invalidate_sync_watermark();
+
+        // Watermark fully zeroed → SDK drops back to full-scan mode.
+        assert_eq!(provider.last_sync_height(), 0);
+        assert_eq!(
+            provider.last_sync_timestamp(),
+            None,
+            "invalidated watermark must report no last-sync timestamp so the \
+             next pass takes the full-scan branch (the ADDR-09 fix)"
+        );
+        assert_eq!(provider.last_known_recent_block(), 0);
+
+        // The reconciled `found` seed SURVIVES — a full scan ignores it as
+        // a seed, but keeping it means the balance `X` stays visible for
+        // display / input budgeting during the ~15s until the scan runs.
+        let seed: Vec<_> = provider.current_balances().collect();
+        assert_eq!(
+            seed.len(),
+            1,
+            "invalidate_sync_watermark must NOT drop the cached `found` seed"
+        );
+        assert_eq!(seed[0].1, addr);
+        assert_eq!(seed[0].2, funds(294_627_247_940, 5));
     }
 }
