@@ -1,6 +1,6 @@
 package org.dashfoundation.example.ui.transitions
 
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -8,11 +8,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material3.Card
+import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.ListItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -25,6 +24,7 @@ import androidx.navigation.NavHostController
 import org.dashfoundation.example.navigation.TransitionDetailRoute
 import org.dashfoundation.example.services.transitions.StateTransitionDefinitions
 import org.dashfoundation.example.services.transitions.TransitionCategory
+import org.dashfoundation.example.ui.components.EntityRow
 
 /**
  * The transitions in one category — port of `TransitionCategoryView.swift`:
@@ -56,19 +56,16 @@ fun TransitionCategoryScreen(categoryName: String, navController: NavHostControl
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(padding),
             contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             items(definitions, key = { it.key }) { def ->
-                Card(
-                    modifier = Modifier
-                        .padding(vertical = 4.dp)
-                        .testTag("transition.${def.key}")
-                        .clickable { navController.navigate(TransitionDetailRoute(def.key)) },
-                ) {
-                    ListItem(
-                        headlineContent = { Text(def.label) },
-                        supportingContent = { Text(def.description) },
-                    )
-                }
+                EntityRow(
+                    icon = Icons.Filled.SwapVert,
+                    title = def.label,
+                    subtitle = def.description,
+                    onClick = { navController.navigate(TransitionDetailRoute(def.key)) },
+                    modifier = Modifier.testTag("transition.${def.key}"),
+                )
             }
         }
     }
