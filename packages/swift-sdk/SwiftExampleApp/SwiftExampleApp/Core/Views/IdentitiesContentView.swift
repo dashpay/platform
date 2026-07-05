@@ -20,12 +20,14 @@ struct IdentitiesContentView: View {
     private let network: Network
     @Query private var identities: [PersistentIdentity]
     /// All tracked asset locks across wallets. Filtered into
-    /// "resumable" rows (status >= `InstantSendLocked` AND no
-    /// `PersistentIdentity` at the same `(walletId, identityIndex)`
-    /// slot) by `resumableAssetLocks` so the orphan-lock-after-crash
-    /// case surfaces as a tappable Resume row. Sorted newest-first
-    /// by `updatedAt` so the most recent unfinished registration
-    /// sits at the top of the section.
+    /// "resumable" rows by `crossWalletResumableLocks` — identity-
+    /// funding types only (`fundingTypeRaw` in `0...2`), status in
+    /// `1...3` (Broadcast through ChainLocked), and no
+    /// `PersistentIdentity` / in-flight controller at the same
+    /// `(walletId, identityIndex)` slot — so the orphan-lock-after-
+    /// crash case surfaces as a tappable Resume row. Sorted newest-
+    /// first by `updatedAt` so the most recent unfinished
+    /// registration sits at the top of the section.
     @Query(sort: [SortDescriptor(\PersistentAssetLock.updatedAt, order: .reverse)])
     private var allAssetLocks: [PersistentAssetLock]
     /// All wallets, used purely for the "wallet name" lookup on the
