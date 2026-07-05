@@ -471,18 +471,7 @@ impl ShieldedStore for FileBackedShieldedStore {
         if let Some(sw) = self.subwallets.get_mut(&id) {
             sw.clear_redrive(activity_id);
         }
-        let conn = self.pending_conn.lock().expect("pending_conn mutex");
-        conn.execute(
-            "DELETE FROM shielded_pending_spends \
-             WHERE wallet_id = ?1 AND account_index = ?2 AND activity_id = ?3",
-            rusqlite::params![
-                id.wallet_id.as_slice(),
-                id.account_index,
-                activity_id.as_slice(),
-            ],
-        )
-        .map_err(|e| FileShieldedStoreError(format!("clear redrive: {e}")))?;
-        Ok(())
+        self.delete_redrive_row(id, activity_id)
     }
 
     fn record_outgoing_note(
@@ -636,31 +625,38 @@ impl ShieldedStore for FileBackedShieldedStore {
     }
 
     fn purge_wallet(&mut self, wallet_id: WalletId) -> Result<(), Self::Error> {
+        // The redrive table IS durable (unlike the rest of subwallet
+        // state), so purging the in-memory map alone would leave this
+        // wallet's rows to rehydrate stale reservations / rebroadcast
+        // state on the next open. Delete them first, scoped by
+        // wallet_id — SQL before memory, so an Err return means neither
+        // store was touched (fail-atomic) rather than a memory purge
+        // the caller can't distinguish from a no-op.
+        {
+            let conn = self.pending_conn.lock().expect("pending_conn mutex");
+            conn.execute(
+                "DELETE FROM shielded_pending_spends WHERE wallet_id = ?1",
+                rusqlite::params![wallet_id.as_slice()],
+            )
+            .map_err(|e| FileShieldedStoreError(format!("purge pending spends for wallet: {e}")))?;
+        }
         // Per-subwallet note / watermark / checkpoint state is
         // in-memory only (`subwallets`); the commitment tree in
         // SQLite is chain-wide and intentionally left intact.
         self.subwallets.retain(|id, _| id.wallet_id != wallet_id);
-        // The redrive table IS durable (unlike the rest of subwallet
-        // state), so purging the in-memory map alone would leave this
-        // wallet's rows to rehydrate stale reservations / rebroadcast
-        // state on the next open. Delete them here too, scoped by
-        // wallet_id.
-        let conn = self.pending_conn.lock().expect("pending_conn mutex");
-        conn.execute(
-            "DELETE FROM shielded_pending_spends WHERE wallet_id = ?1",
-            rusqlite::params![wallet_id.as_slice()],
-        )
-        .map_err(|e| FileShieldedStoreError(format!("purge pending spends for wallet: {e}")))?;
         Ok(())
     }
 
     fn purge_all_subwallets(&mut self) -> Result<(), Self::Error> {
-        self.subwallets.clear();
         // Durable redrive rows for every wallet go with the in-memory
-        // purge (see `purge_wallet`).
-        let conn = self.pending_conn.lock().expect("pending_conn mutex");
-        conn.execute("DELETE FROM shielded_pending_spends", [])
-            .map_err(|e| FileShieldedStoreError(format!("purge all pending spends: {e}")))?;
+        // purge; SQL first for the same fail-atomic reason as
+        // `purge_wallet`.
+        {
+            let conn = self.pending_conn.lock().expect("pending_conn mutex");
+            conn.execute("DELETE FROM shielded_pending_spends", [])
+                .map_err(|e| FileShieldedStoreError(format!("purge all pending spends: {e}")))?;
+        }
+        self.subwallets.clear();
         Ok(())
     }
 

@@ -109,6 +109,9 @@ class PlatformBalanceSyncService: ObservableObject {
         persistenceHandler: PlatformWalletPersistenceHandler? = nil,
         walletId: Data? = nil
     ) {
+        // Same invalidation as `reset()`: a snapshot still in flight for
+        // the previous wallet must not publish over this configuration.
+        balanceSnapshotGeneration &+= 1
         self.platformAddressWallet = platformAddressWallet
         self.walletManager = walletManager
         self.persistenceHandler = persistenceHandler
@@ -195,6 +198,11 @@ class PlatformBalanceSyncService: ObservableObject {
     /// Use for wallet deletion or network switch. Caller must re-configure
     /// before the next sync.
     func reset() {
+        // Invalidate any in-flight `refreshBalanceSnapshot` — its
+        // detached task captured the OLD wallet handle strongly, so
+        // without this bump a snapshot racing a wallet/network switch
+        // would publish the old wallet's balances over the reset UI.
+        balanceSnapshotGeneration &+= 1
         clearDisplay()
         platformAddressWallet = nil
         walletManager = nil
@@ -329,6 +337,12 @@ class PlatformBalanceSyncService: ObservableObject {
     /// reset locally regardless of outcome.
     func performSync() async {
         guard !isSyncing else { return }
+        // The Clear/Sync mutual exclusion must live here, not only on
+        // CoreContentView's buttons: pull-to-refresh (Wallets/Identities
+        // tabs) and the post-submit resyncs (Transfer/Withdraw views)
+        // call performSync directly and would otherwise start a sync
+        // between clearLocalState's Rust reset and its SwiftData wipe.
+        guard !isClearing else { return }
         guard let walletManager = walletManager else {
             lastError = "Platform address wallet not configured"
             return

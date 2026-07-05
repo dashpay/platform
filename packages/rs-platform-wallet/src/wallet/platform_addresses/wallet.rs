@@ -565,10 +565,10 @@ impl PlatformAddressWallet {
     ///
     /// Does NOT route through [`apply_sync_state`] — that helper's
     /// all-None early-return guard is meant for persisted-state replay
-    /// and is irrelevant here. The two locks are taken sequentially
-    /// (one released before the next is acquired), so there is no
-    /// nested-lock hazard; this mirrors the ordering rationale in
-    /// [`initialize_from_persisted`].
+    /// and is irrelevant here. The wallet-manager write is nested
+    /// INSIDE the provider write (provider → wallet-manager, the same
+    /// order `reconcile_address_infos` uses) so the two clears are
+    /// atomic with respect to a concurrent sync or reconciliation.
     pub async fn reset_sync_state(&self) {
         // Hold the provider write lock across BOTH the managed-account
         // balance clear AND the provider reset, so the whole reset is
