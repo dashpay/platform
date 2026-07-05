@@ -1,9 +1,9 @@
 # DashPay — TODO / backlog
 
 Single source of truth for outstanding DashPay work. Sources: the
-kotlin-platform/dashj comparison (`KOTLIN_PLATFORM_COMPARISON.md`), the spec
-track, the multi-agent reviews, and the code-verified DIP-15 + DIP-16 conformance
-audit (`DIP_CONFORMANCE_GAPS.md`). Prioritized; check off as done.
+kotlin-platform/dashj comparison (folded into `DIP_CONFORMANCE_GAPS.md` §3.1), the
+spec track, the multi-agent reviews, and the code-verified DIP-15 + DIP-16
+conformance audit (`DIP_CONFORMANCE_GAPS.md`). Prioritized; check off as done.
 
 > **STATUS (2026-06-18): the implementable backlog is complete.** Every P0/P1/P2
 > bug, the full sync-correctness spec (Spec 0/1/2 + reject→ignore refactor), the
@@ -600,4 +600,4 @@ DIP/maintainer-coordination effort separate from the wallet work.
   tombstone restore, purpose_mismatch, disabled keys, V001→V002 then squash,
   reject `removed_incoming`, wipe PHASE 1, seed zeroize) — all 45 threads resolved.
 - [x] Comprehensive kotlin-platform/dashj/dash-wallet comparison
-  (`KOTLIN_PLATFORM_COMPARISON.md`).
+  (folded into `DIP_CONFORMANCE_GAPS.md` §3.1).

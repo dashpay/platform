@@ -207,6 +207,35 @@ blocker — not oversights.
   documented insurance for local-only legacy rows; never participates in on-wire
   encoding (send only ever emits 69 bytes; the SDK rejects non-69 before encryption).
 
+### 3.1 Reference-client (dashj / kotlin-platform) source pointers
+
+For re-checking our behavior against the canonical Android stack — `dashpay/kotlin-platform`
+(`org.dashj.platform.dashpay`, the live lib), `dashpay/dashj` (core crypto/keychains),
+and `dashpay/dash-wallet` (the app: sync, UI, DAOs), all on `master`. (`android-dashpay`
+is the **stale** predecessor, last push 2024-01 — do not diff against it.) The
+reference-side anchors that pin each cross-client comparison:
+
+| Concern | Reference-client anchor |
+|---|---|
+| `accountReference` ASK28 byte order | `BlockchainIdentity.getAccountReference` = `wrapReversed(ASK).toBigInteger().toInt() ushr 4` (= `u32_le(ASK[0..4])>>4`; we use the iOS `be(ASK[28..32])>>4` — §3 above) |
+| Friendship path (receive vs send account) | `FriendKeyChain.getContactPath` — `contact.getUserAccount()` (receive) / `getFriendAccountReference()` (send) |
+| `contactRequest` pagination (drain past 100) | `Documents.getAll` loops `startAt = last.id` while `size >= 100`; `retrieveAll` ⇒ `limit(-1)` |
+| High-water + 10-min skew overlap | `PlatformSyncService.kt:346-372`, `DashPayContactRequestDao.kt:50-54` (`MAX(timestamp)` per direction) |
+| Batched contact-profile fetch | `updateContactProfiles` → `Profiles.getList` (chunks of 100, `whereIn $ownerId`) |
+| Non-destructive profile update | `Profiles.replace` — read-modify-write (`profileData.putAll(currentProfile.toObject())`, then overlay) |
+| `encryptedAccountLabel` padding | `padAccountLabel()` — pad to ≥16 chars with spaces, always emit |
+| Recipient-key selection | kotlin = ENCRYPTION-first with AUTH/HIGH fallback |
+| Sent-tx status (live, not stored) | derived from `TransactionConfidence` |
+| tx→contact reverse (both directions) | `getFriendFromTransaction` scans sent + received pools |
+| Account/keychain self-heal | `checkDatabaseIntegrity` |
+
+**Perceptual-hash caveat — do NOT write a cross-client exact-match test on
+`avatarFingerprint`.** The dHash byte/bit layout coincidentally matches dashj, but the
+pixel pipeline differs (greyscale **average vs luma-weighted**, resize filter, 9×9 vs
+9×8), so fingerprints **will not be byte-identical cross-client**. That is inherent to
+perceptual hashing — the fingerprint is used for Hamming distance, never equality — so a
+cross-client exact-match assertion is wrong by construction.
+
 ---
 
 ## 4. Correction to the existing docs
