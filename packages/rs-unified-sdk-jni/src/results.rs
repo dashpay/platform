@@ -12,9 +12,9 @@ use jni::objects::{JByteArray, JString};
 use jni::JNIEnv;
 use rs_sdk_ffi::{
     dash_sdk_address_info_free, dash_sdk_address_info_map_free, dash_sdk_binary_data_free,
-    dash_sdk_error_free, dash_sdk_identity_balance_map_free, dash_sdk_string_free,
-    DashSDKAddressInfo, DashSDKAddressInfoMap, DashSDKBinaryData, DashSDKIdentityBalanceMap,
-    DashSDKResult, DashSDKResultDataType,
+    dash_sdk_error_free, dash_sdk_identity_balance_map_free, dash_sdk_signature_free,
+    dash_sdk_string_free, DashSDKAddressInfo, DashSDKAddressInfoMap, DashSDKBinaryData,
+    DashSDKIdentityBalanceMap, DashSDKResult, DashSDKResultDataType, DashSDKSignature,
 };
 use std::ffi::{c_char, CStr};
 use std::fmt::Write as _;
@@ -93,6 +93,37 @@ pub unsafe fn unwrap_binary<'l>(env: &mut JNIEnv<'l>, r: DashSDKResult) -> Optio
     let slice = std::slice::from_raw_parts((*binary).data, (*binary).len);
     let array = env.byte_array_from_slice(slice).ok();
     dash_sdk_binary_data_free(binary);
+    array
+}
+
+/// Unwrap a result whose success payload is a `DashSDKSignature`. Copies the
+/// signature bytes into a Java `byte[]` and frees the Rust struct before
+/// returning. Returns `null` after throwing.
+///
+/// `dash_sdk_signer_sign` hands the signature back as a `DashSDKSignature`
+/// struct pointer tagged `NoData` (not a `DashSDKBinaryData` tagged
+/// `BinaryData`), so this must not go through [`unwrap_binary`]: the two
+/// structs are layout-identical `{ *mut u8, usize }`, so a release build would
+/// silently succeed, but a debug build trips `unwrap_binary`'s `BinaryData`
+/// assertion — and `dash_sdk_binary_data_free` is the wrong deallocator.
+///
+/// # Safety
+/// `r` must be a `DashSDKResult` freshly returned by an FFI function whose
+/// success payload is a `DashSDKSignature` allocated by the FFI layer.
+pub unsafe fn unwrap_signature<'l>(
+    env: &mut JNIEnv<'l>,
+    r: DashSDKResult,
+) -> Option<JByteArray<'l>> {
+    if take_error(env, &r) {
+        return None;
+    }
+    if r.data.is_null() {
+        return None;
+    }
+    let sig = r.data as *mut DashSDKSignature;
+    let slice = std::slice::from_raw_parts((*sig).signature, (*sig).signature_len);
+    let array = env.byte_array_from_slice(slice).ok();
+    dash_sdk_signature_free(sig);
     array
 }
 

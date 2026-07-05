@@ -16,7 +16,7 @@
 //!
 //! `can_sign_with` stays synchronous: a fast Kotlin lookup.
 
-use crate::results::{unwrap_binary, unwrap_handle};
+use crate::results::{unwrap_handle, unwrap_signature};
 use crate::support::{guard, JVM};
 use jni::objects::{GlobalRef, JByteArray, JClass, JObject, JString};
 use jni::sys::{jbyteArray, jint, jlong};
@@ -305,7 +305,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_SignerNative_signWith
         let signed = unsafe {
             dash_sdk_signer_sign(signer as *mut SignerHandle, payload.as_ptr(), payload.len())
         };
-        let result = unsafe { unwrap_binary(env, signed) }
+        let result = unsafe { unwrap_signature(env, signed) }
             .map(|arr| arr.into_raw())
             .unwrap_or(ptr::null_mut());
 
