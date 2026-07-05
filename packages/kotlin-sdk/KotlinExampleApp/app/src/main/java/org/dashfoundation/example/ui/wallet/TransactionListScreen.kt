@@ -1,17 +1,25 @@
 package org.dashfoundation.example.ui.wallet
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.ArrowDownward
+import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -24,9 +32,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
@@ -36,6 +44,7 @@ import kotlinx.coroutines.flow.flowOf
 import org.dashfoundation.dashsdk.persistence.entities.TransactionEntity
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.navigation.WalletTransactionDetail
+import org.dashfoundation.example.ui.theme.appStatusColors
 import org.dashfoundation.example.util.formatRelative
 import java.util.Date
 
@@ -97,12 +106,26 @@ fun TransactionListScreen(
                     .fillMaxSize()
                     .padding(padding)
                     .padding(24.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterVertically),
+                verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Text("No transactions found.", style = MaterialTheme.typography.titleMedium)
+                Box(
+                    modifier = Modifier
+                        .size(72.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.primaryContainer),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        Icons.Filled.History,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.size(36.dp),
+                    )
+                }
+                Text("No transactions found.", style = MaterialTheme.typography.titleLarge)
                 Text(
-                    "Transactions will appear here once you send or receive Dash",
+                    "Transactions will appear here once you send or receive Dash.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -113,13 +136,18 @@ fun TransactionListScreen(
                     .fillMaxSize()
                     .padding(padding),
                 contentPadding = PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 items(sorted, key = { it.txid.toHexString() }) { tx ->
                     val txidHex = tx.txid.toHexString()
                     Card(
                         onClick = { navController.navigate(WalletTransactionDetail(txidHex)) },
                         modifier = Modifier.testTag("transactions.row.$txidHex"),
+                        shape = MaterialTheme.shapes.large,
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                        ),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
                     ) {
                         TransactionRow(tx)
                     }
@@ -132,45 +160,63 @@ fun TransactionListScreen(
 @OptIn(ExperimentalStdlibApi::class)
 @Composable
 private fun TransactionRow(tx: TransactionEntity) {
-    val txidHex = tx.txid.toHexString()
     val confirmed = tx.context >= 2
+    val incoming = tx.direction == 0
     val amountColor = transactionColor(tx)
+    val statusColor = if (confirmed) appStatusColors.success else appStatusColors.warning
 
-    Column(
+    Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(12.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
+            .padding(14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
+        Box(
+            modifier = Modifier
+                .size(40.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.primaryContainer),
+            contentAlignment = Alignment.Center,
         ) {
-            Text(
-                "${txidHex.take(8)}…${txidHex.takeLast(8)}",
-                style = MaterialTheme.typography.bodyMedium,
-                fontFamily = FontFamily.Monospace,
-            )
-            Text(
-                if (tx.firstSeen > 0) formatRelative(Date(tx.firstSeen * 1000)) else "",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            Icon(
+                if (incoming) Icons.Filled.ArrowDownward else Icons.Filled.ArrowUpward,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                modifier = Modifier.size(20.dp),
             )
         }
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
             Text(
-                if (confirmed) "Confirmed" else "Pending",
-                style = MaterialTheme.typography.labelMedium,
-                color = if (confirmed) Color(0xFF2E7D32) else Color(0xFFE65100),
-            )
-            Text(
                 formattedNetAmount(tx),
-                style = MaterialTheme.typography.titleSmall,
+                style = MaterialTheme.typography.titleMedium,
                 color = amountColor,
             )
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    if (confirmed) "Confirmed" else "Pending",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = statusColor,
+                )
+                if (tx.firstSeen > 0) {
+                    Text(
+                        "·",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Text(
+                        formatRelative(Date(tx.firstSeen * 1000)),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
         }
     }
 }

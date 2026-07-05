@@ -52,9 +52,11 @@ import org.dashfoundation.example.navigation.SendTransaction
 import org.dashfoundation.example.navigation.TransferPlatformAddress
 import org.dashfoundation.example.navigation.WalletTransactions
 import org.dashfoundation.example.navigation.WithdrawPlatformAddress
+import androidx.compose.ui.text.font.FontWeight
 import org.dashfoundation.example.ui.components.ErrorAlertDialog
 import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.LabeledContent
+import org.dashfoundation.example.ui.theme.appStatusColors
 import org.dashfoundation.example.util.formatCredits
 import org.dashfoundation.example.util.formatDate
 import org.dashfoundation.example.util.formatDuffs
@@ -174,12 +176,38 @@ fun WalletDetailScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            // Network indicator (← the Label chip atop WalletDetailView).
-            Text(
-                "Network: ${network.displayName}",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            // Prominent balance header + network caption (← BalanceCardView hero).
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Text(
+                    "BALANCE",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+                Text(
+                    formatDuffs(coreBalance?.confirmed ?: 0),
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Bold,
+                )
+                val incoming = coreBalance?.unconfirmed ?: 0
+                if (incoming > 0) {
+                    Text(
+                        "+${formatDuffs(incoming)} incoming",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = appStatusColors.success,
+                    )
+                }
+                Text(
+                    "Network: ${network.displayName}",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
 
             // Balance card (← BalanceCardView).
             FormSection(title = "Balances") {
