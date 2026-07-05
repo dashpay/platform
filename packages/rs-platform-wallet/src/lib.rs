@@ -19,9 +19,9 @@ pub mod error;
 pub mod events;
 pub mod manager;
 pub mod spv;
-mod util;
 #[cfg(test)]
 pub(crate) mod test_support;
+mod util;
 pub mod wallet;
 
 pub use error::PlatformWalletError;
