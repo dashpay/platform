@@ -1512,8 +1512,8 @@ unsafe fn build_account_spec(
     let index = env.get_field(holder, "index", "I")?.i()? as u32;
     let registration_index = env.get_field(holder, "registrationIndex", "I")?.i()? as u32;
     let key_class = env.get_field(holder, "keyClass", "I")?.i()? as u32;
-    let user_identity_id = read_id32_field(env, holder, "userIdentityId")?;
-    let friend_identity_id = read_id32_field(env, holder, "friendIdentityId")?;
+    let user_identity_id = read_optional_id32_field(env, holder, "userIdentityId")?;
+    let friend_identity_id = read_optional_id32_field(env, holder, "friendIdentityId")?;
     let (xpub_ptr, xpub_len) = read_bytes_field_into_raw(env, holder, "accountXpubBytes")?;
     Ok(AccountSpecFFI {
         type_tag,
@@ -2010,6 +2010,27 @@ fn read_id32_field(
     read_bytes_field_fixed::<32>(env, holder, field)
 }
 
+/// Read an OPTIONAL 32-byte id field where the Kotlin holder uses a
+/// non-null `ByteArray(0)` as the absent sentinel (e.g. the DashPay
+/// `userIdentityId`/`friendIdentityId` on ordinary accounts). Empty and
+/// null both map to the all-zero id; any other non-32 length still
+/// fails the load.
+fn read_optional_id32_field(
+    env: &mut JNIEnv,
+    holder: &JObject,
+    field: &str,
+) -> Result<[u8; 32], jni::errors::Error> {
+    let obj = env.get_field(holder, field, "[B")?.l()?;
+    if obj.is_null() {
+        return Ok([0u8; 32]);
+    }
+    let arr: JByteArray = obj.into();
+    if env.get_array_length(&arr)? == 0 {
+        return Ok([0u8; 32]);
+    }
+    read_bytes_field_fixed::<32>(env, holder, field)
+}
+
 fn read_bytes_field_fixed<const N: usize>(
     env: &mut JNIEnv,
     holder: &JObject,
@@ -2022,14 +2043,11 @@ fn read_bytes_field_fixed<const N: usize>(
     }
     let arr: JByteArray = obj.into();
     let len = env.get_array_length(&arr)? as usize;
-    // ByteArray(0) is the Kotlin holders' non-null absent sentinel
-    // (e.g. ShieldedActivityEntity.identityId with hasIdentityId=false)
-    // — treat it like null. Any OTHER wrong length must fail the load
+    // Any wrong length — including ByteArray(0) — must fail the load
     // (surfaced as ERR_JNI by the load trampoline): zero-padding or
     // truncating would silently rehydrate the row under an altered key.
-    if len == 0 {
-        return Ok(out);
-    }
+    // Fields with a legitimate empty absent sentinel go through
+    // read_optional_id32_field instead.
     if len != N {
         log::error!("load: field `{field}` expected {N} bytes, got {len}");
         return Err(jni::errors::Error::WrongJValueType(
