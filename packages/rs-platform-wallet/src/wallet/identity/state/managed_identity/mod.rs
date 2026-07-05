@@ -181,6 +181,21 @@ pub struct ManagedIdentity {
     /// ignored senders, independent of relationship state. Populated by
     /// `sync_contact_profiles`; public-data only (never `contactInfo`-derived).
     pub contact_profiles: BTreeMap<Identifier, ContactProfileEntry>,
+
+    /// DashPay contact-crypto ops the unattended background sweep enqueued for
+    /// THIS identity but could not perform because key material was unavailable
+    /// (watch-only / signer locked). Drained when a signer is available
+    /// (Keychain unlock, or any signer-present action). Secret-free — only
+    /// on-chain ciphertext + public-key indices; each entry still carries its
+    /// `owner_identity_id` (== this identity) as the drain's routing key and the
+    /// SQLite key column. In-memory only for the live session: the queue is
+    /// persisted to the changeset (SQLite backend), but cold-load restore is
+    /// blocked upstream, so a re-imported wallet re-syncs from scratch and the
+    /// sweep re-enqueues what it needs. Deliberately NOT captured by
+    /// `IdentityEntry::from_managed` — persistence rides the flat changeset
+    /// delta, not a per-identity snapshot.
+    /// See [`PendingContactCrypto`](crate::changeset::PendingContactCrypto).
+    pub pending_contact_crypto: Vec<crate::changeset::PendingContactCrypto>,
 }
 
 #[cfg(test)]

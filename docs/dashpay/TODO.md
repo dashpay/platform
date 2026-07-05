@@ -1,9 +1,9 @@
 # DashPay — TODO / backlog
 
 Single source of truth for outstanding DashPay work. Sources: the
-kotlin-platform/dashj comparison (`KOTLIN_PLATFORM_COMPARISON.md`), the spec
-track, the multi-agent reviews, and the code-verified DIP-15 + DIP-16 conformance
-audit (`DIP_CONFORMANCE_GAPS.md`). Prioritized; check off as done.
+kotlin-platform/dashj comparison (folded into `DIP_CONFORMANCE_GAPS.md` §3.1), the
+spec track, the multi-agent reviews, and the code-verified DIP-15 + DIP-16
+conformance audit (`DIP_CONFORMANCE_GAPS.md`). Prioritized; check off as done.
 
 > **STATUS (2026-06-18): the implementable backlog is complete.** Every P0/P1/P2
 > bug, the full sync-correctness spec (Spec 0/1/2 + reject→ignore refactor), the
@@ -62,8 +62,8 @@ audit (`DIP_CONFORMANCE_GAPS.md`). Prioritized; check off as done.
 - [~] **coreHeight block-rescan — DIP-15 §8.7 + §12.6 (NEW, payment-loss).** Tasks A+B
   IMPLEMENTED + reviewed + pushed (`cba515aaf1`, `18483e4232`); only the funding-gated
   `dp_*` e2e (C) and the optional durability breadcrumb (D) remain.
-  Surfaced by the re-audit (`DIP_CONFORMANCE_GAPS.md` §1.1). **Spec
-  `docs/dashpay/CORE_HEIGHT_RESCAN_SPEC.md` — REVIEWED (4 lenses), implemented.**
+  Surfaced by the re-audit (`DIP_CONFORMANCE_GAPS.md` §1.1). **REVIEWED (4 lenses),
+  implemented; as-built note folded into SPEC.md Milestone 1.**
   An incoming payment that landed on a contact's receival address **before** that address
   was watched is silently missed. The review reshaped the fix (see spec §0): the dash-spv
   `FiltersManager` already backfills when a wallet's `synced_height` drops below the scan
@@ -123,8 +123,8 @@ audit (`DIP_CONFORMANCE_GAPS.md`). Prioritized; check off as done.
   duplicated the convention). Red→green test
   `account_label_is_always_a_valid_48_to_80_byte_field` pins both bounds + multi-byte +
   the exact-48 edge. (No live SDK change needed — it calls the primitive.)
-  - [~] **Receive-side label surfacing — IMPLEMENTED (2026-06-24).** Spec
-    `ACCOUNT_LABEL_SURFACING_SPEC.md` (5-lens reviewed; must-fixes folded). The
+  - [~] **Receive-side label surfacing — IMPLEMENTED (2026-06-24).** 5-lens reviewed;
+    must-fixes folded; as-built note in SPEC.md Milestone 3. The
     contact's label is now decrypted in Rust at the two signer-bearing register sites
     (the drain `RegisterExternal` Ok-branch + `accept_register_external_validated`,
     where the ECDH `shared` already lives) via `store_contact_account_label`, stored on
@@ -180,8 +180,8 @@ audit (`DIP_CONFORMANCE_GAPS.md`). Prioritized; check off as done.
   **DEFERRED (minor):** only bites if SPV drops our own broadcast; `mark_address_used`
   at broadcast is a small hardening with no observed incidence — revisit if it occurs.
 - [~] **QR-based auto-accept (DIP-15) — IMPLEMENTED (2026-06-24), iOS-first reference
-  impl.** Research in `QR_AUTO_ACCEPT_RESEARCH.md`; reviewed spec in
-  `QR_AUTO_ACCEPT_SPEC.md`. Built faithfully to DIP-15 wire formats (no Android client
+  impl.** Reviewed spec in `QR_AUTO_ACCEPT_SPEC.md`. Built faithfully to DIP-15
+  wire formats (no Android client
   verifies `autoAcceptProof`, so it works iOS↔iOS and sets the convention). Commits:
   crypto primitives `b8ff05c6f8`, receive/auto-accept flow `a714b4e8de`, owner QR-create
   + scoped raw-key export `b39e0cf6f0`, scanner + drain-signer `ff2403d7a1`, Swift UI
@@ -293,8 +293,8 @@ audit (`DIP_CONFORMANCE_GAPS.md`). Prioritized; check off as done.
   normal profile edits.**
 
 - [~] **Seed elimination — Q2 = remove the `attach_wallet_seed` workaround.**
-  Spec `SIGNER_SEED_ELIMINATION_SPEC.md` (design, REVIEWED v3, + Q2 status banner);
-  live tracker `SEED_ELIMINATION_HANDOFF.md`. **Done + verified** (platform-wallet
+  Spec `SIGNER_SEED_ELIMINATION_SPEC.md` (design, REVIEWED v3, + Q2 status banner).
+  **Done + verified** (platform-wallet
   292/292; glue builds host + iOS-sim): the whole seedless contact-request flow —
   send/accept/drain/always-enqueue sweep, `ContactCryptoProvider` + signer host
   primitives (ECDH/accountReference/contactInfo seal-open/wrong-seed), deferred-crypto
@@ -337,7 +337,7 @@ audit (`DIP_CONFORMANCE_GAPS.md`). Prioritized; check off as done.
     panic-window guard; neutral drain log; SeedMismatch-vs-transient unlock branch; doc/spec
     fixes). Deferred:
     - [x] **needs-unlock / verify-failed UI signal — DONE** (`9963923e05` Rust+FFI,
-      `841802c587` Swift). Spec + 4-lens review in `NEEDS_UNLOCK_SIGNAL_SPEC.md`.
+      `841802c587` Swift). 4-lens reviewed; as-built note folded into SPEC.md Part 6.
       Diverged from "through persistence like `paymentChannelBroken`" (the review found
       that path isn't buildable today — the per-wallet restore is blocked upstream — and
       would persist self-healing state): instead a pollable FFI count getter + a per-wallet
@@ -563,7 +563,7 @@ DIP/maintainer-coordination effort separate from the wallet work.
 
 - [x] **🐛 BUG (found in UAT 2026-06-19) — RESOLVED 2026-06-21: an IMPORTED identity
   could not sign any state transition.** Fixed by the carry-derived-scalar change
-  (`IMPORTED_IDENTITY_KEY_MATERIALIZATION_SPEC.md`, commit `c567981c46`): discovery
+  (commit `c567981c46`): discovery
   carries the already-verified 32-byte scalar through changeset→FFI→Swift so the client
   stores it directly instead of re-deriving from a not-yet-persisted mnemonic. On-device:
   clean import → 23/23 keys signable, a discovered identity signed a DashPay profile.
@@ -600,4 +600,4 @@ DIP/maintainer-coordination effort separate from the wallet work.
   tombstone restore, purpose_mismatch, disabled keys, V001→V002 then squash,
   reject `removed_incoming`, wipe PHASE 1, seed zeroize) — all 45 threads resolved.
 - [x] Comprehensive kotlin-platform/dashj/dash-wallet comparison
-  (`KOTLIN_PLATFORM_COMPARISON.md`).
+  (folded into `DIP_CONFORMANCE_GAPS.md` §3.1).

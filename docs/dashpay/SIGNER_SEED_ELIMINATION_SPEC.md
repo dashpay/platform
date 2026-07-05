@@ -27,7 +27,7 @@ workaround.
 
 The resolved **import-wallet bug** was the same disease for identity keys
 (Swift re-derived identity scalars from the mnemonic during discovery);
-fixed by the carry-scalar change. See `IMPORTED_IDENTITY_KEY_MATERIALIZATION_SPEC.md`.
+fixed by the carry-scalar change (later reworked into the derive-sign-destroy resolver — see `IDENTITY_KEY_SCALAR_ELIMINATION_SPEC.md`).
 
 ### Goal
 
@@ -77,8 +77,7 @@ session — see §8 — so there is no off-the-shelf signer-based DashPay to cop
 ### Q2 scope, status & completion criteria (2026-06-23)
 
 **Q2** (the PR reviewer ask) = *remove the assign-seed workaround* = delete
-`attach_wallet_seed` (this §; §4.9). Live status tracker:
-`SEED_ELIMINATION_HANDOFF.md`.
+`attach_wallet_seed` (this §; §4.9). Live status: `TODO.md` (authoritative tracker).
 
 **Done + verified** (branch `feat/dashpay-m1-sync-correctness`; platform-wallet
 292/292; glue builds host + `aarch64-apple-ios-sim`): §2 inventory sites **#1–#6**
@@ -590,8 +589,7 @@ tick on an unbuilt contact into an irreversible channel-kill.
    - §4.7 three-state error classification + `is_seedless` gate fix.
    - §4.6 persisted pending-crypto queue + drain FFI.
    - ~~Resolve the imported-identity zero-signing-keys bug~~ **RESOLVED** by the
-     carry-scalar change (commit `c567981c46`,
-     `IMPORTED_IDENTITY_KEY_MATERIALIZATION_SPEC.md` §10; on-device 23/23 signable,
+     carry-scalar change (commit `c567981c46`; on-device 23/23 signable,
      regression tests green). No longer a blocker. Phase 2 need only confirm an
      imported wallet reaches the resolver for xpub/ECDH (its mnemonic is stored in
      the Keychain by `createWallet`, so the resolver-backed signer works for it).

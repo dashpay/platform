@@ -313,8 +313,8 @@ contact established this sweep is fetched the same tick.
   first (so contacts don't flicker on `displayHidden`). Out of scope here; noted.
 - **Cursor as at-rest metadata:** the high-water timestamps are derived from public
   on-chain `$createdAt`, but they are a session-activity residue at rest — exclude
-  the cursor (and the whole DashPay store) from iCloud backup, consistent with the
-  blocklist concern (BLOCK_SPEC R10).
+  the cursor (and the whole DashPay store) from iCloud backup, since a device-local
+  ignore/blocklist and activity residue should not sync to backup.
 
 ## 5. Non-goals
 

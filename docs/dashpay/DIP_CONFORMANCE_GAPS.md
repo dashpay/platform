@@ -45,7 +45,7 @@
 | `$createdAtCoreBlockHeight` populated | 8.7 | ✅ **FULLY** | server-side `document_create_transition/v0/mod.rs:253-256`; client sends `None` `rs-sdk/.../contact_request.rs:478` |
 | DPNS name↔identity resolve/search/cache | 11 | 🟡 **PARTIAL** | works (`network/dpns.rs:281-362`); QR-build doesn't fall back to on-chain name |
 | **L1 block re-scan from `min(coreHeightCreatedAt)` on new contact** | **8.7, 12.6** | ❌ **MISSING** | never read to drive a rescan; SPV exposes no rescan entry point |
-| `encryptedAccountLabel` (48–80B, padded, decrypted) | 8.5 | ✅ **FULLY** | send length-normalized in the crypto primitive (`account_label.rs`); receive decrypted + surfaced via `store_contact_account_label` (incoming-only) → `ContactDetailView` (`ACCOUNT_LABEL_SURFACING_SPEC.md`) |
+| `encryptedAccountLabel` (48–80B, padded, decrypted) | 8.5 | ✅ **FULLY** | send length-normalized in the crypto primitive (`account_label.rs`); receive decrypted + surfaced via `store_contact_account_label` (incoming-only) → `ContactDetailView` (SPEC.md Milestone 3) |
 | `acceptedAccounts` + first-request bloom gating / flood mitigation | 8.4, 10.8 | ❌ **MISSING** | codec only; unpopulated + dropped on ingest |
 | Multi-account contacts (`Account ≠ 0`) | 7.1, 8.9 | 🟡 **DEFERRED** | `account_index` hardcoded `0`; blocked on upstream |
 | QR auto-accept (`autoAcceptProof`, `m/9'/5'/16'/expiry'`, BIP21/72 URI) | 8.13 | ✅ **FULLY** (iOS-first) | `crypto/auto_accept.rs`; see `QR_AUTO_ACCEPT_SPEC.md` |
@@ -145,8 +145,8 @@ duplicated the convention). Red→green test
 `account_label_is_always_a_valid_48_to_80_byte_field` pins both bounds + multi-byte +
 the exact-48 boundary.
 
-**Receive-side surfacing — RESOLVED (2026-06-24, `ACCOUNT_LABEL_SURFACING_SPEC.md`,
-5-lens reviewed).** The label is now decrypted in Rust at the two signer-bearing
+**Receive-side surfacing — RESOLVED (2026-06-24, 5-lens reviewed; folded into SPEC.md
+Milestone 3).** The label is now decrypted in Rust at the two signer-bearing
 register sites (drain `RegisterExternal` Ok-branch + `accept_register_external_validated`,
 where the ECDH `shared` already lives) and stored on
 `EstablishedContact.contact_account_label`. It is **direction-specific** — derived
@@ -206,6 +206,35 @@ blocker — not oversights.
 - **Retained 78/107-byte xpub `decode()` fallback** in `network/contacts.rs:447-461` —
   documented insurance for local-only legacy rows; never participates in on-wire
   encoding (send only ever emits 69 bytes; the SDK rejects non-69 before encryption).
+
+### 3.1 Reference-client (dashj / kotlin-platform) source pointers
+
+For re-checking our behavior against the canonical Android stack — `dashpay/kotlin-platform`
+(`org.dashj.platform.dashpay`, the live lib), `dashpay/dashj` (core crypto/keychains),
+and `dashpay/dash-wallet` (the app: sync, UI, DAOs), all on `master`. (`android-dashpay`
+is the **stale** predecessor, last push 2024-01 — do not diff against it.) The
+reference-side anchors that pin each cross-client comparison:
+
+| Concern | Reference-client anchor |
+|---|---|
+| `accountReference` ASK28 byte order | `BlockchainIdentity.getAccountReference` = `wrapReversed(ASK).toBigInteger().toInt() ushr 4` (= `u32_le(ASK[0..4])>>4`; we use the iOS `be(ASK[28..32])>>4` — §3 above) |
+| Friendship path (receive vs send account) | `FriendKeyChain.getContactPath` — `contact.getUserAccount()` (receive) / `getFriendAccountReference()` (send) |
+| `contactRequest` pagination (drain past 100) | `Documents.getAll` loops `startAt = last.id` while `size >= 100`; `retrieveAll` ⇒ `limit(-1)` |
+| High-water + 10-min skew overlap | `PlatformSyncService.kt:346-372`, `DashPayContactRequestDao.kt:50-54` (`MAX(timestamp)` per direction) |
+| Batched contact-profile fetch | `updateContactProfiles` → `Profiles.getList` (chunks of 100, `whereIn $ownerId`) |
+| Non-destructive profile update | `Profiles.replace` — read-modify-write (`profileData.putAll(currentProfile.toObject())`, then overlay) |
+| `encryptedAccountLabel` padding | `padAccountLabel()` — pad to ≥16 chars with spaces, always emit |
+| Recipient-key selection | kotlin = ENCRYPTION-first with AUTH/HIGH fallback |
+| Sent-tx status (live, not stored) | derived from `TransactionConfidence` |
+| tx→contact reverse (both directions) | `getFriendFromTransaction` scans sent + received pools |
+| Account/keychain self-heal | `checkDatabaseIntegrity` |
+
+**Perceptual-hash caveat — do NOT write a cross-client exact-match test on
+`avatarFingerprint`.** The dHash byte/bit layout coincidentally matches dashj, but the
+pixel pipeline differs (greyscale **average vs luma-weighted**, resize filter, 9×9 vs
+9×8), so fingerprints **will not be byte-identical cross-client**. That is inherent to
+perceptual hashing — the fingerprint is used for Hamming distance, never equality — so a
+cross-client exact-match assertion is wrong by construction.
 
 ---
 
@@ -323,7 +352,7 @@ upstream guard-bypass method, not an SPV build.
    method; the dash-spv `FiltersManager` rescan engine already does the rest.
 2. **§1.2 account-label** — ✅ DONE. Send length-normalization fixed; receive-side
    decryption + UI surfacing implemented (incoming-only) per
-   `ACCOUNT_LABEL_SURFACING_SPEC.md`. DIP-15 §8.5 now fully conforms.
+   SPEC.md Milestone 3. DIP-15 §8.5 now fully conforms.
 3. **DIP-16 deviations (§6.2)** — mostly intentional; if any is worth hardening it is
    #1 (consider sourcing proof-verification quorum keys from the local SPV engine) and
    #3 (height soft-consensus). Track, don't rush.

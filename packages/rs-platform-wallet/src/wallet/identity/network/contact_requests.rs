@@ -1501,17 +1501,14 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             let Some(info) = wm.get_wallet_info(&self.wallet_id) else {
                 return;
             };
-            let mut already = info
-                .pending_contact_crypto
-                .iter()
-                .filter(|e| {
-                    e.owner_identity_id == *identity_id
-                        && matches!(e.op, PendingContactCryptoOp::AutoAccept)
-                })
-                .count();
             let Some(managed) = info.identity_manager.managed_identity(identity_id) else {
                 return;
             };
+            let mut already = managed
+                .pending_contact_crypto
+                .iter()
+                .filter(|e| matches!(e.op, PendingContactCryptoOp::AutoAccept))
+                .count();
             let mut picked = Vec::new();
             for (sender, request) in &managed.incoming_contact_requests {
                 if already >= MAX_AUTO_ACCEPT_QUEUED_PER_OWNER {
@@ -1548,10 +1545,18 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
 
         {
             let mut wm = self.wallet_manager.write().await;
-            if let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) {
-                for entry in &entries {
-                    upsert_pending_contact_crypto(&mut info.pending_contact_crypto, entry.clone());
-                }
+            let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) else {
+                return;
+            };
+            let Some(managed) = info.identity_manager.managed_identity_mut(identity_id) else {
+                tracing::warn!(
+                    owner = %identity_id,
+                    "auto-accept enqueue for a non-resident identity; dropping"
+                );
+                return;
+            };
+            for entry in &entries {
+                upsert_pending_contact_crypto(&mut managed.pending_contact_crypto, entry.clone());
             }
         }
         let changeset = PlatformWalletChangeSet {
@@ -1724,14 +1729,22 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             },
         ];
 
-        // In-memory upsert under the write lock (released before persisting).
+        // In-memory upsert onto the owner identity's queue, under the write
+        // lock (released before persisting). All entries share this owner.
         {
             let mut wm = self.wallet_manager.write().await;
             let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) else {
                 return;
             };
+            let Some(managed) = info.identity_manager.managed_identity_mut(identity_id) else {
+                tracing::warn!(
+                    identity = %identity_id, contact = %candidate.contact_id,
+                    "deferred contact-crypto enqueue for a non-resident identity; dropping"
+                );
+                return;
+            };
             for entry in &entries {
-                upsert_pending_contact_crypto(&mut info.pending_contact_crypto, entry.clone());
+                upsert_pending_contact_crypto(&mut managed.pending_contact_crypto, entry.clone());
             }
         }
 
@@ -1763,7 +1776,12 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     pub async fn pending_contact_crypto_count(&self) -> usize {
         let wm = self.wallet_manager.read().await;
         wm.get_wallet_info(&self.wallet_id)
-            .map(|info| count_account_build_ops(&info.pending_contact_crypto))
+            .map(|info| {
+                info.identity_manager
+                    .managed_identities()
+                    .map(|m| count_account_build_ops(&m.pending_contact_crypto))
+                    .sum::<usize>()
+            })
             .unwrap_or(0)
     }
 
@@ -1784,11 +1802,18 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     ) -> usize {
         use crate::changeset::{PendingContactCryptoKey, PendingContactCryptoOp};
 
-        // Snapshot the queue, then run the async ops without holding the lock.
+        // Snapshot every resident identity's queue into one flat owned Vec
+        // (each entry self-identifies by `owner_identity_id`), then run the
+        // async ops without holding the lock.
         let entries: Vec<crate::changeset::PendingContactCrypto> = {
             let wm = self.wallet_manager.read().await;
             wm.get_wallet_info(&self.wallet_id)
-                .map(|info| info.pending_contact_crypto.clone())
+                .map(|info| {
+                    info.identity_manager
+                        .managed_identities()
+                        .flat_map(|m| m.pending_contact_crypto.iter().cloned())
+                        .collect()
+                })
                 .unwrap_or_default()
         };
         if entries.is_empty() {
@@ -2122,7 +2147,25 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             let mut wm = self.wallet_manager.write().await;
             match wm.get_wallet_info_mut(&self.wallet_id) {
                 Some(info) => {
-                    retain_drained_by_snapshot(&mut info.pending_contact_crypto, &cleared_snapshots)
+                    // Route each drained snapshot entry back to its owner's queue
+                    // and apply the value-aware retain there. Owner is on every
+                    // entry (and in the equality key), so this preserves the
+                    // concurrent-upsert safety per identity. An identity removed
+                    // between the snapshot and here is skipped: its queue died
+                    // with it, and `apply` ignores the cleared delta anyway.
+                    let mut removed = Vec::new();
+                    for snap in &cleared_snapshots {
+                        if let Some(managed) = info
+                            .identity_manager
+                            .managed_identity_mut(&snap.owner_identity_id)
+                        {
+                            removed.extend(retain_drained_by_snapshot(
+                                &mut managed.pending_contact_crypto,
+                                std::slice::from_ref(snap),
+                            ));
+                        }
+                    }
+                    removed
                 }
                 None => Vec::new(),
             }
@@ -2168,13 +2211,16 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             verify_auto_accept_proof_with_pubkey,
         };
 
-        // Snapshot just the AutoAccept entries.
+        // Snapshot just the AutoAccept entries, across every resident identity
+        // (both buckets — an AutoAccept op can legitimately sit on an
+        // out-of-wallet identity, since the enqueue gate isn't wallet-scoped).
         let entries: Vec<crate::changeset::PendingContactCrypto> = {
             let wm = self.wallet_manager.read().await;
             wm.get_wallet_info(&self.wallet_id)
                 .map(|info| {
-                    info.pending_contact_crypto
-                        .iter()
+                    info.identity_manager
+                        .managed_identities()
+                        .flat_map(|m| m.pending_contact_crypto.iter())
                         .filter(|e| matches!(e.op, PendingContactCryptoOp::AutoAccept))
                         .cloned()
                         .collect()
@@ -2293,8 +2339,25 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             {
                 let mut wm = self.wallet_manager.write().await;
                 if let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) {
-                    info.pending_contact_crypto
-                        .retain(|e| !cleared.iter().any(|k| *k == e.key()));
+                    // Remove the cleared entries from their owners' queues. Each
+                    // cleared key names its owner, and only that owner's queue can
+                    // hold it, so retain each affected owner's queue against the
+                    // full cleared set. A plain key-`retain` is sufficient here
+                    // (unlike the value-aware `retain_drained_by_snapshot` the main
+                    // drain uses): `AutoAccept` is a payload-less unit variant, so a
+                    // concurrent mid-drain upsert can't change an entry's value —
+                    // key-equality is total.
+                    let mut cleared_owners: Vec<Identifier> =
+                        cleared.iter().map(|k| k.owner_identity_id).collect();
+                    cleared_owners.sort();
+                    cleared_owners.dedup();
+                    for owner in &cleared_owners {
+                        if let Some(managed) = info.identity_manager.managed_identity_mut(owner) {
+                            managed
+                                .pending_contact_crypto
+                                .retain(|e| !cleared.iter().any(|k| *k == e.key()));
+                        }
+                    }
                     // Record permanent verify failures so the next sweep's
                     // enqueue gate skips the same bad proof (in-memory only —
                     // retried once per launch; the request stays manually
@@ -3251,7 +3314,6 @@ mod sweep_tests {
             balance: Arc::new(WalletBalance::new()),
             identity_manager: IdentityManager::new(),
             tracked_asset_locks: BTreeMap::new(),
-            pending_contact_crypto: Vec::new(),
         }
     }
 

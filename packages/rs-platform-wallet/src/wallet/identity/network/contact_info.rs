@@ -382,7 +382,14 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) else {
                 return;
             };
-            upsert_pending_contact_crypto(&mut info.pending_contact_crypto, entry.clone());
+            let Some(managed) = info.identity_manager.managed_identity_mut(owner_id) else {
+                tracing::warn!(
+                    owner = %owner_id,
+                    "contactInfo-decrypt enqueue for a non-resident identity; dropping"
+                );
+                return;
+            };
+            upsert_pending_contact_crypto(&mut managed.pending_contact_crypto, entry.clone());
         }
         let changeset = PlatformWalletChangeSet {
             pending_contact_crypto_added: vec![entry],

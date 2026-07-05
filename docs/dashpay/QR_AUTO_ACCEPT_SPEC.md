@@ -3,7 +3,7 @@
 Decision (2026-06-24): build the DIP-15 `autoAcceptProof` QR flow, **faithful to the
 DIP-15 wire formats** so we are a correct reference implementation. Research (incl. the
 finding that no reference client implements this today, so it is iOS-first / convention-
-setting) is in `QR_AUTO_ACCEPT_RESEARCH.md`. Invitations (DIP-13) are queued next.
+setting) informed this spec. Invitations (DIP-13) are queued next.
 
 > **Status:** IMPLEMENTED (2026-06-24) across Rust + FFI + Swift; `build_ios.sh` green,
 > platform-wallet 299 + ffi 117 tests green. REVIEWED (4-lens: DIP-fidelity / security /

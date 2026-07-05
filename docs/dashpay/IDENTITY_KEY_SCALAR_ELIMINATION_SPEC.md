@@ -8,10 +8,10 @@ derive-sign-destroy model in which the per-key secret only ever exists in the iO
 Keychain (as the wallet seed), is derived on demand at sign time, and is never
 carried across the Rust→FFI→Swift boundary or stored per-key.
 
-Supersedes the storage posture of `IMPORTED_IDENTITY_KEY_MATERIALIZATION_SPEC.md`
-(the carried-scalar fix this spec reverses). Aligns with the
-`SEED_ELIMINATION_HANDOFF.md` §4.9-blocker item 3 design and the sibling decision
-to stop persisting the DashPay friendship xpub and re-derive on load.
+Supersedes the earlier carried-scalar storage posture (the carry-the-verified-scalar
+fix this spec reverses). Aligns with the seed-elimination §4.9-blocker item 3 design
+and the sibling decision to stop persisting the DashPay friendship xpub and re-derive
+on load.
 
 > **Review outcome (rev 2).** Four independent reviewers (feasibility, scope,
 > security, crypto/domain) audited rev 1 against the code. The crux correctness

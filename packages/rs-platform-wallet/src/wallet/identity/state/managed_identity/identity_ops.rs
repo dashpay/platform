@@ -96,6 +96,7 @@ impl ManagedIdentity {
             high_water_received_ms: None,
             high_water_sent_ms: None,
             contact_profiles: BTreeMap::new(),
+            pending_contact_crypto: Vec::new(),
         }
     }
 
@@ -126,6 +127,7 @@ impl ManagedIdentity {
             high_water_received_ms: None,
             high_water_sent_ms: None,
             contact_profiles: BTreeMap::new(),
+            pending_contact_crypto: Vec::new(),
         }
     }
 
