@@ -547,6 +547,64 @@ class PlatformWalletPersistenceHandlerTest {
     }
 
     @Test
+    fun loadWalletListRoundTripsIdentityKeysWithContractBounds() = runTest {
+        // Signing-critical restore path: a cold-started wallet must get its
+        // identities and public keys back exactly as persisted — keyId,
+        // repr(u8) discriminants, key bytes, and the (kind, id, docType)
+        // contract-bounds triple (kind 2 = SingleContractDocumentType).
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+        val xpub = ByteArray(78) { 30 }
+        handler.onPersistAccountRegistration(
+            walletId, 0, 0, 0, 0, 0, ByteArray(0), ByteArray(0), xpub,
+        )
+        val identityId = ByteArray(32) { 12 }
+        seedIdentity(identityId)
+        val pubkey = ByteArray(33) { 7 }
+        val boundsId = ByteArray(32) { 21 }
+
+        handler.onChangesetBegin(walletId)
+        handler.onPersistIdentityKeyUpsert(
+            walletId = walletId,
+            identityId = identityId,
+            keyId = 4,
+            purpose = 1,
+            securityLevel = 2,
+            keyType = 0,
+            readOnly = true,
+            disabledAtIsSome = false,
+            disabledAt = 0,
+            publicKeyData = pubkey,
+            publicKeyHash = ByteArray(20),
+            walletIdIsSome = true,
+            keyWalletId = walletId,
+            derivationIndicesIsSome = false,
+            identityIndex = 0,
+            keyIndex = 0,
+            contractBoundsKind = 2,
+            contractBoundsId = boundsId,
+            contractBoundsDocumentType = "contactRequest",
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        val list = handler.onLoadWalletList()
+        assertEquals(1, list.size)
+        assertEquals(1, list[0].identities.size)
+        val identity = list[0].identities[0]
+        assertTrue(identityId.contentEquals(identity.identityId))
+        assertEquals(1, identity.keys.size)
+        val key = identity.keys[0]
+        assertEquals(4, key.keyId)
+        assertEquals(0.toByte(), key.keyType)
+        assertEquals(1.toByte(), key.purpose)
+        assertEquals(2.toByte(), key.securityLevel)
+        assertTrue(key.readOnly)
+        assertTrue(pubkey.contentEquals(key.data))
+        assertEquals(2.toByte(), key.contractBoundsKind)
+        assertTrue(boundsId.contentEquals(key.contractBoundsId))
+        assertEquals("contactRequest", key.contractBoundsDocumentType)
+    }
+
+    @Test
     fun loadWalletListScopesToTheHandlerNetwork() = runTest {
         // A network-scoped handler must never hand the Rust loader a
         // foreign-network row — the loader inserts unconditionally, and a
