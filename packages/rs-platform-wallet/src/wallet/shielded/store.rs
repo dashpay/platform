@@ -152,6 +152,20 @@ pub struct PendingRedrive {
     pub attempts: u32,
 }
 
+/// The result of [`SubwalletState::mark_spent`].
+///
+/// `newly_spent` preserves the historical `bool` return (the
+/// unspent→spent transition, which the durable store keys its
+/// note-row write on). `dropped_redrives` carries the activity ids of
+/// any redrive records resolved by this nullifier so the durable store
+/// can mirror the SQLite deletion — even on the already-spent path,
+/// where the in-memory drop happens but `newly_spent` is false.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub(super) struct MarkSpentOutcome {
+    pub newly_spent: bool,
+    pub dropped_redrives: Vec<[u8; 32]>,
+}
+
 /// Storage abstraction for shielded wallet state.
 ///
 /// Consumers implement this for their persistence layer. The
@@ -534,22 +548,29 @@ impl SubwalletState {
         self.notes.clone()
     }
 
-    pub(super) fn mark_spent(&mut self, nullifier: &[u8; 32]) -> bool {
-        if let Some(&idx) = self.nullifier_index.get(nullifier) {
-            if !self.notes[idx].is_spent {
-                self.notes[idx].is_spent = true;
-                // Promotion implies the spend confirmed; drop any
-                // matching pending reservation. Idempotent — the
-                // common path already cleared pending in the
-                // spend-flow finalizer.
-                self.pending_nullifiers.remove(nullifier);
-                // The spend landed — its redrive record (if armed) is
-                // resolved for every nullifier it carries.
-                self.drop_redrives_containing(nullifier);
-                return true;
-            }
+    pub(super) fn mark_spent(&mut self, nullifier: &[u8; 32]) -> MarkSpentOutcome {
+        let Some(&idx) = self.nullifier_index.get(nullifier) else {
+            return MarkSpentOutcome::default();
+        };
+        let newly_spent = !self.notes[idx].is_spent;
+        self.notes[idx].is_spent = true;
+        // Resolve the reservation + redrive record whenever the
+        // nullifier is KNOWN, not only on the first unspent→spent
+        // transition. A note restored from disk already `is_spent`
+        // (its owning transition landed in a prior session) paired with
+        // a rehydrated redrive row would otherwise keep a ghost
+        // reservation alive and re-broadcast a transition that already
+        // executed. Removing a pending reservation on a spent note is
+        // always safe — a spent note can't be re-spent. `dropped` is
+        // returned so the durable store can mirror the deletion even
+        // when `newly_spent` is false (the in-memory drop still
+        // happened here).
+        self.pending_nullifiers.remove(nullifier);
+        let dropped = self.drop_redrives_containing(nullifier);
+        MarkSpentOutcome {
+            newly_spent,
+            dropped_redrives: dropped,
         }
-        false
     }
 
     /// Drop every redrive record that carries `nullifier`, returning
@@ -774,10 +795,13 @@ impl ShieldedStore for InMemoryShieldedStore {
     }
 
     fn mark_spent(&mut self, id: SubwalletId, nullifier: &[u8; 32]) -> Result<bool, Self::Error> {
+        // In-memory store: the redrive map lives in the same
+        // `SubwalletState`, so `mark_spent` already dropped any resolved
+        // redrives — nothing durable to mirror. Surface `newly_spent`.
         Ok(self
             .subwallets
             .get_mut(&id)
-            .map(|sw| sw.mark_spent(nullifier))
+            .map(|sw| sw.mark_spent(nullifier).newly_spent)
             .unwrap_or(false))
     }
 

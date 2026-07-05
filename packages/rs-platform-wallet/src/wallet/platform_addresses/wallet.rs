@@ -242,8 +242,33 @@ impl PlatformAddressWallet {
         credited_outputs: &BTreeSet<PlatformP2PKHAddress>,
         context: &'static str,
     ) -> crate::PlatformAddressChangeSet {
+        self.reconcile_address_infos_with_persistence(address_infos, credited_outputs, context)
+            .await
+            .0
+    }
+
+    /// Like [`Self::reconcile_address_infos`], but also reports whether the
+    /// reconciled balance changeset was **durably persisted**.
+    ///
+    /// `persisted == false` means (and only means) that the in-memory
+    /// managed-account balances WERE updated to the proof-attested values
+    /// but the durable `persister.store(...)` write failed — so a restart
+    /// would reseed from the stale rows. Every early-return path (no
+    /// provider, nothing resolved, nothing changed) leaves memory
+    /// untouched, so there is no memory-vs-disk divergence and
+    /// `persisted` is `true` there. Callers that pair reconciliation with
+    /// a one-shot side effect — notably `fund_from_asset_lock` marking an
+    /// asset lock `Consumed` — must gate that side effect on
+    /// `persisted == true`, or they risk pairing an irreversible
+    /// commitment with durable balances that under-report the spend.
+    pub(super) async fn reconcile_address_infos_with_persistence(
+        &self,
+        address_infos: &AddressInfos,
+        credited_outputs: &BTreeSet<PlatformP2PKHAddress>,
+        context: &'static str,
+    ) -> (crate::PlatformAddressChangeSet, bool) {
         if address_infos.is_empty() {
-            return crate::PlatformAddressChangeSet::default();
+            return (crate::PlatformAddressChangeSet::default(), true);
         }
 
         let mut guard = self.provider.write().await;
@@ -255,7 +280,7 @@ impl PlatformAddressWallet {
                  provider for this wallet; local balances stay stale \
                  until the next platform-address sync"
             );
-            return crate::PlatformAddressChangeSet::default();
+            return (crate::PlatformAddressChangeSet::default(), true);
         };
         if provider.per_wallet_state(&self.wallet_id).is_none() {
             tracing::warn!(
@@ -265,7 +290,7 @@ impl PlatformAddressWallet {
                  provider state for this wallet; local balances stay \
                  stale until the next platform-address sync"
             );
-            return crate::PlatformAddressChangeSet::default();
+            return (crate::PlatformAddressChangeSet::default(), true);
         }
 
         // Live-pool fallback indexes for addresses derived since the last
@@ -306,7 +331,7 @@ impl PlatformAddressWallet {
                  address belongs to a third party; otherwise local \
                  balances stay stale until the next platform-address sync"
             );
-            return crate::PlatformAddressChangeSet::default();
+            return (crate::PlatformAddressChangeSet::default(), true);
         }
         if outcome.stale_skipped > 0 || outcome.unchanged_skipped > 0 {
             tracing::debug!(
@@ -319,7 +344,7 @@ impl PlatformAddressWallet {
             );
         }
         if outcome.entries.is_empty() {
-            return crate::PlatformAddressChangeSet::default();
+            return (crate::PlatformAddressChangeSet::default(), true);
         }
 
         // Apply the proof-attested balances to the managed accounts while
@@ -384,17 +409,21 @@ impl PlatformAddressWallet {
             provider.invalidate_sync_watermark();
         }
 
-        if let Err(e) = self.persister.store(cs.clone().into()) {
-            tracing::error!(
-                context,
-                error = %e,
-                "Failed to persist platform-address reconciliation; \
-                 in-memory balances are updated but durable rows stay stale \
-                 until the next platform-address sync"
-            );
-        }
+        let persisted = match self.persister.store(cs.clone().into()) {
+            Ok(()) => true,
+            Err(e) => {
+                tracing::error!(
+                    context,
+                    error = %e,
+                    "Failed to persist platform-address reconciliation; \
+                     in-memory balances are updated but durable rows stay stale \
+                     until the next platform-address sync"
+                );
+                false
+            }
+        };
         drop(guard);
-        cs
+        (cs, persisted)
     }
 
     /// Get the network from the SDK.
@@ -536,11 +565,21 @@ impl PlatformAddressWallet {
     ///
     /// Does NOT route through [`apply_sync_state`] — that helper's
     /// all-None early-return guard is meant for persisted-state replay
-    /// and is irrelevant here. The two locks are taken sequentially
-    /// (one released before the next is acquired), so there is no
-    /// nested-lock hazard; this mirrors the ordering rationale in
-    /// [`initialize_from_persisted`].
+    /// and is irrelevant here. The wallet-manager write is nested
+    /// INSIDE the provider write (provider → wallet-manager, the same
+    /// order `reconcile_address_infos` uses) so the two clears are
+    /// atomic with respect to a concurrent sync or reconciliation.
     pub async fn reset_sync_state(&self) {
+        // Hold the provider write lock across BOTH the managed-account
+        // balance clear AND the provider reset, so the whole reset is
+        // atomic: without it, a sync pass or a reconciliation could
+        // interleave between the two steps and repopulate the managed
+        // balances (or the provider seed) we just cleared, leaving the
+        // "Clear" half-applied. The wallet-manager write is nested
+        // INSIDE the provider write — the same provider → wallet-manager
+        // lock order `reconcile_address_infos` uses — so the two paths
+        // can't deadlock.
+        let mut guard = self.provider.write().await;
         {
             let mut wm = self.wallet_manager.write().await;
             if let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) {
@@ -549,7 +588,6 @@ impl PlatformAddressWallet {
                 }
             }
         }
-        let mut guard = self.provider.write().await;
         if let Some(provider) = guard.as_mut() {
             provider.reset_sync_state();
         }
