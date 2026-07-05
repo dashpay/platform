@@ -1307,11 +1307,9 @@ coordinated rather than duplicated:
 
 - [`research/01-dip-spec.md`](./research/01-dip-spec.md) — DIP-9/11/13/14/15
   protocol reference (derivation paths, ECDH, encryption, contract).
-- [`research/02-rust-dashcore-keywallet.md`](./research/02-rust-dashcore-keywallet.md)
-  — `key-wallet` DashPay primitives + the ECDH-absence finding.
-- [`research/03-rs-platform-wallet.md`](./research/03-rs-platform-wallet.md) —
-  per-flow implemented/stub map + FFI surface.
 - [`research/04-sdk-and-contract.md`](./research/04-sdk-and-contract.md) — v1
   contract schema + `rs-sdk`/`rs-sdk-ffi` send flow + the two SDK bugs.
-- [`research/05-swift-app.md`](./research/05-swift-app.md) — app architecture,
-  existing DashPay surface, insertion points, conventions, test-plan seed.
+- [`research/06-interop-desk-check.md`](./research/06-interop-desk-check.md) —
+  cross-client (iOS DashSync / Android dashj) interop evidence + testnet census.
+- [`research/07-contactinfo-conventions.md`](./research/07-contactinfo-conventions.md)
+  — contactInfo wire conventions (this repo sets the de-facto convention).

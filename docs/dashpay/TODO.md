@@ -180,8 +180,8 @@ audit (`DIP_CONFORMANCE_GAPS.md`). Prioritized; check off as done.
   **DEFERRED (minor):** only bites if SPV drops our own broadcast; `mark_address_used`
   at broadcast is a small hardening with no observed incidence — revisit if it occurs.
 - [~] **QR-based auto-accept (DIP-15) — IMPLEMENTED (2026-06-24), iOS-first reference
-  impl.** Research in `QR_AUTO_ACCEPT_RESEARCH.md`; reviewed spec in
-  `QR_AUTO_ACCEPT_SPEC.md`. Built faithfully to DIP-15 wire formats (no Android client
+  impl.** Reviewed spec in `QR_AUTO_ACCEPT_SPEC.md`. Built faithfully to DIP-15
+  wire formats (no Android client
   verifies `autoAcceptProof`, so it works iOS↔iOS and sets the convention). Commits:
   crypto primitives `b8ff05c6f8`, receive/auto-accept flow `a714b4e8de`, owner QR-create
   + scoped raw-key export `b39e0cf6f0`, scanner + drain-signer `ff2403d7a1`, Swift UI
@@ -293,8 +293,8 @@ audit (`DIP_CONFORMANCE_GAPS.md`). Prioritized; check off as done.
   normal profile edits.**
 
 - [~] **Seed elimination — Q2 = remove the `attach_wallet_seed` workaround.**
-  Spec `SIGNER_SEED_ELIMINATION_SPEC.md` (design, REVIEWED v3, + Q2 status banner);
-  live tracker `SEED_ELIMINATION_HANDOFF.md`. **Done + verified** (platform-wallet
+  Spec `SIGNER_SEED_ELIMINATION_SPEC.md` (design, REVIEWED v3, + Q2 status banner).
+  **Done + verified** (platform-wallet
   292/292; glue builds host + iOS-sim): the whole seedless contact-request flow —
   send/accept/drain/always-enqueue sweep, `ContactCryptoProvider` + signer host
   primitives (ECDH/accountReference/contactInfo seal-open/wrong-seed), deferred-crypto
@@ -563,7 +563,7 @@ DIP/maintainer-coordination effort separate from the wallet work.
 
 - [x] **🐛 BUG (found in UAT 2026-06-19) — RESOLVED 2026-06-21: an IMPORTED identity
   could not sign any state transition.** Fixed by the carry-derived-scalar change
-  (`IMPORTED_IDENTITY_KEY_MATERIALIZATION_SPEC.md`, commit `c567981c46`): discovery
+  (commit `c567981c46`): discovery
   carries the already-verified 32-byte scalar through changeset→FFI→Swift so the client
   stores it directly instead of re-deriving from a not-yet-persisted mnemonic. On-device:
   clean import → 23/23 keys signable, a discovered identity signed a DashPay profile.
