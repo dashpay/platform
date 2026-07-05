@@ -505,7 +505,8 @@ impl IdentityWallet {
                     if let Some(managed) = info.identity_manager.managed_identity_mut(identity_id) {
                         let prev_balance = managed.identity.balance();
                         managed.identity.set_balance(new_balance);
-                        if let Err(source) = self.persister.store(managed.snapshot_changeset().into())
+                        if let Err(source) =
+                            self.persister.store(managed.snapshot_changeset().into())
                         {
                             managed.identity.set_balance(prev_balance);
                             return Err(PlatformWalletError::PersistedAfterOnChainSuccess {

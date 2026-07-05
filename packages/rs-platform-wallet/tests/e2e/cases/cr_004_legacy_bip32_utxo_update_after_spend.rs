@@ -276,10 +276,11 @@ async fn cr_004_legacy_bip32_utxo_update_after_spend() {
     // Sanity assert the sink address is on the same network as the
     // wallet — a network mismatch here would mean the send target was
     // wrong all along and the earlier broadcast went somewhere
-    // unexpected. `key_wallet::Network` is a re-export of
-    // `dashcore::Network`, so a direct `==` works without casting.
+    // unexpected. `Address<NetworkChecked>` exposes no network getter, so
+    // validate through the unchecked view's `is_valid_for_network`.
     assert!(
-        sink.as_unchecked().is_valid_for_network(s.ctx.config.network),
+        sink.as_unchecked()
+            .is_valid_for_network(s.ctx.config.network),
         "PRE-pin violated: sink address network does not match test \
          wallet network; CR-004 sweep would broadcast to the wrong chain."
     );
