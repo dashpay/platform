@@ -369,7 +369,13 @@ var body: some View {
                         .buttonStyle(.borderedProminent)
                         .tint(.blue)
                         .controlSize(.mini)
-                        .disabled(platformBalanceSyncService.isSyncing)
+                        // Also block Sync Now while a Clear is running so
+                        // it can't interleave with the Rust reset +
+                        // SwiftData wipe.
+                        .disabled(
+                            platformBalanceSyncService.isSyncing
+                                || platformBalanceSyncService.isClearing
+                        )
 
                         Button {
                             Task {
@@ -387,6 +393,12 @@ var body: some View {
                         .buttonStyle(.borderedProminent)
                         .tint(.red)
                         .controlSize(.mini)
+                        // Clear is fire-and-forget; gate it against a
+                        // concurrent sync and against a second Clear.
+                        .disabled(
+                            platformBalanceSyncService.isSyncing
+                                || platformBalanceSyncService.isClearing
+                        )
                     }
                 }
                 .padding(.vertical, 4)

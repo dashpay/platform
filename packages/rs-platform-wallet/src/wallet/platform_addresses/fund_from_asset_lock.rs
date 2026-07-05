@@ -302,11 +302,40 @@ impl PlatformAddressWallet {
         // forcing the next pass to full-scan-reconcile — the automated
         // equivalent of the manual Sync-tab "Clear" + "Sync Now".
         let credited_outputs = super::credited_outputs_set(addresses.keys());
-        let cs = self
-            .reconcile_address_infos(&address_infos, &credited_outputs, "fund from asset lock")
+        // Use the persistence-reporting variant: marking the lock
+        // `Consumed` below is irreversible, so it MUST be gated on the
+        // reconciled balances actually reaching disk. `persisted` is
+        // false ONLY when the in-memory balances were updated but the
+        // durable write failed — exactly the case where a Consumed lock
+        // would pair with stale rows and under-budget the next spend
+        // after a restart.
+        let (cs, persisted) = self
+            .reconcile_address_infos_with_persistence(
+                &address_infos,
+                &credited_outputs,
+                "fund from asset lock",
+            )
             .await;
 
         if let Some(out_point) = tracked_out_point {
+            if !persisted {
+                // The proof-attested balances were applied in memory but
+                // did not reach disk. Leave the lock non-Consumed: it
+                // stays in the Resumable Funding list, and a user Resume
+                // gets Platform's deterministic "lock already consumed"
+                // rejection — the same benign recovery path as a failed
+                // consume below — while the next platform-address sync
+                // repairs the stale rows. Consuming here would strand the
+                // lock as Consumed over durable balances that under-report
+                // the credit.
+                tracing::error!(
+                    outpoint = %out_point,
+                    "skipping consume_asset_lock: the reconciled balance changeset \
+                     was not durably stored; the lock stays non-Consumed (Resumable) \
+                     rather than pairing a Consumed lock with stale balance rows on disk"
+                );
+                return Ok(cs);
+            }
             // Platform DID accept the top-up — propagating an Err
             // here would misreport the protocol outcome, since the
             // caller's recipient(s) already have credits attested

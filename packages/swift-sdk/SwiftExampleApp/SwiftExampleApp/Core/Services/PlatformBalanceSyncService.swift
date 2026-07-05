@@ -23,6 +23,18 @@ class PlatformBalanceSyncService: ObservableObject {
     /// Whether a sync is currently in progress.
     @Published var isSyncing = false
 
+    /// Whether a `clearLocalState` is currently in progress. Gates the
+    /// Clear / Sync Now controls so a second Clear or a Sync Now can't
+    /// interleave with the Rust reset + SwiftData wipe sequence.
+    @Published var isClearing = false
+
+    /// Monotonic token bumped at the start of every `clearLocalState`. A
+    /// `refreshBalanceSnapshot` captures it before its `await` and
+    /// re-checks it before publishing, so a snapshot that was already in
+    /// flight when a Clear ran can't republish pre-clear balances over
+    /// the cleared UI. `@MainActor` serializes the bump and the check.
+    private var balanceSnapshotGeneration: UInt64 = 0
+
     /// Last successful sync time (local clock).
     @Published var lastSyncTime: Date?
 
@@ -227,6 +239,15 @@ class PlatformBalanceSyncService: ObservableObject {
         network: Network,
         walletIdsOnNetwork: Set<Data>
     ) async {
+        // Invalidate any in-flight `refreshBalanceSnapshot`: a snapshot
+        // queued by a sync that completed just before this Clear must not
+        // land its (pre-clear) balances over the cleared UI. It captured
+        // the old generation and will drop its publish once we bump here.
+        balanceSnapshotGeneration &+= 1
+        // Gate the Clear / Sync Now controls for the whole sequence.
+        isClearing = true
+        defer { isClearing = false }
+
         // 1) Reset the Rust-owned state BEFORE touching disk. Without
         //    this the in-memory watermark survives and the next "Sync
         //    Now" resumes incrementally (fast) instead of doing a full
@@ -368,12 +389,26 @@ class PlatformBalanceSyncService: ObservableObject {
     private func refreshBalanceSnapshot() async {
         guard let wallet = platformAddressWallet else { return }
 
+        // Capture the generation before the off-actor read. If a
+        // `clearLocalState` bumps it while we await, the balances below
+        // are pre-clear and must NOT be published over the cleared UI.
+        let generation = balanceSnapshotGeneration
+
         do {
             let (balances, credits) = try await Task.detached { [wallet] in
                 let balances = try wallet.addressesWithBalances()
                 let credits = try wallet.totalCredits()
                 return (balances, credits)
             }.value
+
+            // A Clear ran while this snapshot was in flight — drop it.
+            guard generation == balanceSnapshotGeneration else {
+                SDKLogger.log(
+                    "BLAST snapshot dropped: superseded by a Clear",
+                    minimumLevel: .medium
+                )
+                return
+            }
 
             var newBalances: [String: UInt64] = [:]
             var total: UInt64 = 0
