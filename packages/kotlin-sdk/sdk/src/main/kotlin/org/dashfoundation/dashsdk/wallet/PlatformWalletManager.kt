@@ -423,6 +423,17 @@ class PlatformWalletManager(
                 database.walletDao().updateName(walletId, label, System.currentTimeMillis())
             }
         } catch (t: Throwable) {
+            // Full rollback, not just the wrapper's Arc clone: the wallet is
+            // already REGISTERED in the native manager (and its persistence
+            // callbacks may have written Room rows), so it must be
+            // unregistered — removeWallet runs the persistence cascade —
+            // or the next loadPersistedWallets resurrects it as an orphan
+            // with no Keystore mnemonic. Best-effort scrub of a partially
+            // written mnemonic keeps the Keystore from drifting.
+            runCatching {
+                mapNativeErrors { WalletManagerNative.removeWallet(managerHandle, walletId) }
+            }
+            runCatching { walletStorage.deleteMnemonic(walletId) }
             managed.close()
             throw t
         }
