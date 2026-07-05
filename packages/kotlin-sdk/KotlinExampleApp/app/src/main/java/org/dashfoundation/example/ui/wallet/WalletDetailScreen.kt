@@ -55,7 +55,10 @@ import org.dashfoundation.dashsdk.wallet.ManagedPlatformWallet
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.di.LocalAppState
 import org.dashfoundation.example.navigation.FundFromAssetLock
+import org.dashfoundation.example.navigation.SeedShieldedPool
 import org.dashfoundation.example.navigation.SendTransaction
+import org.dashfoundation.example.navigation.ShieldedActivity
+import org.dashfoundation.example.navigation.ShieldedFund
 import org.dashfoundation.example.navigation.TransferPlatformAddress
 import org.dashfoundation.example.navigation.WalletTransactions
 import org.dashfoundation.example.navigation.WithdrawPlatformAddress
@@ -252,7 +255,12 @@ fun WalletDetailScreen(
                     onWithdraw = { navController.navigate(WithdrawPlatformAddress(walletIdHex)) },
                 )
                 if (hasShielded) {
-                    LabeledContent("Shielded Balance", formatCredits(shieldedBalance))
+                    ShieldedBalanceRow(
+                        value = formatCredits(shieldedBalance),
+                        onSeedPool = { navController.navigate(SeedShieldedPool(walletIdHex)) },
+                        onFund = { navController.navigate(ShieldedFund(walletIdHex)) },
+                        onActivity = { navController.navigate(ShieldedActivity(walletIdHex)) },
+                    )
                 }
             }
 
@@ -472,6 +480,84 @@ private fun PlatformBalanceRow(
                         onWithdraw()
                     },
                     modifier = Modifier.testTag("walletDetail.withdrawPlatformButton"),
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Shielded Balance row — the DASH value with a trailing overflow menu:
+ * Fund Shielded (Core → pool), Seed Pool Notes, Shielded Activity. Wires up
+ * the Orchard shielded screens (← iOS `BalanceCardView` Shielded row and the
+ * SeedShieldedPool / ShieldedActivity affordances). Only rendered on a
+ * shielded build.
+ */
+@Composable
+private fun ShieldedBalanceRow(
+    value: String,
+    onSeedPool: () -> Unit,
+    onFund: () -> Unit,
+    onActivity: () -> Unit,
+) {
+    var menuOpen by remember { mutableStateOf(false) }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 7.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            "Shielded Balance",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        Text(
+            value,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.End,
+            modifier = Modifier
+                .weight(1f)
+                .padding(end = 4.dp),
+        )
+        Box {
+            IconButton(
+                onClick = { menuOpen = true },
+                modifier = Modifier
+                    .size(28.dp)
+                    .testTag("walletDetail.shieldedBalanceMenu"),
+            ) {
+                Icon(
+                    Icons.Default.MoreVert,
+                    contentDescription = "Shielded Balance actions",
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+            }
+            DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                DropdownMenuItem(
+                    text = { Text("Fund Shielded") },
+                    onClick = {
+                        menuOpen = false
+                        onFund()
+                    },
+                    modifier = Modifier.testTag("walletDetail.fundShieldedButton"),
+                )
+                DropdownMenuItem(
+                    text = { Text("Seed Pool Notes") },
+                    onClick = {
+                        menuOpen = false
+                        onSeedPool()
+                    },
+                    modifier = Modifier.testTag("walletDetail.seedShieldedPoolButton"),
+                )
+                DropdownMenuItem(
+                    text = { Text("Shielded Activity") },
+                    onClick = {
+                        menuOpen = false
+                        onActivity()
+                    },
+                    modifier = Modifier.testTag("walletDetail.shieldedActivityButton"),
                 )
             }
         }
