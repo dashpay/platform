@@ -66,7 +66,10 @@ fun IdentityDetailScreen(identityIdHex: String, navController: NavHostController
     val container = LocalAppContainer.current
     val appState = LocalAppState.current
     val idBytes = remember(identityIdHex) { identityIdHex.hexToBytes() }
-    val idBase58 = identityIdHex // publicKeyDao keys on the Swift storage id string
+    // The persister keys `public_keys.identityId` by base58; older callers
+    // passed the hex nav-arg through — observe base58 and fall back to hex
+    // so both encodings resolve (matches KeyDetailScreen's resolution).
+    val idBase58 = remember(idBytes) { Base58.encode(idBytes) }
 
     val identity by container.database.identityDao()
         .observeByIdentityId(idBytes)
@@ -74,9 +77,13 @@ fun IdentityDetailScreen(identityIdHex: String, navController: NavHostController
     val dpnsNames by container.database.dpnsNameDao()
         .observeByIdentity(idBytes)
         .collectAsStateWithLifecycle(initialValue = emptyList())
-    val keys by container.database.publicKeyDao()
+    val keysBase58 by container.database.publicKeyDao()
         .observeByIdentityId(idBase58)
         .collectAsStateWithLifecycle(initialValue = emptyList())
+    val keysHex by container.database.publicKeyDao()
+        .observeByIdentityId(identityIdHex)
+        .collectAsStateWithLifecycle(initialValue = emptyList())
+    val keys = if (keysBase58.isNotEmpty()) keysBase58 else keysHex
 
     val sdk by appState.sdk.collectAsStateWithLifecycle()
     var contestedNames by remember { mutableStateOf<List<String>>(emptyList()) }

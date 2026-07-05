@@ -8,6 +8,8 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.dashfoundation.dashsdk.ffi.AccountSpecData
 import org.dashfoundation.dashsdk.ffi.CoreTxRecordData
+import org.dashfoundation.dashsdk.ffi.IdentityKeyRestoreData
+import org.dashfoundation.dashsdk.ffi.IdentityRestoreData
 import org.dashfoundation.dashsdk.ffi.NativePersistenceBridge
 import org.dashfoundation.dashsdk.ffi.ShieldedActivityData
 import org.dashfoundation.dashsdk.ffi.ShieldedNoteData
@@ -1075,6 +1077,12 @@ class PlatformWalletPersistenceHandler(
                 val syncState = w.networkRaw?.let {
                     database.platformAddressDao().getSyncState(syncStateScopeId(it))
                 }
+                // Wallet-owned identities + their public keys, so each
+                // restored `Identity` enters the in-memory `IdentityManager`
+                // with a populated `public_keys` map — the gap that left
+                // cold-started identities keyless and every write rejected
+                // at DPP validation (mirror of Swift `buildIdentityRestoreBuffer`).
+                val identities = buildIdentityRestoreData(w.walletId)
                 out.add(
                     WalletRestoreData(
                         walletId = w.walletId,
@@ -1088,6 +1096,7 @@ class PlatformWalletPersistenceHandler(
                         // No separate column — Swift reuses syncedHeight.
                         lastProcessedHeight = w.syncedHeight,
                         lastSynced = w.lastSynced,
+                        identities = identities,
                     ),
                 )
             }
@@ -1194,6 +1203,72 @@ class PlatformWalletPersistenceHandler(
                 )
             }
         }
+
+    // ── Shared load helpers ───────────────────────────────────────────
+
+    /**
+     * Assemble the [IdentityRestoreData] rows for one wallet: every
+     * wallet-owned identity plus its public keys, sorted by identity index
+     * then key id for a deterministic rehydrated `IndexMap` order (mirror
+     * of Swift `buildIdentityRestoreBuffer`).
+     *
+     * Public-key rows are keyed in Room by the identity's **base58** id
+     * (`onPersistIdentityKeyUpsert` writes `identityId.toBase58String()`),
+     * so we look them up under that encoding. Discriminant strings
+     * (`purpose` / `securityLevel` / `keyType` stored as `rawValue`
+     * decimal) parse back to `UInt8`; an unparseable value maps to the
+     * out-of-range `255` sentinel so the Rust side drops the row rather
+     * than coercing it to MASTER/AUTHENTICATION (matches the Swift
+     * `UInt8.max` fallback).
+     */
+    private suspend fun buildIdentityRestoreData(walletId: ByteArray): Array<IdentityRestoreData> {
+        val idRows = database.identityDao().observeByWallet(walletId).first()
+            .sortedBy { it.identityIndex }
+        if (idRows.isEmpty()) return emptyArray()
+        return idRows.map { idRow ->
+            val base58 = idRow.identityId.toBase58String()
+            val keyRows = database.publicKeyDao().observeByIdentityId(base58).first()
+                .sortedBy { it.keyId }
+                .map { pk ->
+                    // ContractBounds → (kind, 32-byte id, doc-type). Inverse
+                    // of `contractBoundsIdToJson` on the persist side:
+                    //   * no blob        → kind 0 (unbounded)
+                    //   * blob + docType → kind 2 (SingleContractDocumentType)
+                    //   * blob, no docType → kind 1 (SingleContract)
+                    // A blob that fails to decode to 32 bytes degrades to
+                    // kind 0 rather than crashing FFI marshalling.
+                    val boundsId = pk.contractBoundsData?.let { contractBoundsJsonToId(it) }
+                    val (kind, id) = when {
+                        boundsId == null -> 0.toByte() to ByteArray(0)
+                        pk.contractBoundsDocumentTypeName != null -> 2.toByte() to boundsId
+                        else -> 1.toByte() to boundsId
+                    }
+                    IdentityKeyRestoreData(
+                        keyId = pk.keyId,
+                        keyType = (pk.keyType.toIntOrNull() ?: 255).toByte(),
+                        purpose = (pk.purpose.toIntOrNull() ?: 255).toByte(),
+                        securityLevel = (pk.securityLevel.toIntOrNull() ?: 255).toByte(),
+                        readOnly = pk.readOnly,
+                        data = pk.publicKeyData,
+                        contractBoundsKind = kind,
+                        contractBoundsId = id,
+                        contractBoundsDocumentType =
+                            if (kind.toInt() == 2) pk.contractBoundsDocumentTypeName else null,
+                    )
+                }.toTypedArray()
+            IdentityRestoreData(
+                identityId = idRow.identityId,
+                balance = idRow.balance,
+                revision = idRow.revision,
+                identityIndex = idRow.identityIndex,
+                // No `status` column on IdentityEntity (matches Swift, which
+                // also lacks it) — fall back to Unknown(0); the next identity
+                // sync round re-stamps it via the identity changeset path.
+                status = 0,
+                keys = keyRows,
+            )
+        }.toTypedArray()
+    }
 
     // ── Shared write helpers ──────────────────────────────────────────
 
@@ -1495,6 +1570,28 @@ internal fun accountTypeName(accountType: Int, standardTag: Int): String = when 
 internal fun contractBoundsIdToJson(contractBoundsId: ByteArray): ByteArray {
     val b64 = android.util.Base64.encodeToString(contractBoundsId, android.util.Base64.NO_WRAP)
     return "[\"$b64\"]".toByteArray(Charsets.UTF_8)
+}
+
+/**
+ * Inverse of [contractBoundsIdToJson]: decode the legacy `[base64(id)]`
+ * JSON blob back to the 32-byte contract id used on the identity-key
+ * restore path. Returns null on any decode failure or a non-32-byte
+ * payload (the caller degrades such a row to "no contract bounds" rather
+ * than crashing FFI marshalling). Minimal string parse — the blob is
+ * always the single-element form this class wrote, never arbitrary JSON.
+ */
+internal fun contractBoundsJsonToId(blob: ByteArray): ByteArray? {
+    val text = blob.toString(Charsets.UTF_8).trim()
+    // Expected shape: ["<base64>"]  — pull the first quoted element.
+    val open = text.indexOf('"')
+    if (open < 0) return null
+    val close = text.indexOf('"', open + 1)
+    if (close <= open) return null
+    val b64 = text.substring(open + 1, close)
+    val id = runCatching {
+        android.util.Base64.decode(b64, android.util.Base64.NO_WRAP)
+    }.getOrNull() ?: return null
+    return if (id.size == 32) id else null
 }
 
 private fun now(): java.util.Date = java.util.Date()

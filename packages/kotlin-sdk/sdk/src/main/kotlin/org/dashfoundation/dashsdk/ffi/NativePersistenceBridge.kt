@@ -510,6 +510,18 @@ class WalletRestoreData(
     @JvmField val syncedHeight: Int,
     @JvmField val lastProcessedHeight: Int,
     @JvmField val lastSynced: Long,
+    /**
+     * Per-wallet identities to rehydrate into the wallet's
+     * `IdentityManager` (the `wallet_identities[wallet_id]` bucket), each
+     * carrying its public keys. Empty when the wallet has no persisted
+     * identities. The Rust trampoline re-packs each into an
+     * `IdentityRestoreEntryFFI` (plus a nested `IdentityKeyRestoreFFI`
+     * array) so the restored `Identity.public_keys` map is populated on
+     * cold start — without this every Platform write is rejected at DPP
+     * validation for a keyless identity (mirror of the Swift
+     * `buildIdentityRestoreBuffer`).
+     */
+    @JvmField val identities: Array<IdentityRestoreData>,
 )
 
 /** One flat account spec — mirror of `AccountSpecFFI`. */
@@ -523,6 +535,44 @@ class AccountSpecData(
     @JvmField val friendIdentityId: ByteArray,
     /** bincode `ExtendedPubKey`; empty when unavailable. */
     @JvmField val accountXpubBytes: ByteArray,
+)
+
+/**
+ * One flat identity-restore row — mirror of `IdentityRestoreEntryFFI`.
+ *
+ * DPNS names ride separately (empty for this pass; the Rust trampoline
+ * passes null/0). `status` uses the `IdentityStatus` discriminant encoding
+ * (0 Unknown, 1 PendingCreation, 2 Active, 3 FailedCreation, 4 NotFound).
+ */
+class IdentityRestoreData(
+    @JvmField val identityId: ByteArray,
+    @JvmField val balance: Long,
+    @JvmField val revision: Long,
+    @JvmField val identityIndex: Int,
+    @JvmField val status: Byte,
+    @JvmField val keys: Array<IdentityKeyRestoreData>,
+)
+
+/**
+ * One flat identity-public-key row — mirror of `IdentityKeyRestoreFFI`.
+ *
+ * `keyType` / `purpose` / `securityLevel` are DPP `repr(u8)` discriminants
+ * (out-of-range = 255 sentinel → Rust drops the row rather than coercing to
+ * MASTER/AUTHENTICATION, matching the Swift loader's `UInt8.max` fallback).
+ * `contractBoundsKind`: 0 none, 1 SingleContract, 2 SingleContractDocumentType;
+ * `contractBoundsId` is 32 bytes (or empty for kind 0);
+ * `contractBoundsDocumentType` is non-null only for kind 2.
+ */
+class IdentityKeyRestoreData(
+    @JvmField val keyId: Int,
+    @JvmField val keyType: Byte,
+    @JvmField val purpose: Byte,
+    @JvmField val securityLevel: Byte,
+    @JvmField val readOnly: Boolean,
+    @JvmField val data: ByteArray,
+    @JvmField val contractBoundsKind: Byte,
+    @JvmField val contractBoundsId: ByteArray,
+    @JvmField val contractBoundsDocumentType: String?,
 )
 
 /** Mirror of `ShieldedNoteRestoreFFI`. */

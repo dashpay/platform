@@ -53,9 +53,10 @@ use jni::JNIEnv;
 use platform_wallet_ffi::{
     AccountAddressPoolFFI, AccountChangeSetFFI, AccountSpecFFI, AddressBalanceEntryFFI,
     AssetLockEntryFFI, ContactRequestFFI, ContactRequestRemovalFFI, CoreAddressEntryFFI,
-    IdentityEntryFFI, IdentityKeyEntryFFI, IdentityKeyRemovalFFI, PersistenceCallbacks,
-    PlatformAddressFFI, SpentOutPointFFI, TokenBalanceRemovalFFI, TokenBalanceUpsertFFI,
-    TransactionRecordFFI, UtxoEntryFFI, WalletChangeSetFFI, WalletRestoreEntryFFI,
+    IdentityEntryFFI, IdentityKeyEntryFFI, IdentityKeyRemovalFFI, IdentityKeyRestoreFFI,
+    IdentityRestoreEntryFFI, PersistenceCallbacks, PlatformAddressFFI, SpentOutPointFFI,
+    TokenBalanceRemovalFFI, TokenBalanceUpsertFFI, TransactionRecordFFI, UtxoEntryFFI,
+    WalletChangeSetFFI, WalletRestoreEntryFFI,
 };
 use std::ffi::{c_void, CStr, CString};
 use std::os::raw::c_char;
@@ -1394,9 +1395,10 @@ unsafe extern "C" fn tramp_persist_shielded_activity(
 /// [`seal_wallet_entries`] mints the raw pointers once the whole load
 /// succeeded.
 struct WalletRestoreStaged {
-    /// FFI row with `accounts` still null / 0 until sealed.
+    /// FFI row with `accounts` / `identities` still null / 0 until sealed.
     entry: WalletRestoreEntryFFI,
     specs: Vec<AccountSpecStaged>,
+    identities: Vec<IdentityRestoreStaged>,
 }
 
 /// Staged account spec: FFI struct with a null xpub pointer plus the
@@ -1407,23 +1409,85 @@ struct AccountSpecStaged {
     xpub: Vec<u8>,
 }
 
+/// Staged identity-restore row: FFI struct with `keys` still null / 0 until
+/// sealed, plus the owned per-key staging. `dpns_names` /
+/// `contested_dpns_names` are left null / 0 this pass (not yet ported), so
+/// there is nothing owned for them to free.
+struct IdentityRestoreStaged {
+    /// FFI entry with `keys` (and the dpns arrays) still null / 0 until
+    /// sealed.
+    entry: IdentityRestoreEntryFFI,
+    keys: Vec<IdentityKeyRestoreStaged>,
+}
+
+/// Staged identity-public-key row: FFI struct with a null `data` pointer
+/// and null `contract_bounds_document_type` pointer, plus the owned
+/// buffers that back them. `doc_type` is `Some` only for
+/// `contract_bounds_kind == 2`.
+struct IdentityKeyRestoreStaged {
+    /// FFI key with `data` / `contract_bounds_document_type` still
+    /// null / 0 until sealed.
+    key: IdentityKeyRestoreFFI,
+    data: Vec<u8>,
+    doc_type: Option<CString>,
+}
+
 /// Mint the raw FFI pointers for a fully staged wallet list. Infallible:
 /// runs only after every JNI read succeeded; every pointer minted here is
 /// freed by [`tramp_load_wallet_list_free`].
 fn seal_wallet_entries(staged: Vec<WalletRestoreStaged>) -> Vec<WalletRestoreEntryFFI> {
     staged
         .into_iter()
-        .map(|WalletRestoreStaged { mut entry, specs }| {
-            let specs: Vec<AccountSpecFFI> = specs
-                .into_iter()
-                .map(|AccountSpecStaged { mut spec, xpub }| {
-                    (spec.account_xpub_bytes, spec.account_xpub_bytes_len) = vec_into_raw(xpub);
-                    spec
-                })
-                .collect();
-            (entry.accounts, entry.accounts_count) = vec_into_raw(specs);
-            entry
-        })
+        .map(
+            |WalletRestoreStaged {
+                 mut entry,
+                 specs,
+                 identities,
+             }| {
+                let specs: Vec<AccountSpecFFI> = specs
+                    .into_iter()
+                    .map(|AccountSpecStaged { mut spec, xpub }| {
+                        (spec.account_xpub_bytes, spec.account_xpub_bytes_len) = vec_into_raw(xpub);
+                        spec
+                    })
+                    .collect();
+                (entry.accounts, entry.accounts_count) = vec_into_raw(specs);
+
+                // Identities: mint each identity's nested key array first,
+                // then the identity array itself. Every pointer minted here
+                // is reclaimed by `tramp_load_wallet_list_free`.
+                let identities: Vec<IdentityRestoreEntryFFI> = identities
+                    .into_iter()
+                    .map(|IdentityRestoreStaged { mut entry, keys }| {
+                        let keys: Vec<IdentityKeyRestoreFFI> = keys
+                            .into_iter()
+                            .map(
+                                |IdentityKeyRestoreStaged {
+                                     mut key,
+                                     data,
+                                     doc_type,
+                                 }| {
+                                    (key.data, key.data_len) = vec_into_raw(data);
+                                    // Only kind==2 carried a doc-type; `into_raw`
+                                    // hands ownership to the FFI struct, reclaimed
+                                    // via `CString::from_raw` in the free path.
+                                    key.contract_bounds_document_type = match doc_type {
+                                        Some(c) => c.into_raw() as *const c_char,
+                                        None => ptr::null(),
+                                    };
+                                    key
+                                },
+                            )
+                            .collect();
+                        (entry.keys, entry.keys_count) = vec_into_raw(keys);
+                        entry
+                    })
+                    .collect();
+                (entry.identities, entry.identities_count) = vec_into_raw(identities);
+
+                entry
+            },
+        )
         .collect()
 }
 
@@ -1515,6 +1579,25 @@ fn build_wallet_restore_entry(
         specs.push(spec);
     }
 
+    // identities (each carrying its public keys).
+    let ids_obj = env
+        .get_field(
+            holder,
+            "identities",
+            "[Lorg/dashfoundation/dashsdk/ffi/IdentityRestoreData;",
+        )?
+        .l()?;
+    let ids_arr: jni::objects::JObjectArray = ids_obj.into();
+    let ids_len = env.get_array_length(&ids_arr)? as usize;
+    let mut identities: Vec<IdentityRestoreStaged> = Vec::with_capacity(ids_len);
+    for i in 0..ids_len {
+        let id = env.with_local_frame(64, |env| {
+            let h = env.get_object_array_element(&ids_arr, i as i32)?;
+            build_identity_restore(env, &h)
+        })?;
+        identities.push(id);
+    }
+
     let entry = WalletRestoreEntryFFI {
         wallet_id,
         network: net_from_ord(network_ord),
@@ -1542,7 +1625,121 @@ fn build_wallet_restore_entry(
         last_applied_chain_lock_bytes: ptr::null(),
         last_applied_chain_lock_bytes_len: 0,
     };
-    Ok(WalletRestoreStaged { entry, specs })
+    Ok(WalletRestoreStaged {
+        entry,
+        specs,
+        identities,
+    })
+}
+
+/// Rebuild one identity-restore row from a Kotlin `IdentityRestoreData`
+/// into an [`IdentityRestoreStaged`]. Public-key `data` buffers and the
+/// contract-bounds doc-type C-string stay owned here (empty vec / `None`
+/// respectively when absent); the raw buffers the wallet-list free
+/// trampoline frees are minted by [`seal_wallet_entries`] only once the
+/// whole load succeeded. DPNS arrays are left null / 0 this pass.
+fn build_identity_restore(
+    env: &mut JNIEnv,
+    holder: &JObject,
+) -> Result<IdentityRestoreStaged, jni::errors::Error> {
+    let identity_id = read_id32_field(env, holder, "identityId")?;
+    let balance = env.get_field(holder, "balance", "J")?.j()? as u64;
+    let revision = env.get_field(holder, "revision", "J")?.j()? as u64;
+    let identity_index = env.get_field(holder, "identityIndex", "I")?.i()? as u32;
+    let status = env.get_field(holder, "status", "B")?.b()? as u8;
+
+    let keys_obj = env
+        .get_field(
+            holder,
+            "keys",
+            "[Lorg/dashfoundation/dashsdk/ffi/IdentityKeyRestoreData;",
+        )?
+        .l()?;
+    let keys_arr: jni::objects::JObjectArray = keys_obj.into();
+    let keys_len = env.get_array_length(&keys_arr)? as usize;
+    let mut keys: Vec<IdentityKeyRestoreStaged> = Vec::with_capacity(keys_len);
+    for i in 0..keys_len {
+        let k = env.with_local_frame(32, |env| {
+            let h = env.get_object_array_element(&keys_arr, i as i32)?;
+            build_identity_key_restore(env, &h)
+        })?;
+        keys.push(k);
+    }
+
+    let entry = IdentityRestoreEntryFFI {
+        identity_id,
+        balance,
+        revision,
+        identity_index,
+        status,
+        dpns_names: ptr::null(),
+        dpns_names_count: 0,
+        contested_dpns_names: ptr::null(),
+        contested_dpns_names_count: 0,
+        keys: ptr::null(),
+        keys_count: 0,
+    };
+    Ok(IdentityRestoreStaged { entry, keys })
+}
+
+/// Rebuild one identity-public-key row from a Kotlin
+/// `IdentityKeyRestoreData` into an [`IdentityKeyRestoreStaged`]. The
+/// public-key `data` bytes and the optional contract-bounds doc-type
+/// C-string stay owned here; both raw pointers are minted by
+/// [`seal_wallet_entries`] and reclaimed by [`tramp_load_wallet_list_free`].
+fn build_identity_key_restore(
+    env: &mut JNIEnv,
+    holder: &JObject,
+) -> Result<IdentityKeyRestoreStaged, jni::errors::Error> {
+    let key_id = env.get_field(holder, "keyId", "I")?.i()? as u32;
+    let key_type = env.get_field(holder, "keyType", "B")?.b()? as u8;
+    let purpose = env.get_field(holder, "purpose", "B")?.b()? as u8;
+    let security_level = env.get_field(holder, "securityLevel", "B")?.b()? as u8;
+    let read_only = env.get_field(holder, "readOnly", "Z")?.z()?;
+    let data = read_bytes_field_vec(env, holder, "data")?;
+    let contract_bounds_kind = env.get_field(holder, "contractBoundsKind", "B")?.b()? as u8;
+    // `contractBoundsId` is 32 bytes for kind 1/2, empty for kind 0 — the
+    // optional-id reader maps the empty sentinel to the all-zero id.
+    let contract_bounds_id = read_optional_id32_field(env, holder, "contractBoundsId")?;
+    // Doc-type C-string only meaningful for kind 2; read as a nullable
+    // Java String. Interior NULs (impossible for a DPP document-type name)
+    // would fail `CString::new` — degrade to `None` rather than fail the load.
+    let doc_type = read_opt_cstring_field(env, holder, "contractBoundsDocumentType")?;
+
+    let key = IdentityKeyRestoreFFI {
+        key_id,
+        key_type,
+        purpose,
+        security_level,
+        read_only,
+        data: ptr::null(),
+        data_len: 0,
+        contract_bounds_kind,
+        contract_bounds_id,
+        contract_bounds_document_type: ptr::null(),
+    };
+    Ok(IdentityKeyRestoreStaged {
+        key,
+        data,
+        doc_type,
+    })
+}
+
+/// Read an optional Java `String?` field into an owned `CString` (null /
+/// interior-NUL → `None`). Used for the identity-key contract-bounds
+/// doc-type; the `CString` is later handed to the FFI struct via
+/// `into_raw` and reclaimed with `CString::from_raw` in the free path.
+fn read_opt_cstring_field(
+    env: &mut JNIEnv,
+    holder: &JObject,
+    field: &str,
+) -> Result<Option<CString>, jni::errors::Error> {
+    let obj = env.get_field(holder, field, "Ljava/lang/String;")?.l()?;
+    if obj.is_null() {
+        return Ok(None);
+    }
+    let s: String = env.get_string(&JString::from(obj))?.into();
+    Ok(CString::new(s).ok())
 }
 
 /// Rebuild one account spec from a Kotlin `AccountSpecData` into an
@@ -1602,6 +1799,44 @@ unsafe extern "C" fn tramp_load_wallet_list_free(
                     free_raw_bytes(s.account_xpub_bytes, s.account_xpub_bytes_len);
                 }
                 drop(specs);
+            }
+
+            // identities + nested key arrays (each key's `data` buffer +
+            // contract-bounds doc-type C-string). Mirrors exactly what
+            // `seal_wallet_entries` minted: the identity array, each
+            // identity's key array, and per-key `data` / doc-type pointers.
+            // The dpns_names / contested_dpns_names arrays are never minted
+            // this pass (staged null / 0), so there is nothing to reclaim
+            // for them.
+            if !e.identities.is_null() && e.identities_count > 0 {
+                let idents: Box<[IdentityRestoreEntryFFI]> =
+                    Box::from_raw(std::ptr::slice_from_raw_parts_mut(
+                        e.identities as *mut IdentityRestoreEntryFFI,
+                        e.identities_count,
+                    ));
+                for ident in idents.iter() {
+                    if !ident.keys.is_null() && ident.keys_count > 0 {
+                        let keys: Box<[IdentityKeyRestoreFFI]> =
+                            Box::from_raw(std::ptr::slice_from_raw_parts_mut(
+                                ident.keys as *mut IdentityKeyRestoreFFI,
+                                ident.keys_count,
+                            ));
+                        for k in keys.iter() {
+                            free_raw_bytes(k.data, k.data_len);
+                            // Reclaim the doc-type C-string handed to the
+                            // FFI struct via `CString::into_raw` in
+                            // `seal_wallet_entries` (only kind==2 keys have
+                            // a non-null pointer).
+                            if !k.contract_bounds_document_type.is_null() {
+                                drop(CString::from_raw(
+                                    k.contract_bounds_document_type as *mut c_char,
+                                ));
+                            }
+                        }
+                        drop(keys);
+                    }
+                }
+                drop(idents);
             }
         }
         drop(boxed);
