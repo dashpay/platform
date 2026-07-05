@@ -37,6 +37,19 @@ impl IdentityWallet {
     /// DIP-9 auth pubkeys) and both signers; the wallet struct
     /// carries no key material.
     ///
+    /// Returns the registered identity alongside the proof-attested
+    /// post-spend `AddressInfos` for the funding addresses. Prefer the
+    /// composite [`PlatformWallet::register_from_addresses`], which feeds
+    /// the returned `AddressInfos` through
+    /// [`PlatformAddressWallet::reconcile_address_infos`] so the spent
+    /// balances and advanced nonces are reflected locally without waiting
+    /// for the next BLAST sync round.
+    ///
+    /// [`PlatformWallet::register_from_addresses`]:
+    /// crate::wallet::PlatformWallet::register_from_addresses
+    /// [`PlatformAddressWallet::reconcile_address_infos`]:
+    /// crate::wallet::PlatformAddressWallet::reconcile_address_infos
+    ///
     /// # Arguments
     ///
     /// * `identity` — fully-constructed placeholder identity (with
@@ -74,7 +87,7 @@ impl IdentityWallet {
         identity_signer: &IS,
         input_address_signer: &AS,
         settings: Option<PutSettings>,
-    ) -> Result<Identity, PlatformWalletError> {
+    ) -> Result<(Identity, dash_sdk::query_types::AddressInfos), PlatformWalletError> {
         if inputs.is_empty() {
             return Err(PlatformWalletError::InvalidIdentityData(
                 "At least one input address is required".to_string(),
@@ -84,7 +97,7 @@ impl IdentityWallet {
         // Route through the auto-fetching SDK variant so the caller
         // doesn't need to maintain its own nonce cache — Platform is
         // always the source of truth at submit time.
-        let (mut registered_identity, _address_infos) = identity
+        let (mut registered_identity, address_infos) = identity
             .put_with_address_funding_fetching_nonces(
                 &self.sdk,
                 inputs,
@@ -136,12 +149,10 @@ impl IdentityWallet {
             )?;
         }
 
-        // TODO(platform-wallet): mirror `transfer()` and push the
-        // returned `address_infos` through the platform-address
-        // balance cache so SwiftData reflects the spent balances +
-        // advanced nonces immediately. For now the next BLAST sync
-        // round refreshes them.
-
-        Ok(identity)
+        // The spent platform-address balances are reconciled by the
+        // composite `PlatformWallet::register_from_addresses`, which routes
+        // the returned `AddressInfos` through the platform-address wallet's
+        // shared reconciliation seam.
+        Ok((identity, address_infos))
     }
 }

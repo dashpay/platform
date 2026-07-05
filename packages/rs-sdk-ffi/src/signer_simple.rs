@@ -414,9 +414,10 @@ pub unsafe extern "C" fn dash_sdk_sign_with_mnemonic_and_path(
         Ok(d) => d,
         Err(_) => return fail(SIGN_WITH_MNEMONIC_ERR_DERIVATION),
     };
-    // Pull the 32 secret bytes into a `Zeroizing` so they're scrubbed
-    // when this function returns (the `ExtendedPrivKey` itself doesn't
-    // zeroize — `derived` falls out of scope intact).
+    // Copy the 32 secret bytes into a `Zeroizing` so this fresh array —
+    // which has no `Drop` of its own — is scrubbed when the function
+    // returns. `derived` self-wipes separately: `ExtendedPrivKey`
+    // zeroizes on `Drop`.
     let secret_bytes: zeroize::Zeroizing<[u8; 32]> =
         zeroize::Zeroizing::new(derived.private_key.secret_bytes());
 

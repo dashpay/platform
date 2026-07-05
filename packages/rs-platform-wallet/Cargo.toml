@@ -84,6 +84,10 @@ required-features = ["shielded"]
 # `tests/shielded_decrypt_bench.rs` to assemble per-chunk wire
 # fixtures and decode the `ShieldedEncryptedNote` wire type.
 drive-proof-verifier = { path = "../rs-drive-proof-verifier" }
+# `test-utils` exposes key-wallet's `TestWalletContext` + `Address::dummy`
+# (via `dashcore/test-utils`) for building funded, signable test wallets.
+# Dev-only, so the production build stays on the leaner default features.
+key-wallet = { workspace = true, features = ["test-utils"] }
 rand = "0.8"
 # Drives the parallel decrypt benchmark in `shielded_decrypt_bench.rs`.
 rayon = "1.10"

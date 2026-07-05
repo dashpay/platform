@@ -99,7 +99,7 @@ Most Platform actions have hard preconditions. Establish these fixtures before s
 | 🚫 | Not implemented anywhere (no FFI, no UI). | No |
 | ➖ | Retired — the thing this row tracked was removed or folded into another row. | n/a |
 
-> **Entry-point reality check.** A few Platform write transitions (data-contract create/update, `DC-03`/`DC-04`) are reachable in the app **only through `Settings → Platform State Transitions` → `TransitionDetailView`** (marked 🧪). They broadcast for real, but there is no per-identity "happy path" button for them. The QA agent must navigate to the builder for those rows. The full **document** write family now has production UI: create (`DOC-02`) via Contracts → contract → document type → **New Document**, and replace/delete/transfer/set-price/purchase (`DOC-03`..`DOC-07`) via Contracts → **Browse Documents** (`contracts.browseDocuments`) → document → **⋯** action menu (ownership-gated) → `platform_wallet_document_*`. Identity credit *transfer* (`ID-04`), *withdrawal* (`ID-10`), and *key-disable* (`ID-12`) also have production buttons (`IdentityDetailView` / `KeyDetailView`). The builder and the read-only **Platform Queries** catalog both live under the **Settings** tab's **Platform** section (scroll past *Network* and *Data*).
+> **Entry-point reality check.** A few Platform write transitions (data-contract create/update, `DC-03`/`DC-04`) are reachable in the app **only through `Settings → Platform State Transitions` → `TransitionDetailView`** (marked 🧪). They broadcast for real, but there is no per-identity "happy path" button for them. The QA agent must navigate to the builder for those rows. The full **document** write family now has production UI: create (`DOC-02`) via Contracts → contract → document type → **New Document**, and replace/delete/transfer/set-price/purchase (`DOC-03`..`DOC-07`) via Contracts → **Browse Documents** (`contracts.browseDocuments`) → document → **⋯** action menu (ownership-gated) → `platform_wallet_document_*`. Identity credit *transfer* (`ID-04`), *withdrawal* (`ID-10`), and *key-disable* (`ID-12`) also have production buttons (`IdentityDetailView` / `KeyDetailView`). The DIP-17 platform-address *transfer* (`ADDR-02`) and *withdrawal* (`ADDR-04`) now have production sheets off the `WalletDetailView` Platform Balance row's ⋯ menu — see those rows. The builder and the read-only **Platform Queries** catalog both live under the **Settings** tab's **Platform** section (scroll past *Network* and *Data*).
 
 ---
 
@@ -160,11 +160,11 @@ The app is a full multi-wallet client: `PlatformWalletManager` holds N wallets c
 | ID | Action | Layer | Tier | Status | Entry point & test notes |
 |---|---|---|---|---|---|
 | ADDR-01 | Query address info / multiple infos | Platform | Common | ✅ | `GetAddressInfoViewModel` / `GetAddressesInfosViewModel` → `dash_sdk_address_fetch_info(s)`. |
-| ADDR-02 | Transfer credits address → address | Platform | Thorough | ✅ | `AddressQueriesView` → TransferAddressFunds → `dash_sdk_address_transfer_funds`. |
+| ADDR-02 | Transfer credits address → address | Platform | Thorough | ✅ | `WalletDetailView` → Platform Balance row **⋯ menu → Transfer Credits** (sheet, `TransferPlatformAddressView`) → `ManagedPlatformAddressWallet.transfer` → `platform_address_wallet_transfer` (keychain-signed). Source = DIP-17 platform-payment account picker; destination = own-wallet address picker or pasted 20-byte P2PKH hash. Input selection (Auto), the `Σ inputs == Σ outputs` balancing, fee strategy, and nonce all happen Rust-side — surplus stays on the source addresses (credit-balance model), so there's no change address to pick, and no private-key entry. Submit gated on amount + fee ≤ account balance and recipient ∉ funded source inputs. On success a DIP-17 resync runs. (Also reachable via the 🧪 debug builder *Settings → Platform State Transitions → Address → Transfer Address Funds (raw)* → `dash_sdk_address_transfer_funds`, which pastes a raw 64-char private key.) |
 | ADDR-03 | Top up address from asset lock | Cross | Thorough | ✅ | `FundFromAssetLockPlatformAddressView` → `dash_sdk_address_top_up_from_asset_lock`. |
-| ADDR-04 | Withdraw address credits → Core L1 | Cross | Thorough | ✅ | `AddressQueriesView` → WithdrawAddressFunds → `dash_sdk_address_withdraw_funds`. |
-| ADDR-05 | Address balance-change history (recent / compacted / branch / trunk) | Platform | Uncommon | 🔌 | FFI `dash_sdk_address_fetch_recent_balance_changes` / `_compacted_balance_changes` / `_branch_state` / `_trunk_state`; no UI. |
+| ADDR-04 | Withdraw address credits → Core L1 | Cross | Thorough | ✅ | `WalletDetailView` → Platform Balance row **⋯ menu → Withdraw to Core** (sheet, `WithdrawPlatformAddressView`) → `ManagedPlatformAddressWallet.withdraw` → `platform_address_wallet_withdraw_to_address` (keychain-signed). Source = DIP-17 platform-payment account picker; the **full** account balance is withdrawn (no per-address amount, no change). Core L1 destination = own wallet (`core_wallet_next_receive_address`) or pasted external address, network-checked Rust-side. `coreFeePerByte` defaults to 1. Gated on the Core (SPV) wallet being initialized — shows a "Core not ready" state otherwise. Identity/address credit balance drops; L1 payout is pooled and processed asynchronously (no immediate txid). On success a DIP-17 resync runs. (Also reachable via the 🧪 debug builder *Settings → Platform State Transitions → Address → Withdraw Address Funds (raw)* → `dash_sdk_address_withdraw_funds`, which pastes a raw 64-char private key.) |
 | ADDR-06 | Display / share your Platform receive address | Platform | Common | ✅ | "Receive Dash" sheet → **Platform** tab (`ReceiveAddressView`, `ReceiveAddressTab.platform`, "Your Platform Address"): QR + bech32m DIP-17 address + Copy. The receive counterpart to the credit-transfer / top-up funding paths. |
+| ADDR-09 | Top-up balance reflects exactly once (no double-credit) | Cross | Thorough | ✅ | Regression guard for the top-up double-credit bug. Run `ADDR-03` ("Top Up from Core", `FundFromAssetLockPlatformAddressView`, `dash_sdk_address_top_up_from_asset_lock`) on a Core-funded wallet, then **wait through at least one automatic BLAST platform-address sync (~15s)** and re-read the `WalletDetailView` Platform Balance. **Pass:** the balance increases by the topped-up amount **exactly once** and stays there — no manual Sync-tab "Clear" + "Sync Now" needed. **Fail (the bug):** balance shows ~2× the top-up until a manual Clear+resync. Root cause was in `rs-platform-wallet`: the fund path reconciled the proof-attested *absolute* balance into the provider but left the incremental sync watermark stale, so the next *incremental* BLAST pass re-applied the on-chain `AddBalanceToAddress` (`AddToCredits`) *delta* on top → 2×. Fixed by `PlatformPaymentAddressProvider::invalidate_sync_watermark()` (called from `fund_from_asset_lock` after `reconcile_address_infos`), which forces the next pass to full-scan-reconcile — the automated equivalent of Clear+resync. Needs a **Funded Core wallet** fixture; the wallet's Core (SPV) balance must be non-zero to build the asset lock. |
 
 ### 4.4 DPNS (usernames) — `Domain=DPNS`
 
@@ -348,7 +348,7 @@ Membership of each feature category across **all** sections (primary section mem
 - **Core / Wallet** — `CORE-01..23`
 - **MultiWallet** — `CORE-14..23`, `MW-01..11`
 - **Identity** — `ID-01..13`, `SH-11`, `MW-01`, `MW-08`, `MW-09`, `MW-10`
-- **Address** (DIP-17 platform addresses) — `ADDR-01..06`, `ID-06`, `ID-08`, `ID-11`
+- **Address** (DIP-17 platform addresses) — `ADDR-01..04`, `ADDR-06`, `ID-06`, `ID-08`, `ID-11`
 - **DPNS** — `DPNS-01..07`, `MW-05`
 - **Voting** — `VOTE-01..07`, `DPNS-05`, `MW-05`
 - **Contract** — `DC-01..04`
@@ -452,10 +452,10 @@ The complete Platform read surface, mapped to where each RPC is exercised in the
 |---|---|---|---|
 | getAddressInfo | Common | ✅ | `ADDR-01` |
 | getAddressesInfos | Common | ✅ | `ADDR-01` |
-| getRecentAddressBalanceChanges | Uncommon | 🔌 | FFI only (`ADDR-05`) |
-| getRecentCompactedAddressBalanceChanges | Uncommon | 🔌 | FFI only (`ADDR-05`) |
-| getAddressesTrunkState | Uncommon | 🔌 | FFI only (`ADDR-05`) |
-| getAddressesBranchState | Uncommon | 🔌 | FFI only (`ADDR-05`) |
+| getRecentAddressBalanceChanges | Uncommon | 🔌 | FFI only (no UI) |
+| getRecentCompactedAddressBalanceChanges | Uncommon | 🔌 | FFI only (no UI) |
+| getAddressesTrunkState | Uncommon | 🔌 | FFI only (no UI) |
+| getAddressesBranchState | Uncommon | 🔌 | FFI only (no UI) |
 
 ### Shielded Pool
 | RPC | Tier | Status | Where |
@@ -474,7 +474,7 @@ The complete Platform read surface, mapped to where each RPC is exercised in the
 For completeness (the "everything gRPC + Core can do" requirement), these exist at the protocol/FFI level but have **no app entry point** today:
 
 **🔌 SDK-only (FFI/wrapper exists, no UI):**
-- `ADDR-05` address balance-change history (recent / compacted / branch / trunk)
+- address balance-change history (recent / compacted / branch / trunk) — FFI only, no UI
 - `SH-11` create identity from shielded pool (Type 20)
 
 **🚫 Not implemented anywhere:**
