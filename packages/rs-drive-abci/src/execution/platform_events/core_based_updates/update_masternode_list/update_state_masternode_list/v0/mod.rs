@@ -68,21 +68,11 @@ where
                         validator.node_ip = address.ip().to_string();
                     }
 
-                    #[allow(deprecated)]
-                    if let Some(p2p_port) = dmn_state_diff
-                        .platform_p2p_address()
-                        .map(|(_, p)| p)
-                        .or(dmn_state_diff.legacy_platform_p2p_port)
-                    {
+                    if let Some(p2p_port) = dmn_state_diff.platform_p2p_port {
                         validator.platform_p2p_port = p2p_port as u16;
                     }
 
-                    #[allow(deprecated)]
-                    if let Some(http_port) = dmn_state_diff
-                        .platform_http_address()
-                        .map(|(_, p)| p)
-                        .or(dmn_state_diff.legacy_platform_http_port)
-                    {
+                    if let Some(http_port) = dmn_state_diff.platform_http_port {
                         validator.platform_http_port = http_port as u16;
                     }
                 }
@@ -151,13 +141,9 @@ where
                     hpmn_list_item.state.apply_diff(state_diff.clone());
                     // these 3 fields are the only fields that are useful for validators. If they change we need to update
                     // validator sets
-                    #[allow(deprecated)]
-                    let p2p_changed = state_diff.platform_p2p_address().is_some()
-                        || state_diff.legacy_platform_p2p_port.is_some()
-                        || state_diff.addresses.is_some();
                     if state_diff.pose_ban_height.is_some()
                         || state_diff.service.is_some()
-                        || p2p_changed
+                        || state_diff.platform_p2p_port.is_some()
                     {
                         // we updated the ban status the IP or the platform port, we need to update the validator in the validator list
                         Self::update_masternode_in_validator_sets(

@@ -927,7 +927,7 @@ pub async fn build_unshield_st<S: ShieldedStore, P: OrchardProver>(
     prover: &P,
 ) -> Result<StateTransition, PlatformWalletError> {
     let change_addr = default_orchard_address(keys)?;
-    let (spends, anchor) = extract_spends_and_anchor(store, selected_notes).await?;
+    let (spends, anchor) = extract_spends_and_anchor(sdk, store, selected_notes).await?;
     let (state_transition, fee_used) = build_unshield_transition(
         spends,
         *to_address,

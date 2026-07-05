@@ -32,7 +32,6 @@ pub struct GenerateTestMasternodeUpdates<'a> {
 }
 
 /// Creates a list of test Masternode identities of size `count` with random data
-#[allow(deprecated)]
 pub fn generate_test_masternodes(
     masternode_count: u16,
     hpmn_count: u16,
@@ -260,9 +259,8 @@ pub fn generate_test_masternodes(
                 pub_key_operator,
                 operator_payout_address: None,
                 platform_node_id: None,
-                legacy_platform_p2p_port: None,
-                legacy_platform_http_port: None,
-                addresses: None,
+                platform_p2p_port: None,
+                platform_http_port: None,
             },
         };
 
@@ -398,9 +396,8 @@ pub fn generate_test_masternodes(
                 pub_key_operator,
                 operator_payout_address: None,
                 platform_node_id: Some(rng.gen::<[u8; 20]>()),
-                legacy_platform_p2p_port: Some(3010),
-                legacy_platform_http_port: Some(8080),
-                addresses: None,
+                platform_p2p_port: Some(3010),
+                platform_http_port: Some(8080),
             },
         };
 
@@ -533,12 +530,12 @@ pub fn generate_test_masternodes(
                         SocketAddr::new(IpAddr::V4(random_ip), old_port);
                 }
                 if update.p2p_port {
-                    if let Some(port) = hpmn_list_item_b.state.legacy_platform_p2p_port.as_mut() {
+                    if let Some(port) = hpmn_list_item_b.state.platform_p2p_port.as_mut() {
                         *port += 1
                     }
                 }
                 if update.http_port {
-                    if let Some(port) = hpmn_list_item_b.state.legacy_platform_http_port.as_mut() {
+                    if let Some(port) = hpmn_list_item_b.state.platform_http_port.as_mut() {
                         *port += 1
                     }
                 }

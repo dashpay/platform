@@ -4,7 +4,6 @@ use dashcore::{Address as DashAddress, OutPoint, Transaction};
 use key_wallet::account::account_type::StandardAccountType;
 use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
 use key_wallet::signer::Signer;
-use key_wallet::transaction_checking::{TransactionContext, WalletTransactionChecker};
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 
 use crate::broadcaster::TransactionBroadcaster;
@@ -76,7 +75,7 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
             ));
         }
 
-        let (tx, xpub, _reservation) = {
+        let (tx, _reservation) = {
             let mut wm = self.wallet_manager.write().await;
             let (wallet, info) = wm.get_wallet_and_info_mut(&self.wallet_id).ok_or_else(|| {
                 crate::error::PlatformWalletError::WalletNotFound(
@@ -200,7 +199,7 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
             // (success) or the error unwinds (failure → outpoints released for retry).
             let reservation = self.reservations.reserve(selected.into_iter().collect());
 
-            (tx, xpub, reservation)
+            (tx, reservation)
         };
 
         broadcast_releasing_on_rejection(

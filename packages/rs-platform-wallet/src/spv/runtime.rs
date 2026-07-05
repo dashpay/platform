@@ -194,7 +194,7 @@ impl SpvRuntime {
         let header = resolve_devnet_genesis_header(&overrides)
             .map_err(|e| PlatformWalletError::SpvError(format!("devnet genesis pre-seed: {e}")))?;
 
-        BlockHeaderStorage::store_headers(&mut *bh, &[header])
+        BlockHeaderStorage::store_headers(&mut *bh, &[header.into()])
             .await
             .map_err(|e| {
                 PlatformWalletError::SpvError(format!("failed to pre-seed devnet genesis: {e}"))

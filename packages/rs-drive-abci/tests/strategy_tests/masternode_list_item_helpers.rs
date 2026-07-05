@@ -10,14 +10,13 @@ pub trait UpdateMasternodeListItem {
 }
 
 impl UpdateMasternodeListItem for MasternodeListItem {
-    #[allow(deprecated)]
     fn random_keys_update(&mut self, num_fields_to_change: Option<usize>, rng: &mut StdRng) {
         let mut available_fields: Vec<usize> = (0..8)
             .filter(|&field_idx| match field_idx {
                 4 => self.state.operator_payout_address.is_some(),
                 5 => self.state.platform_node_id.is_some(),
-                6 => self.state.legacy_platform_p2p_port.is_some(),
-                7 => self.state.legacy_platform_http_port.is_some(),
+                6 => self.state.platform_p2p_port.is_some(),
+                7 => self.state.platform_http_port.is_some(),
                 _ => true,
             })
             .collect();
@@ -57,12 +56,12 @@ impl UpdateMasternodeListItem for MasternodeListItem {
                     }
                 }
                 6 => {
-                    if let Some(ref mut port) = self.state.legacy_platform_p2p_port {
+                    if let Some(ref mut port) = self.state.platform_p2p_port {
                         *port = rng.gen_range(1024..=65535);
                     }
                 }
                 7 => {
-                    if let Some(ref mut port) = self.state.legacy_platform_http_port {
+                    if let Some(ref mut port) = self.state.platform_http_port {
                         *port = rng.gen_range(1024..=65535);
                     }
                 }
@@ -73,7 +72,6 @@ impl UpdateMasternodeListItem for MasternodeListItem {
 }
 
 #[cfg(test)]
-#[allow(deprecated)]
 mod tests {
     use super::*;
     use dpp::dashcore::hashes::Hash;
@@ -118,9 +116,8 @@ mod tests {
                 pub_key_operator,
                 operator_payout_address: None,
                 platform_node_id: None,
-                legacy_platform_p2p_port: None,
-                legacy_platform_http_port: None,
-                addresses: None,
+                platform_p2p_port: None,
+                platform_http_port: None,
             },
         };
 
