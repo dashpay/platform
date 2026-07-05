@@ -30,7 +30,9 @@ pub use crypto::{
     unmask_account_reference, ContactXpubData, DEFAULT_CONTACT_GAP_LIMIT,
 };
 pub use network::IdentityWallet;
-pub use state::{BlockTime, IdentityLocation, IdentityManager, ManagedIdentity, RegistrationIndex};
+pub use state::{
+    BlockTime, DashPayState, IdentityLocation, IdentityManager, ManagedIdentity, RegistrationIndex,
+};
 pub use types::dashpay::profile::{calculate_avatar_hash, calculate_dhash_fingerprint};
 pub use types::{
     ContactProfileEntry, ContactRequest, DashPayProfile, DashpayAddressMatch, DpnsNameInfo,

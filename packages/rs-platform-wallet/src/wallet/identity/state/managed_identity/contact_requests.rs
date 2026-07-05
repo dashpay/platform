@@ -29,11 +29,13 @@ impl ManagedIdentity {
     /// `($ownerId, toUserId, accountReference)` unique index rejects. So
     /// this checks both maps.
     pub fn prior_sent_account_reference(&self, recipient: &Identifier) -> Option<u32> {
-        self.sent_contact_requests
+        self.dashpay
+            .sent_contact_requests
             .get(recipient)
             .map(|r| r.account_reference)
             .or_else(|| {
-                self.established_contacts
+                self.dashpay
+                    .established_contacts
                     .get(recipient)
                     .map(|c| c.outgoing_request.account_reference)
             })
@@ -78,7 +80,7 @@ impl ManagedIdentity {
         let recipient_id = request.recipient_id;
 
         // Sent-side guard / rotation supersede: already established.
-        if let Some(existing) = self.established_contacts.get(&recipient_id) {
+        if let Some(existing) = self.dashpay.established_contacts.get(&recipient_id) {
             // Same outgoing reference → a re-ingest of a doc we already
             // track carries no new information; re-establishing would wipe
             // user metadata, so it's a no-op.
@@ -104,25 +106,32 @@ impl ManagedIdentity {
                 updated.clone(),
             );
             persister.store(cs.into())?;
-            self.established_contacts.insert(recipient_id, updated);
+            self.dashpay
+                .established_contacts
+                .insert(recipient_id, updated);
             return Ok(());
         }
         // Already tracked as a pending sent request → no-op (no phantom
         // row, no redundant changeset write).
-        if self.sent_contact_requests.contains_key(&recipient_id) {
+        if self
+            .dashpay
+            .sent_contact_requests
+            .contains_key(&recipient_id)
+        {
             return Ok(());
         }
 
         let mut cs = ContactChangeSet::default();
 
         // Check if there's already an incoming request from this recipient
-        if let Some(incoming_request) = self.incoming_contact_requests.remove(&recipient_id) {
+        if let Some(incoming_request) = self.dashpay.incoming_contact_requests.remove(&recipient_id)
+        {
             // Automatically establish the contact — per the ContactChangeSet
             // auto-establishment contract, `established` implies the matching
             // pending entries are dropped, so we don't also emit a
             // `removed_incoming` tombstone here. Preserve metadata if a
             // prior `EstablishedContact` exists for this pair.
-            let contact = match self.established_contacts.get(&recipient_id) {
+            let contact = match self.dashpay.established_contacts.get(&recipient_id) {
                 Some(existing) => EstablishedContact::reestablish_preserving_metadata(
                     existing,
                     request,
@@ -137,7 +146,9 @@ impl ManagedIdentity {
                 },
                 contact.clone(),
             );
-            self.established_contacts.insert(recipient_id, contact);
+            self.dashpay
+                .established_contacts
+                .insert(recipient_id, contact);
         } else {
             // No matching incoming request, just add as sent
             cs.sent_requests.insert(
@@ -149,7 +160,9 @@ impl ManagedIdentity {
                     request: request.clone(),
                 },
             );
-            self.sent_contact_requests.insert(recipient_id, request);
+            self.dashpay
+                .sent_contact_requests
+                .insert(recipient_id, request);
         }
         persister.store(cs.into())?;
         Ok(())
@@ -167,8 +180,8 @@ impl ManagedIdentity {
     /// for persisting it through the same write guard it holds).
     pub fn ignore_sender(&mut self, sender_id: &Identifier) -> ContactChangeSet {
         let owner_id = self.id();
-        self.incoming_contact_requests.remove(sender_id);
-        self.ignored_senders.insert(*sender_id);
+        self.dashpay.incoming_contact_requests.remove(sender_id);
+        self.dashpay.ignored_senders.insert(*sender_id);
 
         let mut cs = ContactChangeSet::default();
         // Emit `removed_incoming` too — NOT just the ignore entry. The
@@ -192,7 +205,7 @@ impl ManagedIdentity {
     /// the sender's incoming requests are suppressed from the main pending
     /// list — including rotated (bumped-`accountReference`) ones.
     pub fn is_sender_ignored(&self, sender_id: &Identifier) -> bool {
-        self.ignored_senders.contains(sender_id)
+        self.dashpay.ignored_senders.contains(sender_id)
     }
 
     /// Marker key for the auto-accept verify-failed set:
@@ -224,10 +237,11 @@ impl ManagedIdentity {
     /// [`Self::AUTO_ACCEPT_VERIFY_FAILED_CAP`]: over cap, an arbitrary existing
     /// entry is evicted to make room (see the cap docs for why that is safe).
     pub fn mark_auto_accept_verify_failed(&mut self, sender_id: &Identifier, proof: &[u8]) {
-        while self.auto_accept_verify_failed.len() >= Self::AUTO_ACCEPT_VERIFY_FAILED_CAP {
-            self.auto_accept_verify_failed.pop_first();
+        while self.dashpay.auto_accept_verify_failed.len() >= Self::AUTO_ACCEPT_VERIFY_FAILED_CAP {
+            self.dashpay.auto_accept_verify_failed.pop_first();
         }
-        self.auto_accept_verify_failed
+        self.dashpay
+            .auto_accept_verify_failed
             .insert(Self::auto_accept_verify_failed_key(sender_id, proof));
     }
 
@@ -235,7 +249,8 @@ impl ManagedIdentity {
     /// launch — the enqueue gate consults this before re-queuing an
     /// `AutoAccept` op.
     pub fn is_auto_accept_verify_failed(&self, sender_id: &Identifier, proof: &[u8]) -> bool {
-        self.auto_accept_verify_failed
+        self.dashpay
+            .auto_accept_verify_failed
             .contains(&Self::auto_accept_verify_failed_key(sender_id, proof))
     }
 
@@ -260,7 +275,7 @@ impl ManagedIdentity {
         sender_id: &Identifier,
         request: &ContactRequest,
     ) -> bool {
-        if self.established_contacts.contains_key(sender_id) {
+        if self.dashpay.established_contacts.contains_key(sender_id) {
             return false;
         }
         let Some(proof) = request.auto_accept_proof.as_deref() else {
@@ -290,13 +305,13 @@ impl ManagedIdentity {
     /// ignored.
     pub fn unignore_sender(&mut self, sender_id: &Identifier) -> ContactChangeSet {
         let owner_id = self.id();
-        let was_ignored = self.ignored_senders.remove(sender_id);
+        let was_ignored = self.dashpay.ignored_senders.remove(sender_id);
         if !was_ignored {
             return ContactChangeSet::default();
         }
         // Rewind the receive cursor so the next sweep re-fetches the
         // now-un-ignored sender's on-chain requests.
-        self.high_water_received_ms = None;
+        self.dashpay.high_water_received_ms = None;
 
         let mut cs = ContactChangeSet::default();
         cs.unignored.insert((owner_id, *sender_id));
@@ -310,7 +325,7 @@ impl ManagedIdentity {
         &mut self,
         recipient_id: &Identifier,
     ) -> (Option<ContactRequest>, ContactChangeSet) {
-        let removed = self.sent_contact_requests.remove(recipient_id);
+        let removed = self.dashpay.sent_contact_requests.remove(recipient_id);
         let mut cs = ContactChangeSet::default();
         if removed.is_some() {
             cs.removed_sent.insert(SentContactRequestKey {
@@ -336,7 +351,7 @@ impl ManagedIdentity {
         let mut cs = ContactChangeSet::default();
 
         // Check if there's already a sent request to this sender
-        if let Some(outgoing_request) = self.sent_contact_requests.remove(&sender_id) {
+        if let Some(outgoing_request) = self.dashpay.sent_contact_requests.remove(&sender_id) {
             // Automatically establish the contact — per the ContactChangeSet
             // auto-establishment contract, `established` implies the matching
             // pending entries are dropped, so we don't also emit a
@@ -344,7 +359,7 @@ impl ManagedIdentity {
             // `EstablishedContact` exists for this pair (a recurring sweep
             // can re-ingest a reciprocal while the relationship already
             // exists — naive re-establish would wipe the user's metadata).
-            let contact = match self.established_contacts.get(&sender_id) {
+            let contact = match self.dashpay.established_contacts.get(&sender_id) {
                 Some(existing) => EstablishedContact::reestablish_preserving_metadata(
                     existing,
                     outgoing_request,
@@ -359,7 +374,7 @@ impl ManagedIdentity {
                 },
                 contact.clone(),
             );
-            self.established_contacts.insert(sender_id, contact);
+            self.dashpay.established_contacts.insert(sender_id, contact);
         } else {
             // No matching sent request, just add as incoming
             cs.incoming_requests.insert(
@@ -371,7 +386,9 @@ impl ManagedIdentity {
                     request: request.clone(),
                 },
             );
-            self.incoming_contact_requests.insert(sender_id, request);
+            self.dashpay
+                .incoming_contact_requests
+                .insert(sender_id, request);
         }
         persister.store(cs.into())?;
         Ok(())
@@ -400,7 +417,7 @@ impl ManagedIdentity {
         persister: &WalletPersister,
     ) -> Result<bool, crate::changeset::PersistenceError> {
         let owner_id = self.id();
-        let Some(contact) = self.established_contacts.get_mut(contact_id) else {
+        let Some(contact) = self.dashpay.established_contacts.get_mut(contact_id) else {
             return Ok(false);
         };
         if contact.alias == metadata.alias_name
@@ -473,11 +490,13 @@ impl ManagedIdentity {
         // call repeatedly with the same request without thrashing the
         // persister or re-tearing-down the external account.
         let already_applied = self
+            .dashpay
             .established_contacts
             .get(&sender_id)
             .map(|c| c.incoming_request == request)
             .or_else(|| {
-                self.incoming_contact_requests
+                self.dashpay
+                    .incoming_contact_requests
                     .get(&sender_id)
                     .map(|r| *r == request)
             })
@@ -489,7 +508,7 @@ impl ManagedIdentity {
         let mut cs = ContactChangeSet::default();
 
         let rekeyed_established =
-            if let Some(contact) = self.established_contacts.get_mut(&sender_id) {
+            if let Some(contact) = self.dashpay.established_contacts.get_mut(&sender_id) {
                 tracing::info!(
                     owner = %owner_id,
                     sender = %sender_id,
@@ -516,7 +535,7 @@ impl ManagedIdentity {
                     contact.clone(),
                 );
                 true
-            } else if let Some(slot) = self.incoming_contact_requests.get_mut(&sender_id) {
+            } else if let Some(slot) = self.dashpay.incoming_contact_requests.get_mut(&sender_id) {
                 // Pending (not-yet-accepted) incoming request — replace it
                 // in place so a later Accept uses the freshest key material.
                 *slot = request.clone();
@@ -543,7 +562,7 @@ impl ManagedIdentity {
         &mut self,
         sender_id: &Identifier,
     ) -> (Option<ContactRequest>, ContactChangeSet) {
-        let removed = self.incoming_contact_requests.remove(sender_id);
+        let removed = self.dashpay.incoming_contact_requests.remove(sender_id);
         let mut cs = ContactChangeSet::default();
         if removed.is_some() {
             cs.removed_incoming.insert(ReceivedContactRequestKey {
@@ -565,17 +584,22 @@ impl ManagedIdentity {
         sender_id: &Identifier,
     ) -> (Option<EstablishedContact>, ContactChangeSet) {
         // Check both exist before removing either (prevents data loss).
-        if !self.incoming_contact_requests.contains_key(sender_id)
-            || !self.sent_contact_requests.contains_key(sender_id)
+        if !self
+            .dashpay
+            .incoming_contact_requests
+            .contains_key(sender_id)
+            || !self.dashpay.sent_contact_requests.contains_key(sender_id)
         {
             return (None, ContactChangeSet::default());
         }
         // Both `remove` calls are guaranteed `Some` by the pre-check above.
         let incoming_request = self
+            .dashpay
             .incoming_contact_requests
             .remove(sender_id)
             .expect("incoming request presence checked above");
         let outgoing_request = self
+            .dashpay
             .sent_contact_requests
             .remove(sender_id)
             .expect("sent request presence checked above");
@@ -584,7 +608,8 @@ impl ManagedIdentity {
         let contact = EstablishedContact::new(*sender_id, outgoing_request, incoming_request);
 
         // Add to established contacts
-        self.established_contacts
+        self.dashpay
+            .established_contacts
             .insert(*sender_id, contact.clone());
 
         // Per the ContactChangeSet auto-establishment contract, `established`
@@ -620,9 +645,11 @@ impl ManagedIdentity {
     /// invariant to protect).
     pub(crate) fn apply_established_contact(&mut self, contact: EstablishedContact) {
         let contact_id = contact.contact_identity_id;
-        self.sent_contact_requests.remove(&contact_id);
-        self.incoming_contact_requests.remove(&contact_id);
-        self.established_contacts.insert(contact_id, contact);
+        self.dashpay.sent_contact_requests.remove(&contact_id);
+        self.dashpay.incoming_contact_requests.remove(&contact_id);
+        self.dashpay
+            .established_contacts
+            .insert(contact_id, contact);
     }
 }
 
@@ -705,10 +732,13 @@ mod tests {
             .expect("setup persists");
 
         // Should be in sent requests
-        assert_eq!(managed.sent_contact_requests.len(), 1);
-        assert!(managed.sent_contact_requests.contains_key(&recipient_id));
-        assert_eq!(managed.incoming_contact_requests.len(), 0);
-        assert_eq!(managed.established_contacts.len(), 0);
+        assert_eq!(managed.dashpay.sent_contact_requests.len(), 1);
+        assert!(managed
+            .dashpay
+            .sent_contact_requests
+            .contains_key(&recipient_id));
+        assert_eq!(managed.dashpay.incoming_contact_requests.len(), 0);
+        assert_eq!(managed.dashpay.established_contacts.len(), 0);
     }
 
     /// **Blocking — ignore must DELETE the persisted incoming row, not only
@@ -729,7 +759,7 @@ mod tests {
         managed
             .add_incoming_contact_request(create_contact_request(sender_id, owner_id, 1234), &p)
             .expect("setup persists");
-        assert_eq!(managed.incoming_contact_requests.len(), 1);
+        assert_eq!(managed.dashpay.incoming_contact_requests.len(), 1);
 
         let cs = managed.ignore_sender(&sender_id);
 
@@ -763,10 +793,13 @@ mod tests {
             .expect("setup persists");
 
         // Should be in incoming requests
-        assert_eq!(managed.incoming_contact_requests.len(), 1);
-        assert!(managed.incoming_contact_requests.contains_key(&sender_id));
-        assert_eq!(managed.sent_contact_requests.len(), 0);
-        assert_eq!(managed.established_contacts.len(), 0);
+        assert_eq!(managed.dashpay.incoming_contact_requests.len(), 1);
+        assert!(managed
+            .dashpay
+            .incoming_contact_requests
+            .contains_key(&sender_id));
+        assert_eq!(managed.dashpay.sent_contact_requests.len(), 0);
+        assert_eq!(managed.dashpay.established_contacts.len(), 0);
     }
 
     #[test]
@@ -782,8 +815,8 @@ mod tests {
             .add_sent_contact_request(outgoing, &p)
             .expect("setup persists");
 
-        assert_eq!(managed.sent_contact_requests.len(), 1);
-        assert_eq!(managed.established_contacts.len(), 0);
+        assert_eq!(managed.dashpay.sent_contact_requests.len(), 1);
+        assert_eq!(managed.dashpay.established_contacts.len(), 0);
 
         // Add incoming request - should auto-establish
         let incoming = create_contact_request(contact_id, our_id, 1234567891);
@@ -792,10 +825,13 @@ mod tests {
             .expect("setup persists");
 
         // Requests should be moved to established contacts
-        assert_eq!(managed.sent_contact_requests.len(), 0);
-        assert_eq!(managed.incoming_contact_requests.len(), 0);
-        assert_eq!(managed.established_contacts.len(), 1);
-        assert!(managed.established_contacts.contains_key(&contact_id));
+        assert_eq!(managed.dashpay.sent_contact_requests.len(), 0);
+        assert_eq!(managed.dashpay.incoming_contact_requests.len(), 0);
+        assert_eq!(managed.dashpay.established_contacts.len(), 1);
+        assert!(managed
+            .dashpay
+            .established_contacts
+            .contains_key(&contact_id));
     }
 
     /// DIP-15 §8.5 receive-side label: a contact's account label is derived
@@ -819,7 +855,10 @@ mod tests {
         let mut established = EstablishedContact::new(contact_id, outgoing, incoming);
         established.contact_account_label = Some("Old label".to_string());
         established.payment_channel_broken = true;
-        managed.established_contacts.insert(contact_id, established);
+        managed
+            .dashpay
+            .established_contacts
+            .insert(contact_id, established);
 
         // A superseding incoming request rotates the relationship.
         let rotated = create_contact_request(contact_id, our_id, 2000);
@@ -832,6 +871,7 @@ mod tests {
             "a superseding incoming request must re-key the established contact"
         );
         let contact = managed
+            .dashpay
             .established_contacts
             .get(&contact_id)
             .expect("still established after rotation");
@@ -855,7 +895,7 @@ mod tests {
         let contact_id = Identifier::from([2u8; 32]);
         let outgoing = create_contact_request(our_id, contact_id, 1000);
         let incoming = create_contact_request(contact_id, our_id, 1001);
-        managed.established_contacts.insert(
+        managed.dashpay.established_contacts.insert(
             contact_id,
             EstablishedContact::new(contact_id, outgoing, incoming),
         );
@@ -889,7 +929,7 @@ mod tests {
         let contact_id = Identifier::from([2u8; 32]);
         let outgoing = create_contact_request(our_id, contact_id, 1000);
         let incoming = create_contact_request(contact_id, our_id, 1001);
-        managed.established_contacts.insert(
+        managed.dashpay.established_contacts.insert(
             contact_id,
             EstablishedContact::new(contact_id, outgoing.clone(), incoming),
         );
@@ -901,7 +941,7 @@ mod tests {
         let result = managed.add_sent_contact_request(rotated.clone(), &failing_persister());
         assert!(result.is_err(), "a failed supersede persist must surface");
         assert_eq!(
-            managed.established_contacts[&contact_id]
+            managed.dashpay.established_contacts[&contact_id]
                 .outgoing_request
                 .account_reference,
             outgoing.account_reference,
@@ -914,7 +954,7 @@ mod tests {
             .add_sent_contact_request(rotated.clone(), &noop_persister())
             .expect("retry persists");
         assert_eq!(
-            managed.established_contacts[&contact_id]
+            managed.dashpay.established_contacts[&contact_id]
                 .outgoing_request
                 .account_reference,
             rotated.account_reference,
@@ -959,7 +999,7 @@ mod tests {
         let contact_id = Identifier::from([2u8; 32]);
         let outgoing = create_contact_request(our_id, contact_id, 1000);
         let incoming = create_contact_request(contact_id, our_id, 1001);
-        managed.established_contacts.insert(
+        managed.dashpay.established_contacts.insert(
             contact_id,
             EstablishedContact::new(contact_id, outgoing, incoming),
         );
@@ -992,6 +1032,7 @@ mod tests {
         );
         assert_eq!(
             managed
+                .dashpay
                 .established_contacts
                 .get(&contact_id)
                 .unwrap()
@@ -1015,8 +1056,8 @@ mod tests {
             .add_incoming_contact_request(incoming, &p)
             .expect("setup persists");
 
-        assert_eq!(managed.incoming_contact_requests.len(), 1);
-        assert_eq!(managed.established_contacts.len(), 0);
+        assert_eq!(managed.dashpay.incoming_contact_requests.len(), 1);
+        assert_eq!(managed.dashpay.established_contacts.len(), 0);
 
         // Add sent request - should auto-establish
         let outgoing = create_contact_request(our_id, contact_id, 1234567891);
@@ -1025,10 +1066,13 @@ mod tests {
             .expect("setup persists");
 
         // Requests should be moved to established contacts
-        assert_eq!(managed.sent_contact_requests.len(), 0);
-        assert_eq!(managed.incoming_contact_requests.len(), 0);
-        assert_eq!(managed.established_contacts.len(), 1);
-        assert!(managed.established_contacts.contains_key(&contact_id));
+        assert_eq!(managed.dashpay.sent_contact_requests.len(), 0);
+        assert_eq!(managed.dashpay.incoming_contact_requests.len(), 0);
+        assert_eq!(managed.dashpay.established_contacts.len(), 1);
+        assert!(managed
+            .dashpay
+            .established_contacts
+            .contains_key(&contact_id));
     }
 
     #[test]
@@ -1043,7 +1087,7 @@ mod tests {
             .add_sent_contact_request(request.clone(), &p)
             .expect("setup persists");
 
-        assert_eq!(managed.sent_contact_requests.len(), 1);
+        assert_eq!(managed.dashpay.sent_contact_requests.len(), 1);
 
         // Remove the request
         let (removed, cs) = managed.remove_sent_contact_request(&recipient_id);
@@ -1053,7 +1097,7 @@ mod tests {
             owner_id: managed.id(),
             recipient_id
         }));
-        assert_eq!(managed.sent_contact_requests.len(), 0);
+        assert_eq!(managed.dashpay.sent_contact_requests.len(), 0);
     }
 
     #[test]
@@ -1078,7 +1122,7 @@ mod tests {
             .add_incoming_contact_request(request.clone(), &p)
             .expect("setup persists");
 
-        assert_eq!(managed.incoming_contact_requests.len(), 1);
+        assert_eq!(managed.dashpay.incoming_contact_requests.len(), 1);
 
         // Remove the request
         let (removed, cs) = managed.remove_incoming_contact_request(&sender_id);
@@ -1088,7 +1132,7 @@ mod tests {
             owner_id: managed.id(),
             sender_id
         }));
-        assert_eq!(managed.incoming_contact_requests.len(), 0);
+        assert_eq!(managed.dashpay.incoming_contact_requests.len(), 0);
     }
 
     #[test]
@@ -1111,8 +1155,12 @@ mod tests {
         let outgoing = create_contact_request(our_id, contact_id, 1234567890);
         let incoming = create_contact_request(contact_id, our_id, 1234567891);
 
-        managed.sent_contact_requests.insert(contact_id, outgoing);
         managed
+            .dashpay
+            .sent_contact_requests
+            .insert(contact_id, outgoing);
+        managed
+            .dashpay
             .incoming_contact_requests
             .insert(contact_id, incoming);
 
@@ -1132,10 +1180,13 @@ mod tests {
         assert!(cs.removed_incoming.is_empty());
 
         // Verify requests were removed and contact established
-        assert_eq!(managed.sent_contact_requests.len(), 0);
-        assert_eq!(managed.incoming_contact_requests.len(), 0);
-        assert_eq!(managed.established_contacts.len(), 1);
-        assert!(managed.established_contacts.contains_key(&contact_id));
+        assert_eq!(managed.dashpay.sent_contact_requests.len(), 0);
+        assert_eq!(managed.dashpay.incoming_contact_requests.len(), 0);
+        assert_eq!(managed.dashpay.established_contacts.len(), 1);
+        assert!(managed
+            .dashpay
+            .established_contacts
+            .contains_key(&contact_id));
     }
 
     #[test]
@@ -1146,7 +1197,10 @@ mod tests {
 
         // Only add outgoing request
         let outgoing = create_contact_request(our_id, contact_id, 1234567890);
-        managed.sent_contact_requests.insert(contact_id, outgoing);
+        managed
+            .dashpay
+            .sent_contact_requests
+            .insert(contact_id, outgoing);
 
         // Accept should fail - no incoming request
         let (result, cs) = managed.accept_incoming_request(&contact_id);
@@ -1163,6 +1217,7 @@ mod tests {
         // Only add incoming request
         let incoming = create_contact_request(contact_id, our_id, 1234567891);
         managed
+            .dashpay
             .incoming_contact_requests
             .insert(contact_id, incoming);
 
@@ -1186,7 +1241,7 @@ mod tests {
         managed
             .add_sent_contact_request(request.clone(), &p)
             .expect("setup persists");
-        assert_eq!(managed.sent_contact_requests.len(), 1);
+        assert_eq!(managed.dashpay.sent_contact_requests.len(), 1);
 
         // Re-ingest the SAME sent request (recurring sweep). It must not
         // create a duplicate / phantom row.
@@ -1194,11 +1249,11 @@ mod tests {
             .add_sent_contact_request(request, &p)
             .expect("setup persists");
         assert_eq!(
-            managed.sent_contact_requests.len(),
+            managed.dashpay.sent_contact_requests.len(),
             1,
             "re-ingesting an already-tracked sent request must not duplicate it"
         );
-        assert_eq!(managed.established_contacts.len(), 0);
+        assert_eq!(managed.dashpay.established_contacts.len(), 0);
     }
 
     /// Re-ingesting a sent request to an ALREADY-established contact
@@ -1218,8 +1273,12 @@ mod tests {
         managed
             .add_sent_contact_request(create_contact_request(our_id, contact_id, 2), &p)
             .expect("setup persists");
-        assert_eq!(managed.established_contacts.len(), 1);
-        let established = managed.established_contacts.get_mut(&contact_id).unwrap();
+        assert_eq!(managed.dashpay.established_contacts.len(), 1);
+        let established = managed
+            .dashpay
+            .established_contacts
+            .get_mut(&contact_id)
+            .unwrap();
         established.set_alias("Alice".to_string());
         established.set_note("from work".to_string());
         established.hide();
@@ -1230,7 +1289,11 @@ mod tests {
             .add_sent_contact_request(create_contact_request(our_id, contact_id, 3), &p)
             .expect("setup persists");
 
-        let established = managed.established_contacts.get(&contact_id).unwrap();
+        let established = managed
+            .dashpay
+            .established_contacts
+            .get(&contact_id)
+            .unwrap();
         assert_eq!(established.alias, Some("Alice".to_string()));
         assert_eq!(established.note, Some("from work".to_string()));
         assert_eq!(established.is_hidden, true);
@@ -1261,8 +1324,12 @@ mod tests {
         managed
             .add_sent_contact_request(first_send, &p)
             .expect("setup persists");
-        assert_eq!(managed.established_contacts.len(), 1);
-        let est = managed.established_contacts.get_mut(&contact_id).unwrap();
+        assert_eq!(managed.dashpay.established_contacts.len(), 1);
+        let est = managed
+            .dashpay
+            .established_contacts
+            .get_mut(&contact_id)
+            .unwrap();
         est.set_alias("Carol".to_string());
         assert_eq!(est.outgoing_request.account_reference, 100);
 
@@ -1274,6 +1341,7 @@ mod tests {
             .expect("rotation #1 persists");
         assert_eq!(
             managed
+                .dashpay
                 .established_contacts
                 .get(&contact_id)
                 .unwrap()
@@ -1289,7 +1357,11 @@ mod tests {
         managed
             .add_sent_contact_request(rotation2, &p)
             .expect("rotation #2 persists");
-        let est = managed.established_contacts.get(&contact_id).unwrap();
+        let est = managed
+            .dashpay
+            .established_contacts
+            .get(&contact_id)
+            .unwrap();
         assert_eq!(
             est.outgoing_request.account_reference, 102,
             "rotation #2 must advance to the newest reference — distinct across sends"
@@ -1303,7 +1375,11 @@ mod tests {
         managed
             .add_sent_contact_request(resend_same, &p)
             .expect("same-reference re-ingest is a no-op");
-        let est = managed.established_contacts.get(&contact_id).unwrap();
+        let est = managed
+            .dashpay
+            .established_contacts
+            .get(&contact_id)
+            .unwrap();
         assert_eq!(est.outgoing_request.account_reference, 102);
         assert_eq!(est.alias, Some("Carol".to_string()));
     }
@@ -1327,19 +1403,28 @@ mod tests {
         managed
             .add_sent_contact_request(create_contact_request(our_id, contact_id, 2), &p)
             .expect("setup persists");
-        let est = managed.established_contacts.get_mut(&contact_id).unwrap();
+        let est = managed
+            .dashpay
+            .established_contacts
+            .get_mut(&contact_id)
+            .unwrap();
         est.set_alias("Bob".to_string());
 
         // Simulate a re-ingested incoming reciprocal landing while a sent
         // request also exists in the map (forced state).
         managed
+            .dashpay
             .sent_contact_requests
             .insert(contact_id, create_contact_request(our_id, contact_id, 4));
         managed
             .add_incoming_contact_request(create_contact_request(contact_id, our_id, 5), &p)
             .expect("setup persists");
 
-        let est = managed.established_contacts.get(&contact_id).unwrap();
+        let est = managed
+            .dashpay
+            .established_contacts
+            .get(&contact_id)
+            .unwrap();
         assert_eq!(
             est.alias,
             Some("Bob".to_string()),
@@ -1363,13 +1448,13 @@ mod tests {
         managed
             .add_incoming_contact_request(request, &p)
             .expect("setup persists");
-        assert_eq!(managed.incoming_contact_requests.len(), 1);
+        assert_eq!(managed.dashpay.incoming_contact_requests.len(), 1);
 
         let cs = managed.ignore_sender(&sender_id);
 
         // Incoming dropped, sender recorded as ignored.
-        assert_eq!(managed.incoming_contact_requests.len(), 0);
-        assert!(managed.ignored_senders.contains(&sender_id));
+        assert_eq!(managed.dashpay.incoming_contact_requests.len(), 0);
+        assert!(managed.dashpay.ignored_senders.contains(&sender_id));
         assert!(cs.ignored.contains(&(our_id, sender_id)));
         // The sender is ignored regardless of accountReference — both the
         // original (0) and a rotated (1) request are suppressed.
@@ -1391,26 +1476,26 @@ mod tests {
         assert!(managed.is_sender_ignored(&sender_id));
         // Simulate the sweep having advanced the cursor past the sender's
         // requests while they were ignored.
-        managed.high_water_received_ms = Some(123_456);
+        managed.dashpay.high_water_received_ms = Some(123_456);
 
         let cs = managed.unignore_sender(&sender_id);
 
         assert!(!managed.is_sender_ignored(&sender_id));
         assert!(cs.unignored.contains(&(our_id, sender_id)));
         assert_eq!(
-            managed.high_water_received_ms, None,
+            managed.dashpay.high_water_received_ms, None,
             "un-ignore must rewind the receive cursor so the sender's requests re-fetch"
         );
 
         // Un-ignoring again (no longer ignored) is a no-op and does NOT
         // touch the cursor a second time.
-        managed.high_water_received_ms = Some(999);
+        managed.dashpay.high_water_received_ms = Some(999);
         let cs2 = managed.unignore_sender(&sender_id);
         assert!(
             <ContactChangeSet as crate::changeset::Merge>::is_empty(&cs2),
             "un-ignoring a non-ignored sender must be a no-op"
         );
-        assert_eq!(managed.high_water_received_ms, Some(999));
+        assert_eq!(managed.dashpay.high_water_received_ms, Some(999));
     }
 
     #[test]
@@ -1438,9 +1523,9 @@ mod tests {
             )
             .expect("setup persists");
 
-        assert_eq!(managed.sent_contact_requests.len(), 2);
-        assert_eq!(managed.incoming_contact_requests.len(), 1);
-        assert_eq!(managed.established_contacts.len(), 0);
+        assert_eq!(managed.dashpay.sent_contact_requests.len(), 2);
+        assert_eq!(managed.dashpay.incoming_contact_requests.len(), 1);
+        assert_eq!(managed.dashpay.established_contacts.len(), 0);
 
         // Add incoming from contact1 - should establish
         managed
@@ -1450,10 +1535,13 @@ mod tests {
             )
             .expect("setup persists");
 
-        assert_eq!(managed.sent_contact_requests.len(), 1); // Only contact2 left
-        assert_eq!(managed.incoming_contact_requests.len(), 1); // Only contact3 left
-        assert_eq!(managed.established_contacts.len(), 1); // contact1 established
-        assert!(managed.established_contacts.contains_key(&contact1_id));
+        assert_eq!(managed.dashpay.sent_contact_requests.len(), 1); // Only contact2 left
+        assert_eq!(managed.dashpay.incoming_contact_requests.len(), 1); // Only contact3 left
+        assert_eq!(managed.dashpay.established_contacts.len(), 1); // contact1 established
+        assert!(managed
+            .dashpay
+            .established_contacts
+            .contains_key(&contact1_id));
     }
 
     /// A structurally-valid but cryptographically-garbage `autoAcceptProof`

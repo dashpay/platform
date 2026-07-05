@@ -81,22 +81,11 @@ impl ManagedIdentity {
             identity_index: Some(identity_index),
             last_updated_balance_block_time: None,
             last_synced_keys_block_time: None,
-            established_contacts: Default::default(),
-            dashpay_rescan_triggered: Default::default(),
-            auto_accept_verify_failed: Default::default(),
-            sent_contact_requests: Default::default(),
-            incoming_contact_requests: Default::default(),
-            ignored_senders: Default::default(),
             status: Default::default(),
             dpns_names: Vec::new(),
             contested_dpns_names: Vec::new(),
             wallet_id: None,
-            dashpay_profile: None,
-            dashpay_payments: BTreeMap::new(),
-            high_water_received_ms: None,
-            high_water_sent_ms: None,
-            contact_profiles: BTreeMap::new(),
-            pending_contact_crypto: Vec::new(),
+            dashpay: Default::default(),
         }
     }
 
@@ -112,22 +101,11 @@ impl ManagedIdentity {
             identity_index: None,
             last_updated_balance_block_time: None,
             last_synced_keys_block_time: None,
-            established_contacts: Default::default(),
-            dashpay_rescan_triggered: Default::default(),
-            auto_accept_verify_failed: Default::default(),
-            sent_contact_requests: Default::default(),
-            incoming_contact_requests: Default::default(),
-            ignored_senders: Default::default(),
             status: Default::default(),
             dpns_names: Vec::new(),
             contested_dpns_names: Vec::new(),
             wallet_id: None,
-            dashpay_profile: None,
-            dashpay_payments: BTreeMap::new(),
-            high_water_received_ms: None,
-            high_water_sent_ms: None,
-            contact_profiles: BTreeMap::new(),
-            pending_contact_crypto: Vec::new(),
+            dashpay: Default::default(),
         }
     }
 
@@ -146,7 +124,7 @@ impl ManagedIdentity {
         profile: Option<crate::wallet::identity::DashPayProfile>,
         persister: &WalletPersister,
     ) {
-        self.dashpay_profile = profile;
+        self.dashpay.profile = profile;
         let cs = self.snapshot_changeset();
         if let Err(e) = persister.store(cs.into()) {
             tracing::error!("Failed to persist changeset: {}", e);
@@ -179,15 +157,15 @@ impl ManagedIdentity {
         // A failed overwrite restores the previous entry rather than deleting
         // it. Either way the persist result is returned, not swallowed: the
         // user-initiated send path (`send_payment`) surfaces it in the UI.
-        let previous = self.dashpay_payments.insert(tx_id.clone(), entry);
+        let previous = self.dashpay.payments.insert(tx_id.clone(), entry);
         let cs = self.snapshot_changeset();
         if let Err(e) = persister.store(cs.into()) {
             match previous {
                 Some(prev) => {
-                    self.dashpay_payments.insert(tx_id, prev);
+                    self.dashpay.payments.insert(tx_id, prev);
                 }
                 None => {
-                    self.dashpay_payments.remove(&tx_id);
+                    self.dashpay.payments.remove(&tx_id);
                 }
             }
             return Err(e);
@@ -203,7 +181,8 @@ impl ManagedIdentity {
         &self,
         contact_id: &Identifier,
     ) -> Vec<(String, crate::wallet::identity::PaymentEntry)> {
-        self.dashpay_payments
+        self.dashpay
+            .payments
             .iter()
             .filter(|(_, p)| p.counterparty_id == contact_id)
             .map(|(tx_id, p)| (tx_id.clone(), p.clone()))
@@ -688,7 +667,7 @@ mod tests {
         );
         assert!(result.is_err(), "a failed payment persist must surface");
         assert!(
-            !managed.dashpay_payments.contains_key("tx1"),
+            !managed.dashpay.payments.contains_key("tx1"),
             "a failed persist must not strand the entry in memory, else the \
              contains_key retry guard skips the re-attempt"
         );
@@ -710,7 +689,8 @@ mod tests {
 
         // Pre-existing (persisted) entry.
         managed
-            .dashpay_payments
+            .dashpay
+            .payments
             .insert("tx1".into(), PaymentEntry::new_sent(alice, 100, None));
 
         // Overwrite attempt fails to persist → previous must survive intact.
@@ -721,7 +701,8 @@ mod tests {
         );
         assert!(result.is_err());
         let kept = managed
-            .dashpay_payments
+            .dashpay
+            .payments
             .get("tx1")
             .expect("previous survives");
         assert_eq!(
@@ -743,13 +724,16 @@ mod tests {
         let bob = Identifier::from([0xBB; 32]);
 
         managed
-            .dashpay_payments
+            .dashpay
+            .payments
             .insert("t1".into(), PaymentEntry::new_sent(alice, 100, None));
         managed
-            .dashpay_payments
+            .dashpay
+            .payments
             .insert("t2".into(), PaymentEntry::new_received(bob, 200, None));
         managed
-            .dashpay_payments
+            .dashpay
+            .payments
             .insert("t3".into(), PaymentEntry::new_sent(alice, 300, None));
 
         let for_alice = managed.payments_for_contact(&alice);

@@ -143,10 +143,10 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             let Some(managed) = info.identity_manager.managed_identity(&owner) else {
                 continue;
             };
-            if managed.dashpay_rescan_triggered.contains(&contact) {
+            if managed.dashpay.rescan_triggered.contains(&contact) {
                 continue;
             }
-            let Some(established) = managed.established_contacts.get(&contact) else {
+            let Some(established) = managed.dashpay.established_contacts.get(&contact) else {
                 continue;
             };
             let funding = established
@@ -181,7 +181,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         let triggered = to_mark.len();
         for (owner, contact) in to_mark {
             if let Some(managed) = info.identity_manager.managed_identity_mut(&owner) {
-                managed.dashpay_rescan_triggered.insert(contact);
+                managed.dashpay.rescan_triggered.insert(contact);
             }
         }
         if let Some(floor) = floor {
@@ -231,7 +231,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 let Some(managed) = info.identity_manager.managed_identity(&owner) else {
                     continue;
                 };
-                for (txid, entry) in &managed.dashpay_payments {
+                for (txid, entry) in &managed.dashpay.payments {
                     if entry.direction == PaymentDirection::Sent
                         && entry.status == PaymentStatus::Pending
                     {
@@ -367,7 +367,7 @@ fn record_received_payment_totals(
         let Some(managed) = info.identity_manager.managed_identity_mut(&owner) else {
             continue;
         };
-        if managed.dashpay_payments.contains_key(&txid) {
+        if managed.dashpay.payments.contains_key(&txid) {
             continue;
         }
         tracing::info!(
@@ -476,7 +476,7 @@ async fn confirm_sent_payment_by_txid(
         let Some(managed) = info.identity_manager.managed_identity_mut(&owner) else {
             continue;
         };
-        let confirmed = match managed.dashpay_payments.get(txid) {
+        let confirmed = match managed.dashpay.payments.get(txid) {
             Some(entry)
                 if entry.direction == PaymentDirection::Sent
                     && entry.status == PaymentStatus::Pending =>
@@ -1244,7 +1244,8 @@ mod tests {
                 .managed_identity(&owner)
                 .expect("managed identity");
             let entry = managed
-                .dashpay_payments
+                .dashpay
+                .payments
                 .get(&txid)
                 .expect("Received entry recorded under the UTXO's txid");
             assert_eq!(entry.counterparty_id, contact);
@@ -1328,7 +1329,7 @@ mod tests {
             .managed_identity(&owner)
             .expect("managed identity");
         assert_eq!(
-            managed.dashpay_payments.get(&txid),
+            managed.dashpay.payments.get(&txid),
             Some(&preexisting),
             "reconcile must not overwrite the pre-existing entry"
         );
@@ -1386,12 +1387,13 @@ mod tests {
             .managed_identity(&owner)
             .expect("managed identity");
         assert_eq!(
-            managed.dashpay_payments.get(&existing_txid),
+            managed.dashpay.payments.get(&existing_txid),
             Some(&preexisting),
             "the existing txid entry must be left untouched (no clobber)"
         );
         let fresh = managed
-            .dashpay_payments
+            .dashpay
+            .payments
             .get(&fresh_txid)
             .expect("fresh entry recorded");
         assert_eq!(fresh.direction, PaymentDirection::Received);
@@ -1538,6 +1540,7 @@ mod tests {
             info.identity_manager
                 .managed_identity_mut(&owner)
                 .expect("managed")
+                .dashpay
                 .established_contacts
                 .insert(
                     contact,
@@ -1613,6 +1616,7 @@ mod tests {
         info.identity_manager
             .managed_identity_mut(&owner)
             .expect("managed")
+            .dashpay
             .established_contacts
             .insert(
                 contact,
@@ -1837,7 +1841,8 @@ mod tests {
             info.identity_manager
                 .managed_identity(owner)
                 .unwrap()
-                .dashpay_payments
+                .dashpay
+                .payments
                 .get(txid)
                 .cloned()
                 .expect("entry")
@@ -1998,7 +2003,8 @@ mod tests {
             info.identity_manager
                 .managed_identity(owner)
                 .expect("managed")
-                .dashpay_payments
+                .dashpay
+                .payments
                 .get(txid)
                 .cloned()
                 .expect("entry present under the sent txid")
@@ -2162,7 +2168,8 @@ mod tests {
             .identity_manager
             .managed_identity(&owner)
             .expect("managed")
-            .dashpay_payments
+            .dashpay
+            .payments
             .get(&txid.to_string())
             .cloned()
             .expect("entry present under the sent txid");
@@ -2267,7 +2274,8 @@ mod tests {
             info.identity_manager
                 .managed_identity(&owner)
                 .expect("managed")
-                .dashpay_payments
+                .dashpay
+                .payments
                 .get(&txid.to_string())
                 .expect("entry")
                 .status,
@@ -2388,7 +2396,8 @@ mod tests {
                 .expect("managed");
             assert_eq!(
                 managed
-                    .dashpay_payments
+                    .dashpay
+                    .payments
                     .get(&mined_txid.to_string())
                     .expect("mined entry")
                     .status,
@@ -2397,7 +2406,8 @@ mod tests {
             );
             assert_eq!(
                 managed
-                    .dashpay_payments
+                    .dashpay
+                    .payments
                     .get(&mempool_txid.to_string())
                     .expect("mempool entry")
                     .status,
@@ -2540,6 +2550,7 @@ mod tests {
         info.identity_manager
             .managed_identity_mut(&owner)
             .expect("managed")
+            .dashpay
             .established_contacts
             .insert(
                 contact,
@@ -2563,7 +2574,7 @@ mod tests {
         let label = wm
             .get_wallet_info(wallet_id)
             .and_then(|info| info.identity_manager.managed_identity(owner))
-            .and_then(|m| m.established_contacts.get(contact))
+            .and_then(|m| m.dashpay.established_contacts.get(contact))
             .and_then(|c| c.contact_account_label.clone());
         label
     }
@@ -2772,6 +2783,7 @@ mod tests {
             info.identity_manager
                 .managed_identity_mut(&owner)
                 .expect("owner resident")
+                .dashpay
                 .pending_contact_crypto
                 .push(PendingContactCrypto {
                     owner_identity_id: owner,
@@ -2791,6 +2803,7 @@ mod tests {
             info.identity_manager
                 .managed_identity(&owner)
                 .expect("owner resident")
+                .dashpay
                 .pending_contact_crypto
                 .is_empty(),
             "the queue must be cleared after a successful drain"
@@ -2841,6 +2854,7 @@ mod tests {
             info.identity_manager
                 .managed_identity_mut(&owned)
                 .expect("owned resident")
+                .dashpay
                 .pending_contact_crypto
                 .push(PendingContactCrypto {
                     owner_identity_id: owned,
@@ -2859,6 +2873,7 @@ mod tests {
             info.identity_manager
                 .managed_identity_mut(&watched)
                 .expect("watched resident")
+                .dashpay
                 .pending_contact_crypto
                 .push(PendingContactCrypto {
                     owner_identity_id: watched,
@@ -2908,6 +2923,7 @@ mod tests {
             info.identity_manager
                 .managed_identity_mut(&watched)
                 .expect("watched resident")
+                .dashpay
                 .pending_contact_crypto
                 .push(PendingContactCrypto {
                     owner_identity_id: watched,
@@ -2930,6 +2946,7 @@ mod tests {
             info.identity_manager
                 .managed_identity(&watched)
                 .expect("watched resident")
+                .dashpay
                 .pending_contact_crypto
                 .is_empty(),
             "the out-of-wallet identity's queue must be cleared after the drain"
@@ -2967,6 +2984,7 @@ mod tests {
             info.identity_manager
                 .managed_identity_mut(&owner)
                 .expect("owner resident")
+                .dashpay
                 .pending_contact_crypto
                 .push(PendingContactCrypto {
                     owner_identity_id: owner,
@@ -3062,6 +3080,7 @@ mod tests {
             info.identity_manager
                 .managed_identity(&owner)
                 .expect("owner resident")
+                .dashpay
                 .pending_contact_crypto
                 .len(),
             1,
@@ -3127,6 +3146,7 @@ mod tests {
             info.identity_manager
                 .managed_identity(&owner)
                 .expect("owner resident")
+                .dashpay
                 .pending_contact_crypto
                 .iter()
                 .any(|e| e.op.kind() == PendingContactCryptoKind::ContactInfoDecrypt),
@@ -3204,6 +3224,7 @@ mod tests {
             info.identity_manager
                 .managed_identity_mut(&owner)
                 .expect("owner resident")
+                .dashpay
                 .pending_contact_crypto
                 .push(PendingContactCrypto {
                     owner_identity_id: owner,
@@ -3248,6 +3269,7 @@ mod tests {
                 .identity_manager
                 .managed_identity(&owner)
                 .expect("owner resident")
+                .dashpay
                 .pending_contact_crypto
                 .iter()
                 .any(|e| e.contact_id == queued_contact),

@@ -5,8 +5,11 @@
 
 mod contact_requests;
 mod contacts;
+mod dashpay;
 mod identity_ops;
 mod sync;
+
+pub use dashpay::DashPayState;
 
 // `block_time` + `key_storage` moved to `crate::wallet::identity::types`.
 // Re-export so every `impl ManagedIdentity` block below keeps working
@@ -17,12 +20,7 @@ pub use crate::wallet::identity::types::key_storage::{
     self, DpnsNameInfo, IdentityStatus, KeyStorage, PrivateKeyData,
 };
 
-use crate::wallet::identity::{
-    ContactProfileEntry, ContactRequest, DashPayProfile, EstablishedContact, PaymentEntry,
-};
 use dpp::identity::Identity;
-use dpp::prelude::Identifier;
-use std::collections::BTreeMap;
 
 /// A managed identity that combines an Identity with wallet-specific metadata.
 ///
@@ -58,74 +56,6 @@ pub struct ManagedIdentity {
     /// Last block time when keys were synced for this identity
     pub last_synced_keys_block_time: Option<BlockTime>,
 
-    /// Map of established contacts (bidirectional relationships) keyed by contact identity ID
-    pub established_contacts: BTreeMap<Identifier, EstablishedContact>,
-
-    /// Contacts for which a historical L1 rescan has already been triggered this
-    /// process lifetime (DIP-15 §12.6 coreHeight backfill). When the rescan
-    /// reconcile lowers the wallet's SPV `synced_height` to a contact's funding
-    /// height so the filter manager re-scans for payments that landed before the
-    /// receival address was watched, the contact is recorded here so the
-    /// recurring sweep does not re-lower the height every pass — which would
-    /// reset the in-flight backfill and prevent it from ever completing.
-    ///
-    /// In-memory only (never persisted): a relaunch clears it, and because
-    /// `synced_height` is restored at its monotonic high-water, an interrupted
-    /// backfill is re-triggered on the next launch — self-healing. The cost of
-    /// that reset is one historical re-match per launch while any contact is
-    /// funded below the tip; the compact filters are reused from disk (not
-    /// re-downloaded), so it is cheap. A persisted breadcrumb could make the
-    /// backfill durable across a crash if that ever becomes necessary.
-    pub dashpay_rescan_triggered: std::collections::BTreeSet<Identifier>,
-
-    /// Map of sent contact requests (outgoing, not yet reciprocated) keyed by recipient ID
-    pub sent_contact_requests: BTreeMap<Identifier, ContactRequest>,
-
-    /// Map of incoming contact requests (not yet accepted) keyed by sender ID
-    pub incoming_contact_requests: BTreeMap<Identifier, ContactRequest>,
-
-    /// DIP-15 auto-accept proofs that failed cryptographic verification (or
-    /// were expired / malformed) during a [`drain_auto_accepts`] pass, keyed by
-    /// `SHA256(sender_id ‖ proof_bytes)`. Consulted by the sync sweep's
-    /// auto-accept enqueue gate so a structurally-valid but cryptographically
-    /// bogus `autoAcceptProof` on an attacker-published contact request is not
-    /// re-enqueued every sweep (which would keep the "waiting to finish setup"
-    /// banner permanently tripped).
-    ///
-    /// Keying on `(sender, proof)` — not on the sender alone — means a
-    /// **different** proof from the same sender still enqueues (a genuine
-    /// re-issued proof is not blocked by a prior bad one). Only PERMANENT
-    /// failures (invalid signature / expired / malformed / bad index) are
-    /// recorded here; transient failures (provider unavailable, reciprocal-send
-    /// failure) stay retryable and are never marked.
-    ///
-    /// In-memory only (never persisted): a relaunch clears it, so a bad proof is
-    /// retried at most once per launch. The request stays manually acceptable
-    /// meanwhile, and the sender never establishes off a bogus proof — so
-    /// retrying once per launch is harmless and avoids a persisted tombstone for
-    /// attacker-controlled input. Capped at
-    /// [`Self::AUTO_ACCEPT_VERIFY_FAILED_CAP`] entries (arbitrary eviction over
-    /// cap) so a griefer paying credits for many distinct malformed proofs
-    /// can't grow it unboundedly for the process lifetime.
-    pub auto_accept_verify_failed: std::collections::BTreeSet<[u8; 32]>,
-
-    /// Senders this identity has chosen to **ignore** (per-sender mute,
-    /// reversible — the local-only equivalent of "block"). Keyed by the
-    /// sender's identity id.
-    ///
-    /// `ignore_sender` records a sender here so the recurring sync ingest
-    /// path won't resurrect *any* of that sender's still-on-platform
-    /// immutable `contactRequest` documents — including rotated ones with
-    /// a bumped `accountReference`. Suppression is per-sender by design: if
-    /// you ignored the person you ignored them; `unignore_sender` is the
-    /// "changed my mind" affordance, which also rewinds the receive cursor
-    /// so the next sweep re-fetches their requests.
-    ///
-    /// Local-only: there is no on-chain artifact (syncing it would leak who
-    /// you ignored via the public contact-request indices). Cross-device
-    /// sync is deferred to a future encrypted `profile` field.
-    pub ignored_senders: std::collections::BTreeSet<Identifier>,
-
     /// Identity lifecycle status on Platform.
     pub status: IdentityStatus,
 
@@ -154,55 +84,19 @@ pub struct ManagedIdentity {
     /// lives in the out-of-wallet bucket (observed only).
     pub wallet_id: Option<[u8; 32]>,
 
-    /// DashPay profile (display name, bio, avatar, public message)
-    /// published via the DashPay data contract. `None` until the
-    /// profile has been fetched or set.
-    pub dashpay_profile: Option<DashPayProfile>,
-
-    /// DashPay payment history keyed by transaction id (hex string).
-    /// Each entry records a single Dash payment to or from a contact
-    /// identity, with direction, amount, memo, and status.
-    pub dashpay_payments: BTreeMap<String, PaymentEntry>,
-
-    /// Incremental-sync high-water marks (`$createdAt` ms of the newest
-    /// `contactRequest` fetched) per direction. `None` ⇒ never synced; the
-    /// next sweep does a full fetch. Held in memory: it survives across sweeps
-    /// within a session but resets to `None` on cold restart, triggering one
-    /// full re-fetch (safe — ingest is a fixpoint, so under-shoot is free).
-    /// Durable cross-relaunch persistence is a follow-up; when added, restore
-    /// must tolerate only under-shoot — never a value higher than the contact
-    /// state justifies.
-    pub high_water_received_ms: Option<u64>,
-    /// High-water mark for the sent direction (`$ownerId == me`).
-    pub high_water_sent_ms: Option<u64>,
-
-    /// Cached **contact** profiles keyed by the contact's identity id —
-    /// established contacts, pending incoming-request senders, and (later)
-    /// ignored senders, independent of relationship state. Populated by
-    /// `sync_contact_profiles`; public-data only (never `contactInfo`-derived).
-    pub contact_profiles: BTreeMap<Identifier, ContactProfileEntry>,
-
-    /// DashPay contact-crypto ops the unattended background sweep enqueued for
-    /// THIS identity but could not perform because key material was unavailable
-    /// (watch-only / signer locked). Drained when a signer is available
-    /// (Keychain unlock, or any signer-present action). Secret-free — only
-    /// on-chain ciphertext + public-key indices; each entry still carries its
-    /// `owner_identity_id` (== this identity) as the drain's routing key and the
-    /// SQLite key column. In-memory only for the live session: the queue is
-    /// persisted to the changeset (SQLite backend), but cold-load restore is
-    /// blocked upstream, so a re-imported wallet re-syncs from scratch and the
-    /// sweep re-enqueues what it needs. Deliberately NOT captured by
-    /// `IdentityEntry::from_managed` — persistence rides the flat changeset
-    /// delta, not a per-identity snapshot.
-    /// See [`PendingContactCrypto`](crate::changeset::PendingContactCrypto).
-    pub pending_contact_crypto: Vec<crate::changeset::PendingContactCrypto>,
+    /// DashPay social state layered on this identity: contacts, contact
+    /// requests, profile, payments, sync cursors, deferred crypto. See
+    /// [`DashPayState`] for the per-field contracts.
+    pub dashpay: DashPayState,
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::wallet::identity::ContactRequest;
     use crate::wallet::persister::{NoPlatformPersistence, WalletPersister};
     use dpp::identity::v0::IdentityV0;
+    use dpp::prelude::Identifier;
     use std::collections::BTreeMap;
     use std::sync::Arc;
 
@@ -338,8 +232,8 @@ mod tests {
             .expect("setup persists");
 
         // Verify it's in incoming requests
-        assert_eq!(managed.incoming_contact_requests.len(), 1);
-        assert_eq!(managed.established_contacts.len(), 0);
+        assert_eq!(managed.dashpay.incoming_contact_requests.len(), 1);
+        assert_eq!(managed.dashpay.established_contacts.len(), 0);
 
         // Now add a sent request to the same contact - should auto-establish
         let outgoing_request = ContactRequest::new(
@@ -357,10 +251,13 @@ mod tests {
             .expect("setup persists");
 
         // Verify contact was established
-        assert_eq!(managed.incoming_contact_requests.len(), 0);
-        assert_eq!(managed.sent_contact_requests.len(), 0);
-        assert_eq!(managed.established_contacts.len(), 1);
-        assert!(managed.established_contacts.contains_key(&contact_id));
+        assert_eq!(managed.dashpay.incoming_contact_requests.len(), 0);
+        assert_eq!(managed.dashpay.sent_contact_requests.len(), 0);
+        assert_eq!(managed.dashpay.established_contacts.len(), 1);
+        assert!(managed
+            .dashpay
+            .established_contacts
+            .contains_key(&contact_id));
     }
 
     #[test]
@@ -388,8 +285,8 @@ mod tests {
             .expect("setup persists");
 
         // Verify it's in sent requests
-        assert_eq!(managed.sent_contact_requests.len(), 1);
-        assert_eq!(managed.established_contacts.len(), 0);
+        assert_eq!(managed.dashpay.sent_contact_requests.len(), 1);
+        assert_eq!(managed.dashpay.established_contacts.len(), 0);
 
         // Now add an incoming request from the same contact - should auto-establish
         let incoming_request = ContactRequest::new(
@@ -407,10 +304,13 @@ mod tests {
             .expect("setup persists");
 
         // Verify contact was established
-        assert_eq!(managed.incoming_contact_requests.len(), 0);
-        assert_eq!(managed.sent_contact_requests.len(), 0);
-        assert_eq!(managed.established_contacts.len(), 1);
-        assert!(managed.established_contacts.contains_key(&contact_id));
+        assert_eq!(managed.dashpay.incoming_contact_requests.len(), 0);
+        assert_eq!(managed.dashpay.sent_contact_requests.len(), 0);
+        assert_eq!(managed.dashpay.established_contacts.len(), 1);
+        assert!(managed
+            .dashpay
+            .established_contacts
+            .contains_key(&contact_id));
     }
 
     #[test]
@@ -438,8 +338,8 @@ mod tests {
             .expect("setup persists");
 
         // Verify it stays in sent requests
-        assert_eq!(managed.sent_contact_requests.len(), 1);
-        assert_eq!(managed.established_contacts.len(), 0);
+        assert_eq!(managed.dashpay.sent_contact_requests.len(), 1);
+        assert_eq!(managed.dashpay.established_contacts.len(), 0);
 
         // Add an incoming request from a different contact
         let other_contact_id = Identifier::from([3u8; 32]);
@@ -458,9 +358,9 @@ mod tests {
             .expect("setup persists");
 
         // Verify both requests stay separate
-        assert_eq!(managed.sent_contact_requests.len(), 1);
-        assert_eq!(managed.incoming_contact_requests.len(), 1);
-        assert_eq!(managed.established_contacts.len(), 0);
+        assert_eq!(managed.dashpay.sent_contact_requests.len(), 1);
+        assert_eq!(managed.dashpay.incoming_contact_requests.len(), 1);
+        assert_eq!(managed.dashpay.established_contacts.len(), 0);
     }
 
     #[test]

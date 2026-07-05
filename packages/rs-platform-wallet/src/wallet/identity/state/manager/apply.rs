@@ -53,7 +53,7 @@ impl IdentityManager {
             existing.last_updated_balance_block_time = entry.last_updated_balance_block_time;
             existing.last_synced_keys_block_time = entry.last_synced_keys_block_time;
             existing.status = entry.status;
-            existing.dashpay_profile = entry.dashpay_profile;
+            existing.dashpay.profile = entry.dashpay_profile;
             for name in entry.dpns_names {
                 if !existing.dpns_names.iter().any(|n| n.label == name.label) {
                     existing.dpns_names.push(name);
@@ -64,11 +64,17 @@ impl IdentityManager {
                     existing.contested_dpns_names.push(label);
                 }
             }
-            existing.dashpay_payments.extend(entry.dashpay_payments);
-            existing.contact_profiles.extend(entry.contact_profiles);
+            existing.dashpay.payments.extend(entry.dashpay_payments);
+            existing
+                .dashpay
+                .contact_profiles
+                .extend(entry.contact_profiles);
             // Ignored senders: union (un-ignore is carried by an explicit
             // `ContactChangeSet::unignored` removal, applied separately).
-            existing.ignored_senders.extend(entry.ignored_senders);
+            existing
+                .dashpay
+                .ignored_senders
+                .extend(entry.ignored_senders);
             return;
         }
 
@@ -109,10 +115,10 @@ impl IdentityManager {
                 managed.wallet_id = Some(wallet_id);
                 managed.dpns_names = entry.dpns_names;
                 managed.contested_dpns_names = entry.contested_dpns_names;
-                managed.dashpay_profile = entry.dashpay_profile;
-                managed.dashpay_payments = entry.dashpay_payments;
-                managed.contact_profiles = entry.contact_profiles;
-                managed.ignored_senders = entry.ignored_senders;
+                managed.dashpay.profile = entry.dashpay_profile;
+                managed.dashpay.payments = entry.dashpay_payments;
+                managed.dashpay.contact_profiles = entry.contact_profiles;
+                managed.dashpay.ignored_senders = entry.ignored_senders;
 
                 self.wallet_identities
                     .entry(wallet_id)
@@ -137,10 +143,10 @@ impl IdentityManager {
                 // initialized it that way.
                 managed.dpns_names = entry.dpns_names;
                 managed.contested_dpns_names = entry.contested_dpns_names;
-                managed.dashpay_profile = entry.dashpay_profile;
-                managed.dashpay_payments = entry.dashpay_payments;
-                managed.contact_profiles = entry.contact_profiles;
-                managed.ignored_senders = entry.ignored_senders;
+                managed.dashpay.profile = entry.dashpay_profile;
+                managed.dashpay.payments = entry.dashpay_payments;
+                managed.dashpay.contact_profiles = entry.contact_profiles;
+                managed.dashpay.ignored_senders = entry.ignored_senders;
 
                 self.out_of_wallet_identities.insert(id, managed);
                 self.location_index_insert(id, IdentityLocation::OutOfWallet);

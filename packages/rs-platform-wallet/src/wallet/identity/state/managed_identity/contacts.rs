@@ -8,7 +8,8 @@ use dpp::prelude::Identifier;
 impl ManagedIdentity {
     /// Add an established contact
     pub(crate) fn add_established_contact(&mut self, contact: EstablishedContact) {
-        self.established_contacts
+        self.dashpay
+            .established_contacts
             .insert(contact.contact_identity_id, contact);
     }
 
@@ -17,7 +18,7 @@ impl ManagedIdentity {
         &mut self,
         contact_id: &Identifier,
     ) -> Option<EstablishedContact> {
-        self.established_contacts.remove(contact_id)
+        self.dashpay.established_contacts.remove(contact_id)
     }
 
     /// Get an established contact by identity ID
@@ -25,7 +26,7 @@ impl ManagedIdentity {
         &self,
         contact_id: &Identifier,
     ) -> Option<&EstablishedContact> {
-        self.established_contacts.get(contact_id)
+        self.dashpay.established_contacts.get(contact_id)
     }
 
     /// Get a mutable established contact by identity ID
@@ -33,6 +34,6 @@ impl ManagedIdentity {
         &mut self,
         contact_id: &Identifier,
     ) -> Option<&mut EstablishedContact> {
-        self.established_contacts.get_mut(contact_id)
+        self.dashpay.established_contacts.get_mut(contact_id)
     }
 }

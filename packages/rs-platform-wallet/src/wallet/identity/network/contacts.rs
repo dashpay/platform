@@ -137,11 +137,11 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             .identity_manager
             .out_of_wallet_identities
             .values()
-            .flat_map(|managed| managed.established_contacts.values().cloned())
+            .flat_map(|managed| managed.dashpay.established_contacts.values().cloned())
             .collect();
         for inner in info.identity_manager.wallet_identities.values() {
             for managed in inner.values() {
-                out.extend(managed.established_contacts.values().cloned());
+                out.extend(managed.dashpay.established_contacts.values().cloned());
             }
         }
         out

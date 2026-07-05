@@ -88,7 +88,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             let Some(managed) = info.identity_manager.managed_identity_mut(&identity_id) else {
                 continue;
             };
-            if managed.dashpay_profile == profile {
+            if managed.dashpay.profile == profile {
                 continue;
             }
             managed.set_dashpay_profile(profile, &self.persister);
@@ -570,13 +570,19 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             own.iter()
                 .filter_map(|owner_id| {
                     let managed = info.identity_manager.managed_identity(owner_id)?;
-                    let mut targets: std::collections::BTreeSet<Identifier> =
-                        managed.established_contacts.keys().copied().collect();
-                    targets.extend(managed.incoming_contact_requests.keys().copied());
+                    let mut targets: std::collections::BTreeSet<Identifier> = managed
+                        .dashpay
+                        .established_contacts
+                        .keys()
+                        .copied()
+                        .collect();
+                    targets.extend(managed.dashpay.incoming_contact_requests.keys().copied());
                     let to_fetch: Vec<Identifier> = targets
                         .into_iter()
                         .filter(|id| !own.contains(id))
-                        .filter(|id| should_fetch_profile(managed.contact_profiles.get(id), now_ms))
+                        .filter(|id| {
+                            should_fetch_profile(managed.dashpay.contact_profiles.get(id), now_ms)
+                        })
                         .collect();
                     (!to_fetch.is_empty()).then_some((*owner_id, to_fetch))
                 })
@@ -635,7 +641,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 };
                 for (contact_id, profile) in owner_results {
                     if apply_fetched_profile(
-                        &mut managed.contact_profiles,
+                        &mut managed.dashpay.contact_profiles,
                         contact_id,
                         profile,
                         now_ms,

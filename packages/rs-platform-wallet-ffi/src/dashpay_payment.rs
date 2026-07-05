@@ -163,7 +163,8 @@ pub unsafe extern "C" fn managed_identity_get_dashpay_payments(
 
     let option = MANAGED_IDENTITY_STORAGE.with_item(identity_handle, |identity| {
         identity
-            .dashpay_payments
+            .dashpay
+            .payments
             .iter()
             .map(|(txid, entry)| DashpayPaymentFFI {
                 counterparty_id: entry.counterparty_id.to_buffer(),
@@ -247,11 +248,11 @@ mod tests {
         // path the persister load uses.
         let identity = dpp::identity::Identity::V0(dpp::identity::v0::IdentityV0::default());
         let mut managed = ManagedIdentity::new(identity, 0);
-        managed.dashpay_payments.insert(
+        managed.dashpay.payments.insert(
             "aa".repeat(32),
             PaymentEntry::new_sent(Identifier::from([1u8; 32]), 12_000, Some("lunch".into())),
         );
-        managed.dashpay_payments.insert(
+        managed.dashpay.payments.insert(
             "bb".repeat(32),
             PaymentEntry::new_received(Identifier::from([2u8; 32]), 7_500, None),
         );

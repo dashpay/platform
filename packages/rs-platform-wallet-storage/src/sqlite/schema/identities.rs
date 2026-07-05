@@ -196,7 +196,7 @@ fn managed_identity_from_entry(
 ) -> platform_wallet::wallet::identity::ManagedIdentity {
     use dpp::identity::v0::IdentityV0;
     use dpp::identity::Identity;
-    use platform_wallet::wallet::identity::ManagedIdentity;
+    use platform_wallet::wallet::identity::{DashPayState, ManagedIdentity};
     let identity = Identity::V0(IdentityV0 {
         id: entry.id,
         public_keys: std::collections::BTreeMap::new(),
@@ -208,36 +208,30 @@ fn managed_identity_from_entry(
         identity_index: entry.identity_index,
         last_updated_balance_block_time: entry.last_updated_balance_block_time,
         last_synced_keys_block_time: entry.last_synced_keys_block_time,
-        established_contacts: Default::default(),
-        sent_contact_requests: Default::default(),
-        incoming_contact_requests: Default::default(),
-        // Scalar-snapshot collections ride the identity `entry_blob` (like
-        // `dashpay_payments` / `dashpay_profile` below), so they restore from
-        // `entry`. The relational request collections above are loaded
-        // separately from the `contacts` table and stay defaulted here.
-        ignored_senders: entry.ignored_senders.clone(),
         status: entry.status,
         dpns_names: entry.dpns_names.clone(),
         contested_dpns_names: entry.contested_dpns_names.clone(),
         wallet_id: entry.wallet_id.or(Some(*wallet_id)),
-        dashpay_profile: entry.dashpay_profile.clone(),
-        dashpay_payments: entry.dashpay_payments.clone(),
-        contact_profiles: entry.contact_profiles.clone(),
-        // High-water sync cursors are in-memory by design: a cold restore
-        // starts them at `None` so the next sweep does one safe full re-fetch.
-        high_water_received_ms: None,
-        high_water_sent_ms: None,
-        // Per-session guard tracking which contacts have already triggered a
-        // payment-history rescan; transient, so a cold restore starts empty
-        // and the next sweep re-evaluates.
-        dashpay_rescan_triggered: Default::default(),
-        // In-memory verify-failed auto-accept markers; transient, so a cold
-        // restore starts empty and a bad proof is retried once next launch.
-        auto_accept_verify_failed: Default::default(),
-        // The deferred contact-crypto queue is not persisted yet (a
-        // signerless sweep re-enqueues its ops on load), so a cold
-        // restore starts it empty.
-        pending_contact_crypto: Vec::new(),
+        dashpay: DashPayState {
+            // Scalar-snapshot collections ride the identity `entry_blob`
+            // (`payments` / `profile` / `contact_profiles` /
+            // `ignored_senders`), so they restore from `entry`. The
+            // relational request collections are loaded separately from the
+            // `contacts` table and stay defaulted here. High-water sync
+            // cursors, the per-session rescan guard, and the verify-failed
+            // auto-accept markers are in-memory by design: a cold restore
+            // starts them at their defaults so the next sweep re-fetches /
+            // re-evaluates safely.
+            ignored_senders: entry.ignored_senders.clone(),
+            profile: entry.dashpay_profile.clone(),
+            payments: entry.dashpay_payments.clone(),
+            contact_profiles: entry.contact_profiles.clone(),
+            // The deferred contact-crypto queue is not persisted (a
+            // signerless sweep re-enqueues its ops on load), so — like
+            // the sync cursors and per-session guards — a cold restore
+            // starts it at its default.
+            ..Default::default()
+        },
     }
 }
 

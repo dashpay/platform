@@ -15,6 +15,7 @@ pub unsafe extern "C" fn managed_identity_get_sent_contact_request_ids(
 
     let option = MANAGED_IDENTITY_STORAGE.with_item(identity_handle, |identity| {
         identity
+            .dashpay
             .sent_contact_requests
             .keys()
             .cloned()
@@ -35,6 +36,7 @@ pub unsafe extern "C" fn managed_identity_get_incoming_contact_request_ids(
 
     let option = MANAGED_IDENTITY_STORAGE.with_item(identity_handle, |identity| {
         identity
+            .dashpay
             .incoming_contact_requests
             .keys()
             .cloned()
@@ -55,6 +57,7 @@ pub unsafe extern "C" fn managed_identity_get_established_contact_ids(
 
     let option = MANAGED_IDENTITY_STORAGE.with_item(identity_handle, |identity| {
         identity
+            .dashpay
             .established_contacts
             .keys()
             .cloned()
@@ -78,7 +81,7 @@ pub unsafe extern "C" fn managed_identity_is_contact_established(
     let id = unwrap_result_or_return!(unsafe { read_identifier(contact_id) });
 
     let option = MANAGED_IDENTITY_STORAGE.with_item(identity_handle, |identity| {
-        identity.established_contacts.contains_key(&id)
+        identity.dashpay.established_contacts.contains_key(&id)
     });
     *out_is_established = unwrap_option_or_return!(option);
     PlatformWalletFFIResult::ok()

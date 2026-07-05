@@ -389,7 +389,10 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 );
                 return;
             };
-            upsert_pending_contact_crypto(&mut managed.pending_contact_crypto, entry.clone());
+            upsert_pending_contact_crypto(
+                &mut managed.dashpay.pending_contact_crypto,
+                entry.clone(),
+            );
         }
         let changeset = PlatformWalletChangeSet {
             pending_contact_crypto_added: vec![entry],
@@ -550,7 +553,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                     "Contact {contact_id} is not established for identity {identity_id}"
                 )));
             }
-            let established_count = managed.established_contacts.len();
+            let established_count = managed.dashpay.established_contacts.len();
             let identity_index = managed.identity_index;
             let signing_key = managed
                 .identity

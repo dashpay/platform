@@ -1064,7 +1064,12 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                     let (hwr, hws) = info
                         .identity_manager
                         .managed_identity(&id)
-                        .map(|m| (m.high_water_received_ms, m.high_water_sent_ms))
+                        .map(|m| {
+                            (
+                                m.dashpay.high_water_received_ms,
+                                m.dashpay.high_water_sent_ms,
+                            )
+                        })
                         .unwrap_or((None, None));
                     (id, hwr, hws)
                 })
@@ -1204,11 +1209,13 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                     // is a rotation request (receive side) and must get
                     // through.
                     let tracked_reference = managed
+                        .dashpay
                         .incoming_contact_requests
                         .get(&sender_id)
                         .map(|r| r.account_reference)
                         .or_else(|| {
                             managed
+                                .dashpay
                                 .established_contacts
                                 .get(&sender_id)
                                 .map(|c| c.incoming_request.account_reference)
@@ -1307,7 +1314,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 //       collide with the mutable `managed` reborrow.
                 {
                     use key_wallet::account::account_collection::DashpayAccountKey;
-                    for (contact_id, contact) in managed.established_contacts.iter() {
+                    for (contact_id, contact) in managed.dashpay.established_contacts.iter() {
                         let key = DashpayAccountKey {
                             index: 0,
                             user_identity_id: identity_id.to_buffer(),
@@ -1360,15 +1367,15 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 // `unignore_sender` may have reset the cursor mid-sweep to force
                 // a re-fetch; this sweep's stale `max` must not clobber that.
                 if received_persist_ok {
-                    managed.high_water_received_ms = advance_if_unchanged(
-                        managed.high_water_received_ms,
+                    managed.dashpay.high_water_received_ms = advance_if_unchanged(
+                        managed.dashpay.high_water_received_ms,
                         hw_received,
                         max_received,
                     );
                 }
                 if sent_ok && sent_persist_ok {
-                    managed.high_water_sent_ms =
-                        advance_if_unchanged(managed.high_water_sent_ms, hw_sent, max_sent);
+                    managed.dashpay.high_water_sent_ms =
+                        advance_if_unchanged(managed.dashpay.high_water_sent_ms, hw_sent, max_sent);
                 }
 
                 // (3) Collect account-building candidates: every established
@@ -1505,12 +1512,13 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 return;
             };
             let mut already = managed
+                .dashpay
                 .pending_contact_crypto
                 .iter()
                 .filter(|e| matches!(e.op, PendingContactCryptoOp::AutoAccept))
                 .count();
             let mut picked = Vec::new();
-            for (sender, request) in &managed.incoming_contact_requests {
+            for (sender, request) in &managed.dashpay.incoming_contact_requests {
                 if already >= MAX_AUTO_ACCEPT_QUEUED_PER_OWNER {
                     tracing::warn!(
                         owner = %identity_id,
@@ -1556,7 +1564,10 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 return;
             };
             for entry in &entries {
-                upsert_pending_contact_crypto(&mut managed.pending_contact_crypto, entry.clone());
+                upsert_pending_contact_crypto(
+                    &mut managed.dashpay.pending_contact_crypto,
+                    entry.clone(),
+                );
             }
         }
         let changeset = PlatformWalletChangeSet {
@@ -1587,7 +1598,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         };
 
         let mut out = Vec::new();
-        for (contact_id, contact) in &managed.established_contacts {
+        for (contact_id, contact) in &managed.dashpay.established_contacts {
             // Never retry a permanently-broken channel — wait for a
             // superseding request (which clears the flag on re-establish).
             if contact.payment_channel_broken {
@@ -1744,7 +1755,10 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 return;
             };
             for entry in &entries {
-                upsert_pending_contact_crypto(&mut managed.pending_contact_crypto, entry.clone());
+                upsert_pending_contact_crypto(
+                    &mut managed.dashpay.pending_contact_crypto,
+                    entry.clone(),
+                );
             }
         }
 
@@ -1779,7 +1793,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             .map(|info| {
                 info.identity_manager
                     .managed_identities()
-                    .map(|m| count_account_build_ops(&m.pending_contact_crypto))
+                    .map(|m| count_account_build_ops(&m.dashpay.pending_contact_crypto))
                     .sum::<usize>()
             })
             .unwrap_or(0)
@@ -1811,7 +1825,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 .map(|info| {
                     info.identity_manager
                         .managed_identities()
-                        .flat_map(|m| m.pending_contact_crypto.iter().cloned())
+                        .flat_map(|m| m.dashpay.pending_contact_crypto.iter().cloned())
                         .collect()
                 })
                 .unwrap_or_default()
@@ -2160,7 +2174,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                             .managed_identity_mut(&snap.owner_identity_id)
                         {
                             removed.extend(retain_drained_by_snapshot(
-                                &mut managed.pending_contact_crypto,
+                                &mut managed.dashpay.pending_contact_crypto,
                                 std::slice::from_ref(snap),
                             ));
                         }
@@ -2220,7 +2234,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 .map(|info| {
                     info.identity_manager
                         .managed_identities()
-                        .flat_map(|m| m.pending_contact_crypto.iter())
+                        .flat_map(|m| m.dashpay.pending_contact_crypto.iter())
                         .filter(|e| matches!(e.op, PendingContactCryptoOp::AutoAccept))
                         .cloned()
                         .collect()
@@ -2253,7 +2267,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 let wm = self.wallet_manager.read().await;
                 wm.get_wallet_info(&self.wallet_id)
                     .and_then(|info| info.identity_manager.managed_identity(&owner))
-                    .and_then(|mi| mi.incoming_contact_requests.get(&sender).cloned())
+                    .and_then(|mi| mi.dashpay.incoming_contact_requests.get(&sender).cloned())
             };
             let Some(request) = request else {
                 // Gone (already established / removed) — nothing to do.
@@ -2354,6 +2368,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                     for owner in &cleared_owners {
                         if let Some(managed) = info.identity_manager.managed_identity_mut(owner) {
                             managed
+                                .dashpay
                                 .pending_contact_crypto
                                 .retain(|e| !cleared.iter().any(|k| *k == e.key()));
                         }
@@ -2455,7 +2470,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         let Some(managed) = info.identity_manager.managed_identity_mut(identity_id) else {
             return;
         };
-        let Some(contact) = managed.established_contacts.get_mut(contact_id) else {
+        let Some(contact) = managed.dashpay.established_contacts.get_mut(contact_id) else {
             return;
         };
         if contact.payment_channel_broken {
@@ -2507,7 +2522,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         let Some(managed) = info.identity_manager.managed_identity_mut(identity_id) else {
             return;
         };
-        let Some(contact) = managed.established_contacts.get_mut(contact_id) else {
+        let Some(contact) = managed.dashpay.established_contacts.get_mut(contact_id) else {
             return;
         };
         let current_reference = contact.incoming_request.account_reference;
@@ -2579,7 +2594,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         let Some(managed) = info.identity_manager.managed_identity_mut(identity_id) else {
             return;
         };
-        let Some(contact) = managed.established_contacts.get_mut(contact_id) else {
+        let Some(contact) = managed.dashpay.established_contacts.get_mut(contact_id) else {
             return;
         };
 
@@ -2684,11 +2699,20 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             // exists — in either case the reciprocal is already on
             // Platform and re-broadcasting it would be rejected by the
             // `(ownerId, toUserId, accountReference)` unique index.
-            let established = managed.established_contacts.contains_key(&sender_id);
-            let sent_exists = managed.sent_contact_requests.contains_key(&sender_id);
+            let established = managed
+                .dashpay
+                .established_contacts
+                .contains_key(&sender_id);
+            let sent_exists = managed
+                .dashpay
+                .sent_contact_requests
+                .contains_key(&sender_id);
             if !established
                 && !sent_exists
-                && !managed.incoming_contact_requests.contains_key(&sender_id)
+                && !managed
+                    .dashpay
+                    .incoming_contact_requests
+                    .contains_key(&sender_id)
             {
                 return Err(PlatformWalletError::ContactRequestNotFound(sender_id));
             }
@@ -2815,6 +2839,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             .ok_or(PlatformWalletError::IdentityNotFound(our_identity_id))?;
 
         managed
+            .dashpay
             .established_contacts
             .get(&sender_id)
             .cloned()
@@ -3360,7 +3385,7 @@ mod sweep_tests {
         managed
             .add_sent_contact_request(test_request(our, contact, 0), &p)
             .expect("setup persists");
-        assert_eq!(managed.established_contacts.len(), 1);
+        assert_eq!(managed.dashpay.established_contacts.len(), 1);
         (wallet, info)
     }
 
@@ -3411,6 +3436,7 @@ mod sweep_tests {
         info.identity_manager
             .managed_identity_mut(&our_id)
             .unwrap()
+            .dashpay
             .established_contacts
             .get_mut(&contact_id)
             .unwrap()
@@ -3495,6 +3521,7 @@ mod sweep_tests {
             .identity_manager
             .managed_identity(&our_id)
             .unwrap()
+            .dashpay
             .established_contacts
             .get(&contact_id)
             .unwrap()
@@ -3519,6 +3546,7 @@ mod sweep_tests {
             info.identity_manager
                 .managed_identity(&our_id)
                 .unwrap()
+                .dashpay
                 .established_contacts
                 .get(&contact_id)
                 .unwrap()
@@ -3560,6 +3588,7 @@ mod sweep_tests {
         info.identity_manager
             .managed_identity_mut(&our_id)
             .unwrap()
+            .dashpay
             .ignored_senders
             .clear();
         let mut wallet = wallet;
@@ -3816,7 +3845,7 @@ mod sweep_tests {
         let managed = info.identity_manager.managed_identity_mut(&our_id).unwrap();
         // Precondition: the outgoing request is NOT in the pending map.
         assert!(
-            !managed.sent_contact_requests.contains_key(&contact_id),
+            !managed.dashpay.sent_contact_requests.contains_key(&contact_id),
             "an established contact's outgoing request lives in established_contacts, not the pending map"
         );
         // The fix: the lookup still finds the prior reference via the
@@ -3874,6 +3903,7 @@ mod sweep_tests {
             .identity_manager
             .managed_identity(&our_id)
             .unwrap()
+            .dashpay
             .established_contacts
             .get(&Identifier::from([contact; 32]))
             .unwrap();

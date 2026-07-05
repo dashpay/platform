@@ -90,8 +90,8 @@ fn test_send_and_accept_contact_request_same_wallet() {
         .expect("setup persists");
 
     // Verify request is pending
-    assert_eq!(managed_a.sent_contact_requests.len(), 1);
-    assert_eq!(managed_a.established_contacts.len(), 0);
+    assert_eq!(managed_a.dashpay.sent_contact_requests.len(), 1);
+    assert_eq!(managed_a.dashpay.established_contacts.len(), 0);
 
     // Identity B receives the request
     managed_b
@@ -99,8 +99,8 @@ fn test_send_and_accept_contact_request_same_wallet() {
         .expect("setup persists");
 
     // Verify B has incoming request
-    assert_eq!(managed_b.incoming_contact_requests.len(), 1);
-    assert_eq!(managed_b.established_contacts.len(), 0);
+    assert_eq!(managed_b.dashpay.incoming_contact_requests.len(), 1);
+    assert_eq!(managed_b.dashpay.established_contacts.len(), 0);
 
     // Identity B sends friend request back to Identity A
     let request_b_to_a = create_contact_request(id_b, id_a, 0, 1234567891);
@@ -109,10 +109,10 @@ fn test_send_and_accept_contact_request_same_wallet() {
         .expect("setup persists");
 
     // This should auto-establish on B's side
-    assert_eq!(managed_b.sent_contact_requests.len(), 0);
-    assert_eq!(managed_b.incoming_contact_requests.len(), 0);
-    assert_eq!(managed_b.established_contacts.len(), 1);
-    assert!(managed_b.established_contacts.contains_key(&id_a));
+    assert_eq!(managed_b.dashpay.sent_contact_requests.len(), 0);
+    assert_eq!(managed_b.dashpay.incoming_contact_requests.len(), 0);
+    assert_eq!(managed_b.dashpay.established_contacts.len(), 1);
+    assert!(managed_b.dashpay.established_contacts.contains_key(&id_a));
 
     // Identity A receives B's request
     managed_a
@@ -120,14 +120,14 @@ fn test_send_and_accept_contact_request_same_wallet() {
         .expect("setup persists");
 
     // This should auto-establish on A's side
-    assert_eq!(managed_a.sent_contact_requests.len(), 0);
-    assert_eq!(managed_a.incoming_contact_requests.len(), 0);
-    assert_eq!(managed_a.established_contacts.len(), 1);
-    assert!(managed_a.established_contacts.contains_key(&id_b));
+    assert_eq!(managed_a.dashpay.sent_contact_requests.len(), 0);
+    assert_eq!(managed_a.dashpay.incoming_contact_requests.len(), 0);
+    assert_eq!(managed_a.dashpay.established_contacts.len(), 1);
+    assert!(managed_a.dashpay.established_contacts.contains_key(&id_b));
 
     // Both should have established contacts now
-    let contact_a = managed_a.established_contacts.get(&id_b).unwrap();
-    let contact_b = managed_b.established_contacts.get(&id_a).unwrap();
+    let contact_a = managed_a.dashpay.established_contacts.get(&id_b).unwrap();
+    let contact_b = managed_b.dashpay.established_contacts.get(&id_a).unwrap();
 
     assert_eq!(contact_a.contact_identity_id, id_b);
     assert_eq!(contact_b.contact_identity_id, id_a);
@@ -159,8 +159,8 @@ fn test_send_and_accept_contact_request_different_wallets() {
         .expect("setup persists");
 
     // Verify states before reciprocation
-    assert_eq!(managed_1.sent_contact_requests.len(), 1);
-    assert_eq!(managed_2.incoming_contact_requests.len(), 1);
+    assert_eq!(managed_1.dashpay.sent_contact_requests.len(), 1);
+    assert_eq!(managed_2.dashpay.incoming_contact_requests.len(), 1);
 
     // Identity 2 sends friend request back
     let request_2_to_1 = create_contact_request(id_2, id_1, 0, 1234567901);
@@ -169,7 +169,7 @@ fn test_send_and_accept_contact_request_different_wallets() {
         .expect("setup persists");
 
     // Should auto-establish on identity 2's side
-    assert_eq!(managed_2.established_contacts.len(), 1);
+    assert_eq!(managed_2.dashpay.established_contacts.len(), 1);
 
     // Identity 1 receives the reciprocal request
     managed_1
@@ -177,11 +177,11 @@ fn test_send_and_accept_contact_request_different_wallets() {
         .expect("setup persists");
 
     // Should auto-establish on identity 1's side
-    assert_eq!(managed_1.established_contacts.len(), 1);
+    assert_eq!(managed_1.dashpay.established_contacts.len(), 1);
 
     // Verify both have the friendship established
-    assert!(managed_1.established_contacts.contains_key(&id_2));
-    assert!(managed_2.established_contacts.contains_key(&id_1));
+    assert!(managed_1.dashpay.established_contacts.contains_key(&id_2));
+    assert!(managed_2.dashpay.established_contacts.contains_key(&id_1));
 }
 
 #[test]
@@ -221,7 +221,7 @@ fn test_multiple_contact_requests_workflow() {
         )
         .expect("setup persists");
 
-    assert_eq!(managed_main.sent_contact_requests.len(), 3);
+    assert_eq!(managed_main.dashpay.sent_contact_requests.len(), 3);
 
     // Receive incoming request from friend1 (should auto-establish)
     managed_main
@@ -231,8 +231,8 @@ fn test_multiple_contact_requests_workflow() {
         )
         .expect("setup persists");
 
-    assert_eq!(managed_main.sent_contact_requests.len(), 2); // friend2 and friend3 left
-    assert_eq!(managed_main.established_contacts.len(), 1); // friend1 established
+    assert_eq!(managed_main.dashpay.sent_contact_requests.len(), 2); // friend2 and friend3 left
+    assert_eq!(managed_main.dashpay.established_contacts.len(), 1); // friend1 established
 
     // Receive incoming request from friend2 (should auto-establish)
     managed_main
@@ -242,8 +242,8 @@ fn test_multiple_contact_requests_workflow() {
         )
         .expect("setup persists");
 
-    assert_eq!(managed_main.sent_contact_requests.len(), 1); // only friend3 left
-    assert_eq!(managed_main.established_contacts.len(), 2); // friend1 and friend2 established
+    assert_eq!(managed_main.dashpay.sent_contact_requests.len(), 1); // only friend3 left
+    assert_eq!(managed_main.dashpay.established_contacts.len(), 2); // friend1 and friend2 established
 
     // Receive incoming from unknown identity (should stay in incoming)
     let id_stranger = Identifier::from([99u8; 32]);
@@ -254,9 +254,9 @@ fn test_multiple_contact_requests_workflow() {
         )
         .expect("setup persists");
 
-    assert_eq!(managed_main.incoming_contact_requests.len(), 1);
-    assert_eq!(managed_main.sent_contact_requests.len(), 1);
-    assert_eq!(managed_main.established_contacts.len(), 2);
+    assert_eq!(managed_main.dashpay.incoming_contact_requests.len(), 1);
+    assert_eq!(managed_main.dashpay.sent_contact_requests.len(), 1);
+    assert_eq!(managed_main.dashpay.established_contacts.len(), 2);
 }
 
 #[test]
@@ -283,10 +283,14 @@ fn test_contact_alias_and_metadata() {
         .expect("setup persists");
 
     // Contact should be established
-    assert_eq!(managed_a.established_contacts.len(), 1);
+    assert_eq!(managed_a.dashpay.established_contacts.len(), 1);
 
     // Get mutable reference to contact and modify metadata
-    let contact = managed_a.established_contacts.get_mut(&id_b).unwrap();
+    let contact = managed_a
+        .dashpay
+        .established_contacts
+        .get_mut(&id_b)
+        .unwrap();
 
     // Set alias
     contact.set_alias("Best Friend".to_string());
@@ -333,12 +337,12 @@ fn test_reject_contact_request() {
         )
         .expect("setup persists");
 
-    assert_eq!(managed_a.incoming_contact_requests.len(), 1);
+    assert_eq!(managed_a.dashpay.incoming_contact_requests.len(), 1);
 
     // Reject by removing the request
     let (removed, _cs) = managed_a.remove_incoming_contact_request(&id_b);
     assert!(removed.is_some());
-    assert_eq!(managed_a.incoming_contact_requests.len(), 0);
+    assert_eq!(managed_a.dashpay.incoming_contact_requests.len(), 0);
 }
 
 #[test]
@@ -361,12 +365,12 @@ fn test_cancel_sent_contact_request() {
         )
         .expect("setup persists");
 
-    assert_eq!(managed_a.sent_contact_requests.len(), 1);
+    assert_eq!(managed_a.dashpay.sent_contact_requests.len(), 1);
 
     // Cancel by removing the request
     let (removed, _cs) = managed_a.remove_sent_contact_request(&id_b);
     assert!(removed.is_some());
-    assert_eq!(managed_a.sent_contact_requests.len(), 0);
+    assert_eq!(managed_a.dashpay.sent_contact_requests.len(), 0);
 }
 
 #[test]
@@ -397,9 +401,9 @@ fn test_contact_request_with_different_account_references() {
         .expect("setup persists");
 
     // Should establish contact
-    assert_eq!(managed_a.established_contacts.len(), 1);
+    assert_eq!(managed_a.dashpay.established_contacts.len(), 1);
 
-    let contact = managed_a.established_contacts.get(&id_b).unwrap();
+    let contact = managed_a.dashpay.established_contacts.get(&id_b).unwrap();
     assert_eq!(contact.outgoing_request.account_reference, 0);
     assert_eq!(contact.incoming_request.account_reference, 1);
 }
@@ -435,8 +439,8 @@ fn test_concurrent_bidirectional_requests() {
         .expect("setup persists");
 
     // Both have sent requests pending
-    assert_eq!(managed_a.sent_contact_requests.len(), 1);
-    assert_eq!(managed_b.sent_contact_requests.len(), 1);
+    assert_eq!(managed_a.dashpay.sent_contact_requests.len(), 1);
+    assert_eq!(managed_b.dashpay.sent_contact_requests.len(), 1);
 
     // Now they receive each other's requests
     managed_a
@@ -447,10 +451,10 @@ fn test_concurrent_bidirectional_requests() {
         .expect("setup persists");
 
     // Both should have auto-established
-    assert_eq!(managed_a.established_contacts.len(), 1);
-    assert_eq!(managed_b.established_contacts.len(), 1);
-    assert_eq!(managed_a.sent_contact_requests.len(), 0);
-    assert_eq!(managed_b.sent_contact_requests.len(), 0);
+    assert_eq!(managed_a.dashpay.established_contacts.len(), 1);
+    assert_eq!(managed_b.dashpay.established_contacts.len(), 1);
+    assert_eq!(managed_a.dashpay.sent_contact_requests.len(), 0);
+    assert_eq!(managed_b.dashpay.sent_contact_requests.len(), 0);
 }
 
 /// G3 receive side: a rotation request (same sender, bumped
@@ -481,11 +485,12 @@ fn test_rotation_request_rekeys_established_contact_and_clears_broken_flag() {
     managed_a
         .add_incoming_contact_request(request_b_to_a, &noop_persister())
         .expect("setup persists");
-    assert_eq!(managed_a.established_contacts.len(), 1);
+    assert_eq!(managed_a.dashpay.established_contacts.len(), 1);
 
     // Simulate a broken payment channel — e.g. the old request's
     // xpub stopped decrypting after B rotated keys.
     managed_a
+        .dashpay
         .established_contacts
         .get_mut(&id_b)
         .expect("established contact")
@@ -499,6 +504,7 @@ fn test_rotation_request_rekeys_established_contact_and_clears_broken_flag() {
 
     assert!(rekeyed, "an established contact must report re-keying");
     let contact = managed_a
+        .dashpay
         .established_contacts
         .get(&id_b)
         .expect("contact still established");
@@ -532,6 +538,7 @@ fn test_rotation_request_rekeys_established_contact_and_clears_broken_flag() {
     );
     assert_eq!(
         managed_a
+            .dashpay
             .incoming_contact_requests
             .get(&id_c)
             .expect("pending request still tracked")
@@ -548,6 +555,7 @@ fn test_rotation_request_rekeys_established_contact_and_clears_broken_flag() {
         .apply_rotated_incoming_request(stranger, &noop_persister())
         .expect("rotation persists in test"));
     assert!(!managed_a
+        .dashpay
         .incoming_contact_requests
         .contains_key(&identity_d.id()));
 }

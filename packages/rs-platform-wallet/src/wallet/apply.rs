@@ -198,6 +198,7 @@ impl PlatformWalletInfo {
                 match self.identity_manager.managed_identity_mut(&key.owner_id) {
                     Some(managed) => {
                         managed
+                            .dashpay
                             .sent_contact_requests
                             .insert(entry.request.recipient_id, entry.request);
                     }
@@ -211,6 +212,7 @@ impl PlatformWalletInfo {
                 match self.identity_manager.managed_identity_mut(&key.owner_id) {
                     Some(managed) => {
                         managed
+                            .dashpay
                             .incoming_contact_requests
                             .insert(entry.request.sender_id, entry.request);
                     }
@@ -222,12 +224,18 @@ impl PlatformWalletInfo {
             }
             for key in removed_sent {
                 if let Some(managed) = self.identity_manager.managed_identity_mut(&key.owner_id) {
-                    managed.sent_contact_requests.remove(&key.recipient_id);
+                    managed
+                        .dashpay
+                        .sent_contact_requests
+                        .remove(&key.recipient_id);
                 }
             }
             for key in removed_incoming {
                 if let Some(managed) = self.identity_manager.managed_identity_mut(&key.owner_id) {
-                    managed.incoming_contact_requests.remove(&key.sender_id);
+                    managed
+                        .dashpay
+                        .incoming_contact_requests
+                        .remove(&key.sender_id);
                 }
             }
             // Established promotions — drop any matching pending
@@ -252,7 +260,7 @@ impl PlatformWalletInfo {
             for (owner_id, sender_id) in ignored {
                 match self.identity_manager.managed_identity_mut(&owner_id) {
                     Some(managed) => {
-                        managed.ignored_senders.insert(sender_id);
+                        managed.dashpay.ignored_senders.insert(sender_id);
                     }
                     None => tracing::warn!(
                         owner = %owner_id,
@@ -262,7 +270,7 @@ impl PlatformWalletInfo {
             }
             for (owner_id, sender_id) in unignored {
                 if let Some(managed) = self.identity_manager.managed_identity_mut(&owner_id) {
-                    managed.ignored_senders.remove(&sender_id);
+                    managed.dashpay.ignored_senders.remove(&sender_id);
                 }
             }
         }
@@ -273,14 +281,14 @@ impl PlatformWalletInfo {
         if let Some(profiles) = dashpay_profiles {
             for (id, profile) in profiles {
                 if let Some(managed) = self.identity_manager.managed_identity_mut(&id) {
-                    managed.dashpay_profile = profile;
+                    managed.dashpay.profile = profile;
                 }
             }
         }
         if let Some(payments) = dashpay_payments_overlay {
             for (id, payments_map) in payments {
                 if let Some(managed) = self.identity_manager.managed_identity_mut(&id) {
-                    managed.dashpay_payments.extend(payments_map);
+                    managed.dashpay.payments.extend(payments_map);
                 }
             }
         }
@@ -560,9 +568,11 @@ mod tests {
         let mut id_cs = IdentityChangeSet::default();
         let mut managed = ManagedIdentity::new(make_test_identity(1, 0), 0);
         managed
+            .dashpay
             .sent_contact_requests
             .insert(other_id, make_test_contact_request(1, 2));
         managed
+            .dashpay
             .incoming_contact_requests
             .insert(other_id, make_test_contact_request(2, 1));
         id_cs
@@ -596,9 +606,15 @@ mod tests {
             .identity_manager
             .managed_identity(&owner_id)
             .expect("owner present");
-        assert!(managed.established_contacts.contains_key(&other_id));
-        assert!(!managed.sent_contact_requests.contains_key(&other_id));
-        assert!(!managed.incoming_contact_requests.contains_key(&other_id));
+        assert!(managed.dashpay.established_contacts.contains_key(&other_id));
+        assert!(!managed
+            .dashpay
+            .sent_contact_requests
+            .contains_key(&other_id));
+        assert!(!managed
+            .dashpay
+            .incoming_contact_requests
+            .contains_key(&other_id));
     }
 
     #[test]
@@ -1068,9 +1084,12 @@ mod tests {
             .identity_manager
             .managed_identity(&owner)
             .expect("b owner");
-        assert!(b_owner.sent_contact_requests.contains_key(&recipient));
-        assert!(b_owner.incoming_contact_requests.is_empty());
-        assert!(b_owner.established_contacts.is_empty());
+        assert!(b_owner
+            .dashpay
+            .sent_contact_requests
+            .contains_key(&recipient));
+        assert!(b_owner.dashpay.incoming_contact_requests.is_empty());
+        assert!(b_owner.dashpay.established_contacts.is_empty());
     }
 
     #[test]
@@ -1124,6 +1143,7 @@ mod tests {
             .identity_manager
             .managed_identity(&owner)
             .expect("a owner")
+            .dashpay
             .established_contacts
             .get(&other)
             .cloned()
@@ -1158,12 +1178,12 @@ mod tests {
             .identity_manager
             .managed_identity(&owner)
             .expect("b owner");
-        assert!(a_owner.established_contacts.contains_key(&other));
-        assert!(b_owner.established_contacts.contains_key(&other));
-        assert!(a_owner.sent_contact_requests.is_empty());
-        assert!(b_owner.sent_contact_requests.is_empty());
-        assert!(a_owner.incoming_contact_requests.is_empty());
-        assert!(b_owner.incoming_contact_requests.is_empty());
+        assert!(a_owner.dashpay.established_contacts.contains_key(&other));
+        assert!(b_owner.dashpay.established_contacts.contains_key(&other));
+        assert!(a_owner.dashpay.sent_contact_requests.is_empty());
+        assert!(b_owner.dashpay.sent_contact_requests.is_empty());
+        assert!(a_owner.dashpay.incoming_contact_requests.is_empty());
+        assert!(b_owner.dashpay.incoming_contact_requests.is_empty());
     }
 
     #[test]
@@ -1222,8 +1242,8 @@ mod tests {
 
         let a_owner = info_a.identity_manager.managed_identity(&owner).expect("a");
         let b_owner = info_b.identity_manager.managed_identity(&owner).expect("b");
-        assert!(a_owner.sent_contact_requests.is_empty());
-        assert!(b_owner.sent_contact_requests.is_empty());
+        assert!(a_owner.dashpay.sent_contact_requests.is_empty());
+        assert!(b_owner.dashpay.sent_contact_requests.is_empty());
     }
 
     // ----------------------------------------------------------------------
@@ -1346,6 +1366,7 @@ mod tests {
         let other = Identifier::from([2u8; 32]);
         let mut managed = ManagedIdentity::new(make_test_identity(1, 0), 0);
         managed
+            .dashpay
             .sent_contact_requests
             .insert(other, make_test_contact_request(1, 2));
         let mut id_cs = IdentityChangeSet::default();
@@ -1368,7 +1389,7 @@ mod tests {
             .identity_manager
             .managed_identity(&owner)
             .expect("present");
-        assert!(!restored.sent_contact_requests.contains_key(&other));
+        assert!(!restored.dashpay.sent_contact_requests.contains_key(&other));
     }
 
     #[test]
@@ -1417,8 +1438,8 @@ mod tests {
 
         let a = info_a.identity_manager.managed_identity(&id).expect("a");
         let b = info_b.identity_manager.managed_identity(&id).expect("b");
-        assert_eq!(a.dashpay_profile, b.dashpay_profile);
-        assert_eq!(b.dashpay_profile, Some(profile));
+        assert_eq!(a.dashpay.profile, b.dashpay.profile);
+        assert_eq!(b.dashpay.profile, Some(profile));
     }
 
     #[test]
@@ -1465,7 +1486,7 @@ mod tests {
             .identity_manager
             .managed_identity(&owner)
             .expect("b managed");
-        assert_eq!(b_managed.dashpay_payments.get(&tx_id), Some(&payment));
+        assert_eq!(b_managed.dashpay.payments.get(&tx_id), Some(&payment));
     }
 
     #[test]
@@ -1528,7 +1549,7 @@ mod tests {
             .managed_identity(&owner)
             .expect("b managed");
         assert_eq!(
-            b_managed.dashpay_payments.get(&tx_id).map(|p| p.status),
+            b_managed.dashpay.payments.get(&tx_id).map(|p| p.status),
             Some(PaymentStatus::Confirmed)
         );
     }
@@ -1560,6 +1581,7 @@ mod tests {
             .identity_manager
             .managed_identity_mut(&owner)
             .expect("a managed")
+            .dashpay
             .contact_profiles
             .insert(
                 contact,
@@ -1584,6 +1606,7 @@ mod tests {
         let b_managed = info_b.identity_manager.managed_identity(&owner).expect("b");
         assert_eq!(
             b_managed
+                .dashpay
                 .contact_profiles
                 .get(&contact)
                 .and_then(|e| e.profile.as_ref())
@@ -1597,6 +1620,7 @@ mod tests {
             .identity_manager
             .managed_identity_mut(&owner)
             .expect("a managed")
+            .dashpay
             .contact_profiles
             .insert(
                 contact,
@@ -1621,6 +1645,7 @@ mod tests {
         let b_managed = info_b.identity_manager.managed_identity(&owner).expect("b");
         assert_eq!(
             b_managed
+                .dashpay
                 .contact_profiles
                 .get(&contact)
                 .and_then(|e| e.profile.as_ref())
@@ -1682,7 +1707,8 @@ mod tests {
                 .identity_manager
                 .managed_identity(&id)
                 .expect("a")
-                .dashpay_profile,
+                .dashpay
+                .profile,
             None
         );
         assert_eq!(
@@ -1690,7 +1716,8 @@ mod tests {
                 .identity_manager
                 .managed_identity(&id)
                 .expect("b")
-                .dashpay_profile,
+                .dashpay
+                .profile,
             None
         );
     }
