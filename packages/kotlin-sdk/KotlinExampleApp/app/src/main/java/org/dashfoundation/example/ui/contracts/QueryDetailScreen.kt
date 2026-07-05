@@ -38,6 +38,7 @@ import kotlinx.coroutines.launch
 import org.dashfoundation.example.di.LocalAppState
 import org.dashfoundation.example.navigation.AddressQueries
 import org.dashfoundation.example.navigation.Diagnostics
+import org.dashfoundation.example.navigation.GroveDbPathElements
 import org.dashfoundation.example.navigation.QueryDetail
 import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.SubmitButton
@@ -94,8 +95,21 @@ fun QueriesListScreen(navController: NavHostController) {
             }
 
             // Categories with dedicated destinations, mirroring the iOS
-            // list (Addresses → AddressQueriesView, Diagnostics →
-            // DiagnosticsView's "Run All Queries").
+            // list (System → GroveDBPathElementsView, Addresses →
+            // AddressQueriesView, Diagnostics → DiagnosticsView's
+            // "Run All Queries").
+            ListItem(
+                headlineContent = { Text("GroveDB Path Elements") },
+                supportingContent = {
+                    Text(
+                        "Raw GroveDB path-elements query (SYS-06)",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                },
+                modifier = Modifier
+                    .clickable { navController.navigate(GroveDbPathElements) }
+                    .testTag("queries.row.groveDbPathElements"),
+            )
             ListItem(
                 headlineContent = { Text("Address Queries") },
                 supportingContent = {

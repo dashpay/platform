@@ -26,6 +26,7 @@ mod sdk;
 mod signer;
 mod support;
 mod tokens;
+mod transactions;
 mod wallet_manager;
 
 use jni::sys::{jint, JNI_VERSION_1_6};

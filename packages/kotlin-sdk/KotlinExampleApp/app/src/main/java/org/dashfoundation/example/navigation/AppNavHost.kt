@@ -11,7 +11,9 @@ import org.dashfoundation.example.ui.contracts.CountDocumentsScreen
 import org.dashfoundation.example.ui.contracts.DataContractDetailsScreen
 import org.dashfoundation.example.ui.contracts.DocumentFieldsScreen
 import org.dashfoundation.example.ui.contracts.DocumentTypeDetailsScreen
+import org.dashfoundation.example.ui.contracts.DocumentWithPriceScreen
 import org.dashfoundation.example.ui.contracts.DocumentsScreen
+import org.dashfoundation.example.ui.contracts.GroveDBPathElementsScreen
 import org.dashfoundation.example.ui.contracts.GroupDetailScreen
 import org.dashfoundation.example.ui.contracts.LocalDataContractsScreen
 import org.dashfoundation.example.ui.contracts.RegisterContractSourceScreen
@@ -23,6 +25,7 @@ import org.dashfoundation.example.ui.diagnostics.BannedAddressesScreen
 import org.dashfoundation.example.ui.diagnostics.DiagnosticsScreen
 import org.dashfoundation.example.ui.diagnostics.KeystoreExplorerScreen
 import org.dashfoundation.example.ui.diagnostics.WalletMemoryExplorerScreen
+import org.dashfoundation.example.ui.identity.AddIdentityKeyScreen
 import org.dashfoundation.example.ui.identity.ContestDetailScreen
 import org.dashfoundation.example.ui.identity.CreateIdentityScreen
 import org.dashfoundation.example.ui.identity.DpnsTestScreen
@@ -175,6 +178,11 @@ fun AppNavHost(
             KeyDetailScreen(route.identityIdHex, route.keyId, navController)
         }
 
+        composable<AddIdentityKey> { entry ->
+            val route = entry.toRoute<AddIdentityKey>()
+            AddIdentityKeyScreen(route.identityIdHex, navController)
+        }
+
         // ── Credits graph ──────────────────────────────────────────────
 
         composable<TopUpIdentity> { entry ->
@@ -284,6 +292,16 @@ fun AppNavHost(
             DocumentFieldsScreen(route.documentJson, navController)
         }
 
+        composable<DocumentWithPrice> { entry ->
+            val route = entry.toRoute<DocumentWithPrice>()
+            DocumentWithPriceScreen(
+                contractIdHex = route.contractIdHex,
+                typeName = route.typeName,
+                initialDocumentId = route.documentId,
+                navController = navController,
+            )
+        }
+
         composable<CountDocuments> { entry ->
             CountDocumentsScreen(entry.toRoute<CountDocuments>(), navController)
         }
@@ -298,6 +316,8 @@ fun AppNavHost(
             val route = entry.toRoute<QueryDetail>()
             QueryDetailScreen(route.queryName, navController)
         }
+
+        composable<GroveDbPathElements> { GroveDBPathElementsScreen(navController) }
 
         // ── Tokens graph (hosted under the Contracts tab) ──────────────
 

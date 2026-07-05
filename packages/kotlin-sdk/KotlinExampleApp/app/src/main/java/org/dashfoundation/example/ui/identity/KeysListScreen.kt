@@ -8,6 +8,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -25,15 +26,16 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import org.dashfoundation.example.di.LocalAppContainer
+import org.dashfoundation.example.navigation.AddIdentityKey
 import org.dashfoundation.example.navigation.KeyDetail
 import org.dashfoundation.example.ui.components.FormSection
 
 /**
  * All public keys of an identity — port of `KeysListView.swift`. Rows from
- * the Room [PublicKeyDao]; tapping opens [KeyDetailScreen]. Add-key and
- * disable-key actions need the `updateIdentity` FFI (a named deferral to the
- * key-management milestone); the [org.dashfoundation.example.services.KeyDisableGate]
- * that guards disabling is ported and unit-testable already.
+ * the Room [PublicKeyDao]; tapping opens [KeyDetailScreen]. The toolbar's
+ * Add action opens [AddIdentityKeyScreen] (← the `AddIdentityKeyView`
+ * sheet); disabling lives on [KeyDetailScreen], gated by
+ * [org.dashfoundation.example.services.KeyDisableGate].
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -50,6 +52,14 @@ fun KeysListScreen(identityIdHex: String, navController: NavHostController) {
                 navigationIcon = {
                     IconButton(onClick = { navController.popBackStack() }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
+                actions = {
+                    IconButton(
+                        onClick = { navController.navigate(AddIdentityKey(identityIdHex)) },
+                        modifier = Modifier.testTag("keysList.addKey"),
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = "Add Key")
                     }
                 },
             )

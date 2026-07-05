@@ -9,7 +9,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -17,12 +16,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -31,7 +30,9 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
+import kotlinx.coroutines.launch
 import org.dashfoundation.example.di.LocalAppContainer
+import org.dashfoundation.example.di.LocalAppState
 import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.LabeledContent
 import org.dashfoundation.example.ui.components.SubmitButton
@@ -39,18 +40,29 @@ import org.dashfoundation.example.util.truncateMiddle
 
 /**
  * Platform-address balance/nonce queries — port of
- * `AddressQueriesView.swift` (single + batch address info forms). The
- * backing reads (`dash_sdk_address_fetch_info`,
- * `dash_sdk_addresses_fetch_infos` in rs-sdk-ffi) are not bridged into
- * the JNI shim yet, so Execute surfaces the named-missing-export dialog.
- * What IS live: the locally-synced Platform addresses (Room
+ * `AddressQueriesView.swift`'s single + batch address-info forms
+ * (`dash_sdk_address_fetch_info` / `dash_sdk_addresses_fetch_infos`, now
+ * bridged as `Sdk.addresses.fetchInfo` / `fetchInfos`).
+ *
+ * The Kotlin `Addresses` surface takes RAW address bytes (the caller owns
+ * decoding), so this screen decodes at the edge. iOS accepts bech32m
+ * (tdashevo1…) and hex; bech32m decoding is not yet ported to Kotlin, so
+ * this screen accepts **hex** (21 bytes = 42 hex chars, e.g. a `00`
+ * type-byte prefix + 20-byte hash — the iOS "Use Hex Test" fixtures). A
+ * bech32m address is rejected with a clear message rather than mis-decoded.
+ *
+ * What also stays live: the locally-synced Platform addresses (Room
  * `platform_addresses`, written by BLAST address sync) render below the
- * forms so the screen is still a useful address browser.
+ * forms so the screen doubles as an address browser.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AddressQueriesScreen(navController: NavHostController) {
     val container = LocalAppContainer.current
+    val appState = LocalAppState.current
+    val scope = rememberCoroutineScope()
+
+    val sdk by appState.sdk.collectAsStateWithLifecycle()
 
     val localAddresses by remember {
         container.database.platformAddressDao().observeNonZeroBalances()
@@ -58,7 +70,11 @@ fun AddressQueriesScreen(navController: NavHostController) {
 
     var singleAddress by rememberSaveable { mutableStateOf("") }
     var batchAddresses by rememberSaveable { mutableStateOf("") }
-    var notBridged by remember { mutableStateOf(false) }
+
+    var singleLoading by remember { mutableStateOf(false) }
+    var batchLoading by remember { mutableStateOf(false) }
+    var singleResult by remember { mutableStateOf<String?>(null) }
+    var batchResult by remember { mutableStateOf<String?>(null) }
 
     Scaffold(
         topBar = {
@@ -82,15 +98,16 @@ fun AddressQueriesScreen(navController: NavHostController) {
         ) {
             FormSection(title = "Get Address Info") {
                 Text(
-                    "Fetch balance and nonce for a single Platform address.",
+                    "Fetch balance and nonce for a single Platform address " +
+                        "(hex, 42 chars = 21 bytes).",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 OutlinedTextField(
                     value = singleAddress,
                     onValueChange = { singleAddress = it },
-                    label = { Text("Address (bech32m)") },
-                    placeholder = { Text("tdash1…") },
+                    label = { Text("Address (hex)") },
+                    placeholder = { Text("001234…") },
                     singleLine = true,
                     modifier = Modifier
                         .fillMaxWidth()
@@ -98,36 +115,86 @@ fun AddressQueriesScreen(navController: NavHostController) {
                 )
                 SubmitButton(
                     text = "Fetch Info",
-                    isLoading = false,
-                    enabled = singleAddress.isNotBlank(),
+                    isLoading = singleLoading,
+                    enabled = singleAddress.isNotBlank() && sdk != null && !singleLoading,
                     modifier = Modifier.testTag("addressQueries.fetchInfo"),
                 ) {
-                    notBridged = true
+                    val currentSdk = sdk ?: return@SubmitButton
+                    val bytes = decodeHexAddress(singleAddress)
+                    if (bytes == null) {
+                        singleResult = INVALID_HEX_MESSAGE
+                        return@SubmitButton
+                    }
+                    scope.launch {
+                        singleLoading = true
+                        singleResult = runCatching { currentSdk.addresses.fetchInfo(bytes) }
+                            .fold(
+                                onSuccess = { it ?: "Address not found on Platform." },
+                                onFailure = { it.message ?: "Query failed." },
+                            )
+                        singleLoading = false
+                    }
+                }
+                singleResult?.let { result ->
+                    LabeledContent("Result", "")
+                    Text(
+                        result,
+                        style = MaterialTheme.typography.bodySmall,
+                        fontFamily = FontFamily.Monospace,
+                        modifier = Modifier.testTag("addressQueries.singleResult"),
+                    )
                 }
             }
 
             FormSection(title = "Get Addresses Infos") {
                 Text(
-                    "Fetch balance and nonce for multiple Platform addresses.",
+                    "Fetch balance and nonce for multiple Platform addresses " +
+                        "(one hex address per line).",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 OutlinedTextField(
                     value = batchAddresses,
                     onValueChange = { batchAddresses = it },
-                    label = { Text("Addresses (comma-separated)") },
-                    placeholder = { Text("tdash1…, tdash1…") },
+                    label = { Text("Addresses (one per line)") },
+                    placeholder = { Text("001234…\n00abcd…") },
                     modifier = Modifier
                         .fillMaxWidth()
                         .testTag("addressQueries.batchAddresses"),
                 )
                 SubmitButton(
                     text = "Fetch Infos",
-                    isLoading = false,
-                    enabled = batchAddresses.isNotBlank(),
+                    isLoading = batchLoading,
+                    enabled = batchAddresses.isNotBlank() && sdk != null && !batchLoading,
                     modifier = Modifier.testTag("addressQueries.fetchInfos"),
                 ) {
-                    notBridged = true
+                    val currentSdk = sdk ?: return@SubmitButton
+                    val lines = batchAddresses.split("\n", ",")
+                        .map { it.trim() }.filter { it.isNotEmpty() }
+                    val decoded = lines.map { decodeHexAddress(it) }
+                    if (decoded.any { it == null }) {
+                        batchResult = INVALID_HEX_MESSAGE
+                        return@SubmitButton
+                    }
+                    val bytes = decoded.filterNotNull()
+                    scope.launch {
+                        batchLoading = true
+                        batchResult = runCatching { currentSdk.addresses.fetchInfos(bytes) }
+                            .fold(
+                                onSuccess = { it ?: "No address info returned." },
+                                onFailure = { it.message ?: "Query failed." },
+                            )
+                        batchLoading = false
+                    }
+                }
+                batchResult?.let { result ->
+                    LabeledContent("Result", "")
+                    Text(
+                        result,
+                        style = MaterialTheme.typography.bodySmall,
+                        fontFamily = FontFamily.Monospace,
+                        modifier = Modifier.testTag("addressQueries.batchResult"),
+                    )
                 }
             }
 
@@ -154,33 +221,24 @@ fun AddressQueriesScreen(navController: NavHostController) {
                     }
                 }
             }
-
-            FormSection(title = "Note") {
-                Text(
-                    "Network execution requires the dash_sdk_address_fetch_info / " +
-                        "dash_sdk_addresses_fetch_infos JNI exports.",
-                    style = MaterialTheme.typography.bodySmall,
-                    fontFamily = FontFamily.Monospace,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
         }
     }
+}
 
-    if (notBridged) {
-        AlertDialog(
-            onDismissRequest = { notBridged = false },
-            title = { Text("Address Queries Not Available Yet") },
-            text = {
-                Text(
-                    "Fetching Platform address balances/nonces requires the " +
-                        "`dash_sdk_address_fetch_info` and " +
-                        "`dash_sdk_addresses_fetch_infos` FFI exports (rs-sdk-ffi) " +
-                        "to be bridged into the JNI shim. The forms and the local " +
-                        "address browser are wired; only the network read is pending.",
-                )
-            },
-            confirmButton = { TextButton(onClick = { notBridged = false }) { Text("OK") } },
-        )
-    }
+private const val INVALID_HEX_MESSAGE =
+    "Enter each address as hex (21 bytes = 42 hex chars). bech32m " +
+        "(tdashevo1…) input is not yet supported on Android."
+
+/**
+ * Decode a hex-encoded Platform address into raw bytes. Returns null unless
+ * the input is an even-length hex string of 21 bytes (the type byte + 20-byte
+ * hash the address queries expect).
+ */
+private fun decodeHexAddress(input: String): ByteArray? {
+    val trimmed = input.trim()
+    if (trimmed.length != 42 || trimmed.length % 2 != 0) return null
+    if (!trimmed.all { it.isDigit() || it in 'a'..'f' || it in 'A'..'F' }) return null
+    return runCatching {
+        trimmed.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
+    }.getOrNull()
 }

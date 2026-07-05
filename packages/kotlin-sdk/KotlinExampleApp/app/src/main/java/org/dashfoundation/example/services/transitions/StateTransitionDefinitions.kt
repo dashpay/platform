@@ -71,14 +71,29 @@ data class TransitionDefinition(
     val executable: Boolean = false,
     /**
      * Where an executable transition routes for its dedicated screen (the
-     * Address / credits flows have specialized screens rather than the
-     * generic builder). Null → executes inline via the generic detail form.
+     * credits / contract / document-price / token flows have specialized
+     * screens rather than the generic builder). Null → executes inline via
+     * the generic detail form.
      */
     val dedicatedRoute: DedicatedTransition? = null,
+    /**
+     * The [org.dashfoundation.example.services.tokens.TokenActionKind.id]
+     * a [DedicatedTransition.TOKEN_ACTION] route opens.
+     */
+    val tokenActionId: String? = null,
 )
 
 /** Executable transitions with a dedicated (non-generic-builder) screen. */
-enum class DedicatedTransition { TRANSFER_CREDITS, WITHDRAW_CREDITS, TOP_UP_IDENTITY }
+enum class DedicatedTransition {
+    TRANSFER_CREDITS,
+    WITHDRAW_CREDITS,
+    TOP_UP_IDENTITY,
+    CREATE_IDENTITY,
+    REGISTER_CONTRACT,
+    DOCUMENT_WITH_PRICE,
+    TOKEN_ACTION,
+    CONTEST_DETAIL,
+}
 
 /** The full catalog, keyed by transition key. ← `TransitionDefinitions.all`. */
 object StateTransitionDefinitions {
@@ -86,8 +101,6 @@ object StateTransitionDefinitions {
     private val select = TransitionInputType.SELECT
     private val text = TransitionInputType.TEXT
     private val textarea = TransitionInputType.TEXTAREA
-    private val number = TransitionInputType.NUMBER
-    private val checkbox = TransitionInputType.CHECKBOX
     private val json = TransitionInputType.JSON
     private val identityPicker = TransitionInputType.IDENTITY_PICKER
     private val contractPicker = TransitionInputType.CONTRACT_PICKER
@@ -109,10 +122,9 @@ object StateTransitionDefinitions {
             category = TransitionCategory.IDENTITY,
             label = "Create Identity",
             description = "Register a new identity from an asset-lock proof",
-            inputs = listOf(
-                TransitionInput("identityIndex", number, "Identity index (HD slot)", true, defaultValue = "0"),
-                TransitionInput("assetLockProof", textarea, "Asset lock proof", true, help = "The asset lock proof that provides initial credits"),
-            ),
+            inputs = emptyList(),
+            executable = true,
+            dedicatedRoute = DedicatedTransition.CREATE_IDENTITY,
         ),
         TransitionDefinition(
             key = "identityTopUp",
@@ -120,7 +132,7 @@ object StateTransitionDefinitions {
             label = "Top Up Identity",
             description = "Add credits to an identity from Platform addresses",
             inputs = listOf(
-                TransitionInput("assetLockProof", textarea, "Asset lock proof", true, help = "The asset lock proof that provides additional credits"),
+                TransitionInput("identityId", identityPicker, "Identity to top up", true),
             ),
             executable = true,
             dedicatedRoute = DedicatedTransition.TOP_UP_IDENTITY,
@@ -131,9 +143,15 @@ object StateTransitionDefinitions {
             label = "Update Identity",
             description = "Add or disable identity public keys",
             inputs = listOf(
-                TransitionInput("addPublicKeys", textarea, "Add public keys (JSON)", false, help = "JSON array of key rows"),
+                TransitionInput("identityId", identityPicker, "Identity", true),
+                TransitionInput(
+                    "addPublicKeys", textarea, "Add public keys (JSON)", false,
+                    help = "JSON array of key rows — the Add Identity Key screen is " +
+                        "the guided path",
+                ),
                 TransitionInput("disablePublicKeys", text, "Disable key IDs", false, placeholder = "2,3,5"),
             ),
+            executable = true,
         ),
         TransitionDefinition(
             key = "identityCreditTransfer",
@@ -141,8 +159,7 @@ object StateTransitionDefinitions {
             label = "Transfer Credits",
             description = "Transfer credits between identities",
             inputs = listOf(
-                TransitionInput("toIdentityId", identityPicker, "Recipient", true),
-                TransitionInput("amount", number, "Amount (credits)", true, placeholder = "1000000"),
+                TransitionInput("identityId", identityPicker, "Source identity", true),
             ),
             executable = true,
             dedicatedRoute = DedicatedTransition.TRANSFER_CREDITS,
@@ -153,9 +170,7 @@ object StateTransitionDefinitions {
             label = "Withdraw Credits",
             description = "Withdraw credits to a Core (L1) address",
             inputs = listOf(
-                TransitionInput("toAddress", text, "Destination L1 address", true, placeholder = "yXXXX…"),
-                TransitionInput("amount", number, "Amount (credits)", true, placeholder = "1000000"),
-                TransitionInput("coreFeePerByte", number, "Core fee per byte", false, placeholder = "1"),
+                TransitionInput("identityId", identityPicker, "Source identity", true),
             ),
             executable = true,
             dedicatedRoute = DedicatedTransition.WITHDRAW_CREDITS,
@@ -167,17 +182,10 @@ object StateTransitionDefinitions {
             label = "Create Data Contract",
             description = "Deploy a new data contract",
             inputs = listOf(
-                TransitionInput("canBeDeleted", checkbox, "Can be deleted", false),
-                TransitionInput("readonly", checkbox, "Read-only", false),
-                TransitionInput("keepsHistory", checkbox, "Keeps history", false),
-                TransitionInput("documentsMutableContractDefault", checkbox, "Documents mutable (default)", false, defaultValue = "true"),
-                TransitionInput("documentsCanBeDeletedContractDefault", checkbox, "Documents deletable (default)", false, defaultValue = "true"),
-                TransitionInput("documentSchemas", json, "Document schemas (JSON)", false),
-                TransitionInput("tokenSchemas", json, "Token schemas (JSON)", false),
-                TransitionInput("groups", json, "Groups (JSON)", false),
-                TransitionInput("keywords", text, "Keywords", false, placeholder = "Comma-separated keywords"),
-                TransitionInput("description", text, "Description", false),
+                TransitionInput("identityId", identityPicker, "Owner identity", true),
             ),
+            executable = true,
+            dedicatedRoute = DedicatedTransition.REGISTER_CONTRACT,
         ),
         TransitionDefinition(
             key = "dataContractUpdate",
@@ -247,8 +255,9 @@ object StateTransitionDefinitions {
                 TransitionInput("contractId", contractPicker, "Data contract", true),
                 TransitionInput("documentType", docTypePicker, "Document type", true),
                 TransitionInput("documentId", docPicker, "Document ID", true),
-                TransitionInput("newPrice", number, "New price (credits)", true, help = "0 to remove price"),
             ),
+            executable = true,
+            dedicatedRoute = DedicatedTransition.DOCUMENT_WITH_PRICE,
         ),
         TransitionDefinition(
             key = "documentPurchase",
@@ -260,111 +269,21 @@ object StateTransitionDefinitions {
                 TransitionInput("documentType", docTypePicker, "Document type", true),
                 TransitionInput("documentId", docWithPrice, "Document ID", true),
             ),
+            executable = true,
+            dedicatedRoute = DedicatedTransition.DOCUMENT_WITH_PRICE,
         ),
         // ── Token ─────────────────────────────────────────────────────
-        TransitionDefinition(
-            key = "tokenMint",
-            category = TransitionCategory.TOKEN,
-            label = "Mint Tokens",
-            description = "Issue new tokens",
-            inputs = listOf(
-                TransitionInput("token", tokenPicker, "Token", true),
-                TransitionInput("amount", text, "Amount", true),
-                TransitionInput("issuedToIdentityId", text, "Issue to (optional)", false),
-                TransitionInput("publicNote", text, "Public note", false),
-            ),
-        ),
-        TransitionDefinition(
-            key = "tokenBurn",
-            category = TransitionCategory.TOKEN,
-            label = "Burn Tokens",
-            description = "Destroy tokens from the owner balance",
-            inputs = listOf(
-                TransitionInput("token", tokenPicker, "Token", true),
-                TransitionInput("amount", text, "Amount", true),
-                TransitionInput("publicNote", text, "Public note", false),
-            ),
-        ),
-        TransitionDefinition(
-            key = "tokenTransfer",
-            category = TransitionCategory.TOKEN,
-            label = "Transfer Tokens",
-            description = "Transfer tokens to another identity",
-            inputs = listOf(
-                TransitionInput("token", tokenPicker, "Token", true),
-                TransitionInput("recipientId", text, "Recipient identity ID", true),
-                TransitionInput("amount", text, "Amount", true),
-                TransitionInput("note", text, "Note", false),
-            ),
-        ),
-        TransitionDefinition(
-            key = "tokenFreeze",
-            category = TransitionCategory.TOKEN,
-            label = "Freeze Tokens",
-            description = "Freeze an identity's token balance",
-            inputs = listOf(
-                TransitionInput("token", tokenPicker, "Token", true),
-                TransitionInput("targetIdentityId", text, "Target identity ID", true),
-                TransitionInput("note", text, "Note", false),
-            ),
-        ),
-        TransitionDefinition(
-            key = "tokenUnfreeze",
-            category = TransitionCategory.TOKEN,
-            label = "Unfreeze Tokens",
-            description = "Unfreeze an identity's token balance",
-            inputs = listOf(
-                TransitionInput("token", tokenPicker, "Token", true),
-                TransitionInput("targetIdentityId", text, "Target identity ID", true),
-                TransitionInput("note", text, "Note", false),
-            ),
-        ),
-        TransitionDefinition(
-            key = "tokenDestroyFrozenFunds",
-            category = TransitionCategory.TOKEN,
-            label = "Destroy Frozen Funds",
-            description = "Destroy a frozen identity's tokens",
-            inputs = listOf(
-                TransitionInput("token", tokenPicker, "Token", true),
-                TransitionInput("frozenIdentityId", text, "Frozen identity ID", true),
-                TransitionInput("note", text, "Note", false),
-            ),
-        ),
-        TransitionDefinition(
-            key = "tokenClaim",
-            category = TransitionCategory.TOKEN,
-            label = "Claim Tokens",
-            description = "Claim from a distribution",
-            inputs = listOf(
-                TransitionInput("token", tokenPicker, "Token", true),
-                TransitionInput(
-                    "distributionType", select, "Distribution type", true,
-                    options = listOf(
-                        SelectOption("perpetual", "Perpetual"),
-                        SelectOption("preprogrammed", "Pre-programmed"),
-                    ),
-                ),
-                TransitionInput("publicNote", text, "Public note", false),
-            ),
-        ),
-        TransitionDefinition(
-            key = "tokenSetPrice",
-            category = TransitionCategory.TOKEN,
-            label = "Set Token Price",
-            description = "Set or remove direct-purchase pricing",
-            inputs = listOf(
-                TransitionInput("token", tokenPicker, "Token", true),
-                TransitionInput(
-                    "priceType", select, "Price type", true,
-                    options = listOf(
-                        SelectOption("single", "Single"),
-                        SelectOption("tiered", "Tiered"),
-                    ),
-                ),
-                TransitionInput("priceData", text, "Price data", false, help = "Leave empty to remove pricing"),
-                TransitionInput("publicNote", text, "Public note", false),
-            ),
-        ),
+        // Each token transition routes to its dedicated (fully wired)
+        // action form — the [DedicatedTransition.TOKEN_ACTION] pattern; the
+        // form collects amounts / targets / notes with the token's rules.
+        tokenTransition("tokenMint", "Mint Tokens", "Issue new tokens", "mint"),
+        tokenTransition("tokenBurn", "Burn Tokens", "Destroy tokens from the owner balance", "burn"),
+        tokenTransition("tokenTransfer", "Transfer Tokens", "Transfer tokens to another identity", "transfer"),
+        tokenTransition("tokenFreeze", "Freeze Tokens", "Freeze an identity's token balance", "freeze"),
+        tokenTransition("tokenUnfreeze", "Unfreeze Tokens", "Unfreeze an identity's token balance", "unfreeze"),
+        tokenTransition("tokenDestroyFrozenFunds", "Destroy Frozen Funds", "Destroy a frozen identity's tokens", "destroyFrozenFunds"),
+        tokenTransition("tokenClaim", "Claim Tokens", "Claim from a distribution", "claim"),
+        tokenTransition("tokenSetPrice", "Set Token Price", "Set or remove direct-purchase pricing", "setDirectPurchasePrice"),
         // ── Voting ────────────────────────────────────────────────────
         TransitionDefinition(
             key = "dpnsUsername",
@@ -373,9 +292,10 @@ object StateTransitionDefinitions {
             description = "Vote on a contested DPNS username",
             inputs = listOf(
                 TransitionInput("contestedUsername", text, "Contested username", true),
-                TransitionInput("voteChoice", select, "Vote choice", true, options = voteChoiceOptions),
-                TransitionInput("targetIdentity", identityPicker, "Target identity", false),
+                TransitionInput("targetIdentity", identityPicker, "Viewing identity", false),
             ),
+            executable = true,
+            dedicatedRoute = DedicatedTransition.CONTEST_DETAIL,
         ),
         TransitionDefinition(
             key = "masternodeVote",
@@ -389,8 +309,39 @@ object StateTransitionDefinitions {
                 TransitionInput("indexValues", text, "Index values", true, placeholder = "Comma-separated"),
                 TransitionInput("voteChoice", select, "Vote choice", true, options = voteChoiceOptions),
                 TransitionInput("targetIdentity", identityPicker, "Target identity", false),
+                TransitionInput(
+                    "proTxHash", text, "Masternode pro_tx_hash", true,
+                    placeholder = "64 hex chars",
+                ),
+                TransitionInput(
+                    "votingPrivateKey", text, "Masternode voting private key", true,
+                    placeholder = "64 hex chars",
+                    help = "The ECDSA_HASH160 voting key + signer derive from this " +
+                        "Rust-side; the bytes are not stored",
+                ),
             ),
+            executable = true,
         ),
+    )
+
+    /** Shared shape of the eight token-transition rows. */
+    private fun tokenTransition(
+        key: String,
+        label: String,
+        description: String,
+        actionId: String,
+    ): TransitionDefinition = TransitionDefinition(
+        key = key,
+        category = TransitionCategory.TOKEN,
+        label = label,
+        description = description,
+        inputs = listOf(
+            TransitionInput("token", tokenPicker, "Token", true),
+            TransitionInput("identityId", identityPicker, "Acting identity", true),
+        ),
+        executable = true,
+        dedicatedRoute = DedicatedTransition.TOKEN_ACTION,
+        tokenActionId = actionId,
     )
 
     /** Definitions in [category], in catalog order. */

@@ -97,6 +97,19 @@ internal object IdentityNative {
     ): ByteArray
 
     /**
+     * Keypair variant of the resolver-keyed slot derive:
+     * `[privateKey(32), publicKey]`. The public half is required by
+     * IdentityUpdateTransition add-key rows.
+     */
+    external fun deriveIdentityKeyPairWithResolver(
+        networkOrd: Int,
+        walletId: ByteArray,
+        resolverHandle: Long,
+        identityIndex: Int,
+        keyIndex: Int,
+    ): Array<ByteArray>
+
+    /**
      * Register a new identity funded from the wallet's Core balance. The
      * single FFI entry point the registration coordinator's body invokes.
      *

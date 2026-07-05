@@ -41,15 +41,21 @@
 
 use crate::events::{build_event_vtable, KotlinEventCtx};
 use crate::persistence::{build_vtable, KotlinPersistenceCtx};
-use crate::support::{guard, take_pwffi_error, throw_sdk_exception};
+use crate::support::{guard, take_pwffi_error, throw_sdk_exception, PWFFI_CODE_OFFSET};
 use jni::objects::{JByteArray, JClass, JObject, JObjectArray, JString};
-use jni::sys::{jboolean, jbyteArray, jdoubleArray, jlong, jlongArray, JNI_FALSE, JNI_TRUE};
+use jni::sys::{
+    jboolean, jbyteArray, jdoubleArray, jint, jlong, jlongArray, jstring, JNI_FALSE, JNI_TRUE,
+};
 use jni::JNIEnv;
-use platform_wallet_ffi::error::platform_wallet_ffi_result_free;
+use platform_wallet_ffi::error::{
+    platform_wallet_ffi_result_free, PlatformWalletFFIResult, PlatformWalletFFIResultCode,
+};
 use platform_wallet_ffi::event_handler::EventHandlerCallbacks;
 use platform_wallet_ffi::handle::Handle;
 use platform_wallet_ffi::persistence::PersistenceCallbacks;
-use std::ffi::c_void;
+use platform_wallet_ffi::types::IdentifierArray;
+use std::ffi::{c_void, CStr};
+use std::os::raw::c_char;
 use std::ptr;
 
 use rs_sdk_ffi::{dash_sdk_get_inner_sdk_ptr, SDKHandle};
@@ -1818,4 +1824,384 @@ fn read_cstring_array(
     }
     let ptrs: Vec<*const std::os::raw::c_char> = owned.iter().map(|c| c.as_ptr()).collect();
     Ok((owned, ptrs))
+}
+
+// ── Wallet-memory snapshots (Wave-1B) ─────────────────────────────────
+//
+// Read-only in-memory-state accessors backing the Kotlin
+// `WalletMemoryExplorerView` port (additive methods on
+// `ManagedPlatformWallet`). Wallet-handle-scoped, mirroring the existing
+// per-wallet accessors above.
+
+/// Copy an `IdentifierArray` into a flat JVM `byte[]` (concatenated 32-byte
+/// ids) and free the Rust buffer. The Kotlin side splits into 32-byte rows.
+fn identifier_array_to_flat(env: &mut JNIEnv, mut arr: IdentifierArray) -> jbyteArray {
+    let mut flat = Vec::with_capacity(arr.count * 32);
+    if !arr.items.is_null() && arr.count > 0 {
+        let rows = unsafe { std::slice::from_raw_parts(arr.items, arr.count) };
+        for id in rows {
+            flat.extend_from_slice(id);
+        }
+    }
+    unsafe {
+        platform_wallet_ffi::platform_wallet_identifier_array_free(&mut arr as *mut IdentifierArray)
+    };
+    env.byte_array_from_slice(&flat)
+        .map(|a| a.into_raw())
+        .unwrap_or(ptr::null_mut())
+}
+
+/// In-memory summary of a wallet's Rust-side state as a `long[4]` =
+/// `[identitiesCount, watchedCount, lastScannedIndex, trackedAssetLocksCount]`.
+/// Bridges `platform_wallet_get_in_memory_summary` (Swift
+/// `wallet.inMemorySummary()` behind `WalletMemoryExplorerView`).
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_walletInMemorySummary(
+    mut env: JNIEnv,
+    _class: JClass,
+    wallet_handle: jlong,
+) -> jlongArray {
+    guard(&mut env, ptr::null_mut(), |env| {
+        let mut summary = platform_wallet_ffi::PlatformWalletMemorySummaryFFI {
+            identities_count: 0,
+            watched_count: 0,
+            last_scanned_index: 0,
+            tracked_asset_locks_count: 0,
+        };
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_get_in_memory_summary(
+                wallet_handle as Handle,
+                &mut summary as *mut platform_wallet_ffi::PlatformWalletMemorySummaryFFI,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return ptr::null_mut();
+        }
+        let quad = [
+            summary.identities_count as jlong,
+            summary.watched_count as jlong,
+            summary.last_scanned_index as jlong,
+            summary.tracked_asset_locks_count as jlong,
+        ];
+        let Ok(arr) = env.new_long_array(4) else {
+            return ptr::null_mut();
+        };
+        if env.set_long_array_region(&arr, 0, &quad).is_err() {
+            return ptr::null_mut();
+        }
+        arr.into_raw()
+    })
+}
+
+/// The ids of every identity the wallet currently manages, as a flat
+/// `byte[]` (concatenated 32-byte ids). Bridges
+/// `platform_wallet_list_in_memory_identity_ids` (Swift
+/// `wallet.inMemoryIdentityIds()`).
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_walletInMemoryIdentityIds(
+    mut env: JNIEnv,
+    _class: JClass,
+    wallet_handle: jlong,
+) -> jbyteArray {
+    guard(&mut env, ptr::null_mut(), |env| {
+        let mut out = IdentifierArray {
+            items: ptr::null_mut(),
+            count: 0,
+        };
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_list_in_memory_identity_ids(
+                wallet_handle as Handle,
+                &mut out as *mut IdentifierArray,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return ptr::null_mut();
+        }
+        identifier_array_to_flat(env, out)
+    })
+}
+
+/// The ids of every out-of-wallet / observed identity, as a flat `byte[]`.
+/// Bridges `platform_wallet_list_in_memory_watched_identity_ids` (Swift
+/// `wallet.inMemoryWatchedIdentityIds()`).
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_walletInMemoryWatchedIdentityIds(
+    mut env: JNIEnv,
+    _class: JClass,
+    wallet_handle: jlong,
+) -> jbyteArray {
+    guard(&mut env, ptr::null_mut(), |env| {
+        let mut out = IdentifierArray {
+            items: ptr::null_mut(),
+            count: 0,
+        };
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_list_in_memory_watched_identity_ids(
+                wallet_handle as Handle,
+                &mut out as *mut IdentifierArray,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return ptr::null_mut();
+        }
+        identifier_array_to_flat(env, out)
+    })
+}
+
+/// The BIP-9 identity index recorded on a managed-identity snapshot handle,
+/// or `-1` when the identity is out-of-wallet (no index). Bridges
+/// `managed_identity_get_identity_index` (Swift `mi.getIdentityIndex()`).
+/// `identityHandle` comes from `TokensNative.getManagedIdentity`.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_managedIdentityGetIdentityIndex(
+    mut env: JNIEnv,
+    _class: JClass,
+    identity_handle: jlong,
+) -> jlong {
+    guard(&mut env, -1, |env| {
+        let mut has_index = false;
+        let mut index: u32 = 0;
+        let result = unsafe {
+            platform_wallet_ffi::managed_identity_get_identity_index(
+                identity_handle as Handle,
+                &mut has_index as *mut bool,
+                &mut index as *mut u32,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return -1;
+        }
+        if has_index {
+            index as jlong
+        } else {
+            -1
+        }
+    })
+}
+
+/// The lifecycle status of a managed-identity snapshot handle as its
+/// `IdentityStatusFFI` discriminant (0 Unknown, 1 PendingCreation, 2 Active,
+/// 3 FailedCreation, 4 NotFound). Bridges `managed_identity_get_status`
+/// (Swift `mi.getStatus()`). Returns `-1` after throwing on error.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_managedIdentityGetStatus(
+    mut env: JNIEnv,
+    _class: JClass,
+    identity_handle: jlong,
+) -> jint {
+    guard(&mut env, -1, |env| {
+        let mut status: u8 = 0;
+        let result = unsafe {
+            platform_wallet_ffi::managed_identity_get_status(
+                identity_handle as Handle,
+                &mut status as *mut u8,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return -1;
+        }
+        status as jint
+    })
+}
+
+// ── DAPI address ban list (manager-scoped, Wave-1B) ───────────────────
+
+/// Snapshot of every DAPI address' ban state as a JSON array string, or
+/// null when the list is empty / after throwing. Bridges
+/// `platform_wallet_manager_address_ban_info` (Swift `BannedAddressesView`).
+/// Manager-scoped (takes the manager handle).
+///
+/// Each element:
+/// `{"address": "<uri>", "banned": <bool>, "banCount": <u32>,
+/// "bannedUntilMs": <i64>, "reason": "<string|null>"}`.
+///
+/// The Rust rows (incl. heap-owned `address` / `reason` C strings) are
+/// freed via `platform_wallet_manager_address_ban_info_free` before this
+/// returns.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_managerAddressBanInfo(
+    mut env: JNIEnv,
+    _class: JClass,
+    manager_handle: jlong,
+) -> jstring {
+    guard(&mut env, ptr::null_mut(), |env| {
+        let mut entries: *const platform_wallet_ffi::AddressBanInfoFFI = ptr::null();
+        let mut count: usize = 0;
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_manager_address_ban_info(
+                manager_handle as Handle,
+                &mut entries as *mut *const platform_wallet_ffi::AddressBanInfoFFI,
+                &mut count as *mut usize,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return ptr::null_mut();
+        }
+
+        // Build a JSON array from the rows before freeing them.
+        let json = if entries.is_null() || count == 0 {
+            String::from("[]")
+        } else {
+            let rows = unsafe { std::slice::from_raw_parts(entries, count) };
+            let mut items: Vec<String> = Vec::with_capacity(count);
+            for row in rows {
+                let address = cstr_opt(row.address);
+                let reason = cstr_opt(row.reason);
+                items.push(format!(
+                    "{{\"address\":{},\"banned\":{},\"banCount\":{},\"bannedUntilMs\":{},\"reason\":{}}}",
+                    json_string_or_null(address.as_deref()),
+                    row.banned,
+                    row.ban_count,
+                    row.banned_until_ms,
+                    json_string_or_null(reason.as_deref()),
+                ));
+            }
+            format!("[{}]", items.join(","))
+        };
+
+        // Free the Rust-owned rows (walks each row's C strings first).
+        if !entries.is_null() && count > 0 {
+            unsafe {
+                platform_wallet_ffi::platform_wallet_manager_address_ban_info_free(
+                    entries as *mut platform_wallet_ffi::AddressBanInfoFFI,
+                    count,
+                )
+            };
+        }
+
+        env.new_string(json)
+            .map(|s| s.into_raw())
+            .unwrap_or(ptr::null_mut())
+    })
+}
+
+/// Read a nullable Rust C string into an owned `String`, or `None` when the
+/// pointer is null. Does NOT free — the paired `*_free` reclaims the buffer.
+fn cstr_opt(ptr: *const c_char) -> Option<String> {
+    if ptr.is_null() {
+        None
+    } else {
+        Some(
+            unsafe { CStr::from_ptr(ptr) }
+                .to_string_lossy()
+                .into_owned(),
+        )
+    }
+}
+
+/// Encode an optional string as a JSON string literal (with the minimal
+/// escaping the ban fields need — quote and backslash), or the bare `null`
+/// token when absent.
+fn json_string_or_null(s: Option<&str>) -> String {
+    match s {
+        None => String::from("null"),
+        Some(value) => {
+            let escaped = value.replace('\\', "\\\\").replace('"', "\\\"");
+            format!("\"{escaped}\"")
+        }
+    }
+}
+
+// ── Withdrawal preflight reason (micro-gap, Wave-1B) ──────────────────
+
+/// Preflight an AUTO withdrawal and return the advisory reason string when
+/// the account can't fund one — the `success_with_message` reason the
+/// existing [`Java_..._walletPlatformAddressPreflightWithdrawal`] discards.
+/// Returns the reason string when `can_withdraw == false` and a message was
+/// recorded; null when the withdrawal CAN proceed (no reason to show) or no
+/// message was set. Throws only on a structural FFI error.
+///
+/// This is the second half of the micro-gap split: the existing
+/// triple-returning entry point stays the authoritative `canWithdraw` gate
+/// (source-compatible — its ABI is unchanged), and this sibling surfaces the
+/// human-readable "why not" without touching it.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_walletPlatformAddressPreflightWithdrawalReason(
+    mut env: JNIEnv,
+    _class: JClass,
+    wallet_handle: jlong,
+    account_index: jint,
+    core_fee_per_byte: jint,
+) -> jstring {
+    guard(&mut env, ptr::null_mut(), |env| {
+        let mut addr_handle: Handle = 0;
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_get_platform(
+                wallet_handle as Handle,
+                &mut addr_handle as *mut Handle,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return ptr::null_mut();
+        }
+
+        let mut preflight = platform_wallet_ffi::WithdrawalPreflightFFI {
+            can_withdraw: false,
+            net_withdrawable: 0,
+            estimated_fee: 0,
+        };
+        let mut preflight_result = unsafe {
+            platform_wallet_ffi::platform_address_wallet_preflight_withdrawal(
+                addr_handle,
+                account_index.max(0) as u32,
+                core_fee_per_byte.max(0) as u32,
+                &mut preflight as *mut platform_wallet_ffi::WithdrawalPreflightFFI,
+            )
+        };
+
+        // A structural failure is a non-Success code -> throw via the shared
+        // mapping (which also frees the message). A Success code with a
+        // non-null message on the `can_withdraw == false` path is the
+        // advisory reason we want to surface.
+        let out = if preflight_result.code != PlatformWalletFFIResultCode::Success {
+            throw_pwffi(env, &mut preflight_result);
+            ptr::null_mut()
+        } else {
+            let reason = cstr_opt(preflight_result.message);
+            // The message is only meaningful when the withdrawal is blocked;
+            // a fundable preflight has no "reason".
+            let out = if !preflight.can_withdraw {
+                match reason {
+                    Some(msg) if !msg.is_empty() => env
+                        .new_string(msg)
+                        .map(|s| s.into_raw())
+                        .unwrap_or(ptr::null_mut()),
+                    _ => ptr::null_mut(),
+                }
+            } else {
+                ptr::null_mut()
+            };
+            // Free the Success message buffer regardless (take_pwffi_error
+            // only frees on the error path).
+            unsafe { platform_wallet_ffi_result_free(&mut preflight_result) };
+            out
+        };
+
+        let destroy_result =
+            unsafe { platform_wallet_ffi::platform_address_wallet_destroy(addr_handle) };
+        if !env.exception_check().unwrap_or(false) {
+            let _ = take_pwffi_error(env, destroy_result);
+        } else {
+            unsafe { platform_wallet_ffi_result_free(&mut { destroy_result }) };
+        }
+
+        out
+    })
+}
+
+/// Throw a `DashSDKException` for a non-Success `PlatformWalletFFIResult`
+/// and free its message. Mirrors the throw half of
+/// [`crate::support::take_pwffi_error`] for callers that need to inspect a
+/// Success-coded message first (so they can't hand the result to
+/// `take_pwffi_error`, which treats Success as "no error, nothing to free").
+fn throw_pwffi(env: &mut JNIEnv, result: &mut PlatformWalletFFIResult) {
+    let message = if result.message.is_null() {
+        format!("platform-wallet error (code {})", result.code as i32)
+    } else {
+        unsafe { CStr::from_ptr(result.message) }
+            .to_string_lossy()
+            .into_owned()
+    };
+    throw_sdk_exception(env, result.code as i32 + PWFFI_CODE_OFFSET, &message);
+    unsafe { platform_wallet_ffi_result_free(result) };
 }

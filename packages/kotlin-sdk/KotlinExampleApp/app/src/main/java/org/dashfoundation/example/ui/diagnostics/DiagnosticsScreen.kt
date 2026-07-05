@@ -10,6 +10,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -225,7 +226,13 @@ fun DiagnosticsScreen(navController: NavHostController) {
 
             if (results.isNotEmpty()) {
                 val passed = results.count { it.success }
+                val failed = results.size - passed
                 FormSection(title = "Results ($passed/${results.size} passed)") {
+                    LabeledContent(
+                        "Summary",
+                        "$passed passed · $failed failed · ${results.size} total",
+                    )
+                    HorizontalDivider(Modifier.padding(vertical = 4.dp))
                     results.forEach { result ->
                         LabeledContent(
                             label = (if (result.success) "PASS · " else "FAIL · ") + result.label,

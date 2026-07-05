@@ -92,6 +92,7 @@ fun WithdrawPlatformAddressScreen(walletIdHex: String, navController: NavHostCon
     var coreFeePerByte by remember { mutableStateOf(1) }
     var toAddress by rememberSaveable { mutableStateOf("") }
     var preflight by remember { mutableStateOf<ManagedPlatformWallet.WithdrawalPreflight?>(null) }
+    var preflightReason by remember { mutableStateOf<String?>(null) }
     var isSubmitting by remember { mutableStateOf(false) }
     var submitGeneration by remember { mutableStateOf(0) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -99,12 +100,22 @@ fun WithdrawPlatformAddressScreen(walletIdHex: String, navController: NavHostCon
 
     // Recompute the preflight on appear and on any source/fee change — the
     // gate must reflect what the spend would accept (← Swift recomputePreflight).
+    // When the account can't fund a withdrawal, also surface the advisory
+    // "why not" the preflight recorded (← the Swift `WithdrawalPreflightFFI`
+    // success_with_message reason, via `preflightWithdrawalReason`).
     LaunchedEffect(wallet, sourceAccountIndex, coreFeePerByte) {
         val w = wallet
         val acct = sourceAccountIndex
         preflight = if (w != null && acct != null) {
             runCatching { w.preflightWithdrawal(accountIndex = acct, coreFeePerByte = coreFeePerByte) }
                 .getOrNull()
+        } else {
+            null
+        }
+        preflightReason = if (w != null && acct != null && preflight?.canWithdraw == false) {
+            runCatching {
+                w.preflightWithdrawalReason(accountIndex = acct, coreFeePerByte = coreFeePerByte)
+            }.getOrNull()
         } else {
             null
         }
@@ -207,7 +218,17 @@ fun WithdrawPlatformAddressScreen(walletIdHex: String, navController: NavHostCon
                         LabeledContent("Net withdrawable", formatCredits(pf.netWithdrawable))
                         LabeledContent("Estimated fee", formatCredits(pf.estimatedFee))
                     }
-                    else -> LabeledContent("Status", "Cannot withdraw from this account right now")
+                    else -> {
+                        LabeledContent("Status", "Cannot withdraw from this account right now")
+                        preflightReason?.let { reason ->
+                            Text(
+                                reason,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.testTag("withdrawPlatform.preflightReason"),
+                            )
+                        }
+                    }
                 }
             }
 

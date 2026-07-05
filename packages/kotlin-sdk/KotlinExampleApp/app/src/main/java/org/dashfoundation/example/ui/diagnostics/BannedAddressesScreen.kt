@@ -9,17 +9,18 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -29,19 +30,21 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.ui.components.FormSection
+import org.json.JSONArray
 
 /**
  * Read-only DAPI address ban list — port of `BannedAddressesView.swift`.
- * The iOS view renders the snapshot from
- * `PlatformWalletManager.addressBanInfo()`
- * (`platform_wallet_manager_address_ban_info` in platform-wallet-ffi);
- * that export is not bridged into the JNI shim yet, so the list can never
- * populate here. The screen keeps the iOS empty-state semantics (an empty
- * list already legitimately means "no bans or unseeded pool") and the
- * Refresh affordance surfaces the named-missing-export dialog so the gap
- * is explicit rather than silent.
+ * Renders the snapshot from `PlatformWalletManager.addressBanInfo()`
+ * (`platform_wallet_manager_address_ban_info`), a JSON array of
+ * `{"address","banned","banCount","bannedUntilMs","reason"}` entries.
+ *
+ * The empty-state semantics match iOS: an empty (or null) list legitimately
+ * means either "no DAPI addresses banned" or "address pool not yet seeded".
+ * Refresh re-reads the current SDK session.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -49,7 +52,31 @@ fun BannedAddressesScreen(navController: NavHostController) {
     val container = LocalAppContainer.current
     val manager by container.walletManagerStore.activeManager.collectAsStateWithLifecycle()
 
-    var notBridged by remember { mutableStateOf(false) }
+    var reloadKey by remember { mutableIntStateOf(0) }
+    var entries by remember { mutableStateOf<List<BannedAddressEntry>>(emptyList()) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(manager, reloadKey) {
+        val current = manager
+        if (current == null) {
+            entries = emptyList()
+            errorMessage = null
+            return@LaunchedEffect
+        }
+        val outcome = withContext(Dispatchers.IO) {
+            runCatching { current.addressBanInfo() }
+        }
+        outcome.fold(
+            onSuccess = { json ->
+                entries = json?.let { parseBanInfo(it) } ?: emptyList()
+                errorMessage = null
+            },
+            onFailure = {
+                entries = emptyList()
+                errorMessage = it.message ?: "Failed to read ban list."
+            },
+        )
+    }
 
     Scaffold(
         topBar = {
@@ -62,7 +89,7 @@ fun BannedAddressesScreen(navController: NavHostController) {
                 },
                 actions = {
                     IconButton(
-                        onClick = { notBridged = true },
+                        onClick = { reloadKey++ },
                         modifier = Modifier.testTag("bannedAddresses.refresh"),
                     ) {
                         Icon(Icons.Default.Refresh, contentDescription = "Refresh")
@@ -79,21 +106,60 @@ fun BannedAddressesScreen(navController: NavHostController) {
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            FormSection(title = "Addresses (0)") {
-                Text(
-                    "No banned addresses.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.testTag("bannedAddresses.empty"),
-                )
-                Text(
-                    "This list reflects the current SDK session. An empty list " +
-                        "can mean either that no DAPI addresses have been banned, " +
-                        "or that the address pool has not yet been seeded.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 8.dp),
-                )
+            FormSection(title = "Addresses (${entries.size})") {
+                if (entries.isEmpty()) {
+                    Text(
+                        "No banned addresses.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.testTag("bannedAddresses.empty"),
+                    )
+                    Text(
+                        "This list reflects the current SDK session. An empty list " +
+                            "can mean either that no DAPI addresses have been banned, " +
+                            "or that the address pool has not yet been seeded.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 8.dp),
+                    )
+                } else {
+                    entries.forEachIndexed { index, entry ->
+                        if (index > 0) HorizontalDivider(Modifier.padding(vertical = 8.dp))
+                        Text(
+                            entry.address,
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontFamily = FontFamily.Monospace,
+                            modifier = Modifier.testTag("bannedAddresses.entry.$index"),
+                        )
+                        Text(
+                            buildString {
+                                append(if (entry.banned) "Banned" else "Active")
+                                if (entry.banCount > 0) append(" · ${entry.banCount} ban(s)")
+                                if (entry.bannedUntilMs > 0) append(" · until ${entry.bannedUntilMs}")
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        entry.reason?.takeIf { it.isNotBlank() }?.let { reason ->
+                            Text(
+                                reason,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+            }
+
+            errorMessage?.let { message ->
+                FormSection(title = "Error") {
+                    Text(
+                        message,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.testTag("bannedAddresses.error"),
+                    )
+                }
             }
 
             FormSection(title = "Session") {
@@ -106,32 +172,32 @@ fun BannedAddressesScreen(navController: NavHostController) {
                     style = MaterialTheme.typography.bodyMedium,
                 )
             }
-
-            FormSection(title = "Note") {
-                Text(
-                    "Reading the Rust-side ban state requires the " +
-                        "platform_wallet_manager_address_ban_info JNI export.",
-                    style = MaterialTheme.typography.bodySmall,
-                    fontFamily = FontFamily.Monospace,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
         }
     }
+}
 
-    if (notBridged) {
-        AlertDialog(
-            onDismissRequest = { notBridged = false },
-            title = { Text("Ban List Not Available Yet") },
-            text = {
-                Text(
-                    "Reading the DAPI address ban list requires the " +
-                        "`platform_wallet_manager_address_ban_info` FFI " +
-                        "(platform-wallet-ffi) to be bridged into the JNI shim. " +
-                        "Until then this screen always shows the empty state.",
-                )
-            },
-            confirmButton = { TextButton(onClick = { notBridged = false }) { Text("OK") } },
+private data class BannedAddressEntry(
+    val address: String,
+    val banned: Boolean,
+    val banCount: Long,
+    val bannedUntilMs: Long,
+    val reason: String?,
+)
+
+/**
+ * Parse the ban-info JSON array. Tolerates absent fields so a schema tweak on
+ * the Rust side degrades to a partial render rather than an empty list.
+ */
+private fun parseBanInfo(json: String): List<BannedAddressEntry> = runCatching {
+    val array = JSONArray(json)
+    (0 until array.length()).map { i ->
+        val obj = array.getJSONObject(i)
+        BannedAddressEntry(
+            address = obj.optString("address", "—"),
+            banned = obj.optBoolean("banned", false),
+            banCount = obj.optLong("banCount", 0L),
+            bannedUntilMs = obj.optLong("bannedUntilMs", 0L),
+            reason = obj.optString("reason").takeIf { it.isNotBlank() },
         )
     }
-}
+}.getOrElse { emptyList() }

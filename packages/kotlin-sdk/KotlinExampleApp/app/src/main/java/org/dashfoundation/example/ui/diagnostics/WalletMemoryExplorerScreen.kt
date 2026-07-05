@@ -35,6 +35,7 @@ import org.dashfoundation.dashsdk.wallet.ManagedPlatformWallet
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.LabeledContent
+import org.dashfoundation.example.util.Base58
 import org.dashfoundation.example.util.formatDuffs
 import org.dashfoundation.example.util.truncateMiddle
 import java.text.DateFormat
@@ -63,6 +64,12 @@ fun WalletMemoryExplorerScreen(navController: NavHostController) {
     var shieldedSyncRunning by remember { mutableStateOf<Boolean?>(null) }
     var balances by remember {
         mutableStateOf<Map<String, ManagedPlatformWallet.Balance>>(emptyMap())
+    }
+    var summaries by remember {
+        mutableStateOf<Map<String, ManagedPlatformWallet.InMemorySummary>>(emptyMap())
+    }
+    var identityRows by remember {
+        mutableStateOf<Map<String, List<ManagedPlatformWallet.IdentityState>>>(emptyMap())
     }
 
     Scaffold(
@@ -118,6 +125,12 @@ fun WalletMemoryExplorerScreen(navController: NavHostController) {
             balances = wallets.mapNotNull { (idHex, wallet) ->
                 runCatching { idHex to wallet.balance() }.getOrNull()
             }.toMap()
+            summaries = wallets.mapNotNull { (idHex, wallet) ->
+                runCatching { idHex to wallet.inMemorySummary() }.getOrNull()
+            }.toMap()
+            identityRows = wallets.mapValues { (_, wallet) ->
+                runCatching { wallet.inMemoryIdentityStates() }.getOrDefault(emptyList())
+            }
         }
 
         Column(
@@ -194,22 +207,45 @@ fun WalletMemoryExplorerScreen(navController: NavHostController) {
                         LabeledContent("Immature", formatDuffs(balance.immature))
                         LabeledContent("Locked", formatDuffs(balance.locked))
                     }
+                    summaries[idHex]?.let { summary ->
+                        LabeledContent("Identities", "${summary.identitiesCount}")
+                        LabeledContent("Watched", "${summary.watchedCount}")
+                        LabeledContent("Last Scanned Index", "${summary.lastScannedIndex}")
+                        LabeledContent("Tracked Asset Locks", "${summary.trackedAssetLocksCount}")
+                    }
+                    val rows = identityRows[idHex].orEmpty()
+                    if (rows.isNotEmpty()) {
+                        Text(
+                            "Identities (${rows.size})",
+                            style = MaterialTheme.typography.labelMedium,
+                            modifier = Modifier.padding(top = 8.dp),
+                        )
+                        rows.forEach { row ->
+                            LabeledContent(
+                                label = truncateMiddle(Base58.encode(row.identityId), 12, 8),
+                                value = buildString {
+                                    append(if (row.watched) "watched" else "index ${row.index}")
+                                    append(" · ")
+                                    append(identityStatusLabel(row.status))
+                                },
+                            )
+                        }
+                    }
                 }
-            }
-
-            FormSection(title = "Note") {
-                Text(
-                    "Deeper drill-downs (core wallet state, identity scan state, " +
-                        "address provider, per-account UTXO pools) wait on the " +
-                        "platform_wallet_manager_* snapshot JNI exports.",
-                    style = MaterialTheme.typography.bodySmall,
-                    fontFamily = FontFamily.Monospace,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
             }
         }
     }
 }
+
+/** Human label for a managed-identity lifecycle status. */
+private fun identityStatusLabel(status: ManagedPlatformWallet.IdentityStatus): String =
+    when (status) {
+        ManagedPlatformWallet.IdentityStatus.PENDING_CREATION -> "Pending"
+        ManagedPlatformWallet.IdentityStatus.ACTIVE -> "Active"
+        ManagedPlatformWallet.IdentityStatus.FAILED_CREATION -> "Failed"
+        ManagedPlatformWallet.IdentityStatus.NOT_FOUND -> "Not Found"
+        ManagedPlatformWallet.IdentityStatus.UNKNOWN -> "Unknown"
+    }
 
 private fun liveness(running: Boolean?): String = when (running) {
     null -> "—"

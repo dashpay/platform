@@ -98,6 +98,9 @@ import kotlinx.serialization.Serializable
 /** One public key's detail + private-key reveal (← `KeyDetailView.swift`). */
 @Serializable data class KeyDetail(val identityIdHex: String, val keyId: Int)
 
+/** Add a public key to an identity (← `AddIdentityKeyView.swift`). */
+@Serializable data class AddIdentityKey(val identityIdHex: String)
+
 // ── Credits graph (← the credit-action rows on IdentityDetailView) ─────
 
 /** Top up an identity from Platform addresses (← `TopUpIdentityView.swift`). */
@@ -199,6 +202,18 @@ import kotlinx.serialization.Serializable
 /** Count aggregate form (← `CountDocumentsView.swift`). */
 @Serializable data class CountDocuments(val contractIdHex: String, val typeName: String)
 
+/**
+ * Price probe + purchase / set-price for one document
+ * (← `DocumentWithPriceView.swift` + the `PurchaseDocumentView` /
+ * set-price flows in `DocumentsView.swift`). [documentId] may arrive
+ * empty (the transition-catalog entry lets the user type one).
+ */
+@Serializable data class DocumentWithPrice(
+    val contractIdHex: String,
+    val typeName: String,
+    val documentId: String = "",
+)
+
 /** Sum/average aggregate form (← `SumAverageDocumentsView.swift`). */
 @Serializable data class SumAverageDocuments(val contractIdHex: String, val typeName: String)
 
@@ -207,6 +222,9 @@ import kotlinx.serialization.Serializable
 
 /** One query's parameters + result (← `QueryDetailView.swift`). */
 @Serializable data class QueryDetail(val queryName: String)
+
+/** Raw GroveDB path-elements query (← `GroveDBPathElementsView.swift`). */
+@Serializable object GroveDbPathElements
 
 // ── Tokens graph (hosted under the Contracts tab, ← ContractsTabView) ──
 

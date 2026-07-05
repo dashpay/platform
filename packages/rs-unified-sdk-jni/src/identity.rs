@@ -339,6 +339,88 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_derive
     })
 }
 
+/// Keypair variant of the resolver-keyed slot derive: returns
+/// `[privateKey: byte[32], publicKey: byte[]]` from the same
+/// `IdentityKeyPreviewFFI` row the scalar-only export reads (the public
+/// half was previously discarded — it is required by
+/// `IdentityUpdateTransition` add-key rows). Lock-free like its sibling:
+/// safe from persistence-callback context.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_deriveIdentityKeyPairWithResolver(
+    mut env: JNIEnv,
+    _class: JClass,
+    network_ord: jint,
+    wallet_id: JByteArray,
+    resolver_handle: jlong,
+    identity_index: jint,
+    key_index: jint,
+) -> jni::sys::jobjectArray {
+    guard(&mut env, ptr::null_mut(), |env| {
+        let Some(wid) = read_id32(env, &wallet_id, "walletId") else {
+            return ptr::null_mut();
+        };
+
+        let mut out_row = IdentityKeyPreviewFFI::empty();
+        let result = unsafe {
+            platform_wallet_ffi::dash_sdk_derive_identity_key_at_slot_with_resolver(
+                net_from_ord(network_ord),
+                wid.as_ptr(),
+                resolver_handle as *mut MnemonicResolverHandle,
+                identity_index.max(0) as u32,
+                key_index.max(0) as u32,
+                &mut out_row as *mut IdentityKeyPreviewFFI,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            unsafe {
+                platform_wallet_ffi::dash_sdk_derive_identity_key_at_slot_free(
+                    &mut out_row as *mut IdentityKeyPreviewFFI,
+                )
+            };
+            return ptr::null_mut();
+        }
+
+        // Copy BOTH halves before the free (callback-window rule).
+        let scalar = out_row.private_key_bytes;
+        let pubkey: Vec<u8> = if out_row.public_key.is_null() || out_row.public_key_len == 0 {
+            Vec::new()
+        } else {
+            unsafe {
+                std::slice::from_raw_parts(out_row.public_key, out_row.public_key_len).to_vec()
+            }
+        };
+        unsafe {
+            platform_wallet_ffi::dash_sdk_derive_identity_key_at_slot_free(
+                &mut out_row as *mut IdentityKeyPreviewFFI,
+            )
+        };
+        if pubkey.is_empty() {
+            crate::support::throw_sdk_exception(
+                env,
+                99,
+                "slot derive returned no public key bytes",
+            );
+            return ptr::null_mut();
+        }
+
+        let build = (|| -> Result<jni::sys::jobjectArray, jni::errors::Error> {
+            let priv_arr = env.byte_array_from_slice(&scalar)?;
+            let pub_arr = env.byte_array_from_slice(&pubkey)?;
+            let byte_array_class = env.find_class("[B")?;
+            let result =
+                env.new_object_array(2, byte_array_class, jni::objects::JObject::null())?;
+            env.set_object_array_element(&result, 0, priv_arr)?;
+            env.set_object_array_element(&result, 1, pub_arr)?;
+            Ok(result.into_raw())
+        })();
+        build.unwrap_or_else(|_| {
+            let _ = env.exception_clear();
+            crate::support::throw_sdk_exception(env, 99, "keypair marshalling failed");
+            ptr::null_mut()
+        })
+    })
+}
+
 // ── Registration (wallet-balance funded) ──────────────────────────────
 
 /// Register a new identity funded from the wallet's Core balance, driven

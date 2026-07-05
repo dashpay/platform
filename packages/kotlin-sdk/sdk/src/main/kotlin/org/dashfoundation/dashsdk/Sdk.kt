@@ -58,6 +58,31 @@ class Sdk private constructor(
         org.dashfoundation.dashsdk.queries.TokenQueries(this)
     }
 
+    /** Platform address queries (balance + nonce). */
+    val addresses: org.dashfoundation.dashsdk.queries.Addresses by lazy {
+        org.dashfoundation.dashsdk.queries.Addresses(this)
+    }
+
+    /** Contested-resource and voting read queries. */
+    val voting: org.dashfoundation.dashsdk.queries.Voting by lazy {
+        org.dashfoundation.dashsdk.queries.Voting(this)
+    }
+
+    /** Evonode proposed-epoch-block queries. */
+    val evonodes: org.dashfoundation.dashsdk.queries.Evonodes by lazy {
+        org.dashfoundation.dashsdk.queries.Evonodes(this)
+    }
+
+    /** System / protocol / epoch queries (GroveDB, credits, quorums). */
+    val system: org.dashfoundation.dashsdk.queries.SystemQueries by lazy {
+        org.dashfoundation.dashsdk.queries.SystemQueries(this)
+    }
+
+    /** Group (multi-party control) read queries. */
+    val groups: org.dashfoundation.dashsdk.queries.Groups by lazy {
+        org.dashfoundation.dashsdk.queries.Groups(this)
+    }
+
     /**
      * The raw native handle for FFI calls. Throws if the SDK was closed —
      * matching the Swift SDK where a nil handle is a programmer error.

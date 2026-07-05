@@ -3,6 +3,7 @@ package org.dashfoundation.dashsdk.wallet
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.dashfoundation.dashsdk.errors.mapNativeErrors
+import org.dashfoundation.dashsdk.ffi.TokensNative
 import org.dashfoundation.dashsdk.ffi.WalletManagerNative
 import java.lang.ref.Cleaner
 import java.util.concurrent.atomic.AtomicLong
@@ -381,8 +382,171 @@ class ManagedPlatformWallet internal constructor(
         )
     }
 
+    // ── Wallet-memory snapshots (Wave-1B) ─────────────────────────────
+    //
+    // Read-only in-memory-state accessors backing the Kotlin
+    // `WalletMemoryExplorerView` port — ports of Swift's
+    // `wallet.inMemorySummary()` / `inMemoryIdentityIds()` /
+    // `inMemoryWatchedIdentityIds()`.
+
+    /** In-memory summary of the wallet's Rust-side state. */
+    data class InMemorySummary(
+        val identitiesCount: Long,
+        val watchedCount: Long,
+        val lastScannedIndex: Long,
+        val trackedAssetLocksCount: Long,
+    )
+
+    /**
+     * A wallet's in-memory summary — port of Swift's `inMemorySummary()`.
+     * Bridges `platform_wallet_get_in_memory_summary`.
+     */
+    suspend fun inMemorySummary(): InMemorySummary = withContext(Dispatchers.IO) {
+        val quad = mapNativeErrors { WalletManagerNative.walletInMemorySummary(handle) }
+        InMemorySummary(
+            identitiesCount = quad.getOrElse(0) { 0L },
+            watchedCount = quad.getOrElse(1) { 0L },
+            lastScannedIndex = quad.getOrElse(2) { 0L },
+            trackedAssetLocksCount = quad.getOrElse(3) { 0L },
+        )
+    }
+
+    /**
+     * The 32-byte ids of every identity the wallet manages — port of Swift's
+     * `inMemoryIdentityIds()`. Bridges
+     * `platform_wallet_list_in_memory_identity_ids`.
+     */
+    suspend fun inMemoryIdentityIds(): List<ByteArray> = withContext(Dispatchers.IO) {
+        val flat = mapNativeErrors { WalletManagerNative.walletInMemoryIdentityIds(handle) }
+        splitIds(flat)
+    }
+
+    /**
+     * The 32-byte ids of every out-of-wallet / observed identity — port of
+     * Swift's `inMemoryWatchedIdentityIds()`. Bridges
+     * `platform_wallet_list_in_memory_watched_identity_ids`.
+     */
+    suspend fun inMemoryWatchedIdentityIds(): List<ByteArray> = withContext(Dispatchers.IO) {
+        val flat = mapNativeErrors { WalletManagerNative.walletInMemoryWatchedIdentityIds(handle) }
+        splitIds(flat)
+    }
+
+    /** Lifecycle status of a managed identity, mirroring `IdentityStatusFFI`. */
+    enum class IdentityStatus {
+        UNKNOWN,
+        PENDING_CREATION,
+        ACTIVE,
+        FAILED_CREATION,
+        NOT_FOUND,
+        ;
+
+        internal companion object {
+            fun fromDiscriminant(value: Int): IdentityStatus = when (value) {
+                1 -> PENDING_CREATION
+                2 -> ACTIVE
+                3 -> FAILED_CREATION
+                4 -> NOT_FOUND
+                else -> UNKNOWN
+            }
+        }
+    }
+
+    /**
+     * The in-memory index + lifecycle status of one managed identity — port
+     * of the per-identity drill-down in Swift's `WalletMemoryExplorerView`.
+     * [index] is the BIP-9 identity index, or `-1` for a watched
+     * (out-of-wallet) identity; [watched] reflects which list the id came from.
+     */
+    data class IdentityState(
+        val identityId: ByteArray,
+        val index: Long,
+        val watched: Boolean,
+        val status: IdentityStatus,
+    ) {
+        override fun equals(other: Any?): Boolean {
+            if (this === other) return true
+            if (other !is IdentityState) return false
+            return identityId.contentEquals(other.identityId) &&
+                index == other.index &&
+                watched == other.watched &&
+                status == other.status
+        }
+
+        override fun hashCode(): Int {
+            var result = identityId.contentHashCode()
+            result = 31 * result + index.hashCode()
+            result = 31 * result + watched.hashCode()
+            result = 31 * result + status.hashCode()
+            return result
+        }
+    }
+
+    /**
+     * Snapshot the in-memory index + status of every managed and watched
+     * identity — the drill-down backing the Kotlin `WalletMemoryExplorerView`
+     * port. Opens a `ManagedIdentity` handle per id
+     * (`TokensNative.getManagedIdentity`), reads its index/status, and frees
+     * the handle before moving on. Ids that can't be snapshotted are skipped
+     * (they may have just been removed by a concurrent sync). No network I/O.
+     */
+    suspend fun inMemoryIdentityStates(): List<IdentityState> = withContext(Dispatchers.IO) {
+        val managed = inMemoryIdentityIds().map { it to false }
+        val watched = inMemoryWatchedIdentityIds().map { it to true }
+        (managed + watched).mapNotNull { (id, isWatched) ->
+            mapNativeErrors {
+                val identityHandle = TokensNative.getManagedIdentity(handle, id)
+                if (identityHandle == 0L) return@mapNativeErrors null
+                try {
+                    val index = WalletManagerNative.managedIdentityGetIdentityIndex(identityHandle)
+                    val status = WalletManagerNative.managedIdentityGetStatus(identityHandle)
+                    IdentityState(
+                        identityId = id,
+                        index = index,
+                        watched = isWatched || index < 0,
+                        status = IdentityStatus.fromDiscriminant(status),
+                    )
+                } finally {
+                    TokensNative.managedIdentityDestroy(identityHandle)
+                }
+            }
+        }
+    }
+
+    /**
+     * The advisory "why not" reason a withdrawal preflight records when the
+     * account can't fund one — port of the `success_with_message` reason the
+     * Swift `WithdrawalPreflightFFI` message carries. Returns null when the
+     * withdrawal can proceed (no reason to show) or no message was recorded.
+     * Complements [preflightWithdrawal], whose `canWithdraw` flag remains the
+     * authoritative gate.
+     */
+    suspend fun preflightWithdrawalReason(
+        accountIndex: Int = 0,
+        coreFeePerByte: Int = 0,
+    ): String? = withContext(Dispatchers.IO) {
+        mapNativeErrors {
+            WalletManagerNative.walletPlatformAddressPreflightWithdrawalReason(
+                walletHandle = handle,
+                accountIndex = accountIndex,
+                coreFeePerByte = coreFeePerByte,
+            )
+        }
+    }
+
     override fun close() {
         cleanable.clean()
+    }
+
+    /** Split a flat `byte[]` of concatenated 32-byte ids into per-id rows. */
+    private fun splitIds(flat: ByteArray): List<ByteArray> {
+        if (flat.size < 32) return emptyList()
+        val out = ArrayList<ByteArray>(flat.size / 32)
+        var offset = 0
+        while (offset + 32 <= flat.size) {
+            out.add(flat.copyOfRange(offset, offset + 32))
+            offset += 32
+        }
+        return out
     }
 
     /**

@@ -11,10 +11,13 @@ use crate::support::throw_sdk_exception;
 use jni::objects::{JByteArray, JString};
 use jni::JNIEnv;
 use rs_sdk_ffi::{
-    dash_sdk_binary_data_free, dash_sdk_error_free, dash_sdk_string_free, DashSDKBinaryData,
+    dash_sdk_address_info_free, dash_sdk_address_info_map_free, dash_sdk_binary_data_free,
+    dash_sdk_error_free, dash_sdk_identity_balance_map_free, dash_sdk_string_free,
+    DashSDKAddressInfo, DashSDKAddressInfoMap, DashSDKBinaryData, DashSDKIdentityBalanceMap,
     DashSDKResult, DashSDKResultDataType,
 };
 use std::ffi::{c_char, CStr};
+use std::fmt::Write as _;
 
 /// If `r` carries an error: throw `DashSDKException`, free the error, and
 /// return `true` (the caller must bail out with its default value).
@@ -105,4 +108,168 @@ pub unsafe fn unwrap_void(env: &mut JNIEnv, r: DashSDKResult) {
         r.data.is_null(),
         "unwrap_void called on a result carrying data — memory would leak"
     );
+}
+
+/// Lowercase-hex-encode a byte slice into `out` (no allocation of an
+/// intermediate `String` per byte).
+fn push_hex(out: &mut String, bytes: &[u8]) {
+    for b in bytes {
+        // Infallible: writing to a String never errors.
+        let _ = write!(out, "{:02x}", b);
+    }
+}
+
+/// The rs-sdk-ffi sentinel for a Platform address / identity that was not
+/// found: nonce and balance are both set to their type max.
+const NONCE_NOT_FOUND: u32 = u32::MAX;
+const BALANCE_NOT_FOUND: u64 = u64::MAX;
+
+/// Serialize one address entry (address bytes + nonce + balance) as a JSON
+/// object into `out`. Keys are stable: `addressHex`, `nonce`, `balance`,
+/// `found`. `nonce`/`balance` are emitted verbatim (including the
+/// not-found sentinels) so the Kotlin side can distinguish "found with max
+/// value" only via `found`, which mirrors the Swift `isFound` flag.
+///
+/// # Safety
+/// `address` must be null or point to `address_len` valid bytes.
+unsafe fn write_address_json(
+    out: &mut String,
+    address: *const u8,
+    address_len: usize,
+    nonce: u32,
+    balance: u64,
+) {
+    out.push_str("{\"addressHex\":\"");
+    if !address.is_null() && address_len > 0 {
+        let slice = std::slice::from_raw_parts(address, address_len);
+        push_hex(out, slice);
+    }
+    let found = !(nonce == NONCE_NOT_FOUND && balance == BALANCE_NOT_FOUND);
+    // Infallible writes into a String.
+    let _ = write!(
+        out,
+        "\",\"nonce\":{},\"balance\":{},\"found\":{}}}",
+        nonce, balance, found
+    );
+}
+
+/// Unwrap a `DashSDKAddressInfo` payload (`data_type == AddressInfo`) into a
+/// flat JSON object string and free the FFI struct. Returns `null` after
+/// throwing, or `null` if the payload pointer was null. The address bytes
+/// are hex-encoded (rather than base58/bech32m) to keep this crate free of
+/// address-encoding dependencies; the Kotlin/UI layer owns human-readable
+/// formatting, exactly as the Swift SDK re-encodes `addressHex` for display.
+///
+/// # Safety
+/// `r` must be a `DashSDKResult` whose success payload is a
+/// `DashSDKAddressInfo` allocated by the FFI layer.
+pub unsafe fn unwrap_address_info<'l>(
+    env: &mut JNIEnv<'l>,
+    r: DashSDKResult,
+) -> Option<JString<'l>> {
+    if take_error(env, &r) {
+        return None;
+    }
+    if r.data.is_null() {
+        return None;
+    }
+    debug_assert!(matches!(r.data_type, DashSDKResultDataType::AddressInfo));
+    let info = r.data as *mut DashSDKAddressInfo;
+    let mut json = String::new();
+    write_address_json(
+        &mut json,
+        (*info).address,
+        (*info).address_len,
+        (*info).nonce,
+        (*info).balance,
+    );
+    dash_sdk_address_info_free(info);
+    env.new_string(json).ok()
+}
+
+/// Unwrap a `DashSDKAddressInfoMap` payload (`data_type == AddressInfoMap`)
+/// into a JSON array of the per-address objects produced by
+/// [`write_address_json`], and free the FFI map. Returns `null` after
+/// throwing, or an empty array `[]` for an empty/absent map.
+///
+/// # Safety
+/// `r` must be a `DashSDKResult` whose success payload is a
+/// `DashSDKAddressInfoMap` allocated by the FFI layer.
+pub unsafe fn unwrap_address_info_map<'l>(
+    env: &mut JNIEnv<'l>,
+    r: DashSDKResult,
+) -> Option<JString<'l>> {
+    if take_error(env, &r) {
+        return None;
+    }
+    let mut json = String::from("[");
+    if !r.data.is_null() {
+        debug_assert!(matches!(r.data_type, DashSDKResultDataType::AddressInfoMap));
+        let map = r.data as *mut DashSDKAddressInfoMap;
+        if !(*map).entries.is_null() && (*map).count > 0 {
+            let entries = std::slice::from_raw_parts((*map).entries, (*map).count);
+            for (i, entry) in entries.iter().enumerate() {
+                if i > 0 {
+                    json.push(',');
+                }
+                write_address_json(
+                    &mut json,
+                    entry.address,
+                    entry.address_len,
+                    entry.nonce,
+                    entry.balance,
+                );
+            }
+        }
+        dash_sdk_address_info_map_free(map);
+    }
+    json.push(']');
+    env.new_string(json).ok()
+}
+
+/// Unwrap a `DashSDKIdentityBalanceMap` payload
+/// (`data_type == IdentityBalanceMap`) into a JSON array of
+/// `{"identityIdHex":"<64 hex chars>","balance":<u64>,"found":<bool>}`
+/// objects, and free the FFI map. Identity ids are hex-encoded for the
+/// same dependency-free reason as addresses; the Kotlin layer re-encodes to
+/// base58 for display. `found` is false when the balance is the
+/// `u64::MAX` not-found sentinel.
+///
+/// # Safety
+/// `r` must be a `DashSDKResult` whose success payload is a
+/// `DashSDKIdentityBalanceMap` allocated by the FFI layer.
+pub unsafe fn unwrap_identity_balance_map<'l>(
+    env: &mut JNIEnv<'l>,
+    r: DashSDKResult,
+) -> Option<JString<'l>> {
+    if take_error(env, &r) {
+        return None;
+    }
+    let mut json = String::from("[");
+    if !r.data.is_null() {
+        debug_assert!(matches!(
+            r.data_type,
+            DashSDKResultDataType::IdentityBalanceMap
+        ));
+        let map = r.data as *mut DashSDKIdentityBalanceMap;
+        if !(*map).entries.is_null() && (*map).count > 0 {
+            let entries = std::slice::from_raw_parts((*map).entries, (*map).count);
+            for (i, entry) in entries.iter().enumerate() {
+                if i > 0 {
+                    json.push(',');
+                }
+                json.push_str("{\"identityIdHex\":\"");
+                push_hex(&mut json, &entry.identity_id);
+                let found = entry.balance != BALANCE_NOT_FOUND;
+                let _ = write!(
+                    &mut json,
+                    "\",\"balance\":{},\"found\":{}}}",
+                    entry.balance, found
+                );
+            }
+        }
+        dash_sdk_identity_balance_map_free(map);
+    }
+    json.push(']');
+    env.new_string(json).ok()
 }

@@ -268,6 +268,30 @@ class PlatformWalletManager(
     )
 
     /**
+     * Derive the full keypair at an identity key slot — the add-key path
+     * (AddIdentityKeyView parity): IdentityUpdateTransition rows need the
+     * public half, which the scalar-only derive discards. Lock-free
+     * (resolver-keyed), suspend on IO. Caller zeroes the private half.
+     */
+    suspend fun deriveIdentityKeyPair(
+        walletId: ByteArray,
+        identityIndex: Int,
+        keyIndex: Int,
+    ): Pair<ByteArray, ByteArray> = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        val pair = org.dashfoundation.dashsdk.errors.mapNativeErrors {
+            org.dashfoundation.dashsdk.ffi.IdentityNative.deriveIdentityKeyPairWithResolver(
+                network.ffiValue,
+                walletId,
+                mnemonicResolver.nativeHandle,
+                identityIndex,
+                keyIndex,
+            )
+        }
+        check(pair.size == 2) { "keypair derive returned ${pair.size} elements" }
+        pair[0] to pair[1]
+    }
+
+    /**
      * Identity registration / discovery / DPNS-name bridge. Stateless
      * wrapper over the identity JNI surface; callers thread the wallet
      * handle + [signerHandle] / [mnemonicResolverHandle] into each call.
@@ -284,6 +308,32 @@ class PlatformWalletManager(
      */
     val identityCredits: org.dashfoundation.dashsdk.credits.IdentityCredits =
         org.dashfoundation.dashsdk.credits.IdentityCredits()
+
+    /**
+     * Identity add/disable-keys bridge — the identity-update slice of
+     * `ManagedPlatformWallet.swift` (`updateIdentity(addPublicKeys:...)`,
+     * driven by Swift `AddIdentityKeyView`). Stateless; callers thread the
+     * wallet handle + [signerHandle] into each call.
+     */
+    val identityUpdates: org.dashfoundation.dashsdk.identity.IdentityUpdates =
+        org.dashfoundation.dashsdk.identity.IdentityUpdates()
+
+    /**
+     * Document purchase + set-price bridge — the document state-transition
+     * slice of `ManagedPlatformWallet.swift` (driven by Swift
+     * `DocumentWithPriceView`). Stateless; callers thread the wallet handle +
+     * [signerHandle] into each call.
+     */
+    val documentTransactions: org.dashfoundation.dashsdk.documents.DocumentTransactions =
+        org.dashfoundation.dashsdk.documents.DocumentTransactions()
+
+    /**
+     * Masternode contested-resource vote bridge — port of
+     * `SDK.castContestedResourceVote` (driven by Swift `ContestDetailView`).
+     * Stateless; callers thread the SDK handle into each call.
+     */
+    val voteCasting: org.dashfoundation.dashsdk.voting.VoteCasting =
+        org.dashfoundation.dashsdk.voting.VoteCasting()
 
     // ── Native manager bundle ─────────────────────────────────────────
 
@@ -656,6 +706,21 @@ class PlatformWalletManager(
     suspend fun spvTipUnixSeconds(): Long = withContext(Dispatchers.IO) {
         mapNativeErrors { WalletManagerNative.spvTipUnixSeconds(managerHandle) }
     }
+
+    // ── DAPI address ban list (Wave-1B) ───────────────────────────────
+
+    /**
+     * Snapshot of every DAPI address' ban state as a JSON array string, or
+     * null when the list is empty — port of the manager-level ban query
+     * behind Swift `BannedAddressesView`. Bridges
+     * `platform_wallet_manager_address_ban_info`. Each element:
+     * `{"address","banned","banCount","bannedUntilMs","reason"}`.
+     *
+     * Synchronous by design (the native side takes a cheap `blocking_read`);
+     * callers that need to stay off the main thread wrap it themselves.
+     */
+    fun addressBanInfo(): String? =
+        mapNativeErrors { WalletManagerNative.managerAddressBanInfo(managerHandle) }
 
     // ── SPV progress (fast-cadence StateFlow) ─────────────────────────
 

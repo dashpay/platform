@@ -281,4 +281,67 @@ internal object WalletManagerNative {
     /** SPV `is_running`. */
     external fun spvIsRunning(managerHandle: Long): Boolean
     external fun spvStop(managerHandle: Long)
+
+    // ── Wallet-memory snapshots (Wave-1B) ─────────────────────────────
+
+    /**
+     * In-memory summary of a wallet's Rust-side state as `long[4]` =
+     * `[identitiesCount, watchedCount, lastScannedIndex,
+     * trackedAssetLocksCount]`. Bridges `platform_wallet_get_in_memory_summary`
+     * (Swift `wallet.inMemorySummary()`).
+     */
+    external fun walletInMemorySummary(walletHandle: Long): LongArray
+
+    /**
+     * The ids of every identity the wallet currently manages, as a flat
+     * `byte[]` (concatenated 32-byte ids). Bridges
+     * `platform_wallet_list_in_memory_identity_ids`.
+     */
+    external fun walletInMemoryIdentityIds(walletHandle: Long): ByteArray
+
+    /**
+     * The ids of every out-of-wallet / observed identity, as a flat
+     * `byte[]`. Bridges `platform_wallet_list_in_memory_watched_identity_ids`.
+     */
+    external fun walletInMemoryWatchedIdentityIds(walletHandle: Long): ByteArray
+
+    /**
+     * The BIP-9 identity index recorded on a managed-identity snapshot
+     * handle (from `TokensNative.getManagedIdentity`), or `-1` when the
+     * identity is out-of-wallet. Bridges `managed_identity_get_identity_index`.
+     */
+    external fun managedIdentityGetIdentityIndex(identityHandle: Long): Long
+
+    /**
+     * The lifecycle status of a managed-identity snapshot handle as its
+     * `IdentityStatusFFI` discriminant (0 Unknown, 1 PendingCreation,
+     * 2 Active, 3 FailedCreation, 4 NotFound), or `-1` after throwing.
+     * Bridges `managed_identity_get_status`.
+     */
+    external fun managedIdentityGetStatus(identityHandle: Long): Int
+
+    // ── DAPI address ban list (Wave-1B) ───────────────────────────────
+
+    /**
+     * Snapshot of every DAPI address' ban state as a JSON array string, or
+     * null when the list is empty. Bridges
+     * `platform_wallet_manager_address_ban_info` (Swift `BannedAddressesView`).
+     * Each element: `{"address","banned","banCount","bannedUntilMs","reason"}`.
+     */
+    external fun managerAddressBanInfo(managerHandle: Long): String?
+
+    // ── Withdrawal preflight reason (Wave-1B micro-gap) ───────────────
+
+    /**
+     * The advisory `success_with_message` reason string surfaced when an
+     * AUTO withdrawal can't be funded — the message the triple-returning
+     * [walletPlatformAddressPreflightWithdrawal] discards. Returns null when
+     * the withdrawal CAN proceed or no message was recorded; throws only on a
+     * structural FFI error.
+     */
+    external fun walletPlatformAddressPreflightWithdrawalReason(
+        walletHandle: Long,
+        accountIndex: Int,
+        coreFeePerByte: Int,
+    ): String?
 }

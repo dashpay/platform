@@ -19,6 +19,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -39,6 +40,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import org.dashfoundation.example.di.LocalAppState
 import org.dashfoundation.example.navigation.DocumentFields
+import org.dashfoundation.example.navigation.DocumentWithPrice
 import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.SubmitButton
 import org.dashfoundation.example.util.Base58
@@ -239,6 +241,24 @@ fun DocumentsScreen(
                                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         )
                                     }
+                                }
+                            },
+                            // Price / purchase drill-in (← the Set Price… /
+                            // Purchase… context actions on iOS document rows).
+                            trailingContent = {
+                                if (id.isNotEmpty()) {
+                                    TextButton(
+                                        onClick = {
+                                            navController.navigate(
+                                                DocumentWithPrice(
+                                                    contractIdHex = contractIdHex,
+                                                    typeName = typeName,
+                                                    documentId = id,
+                                                ),
+                                            )
+                                        },
+                                        modifier = Modifier.testTag("documents.price.$id"),
+                                    ) { Text("Price…") }
                                 }
                             },
                         )

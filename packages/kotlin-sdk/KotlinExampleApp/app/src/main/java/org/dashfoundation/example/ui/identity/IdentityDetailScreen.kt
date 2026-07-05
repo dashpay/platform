@@ -20,8 +20,11 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
@@ -29,6 +32,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import org.dashfoundation.example.di.LocalAppContainer
+import org.dashfoundation.example.di.LocalAppState
+import org.dashfoundation.example.navigation.ContestDetail
 import org.dashfoundation.example.navigation.Friends
 import org.dashfoundation.example.navigation.KeysList
 import org.dashfoundation.example.navigation.RegisterName
@@ -38,20 +43,28 @@ import org.dashfoundation.example.navigation.TransferCredits
 import org.dashfoundation.example.navigation.WithdrawCredits
 import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.LabeledContent
+import org.dashfoundation.example.util.Base58
 import org.dashfoundation.example.util.hexToBytes
 
 /**
  * One identity's detail — port of `IdentityDetailView.swift`: identity info,
- * balance + credit actions, DPNS names (with Register / Select-Main entries),
- * DashPay (Friends entry), and the keys summary (View All Keys). The credit
- * actions (Top Up / Transfer / Withdraw) route to their B-M6 credits screens
- * — Transfer / Withdraw run the bridged FFI directly; Top Up is form-wired
- * pending the funding-input accessor.
+ * balance + credit actions, DPNS names (settled rows plus contested-name
+ * rows linking into [ContestDetailScreen], with Register / Select-Main
+ * entries), DashPay (Friends entry), and the keys summary (View All Keys).
+ *
+ * Contested-name rows probe each locally-known label with the bridged
+ * `Voting.contestedResourceVoteState` read and surface the labels whose
+ * contest is still unresolved and lists this identity as a contender —
+ * the iOS view's `fetchContestedDPNSNames` semantics over the bridged
+ * query surface (the network-wide by-identity discovery
+ * `dash_sdk_dpns_get_contested_usernames_by_identity` is not bridged, so
+ * discovery is scoped to labels this device knows about).
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun IdentityDetailScreen(identityIdHex: String, navController: NavHostController) {
     val container = LocalAppContainer.current
+    val appState = LocalAppState.current
     val idBytes = remember(identityIdHex) { identityIdHex.hexToBytes() }
     val idBase58 = identityIdHex // publicKeyDao keys on the Swift storage id string
 
@@ -64,6 +77,41 @@ fun IdentityDetailScreen(identityIdHex: String, navController: NavHostController
     val keys by container.database.publicKeyDao()
         .observeByIdentityId(idBase58)
         .collectAsStateWithLifecycle(initialValue = emptyList())
+
+    val sdk by appState.sdk.collectAsStateWithLifecycle()
+    var contestedNames by remember { mutableStateOf<List<String>>(emptyList()) }
+
+    // Probe the locally-known labels for live contests this identity is
+    // contending (capped — each probe is one network round-trip).
+    LaunchedEffect(sdk, dpnsNames, identity?.dpnsName, identity?.mainDpnsName) {
+        val currentSdk = sdk ?: return@LaunchedEffect
+        val viewerBase58 = Base58.encode(idBytes)
+        val candidates = buildSet {
+            dpnsNames.forEach { add(it.label.lowercase()) }
+            identity?.dpnsName?.let { add(it.lowercase()) }
+            identity?.mainDpnsName?.let { add(it.lowercase()) }
+        }.take(MAX_CONTEST_PROBES)
+        val contested = mutableListOf<String>()
+        for (label in candidates) {
+            val state = try {
+                currentSdk.voting.contestedResourceVoteState(
+                    contractId = DPNS_CONTRACT_ID_BASE58,
+                    documentTypeName = DPNS_DOCUMENT_TYPE,
+                    indexName = DPNS_INDEX_NAME,
+                    indexValuesJson = dpnsIndexValuesJson(label),
+                    resultType = RESULT_TYPE_DOCUMENTS_AND_VOTE_TALLY,
+                )?.let(::parseContestVoteState)
+            } catch (_: Exception) {
+                null // probe failures degrade to "not contested"
+            }
+            if (state != null && state.winner == null &&
+                state.contenders.any { it.identityIdBase58 == viewerBase58 }
+            ) {
+                contested.add(label)
+            }
+        }
+        contestedNames = contested
+    }
 
     Scaffold(
         topBar = {
@@ -127,7 +175,7 @@ fun IdentityDetailScreen(identityIdHex: String, navController: NavHostController
             }
 
             FormSection(title = "DPNS Names") {
-                if (dpnsNames.isEmpty()) {
+                if (dpnsNames.isEmpty() && contestedNames.isEmpty()) {
                     Text(
                         "No names registered.",
                         style = MaterialTheme.typography.bodyMedium,
@@ -139,6 +187,27 @@ fun IdentityDetailScreen(identityIdHex: String, navController: NavHostController
                         LabeledContent(
                             label = if (isMain) "${name.label} ★" else name.label,
                             value = name.parentDomainName,
+                        )
+                    }
+                    // Contested labels — ⚑ rows drilling into the live
+                    // contest (← IdentityDetailView's Contested rows).
+                    contestedNames.forEach { label ->
+                        ListItem(
+                            headlineContent = { Text(label) },
+                            supportingContent = {
+                                Text(
+                                    "Contested — voting in progress",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.tertiary,
+                                )
+                            },
+                            modifier = Modifier
+                                .clickable {
+                                    navController.navigate(
+                                        ContestDetail(label, identityIdHex),
+                                    )
+                                }
+                                .testTag("identityDetail.contested.$label"),
                         )
                     }
                 }
@@ -178,3 +247,6 @@ fun IdentityDetailScreen(identityIdHex: String, navController: NavHostController
         }
     }
 }
+
+/** Cap on per-label contest probes (each is a network round-trip). */
+private const val MAX_CONTEST_PROBES = 8
