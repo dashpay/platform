@@ -58,6 +58,8 @@ use std::ffi::{c_void, CStr};
 use std::os::raw::c_char;
 use std::ptr;
 
+#[cfg(feature = "shielded")]
+use rs_sdk_ffi::MnemonicResolverHandle;
 use rs_sdk_ffi::{dash_sdk_get_inner_sdk_ptr, SDKHandle};
 
 // ── Manager bundle ────────────────────────────────────────────────────
@@ -1573,6 +1575,160 @@ sync_start_stop!(
     platform_wallet_ffi::platform_wallet_manager_shielded_sync_stop,
     platform_wallet_ffi::platform_wallet_manager_shielded_sync_is_running
 );
+
+/// Configure the network-scoped shielded coordinator — opens (or creates)
+/// the per-network commitment-tree SQLite file at `db_path` that every
+/// subsequent `shieldedBind` on this manager reuses. Idempotent at the
+/// path level (same path no-ops; a different path throws — the SQLite
+/// handle can't be repointed mid-flight). Mirrors Swift's
+/// `PlatformWalletManager.configureShielded(dbPath:)`.
+#[cfg(feature = "shielded")]
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_shieldedConfigure(
+    mut env: JNIEnv,
+    _class: JClass,
+    manager_handle: jlong,
+    db_path: JString,
+) {
+    guard(&mut env, (), |env| {
+        // db_path is required (read_cstring_required rejects null / empty).
+        let Some(db_path_c) = read_cstring_required(env, &db_path, "db_path") else {
+            return;
+        };
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_manager_configure_shielded(
+                manager_handle as Handle,
+                db_path_c.as_ptr(),
+            )
+        };
+        let _ = take_pwffi_error(env, result);
+    })
+}
+
+/// Derive Orchard keys for `walletId` via the SDK-level mnemonic resolver
+/// and register the resulting ZIP-32 accounts on the network-scoped
+/// shielded coordinator. `accounts` is a JVM `int[]` of account indices
+/// (1..=64 entries, all non-negative; the FFI enforces the same length
+/// bounds). Idempotent: a second call replaces the previous binding for
+/// the same wallet. Requires a prior `shieldedConfigure` on this manager
+/// (the FFI throws `ErrorWalletOperation` otherwise). Mirrors Swift's
+/// `PlatformWalletManager.bindShielded(walletId:resolver:accounts:)`.
+#[cfg(feature = "shielded")]
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_shieldedBind(
+    mut env: JNIEnv,
+    _class: JClass,
+    manager_handle: jlong,
+    wallet_id: JByteArray,
+    resolver_handle: jlong,
+    accounts: jni::objects::JIntArray,
+) {
+    guard(&mut env, (), |env| {
+        let Some(id) = read_id32(env, &wallet_id) else {
+            return;
+        };
+        if resolver_handle == 0 {
+            throw_sdk_exception(env, 1, "resolver handle is 0");
+            return;
+        }
+        // Read the accounts (a JVM int[] → Vec<u32>); jni 0.21 has no
+        // `convert_int_array`, so read the length then the region into an
+        // owned buffer.
+        if accounts.is_null() {
+            throw_sdk_exception(env, 1, "accounts int[] was null");
+            return;
+        }
+        let len = match env.get_array_length(&accounts) {
+            Ok(l) => l as usize,
+            Err(_) => {
+                let _ = env.exception_clear();
+                throw_sdk_exception(env, 1, "accounts int[] was invalid");
+                return;
+            }
+        };
+        if len == 0 || len > 64 {
+            throw_sdk_exception(
+                env,
+                1,
+                &format!("accounts must have 1..=64 entries, got {len}"),
+            );
+            return;
+        }
+        let mut buf = vec![0i32; len];
+        if env.get_int_array_region(&accounts, 0, &mut buf).is_err() {
+            let _ = env.exception_clear();
+            throw_sdk_exception(env, 1, "accounts int[] read failed");
+            return;
+        }
+        // Reject negative entries before the sign-losing cast — a negative
+        // int would otherwise bit-cast to a bogus huge u32 account index.
+        if buf.iter().any(|&i| i < 0) {
+            throw_sdk_exception(env, 1, "accounts must be non-negative");
+            return;
+        }
+        let accounts_u32: Vec<u32> = buf.into_iter().map(|i| i as u32).collect();
+
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_manager_bind_shielded(
+                manager_handle as Handle,
+                id.as_ptr(),
+                resolver_handle as *mut MnemonicResolverHandle,
+                accounts_u32.as_ptr(),
+                accounts_u32.len(),
+            )
+        };
+        let _ = take_pwffi_error(env, result);
+    })
+}
+
+/// Set the background shielded sync interval in seconds. Rejects
+/// non-positive values at the boundary (a negative jlong would otherwise
+/// bit-cast to a huge u64). Mirrors Swift's
+/// `PlatformWalletManager.setShieldedSyncInterval(seconds:)`.
+#[cfg(feature = "shielded")]
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_shieldedSyncSetInterval(
+    mut env: JNIEnv,
+    _class: JClass,
+    manager_handle: jlong,
+    interval_seconds: jlong,
+) {
+    guard(&mut env, (), |env| {
+        if interval_seconds <= 0 {
+            throw_sdk_exception(env, 1, "intervalSeconds must be positive");
+            return;
+        }
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_manager_shielded_sync_set_interval(
+                manager_handle as Handle,
+                interval_seconds as u64,
+            )
+        };
+        let _ = take_pwffi_error(env, result);
+    })
+}
+
+/// Run one forced shielded sync pass across all registered wallets — the
+/// user-initiated "Sync Now" entry point (`force=true` on the Rust side
+/// bypasses the caught-up cooldown). Blocks the calling thread for the
+/// pass; Kotlin wraps it in `Dispatchers.IO`. Mirrors Swift's
+/// `PlatformWalletManager.syncShieldedNow()`.
+#[cfg(feature = "shielded")]
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_shieldedSyncNow(
+    mut env: JNIEnv,
+    _class: JClass,
+    manager_handle: jlong,
+) {
+    guard(&mut env, (), |env| {
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_manager_shielded_sync_sync_now(
+                manager_handle as Handle,
+            )
+        };
+        let _ = take_pwffi_error(env, result);
+    })
+}
 
 /// Start the Core SPV client. Flattened form of
 /// `platform_wallet_manager_spv_start` — the FFI takes 11 discrete

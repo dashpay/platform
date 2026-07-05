@@ -34,7 +34,9 @@ import org.dashfoundation.dashsdk.wallet.WalletSyncEvent
  * across passes since [bind], mirroring Swift's `totalScanned` /
  * `totalNewNotes` / `syncCountSinceLaunch`.
  *
- * REFLECTS the loop only; start/stop stay on [PlatformWalletManager].
+ * [bind] drives the Rust-side shielded bind (configure + bind, like the
+ * Swift service) and then reflects the loop; start/stop stay on
+ * [PlatformWalletManager].
  */
 class ShieldedService(private val database: DashDatabase) {
 
@@ -99,24 +101,48 @@ class ShieldedService(private val database: DashDatabase) {
 
     /**
      * Bind to [manager]'s [walletId] shielded sub-wallet and start
-     * reflecting the loop — port of Swift `bind(...)`. No-op (leaves state
-     * at its defaults) when shielded support is absent. Re-binding rebinds
-     * cleanly and resets the cumulative counters.
+     * reflecting the loop — port of Swift
+     * `ShieldedService.bind(walletManager:walletId:network:resolver:accounts:)`
+     * (`SwiftExampleApp/Core/Services/ShieldedService.swift`). No-op
+     * (leaves state at its defaults) when shielded support is absent.
+     * Re-binding rebinds cleanly and resets the cumulative counters.
      *
-     * @param accounts ZIP-32 account indices the caller bound in Rust; used
-     *   only to publish [boundAccounts] (the actual key derivation /
-     *   registration is a Rust concern via the manager's bind entry point).
+     * Like iOS, the service drives the Rust-side bind itself:
+     * [PlatformWalletManager.configureShielded] with [dbPath] (idempotent
+     * at the path level — first call opens the per-network commitment-tree
+     * SQLite file, same-path repeats no-op) then
+     * [PlatformWalletManager.bindShielded] (resolver-driven mnemonic
+     * lookup, ZIP-32 derivation per [accounts]). The pair is best-effort:
+     * on failure (no mnemonic in the store, biometric prompt declined,
+     * etc.) the service stays unbound — logged, since [ShieldedSyncState]
+     * carries no error field (Swift records `lastError`) — and nothing is
+     * thrown; a later [bind] retry picks up cleanly.
+     *
+     * @param dbPath absolute path of the per-network commitment-tree
+     *   SQLite file (Swift `ShieldedService.dbPath(for:)`); the caller
+     *   supplies it because the service holds no Android `Context`.
+     * @param accounts ZIP-32 account indices to bind (deduped + sorted,
+     *   matching Swift); published as [boundAccounts] on success.
      */
-    fun bind(
+    suspend fun bind(
         manager: PlatformWalletManager,
         walletId: ByteArray,
+        dbPath: String,
         accounts: List<Int> = listOf(0),
     ) {
         if (!isAvailable) return
         unbind()
+        val sortedAccounts = accounts.distinct().sorted()
+        try {
+            manager.configureShielded(dbPath)
+            manager.bindShielded(walletId, sortedAccounts)
+        } catch (e: Exception) {
+            android.util.Log.w(TAG, "Shielded bind failed: ${e.message}", e)
+            return
+        }
         this.manager = manager
         this.boundWalletId = walletId.copyOf()
-        _boundAccounts.value = accounts.sorted()
+        _boundAccounts.value = sortedAccounts
         _state.value = ShieldedSyncState()
         _shieldedBalance.value = database.shieldedDao()
             .observeUnspentNotesByWallet(walletId)
@@ -223,6 +249,7 @@ class ShieldedService(private val database: DashDatabase) {
     }
 
     private companion object {
+        const val TAG = "ShieldedService"
         const val POLL_INTERVAL_MS = 1_000L
     }
 }

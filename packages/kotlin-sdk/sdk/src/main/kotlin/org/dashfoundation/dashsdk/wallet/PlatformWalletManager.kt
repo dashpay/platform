@@ -344,7 +344,17 @@ class PlatformWalletManager(
     // ── Native manager bundle ─────────────────────────────────────────
 
     private val bundleRef: AtomicLong = AtomicLong(
-        WalletManagerNative.nativeCreate(sdk.handle, persistenceHandler, eventBridge),
+        try {
+            WalletManagerNative.nativeCreate(sdk.handle, persistenceHandler, eventBridge)
+        } catch (t: Throwable) {
+            // The resolver/signer fields above already hold native
+            // handles; without this, a failed manager construction
+            // (closed SDK, GlobalRef failure) leaks them for the
+            // process lifetime — no user code ever gets to call close().
+            runCatching { mnemonicResolver.close() }
+            runCatching { signer.close() }
+            throw t
+        },
     )
 
     /** Raw native manager `Handle` (for the sync / wallet-accessor calls). */
@@ -397,17 +407,24 @@ class PlatformWalletManager(
                 outHandle,
             )
         }
-        // Store the mnemonic keyed by the id the FFI just derived.
-        walletStorage.storeMnemonic(walletId, mnemonic)
-
-        // Persist the display name onto the Room row the persistence
-        // callbacks just wrote (a persist step, not orchestration —
-        // ← CreateWalletView.swift stamping the label per created wallet).
-        name?.trim()?.takeIf { it.isNotEmpty() }?.let { label ->
-            database.walletDao().updateName(walletId, label, System.currentTimeMillis())
-        }
-
+        // Adopt the native handle into its AutoCloseable owner BEFORE the
+        // fallible Keystore/Room steps — a raw jlong has no owner, so a
+        // throw below would otherwise leak the Rust registry entry.
         val managed = ManagedPlatformWallet(handle = outHandle[0], walletId = walletId)
+        try {
+            // Store the mnemonic keyed by the id the FFI just derived.
+            walletStorage.storeMnemonic(walletId, mnemonic)
+
+            // Persist the display name onto the Room row the persistence
+            // callbacks just wrote (a persist step, not orchestration —
+            // ← CreateWalletView.swift stamping the label per created wallet).
+            name?.trim()?.takeIf { it.isNotEmpty() }?.let { label ->
+                database.walletDao().updateName(walletId, label, System.currentTimeMillis())
+            }
+        } catch (t: Throwable) {
+            managed.close()
+            throw t
+        }
         _wallets.update { it + (walletId.toHex() to managed) }
         managed
     }
@@ -515,6 +532,83 @@ class PlatformWalletManager(
 
     suspend fun isShieldedSyncRunning(): Boolean = withContext(Dispatchers.IO) {
         mapNativeErrors { WalletManagerNative.shieldedSyncIsRunning(managerHandle) }
+    }
+
+    /**
+     * Configure the network-scoped shielded coordinator — port of Swift's
+     * `PlatformWalletManager.configureShielded(dbPath:)`
+     * (`PlatformWalletManagerShieldedSync.swift`). Opens (or creates) the
+     * per-network commitment-tree SQLite file at [dbPath]; every subsequent
+     * [bindShielded] on this manager reuses the one handle. Idempotent at
+     * the path level: the same path no-ops, a different path throws (the
+     * SQLite handle can't be repointed mid-flight). Must run before any
+     * [bindShielded]. Only meaningful on a shielded build ([Sdk.hasShielded]);
+     * the native entry point is absent otherwise and this throws.
+     */
+    suspend fun configureShielded(dbPath: String) = withContext(Dispatchers.IO) {
+        require(dbPath.isNotBlank()) { "dbPath must not be blank" }
+        mapNativeErrors { WalletManagerNative.shieldedConfigure(managerHandle, dbPath) }
+    }
+
+    /**
+     * Derive Orchard keys for [walletId] from this manager's mnemonic
+     * resolver and register the ZIP-32 account indices in [accounts] on the
+     * shielded coordinator — port of Swift's
+     * `PlatformWalletManager.bindShielded(walletId:resolver:accounts:)`
+     * (`PlatformWalletManagerShieldedSync.swift`); the resolver is the
+     * manager-owned one rather than a per-call parameter, matching the
+     * other resolver-keyed wrappers here. The resolver fires exactly once;
+     * mnemonic and seed are zeroized Rust-side before this returns.
+     * Requires a prior [configureShielded]; idempotent — a second call
+     * replaces the previous binding for the same wallet. Only meaningful on
+     * a shielded build ([Sdk.hasShielded]); the native entry point is
+     * absent otherwise and this throws.
+     */
+    suspend fun bindShielded(
+        walletId: ByteArray,
+        accounts: List<Int> = listOf(0),
+    ) = withContext(Dispatchers.IO) {
+        require(walletId.size == 32) {
+            "walletId must be exactly 32 bytes, got ${walletId.size}"
+        }
+        require(accounts.isNotEmpty()) { "accounts must be non-empty" }
+        require(accounts.size <= 64) {
+            "accounts must contain at most 64 entries, got ${accounts.size}"
+        }
+        require(accounts.all { it >= 0 }) { "accounts must be non-negative" }
+        mapNativeErrors {
+            WalletManagerNative.shieldedBind(
+                managerHandle,
+                walletId,
+                mnemonicResolver.nativeHandle,
+                accounts.toIntArray(),
+            )
+        }
+    }
+
+    /**
+     * Set the background shielded sync interval — port of Swift's
+     * `PlatformWalletManager.setShieldedSyncInterval(seconds:)`
+     * (`PlatformWalletManagerShieldedSync.swift`). Only meaningful on a
+     * shielded build ([Sdk.hasShielded]); the native entry point is absent
+     * otherwise and this throws.
+     */
+    suspend fun setShieldedSyncInterval(seconds: Long) = withContext(Dispatchers.IO) {
+        require(seconds > 0) { "seconds must be positive, got $seconds" }
+        mapNativeErrors { WalletManagerNative.shieldedSyncSetInterval(managerHandle, seconds) }
+    }
+
+    /**
+     * Run one forced shielded sync pass across all registered wallets —
+     * port of Swift's `PlatformWalletManager.syncShieldedNow()`
+     * (`PlatformWalletManagerShieldedSync.swift`), the user-initiated
+     * "Sync Now" entry point (bypasses the caught-up cooldown). Blocks
+     * for the pass on `Dispatchers.IO`. Only meaningful on a shielded
+     * build ([Sdk.hasShielded]); the native entry point is absent
+     * otherwise and this throws.
+     */
+    suspend fun syncShieldedNow() = withContext(Dispatchers.IO) {
+        mapNativeErrors { WalletManagerNative.shieldedSyncNow(managerHandle) }
     }
 
     // ── Shielded funding submits ──────────────────────────────────────

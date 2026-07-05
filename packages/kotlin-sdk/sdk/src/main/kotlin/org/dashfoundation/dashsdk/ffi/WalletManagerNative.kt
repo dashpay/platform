@@ -241,6 +241,44 @@ internal object WalletManagerNative {
     external fun shieldedSyncIsRunning(managerHandle: Long): Boolean
 
     /**
+     * Configure the network-scoped shielded coordinator: open (or create)
+     * the per-network commitment-tree SQLite file at [dbPath], reused by
+     * every subsequent [shieldedBind] on this manager. Idempotent at the
+     * path level (same path no-ops; a different path throws). Only present
+     * when the native library is built with shielded.
+     */
+    external fun shieldedConfigure(managerHandle: Long, dbPath: String)
+
+    /**
+     * Derive Orchard keys for [walletId] (32 bytes) via the SDK-level
+     * mnemonic resolver [resolverHandle] and register the ZIP-32 account
+     * indices in [accounts] (1..=64 non-negative entries) on the shielded
+     * coordinator. Requires a prior [shieldedConfigure]; idempotent per
+     * wallet. Only present when the native library is built with shielded.
+     */
+    external fun shieldedBind(
+        managerHandle: Long,
+        walletId: ByteArray,
+        resolverHandle: Long,
+        accounts: IntArray,
+    )
+
+    /**
+     * Set the background shielded sync interval in seconds (must be
+     * positive). Only present when the native library is built with
+     * shielded.
+     */
+    external fun shieldedSyncSetInterval(managerHandle: Long, intervalSeconds: Long)
+
+    /**
+     * Run one forced shielded sync pass across all registered wallets —
+     * the "Sync Now" entry point (bypasses the caught-up cooldown). Blocks
+     * for the pass; call on `Dispatchers.IO`. Only present when the native
+     * library is built with shielded.
+     */
+    external fun shieldedSyncNow(managerHandle: Long)
+
+    /**
      * Start the Core SPV client — flattened form of
      * `platform_wallet_manager_spv_start` (11 discrete params, no config
      * struct). [userAgent] / [devnetName] pass JVM null → FFI null;
