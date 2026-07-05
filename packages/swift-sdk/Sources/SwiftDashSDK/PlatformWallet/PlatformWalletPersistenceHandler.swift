@@ -85,12 +85,28 @@ public class PlatformWalletPersistenceHandler {
     /// cache wipe between runs), we skip it — the next
     /// address-emit pass will bring the row back and the next sync
     /// will fill in the balance.
+    ///
+    /// The entry also carries `accountIndex` / `addressIndex`, but this
+    /// callback deliberately does NOT write them: the derivation index is
+    /// authoritative from the address-emit path (the row's index is fixed
+    /// the moment its address is derived and never changes). A reconcile
+    /// *removal* can arrive here carrying a pool-resolved `addressIndex`
+    /// that conflicts with another address's true index (the Rust provider
+    /// still emits the zero so the balance can't resurrect — see
+    /// `commit_reconciliation`'s index-conflict removal path). Overwriting
+    /// the row's index with that value would make two durable rows claim
+    /// one index; on the next restore the bijection rebuild
+    /// (`insert_persisted_entry`) would then drop the funded pairing and
+    /// orphan its balance. So the balance path owns balance/nonce/`isUsed`
+    /// only; derivation metadata stays as the address-emit path set it.
     func persistAddressBalances(
         walletId: Data,
         entries: [(UInt8, Data, UInt64, UInt32, UInt32, UInt32)]
     ) {
         onQueue {
-            for (_, addressHash, balance, nonce, accountIndex, addressIndex) in entries {
+            // `accountIndex` / `addressIndex` (tuple slots 5 and 6) are
+            // intentionally ignored — see the note above.
+            for (_, addressHash, balance, nonce, _, _) in entries {
                 // Scope by walletId + hash: a hash-only predicate can match
                 // another wallet's row in a multi-wallet store (same seed
                 // imported on coin-type-sharing networks, watch-only
@@ -103,8 +119,6 @@ public class PlatformWalletPersistenceHandler {
                 guard let existing = try? backgroundContext.fetch(descriptor).first else {
                     continue
                 }
-                existing.accountIndex = accountIndex
-                existing.addressIndex = addressIndex
                 existing.balance = balance
                 existing.nonce = nonce
                 if balance > 0 || nonce > 0 {
