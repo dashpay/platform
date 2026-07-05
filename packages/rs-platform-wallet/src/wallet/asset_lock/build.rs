@@ -386,9 +386,13 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             .await?;
         self.queue_asset_lock_changeset(cs_broadcast);
 
-        // 5. Wait for proof via SPV events.
+        // 5. Wait for proof via SPV events. The 300s bound is an
+        //    InstantSend-preference window, NOT a finality timeout: on
+        //    expiry the resolver falls back to an unbounded ChainLock wait
+        //    (`upgrade_to_chain_lock_proof(None)`), so a broadcast lock is
+        //    never surfaced as "failed" just because IS was slow.
         let proof = self
-            .wait_for_proof(&out_point, Duration::from_secs(300))
+            .wait_for_proof(&out_point, Some(Duration::from_secs(300)))
             .await?;
 
         // 5b. If we got an IS-lock proof, check whether the transaction is

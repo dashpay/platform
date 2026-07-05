@@ -27,7 +27,7 @@
 
 use crate::wallet::asset_lock::orchestration::{
     out_point_from_proof, submit_with_cl_height_retry, AssetLockFunding, FundingResolution,
-    ResolvedFunding, CL_FALLBACK_TIMEOUT,
+    ResolvedFunding,
 };
 use crate::wallet::PlatformAddressWallet;
 use crate::{error::is_instant_lock_proof_invalid, PlatformAddressChangeSet, PlatformWalletError};
@@ -86,12 +86,17 @@ impl PlatformAddressWallet {
     ///
     /// # Latency budget
     ///
-    /// Worst-case wall time stacks at ~690s on the IS-rejection
-    /// branch:
+    /// There is intentionally **no ceiling** on this call: a broadcast
+    /// asset lock is committed on-chain, and its ChainLock is
+    /// deterministic finality that will eventually arrive, so the flow
+    /// waits for finality however long it takes rather than reporting a
+    /// spurious failure. The components are:
     /// - 300s IS-wait inside the resolver's
     ///   `create_funded_asset_lock_proof` (`AssetLockManager`'s
-    ///   fixed window before falling back to ChainLock).
-    /// - 180s CL fallback (`CL_FALLBACK_TIMEOUT`) per `upgrade_to_chain_lock_proof` call.
+    ///   InstantSend-preference window before falling back to ChainLock).
+    /// - **Unbounded** ChainLock fallback
+    ///   (`upgrade_to_chain_lock_proof(None)`) — waits for the ChainLock
+    ///   indefinitely (testnet ChainLocks can take ~15min).
     /// - 210s CL-height retry budget (`CL_HEIGHT_RETRY_BUDGET`) per
     ///   `submit_with_cl_height_retry` wrapper.
     /// - Up to two passes through the submit wrapper on the
@@ -100,7 +105,10 @@ impl PlatformAddressWallet {
     ///
     /// Happy-path wall time on a healthy testnet is single-digit
     /// seconds (IS-lock typically arrives within 3s of broadcast,
-    /// CL-height retry never fires).
+    /// CL-height retry never fires). The unbounded wait only bites when
+    /// InstantSend never propagates and the caller must wait out the
+    /// slower ChainLock. Callers run this off the main thread and never
+    /// cancel it (see the Cancellation note below).
     ///
     /// # Cancellation
     ///
@@ -173,16 +181,13 @@ impl PlatformAddressWallet {
                 );
                 let chain_proof = self
                     .asset_locks
-                    .upgrade_to_chain_lock_proof(&out_point, CL_FALLBACK_TIMEOUT)
+                    .upgrade_to_chain_lock_proof(&out_point, None)
                     .await?;
                 // Re-derive the credit-output path. The lock is now
                 // CL-attached; `resume_asset_lock` short-circuits to
                 // the existing-proof branch and just hands the path
                 // back.
-                let (_, path) = self
-                    .asset_locks
-                    .resume_asset_lock(&out_point, CL_FALLBACK_TIMEOUT)
-                    .await?;
+                let (_, path) = self.asset_locks.resume_asset_lock(&out_point, None).await?;
                 ResolvedFunding {
                     proof: chain_proof,
                     path,
@@ -220,7 +225,7 @@ impl PlatformAddressWallet {
                 );
                 let chain_proof = self
                     .asset_locks
-                    .upgrade_to_chain_lock_proof(&out_point, CL_FALLBACK_TIMEOUT)
+                    .upgrade_to_chain_lock_proof(&out_point, None)
                     .await?;
                 // Advance the tracked status from `InstantSendLocked`
                 // to `ChainLocked` with the upgraded proof attached

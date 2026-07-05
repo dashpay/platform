@@ -68,7 +68,6 @@ use dash_sdk::platform::transition::top_up_identity::TopUpIdentity;
 use crate::error::{is_instant_lock_proof_invalid, PlatformWalletError};
 use crate::wallet::asset_lock::orchestration::{
     out_point_from_proof, submit_with_cl_height_retry, FundingResolution, ResolvedFunding,
-    CL_FALLBACK_TIMEOUT,
 };
 use crate::wallet::asset_lock::AssetLockFunding;
 
@@ -184,7 +183,7 @@ impl IdentityWallet {
                 );
                 let chain_proof = self
                     .asset_locks
-                    .upgrade_to_chain_lock_proof(&out_point, CL_FALLBACK_TIMEOUT)
+                    .upgrade_to_chain_lock_proof(&out_point, None)
                     .await?;
                 // Recover the credit-output derivation path. The
                 // asset lock is now CL-attached (status advanced by
@@ -193,10 +192,7 @@ impl IdentityWallet {
                 // proof branch and just re-derives the path. This is
                 // cheap (no SPV wait) and avoids duplicating the
                 // path-derivation logic here.
-                let (_, path) = self
-                    .asset_locks
-                    .resume_asset_lock(&out_point, CL_FALLBACK_TIMEOUT)
-                    .await?;
+                let (_, path) = self.asset_locks.resume_asset_lock(&out_point, None).await?;
                 ResolvedFunding {
                     proof: chain_proof,
                     path,
@@ -248,7 +244,7 @@ impl IdentityWallet {
                 );
                 let chain_proof = self
                     .asset_locks
-                    .upgrade_to_chain_lock_proof(&out_point, CL_FALLBACK_TIMEOUT)
+                    .upgrade_to_chain_lock_proof(&out_point, None)
                     .await?;
                 submit_with_cl_height_retry(settings, |s| {
                     placeholder.put_to_platform_and_wait_for_response_with_signer(
@@ -404,12 +400,9 @@ impl IdentityWallet {
                 );
                 let chain_proof = self
                     .asset_locks
-                    .upgrade_to_chain_lock_proof(&out_point, CL_FALLBACK_TIMEOUT)
+                    .upgrade_to_chain_lock_proof(&out_point, None)
                     .await?;
-                let (_, path) = self
-                    .asset_locks
-                    .resume_asset_lock(&out_point, CL_FALLBACK_TIMEOUT)
-                    .await?;
+                let (_, path) = self.asset_locks.resume_asset_lock(&out_point, None).await?;
                 ResolvedFunding {
                     proof: chain_proof,
                     path,
@@ -445,7 +438,7 @@ impl IdentityWallet {
                 );
                 let chain_proof = self
                     .asset_locks
-                    .upgrade_to_chain_lock_proof(&out_point, CL_FALLBACK_TIMEOUT)
+                    .upgrade_to_chain_lock_proof(&out_point, None)
                     .await?;
                 submit_with_cl_height_retry(settings, |s| {
                     identity.top_up_identity_with_signer(

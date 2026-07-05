@@ -206,10 +206,15 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// registration or top-up via the `_with_signer` SDK methods. The
     /// caller passes `derivation_path` to the same signer used for the
     /// build phase when the credit output is later consumed on Platform.
+    ///
+    /// `timeout` is `Option<Duration>` and is only consulted when the lock
+    /// still needs a proof (`Built` / `Broadcast`): `None` waits
+    /// **indefinitely** for finality. For `InstantSendLocked` / `ChainLocked`
+    /// the proof already exists and no wait happens, so the value is moot.
     pub async fn resume_asset_lock(
         &self,
         out_point: &OutPoint,
-        timeout: Duration,
+        timeout: Option<Duration>,
     ) -> Result<(dpp::prelude::AssetLockProof, DerivationPath), PlatformWalletError> {
         tracing::info!(outpoint = %out_point, ?timeout, "resume_asset_lock: entered");
 
