@@ -107,16 +107,16 @@ Most Platform actions have hard preconditions. Establish these fixtures before s
 
 | ID | Action | Layer | Tier | Status | Tags | Entry point & test notes |
 |---|---|---|---|---|---|---|
-| CORE-14 | Hold multiple wallets at once (wallet list) | Core | Thorough | ✅ | | `WalletsScreen` lists every wallet for the current network; `PlatformWalletManager.wallets` holds N keyed by `wallet_id`. |
-| CORE-15 | Create / import a second wallet (alongside existing) | Core | Thorough | ✅ | | Wallets tab → "Add Wallet" → `CreateWalletScreen`. New wallet coexists; must not replace or corrupt the first. |
-| CORE-16 | Switch active wallet | Core | Thorough | ✅ | | Tap a wallet row → `WalletDetailScreen` scopes all Room queries to that `walletId`. Navigation-based — there is **no** global wallet picker. |
-| CORE-17 | Remove / delete a wallet | Core | Uncommon | ✅ | | `WalletDetailScreen` → Delete Wallet → `platform_wallet_manager_remove_wallet`; cascades Keystore mnemonic + that wallet's identities + Room rows. Verify other wallets untouched. |
-| CORE-18 | Per-wallet isolation (identities / addresses / balances / shielded) | Core | Thorough | ✅ | | Confirm wallet A's identities, addresses, Core/Platform balances and shielded state never surface under wallet B (Room queries filtered by `walletId`). |
-| CORE-19 | Send between two on-device wallets | Core | Thorough | ✅ | | Normal send from wallet A to wallet B's receive address. B's balance increases after sync. |
-| CORE-20 | Concurrent SPV sync across all wallets | Core | Thorough | ✅ | | One SPV runtime per network filters every wallet's addresses; `spvProgress` is manager-global. With 2+ wallets, confirm each reaches the tip. |
-| CORE-21 | Multiple wallets bound to the shielded pool concurrently | Shielded | Uncommon | ✅ | | `platform_wallet_manager_bind_shielded` is per `wallet_id`; the manager syncs all bound wallets. |
-| CORE-22 | Re-add a previously deleted wallet (same network) | Core | Uncommon | ✅ | | After `CORE-17`, re-import the same mnemonic on the same network. Re-derives the same `wallet_id`; must re-discover identities/addresses/balances cleanly. |
-| CORE-23 | Re-add a deleted wallet that also exists on another network | Core | Uncommon | ✅ | | Same mnemonic on two networks → distinct network-scoped `wallet_id`s. Delete on X, verify Y untouched, re-add on X, confirm both coexist. |
+| CORE-14 | Hold multiple wallets at once (wallet list) | Core | Thorough | ✅ | multiwallet | `WalletsScreen` lists every wallet for the current network; `PlatformWalletManager.wallets` holds N keyed by `wallet_id`. |
+| CORE-15 | Create / import a second wallet (alongside existing) | Core | Thorough | ✅ | multiwallet | Wallets tab → "Add Wallet" → `CreateWalletScreen`. New wallet coexists; must not replace or corrupt the first. |
+| CORE-16 | Switch active wallet | Core | Thorough | ✅ | multiwallet | Tap a wallet row → `WalletDetailScreen` scopes all Room queries to that `walletId`. Navigation-based — there is **no** global wallet picker. |
+| CORE-17 | Remove / delete a wallet | Core | Uncommon | ✅ | multiwallet | `WalletDetailScreen` → Delete Wallet → `platform_wallet_manager_remove_wallet`; cascades Keystore mnemonic + that wallet's identities + Room rows. Verify other wallets untouched. |
+| CORE-18 | Per-wallet isolation (identities / addresses / balances / shielded) | Core | Thorough | ✅ | multiwallet | Confirm wallet A's identities, addresses, Core/Platform balances and shielded state never surface under wallet B (Room queries filtered by `walletId`). |
+| CORE-19 | Send between two on-device wallets | Core | Thorough | ✅ | multiwallet | Normal send from wallet A to wallet B's receive address. B's balance increases after sync. |
+| CORE-20 | Concurrent SPV sync across all wallets | Core | Thorough | ✅ | multiwallet | One SPV runtime per network filters every wallet's addresses; `spvProgress` is manager-global. With 2+ wallets, confirm each reaches the tip. |
+| CORE-21 | Multiple wallets bound to the shielded pool concurrently | Shielded | Uncommon | ✅ | multiwallet | `platform_wallet_manager_bind_shielded` is per `wallet_id`; the manager syncs all bound wallets. |
+| CORE-22 | Re-add a previously deleted wallet (same network) | Core | Uncommon | ✅ | multiwallet | After `CORE-17`, re-import the same mnemonic on the same network. Re-derives the same `wallet_id`; must re-discover identities/addresses/balances cleanly. |
+| CORE-23 | Re-add a deleted wallet that also exists on another network | Core | Uncommon | ✅ | multiwallet | Same mnemonic on two networks → distinct network-scoped `wallet_id`s. Delete on X, verify Y untouched, re-add on X, confirm both coexist. |
 
 ### 4.2 Identity — `Domain=Identity`
 
