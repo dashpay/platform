@@ -1768,8 +1768,12 @@ unsafe extern "C" fn tramp_load_shielded_activity(
                     let block_height = env.get_field(&h, "blockHeight", "J")?.j()? as u64;
                     let has_block_height = env.get_field(&h, "hasBlockHeight", "Z")?.z()? as u8;
                     let created_at_ms = env.get_field(&h, "createdAtMs", "J")?.j()? as u64;
-                    let identity_id = read_id32_field(env, &h, "identityId")?;
                     let has_identity_id = env.get_field(&h, "hasIdentityId", "Z")?.z()? as u8;
+                    let identity_id = if has_identity_id != 0 {
+                        read_id32_field(env, &h, "identityId")?
+                    } else {
+                        [0u8; 32]
+                    };
                     let (counterparty_ptr, counterparty_len) =
                         read_bytes_field_into_raw(env, &h, "counterparty")?;
                     let (memo_ptr, memo_len) = read_bytes_field_into_raw(env, &h, "memo")?;
@@ -2018,9 +2022,14 @@ fn read_bytes_field_fixed<const N: usize>(
     }
     let arr: JByteArray = obj.into();
     let len = env.get_array_length(&arr)? as usize;
-    // A wrong-length id must fail the load (surfaced as ERR_JNI by the
-    // load trampoline) — zero-padding or truncating would silently
-    // rehydrate the row under an altered fixed-size key.
+    // ByteArray(0) is the Kotlin holders' non-null absent sentinel
+    // (e.g. ShieldedActivityEntity.identityId with hasIdentityId=false)
+    // — treat it like null. Any OTHER wrong length must fail the load
+    // (surfaced as ERR_JNI by the load trampoline): zero-padding or
+    // truncating would silently rehydrate the row under an altered key.
+    if len == 0 {
+        return Ok(out);
+    }
     if len != N {
         log::error!("load: field `{field}` expected {N} bytes, got {len}");
         return Err(jni::errors::Error::WrongJValueType(
