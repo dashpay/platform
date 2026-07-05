@@ -273,11 +273,7 @@ impl WasmSdkError {
                 &JsValue::from_str("messages"),
                 &Array::new().into(),
             );
-            let _ = Reflect::set(
-                &details,
-                &JsValue::from_str("consensusErrors"),
-                &Array::new().into(),
-            );
+            let _ = Reflect::set(&details, &JsValue::from_str("errors"), &Array::new().into());
 
             let mut error = Self::new(
                 WasmSdkErrorKind::Protocol,

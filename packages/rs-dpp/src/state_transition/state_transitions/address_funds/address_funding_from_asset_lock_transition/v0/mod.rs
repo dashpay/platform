@@ -278,17 +278,18 @@ mod tests {
         let mut outputs = BTreeMap::new();
         outputs.insert(PlatformAddress::P2pkh([2u8; 20]), None);
 
-        let result = AddressFundingFromAssetLockTransitionV0::try_from_asset_lock_with_signer(
-            AssetLockProof::Chain(ChainAssetLockProof::new(42, [3u8; 36])),
-            &[7u8; 32],
-            inputs,
-            outputs,
-            vec![AddressFundsFeeStrategyStep::DeductFromInput(99)],
-            &UnreachableAddressSigner,
-            0,
-            &low_version,
-        )
-        .await;
+        let result =
+            AddressFundingFromAssetLockTransitionV0::try_from_asset_lock_with_signer_and_private_key(
+                AssetLockProof::Chain(ChainAssetLockProof::new(42, [3u8; 36])),
+                &[7u8; 32],
+                inputs,
+                outputs,
+                vec![AddressFundsFeeStrategyStep::DeductFromInput(99)],
+                &UnreachableAddressSigner,
+                0,
+                &low_version,
+            )
+            .await;
 
         assert!(matches!(
             result,
@@ -315,17 +316,18 @@ mod tests {
             Network::Testnet,
         );
 
-        let result = AddressFundingFromAssetLockTransitionV0::try_from_asset_lock_with_signer(
-            instant_asset_lock_proof_fixture(Some(correct_private_key), None),
-            &wrong_private_key.inner.secret_bytes(),
-            inputs,
-            outputs,
-            vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
-            &UnreachableAddressSigner,
-            0,
-            PlatformVersion::latest(),
-        )
-        .await;
+        let result =
+            AddressFundingFromAssetLockTransitionV0::try_from_asset_lock_with_signer_and_private_key(
+                instant_asset_lock_proof_fixture(Some(correct_private_key), None),
+                &wrong_private_key.inner.secret_bytes(),
+                inputs,
+                outputs,
+                vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
+                &UnreachableAddressSigner,
+                0,
+                PlatformVersion::latest(),
+            )
+            .await;
 
         assert!(
             matches!(result, Err(ProtocolError::Generic(ref message)) if message.contains("does not match the locked output")),

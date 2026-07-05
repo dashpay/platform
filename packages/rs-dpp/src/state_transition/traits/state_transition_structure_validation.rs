@@ -125,7 +125,8 @@ fn address_funds_basic_structure_version(
         | StateTransitionType::ShieldedTransfer
         | StateTransitionType::Unshield
         | StateTransitionType::ShieldFromAssetLock
-        | StateTransitionType::ShieldedWithdrawal => unreachable!(
+        | StateTransitionType::ShieldedWithdrawal
+        | StateTransitionType::IdentityCreateFromShieldedPool => unreachable!(
             "{state_transition_type} is not an address-funds constructor dispatch target"
         ),
     }

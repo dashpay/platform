@@ -883,11 +883,11 @@ mod tests {
 
         // Verify trunk query results.
         // Deterministic with seed=15 and the strategy above, after the
-        // client-side validation min_per_input fix.
+        // client-side address validation constructor checks.
         assert_eq!(
             trunk_result.elements.len(),
-            40,
-            "trunk query should return 40 elements"
+            43,
+            "trunk query should return 43 elements"
         );
         assert_eq!(
             trunk_result.leaf_keys.len(),
@@ -1083,11 +1083,11 @@ mod tests {
 
         // Verify trunk query results match expected values.
         // Deterministic with seed=15 and the strategy above, after the
-        // client-side validation min_per_input fix.
+        // client-side address validation constructor checks.
         assert_eq!(
             trunk_result.elements.len(),
-            40,
-            "trunk query should return 40 elements after restart"
+            43,
+            "trunk query should return 43 elements after restart"
         );
         assert_eq!(
             trunk_result.leaf_keys.len(),
@@ -2256,11 +2256,11 @@ mod tests {
 
         // Verify trunk query results.
         // Deterministic with seed=15 and the strategy above, after the
-        // client-side validation min_per_input fix.
+        // client-side address validation constructor checks.
         assert_eq!(
             trunk_result.elements.len(),
-            40,
-            "trunk query should return 40 elements"
+            43,
+            "trunk query should return 43 elements"
         );
         assert_eq!(
             trunk_result.leaf_keys.len(),
@@ -3903,8 +3903,8 @@ mod tests {
         assert_eq!(root_hash.len(), 32, "root hash should be 32 bytes");
         assert_eq!(
             trunk_data.elements.len(),
-            36,
-            "phase 1: trunk should return 36 elements"
+            49,
+            "phase 1: trunk should return 49 elements"
         );
 
         // Record addresses known so far from state transitions

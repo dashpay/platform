@@ -134,13 +134,14 @@ fn basic_structure_rules_v1_for_transition(
     use crate::withdrawal::Pooling;
 
     let mut result = SimpleConsensusValidationResult::default();
+    let min_withdrawal_amount = platform_version.system_limits.min_withdrawal_amount;
 
-    if amount < MIN_WITHDRAWAL_AMOUNT
+    if amount < min_withdrawal_amount
         || amount > platform_version.system_limits.max_withdrawal_amount
     {
         result.add_error(InvalidIdentityCreditWithdrawalTransitionAmountError::new(
             amount,
-            MIN_WITHDRAWAL_AMOUNT,
+            min_withdrawal_amount,
             platform_version.system_limits.max_withdrawal_amount,
         ));
     }
@@ -230,6 +231,8 @@ impl OptionallyAssetLockProved for IdentityCreditWithdrawalTransition {}
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::consensus::basic::BasicError;
+    use crate::consensus::ConsensusError;
     use crate::identity::core_script::CoreScript;
     use crate::serialization::{PlatformDeserializable, PlatformSerializable};
     use crate::state_transition::identity_credit_withdrawal_transition::accessors::IdentityCreditWithdrawalTransitionAccessorsV0;
@@ -456,6 +459,31 @@ mod test {
             .validate_estimated_fee(0, LATEST_PLATFORM_VERSION)
             .expect("validation should succeed");
         assert!(!result.is_valid());
+    }
+
+    #[test]
+    fn basic_structure_uses_versioned_min_withdrawal_amount_v12() {
+        let platform_version = PlatformVersion::get(12).expect("v12 exists");
+        let mut t = make_withdrawal_v1();
+        t.set_amount(999_999);
+        t.set_pooling(Pooling::Never);
+
+        let result = t.basic_structure_rules_v1(platform_version);
+
+        assert_eq!(
+            platform_version.system_limits.min_withdrawal_amount,
+            1_000_000
+        );
+        assert_eq!(result.errors.len(), 1);
+        match &result.errors[0] {
+            ConsensusError::BasicError(
+                BasicError::InvalidIdentityCreditWithdrawalTransitionAmountError(error),
+            ) => {
+                assert_eq!(error.amount(), 999_999);
+                assert_eq!(error.min_amount(), 1_000_000);
+            }
+            error => panic!("unexpected error: {error:?}"),
+        }
     }
 
     #[test]

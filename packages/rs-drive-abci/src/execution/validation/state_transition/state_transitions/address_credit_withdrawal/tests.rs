@@ -1937,14 +1937,18 @@ mod tests {
             inputs.insert(real_address, (1 as AddressNonce, dash_to_credits!(0.5)));
 
             // Sign with wrong signer
-            let transition = create_signed_address_credit_withdrawal_transition(
+            let transition = create_manually_signed_withdrawal_transition(
                 &wrong_signer,
                 inputs,
                 None,
-                vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
+                AddressFundsFeeStrategy::from(vec![AddressFundsFeeStrategyStep::DeductFromInput(
+                    0,
+                )]),
+                1,
+                Pooling::Never,
                 create_random_output_script(&mut rng),
-            )
-            .await;
+                0,
+            );
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 

@@ -223,9 +223,8 @@ impl IdentityCreateTransitionMethodsV0 for IdentityCreateTransitionV0 {
                 true, // in create_identity context
                 _platform_version,
             )?;
-        if !validation_result.is_valid() {
-            let first_error = validation_result.errors.into_iter().next().unwrap();
-            return Err(ProtocolError::ConsensusError(Box::new(first_error)));
+        if let Some(error) = consensus_errors_as_protocol_error(validation_result) {
+            return Err(error);
         }
 
         let identity_id = asset_lock_proof.create_identifier()?;
