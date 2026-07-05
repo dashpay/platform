@@ -8,6 +8,9 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import org.dashfoundation.dashsdk.Sdk
 import org.dashfoundation.dashsdk.persistence.DashDatabase
@@ -111,6 +114,7 @@ class AppContainer(private val context: Context) {
     val shieldedService = org.dashfoundation.dashsdk.services.ShieldedService(database)
 
     private var spvOverlayJob: kotlinx.coroutines.Job? = null
+    private var rebindJob: kotlinx.coroutines.Job? = null
 
     /**
      * Activate the manager for the current SDK/network, load wallets, and
@@ -123,53 +127,19 @@ class AppContainer(private val context: Context) {
         manager.loadPersistedWallets()
         platformBalanceSyncService.configure(manager)
 
-        // Port of the `rebindWalletScopedServices` tail
-        // (SwiftExampleAppApp.swift): drive the manager-wide sync loops
-        // from the deterministic first wallet. Mirrors iOS
-        // `PlatformWalletManager.firstWallet` — the lexicographically
-        // smallest wallet id; the map keys are fixed-width lowercase hex,
-        // so string order equals byte order.
-        val wallet = manager.wallets.value.entries.minByOrNull { it.key }?.value
-        if (wallet == null) {
-            // No wallets on the active network: stop the loops and reset
-            // the per-wallet service surfaces, so the Sync tab shows zeros
-            // instead of leaking values from another network's wallet.
-            try {
-                manager.stopPlatformAddressSync()
-                if (shieldedService.isAvailable) {
-                    manager.stopShieldedSync()
-                }
-            } catch (e: Exception) {
-                android.util.Log.w(TAG, "Failed to stop sync coordinators", e)
-            }
-            platformBalanceSyncService.reset()
-            shieldedService.unbind()
-        } else {
-            try {
-                if (!manager.isPlatformAddressSyncRunning()) {
-                    manager.startPlatformAddressSync()
-                }
-                // Bind the shielded service against the same wallet.
-                // Best-effort like iOS — failures (no mnemonic in the
-                // store, declined biometric) leave the service unbound;
-                // bind() logs and doesn't throw. dbPath mirrors iOS's
-                // `ShieldedService.dbPath(for:)` naming
-                // (`shielded_tree_<networkName>.sqlite`), rooted in
-                // filesDir (← the iOS Documents directory).
-                shieldedService.bind(
-                    manager = manager,
-                    walletId = wallet.walletId,
-                    dbPath = java.io.File(
-                        context.filesDir,
-                        "shielded_tree_${manager.network.networkName}.sqlite",
-                    ).absolutePath,
-                )
-                if (shieldedService.isAvailable && !manager.isShieldedSyncRunning()) {
-                    manager.startShieldedSync()
-                }
-            } catch (e: Exception) {
-                android.util.Log.e(TAG, "Failed to bind wallet-scoped services", e)
-            }
+        // Bind the wallet-scoped services against the deterministic first
+        // wallet now, and re-bind whenever the wallet set changes (create /
+        // import / remove) so a wallet created mid-session binds and starts
+        // syncing without an app relaunch. `drop(1)` skips the current set,
+        // already bound by the direct call above.
+        rebindWalletScopedServices(manager)
+        rebindJob?.cancel()
+        rebindJob = applicationScope.launch {
+            manager.wallets
+                .map { it.keys }
+                .distinctUntilChanged()
+                .drop(1)
+                .collect { rebindWalletScopedServices(manager) }
         }
 
         // Adapt the SDK's SPV progress into the app's overlay feed. Only
@@ -186,6 +156,61 @@ class AppContainer(private val context: Context) {
                         isSyncing = p.isSyncing,
                     ).takeIf { p.isSyncing },
                 )
+            }
+        }
+    }
+
+    /**
+     * Wallet-scoped rebind — drive the manager-wide sync loops from the
+     * deterministic first wallet (← iOS `rebindWalletScopedServices` in
+     * SwiftExampleAppApp.swift). Idempotent: `configureShielded` /
+     * `bindShielded` and the start-if-not-running guards make repeated calls
+     * (on every wallet-set change) safe.
+     */
+    private suspend fun rebindWalletScopedServices(
+        manager: org.dashfoundation.dashsdk.wallet.PlatformWalletManager,
+    ) {
+        // Mirrors iOS `PlatformWalletManager.firstWallet` — the
+        // lexicographically smallest wallet id; the map keys are fixed-width
+        // lowercase hex, so string order equals byte order.
+        val wallet = manager.wallets.value.entries.minByOrNull { it.key }?.value
+        if (wallet == null) {
+            // No wallets on the active network: stop the loops and reset the
+            // per-wallet service surfaces, so the Sync tab shows zeros instead
+            // of leaking values from another network's wallet.
+            try {
+                manager.stopPlatformAddressSync()
+                if (shieldedService.isAvailable) {
+                    manager.stopShieldedSync()
+                }
+            } catch (e: Exception) {
+                android.util.Log.w(TAG, "Failed to stop sync coordinators", e)
+            }
+            platformBalanceSyncService.reset()
+            shieldedService.unbind()
+        } else {
+            try {
+                if (!manager.isPlatformAddressSyncRunning()) {
+                    manager.startPlatformAddressSync()
+                }
+                // Best-effort like iOS — failures (no mnemonic in the store,
+                // declined biometric) leave the service unbound; bind() logs
+                // and doesn't throw. dbPath mirrors iOS's
+                // `ShieldedService.dbPath(for:)` naming
+                // (`shielded_tree_<networkName>.sqlite`), rooted in filesDir.
+                shieldedService.bind(
+                    manager = manager,
+                    walletId = wallet.walletId,
+                    dbPath = java.io.File(
+                        context.filesDir,
+                        "shielded_tree_${manager.network.networkName}.sqlite",
+                    ).absolutePath,
+                )
+                if (shieldedService.isAvailable && !manager.isShieldedSyncRunning()) {
+                    manager.startShieldedSync()
+                }
+            } catch (e: Exception) {
+                android.util.Log.e(TAG, "Failed to bind wallet-scoped services", e)
             }
         }
     }
