@@ -1942,7 +1942,10 @@ mod tests {
         // In-memory `found` for the removed address is dropped.
         assert!(!state.found.contains_key(&removed));
         // The bijection is unchanged — pre-existing pairing survives.
-        assert_eq!(state.addresses.get_by_left(&5u32).copied(), Some(conflicting));
+        assert_eq!(
+            state.addresses.get_by_left(&5u32).copied(),
+            Some(conflicting)
+        );
         assert!(state.addresses.get_by_right(&removed).is_none());
         // The protected address's balance is untouched.
         assert_eq!(state.found.get(&conflicting).copied(), Some(funds(200, 1)));
@@ -2001,7 +2004,10 @@ mod tests {
         assert!(!state.found.contains_key(&credited));
         // Bijection untouched: index 5 still → conflicting, and the
         // credited address was not inserted.
-        assert_eq!(state.addresses.get_by_left(&5u32).copied(), Some(conflicting));
+        assert_eq!(
+            state.addresses.get_by_left(&5u32).copied(),
+            Some(conflicting)
+        );
         assert!(state.addresses.get_by_right(&credited).is_none());
         assert_eq!(state.found.get(&conflicting).copied(), Some(funds(200, 1)));
     }
