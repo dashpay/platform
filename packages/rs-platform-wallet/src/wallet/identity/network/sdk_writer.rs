@@ -218,16 +218,14 @@ impl SdkWriter {
         // client-side equivalent of the old SdkSide key-id guard). The
         // `F`/`Fut` (SdkSide) type params are unused here, so a never-called
         // `fn` placeholder satisfies their bounds.
-        let ecdh_provider: EcdhProvider<
-            fn(
-                &IdentityPublicKey,
-                u32,
-            )
-                -> std::future::Ready<Result<dashcore::secp256k1::SecretKey, dash_sdk::Error>>,
-            _,
-            _,
-            _,
-        > = EcdhProvider::ClientSide {
+        // Aliased so the annotation stays under the type-complexity lint.
+        type UnusedSdkSideEcdh = fn(
+            &IdentityPublicKey,
+            u32,
+        ) -> std::future::Ready<
+            Result<dashcore::secp256k1::SecretKey, dash_sdk::Error>,
+        >;
+        let ecdh_provider: EcdhProvider<UnusedSdkSideEcdh, _, _, _> = EcdhProvider::ClientSide {
             get_shared_secret: move |peer: &dashcore::secp256k1::PublicKey| {
                 let peer_matches = *peer == expected_recipient_pubkey;
                 async move {
