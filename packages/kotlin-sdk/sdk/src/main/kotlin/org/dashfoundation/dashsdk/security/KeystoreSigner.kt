@@ -36,7 +36,11 @@ class KeystoreSigner(
     private val biometricGate: BiometricGate?,
 ) : NativeSignerBridge(), AutoCloseable {
 
-    val nativeHandle: Long = SignerNative.createSigner(this)
+    private val handleRef =
+        java.util.concurrent.atomic.AtomicLong(SignerNative.createSigner(this))
+
+    val nativeHandle: Long
+        get() = handleRef.get().also { check(it != 0L) { "KeystoreSigner has been closed" } }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -116,6 +120,7 @@ class KeystoreSigner(
         }
 
     override fun close() {
-        SignerNative.destroySigner(nativeHandle)
+        val h = handleRef.getAndSet(0)
+        if (h != 0L) SignerNative.destroySigner(h)
     }
 }

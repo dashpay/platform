@@ -20,7 +20,13 @@ class MnemonicResolverAndPersister(
     private val storage: WalletStorage,
 ) : NativeMnemonicBridge(), AutoCloseable {
 
-    val nativeHandle: Long = MnemonicNative.createResolver(this)
+    private val handleRef =
+        java.util.concurrent.atomic.AtomicLong(MnemonicNative.createResolver(this))
+
+    val nativeHandle: Long
+        get() = handleRef.get().also {
+            check(it != 0L) { "MnemonicResolverAndPersister has been closed" }
+        }
 
     /**
      * Synchronous resolve on the calling (Tokio) thread. `runBlocking` is
@@ -36,6 +42,7 @@ class MnemonicResolverAndPersister(
     }
 
     override fun close() {
-        MnemonicNative.destroyResolver(nativeHandle)
+        val h = handleRef.getAndSet(0)
+        if (h != 0L) MnemonicNative.destroyResolver(h)
     }
 }

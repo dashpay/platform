@@ -106,16 +106,22 @@ class AppState(
         }
     }
 
-    /** Switch networks: persist the choice and rebuild the SDK. */
+    /**
+     * Switch networks: rebuild the SDK first, then persist the choice.
+     * A failed build (e.g. devnet without a valid quorum URL) must leave
+     * both [_currentNetwork] and the persisted preference on the old
+     * network — committing first would strand the UI on a network with
+     * no SDK and replay the bad choice on next launch.
+     */
     suspend fun switchNetwork(
         network: Network,
         dapiAddresses: String? = null,
         quorumUrl: String? = null,
     ) {
         if (network == _currentNetwork.value && _sdk.value != null) return
+        initializeSdk(network, dapiAddresses, quorumUrl)
         dataStore.edit { it[KEY_NETWORK] = network.networkName }
         _currentNetwork.value = network
-        initializeSdk(network, dapiAddresses, quorumUrl)
     }
 
     fun setUseDockerSetup(enabled: Boolean) {
