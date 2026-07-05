@@ -17,13 +17,13 @@ use std::collections::{BTreeMap, BTreeSet};
 #[derive(Debug, Clone, Default)]
 pub struct DashPayState {
     /// Map of established contacts (bidirectional relationships) keyed by contact identity ID
-    pub established_contacts: BTreeMap<Identifier, EstablishedContact>,
+    pub(super) established_contacts: BTreeMap<Identifier, EstablishedContact>,
 
     /// Map of sent contact requests (outgoing, not yet reciprocated) keyed by recipient ID
-    pub sent_contact_requests: BTreeMap<Identifier, ContactRequest>,
+    pub(super) sent_contact_requests: BTreeMap<Identifier, ContactRequest>,
 
     /// Map of incoming contact requests (not yet accepted) keyed by sender ID
-    pub incoming_contact_requests: BTreeMap<Identifier, ContactRequest>,
+    pub(super) incoming_contact_requests: BTreeMap<Identifier, ContactRequest>,
 
     /// Senders this identity has chosen to **ignore** (per-sender mute,
     /// reversible — the local-only equivalent of "block"). Keyed by the
@@ -40,7 +40,7 @@ pub struct DashPayState {
     /// Local-only: there is no on-chain artifact (syncing it would leak who
     /// you ignored via the public contact-request indices). Cross-device
     /// sync is deferred to a future encrypted `profile` field.
-    pub ignored_senders: BTreeSet<Identifier>,
+    pub(super) ignored_senders: BTreeSet<Identifier>,
 
     /// DIP-15 auto-accept proofs that failed cryptographic verification (or
     /// were expired / malformed) during a `drain_auto_accepts` pass, keyed by
@@ -65,7 +65,7 @@ pub struct DashPayState {
     /// `ManagedIdentity::AUTO_ACCEPT_VERIFY_FAILED_CAP` entries (arbitrary
     /// eviction over cap) so a griefer paying credits for many distinct
     /// malformed proofs can't grow it unboundedly for the process lifetime.
-    pub auto_accept_verify_failed: BTreeSet<[u8; 32]>,
+    pub(super) auto_accept_verify_failed: BTreeSet<[u8; 32]>,
 
     /// Incremental-sync high-water marks (`$createdAt` ms of the newest
     /// `contactRequest` fetched) per direction. `None` ⇒ never synced; the
@@ -75,9 +75,9 @@ pub struct DashPayState {
     /// Durable cross-relaunch persistence is a follow-up; when added, restore
     /// must tolerate only under-shoot — never a value higher than the contact
     /// state justifies.
-    pub high_water_received_ms: Option<u64>,
+    pub(super) high_water_received_ms: Option<u64>,
     /// High-water mark for the sent direction (`$ownerId == me`).
-    pub high_water_sent_ms: Option<u64>,
+    pub(super) high_water_sent_ms: Option<u64>,
 
     /// DashPay profile (display name, bio, avatar, public message)
     /// published via the DashPay data contract. `None` until the
@@ -126,4 +126,45 @@ pub struct DashPayState {
     /// delta, not a per-identity snapshot.
     /// See [`PendingContactCrypto`](crate::changeset::PendingContactCrypto).
     pub pending_contact_crypto: Vec<crate::changeset::PendingContactCrypto>,
+}
+
+// Read access to the guarded relationship/cursor fields. Mutation goes
+// through the invariant-holding methods on `ManagedIdentity` (or their
+// `apply_*` replay counterparts) — the fields themselves are sealed to
+// this module tree so no caller can insert a relationship without the
+// auto-establish / tombstone / compare-and-advance rules running.
+impl DashPayState {
+    /// Established contacts (bidirectional relationships) keyed by
+    /// contact identity id.
+    pub fn established_contacts(&self) -> &BTreeMap<Identifier, EstablishedContact> {
+        &self.established_contacts
+    }
+
+    /// Sent contact requests (outgoing, not yet reciprocated) keyed by
+    /// recipient id.
+    pub fn sent_contact_requests(&self) -> &BTreeMap<Identifier, ContactRequest> {
+        &self.sent_contact_requests
+    }
+
+    /// Incoming contact requests (not yet accepted) keyed by sender id.
+    pub fn incoming_contact_requests(&self) -> &BTreeMap<Identifier, ContactRequest> {
+        &self.incoming_contact_requests
+    }
+
+    /// Senders this identity has chosen to ignore (per-sender mute).
+    pub fn ignored_senders(&self) -> &BTreeSet<Identifier> {
+        &self.ignored_senders
+    }
+
+    /// Received-direction incremental-sync cursor (`$createdAt` ms of the
+    /// newest fetched `contactRequest`). `None` ⇒ never synced this session.
+    pub fn high_water_received_ms(&self) -> Option<u64> {
+        self.high_water_received_ms
+    }
+
+    /// Sent-direction incremental-sync cursor. `None` ⇒ never synced this
+    /// session.
+    pub fn high_water_sent_ms(&self) -> Option<u64> {
+        self.high_water_sent_ms
+    }
 }

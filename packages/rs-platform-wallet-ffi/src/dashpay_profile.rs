@@ -103,8 +103,9 @@ pub unsafe extern "C" fn managed_identity_get_dashpay_profile(
         *out_has_profile = false;
     }
 
-    let option = MANAGED_IDENTITY_STORAGE
-        .with_item(identity_handle, |identity| identity.dashpay.profile.clone());
+    let option = MANAGED_IDENTITY_STORAGE.with_item(identity_handle, |identity| {
+        identity.dashpay().profile.clone()
+    });
     let profile_opt = unwrap_option_or_return!(option);
     match profile_opt {
         Some(profile) => unsafe {
@@ -153,28 +154,28 @@ pub unsafe extern "C" fn managed_identity_get_dashpay_sync_state(
 ) -> PlatformWalletFFIResult {
     check_ptr!(out_state);
     let option = MANAGED_IDENTITY_STORAGE.with_item(identity_handle, |identity| {
-        let (has_received, received) = match identity.dashpay.high_water_received_ms {
+        let (has_received, received) = match identity.dashpay().high_water_received_ms() {
             Some(v) => (true, v),
             None => (false, 0),
         };
-        let (has_sent, sent) = match identity.dashpay.high_water_sent_ms {
+        let (has_sent, sent) = match identity.dashpay().high_water_sent_ms() {
             Some(v) => (true, v),
             None => (false, 0),
         };
         DashPaySyncStateFFI {
-            established_contacts: identity.dashpay.established_contacts.len() as u32,
-            incoming_requests: identity.dashpay.incoming_contact_requests.len() as u32,
-            sent_requests: identity.dashpay.sent_contact_requests.len() as u32,
-            ignored_senders: identity.dashpay.ignored_senders.len() as u32,
-            contact_profiles: identity.dashpay.contact_profiles.len() as u32,
+            established_contacts: identity.dashpay().established_contacts().len() as u32,
+            incoming_requests: identity.dashpay().incoming_contact_requests().len() as u32,
+            sent_requests: identity.dashpay().sent_contact_requests().len() as u32,
+            ignored_senders: identity.dashpay().ignored_senders().len() as u32,
+            contact_profiles: identity.dashpay().contact_profiles.len() as u32,
             present_contact_profiles: identity
-                .dashpay
+                .dashpay()
                 .contact_profiles
                 .values()
                 .filter(|e| e.profile.is_some())
                 .count() as u32,
-            dashpay_payments: identity.dashpay.payments.len() as u32,
-            has_dashpay_profile: identity.dashpay.profile.is_some(),
+            dashpay_payments: identity.dashpay().payments.len() as u32,
+            has_dashpay_profile: identity.dashpay().profile.is_some(),
             has_high_water_received: has_received,
             high_water_received_ms: received,
             has_high_water_sent: has_sent,
@@ -217,7 +218,7 @@ pub unsafe extern "C" fn platform_wallet_get_dashpay_profile(
         let wm = wallet.wallet_manager().blocking_read();
         let info = wm.get_wallet_info(&wallet.wallet_id())?;
         let managed = info.identity_manager.managed_identity(&id)?;
-        Some(managed.dashpay.profile.clone())
+        Some(managed.dashpay().profile.clone())
     });
     let inner = unwrap_option_or_return!(option);
     let profile = unwrap_option_or_return!(inner);
@@ -266,7 +267,7 @@ pub unsafe extern "C" fn platform_wallet_get_contact_profile(
         let info = wm.get_wallet_info(&wallet.wallet_id())?;
         info.identity_manager
             .managed_identity(&owner)
-            .and_then(|m| m.dashpay.contact_profiles.get(&contact).cloned())
+            .and_then(|m| m.dashpay().contact_profiles.get(&contact).cloned())
     });
     let entry = unwrap_option_or_return!(option);
     match entry.and_then(|e| e.profile) {
@@ -422,7 +423,7 @@ mod tests {
             let mut managed = platform_wallet::ManagedIdentity::new(make_test_identity(), 0);
             let mut hash = [0u8; 32];
             hash[0] = 0xAB;
-            managed.dashpay.profile = Some(DashPayProfile {
+            *managed.dashpay_profile_mut() = Some(DashPayProfile {
                 display_name: Some("Alice".to_string()),
                 bio: Some("Bio text".to_string()),
                 avatar_url: Some("https://example.com/a.png".to_string()),

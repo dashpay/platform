@@ -280,14 +280,8 @@ pub mod scenarios {
         let contact1 = create_established_contact(bob_id, alice_id, 1_700_000_000, 1_700_000_100);
         let contact2 = create_established_contact(carol_id, alice_id, 1_700_000_200, 1_700_000_300);
 
-        alice
-            .dashpay
-            .established_contacts
-            .insert(bob_id, contact1.clone());
-        alice
-            .dashpay
-            .established_contacts
-            .insert(carol_id, contact2.clone());
+        alice.apply_established_contact(contact1.clone());
+        alice.apply_established_contact(contact2.clone());
 
         (alice, vec![contact1, contact2])
     }
@@ -305,10 +299,7 @@ pub mod scenarios {
         // Established contact with Bob
         let bob_contact =
             create_established_contact(bob_id, alice_id, 1_700_000_000, 1_700_000_100);
-        alice
-            .dashpay
-            .established_contacts
-            .insert(bob_id, bob_contact);
+        alice.apply_established_contact(bob_contact);
 
         // Pending sent request to Carol (not reciprocated yet)
         let carol_request = create_contact_request(alice_id, carol_id, 0, 1, 0, 1_700_000_200);
@@ -386,14 +377,14 @@ mod tests {
     fn test_alice_with_pending_sent_requests() {
         let (alice, requests) = scenarios::alice_with_pending_sent_requests();
 
-        assert_eq!(alice.dashpay.sent_contact_requests.len(), 3);
+        assert_eq!(alice.dashpay().sent_contact_requests().len(), 3);
         assert_eq!(requests.len(), 3);
 
         // Verify requests are in the managed identity
         for request in &requests {
             assert!(alice
-                .dashpay
-                .sent_contact_requests
+                .dashpay()
+                .sent_contact_requests()
                 .contains_key(&request.recipient_id));
         }
     }
@@ -402,8 +393,8 @@ mod tests {
     fn test_alice_with_mixed_contacts() {
         let alice = scenarios::alice_with_mixed_contacts();
 
-        assert_eq!(alice.dashpay.established_contacts.len(), 1); // Bob
-        assert_eq!(alice.dashpay.sent_contact_requests.len(), 1); // Carol
-        assert_eq!(alice.dashpay.incoming_contact_requests.len(), 2); // Dave, Eve
+        assert_eq!(alice.dashpay().established_contacts().len(), 1); // Bob
+        assert_eq!(alice.dashpay().sent_contact_requests().len(), 1); // Carol
+        assert_eq!(alice.dashpay().incoming_contact_requests().len(), 2); // Dave, Eve
     }
 }

@@ -163,7 +163,7 @@ pub unsafe extern "C" fn managed_identity_get_dashpay_payments(
 
     let option = MANAGED_IDENTITY_STORAGE.with_item(identity_handle, |identity| {
         identity
-            .dashpay
+            .dashpay()
             .payments
             .iter()
             .map(|(txid, entry)| DashpayPaymentFFI {
@@ -243,16 +243,16 @@ mod tests {
     /// `managed_identity_*` tests use.
     fn managed_identity_with_payments() -> Handle {
         // A minimal valid identity is awkward to build here; the
-        // `dashpay_payments` map is a plain public field, so we mutate
-        // it directly on a default-constructed identity via the same
-        // path the persister load uses.
+        // payments map is an open-tier cache, so we mutate it directly
+        // on a default-constructed identity via the same path the
+        // persister load uses.
         let identity = dpp::identity::Identity::V0(dpp::identity::v0::IdentityV0::default());
         let mut managed = ManagedIdentity::new(identity, 0);
-        managed.dashpay.payments.insert(
+        managed.dashpay_payments_mut().insert(
             "aa".repeat(32),
             PaymentEntry::new_sent(Identifier::from([1u8; 32]), 12_000, Some("lunch".into())),
         );
-        managed.dashpay.payments.insert(
+        managed.dashpay_payments_mut().insert(
             "bb".repeat(32),
             PaymentEntry::new_received(Identifier::from([2u8; 32]), 7_500, None),
         );

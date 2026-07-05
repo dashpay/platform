@@ -798,39 +798,6 @@ fn query_lower_bound(high_water: Option<u64>) -> Option<u64> {
     high_water.map(|hw| hw.saturating_sub(SYNC_OVERLAP_MS))
 }
 
-/// Advance a high-water cursor to the max `$createdAt` fetched this sweep,
-/// never below its current value. `max_fetched` is the max over docs *seen*
-/// (including ones ingest later collapses or skips — the cursor records
-/// fetch-completeness, not ingest-success), `None` when nothing was fetched (a
-/// zero-doc sweep leaves the cursor unchanged). The caller must only invoke
-/// this when the paginate exhausted without error.
-fn advance_high_water(current: Option<u64>, max_fetched: Option<u64>) -> Option<u64> {
-    match (current, max_fetched) {
-        (Some(c), Some(m)) => Some(c.max(m)), // never move backward
-        (None, m) => m,                       // first sweep: adopt what was fetched
-        (current, None) => current,           // zero-doc sweep: leave unchanged
-    }
-}
-
-/// Advance the cursor only if it still holds `snapshot` — the value read at the
-/// start of the sweep. If it changed mid-sweep (an `unignore_sender` resets it
-/// to `None` to force a re-fetch of a sender whose docs predate the cursor),
-/// this sweep's `max_fetched` is stale — its fetch ran before the reset and
-/// excluded that sender — so leave the new value rather than clobber the rewind.
-/// Without this, a concurrent un-ignore is lost and the sender stays invisible
-/// until a cold restart.
-fn advance_if_unchanged(
-    current: Option<u64>,
-    snapshot: Option<u64>,
-    max_fetched: Option<u64>,
-) -> Option<u64> {
-    if current == snapshot {
-        advance_high_water(snapshot, max_fetched)
-    } else {
-        current
-    }
-}
-
 fn newest_received_per_sender(
     requests: impl IntoIterator<Item = ContactRequest>,
 ) -> std::collections::BTreeMap<Identifier, ContactRequest> {
@@ -1066,8 +1033,8 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                         .managed_identity(&id)
                         .map(|m| {
                             (
-                                m.dashpay.high_water_received_ms,
-                                m.dashpay.high_water_sent_ms,
+                                m.dashpay().high_water_received_ms(),
+                                m.dashpay().high_water_sent_ms(),
                             )
                         })
                         .unwrap_or((None, None));
@@ -1209,14 +1176,14 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                     // is a rotation request (receive side) and must get
                     // through.
                     let tracked_reference = managed
-                        .dashpay
-                        .incoming_contact_requests
+                        .dashpay()
+                        .incoming_contact_requests()
                         .get(&sender_id)
                         .map(|r| r.account_reference)
                         .or_else(|| {
                             managed
-                                .dashpay
-                                .established_contacts
+                                .dashpay()
+                                .established_contacts()
                                 .get(&sender_id)
                                 .map(|c| c.incoming_request.account_reference)
                         });
@@ -1314,7 +1281,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 //       collide with the mutable `managed` reborrow.
                 {
                     use key_wallet::account::account_collection::DashpayAccountKey;
-                    for (contact_id, contact) in managed.dashpay.established_contacts.iter() {
+                    for (contact_id, contact) in managed.dashpay().established_contacts().iter() {
                         let key = DashpayAccountKey {
                             index: 0,
                             user_identity_id: identity_id.to_buffer(),
@@ -1361,21 +1328,14 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 // every ingest reached disk — a mid-sweep fetch error or a
                 // persist failure leaves that cursor intact so the next sweep
                 // re-fetches and retries (no burying, no skip past an
-                // unpersisted request).
-                //
-                // Compare-and-advance (see `advance_if_unchanged`): a concurrent
-                // `unignore_sender` may have reset the cursor mid-sweep to force
-                // a re-fetch; this sweep's stale `max` must not clobber that.
+                // unpersisted request). The compare-and-advance itself (a
+                // concurrent `unignore_sender` rewind must not be clobbered by
+                // this sweep's stale max) lives in the state layer.
                 if received_persist_ok {
-                    managed.dashpay.high_water_received_ms = advance_if_unchanged(
-                        managed.dashpay.high_water_received_ms,
-                        hw_received,
-                        max_received,
-                    );
+                    managed.advance_high_water_received(hw_received, max_received);
                 }
                 if sent_ok && sent_persist_ok {
-                    managed.dashpay.high_water_sent_ms =
-                        advance_if_unchanged(managed.dashpay.high_water_sent_ms, hw_sent, max_sent);
+                    managed.advance_high_water_sent(hw_sent, max_sent);
                 }
 
                 // (3) Collect account-building candidates: every established
@@ -1512,13 +1472,13 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 return;
             };
             let mut already = managed
-                .dashpay
+                .dashpay()
                 .pending_contact_crypto
                 .iter()
                 .filter(|e| matches!(e.op, PendingContactCryptoOp::AutoAccept))
                 .count();
             let mut picked = Vec::new();
-            for (sender, request) in &managed.dashpay.incoming_contact_requests {
+            for (sender, request) in managed.dashpay().incoming_contact_requests() {
                 if already >= MAX_AUTO_ACCEPT_QUEUED_PER_OWNER {
                     tracing::warn!(
                         owner = %identity_id,
@@ -1565,7 +1525,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             };
             for entry in &entries {
                 upsert_pending_contact_crypto(
-                    &mut managed.dashpay.pending_contact_crypto,
+                    managed.dashpay_pending_contact_crypto_mut(),
                     entry.clone(),
                 );
             }
@@ -1598,7 +1558,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         };
 
         let mut out = Vec::new();
-        for (contact_id, contact) in &managed.dashpay.established_contacts {
+        for (contact_id, contact) in managed.dashpay().established_contacts() {
             // Never retry a permanently-broken channel — wait for a
             // superseding request (which clears the flag on re-establish).
             if contact.payment_channel_broken {
@@ -1756,7 +1716,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             };
             for entry in &entries {
                 upsert_pending_contact_crypto(
-                    &mut managed.dashpay.pending_contact_crypto,
+                    managed.dashpay_pending_contact_crypto_mut(),
                     entry.clone(),
                 );
             }
@@ -1793,7 +1753,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             .map(|info| {
                 info.identity_manager
                     .managed_identities()
-                    .map(|m| count_account_build_ops(&m.dashpay.pending_contact_crypto))
+                    .map(|m| count_account_build_ops(&m.dashpay().pending_contact_crypto))
                     .sum::<usize>()
             })
             .unwrap_or(0)
@@ -1825,7 +1785,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 .map(|info| {
                     info.identity_manager
                         .managed_identities()
-                        .flat_map(|m| m.dashpay.pending_contact_crypto.iter().cloned())
+                        .flat_map(|m| m.dashpay().pending_contact_crypto.iter().cloned())
                         .collect()
                 })
                 .unwrap_or_default()
@@ -2174,7 +2134,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                             .managed_identity_mut(&snap.owner_identity_id)
                         {
                             removed.extend(retain_drained_by_snapshot(
-                                &mut managed.dashpay.pending_contact_crypto,
+                                managed.dashpay_pending_contact_crypto_mut(),
                                 std::slice::from_ref(snap),
                             ));
                         }
@@ -2234,7 +2194,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 .map(|info| {
                     info.identity_manager
                         .managed_identities()
-                        .flat_map(|m| m.dashpay.pending_contact_crypto.iter())
+                        .flat_map(|m| m.dashpay().pending_contact_crypto.iter())
                         .filter(|e| matches!(e.op, PendingContactCryptoOp::AutoAccept))
                         .cloned()
                         .collect()
@@ -2267,7 +2227,12 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 let wm = self.wallet_manager.read().await;
                 wm.get_wallet_info(&self.wallet_id)
                     .and_then(|info| info.identity_manager.managed_identity(&owner))
-                    .and_then(|mi| mi.dashpay.incoming_contact_requests.get(&sender).cloned())
+                    .and_then(|mi| {
+                        mi.dashpay()
+                            .incoming_contact_requests()
+                            .get(&sender)
+                            .cloned()
+                    })
             };
             let Some(request) = request else {
                 // Gone (already established / removed) — nothing to do.
@@ -2368,8 +2333,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                     for owner in &cleared_owners {
                         if let Some(managed) = info.identity_manager.managed_identity_mut(owner) {
                             managed
-                                .dashpay
-                                .pending_contact_crypto
+                                .dashpay_pending_contact_crypto_mut()
                                 .retain(|e| !cleared.iter().any(|k| *k == e.key()));
                         }
                     }
@@ -2470,7 +2434,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         let Some(managed) = info.identity_manager.managed_identity_mut(identity_id) else {
             return;
         };
-        let Some(contact) = managed.dashpay.established_contacts.get_mut(contact_id) else {
+        let Some(contact) = managed.established_contact_mut(contact_id) else {
             return;
         };
         if contact.payment_channel_broken {
@@ -2522,7 +2486,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         let Some(managed) = info.identity_manager.managed_identity_mut(identity_id) else {
             return;
         };
-        let Some(contact) = managed.dashpay.established_contacts.get_mut(contact_id) else {
+        let Some(contact) = managed.established_contact_mut(contact_id) else {
             return;
         };
         let current_reference = contact.incoming_request.account_reference;
@@ -2594,7 +2558,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         let Some(managed) = info.identity_manager.managed_identity_mut(identity_id) else {
             return;
         };
-        let Some(contact) = managed.dashpay.established_contacts.get_mut(contact_id) else {
+        let Some(contact) = managed.established_contact_mut(contact_id) else {
             return;
         };
 
@@ -2700,18 +2664,18 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             // Platform and re-broadcasting it would be rejected by the
             // `(ownerId, toUserId, accountReference)` unique index.
             let established = managed
-                .dashpay
-                .established_contacts
+                .dashpay()
+                .established_contacts()
                 .contains_key(&sender_id);
             let sent_exists = managed
-                .dashpay
-                .sent_contact_requests
+                .dashpay()
+                .sent_contact_requests()
                 .contains_key(&sender_id);
             if !established
                 && !sent_exists
                 && !managed
-                    .dashpay
-                    .incoming_contact_requests
+                    .dashpay()
+                    .incoming_contact_requests()
                     .contains_key(&sender_id)
             {
                 return Err(PlatformWalletError::ContactRequestNotFound(sender_id));
@@ -2839,8 +2803,8 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             .ok_or(PlatformWalletError::IdentityNotFound(our_identity_id))?;
 
         managed
-            .dashpay
-            .established_contacts
+            .dashpay()
+            .established_contacts()
             .get(&sender_id)
             .cloned()
             .ok_or(PlatformWalletError::ContactRequestNotFound(sender_id))
@@ -3237,7 +3201,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
 // ---------------------------------------------------------------------------
 #[cfg(test)]
 mod cursor_tests {
-    use super::{advance_high_water, query_lower_bound, SYNC_OVERLAP_MS};
+    use super::{query_lower_bound, SYNC_OVERLAP_MS};
 
     /// No cursor ⇒ full fetch (no lower bound).
     #[test]
@@ -3257,53 +3221,10 @@ mod cursor_tests {
         // Saturates rather than underflowing for a high-water below the window.
         assert_eq!(query_lower_bound(Some(5 * 60_000)), Some(0));
         const { assert!(SYNC_OVERLAP_MS > 0, "overlap must be > 0 for correctness") };
-    }
 
-    /// Advancing never moves the cursor backward (guards out-of-order /
-    /// stale-max sweeps and restore over-shoot), and a zero-doc sweep leaves
-    /// it unchanged.
-    #[test]
-    fn advance_never_goes_backward_and_zero_doc_is_noop() {
-        // First sweep from empty: adopt the max fetched.
-        assert_eq!(advance_high_water(None, Some(100)), Some(100));
-        // Forward progress.
-        assert_eq!(advance_high_water(Some(100), Some(200)), Some(200));
-        // A lower max (re-fetch within the overlap, or out-of-order) must NOT
-        // pull the cursor backward.
-        assert_eq!(advance_high_water(Some(200), Some(50)), Some(200));
-        // A zero-doc sweep leaves the cursor exactly where it was.
-        assert_eq!(advance_high_water(Some(200), None), Some(200));
-        assert_eq!(advance_high_water(None, None), None);
-
-        // `0` is a real cursor value distinct from `None` (a doc at
-        // `$createdAt == 0`, or a freshly-restored 0 cursor) — pin that a
+        // `0` is a real cursor value distinct from `None` — pin that a
         // future "treat 0 as unset" refactor would regress.
-        assert_eq!(advance_high_water(None, Some(0)), Some(0));
-        assert_eq!(advance_high_water(Some(0), None), Some(0));
         assert_eq!(query_lower_bound(Some(0)), Some(0));
-    }
-
-    /// Compare-and-advance: a concurrent `unignore_sender` reset (cursor no
-    /// longer equals the snapshot) must NOT be clobbered by this sweep's stale
-    /// max — otherwise the un-ignored sender stays invisible until a restart.
-    #[test]
-    fn advance_if_unchanged_respects_a_concurrent_reset() {
-        use super::advance_if_unchanged;
-        // Unchanged since snapshot → normal advance.
-        assert_eq!(
-            advance_if_unchanged(Some(100), Some(100), Some(200)),
-            Some(200)
-        );
-        assert_eq!(advance_if_unchanged(Some(100), Some(100), None), Some(100));
-        // THE RACE: snapshot was Some(100); un-ignore reset it to None
-        // mid-sweep; this sweep's max is Some(200) (stale — excluded the sender)
-        // → keep the None so the next sweep does a full re-fetch.
-        assert_eq!(advance_if_unchanged(None, Some(100), Some(200)), None);
-        // Any other concurrent change is likewise respected, not clobbered.
-        assert_eq!(
-            advance_if_unchanged(Some(50), Some(100), Some(200)),
-            Some(50)
-        );
     }
 }
 
@@ -3385,7 +3306,7 @@ mod sweep_tests {
         managed
             .add_sent_contact_request(test_request(our, contact, 0), &p)
             .expect("setup persists");
-        assert_eq!(managed.dashpay.established_contacts.len(), 1);
+        assert_eq!(managed.dashpay().established_contacts().len(), 1);
         (wallet, info)
     }
 
@@ -3436,9 +3357,7 @@ mod sweep_tests {
         info.identity_manager
             .managed_identity_mut(&our_id)
             .unwrap()
-            .dashpay
-            .established_contacts
-            .get_mut(&contact_id)
+            .established_contact_mut(&contact_id)
             .unwrap()
             .payment_channel_broken = true;
 
@@ -3521,8 +3440,8 @@ mod sweep_tests {
             .identity_manager
             .managed_identity(&our_id)
             .unwrap()
-            .dashpay
-            .established_contacts
+            .dashpay()
+            .established_contacts()
             .get(&contact_id)
             .unwrap()
             .clone();
@@ -3546,8 +3465,8 @@ mod sweep_tests {
             info.identity_manager
                 .managed_identity(&our_id)
                 .unwrap()
-                .dashpay
-                .established_contacts
+                .dashpay()
+                .established_contacts()
                 .get(&contact_id)
                 .unwrap()
                 .payment_channel_broken,
@@ -3585,12 +3504,16 @@ mod sweep_tests {
 
         // Wipe the in-memory ignore set, then re-apply the changeset (the
         // restore-from-persistence path).
-        info.identity_manager
-            .managed_identity_mut(&our_id)
-            .unwrap()
-            .dashpay
-            .ignored_senders
-            .clear();
+        let managed = info.identity_manager.managed_identity_mut(&our_id).unwrap();
+        let wiped: Vec<_> = managed
+            .dashpay()
+            .ignored_senders()
+            .iter()
+            .copied()
+            .collect();
+        for sender in &wiped {
+            managed.apply_unignored_sender(sender);
+        }
         let mut wallet = wallet;
         info.apply_changeset(&mut wallet, pcs).expect("apply");
 
@@ -3845,7 +3768,7 @@ mod sweep_tests {
         let managed = info.identity_manager.managed_identity_mut(&our_id).unwrap();
         // Precondition: the outgoing request is NOT in the pending map.
         assert!(
-            !managed.dashpay.sent_contact_requests.contains_key(&contact_id),
+            !managed.dashpay().sent_contact_requests().contains_key(&contact_id),
             "an established contact's outgoing request lives in established_contacts, not the pending map"
         );
         // The fix: the lookup still finds the prior reference via the
@@ -3903,8 +3826,8 @@ mod sweep_tests {
             .identity_manager
             .managed_identity(&our_id)
             .unwrap()
-            .dashpay
-            .established_contacts
+            .dashpay()
+            .established_contacts()
             .get(&Identifier::from([contact; 32]))
             .unwrap();
         assert_eq!(stored.incoming_request.account_reference, 7);

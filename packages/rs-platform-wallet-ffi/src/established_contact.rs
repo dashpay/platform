@@ -27,8 +27,8 @@ pub unsafe extern "C" fn managed_identity_get_established_contact(
 
     let option = MANAGED_IDENTITY_STORAGE.with_item(identity_handle, |identity| {
         identity
-            .dashpay
-            .established_contacts
+            .dashpay()
+            .established_contacts()
             .get(&contact_identifier)
             .cloned()
     });

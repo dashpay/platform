@@ -87,7 +87,70 @@ pub struct ManagedIdentity {
     /// DashPay social state layered on this identity: contacts, contact
     /// requests, profile, payments, sync cursors, deferred crypto. See
     /// [`DashPayState`] for the per-field contracts.
-    pub dashpay: DashPayState,
+    ///
+    /// Module-private on purpose: reads go through [`Self::dashpay`],
+    /// invariant-carrying mutations through the methods on this type,
+    /// and open-tier cache writes through the `*_mut` accessors. Keeping
+    /// the field sealed also rules out whole-value replacement
+    /// (`mem::take` / reassignment), which would silently wipe the
+    /// guarded relationship maps and sync cursors.
+    dashpay: DashPayState,
+}
+
+impl ManagedIdentity {
+    /// Read access to this identity's DashPay social state.
+    pub fn dashpay(&self) -> &DashPayState {
+        &self.dashpay
+    }
+
+    /// Mutable access to the DashPay profile cache.
+    ///
+    /// Replay/restore surface: bypasses persistence on purpose (the
+    /// changeset being applied is already durable). Live mutations that
+    /// must persist go through [`Self::set_dashpay_profile`].
+    pub fn dashpay_profile_mut(&mut self) -> &mut Option<crate::wallet::identity::DashPayProfile> {
+        &mut self.dashpay.profile
+    }
+
+    /// Mutable access to the DashPay payment-history cache.
+    ///
+    /// Replay/restore surface: bypasses persistence and the
+    /// rollback-on-persist-failure contract of
+    /// [`Self::record_dashpay_payment`], which live mutations must use.
+    pub fn dashpay_payments_mut(
+        &mut self,
+    ) -> &mut std::collections::BTreeMap<String, crate::wallet::identity::PaymentEntry> {
+        &mut self.dashpay.payments
+    }
+
+    /// Mutable access to the cached contact profiles.
+    pub fn dashpay_contact_profiles_mut(
+        &mut self,
+    ) -> &mut std::collections::BTreeMap<
+        dpp::prelude::Identifier,
+        crate::wallet::identity::ContactProfileEntry,
+    > {
+        &mut self.dashpay.contact_profiles
+    }
+
+    /// Mutable access to the per-session contact-rescan guard set.
+    pub fn dashpay_rescan_triggered_mut(
+        &mut self,
+    ) -> &mut std::collections::BTreeSet<dpp::prelude::Identifier> {
+        &mut self.dashpay.rescan_triggered
+    }
+
+    /// Mutable access to the deferred contact-crypto queue.
+    ///
+    /// The queue's dedup invariant (≤ 1 entry per
+    /// `(owner, contact, kind)`) lives in
+    /// [`upsert_pending_contact_crypto`](crate::changeset::upsert_pending_contact_crypto) —
+    /// callers inserting entries must go through it.
+    pub fn dashpay_pending_contact_crypto_mut(
+        &mut self,
+    ) -> &mut Vec<crate::changeset::PendingContactCrypto> {
+        &mut self.dashpay.pending_contact_crypto
+    }
 }
 
 #[cfg(test)]

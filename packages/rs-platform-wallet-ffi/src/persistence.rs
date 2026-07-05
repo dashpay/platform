@@ -3755,10 +3755,7 @@ unsafe fn restore_dashpay_ignored(spec: &IdentityRestoreEntryFFI, managed: &mut 
 /// unit-testable without a full `IdentityRestoreEntryFFI`.
 fn apply_ignored_rows(rows: &[[u8; 32]], managed: &mut ManagedIdentity) {
     for row in rows {
-        managed
-            .dashpay
-            .ignored_senders
-            .insert(Identifier::from(*row));
+        managed.apply_ignored_sender(Identifier::from(*row));
     }
 }
 
@@ -3806,7 +3803,7 @@ unsafe fn apply_payment_rows(rows: &[PaymentRestoreEntryFFI], managed: &mut Mana
         } else {
             CStr::from_ptr(row.memo).to_str().ok().map(str::to_string)
         };
-        managed.dashpay.payments.insert(
+        managed.dashpay_payments_mut().insert(
             txid,
             PaymentEntry {
                 counterparty_id: Identifier::from(row.counterparty_id),
@@ -3900,7 +3897,7 @@ unsafe fn apply_contact_profile_rows(
         // longer passes the `https://` / length rule.
         let avatar_url = opt_string(row.avatar_url).filter(|u| is_valid_avatar_url(u));
 
-        managed.dashpay.contact_profiles.insert(
+        managed.dashpay_contact_profiles_mut().insert(
             Identifier::from(row.contact_id),
             ContactProfileEntry {
                 profile: Some(DashPayProfile {
@@ -4064,22 +4061,13 @@ unsafe fn apply_contact_rows(
                 contact.payment_channel_broken = acc.payment_channel_broken;
                 contact.contact_account_label = acc.contact_account_label;
                 contact.accepted_accounts = acc.accepted_accounts;
-                managed
-                    .dashpay
-                    .established_contacts
-                    .insert(contact_id, contact);
+                managed.apply_established_contact(contact);
             }
             (Some(outgoing), None) => {
-                managed
-                    .dashpay
-                    .sent_contact_requests
-                    .insert(contact_id, outgoing);
+                managed.apply_sent_contact_request(outgoing);
             }
             (None, Some(incoming)) => {
-                managed
-                    .dashpay
-                    .incoming_contact_requests
-                    .insert(contact_id, incoming);
+                managed.apply_incoming_contact_request(incoming);
             }
             (None, None) => unreachable!("accumulator entries always hold at least one row"),
         }
@@ -4792,9 +4780,9 @@ mod tests {
 
         unsafe { apply_payment_rows(&rows, &mut managed) };
 
-        assert_eq!(managed.dashpay.payments.len(), 2);
+        assert_eq!(managed.dashpay().payments.len(), 2);
         let sent = managed
-            .dashpay
+            .dashpay()
             .payments
             .get(&"aa".repeat(32))
             .expect("sent entry restored");
@@ -4805,7 +4793,7 @@ mod tests {
         assert_eq!(sent.counterparty_id, Identifier::from([0xBB; 32]));
 
         let recv = managed
-            .dashpay
+            .dashpay()
             .payments
             .get(&"bb".repeat(32))
             .expect("received entry restored");
@@ -4825,7 +4813,7 @@ mod tests {
         }];
         unsafe { apply_payment_rows(&bad, &mut managed) };
         assert_eq!(
-            managed.dashpay.payments.len(),
+            managed.dashpay().payments.len(),
             2,
             "a row with an unknown direction must be skipped, not inserted"
         );
@@ -4889,10 +4877,10 @@ mod tests {
 
         unsafe { apply_contact_profile_rows(&rows, &mut managed) };
 
-        assert_eq!(managed.dashpay.contact_profiles.len(), 2);
+        assert_eq!(managed.dashpay().contact_profiles.len(), 2);
 
         let alice = managed
-            .dashpay
+            .dashpay()
             .contact_profiles
             .get(&Identifier::from([0xBB; 32]))
             .expect("alice contact profile restored");
@@ -4909,7 +4897,7 @@ mod tests {
         assert!(alice_profile.bio.is_none());
 
         let bob = managed
-            .dashpay
+            .dashpay()
             .contact_profiles
             .get(&Identifier::from([0xCC; 32]))
             .expect("bob contact profile restored");
@@ -4953,7 +4941,7 @@ mod tests {
 
         apply_ignored_rows(&rows, &mut managed);
 
-        assert_eq!(managed.dashpay.ignored_senders.len(), 2);
+        assert_eq!(managed.dashpay().ignored_senders().len(), 2);
         assert!(managed.is_sender_ignored(&Identifier::from([0xBB; 32])));
         assert!(managed.is_sender_ignored(&Identifier::from([0xDD; 32])));
         // Per-sender suppression: the ignored sender is suppressed
@@ -5025,8 +5013,8 @@ mod tests {
         unsafe { apply_contact_rows(&rows, &owner, &mut managed) };
 
         let s = managed
-            .dashpay
-            .sent_contact_requests
+            .dashpay()
+            .sent_contact_requests()
             .get(&sent_c)
             .expect("pending sent request restored");
         assert_eq!(
@@ -5038,8 +5026,8 @@ mod tests {
             (3, 4, 11)
         );
         let i = managed
-            .dashpay
-            .incoming_contact_requests
+            .dashpay()
+            .incoming_contact_requests()
             .get(&in_c)
             .expect("pending incoming request restored");
         assert_eq!(
@@ -5052,8 +5040,8 @@ mod tests {
         );
 
         let e = managed
-            .dashpay
-            .established_contacts
+            .dashpay()
+            .established_contacts()
             .get(&estab_c)
             .expect("established contact restored");
         assert_eq!(e.outgoing_request.auto_accept_proof, Some(vec![9u8; 40]));

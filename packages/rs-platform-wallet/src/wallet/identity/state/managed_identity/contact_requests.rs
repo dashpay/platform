@@ -629,7 +629,74 @@ impl ManagedIdentity {
     }
 }
 
-// --- Apply (restore from changeset) ---
+// --- High-water sync cursors (compare-and-advance) ---
+
+/// Advance a high-water cursor to the max `$createdAt` fetched this sweep,
+/// never below its current value. `max_fetched` is the max over docs *seen*
+/// (including ones ingest later collapses or skips — the cursor records
+/// fetch-completeness, not ingest-success), `None` when nothing was fetched (a
+/// zero-doc sweep leaves the cursor unchanged).
+fn advance_high_water(current: Option<u64>, max_fetched: Option<u64>) -> Option<u64> {
+    match (current, max_fetched) {
+        (Some(c), Some(m)) => Some(c.max(m)), // never move backward
+        (None, m) => m,                       // first sweep: adopt what was fetched
+        (current, None) => current,           // zero-doc sweep: leave unchanged
+    }
+}
+
+/// Advance the cursor only if it still holds `snapshot` — the value read at the
+/// start of the sweep. If it changed mid-sweep (an `unignore_sender` resets it
+/// to `None` to force a re-fetch of a sender whose docs predate the cursor),
+/// this sweep's `max_fetched` is stale — its fetch ran before the reset and
+/// excluded that sender — so leave the new value rather than clobber the rewind.
+/// Without this, a concurrent un-ignore is lost and the sender stays invisible
+/// until a cold restart.
+fn advance_if_unchanged(
+    current: Option<u64>,
+    snapshot: Option<u64>,
+    max_fetched: Option<u64>,
+) -> Option<u64> {
+    if current == snapshot {
+        advance_high_water(snapshot, max_fetched)
+    } else {
+        current
+    }
+}
+
+impl ManagedIdentity {
+    /// Compare-and-advance the received-direction sync cursor to
+    /// `max_fetched` (never below its current value), ONLY if the cursor
+    /// still holds `snapshot` — the value read at sweep start. A mid-sweep
+    /// [`Self::unignore_sender`] rewind (reset to `None`) must not be
+    /// clobbered by a stale sweep max, or the un-ignored sender stays
+    /// invisible until a cold restart.
+    ///
+    /// Caller contract (unchanged from when this lived at the sweep call
+    /// site): invoke only when the paginate exhausted without error AND
+    /// every ingest reached disk — fetch/persist-success gating stays at
+    /// the call site.
+    pub fn advance_high_water_received(&mut self, snapshot: Option<u64>, max_fetched: Option<u64>) {
+        self.dashpay.high_water_received_ms =
+            advance_if_unchanged(self.dashpay.high_water_received_ms, snapshot, max_fetched);
+    }
+
+    /// Sent-direction counterpart of [`Self::advance_high_water_received`];
+    /// same compare-and-advance semantics and caller contract.
+    pub fn advance_high_water_sent(&mut self, snapshot: Option<u64>, max_fetched: Option<u64>) {
+        self.dashpay.high_water_sent_ms =
+            advance_if_unchanged(self.dashpay.high_water_sent_ms, snapshot, max_fetched);
+    }
+}
+
+// --- Apply (restore from changeset / cold load) ---
+//
+// These methods reproduce persisted or already-decided state and skip the
+// business invariants (auto-establish, ignore tombstones, persist-on-mutate)
+// ON PURPOSE: the establishment / ignore decisions were made before the data
+// was persisted, and replay must reproduce state, not re-decide it. They are
+// for the changeset-apply path (`wallet/apply.rs`), the cold-load restore
+// paths (FFI loader, storage test helpers), and test fixtures — live
+// mutations go through the invariant-holding methods above.
 
 impl ManagedIdentity {
     /// Promote a contact to established during apply, also dropping any
@@ -637,19 +704,56 @@ impl ManagedIdentity {
     /// auto-establishment contract: when `established` is populated for
     /// `(owner, contact)`, the apply path MUST drop the matching
     /// entries from both `sent_contact_requests` and
-    /// `incoming_contact_requests`.
-    ///
-    /// This is the only contact-side apply helper that earns its name —
-    /// the trivial sent / incoming insert and remove paths are inlined
-    /// at the call site in `wallet/apply.rs` (single map operation, no
-    /// invariant to protect).
-    pub(crate) fn apply_established_contact(&mut self, contact: EstablishedContact) {
+    /// `incoming_contact_requests`. (On cold-load paths that emit at most
+    /// one of {established, sent, incoming} per contact into fresh maps,
+    /// the removes are no-ops.)
+    pub fn apply_established_contact(&mut self, contact: EstablishedContact) {
         let contact_id = contact.contact_identity_id;
         self.dashpay.sent_contact_requests.remove(&contact_id);
         self.dashpay.incoming_contact_requests.remove(&contact_id);
         self.dashpay
             .established_contacts
             .insert(contact_id, contact);
+    }
+
+    /// Reproduce a persisted sent contact request, keyed by its
+    /// `recipient_id` (last write wins).
+    pub fn apply_sent_contact_request(&mut self, request: ContactRequest) {
+        self.dashpay
+            .sent_contact_requests
+            .insert(request.recipient_id, request);
+    }
+
+    /// Reproduce a persisted incoming contact request, keyed by its
+    /// `sender_id` (last write wins).
+    pub fn apply_incoming_contact_request(&mut self, request: ContactRequest) {
+        self.dashpay
+            .incoming_contact_requests
+            .insert(request.sender_id, request);
+    }
+
+    /// Reproduce a persisted sent-request tombstone.
+    pub(crate) fn apply_removed_sent(&mut self, recipient_id: &Identifier) {
+        self.dashpay.sent_contact_requests.remove(recipient_id);
+    }
+
+    /// Reproduce a persisted incoming-request tombstone.
+    pub(crate) fn apply_removed_incoming(&mut self, sender_id: &Identifier) {
+        self.dashpay.incoming_contact_requests.remove(sender_id);
+    }
+
+    /// Reproduce a persisted ignore marker. Does NOT drop pending incoming
+    /// requests or emit a tombstone changeset — that already happened in
+    /// [`Self::ignore_sender`] before the marker was persisted.
+    pub fn apply_ignored_sender(&mut self, sender_id: Identifier) {
+        self.dashpay.ignored_senders.insert(sender_id);
+    }
+
+    /// Reproduce a persisted un-ignore. Does NOT rewind the receive cursor —
+    /// the live [`Self::unignore_sender`] already did, and on a cold load the
+    /// cursor starts at `None` anyway.
+    pub fn apply_unignored_sender(&mut self, sender_id: &Identifier) {
+        self.dashpay.ignored_senders.remove(sender_id);
     }
 }
 
@@ -1594,6 +1698,176 @@ mod tests {
         assert!(
             managed.should_enqueue_auto_accept(&sender_id, &different),
             "a different proof from the same sender must still enqueue"
+        );
+    }
+
+    /// Advancing never moves a cursor backward (guards out-of-order /
+    /// stale-max sweeps and restore over-shoot), and a zero-doc sweep leaves
+    /// it unchanged. Exercises the public methods so the pinned behavior is
+    /// the one callers actually get.
+    #[test]
+    fn advance_never_goes_backward_and_zero_doc_is_noop() {
+        let mut managed = create_test_identity([1u8; 32]);
+
+        // First sweep from empty: adopt the max fetched.
+        managed.advance_high_water_received(None, Some(100));
+        assert_eq!(managed.dashpay().high_water_received_ms(), Some(100));
+        // Forward progress.
+        managed.advance_high_water_received(Some(100), Some(200));
+        assert_eq!(managed.dashpay().high_water_received_ms(), Some(200));
+        // A lower max (re-fetch within the overlap, or out-of-order) must NOT
+        // pull the cursor backward.
+        managed.advance_high_water_received(Some(200), Some(50));
+        assert_eq!(managed.dashpay().high_water_received_ms(), Some(200));
+        // A zero-doc sweep leaves the cursor exactly where it was.
+        managed.advance_high_water_received(Some(200), None);
+        assert_eq!(managed.dashpay().high_water_received_ms(), Some(200));
+
+        // `0` is a real cursor value distinct from `None` (a doc at
+        // `$createdAt == 0`, or a freshly-restored 0 cursor) — pin that a
+        // future "treat 0 as unset" refactor would regress.
+        let mut fresh = create_test_identity([2u8; 32]);
+        fresh.advance_high_water_sent(None, Some(0));
+        assert_eq!(fresh.dashpay().high_water_sent_ms(), Some(0));
+        fresh.advance_high_water_sent(Some(0), None);
+        assert_eq!(fresh.dashpay().high_water_sent_ms(), Some(0));
+        // A zero-doc first sweep leaves the cursor unset.
+        let mut untouched = create_test_identity([3u8; 32]);
+        untouched.advance_high_water_sent(None, None);
+        assert_eq!(untouched.dashpay().high_water_sent_ms(), None);
+    }
+
+    /// Compare-and-advance: a concurrent `unignore_sender` reset (cursor no
+    /// longer equals the snapshot) must NOT be clobbered by this sweep's stale
+    /// max — otherwise the un-ignored sender stays invisible until a restart.
+    #[test]
+    fn advance_respects_a_concurrent_reset() {
+        let p = noop_persister();
+
+        // Unchanged since snapshot -> normal advance.
+        let mut managed = create_test_identity([1u8; 32]);
+        managed.advance_high_water_received(None, Some(100));
+        managed.advance_high_water_received(Some(100), Some(200));
+        assert_eq!(managed.dashpay().high_water_received_ms(), Some(200));
+
+        // THE RACE: cursor was Some(100) at snapshot time; an un-ignore
+        // rewound it to None mid-sweep; this sweep's max Some(200) is stale
+        // (its fetch excluded the sender) -> keep the None so the next sweep
+        // does a full re-fetch.
+        let mut raced = create_test_identity([2u8; 32]);
+        let sender_id = Identifier::from([9u8; 32]);
+        raced.advance_high_water_received(None, Some(100));
+        raced
+            .add_incoming_contact_request(
+                ContactRequest::new(
+                    sender_id,
+                    raced.id(),
+                    0,
+                    0,
+                    0,
+                    vec![0u8; 96],
+                    100000,
+                    1234567890,
+                ),
+                &p,
+            )
+            .expect("setup persists");
+        let _ = raced.ignore_sender(&sender_id);
+        let _ = raced.unignore_sender(&sender_id); // rewinds cursor to None
+        assert_eq!(raced.dashpay().high_water_received_ms(), None);
+        raced.advance_high_water_received(Some(100), Some(200));
+        assert_eq!(
+            raced.dashpay().high_water_received_ms(),
+            None,
+            "a stale sweep max must not clobber a concurrent rewind"
+        );
+
+        // Kill-the-mutant: ANY snapshot mismatch leaves the cursor untouched.
+        let mut drifted = create_test_identity([3u8; 32]);
+        drifted.advance_high_water_sent(None, Some(50));
+        drifted.advance_high_water_sent(Some(100), Some(200));
+        assert_eq!(
+            drifted.dashpay().high_water_sent_ms(),
+            Some(50),
+            "snapshot != current must be a no-op"
+        );
+    }
+
+    /// The `apply_*` replay family must reproduce persisted state WITHOUT
+    /// re-running business invariants: a reciprocal pair applied via
+    /// `apply_sent` + `apply_incoming` stays two pending requests (the
+    /// auto-establish decision was already made — or not — before persist),
+    /// while `apply_established_contact` drops both pending sides per the
+    /// changeset contract.
+    #[test]
+    fn apply_family_reproduces_state_without_re_deciding() {
+        let mut managed = create_test_identity([1u8; 32]);
+        let our_id = managed.id();
+        let contact_id = Identifier::from([2u8; 32]);
+
+        let sent = ContactRequest::new(our_id, contact_id, 0, 0, 0, vec![0u8; 96], 100, 1);
+        let incoming = ContactRequest::new(contact_id, our_id, 0, 0, 0, vec![0u8; 96], 100, 2);
+
+        managed.apply_sent_contact_request(sent.clone());
+        managed.apply_incoming_contact_request(incoming.clone());
+        assert_eq!(
+            managed.dashpay().established_contacts().len(),
+            0,
+            "replay must NOT auto-establish a reciprocal pair"
+        );
+        assert!(managed
+            .dashpay()
+            .sent_contact_requests()
+            .contains_key(&contact_id));
+        assert!(managed
+            .dashpay()
+            .incoming_contact_requests()
+            .contains_key(&contact_id));
+
+        // Tombstone replays remove exactly the keyed entry.
+        managed.apply_removed_sent(&contact_id);
+        assert!(managed.dashpay().sent_contact_requests().is_empty());
+        managed.apply_removed_incoming(&contact_id);
+        assert!(managed.dashpay().incoming_contact_requests().is_empty());
+
+        // An established replay drops any matching pending sides.
+        managed.apply_sent_contact_request(sent.clone());
+        managed.apply_incoming_contact_request(incoming.clone());
+        managed.apply_established_contact(EstablishedContact::new(contact_id, sent, incoming));
+        assert!(managed.dashpay().sent_contact_requests().is_empty());
+        assert!(managed.dashpay().incoming_contact_requests().is_empty());
+        assert!(managed
+            .dashpay()
+            .established_contacts()
+            .contains_key(&contact_id));
+    }
+
+    /// Per-element `apply_ignored_sender` over a fresh identity reproduces a
+    /// wholesale set assign — the equivalence the replay/restore paths (which
+    /// previously assigned or extended the whole `BTreeSet`) rely on.
+    #[test]
+    fn apply_ignored_sender_loop_equals_wholesale_assign() {
+        let persisted: std::collections::BTreeSet<Identifier> = [
+            Identifier::from([3u8; 32]),
+            Identifier::from([4u8; 32]),
+            Identifier::from([5u8; 32]),
+        ]
+        .into();
+
+        let mut managed = create_test_identity([1u8; 32]);
+        for sender in &persisted {
+            managed.apply_ignored_sender(*sender);
+        }
+        assert_eq!(managed.dashpay().ignored_senders(), &persisted);
+
+        // And the un-ignore replay removes without rewinding the cursor.
+        managed.advance_high_water_received(None, Some(100));
+        managed.apply_unignored_sender(&Identifier::from([4u8; 32]));
+        assert_eq!(managed.dashpay().ignored_senders().len(), 2);
+        assert_eq!(
+            managed.dashpay().high_water_received_ms(),
+            Some(100),
+            "replay un-ignore must not rewind the live cursor"
         );
     }
 }

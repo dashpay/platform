@@ -341,10 +341,10 @@ impl IdentityEntry {
             contested_dpns_names: managed.contested_dpns_names.clone(),
             status: managed.status,
             wallet_id: managed.wallet_id,
-            dashpay_profile: managed.dashpay.profile.clone(),
-            dashpay_payments: managed.dashpay.payments.clone(),
-            contact_profiles: managed.dashpay.contact_profiles.clone(),
-            ignored_senders: managed.dashpay.ignored_senders.clone(),
+            dashpay_profile: managed.dashpay().profile.clone(),
+            dashpay_payments: managed.dashpay().payments.clone(),
+            contact_profiles: managed.dashpay().contact_profiles.clone(),
+            ignored_senders: managed.dashpay().ignored_senders().clone(),
         }
     }
 }
