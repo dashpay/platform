@@ -45,7 +45,7 @@ import org.dashfoundation.example.navigation.QrScanner
 import org.dashfoundation.example.ui.components.ErrorAlertDialog
 import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.SubmitButton
-import org.dashfoundation.example.util.hexToBytes
+import org.dashfoundation.example.util.Base58
 
 /**
  * Load an existing identity by id — port of `LoadIdentityView.swift`. Paste
@@ -148,16 +148,13 @@ fun LoadIdentityScreen(navController: NavHostController) {
                                 ?.jsonPrimitive?.longOrNull ?: 0L
                         }.getOrDefault(0L)
 
-                        // Decode the id to raw 32 bytes for the primary key. Hex
-                        // ids are 64 chars; Base58 falls back to the SDK id in
-                        // the fetched JSON if present.
-                        val idBytes = if (id.length == 64 && id.all { it.isHexDigit() }) {
-                            id.hexToBytes()
-                        } else {
-                            decodeIdFromJson(json) ?: throw IllegalStateException(
-                                "Could not decode identity id — paste the 64-char hex form.",
+                        // Decode the input id (64-char hex or Base58) to raw 32
+                        // bytes for the primary key. `Base58.decodeIdentifier`
+                        // accepts either encoding and enforces the 32-byte width.
+                        val idBytes = Base58.decodeIdentifier(id)
+                            ?: throw IllegalStateException(
+                                "Could not decode identity id — enter a 64-char hex or Base58 identity id.",
                             )
-                        }
 
                         container.database.identityDao().upsert(
                             IdentityEntity(
@@ -190,19 +187,6 @@ fun LoadIdentityScreen(navController: NavHostController) {
 
     ErrorAlertDialog(message = error, onDismiss = { error = null })
 }
-
-private fun Char.isHexDigit(): Boolean = this in '0'..'9' || this in 'a'..'f' || this in 'A'..'F'
-
-/** Pull a hex/id field out of the fetched identity JSON as a fallback. */
-private fun decodeIdFromJson(json: String): ByteArray? = runCatching {
-    val obj = Json.parseToJsonElement(json).jsonObject
-    val idStr = obj["id"]?.jsonPrimitive?.content ?: return null
-    if (idStr.length == 64 && idStr.all { it in "0123456789abcdefABCDEF" }) {
-        idStr.hexToBytes()
-    } else {
-        null
-    }
-}.getOrNull()
 
 @OptIn(ExperimentalStdlibApi::class)
 private fun ByteArray.toHexString(): String = toHexString(HexFormat.Default)
