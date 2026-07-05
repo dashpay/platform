@@ -278,9 +278,8 @@ async fn cr_004_legacy_bip32_utxo_update_after_spend() {
     // wrong all along and the earlier broadcast went somewhere
     // unexpected. `key_wallet::Network` is a re-export of
     // `dashcore::Network`, so a direct `==` works without casting.
-    assert_eq!(
-        *sink.network(),
-        s.ctx.config.network,
+    assert!(
+        sink.as_unchecked().is_valid_for_network(s.ctx.config.network),
         "PRE-pin violated: sink address network does not match test \
          wallet network; CR-004 sweep would broadcast to the wrong chain."
     );

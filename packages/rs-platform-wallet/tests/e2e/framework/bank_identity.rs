@@ -362,7 +362,7 @@ async fn bootstrap_register(
     let inputs: BTreeMap<PlatformAddress, Credits> =
         std::iter::once((funding_address, BANK_IDENTITY_BOOTSTRAP_FUNDING)).collect();
 
-    let registered = bank_wallet
+    let (registered, _address_infos) = bank_wallet
         .identity()
         .register_from_addresses(
             &placeholder,

@@ -520,7 +520,7 @@ impl TestWallet {
         let inputs: BTreeMap<PlatformAddress, Credits> =
             std::iter::once((funding_address, funding)).collect();
 
-        let registered = self
+        let (registered, _address_infos) = self
             .wallet
             .identity()
             .register_from_addresses(

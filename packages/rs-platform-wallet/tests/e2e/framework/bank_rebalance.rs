@@ -382,7 +382,7 @@ pub async fn drain_bank_identity_to_addresses(
         )
         .await
     {
-        Ok(post) => {
+        Ok((_address_infos, post)) => {
             tracing::info!(
                 target: "platform_wallet::e2e::bank_rebalance",
                 bank_identity_id = %bank_identity.id,
@@ -481,7 +481,7 @@ pub async fn refill_core_from_platform_if_below_threshold(
         .top_up_from_addresses(&bank_identity.id, inputs, bank.address_signer(), None)
         .await
     {
-        Ok(new_balance) => new_balance,
+        Ok((_address_infos, new_balance)) => new_balance,
         Err(err) => {
             tracing::warn!(
                 target: "platform_wallet::e2e::bank_rebalance",
