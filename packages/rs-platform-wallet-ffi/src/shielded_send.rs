@@ -918,6 +918,9 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_fund_from_asset_lock(
                 // pool-seeding path uses its own dedicated FFI entry point).
                 0,
                 None,
+                // User-facing funding: wait for the ChainLock indefinitely —
+                // a broadcast asset lock is pending finality, never failed.
+                None,
             )
             .await
     });
@@ -1060,6 +1063,9 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_resume_fund_from_asset
                 surplus_output,
                 // Resuming a single-note fund (not a seeding batch).
                 0,
+                None,
+                // User-facing funding: wait for the ChainLock indefinitely —
+                // a broadcast asset lock is pending finality, never failed.
                 None,
             )
             .await
