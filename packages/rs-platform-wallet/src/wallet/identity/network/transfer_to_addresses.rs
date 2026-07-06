@@ -82,7 +82,7 @@ impl IdentityWallet {
         recipient_addresses: BTreeMap<PlatformAddress, Credits>,
         signer: &S,
         settings: Option<PutSettings>,
-    ) -> Result<(dash_sdk::query_types::AddressInfos, Credits), PlatformWalletError>
+    ) -> Result<(dash_sdk::query_types::AddressInfos, Credits, u64), PlatformWalletError>
     where
         S: Signer<IdentityPublicKey> + Send + Sync,
     {
@@ -100,7 +100,7 @@ impl IdentityWallet {
                 .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?
         };
 
-        let (address_infos, new_balance) = identity
+        let (address_infos, new_balance, proof_height) = identity
             .transfer_credits_to_addresses(
                 &self.sdk,
                 recipient_addresses,
@@ -143,6 +143,6 @@ impl IdentityWallet {
         // composite `PlatformWallet::transfer_credits_to_addresses_with_external_signer`,
         // which routes the returned `AddressInfos` through the
         // platform-address wallet's shared reconciliation seam.
-        Ok((address_infos, new_balance))
+        Ok((address_infos, new_balance, proof_height))
     }
 }

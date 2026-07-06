@@ -57,7 +57,7 @@ impl IdentityWallet {
         inputs: BTreeMap<PlatformAddress, Credits>,
         address_signer: &S,
         settings: Option<PutSettings>,
-    ) -> Result<(AddressInfos, Credits), PlatformWalletError> {
+    ) -> Result<(AddressInfos, Credits, u64), PlatformWalletError> {
         let identity = {
             let wm = self.wallet_manager.read().await;
             let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
@@ -72,7 +72,7 @@ impl IdentityWallet {
                 .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?
         };
 
-        let (address_infos, new_balance) = identity
+        let (address_infos, new_balance, proof_height) = identity
             .top_up_from_addresses(&self.sdk, inputs, address_signer, settings)
             .await
             .map_err(|e| {
@@ -110,6 +110,6 @@ impl IdentityWallet {
         // composite `PlatformWallet::top_up_from_addresses`, which routes
         // the returned `AddressInfos` through the platform-address wallet's
         // shared reconciliation seam.
-        Ok((address_infos, new_balance))
+        Ok((address_infos, new_balance, proof_height))
     }
 }
