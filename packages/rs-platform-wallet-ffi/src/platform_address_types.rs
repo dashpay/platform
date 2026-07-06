@@ -403,6 +403,26 @@ pub struct PlatformAddressChangeSetFFI {
     pub updated_count: usize,
 }
 
+impl PlatformAddressChangeSetFFI {
+    /// FFI-safe empty sentinel: a null pointer with a zero count.
+    ///
+    /// The changeset-producing FFI entry points (transfer / withdraw /
+    /// fund-from-asset-lock) publish this into their `out_changeset`
+    /// out-param *before* any fallible work, so that an error return leaves
+    /// the out-param well-defined. `platform_address_wallet_free_changeset`
+    /// reconstructs `Vec::from_raw_parts(updated, updated_count, ..)` whenever
+    /// `updated` is non-null, so a caller running symmetric cleanup-on-error
+    /// over an uninitialized changeset would otherwise feed stale stack bytes
+    /// into a real `Vec::from_raw_parts` — a double-free. The `(null, 0)`
+    /// sentinel is skipped by that free path.
+    pub fn empty() -> Self {
+        Self {
+            updated: std::ptr::null_mut(),
+            updated_count: 0,
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Conversion helpers
 // ---------------------------------------------------------------------------

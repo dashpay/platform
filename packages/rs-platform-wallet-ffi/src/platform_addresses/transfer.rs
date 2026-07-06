@@ -37,6 +37,10 @@ pub unsafe extern "C" fn platform_address_wallet_transfer(
     out_changeset: *mut PlatformAddressChangeSetFFI,
 ) -> PlatformWalletFFIResult {
     check_ptr!(out_changeset);
+    // Sentinel first: output/input parsing, the wallet lookup, and the async
+    // transfer below are all fallible. See
+    // `PlatformAddressChangeSetFFI::empty` for the double-free rationale.
+    *out_changeset = PlatformAddressChangeSetFFI::empty();
     check_ptr!(signer_address_handle);
 
     let output_map = unwrap_result_or_return!(parse_outputs(outputs, outputs_count));

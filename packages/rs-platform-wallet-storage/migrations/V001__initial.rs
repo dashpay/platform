@@ -54,6 +54,8 @@ pub fn migration() -> String {
         build_check_in(crate::sqlite::schema::asset_locks::ASSET_LOCK_STATUS_LABELS);
     let contact_state_check =
         build_check_in(crate::sqlite::schema::contacts::CONTACT_STATE_LABELS);
+    let pending_contact_crypto_kind_check =
+        build_check_in(crate::sqlite::schema::pending_contact_crypto::KIND_LABELS);
 
     format!(
         "\
@@ -79,6 +81,17 @@ CREATE TABLE account_address_pools (
     pool_type TEXT NOT NULL CHECK (pool_type IN {pool_type_check}),
     snapshot_blob BLOB NOT NULL,
     PRIMARY KEY (wallet_id, account_type, account_index, pool_type),
+    FOREIGN KEY (wallet_id) REFERENCES wallet_metadata(wallet_id) ON DELETE CASCADE
+);
+
+CREATE TABLE pending_contact_crypto (
+    wallet_id BLOB NOT NULL,
+    owner_identity_id BLOB NOT NULL,
+    contact_id BLOB NOT NULL,
+    kind TEXT NOT NULL CHECK (kind IN {pending_contact_crypto_kind_check}),
+    payload BLOB NOT NULL,
+    enqueued_at_ms INTEGER NOT NULL,
+    PRIMARY KEY (wallet_id, owner_identity_id, contact_id, kind),
     FOREIGN KEY (wallet_id) REFERENCES wallet_metadata(wallet_id) ON DELETE CASCADE
 );
 
@@ -186,8 +199,29 @@ CREATE TABLE contacts (
     note TEXT,
     is_hidden INTEGER,
     accepted_accounts BLOB,
+    -- G1c: set when external-account registration permanently fails for a
+    -- contact (so the sync sweep stops retrying a poisoned channel);
+    -- cleared on a superseding rotation. Nullable — readers treat NULL as
+    -- `false`.
+    payment_channel_broken INTEGER,
     updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
     PRIMARY KEY (wallet_id, owner_id, contact_id),
+    FOREIGN KEY (wallet_id) REFERENCES wallet_metadata(wallet_id) ON DELETE CASCADE
+);
+
+-- Ignored senders (per-sender mute = block, reversible — local-only). Keyed by
+-- bare `(wallet_id, owner_id, sender_id)`: ignoring is per-sender, NOT
+-- per-request, so it suppresses ALL of a sender's incoming contactRequests
+-- (including rotated, bumped-`accountReference` ones) and survives a recurring
+-- re-sync. Un-ignore deletes the row so the sender's requests resurface. The
+-- sync ingest path consults this table before surfacing a received
+-- contactRequest in the main pending list.
+CREATE TABLE ignored_senders (
+    wallet_id BLOB NOT NULL,
+    owner_id BLOB NOT NULL,
+    sender_id BLOB NOT NULL,
+    ignored_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    PRIMARY KEY (wallet_id, owner_id, sender_id),
     FOREIGN KEY (wallet_id) REFERENCES wallet_metadata(wallet_id) ON DELETE CASCADE
 );
 

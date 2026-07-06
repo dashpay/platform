@@ -150,4 +150,47 @@ mod tests {
             "schema-history table is present after creation"
         );
     }
+
+    fn table_exists(conn: &Connection, name: &str) -> bool {
+        conn.query_row(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1",
+            [name],
+            |_| Ok(()),
+        )
+        .is_ok()
+    }
+
+    fn column_exists(conn: &Connection, table: &str, column: &str) -> bool {
+        let mut stmt = conn
+            .prepare(&format!("PRAGMA table_info({table})"))
+            .unwrap();
+        let cols: Vec<String> = stmt
+            .query_map([], |r| r.get::<_, String>(1))
+            .unwrap()
+            .filter_map(Result::ok)
+            .collect();
+        cols.iter().any(|c| c == column)
+    }
+
+    /// The initial schema (V001) creates the DashPay sync-correctness
+    /// objects directly — the `contacts.payment_channel_broken` column and
+    /// the `ignored_senders` table. The storage crate is pre-release with no
+    /// product consumers yet (nothing instantiates `SqlitePersister` or runs
+    /// these migrations), so V001 is edited in place rather than amended by a
+    /// follow-on migration — no real database has ever applied it. This test
+    /// pins that the objects exist after the (only) migration runs.
+    #[test]
+    fn v001_creates_dashpay_sync_schema() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        run(&mut conn).unwrap();
+
+        assert!(
+            table_exists(&conn, "ignored_senders"),
+            "V001 must create the ignored-senders table"
+        );
+        assert!(
+            column_exists(&conn, "contacts", "payment_channel_broken"),
+            "V001 must create the contacts.payment_channel_broken column"
+        );
+    }
 }

@@ -99,7 +99,7 @@ struct GetAddressInfoView: View {
             .fontWeight(.bold)
 
           Text(
-            "Query the balance and nonce for a Platform address. Supports both bech32m (tdashevo1.../dashevo1...) and hex formats."
+            "Query the balance and nonce for a Platform address. Supports both bech32m (tdash1.../dash1...) and hex formats."
           )
           .font(.body)
           .foregroundColor(.secondary)
@@ -147,9 +147,7 @@ struct GetAddressInfoView: View {
               }
 
               // Debug info for bech32m
-              if viewModel.addressInput.lowercased().hasPrefix("dashevo1")
-                || viewModel.addressInput.lowercased().hasPrefix("tdashevo1")
-              {
+              if Bech32m.looksLikePlatformAddress(viewModel.addressInput) {
                 let debug = Bech32m.debugDecode(viewModel.addressInput)
                 if let hex = debug.hex, let count = debug.byteCount {
                   Text("Decoded: \(count) bytes")
@@ -216,9 +214,9 @@ struct GetAddressInfoView: View {
             } else if let info = viewModel.result {
               VStack(alignment: .leading, spacing: 8) {
                 let network: Network =
-                  viewModel.addressInput.lowercased().hasPrefix("tdashevo")
-                  ? .testnet
-                  : .mainnet
+                  viewModel.addressInput.lowercased().hasPrefix(Bech32m.platformHrpMainnet + "1")
+                  ? .mainnet
+                  : .testnet
                 let bech32mAddress = info.toBech32m(network: network) ?? info.addressHex
 
                 ResultRow(label: "Address", value: bech32mAddress)
@@ -354,7 +352,10 @@ struct GetAddressesInfosView: View {
               .background(Color.red.opacity(0.1))
               .cornerRadius(8)
             } else if let result = viewModel.result {
-              let isTestnet = viewModel.addressesText.lowercased().contains("tdashevo")
+              // Testnet HRP (tdash) contains the mainnet HRP (dash) as a
+              // substring, so check for the testnet prefix first.
+              let lowered = viewModel.addressesText.lowercased()
+              let isTestnet = lowered.contains(Bech32m.platformHrpTestnet + "1")
               let network: Network = isTestnet ? .testnet : .mainnet
 
               VStack(alignment: .leading, spacing: 12) {

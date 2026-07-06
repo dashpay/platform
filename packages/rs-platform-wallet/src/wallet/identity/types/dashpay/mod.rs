@@ -9,5 +9,6 @@ pub use contact_request::ContactRequest;
 pub use established_contact::EstablishedContact;
 pub use payment::{DashpayAddressMatch, PaymentDirection, PaymentEntry, PaymentStatus};
 pub use profile::{
-    calculate_avatar_hash, calculate_dhash_fingerprint, DashPayProfile, ProfileUpdate,
+    calculate_avatar_hash, calculate_dhash_fingerprint, ContactProfileEntry, DashPayProfile,
+    ProfileUpdate,
 };

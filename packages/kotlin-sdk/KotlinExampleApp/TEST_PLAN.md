@@ -259,7 +259,7 @@ Shielded notes/balance/activity have **no read-side FFI** by design — Rust pus
 | DP-04 | Create / update DashPay profile | Platform | Common | ✅ | | `IdentityDetailScreen` profile editor → `platform_wallet_create_or_update_dashpay_profile_with_signer`. |
 | DP-05 | View profile / contacts / requests | Platform | Common | ✅ | | `FriendsScreen`, `EstablishedContactEntity` (Room). |
 | DP-06 | Reject contact request | Platform | Thorough | ✅ | | `FriendsScreen` → `wallet.rejectContactRequest`. |
-| DP-07 | DashPay request → accept → payment, both endpoints on device | Platform | Thorough | ✅ | multiwallet | A sends contact request (`DP-01`) to B; switch to wallet B and accept (`DP-02`); then pay (`DP-03`). Full bidirectional loop. |
+| DP-11 | DashPay request → accept → payment, both endpoints on device | Platform | Thorough | ✅ | multiwallet | A sends contact request (`DP-01`) to B; switch to wallet B and accept (`DP-02`); then pay (`DP-03`). Full bidirectional loop. |
 
 ### 4.11 System / Protocol / Diagnostics — `Domain=System`
 
@@ -314,14 +314,14 @@ Membership of each feature category across **all** sections (primary section mem
 - **Document** — `DOC-01..15`
 - **Token** — `TOK-01..17`
 - **Shielded** — `SH-01..16`, `CORE-21`
-- **DashPay** — `DP-01..07`
+- **DashPay** — `DP-01..06`, `DP-11`
 - **System / Diagnostics** — `SYS-01..08`
 
 ### Tag index
 
 Tags are cross-cutting modalities. A test may appear under multiple tags.
 
-- **multiwallet** — `CORE-14..23`, `ID-14`, `ID-15`, `TOK-17`, `DPNS-08`, `DP-07`, `DOC-15`, `SH-14`, `SH-15`, `SH-16`, `SYS-07`, `SYS-08`
+- **multiwallet** — `CORE-14..23`, `ID-14`, `ID-15`, `TOK-17`, `DPNS-08`, `DP-11`, `DOC-15`, `SH-14`, `SH-15`, `SH-16`, `SYS-07`, `SYS-08`
 - **group** — `TOK-15`, `TOK-16`
 - **contested** — `DPNS-05`, `DPNS-08`, `VOTE-01..06`
 - **withdrawal** — `ID-10`, `ADDR-04`, `SH-08`, `SH-16`

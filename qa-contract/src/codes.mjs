@@ -66,7 +66,7 @@ export const TAGS = [
 export const TESTID_REMAP = {
   'MW-01': 'ID-14',
   'MW-02': 'TOK-17',
-  'MW-03': 'DP-07',
+  'MW-03': 'DP-11',
   'MW-04': 'DOC-15',
   'MW-05': 'DPNS-08',
   'MW-06': 'SH-14',
