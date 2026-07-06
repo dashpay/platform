@@ -257,7 +257,9 @@ OTHER_SWIFT_FLAGS="-warnings-as-errors"
 SWIFT_TREAT_WARNINGS_AS_ERRORS=YES
 SWIFT_SUPPRESS_WARNINGS=NO
 
-if command -v xcodebuild >/dev/null 2>&1; then
+if [ "${SKIP_EXAMPLE_APP_BUILD:-0}" = "1" ]; then
+    log_info "SKIP_EXAMPLE_APP_BUILD=1 — skipping SwiftExampleApp verification build"
+elif command -v xcodebuild >/dev/null 2>&1; then
     set +e
     xcodebuild -project "$SWIFT_PROJECT" \
                -scheme "$SWIFT_SCHEME" \
