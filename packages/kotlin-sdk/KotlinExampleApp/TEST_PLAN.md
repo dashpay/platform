@@ -144,9 +144,12 @@ Most Platform actions have hard preconditions. Establish these fixtures before s
 |---|---|---|---|---|---|---|
 | ADDR-01 | Query address info / multiple infos | Platform | Common | ✅ | | `AddressQueriesScreen` → `dash_sdk_address_fetch_info(s)`. |
 | ADDR-02 | Transfer credits address → address | Platform | Thorough | ✅ | | `WalletDetailScreen` → Platform Balance row **⋯ menu → Transfer Credits** (`TransferPlatformAddressScreen`) → `platform_address_wallet_transfer` (Keystore-signed). Source = DIP-17 platform-payment account picker; destination = own-wallet address picker or pasted 20-byte P2PKH hash. |
-| ADDR-03 | Top up address from asset lock | Cross | Thorough | ✅ | | `FundFromAssetLockScreen` → `dash_sdk_address_top_up_from_asset_lock`. |
+| ADDR-03 | Top up address from an existing (pending) asset lock | Cross | Thorough | ✅ | | Resume a stuck/pending Platform-address asset-lock funding: `IdentitiesHomeScreen` → `PendingAssetLocksList` → `ManagedPlatformWallet.resumeFundFromAssetLock` → `WalletManagerNative.walletResumeFundFromAssetLock`. Distinct from `ADDR-09`, which builds a **new** lock from Core. Needs a pending-lock fixture (an asset lock whose consume did not complete). |
 | ADDR-04 | Withdraw address credits → Core L1 | Cross | Thorough | ✅ | withdrawal | `WalletDetailScreen` → Platform Balance row **⋯ menu → Withdraw to Core** (`WithdrawPlatformAddressScreen`) → `platform_address_wallet_withdraw_to_address` (Keystore-signed). Full account balance withdrawn. |
 | ADDR-06 | Display / share your Platform receive address | Platform | Common | ✅ | | "Receive Dash" sheet → **Platform** tab (`ReceiveAddressSheet`, platform tab): QR + bech32m DIP-17 address + Copy. |
+| ADDR-07 | Platform address balance sync (BLAST) — start / progress; address balances populate to tip | Platform | Essential | ✅ | | Sync tab → **PLATFORM SYNC STATUS** (`SyncStatusScreen`, `container.platformBalanceSyncService`): State reaches `Synced`, Sync Height advances to tip, Active Addresses populate, "Sync Now" forces a pass. Precondition for the other address rows. |
+| ADDR-08 | Clear & resync platform address balances | Platform | Common | ✅ | | Sync tab → Platform section **Clear** (`SyncStatusScreen`, `testTag("sync.platformClear")`) → `container.platformBalanceSyncService.clearLocalState` (fail-closed): wipes local platform-address balance state; the next sync repopulates from scratch to tip. |
+| ADDR-09 | Top up Platform balance from Core | Cross | Essential | ✅ | | `WalletDetailScreen` → Platform Balance row **⋯ menu → Top Up from Core** (`FundFromAssetLockScreen`) → builds a **new** asset lock from the wallet's Core balance and credits a DIP-17 Platform address once the lock proves (IS→CL) → `dash_sdk_address_top_up_from_asset_lock`. Needs a Core (SPV) balance to build the lock. |
 
 ### 4.4 DPNS (usernames) — `Domain=DPNS`
 
@@ -307,7 +310,7 @@ Membership of each feature category across **all** sections (primary section mem
 
 - **Core / Wallet** — `CORE-01..23`
 - **Identity** — `ID-01..15`, `SH-11`
-- **Address** (DIP-17 platform addresses) — `ADDR-01..04`, `ADDR-06`, `ID-06`, `ID-08`, `ID-11`
+- **Address** (DIP-17 platform addresses) — `ADDR-01..04`, `ADDR-06..09`, `ID-06`, `ID-08`, `ID-11`
 - **DPNS** — `DPNS-01..08`
 - **Voting** — `VOTE-01..07`, `DPNS-05`, `DPNS-08`
 - **Contract** — `DC-01..04`
