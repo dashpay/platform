@@ -147,7 +147,7 @@ async fn id_005_identity_to_addresses_transfer() {
 
     let outputs: BTreeMap<PlatformAddress, Credits> =
         std::iter::once((dest_addr, TRANSFER_AMOUNT)).collect();
-    let (_address_infos, new_balance) = s
+    let (_address_infos, new_balance, _) = s
         .test_wallet
         .platform_wallet()
         .identity()

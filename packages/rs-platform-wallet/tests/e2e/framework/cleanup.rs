@@ -282,7 +282,7 @@ async fn sweep_one(
     let wallet = match manager
         .create_wallet_from_seed_bytes(
             network,
-            seed_bytes,
+            &seed_bytes,
             WalletAccountCreationOptions::Default,
             None,
         )

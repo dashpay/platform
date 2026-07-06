@@ -85,7 +85,7 @@ async fn found_017_register_wallet_store_ok_persists() {
     let result = manager
         .create_wallet_from_seed_bytes(
             Network::Mainnet,
-            TEST_SEED,
+            &TEST_SEED,
             WalletAccountCreationOptions::Default,
             // Pin the SPV scan window so birth-height resolution does not
             // touch the (absent) SPV runtime; keeps the path fully local.

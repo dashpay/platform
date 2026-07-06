@@ -95,7 +95,7 @@ impl TestWallet {
         let wallet = manager
             .create_wallet_from_seed_bytes(
                 network,
-                seed_bytes,
+                &seed_bytes,
                 WalletAccountCreationOptions::Default,
                 None,
             )
@@ -520,7 +520,7 @@ impl TestWallet {
         let inputs: BTreeMap<PlatformAddress, Credits> =
             std::iter::once((funding_address, funding)).collect();
 
-        let (registered, _address_infos) = self
+        let (registered, _address_infos, _) = self
             .wallet
             .identity()
             .register_from_addresses(

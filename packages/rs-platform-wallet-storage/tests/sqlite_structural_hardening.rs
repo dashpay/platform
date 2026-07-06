@@ -80,6 +80,7 @@ fn platform_addr_mixed_wallet_rejected() {
             funds: AddressFunds {
                 nonce: 0,
                 balance: 0,
+                as_of_height: 0,
             },
         }],
         ..Default::default()
@@ -361,6 +362,8 @@ fn identity_entry_id_mismatch_rejected() {
         wallet_id: None,
         dashpay_profile: None,
         dashpay_payments: Default::default(),
+        contact_profiles: Default::default(),
+        ignored_senders: Default::default(),
     };
     let mut identities = std::collections::BTreeMap::new();
     identities.insert(key_id, entry);

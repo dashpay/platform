@@ -159,7 +159,7 @@ async fn id_002_top_up_identity_from_addresses() {
 
     let inputs: BTreeMap<PlatformAddress, Credits> =
         std::iter::once((top_up_addr, TOP_UP_AMOUNT)).collect();
-    let (_address_infos, new_balance) = s
+    let (_address_infos, new_balance, _) = s
         .test_wallet
         .platform_wallet()
         .identity()

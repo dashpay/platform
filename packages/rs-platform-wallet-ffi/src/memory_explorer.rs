@@ -67,6 +67,11 @@ pub unsafe extern "C" fn platform_wallet_list_in_memory_identity_ids(
     out_array: *mut IdentifierArray,
 ) -> PlatformWalletFFIResult {
     check_ptr!(out_array);
+    // Sentinel first: the handle lookup and wallet-info fetch below are both
+    // fallible, and `platform_wallet_identifier_array_free` reconstructs a
+    // `Vec` from any non-null pointer/count pair — see
+    // `IdentifierArray::empty`.
+    unsafe { *out_array = IdentifierArray::empty() };
 
     let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
         let wm = wallet.wallet_manager().blocking_read();
@@ -92,6 +97,8 @@ pub unsafe extern "C" fn platform_wallet_list_in_memory_watched_identity_ids(
     out_array: *mut IdentifierArray,
 ) -> PlatformWalletFFIResult {
     check_ptr!(out_array);
+    // Sentinel first — see `IdentifierArray::empty`.
+    unsafe { *out_array = IdentifierArray::empty() };
 
     let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
         let wm = wallet.wallet_manager().blocking_read();

@@ -256,6 +256,60 @@ SELECT ZIDENTITYINDEXRAW AS slot, ZSTATUSRAW AS status
 
 Within-store contrast eliminates a class of "did I really install the new build?" doubts — if the histogram changed for the row you just created but not for the 20 pre-existing ones, the new code is provably running.
 
+### K — Auto-fund a testnet wallet from the in-app faucet (no manual faucet visit)
+
+For e2e flows that need Core funds on **testnet** (identity registration, DashPay
+payments), the Receive screen has a built-in faucet button — tap it instead of
+visiting a web faucet by hand. It sends ~1 tDASH to the wallet's current Core
+receive address via `faucet.thepasta.org` (`ReceiveAddressView.requestFromTestnetFaucet`
+→ `TestnetFaucet().requestCoreDash`).
+
+Preconditions (the button is conditionally rendered):
+- The app must be on the **Core tab** and the SDK on the **testnet** network
+  (`selectedTab == .core && currentNetwork == .testnet`). It's hidden on
+  mainnet / devnet / regtest.
+- A valid receive address must be shown (a wallet exists + synced enough to derive one).
+
+Drive it by its **stable accessibility id** `receive.testnetFaucetButton` (don't
+rely on the visible label — it doubles as a status toast: "Get 1 tDASH — Testnet
+Faucet" → "Solving captcha…" → "Sent N tDASH! tx: …", or a web-fallback toast on
+rate-limit/failure):
+
+```bash
+UDID=$(xcrun simctl list devices booted | awk -F'[()]' '/Booted/ {print $2}')
+idb ui describe-all --udid "$UDID" > /tmp/tree.json
+# tap the element whose AXUniqueId == "receive.testnetFaucetButton"
+LABEL_ID="receive.testnetFaucetButton" UDID="$UDID" python3 << 'PY'
+import json, os, subprocess
+items = json.load(open('/tmp/tree.json'))
+m = next((it for it in items if it.get('AXUniqueId') == os.environ['LABEL_ID'] and it.get('enabled')), None)
+if not m: raise SystemExit('faucet button not found — on Core tab + testnet? wallet synced?')
+fr = m['frame']; x, y = int(fr['x']+fr['width']/2), int(fr['y']+fr['height']/2)
+subprocess.run([os.path.expanduser('~/.local/bin/idb'),'ui','tap','--udid',os.environ['UDID'],str(x),str(y)], check=True)
+print(f'tapped faucet at ({x},{y})')
+PY
+```
+
+Then poll for arrival (the faucet tx must confirm/IS-lock before SPV credits it):
+```bash
+DATA=$(xcrun simctl get_app_container booted org.dashfoundation.DashDeveloperPro data)
+STORE="$DATA/Library/Application Support/default.store"
+for i in {1..40}; do
+  bal=$(sqlite3 "$STORE" "SELECT COALESCE(SUM(ZAMOUNT),0) FROM ZPERSISTENTTXO WHERE ZISSPENT=0;")
+  echo "[$i] unspent duffs=$bal"; [ "${bal:-0}" -gt 0 ] && break; sleep 6
+done
+```
+
+Notes:
+- **Rate-limited / captcha failure** falls back to opening the *web* faucet in
+  Safari and copying the address to the clipboard — if the toast says "opened web
+  faucet", the in-app send did NOT happen; either wait out the rate limit and
+  re-tap, or fund the copied address manually.
+- ~1 tDASH per call; for a two-party DashPay test (fund both wallets) tap it once
+  per wallet from each wallet's Receive screen.
+- This is a Core (L1) funding tool. Platform credits (identity top-up) still come
+  from an asset-lock of these Core funds — fund first, then register/top-up.
+
 ## Setup checklist
 
 Run before any session that needs UI control:
@@ -273,20 +327,31 @@ If `idb connect` hangs, clear stale companion processes: `pkill -f idb_companion
 
 If `idb connect` succeeds but `idb ui describe-all` returns a single root element with empty bounds (`{{0, 0}, {0, 0}}`) — companion is connected but desynced from the simulator UI tree. Same fix as the hang case: `pkill -f idb_companion && idb connect $UDID`. A successful re-connection shows the real app frame (e.g. `{{0, 0}, {402, 874}}` for iPhone 17 Pro) as the root element.
 
+### Build for the simulator (canonical command)
+
+**To build the app for the simulator, run `bash packages/swift-sdk/build_ios.sh --target sim`** (from the repo root) — or `bash build_ios.sh --target sim` from `packages/swift-sdk/`. This is THE sim build: it compiles the Rust → iOS-sim `DashSDKFFI.xcframework`, the `SwiftDashSDK` package, and the `SwiftExampleApp` app (warnings-as-errors), ending in `** BUILD SUCCEEDED **`. Don't hand-run `xcodebuild` / `swift build` for a sim build — `build_ios.sh --target sim` wires the xcframework + flags correctly. (`--target all` adds device + macOS slices; `--target mac` is macOS-only and leaves the xcframework WITHOUT a sim slice — never use it for sim work.)
+
+**Never run two builds against the same worktree's DerivedData at once** (e.g. a background build + the user's own `build_ios.sh`) — concurrent `xcodebuild` corrupts the build DB (`error: unable to attach DB` → `** BUILD FAILED **`). If the user may be building, build in an isolated `git worktree` (separate DerivedData + target dir). See [[feedback-parallel-agents-need-worktrees]].
+
 ### Install the latest build before driving the UI
 
-The skill assumes the binary on the simulator is current. It's not, if you've built but forgotten to install. After every `./build_ios.sh --target sim` (or any code change), push the fresh artifact:
+The skill assumes the binary on the simulator is current. It's not, if you've built but forgotten to install. After every `build_ios.sh --target sim` (or any code change), push the fresh artifact. With MULTIPLE simulators booted, install to each by **UDID** (`booted` is ambiguous with >1 sim):
 
 ```bash
 BUNDLE=org.dashfoundation.DashDeveloperPro
 # The .app on disk is named after PRODUCT_NAME (still "SwiftExampleApp"), which
 # differs from the bundle id — find by the product name, launch by the bundle id.
 APP=$(find ~/Library/Developer/Xcode/DerivedData -name "SwiftExampleApp.app" -path "*Debug-iphonesimulator*" -not -path "*Index.noindex*" 2>/dev/null | head -1)
-xcrun simctl install booted "$APP"
-xcrun simctl launch booted "$BUNDLE"  # or terminate-then-launch to force a fresh process
+for UDID in $(xcrun simctl list devices booted | grep -oiE '[0-9A-F-]{36}'); do
+  xcrun simctl install "$UDID" "$APP"
+  xcrun simctl terminate "$UDID" "$BUNDLE" 2>/dev/null
+  xcrun simctl launch "$UDID" "$BUNDLE"
+done
 ```
 
-Without this step, idb taps still hit the OLD binary's UI and your verification is meaningless. Pair with a clean `git status` + `git log -1` check before running any post-fix manual test pass.
+For a **two-party DashPay test**, boot two sims (`xcrun simctl boot <udid>`), install the same build on both, and use a distinct identity/wallet per sim. Drive each by passing `--udid <that sim>` to every `idb` command.
+
+Without this step, idb taps still hit the OLD binary's UI and your verification is meaningless. Pair with a clean `git status` + `git log -1` check before any post-fix manual test pass.
 
 ## Pitfalls
 

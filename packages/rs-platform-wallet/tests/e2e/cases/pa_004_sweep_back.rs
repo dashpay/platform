@@ -149,7 +149,7 @@ async fn pa_004_sweep_back_drains_to_bank() {
         .manager()
         .create_wallet_from_seed_bytes(
             network,
-            seed_bytes,
+            &seed_bytes,
             WalletAccountCreationOptions::Default,
             None,
         )

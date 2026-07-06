@@ -58,7 +58,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let wallet = manager
         .create_wallet_from_seed_bytes(
             Network::Testnet,
-            seed_bytes,
+            &seed_bytes,
             WalletAccountCreationOptions::Default,
             None,
         )

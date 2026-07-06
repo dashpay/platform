@@ -240,7 +240,7 @@ async fn run_wallet_sync_test(wallet: WalletIndex) {
     let platform_wallet = manager
         .create_wallet_from_seed_bytes(
             network,
-            transparent_seed,
+            &transparent_seed,
             WalletAccountCreationOptions::Default,
             None,
         )

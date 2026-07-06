@@ -234,7 +234,7 @@ async fn main() {
     let platform_wallet = manager
         .create_wallet_from_seed_bytes(
             Network::Devnet,
-            transparent_seed,
+            &transparent_seed,
             WalletAccountCreationOptions::Default,
             // birth_height_override: skip SPV-tip lookup (no SPV running here)
             Some(0),

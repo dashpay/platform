@@ -295,6 +295,7 @@ fn tc009_platform_address_roundtrip() {
             funds: AddressFunds {
                 nonce: 1,
                 balance: 500,
+                as_of_height: 111,
             },
         },
         PlatformAddressBalanceEntry {
@@ -305,6 +306,7 @@ fn tc009_platform_address_roundtrip() {
             funds: AddressFunds {
                 nonce: 2,
                 balance: 1500,
+                as_of_height: 222,
             },
         },
     ];

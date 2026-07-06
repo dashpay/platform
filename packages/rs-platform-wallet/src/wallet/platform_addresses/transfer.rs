@@ -225,15 +225,13 @@ impl PlatformAddressWallet {
         // gate and the spend path diverge on a non-latest-pinned SDK.
         let version = platform_version.unwrap_or_else(|| self.sdk.version());
 
-        // Capture the credited output addresses BEFORE `outputs` is moved
-        // into the SDK call below. Transfer outputs are recorded on-chain
-        // as `AddBalanceToAddress` DELTAS (a same-wallet output — e.g. a
-        // change address — is the ADDR-09 double-count shape); the seam's
-        // watermark gate needs to know them. See
-        // `reconcile_address_infos` for the full mechanism.
-        let credited_outputs = super::credited_outputs_set(outputs.keys());
-
-        let address_infos = match input_selection {
+        // `proof_height` is the broadcast proof's committed block — the
+        // height pin for the reconciled absolutes below. Transfer outputs
+        // are recorded on-chain as `AddBalanceToAddress` DELTAS at that
+        // height (a same-wallet output — e.g. a change address — is the
+        // ADDR-09 double-count shape); the pin is what stops the sync from
+        // re-applying them. See `reconcile_address_infos`.
+        let (address_infos, proof_height) = match input_selection {
             InputSelection::Explicit(inputs) => {
                 if inputs.is_empty() {
                     return Err(PlatformWalletError::AddressOperation(
@@ -286,13 +284,12 @@ impl PlatformAddressWallet {
         // `transfer_address_funds` returns address info for the full
         // `inputs ∪ outputs` set, including external recipients the wallet
         // does not own — the shared seam filters those out, applies the
-        // proof-attested balances, updates the sync seed, persists, and
-        // (when a wallet-owned output in `credited_outputs` was committed)
-        // invalidates the incremental sync watermark so the next BLAST
-        // pass full-scan-reconciles instead of re-applying the on-chain
-        // credit delta on top of the absolute seed (ADDR-09).
+        // proof-attested balances pinned at `proof_height`, updates the
+        // sync seed, and persists. The pin lets the next BLAST pass drop
+        // the on-chain credit delta instead of re-applying it on top of
+        // the absolute seed (ADDR-09).
         Ok(self
-            .reconcile_address_infos(&address_infos, &credited_outputs, "address transfer")
+            .reconcile_address_infos(&address_infos, proof_height, "address transfer")
             .await)
     }
 

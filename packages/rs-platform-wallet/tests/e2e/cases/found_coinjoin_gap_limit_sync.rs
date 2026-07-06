@@ -249,7 +249,7 @@ async fn found_coinjoin_gap_limit_sync() {
     let wallet_a = manager
         .create_wallet_from_seed_bytes(
             network,
-            seed,
+            &seed,
             WalletAccountCreationOptions::Default,
             Some(0),
         )
@@ -274,7 +274,7 @@ async fn found_coinjoin_gap_limit_sync() {
     let wallet_b = manager_b
         .create_wallet_from_seed_bytes(
             network,
-            seed,
+            &seed,
             WalletAccountCreationOptions::AllAccounts(
                 bip44,
                 Default::default(),
@@ -748,7 +748,7 @@ async fn found_coinjoin_gap_limit_sweep_f1() {
     let wallet = manager
         .create_wallet_from_seed_bytes(
             network,
-            seed,
+            &seed,
             WalletAccountCreationOptions::AllAccounts(
                 bip44,
                 Default::default(),
@@ -895,7 +895,7 @@ async fn found_coinjoin_gap_limit_sync_height_analysis() {
     let wallet = manager
         .create_wallet_from_seed_bytes(
             network,
-            seed,
+            &seed,
             WalletAccountCreationOptions::AllAccounts(
                 bip44,
                 Default::default(),
