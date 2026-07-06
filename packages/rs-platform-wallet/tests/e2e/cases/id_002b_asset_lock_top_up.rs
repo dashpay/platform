@@ -1,12 +1,17 @@
 //! ID-002b — Asset-lock-funded top-up of existing identity.
 //!
-//! **RED-by-design (Found-031)**: step 3 precondition (`add_identity_topup_account`)
-//! fails because `register_wallet` calls `downgrade_to_external_signable()`
-//! (`wallet_lifecycle.rs:244`) before IdentityTopUp accounts can be provisioned,
-//! stripping the private key required for HD derivation. See TEST_SPEC.md Found-031.
+//! **Found-031 reachability proof**: step 3's precondition
+//! (`add_identity_topup_account`) provisions the `IdentityTopUp` account on a
+//! post-registration wallet. `register_wallet` calls
+//! `downgrade_to_external_signable()` (`wallet_lifecycle.rs:244`), dropping the
+//! root seed, so the resident-key `add_account(.., None)` path fails with
+//! "External signable wallet has no private key". The account is instead
+//! provisioned with an externally-derived `Some(xpub)` — watch-only, signed at
+//! build/consume time by the external `core_signer` — proving the asset-lock
+//! top-up is reachable on an external-signable wallet. See TEST_SPEC.md Found-031.
 //!
 //! Spec: `tests/e2e/TEST_SPEC.md` (### Identity (ID) → ID-002b).
-//! Pinned status: STUB — full test body implemented, gated behind the `e2e` cargo feature
+//! Pinned status: ACTIVE — full test body, gated behind the `e2e` cargo feature
 //! behind the `PLATFORM_WALLET_E2E_BANK_CORE_GATE` env var (same gate
 //! CR-003 uses; default-on, 180 s deadline). Bank Core (Layer-1)
 //! pre-funding required.
@@ -41,7 +46,9 @@ use dash_sdk::platform::Fetch;
 use dpp::balances::credits::CREDITS_PER_DUFF;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::Identity;
-use key_wallet::AccountType;
+use key_wallet::bip32::{ExtendedPrivKey, ExtendedPubKey};
+use key_wallet::dashcore::secp256k1::Secp256k1;
+use key_wallet::{AccountType, Network};
 use platform_wallet::wallet::asset_lock::tracked::AssetLockStatus;
 use platform_wallet::AssetLockFunding;
 use platform_wallet::PlatformWalletError;
@@ -164,13 +171,21 @@ async fn id_002b_asset_lock_funded_top_up() {
     // HD account in the wallet's managed account collection. That account
     // is absent when the wallet is created with
     // `WalletAccountCreationOptions::Default`. Provision it now.
-    add_identity_topup_account(s.test_wallet.platform_wallet(), IDENTITY_INDEX)
-        .await
-        .expect(
-            "Found-031 (RED-by-design): register_wallet strips private key before \
-             IdentityTopUp provisioning — add_account fails for IDENTITY_INDEX. \
-             See TEST_SPEC.md Found-031.",
-        );
+    let seed = s.test_wallet.seed_bytes();
+    let network = s.test_wallet.platform_wallet().core().network();
+    add_identity_topup_account(
+        s.test_wallet.platform_wallet(),
+        &seed,
+        network,
+        IDENTITY_INDEX,
+    )
+    .await
+    .expect(
+        "provision IdentityTopUp account via externally-derived xpub — the \
+         post-registration wallet is external-signable, so the account must be \
+         added with Some(xpub) (watch-only), not the resident-key None path. \
+         See TEST_SPEC.md Found-031.",
+    );
 
     // Internally:
     //   1. AssetLockManager::create_funded_asset_lock_proof — builds
@@ -236,10 +251,13 @@ async fn id_002b_asset_lock_funded_top_up() {
          on-chain top-up always pays a chain-time fee"
     );
 
-    // Step 7: assert the new top-up asset-lock tx appears in the
-    // tracked-locks registry with a finalised proof state. CR-003 pins
-    // the same shape for the registration path; the top-up path keeps
-    // the same invariant.
+    // Step 7: the unified top-up flow is remove-on-success —
+    // `top_up_identity_with_funding` calls `consume_asset_lock` once
+    // Platform accepts the top-up, which drops the entry from the
+    // tracked-locks registry. So after a successful top-up no live
+    // IdentityTopUp lock remains; any that somehow linger must be in a
+    // finalised proof state. Mirrors CR-003's Step 6 loose contract
+    // (which passes vacuously when the lock is consumed).
     let tracked = s
         .test_wallet
         .platform_wallet()
@@ -255,11 +273,6 @@ async fn id_002b_asset_lock_funded_top_up() {
             )
         })
         .collect();
-    assert!(
-        !top_up_locks.is_empty(),
-        "POST-pin violated: no IdentityTopUp asset-lock entry in \
-         tracked_asset_locks after a top-up call landed"
-    );
     for lock in &top_up_locks {
         assert!(
             matches!(
@@ -319,16 +332,39 @@ async fn id_002b_asset_lock_funded_top_up() {
 /// in `wallet_info.accounts.identity_topup`. That map starts empty
 /// when the wallet is created with `WalletAccountCreationOptions::Default`
 /// — provisioning it here is the required precondition. (QA-006)
+///
+/// The wallet is external-signable after `register_wallet` (root seed
+/// dropped), so `add_account(.., None)` — which re-derives from the resident
+/// key — fails. Derive the account xpub from the seed's master exactly as the
+/// `None` branch would (`master.derive_priv(account_path).neuter()`) and
+/// provision via `Some(xpub)`. The account is watch-only; the asset-lock
+/// build and consume both sign through the external `core_signer`, so no
+/// resident key is needed. Mirrors the DashPay contact provisioning in
+/// `src/wallet/identity/network/contacts.rs`.
 async fn add_identity_topup_account(
     wallet: &std::sync::Arc<platform_wallet::PlatformWallet>,
+    seed_bytes: &[u8; 64],
+    network: Network,
     registration_index: u32,
 ) -> Result<(), PlatformWalletError> {
+    let account_type = AccountType::IdentityTopUp { registration_index };
+    let secp = Secp256k1::new();
+    let master = ExtendedPrivKey::new_master(network, seed_bytes)
+        .map_err(|e| PlatformWalletError::InvalidIdentityData(e.to_string()))?;
+    let derivation_path = account_type
+        .derivation_path(network)
+        .map_err(|e| PlatformWalletError::InvalidIdentityData(e.to_string()))?;
+    let account_xpriv = master
+        .derive_priv(&secp, &derivation_path)
+        .map_err(|e| PlatformWalletError::InvalidIdentityData(e.to_string()))?;
+    let account_xpub = ExtendedPubKey::from_priv(&secp, &account_xpriv);
+
     let wallet_id = wallet.wallet_id();
     let mut wm = wallet.wallet_manager().write().await;
     let (kw, info) = wm
         .get_wallet_mut_and_info_mut(&wallet_id)
         .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(wallet_id)))?;
-    kw.add_account(AccountType::IdentityTopUp { registration_index }, None)
+    kw.add_account(account_type, Some(account_xpub))
         .map_err(|e| PlatformWalletError::InvalidIdentityData(e.to_string()))?;
     let account = kw
         .accounts
