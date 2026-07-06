@@ -40,7 +40,11 @@ object Base58 {
             if (digit < 0) return null
             value = value.multiply(BASE).add(BigInteger.valueOf(digit.toLong()))
         }
-        var decoded = value.toByteArray()
+        // BigInteger.ZERO.toByteArray() is a synthetic [0] — an all-'1'
+        // input must contribute NO value bytes (its length is carried
+        // entirely by the leading-zero restore below), or a 32-byte zero
+        // id round-trips to 33 bytes.
+        var decoded = if (value == BigInteger.ZERO) ByteArray(0) else value.toByteArray()
         // Strip BigInteger's sign byte.
         if (decoded.size > 1 && decoded[0].toInt() == 0) {
             decoded = decoded.copyOfRange(1, decoded.size)
