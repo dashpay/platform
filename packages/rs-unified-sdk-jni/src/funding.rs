@@ -19,13 +19,15 @@
 //!
 //! The heavy shielded funding transitions themselves — the shielded
 //! fund-from-asset-lock (+ its resume-by-outpoint variant) and the
-//! shielded seed-pool batch builder — are bridged below. They are
-//! **manager-handle** entry points (they take the manager `Handle` + the
-//! 32-byte wallet id + a `MnemonicResolverHandle`, resolving the wallet and
+//! shielded seed-pool batch builder — are bridged below, as are the three
+//! **outgoing** shielded spends (transfer / unshield / withdraw, transition
+//! types 16/17/19). They are all **manager-handle** entry points (they take
+//! the manager `Handle` + the 32-byte wallet id, resolving the wallet and
 //! its shielded coordinator Rust-side), so their Kotlin wrappers live on
 //! `PlatformWalletManager` rather than `ManagedPlatformWallet` — matching
 //! the Swift `PlatformWalletManager.shieldedFundFromAssetLock` /
-//! `seedShieldedPoolNotes` shapes. No orchestration crosses the JNI
+//! `seedShieldedPoolNotes` / `shieldedTransfer` / `shieldedUnshield` /
+//! `shieldedWithdraw` shapes. No orchestration crosses the JNI
 //! boundary: each is a single FFI call whose result carries only a status
 //! code (the Orchard note arrives on the next shielded sync pass, not
 //! synchronously). The seed-pool builder also drives an optional progress
@@ -38,7 +40,7 @@
 #![cfg(feature = "shielded")]
 
 use crate::support::{guard, take_pwffi_error, throw_sdk_exception, JVM};
-use jni::objects::{GlobalRef, JByteArray, JClass, JObject};
+use jni::objects::{GlobalRef, JByteArray, JClass, JObject, JString};
 use jni::sys::{jboolean, jint, jlong, JNI_FALSE, JNI_TRUE};
 use jni::JNIEnv;
 use platform_wallet_ffi::handle::Handle;
@@ -187,6 +189,68 @@ fn read_opt_bytes(env: &mut JNIEnv, arr: &JByteArray) -> Result<Option<Vec<u8>>,
         Err(_) => {
             let _ = env.exception_clear();
             throw_sdk_exception(env, 1, "surplusOutput byte[] was invalid");
+            Err(())
+        }
+    }
+}
+
+/// Read a REQUIRED Java `String` into an owned `CString`; throws + returns
+/// None on JVM null, a JNI read error, an empty string, or an interior NUL.
+/// `field` names the argument in the thrown message. Local sibling of
+/// `wallet_manager::read_cstring_required` (that helper is module-private).
+fn read_cstring_required(env: &mut JNIEnv, s: &JString, field: &str) -> Option<std::ffi::CString> {
+    if s.is_null() {
+        throw_sdk_exception(env, 1, &format!("{field} was null"));
+        return None;
+    }
+    let owned: String = match env.get_string(s) {
+        Ok(v) => v.into(),
+        Err(_) => {
+            let _ = env.exception_clear();
+            throw_sdk_exception(env, 1, &format!("{field} string was invalid"));
+            return None;
+        }
+    };
+    if owned.is_empty() {
+        throw_sdk_exception(env, 1, &format!("{field} was empty"));
+        return None;
+    }
+    match std::ffi::CString::new(owned) {
+        Ok(c) => Some(c),
+        Err(_) => {
+            throw_sdk_exception(env, 1, &format!("{field} contained an interior NUL"));
+            None
+        }
+    }
+}
+
+/// Read an OPTIONAL Java `String` into `Option<CString>`. JVM null (or an
+/// empty string) → `Ok(None)` — the FFI treats a null memo pointer as "no
+/// memo", and Rust's `encode_memo_text` maps an empty string to the same
+/// all-zero memo anyway, so both normalize to null here. Returns `Err(())`
+/// (after throwing) on an interior NUL; a JNI read error is treated as null.
+fn read_cstring_opt(
+    env: &mut JNIEnv,
+    s: &JString,
+    field: &str,
+) -> Result<Option<std::ffi::CString>, ()> {
+    if s.is_null() {
+        return Ok(None);
+    }
+    let owned: String = match env.get_string(s) {
+        Ok(v) => v.into(),
+        Err(_) => {
+            let _ = env.exception_clear();
+            return Ok(None);
+        }
+    };
+    if owned.is_empty() {
+        return Ok(None);
+    }
+    match std::ffi::CString::new(owned) {
+        Ok(c) => Ok(Some(c)),
+        Err(_) => {
+            throw_sdk_exception(env, 1, &format!("{field} contained an interior NUL"));
             Err(())
         }
     }
@@ -500,6 +564,184 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shielde
         // dereferenced) stays alive through the blocking call above; it is
         // dropped here, after the FFI can no longer fire the callback.
         drop(progress_global);
+        let _ = take_pwffi_error(env, result);
+    })
+}
+
+// ── Shielded outgoing spends (types 16/17/19) ─────────────────────────
+//
+// Manager-handle entry points like the funding submits above. Each spend
+// signs with the bound shielded sub-wallet's own Orchard
+// `SpendAuthorizingKey` (cached by `platform_wallet_manager_bind_shielded`),
+// so — unlike the shield / fund paths — NO host signer or mnemonic-resolver
+// handle crosses the boundary; the host only supplies recipient + amount.
+// Each is a single blocking FFI call that runs the ~30s Halo 2 proof on a
+// Rust worker thread and returns only a status code. The retry-semantics-
+// bearing error codes (`ErrorShieldedSpendUnconfirmed` = do NOT retry,
+// `ErrorShieldedNoRecordedAnchor` / `ErrorShieldedBroadcastFailed` =
+// retryable) surface through `take_pwffi_error`'s offset codes and map to
+// the dedicated `DashSdkError.PlatformWallet` types on the Kotlin side.
+
+/// Shielded → shielded transfer (Type 16) — bridges
+/// `platform_wallet_manager_shielded_transfer`.
+///
+/// Mirrors Swift's `PlatformWalletManager.shieldedTransfer` (
+/// `PlatformWalletManagerShieldedSync.swift`): spends notes from `account`
+/// on `walletId` and creates a new note for `recipientRaw43` (the
+/// recipient's raw 43-byte Orchard payment address — same shape
+/// [`Java_..._shieldedDefaultAddress`] returns). `amount` is in credits
+/// (1 DASH = 1e11). `memoText` is an optional UTF-8 memo attached to the
+/// recipient's note (null / empty = no memo); Rust validates the 32-byte
+/// UTF-8 limit and does the 36-byte on-chain encoding.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shieldedTransfer(
+    mut env: JNIEnv,
+    _class: JClass,
+    manager_handle: jlong,
+    wallet_id: JByteArray,
+    account: jint,
+    recipient_raw43: JByteArray,
+    amount: jlong,
+    memo_text: JString,
+) {
+    guard(&mut env, (), |env| {
+        // Reject sign errors at the boundary — negatives would otherwise
+        // bit-cast to huge unsigned values (never clamp).
+        if amount <= 0 {
+            throw_sdk_exception(env, 1, "amount must be positive");
+            return;
+        }
+        if account < 0 {
+            throw_sdk_exception(env, 1, "account must be non-negative");
+            return;
+        }
+        let Some(wid) = read_id32(env, &wallet_id, "walletId") else {
+            return;
+        };
+        let Some(recipient) = read_recipient43(env, &recipient_raw43) else {
+            return;
+        };
+        // null / empty memo → null pointer (no memo). The CString owns the
+        // bytes through the blocking FFI call below.
+        let memo = match read_cstring_opt(env, &memo_text, "memoText") {
+            Ok(m) => m,
+            Err(()) => return,
+        };
+        let memo_ptr = memo.as_ref().map_or(ptr::null(), |c| c.as_ptr());
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_manager_shielded_transfer(
+                manager_handle as Handle,
+                wid.as_ptr(),
+                account as u32,
+                recipient.as_ptr(),
+                amount as u64,
+                memo_ptr,
+            )
+        };
+        let _ = take_pwffi_error(env, result);
+    })
+}
+
+/// Shielded → Platform unshield (Type 17) — bridges
+/// `platform_wallet_manager_shielded_unshield`.
+///
+/// Mirrors Swift's `PlatformWalletManager.shieldedUnshield`
+/// (`PlatformWalletManagerShieldedSync.swift`): spends notes from
+/// `account` on `walletId` and credits `toPlatformAddress`, a bech32m
+/// string (`"dash1…"` mainnet / `"tdash1…"` testnet). Rust parses it via
+/// `PlatformAddress::from_bech32m_string` and network-checks it, so the
+/// host never hand-rolls the storage variant tag. `amount` is in credits.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shieldedUnshield(
+    mut env: JNIEnv,
+    _class: JClass,
+    manager_handle: jlong,
+    wallet_id: JByteArray,
+    account: jint,
+    to_platform_address: JString,
+    amount: jlong,
+) {
+    guard(&mut env, (), |env| {
+        if amount <= 0 {
+            throw_sdk_exception(env, 1, "amount must be positive");
+            return;
+        }
+        if account < 0 {
+            throw_sdk_exception(env, 1, "account must be non-negative");
+            return;
+        }
+        let Some(wid) = read_id32(env, &wallet_id, "walletId") else {
+            return;
+        };
+        let Some(to_addr) = read_cstring_required(env, &to_platform_address, "toPlatformAddress")
+        else {
+            return;
+        };
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_manager_shielded_unshield(
+                manager_handle as Handle,
+                wid.as_ptr(),
+                account as u32,
+                to_addr.as_ptr(),
+                amount as u64,
+            )
+        };
+        let _ = take_pwffi_error(env, result);
+    })
+}
+
+/// Shielded → Core L1 withdrawal (Type 19) — bridges
+/// `platform_wallet_manager_shielded_withdraw`.
+///
+/// Mirrors Swift's `PlatformWalletManager.shieldedWithdraw`
+/// (`PlatformWalletManagerShieldedSync.swift`): spends notes from
+/// `account` on `walletId` and creates an L1 withdrawal to `toCoreAddress`
+/// (Base58Check string; Rust parses it and verifies the network).
+/// `amount` is in credits — the network converts to L1 duffs at the
+/// 1000:1 rate. `coreFeePerByte` is the L1 fee rate in duffs/byte
+/// (`1` is the dashmate default).
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shieldedWithdraw(
+    mut env: JNIEnv,
+    _class: JClass,
+    manager_handle: jlong,
+    wallet_id: JByteArray,
+    account: jint,
+    to_core_address: JString,
+    amount: jlong,
+    core_fee_per_byte: jint,
+) {
+    guard(&mut env, (), |env| {
+        if amount <= 0 {
+            throw_sdk_exception(env, 1, "amount must be positive");
+            return;
+        }
+        if account < 0 {
+            throw_sdk_exception(env, 1, "account must be non-negative");
+            return;
+        }
+        // A zero fee rate would build an unrelayable L1 withdrawal and a
+        // negative one would bit-cast huge — reject both at the boundary.
+        if core_fee_per_byte <= 0 {
+            throw_sdk_exception(env, 1, "coreFeePerByte must be positive");
+            return;
+        }
+        let Some(wid) = read_id32(env, &wallet_id, "walletId") else {
+            return;
+        };
+        let Some(to_addr) = read_cstring_required(env, &to_core_address, "toCoreAddress") else {
+            return;
+        };
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_manager_shielded_withdraw(
+                manager_handle as Handle,
+                wid.as_ptr(),
+                account as u32,
+                to_addr.as_ptr(),
+                amount as u64,
+                core_fee_per_byte as u32,
+            )
+        };
         let _ = take_pwffi_error(env, result);
     })
 }

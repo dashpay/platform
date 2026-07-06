@@ -801,6 +801,129 @@ class PlatformWalletManager(
         }
     }
 
+    // ── Shielded outgoing spends (types 16/17/19) ──────────────────────
+    //
+    // Manager-handle FFI calls like the funding submits above; each signs
+    // with the bound shielded sub-wallet's own Orchard spend key Rust-side
+    // (cached by [bindShielded]), so no signer or resolver handle crosses
+    // JNI — matching the Swift counterparts, which take no signer either.
+    // Each blocks for the ~30s Halo 2 proof on Dispatchers.IO. On the
+    // AMBIGUOUS outcome (broadcast accepted, execution unconfirmed) they
+    // throw [org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.ShieldedSpendUnconfirmed]
+    // — the caller must NOT retry (the spent notes stay reserved Rust-side;
+    // the next shielded sync reconciles the outcome).
+
+    /**
+     * Shielded → shielded transfer (Type 16) — port of Swift's
+     * `PlatformWalletManager.shieldedTransfer(walletId:account:recipientRaw43:amount:memo:)`
+     * (`PlatformWalletManagerShieldedSync.swift`). Spends notes from
+     * [account] on [walletId] and creates a new note for [recipientRaw43].
+     *
+     * @param walletId the 32-byte wallet id.
+     * @param recipientRaw43 the recipient's raw 43-byte Orchard payment
+     *   address (11-byte diversifier + 32-byte pk_d) — same shape
+     *   [shieldedDefaultAddress] returns.
+     * @param amount credits to transfer (1 DASH = 1e11 credits).
+     * @param account the ZIP-32 shielded account to spend from (usually 0).
+     * @param memo optional UTF-8 memo attached to the recipient's note
+     *   (null / empty = no memo; the UTF-8 byte length must be at most 32
+     *   or Rust rejects it — the 36-byte on-chain encoding is Rust-side).
+     */
+    suspend fun shieldedTransfer(
+        walletId: ByteArray,
+        recipientRaw43: ByteArray,
+        amount: Long,
+        account: Int = 0,
+        memo: String? = null,
+    ): Unit = withContext(Dispatchers.IO) {
+        require(amount > 0) { "amount must be positive, got $amount" }
+        require(account >= 0) { "account must be non-negative, got $account" }
+        require(recipientRaw43.size == 43) {
+            "recipientRaw43 must be exactly 43 bytes, got ${recipientRaw43.size}"
+        }
+        mapNativeErrors {
+            FundingNative.shieldedTransfer(
+                managerHandle,
+                walletId,
+                account,
+                recipientRaw43,
+                amount,
+                memo?.takeIf { it.isNotEmpty() },
+            )
+        }
+    }
+
+    /**
+     * Shielded → Platform unshield (Type 17) — port of Swift's
+     * `PlatformWalletManager.shieldedUnshield(walletId:account:toPlatformAddress:amount:)`
+     * (`PlatformWalletManagerShieldedSync.swift`). Spends notes from
+     * [account] on [walletId] and credits [toPlatformAddress].
+     *
+     * @param toPlatformAddress the recipient as a bech32m string
+     *   (`dash1…` mainnet / `tdash1…` testnet). Forwarded as-is — Rust
+     *   parses it via `PlatformAddress::from_bech32m_string` and verifies
+     *   the network, so hosts never hand-roll the storage variant tag.
+     * @param amount credits to unshield (1 DASH = 1e11 credits).
+     */
+    suspend fun shieldedUnshield(
+        walletId: ByteArray,
+        toPlatformAddress: String,
+        amount: Long,
+        account: Int = 0,
+    ): Unit = withContext(Dispatchers.IO) {
+        require(amount > 0) { "amount must be positive, got $amount" }
+        require(account >= 0) { "account must be non-negative, got $account" }
+        require(toPlatformAddress.isNotBlank()) { "toPlatformAddress is empty" }
+        mapNativeErrors {
+            FundingNative.shieldedUnshield(
+                managerHandle,
+                walletId,
+                account,
+                toPlatformAddress,
+                amount,
+            )
+        }
+    }
+
+    /**
+     * Shielded → Core L1 withdrawal (Type 19) — port of Swift's
+     * `PlatformWalletManager.shieldedWithdraw(walletId:account:toCoreAddress:amount:coreFeePerByte:)`
+     * (`PlatformWalletManagerShieldedSync.swift`). Spends notes from
+     * [account] on [walletId] and creates an L1 withdrawal to
+     * [toCoreAddress].
+     *
+     * @param toCoreAddress the L1 recipient as a Base58Check string; Rust
+     *   parses it and verifies it matches the wallet's network.
+     * @param amount credits to withdraw (1 DASH = 1e11 credits); the
+     *   network converts to L1 duffs at the 1000:1 rate.
+     * @param coreFeePerByte the L1 fee rate in duffs/byte (1 is the
+     *   dashmate default, matching the Swift default).
+     */
+    suspend fun shieldedWithdraw(
+        walletId: ByteArray,
+        toCoreAddress: String,
+        amount: Long,
+        coreFeePerByte: Int = 1,
+        account: Int = 0,
+    ): Unit = withContext(Dispatchers.IO) {
+        require(amount > 0) { "amount must be positive, got $amount" }
+        require(account >= 0) { "account must be non-negative, got $account" }
+        require(coreFeePerByte > 0) {
+            "coreFeePerByte must be positive, got $coreFeePerByte"
+        }
+        require(toCoreAddress.isNotBlank()) { "toCoreAddress is empty" }
+        mapNativeErrors {
+            FundingNative.shieldedWithdraw(
+                managerHandle,
+                walletId,
+                account,
+                toCoreAddress,
+                amount,
+                coreFeePerByte,
+            )
+        }
+    }
+
     /**
      * Start the Core SPV client — port of Swift `startSpv(...)`. Flattened
      * `platform_wallet_manager_spv_start`; the native side owns the sync

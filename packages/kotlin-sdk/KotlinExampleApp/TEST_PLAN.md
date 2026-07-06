@@ -239,7 +239,7 @@ Shielded notes/balance/activity have **no read-side FFI** by design — Rust pus
 | SH-05 | Shielded → shielded transfer (Type 16) | Shielded | Essential | ✅ | | Send flow (Shielded→Shielded) → `walletManager.shieldedTransfer`. Optional ≤32-byte memo. |
 | SH-06 | Unshield → Platform address (Type 17) | Shielded | Essential | ✅ | | Send flow (Shielded→Platform) → `walletManager.shieldedUnshield`. |
 | SH-07 | Shield from asset lock (Type 18) | Cross | Common | ✅ | | `ShieldedFundScreen` (from `WalletDetailScreen`) → `platform_wallet_manager_shielded_fund_from_asset_lock`. |
-| SH-08 | Shielded withdraw → Core L1 (Type 19) | Cross | Common | ✅ | withdrawal | Send flow (Shielded→Core) → `walletManager.shieldedWithdraw` (custom `core_fee_per_byte`). |
+| SH-08 | Shielded withdraw → Core L1 (Type 19) | Cross | Common | ✅ | withdrawal | Send flow (Shielded→Core) → `walletManager.shieldedWithdraw` (`core_fee_per_byte` = 1, the dashmate default — same value the iOS send flow passes). |
 | SH-09 | Prover warm-up / readiness | Shielded | Common | ✅ | | `warmUpShieldedProver` / `shieldedProverIsReady` (~30s Halo2 key build). |
 | SH-10 | Seed shielded pool (anonymity set) | Shielded | Uncommon | ✅ | | `SeedShieldedPoolScreen` → `platform_wallet_manager_shielded_seed_pool_notes`. **Devnet/testnet only.** |
 | SH-11 | Create identity from shielded pool (Type 20) | Cross | Common | ✅ | | `CreateIdentityScreen` → funding source **Shielded balance** (fixed denominations) → `platform_wallet_manager_shielded_identity_create_from_pool`. |

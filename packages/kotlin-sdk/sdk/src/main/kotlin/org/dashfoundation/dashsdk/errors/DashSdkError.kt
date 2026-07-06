@@ -99,6 +99,26 @@ sealed class DashSdkError(
         }
 
         /**
+         * `ErrorShieldedSpendUnconfirmed` (native code 18). A shielded spend
+         * (transfer / unshield / withdraw / shield) was broadcast and
+         * accepted, but its execution result couldn't be confirmed — it may
+         * already be on chain. Rust intentionally KEEPS the spent notes'
+         * reservations, so the caller must NOT retry (a retry would rebuild
+         * the bundle against other notes and could double-spend); the next
+         * shielded sync reconciles the outcome. The Android analog of
+         * Swift's `PlatformWalletError.shieldedSpendUnconfirmed`, which the
+         * iOS send flow surfaces as a non-retryable "may have gone through"
+         * outcome rather than an error.
+         */
+        class ShieldedSpendUnconfirmed(message: String, cause: Throwable? = null) :
+            PlatformWallet(
+                "$message (do NOT retry: the spend may already be on chain; " +
+                    "the wallet keeps the spent notes reserved until the next " +
+                    "shielded sync reconciles the outcome)",
+                cause,
+            )
+
+        /**
          * `ErrorTransactionBroadcastUnconfirmed` (native code 20). A core
          * transaction broadcast had an AMBIGUOUS outcome — it may already be
          * on the network. The wallet keeps the spent inputs reserved so a
@@ -169,6 +189,7 @@ sealed class DashSdkError(
             // PlatformWalletFFIResultCode variants (platform-wallet-ffi/src/error.rs)
             1 -> PlatformWallet.InvalidHandle(message, cause) // ErrorInvalidHandle
             6 -> PlatformWallet.WalletOperation(message, cause) // ErrorWalletOperation
+            18 -> PlatformWallet.ShieldedSpendUnconfirmed(message, cause) // ErrorShieldedSpendUnconfirmed
             19 -> PlatformWallet.ShieldedNoRecordedAnchor(message, cause) // ErrorShieldedNoRecordedAnchor
             20 -> PlatformWallet.TransactionBroadcastUnconfirmed(message, cause) // ErrorTransactionBroadcastUnconfirmed
             else -> PlatformWallet.Generic(code, message, cause)

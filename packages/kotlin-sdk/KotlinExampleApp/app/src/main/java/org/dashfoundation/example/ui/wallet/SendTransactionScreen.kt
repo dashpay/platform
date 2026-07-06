@@ -18,13 +18,18 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -35,32 +40,74 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
-import androidx.compose.runtime.rememberCoroutineScope
+import org.dashfoundation.dashsdk.Sdk
+import org.dashfoundation.dashsdk.errors.DashSdkError
+import org.dashfoundation.dashsdk.funding.ShieldedProver
 import org.dashfoundation.dashsdk.wallet.ManagedPlatformWallet
 import org.dashfoundation.example.di.LocalAppContainer
+import org.dashfoundation.example.di.LocalAppState
 import org.dashfoundation.example.navigation.QrScanner
 import org.dashfoundation.example.ui.components.ErrorAlertDialog
 import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.LabeledContent
 import org.dashfoundation.example.ui.components.SubmitButton
-import org.dashfoundation.example.util.Base58
+import org.dashfoundation.example.util.DashAddress
+import org.dashfoundation.example.util.DashAddressType
 import org.dashfoundation.example.util.ScannedPayment
+import org.dashfoundation.example.util.formatCredits
 import org.dashfoundation.example.util.formatDuffs
+import org.dashfoundation.example.util.hexToBytes
+import org.dashfoundation.example.util.parseDashToCredits
 import org.dashfoundation.example.util.parseDashToDuffs
 
 /**
- * Send form — port of the Core (`coreToCore`) flow of
- * `SendTransactionView.swift` + `SendViewModel.swift`: recipient +
- * decimal-DASH amount with `Decimal`-backed duffs parsing, QR-scan entry,
- * spendable-balance display, and the static Core fee estimate.
+ * The send flows this screen routes — the Android-bridged subset of iOS
+ * `SendFlow` (SendViewModel.swift:6). The three shielded OUTFLOW spends
+ * (types 16/17/19) ride the manager wrappers; the shield inflows
+ * (`coreToShielded` / `platformToShielded`) live on their dedicated
+ * screens (`ShieldedFundScreen`) / aren't bridged yet, and
+ * `platformToPlatform` has the dedicated `TransferPlatformAddressScreen`.
+ */
+private enum class SendFlow(val displayName: String) {
+    CORE_TO_CORE("Core Payment"),
+    SHIELDED_TO_SHIELDED("Shielded Transfer"),
+    SHIELDED_TO_PLATFORM("Unshield"),
+    SHIELDED_TO_CORE("Withdrawal to Core"),
+}
+
+/** Fund source for sending (← iOS `FundSource`, SendViewModel.swift:58). */
+private enum class FundSource(val label: String) {
+    CORE("Core"),
+    SHIELDED("Shielded"),
+}
+
+/**
+ * Maximum UTF-8 byte length of a shielded memo (the 32-byte payload of the
+ * 36-byte `DashMemo`) — mirrors `SendViewModel.memoByteLimit` /
+ * `dpp::shielded::MEMO_PAYLOAD_SIZE`. Rust re-validates.
+ */
+private const val MEMO_BYTE_LIMIT = 32
+
+/**
+ * Send form — port of `SendTransactionView.swift` + `SendViewModel.swift`:
+ * recipient with address-family detection (Core / Platform / Shielded via
+ * [DashAddress.parse]), a "Send From" source selector, and per-flow routing:
  *
- * Submit calls `ManagedPlatformWallet.sendToAddresses` →
- * `WalletManagerNative.walletCoreSendToAddresses` → (Rust)
- * `platform_wallet_get_core` + `core_wallet_send_to_addresses`, which
- * builds, signs (via the manager's mnemonic resolver as the Core signer),
- * and broadcasts in one call — the Kotlin port of Swift's
- * `ManagedCoreWallet.sendToAddresses`.
+ * - **Core → Core** — `ManagedPlatformWallet.sendToAddresses` (unchanged).
+ * - **Shielded → Shielded** (Type 16, SH-05) —
+ *   `PlatformWalletManager.shieldedTransfer`, optional ≤32-byte UTF-8 memo.
+ * - **Shielded → Platform** (Type 17, SH-06) —
+ *   `PlatformWalletManager.shieldedUnshield` (bech32m string parsed Rust-side).
+ * - **Shielded → Core** (Type 19, SH-08) —
+ *   `PlatformWalletManager.shieldedWithdraw` (`coreFeePerByte = 1`).
+ *
+ * The shielded flows settle in credits (1 DASH = 1e11) and block through a
+ * ~30s Halo 2 proof; their consensus-pinned fee comes from
+ * [ShieldedProver.estimateFee]. A `ShieldedSpendUnconfirmed` outcome is
+ * surfaced through the SUCCESS path ("may have gone through — do not
+ * retry"), mirroring iOS SendViewModel.swift:790.
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalStdlibApi::class)
 @Composable
@@ -69,14 +116,20 @@ fun SendTransactionScreen(
     navController: NavHostController,
 ) {
     val container = LocalAppContainer.current
+    val appState = LocalAppState.current
 
     val scope = rememberCoroutineScope()
+    val network by appState.currentNetwork.collectAsStateWithLifecycle()
+    val walletId = remember(walletIdHex) { walletIdHex.hexToBytes() }
 
     var recipient by rememberSaveable { mutableStateOf("") }
     var amountText by rememberSaveable { mutableStateOf("") }
+    var memoText by rememberSaveable { mutableStateOf("") }
+    var selectedSource by rememberSaveable { mutableStateOf(FundSource.CORE) }
     var error by remember { mutableStateOf<String?>(null) }
     var isSending by remember { mutableStateOf(false) }
     var sentTxidHex by remember { mutableStateOf<String?>(null) }
+    var successMessage by remember { mutableStateOf<String?>(null) }
 
     // Result hand-back from the QR scanner (← QRScannerView's onScan).
     val savedStateHandle = navController.currentBackStackEntry?.savedStateHandle
@@ -111,15 +164,110 @@ fun SendTransactionScreen(
         }
     }
 
-    val amountDuffs = parseDashToDuffs(amountText)
+    // Shielded credits — unspent-note sum from Room, only on a shielded
+    // build (same source WalletDetailScreen's Shielded row reads).
+    val hasShielded = remember { Sdk.hasShielded() }
+    val shieldedBalance by remember(walletIdHex) {
+        if (hasShielded) {
+            container.database.shieldedDao().observeUnspentNotesByWallet(walletId)
+                .map { notes -> notes.sumOf { it.value } }
+        } else {
+            MutableStateFlow(0L)
+        }
+    }.collectAsStateWithLifecycle(initialValue = 0L)
+
+    // ── Address detection + flow routing (← SendViewModel.detectAddressType /
+    //    updateFlow) ────────────────────────────────────────────────────
     val trimmedRecipient = recipient.trim()
-    // Light address validation — base58 decodes to the 25-byte
-    // base58check payload (version + hash160 + checksum). Full network-
-    // aware validation is `DashAddress.parse` → Rust on iOS; that FFI
-    // isn't bridged, so this catches typos without judging the network.
-    val recipientLooksValid = trimmedRecipient.isNotEmpty() &&
-        Base58.decode(trimmedRecipient)?.size == 25
-    val canSend = recipientLooksValid && (amountDuffs ?: 0) > 0
+    val addressType = remember(trimmedRecipient, network) {
+        DashAddress.parse(trimmedRecipient, network)
+    }
+
+    // Which sources can fund a send to this recipient family — the
+    // Android-bridged subset of iOS `availableSources` (SendViewModel
+    // .swift:374): the Shielded source appears once the pool holds notes;
+    // Core stays first (and always offered) for Core recipients so the
+    // plain L1 flow is the default.
+    val availableSources = remember(addressType, hasShielded, shieldedBalance) {
+        val shieldedSource =
+            if (hasShielded && shieldedBalance > 0) listOf(FundSource.SHIELDED) else emptyList()
+        when (addressType) {
+            is DashAddressType.Core -> listOf(FundSource.CORE) + shieldedSource
+            is DashAddressType.Orchard -> shieldedSource
+            is DashAddressType.Platform -> shieldedSource
+            DashAddressType.Unknown -> emptyList()
+        }
+    }
+    // Auto-select the first available source when the recipient family
+    // changes (← SendTransactionView.autoSelectSource).
+    LaunchedEffect(availableSources) {
+        if (selectedSource !in availableSources) {
+            availableSources.firstOrNull()?.let { selectedSource = it }
+        }
+    }
+
+    val flow: SendFlow? = when (addressType) {
+        is DashAddressType.Core ->
+            if (selectedSource == FundSource.SHIELDED) SendFlow.SHIELDED_TO_CORE
+            else SendFlow.CORE_TO_CORE
+        is DashAddressType.Orchard ->
+            if (selectedSource == FundSource.SHIELDED) SendFlow.SHIELDED_TO_SHIELDED else null
+        is DashAddressType.Platform ->
+            if (selectedSource == FundSource.SHIELDED) SendFlow.SHIELDED_TO_PLATFORM else null
+        DashAddressType.Unknown -> null
+    }
+    val isShieldedFlow = flow != null && flow != SendFlow.CORE_TO_CORE
+
+    // Amount in the flow's settlement unit: Core/L1 settles in duffs (1e8),
+    // every shielded flow settles in credits (1e11) — mirroring
+    // `SendViewModel.amount` vs `amountCredits`.
+    val amountDuffs = parseDashToDuffs(amountText)
+    val amountCredits = parseDashToCredits(amountText)
+
+    // Memo (shielded → shielded only): UTF-8 BYTE length, like Rust.
+    val trimmedMemo = memoText.trim()
+    val memoByteCount = trimmedMemo.toByteArray(Charsets.UTF_8).size
+    val memoOverLimit = memoByteCount > MEMO_BYTE_LIMIT
+
+    // Halo 2 prover readiness + consensus-pinned fee for the active
+    // shielded flow (← ShieldedFundScreen's prover panel; iOS resolves the
+    // same estimator in SendViewModel.estimateFee(for:)). Warms the prover
+    // on first entry to a shielded flow so the spend doesn't pay the ~30s
+    // key build inline.
+    val proverReady by produceState(initialValue = false, isShieldedFlow) {
+        if (isShieldedFlow) {
+            runCatching { ShieldedProver.warmUp() }
+            while (value.not()) {
+                value = runCatching { ShieldedProver.isReady() }.getOrDefault(false)
+                if (!value) delay(2_000)
+            }
+        }
+    }
+    val shieldedFeeEstimate by produceState<Long?>(initialValue = null, flow) {
+        value = when (flow) {
+            SendFlow.SHIELDED_TO_SHIELDED ->
+                runCatching {
+                    ShieldedProver.estimateFee(ShieldedProver.FeeKind.TransferOrShield, 2)
+                }.getOrNull()
+            SendFlow.SHIELDED_TO_PLATFORM ->
+                runCatching {
+                    ShieldedProver.estimateFee(ShieldedProver.FeeKind.Unshield, 2)
+                }.getOrNull()
+            SendFlow.SHIELDED_TO_CORE ->
+                runCatching {
+                    ShieldedProver.estimateFee(ShieldedProver.FeeKind.Withdrawal, 2)
+                }.getOrNull()
+            SendFlow.CORE_TO_CORE, null -> null
+        }
+    }
+
+    val recipientKnown = addressType != DashAddressType.Unknown
+    val canSend = when (flow) {
+        SendFlow.CORE_TO_CORE -> (amountDuffs ?: 0) > 0
+        SendFlow.SHIELDED_TO_SHIELDED -> (amountCredits ?: 0) > 0 && !memoOverLimit
+        SendFlow.SHIELDED_TO_PLATFORM, SendFlow.SHIELDED_TO_CORE -> (amountCredits ?: 0) > 0
+        null -> false
+    }
 
     Scaffold(
         topBar = {
@@ -148,10 +296,19 @@ fun SendTransactionScreen(
                     onValueChange = { recipient = it },
                     label = { Text("Dash address") },
                     singleLine = true,
-                    isError = trimmedRecipient.isNotEmpty() && !recipientLooksValid,
+                    isError = trimmedRecipient.isNotEmpty() && !recipientKnown,
                     supportingText = {
-                        if (trimmedRecipient.isNotEmpty() && !recipientLooksValid) {
-                            Text("Not a valid Dash address")
+                        // Address-family badge (← AddressTypeBadge).
+                        if (trimmedRecipient.isNotEmpty()) {
+                            Text(
+                                when (addressType) {
+                                    is DashAddressType.Core -> "Core Address"
+                                    is DashAddressType.Platform -> "Platform Address"
+                                    is DashAddressType.Orchard -> "Shielded Address"
+                                    DashAddressType.Unknown -> "Not a valid Dash address"
+                                },
+                                modifier = Modifier.testTag("send.addressTypeBadge"),
+                            )
                         }
                     },
                     trailingIcon = {
@@ -176,10 +333,15 @@ fun SendTransactionScreen(
                     label = { Text("Amount (DASH)") },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                    isError = amountText.isNotBlank() && amountDuffs == null,
+                    isError = amountText.isNotBlank() &&
+                        (if (isShieldedFlow) amountCredits else amountDuffs) == null,
                     supportingText = {
-                        if (amountText.isNotBlank() && amountDuffs == null) {
-                            Text("Enter a positive amount with at most 8 decimals")
+                        if (amountText.isNotBlank()) {
+                            if (isShieldedFlow && amountCredits == null) {
+                                Text("Enter a positive amount with at most 11 decimals")
+                            } else if (!isShieldedFlow && amountDuffs == null) {
+                                Text("Enter a positive amount with at most 8 decimals")
+                            }
                         }
                     },
                     modifier = Modifier
@@ -187,16 +349,101 @@ fun SendTransactionScreen(
                         .padding(vertical = 8.dp)
                         .testTag("send.amountField"),
                 )
-                amountDuffs?.let { LabeledContent("Duffs", it.toString()) }
+                if (isShieldedFlow) {
+                    amountCredits?.let { LabeledContent("Credits", it.toString()) }
+                } else {
+                    amountDuffs?.let { LabeledContent("Duffs", it.toString()) }
+                }
+            }
+
+            // Send From (← the iOS "Send From" section) — only shown once
+            // the recipient resolves and more than one source can fund it.
+            if (availableSources.size > 1) {
+                FormSection(title = "Send From") {
+                    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                        availableSources.forEachIndexed { index, source ->
+                            SegmentedButton(
+                                selected = selectedSource == source,
+                                onClick = { selectedSource = source },
+                                shape = SegmentedButtonDefaults.itemShape(
+                                    index,
+                                    availableSources.size,
+                                ),
+                                modifier = Modifier.testTag("send.source.${source.label}"),
+                            ) { Text(source.label) }
+                        }
+                    }
+                }
+            }
+
+            // Memo (shielded → shielded only, ← SendTransactionView's Memo
+            // section): the on-chain note carries an optional 32-byte UTF-8
+            // memo. Gated on the FLOW, not the recipient family.
+            if (flow == SendFlow.SHIELDED_TO_SHIELDED) {
+                FormSection(title = "Memo (optional)") {
+                    OutlinedTextField(
+                        value = memoText,
+                        onValueChange = { memoText = it },
+                        label = { Text("Note for the recipient") },
+                        singleLine = true,
+                        isError = memoOverLimit,
+                        supportingText = {
+                            Text(
+                                "$memoByteCount/$MEMO_BYTE_LIMIT bytes",
+                                color = if (memoOverLimit) {
+                                    MaterialTheme.colorScheme.error
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                },
+                            )
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 8.dp)
+                            .testTag("send.memoField"),
+                    )
+                }
             }
 
             FormSection(title = "Summary") {
+                flow?.let {
+                    LabeledContent("Transaction type", it.displayName)
+                }
                 LabeledContent(
                     "Spendable",
-                    balance?.let { formatDuffs(it.confirmed) } ?: "—",
+                    when (selectedSource) {
+                        FundSource.CORE -> balance?.let { formatDuffs(it.confirmed) } ?: "—"
+                        FundSource.SHIELDED -> formatCredits(shieldedBalance)
+                    },
                 )
-                // Static Core fee estimate (← SendFlow.coreToCore.estimatedFee).
-                LabeledContent("Estimated fee", formatDuffs(500_000))
+                if (isShieldedFlow) {
+                    // Consensus-pinned flat shielded fee in credits (2-action
+                    // single-note spend with change), from the Rust estimator.
+                    LabeledContent(
+                        "Estimated fee",
+                        shieldedFeeEstimate?.let { formatCredits(it) } ?: "—",
+                    )
+                    LabeledContent(
+                        "Halo 2 prover",
+                        if (proverReady) "Ready" else "Preparing…",
+                    )
+                } else {
+                    // Static Core fee estimate (← SendFlow.coreToCore.estimatedFee).
+                    LabeledContent("Estimated fee", formatDuffs(500_000))
+                }
+            }
+
+            if (trimmedRecipient.isNotEmpty() && recipientKnown && availableSources.isEmpty()) {
+                Text(
+                    when (addressType) {
+                        is DashAddressType.Orchard, is DashAddressType.Platform ->
+                            "No spendable shielded balance to fund this send — " +
+                                "shield funds first (Wallet → Shielded Balance → Fund Shielded)."
+                        else -> "No spendable balance to fund this send."
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
 
             SubmitButton(
@@ -208,22 +455,85 @@ fun SendTransactionScreen(
                     .testTag("send.submitButton"),
             ) {
                 val activeManager = manager
-                val wallet = managed
-                val amount = amountDuffs
-                if (activeManager == null || wallet == null || amount == null) {
+                if (activeManager == null || flow == null) {
                     error = "Wallet is not ready. Try again in a moment."
                     return@SubmitButton
                 }
                 isSending = true
                 scope.launch {
                     try {
-                        val txBytes = wallet.sendToAddresses(
-                            recipients = listOf(trimmedRecipient to amount),
-                            coreSignerHandle = activeManager.mnemonicResolverHandle,
-                        )
-                        sentTxidHex = txidHexOf(txBytes)
+                        when (flow) {
+                            SendFlow.CORE_TO_CORE -> {
+                                val wallet = managed
+                                val amount = amountDuffs
+                                if (wallet == null || amount == null) {
+                                    error = "Wallet is not ready. Try again in a moment."
+                                    return@launch
+                                }
+                                val txBytes = wallet.sendToAddresses(
+                                    recipients = listOf(trimmedRecipient to amount),
+                                    coreSignerHandle = activeManager.mnemonicResolverHandle,
+                                )
+                                sentTxidHex = txidHexOf(txBytes)
+                            }
+
+                            SendFlow.SHIELDED_TO_SHIELDED -> {
+                                val recipientRaw =
+                                    (addressType as? DashAddressType.Orchard)?.raw43
+                                val credits = amountCredits
+                                if (recipientRaw == null || credits == null) {
+                                    error = "Invalid recipient or amount"
+                                    return@launch
+                                }
+                                activeManager.shieldedTransfer(
+                                    walletId = walletId,
+                                    recipientRaw43 = recipientRaw,
+                                    amount = credits,
+                                    memo = trimmedMemo.ifEmpty { null },
+                                )
+                                successMessage = "Shielded transfer complete"
+                            }
+
+                            SendFlow.SHIELDED_TO_PLATFORM -> {
+                                val credits = amountCredits
+                                if (credits == null) {
+                                    error = "Invalid amount"
+                                    return@launch
+                                }
+                                // The bech32m string is forwarded as-is —
+                                // Rust parses + network-checks it.
+                                activeManager.shieldedUnshield(
+                                    walletId = walletId,
+                                    toPlatformAddress = trimmedRecipient,
+                                    amount = credits,
+                                )
+                                successMessage = "Unshield complete"
+                            }
+
+                            SendFlow.SHIELDED_TO_CORE -> {
+                                val credits = amountCredits
+                                if (credits == null) {
+                                    error = "Invalid amount"
+                                    return@launch
+                                }
+                                activeManager.shieldedWithdraw(
+                                    walletId = walletId,
+                                    toCoreAddress = trimmedRecipient,
+                                    amount = credits,
+                                    coreFeePerByte = 1,
+                                )
+                                successMessage = "Withdrawal submitted"
+                            }
+                        }
+                    } catch (e: DashSdkError.PlatformWallet.ShieldedSpendUnconfirmed) {
+                        // Broadcast accepted but its execution result couldn't
+                        // be confirmed — the spend may already be on chain and
+                        // the notes stay reserved Rust-side, so this must NOT
+                        // read as a retryable failure (← SendViewModel.swift:790).
+                        successMessage = "Transaction may have gone through — waiting for " +
+                            "the next shielded sync to confirm. Do not retry."
                     } catch (t: Throwable) {
-                        error = t.message ?: "Failed to broadcast the transaction."
+                        error = t.message ?: "Failed to send the transaction."
                     } finally {
                         isSending = false
                     }
@@ -249,6 +559,29 @@ fun SendTransactionScreen(
                 androidx.compose.material3.TextButton(
                     onClick = {
                         sentTxidHex = null
+                        navController.popBackStack()
+                    },
+                ) { Text("Done") }
+            },
+        )
+    }
+
+    // Shielded-flow outcome (no txid to show — the transition settles on
+    // Platform; the note/balance change arrives on the next shielded sync).
+    successMessage?.let { message ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = {
+                successMessage = null
+                navController.popBackStack()
+            },
+            title = { Text("Success") },
+            text = {
+                Text(message, modifier = Modifier.testTag("send.successMessage"))
+            },
+            confirmButton = {
+                androidx.compose.material3.TextButton(
+                    onClick = {
+                        successMessage = null
                         navController.popBackStack()
                     },
                 ) { Text("Done") }

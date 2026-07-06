@@ -29,6 +29,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -49,12 +50,14 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import org.dashfoundation.dashsdk.Network
+import org.dashfoundation.dashsdk.Sdk
 import org.dashfoundation.dashsdk.persistence.entities.CoreAddressEntity
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.di.LocalAppState
 import org.dashfoundation.example.services.faucet.TestnetFaucet
 import org.dashfoundation.example.services.faucet.TestnetFaucetOutcome
 import org.dashfoundation.example.ui.components.LabeledContent
+import org.dashfoundation.example.util.DashAddress
 import org.dashfoundation.example.util.generateQrBitmap
 import org.dashfoundation.example.util.toHex
 
@@ -62,21 +65,35 @@ import org.dashfoundation.example.util.toHex
 private enum class ReceiveTab(val label: String) {
     CORE("Core"),
     PLATFORM("Platform"),
+    SHIELDED("Shielded"),
 }
 
-/** A displayable receive address (any family), flattened for the UI. */
+/**
+ * A displayable receive address (any family), flattened for the UI.
+ * [derivationPath] / [publicKey] are null for addresses that didn't come
+ * out of an HD pool (Shielded), matching iOS's nil path/pubkey handling
+ * (`ReceiveAddressView.currentDerivationPath` / `currentPublicKeyHex`).
+ */
 private data class ReceiveAddr(
     val address: String,
-    val derivationPath: String,
-    val publicKey: ByteArray,
+    val derivationPath: String?,
+    val publicKey: ByteArray?,
 )
 
 /**
  * Receive sheet — port of `ReceiveAddressView.swift`. Segmented **Core** /
- * **Platform** tabs, each showing the lowest-indexed unused address on its
- * pool with a QR code, copy / share, and (Core + testnet) a one-tap testnet
- * faucet. The **Shielded** tab is owned by the shielded workstream and slots
- * into [ReceiveTab] alongside these.
+ * **Platform** / **Shielded** tabs, the first two showing the
+ * lowest-indexed unused address on their pool with a QR code, copy / share,
+ * and (Core + testnet) a one-tap testnet faucet.
+ *
+ * The **Shielded** tab (SH-13, ← `ReceiveAddressTab.shielded`) shows the
+ * wallet's default Orchard payment address for ZIP-32 account 0 —
+ * [org.dashfoundation.dashsdk.wallet.PlatformWalletManager.shieldedDefaultAddress]
+ * bech32m-encoded via [DashAddress.encodeOrchard] (`tdash1…` / `dash1…`),
+ * the Android analog of iOS `ShieldedService.addressesByAccount[0]`
+ * (`ShieldedService.swift:268` → `DashAddress.encodeOrchard`). Null until
+ * the wallet's shielded sub-wallet is bound; only offered on a shielded
+ * build ([Sdk.hasShielded]).
  *
  * "Never used" approximates iOS's `addr.txos.isEmpty` with
  * `!isUsed && balance == 0` — the persisted flags Rust maintains for the
@@ -126,12 +143,38 @@ fun ReceiveAddressSheet(
             }
     }.collectAsStateWithLifecycle(initialValue = null)
 
+    // Shielded: the wallet's default Orchard address for ZIP-32 account 0,
+    // bech32m-encoded for display (← ShieldedService.addressesByAccount[0] /
+    // orchardDisplayAddress). Null until the shielded sub-wallet is bound.
+    val hasShielded = remember { Sdk.hasShielded() }
+    val tabs = remember(hasShielded) {
+        if (hasShielded) ReceiveTab.entries.toList()
+        else listOf(ReceiveTab.CORE, ReceiveTab.PLATFORM)
+    }
+    val manager by container.walletManagerStore.activeManager.collectAsStateWithLifecycle()
+    val shieldedAddress by produceState<String?>(initialValue = null, manager, network) {
+        value = if (!hasShielded) {
+            null
+        } else {
+            manager?.let { m ->
+                runCatching { m.shieldedDefaultAddress(walletId, account = 0) }
+                    .getOrNull()
+                    ?.let { raw -> DashAddress.encodeOrchard(raw, network) }
+            }
+        }
+    }
+
     val current: ReceiveAddr? = when (tab) {
         ReceiveTab.CORE -> coreAddress?.let {
             ReceiveAddr(it.address, it.derivationPath, it.publicKey)
         }
         ReceiveTab.PLATFORM -> platformAddress?.let {
             ReceiveAddr(it.address, it.derivationPath, it.publicKey)
+        }
+        // No HD derivation path / pubkey to show — mirrors iOS's nil
+        // path/pubkey on the shielded tab.
+        ReceiveTab.SHIELDED -> shieldedAddress?.let {
+            ReceiveAddr(it, derivationPath = null, publicKey = null)
         }
     }
 
@@ -158,11 +201,11 @@ fun ReceiveAddressSheet(
             Text("Receive Dash", style = MaterialTheme.typography.titleLarge)
 
             SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                ReceiveTab.entries.forEachIndexed { index, entry ->
+                tabs.forEachIndexed { index, entry ->
                     SegmentedButton(
                         selected = tab == entry,
                         onClick = { tab = entry },
-                        shape = SegmentedButtonDefaults.itemShape(index, ReceiveTab.entries.size),
+                        shape = SegmentedButtonDefaults.itemShape(index, tabs.size),
                         modifier = Modifier.testTag("receive.tab.${entry.label}"),
                     ) { Text(entry.label) }
                 }
@@ -175,6 +218,8 @@ fun ReceiveAddressSheet(
                             "No unused receive address available yet — sync the wallet to extend the pool."
                         ReceiveTab.PLATFORM ->
                             "No Platform receive address available yet — create a wallet with Platform address persistence."
+                        ReceiveTab.SHIELDED ->
+                            "Shielded address not available yet — bind the shielded wallet on the Sync tab first."
                     },
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -207,11 +252,12 @@ fun ReceiveAddressSheet(
                 )
 
                 Column(Modifier.fillMaxWidth()) {
-                    LabeledContent("Path", current.derivationPath)
-                    if (current.publicKey.isNotEmpty()) {
+                    current.derivationPath?.let { LabeledContent("Path", it) }
+                    val publicKey = current.publicKey
+                    if (publicKey != null && publicKey.isNotEmpty()) {
                         LabeledContent(
                             "Public Key",
-                            current.publicKey.toHex().take(20) + "…",
+                            publicKey.toHex().take(20) + "…",
                         )
                     }
                 }

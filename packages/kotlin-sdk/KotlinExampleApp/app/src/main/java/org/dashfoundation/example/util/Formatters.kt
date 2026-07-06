@@ -92,6 +92,25 @@ fun parseDashToDuffs(text: String): Long? = try {
     null
 }
 
+/**
+ * Decimal DASH string → Platform credits (1 DASH = 1e11), the credits-scale
+ * sibling of [parseDashToDuffs] — Swift's `parseTokenAmount(_:decimals: 11)`
+ * backing `SendViewModel.amountCredits`. Used by every send flow that
+ * settles on the credits ledger (shielded transfer / unshield / withdraw).
+ * Returns null when the text is unparseable, non-positive, has more than 11
+ * fractional digits, or overflows [Long].
+ */
+fun parseDashToCredits(text: String): Long? = try {
+    val credits = java.math.BigDecimal(text.trim())
+        .movePointRight(11)
+        .toBigIntegerExact()
+    if (credits.signum() > 0 && credits.bitLength() < 63) credits.toLong() else null
+} catch (_: NumberFormatException) {
+    null
+} catch (_: ArithmeticException) {
+    null
+}
+
 /** Pretty-print a JSON string; returns the input unchanged when unparseable. */
 fun prettyPrintJson(raw: String): String = try {
     LenientJson.encodeToString(JsonElement.serializer(), LenientJson.parseToJsonElement(raw))

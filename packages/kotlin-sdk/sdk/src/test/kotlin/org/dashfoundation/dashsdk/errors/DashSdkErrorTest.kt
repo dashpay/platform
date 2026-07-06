@@ -62,6 +62,16 @@ class DashSdkErrorTest {
         assertTrue(noAnchor is DashSdkError.PlatformWallet.ShieldedNoRecordedAnchor)
         assertTrue("ShieldedNoRecordedAnchor is retryable", noAnchor.isRetryable)
 
+        val spendUnconfirmed =
+            DashSdkError.fromNative(DashSDKException(offset + 18, "ambiguous spend"))
+        assertTrue(spendUnconfirmed is DashSdkError.PlatformWallet.ShieldedSpendUnconfirmed)
+        assertFalse(
+            "ShieldedSpendUnconfirmed must NOT be retryable (notes stay reserved)",
+            spendUnconfirmed.isRetryable,
+        )
+        // The message must warn against retrying, like the broadcast sibling.
+        assertTrue(spendUnconfirmed.message!!.contains("do NOT retry"))
+
         val broadcastUnconfirmed =
             DashSdkError.fromNative(DashSDKException(offset + 20, "ambiguous broadcast"))
         assertTrue(

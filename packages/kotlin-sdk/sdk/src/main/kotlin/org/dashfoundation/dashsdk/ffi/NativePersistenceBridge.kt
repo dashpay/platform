@@ -42,6 +42,11 @@ package org.dashfoundation.dashsdk.ffi
  * must complete before returning. Subclasses that touch Room do so with
  * `runBlocking` on a dedicated dispatcher (see
  * `PlatformWalletPersistenceHandler`).
+ *
+ * Known coverage deviation: the deferred contact-crypto queue
+ * (`PlatformWalletChangeSet.pending_contact_crypto_added/_cleared`) has
+ * no vtable slot, so it is NOT durable on this host — a restart before a
+ * signer-backed drain relies on the recurring sweep to re-enqueue.
  */
 abstract class NativePersistenceBridge {
 

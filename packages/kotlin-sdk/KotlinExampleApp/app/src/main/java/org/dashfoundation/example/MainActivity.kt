@@ -6,6 +6,8 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.fragment.app.FragmentActivity
 import org.dashfoundation.example.di.AppContainer
 import org.dashfoundation.example.di.LocalAppContainer
@@ -40,6 +42,12 @@ class MainActivity : FragmentActivity() {
         container.biometricGate.delegate = AuthPrompt(this)
 
         setContent {
+            // Expose Compose testTags as uiautomator resource-ids so the
+            // TEST_PLAN's on-device flows are drivable via adb (the Android
+            // analog of iOS's accessibility identifiers being queryable).
+            androidx.compose.foundation.layout.Box(
+                androidx.compose.ui.Modifier.semantics { testTagsAsResourceId = true },
+            ) {
             ExampleTheme {
                 CompositionLocalProvider(
                     LocalAppContainer provides container,
@@ -49,6 +57,7 @@ class MainActivity : FragmentActivity() {
                 ) {
                     AppRoot()
                 }
+            }
             }
         }
     }

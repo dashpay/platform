@@ -95,6 +95,59 @@ internal object FundingNative {
         coreSignerHandle: Long,
         progressBridge: SeedPoolProgressBridge?,
     )
+
+    // ── Shielded outgoing spends (types 16/17/19) ─────────────────────
+    //
+    // Manager-handle calls like the funding submits above; each signs with
+    // the bound shielded sub-wallet's own Orchard spend key Rust-side, so no
+    // signer/resolver handle crosses JNI. Each blocks for the ~30s Halo 2
+    // proof and returns nothing on success.
+
+    /**
+     * Shielded → shielded transfer, Type 16 (bridges
+     * `platform_wallet_manager_shielded_transfer`). [recipientRaw43] is the
+     * recipient's raw 43-byte Orchard payment address; [amount] is in
+     * credits (1 DASH = 1e11). [memoText] is an optional UTF-8 memo (null /
+     * empty = none; Rust enforces the 32-byte UTF-8 limit).
+     */
+    external fun shieldedTransfer(
+        managerHandle: Long,
+        walletId: ByteArray,
+        account: Int,
+        recipientRaw43: ByteArray,
+        amount: Long,
+        memoText: String?,
+    )
+
+    /**
+     * Shielded → Platform unshield, Type 17 (bridges
+     * `platform_wallet_manager_shielded_unshield`). [toPlatformAddress] is a
+     * bech32m string (`dash1…` / `tdash1…`) parsed and network-checked on
+     * the Rust side; [amount] is in credits.
+     */
+    external fun shieldedUnshield(
+        managerHandle: Long,
+        walletId: ByteArray,
+        account: Int,
+        toPlatformAddress: String,
+        amount: Long,
+    )
+
+    /**
+     * Shielded → Core L1 withdrawal, Type 19 (bridges
+     * `platform_wallet_manager_shielded_withdraw`). [toCoreAddress] is a
+     * Base58Check string; [amount] is in credits (converted to duffs at
+     * 1000:1 by the network); [coreFeePerByte] is the L1 fee rate in
+     * duffs/byte (1 = the dashmate default).
+     */
+    external fun shieldedWithdraw(
+        managerHandle: Long,
+        walletId: ByteArray,
+        account: Int,
+        toCoreAddress: String,
+        amount: Long,
+        coreFeePerByte: Int,
+    )
 }
 
 /**

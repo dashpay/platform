@@ -10,6 +10,11 @@ import DashSDKFFI
 // All mutable state (`backgroundContext`, caches) is confined to `serialQueue`
 // — the handler's de-facto actor — so it is safe to hand to a `@Sendable`
 // closure (e.g. the off-main `serialQueue.async` backfill dispatch).
+//
+// Known coverage deviation: the deferred contact-crypto queue
+// (`PlatformWalletChangeSet.pending_contact_crypto_added/_cleared`) has no
+// persister vtable slot, so it is NOT durable on this host — a restart
+// before a signer-backed drain relies on the recurring sweep to re-enqueue.
 public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     let modelContainer: ModelContainer
 
