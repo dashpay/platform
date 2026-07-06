@@ -425,7 +425,7 @@ abstract class NativePersistenceBridge {
         lastSyncedIndex: Long,
     ): Int = 0
 
-    /** One `ShieldedActivityFFI`. Descriptor `([B[BI[BBBBJJZJZJ[BZ[B[B[B)I`. */
+    /** One `ShieldedActivityFFI`. Descriptor `([B[BI[BBBBJJZJZJ[BZ[B[B[B[B)I`. */
     @Suppress("LongParameterList")
     open fun onPersistShieldedActivity(
         walletId: ByteArray,

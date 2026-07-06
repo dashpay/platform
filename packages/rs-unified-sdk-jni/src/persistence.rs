@@ -761,7 +761,7 @@ unsafe fn persist_changeset_transaction(
     env.call_method(
         bridge,
         "onWalletChangesetTransaction",
-        "([B[B[BII[BIIILjava/lang/String;IJJZLjava/lang/String;J)I",
+        "([B[B[BII[BIILjava/lang/String;IJJZLjava/lang/String;J)I",
         &[
             wid.into(),
             (&txid).into(),
@@ -1355,7 +1355,7 @@ unsafe extern "C" fn tramp_persist_shielded_activity(
                 env.call_method(
                     bridge,
                     "onPersistShieldedActivity",
-                    "([B[BI[BBBBJJZJZJ[BZ[B[B[B)I",
+                    "([B[BI[BBBBJJZJZJ[BZ[B[B[B[B)I",
                     &[
                         (&wid).into(),
                         (&nwid).into(),

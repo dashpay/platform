@@ -162,7 +162,18 @@ fun CreateIdentityScreen(navController: NavHostController) {
                             count = -1,
                         )
                         keys.forEach { key ->
-                            container.walletStorage.storePrivateKey(key.publicKeyHex, key.privateKey)
+                            try {
+                                container.walletStorage.storePrivateKey(
+                                    key.publicKeyHex,
+                                    key.privateKey,
+                                )
+                            } finally {
+                                // Keystore is authoritative from here; the JVM
+                                // copy must not outlive the store (the
+                                // IdentityKeyPreview retention rule — the
+                                // registration blob reads only publicKey).
+                                key.privateKey.fill(0)
+                            }
                         }
                         // Step 2: hand the single registration FFI entry point to
                         // the coordinator as the body — no orchestration here.
