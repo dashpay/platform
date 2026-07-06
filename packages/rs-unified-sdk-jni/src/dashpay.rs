@@ -30,11 +30,19 @@ use std::os::raw::c_char;
 use std::ptr;
 
 fn read_id32(env: &mut JNIEnv, arr: &JByteArray, field: &str) -> Option<[u8; 32]> {
+    // throw_sdk_exception hits DashSDKException's (Int, String) ctor — a
+    // bare throw_new would look for a (String) ctor that does not exist
+    // and surface as NoSuchMethodError instead of a DashSdkError.
+    if arr.is_null() {
+        crate::support::throw_sdk_exception(env, 1, &format!("{field} must not be null"));
+        return None;
+    }
     let len = env.get_array_length(arr).ok()? as usize;
     if len != 32 {
-        let _ = env.throw_new(
-            "org/dashfoundation/dashsdk/ffi/DashSDKException",
-            format!("{field} must be 32 bytes, got {len}"),
+        crate::support::throw_sdk_exception(
+            env,
+            1,
+            &format!("{field} must be 32 bytes, got {len}"),
         );
         return None;
     }
@@ -789,7 +797,9 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_resolve
 }
 
 /// Convert a nullable JString into an owned CString; None on null /
-/// conversion failure (treated as "field absent").
+/// conversion failure (treated as "field absent"). NOTE: an interior NUL
+/// therefore CLEARS the field on Android (Swift truncates at the NUL
+/// instead) — a deliberate divergence for pathological input.
 fn opt_jstring_to_cstring(env: &mut JNIEnv, s: &JString) -> Option<std::ffi::CString> {
     if s.is_null() {
         return None;

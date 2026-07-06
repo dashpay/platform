@@ -27,6 +27,7 @@ const RESULT_OTHER: i32 = 3;
 /// (keep in sync with the Kotlin companion constants).
 const RESOLVE_NOT_FOUND: i32 = -1;
 const RESOLVE_BUFFER_TOO_SMALL: i32 = -2;
+const RESOLVE_OTHER: i32 = -3;
 
 struct KotlinMnemonicCtx {
     bridge: GlobalRef,
@@ -60,11 +61,18 @@ unsafe extern "C" fn resolve_trampoline(
             return RESULT_OTHER;
         };
 
+        // A zero-capacity out buffer cannot even hold the NUL terminator;
+        // reject up front (the `usable = cap - 1` arithmetic below would
+        // otherwise let an empty phrase write one byte out of bounds).
+        if out_capacity == 0 {
+            return RESULT_BUFFER_TOO_SMALL;
+        }
+
         match env.with_local_frame(16, |env| -> Result<i32, jni::errors::Error> {
             let wallet_id = std::slice::from_raw_parts(wallet_id_bytes, 32);
             let jwallet_id = env.byte_array_from_slice(wallet_id)?;
             // Reserve one byte of the Rust capacity for the NUL terminator.
-            let usable = out_capacity.saturating_sub(1);
+            let usable = out_capacity - 1;
             let jout = env.new_byte_array(usable as i32)?;
             let written = env
                 .call_method(
@@ -78,6 +86,7 @@ unsafe extern "C" fn resolve_trampoline(
             let code = match written {
                 RESOLVE_NOT_FOUND => RESULT_NOT_FOUND,
                 RESOLVE_BUFFER_TOO_SMALL => RESULT_BUFFER_TOO_SMALL,
+                RESOLVE_OTHER => RESULT_OTHER,
                 len if len < 0 || len as usize > usable => RESULT_OTHER,
                 len => {
                     let len = len as usize;

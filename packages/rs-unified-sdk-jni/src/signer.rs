@@ -356,8 +356,10 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_SignerNative_signWith
     data: JByteArray,
 ) -> jbyteArray {
     guard(&mut env, ptr::null_mut(), |env| {
-        let (Ok(mnemonic_str), Ok(path_str), Ok(payload)) = (
-            env.get_string(&mnemonic).map(String::from),
+        // Decode the non-secret arguments FIRST, the mnemonic LAST: a
+        // sibling-conversion failure must never orphan an already-decoded
+        // plaintext copy of the phrase.
+        let (Ok(path_str), Ok(payload)) = (
             env.get_string(&derivation_path).map(String::from),
             env.convert_byte_array(&data),
         ) else {
@@ -365,28 +367,37 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_SignerNative_signWith
             crate::support::throw_sdk_exception(env, 1, "invalid mnemonic-sign arguments");
             return ptr::null_mut();
         };
-
-        // Interior NULs would truncate the C string mid-derivation-path;
-        // reject rather than silently sign under a wrong path. The
-        // mnemonic buffer is scrubbed on every path — including the
-        // NulError one, which hands the allocation back via into_vec().
-        let mnemonic_c = match CString::new(mnemonic_str) {
-            Ok(c) => c,
-            Err(e) => {
-                let mut leaked = e.into_vec();
-                leaked.iter_mut().for_each(|b| *b = 0);
-                crate::support::throw_sdk_exception(env, 1, "mnemonic contained an interior NUL");
-                return ptr::null_mut();
-            }
-        };
         let Ok(path_c) = CString::new(path_str) else {
-            scrub_cstring(mnemonic_c);
+            // Interior NULs would truncate the C string mid-derivation-path;
+            // reject rather than silently sign under a wrong path.
             crate::support::throw_sdk_exception(
                 env,
                 1,
                 "derivation path contained an interior NUL",
             );
             return ptr::null_mut();
+        };
+        let Ok(mnemonic_str) = env.get_string(&mnemonic).map(String::from) else {
+            let _ = env.exception_clear();
+            crate::support::throw_sdk_exception(env, 1, "invalid mnemonic argument");
+            return ptr::null_mut();
+        };
+
+        // The mnemonic buffer is scrubbed on every path. `reserve_exact(1)`
+        // BEFORE `CString::new` matters: the NUL append would otherwise
+        // reallocate a capacity==len buffer, freeing the original plaintext
+        // allocation unscrubbed — the scrub would then only touch the copy.
+        let mut mnemonic_bytes = mnemonic_str.into_bytes();
+        mnemonic_bytes.reserve_exact(1);
+        let mnemonic_c = match CString::new(mnemonic_bytes) {
+            Ok(c) => c,
+            Err(e) => {
+                // NulError hands back the original allocation via into_vec.
+                let mut leaked = e.into_vec();
+                leaked.iter_mut().for_each(|b| *b = 0);
+                crate::support::throw_sdk_exception(env, 1, "mnemonic contained an interior NUL");
+                return ptr::null_mut();
+            }
         };
 
         let network = match network {
