@@ -39,6 +39,7 @@ use dpp::fee::Credits;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::{Identity, Purpose, SecurityLevel};
+use key_wallet::bip32::ExtendedPrivKey;
 
 use super::bank::BankWallet;
 use super::bank_identity::BankIdentity;
@@ -134,6 +135,18 @@ const CORE_REFILL_IDENTITY_FEE_RESERVE: Credits = 50_000_000;
 /// bank-identity bootstrap path — generous, because the helper runs once
 /// per suite.
 const CORE_REFILL_TOPUP_TIMEOUT: Duration = Duration::from_secs(60);
+
+/// BIP-32 master node for the bank wallet on its network.
+///
+/// The bank wallet is external-signable (keyless) after registration, so
+/// `load_identity_by_index`'s resident-key derive fails with "External signable
+/// wallet has no private key". Every bank-identity load in this module derives
+/// its probe key from this master via `load_identity_by_index_from_master`
+/// instead — mirrors [`super::cleanup::sweep_identities_with_seed`].
+fn bank_master(bank: &BankWallet) -> FrameworkResult<ExtendedPrivKey> {
+    ExtendedPrivKey::new_master(bank.network(), bank.seed_bytes())
+        .map_err(|e| FrameworkError::Bank(format!("bank master-xprv derive: {e}")))
+}
 
 /// Ensure the bank identity advertises a `Purpose::TRANSFER` /
 /// `SecurityLevel::CRITICAL` key so
@@ -243,9 +256,21 @@ pub async fn provision_transfer_key_if_missing(
     // primitive does later), so load it once here. Any failure means
     // the manager can't pick a MASTER key to sign the update —
     // surface as a skip rather than aborting harness init.
+    let master = match bank_master(bank) {
+        Ok(m) => m,
+        Err(err) => {
+            tracing::warn!(
+                target: "platform_wallet::e2e::bank_rebalance",
+                bank_identity_id = %bank_identity.id,
+                error = %err,
+                "transfer-key provision skipped: bank master-xprv derive failed"
+            );
+            return Ok(None);
+        }
+    };
     if let Err(err) = bank_wallet
         .identity()
-        .load_identity_by_index(bank_identity.identity_index)
+        .load_identity_by_index_from_master(bank_identity.identity_index, &master)
         .await
     {
         tracing::warn!(
@@ -317,9 +342,21 @@ pub async fn drain_bank_identity_to_addresses(
     // IdentityManager — `transfer_credits_to_addresses_with_external_signer`
     // looks it up there. On the persisted-id load path the manager
     // would otherwise be empty for the bank slot.
+    let master = match bank_master(bank) {
+        Ok(m) => m,
+        Err(err) => {
+            tracing::warn!(
+                target: "platform_wallet::e2e::bank_rebalance",
+                bank_identity_id = %bank_identity.id,
+                error = %err,
+                "drain skipped: bank master-xprv derive failed"
+            );
+            return Ok(0);
+        }
+    };
     if let Err(err) = bank_wallet
         .identity()
-        .load_identity_by_index(bank_identity.identity_index)
+        .load_identity_by_index_from_master(bank_identity.identity_index, &master)
         .await
     {
         tracing::warn!(
@@ -457,9 +494,21 @@ pub async fn refill_core_from_platform_if_below_threshold(
 
     // Ensure the bank identity is loaded into the manager — both the
     // top-up and the withdrawal look it up there.
+    let master = match bank_master(bank) {
+        Ok(m) => m,
+        Err(err) => {
+            tracing::warn!(
+                target: "platform_wallet::e2e::bank_rebalance",
+                bank_identity_id = %bank_identity.id,
+                error = %err,
+                "core-refill skipped: bank master-xprv derive failed"
+            );
+            return Ok(0);
+        }
+    };
     if let Err(err) = bank_wallet
         .identity()
-        .load_identity_by_index(bank_identity.identity_index)
+        .load_identity_by_index_from_master(bank_identity.identity_index, &master)
         .await
     {
         tracing::warn!(
@@ -701,9 +750,10 @@ pub async fn top_up_identity_from_platform(
         return Ok(());
     }
     let bank_wallet = bank.platform_wallet();
+    let master = bank_master(bank)?;
     bank_wallet
         .identity()
-        .load_identity_by_index(bank_identity.identity_index)
+        .load_identity_by_index_from_master(bank_identity.identity_index, &master)
         .await
         .map_err(|e| FrameworkError::Bank(format!("E3 top-up: load bank identity failed: {e}")))?;
 
