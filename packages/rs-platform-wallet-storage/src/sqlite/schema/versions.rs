@@ -204,8 +204,8 @@ pub fn read_seq(
     Ok(seq.unwrap_or(0))
 }
 
-/// Read the 16-byte store-generation token written by V002. `None` on a
-/// pre-V002 store (the table is absent).
+/// Read the 16-byte store-generation token written by V003. `None` on a
+/// pre-V003 store (the table is absent).
 #[cfg(any(test, feature = "__test-helpers"))]
 pub fn read_generation(
     conn: &rusqlite::Connection,
@@ -233,8 +233,8 @@ pub fn read_generation(
 }
 
 /// Regenerate the store-generation token so a restored copy is
-/// distinguishable from its source. A no-op on a pre-V002 store (no table);
-/// such a store gets a fresh token when it later migrates to V002.
+/// distinguishable from its source. A no-op on a pre-V003 store (no table);
+/// such a store gets a fresh token when it later migrates to V003.
 pub fn regenerate_generation(conn: &rusqlite::Connection) -> Result<(), WalletStorageError> {
     if !generation_table_exists(conn)? {
         return Ok(());

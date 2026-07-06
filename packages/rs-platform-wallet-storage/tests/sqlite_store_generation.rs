@@ -25,7 +25,7 @@ fn tc_b_004_generation_present_and_stable_across_flush() {
         let conn = persister.lock_conn_for_test();
         versions::read_generation(&conn)
             .unwrap()
-            .expect("fresh V002 store carries a generation")
+            .expect("fresh V003 store carries a generation")
     };
     assert!(
         g1.iter().any(|b| *b != 0),

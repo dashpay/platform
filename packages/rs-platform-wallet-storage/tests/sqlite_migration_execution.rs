@@ -5,6 +5,11 @@
 //! TC-B-033 (backup restorable + re-migration determinism), TC-B-034
 //! (forward-version rejection at the new max), TC-B-035 (idempotent
 //! re-entry), TC-B-036 (empty wallet through migration).
+//!
+//! TODO(post-#3986/#3968 reconcile): does not compile against the shipped
+//! `ClientWalletStartState` — same phantom `used_core_addresses` field gap as
+//! `sqlite_pool_reader.rs`; see that file's TODO. Pre-existing, unrelated to
+//! the T5 PK-collision fix.
 
 mod common;
 
@@ -59,7 +64,7 @@ fn count(conn: &Connection, sql: &str, wallet: &[u8; 32]) -> i64 {
 /// Assert the post-migration store carries the full fixture data intact.
 fn assert_full_data_preserved(conn: &Connection) {
     let full = wid(FULL_WALLET);
-    assert_eq!(schema_version(conn), 2, "must be migrated to V002");
+    assert_eq!(schema_version(conn), 3, "must be migrated to V003");
     assert_eq!(
         conn.query_row("SELECT COUNT(*) FROM wallets", [], |r| r.get::<_, i64>(0))
             .unwrap(),
@@ -189,12 +194,12 @@ fn tc_b_032_pre_migration_backup_created() {
         .find(|p| {
             p.file_name()
                 .and_then(|n| n.to_str())
-                .is_some_and(|n| n.starts_with("pre-migration-1-to-2-") && n.ends_with(".db"))
+                .is_some_and(|n| n.starts_with("pre-migration-1-to-3-") && n.ends_with(".db"))
         })
         .expect("pre-migration backup must exist");
 
     // The backup captured the PRE-migration state: schema version 1, and no
-    // V002 table.
+    // V003 table.
     let bconn = ro_conn(&backup);
     assert_eq!(
         schema_version(&bconn),
@@ -203,7 +208,7 @@ fn tc_b_032_pre_migration_backup_created() {
     );
     assert!(
         !table_exists(&bconn, "core_address_pool"),
-        "backup must predate the V002 schema"
+        "backup must predate the V003 schema"
     );
     assert_eq!(
         bconn
@@ -234,7 +239,7 @@ fn tc_b_033_backup_restorable_and_remigration_deterministic() {
         .find(|p| {
             p.file_name()
                 .and_then(|n| n.to_str())
-                .is_some_and(|n| n.starts_with("pre-migration-1-to-2-"))
+                .is_some_and(|n| n.starts_with("pre-migration-1-to-3-"))
         })
         .expect("backup exists");
 
@@ -250,8 +255,8 @@ fn tc_b_033_backup_restorable_and_remigration_deterministic() {
     assert_full_data_preserved(&conn);
 }
 
-/// TC-B-034 — the forward-version gate now rejects at the NEW max (2); a
-/// forged version-3 row is refused.
+/// TC-B-034 — the forward-version gate now rejects at the NEW max (3); a
+/// forged version-4 row is refused.
 #[test]
 fn tc_b_034_forward_version_rejected_at_new_max() {
     let tmp = tempfile::tempdir().unwrap();
@@ -263,7 +268,7 @@ fn tc_b_034_forward_version_rejected_at_new_max() {
         let conn = Connection::open(&path).unwrap();
         conn.execute(
             "INSERT INTO refinery_schema_history (version, name, applied_on, checksum) \
-             VALUES (3, 'future', '', '0')",
+             VALUES (4, 'future', '', '0')",
             [],
         )
         .unwrap();
@@ -273,8 +278,8 @@ fn tc_b_034_forward_version_rejected_at_new_max() {
             found,
             max_supported,
         }) => {
-            assert_eq!(found, 3);
-            assert_eq!(max_supported, 2, "max must reflect the post-redirect V002");
+            assert_eq!(found, 4);
+            assert_eq!(max_supported, 3, "max must reflect the post-redirect V003");
         }
         Err(other) => panic!("expected SchemaVersionUnsupported, got {other:?}"),
         Ok(_) => panic!("forward-version DB must be refused"),
@@ -321,8 +326,8 @@ fn migration_snapshot(conn: &Connection) -> Vec<i64> {
     ]
 }
 
-/// TC-B-035 — crash mid-migrate: an interrupted V002 (partial DDL, no commit)
-/// leaves the store at the last committed version (V001) with no partial
+/// TC-B-035 — crash mid-migrate: an interrupted V003 (partial DDL, no commit)
+/// leaves the store at the last committed version (V002) with no partial
 /// tables; re-opening resumes and converges byte-equal to a clean direct
 /// migration. Empirically demonstrates refinery's per-migration transaction
 /// guarantee (one tx per migration — no `set_grouped`/`no_transaction`).
@@ -336,9 +341,9 @@ fn tc_b_035_interrupted_migration_recovers_to_clean_state() {
         let conn = p.lock_conn_for_test();
         migration_snapshot(&conn)
     };
-    assert_eq!(clean_snapshot[0], 2, "clean migration reaches V002");
+    assert_eq!(clean_snapshot[0], 3, "clean migration reaches V003");
 
-    // Crash simulation: apply part of V002's DDL inside a transaction that is
+    // Crash simulation: apply part of V003's DDL inside a transaction that is
     // rolled back before commit — exactly what a crash before the migration's
     // single COMMIT leaves behind (SQLite DDL is transactional).
     let crash_dir = tempfile::tempdir().unwrap();
@@ -405,6 +410,6 @@ fn reopen_of_migrated_store_is_idempotent() {
         let conn = p.lock_conn_for_test();
         read(&conn)
     };
-    assert_eq!(first.0[0], 2, "first open migrates to V002");
+    assert_eq!(first.0[0], 3, "first open migrates to V003");
     assert_eq!(first, second, "reopen is a byte-stable no-op");
 }

@@ -20,9 +20,9 @@ use key_wallet::{AddressInfo, Network};
 use platform_wallet::changeset::{
     AccountAddressPoolEntry, AccountRegistrationEntry, AssetLockChangeSet, ContactChangeSet,
     ContactRequestEntry, CoreChangeSet, IdentityChangeSet, IdentityEntry, IdentityKeyEntry,
-    IdentityKeysChangeSet, PlatformAddressBalanceEntry, PlatformAddressChangeSet,
-    PlatformWalletChangeSet, PlatformWalletPersistence, SentContactRequestKey,
-    TokenBalanceChangeSet, WalletMetadataEntry,
+    IdentityKeysChangeSet, PendingContactCrypto, PendingContactCryptoOp,
+    PlatformAddressBalanceEntry, PlatformAddressChangeSet, PlatformWalletChangeSet,
+    PlatformWalletPersistence, SentContactRequestKey, TokenBalanceChangeSet, WalletMetadataEntry,
 };
 use platform_wallet::wallet::identity::{ContactRequest, IdentityStatus};
 use platform_wallet::wallet::platform_wallet::WalletId;
@@ -115,6 +115,7 @@ fn single_domain_changeset(domain: Domain) -> PlatformWalletChangeSet {
                     funds: dash_sdk::platform::address_sync::AddressFunds {
                         balance: 1,
                         nonce: 0,
+                        as_of_height: 0,
                     },
                 }],
                 ..Default::default()
@@ -175,6 +176,14 @@ fn single_domain_changeset(domain: Domain) -> PlatformWalletChangeSet {
                 addresses: vec![],
             }];
         }
+        Domain::PendingContactCrypto => {
+            cs.pending_contact_crypto_added = vec![PendingContactCrypto {
+                owner_identity_id: Identifier::from([0x06; 32]),
+                contact_id: Identifier::from([0x07; 32]),
+                op: PendingContactCryptoOp::RegisterReceiving,
+                enqueued_at_ms: 0,
+            }];
+        }
     }
     cs
 }
@@ -193,6 +202,8 @@ fn identity_entry(id: Identifier) -> IdentityEntry {
         wallet_id: None,
         dashpay_profile: None,
         dashpay_payments: Default::default(),
+        contact_profiles: Default::default(),
+        ignored_senders: Default::default(),
     }
 }
 
