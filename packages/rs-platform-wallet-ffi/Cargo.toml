@@ -63,6 +63,9 @@ zeroize = { version = "1", features = ["derive"] }
 [dev-dependencies]
 tempfile = "3.8"
 dpp = { path = "../rs-dpp", features = ["fixtures-and-mocks"] }
+# test-utils unlocks the Address::dummy / Transaction::dummy fixtures
+# used by the tx_decode tests.
+dashcore = { workspace = true, features = ["test-utils"] }
 
 [build-dependencies]
 cbindgen = "0.27"

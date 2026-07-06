@@ -11,13 +11,24 @@ import DashSDKFFI
 /// `TransactionDecoder.decode` is that opener.
 public struct DecodedTransaction: Sendable, Equatable {
     public struct Input: Sendable, Equatable {
-        /// Previous output's txid in consensus (internal) byte order.
+        /// Previous output's txid in consensus (internal) byte order —
+        /// reverse for explorer-style display (see `prevTxidDisplayHex`).
         public let prevTxid: Data
         /// Previous output's index.
         public let prevVout: UInt32
-        /// Sender address recovered from a P2PKH scriptSig; nil for
-        /// coinbase / non-P2PKH / unparseable script sigs.
+        /// Sender address recovered from a P2PKH-shaped scriptSig; nil for
+        /// coinbase / non-P2PKH / unparseable script sigs. Unauthenticated —
+        /// derived from a script push the spender fully controls, with no
+        /// signature verification against the spent UTXO. Use it for display
+        /// or as a matching hint only, never for authentication or
+        /// authorization; the attacker-resistant matching primitive is the
+        /// per-output `(address, valueDuffs)` pair.
         public let address: String?
+
+        /// Explorer-style (reversed, hex) rendering of `prevTxid`.
+        public var prevTxidDisplayHex: String {
+            prevTxid.reversed().map { String(format: "%02x", $0) }.joined()
+        }
     }
 
     public struct Output: Sendable, Equatable {
