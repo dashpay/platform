@@ -112,6 +112,9 @@ import kotlinx.serialization.Serializable
 /** Transfer credits identity → identity (← `TransferCreditsView.swift`). */
 @Serializable data class TransferCredits(val identityIdHex: String)
 
+/** Transfer credits identity → Platform addresses (ID-11). */
+@Serializable data class TransferToAddress(val identityIdHex: String)
+
 /** Withdraw credits identity → L1 address (← `WithdrawCreditsView.swift`). */
 @Serializable data class WithdrawCredits(val identityIdHex: String)
 

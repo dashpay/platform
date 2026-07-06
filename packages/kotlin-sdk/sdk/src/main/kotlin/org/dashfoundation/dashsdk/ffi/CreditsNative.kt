@@ -61,6 +61,23 @@ internal object CreditsNative {
     ): Long
 
     /**
+     * Transfer credits from [fromIdentityId] (32 bytes) to one or more
+     * Platform-address recipients, signed by the identity's transfer key
+     * via [signerHandle]. Returns the sender's post-transfer credit balance.
+     *
+     * @param outputsBlob big-endian: `u32 rowCount` then per row
+     *   `u8 addressType (0 P2PKH / 1 P2SH), u8[20] hash, u64 credits` — the
+     *   same row shape [topUpFromAddresses] consumes. Built by
+     *   [org.dashfoundation.dashsdk.credits.FundingInput.encode].
+     */
+    external fun transferCreditsToAddresses(
+        walletHandle: Long,
+        fromIdentityId: ByteArray,
+        outputsBlob: ByteArray,
+        signerHandle: Long,
+    ): Long
+
+    /**
      * Top up [identityId] (32 bytes) by building + broadcasting a **new
      * Core asset lock** — the ID-05 funding path, distinct from
      * [topUpFromAddresses] (ID-06). [amountDuffs] is the Dash amount in

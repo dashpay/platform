@@ -40,6 +40,7 @@ use platform_wallet_ffi::handle::Handle;
 use platform_wallet_ffi::identity_discovery::DiscoveredIdentityIdsFFI;
 use platform_wallet_ffi::identity_key_preview::{IdentityKeyPreviewFFI, IdentityKeyPreviewsFFI};
 use platform_wallet_ffi::identity_private_key_at_slot::IdentityPrivateKeyFFI;
+use platform_wallet_ffi::identity_registration::IdentityFundingInputFFI;
 use platform_wallet_ffi::identity_registration_with_signer::IdentityPubkeyFFI;
 use platform_wallet_ffi::types::FFINetwork;
 use rs_sdk_ffi::{MnemonicResolverHandle, SignerHandle};
@@ -694,6 +695,131 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_regist
         // The new identity is folded into Rust's IdentityManager and lands
         // in Room via the persister changeset; the standalone managed
         // handle would otherwise leak, so drop it.
+        if out_managed != 0 {
+            let mut destroy = unsafe { platform_wallet_ffi::managed_identity_destroy(out_managed) };
+            unsafe { platform_wallet_ffi_result_free(&mut destroy) };
+        }
+
+        env.byte_array_from_slice(&out_id)
+            .map(|a| a.into_raw())
+            .unwrap_or(ptr::null_mut())
+    })
+}
+
+// ── Registration (Platform-address funded) ────────────────────────────
+
+/// Register a new identity funded by the wallet's already-committed
+/// Platform-payment (DIP-17) address balances — the ID-08 create path,
+/// distinct from `registerIdentityWithFunding` (ID-01) which builds a new
+/// Core asset lock. No Core-chain transaction is broadcast; the inputs are
+/// existing Platform credits.
+///
+/// `pubkeysBlob` is the same flat layout `registerIdentityWithFunding`
+/// consumes (`u32 rowCount` then per row `u32 keyId, u16 pubkeyLen,
+/// pubkey`), each key stamped with its canonical DPP role by `keyId`.
+///
+/// `inputsBlob` is the funding-address row shape shared with the top-up /
+/// transfer-to-addresses exports (`u32 rowCount` then per row
+/// `u8 addressType (0 P2PKH / 1 P2SH), u8[20] hash, u64 credits`). The
+/// on-chain nonces are auto-fetched Rust-side right before submit.
+///
+/// `signerHandle` is used for **both** signing roles — the new identity's
+/// state-transition keys and the input Platform addresses. The underlying
+/// `VTableSigner` dispatches by key-type byte, so one handle serves both
+/// (the platform-address signing path is the same one ID-06 top-up drives).
+///
+/// Returns the 32-byte identity id. The standalone `ManagedIdentity` handle
+/// the FFI produces is destroyed here — Room learns of the new identity
+/// through the persistence changeset, not through this handle.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_registerIdentityFromAddresses(
+    mut env: JNIEnv,
+    _class: JClass,
+    wallet_handle: jlong,
+    identity_index: jint,
+    pubkeys_blob: JByteArray,
+    signer_handle: jlong,
+    inputs_blob: JByteArray,
+) -> jbyteArray {
+    guard(&mut env, ptr::null_mut(), |env| {
+        if identity_index < 0 {
+            throw_sdk_exception(env, 1, "identityIndex must be non-negative");
+            return ptr::null_mut();
+        }
+
+        let Some(decoded) = decode_pubkeys_blob(env, &pubkeys_blob) else {
+            return ptr::null_mut();
+        };
+        if decoded.is_empty() {
+            throw_sdk_exception(env, 1, "pubkeysBlob contained no keys");
+            return ptr::null_mut();
+        }
+
+        let Some(input_rows) = crate::credits::decode_credit_rows(env, &inputs_blob, "inputsBlob")
+        else {
+            return ptr::null_mut();
+        };
+        if input_rows.is_empty() {
+            throw_sdk_exception(env, 1, "inputsBlob contained no funding inputs");
+            return ptr::null_mut();
+        }
+
+        // Same positional keyId → DPP role assignment as ID-01 (keyId 0
+        // MASTER/AUTH, 1 CRITICAL/AUTH, 2 HIGH/AUTH, 3 TRANSFER/CRITICAL).
+        let ffi_rows: Vec<IdentityPubkeyFFI> = decoded
+            .iter()
+            .map(|(key_id, bytes)| {
+                let (key_type, purpose, security_level) = role_for_registration_key_id(*key_id);
+                IdentityPubkeyFFI {
+                    key_id: *key_id,
+                    key_type,
+                    purpose,
+                    security_level,
+                    pubkey_bytes: bytes.as_ptr(),
+                    pubkey_len: bytes.len(),
+                    read_only: false,
+                    contract_bounds_kind: 0,
+                    contract_bounds_id: ptr::null(),
+                    contract_bounds_document_type: ptr::null(),
+                }
+            })
+            .collect();
+
+        let input_ffi: Vec<IdentityFundingInputFFI> = input_rows
+            .into_iter()
+            .map(|(address_type, hash, credits)| IdentityFundingInputFFI {
+                address_type,
+                hash,
+                credits,
+            })
+            .collect();
+
+        let mut out_id = [0u8; 32];
+        let mut out_managed: Handle = 0;
+        let result = unsafe {
+            // Same signer handle for both the identity-key and
+            // platform-address signing roles — the VTableSigner dispatches
+            // by key-type byte (see the FFI's two-signer doc comment).
+            platform_wallet_ffi::platform_wallet_register_identity_with_signer(
+                wallet_handle as Handle,
+                identity_index as u32,
+                ffi_rows.as_ptr(),
+                ffi_rows.len(),
+                signer_handle as *mut SignerHandle,
+                signer_handle as *mut SignerHandle,
+                input_ffi.as_ptr(),
+                input_ffi.len(),
+                ptr::null(),
+                &mut out_id as *mut [u8; 32],
+                &mut out_managed as *mut Handle,
+            )
+        };
+        // `decoded` / `ffi_rows` / `input_ffi` own the buffers the pointers
+        // reference; they stay in scope through the FFI call above.
+        if take_pwffi_error(env, result) {
+            return ptr::null_mut();
+        }
+
         if out_managed != 0 {
             let mut destroy = unsafe { platform_wallet_ffi::managed_identity_destroy(out_managed) };
             unsafe { platform_wallet_ffi_result_free(&mut destroy) };

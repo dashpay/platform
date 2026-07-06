@@ -31,6 +31,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
+import org.dashfoundation.dashsdk.credits.FundingInput
 import org.dashfoundation.dashsdk.wallet.ManagedPlatformWallet
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.di.LocalAppState
@@ -176,23 +177,63 @@ fun CreateIdentityScreen(navController: NavHostController) {
                             }
                         }
                         // Step 2: hand the single registration FFI entry point to
-                        // the coordinator as the body — no orchestration here.
-                        coordinator.startRegistration(
-                            walletId = wallet.walletId,
-                            identityIndex = identityIndex,
-                            fundingKind = IdentityRegistrationController.FundingKind.AssetLock,
-                            body = {
-                                mgr.identityRegistration.registerWithWalletFunding(
-                                    walletHandle = wallet.handle,
-                                    amountDuffs = amount,
-                                    accountIndex = 0,
+                        // the coordinator as the body — no orchestration here. The
+                        // funding source picks which registration FFI runs (ID-01
+                        // Core asset lock vs ID-08 Platform addresses).
+                        when (fundingSource) {
+                            CreateIdentityFundingSource.CoreBalance -> {
+                                coordinator.startRegistration(
+                                    walletId = wallet.walletId,
                                     identityIndex = identityIndex,
-                                    keys = keys,
-                                    signerHandle = mgr.signerHandle,
-                                    coreSignerHandle = mgr.mnemonicResolverHandle,
+                                    fundingKind = IdentityRegistrationController.FundingKind.AssetLock,
+                                    body = {
+                                        mgr.identityRegistration.registerWithWalletFunding(
+                                            walletHandle = wallet.handle,
+                                            amountDuffs = amount,
+                                            accountIndex = 0,
+                                            identityIndex = identityIndex,
+                                            keys = keys,
+                                            signerHandle = mgr.signerHandle,
+                                            coreSignerHandle = mgr.mnemonicResolverHandle,
+                                        )
+                                    },
                                 )
-                            },
-                        )
+                            }
+                            CreateIdentityFundingSource.PlatformAddress -> {
+                                // Enumerate balance-carrying Platform-payment
+                                // addresses, then greedily pack up to `amount`
+                                // credits (largest first) — matching the ID-06
+                                // top-up input assembly. Nonces are auto-fetched
+                                // Rust-side by the register-from-addresses FFI.
+                                val candidates = wallet.addressesWithBalances()
+                                    .sortedByDescending { it.credits }
+                                val inputs = packFundingInputs(candidates, amount)
+                                if (inputs.isEmpty()) {
+                                    error = "Not enough Platform-address balance to fund " +
+                                        "$amount credits. Fund a Platform address first."
+                                    return@launch
+                                }
+                                coordinator.startRegistration(
+                                    walletId = wallet.walletId,
+                                    identityIndex = identityIndex,
+                                    fundingKind =
+                                        IdentityRegistrationController.FundingKind.PlatformAddresses,
+                                    body = {
+                                        mgr.identityRegistration.registerFromAddresses(
+                                            walletHandle = wallet.handle,
+                                            identityIndex = identityIndex,
+                                            keys = keys,
+                                            signerHandle = mgr.signerHandle,
+                                            inputs = inputs,
+                                        )
+                                    },
+                                )
+                            }
+                            CreateIdentityFundingSource.AssetLockResume -> {
+                                error = "\"${fundingSource.label}\" funding is not wired yet."
+                                return@launch
+                            }
+                        }
                         navController.navigate(
                             RegistrationProgress(wallet.walletId.toHexString(), identityIndex),
                         )
@@ -210,17 +251,25 @@ fun CreateIdentityScreen(navController: NavHostController) {
 }
 
 /**
- * The funding sources `CreateIdentityView` offers. Only [CoreBalance] is
- * wired this milestone (the single registration FFI the coordinator body
- * invokes); [PlatformAddress] and [AssetLockResume] are the B-M3 deferrals
- * — the `platform_wallet_register_identity_with_signer` /
- * `platform_wallet_resume_identity_with_existing_asset_lock_signer` FFI need
- * a platform-address signer the Kotlin manager doesn't export yet.
+ * The funding sources `CreateIdentityView` offers. [CoreBalance] (ID-01,
+ * `platform_wallet_register_identity_with_funding_signer`) and
+ * [PlatformAddress] (ID-08, `platform_wallet_register_identity_with_signer`)
+ * both execute; [AssetLockResume]
+ * (`platform_wallet_resume_identity_with_existing_asset_lock_signer`) is
+ * still deferred.
+ *
+ * @property amountInCredits true when the amount field is denominated in
+ *   credits (the Platform-address path spends existing Platform credits);
+ *   false when it is duffs (the Core path locks Dash).
  */
-enum class CreateIdentityFundingSource(val label: String, val wired: Boolean) {
-    CoreBalance("Core balance", true),
-    PlatformAddress("Platform address", false),
-    AssetLockResume("Resume from asset lock", false),
+enum class CreateIdentityFundingSource(
+    val label: String,
+    val wired: Boolean,
+    val amountInCredits: Boolean,
+) {
+    CoreBalance("Core balance", true, amountInCredits = false),
+    PlatformAddress("Platform address", true, amountInCredits = true),
+    AssetLockResume("Resume from asset lock", false, amountInCredits = false),
 }
 
 /**
@@ -256,12 +305,32 @@ private fun FundingSection(
         OutlinedTextField(
             value = amountText,
             onValueChange = onAmountChange,
-            label = { Text("Amount (duffs)") },
+            label = { Text(if (source.amountInCredits) "Amount (credits)" else "Amount (duffs)") },
             singleLine = true,
             keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = KeyboardType.Number),
             modifier = Modifier.fillMaxWidth().testTag("createIdentity.amount"),
         )
     }
+}
+
+/**
+ * Greedily select funding inputs from [candidates] (assumed sorted
+ * largest-balance-first) until their combined credits cover [target],
+ * spending only what's needed from the final address. Returns an empty list
+ * when the candidates can't cover [target]. Mirrors the ID-06 top-up
+ * `packInputs`.
+ */
+private fun packFundingInputs(candidates: List<FundingInput>, target: Long): List<FundingInput> {
+    if (target <= 0) return emptyList()
+    var remaining = target
+    val picked = ArrayList<FundingInput>()
+    for (input in candidates) {
+        if (remaining <= 0) break
+        val spend = minOf(input.credits, remaining)
+        picked.add(input.copy(credits = spend))
+        remaining -= spend
+    }
+    return if (remaining <= 0) picked else emptyList()
 }
 
 /** Identity-slot section — the Swift `CreateIdentityView` identity-index stepper. */

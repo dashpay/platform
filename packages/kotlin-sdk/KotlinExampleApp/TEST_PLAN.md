@@ -129,10 +129,10 @@ Most Platform actions have hard preconditions. Establish these fixtures before s
 | ID-05 | Top up identity (asset lock) | Cross | Common | ✅ | | `IdentityDetailScreen` → **Top Up from Core** (`TopUpIdentityFromCoreScreen`) → `platform_wallet_top_up_identity_with_funding_signer`. Builds + broadcasts a new Core asset lock (same mechanism as ID-01), signed by the asset lock's Core key. |
 | ID-06 | Top up identity (from Platform addresses) | Cross | Common | ✅ | | `IdentityDetailScreen` → **Top Up from Platform addresses** (`TopUpIdentityScreen`) → `platform_wallet_top_up_from_addresses_with_signer`. Requires the wallet's Platform-payment addresses to hold credits first — fund them via `WalletDetailScreen` → Platform Balance → **Top Up from Core** (`FundFromAssetLockScreen`). |
 | ID-07 | Update identity — add public key | Platform | Common | ✅ | | `AddIdentityKeyScreen` (from `KeysListScreen`) → `updateIdentity(addPublicKeys:)`. |
-| ID-08 | Create identity (from Platform addresses) | Cross | Common | 🔌 | | `dash_sdk_identity_create_from_addresses` exists in rs-sdk-ffi but is not bridged to Android — no JNI export or Kotlin caller yet. |
+| ID-08 | Create identity (from Platform addresses) | Cross | Common | ✅ | | `CreateIdentityScreen` → funding source **Platform address** → `IdentityRegistration.registerFromAddresses` → `platform_wallet_register_identity_with_signer` (Keystore-signed; one signer drives both the identity-key and platform-address roles). Derives + persists the canonical key set (as ID-01), then greedily packs the wallet's balance-carrying Platform-payment addresses; nonces auto-fetched Rust-side. Requires funded Platform addresses first (fund via `WalletDetailScreen` → Platform Balance → **Top Up from Core**). |
 | ID-09 | Set / edit local alias | Platform | Common | ✅ | | `IdentityDetailScreen` (Add Alias). Local only — persists across relaunch; no broadcast. |
 | ID-10 | Withdraw credits → Dash L1 address | Cross | Common | ✅ | withdrawal | `IdentityDetailScreen` → **Withdraw Credits** (dialog, `WithdrawCreditsScreen`) → `platform_wallet_withdraw_credits_with_signer` (Keystore-signed). Destination L1 address typed in + validated. |
-| ID-11 | Transfer credits → Platform addresses | Platform | Common | 🔌 | | `dash_sdk_identity_transfer_credits_to_addresses` exists in rs-sdk-ffi but is not bridged to Android — no JNI export or Kotlin caller yet. |
+| ID-11 | Transfer credits → Platform addresses | Platform | Common | ✅ | | `IdentityDetailScreen` → **Transfer to Platform Address** (`TransferIdentityToAddressScreen`) → `IdentityCredits.transferToAddresses` → `platform_wallet_transfer_credits_to_addresses_with_signer` (Keystore-signed). Recipient = an own-wallet Platform address (credits stay in-wallet, recipient reconciles from proof) or a pasted external 40-hex P2PKH hash; amount gated `>= minOutput` and `<= identity balance`. |
 | ID-12 | Update identity — disable key | Platform | Thorough | ✅ | | `KeyDetailScreen` (drill into a key from `KeysListScreen`) → **Key Status → Disable Key** → confirm → `platform_wallet_update_identity_with_signer` (Keystore-signed). Gated to match consensus. |
 | ID-13 | Top up identity (builder path) | Cross | — | ➖ | | Retired — builder entry is a stub; covered by `ID-05`/`ID-06`. |
 | ID-14 | Credit transfer between two on-device identities (A → B) | Platform | Thorough | ✅ | multiwallet | `IdentityDetailScreen` → **Transfer Credits** (`ID-04`), recipient = wallet B's identity (via `RecipientPicker`). Switch to B; verify credit balance rose. |
@@ -144,9 +144,12 @@ Most Platform actions have hard preconditions. Establish these fixtures before s
 |---|---|---|---|---|---|---|
 | ADDR-01 | Query address info / multiple infos | Platform | Common | ✅ | | `AddressQueriesScreen` → `dash_sdk_address_fetch_info(s)`. |
 | ADDR-02 | Transfer credits address → address | Platform | Thorough | ✅ | | `WalletDetailScreen` → Platform Balance row **⋯ menu → Transfer Credits** (`TransferPlatformAddressScreen`) → `platform_address_wallet_transfer` (Keystore-signed). Source = DIP-17 platform-payment account picker; destination = own-wallet address picker or pasted 20-byte P2PKH hash. |
-| ADDR-03 | Top up address from asset lock | Cross | Thorough | ✅ | | `FundFromAssetLockScreen` → `dash_sdk_address_top_up_from_asset_lock`. |
+| ADDR-03 | Top up address from an existing (pending) asset lock | Cross | Thorough | ✅ | | Resume a stuck/pending Platform-address asset-lock funding: `IdentitiesHomeScreen` → `PendingAssetLocksList` → `ManagedPlatformWallet.resumeFundFromAssetLock` → `WalletManagerNative.walletResumeFundFromAssetLock`. Distinct from `ADDR-09`, which builds a **new** lock from Core. Needs a pending-lock fixture (an asset lock whose consume did not complete). |
 | ADDR-04 | Withdraw address credits → Core L1 | Cross | Thorough | ✅ | withdrawal | `WalletDetailScreen` → Platform Balance row **⋯ menu → Withdraw to Core** (`WithdrawPlatformAddressScreen`) → `platform_address_wallet_withdraw_to_address` (Keystore-signed). Full account balance withdrawn. |
 | ADDR-06 | Display / share your Platform receive address | Platform | Common | ✅ | | "Receive Dash" sheet → **Platform** tab (`ReceiveAddressSheet`, platform tab): QR + bech32m DIP-17 address + Copy. |
+| ADDR-07 | Platform address balance sync (BLAST) — start / progress; address balances populate to tip | Platform | Essential | ✅ | | Sync tab → **PLATFORM SYNC STATUS** (`SyncStatusScreen`, `container.platformBalanceSyncService`): State reaches `Synced`, Sync Height advances to tip, Active Addresses populate, "Sync Now" forces a pass. Precondition for the other address rows. |
+| ADDR-08 | Clear & resync platform address balances | Platform | Common | ✅ | | Sync tab → Platform section **Clear** (`SyncStatusScreen`, `testTag("sync.platformClear")`) → `container.platformBalanceSyncService.clearLocalState` (fail-closed): wipes local platform-address balance state; the next sync repopulates from scratch to tip. |
+| ADDR-09 | Top up Platform balance from Core | Cross | Essential | ✅ | | `WalletDetailScreen` → Platform Balance row **⋯ menu → Top Up from Core** (`FundFromAssetLockScreen`) → builds a **new** asset lock from the wallet's Core balance and credits a DIP-17 Platform address once the lock proves (IS→CL) → `dash_sdk_address_top_up_from_asset_lock`. Needs a Core (SPV) balance to build the lock. |
 
 ### 4.4 DPNS (usernames) — `Domain=DPNS`
 
@@ -307,7 +310,7 @@ Membership of each feature category across **all** sections (primary section mem
 
 - **Core / Wallet** — `CORE-01..23`
 - **Identity** — `ID-01..15`, `SH-11`
-- **Address** (DIP-17 platform addresses) — `ADDR-01..04`, `ADDR-06`, `ID-06`, `ID-08`, `ID-11`
+- **Address** (DIP-17 platform addresses) — `ADDR-01..04`, `ADDR-06..09`, `ID-06`, `ID-08`, `ID-11`
 - **DPNS** — `DPNS-01..08`
 - **Voting** — `VOTE-01..07`, `DPNS-05`, `DPNS-08`
 - **Contract** — `DC-01..04`

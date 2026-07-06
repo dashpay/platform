@@ -211,6 +211,69 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_CreditsNative_topUpFr
     })
 }
 
+// ── Transfer (identity → Platform addresses) ───────────────────────────
+
+/// Transfer credits from `fromIdentityId` (32 bytes) to one or more
+/// Platform-address recipients, signed by the identity's transfer-purpose
+/// key via `signerHandle`. Returns the sender's post-transfer credit
+/// balance.
+///
+/// `outputsBlob` layout (big-endian): `u32 rowCount` then per row
+/// `u8 addressType (0 P2PKH / 1 P2SH), u8[20] hash, u64 credits` — the same
+/// row shape `topUpFromAddresses` consumes.
+///
+/// Wraps `platform_wallet_transfer_credits_to_addresses_with_signer`, which
+/// also reconciles any wallet-owned recipient addresses' platform balances
+/// from the transfer proof (third-party recipients are skipped).
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_CreditsNative_transferCreditsToAddresses(
+    mut env: JNIEnv,
+    _class: JClass,
+    wallet_handle: jlong,
+    from_identity_id: JByteArray,
+    outputs_blob: JByteArray,
+    signer_handle: jlong,
+) -> jlong {
+    guard(&mut env, 0i64, |env| {
+        let Some(from_id) = read_id32(env, &from_identity_id, "fromIdentityId") else {
+            return 0;
+        };
+        let Some(rows) = decode_credit_rows(env, &outputs_blob, "outputsBlob") else {
+            return 0;
+        };
+        if rows.is_empty() {
+            throw_sdk_exception(env, 1, "outputsBlob contained no recipients");
+            return 0;
+        }
+        let outputs: Vec<PlatformAddressCreditOutputFFI> = rows
+            .into_iter()
+            .map(
+                |(address_type, hash, credits)| PlatformAddressCreditOutputFFI {
+                    address_type,
+                    hash,
+                    credits,
+                },
+            )
+            .collect();
+
+        let mut out_balance: u64 = 0;
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_transfer_credits_to_addresses_with_signer(
+                wallet_handle as Handle,
+                from_id.as_ptr(),
+                outputs.as_ptr(),
+                outputs.len(),
+                signer_handle as *mut SignerHandle,
+                &mut out_balance as *mut u64,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return 0;
+        }
+        out_balance as i64
+    })
+}
+
 // ── Top up (existing identity ← new Core asset lock) ───────────────────
 
 /// Top up an existing identity's credit balance by building and
@@ -270,16 +333,27 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_CreditsNative_topUpId
     })
 }
 
-/// Decode the top-up inputs BLOB into owned [`IdentityFundingInputFFI`]
-/// rows. Throws + returns None on a malformed blob. The struct is
-/// `Copy`, so the returned `Vec` fully owns its rows (no borrowed
-/// pointers escape).
-fn decode_inputs_blob(env: &mut JNIEnv, arr: &JByteArray) -> Option<Vec<IdentityFundingInputFFI>> {
+/// Decode a credit-rows BLOB into owned `(address_type, hash, credits)`
+/// tuples. Layout (big-endian): `u32 rowCount` then per row
+/// `u8 addressType (0 P2PKH / 1 P2SH), u8[20] hash, u64 credits`. Throws +
+/// returns None on a malformed blob or an out-of-range (sign-bit-set)
+/// credit amount. [`field`] names the blob in error messages
+/// (`"inputsBlob"` / `"outputsBlob"`).
+///
+/// Shared by the top-up (ID-06) and transfer-to-addresses (ID-11) credit
+/// exports here and the register-from-addresses (ID-08) export in
+/// `identity.rs` — every one marshals the same flat row shape that
+/// [`IdentityFundingInputFFI`] / [`PlatformAddressCreditOutputFFI`] expose.
+pub(crate) fn decode_credit_rows(
+    env: &mut JNIEnv,
+    arr: &JByteArray,
+    field: &str,
+) -> Option<Vec<(u8, [u8; 20], u64)>> {
     let bytes = match env.convert_byte_array(arr) {
         Ok(b) => b,
         Err(_) => {
             let _ = env.exception_clear();
-            throw_sdk_exception(env, 1, "inputsBlob was null/invalid");
+            throw_sdk_exception(env, 1, &format!("{field} was null/invalid"));
             return None;
         }
     };
@@ -293,25 +367,25 @@ fn decode_inputs_blob(env: &mut JNIEnv, arr: &JByteArray) -> Option<Vec<Identity
         Some(s)
     };
     let Some(count_bytes) = read(&mut cursor, 4) else {
-        throw_sdk_exception(env, 1, "inputsBlob truncated (row count)");
+        throw_sdk_exception(env, 1, &format!("{field} truncated (row count)"));
         return None;
     };
     let count = u32::from_be_bytes(count_bytes.try_into().ok()?) as usize;
     let mut rows = Vec::with_capacity(count);
     for i in 0..count {
         let Some(type_byte) = read(&mut cursor, 1) else {
-            throw_sdk_exception(env, 1, &format!("inputsBlob truncated at row {i} type"));
+            throw_sdk_exception(env, 1, &format!("{field} truncated at row {i} type"));
             return None;
         };
         let address_type = type_byte[0];
         let Some(hash_bytes) = read(&mut cursor, 20) else {
-            throw_sdk_exception(env, 1, &format!("inputsBlob truncated at row {i} hash"));
+            throw_sdk_exception(env, 1, &format!("{field} truncated at row {i} hash"));
             return None;
         };
         let mut hash = [0u8; 20];
         hash.copy_from_slice(hash_bytes);
         let Some(credits_bytes) = read(&mut cursor, 8) else {
-            throw_sdk_exception(env, 1, &format!("inputsBlob truncated at row {i} credits"));
+            throw_sdk_exception(env, 1, &format!("{field} truncated at row {i} credits"));
             return None;
         };
         let credits = u64::from_be_bytes(credits_bytes.try_into().ok()?);
@@ -322,21 +396,26 @@ fn decode_inputs_blob(env: &mut JNIEnv, arr: &JByteArray) -> Option<Vec<Identity
             throw_sdk_exception(
                 env,
                 1,
-                &format!("inputsBlob row {i} credits amount out of range"),
+                &format!("{field} row {i} credits amount out of range"),
             );
             return None;
         }
-        rows.push(IdentityFundingInputFFI {
-            address_type,
-            hash,
-            credits,
-        });
+        rows.push((address_type, hash, credits));
     }
     Some(rows)
 }
 
-// `PlatformAddressCreditOutputFFI` is imported for parity with the
-// transfer-to-addresses shape; the credits screens use identity→identity
-// and identity→L1 movements, so it is not yet marshalled here.
-#[allow(dead_code)]
-type _TransferToAddressesShape = PlatformAddressCreditOutputFFI;
+/// Decode the top-up inputs BLOB into owned [`IdentityFundingInputFFI`]
+/// rows (the ID-06 shape). Thin mapper over [`decode_credit_rows`]; the
+/// struct is `Copy`, so the returned `Vec` fully owns its rows.
+fn decode_inputs_blob(env: &mut JNIEnv, arr: &JByteArray) -> Option<Vec<IdentityFundingInputFFI>> {
+    decode_credit_rows(env, arr, "inputsBlob").map(|rows| {
+        rows.into_iter()
+            .map(|(address_type, hash, credits)| IdentityFundingInputFFI {
+                address_type,
+                hash,
+                credits,
+            })
+            .collect()
+    })
+}
