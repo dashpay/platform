@@ -224,7 +224,7 @@ abstract class NativePersistenceBridge {
         spendingTxid: ByteArray,
     ): Int = 0
 
-    /** One `TransactionRecordFFI` on the current account. Descriptor `([B[B[BII[BIIILjava/lang/String;IJJZLjava/lang/String;J)I`. */
+    /** One `TransactionRecordFFI` on the current account. Descriptor `([B[B[BII[BIILjava/lang/String;IJJZLjava/lang/String;J)I`. */
     @Suppress("LongParameterList")
     open fun onWalletChangesetTransaction(
         walletId: ByteArray,
