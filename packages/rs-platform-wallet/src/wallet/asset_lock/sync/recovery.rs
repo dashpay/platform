@@ -4,7 +4,7 @@
 //! resolving status from wallet info, resuming interrupted locks,
 //! and re-deriving private keys.
 
-use crate::broadcaster::TransactionBroadcaster;
+use crate::broadcaster::{BroadcastError, TransactionBroadcaster};
 use std::time::Duration;
 
 use dashcore::Address as DashAddress;
@@ -254,12 +254,37 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         // 2. Resume from the current status.
         let proof = match status {
             AssetLockStatus::Built => {
-                // Re-broadcast and wait for proof.
-                self.broadcaster.broadcast(&tx).await?;
+                // Advance the tracked row to `Broadcast` BEFORE calling
+                // `broadcast(&tx)`. The snapshot above dropped the read lock,
+                // so a concurrent create-path Rejected cleanup can race the
+                // re-broadcast: if the row is still `Built` when
+                // `untrack_asset_lock` runs, the guard doesn't fire, the row
+                // is deleted, and the funding reservation is released while
+                // this call is still handing the same transaction to the
+                // network. Advancing first pushes the status past `Built`
+                // under the write lock, so either (a) we win and the untrack
+                // guard preserves the row + reservation, or (b) untrack ran
+                // first, the row is already gone, and this advance fails
+                // before we ever call `broadcast(&tx)`.
                 let cs = self
                     .advance_asset_lock_status(out_point, AssetLockStatus::Broadcast, None)
                     .await?;
                 self.queue_asset_lock_changeset(cs);
+                match self.broadcaster.broadcast(&tx).await {
+                    Ok(_) => {}
+                    Err(e @ BroadcastError::Rejected { .. }) => {
+                        // Keep `Broadcast`: a concurrent successful resume
+                        // may own that status, and the `Broadcast` arm
+                        // defensively re-broadcasts on later resumes.
+                        return Err(e.into());
+                    }
+                    Err(e @ BroadcastError::MaybeSent { .. }) => {
+                        // Outcome unknown — the tx may already be
+                        // propagating. Keep `Broadcast` so a later resume
+                        // can defensively re-broadcast and wait for proof.
+                        return Err(e.into());
+                    }
+                }
                 let proof = self.wait_for_proof(out_point, timeout).await?;
                 self.validate_or_upgrade_proof(proof, account_index, out_point)
                     .await?

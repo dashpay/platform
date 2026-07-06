@@ -604,7 +604,9 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::{Arc, Mutex};
+    use std::time::Duration;
 
     use dashcore::OutPoint;
     use key_wallet::account::account_type::StandardAccountType;
@@ -1377,5 +1379,340 @@ mod tests {
                 drop(other);
             }
         }
+    }
+
+    /// Broadcaster that models the read-before-broadcast interleave between
+    /// the create-path Rejected cleanup and a concurrent `resume_asset_lock`
+    /// re-broadcast. Call 1 is create's broadcast (blocks until the test
+    /// releases it, then returns `Rejected`); call 2 is resume's re-broadcast
+    /// (blocks until the test releases it, then returns success). Each side
+    /// signals a `Notify` when it enters so the test can order the race
+    /// deterministically.
+    struct RaceRejectDuringResumeBroadcaster {
+        call_count: AtomicUsize,
+        create_entered: Arc<Notify>,
+        create_can_return: Arc<Notify>,
+        resume_entered: Arc<Notify>,
+        resume_can_return: Arc<Notify>,
+    }
+
+    #[async_trait]
+    impl TransactionBroadcaster for RaceRejectDuringResumeBroadcaster {
+        async fn broadcast(&self, transaction: &Transaction) -> Result<Txid, BroadcastError> {
+            let call = self.call_count.fetch_add(1, Ordering::SeqCst);
+            if call == 0 {
+                self.create_entered.notify_one();
+                self.create_can_return.notified().await;
+                Err(BroadcastError::Rejected {
+                    reason: "simulated rejection during concurrent resume".to_string(),
+                })
+            } else {
+                self.resume_entered.notify_one();
+                self.resume_can_return.notified().await;
+                Ok(transaction.txid())
+            }
+        }
+    }
+
+    /// The read-before-broadcast interleave: a `resume_asset_lock` snapshots
+    /// the `Built` row under a read lock, drops the lock, and calls
+    /// `broadcast(&tx)` while the create path is still awaiting its own
+    /// broadcast. When the create broadcast then returns `Rejected`, the
+    /// cleanup must not remove the row or release the funding reservation —
+    /// the resume path may still be handing the same transaction to the
+    /// network. The `Built`-arm advance-before-broadcast in
+    /// `resume_asset_lock` closes this window by pushing the status past
+    /// `Built` under the write lock before the re-broadcast; the untrack
+    /// guard then preserves the row and its reservation.
+    #[tokio::test]
+    async fn rejected_broadcast_racing_resume_read_before_broadcast_keeps_row_and_reservation() {
+        let (wallet_manager, wallet_id, _balance, signer) =
+            funded_wallet_manager(StandardAccountType::BIP44Account).await;
+
+        let create_entered = Arc::new(Notify::new());
+        let create_can_return = Arc::new(Notify::new());
+        let resume_entered = Arc::new(Notify::new());
+        let resume_can_return = Arc::new(Notify::new());
+
+        let broadcaster = Arc::new(RaceRejectDuringResumeBroadcaster {
+            call_count: AtomicUsize::new(0),
+            create_entered: Arc::clone(&create_entered),
+            create_can_return: Arc::clone(&create_can_return),
+            resume_entered: Arc::clone(&resume_entered),
+            resume_can_return: Arc::clone(&resume_can_return),
+        });
+        let persistence = Arc::new(CapturingPersistence::default());
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let manager = Arc::new(AssetLockManager::new(
+            sdk,
+            Arc::clone(&wallet_manager),
+            wallet_id,
+            Arc::new(Notify::new()),
+            Arc::clone(&broadcaster),
+            WalletPersister::new(
+                wallet_id,
+                Arc::clone(&persistence) as Arc<dyn PlatformWalletPersistence>,
+            ),
+        ));
+
+        // 1. Start the create path. It builds a fresh asset-lock tx, tracks
+        //    the `Built` row, then blocks inside our broadcaster on the
+        //    first call.
+        let signer = Arc::new(signer);
+        let manager_create = Arc::clone(&manager);
+        let signer_create = Arc::clone(&signer);
+        let create_handle = tokio::spawn(async move {
+            manager_create
+                .create_funded_asset_lock_proof(
+                    1_000_000,
+                    0,
+                    AssetLockFundingType::IdentityRegistration,
+                    0,
+                    &*signer_create,
+                )
+                .await
+        });
+        create_entered.notified().await;
+
+        // 2. The row is now tracked at `Built`; snapshot its outpoint.
+        let out_point = {
+            let wm = wallet_manager.read().await;
+            let (_, info) = wm.get_wallet_and_info(&wallet_id).expect("wallet present");
+            *info
+                .tracked_asset_locks
+                .keys()
+                .next()
+                .expect("built row tracked before broadcast")
+        };
+
+        // 3. Start the resume path against the same outpoint. It looks up
+        //    the tracked row under a read lock, drops the lock, and — with
+        //    the fix — advances Built → Broadcast under the write lock
+        //    before entering the second broadcaster call.
+        let manager_resume = Arc::clone(&manager);
+        let resume_handle = tokio::spawn(async move {
+            manager_resume
+                .resume_asset_lock(&out_point, Some(Duration::from_millis(50)))
+                .await
+        });
+        resume_entered.notified().await;
+
+        // 4. Let the create broadcast return `Rejected`. Because the row
+        //    has already been advanced past `Built` by the concurrent
+        //    resume, the untrack guard must refuse to remove it and the
+        //    reservation must stay held.
+        create_can_return.notify_one();
+        let create_result = create_handle.await.expect("create task joined");
+        assert!(
+            matches!(
+                create_result,
+                Err(PlatformWalletError::TransactionBroadcast(_))
+            ),
+            "rejection should still surface, got {create_result:?}"
+        );
+
+        // 5. Let the resume broadcast complete. Resume will then wait for a
+        //    proof and time out (short deadline), which is fine — the
+        //    interleave under test is already resolved by this point.
+        resume_can_return.notify_one();
+        let _ = resume_handle.await.expect("resume task joined");
+
+        // Both sides actually attempted a broadcast: the interleave really
+        // did happen (resume did not error out before its broadcast call).
+        assert_eq!(
+            broadcaster.call_count.load(Ordering::SeqCst),
+            2,
+            "both create and resume should have attempted a broadcast"
+        );
+
+        // The row survives the rejection cleanup, past `Built`.
+        {
+            let wm = wallet_manager.read().await;
+            let (_, info) = wm.get_wallet_and_info(&wallet_id).expect("wallet present");
+            assert_eq!(
+                info.tracked_asset_locks.len(),
+                1,
+                "row must survive: a concurrent resume broadcast the tx, so the \
+                 rejection cleanup must not delete the row"
+            );
+            let lock = info
+                .tracked_asset_locks
+                .get(&out_point)
+                .expect("row kept at the raced outpoint");
+            assert_ne!(
+                lock.status,
+                AssetLockStatus::Built,
+                "resume must have advanced the row past Built before its \
+                 broadcast; found {:?}",
+                lock.status
+            );
+        }
+
+        // No persisted-row deletion was queued.
+        assert!(
+            persistence.removed_outpoints().is_empty(),
+            "advanced row must not be queued for deletion, got {:?}",
+            persistence.removed_outpoints()
+        );
+
+        // The reservation was NOT released: a fresh build cannot reselect
+        // the single reserved UTXO — otherwise resume would have handed the
+        // network a transaction whose inputs are re-spendable locally.
+        let rebuild = manager
+            .build_asset_lock_transaction(
+                1_000_000,
+                0,
+                AssetLockFundingType::IdentityRegistration,
+                0,
+                &*signer,
+            )
+            .await;
+        assert!(
+            matches!(rebuild, Err(PlatformWalletError::AssetLockTransaction(_))),
+            "rebuild must fail at input selection while the reservation is \
+             held across the concurrent resume, got {rebuild:?}"
+        );
+    }
+
+    /// Broadcaster whose first call (create-path) returns `MaybeSent` (leaving
+    /// the tracked row at `Built` with the funding reservation held) and whose
+    /// second call (resume-path) returns `Rejected` — the case where resume
+    /// pre-advances the row to `Broadcast` under the write lock and then the
+    /// broadcast definitively fails to reach the network.
+    struct MaybeSentThenRejectedBroadcaster {
+        call_count: AtomicUsize,
+    }
+
+    #[async_trait]
+    impl TransactionBroadcaster for MaybeSentThenRejectedBroadcaster {
+        async fn broadcast(&self, _transaction: &Transaction) -> Result<Txid, BroadcastError> {
+            let call = self.call_count.fetch_add(1, Ordering::SeqCst);
+            if call == 0 {
+                Err(BroadcastError::MaybeSent {
+                    reason: "create-path leaves the row at Built for a later resume".to_string(),
+                })
+            } else {
+                Err(BroadcastError::Rejected {
+                    reason: "resume-side rejection after the pre-advance to Broadcast".to_string(),
+                })
+            }
+        }
+    }
+
+    /// After the `Built`-arm race-guard advances the tracked row to
+    /// `Broadcast`, a resume-side broadcast that returns `Rejected` must keep
+    /// that status: the `Broadcast` arm can defensively re-broadcast on later
+    /// resumes, and rolling back could clobber a concurrent successful resume.
+    /// The funding reservation must stay held (the row is still tracked), and
+    /// no persisted-row deletion must be queued.
+    #[tokio::test]
+    async fn resume_side_rejected_after_pre_advance_keeps_row_at_broadcast() {
+        let broadcaster = Arc::new(MaybeSentThenRejectedBroadcaster {
+            call_count: AtomicUsize::new(0),
+        });
+        let (manager, signer, persistence) =
+            funded_asset_lock_manager(Arc::clone(&broadcaster)).await;
+
+        // 1. Create leaves the row at `Built` (MaybeSent keeps the reservation
+        //    and the resumable row).
+        let create_result = manager
+            .create_funded_asset_lock_proof(
+                1_000_000,
+                0,
+                AssetLockFundingType::IdentityRegistration,
+                0,
+                &signer,
+            )
+            .await;
+        assert!(
+            matches!(
+                create_result,
+                Err(PlatformWalletError::TransactionBroadcastUnconfirmed(_))
+            ),
+            "create-side MaybeSent should surface as TransactionBroadcastUnconfirmed, got {create_result:?}"
+        );
+        let out_point = {
+            let wm = manager.wallet_manager.read().await;
+            let (_, info) = wm
+                .get_wallet_and_info(&manager.wallet_id)
+                .expect("wallet present");
+            assert_eq!(info.tracked_asset_locks.len(), 1);
+            let (op, lock) = info
+                .tracked_asset_locks
+                .iter()
+                .next()
+                .expect("built row tracked");
+            assert_eq!(lock.status, AssetLockStatus::Built);
+            *op
+        };
+
+        // 2. Resume: pre-advances Built → Broadcast under the write lock, then
+        //    calls `broadcast(&tx)` which returns `Rejected`. The `Rejected`
+        //    surfaces to the caller.
+        let resume_result = manager
+            .resume_asset_lock(&out_point, Some(Duration::from_millis(10)))
+            .await;
+        assert!(
+            matches!(
+                resume_result,
+                Err(PlatformWalletError::TransactionBroadcast(_))
+            ),
+            "resume-side Rejected should surface as TransactionBroadcast, got {resume_result:?}"
+        );
+        assert_eq!(
+            broadcaster.call_count.load(Ordering::SeqCst),
+            2,
+            "both create and resume must have attempted a broadcast"
+        );
+
+        // 3. Row remains at `Broadcast` — the pre-advance is retained because
+        //    another resume may already own that shared status.
+        {
+            let wm = manager.wallet_manager.read().await;
+            let (_, info) = wm
+                .get_wallet_and_info(&manager.wallet_id)
+                .expect("wallet present");
+            assert_eq!(
+                info.tracked_asset_locks.len(),
+                1,
+                "row must remain tracked for a later Broadcast-arm resume"
+            );
+            let lock = info
+                .tracked_asset_locks
+                .get(&out_point)
+                .expect("row still tracked");
+            assert_eq!(
+                lock.status,
+                AssetLockStatus::Broadcast,
+                "resume-side Rejected after pre-advance must keep Broadcast \
+                 so it does not clobber a concurrent successful resume, got {:?}",
+                lock.status
+            );
+        }
+
+        // 4. No persisted-row deletion was queued — the row must survive for
+        //    a later resume.
+        assert!(
+            persistence.removed_outpoints().is_empty(),
+            "Broadcast row must not be queued for deletion, got {:?}",
+            persistence.removed_outpoints()
+        );
+
+        // 5. Reservation is still held — the row is tracked, so a fresh build
+        //    over the single-UTXO wallet fails at input selection.
+        let rebuild = manager
+            .build_asset_lock_transaction(
+                1_000_000,
+                0,
+                AssetLockFundingType::IdentityRegistration,
+                0,
+                &signer,
+            )
+            .await;
+        assert!(
+            matches!(rebuild, Err(PlatformWalletError::AssetLockTransaction(_))),
+            "rebuild must fail at input selection while the reservation is \
+             held for the retained Broadcast row, got {rebuild:?}"
+        );
     }
 }
