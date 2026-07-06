@@ -636,7 +636,11 @@ mod tests {
         let p2pkh2 = PlatformP2PKHAddress::new([20u8; 20]);
 
         use dash_sdk::platform::address_sync::AddressFunds;
-        let funds = |balance, nonce| AddressFunds { balance, nonce };
+        let funds = |balance, nonce| AddressFunds {
+            balance,
+            nonce,
+            as_of_height: 0,
+        };
         let wallet_id: crate::wallet::platform_wallet::WalletId = [0u8; 32];
         let entry = |address_index, address, funds| crate::PlatformAddressBalanceEntry {
             wallet_id,
@@ -1799,6 +1803,7 @@ mod tests {
             funds: dash_sdk::platform::address_sync::AddressFunds {
                 balance: 1_000,
                 nonce: 0,
+                as_of_height: 0,
             },
         });
 

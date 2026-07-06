@@ -35,6 +35,7 @@ fn entry(
         funds: AddressFunds {
             balance: address_index as u64 * 100,
             nonce: address_index,
+            as_of_height: address_index as u64 * 1_000,
         },
     }
 }
@@ -149,7 +150,8 @@ fn load_state_reconstructs_per_account_from_registration_and_addresses() {
         account.found().get(&addr0),
         Some(&AddressFunds {
             balance: 0,
-            nonce: 0
+            nonce: 0,
+            as_of_height: 0,
         }),
         "address 0 funds must match the seeded entry"
     );
@@ -157,7 +159,8 @@ fn load_state_reconstructs_per_account_from_registration_and_addresses() {
         account.found().get(&addr1),
         Some(&AddressFunds {
             balance: 100,
-            nonce: 1
+            nonce: 1,
+            as_of_height: 1_000,
         }),
         "address 1 funds must match the seeded entry"
     );

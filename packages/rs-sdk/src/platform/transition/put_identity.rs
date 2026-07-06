@@ -114,7 +114,7 @@ pub trait PutIdentity<IS: Signer<IdentityPublicKey>>: Waitable {
         identity_signer: &IS,
         input_address_signer: &AS,
         settings: Option<PutSettings>,
-    ) -> Result<(Identity, AddressInfos), Error>;
+    ) -> Result<(Identity, AddressInfos, u64), Error>;
 
     /// Creates an identity funded by Platform addresses, fetching the
     /// current address nonces from Platform automatically.
@@ -138,7 +138,7 @@ pub trait PutIdentity<IS: Signer<IdentityPublicKey>>: Waitable {
         identity_signer: &IS,
         input_address_signer: &AS,
         settings: Option<PutSettings>,
-    ) -> Result<(Identity, AddressInfos), Error>;
+    ) -> Result<(Identity, AddressInfos, u64), Error>;
 }
 
 #[async_trait::async_trait]
@@ -243,7 +243,7 @@ impl<IS: Signer<IdentityPublicKey>> PutIdentity<IS> for Identity {
         identity_signer: &IS,
         input_address_signer: &AS,
         settings: Option<PutSettings>,
-    ) -> Result<(Identity, AddressInfos), Error> {
+    ) -> Result<(Identity, AddressInfos, u64), Error> {
         put_identity_with_address_funding::<IS, AS>(
             self,
             sdk,
@@ -264,7 +264,7 @@ impl<IS: Signer<IdentityPublicKey>> PutIdentity<IS> for Identity {
         identity_signer: &IS,
         input_address_signer: &AS,
         settings: Option<PutSettings>,
-    ) -> Result<(Identity, AddressInfos), Error> {
+    ) -> Result<(Identity, AddressInfos, u64), Error> {
         // Platform's convention: transitions submit `last_used + 1`.
         // `fetch_inputs_with_nonce` reads the on-chain "last used",
         // `nonce_inc` bumps by 1 — same helpers used by
@@ -356,7 +356,7 @@ async fn put_identity_with_address_funding<
     identity_signer: &IS,
     input_signer: &AS,
     settings: Option<PutSettings>,
-) -> Result<(Identity, AddressInfos), Error> {
+) -> Result<(Identity, AddressInfos, u64), Error> {
     let expected_addresses: BTreeSet<PlatformAddress> =
         inputs.keys().copied().collect::<BTreeSet<_>>();
 
@@ -388,10 +388,12 @@ async fn put_identity_with_address_funding<
 
     ensure_valid_state_transition_structure(&state_transition, sdk.version())?;
 
-    match state_transition
-        .broadcast_and_wait::<StateTransitionProofResult>(sdk, settings)
-        .await?
-    {
+    // `metadata.height` is the proof's committed block — the height
+    // pin for these absolutes (`AddressFunds::as_of_height`).
+    let (st_result, metadata) = state_transition
+        .broadcast_and_wait_with_metadata::<StateTransitionProofResult>(sdk, settings)
+        .await?;
+    match st_result {
         StateTransitionProofResult::VerifiedIdentityFullWithAddressInfos(
             proved_identity,
             address_infos_map,
@@ -407,7 +409,7 @@ async fn put_identity_with_address_funding<
             let address_infos =
                 collect_address_infos_from_proof(address_infos_map, &expected_addresses)?;
 
-            Ok((proved_identity, address_infos))
+            Ok((proved_identity, address_infos, metadata.height))
         }
         other => Err(Error::InvalidProvedResponse(format!(
             "identity proof was expected but not returned: {:?}",
