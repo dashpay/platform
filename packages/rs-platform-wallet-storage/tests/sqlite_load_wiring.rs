@@ -120,9 +120,11 @@ fn c1_load_populates_keyless_wallet_payload() {
         )),
         "BIP44 account must be in the manifest"
     );
-    assert_eq!(slice.core_state.new_utxos.len(), 1);
-    assert_eq!(slice.core_state.new_utxos[0].value(), 777_000);
-    assert_eq!(slice.core_state.last_processed_height, Some(50));
+    // Core state now lives inside the assembled `core_wallet_info`: the single
+    // confirmed 777_000-duff UTXO restores as the wallet balance and the sync
+    // watermark carries over.
+    assert_eq!(slice.core_wallet_info.balance.total(), 777_000);
+    assert_eq!(slice.core_wallet_info.metadata.last_processed_height, 50);
 }
 
 /// Empty DB → empty `wallets`, no error (the `load()` doctest contract).
@@ -148,5 +150,5 @@ fn c3_metadata_only_wallet_present() {
     let state = p2.load().unwrap();
     let slice = state.wallets.get(&w).expect("metadata-only wallet present");
     assert!(slice.account_manifest.is_empty());
-    assert!(slice.core_state.new_utxos.is_empty());
+    assert_eq!(slice.core_wallet_info.balance.total(), 0);
 }

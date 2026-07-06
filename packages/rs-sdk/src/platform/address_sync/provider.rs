@@ -83,6 +83,9 @@ pub trait AddressProvider: Send {
     /// per sync (once per trunk/branch round), so the returned iterator
     /// should be cheap to construct — typically a view into an internal
     /// map rather than a computed list.
+    ///
+    /// Must be a superset of [`current_balances`](Self::current_balances);
+    /// see the invariant documented there.
     fn pending_addresses(&self) -> impl Iterator<Item = (Self::Tag, Self::Address)> + '_;
 
     /// Called when an address is found in the tree with a balance.
@@ -146,6 +149,21 @@ pub trait AddressProvider: Send {
     /// it can yield from whatever internal structure it keeps. The
     /// `impl Iterator` return (stable RPITIT since Rust 1.75) means the
     /// iterator is statically dispatched with no heap allocation.
+    ///
+    /// # Invariant
+    ///
+    /// Every address yielded by `current_balances` MUST also appear in
+    /// [`pending_addresses`](Self::pending_addresses) (with the same
+    /// `(tag, address)` pairing). The engine builds its entry-time lookup
+    /// from `pending_addresses`; an incremental change for an address that
+    /// is in `current_balances` but absent from `pending_addresses` is
+    /// buffered as unknown and dropped at end-of-pass (the same silent-loss
+    /// class as a post-snapshot address that never resolves). Production HD
+    /// providers satisfy this by construction — both views project the same
+    /// derived-address set. Bridge providers that accept two independent
+    /// caller-supplied arrays (e.g. the FFI batch provider) must enforce it
+    /// themselves. The engine folds `current_balances` keys into its lookup
+    /// defensively, but providers should not rely on that.
     fn current_balances(
         &self,
     ) -> impl Iterator<Item = (Self::Tag, Self::Address, AddressFunds)> + '_;

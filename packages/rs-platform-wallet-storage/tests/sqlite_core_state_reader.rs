@@ -378,7 +378,7 @@ fn b5_last_applied_chain_lock_round_trips() {
     drop(p2);
 
     // Adversarial path: `PlatformWalletPersistence::load()` must also surface
-    // the chain lock through `ClientStartState.wallets[w].core_state`.
+    // the chain lock through the assembled `core_wallet_info` metadata.
     let p3 = reopen(&path);
     let start_state = PlatformWalletPersistence::load(&p3).expect("load must succeed");
     let wallet_start = start_state
@@ -386,10 +386,14 @@ fn b5_last_applied_chain_lock_round_trips() {
         .get(&w)
         .expect("wallet must be in load output");
     assert_eq!(
-        wallet_start.core_state.last_applied_chain_lock.as_ref(),
+        wallet_start
+            .core_wallet_info
+            .metadata
+            .last_applied_chain_lock
+            .as_ref(),
         Some(&cl),
         "PlatformWalletPersistence::load must carry last_applied_chain_lock \
-         through ClientWalletStartState.core_state — fails if reader still leaves it None"
+         into the assembled core_wallet_info metadata"
     );
 }
 

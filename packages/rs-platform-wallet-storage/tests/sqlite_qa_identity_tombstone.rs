@@ -44,6 +44,8 @@ fn entry_for(id: u8, wallet_id: [u8; 32]) -> IdentityEntry {
         wallet_id: Some(wallet_id),
         dashpay_profile: None,
         dashpay_payments: Default::default(),
+        contact_profiles: Default::default(),
+        ignored_senders: Default::default(),
     }
 }
 

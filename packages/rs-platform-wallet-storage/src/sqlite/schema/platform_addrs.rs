@@ -25,17 +25,22 @@ pub fn apply(
     if !cs.addresses.is_empty() {
         let mut stmt = tx.prepare_cached(
             "INSERT INTO platform_addresses \
-                (wallet_id, account_index, address_index, address, balance, nonce) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6) \
+                (wallet_id, account_index, address_index, address, balance, nonce, \
+                 as_of_height) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7) \
              ON CONFLICT(wallet_id, address) DO UPDATE SET \
                 account_index = excluded.account_index, \
                 address_index = excluded.address_index, \
                 balance = excluded.balance, \
-                nonce = excluded.nonce",
+                nonce = excluded.nonce, \
+                as_of_height = excluded.as_of_height",
         )?;
         for entry in &cs.addresses {
-            // Reject an entry naming a different wallet; the typed error
-            // pinpoints the mismatch instead of a raw FOREIGN KEY failure.
+            // The row is keyed by the outer `wallet_id`; an entry that
+            // names a different wallet would otherwise be mis-filed. The
+            // native FK also rejects an unknown parent, but this typed
+            // error pinpoints the mismatch instead of surfacing a raw
+            // FOREIGN KEY failure.
             if entry.wallet_id != *wallet_id {
                 return Err(WalletStorageError::WalletIdMismatch {
                     expected: *wallet_id,
@@ -49,6 +54,7 @@ pub fn apply(
                 entry.address.as_bytes(),
                 safe_cast::u64_to_i64("platform_addresses.balance", entry.funds.balance)?,
                 i64::from(entry.funds.nonce),
+                safe_cast::u64_to_i64("platform_addresses.as_of_height", entry.funds.as_of_height)?,
             ])?;
         }
     }
@@ -111,42 +117,47 @@ pub fn list_per_wallet(
     conn: &Connection,
     wallet_id: &WalletId,
 ) -> Result<Vec<PlatformAddressRow>, WalletStorageError> {
-    // length(address) is read first (O(1)) so an oversize or wrong-width
-    // address blob is caught before materializing the Vec.
     let mut stmt = conn.prepare(
-        "SELECT account_index, address_index, length(address), address, balance, nonce \
+        "SELECT account_index, address_index, address, balance, nonce, as_of_height \
          FROM platform_addresses WHERE wallet_id = ?1 \
          ORDER BY account_index, address_index, address",
     )?;
-    let mut rows = stmt.query(params![wallet_id.as_slice()])?;
+    let rows = stmt.query_map(params![wallet_id.as_slice()], |row| {
+        Ok((
+            row.get::<_, i64>(0)?,
+            row.get::<_, i64>(1)?,
+            row.get::<_, Vec<u8>>(2)?,
+            row.get::<_, i64>(3)?,
+            row.get::<_, i64>(4)?,
+            row.get::<_, i64>(5)?,
+        ))
+    })?;
     let mut out = Vec::new();
-    while let Some(row) = rows.next()? {
-        let account_index: i64 = row.get(0)?;
-        let address_index: i64 = row.get(1)?;
-        blob::check_fixed_width(
-            row.get::<_, i64>(2)?,
-            20,
-            "platform_addresses.address is not 20 bytes",
-        )?;
-        let address_bytes: Vec<u8> = row.get(3)?;
-        let balance: i64 = row.get(4)?;
-        let nonce: i64 = row.get(5)?;
+    for r in rows {
+        let (account_index, address_index, address_bytes, balance, nonce, as_of_height) = r?;
         out.push(decode_address_row(
             account_index,
             address_index,
             &address_bytes,
             balance,
             nonce,
+            as_of_height,
         )?);
     }
     Ok(out)
 }
 
-/// Reassemble the per-account committed state from `platform_payment`
-/// registrations (one [`PerAccountPlatformAddressState`] each) plus the
-/// `platform_addresses` rows whose `account_index` matches. Address rows for an
-/// unregistered account are skipped — without the xpub there's nothing to
-/// restore.
+/// Reassemble the per-account committed state for one wallet from its
+/// `platform_payment` registrations (xpub per account index) and its
+/// `platform_addresses` rows (the derived address set + known balances).
+///
+/// Each registration becomes one [`PerAccountPlatformAddressState`]; the
+/// address rows whose `account_index` matches populate its `addresses`
+/// bijection and `found` balance map via
+/// [`PerAccountPlatformAddressState::insert_persisted_entry`]. Address
+/// rows for an account with no registration are skipped — without the
+/// xpub the provider can't extend that account's gap window, so there's
+/// nothing to restore.
 fn build_per_account(
     registrations: &[accounts::PlatformPaymentRegistration],
     address_rows: &[PlatformAddressRow],
@@ -182,9 +193,12 @@ fn account_state_from_rows(
     state
 }
 
-/// Build `PlatformAddressSyncStartState` for one wallet: the sync watermark
-/// plus the per-account state from registrations + address rows. `load()` uses
-/// the grouped [`load_all`] path; this per-wallet form is for tests.
+/// Build `PlatformAddressSyncStartState` for one wallet: the
+/// network-scoped sync watermark plus the per-account committed state
+/// reconstructed from registrations + address rows.
+///
+/// `load()` uses the grouped [`load_all`] path; this per-wallet form is
+/// retained for this crate's integration tests.
 #[cfg(any(test, feature = "__test-helpers"))]
 pub fn load_state(
     conn: &Connection,
@@ -232,19 +246,24 @@ pub fn count_per_wallet(
     Ok(usize::try_from(n).unwrap_or(usize::MAX))
 }
 
-/// One [`load_all`] row per wallet: `(sync_state,
-/// reconstructed_address_count)`. The count includes only address rows
-/// actually rebuilt into `sync_state.per_account` (those with a matching
-/// registration), so it never claims state `load()` did not surface.
+/// One row of [`load_all`] aggregated state per wallet:
+/// `(sync_state, address_row_count)`.
+///
+/// `address_row_count` is the number of `platform_addresses` rows for the
+/// wallet — `load()` uses it (with the watermark and per_account) to
+/// decide whether the wallet carries any platform state worth surfacing.
 pub type LoadAllEntry = (PlatformAddressSyncStartState, usize);
 
-/// Bulk reader for `load()`: three grouped scans (over `platform_address_sync`,
-/// `platform_addresses`, and the `platform_payment` `account_registrations`)
-/// regardless of wallet count, instead of a per-wallet fan-out.
+/// Bulk reader for `load()`. Cost is a fixed number of grouped scans —
+/// one over `platform_address_sync`, one over `platform_addresses`, and
+/// one over the `platform_payment` `account_registrations` — regardless
+/// of wallet count, rather than a per-wallet fan-out.
 ///
-/// Driven by [`wallets::list_ids`](crate::sqlite::schema::wallets::list_ids), so
-/// rows whose `wallet_id` is absent from `wallets` are not surfaced (native FKs
-/// prevent such orphans anyway).
+/// Driven by [`wallets::list_ids`](crate::sqlite::schema::wallets::list_ids):
+/// orphaned `platform_addresses` / `platform_address_sync` rows whose
+/// `wallet_id` is absent from `wallet_metadata` are intentionally NOT
+/// surfaced. Native foreign keys prevent such orphans; a future re-wire
+/// that needs them must restore the id-union over the area tables.
 pub fn load_all(conn: &Connection) -> Result<BTreeMap<WalletId, LoadAllEntry>, WalletStorageError> {
     let sync_by_wallet = all_sync_state(conn)?;
     let addresses_by_wallet = all_address_rows(conn)?;
@@ -266,25 +285,9 @@ pub fn load_all(conn: &Connection) -> Result<BTreeMap<WalletId, LoadAllEntry>, W
             sync_timestamp: t,
             last_known_recent_block: r,
         };
-        let reconstructed = reconstructed_address_count(registrations, address_rows);
-        out.insert(wallet_id, (sync, reconstructed));
+        out.insert(wallet_id, (sync, address_rows.len()));
     }
     Ok(out)
-}
-
-/// Count the `platform_addresses` rows [`build_per_account`] rebuilds: those
-/// whose `account_index` has a matching registration, keeping the count aligned
-/// with `per_account`.
-fn reconstructed_address_count(
-    registrations: &[accounts::PlatformPaymentRegistration],
-    address_rows: &[PlatformAddressRow],
-) -> usize {
-    let registered: std::collections::BTreeSet<u32> =
-        registrations.iter().map(|(idx, _)| *idx).collect();
-    address_rows
-        .iter()
-        .filter(|r| registered.contains(&r.account_index))
-        .count()
 }
 
 /// One grouped scan of `platform_address_sync` → `(sync_height,
@@ -328,7 +331,8 @@ fn all_address_rows(
     // length(address) is read first (O(1)) so an oversize or wrong-width
     // address blob is caught before materializing the Vec.
     let mut stmt = conn.prepare(
-        "SELECT wallet_id, account_index, address_index, length(address), address, balance, nonce \
+        "SELECT wallet_id, account_index, address_index, length(address), address, balance, nonce, \
+                as_of_height \
          FROM platform_addresses ORDER BY wallet_id, account_index, address_index, address",
     )?;
     let mut rows = stmt.query([])?;
@@ -345,6 +349,7 @@ fn all_address_rows(
         let address_bytes: Vec<u8> = row.get(4)?;
         let balance: i64 = row.get(5)?;
         let nonce: i64 = row.get(6)?;
+        let as_of_height: i64 = row.get(7)?;
         let wallet_id = wallet_id_from_bytes(&wid_bytes)?;
         out.entry(wallet_id).or_default().push(decode_address_row(
             account_index,
@@ -352,6 +357,7 @@ fn all_address_rows(
             &address_bytes,
             balance,
             nonce,
+            as_of_height,
         )?);
     }
     Ok(out)
@@ -364,6 +370,7 @@ fn decode_address_row(
     address_bytes: &[u8],
     balance: i64,
     nonce: i64,
+    as_of_height: i64,
 ) -> Result<PlatformAddressRow, WalletStorageError> {
     if address_bytes.len() != 20 {
         return Err(WalletStorageError::blob_decode(
@@ -373,14 +380,33 @@ fn decode_address_row(
     let mut hash160 = [0u8; 20];
     hash160.copy_from_slice(address_bytes);
     let balance = safe_cast::i64_to_u64("platform_addresses.balance", balance)?;
-    let nonce = safe_cast::i64_to_u32("platform_addresses.nonce", nonce)?;
-    let account_index = safe_cast::i64_to_u32("platform_addresses.account_index", account_index)?;
-    let address_index = safe_cast::i64_to_u32("platform_addresses.address_index", address_index)?;
+    let as_of_height = safe_cast::i64_to_u64("platform_addresses.as_of_height", as_of_height)?;
+    let nonce = u32::try_from(nonce).map_err(|_| WalletStorageError::IntegerOverflow {
+        field: "platform_addresses.nonce",
+        value: nonce as u64,
+        target: safe_cast::SafeCastTarget::U64,
+    })?;
+    let account_index =
+        u32::try_from(account_index).map_err(|_| WalletStorageError::IntegerOverflow {
+            field: "platform_addresses.account_index",
+            value: account_index as u64,
+            target: safe_cast::SafeCastTarget::U64,
+        })?;
+    let address_index =
+        u32::try_from(address_index).map_err(|_| WalletStorageError::IntegerOverflow {
+            field: "platform_addresses.address_index",
+            value: address_index as u64,
+            target: safe_cast::SafeCastTarget::U64,
+        })?;
     Ok(PlatformAddressRow {
         account_index,
         address_index,
         address: PlatformP2PKHAddress::new(hash160),
-        funds: AddressFunds { balance, nonce },
+        funds: AddressFunds {
+            balance,
+            nonce,
+            as_of_height,
+        },
     })
 }
 

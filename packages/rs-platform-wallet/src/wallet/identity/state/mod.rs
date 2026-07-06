@@ -8,7 +8,7 @@
 pub mod managed_identity;
 pub mod manager;
 
-pub use managed_identity::{BlockTime, ManagedIdentity};
+pub use managed_identity::{BlockTime, DashPayState, ManagedIdentity};
 pub use manager::IdentityLocation;
 pub use manager::IdentityManager;
 pub use manager::RegistrationIndex;

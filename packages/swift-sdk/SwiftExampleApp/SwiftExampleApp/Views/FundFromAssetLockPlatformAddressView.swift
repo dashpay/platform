@@ -311,7 +311,16 @@ struct FundFromAssetLockPlatformAddressView: View {
             } header: {
                 Text("Resuming")
             } footer: {
-                Text("The asset lock was already built and reached a usable proof state. Pick a destination address to complete the funding.")
+                // Status-aware: a proof-ready lock (InstantSendLocked /
+                // ChainLocked) submits as soon as a recipient is picked; a
+                // Broadcast lock still needs finality, so resuming it waits
+                // for the ChainLock (guaranteed finality, however long it
+                // takes) before crediting the address.
+                if lock.canFundIdentity {
+                    Text("The asset lock already reached a usable proof state. Pick a destination address to complete the funding.")
+                } else {
+                    Text("The asset lock is broadcast and still awaiting InstantSend / ChainLock finality. Pick a destination address; resuming will wait for finality, then credit the address.")
+                }
             }
         }
     }

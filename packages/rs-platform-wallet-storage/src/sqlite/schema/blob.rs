@@ -65,22 +65,15 @@ pub(crate) fn check_size(len: i64) -> Result<(), WalletStorageError> {
 }
 
 /// Gate a fixed-width blob column BEFORE materializing the `Vec<u8>`.
-/// Returns [`WalletStorageError::BlobTooLarge`] for oversize values, or
-/// [`WalletStorageError::BlobDecode`] when `len != expected`. `col` names
-/// the column in the decode reason string.
+/// Oversize (`len` past the cap) surfaces as [`WalletStorageError::BlobTooLarge`];
+/// any other deviation from `expected` as [`WalletStorageError::BlobDecode`].
 pub(crate) fn check_fixed_width(
     len: i64,
     expected: usize,
     col: &'static str,
 ) -> Result<(), WalletStorageError> {
-    let len_usize = usize::try_from(len).unwrap_or(usize::MAX);
-    if len_usize > BLOB_SIZE_LIMIT_BYTES {
-        return Err(WalletStorageError::BlobTooLarge {
-            len_bytes: len_usize,
-            limit_bytes: BLOB_SIZE_LIMIT_BYTES,
-        });
-    }
-    if len_usize != expected {
+    check_size(len)?;
+    if usize::try_from(len).unwrap_or(usize::MAX) != expected {
         return Err(WalletStorageError::blob_decode(col));
     }
     Ok(())

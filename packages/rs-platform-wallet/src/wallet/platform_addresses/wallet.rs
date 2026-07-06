@@ -1,9 +1,11 @@
 //! Platform address wallet for DIP-17 platform payment addresses.
 
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
+use key_wallet::PlatformP2PKHAddress;
 use tokio::sync::RwLock;
 
 use crate::broadcaster::SpvBroadcaster;
@@ -16,6 +18,8 @@ use crate::wallet::persister::WalletPersister;
 
 use super::provider::PlatformPaymentAddressProvider;
 
+use dash_sdk::query_types::AddressInfos;
+
 /// Platform address wallet providing DIP-17 platform payment address functionality.
 #[derive(Clone)]
 pub struct PlatformAddressWallet {
@@ -26,8 +30,11 @@ pub struct PlatformAddressWallet {
     pub(crate) wallet_id: WalletId,
     /// Single provider covering every platform payment account on the
     /// wallet. `None` until [`initialize`] runs so that no-account
-    /// wallets don't allocate empty state. Sync takes a `write` lock;
-    /// transfer/withdraw paths take `read` for key_source lookups.
+    /// wallets don't allocate empty state. Both sync and the
+    /// post-broadcast reconciliation seam
+    /// ([`reconcile_address_infos`](Self::reconcile_address_infos))
+    /// take the `write` lock across their whole apply sequence, which
+    /// is what serializes them against each other.
     pub(crate) provider: Arc<RwLock<Option<PlatformPaymentAddressProvider>>>,
     /// Shared asset-lock manager. Threaded in so the orchestrated
     /// `fund_from_asset_lock` path can drive
@@ -157,9 +164,301 @@ impl PlatformAddressWallet {
         Ok(())
     }
 
+    /// Reconcile platform-address balances from the proof-attested
+    /// `address_infos` an address-funds state transition returns (transfer,
+    /// withdrawal, asset-lock funding, identity registration / top-up /
+    /// credit transfer). This is the single apply-and-persist seam every
+    /// flow routes through.
+    ///
+    /// Each address's `(account_index, address_index)` is resolved through
+    /// the provider's persisted `index <-> address` bijection — covering
+    /// addresses restored from disk that are no longer in a live derived
+    /// pool — with the live pools as fallback for addresses derived since
+    /// the last sync (e.g. a fresh change address). Non-P2PKH addresses and
+    /// addresses the wallet doesn't own (external recipients) are skipped.
+    ///
+    /// For each surviving entry the in-memory account balance is set to the
+    /// proof's attested value, the provider's committed `found` seed is
+    /// updated (so the background sync's diff baseline agrees with what we
+    /// just applied), and a `PlatformAddressChangeSet` is persisted so the
+    /// displayed balance and the next input selection both reflect on-chain
+    /// reality. Without this, local balances stay frozen at their
+    /// pre-transition values: the wallet displays a stale "Platform
+    /// Balance" and the next input selection over-selects drained
+    /// addresses, which Drive rejects with "Insufficient combined address
+    /// balances".
+    ///
+    /// A freshness guard protects against racing the 15s background sync:
+    /// height-pin authority (see `AddressFunds::as_of_height`) — entries
+    /// whose pin is below the committed seed's are dropped (a fresher
+    /// absolute was already committed; the nonce breaks same-block ties),
+    /// see [`PlatformPaymentAddressProvider::commit_reconciliation`]. The
+    /// provider write lock is held across the provider commit, the
+    /// account-balance write, AND the persist — mirroring
+    /// [`sync_balances`](Self::sync_balances), so the two writers' stores
+    /// are totally ordered by the lock and a sync pass can never
+    /// interleave between (or persist across) the seam's steps; the lock
+    /// order (provider → wallet manager) matches the sync callbacks.
+    ///
+    /// # `as_of_height` — the height pin
+    ///
+    /// `as_of_height` is the block height of the proof that attested
+    /// `address_infos` (the broadcast result's quorum-authenticated
+    /// `metadata.height`). Every committed entry carries it as its
+    /// balance pin, which is what makes the optimistic absolute write
+    /// safe against delta replay: the transition's on-chain
+    /// `AddBalanceToAddress` credit is recorded as a DELTA
+    /// (`AddToCredits`) at this same height in Drive's
+    /// recent-address-balance-changes tree, and the sync's apply loops
+    /// drop any delta at or below an entry's pin. This replaces the
+    /// former watermark-invalidation gate (`credited_outputs`), which
+    /// forced a full rescan but could not stop the rescan itself from
+    /// replaying the same delta on top of the fresh absolute.
+    ///
+    /// Persistence errors are logged rather than propagated — Platform
+    /// already accepted the transition, and a later sync reconciles.
+    ///
+    /// [`PlatformPaymentAddressProvider::commit_reconciliation`]:
+    /// super::provider::PlatformPaymentAddressProvider::commit_reconciliation
+    pub async fn reconcile_address_infos(
+        &self,
+        address_infos: &AddressInfos,
+        as_of_height: u64,
+        context: &'static str,
+    ) -> crate::PlatformAddressChangeSet {
+        self.reconcile_address_infos_with_persistence(address_infos, as_of_height, context)
+            .await
+            .0
+    }
+
+    /// Like [`Self::reconcile_address_infos`], but also reports whether the
+    /// reconciled balance changeset was **durably persisted**.
+    ///
+    /// `persisted == false` means (and only means) that the in-memory
+    /// managed-account balances WERE updated to the proof-attested values
+    /// but the durable `persister.store(...)` write failed — so a restart
+    /// would reseed from the stale rows. Every early-return path (no
+    /// provider, nothing resolved, nothing changed) leaves memory
+    /// untouched, so there is no memory-vs-disk divergence and
+    /// `persisted` is `true` there. Callers that pair reconciliation with
+    /// a one-shot side effect — notably `fund_from_asset_lock` marking an
+    /// asset lock `Consumed` — must gate that side effect on
+    /// `persisted == true`, or they risk pairing an irreversible
+    /// commitment with durable balances that under-report the spend.
+    pub(super) async fn reconcile_address_infos_with_persistence(
+        &self,
+        address_infos: &AddressInfos,
+        as_of_height: u64,
+        context: &'static str,
+    ) -> (crate::PlatformAddressChangeSet, bool) {
+        if address_infos.is_empty() {
+            return (crate::PlatformAddressChangeSet::default(), true);
+        }
+
+        let mut guard = self.provider.write().await;
+        let Some(provider) = guard.as_mut() else {
+            tracing::warn!(
+                wallet_id = ?self.wallet_id,
+                context,
+                "Address reconciliation skipped: no platform-address \
+                 provider for this wallet; local balances stay stale \
+                 until the next platform-address sync"
+            );
+            return (crate::PlatformAddressChangeSet::default(), true);
+        };
+        if provider.per_wallet_state(&self.wallet_id).is_none() {
+            tracing::warn!(
+                wallet_id = ?self.wallet_id,
+                context,
+                "Address reconciliation skipped: no platform-address \
+                 provider state for this wallet; local balances stay \
+                 stale until the next platform-address sync"
+            );
+            return (crate::PlatformAddressChangeSet::default(), true);
+        }
+
+        // Live-pool fallback indexes for addresses derived since the last
+        // sync (not yet merged into the provider bijection). Taking the
+        // wallet-manager read lock while holding the provider write lock
+        // follows the provider → wallet-manager order the sync callbacks
+        // use.
+        let pool_indexes: BTreeMap<PlatformP2PKHAddress, (u32, u32)> = {
+            let wm = self.wallet_manager.read().await;
+            let mut out = BTreeMap::new();
+            if let Some(info) = wm.get_wallet_info(&self.wallet_id) {
+                for account in info.core_wallet.all_platform_payment_managed_accounts() {
+                    // The provider tracks key-class-0 accounts only; other
+                    // key classes have no per-account provider state to
+                    // reconcile against.
+                    if account.key_class != 0 {
+                        continue;
+                    }
+                    for (&index, addr_info) in &account.addresses.addresses {
+                        if let Ok(p2pkh) = PlatformP2PKHAddress::from_address(&addr_info.address) {
+                            out.entry(p2pkh).or_insert((account.account, index));
+                        }
+                    }
+                }
+            }
+            out
+        };
+
+        let outcome = provider.commit_reconciliation(
+            &self.wallet_id,
+            address_infos,
+            &pool_indexes,
+            as_of_height,
+        );
+
+        if outcome.resolved == 0 {
+            tracing::warn!(
+                wallet_id = ?self.wallet_id,
+                context,
+                proof_addresses = address_infos.len(),
+                "Address reconciliation resolved none of the proof's \
+                 addresses to a wallet-owned slot. Expected when every \
+                 address belongs to a third party; otherwise local \
+                 balances stay stale until the next platform-address sync"
+            );
+            return (crate::PlatformAddressChangeSet::default(), true);
+        }
+        if outcome.stale_skipped > 0 || outcome.unchanged_skipped > 0 {
+            tracing::debug!(
+                wallet_id = ?self.wallet_id,
+                context,
+                stale_skipped = outcome.stale_skipped,
+                unchanged_skipped = outcome.unchanged_skipped,
+                "Address reconciliation dropped entries superseded by (or \
+                 identical to) the committed sync seed"
+            );
+        }
+        if outcome.entries.is_empty() {
+            return (crate::PlatformAddressChangeSet::default(), true);
+        }
+
+        // Apply the proof-attested balances to the managed accounts while
+        // STILL holding the provider write lock, so a background sync can't
+        // interleave between the provider commit above and this write.
+        // The per-account key source drives gap-limit extension when a
+        // previously unfunded address (e.g. a change output) becomes funded.
+        {
+            let key_sources: BTreeMap<u32, key_wallet::KeySource> = outcome
+                .entries
+                .iter()
+                .map(|e| e.account_index)
+                .collect::<std::collections::BTreeSet<_>>()
+                .into_iter()
+                .filter_map(|account_index| {
+                    provider
+                        .key_source(&self.wallet_id, account_index)
+                        .map(|ks| (account_index, ks))
+                })
+                .collect();
+            let mut wm = self.wallet_manager.write().await;
+            if let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) {
+                for entry in &outcome.entries {
+                    if let Some(account) = info
+                        .core_wallet
+                        .platform_payment_managed_account_at_index_mut(entry.account_index)
+                    {
+                        account.set_address_credit_balance(
+                            entry.address,
+                            entry.funds.balance,
+                            key_sources.get(&entry.account_index),
+                        );
+                    }
+                }
+            }
+        }
+        // Persist BEFORE releasing the provider lock, mirroring
+        // `sync_balances`. Both writers persisting inside the same
+        // critical section totally orders the stores with the lock: a
+        // sync pass (or another reconciliation) that commits a fresher
+        // seed after us also persists after us, so an older row can
+        // never overwrite a fresher one on disk. Persistence callbacks
+        // must not re-enter wallet APIs (the pre-existing contract —
+        // stores already run under the wallet-manager write lock
+        // elsewhere).
+        let cs = crate::PlatformAddressChangeSet {
+            addresses: outcome.entries,
+            ..Default::default()
+        };
+
+        let persisted = match self.persister.store(cs.clone().into()) {
+            Ok(()) => true,
+            Err(e) => {
+                tracing::error!(
+                    context,
+                    error = %e,
+                    "Failed to persist platform-address reconciliation; \
+                     in-memory balances are updated but durable rows stay stale \
+                     until the next platform-address sync"
+                );
+                false
+            }
+        };
+        drop(guard);
+        (cs, persisted)
+    }
+
     /// Get the network from the SDK.
     pub fn network(&self) -> key_wallet::Network {
         self.sdk.network
+    }
+
+    /// The per-input minimum credit amount enforced by the chain for
+    /// address-funds transitions, read from the wallet's **current**
+    /// platform version
+    /// (`platform_version.dpp.state_transitions.address_funds.min_input_amount`).
+    ///
+    /// This is the same constant the transfer/withdraw auto-selectors use
+    /// to drop sub-minimum "dust" inputs (see
+    /// [`select_withdrawable_inputs`](super::withdrawal) and
+    /// [`build_auto_select_candidates`](super::transfer)): DPP rejects any
+    /// address-funds input below this floor, so an address whose balance is
+    /// under it cannot be spent on its own. Exposed so UI gating can sum
+    /// only spendable (≥ this) balances instead of every funded row,
+    /// keeping the enabled/disabled decision in step with what the Rust
+    /// selectors will actually consume.
+    ///
+    /// The version is resolved from the wallet's SDK
+    /// ([`dash_sdk::Sdk::version`]), the same network-floored,
+    /// protocol-version-tracking source the spend paths run under — so the
+    /// figure is version-locked rather than a hardcoded mirror of the
+    /// constant.
+    pub fn min_input_amount(&self) -> Credits {
+        self.sdk
+            .version()
+            .dpp
+            .state_transitions
+            .address_funds
+            .min_input_amount
+    }
+
+    /// The per-output minimum credit amount enforced by the chain for
+    /// address-funds transitions, read from the wallet's **current**
+    /// platform version
+    /// (`platform_version.dpp.state_transitions.address_funds.min_output_amount`).
+    ///
+    /// DPP rejects any address-funds *output* below this floor, so a transfer
+    /// that sends a single output under it deterministically fails structure
+    /// validation after submit. Exposed so UI gating can disable submit (and
+    /// explain why) when the requested amount is below the minimum, keeping
+    /// the enabled/disabled decision in step with what DPP will accept —
+    /// rather than mirroring the protocol constant in Swift, which would
+    /// drift if the version changed it.
+    ///
+    /// The version is resolved from the wallet's SDK
+    /// ([`dash_sdk::Sdk::version`]), the same network-floored,
+    /// protocol-version-tracking source the spend paths run under, so the
+    /// figure is version-locked. Companion to [`min_input_amount`](Self::min_input_amount).
+    pub fn min_output_amount(&self) -> Credits {
+        self.sdk
+            .version()
+            .dpp
+            .state_transitions
+            .address_funds
+            .min_output_amount
     }
 
     /// Wallet id this `PlatformAddressWallet` operates on. Exposed so
@@ -221,6 +520,52 @@ impl PlatformAddressWallet {
             Some(last_known_recent_block),
         )
         .await;
+    }
+
+    /// Reset the platform-address sync watermark and drop every cached
+    /// balance for this wallet, forcing a full trunk/branch/compact
+    /// rescan on the next `sync_balances`.
+    ///
+    /// Backs the host's "Clear" flow. Clears BOTH in-memory balance
+    /// stores a resume would otherwise read from:
+    ///   * the provider's incremental seed (`found`) + watermark — what
+    ///     makes a resync "fast" (see
+    ///     [`PlatformPaymentAddressProvider::reset_sync_state`]);
+    ///   * each `ManagedPlatformAccount`'s `address_balances` map — what
+    ///     [`addresses_with_balances`](Self::addresses_with_balances) /
+    ///     `total_credits` and the transfer/withdraw spend paths read.
+    ///     Without this the UI/spend paths would keep reporting stale
+    ///     balances until the next full sync re-zeroed them via the
+    ///     absent diff.
+    ///
+    /// Does NOT route through [`apply_sync_state`] — that helper's
+    /// all-None early-return guard is meant for persisted-state replay
+    /// and is irrelevant here. The wallet-manager write is nested
+    /// INSIDE the provider write (provider → wallet-manager, the same
+    /// order `reconcile_address_infos` uses) so the two clears are
+    /// atomic with respect to a concurrent sync or reconciliation.
+    pub async fn reset_sync_state(&self) {
+        // Hold the provider write lock across BOTH the managed-account
+        // balance clear AND the provider reset, so the whole reset is
+        // atomic: without it, a sync pass or a reconciliation could
+        // interleave between the two steps and repopulate the managed
+        // balances (or the provider seed) we just cleared, leaving the
+        // "Clear" half-applied. The wallet-manager write is nested
+        // INSIDE the provider write — the same provider → wallet-manager
+        // lock order `reconcile_address_infos` uses — so the two paths
+        // can't deadlock.
+        let mut guard = self.provider.write().await;
+        {
+            let mut wm = self.wallet_manager.write().await;
+            if let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) {
+                for account in info.core_wallet.all_platform_payment_managed_accounts_mut() {
+                    account.clear_balances();
+                }
+            }
+        }
+        if let Some(provider) = guard.as_mut() {
+            provider.reset_sync_state();
+        }
     }
 
     /// Internal accessor for the diagnostic snapshot path on
@@ -299,6 +644,13 @@ impl PlatformAddressWallet {
     ///
     /// Returns the balances from the last call to [`sync_balances`](Self::sync_balances),
     /// [`transfer`](Self::transfer), or [`withdraw`](Self::withdraw).
+    ///
+    /// Resolves against the **first** platform-payment account (account index 0,
+    /// key class 0). This is a read-only display query; account-scoped input
+    /// selection for transfers/withdrawals happens inside
+    /// [`transfer`](Self::transfer) / [`withdraw`](Self::withdraw) via
+    /// [`InputSelection::Auto`](super::InputSelection::Auto), which resolves the
+    /// requested account on the Rust side.
     pub async fn addresses_with_balances(&self) -> Vec<(PlatformAddress, Credits)> {
         let wm = self.wallet_manager.read().await;
         wm.get_wallet_info(&self.wallet_id)
@@ -345,5 +697,80 @@ impl std::fmt::Debug for PlatformAddressWallet {
         f.debug_struct("PlatformAddressWallet")
             .field("network", &self.sdk.network)
             .finish()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::PlatformAddressWallet;
+
+    /// Build a `PlatformAddressWallet` on a mock SDK for getter tests that
+    /// touch no I/O. Mirrors `transfer::tests::build_short_circuit_wallet`,
+    /// duplicated here because that helper is private to the transfer
+    /// module's `tests`.
+    fn build_test_wallet() -> PlatformAddressWallet {
+        use crate::broadcaster::SpvBroadcaster;
+        use crate::events::PlatformEventManager;
+        use crate::spv::SpvRuntime;
+        use crate::wallet::asset_lock::manager::AssetLockManager;
+        use crate::wallet::persister::{NoPlatformPersistence, WalletPersister};
+        use std::sync::Arc;
+        use tokio::sync::{Notify, RwLock};
+
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let wallet_manager = Arc::new(RwLock::new(key_wallet_manager::WalletManager::new(
+            sdk.network,
+        )));
+        let persister = WalletPersister::new([0u8; 32], Arc::new(NoPlatformPersistence));
+        let event_manager = Arc::new(PlatformEventManager::new(Vec::new()));
+        let spv = Arc::new(SpvRuntime::new(Arc::clone(&wallet_manager), event_manager));
+        let broadcaster = Arc::new(SpvBroadcaster::new(spv));
+        let asset_locks = Arc::new(AssetLockManager::new(
+            Arc::clone(&sdk),
+            Arc::clone(&wallet_manager),
+            [0u8; 32],
+            Arc::new(Notify::new()),
+            broadcaster,
+            persister.clone(),
+        ));
+        PlatformAddressWallet::new(sdk, wallet_manager, [0u8; 32], asset_locks, persister)
+    }
+
+    /// `min_input_amount()` must return the constant from the wallet's own
+    /// SDK-resolved `PlatformVersion`, i.e. exactly
+    /// `version.dpp.state_transitions.address_funds.min_input_amount` — the
+    /// same floor the auto-selectors use to drop dust. Pins the getter to
+    /// the version's value rather than a hardcoded literal, so the UI gate
+    /// stays version-locked.
+    #[test]
+    fn min_input_amount_matches_sdk_version_constant() {
+        let wallet = build_test_wallet();
+        let expected = wallet
+            .sdk
+            .version()
+            .dpp
+            .state_transitions
+            .address_funds
+            .min_input_amount;
+        assert_eq!(wallet.min_input_amount(), expected);
+    }
+
+    /// `min_output_amount()` must likewise return the constant from the
+    /// wallet's own SDK-resolved `PlatformVersion`, i.e. exactly
+    /// `version.dpp.state_transitions.address_funds.min_output_amount` — the
+    /// per-output floor DPP enforces on address-funds transitions. Pins the
+    /// getter to the version's value rather than a hardcoded literal so the
+    /// transfer UI gate stays version-locked.
+    #[test]
+    fn min_output_amount_matches_sdk_version_constant() {
+        let wallet = build_test_wallet();
+        let expected = wallet
+            .sdk
+            .version()
+            .dpp
+            .state_transitions
+            .address_funds
+            .min_output_amount;
+        assert_eq!(wallet.min_output_amount(), expected);
     }
 }

@@ -46,6 +46,8 @@ fn wallet_identity_entry(id: Identifier, w: WalletId, index: u32) -> IdentityEnt
         wallet_id: Some(w),
         dashpay_profile: None,
         dashpay_payments: Default::default(),
+        contact_profiles: Default::default(),
+        ignored_senders: Default::default(),
     }
 }
 
@@ -118,6 +120,9 @@ fn established(owner: Identifier, contact: Identifier) -> EstablishedContact {
         note: Some("met at conf".into()),
         is_hidden: false,
         accepted_accounts: vec![0, 3, 7],
+        payment_channel_broken: false,
+        contact_account_label: None,
+        external_account_reference: None,
     }
 }
 
@@ -223,13 +228,13 @@ fn tc3_established_contact_restores_onto_identity() {
 
     let state = reopen(&path).load().expect("load");
     let managed = &state.wallets[&w].identity_manager.wallet_identities[&w][&0];
-    assert_eq!(managed.established_contacts.len(), 1);
+    assert_eq!(managed.dashpay().established_contacts().len(), 1);
     assert_eq!(
-        managed.established_contacts.get(&contact),
+        managed.dashpay().established_contacts().get(&contact),
         Some(&contact_state)
     );
-    assert!(managed.sent_contact_requests.is_empty());
-    assert!(managed.incoming_contact_requests.is_empty());
+    assert!(managed.dashpay().sent_contact_requests().is_empty());
+    assert!(managed.dashpay().incoming_contact_requests().is_empty());
 }
 
 /// TC-4 — pending sent and incoming requests restore with correct
@@ -282,18 +287,20 @@ fn tc4_sent_and_incoming_requests_restore_directionally() {
     let state = reopen(&path).load().expect("load");
     let managed = &state.wallets[&w].identity_manager.wallet_identities[&w][&0];
     let s = managed
-        .sent_contact_requests
+        .dashpay()
+        .sent_contact_requests()
         .get(&recipient)
         .expect("sent restored, keyed by recipient");
     assert_eq!(s.sender_id, owner);
     assert_eq!(s.recipient_id, recipient);
     let i = managed
-        .incoming_contact_requests
+        .dashpay()
+        .incoming_contact_requests()
         .get(&sender)
         .expect("incoming restored, keyed by sender");
     assert_eq!(i.sender_id, sender);
     assert_eq!(i.recipient_id, owner);
-    assert!(managed.established_contacts.is_empty());
+    assert!(managed.dashpay().established_contacts().is_empty());
 }
 
 /// TC-5 — two identities in one wallet with the same numeric `KeyID` keep
@@ -396,10 +403,10 @@ fn tc6_no_cross_identity_contact_leakage() {
     let wallet = &state.wallets[&w].identity_manager.wallet_identities[&w];
     let managed_a = &wallet[&0];
     let managed_b = &wallet[&1];
-    assert!(managed_a.established_contacts.contains_key(&c));
-    assert!(managed_a.sent_contact_requests.is_empty());
-    assert!(managed_b.sent_contact_requests.contains_key(&d));
-    assert!(managed_b.established_contacts.is_empty());
+    assert!(managed_a.dashpay().established_contacts().contains_key(&c));
+    assert!(managed_a.dashpay().sent_contact_requests().is_empty());
+    assert!(managed_b.dashpay().sent_contact_requests().contains_key(&d));
+    assert!(managed_b.dashpay().established_contacts().is_empty());
 }
 
 /// TC-7 — an identity with zero persisted keys loads fine with an empty
@@ -426,7 +433,7 @@ fn tc7_identity_with_zero_keys_loads_empty() {
     assert!(managed.identity.public_keys().is_empty());
     assert_eq!(managed.identity.balance(), 1_000);
     assert_eq!(managed.identity.revision(), 1);
-    assert!(managed.established_contacts.is_empty());
+    assert!(managed.dashpay().established_contacts().is_empty());
 }
 
 /// TC-8 — an out-of-wallet identity (no `identity_index`) with zero keys
@@ -462,9 +469,9 @@ fn tc8_out_of_wallet_identity_loads_empty() {
         .get(&id)
         .expect("out-of-wallet identity present");
     assert!(managed.identity.public_keys().is_empty());
-    assert!(managed.established_contacts.is_empty());
-    assert!(managed.sent_contact_requests.is_empty());
-    assert!(managed.incoming_contact_requests.is_empty());
+    assert!(managed.dashpay().established_contacts().is_empty());
+    assert!(managed.dashpay().sent_contact_requests().is_empty());
+    assert!(managed.dashpay().incoming_contact_requests().is_empty());
 }
 
 /// TC-9 — a tombstoned identity's orphaned key/contact rows don't crash

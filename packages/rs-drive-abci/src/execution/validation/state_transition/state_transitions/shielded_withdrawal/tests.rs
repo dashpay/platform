@@ -511,6 +511,234 @@ mod tests {
             );
         }
 
+        /// Gold-standard reproduction of TestFlight report B ("shielded→Core
+        /// withdrawal never lands"). Identical to
+        /// `test_valid_shielded_withdrawal_proof_succeeds` — a **real** Orchard
+        /// proof, correct value balance, sufficient pool balance — EXCEPT the
+        /// anchor is **not** recorded in state (`insert_anchor_into_state` is
+        /// omitted). A legitimate spend is then refused with `InvalidAnchorError`
+        /// purely because its anchor isn't in the recorded set.
+        ///
+        /// This is exactly the wallet's failure mode: it builds the proof
+        /// against its depth-0 tree root, but the index-chunk sync leaves that
+        /// root mid-block, so Platform (which records one anchor per block) never
+        /// recorded it. See `platform-wallet`'s
+        /// `depth0_spend_anchor_mid_block_is_not_a_recorded_block_boundary_anchor`,
+        /// which proves the wallet produces such a non-recorded anchor.
+        #[test]
+        fn test_valid_proof_with_unrecorded_anchor_returns_invalid_anchor_error() {
+            let platform_version = PlatformVersion::latest();
+            let platform = setup_platform();
+            insert_dummy_encrypted_notes(&platform, 250);
+            let mut rng = StdRng::seed_from_u64(0);
+            let pk = get_proving_key();
+
+            // --- Create keys ---
+            let sk = SpendingKey::from_bytes([0u8; 32]).unwrap();
+            let fvk = FullViewingKey::from(&sk);
+            let recipient = fvk.address_at(0u32, Scope::External);
+            let ask = SpendAuthorizingKey::from(&sk);
+
+            // --- Create a spendable note with value 500M ---
+            let rho_bytes: [u8; 32] = {
+                let mut b = [0u8; 32];
+                b[0] = 1;
+                b
+            };
+            let rho = Rho::from_bytes(&rho_bytes).unwrap();
+            let rseed = RandomSeed::from_bytes([42u8; 32], &rho).unwrap();
+            let note =
+                Note::from_parts(recipient, NoteValue::from_raw(500_000_000), rho, rseed).unwrap();
+
+            // --- Build commitment tree and get anchor + merkle path ---
+            let cmx = ExtractedNoteCommitment::from(note.commitment());
+            let mut tree = ClientMemoryCommitmentTree::new(100);
+            tree.append(cmx.to_bytes(), Retention::Marked).unwrap();
+            tree.checkpoint(0u32).unwrap();
+            let anchor = tree.anchor().unwrap();
+            let merkle_path = tree.witness(Position::from(0u64), 0).unwrap().unwrap();
+
+            // --- Build bundle: spend 500M -> output 5K ---
+            let mut builder = Builder::<DashMemo>::new(BundleType::DEFAULT, anchor);
+            builder.add_spend(fvk.clone(), note, merkle_path).unwrap();
+            builder
+                .add_output(None, recipient, NoteValue::from_raw(5_000), [0u8; 36])
+                .unwrap();
+            let (unauthorized, _) = builder.build::<i64>(&mut rng).unwrap().unwrap();
+
+            let output_script = create_output_script();
+            let unshielding_amount = 499_995_000u64;
+            let extra_sighash_data = dpp::shielded::shielded_withdrawal_extra_sighash_data_v0(
+                output_script.as_bytes(),
+                unshielding_amount,
+                1,
+                Pooling::Never,
+            );
+            let bundle_commitment: [u8; 32] = unauthorized.commitment().into();
+            let sighash = compute_platform_sighash(&bundle_commitment, &extra_sighash_data);
+            let proven = unauthorized.create_proof(pk, &mut rng).unwrap();
+            let bundle = proven.apply_signatures(rng, sighash, &[ask]).unwrap();
+
+            let (actions, value_balance, anchor_bytes, proof_bytes, binding_sig) =
+                serialize_authorized_bundle_i64(&bundle);
+            assert_eq!(value_balance, 499_995_000);
+
+            // Pool balance passes; the anchor is DELIBERATELY not recorded
+            // (no `insert_anchor_into_state`) — the crux of the reproduction.
+            set_pool_total_balance(&platform, 500_000_000);
+
+            let transition = create_shielded_withdrawal_transition(
+                actions,
+                value_balance as u64,
+                anchor_bytes,
+                proof_bytes,
+                binding_sig,
+                1,
+                Pooling::Never,
+                output_script,
+            );
+
+            let processing_result = process_transition(&platform, transition, platform_version);
+
+            // Real proof passes; anchor validation then rejects the unrecorded
+            // anchor. This is why the withdrawal never lands.
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::UnpaidConsensusError(
+                    ConsensusError::StateError(StateError::InvalidAnchorError(_))
+                )]
+            );
+        }
+
+        /// Keystone acceptance test for the anchor-selection fix: a **real**
+        /// Orchard proof built against an OLDER recorded anchor — with the
+        /// commitment tree (and the recorded set) advanced past it — must
+        /// validate successfully. This is exactly the spend shape
+        /// `platform-wallet`'s `select_recorded_spends` produces after the
+        /// fix: witnesses taken at a deeper checkpoint whose root Platform
+        /// recorded, while newer commitments and a newer boundary anchor
+        /// already exist. `test_valid_shielded_withdrawal_proof_succeeds`
+        /// covers only the fresh-anchor (depth-0-recorded) case, and
+        /// `test_valid_proof_with_unrecorded_anchor_returns_invalid_anchor_error`
+        /// only the rejection side; this pins the acceptance side the whole
+        /// fix rests on.
+        #[test]
+        fn test_valid_proof_with_older_recorded_anchor_succeeds() {
+            let platform_version = PlatformVersion::latest();
+            let platform = setup_platform();
+            insert_dummy_encrypted_notes(&platform, 250);
+            let mut rng = StdRng::seed_from_u64(0);
+            let pk = get_proving_key();
+
+            let sk = SpendingKey::from_bytes([0u8; 32]).unwrap();
+            let fvk = FullViewingKey::from(&sk);
+            let recipient = fvk.address_at(0u32, Scope::External);
+            let ask = SpendAuthorizingKey::from(&sk);
+
+            let rho_bytes: [u8; 32] = {
+                let mut b = [0u8; 32];
+                b[0] = 1;
+                b
+            };
+            let rho = Rho::from_bytes(&rho_bytes).unwrap();
+            let rseed = RandomSeed::from_bytes([42u8; 32], &rho).unwrap();
+            let note =
+                Note::from_parts(recipient, NoteValue::from_raw(500_000_000), rho, rseed).unwrap();
+
+            // The spent note lands in "block 1", whose boundary root is
+            // recorded (anchor_old). Later commitments then arrive and a
+            // newer boundary is recorded (anchor_new). The spend is built at
+            // checkpoint depth 1 — the wallet fix's exact output when its
+            // depth-0 root is unrecorded.
+            let cmx = ExtractedNoteCommitment::from(note.commitment());
+            let mut tree = ClientMemoryCommitmentTree::new(100);
+            tree.append(cmx.to_bytes(), Retention::Marked).unwrap();
+            tree.checkpoint(0u32).unwrap(); // block-1 boundary
+
+            for later in 2u8..=4 {
+                let mut b = [0u8; 32];
+                b[0] = later;
+                let rho_later = Rho::from_bytes(&b).unwrap();
+                let rseed_later = RandomSeed::from_bytes([42u8; 32], &rho_later).unwrap();
+                let note_later = Note::from_parts(
+                    recipient,
+                    NoteValue::from_raw(1_000),
+                    rho_later,
+                    rseed_later,
+                )
+                .unwrap();
+                let cmx_later = ExtractedNoteCommitment::from(note_later.commitment());
+                tree.append(cmx_later.to_bytes(), Retention::Ephemeral)
+                    .unwrap();
+            }
+            tree.checkpoint(1u32).unwrap(); // block-2 boundary
+
+            let anchor_new = tree.anchor().unwrap();
+            // Witness at checkpoint depth 1 → path rooted at the OLDER
+            // (block-1) recorded root, not the tip.
+            let merkle_path = tree.witness(Position::from(0u64), 1).unwrap().unwrap();
+            let anchor_old = merkle_path.root(cmx);
+            assert_ne!(
+                anchor_old.to_bytes(),
+                anchor_new.to_bytes(),
+                "tree must have advanced past the spend's anchor for this test to be meaningful"
+            );
+
+            // --- Build bundle against the older anchor ---
+            let mut builder = Builder::<DashMemo>::new(BundleType::DEFAULT, anchor_old);
+            builder.add_spend(fvk.clone(), note, merkle_path).unwrap();
+            builder
+                .add_output(None, recipient, NoteValue::from_raw(5_000), [0u8; 36])
+                .unwrap();
+            let (unauthorized, _) = builder.build::<i64>(&mut rng).unwrap().unwrap();
+
+            let output_script = create_output_script();
+            let unshielding_amount = 499_995_000u64;
+            let extra_sighash_data = dpp::shielded::shielded_withdrawal_extra_sighash_data_v0(
+                output_script.as_bytes(),
+                unshielding_amount,
+                1,
+                Pooling::Never,
+            );
+            let bundle_commitment: [u8; 32] = unauthorized.commitment().into();
+            let sighash = compute_platform_sighash(&bundle_commitment, &extra_sighash_data);
+            let proven = unauthorized.create_proof(pk, &mut rng).unwrap();
+            let bundle = proven.apply_signatures(rng, sighash, &[ask]).unwrap();
+
+            let (actions, value_balance, anchor_bytes, proof_bytes, binding_sig) =
+                serialize_authorized_bundle_i64(&bundle);
+            assert_eq!(value_balance, 499_995_000);
+            assert_eq!(
+                anchor_bytes,
+                anchor_old.to_bytes(),
+                "the bundle must carry the older anchor"
+            );
+
+            // The recorded set holds BOTH boundaries — like drive after two
+            // block-ends — and the spend references the older one.
+            insert_anchor_into_state(&platform, &anchor_bytes);
+            insert_anchor_into_state(&platform, &anchor_new.to_bytes());
+            set_pool_total_balance(&platform, 500_000_000);
+
+            let transition = create_shielded_withdrawal_transition(
+                actions,
+                value_balance as u64,
+                anchor_bytes,
+                proof_bytes,
+                binding_sig,
+                1,
+                Pooling::Never,
+                output_script,
+            );
+
+            let processing_result = process_transition(&platform, transition, platform_version);
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+            );
+        }
+
         #[test]
         fn test_wrong_encrypted_note_size_returns_error() {
             let platform_version = PlatformVersion::latest();

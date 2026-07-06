@@ -645,6 +645,9 @@ struct CreateIdentityView: View {
         }
     }
 
+    /// Footer copy for the funding-source section. Built out-of-line —
+    /// inlining the concatenation chain (with a conditional in the
+    /// middle) blows the SwiftUI type-checker's time budget.
     private static func fundingSourceFooterText(showShielded: Bool) -> String {
         var text = "Any account on the selected wallet with a balance can fund "
             + "the identity — Core or Platform Payment. Empty accounts are hidden. "

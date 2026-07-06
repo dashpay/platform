@@ -38,9 +38,11 @@ impl IdentityManagerStartState {
     ///
     /// Entries route by owner `identity_id` across BOTH buckets; one whose
     /// owner is absent (e.g. a tombstoned identity's orphaned rows) is
-    /// logged and skipped, never fatal. `removed_*` are ignored
-    /// (insert-only feed); no `Network` needed (key insert is
-    /// network-independent).
+    /// logged and skipped, never fatal. Only key `upserts` and the
+    /// `sent` / `incoming` / `established` maps are routed; `removed_*`
+    /// (insert-only feed) and `ignored` / `unignored` (restored in the
+    /// identity reader from the `ignored_senders` table) are skipped. No
+    /// `Network` needed — key insert is network-independent.
     pub fn merge_contacts_and_keys(
         &mut self,
         contacts: ContactChangeSet,
@@ -71,11 +73,7 @@ impl IdentityManagerStartState {
         }
         for (key, entry) in contacts.sent_requests {
             match by_id.get_mut(&key.owner_id) {
-                Some(managed) => {
-                    managed
-                        .sent_contact_requests
-                        .insert(entry.request.recipient_id, entry.request);
-                }
+                Some(managed) => managed.apply_sent_contact_request(entry.request),
                 None => tracing::warn!(
                     owner = %key.owner_id,
                     "skipping sent contact request during rehydration merge: owner identity not loaded"
@@ -84,11 +82,7 @@ impl IdentityManagerStartState {
         }
         for (key, entry) in contacts.incoming_requests {
             match by_id.get_mut(&key.owner_id) {
-                Some(managed) => {
-                    managed
-                        .incoming_contact_requests
-                        .insert(entry.request.sender_id, entry.request);
-                }
+                Some(managed) => managed.apply_incoming_contact_request(entry.request),
                 None => tracing::warn!(
                     owner = %key.owner_id,
                     "skipping incoming contact request during rehydration merge: owner identity not loaded"
@@ -273,6 +267,9 @@ mod tests {
                 note: None,
                 is_hidden: false,
                 accepted_accounts: vec![1],
+                payment_channel_broken: false,
+                contact_account_label: None,
+                external_account_reference: None,
             },
         );
 
@@ -280,12 +277,17 @@ mod tests {
 
         let managed = &state.wallet_identities[&w][&0];
         assert!(managed
-            .sent_contact_requests
+            .dashpay()
+            .sent_contact_requests()
             .contains_key(&Identifier::from([0x22; 32])));
         assert!(managed
-            .incoming_contact_requests
+            .dashpay()
+            .incoming_contact_requests()
             .contains_key(&Identifier::from([0x33; 32])));
-        assert!(managed.established_contacts.contains_key(&contact_c));
+        assert!(managed
+            .dashpay()
+            .established_contacts()
+            .contains_key(&contact_c));
     }
 
     /// Two identities with the same numeric `KeyID` but different owners
@@ -340,7 +342,7 @@ mod tests {
 
         let managed = &state.wallet_identities[&w][&0];
         assert!(managed.identity.public_keys().is_empty());
-        assert!(managed.sent_contact_requests.is_empty());
+        assert!(managed.dashpay().sent_contact_requests().is_empty());
     }
 
     /// Empty changesets are a no-op.
@@ -357,8 +359,8 @@ mod tests {
 
         let managed = &state.wallet_identities[&w][&0];
         assert!(managed.identity.public_keys().is_empty());
-        assert!(managed.sent_contact_requests.is_empty());
-        assert!(managed.incoming_contact_requests.is_empty());
-        assert!(managed.established_contacts.is_empty());
+        assert!(managed.dashpay().sent_contact_requests().is_empty());
+        assert!(managed.dashpay().incoming_contact_requests().is_empty());
+        assert!(managed.dashpay().established_contacts().is_empty());
     }
 }

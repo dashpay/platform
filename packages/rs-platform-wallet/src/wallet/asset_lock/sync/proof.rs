@@ -148,12 +148,21 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// Called from the recovery layer when `put_to_platform` fails with
     /// `InvalidInstantAssetLockProofSignature`. If the TX is already
     /// chain-locked, constructs the proof immediately. Otherwise, **waits**
-    /// for a ChainLock via SPV events (up to 10 minutes) so the caller
-    /// doesn't see a failure — just a longer wait.
+    /// for a ChainLock via SPV events so the caller doesn't see a failure —
+    /// just a longer wait.
+    ///
+    /// `timeout` is `Option<Duration>`: `None` waits **indefinitely**. A
+    /// ChainLock is deterministic finality that will eventually cover any
+    /// broadcast asset-lock tx, so the user-facing funding flows
+    /// (identity registration / top-up, platform-address top-up, shielded
+    /// funding) pass `None` — a broadcast lock is pending, never failed.
+    /// The only bounded caller is the shielded seed pool, where a
+    /// `FinalityTimeout` is a deliberate pacing signal for the
+    /// unconfirmed-ancestor stall (see `CL_FALLBACK_TIMEOUT`).
     pub(crate) async fn upgrade_to_chain_lock_proof(
         &self,
         out_point: &OutPoint,
-        timeout: Duration,
+        timeout: Option<Duration>,
     ) -> Result<dpp::prelude::AssetLockProof, PlatformWalletError> {
         use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
         use key_wallet::transaction_checking::TransactionContext;
@@ -253,16 +262,18 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// Wait for a ChainLock that covers the given transaction.
     ///
     /// Subscribes to SPV events and waits until the transaction's block
-    /// is chain-locked.
+    /// is chain-locked. `timeout` is `Option<Duration>`: `None` waits
+    /// **indefinitely** (a ChainLock is guaranteed finality that will
+    /// eventually arrive, so a broadcast lock is pending, not failed).
     async fn wait_for_chain_lock(
         &self,
         account_index: u32,
         out_point: &OutPoint,
-        timeout: Duration,
+        timeout: Option<Duration>,
     ) -> Result<u32, PlatformWalletError> {
         use key_wallet::transaction_checking::TransactionContext;
 
-        let deadline = tokio::time::Instant::now() + timeout;
+        let deadline = timeout.map(|t| tokio::time::Instant::now() + t);
 
         loop {
             // Arm the `Notify` future BEFORE the state check, closing
@@ -304,18 +315,26 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 }
             }
 
-            let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
-            if remaining.is_zero() {
-                return Err(PlatformWalletError::FinalityTimeout(*out_point));
-            }
-
-            // Wait for a lock event notification or timeout. The
-            // `notified` future is the one we armed above, so any
-            // CL/IS event since then is already buffered into it.
-            tokio::select! {
-                _ = &mut notified => continue,
-                _ = tokio::time::sleep(remaining) => {
-                    return Err(PlatformWalletError::FinalityTimeout(*out_point));
+            // Wait for a lock event notification (or timeout, when one is
+            // configured). The `notified` future is the one we armed above,
+            // so any CL/IS event since then is already buffered into it.
+            match deadline {
+                Some(dl) => {
+                    let remaining = dl.saturating_duration_since(tokio::time::Instant::now());
+                    if remaining.is_zero() {
+                        return Err(PlatformWalletError::FinalityTimeout(*out_point));
+                    }
+                    tokio::select! {
+                        _ = &mut notified => continue,
+                        _ = tokio::time::sleep(remaining) => {
+                            return Err(PlatformWalletError::FinalityTimeout(*out_point));
+                        }
+                    }
+                }
+                // No deadline: wait indefinitely for the next lock event.
+                None => {
+                    notified.as_mut().await;
+                    continue;
                 }
             }
         }
@@ -330,17 +349,23 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     ///
     /// Returns a properly-constructed `AssetLockProof` on success, or
     /// `FinalityTimeout` if the timeout elapses first.
+    ///
+    /// `timeout` is `Option<Duration>`: `None` waits **indefinitely** for
+    /// either an InstantSend or a ChainLock proof. Bounded callers use the
+    /// deadline as an InstantSend-preference window — on expiry they get a
+    /// `FinalityTimeout` and fall back to an (unbounded) ChainLock wait via
+    /// [`Self::upgrade_to_chain_lock_proof`].
     pub(in crate::wallet::asset_lock) async fn wait_for_proof(
         &self,
         out_point: &OutPoint,
-        timeout: Duration,
+        timeout: Option<Duration>,
     ) -> Result<dpp::prelude::AssetLockProof, PlatformWalletError> {
         use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
         use dpp::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
         use key_wallet::transaction_checking::TransactionContext;
 
         tracing::info!(outpoint = %out_point, ?timeout, "wait_for_proof: entered");
-        let deadline = tokio::time::Instant::now() + timeout;
+        let deadline = timeout.map(|t| tokio::time::Instant::now() + t);
         let mut iter: u32 = 0;
 
         // Read account_index and transaction from the tracked lock.
@@ -520,18 +545,26 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 }
             }
 
-            let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
-            if remaining.is_zero() {
-                return Err(PlatformWalletError::FinalityTimeout(*out_point));
-            }
-
-            // Wait for a lock event notification or timeout. The
-            // `notified` future is the one we armed above, so any
-            // IS/CL event since then is already buffered into it.
-            tokio::select! {
-                _ = &mut notified => continue,
-                _ = tokio::time::sleep(remaining) => {
-                    return Err(PlatformWalletError::FinalityTimeout(*out_point));
+            // Wait for a lock event notification (or timeout, when one is
+            // configured). The `notified` future is the one we armed above,
+            // so any IS/CL event since then is already buffered into it.
+            match deadline {
+                Some(dl) => {
+                    let remaining = dl.saturating_duration_since(tokio::time::Instant::now());
+                    if remaining.is_zero() {
+                        return Err(PlatformWalletError::FinalityTimeout(*out_point));
+                    }
+                    tokio::select! {
+                        _ = &mut notified => continue,
+                        _ = tokio::time::sleep(remaining) => {
+                            return Err(PlatformWalletError::FinalityTimeout(*out_point));
+                        }
+                    }
+                }
+                // No deadline: wait indefinitely for the next lock event.
+                None => {
+                    notified.as_mut().await;
+                    continue;
                 }
             }
         }

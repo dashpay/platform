@@ -440,7 +440,7 @@ pub unsafe extern "C" fn platform_wallet_register_identity_with_signer(
     ));
 
     let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
-        let identity_wallet = wallet.identity().clone();
+        let wallet = wallet.clone();
 
         let placeholder = Identity::V0(IdentityV0 {
             id: Identifier::default(),
@@ -455,7 +455,10 @@ pub unsafe extern "C" fn platform_wallet_register_identity_with_signer(
             let address_signer: &VTableSigner =
                 unsafe { &*(signer_address_addr as *const VTableSigner) };
 
-            identity_wallet
+            // The composite registers the identity AND reconciles the
+            // spent funding addresses' platform-address balances from
+            // the proof.
+            wallet
                 .register_from_addresses(
                     &placeholder,
                     input_map,

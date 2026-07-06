@@ -949,22 +949,62 @@ impl PlatformWalletPersistence for SqlitePersister {
                 schema::core_state::load_used_addresses(&conn, &wallet_id, network)
                     .map_err(PersistenceError::from)?;
 
+            // Reconstruct a populated `ManagedWalletInfo` from typed rows:
+            // rebuild the wallet watch-only from the manifest, then layer the
+            // persisted core-state projection (UTXOs, sync watermarks,
+            // chainlock, used-address pool depth) onto it. The manager consumes
+            // this directly — the old skeleton + core_state replay fallback is
+            // gone.
+            let watch_only = if account_manifest.is_empty() {
+                // A metadata-only wallet (created, no accounts registered yet)
+                // has no manifest to rebuild from; represent it as an empty
+                // watch-only wallet so it still appears with a zero balance
+                // rather than being dropped.
+                key_wallet::wallet::Wallet::new_watch_only(
+                    network,
+                    wallet_id,
+                    key_wallet::account::account_collection::AccountCollection::new(),
+                )
+            } else {
+                platform_wallet::rehydrate::build_watch_only_wallet(
+                    network,
+                    wallet_id,
+                    &account_manifest,
+                )
+                .map_err(|e| {
+                    PersistenceError::backend(format!(
+                        "watch-only wallet rebuild failed for {}: {e}",
+                        hex::encode(wallet_id)
+                    ))
+                })?
+            };
+            let mut core_wallet_info =
+                key_wallet::wallet::managed_wallet_info::ManagedWalletInfo::from_wallet(
+                    &watch_only,
+                    birth_height,
+                );
+            platform_wallet::rehydrate::apply_persisted_core_state(
+                &mut core_wallet_info,
+                &account_manifest,
+                &core_state,
+                &used_core_addresses,
+            )
+            .map_err(|e| {
+                PersistenceError::backend(format!(
+                    "core-state rehydration failed for {}: {e}",
+                    hex::encode(wallet_id)
+                ))
+            })?;
+
             state.wallets.insert(
                 wallet_id,
                 platform_wallet::changeset::ClientWalletStartState {
                     network,
                     birth_height,
                     account_manifest,
-                    // SQLite persister reconstructs core state from typed rows
-                    // (see `core_state` below), not a full snapshot.
-                    core_wallet_info: None,
-                    core_state,
+                    core_wallet_info: Box::new(core_wallet_info),
                     identity_manager,
                     unused_asset_locks,
-                    // Pre-keyed into `identity_manager` above; nothing to layer.
-                    contacts: Default::default(),
-                    identity_keys: Default::default(),
-                    used_core_addresses,
                 },
             );
         }
@@ -1097,6 +1137,15 @@ fn apply_changeset_to_tx(
     // is hardcoded to the default account (index 0) in `core_state`, so the
     // pool snapshot is no longer a storage input. The changeset field is kept
     // for API stability and still feeds non-storage consumers.
+    if !cs.pending_contact_crypto_added.is_empty() || !cs.pending_contact_crypto_cleared.is_empty()
+    {
+        schema::pending_contact_crypto::apply_pending_contact_crypto(
+            tx,
+            wallet_id,
+            &cs.pending_contact_crypto_added,
+            &cs.pending_contact_crypto_cleared,
+        )?;
+    }
     if let Some(core) = cs.core.as_ref() {
         schema::core_state::apply(tx, wallet_id, core)?;
     }
