@@ -6,9 +6,9 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import org.dashfoundation.dashsdk.config.SdkConfig
 import org.dashfoundation.dashsdk.errors.mapNativeErrors
+import org.dashfoundation.dashsdk.ffi.NativeCleaner
 import org.dashfoundation.dashsdk.ffi.NativeLoader
 import org.dashfoundation.dashsdk.ffi.SdkNative
-import java.lang.ref.Cleaner
 import java.net.HttpURLConnection
 import java.net.URI
 import java.util.concurrent.atomic.AtomicLong
@@ -22,7 +22,7 @@ import java.util.concurrent.atomic.AtomicLong
  * new one (see `WalletManagerStore`).
  *
  * Instances are created with [create]; the handle is released by [close]
- * (owners should use `use {}` or tie it to a lifecycle), with a [Cleaner]
+ * (owners should use `use {}` or tie it to a lifecycle), with a [NativeCleaner]
  * backstop for leaked instances.
  */
 class Sdk private constructor(
@@ -31,7 +31,7 @@ class Sdk private constructor(
 ) : AutoCloseable {
 
     private val handleRef = AtomicLong(handle)
-    private val cleanable = CLEANER.register(this, HandleCleanup(handleRef))
+    private val cleanable = NativeCleaner.register(this, HandleCleanup(handleRef))
 
     /** Identity queries — mirrors Swift's `sdk.identities`. */
     val identities: org.dashfoundation.dashsdk.queries.Identities by lazy {
@@ -98,7 +98,7 @@ class Sdk private constructor(
         cleanable.clean()
     }
 
-    /** Runs on [Cleaner] or [close]; destroys the handle exactly once. */
+    /** Runs on [NativeCleaner] or [close]; destroys the handle exactly once. */
     private class HandleCleanup(private val handleRef: AtomicLong) : Runnable {
         override fun run() {
             val handle = handleRef.getAndSet(0)
@@ -136,8 +136,6 @@ class Sdk private constructor(
     data class ActiveMasternode(val spvPeer: String, val dapiUrl: String)
 
     companion object {
-        private val CLEANER: Cleaner = Cleaner.create()
-
         private val json = Json { ignoreUnknownKeys = true }
 
         /** One-time native library load + `dash_sdk_init`. Idempotent. */

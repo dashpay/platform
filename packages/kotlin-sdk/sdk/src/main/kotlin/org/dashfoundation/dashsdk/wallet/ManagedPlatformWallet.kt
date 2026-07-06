@@ -3,9 +3,9 @@ package org.dashfoundation.dashsdk.wallet
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.dashfoundation.dashsdk.errors.mapNativeErrors
+import org.dashfoundation.dashsdk.ffi.NativeCleaner
 import org.dashfoundation.dashsdk.ffi.TokensNative
 import org.dashfoundation.dashsdk.ffi.WalletManagerNative
-import java.lang.ref.Cleaner
 import java.util.concurrent.atomic.AtomicLong
 
 /**
@@ -14,7 +14,7 @@ import java.util.concurrent.atomic.AtomicLong
  *
  * Like the Swift type, this **owns the wallet handle** and destroys it
  * (`platform_wallet_destroy`, which drops the manager's `Arc` clone) via
- * [close] or the [Cleaner] backstop. The Rust `PlatformWalletManager`
+ * [close] or the [NativeCleaner] backstop. The Rust `PlatformWalletManager`
  * keeps its own registration; destroying this wrapper's handle only drops
  * one `Arc` clone, so it is safe even while the manager still holds the
  * wallet.
@@ -31,7 +31,7 @@ class ManagedPlatformWallet internal constructor(
 ) : AutoCloseable {
 
     private val handleRef = AtomicLong(handle)
-    private val cleanable = CLEANER.register(this, HandleCleanup(handleRef))
+    private val cleanable = NativeCleaner.register(this, HandleCleanup(handleRef))
 
     /** Raw native `PlatformWallet` handle; throws if the wrapper was closed. */
     val handle: Long
@@ -654,7 +654,7 @@ class ManagedPlatformWallet internal constructor(
         return out
     }
 
-    /** Runs on [Cleaner] or [close]; destroys the handle exactly once. */
+    /** Runs on [NativeCleaner] or [close]; destroys the handle exactly once. */
     private class HandleCleanup(private val handleRef: AtomicLong) : Runnable {
         override fun run() {
             val handle = handleRef.getAndSet(0)
@@ -665,6 +665,5 @@ class ManagedPlatformWallet internal constructor(
     }
 
     private companion object {
-        val CLEANER: Cleaner = Cleaner.create()
     }
 }
