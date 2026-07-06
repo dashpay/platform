@@ -688,6 +688,27 @@ impl ShieldedStore for FileBackedShieldedStore {
                  DELETE FROM commitment_tree_cap;",
             )
             .map_err(|e| FileShieldedStoreError(format!("reset commitment tree tables: {e}")))?;
+
+            // Durably flush the DELETEs into the main database file with a
+            // TRUNCATE checkpoint before this connection is dropped.
+            //
+            // Without this, Clear is a no-op across a hard kill. The store
+            // runs `synchronous=NORMAL` in WAL mode (see `open_tuned_connection`),
+            // so a committed transaction lands in the `-wal` file but is NOT
+            // fsync'd until a checkpoint. Two other connections (`tree` and
+            // `pending_conn`) stay open on the same file, so SQLite's
+            // last-connection-close auto-checkpoint never fires when this
+            // transient connection drops — the emptied tables live only in the
+            // WAL. On Android the "Clear" button is routinely followed by a
+            // force-stop (non-graceful SIGKILL, no checkpoint), so the WAL
+            // frames are discarded and the next launch reopens the OLD full
+            // tree (the 771/771 "Clear did nothing" symptom). A TRUNCATE
+            // checkpoint rewrites the main db and resets the WAL, making the
+            // emptied state durable regardless of how the process later dies.
+            // The prior graceful `drop(store)` in the unit test masked this —
+            // a clean close checkpoints, a SIGKILL does not.
+            conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")
+                .map_err(|e| FileShieldedStoreError(format!("checkpoint after tree reset: {e}")))?;
         }
 
         let conn = Self::open_tuned_connection(&self.path)?;
@@ -1044,6 +1065,74 @@ mod tests {
             size, 1,
             "post-reset tree state (1 leaf) must survive persist + reload, \
              confirming reset cleared the SQLite tree tables"
+        );
+    }
+
+    /// Durability regression guard for the "Clear did nothing after a
+    /// force-stop" bug: `reset_commitment_tree` must land the emptied
+    /// tables in the MAIN database file, not merely in the `-wal` file of
+    /// the store's own connections.
+    ///
+    /// The store runs `synchronous=NORMAL` in WAL mode and keeps multiple
+    /// connections open, so SQLite's last-connection-close auto-checkpoint
+    /// never fires on the transient reset connection — without an explicit
+    /// checkpoint the DELETEs live only in the WAL. On Android the Clear
+    /// button is routinely followed by a force-stop (SIGKILL, no graceful
+    /// close, no checkpoint), which discards those WAL frames and reopens
+    /// the OLD full tree (the 771/771 symptom).
+    ///
+    /// This test proves the fix WITHOUT dropping the store (a graceful drop
+    /// would checkpoint and mask the bug — exactly what the prior test's
+    /// `drop(store)` did): it opens an INDEPENDENT read-only connection that
+    /// deliberately does NOT attach the `-wal` (`?immutable=1`), so it can
+    /// only see rows already written to the main db file. If the reset left
+    /// the shard rows in the WAL, this connection would still see the old
+    /// leaves; seeing zero proves the checkpoint flushed them to the main db,
+    /// where they survive any later process death.
+    #[test]
+    fn reset_commitment_tree_flushes_to_main_db_file_not_just_wal() {
+        let path = temp_tree_path("reset_durable");
+        let mut store = FileBackedShieldedStore::open_path(&path, 100).unwrap();
+
+        // Build a non-trivial tree and checkpoint it (durably, via the
+        // normal append path).
+        const N: u64 = 6;
+        for i in 0..N {
+            let mut cmx = [0u8; 32];
+            cmx[0] = (i as u8) + 1;
+            store.append_commitment(&cmx, true).unwrap();
+        }
+        store.checkpoint_tree(N as u32).unwrap();
+        assert_eq!(store.tree_size().unwrap(), N);
+
+        // Reset. The store's connections stay open (mirroring a live
+        // process that hasn't been force-stopped yet).
+        store.reset_commitment_tree().unwrap();
+        assert_eq!(store.tree_size().unwrap(), 0);
+
+        // Independent immutable connection: reads ONLY the main .sqlite
+        // file, ignoring any `-wal`. `immutable=1` tells SQLite the file
+        // won't change and there is no live WAL to consult, so a shard row
+        // visible here is one the checkpoint flushed into the main db.
+        let uri = format!("file:{}?immutable=1", path.display());
+        let main_only = rusqlite::Connection::open_with_flags(
+            &uri,
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_URI,
+        )
+        .expect("open main-db-only connection");
+        let shard_rows: i64 = main_only
+            .query_row("SELECT COUNT(*) FROM commitment_tree_shards", [], |r| {
+                r.get(0)
+            })
+            .expect("count shard rows in main db");
+        drop(main_only);
+        let _ = std::fs::remove_file(&path);
+
+        assert_eq!(
+            shard_rows, 0,
+            "reset must checkpoint the emptied tables into the MAIN db file; \
+             a non-zero count means the DELETEs sit only in the WAL and a \
+             force-stop before checkpoint would resurrect the old tree"
         );
     }
 

@@ -10,6 +10,7 @@ import java.util.concurrent.ConcurrentHashMap
 import org.dashfoundation.dashsdk.Network
 import org.dashfoundation.dashsdk.ffi.NativeSignerBridge
 import org.dashfoundation.dashsdk.ffi.SignerNative
+import org.dashfoundation.dashsdk.persistence.dao.PlatformAddressDao
 
 /**
  * Keystore-backed signer — port of `KeychainSigner.swift` (~774 LOC).
@@ -25,15 +26,22 @@ import org.dashfoundation.dashsdk.ffi.SignerNative
  * Activity-bound BiometricPrompt supplied by the app) is invoked and the
  * decrypt retried — the Rust side tolerates the latency (5-minute bound).
  *
- * [lookupPubkeyHex] maps raw pubkey bytes + key type to the storage key;
- * key_type 0xFF (platform-address-hash) rows are registered by the wallet
- * manager as addresses are derived, mirroring the PersistentPlatformAddress
- * lookup in Swift.
+ * Identity keys (`keyType < 5`) are looked up directly from [storage] by
+ * public-key hex. Platform-payment addresses (`keyType == 0xFF`,
+ * `Signer<PlatformAddress>`) are handled separately: their private keys are
+ * NEVER persisted (the production wallet is external-signable and holds only
+ * account XPUBs), so they are derived on demand from `(mnemonic,
+ * derivationPath)` — the `derivationPath` + `walletId` are resolved from the
+ * `PlatformAddressEntity` row via [platformAddressDao], the mnemonic from
+ * [storage], and the derive-and-sign happens entirely inside Rust
+ * ([SignerNative.signWithMnemonicAndPath]). Direct port of
+ * `KeychainSigner.signPlatformAddressOnDemand` on iOS.
  */
 class KeystoreSigner(
     private val storage: WalletStorage,
     private val network: Network,
     private val biometricGate: BiometricGate?,
+    private val platformAddressDao: PlatformAddressDao,
 ) : NativeSignerBridge(), AutoCloseable {
 
     private val handleRef =
@@ -63,38 +71,119 @@ class KeystoreSigner(
     ) {
         // Return immediately (vtable contract); work on IO.
         scope.launch {
-            var key: ByteArray? = null
             try {
-                val storageKey = storageKeyFor(pubkeyBytes)
-                key = retrieveKeyWithAuth(storageKey)
-                if (key == null) {
-                    SignerNative.completeSign(
-                        completionToken,
-                        null,
-                        "no private key stored for ${storageKey.take(16)}…",
-                    )
+                // Platform-payment addresses (0xFF) have no stored private
+                // key — derive on demand from (mnemonic, derivationPath).
+                if (keyType == PLATFORM_ADDRESS_HASH_KEY_TYPE) {
+                    signPlatformAddressOnDemand(pubkeyBytes, data, completionToken)
                     return@launch
                 }
-                val signature = SignerNative.signWithPrivateKey(key, network.ffiValue, data)
-                if (signature != null) {
-                    SignerNative.completeSign(completionToken, signature, null)
-                } else {
-                    SignerNative.completeSign(completionToken, null, "signing returned no data")
-                }
+                signWithStoredKey(pubkeyBytes, data, completionToken)
             } catch (e: Exception) {
                 SignerNative.completeSign(
                     completionToken,
                     null,
                     e.message ?: "signing failed",
                 )
-            } finally {
-                key?.fill(0)
             }
         }
     }
 
+    /** Identity-key path: decrypt the stored private key and sign. */
+    private suspend fun signWithStoredKey(
+        pubkeyBytes: ByteArray,
+        data: ByteArray,
+        completionToken: Long,
+    ) {
+        var key: ByteArray? = null
+        try {
+            val storageKey = storageKeyFor(pubkeyBytes)
+            key = retrieveKeyWithAuth(storageKey)
+            if (key == null) {
+                SignerNative.completeSign(
+                    completionToken,
+                    null,
+                    "no private key stored for ${storageKey.take(16)}…",
+                )
+                return
+            }
+            val signature = SignerNative.signWithPrivateKey(key, network.ffiValue, data)
+            if (signature != null) {
+                SignerNative.completeSign(completionToken, signature, null)
+            } else {
+                SignerNative.completeSign(completionToken, null, "signing returned no data")
+            }
+        } finally {
+            key?.fill(0)
+        }
+    }
+
+    /**
+     * Platform-address (`keyType == 0xFF`) path — port of
+     * `KeychainSigner.signPlatformAddressOnDemand`. Resolves the
+     * `(walletId, derivationPath)` from the `PlatformAddressEntity` row keyed
+     * by the 20-byte [addressHash], retrieves the wallet mnemonic, and hands
+     * both to the Rust derive-and-sign FFI. The derived key never crosses JNI.
+     */
+    private suspend fun signPlatformAddressOnDemand(
+        addressHash: ByteArray,
+        data: ByteArray,
+        completionToken: Long,
+    ) {
+        val hashHex = addressHash.joinToString("") { "%02x".format(it) }
+        val row = platformAddressDao.getByAddressHash(addressHash)
+        if (row == null) {
+            SignerNative.completeSign(
+                completionToken,
+                null,
+                "no platform address row for $hashHex",
+            )
+            return
+        }
+        if (row.derivationPath.isEmpty()) {
+            SignerNative.completeSign(
+                completionToken,
+                null,
+                "platform address $hashHex has no derivation path",
+            )
+            return
+        }
+        val mnemonic = storage.retrieveMnemonic(row.walletId)
+        if (mnemonic == null) {
+            SignerNative.completeSign(
+                completionToken,
+                null,
+                "no mnemonic stored for wallet of platform address $hashHex",
+            )
+            return
+        }
+        val signature = SignerNative.signWithMnemonicAndPath(
+            mnemonic,
+            row.derivationPath,
+            network.ffiValue,
+            data,
+        )
+        if (signature != null) {
+            SignerNative.completeSign(completionToken, signature, null)
+        } else {
+            SignerNative.completeSign(completionToken, null, "signing returned no data")
+        }
+    }
+
     override fun canSignWith(pubkeyBytes: ByteArray, keyType: Int): Boolean = try {
-        runBlocking { storage.hasPrivateKey(storageKeyFor(pubkeyBytes)) }
+        if (keyType == PLATFORM_ADDRESS_HASH_KEY_TYPE) {
+            // Prerequisites for the derive-and-sign path: a row with a
+            // non-empty derivation path plus a stored wallet mnemonic. Do
+            // NOT materialize the mnemonic here — existence only.
+            runBlocking {
+                val row = platformAddressDao.getByAddressHash(pubkeyBytes)
+                row != null &&
+                    row.derivationPath.isNotEmpty() &&
+                    storage.retrieveMnemonic(row.walletId) != null
+            }
+        } else {
+            runBlocking { storage.hasPrivateKey(storageKeyFor(pubkeyBytes)) }
+        }
     } catch (_: Exception) {
         false
     }
@@ -122,5 +211,16 @@ class KeystoreSigner(
     override fun close() {
         val h = handleRef.getAndSet(0)
         if (h != 0L) SignerNative.destroySigner(h)
+    }
+
+    private companion object {
+        /**
+         * FFI dispatch tag the Rust `Signer<PlatformAddress>` vtable ships
+         * instead of a `KeyType` discriminant when the "pubkey bytes" are a
+         * 20-byte platform-address hash. Mirrors
+         * `SIGNER_KEY_TYPE_PLATFORM_ADDRESS_HASH` (0xFF) in
+         * `rs-sdk-ffi/src/signer.rs`; arrives here as the unsigned value 255.
+         */
+        const val PLATFORM_ADDRESS_HASH_KEY_TYPE: Int = 0xFF
     }
 }

@@ -83,6 +83,13 @@ class ShieldedService(private val database: DashDatabase) {
 
     private var manager: PlatformWalletManager? = null
     private var boundWalletId: ByteArray? = null
+    /**
+     * Commitment-tree SQLite path last passed to [bind]. Retained so
+     * [clearLocalState] can re-bind after the Rust-side reset drops every
+     * coordinator registration — the cold rebuild can't start until the
+     * wallet re-registers its viewing keys on the (now empty) coordinator.
+     */
+    private var boundDbPath: String? = null
     private var eventJob: Job? = null
     private var pollJob: Job? = null
 
@@ -149,6 +156,7 @@ class ShieldedService(private val database: DashDatabase) {
         }
         this.manager = manager
         this.boundWalletId = walletId.copyOf()
+        this.boundDbPath = dbPath
         _boundAccounts.value = sortedAccounts
         _state.value = ShieldedSyncState()
         _shieldedBalance.value = database.shieldedDao()
@@ -228,20 +236,75 @@ class ShieldedService(private val database: DashDatabase) {
         pollJob = null
         manager = null
         boundWalletId = null
+        boundDbPath = null
         _boundAccounts.value = emptyList()
         _shieldedBalance.value = emptyFlow()
         _state.value = ShieldedSyncState()
     }
 
     /**
-     * Wipe the local shielded rows for the bound wallet — port of Swift
-     * `clearLocalState(modelContext:)`'s persistence pass. The Rust-side
-     * reset (`platform_wallet_manager_shielded_clear`) is the manager's
-     * concern and must run before this; here we only clear the Room rows in
-     * one transaction (child order first). No-op when unbound.
+     * Reset shielded state for the bound wallet — port of Swift
+     * `ShieldedService.clearLocalState(modelContext:)`. Two ordered halves:
+     *
+     * 1. **Rust-side reset FIRST** via
+     *    [PlatformWalletManager.clearShieldedStorage]
+     *    (`platform_wallet_manager_shielded_clear`): quiesce the background
+     *    sync loop, drop every wallet registration from the network-scoped
+     *    coordinator, empty the shared commitment tree, and reset the
+     *    caught-up cooldown. This MUST run before the Room wipe — the
+     *    coordinator keeps every bound wallet registered, so without it the
+     *    next sync pass's persister callback immediately re-creates the very
+     *    rows we're about to delete. It also resets the on-disk tree size, so
+     *    the post-clear resync cold-rebuilds from index 0 instead of
+     *    gate-skipping every re-downloaded position against a stale tree
+     *    (the frozen-tree / zero-notes desync this Clear exists to fix).
+     * 2. **Room wipe** — delete the wallet's shielded rows (INCLUDING
+     *    `shielded_sync_states`, the per-subwallet watermark; leaving it
+     *    would let [bind]'s `restore_for_wallet` re-seed a caught-up
+     *    watermark and re-freeze the tree) in one transaction, and zero the
+     *    published counters.
+     * 3. **Re-bind + restart sync** — [clearShieldedStorage] dropped every
+     *    coordinator registration and quiesced the sync loop, so nothing
+     *    would resync until the next app relaunch otherwise. Re-run [bind]
+     *    (re-registers the viewing keys on the now-empty coordinator, its
+     *    `restore_for_wallet` finding no watermark → starts at index 0) and
+     *    restart the background loop, so the button alone triggers an
+     *    in-session cold rebuild 0→N. Mirrors Swift's
+     *    "keep bind credentials, re-bind on next sync" intent, done eagerly.
+     *
+     * Fail-closed: if the Rust reset throws, the exception propagates and the
+     * Room rows are left intact — the FFI's contract is that the host must
+     * not drop its persistence while the shared tree may still be populated.
+     * No-op when unbound.
      */
     suspend fun clearLocalState(db: DashDatabase = database) {
         val walletId = boundWalletId ?: return
+        // Snapshot bind credentials BEFORE the wipe: bind() → unbind() nulls
+        // these, and we need them to re-bind at the end.
+        val mgr = manager
+        val dbPath = boundDbPath
+        val accounts = _boundAccounts.value.ifEmpty { listOf(0) }
+
+        // A bound service must have a manager (both are set together in
+        // bind, cleared together in unbind). If it doesn't, the Rust-side
+        // reset can't run — fail LOUDLY rather than silently wiping only
+        // Room and leaving the on-disk tree at its full size (which would
+        // re-freeze the tree on the next cold resync).
+        if (mgr == null) {
+            error("Shielded clear: bound wallet has no manager — cannot reset the Rust store")
+        }
+
+        // Rust-side reset FIRST (empties the on-disk commitment tree +
+        // watermarks, durably). This THROWS on failure (native FFI error →
+        // DashSDKException), and we deliberately do NOT catch it: the Room
+        // wipe below must not run unless the tree was truly reset, else the
+        // host drops its rows while the shared tree stays populated and the
+        // next resync gate-skips every position. Fail-closed by propagation.
+        val walletIdHex = walletId.joinToString("") { "%02x".format(it) }
+        android.util.Log.i(TAG, "Shielded clear: resetting Rust store for $walletIdHex")
+        mgr.clearShieldedStorage()
+        android.util.Log.i(TAG, "Shielded clear: Rust store reset OK; wiping Room rows")
+
         db.withTransaction {
             db.shieldedDao().deleteActivityByWallet(walletId)
             db.shieldedDao().deleteOutgoingNotesByWallet(walletId)
@@ -249,6 +312,22 @@ class ShieldedService(private val database: DashDatabase) {
             db.shieldedDao().deleteSyncStatesByWallet(walletId)
         }
         _state.update { it.copy(shieldedBalance = 0, totalScanned = 0, totalNewNotes = 0) }
+
+        // Re-bind + restart so the cold rebuild runs now, not just after a
+        // relaunch. bind() re-runs configureShielded (idempotent same-path)
+        // + bindShielded (re-registers on the now-empty coordinator; its
+        // restore_for_wallet finds no watermark → starts at index 0).
+        if (dbPath != null) {
+            bind(mgr, walletId, dbPath, accounts)
+            val notRunning = runCatching { !mgr.isShieldedSyncRunning() }.getOrDefault(false)
+            if (isAvailable && notRunning) {
+                runCatching { mgr.startShieldedSync() }.onFailure {
+                    android.util.Log.w(TAG, "restart shielded sync after clear failed: ${it.message}", it)
+                }
+            }
+        } else {
+            android.util.Log.w(TAG, "Shielded clear: no dbPath retained; skipping re-bind (will resync on relaunch)")
+        }
     }
 
     /** Tear down the service scope permanently. */
