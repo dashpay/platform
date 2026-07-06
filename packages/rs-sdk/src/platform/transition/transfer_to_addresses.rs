@@ -23,7 +23,14 @@ pub trait TransferToAddresses: Waitable {
     /// Returns tuple of:
     /// * Proof-backed address infos for provided recipients
     /// * Updated identity balance
-    /// * Proof-backed address infos for provided recipients
+    /// * The proof's committed block height (`metadata.height`) — the
+    ///   height the returned absolutes are current **as of**. Callers
+    ///   that persist them must record it as the balance height pin
+    ///   ([`AddressFunds::as_of_height`]) so balance-change deltas at or
+    ///   below it are not re-applied on top.
+    ///
+    /// [`AddressFunds::as_of_height`]:
+    /// crate::platform::address_sync::AddressFunds::as_of_height
     #[allow(clippy::too_many_arguments)]
     async fn transfer_credits_to_addresses<S: Signer<IdentityPublicKey> + Send>(
         &self,

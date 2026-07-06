@@ -23,7 +23,13 @@ use drive_proof_verifier::types::AddressInfos;
 pub trait TopUpAddress<S: Signer<PlatformAddress>> {
     /// Tops up addresses using a raw private key for the asset-lock proof.
     ///
-    /// Returns proof-backed [`AddressInfos`] for the funded addresses.
+    /// Returns proof-backed [`AddressInfos`] for the funded addresses,
+    /// paired with the proof's committed block height — the balance
+    /// height pin ([`AddressFunds::as_of_height`]) callers that persist
+    /// the absolutes must record.
+    ///
+    /// [`AddressFunds::as_of_height`]:
+    /// crate::platform::address_sync::AddressFunds::as_of_height
     ///
     /// Prefer [`Self::top_up_with_signers`] when the asset-lock private
     /// key lives outside Rust (Swift / hardware wallet / HSM): the

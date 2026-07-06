@@ -188,7 +188,8 @@ pub struct AddressSyncResult<Tag, Address> {
     /// whether the height has been compacted away.
     ///
     /// Store this value and return it from
-    /// [`AddressProvider::last_known_recent_block_height`] on the next call.
+    /// [`AddressProvider::last_known_recent_block_height`](super::provider::AddressProvider::last_known_recent_block_height)
+    /// on the next call.
     /// A value of `0` means no recent block has been observed yet.
     pub last_known_recent_block: u64,
 
