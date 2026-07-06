@@ -78,7 +78,7 @@ pub const BOOTSTRAP_ASSET_LOCK_FEE_RESERVE: Credits = 150_000_000;
 /// [`CREDITS_PER_DUFF`] so rounding never undershoots the target; returns
 /// `0` when the balance already covers it. The single sizing rule both
 /// the planner's E5 move and the bank-identity bootstrap use.
-pub fn bootstrap_lock_duff(current_credits: Credits, target_credits: Credits) -> u64 {
+pub const fn bootstrap_lock_duff(current_credits: Credits, target_credits: Credits) -> u64 {
     target_credits
         .saturating_sub(current_credits)
         .div_ceil(CREDITS_PER_DUFF)

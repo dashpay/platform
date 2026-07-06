@@ -679,6 +679,10 @@ impl E2eContext {
             );
         }
 
+        // Baseline the confirmed Core balance before the bootstrap self-fund
+        // spends from it; the fund-planner snapshot below polls back to it.
+        let pre_bootstrap_core_duff = bank.core_balance_confirmed();
+
         // Resolve / register the bank identity BEFORE the orphan
         // sweep so [`cleanup::sweep_orphans`] has a valid sweep
         // destination on its very first invocation.
@@ -969,6 +973,34 @@ impl E2eContext {
         //      (Core error).
         // Idempotent: a re-run with balances already at min emits an
         // empty plan (only the self-gating drain).
+        //
+        // `snapshot_balances` sizes E5 from `core_balance_confirmed()`, a
+        // lock-free atomic fed asynchronously by the SPV WalletEvent pipeline;
+        // it lags the awaited bootstrap self-fund (resolved on a different
+        // notify path) and can read a stale ~0, sizing E5 to nothing. Poll it
+        // back to the pre-bootstrap baseline (minus the self-fund's max Core
+        // outlay) first, reusing the startup `wait_for_bank_funded` gate.
+        // SPV-disabled runs never self-fund and can't advance the atomic, skip.
+        if !config.disable_spv {
+            let converge_min = pre_bootstrap_core_duff
+                .saturating_sub(bank_identity::MAX_BOOTSTRAP_CORE_OUTLAY_DUFF);
+            let timeout = config
+                .bank_core_gate_timeout
+                .unwrap_or(config::DEFAULT_BANK_CORE_GATE_TIMEOUT);
+            if let Err(err) =
+                wait::wait_for_bank_funded(&bank, spv_runtime.as_deref(), converge_min, timeout)
+                    .await
+            {
+                tracing::warn!(
+                    target: "platform_wallet::e2e::harness",
+                    error = %err,
+                    converge_min,
+                    pre_bootstrap_core_duff,
+                    "confirmed Core balance did not reconverge before the fund-planner \
+                     snapshot; E5 may be sized from a stale Core balance"
+                );
+            }
+        }
         let balances = bank_plan::snapshot_balances(&bank, &bank_identity).await;
         let mins = bank_plan::mins_from_config(&config);
         match bank_plan::plan(balances, mins) {

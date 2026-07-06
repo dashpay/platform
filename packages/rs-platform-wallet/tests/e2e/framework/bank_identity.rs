@@ -79,6 +79,20 @@ pub const BANK_IDENTITY_BOOTSTRAP_FUNDING: Credits = 200_000_000;
 /// check; this only fails the obviously-too-poor bank fast and clearly.
 const BOOTSTRAP_CORE_FEE_RESERVE_DUFF: u64 = 10_000;
 
+/// Upper bound on the Core (duff) outlay one bootstrap self-fund can consume:
+/// the largest possible asset-lock — the full gross target locked from a
+/// zero-balance address — plus [`BOOTSTRAP_CORE_FEE_RESERVE_DUFF`]. The
+/// harness polls the confirmed Core atomic back to within this bound of its
+/// pre-bootstrap value before the fund-planner snapshot, because that atomic
+/// is fed asynchronously by the SPV pipeline and lags the awaited self-fund.
+pub const MAX_BOOTSTRAP_CORE_OUTLAY_DUFF: u64 = bootstrap_lock_duff(
+    0,
+    BANK_IDENTITY_BOOTSTRAP_FUNDING
+        .saturating_add(PLATFORM_BOOTSTRAP_FEE_RESERVE)
+        .saturating_add(BOOTSTRAP_ASSET_LOCK_FEE_RESERVE),
+)
+.saturating_add(BOOTSTRAP_CORE_FEE_RESERVE_DUFF);
+
 /// Funding-type tag (see `PlatformWalletManager::tracked_asset_locks_blocking`'s
 /// `lock_type`) for asset-locks that top up a Platform address — what the
 /// bootstrap self-fund mints. Used to spot a prior run's actionable lock
