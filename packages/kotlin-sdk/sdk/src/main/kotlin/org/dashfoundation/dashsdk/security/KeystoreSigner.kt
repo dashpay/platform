@@ -148,6 +148,13 @@ class KeystoreSigner(
             )
             return
         }
+        // KNOWN residual seed exposure: this materializes the phrase as an
+        // un-scrubbable JVM String and passes it across JNI — the exact
+        // anti-pattern the resolver path eliminated with
+        // resolveMnemonicInto. Migrating this call to an out-buffer
+        // signWithMnemonicAndPathInto variant is the tracked follow-up;
+        // until then every on-demand platform-address signature re-exposes
+        // the phrase on the JVM heap.
         val mnemonic = storage.retrieveMnemonic(row.walletId)
         if (mnemonic == null) {
             SignerNative.completeSign(

@@ -54,9 +54,11 @@ class MnemonicResolverAndPersister(
             }
         }
     } catch (_: Exception) {
-        // Contract: never throw across JNI; NOT_FOUND surfaces as a
-        // wallet-operation error on the Rust side.
-        RESOLVE_NOT_FOUND
+        // Contract: never throw across JNI. A decrypt/Keystore failure on
+        // a wallet that MAY have a stored seed is OTHER, not NOT_FOUND —
+        // reporting it as "no seed (watch-only)" would misdirect recovery
+        // (the iOS `.other` discipline).
+        RESOLVE_OTHER
     }
 
     override fun close() {

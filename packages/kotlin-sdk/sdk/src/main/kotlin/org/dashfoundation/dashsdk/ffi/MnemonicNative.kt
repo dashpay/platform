@@ -39,6 +39,15 @@ abstract class NativeMnemonicBridge {
 
         /** The phrase does not fit in the caller-supplied buffer. */
         const val RESOLVE_BUFFER_TOO_SMALL: Int = -2
+
+        /**
+         * A mnemonic IS stored but could not be produced — Keystore
+         * locked, decrypt failure, etc. Distinct from [RESOLVE_NOT_FOUND]
+         * so a transient failure is never reported as "this wallet has no
+         * seed" (the iOS `.other` channel; collapsing them points the
+         * user toward the wrong remediation).
+         */
+        const val RESOLVE_OTHER: Int = -3
     }
 
     /**

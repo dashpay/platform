@@ -79,7 +79,7 @@ class PlatformWalletManager(
     val network: Network,
     private val database: DashDatabase,
     private val walletStorage: WalletStorage,
-    biometricGate: BiometricGate? = null,
+    private val biometricGate: BiometricGate? = null,
 ) : AutoCloseable {
 
     init {
@@ -471,7 +471,6 @@ class PlatformWalletManager(
             .filter { it.size == 32 }
 
         val restored = ArrayList<ManagedPlatformWallet>(ids.size)
-        val additions = LinkedHashMap<String, ManagedPlatformWallet>()
         for (walletId in ids) {
             val handle = try {
                 mapNativeErrors { WalletManagerNative.getWallet(managerHandle, walletId) }
@@ -481,7 +480,12 @@ class PlatformWalletManager(
             }
             val managed = ManagedPlatformWallet(handle = handle, walletId = walletId)
             restored.add(managed)
-            additions[walletId.toHex()] = managed
+            // Publish into [wallets] BEFORE unlocking (Swift's per-wallet
+            // ordering): the unlock writes onto [dashPayUnlockStatus], and
+            // the 1 Hz poll prunes status keys absent from [wallets] — a
+            // publish-after-unlock ordering would let the prune silently
+            // drop a just-published seedMismatch.
+            _wallets.update { it + (walletId.toHex() to managed) }
 
             // Seedless unlock of the just-restored external-signable wallet:
             // verify the Keystore-resolved seed binds to this wallet and
@@ -495,14 +499,15 @@ class PlatformWalletManager(
             try {
                 unlockWalletFromKeystore(managed)
             } catch (_: Exception) {
-                // Logged inside (seedMismatch published on the status flow);
-                // one wallet's unlock failure can't fail the whole restore —
-                // the wallet simply stays external-signable (cannot sign).
+                // Outcome is published on [dashPayUnlockStatus] (seedMismatch
+                // for a binding rejection); one wallet's unlock failure can't
+                // fail the whole restore — the wallet simply stays
+                // external-signable.
             }
         }
-        if (additions.isNotEmpty()) {
-            _wallets.update { it + additions }
-        }
+        // Banner state (pendingAccountBuilds) must refresh whenever wallets
+        // exist, independent of whether the sweep service was started.
+        if (restored.isNotEmpty()) startDashPayStatusPolling()
         restored
     }
 
@@ -1196,10 +1201,13 @@ class PlatformWalletManager(
         startDashPayStatusPolling()
     }
 
-    /** Stop the recurring sweep (restartable) and its status poll. */
+    /**
+     * Stop the recurring sweep (restartable). The 1 Hz status poll keeps
+     * running — it also serves the unlock banner (`pendingAccountBuilds`),
+     * which must stay fresh while wallets exist regardless of the sweep;
+     * it dies with the manager scope in [close].
+     */
     suspend fun stopDashPaySync() = withContext(Dispatchers.IO) {
-        dashPayPollJob?.cancel()
-        dashPayPollJob = null
         mapNativeErrors { DashpayNative.dashPaySyncStop(managerHandle) }
         _dashPaySyncIsSyncing.value = false
     }
@@ -1253,8 +1261,10 @@ class PlatformWalletManager(
      * 1. **Verify** the Keystore-resolved seed binds to this wallet
      *    (derives the BIP44 account-0 xpub through the resolver and
      *    compares with the persisted one) — a mis-mapped Keystore slot
-     *    fails here and the wallet stays external-signable, so a wrong
-     *    seed can never sign.
+     *    fails here, no drain runs, and the wallet stays
+     *    external-signable, so a wrong seed can never produce a
+     *    network-valid signature for it (the enforcement is on-chain key
+     *    ownership — the signer itself is not gated on this verify).
      * 2. **Drain** deferred contact-crypto in the background (network +
      *    ECDH per entry). Guarded against stacking on an in-flight drain.
      *
@@ -1298,28 +1308,47 @@ class PlatformWalletManager(
 
         // Don't stack a second drain on an in-flight one: a banner Unlock
         // tap while a drain runs would duplicate the network re-fetch +
-        // ECDH work and race the channel-broken writes.
-        if (_dashPayUnlockStatus.value[key]?.draining == true) return true
-        updateUnlockStatus(key) { it.copy(draining = true) }
+        // ECDH work and race the channel-broken writes. The false→true
+        // transition happens inside ONE atomic flow update — a separate
+        // check-then-set would let two concurrent unlocks (auto-unlock
+        // racing a banner tap) both pass the check and stack drains.
+        var wonDrainSlot = false
+        _dashPayUnlockStatus.update { map ->
+            val prev = map[key] ?: DashPayUnlockStatus()
+            if (prev.draining) {
+                wonDrainSlot = false
+                map
+            } else {
+                wonDrainSlot = true
+                map + (key to prev.copy(draining = true))
+            }
+        }
+        if (!wonDrainSlot) return true
 
         // Drain in the background — it re-fetches and decrypts over the
-        // network, so it must not block the caller. [signer] and
-        // [mnemonicResolver] are manager members (strongly reachable for
-        // the manager's lifetime), so their bridge GlobalRefs outlive the
-        // call. The raw wallet handle is captured, not the wrapper: a
-        // wallet destroyed before the drain runs just misses Rust-side
-        // (NotFound) — no use-after-free. An auth-gated signing failure
-        // inside the drain (Android-only: identity keys are biometric-
-        // gated here, unlike iOS) leaves the entry queued — the sweep
-        // self-heals — and surfaces like any other drain error.
+        // network, so it must not block the caller. The drain gets its OWN
+        // resolver + signer, owned by this coroutine (the Swift
+        // Task.detached + withExtendedLifetime shape): the manager's shared
+        // children are freed by close() without waiting for an in-flight
+        // blocking JNI call, so borrowing them would be a use-after-free
+        // when a manager swap races a slow drain. The raw wallet handle is
+        // captured, not the wrapper: a wallet destroyed before the drain
+        // runs just misses Rust-side (NotFound) — wallet handles are
+        // storage-keyed, unlike the resolver/signer boxes. An auth-gated
+        // signing failure inside the drain (Android-only: identity keys
+        // are biometric-gated here, unlike iOS) leaves the entry queued —
+        // the sweep self-heals — and surfaces like any other drain error.
         val walletHandle = managed.handle
         scope.launch(Dispatchers.IO) {
+            val drainResolver = MnemonicResolverAndPersister(walletStorage)
+            val drainSigner =
+                KeystoreSigner(walletStorage, network, biometricGate, database.platformAddressDao())
             try {
                 mapNativeErrors {
                     DashpayNative.drainPendingContactCrypto(
                         walletHandle,
-                        signer.nativeHandle,
-                        mnemonicResolver.nativeHandle,
+                        drainSigner.nativeHandle,
+                        drainResolver.nativeHandle,
                     )
                 }
             } catch (_: Exception) {
@@ -1327,6 +1356,8 @@ class PlatformWalletManager(
                 // next unlock) re-attempts; the queue rebuilds via the sweep.
             } finally {
                 updateUnlockStatus(key) { it.copy(draining = false) }
+                runCatching { drainResolver.close() }
+                runCatching { drainSigner.close() }
             }
         }
         return true
@@ -1448,8 +1479,10 @@ data class DashPayUnlockStatus(
     val draining: Boolean = false,
     /**
      * The stored seed failed the binding verify — a mis-mapped Keystore
-     * slot. Security-relevant: the wallet stays external-signable, so the
-     * wrong seed can never sign for it.
+     * slot. Security-relevant: no drain runs and the wallet stays
+     * external-signable, so the wrong seed can never produce a
+     * network-valid signature for it (its identity keys derive from the
+     * correct seed; a foreign-seed signature fails on-chain validation).
      */
     val seedMismatch: Boolean = false,
     /** Deferred contact-crypto entries queued (from the 1 Hz poll). */
