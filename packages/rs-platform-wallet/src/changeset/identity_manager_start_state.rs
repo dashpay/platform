@@ -31,19 +31,16 @@ pub struct IdentityManagerStartState {
 }
 
 impl IdentityManagerStartState {
-    /// Fold persisted PUBLIC keys and contact state into the already-built
+    /// Fold persisted PUBLIC keys and contact state onto the already-built
     /// managed identities so `Identity.public_keys` and the contact maps
-    /// are populated at load time, matching the FFI persister's pre-keyed
-    /// bucket shape (each `ManagedIdentity` carries its own keys/contacts
-    /// with no separate changeset layered on afterwards).
+    /// are populated at load time — the FFI persister's pre-keyed shape,
+    /// with no separate changeset layered on afterwards.
     ///
-    /// Each entry is routed by owner `identity_id` across BOTH buckets;
-    /// keys are applied before contacts so a contact never lands before
-    /// its owner's keys. Entries whose owner is absent from either bucket
-    /// (e.g. a tombstoned identity's orphaned rows) are logged and
-    /// skipped, never fatal. `removed_*` are ignored — the rehydration
-    /// feed is insert-only. No `Network` is needed: the key insert is
-    /// network-independent.
+    /// Entries route by owner `identity_id` across BOTH buckets; one whose
+    /// owner is absent (e.g. a tombstoned identity's orphaned rows) is
+    /// logged and skipped, never fatal. `removed_*` are ignored
+    /// (insert-only feed); no `Network` needed (key insert is
+    /// network-independent).
     pub fn merge_contacts_and_keys(
         &mut self,
         contacts: ContactChangeSet,
