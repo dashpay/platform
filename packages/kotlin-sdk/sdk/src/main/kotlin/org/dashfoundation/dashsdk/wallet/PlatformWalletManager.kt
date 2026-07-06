@@ -19,12 +19,15 @@ import kotlinx.coroutines.withContext
 import org.dashfoundation.dashsdk.Network
 import org.dashfoundation.dashsdk.Sdk
 import org.dashfoundation.dashsdk.errors.mapNativeErrors
+import org.dashfoundation.dashsdk.ffi.DashpayNative
 import org.dashfoundation.dashsdk.ffi.FundingNative
 import org.dashfoundation.dashsdk.ffi.NativeWalletEventBridge
 import org.dashfoundation.dashsdk.ffi.WalletManagerNative
 import org.dashfoundation.dashsdk.persistence.DashDatabase
 import org.dashfoundation.dashsdk.persistence.PlatformWalletPersistenceHandler
+import org.dashfoundation.dashsdk.persistence.entities.DashpayPaymentEntity
 import org.dashfoundation.dashsdk.persistence.toHex
+import org.json.JSONArray
 import org.dashfoundation.dashsdk.security.BiometricGate
 import org.dashfoundation.dashsdk.security.IdentityKeyPrivateKeyDeriver
 import org.dashfoundation.dashsdk.security.KeystoreSigner
@@ -516,6 +519,78 @@ class PlatformWalletManager(
      */
     suspend fun resetPlatformAddressSyncState() = withContext(Dispatchers.IO) {
         mapNativeErrors { WalletManagerNative.platformAddressSyncReset(managerHandle) }
+    }
+
+    /**
+     * Per-account balance snapshot for [walletId] as a JSON array string
+     * (see `DashpayNative.walletManagerAccountBalances` for the row
+     * shape) — drives the DashPay tab's account balance display. Port of
+     * Swift `PlatformWalletManager.accountBalances(for:)`.
+     */
+    suspend fun accountBalances(walletId: ByteArray): String? = withContext(Dispatchers.IO) {
+        mapNativeErrors { DashpayNative.walletManagerAccountBalances(managerHandle, walletId) }
+    }
+
+    /**
+     * Refresh the persisted DashPay payment history for one identity:
+     * one FFI read (`managed_identity_get_dashpay_payments`) + one Room
+     * pass upserting [DashpayPaymentEntity] rows so the UI can observe
+     * them reactively. This is the ONLY path by which payment rows
+     * become durable — the recurring DashPay sweep reconciles payments
+     * in-memory without persisting them (matching iOS), so callers must
+     * refresh after a send and when opening a contact's payment history.
+     * Upsert-only: payment history is append-only, keyed by txid.
+     *
+     * Returns the raw payments JSON that was persisted, or null when
+     * [identityId] isn't managed by the wallet. Port of Swift
+     * `PlatformWalletManager.refreshDashPayPayments(walletId:identityId:)`.
+     */
+    suspend fun refreshDashPayPayments(walletId: ByteArray, identityId: ByteArray): String? =
+        withContext(Dispatchers.IO) {
+            val managed = requireNotNull(wallet(forWalletId = walletId)) {
+                "no loaded wallet with id ${walletId.toHex()}"
+            }
+            val json = managed.dashpay.payments(identityId) ?: return@withContext null
+            // networkRaw rides on the owner identity row (the persist-path
+            // convention); when the identity row hasn't landed yet the read
+            // still succeeds — the rows just aren't persisted this round.
+            val networkRaw = database.identityDao().getByIdentityId(identityId)?.networkRaw
+                ?: return@withContext json
+            val rows = JSONArray(json)
+            val entities = ArrayList<DashpayPaymentEntity>(rows.length())
+            for (i in 0 until rows.length()) {
+                val row = rows.getJSONObject(i)
+                val txid = row.optString("txid", "")
+                val counterparty = row.optString("counterpartyId", "").hexToBytesOrNull()
+                if (txid.isEmpty() || counterparty == null || counterparty.size != 32) continue
+                entities.add(
+                    DashpayPaymentEntity(
+                        networkRaw = networkRaw,
+                        ownerIdentityId = identityId,
+                        counterpartyIdentityId = counterparty,
+                        amountDuffs = row.optLong("amountDuffs"),
+                        directionRaw = row.optInt("direction"),
+                        statusRaw = row.optInt("status"),
+                        txid = txid,
+                        memo = if (row.has("memo")) row.getString("memo") else null,
+                    ),
+                )
+            }
+            if (entities.isNotEmpty()) database.dashpayDao().upsertPayments(entities)
+            json
+        }
+
+    /** Lower-hex decode; null on odd length, empty, or non-hex characters. */
+    private fun String.hexToBytesOrNull(): ByteArray? {
+        if (length % 2 != 0 || isEmpty()) return null
+        val out = ByteArray(length / 2)
+        for (i in out.indices) {
+            val hi = Character.digit(this[2 * i], 16)
+            val lo = Character.digit(this[2 * i + 1], 16)
+            if (hi < 0 || lo < 0) return null
+            out[i] = ((hi shl 4) or lo).toByte()
+        }
+        return out
     }
 
     suspend fun startIdentitySync() = withContext(Dispatchers.IO) {

@@ -4,8 +4,10 @@ import androidx.room.Dao
 import androidx.room.Query
 import androidx.room.Upsert
 import kotlinx.coroutines.flow.Flow
+import org.dashfoundation.dashsdk.persistence.entities.DashpayContactProfileEntity
 import org.dashfoundation.dashsdk.persistence.entities.DashpayContactRequestEntity
 import org.dashfoundation.dashsdk.persistence.entities.DashpayIgnoredSenderEntity
+import org.dashfoundation.dashsdk.persistence.entities.DashpayPaymentEntity
 import org.dashfoundation.dashsdk.persistence.entities.DashpayProfileEntity
 
 /**
@@ -132,4 +134,97 @@ interface DashpayDao {
     /** StorageExplorer network-scoped row count. */
     @Query("SELECT COUNT(*) FROM dashpay_contact_requests WHERE networkRaw = :networkRaw")
     fun countContactRequestsByNetwork(networkRaw: Int): Flow<Long>
+
+    // MARK: Cached contact profiles
+
+    /** Mirror of `PersistentDashpayContactProfile.predicate(ownerIdentityId:)`. */
+    @Query("SELECT * FROM dashpay_contact_profiles WHERE ownerIdentityId = :ownerIdentityId")
+    fun observeContactProfiles(
+        ownerIdentityId: ByteArray,
+    ): Flow<List<DashpayContactProfileEntity>>
+
+    /** Mirror of `predicate(ownerIdentityId:contactIdentityId:)`. */
+    @Query(
+        "SELECT * FROM dashpay_contact_profiles WHERE ownerIdentityId = :ownerIdentityId " +
+            "AND contactIdentityId = :contactIdentityId"
+    )
+    fun observeContactProfile(
+        ownerIdentityId: ByteArray,
+        contactIdentityId: ByteArray,
+    ): Flow<DashpayContactProfileEntity?>
+
+    /** Persister upsert (`is_present == true` changeset entry). */
+    @Upsert
+    suspend fun upsertContactProfile(profile: DashpayContactProfileEntity)
+
+    /**
+     * Persister tombstone (`is_present == false` changeset entry): the
+     * contact removed their on-chain profile, so the cached row must go —
+     * an upsert-only pipeline would leave a stale name/avatar forever.
+     */
+    @Query(
+        "DELETE FROM dashpay_contact_profiles WHERE networkRaw = :networkRaw " +
+            "AND ownerIdentityId = :ownerIdentityId " +
+            "AND contactIdentityId = :contactIdentityId"
+    )
+    suspend fun deleteContactProfile(
+        networkRaw: Int,
+        ownerIdentityId: ByteArray,
+        contactIdentityId: ByteArray,
+    )
+
+    /** Restore-path read: every cached contact profile owned by [ownerIdentityId]. */
+    @Query("SELECT * FROM dashpay_contact_profiles WHERE ownerIdentityId = :ownerIdentityId")
+    suspend fun getContactProfilesByOwner(
+        ownerIdentityId: ByteArray,
+    ): List<DashpayContactProfileEntity>
+
+    @Query("DELETE FROM dashpay_contact_profiles")
+    suspend fun deleteAllContactProfiles()
+
+    /** StorageExplorer row count. */
+    @Query("SELECT COUNT(*) FROM dashpay_contact_profiles")
+    fun countContactProfiles(): Flow<Long>
+
+    /** StorageExplorer network-scoped row count. */
+    @Query("SELECT COUNT(*) FROM dashpay_contact_profiles WHERE networkRaw = :networkRaw")
+    fun countContactProfilesByNetwork(networkRaw: Int): Flow<Long>
+
+    // MARK: Payments (pull-persisted; see DashpayPaymentEntity KDoc)
+
+    /** Mirror of `PersistentDashpayPayment.predicate(ownerIdentityId:)`. */
+    @Query("SELECT * FROM dashpay_payments WHERE ownerIdentityId = :ownerIdentityId")
+    fun observePayments(ownerIdentityId: ByteArray): Flow<List<DashpayPaymentEntity>>
+
+    /**
+     * Mirror of `predicate(ownerIdentityId:counterpartyIdentityId:)` —
+     * the payment list on the contact-detail screen shows only the
+     * history with that one contact.
+     */
+    @Query(
+        "SELECT * FROM dashpay_payments WHERE ownerIdentityId = :ownerIdentityId " +
+            "AND counterpartyIdentityId = :counterpartyIdentityId"
+    )
+    fun observePayments(
+        ownerIdentityId: ByteArray,
+        counterpartyIdentityId: ByteArray,
+    ): Flow<List<DashpayPaymentEntity>>
+
+    @Upsert
+    suspend fun upsertPayments(payments: List<DashpayPaymentEntity>)
+
+    /** Restore-path read: every payment row owned by [ownerIdentityId]. */
+    @Query("SELECT * FROM dashpay_payments WHERE ownerIdentityId = :ownerIdentityId")
+    suspend fun getPaymentsByOwner(ownerIdentityId: ByteArray): List<DashpayPaymentEntity>
+
+    @Query("DELETE FROM dashpay_payments")
+    suspend fun deleteAllPayments()
+
+    /** StorageExplorer row count. */
+    @Query("SELECT COUNT(*) FROM dashpay_payments")
+    fun countPayments(): Flow<Long>
+
+    /** StorageExplorer network-scoped row count. */
+    @Query("SELECT COUNT(*) FROM dashpay_payments WHERE networkRaw = :networkRaw")
+    fun countPaymentsByNetwork(networkRaw: Int): Flow<Long>
 }

@@ -7,10 +7,12 @@ import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.dashfoundation.dashsdk.ffi.AccountSpecData
+import org.dashfoundation.dashsdk.ffi.ContactProfileRestoreData
 import org.dashfoundation.dashsdk.ffi.ContactRequestRestoreData
 import org.dashfoundation.dashsdk.ffi.CoreTxRecordData
 import org.dashfoundation.dashsdk.ffi.IdentityKeyRestoreData
 import org.dashfoundation.dashsdk.ffi.IdentityRestoreData
+import org.dashfoundation.dashsdk.ffi.PaymentRestoreData
 import org.dashfoundation.dashsdk.ffi.NativePersistenceBridge
 import org.dashfoundation.dashsdk.ffi.PlatformAddressBalanceRestoreData
 import org.dashfoundation.dashsdk.ffi.ShieldedActivityData
@@ -21,6 +23,7 @@ import org.dashfoundation.dashsdk.ffi.WalletRestoreData
 import org.dashfoundation.dashsdk.persistence.entities.AccountEntity
 import org.dashfoundation.dashsdk.persistence.entities.AssetLockEntity
 import org.dashfoundation.dashsdk.persistence.entities.CoreAddressEntity
+import org.dashfoundation.dashsdk.persistence.entities.DashpayContactProfileEntity
 import org.dashfoundation.dashsdk.persistence.entities.DashpayContactRequestEntity
 import org.dashfoundation.dashsdk.persistence.entities.DashpayIgnoredSenderEntity
 import org.dashfoundation.dashsdk.persistence.entities.DashpayProfileEntity
@@ -897,6 +900,57 @@ class PlatformWalletPersistenceHandler(
         0
     }
 
+    /**
+     * One cached contact-profile delta riding an identity upsert (mirror
+     * of the Swift `upsertDashpayContactProfiles` loop). A present entry
+     * upserts the [DashpayContactProfileEntity] row; a tombstone
+     * (`isPresent == false` — the contact removed their on-chain
+     * profile) DELETEs it, so a stale name/avatar can't outlive the
+     * on-chain deletion.
+     */
+    @Suppress("LongParameterList")
+    override fun onPersistContactProfileDelta(
+        walletId: ByteArray,
+        ownerId: ByteArray,
+        contactId: ByteArray,
+        isPresent: Boolean,
+        displayName: String?,
+        bio: String?,
+        avatarUrl: String?,
+        avatarHash: ByteArray,
+        avatarHashPresent: Boolean,
+        avatarFingerprint: ByteArray,
+        avatarFingerprintPresent: Boolean,
+        publicMessage: String?,
+        checkedAtMs: Long,
+    ): Int = guarded {
+        stage(walletId) { db ->
+            // Owner identity must exist (networkRaw is read off it); skip
+            // silently otherwise — replayed next round.
+            val owner = db.identityDao().getByIdentityId(ownerId) ?: return@stage
+            if (isPresent) {
+                db.dashpayDao().upsertContactProfile(
+                    DashpayContactProfileEntity(
+                        networkRaw = owner.networkRaw,
+                        ownerIdentityId = ownerId,
+                        contactIdentityId = contactId,
+                        displayName = displayName,
+                        publicMessage = publicMessage,
+                        bio = bio,
+                        avatarUrl = avatarUrl,
+                        avatarHash = avatarHash.takeIf { avatarHashPresent },
+                        avatarFingerprint = avatarFingerprint.takeIf { avatarFingerprintPresent },
+                        checkedAtMs = checkedAtMs,
+                        lastUpdated = now(),
+                    ),
+                )
+            } else {
+                db.dashpayDao().deleteContactProfile(owner.networkRaw, ownerId, contactId)
+            }
+        }
+        0
+    }
+
     override fun onPersistContactRemovalSent(
         walletId: ByteArray,
         ownerId: ByteArray,
@@ -1361,6 +1415,43 @@ class PlatformWalletPersistenceHandler(
                 .map { it.ignoredSenderId }
                 .filter { it.size == 32 }
                 .toTypedArray()
+            // Payment history — restores the Rust `dashpay_payments` map
+            // so Sent entries (and their memos) survive relaunch; the
+            // reconcile sweep can only re-derive Received entries. Rows
+            // reach Room solely via `refreshDashPayPayments` (the sweep
+            // reconciles in-memory without persisting).
+            val paymentRows = database.dashpayDao()
+                .getPaymentsByOwner(idRow.identityId)
+                .filter { it.counterpartyIdentityId.size == 32 }
+                .map { p ->
+                    PaymentRestoreData(
+                        txid = p.txid,
+                        counterpartyId = p.counterpartyIdentityId,
+                        amountDuffs = p.amountDuffs,
+                        directionRaw = p.directionRaw.toByte(),
+                        statusRaw = p.statusRaw.toByte(),
+                        memo = p.memo,
+                    )
+                }.toTypedArray()
+            // Cached contact profiles (present only — tombstones deleted
+            // the row at persist time) — restores the Rust
+            // `contact_profiles` map so the contacts UI shows names +
+            // avatars immediately after relaunch.
+            val contactProfileRows = database.dashpayDao()
+                .getContactProfilesByOwner(idRow.identityId)
+                .filter { it.contactIdentityId.size == 32 }
+                .map { cp ->
+                    ContactProfileRestoreData(
+                        contactId = cp.contactIdentityId,
+                        displayName = cp.displayName,
+                        bio = cp.bio,
+                        avatarUrl = cp.avatarUrl,
+                        avatarHash = cp.avatarHash,
+                        avatarFingerprint = cp.avatarFingerprint,
+                        publicMessage = cp.publicMessage,
+                        checkedAtMs = cp.checkedAtMs,
+                    )
+                }.toTypedArray()
             IdentityRestoreData(
                 identityId = idRow.identityId,
                 balance = idRow.balance,
@@ -1373,6 +1464,8 @@ class PlatformWalletPersistenceHandler(
                 keys = keyRows,
                 contacts = contactRows,
                 ignoredSenders = ignoredRows,
+                payments = paymentRows,
+                contactProfiles = contactProfileRows,
             )
         }.toTypedArray()
     }

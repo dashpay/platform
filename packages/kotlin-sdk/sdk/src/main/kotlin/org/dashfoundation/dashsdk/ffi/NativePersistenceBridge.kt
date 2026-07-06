@@ -397,6 +397,35 @@ abstract class NativePersistenceBridge {
         isIgnored: Boolean,
     ): Int = 0
 
+    /**
+     * One `ContactProfileRowFFI` delta riding an identity upsert
+     * (`IdentityEntryFFI.contact_profiles`). Descriptor
+     * `([B[B[BZLjava/lang/String;Ljava/lang/String;Ljava/lang/String;[BZ[BZLjava/lang/String;J)I`.
+     *
+     * [isPresent] `true` ⇒ upsert the cached contact-profile row for
+     * `(ownerId, contactId)`; `false` ⇒ tombstone — the contact removed
+     * their on-chain profile and any persisted row must be DELETED (an
+     * upsert-only pipeline would show the stale name/avatar forever).
+     * Gate [avatarHash] / [avatarFingerprint] on their paired `_present`
+     * flags — all-zero is a valid hash value.
+     */
+    @Suppress("LongParameterList")
+    open fun onPersistContactProfileDelta(
+        walletId: ByteArray,
+        ownerId: ByteArray,
+        contactId: ByteArray,
+        isPresent: Boolean,
+        displayName: String?,
+        bio: String?,
+        avatarUrl: String?,
+        avatarHash: ByteArray,
+        avatarHashPresent: Boolean,
+        avatarFingerprint: ByteArray,
+        avatarFingerprintPresent: Boolean,
+        publicMessage: String?,
+        checkedAtMs: Long,
+    ): Int = 0
+
     // ── Asset locks ───────────────────────────────────────────────────
 
     /** One `AssetLockEntryFFI` upsert. Descriptor `([B[B[BIBIJB[B)I`. */
@@ -619,10 +648,7 @@ class AccountSpecData(
  * One flat identity-restore row — mirror of `IdentityRestoreEntryFFI`.
  *
  * DPNS names ride separately (empty for this pass; the Rust trampoline
- * passes null/0), as do the DashPay payment-history and cached
- * contact-profile arrays (Kotlin has no persist source for those yet —
- * the trampoline stages them null/0 and the post-load sweeps rebuild
- * them). `status` uses the `IdentityStatus` discriminant encoding
+ * passes null/0). `status` uses the `IdentityStatus` discriminant encoding
  * (0 Unknown, 1 PendingCreation, 2 Active, 3 FailedCreation, 4 NotFound).
  */
 class IdentityRestoreData(
@@ -649,6 +675,53 @@ class IdentityRestoreData(
      * sender resurfaces after every relaunch.
      */
     @JvmField val ignoredSenders: Array<ByteArray>,
+    /**
+     * DashPay payment-history rows to rehydrate the Rust
+     * `dashpay_payments` map at load — without this *Sent* entries (and
+     * their user-entered memos) vanish on every relaunch; the reconcile
+     * sweep can only re-derive *Received* entries from UTXOs.
+     */
+    @JvmField val payments: Array<PaymentRestoreData>,
+    /**
+     * Cached contact-profile rows (present profiles only — tombstones
+     * delete the Room row at persist time) to rehydrate the Rust
+     * `contact_profiles` map at load — without this the contacts UI
+     * shows raw identity ids after relaunch until the next profile sweep
+     * re-fetches every contact.
+     */
+    @JvmField val contactProfiles: Array<ContactProfileRestoreData>,
+)
+
+/**
+ * One flat DashPay payment-history restore row — mirror of
+ * `PaymentRestoreEntryFFI`. `directionRaw`: 0 Sent, 1 Received;
+ * `statusRaw`: 0 Pending, 1 Confirmed, 2 Failed. [memo] null mirrors the
+ * source `Option` being `None`.
+ */
+class PaymentRestoreData(
+    @JvmField val txid: String,
+    @JvmField val counterpartyId: ByteArray,
+    @JvmField val amountDuffs: Long,
+    @JvmField val directionRaw: Byte,
+    @JvmField val statusRaw: Byte,
+    @JvmField val memo: String?,
+)
+
+/**
+ * One flat cached contact-profile restore row — mirror of
+ * `ContactProfileRestoreEntryFFI`. [avatarHash] / [avatarFingerprint]
+ * are null when absent (the trampoline derives the FFI `_present` flags
+ * from nullability + length: 32 / 8 bytes respectively).
+ */
+class ContactProfileRestoreData(
+    @JvmField val contactId: ByteArray,
+    @JvmField val displayName: String?,
+    @JvmField val bio: String?,
+    @JvmField val avatarUrl: String?,
+    @JvmField val avatarHash: ByteArray?,
+    @JvmField val avatarFingerprint: ByteArray?,
+    @JvmField val publicMessage: String?,
+    @JvmField val checkedAtMs: Long,
 )
 
 /**

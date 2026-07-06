@@ -813,6 +813,145 @@ class PlatformWalletPersistenceHandlerTest {
         assertTrue(walletId.contentEquals(list[0].walletId))
     }
 
+    // ── DashPay contact profiles: delta upsert / tombstone, restore ───
+
+    /** Persist one present contact-profile delta for [contactId] owned by [ownerId]. */
+    private suspend fun persistContactProfile(ownerId: ByteArray, contactId: ByteArray) {
+        handler.onChangesetBegin(walletId)
+        handler.onPersistContactProfileDelta(
+            walletId = walletId,
+            ownerId = ownerId,
+            contactId = contactId,
+            isPresent = true,
+            displayName = "Bob",
+            bio = null,
+            avatarUrl = "https://x/bob.png",
+            avatarHash = ByteArray(32) { 23 },
+            avatarHashPresent = true,
+            avatarFingerprint = ByteArray(8),
+            avatarFingerprintPresent = false,
+            publicMessage = "yo",
+            checkedAtMs = 1_700_000_111_000,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+    }
+
+    @Test
+    fun contactProfileDeltaUpsertsPresentRow() = runTest {
+        // A present `IdentityEntryFFI.contact_profiles` row must land as a
+        // cached contact-profile row — with the avatar byte fields gated on
+        // their `_present` flags (all-zero is a valid hash value, so
+        // nullability must come from the flag, not the bytes).
+        val ownerId = ByteArray(32) { 22 }
+        val contactId = ByteArray(32) { 33 }
+        seedIdentity(ownerId)
+        persistContactProfile(ownerId, contactId)
+
+        val rows = db.dashpayDao().getContactProfilesByOwner(ownerId)
+        assertEquals(1, rows.size)
+        val row = rows[0]
+        assertEquals(testnet, row.networkRaw)
+        assertTrue(contactId.contentEquals(row.contactIdentityId))
+        assertEquals("Bob", row.displayName)
+        assertNull(row.bio)
+        assertEquals("https://x/bob.png", row.avatarUrl)
+        assertTrue(ByteArray(32) { 23 }.contentEquals(row.avatarHash!!))
+        assertNull(row.avatarFingerprint)
+        assertEquals("yo", row.publicMessage)
+        assertEquals(1_700_000_111_000, row.checkedAtMs)
+    }
+
+    @Test
+    fun contactProfileTombstoneDeletesTheRow() = runTest {
+        // An `is_present == false` delta means the contact removed their
+        // on-chain profile: the persisted row must be DELETED. An
+        // upsert-only pipeline would show the stale name/avatar forever.
+        val ownerId = ByteArray(32) { 24 }
+        val contactId = ByteArray(32) { 25 }
+        seedIdentity(ownerId)
+        persistContactProfile(ownerId, contactId)
+        assertEquals(1, db.dashpayDao().getContactProfilesByOwner(ownerId).size)
+
+        handler.onChangesetBegin(walletId)
+        val code = handler.onPersistContactProfileDelta(
+            walletId = walletId,
+            ownerId = ownerId,
+            contactId = contactId,
+            isPresent = false,
+            displayName = null,
+            bio = null,
+            avatarUrl = null,
+            avatarHash = ByteArray(32),
+            avatarHashPresent = false,
+            avatarFingerprint = ByteArray(8),
+            avatarFingerprintPresent = false,
+            publicMessage = null,
+            checkedAtMs = 1_700_000_222_000,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+        assertEquals(0, code)
+
+        assertTrue(db.dashpayDao().getContactProfilesByOwner(ownerId).isEmpty())
+    }
+
+    @Test
+    fun loadWalletListRoundTripsPaymentsAndContactProfiles() = runTest {
+        // Relaunch-durability for the two #3841 stores: payments (Sent
+        // entries + memos are NOT re-derivable from UTXOs — losing them
+        // here loses them forever) and the contact-profile cache (without
+        // it the contacts UI shows raw identity ids until the next
+        // profile sweep re-fetches every contact).
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+        val xpub = ByteArray(78) { 30 }
+        handler.onPersistAccountRegistration(
+            walletId, 0, 0, 0, 0, 0, ByteArray(0), ByteArray(0), xpub,
+        )
+        val ownerId = ByteArray(32) { 26 }
+        val contactId = ByteArray(32) { 27 }
+        seedIdentity(ownerId)
+        persistContactProfile(ownerId, contactId)
+        // Payments are pull-persisted (refreshDashPayPayments → DAO); the
+        // load path reads whatever rows the refresh landed.
+        db.dashpayDao().upsertPayments(
+            listOf(
+                org.dashfoundation.dashsdk.persistence.entities.DashpayPaymentEntity(
+                    networkRaw = testnet,
+                    ownerIdentityId = ownerId,
+                    counterpartyIdentityId = contactId,
+                    amountDuffs = 123_456,
+                    directionRaw = 0, // Sent
+                    statusRaw = 1, // Confirmed
+                    txid = "aa".repeat(32),
+                    memo = "for pizza",
+                ),
+            ),
+        )
+
+        val list = handler.onLoadWalletList()
+        assertEquals(1, list.size)
+        val identity = list[0].identities.single()
+
+        assertEquals(1, identity.payments.size)
+        val payment = identity.payments[0]
+        assertEquals("aa".repeat(32), payment.txid)
+        assertTrue(contactId.contentEquals(payment.counterpartyId))
+        assertEquals(123_456L, payment.amountDuffs)
+        assertEquals(0.toByte(), payment.directionRaw)
+        assertEquals(1.toByte(), payment.statusRaw)
+        assertEquals("for pizza", payment.memo)
+
+        assertEquals(1, identity.contactProfiles.size)
+        val profile = identity.contactProfiles[0]
+        assertTrue(contactId.contentEquals(profile.contactId))
+        assertEquals("Bob", profile.displayName)
+        assertNull(profile.bio)
+        assertEquals("https://x/bob.png", profile.avatarUrl)
+        assertTrue(ByteArray(32) { 23 }.contentEquals(profile.avatarHash!!))
+        assertNull(profile.avatarFingerprint)
+        assertEquals("yo", profile.publicMessage)
+        assertEquals(1_700_000_111_000, profile.checkedAtMs)
+    }
+
     // ── Free-function encoders ────────────────────────────────────────
 
     @Test

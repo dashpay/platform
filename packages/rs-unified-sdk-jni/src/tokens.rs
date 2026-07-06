@@ -1460,11 +1460,13 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TokensNative_getDashP
 }
 
 /// Render a [`DashPayProfileFFI`] as a compact JSON object string. Optional
-/// scalars omit their key when absent; byte fields are lower-hex.
+/// scalars omit their key when absent; byte fields are lower-hex. Shared
+/// with [`crate::dashpay`]'s profile readers so both surfaces emit the
+/// same shape.
 ///
 /// # Safety
 /// `profile`'s string pointers, when non-null, must be valid C strings.
-fn profile_to_json(profile: &DashPayProfileFFI) -> String {
+pub(crate) fn profile_to_json(profile: &DashPayProfileFFI) -> String {
     fn opt_cstr(ptr: *const c_char) -> Option<String> {
         if ptr.is_null() {
             None
