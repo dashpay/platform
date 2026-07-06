@@ -974,6 +974,16 @@ impl PlatformWalletPersistence for SqlitePersister {
                 // manifest and skips this wallet as MissingManifest one layer
                 // up (see rt_corrupt_row_skipped_and_other_loads). It exists so
                 // one unregistered wallet doesn't abort load() for all others via `?`.
+                //
+                // TODO(product decision needed, task #14): a crash between wallet-row
+                // creation and first-account-registration leaves this row with a
+                // permanently empty manifest. It is not corrupted or lost — every
+                // future load correctly skips it as MissingManifest — but there is no
+                // recovery path today: no re-registration flow, no eviction, no
+                // surfacing to the user. Open question: does this need one (e.g. a
+                // TTL-based cleanup, a re-registration entry point, or a surfaced
+                // "orphaned wallet" diagnostic), or is silent-skip-forever acceptable?
+                // Awaiting product decision; not addressed in this change.
                 key_wallet::wallet::Wallet::new_watch_only(
                     network,
                     wallet_id,
