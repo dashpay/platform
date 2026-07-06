@@ -16,8 +16,7 @@ use std::time::Duration;
 use crate::framework::prelude::*;
 use crate::framework::tokens::{
     setup_with_token_and_two_identities, token_balance_of, token_frozen_balance_of,
-    token_supply_of, wait_for_token_balance, wait_for_token_supply, TK_OWNER_FUNDING_SIMPLE,
-    TK_PEER_FUNDING,
+    wait_for_token_balance, wait_for_token_supply, TK_OWNER_FUNDING_SIMPLE, TK_PEER_FUNDING,
 };
 use crate::framework::wait::{wait_for_token_predicate, CHAIN_CONFIRMED_CONSECUTIVE_SUCCESSES};
 
@@ -102,13 +101,18 @@ async fn tk_009_token_destroy_frozen() {
     .await
     .expect("peer pre-freeze balance not observed");
 
-    // Snapshot the post-mint total supply. With no burns yet, this
-    // equals MINT_TO_OWNER; we capture the live value rather than
-    // pinning the constant so a future change to the helper's
-    // base-supply default doesn't drift this assertion.
-    let supply_pre_destroy = token_supply_of(ctx, contract_id, position)
-        .await
-        .expect("supply pre-destroy");
+    // Streak-confirm the post-mint total supply rather than a bare
+    // one-shot read: the mint's supply-total update round-robins
+    // independently of the already-confirmed balances, so a lagging
+    // replica here would set an unreachable post-destroy target and
+    // false-red the poll below. Base supply is DEFAULT_BASE_SUPPLY (0)
+    // and the pre-freeze transfer moves tokens without changing supply,
+    // so the total is exactly MINT_TO_OWNER; a drifted value reds on
+    // timeout, surfacing a fixture change instead of masking it.
+    let supply_pre_destroy =
+        wait_for_token_supply(ctx, contract_id, position, MINT_TO_OWNER, STEP_TIMEOUT)
+            .await
+            .expect("post-mint total supply did not settle to MINT_TO_OWNER");
 
     // Freeze peer (TK-007 precondition).
     test_wallet

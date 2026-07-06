@@ -193,7 +193,8 @@ mod token_destroy_frozen_funds_tests {
         let total_supply_pre_destroy = platform
             .drive
             .fetch_token_total_supply(token_id.to_buffer(), None, platform_version)
-            .expect("expected to fetch token total supply pre-destroy");
+            .expect("expected to fetch token total supply pre-destroy")
+            .expect("token total supply must exist pre-destroy");
 
         // Destroy the frozen funds
         let destroy_transition = BatchTransition::new_token_destroy_frozen_funds_transition(
@@ -262,11 +263,12 @@ mod token_destroy_frozen_funds_tests {
         let total_supply_post_destroy = platform
             .drive
             .fetch_token_total_supply(token_id.to_buffer(), None, platform_version)
-            .expect("expected to fetch token total supply post-destroy");
+            .expect("expected to fetch token total supply post-destroy")
+            .expect("token total supply must exist post-destroy");
         assert_eq!(
             total_supply_post_destroy,
-            total_supply_pre_destroy.map(|pre| pre - 5000),
-            "total supply must decrease by the destroyed amount (5000): pre={total_supply_pre_destroy:?} post={total_supply_post_destroy:?}"
+            total_supply_pre_destroy - 5000,
+            "total supply must decrease by the destroyed amount (5000): pre={total_supply_pre_destroy} post={total_supply_post_destroy}"
         );
 
         // Verify identity_2 is still frozen

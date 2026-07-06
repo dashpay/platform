@@ -786,7 +786,7 @@ mod register_wallet_discovery_master_tests {
     use key_wallet::Network;
 
     use crate::wallet::identity::network::{
-        derive_identity_auth_key_hash_from_master, MASTER_KEY_INDEX,
+        derive_identity_auth_key_hash, derive_identity_auth_key_hash_from_master, MASTER_KEY_INDEX,
     };
 
     use super::capture_discovery_master;
@@ -859,20 +859,23 @@ mod register_wallet_discovery_master_tests {
         }
     }
 
-    /// The captured master, fed to the exact helper the discovery scan
-    /// uses, reproduces the canonical master's MASTER-key hash byte-for-byte
-    /// across identity indices and networks — so built-in discovery targets
-    /// the same keys a key-resident scan would. Mirrors the resident-vs-master
-    /// equivalence pinned in `identity::network::loading`.
+    /// The captured master reproduces the RESIDENT wallet's own MASTER-key
+    /// hash byte-for-byte across identity indices and networks. This is the
+    /// load-bearing guarantee: the master path built-in discovery now takes
+    /// is a faithful substitute for the resident derive that
+    /// `downgrade_to_external_signable` renders unusable — not merely
+    /// self-consistent. Comparing against `derive_identity_auth_key_hash`
+    /// (the resident path) rather than another master derive is what makes
+    /// this catch a master-vs-resident divergence; mirrors the
+    /// resident-vs-master equivalence pinned in `identity::network::loading`.
     #[test]
-    fn captured_master_reproduces_discovery_key_hashes() {
+    fn captured_master_reproduces_resident_key_hashes() {
         for network in [Network::Mainnet, Network::Testnet] {
             let wallet =
                 Wallet::from_mnemonic(test_mnemonic(), network, WalletAccountCreationOptions::None)
                     .expect("mnemonic wallet");
             let captured =
                 capture_discovery_master(&wallet).expect("key-resident wallet yields master");
-            let canonical = canonical_master(network);
 
             for identity_index in 0..4u32 {
                 let from_captured = derive_identity_auth_key_hash_from_master(
@@ -882,16 +885,19 @@ mod register_wallet_discovery_master_tests {
                     MASTER_KEY_INDEX,
                 )
                 .expect("captured-master discovery hash");
-                let from_canonical = derive_identity_auth_key_hash_from_master(
-                    &canonical,
+                // The resident derive walks the in-wallet key material — the
+                // path the pre-downgrade wallet would have used — so equality
+                // proves the captured master targets the identical key.
+                let from_resident = derive_identity_auth_key_hash(
+                    &wallet,
                     network,
                     identity_index,
                     MASTER_KEY_INDEX,
                 )
-                .expect("canonical-master discovery hash");
+                .expect("resident-wallet discovery hash");
                 assert_eq!(
-                    from_captured, from_canonical,
-                    "captured master must derive the canonical MASTER-key hash \
+                    from_captured, from_resident,
+                    "captured master must reproduce the resident-wallet MASTER-key hash \
                      (network={network:?}, identity_index={identity_index})"
                 );
             }
