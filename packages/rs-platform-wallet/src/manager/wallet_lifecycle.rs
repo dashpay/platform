@@ -2,10 +2,11 @@
 
 use std::sync::Arc;
 
+use key_wallet::bip32::ExtendedPrivKey;
 use key_wallet::mnemonic::{Language, Mnemonic};
 use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
-use key_wallet::wallet::Wallet;
+use key_wallet::wallet::{Wallet, WalletType};
 use key_wallet::Network;
 
 use crate::changeset::{
@@ -14,6 +15,7 @@ use crate::changeset::{
 };
 use crate::error::PlatformWalletError;
 use crate::wallet::core::WalletBalance;
+use crate::wallet::identity::network::IdentityDiscoveryOptions;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 use crate::wallet::PlatformWallet;
 
@@ -46,6 +48,30 @@ fn parse_mnemonic_any_language(phrase: &str) -> Result<Mnemonic, &'static str> {
         }
     }
     Err("phrase does not match any supported BIP-39 wordlist")
+}
+
+/// Master BIP-32 xpriv for built-in identity discovery, or `None` for a
+/// keyless (watch-only / external-signable) wallet that carries no key
+/// material to derive from. Must be read BEFORE
+/// [`Wallet::downgrade_to_external_signable`] strips the resident key.
+///
+/// The returned node equals `ExtendedPrivKey::new_master(network, seed)`,
+/// so [`IdentityWallet::discover_from_master`] derives exactly the key
+/// hashes a key-resident scan would (see the reference in
+/// `identity::network::loading`).
+fn capture_discovery_master(wallet: &Wallet) -> Option<ExtendedPrivKey> {
+    match &wallet.wallet_type {
+        WalletType::Mnemonic {
+            root_extended_private_key,
+            ..
+        }
+        | WalletType::Seed {
+            root_extended_private_key,
+            ..
+        } => Some(root_extended_private_key.to_extended_priv_key(wallet.network)),
+        WalletType::ExtendedPrivKey(root) => Some(root.to_extended_priv_key(wallet.network)),
+        WalletType::ExternalSignable | WalletType::WatchOnly => None,
+    }
 }
 
 impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
@@ -248,6 +274,11 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             tracked_asset_locks: std::collections::BTreeMap::new(),
         };
 
+        // Capture the master xpriv while key material is still resident;
+        // the downgrade below strips it. `None` == a keyless (watch-only /
+        // external-signable) restore, so built-in discovery is skipped.
+        let discovery_master = capture_discovery_master(&wallet);
+
         wallet.downgrade_to_external_signable();
 
         // Insert into WalletManager. A duplicate (same network-scoped
@@ -426,22 +457,38 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             wallets.insert(wallet_id, Arc::clone(&platform_wallet));
         }
 
-        // Best-effort identity discovery. For a recovery flow (existing
-        // mnemonic re-typed by the user) this hydrates every identity
-        // the wallet had on Platform without the caller having to fire
-        // `discover` manually. For a fresh wallet the gap-limit miss
-        // loop bails out after a handful of empty queries (~seconds)
-        // and produces nothing — same end state, slightly slower than
-        // skipping. Failures here are logged but never block wallet
-        // registration: a sync hiccup or offline DAPI shouldn't lose
-        // the user the wallet they just imported.
-        if let Err(e) = platform_wallet.identity().sync().await {
-            tracing::warn!(
-                wallet_id = %hex::encode(wallet_id),
-                error = %e,
-                "Identity discovery failed during wallet registration; \
-                 callers can retry via PlatformWallet::identity().discover()"
-            );
+        // Best-effort identity discovery via the captured master xpriv —
+        // the resident key was stripped by the downgrade above, so the
+        // resident scan path would always fail here. For a recovery flow
+        // (existing mnemonic re-typed by the user) this hydrates every
+        // identity the wallet had on Platform without the caller having to
+        // fire discovery manually. For a fresh wallet the gap-limit miss
+        // loop bails after a handful of empty queries (~seconds) and finds
+        // nothing. Failures never block registration: a sync hiccup or
+        // offline DAPI shouldn't lose the user the wallet they just
+        // imported.
+        match &discovery_master {
+            Some(master) => {
+                if let Err(e) = platform_wallet
+                    .identity()
+                    .discover_from_master(IdentityDiscoveryOptions::default(), master)
+                    .await
+                {
+                    tracing::warn!(
+                        wallet_id = %hex::encode(wallet_id),
+                        error = %e,
+                        "Identity discovery failed during wallet registration; callers can \
+                         retry via PlatformWallet::identity().discover_from_master(..)"
+                    );
+                }
+            }
+            None => {
+                tracing::debug!(
+                    wallet_id = %hex::encode(wallet_id),
+                    "skipped built-in identity discovery: external-signable wallet has no \
+                     resident key; call PlatformWallet::identity().discover_from_master(..) to hydrate"
+                );
+            }
         }
 
         Ok(platform_wallet)
@@ -669,8 +716,8 @@ mod register_wallet_duplicate_tests {
     /// Build a manager wired to a no-op persister over a mock SDK. The
     /// duplicate-create path under test never reaches the network: the
     /// first `create` returns `Ok` (its only network touch — best-effort
-    /// `identity().sync()` — is logged-and-ignored), and the second
-    /// fails at `WalletManager::insert_wallet` before any query.
+    /// master-based identity discovery — is logged-and-ignored), and the
+    /// second fails at `WalletManager::insert_wallet` before any query.
     fn make_manager() -> Arc<PlatformWalletManager<NoopPersister>> {
         let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
         let persister = Arc::new(NoopPersister);
@@ -727,5 +774,127 @@ mod register_wallet_duplicate_tests {
             matches!(err, PlatformWalletError::WalletAlreadyExists(_)),
             "duplicate create must map to WalletAlreadyExists, got: {err:?}"
         );
+    }
+}
+
+#[cfg(test)]
+mod register_wallet_discovery_master_tests {
+    use key_wallet::bip32::ExtendedPrivKey;
+    use key_wallet::mnemonic::{Language, Mnemonic};
+    use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+    use key_wallet::wallet::Wallet;
+    use key_wallet::Network;
+
+    use crate::wallet::identity::network::{
+        derive_identity_auth_key_hash_from_master, MASTER_KEY_INDEX,
+    };
+
+    use super::capture_discovery_master;
+
+    // Canonical all-`abandon` BIP-39 test vector — deterministic seed.
+    const TEST_MNEMONIC: &str = "abandon abandon abandon abandon abandon abandon \
+         abandon abandon abandon abandon abandon about";
+
+    fn test_mnemonic() -> Mnemonic {
+        Mnemonic::from_phrase(TEST_MNEMONIC, Language::English).expect("valid test mnemonic")
+    }
+
+    /// The BIP-32 master node `discover_from_master` documents as its
+    /// contract: `ExtendedPrivKey::new_master(network, seed)`.
+    fn canonical_master(network: Network) -> ExtendedPrivKey {
+        let seed = test_mnemonic().to_seed("");
+        ExtendedPrivKey::new_master(network, &seed).expect("master xpriv from test seed")
+    }
+
+    /// A key-resident `WalletType::Mnemonic` wallet yields the canonical
+    /// master node — the value `discover_from_master` expects — so
+    /// registration's built-in discovery derives from live key material
+    /// instead of the now-dead resident scan path.
+    #[test]
+    fn mnemonic_wallet_captures_canonical_master() {
+        for network in [Network::Mainnet, Network::Testnet] {
+            let wallet =
+                Wallet::from_mnemonic(test_mnemonic(), network, WalletAccountCreationOptions::None)
+                    .expect("mnemonic wallet");
+            let captured = capture_discovery_master(&wallet)
+                .expect("key-resident wallet must yield a master xpriv");
+            assert_eq!(
+                captured,
+                canonical_master(network),
+                "captured master must equal ExtendedPrivKey::new_master (network={network:?})"
+            );
+        }
+    }
+
+    /// A `WalletType::Seed` wallet captures the same canonical master —
+    /// the create-from-seed-bytes entry point is covered too.
+    #[test]
+    fn seed_wallet_captures_canonical_master() {
+        for network in [Network::Mainnet, Network::Testnet] {
+            let seed = test_mnemonic().to_seed("");
+            let wallet = Wallet::from_seed_bytes(seed, network, WalletAccountCreationOptions::None)
+                .expect("seed wallet");
+            let captured = capture_discovery_master(&wallet)
+                .expect("key-resident seed wallet must yield a master xpriv");
+            assert_eq!(captured, canonical_master(network));
+        }
+    }
+
+    /// A keyless (external-signable / watch-only) wallet — the shape a
+    /// watch-only restore loads — carries no key material, so capture is
+    /// `None` and registration cleanly SKIPS discovery (no WARN, no dead
+    /// resident-scan failure). Mirrors the `downgrade_to_external_signable`
+    /// step in `register_wallet`.
+    #[test]
+    fn external_signable_wallet_captures_no_master() {
+        for network in [Network::Mainnet, Network::Testnet] {
+            let mut wallet =
+                Wallet::from_mnemonic(test_mnemonic(), network, WalletAccountCreationOptions::None)
+                    .expect("mnemonic wallet");
+            wallet.downgrade_to_external_signable();
+            assert!(
+                capture_discovery_master(&wallet).is_none(),
+                "external-signable wallet has no resident key to capture (network={network:?})"
+            );
+        }
+    }
+
+    /// The captured master, fed to the exact helper the discovery scan
+    /// uses, reproduces the canonical master's MASTER-key hash byte-for-byte
+    /// across identity indices and networks — so built-in discovery targets
+    /// the same keys a key-resident scan would. Mirrors the resident-vs-master
+    /// equivalence pinned in `identity::network::loading`.
+    #[test]
+    fn captured_master_reproduces_discovery_key_hashes() {
+        for network in [Network::Mainnet, Network::Testnet] {
+            let wallet =
+                Wallet::from_mnemonic(test_mnemonic(), network, WalletAccountCreationOptions::None)
+                    .expect("mnemonic wallet");
+            let captured =
+                capture_discovery_master(&wallet).expect("key-resident wallet yields master");
+            let canonical = canonical_master(network);
+
+            for identity_index in 0..4u32 {
+                let from_captured = derive_identity_auth_key_hash_from_master(
+                    &captured,
+                    network,
+                    identity_index,
+                    MASTER_KEY_INDEX,
+                )
+                .expect("captured-master discovery hash");
+                let from_canonical = derive_identity_auth_key_hash_from_master(
+                    &canonical,
+                    network,
+                    identity_index,
+                    MASTER_KEY_INDEX,
+                )
+                .expect("canonical-master discovery hash");
+                assert_eq!(
+                    from_captured, from_canonical,
+                    "captured master must derive the canonical MASTER-key hash \
+                     (network={network:?}, identity_index={identity_index})"
+                );
+            }
+        }
     }
 }
