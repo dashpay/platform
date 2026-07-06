@@ -124,6 +124,17 @@ fun dashPayContactDisplayName(
     return contactId.toHex().take(12) + "…"
 }
 
+// ── Txid display order ───────────────────────────────────────────────────
+
+/**
+ * Hex-encode a raw 32-byte txid in canonical (reversed) display order —
+ * port of `txidDisplayHex` in `DashPayContactMeta.swift`. The FFI hands back
+ * wire/internal byte order, so a bare hex reads reversed from block
+ * explorers; this flip lines it up with the rest of the app's tx display.
+ */
+fun txidDisplayHex(txid: ByteArray): String =
+    txid.reversed().joinToString("") { "%02x".format(it) }
+
 // ── Avatar ───────────────────────────────────────────────────────────────
 
 /**

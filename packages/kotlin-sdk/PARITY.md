@@ -34,7 +34,7 @@ Status legend:
 | DocumentTypeDetailsView.swift | ui/contracts/DocumentTypeDetailsScreen.kt · `DocumentTypeDetail` | ported |
 | DocumentWithPriceView.swift | ui/contracts/DocumentWithPriceScreen.kt · `DocumentWithPrice` | ported — debounced document-id probe (price / owner / ownership badging via `Documents.fetch`), plus the purchase (`DocumentTransactions.purchase` → `platform_wallet_document_purchase`) and owner set-price (`DocumentTransactions.setPrice` → `platform_wallet_document_set_price`) submit flows that live in `PurchaseDocumentView` / the set-price sheet on iOS, hosted as one screen; entries from DocumentsScreen rows ("Price…") and the transition catalog |
 | DocumentsView.swift | ui/contracts/DocumentsScreen.kt · `Documents` | ported (query role; viewer role in DocumentFieldsScreen; the row-level Purchase… / Set Price… actions drill into DocumentWithPriceScreen; create / replace / delete / transfer stay unbridged — see TransitionDetailView) |
-| ~~FriendsView.swift~~ (deleted upstream) | ui/identity/FriendsScreen.kt · `Friends` | **in migration** — the Swift view was deleted by PR #3841 and replaced by the first-class DashPay tab (`Views/DashPay/`, 10 views: DashPayTabView, ContactsView, ContactRequestsView, AddContactView, ContactDetailView, SendDashPayPaymentSheet, DashPayProfileView, IgnoredContactsView, HiddenContactsView, DashPayContactMeta), none of which are ported yet. FriendsScreen still covers a slice (sync / list / send / accept / ignore over the 17 bridged exports, reconciled with the post-#3841 FFI in `2298a2059f`); it is retired and superseded per `docs/dashpay/KOTLIN_MIGRATION_SPEC.md` (milestones K1–K3) |
+| ~~FriendsView.swift~~ (deleted upstream) | — (retired) | retired — deleted by PR #3841 and superseded by the first-class DashPay tab; `FriendsScreen.kt` and its `Friends` route were removed in milestone K3. See the **Views/DashPay/** section below |
 | FundFromAssetLockPlatformAddressView.swift | ui/funding/FundFromAssetLockScreen.kt · `FundFromAssetLock` | ported — submit picks a fresh unused Platform address and funds via the now-bridged `platform_address_wallet_fund_from_asset_lock_signer` (+ resume variant on `ManagedPlatformWallet`); coordinator/progress/pending list drive the flow |
 | TransferPlatformAddressView.swift (ADDR-02, #3923) | ui/credits/TransferPlatformAddressScreen.kt · `TransferPlatformAddress` | ported — wallet-signed DIP-17 credit transfer via the now-bridged `platform_address_wallet_transfer` (`ManagedPlatformWallet.transferCredits`, AUTO selection, null inputs/fee-strategy); source account + destination (own-wallet / external P2PKH hash) + amount only; gate reads version-locked `minInput`/`minOutput` via `walletPlatformAddressMinAmounts`. Launched from WalletDetailScreen's Platform Credits section |
 | WithdrawPlatformAddressView.swift (ADDR-04, #3923) | ui/credits/WithdrawPlatformAddressScreen.kt · `WithdrawPlatformAddress` | ported — wallet-signed full-balance DIP-17 withdrawal to a Core L1 address via the now-bridged `platform_address_wallet_withdraw_to_address` (`ManagedPlatformWallet.withdrawCredits`); submit gated on `platform_address_wallet_preflight_withdrawal` (`preflightWithdrawal`, off the main thread on `Dispatchers.IO`), and when the gate refuses, the advisory "why not" from `preflightWithdrawalReason` (`platform_address_wallet_preflight_withdrawal_reason`) renders under the status row; Fibonacci fee-rate picker mirrors `WithdrawalCoreFeeRates`. Launched from WalletDetailScreen's Platform Credits section |
@@ -80,6 +80,36 @@ Status legend:
 | TransitionInputView.swift | ui/transitions/TransitionDetailScreen.kt (input rows) | ported (component folded into the detail screen) |
 | WalletMemoryExplorerView.swift | ui/diagnostics/WalletMemoryExplorerScreen.kt · `WalletMemoryExplorer` | partial — wallets map, balances, SPV progress/tip, `is*SyncRunning` liveness live; per-wallet drill-downs deferred on `platform_wallet_manager_*` snapshot exports |
 | WithdrawCreditsView.swift | ui/credits/WithdrawCreditsScreen.kt · `WithdrawCredits` | ported |
+
+## Views/DashPay/
+
+The first-class DashPay tab added by PR #3841 (replacing the old
+`FriendsView`), ported in milestone K3. All screens live under
+`ui/dashpay/`; testTags reuse the iOS `dashpay.*` accessibility identifiers
+verbatim. Documented deviations from iOS are listed after the table.
+
+| Swift file | Android file / route | Status |
+| --- | --- | --- |
+| DashPayTabView.swift | ui/dashpay/DashPayTabScreen.kt · `DashPayHome` | ported — wallet-backed identity picker (`observeWalletOwnedByNetwork`), received-from-contacts balance (`accountBalances` typeTag 12, re-read after each sweep), the seedless-unlock banner off `dashPayUnlockStatus` (seed-mismatch / draining / pending-account-builds → `unlockWalletFromKeystore`), pull-to-refresh + toolbar refresh (`dashPaySyncNow`). Adapted: the Contacts/Requests **segmented control is replaced by nav-section rows** (`dashpay.openContacts` / `dashpay.openRequests` / …), so `dashpay.segment` / `dashpay.profileHeader` / `dashpay.usernamePrompt` are not reproduced |
+| ContactsView.swift | ui/dashpay/ContactsScreen.kt · `DashPayContacts` | ported — established-contacts both-direction grouping over Room `observeContactRequests`, hidden excluded, cached name/avatar via `observeContactProfiles` + the meta store, search, Hidden recovery link, pull-to-refresh |
+| ContactRequestsView.swift | ui/dashpay/ContactRequestsScreen.kt · `DashPayRequests` | ported — incoming (Accept via `acceptIncomingRequest` / Ignore via `ignoreContactSender`, per-row in-flight + inline error + optimistic-removal overlay) and outgoing pending; incoming avatars are never loaded (IP-leak avoidance). Adapted: the cross-screen optimistic-**sent** overlay is dropped (AddContact is a separate route, not a shared `@Binding`) |
+| AddContactView.swift | ui/dashpay/AddContactScreen.kt · `DashPayAddContact` | ported — 300 ms-debounced DPNS search (`searchDpnsNames`), paste-id (32-byte base58 gate), preview card, optional account label, collision dialog (Accept vs Continue anyway), and scan-to-send via `sendContactRequestFromQr` (`dashpay.addViaQR` toolbar → the shared QR scanner). Records the DPNS hint into the meta store on success |
+| ContactDetailView.swift | ui/dashpay/ContactDetailScreen.kt · `DashPayContactDetail` | ported — header (cached profile + account label), Send Dash (opens the payment sheet, disabled on broken channel), Room-driven payment history (durable `refreshDashPayPayments` → `observePayments`, sorted newest-first client-side), and alias/note editors + hide toggle via `setContactInfo` **surfacing the DIP-15 deferred / watch-only publish notices** |
+| SendDashPayPaymentSheet.swift | ui/dashpay/SendDashPayPaymentSheet.kt | ported — hosted as a `ModalBottomSheet` from ContactDetail; amount (decimal DASH → duffs) + balance check, `sendPayment` → txid (reversed-hex via `txidDisplayHex`), then always `refreshDashPayPayments` (the durability invariant). No memo field (matches iOS — DashPay payments have no on-chain memo slot). Uses `Balance.confirmed` as spendable (Kotlin `Balance` has no `spendable`) |
+| DashPayProfileView.swift | ui/dashpay/DashPayProfileScreen.kt · `DashPayProfile` | ported — read-only display (avatar / name / DPNS / public message / id) + DIP-15 auto-accept QR (`buildAutoAcceptQr` rendered with the ZXing `generateQrBitmap` helper); folds in the companion editor (inline edit mode → `createOrUpdateProfile`, doCreate when no profile exists) |
+| IgnoredContactsView.swift | ui/dashpay/IgnoredContactsScreen.kt · `DashPayIgnored` | ported — `observeIgnoredSenders` list with Un-ignore (`unignoreContactSender`), optimistic removal + per-row in-flight/error |
+| HiddenContactsView.swift | ui/dashpay/HiddenContactsScreen.kt · `DashPayHidden` | ported — client-side hidden-established grouping with Unhide (`setContactInfo displayHidden=false`, preserving alias/note) + sync kick |
+| DashPayContactMeta.swift | ui/dashpay/DashPayContactMeta.kt (+ DashPayJson.kt) | ported — `DashPayContactMetaStore` (SharedPreferences, same key shape, `version` StateFlow), `dashPayContactDisplayName` precedence, `txidDisplayHex`, the `DashPayAvatar` composable (Coil), plus the org.json parsers for profile / DPNS-search / account-balance / payment reads |
+
+**Deviations from iOS (all intentional, K3):**
+
+1. **Hub uses nav-section rows, not a segmented control.** The DashPay tab navigates to `DashPayContacts` / `DashPayRequests` routes instead of embedding a `[Contacts | Requests]` picker — a cleaner Compose fit. `dashpay.segment` / `dashpay.profileHeader` / `dashpay.usernamePrompt` are not reproduced; Ignored + Hidden are surfaced as hub rows (iOS gated Hidden behind a Contacts link, which the Kotlin ContactsScreen also keeps).
+2. **Active-identity selection is in-memory** (`remember(network)`) — resets on network switch (matching iOS) but is not persisted across launches (iOS uses `@AppStorage`).
+3. **Optimistic-sent overlay dropped** — AddContact is its own route, so a just-sent request appears once the post-send sync persists its outgoing row.
+4. **Incoming-request avatars are always null** (IP-leak avoidance), matching iOS.
+5. **Signing** uses the manager's `signerHandle` + `mnemonicResolverHandle` directly (the KeystoreSigner behind them is auth-gated internally) — no per-screen biometric prompt.
+
+**Tests:** `androidTest/DashPayTabUITest.kt` ports the network-free launch-and-render flows from `DashPayTabUITests.swift` (recognized-state gating + hub entry points), adapted for the nav-section deviation.
 
 ## Views/Components/
 
@@ -129,13 +159,11 @@ Status legend:
 
 ## Totals
 
-- **ported**: 87 (of the 90 pre-#3841 Swift views; the FriendsView row above
-  no longer counts — its Swift source is deleted)
+- **ported**: 97 (87 pre-#3841 views + the 10 `Views/DashPay/` views, ported
+  in milestone K3; the retired FriendsView row does not count — its Swift
+  source is deleted)
 - **partial**: 2 (TransitionDetailView — 5 of 23 catalog entries lack backing FFIs: dataContractUpdate, documentCreate/Replace/Delete/Transfer; WalletMemoryExplorerView — asset-lock drill-down summary only)
 - **deferred**: 0
-- **in migration**: the DashPay tab (10 `Views/DashPay/` views added by
-  PR #3841) — see `docs/dashpay/KOTLIN_MIGRATION_SPEC.md`; this table gets
-  its `Views/DashPay/` section when milestone K3 lands
 
 Every partial/deferred row names the missing FFI export; the app
 surfaces the same name in a dialog at the point of use (grep for
