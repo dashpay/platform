@@ -22,6 +22,7 @@ use dpp::identity::signer::Signer;
 use dpp::prelude::Identifier;
 use dpp::state_transition::address_funds_transfer_transition::AddressFundsTransferTransition;
 use dpp::version::PlatformVersion;
+use key_wallet::bip32::ExtendedPrivKey;
 use key_wallet::gap_limit::DIP17_GAP_LIMIT;
 use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 use key_wallet::Network;
@@ -744,11 +745,17 @@ async fn sweep_identities_with_seed(
     bank_identity: &BankIdentity,
     report: &mut SweepReport,
 ) -> FrameworkResult<()> {
+    // Registration downgrades the wallet to external-signable (no in-process
+    // key), so the resident derive fails with "External signable wallet has no
+    // private key". Derive the master xprv from the seed and probe via master.
+    let master = ExtendedPrivKey::new_master(network, seed_bytes)
+        .map_err(|err| FrameworkError::Cleanup(format!("identity sweep: master derive: {err}")))?;
+
     // Phase 1 — discovery walk.
     for identity_index in 0..IDENTITY_DISCOVERY_GAP {
         match wallet
             .identity()
-            .load_identity_by_index(identity_index)
+            .load_identity_by_index_from_master(identity_index, &master)
             .await
         {
             Ok(Some(_)) => {
