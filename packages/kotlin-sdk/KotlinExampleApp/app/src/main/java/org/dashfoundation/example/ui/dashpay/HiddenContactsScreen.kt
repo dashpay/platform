@@ -15,13 +15,13 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
@@ -43,13 +43,12 @@ import org.dashfoundation.example.util.toHex
 fun HiddenContactsScreen(ownerIdentityIdHex: String, navController: NavHostController) {
     val container = LocalAppContainer.current
     val appState = LocalAppState.current
-    val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val ownerBytes = remember(ownerIdentityIdHex) { ownerIdentityIdHex.hexToBytes() }
 
     val network by appState.currentNetwork.collectAsStateWithLifecycle()
     val manager by container.walletManagerStore.activeManager.collectAsStateWithLifecycle()
-    val metaStore = remember { DashPayContactMetaStore(context) }
+    val metaStore = container.dashPayContactMetaStore
     val metaVersion by metaStore.version.collectAsStateWithLifecycle()
 
     val identity by remember(ownerBytes) {
@@ -69,6 +68,15 @@ fun HiddenContactsScreen(ownerIdentityIdHex: String, navController: NavHostContr
     var inFlightIds by remember { mutableStateOf(emptySet<String>()) }
     var removedOverlayIds by remember { mutableStateOf(emptySet<String>()) }
     var rowErrors by remember { mutableStateOf(emptyMap<String, String>()) }
+
+    // Prune the overlay once Room reflects the unhide (the rows lose their
+    // hidden flag): keep a hex only while its contact is still hidden, so a
+    // later re-hide within this screen session isn't masked.
+    LaunchedEffect(rows) {
+        val stillHidden = rows.groupBy { it.contactIdentityId.toHex() }
+            .filterValues { group -> group.any { it.contactHidden } }.keys
+        removedOverlayIds = removedOverlayIds.filter { it in stillHidden }.toSet()
+    }
 
     val hiddenContacts = remember(rows, profilesByHex, removedOverlayIds, metaVersion, network) {
         rows.groupBy { it.contactIdentityId.toHex() }

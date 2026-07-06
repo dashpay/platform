@@ -24,8 +24,11 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.text.KeyboardOptions
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.dashfoundation.dashsdk.wallet.PlatformWalletManager
 import org.dashfoundation.example.ui.theme.appStatusColors
 import org.dashfoundation.example.util.formatDuffs
@@ -49,6 +52,7 @@ fun SendDashPayPaymentSheet(
     contactId: ByteArray,
     contactDisplayName: String,
     contactDpnsName: String?,
+    onSendingChange: (Boolean) -> Unit,
     onSent: () -> Unit,
     onClose: () -> Unit,
 ) {
@@ -81,25 +85,37 @@ fun SendDashPayPaymentSheet(
         val w = wallet ?: run { errorMessage = "No wallet available for this identity"; return }
         val duffs = amountDuffs ?: return
         isSending = true
+        onSendingChange(true)
         errorMessage = null
         scope.launch {
             try {
-                val txid = w.dashpay.sendPayment(
-                    fromIdentityId = senderIdentityId,
-                    toContactIdentityId = contactId,
-                    amountDuffs = duffs,
-                    coreSignerHandle = manager.mnemonicResolverHandle,
-                    memo = null,
-                )
-                successTxidHex = txid?.let { txidDisplayHex(it) }
-                onSent()
+                // The broadcast + its post-send bookkeeping must complete even
+                // if the sheet is torn down mid-send: the payment leaves the
+                // wallet regardless (the JNI call is uncancellable), so losing
+                // the confirmation + durability refresh (onSent → the parent's
+                // refreshDashPayPayments) would invite a double-send.
+                withContext(NonCancellable) {
+                    val txid = w.dashpay.sendPayment(
+                        fromIdentityId = senderIdentityId,
+                        toContactIdentityId = contactId,
+                        amountDuffs = duffs,
+                        coreSignerHandle = manager.mnemonicResolverHandle,
+                        memo = null,
+                    )
+                    successTxidHex = txid?.let { txidDisplayHex(it) }
+                    onSent()
+                }
+                // Best-effort tail (kick a sweep + settle before auto-close).
                 kickDashPaySync(scope, manager)
                 delay(1500)
                 onClose()
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 errorMessage = e.message ?: "Send failed"
             } finally {
                 isSending = false
+                onSendingChange(false)
             }
         }
     }

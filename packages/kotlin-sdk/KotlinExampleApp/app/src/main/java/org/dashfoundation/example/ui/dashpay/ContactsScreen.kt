@@ -32,7 +32,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -62,13 +61,12 @@ import org.dashfoundation.example.util.toHex
 fun ContactsScreen(identityIdHex: String, navController: NavHostController) {
     val container = LocalAppContainer.current
     val appState = LocalAppState.current
-    val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val idBytes = remember(identityIdHex) { identityIdHex.hexToBytes() }
 
     val network by appState.currentNetwork.collectAsStateWithLifecycle()
     val manager by container.walletManagerStore.activeManager.collectAsStateWithLifecycle()
-    val metaStore = remember { DashPayContactMetaStore(context) }
+    val metaStore = container.dashPayContactMetaStore
     val metaVersion by metaStore.version.collectAsStateWithLifecycle()
 
     val rows by remember(idBytes) {

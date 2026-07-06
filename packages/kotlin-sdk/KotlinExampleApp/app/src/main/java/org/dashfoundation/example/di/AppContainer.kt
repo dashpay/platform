@@ -46,6 +46,16 @@ class AppContainer(private val context: Context) {
     val walletStorage = org.dashfoundation.dashsdk.security.WalletStorage(context)
 
     /**
+     * Device-local DashPay contact metadata (alias / note / hidden / DPNS
+     * hint). A single shared instance so a write's `version` bump invalidates
+     * every DashPay screen that reads through it — a per-screen instance would
+     * only recompose its own creator.
+     */
+    val dashPayContactMetaStore by lazy {
+        org.dashfoundation.example.ui.dashpay.DashPayContactMetaStore(context)
+    }
+
+    /**
      * Auth gate for secret reveals / out-of-window key access. The
      * container is Application-scoped, so the gate is a delegating shell;
      * MainActivity binds the real Activity-bound `AuthPrompt` on create

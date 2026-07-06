@@ -179,13 +179,15 @@ internal object DashpayNative {
     /**
      * Build the owner's DIP-15 auto-accept QR payload
      * (`dash:?du=…&dapk=…`) for [identityId], keying the proof through
-     * [coreSignerHandle]. [username] is a display hint (nullable).
+     * [coreSignerHandle]. [username] is the owner's DPNS name and is
+     * **required** — the FFI rejects a null string; pass `""` for a nameless
+     * identity (Rust resolves the name on-chain or errors clearly).
      * ← Swift `ManagedPlatformWallet.buildAutoAcceptQR`.
      */
     external fun buildAutoAcceptQr(
         walletHandle: Long,
         identityId: ByteArray,
-        username: String?,
+        username: String,
         coreSignerHandle: Long,
     ): String?
 

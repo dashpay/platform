@@ -33,13 +33,11 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.di.LocalAppState
@@ -64,13 +62,12 @@ import org.dashfoundation.example.util.toHex
 fun ContactRequestsScreen(identityIdHex: String, navController: NavHostController) {
     val container = LocalAppContainer.current
     val appState = LocalAppState.current
-    val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val idBytes = remember(identityIdHex) { identityIdHex.hexToBytes() }
 
     val network by appState.currentNetwork.collectAsStateWithLifecycle()
     val manager by container.walletManagerStore.activeManager.collectAsStateWithLifecycle()
-    val metaStore = remember { DashPayContactMetaStore(context) }
+    val metaStore = container.dashPayContactMetaStore
     val metaVersion by metaStore.version.collectAsStateWithLifecycle()
 
     val identity by remember(idBytes) {
@@ -96,22 +93,18 @@ fun ContactRequestsScreen(identityIdHex: String, navController: NavHostControlle
     var rowErrors by remember { mutableStateOf(emptyMap<String, String>()) }
     var isRefreshing by remember { mutableStateOf(false) }
 
-    val isSyncing by (manager?.dashPaySyncIsSyncing ?: MutableStateFlow(false))
-        .collectAsStateWithLifecycle(false)
-
-    // Prune the optimistic-removal overlay once the query reflects the change
-    // (accept promotes to established, ignore deletes the row).
+    // Prune the optimistic-removal overlay against the backing query: keep a
+    // hex only while its pair is STILL incoming-only, so an entry is dropped
+    // exactly when Room reflects the action's own change (accept promotes the
+    // pair to established → it gains an outgoing row; ignore deletes the row →
+    // the group disappears). This is scoped to the row change itself, so an
+    // unrelated sweep completing can no longer flash the row back.
     LaunchedEffect(rows) {
         val byContact = rows.groupBy { it.contactIdentityId.toHex() }
         removedOverlayIds = removedOverlayIds.filter { hex ->
             val group = byContact[hex] ?: return@filter false
             group.any { !it.isOutgoing } && group.none { it.isOutgoing }
         }.toSet()
-    }
-    // Fallback clear: after the next completed sweep, expire whatever the
-    // query still hasn't reflected so no row stays hidden forever.
-    LaunchedEffect(isSyncing) {
-        if (!isSyncing) removedOverlayIds = emptySet()
     }
 
     fun displayNameFor(contactId: ByteArray): String = dashPayContactDisplayName(
