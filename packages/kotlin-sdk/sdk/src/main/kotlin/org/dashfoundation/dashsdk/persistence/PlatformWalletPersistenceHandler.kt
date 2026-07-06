@@ -7,6 +7,7 @@ import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.dashfoundation.dashsdk.ffi.AccountSpecData
+import org.dashfoundation.dashsdk.ffi.ContactRequestRestoreData
 import org.dashfoundation.dashsdk.ffi.CoreTxRecordData
 import org.dashfoundation.dashsdk.ffi.IdentityKeyRestoreData
 import org.dashfoundation.dashsdk.ffi.IdentityRestoreData
@@ -20,6 +21,7 @@ import org.dashfoundation.dashsdk.persistence.entities.AccountEntity
 import org.dashfoundation.dashsdk.persistence.entities.AssetLockEntity
 import org.dashfoundation.dashsdk.persistence.entities.CoreAddressEntity
 import org.dashfoundation.dashsdk.persistence.entities.DashpayContactRequestEntity
+import org.dashfoundation.dashsdk.persistence.entities.DashpayIgnoredSenderEntity
 import org.dashfoundation.dashsdk.persistence.entities.DashpayProfileEntity
 import org.dashfoundation.dashsdk.persistence.entities.DpnsNameEntity
 import org.dashfoundation.dashsdk.persistence.entities.IdentityEntity
@@ -167,6 +169,7 @@ class PlatformWalletPersistenceHandler(
         nonce: Int,
         accountIndex: Int,
         addressIndex: Int,
+        asOfHeight: Long,
     ): Int = guarded {
         stage(walletId) { db ->
             // Update-only: the row is seeded by the address-pool emit
@@ -186,6 +189,9 @@ class PlatformWalletPersistenceHandler(
                     balance = balance,
                     nonce = nonce,
                     isUsed = row.isUsed || balance > 0 || nonce > 0,
+                    // Balance height pin (← Swift handler's lastSeenHeight
+                    // = asOfHeight); platform heights fit an Int.
+                    lastSeenHeight = asOfHeight.coerceIn(0, Int.MAX_VALUE.toLong()).toInt(),
                     lastUpdated = now(),
                 ),
             )
@@ -815,6 +821,12 @@ class PlatformWalletPersistenceHandler(
         autoAcceptProof: ByteArray?,
         coreHeightCreatedAt: Int,
         createdAt: Long,
+        paymentChannelBroken: Boolean,
+        alias: String?,
+        note: String?,
+        isHidden: Boolean,
+        contactAccountLabel: String?,
+        acceptedAccounts: IntArray,
     ): Int = guarded {
         stage(walletId) { db ->
             // Owner identity must exist; skip silently otherwise (replayed
@@ -834,9 +846,52 @@ class PlatformWalletPersistenceHandler(
                     autoAcceptProof = autoAcceptProof,
                     coreHeightCreatedAt = coreHeightCreatedAt,
                     createdAtMillis = createdAt,
+                    paymentChannelBroken = paymentChannelBroken,
+                    contactAlias = alias,
+                    contactNote = note,
+                    contactHidden = isHidden,
+                    contactAccountLabel = contactAccountLabel,
+                    contactAcceptedAccounts = encodeAcceptedAccounts(acceptedAccounts),
                     lastUpdated = now(),
                 ),
             )
+        }
+        0
+    }
+
+    /**
+     * One per-sender ignore delta (mirror of the Swift
+     * `persistContacts` `ignored` loop). An ignore (`isIgnored == true`)
+     * drops **every** incoming request row from the sender — suppression
+     * is per-sender, so rotated (bumped-`accountReference`) requests go
+     * too — and upserts the durable [DashpayIgnoredSenderEntity] row the
+     * restore path rehydrates the Rust `ignored_senders` set from. An
+     * un-ignore deletes that row so the sender's requests resurface on
+     * the next sweep (the Rust side rewinds the cursor to re-fetch them).
+     */
+    override fun onPersistContactIgnored(
+        walletId: ByteArray,
+        ownerId: ByteArray,
+        senderId: ByteArray,
+        isIgnored: Boolean,
+    ): Int = guarded {
+        stage(walletId) { db ->
+            if (isIgnored) {
+                db.dashpayDao().deleteContactRequest(ownerId, senderId, isOutgoing = false)
+                // Owner identity must exist (networkRaw is read off it);
+                // skip silently otherwise — replayed next round.
+                val owner = db.identityDao().getByIdentityId(ownerId) ?: return@stage
+                db.dashpayDao().upsertIgnoredSender(
+                    DashpayIgnoredSenderEntity(
+                        networkRaw = owner.networkRaw,
+                        ownerIdentityId = ownerId,
+                        ignoredSenderId = senderId,
+                        ignoredAt = now(),
+                    ),
+                )
+            } else {
+                db.dashpayDao().deleteIgnoredSender(ownerId, senderId)
+            }
         }
         0
     }
@@ -1256,6 +1311,46 @@ class PlatformWalletPersistenceHandler(
                             if (kind.toInt() == 2) pk.contractBoundsDocumentTypeName else null,
                     )
                 }.toTypedArray()
+            // DashPay contact rows — pending + established requests with
+            // their contactInfo metadata (mirror of the Swift
+            // `buildIdentityRestoreBuffer` contact block). Without these,
+            // contacts only re-derive from chain on the first sweep and the
+            // owner-private metadata is wiped during the DIP-15
+            // deferred-publish window.
+            val contactRows = database.dashpayDao()
+                .getContactRequestsByOwner(idRow.identityId)
+                .map { c ->
+                    ContactRequestRestoreData(
+                        ownerIdentityId = c.ownerIdentityId,
+                        contactIdentityId = c.contactIdentityId,
+                        isOutgoing = c.isOutgoing,
+                        senderKeyIndex = c.senderKeyIndex,
+                        recipientKeyIndex = c.recipientKeyIndex,
+                        accountReference = c.accountReference,
+                        encryptedPublicKey = c.encryptedPublicKey,
+                        encryptedAccountLabel = c.encryptedAccountLabel,
+                        autoAcceptProof = c.autoAcceptProof,
+                        coreHeightCreatedAt = c.coreHeightCreatedAt,
+                        createdAtMillis = c.createdAtMillis,
+                        paymentChannelBroken = c.paymentChannelBroken,
+                        alias = c.contactAlias,
+                        note = c.contactNote,
+                        isHidden = c.contactHidden,
+                        contactAccountLabel = c.contactAccountLabel,
+                        acceptedAccounts = decodeAcceptedAccounts(c.contactAcceptedAccounts),
+                    )
+                }.toTypedArray()
+            // Ignored senders (per-sender mute) — restores the Rust
+            // `ignored_senders` set so a previously-ignored sender doesn't
+            // resurface after a relaunch. Drop any row with a wrong-length
+            // id BEFORE handing it to the trampoline (which fails the whole
+            // load on a non-32-byte id — same abort-on-corrupt convention
+            // as the Swift buffer builder's up-front filter).
+            val ignoredRows = database.dashpayDao()
+                .getIgnoredSendersByOwner(idRow.identityId)
+                .map { it.ignoredSenderId }
+                .filter { it.size == 32 }
+                .toTypedArray()
             IdentityRestoreData(
                 identityId = idRow.identityId,
                 balance = idRow.balance,
@@ -1266,6 +1361,8 @@ class PlatformWalletPersistenceHandler(
                 // sync round re-stamps it via the identity changeset path.
                 status = 0,
                 keys = keyRows,
+                contacts = contactRows,
+                ignoredSenders = ignoredRows,
             )
         }.toTypedArray()
     }
@@ -1423,6 +1520,26 @@ interface PrivateKeyDeriver {
 // ── Free functions (unit-testable, no `this`) ─────────────────────────
 
 /** Lowercase hex of a byte array (used as the changeset-buffer key). */
+/**
+ * Pack DIP-15 accepted-account indices (`u32`s crossing JNI as an
+ * `IntArray` bit-pattern) into a big-endian 4-bytes-per-entry BLOB for
+ * the `contactAcceptedAccounts` column. Empty → null (matches the
+ * absent-optional convention of the other nullable columns).
+ */
+internal fun encodeAcceptedAccounts(accounts: IntArray): ByteArray? {
+    if (accounts.isEmpty()) return null
+    val buffer = java.nio.ByteBuffer.allocate(accounts.size * 4) // big-endian by default
+    accounts.forEach { buffer.putInt(it) }
+    return buffer.array()
+}
+
+/** Inverse of [encodeAcceptedAccounts]; null / ragged tail-safe. */
+internal fun decodeAcceptedAccounts(blob: ByteArray?): IntArray {
+    if (blob == null || blob.size < 4) return IntArray(0)
+    val buffer = java.nio.ByteBuffer.wrap(blob)
+    return IntArray(blob.size / 4) { buffer.int }
+}
+
 internal fun ByteArray.toHex(): String {
     val out = CharArray(size * 2)
     val hex = "0123456789abcdef".toCharArray()

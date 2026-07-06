@@ -52,11 +52,11 @@ use jni::sys::jlong;
 use jni::JNIEnv;
 use platform_wallet_ffi::{
     AccountAddressPoolFFI, AccountChangeSetFFI, AccountSpecFFI, AddressBalanceEntryFFI,
-    AssetLockEntryFFI, ContactRequestFFI, ContactRequestRemovalFFI, CoreAddressEntryFFI,
-    IdentityEntryFFI, IdentityKeyEntryFFI, IdentityKeyRemovalFFI, IdentityKeyRestoreFFI,
-    IdentityRestoreEntryFFI, PersistenceCallbacks, PlatformAddressFFI, SpentOutPointFFI,
-    TokenBalanceRemovalFFI, TokenBalanceUpsertFFI, TransactionRecordFFI, UtxoEntryFFI,
-    WalletChangeSetFFI, WalletRestoreEntryFFI,
+    AssetLockEntryFFI, ContactIgnoredSenderFFI, ContactRequestFFI, ContactRequestRemovalFFI,
+    CoreAddressEntryFFI, IdentityEntryFFI, IdentityKeyEntryFFI, IdentityKeyRemovalFFI,
+    IdentityKeyRestoreFFI, IdentityRestoreEntryFFI, PersistenceCallbacks, PlatformAddressFFI,
+    SpentOutPointFFI, TokenBalanceRemovalFFI, TokenBalanceUpsertFFI, TransactionRecordFFI,
+    UtxoEntryFFI, WalletChangeSetFFI, WalletRestoreEntryFFI,
 };
 use std::ffi::{c_void, CStr, CString};
 use std::os::raw::c_char;
@@ -394,7 +394,7 @@ unsafe extern "C" fn tramp_persist_address_balances(
                 env.call_method(
                     bridge,
                     "onPersistAddressBalance",
-                    "([BB[BJIII)I",
+                    "([BB[BJIIIJ)I",
                     &[
                         (&wid).into(),
                         JValue::Byte(address_type as i8),
@@ -403,6 +403,7 @@ unsafe extern "C" fn tramp_persist_address_balances(
                         JValue::Int(e.nonce as i32),
                         JValue::Int(e.account_index as i32),
                         JValue::Int(e.address_index as i32),
+                        JValue::Long(e.as_of_height as i64),
                     ],
                 )?
                 .i()
@@ -1036,12 +1037,14 @@ unsafe extern "C" fn tramp_persist_contacts(
     removed_sent_count: usize,
     removed_incoming_ptr: *const ContactRequestRemovalFFI,
     removed_incoming_count: usize,
+    ignored_ptr: *const ContactIgnoredSenderFFI,
+    ignored_count: usize,
 ) -> i32 {
     with_bridge(context, |env, bridge| {
         let wid = id32(env, wallet_id)?;
         for c in slice_or_empty(upserts_ptr, upserts_count) {
             let code =
-                env.with_local_frame(32, |env| persist_contact_upsert(env, bridge, &wid, c))?;
+                env.with_local_frame(48, |env| persist_contact_upsert(env, bridge, &wid, c))?;
             if code != 0 {
                 return Ok(code);
             }
@@ -1057,6 +1060,30 @@ unsafe extern "C" fn tramp_persist_contacts(
         for r in slice_or_empty(removed_incoming_ptr, removed_incoming_count) {
             let code = env.with_local_frame(16, |env| {
                 persist_contact_removal(env, bridge, &wid, r, "onPersistContactRemovalIncoming")
+            })?;
+            if code != 0 {
+                return Ok(code);
+            }
+        }
+        // Per-sender ignore deltas: `is_ignored == true` persists the
+        // ignored-sender row (an ignore); `false` deletes it (an
+        // un-ignore). POD rows — the Kotlin handler copies what it keeps.
+        for g in slice_or_empty(ignored_ptr, ignored_count) {
+            let code = env.with_local_frame(16, |env| {
+                let owner = env.byte_array_from_slice(&g.owner_id)?;
+                let sender = env.byte_array_from_slice(&g.sender_id)?;
+                env.call_method(
+                    bridge,
+                    "onPersistContactIgnored",
+                    "([B[B[BZ)I",
+                    &[
+                        (&wid).into(),
+                        (&owner).into(),
+                        (&sender).into(),
+                        JValue::Bool(g.is_ignored as u8),
+                    ],
+                )?
+                .i()
             })?;
             if code != 0 {
                 return Ok(code);
@@ -1081,10 +1108,17 @@ unsafe fn persist_contact_upsert(
         c.encrypted_account_label_len,
     )?;
     let proof = bytes_opt(env, c.auto_accept_proof, c.auto_accept_proof_len)?;
+    // Established-row metadata (contactInfo alias/note/hidden, the
+    // contact's decrypted account label, the broken-channel flag and the
+    // DIP-15 accepted accounts) — null / false / empty on pending rows.
+    let alias = cstr_opt(env, c.alias)?;
+    let note = cstr_opt(env, c.note)?;
+    let contact_account_label = cstr_opt(env, c.contact_account_label)?;
+    let accepted = int_array(env, c.accepted_accounts, c.accepted_accounts_len)?;
     env.call_method(
         bridge,
         "onPersistContactUpsert",
-        "([B[B[BZIII[B[B[BIJ)I",
+        "([B[B[BZIII[B[B[BIJZLjava/lang/String;Ljava/lang/String;ZLjava/lang/String;[I)I",
         &[
             wid.into(),
             (&owner).into(),
@@ -1098,9 +1132,36 @@ unsafe fn persist_contact_upsert(
             (&proof).into(),
             JValue::Int(c.core_height_created_at as i32),
             JValue::Long(c.created_at as i64),
+            JValue::Bool(c.payment_channel_broken as u8),
+            (&alias).into(),
+            (&note).into(),
+            JValue::Bool(c.is_hidden as u8),
+            (&contact_account_label).into(),
+            (&accepted).into(),
         ],
     )?
     .i()
+}
+
+/// Copy `len` `u32`s from `ptr` (or 0 when null) into a JVM `int[]`
+/// (bit-pattern cast — DIP-15 account indices never exceed `i32::MAX`
+/// in practice, and the Kotlin side reads them back with the same cast).
+fn int_array<'l>(
+    env: &JNIEnv<'l>,
+    ptr: *const u32,
+    len: usize,
+) -> Result<jni::objects::JIntArray<'l>, jni::errors::Error> {
+    let arr = env.new_int_array(len as i32)?;
+    if !ptr.is_null() && len > 0 {
+        // SAFETY: caller guarantees `ptr` points to `len` u32s for the
+        // callback window.
+        let values: Vec<i32> = unsafe { std::slice::from_raw_parts(ptr, len) }
+            .iter()
+            .map(|&v| v as i32)
+            .collect();
+        env.set_int_array_region(&arr, 0, &values)?;
+    }
+    Ok(arr)
 }
 
 unsafe fn persist_contact_removal(
@@ -1409,15 +1470,43 @@ struct AccountSpecStaged {
     xpub: Vec<u8>,
 }
 
-/// Staged identity-restore row: FFI struct with `keys` still null / 0 until
-/// sealed, plus the owned per-key staging. `dpns_names` /
-/// `contested_dpns_names` are left null / 0 this pass (not yet ported), so
-/// there is nothing owned for them to free.
+/// Staged identity-restore row: FFI struct with `keys` / `contacts` /
+/// `ignored_senders` still null / 0 until sealed, plus the owned per-key
+/// and per-contact staging. `dpns_names` / `contested_dpns_names` are left
+/// null / 0 this pass (not yet ported), and `payments` /
+/// `contact_profiles` stay null / 0 because Kotlin has no persist source
+/// for them yet (no Room analog of `PersistentDashpayPayment` /
+/// `PersistentDashpayContactProfile`), so there is nothing owned for any
+/// of those to free.
 struct IdentityRestoreStaged {
-    /// FFI entry with `keys` (and the dpns arrays) still null / 0 until
+    /// FFI entry with `keys` / `contacts` / `ignored_senders` (and the
+    /// dpns / payments / contact-profile arrays) still null / 0 until
     /// sealed.
     entry: IdentityRestoreEntryFFI,
     keys: Vec<IdentityKeyRestoreStaged>,
+    contacts: Vec<ContactRestoreStaged>,
+    /// Bare 32-byte ignored-sender ids (per-sender mute) — POD, minted
+    /// as a flat `[u8; 32]` array at seal.
+    ignored_senders: Vec<[u8; 32]>,
+}
+
+/// Staged DashPay contact-restore row: FFI struct with every pointer
+/// field still null / 0 until sealed, plus the owned buffers that back
+/// them. Mirrors the Swift `buildIdentityRestoreBuffer` contact block:
+/// empty byte `Vec`s map back to `(null, 0)` (absent optionals), `None`
+/// strings stay null, and `accepted_accounts` mints a `u32` buffer.
+struct ContactRestoreStaged {
+    /// FFI row with `encrypted_public_key` / `encrypted_account_label` /
+    /// `auto_accept_proof` / `alias` / `note` / `contact_account_label` /
+    /// `accepted_accounts` still null / 0 until sealed.
+    row: ContactRequestFFI,
+    encrypted_public_key: Vec<u8>,
+    encrypted_account_label: Vec<u8>,
+    auto_accept_proof: Vec<u8>,
+    alias: Option<CString>,
+    note: Option<CString>,
+    contact_account_label: Option<CString>,
+    accepted_accounts: Vec<u32>,
 }
 
 /// Staged identity-public-key row: FFI struct with a null `data` pointer
@@ -1453,35 +1542,76 @@ fn seal_wallet_entries(staged: Vec<WalletRestoreStaged>) -> Vec<WalletRestoreEnt
                     .collect();
                 (entry.accounts, entry.accounts_count) = vec_into_raw(specs);
 
-                // Identities: mint each identity's nested key array first,
-                // then the identity array itself. Every pointer minted here
-                // is reclaimed by `tramp_load_wallet_list_free`.
+                // Identities: mint each identity's nested key / contact /
+                // ignored-sender arrays first, then the identity array
+                // itself. Every pointer minted here is reclaimed by
+                // `tramp_load_wallet_list_free`.
                 let identities: Vec<IdentityRestoreEntryFFI> = identities
                     .into_iter()
-                    .map(|IdentityRestoreStaged { mut entry, keys }| {
-                        let keys: Vec<IdentityKeyRestoreFFI> = keys
-                            .into_iter()
-                            .map(
-                                |IdentityKeyRestoreStaged {
-                                     mut key,
-                                     data,
-                                     doc_type,
-                                 }| {
-                                    (key.data, key.data_len) = vec_into_raw(data);
-                                    // Only kind==2 carried a doc-type; `into_raw`
-                                    // hands ownership to the FFI struct, reclaimed
-                                    // via `CString::from_raw` in the free path.
-                                    key.contract_bounds_document_type = match doc_type {
-                                        Some(c) => c.into_raw() as *const c_char,
-                                        None => ptr::null(),
-                                    };
-                                    key
-                                },
-                            )
-                            .collect();
-                        (entry.keys, entry.keys_count) = vec_into_raw(keys);
-                        entry
-                    })
+                    .map(
+                        |IdentityRestoreStaged {
+                             mut entry,
+                             keys,
+                             contacts,
+                             ignored_senders,
+                         }| {
+                            let keys: Vec<IdentityKeyRestoreFFI> = keys
+                                .into_iter()
+                                .map(
+                                    |IdentityKeyRestoreStaged {
+                                         mut key,
+                                         data,
+                                         doc_type,
+                                     }| {
+                                        (key.data, key.data_len) = vec_into_raw(data);
+                                        // Only kind==2 carried a doc-type; `into_raw`
+                                        // hands ownership to the FFI struct, reclaimed
+                                        // via `CString::from_raw` in the free path.
+                                        key.contract_bounds_document_type =
+                                            opt_cstring_into_raw(doc_type);
+                                        key
+                                    },
+                                )
+                                .collect();
+                            (entry.keys, entry.keys_count) = vec_into_raw(keys);
+
+                            let contacts: Vec<ContactRequestFFI> = contacts
+                                .into_iter()
+                                .map(
+                                    |ContactRestoreStaged {
+                                         mut row,
+                                         encrypted_public_key,
+                                         encrypted_account_label,
+                                         auto_accept_proof,
+                                         alias,
+                                         note,
+                                         contact_account_label,
+                                         accepted_accounts,
+                                     }| {
+                                        (row.encrypted_public_key, row.encrypted_public_key_len) =
+                                            vec_into_raw(encrypted_public_key);
+                                        (
+                                            row.encrypted_account_label,
+                                            row.encrypted_account_label_len,
+                                        ) = vec_into_raw(encrypted_account_label);
+                                        (row.auto_accept_proof, row.auto_accept_proof_len) =
+                                            vec_into_raw(auto_accept_proof);
+                                        row.alias = opt_cstring_into_raw(alias);
+                                        row.note = opt_cstring_into_raw(note);
+                                        row.contact_account_label =
+                                            opt_cstring_into_raw(contact_account_label);
+                                        (row.accepted_accounts, row.accepted_accounts_len) =
+                                            vec_into_raw(accepted_accounts);
+                                        row
+                                    },
+                                )
+                                .collect();
+                            (entry.contacts, entry.contacts_count) = vec_into_raw(contacts);
+                            (entry.ignored_senders, entry.ignored_senders_count) =
+                                vec_into_raw(ignored_senders);
+                            entry
+                        },
+                    )
                     .collect();
                 (entry.identities, entry.identities_count) = vec_into_raw(identities);
 
@@ -1666,6 +1796,34 @@ fn build_identity_restore(
         keys.push(k);
     }
 
+    // DashPay contact rows — pending + established requests (with their
+    // contactInfo metadata), assembled from the Room
+    // `DashpayContactRequestEntity` rows Kotlin-side. Mirror of the
+    // Swift `buildIdentityRestoreBuffer` contact block.
+    let contacts_obj = env
+        .get_field(
+            holder,
+            "contacts",
+            "[Lorg/dashfoundation/dashsdk/ffi/ContactRequestRestoreData;",
+        )?
+        .l()?;
+    let contacts_arr: jni::objects::JObjectArray = contacts_obj.into();
+    let contacts_len = env.get_array_length(&contacts_arr)? as usize;
+    let mut contacts: Vec<ContactRestoreStaged> = Vec::with_capacity(contacts_len);
+    for i in 0..contacts_len {
+        let c = env.with_local_frame(48, |env| {
+            let h = env.get_object_array_element(&contacts_arr, i as i32)?;
+            build_contact_restore(env, &h)
+        })?;
+        contacts.push(c);
+    }
+
+    // DashPay ignored senders (per-sender mute, local-only) — restores
+    // the `ignored_senders` set so a previously-ignored sender doesn't
+    // resurface after a relaunch when their still-on-platform immutable
+    // contactRequest documents re-ingest on the next sweep.
+    let ignored_senders = read_id32_array_field(env, holder, "ignoredSenders")?;
+
     let entry = IdentityRestoreEntryFFI {
         identity_id,
         balance,
@@ -1678,8 +1836,90 @@ fn build_identity_restore(
         contested_dpns_names_count: 0,
         keys: ptr::null(),
         keys_count: 0,
+        contacts: ptr::null(),
+        contacts_count: 0,
+        // Payments + cached contact profiles stay null / 0 this pass:
+        // Kotlin has no persist source for them yet (no Room analog of
+        // `PersistentDashpayPayment` / `PersistentDashpayContactProfile`),
+        // so there is nothing to rehydrate — the reconcile / profile
+        // sweeps rebuild them after load, exactly as before the arrays
+        // existed. The free trampoline never has to reclaim them because
+        // they are never minted.
+        payments: ptr::null(),
+        payments_count: 0,
+        ignored_senders: ptr::null(),
+        ignored_senders_count: 0,
+        contact_profiles: ptr::null(),
+        contact_profiles_count: 0,
     };
-    Ok(IdentityRestoreStaged { entry, keys })
+    Ok(IdentityRestoreStaged {
+        entry,
+        keys,
+        contacts,
+        ignored_senders,
+    })
+}
+
+/// Rebuild one DashPay contact row from a Kotlin `ContactRequestRestoreData`
+/// into a [`ContactRestoreStaged`]. Byte payloads and metadata strings stay
+/// owned here (empty vec / `None` when absent); [`seal_wallet_entries`]
+/// mints the raw buffers only once the whole load succeeded and
+/// [`tramp_load_wallet_list_free`] reclaims them.
+fn build_contact_restore(
+    env: &mut JNIEnv,
+    holder: &JObject,
+) -> Result<ContactRestoreStaged, jni::errors::Error> {
+    let owner_id = read_id32_field(env, holder, "ownerIdentityId")?;
+    let contact_id = read_id32_field(env, holder, "contactIdentityId")?;
+    let is_outgoing = env.get_field(holder, "isOutgoing", "Z")?.z()?;
+    let sender_key_index = env.get_field(holder, "senderKeyIndex", "I")?.i()? as u32;
+    let recipient_key_index = env.get_field(holder, "recipientKeyIndex", "I")?.i()? as u32;
+    let account_reference = env.get_field(holder, "accountReference", "I")?.i()? as u32;
+    let encrypted_public_key = read_bytes_field_vec(env, holder, "encryptedPublicKey")?;
+    let encrypted_account_label = read_bytes_field_vec(env, holder, "encryptedAccountLabel")?;
+    let auto_accept_proof = read_bytes_field_vec(env, holder, "autoAcceptProof")?;
+    let core_height_created_at = env.get_field(holder, "coreHeightCreatedAt", "I")?.i()? as u32;
+    let created_at = env.get_field(holder, "createdAtMillis", "J")?.j()? as u64;
+    let payment_channel_broken = env.get_field(holder, "paymentChannelBroken", "Z")?.z()?;
+    let alias = read_opt_cstring_field(env, holder, "alias")?;
+    let note = read_opt_cstring_field(env, holder, "note")?;
+    let is_hidden = env.get_field(holder, "isHidden", "Z")?.z()?;
+    let contact_account_label = read_opt_cstring_field(env, holder, "contactAccountLabel")?;
+    let accepted_accounts = read_u32_array_field(env, holder, "acceptedAccounts")?;
+
+    let row = ContactRequestFFI {
+        owner_id,
+        contact_id,
+        is_outgoing,
+        sender_key_index,
+        recipient_key_index,
+        account_reference,
+        encrypted_public_key: ptr::null(),
+        encrypted_public_key_len: 0,
+        encrypted_account_label: ptr::null(),
+        encrypted_account_label_len: 0,
+        auto_accept_proof: ptr::null(),
+        auto_accept_proof_len: 0,
+        core_height_created_at,
+        created_at,
+        payment_channel_broken,
+        alias: ptr::null(),
+        note: ptr::null(),
+        is_hidden,
+        contact_account_label: ptr::null(),
+        accepted_accounts: ptr::null(),
+        accepted_accounts_len: 0,
+    };
+    Ok(ContactRestoreStaged {
+        row,
+        encrypted_public_key,
+        encrypted_account_label,
+        auto_accept_proof,
+        alias,
+        note,
+        contact_account_label,
+        accepted_accounts,
+    })
 }
 
 /// Rebuild one identity-public-key row from a Kotlin
@@ -1801,13 +2041,14 @@ unsafe extern "C" fn tramp_load_wallet_list_free(
                 drop(specs);
             }
 
-            // identities + nested key arrays (each key's `data` buffer +
-            // contract-bounds doc-type C-string). Mirrors exactly what
-            // `seal_wallet_entries` minted: the identity array, each
-            // identity's key array, and per-key `data` / doc-type pointers.
-            // The dpns_names / contested_dpns_names arrays are never minted
-            // this pass (staged null / 0), so there is nothing to reclaim
-            // for them.
+            // identities + nested key / contact / ignored-sender arrays
+            // (each key's `data` buffer + contract-bounds doc-type C-string;
+            // each contact's three byte payloads, three metadata C-strings
+            // and `accepted_accounts` u32 buffer). Mirrors exactly what
+            // `seal_wallet_entries` minted. The dpns_names /
+            // contested_dpns_names / payments / contact_profiles arrays are
+            // never minted this pass (staged null / 0), so there is nothing
+            // to reclaim for them.
             if !e.identities.is_null() && e.identities_count > 0 {
                 let idents: Box<[IdentityRestoreEntryFFI]> =
                     Box::from_raw(std::ptr::slice_from_raw_parts_mut(
@@ -1827,14 +2068,33 @@ unsafe extern "C" fn tramp_load_wallet_list_free(
                             // FFI struct via `CString::into_raw` in
                             // `seal_wallet_entries` (only kind==2 keys have
                             // a non-null pointer).
-                            if !k.contract_bounds_document_type.is_null() {
-                                drop(CString::from_raw(
-                                    k.contract_bounds_document_type as *mut c_char,
-                                ));
-                            }
+                            free_raw_cstring(k.contract_bounds_document_type);
                         }
                         drop(keys);
                     }
+                    if !ident.contacts.is_null() && ident.contacts_count > 0 {
+                        let contacts: Box<[ContactRequestFFI]> =
+                            Box::from_raw(std::ptr::slice_from_raw_parts_mut(
+                                ident.contacts as *mut ContactRequestFFI,
+                                ident.contacts_count,
+                            ));
+                        for c in contacts.iter() {
+                            free_raw_bytes(c.encrypted_public_key, c.encrypted_public_key_len);
+                            free_raw_bytes(
+                                c.encrypted_account_label,
+                                c.encrypted_account_label_len,
+                            );
+                            free_raw_bytes(c.auto_accept_proof, c.auto_accept_proof_len);
+                            free_raw_cstring(c.alias);
+                            free_raw_cstring(c.note);
+                            free_raw_cstring(c.contact_account_label);
+                            free_raw_slice(c.accepted_accounts, c.accepted_accounts_len);
+                        }
+                        drop(contacts);
+                    }
+                    // Flat POD array of 32-byte sender ids — no nested
+                    // buffers, just the boxed slice itself.
+                    free_raw_slice(ident.ignored_senders, ident.ignored_senders_count);
                 }
                 drop(idents);
             }
@@ -2312,6 +2572,35 @@ unsafe fn free_raw_bytes(ptr: *const u8, len: usize) {
     }
 }
 
+/// Free a `Box<[T]>` buffer minted by [`vec_into_raw`] (non-`u8` element
+/// types — `u32` accepted-account buffers, `[u8; 32]` ignored-sender
+/// arrays). No-op on null/0.
+unsafe fn free_raw_slice<T>(ptr: *const T, len: usize) {
+    if !ptr.is_null() && len > 0 {
+        drop(Box::from_raw(std::ptr::slice_from_raw_parts_mut(
+            ptr as *mut T,
+            len,
+        )));
+    }
+}
+
+/// Hand an optional owned `CString` to an FFI struct field (`None` →
+/// null). The paired [`free_raw_cstring`] reclaims it via
+/// `CString::from_raw` — mint only once the whole load succeeded.
+fn opt_cstring_into_raw(c: Option<CString>) -> *const c_char {
+    match c {
+        Some(c) => c.into_raw() as *const c_char,
+        None => ptr::null(),
+    }
+}
+
+/// Reclaim a C string minted by [`opt_cstring_into_raw`]. No-op on null.
+unsafe fn free_raw_cstring(ptr: *const c_char) {
+    if !ptr.is_null() {
+        drop(CString::from_raw(ptr as *mut c_char));
+    }
+}
+
 /// Reconstruct a `Box<[T]>` from a load-callback allocation, run
 /// `per_entry` for each element (to free its nested buffers), then drop it.
 // Only the shielded load-free trampolines call this; without the feature
@@ -2416,6 +2705,69 @@ fn read_bytes_field_fixed<const N: usize>(
     env.get_byte_array_region(&arr, 0, &mut buf)?;
     for (i, b) in buf.iter().enumerate() {
         out[i] = *b as u8;
+    }
+    Ok(out)
+}
+
+/// Read an `IntArray` field into an owned `Vec<u32>` (bit-pattern cast —
+/// inverse of the persist-side [`int_array`] projection); null / empty →
+/// empty vec.
+fn read_u32_array_field(
+    env: &mut JNIEnv,
+    holder: &JObject,
+    field: &str,
+) -> Result<Vec<u32>, jni::errors::Error> {
+    let obj = env.get_field(holder, field, "[I")?.l()?;
+    if obj.is_null() {
+        return Ok(Vec::new());
+    }
+    let arr: jni::objects::JIntArray = obj.into();
+    let len = env.get_array_length(&arr)? as usize;
+    if len == 0 {
+        return Ok(Vec::new());
+    }
+    let mut buf = vec![0i32; len];
+    env.get_int_array_region(&arr, 0, &mut buf)?;
+    Ok(buf.into_iter().map(|v| v as u32).collect())
+}
+
+/// Read an `Array<ByteArray>` field of 32-byte ids into an owned
+/// `Vec<[u8; 32]>`; a null field → empty vec. Any element that is not
+/// exactly 32 bytes fails the load (same altered-key rationale as
+/// [`read_bytes_field_fixed`]).
+fn read_id32_array_field(
+    env: &mut JNIEnv,
+    holder: &JObject,
+    field: &str,
+) -> Result<Vec<[u8; 32]>, jni::errors::Error> {
+    let obj = env.get_field(holder, field, "[[B")?.l()?;
+    if obj.is_null() {
+        return Ok(Vec::new());
+    }
+    let arr: jni::objects::JObjectArray = obj.into();
+    let len = env.get_array_length(&arr)? as usize;
+    let mut out: Vec<[u8; 32]> = Vec::with_capacity(len);
+    for i in 0..len {
+        let id = env.with_local_frame(4, |env| -> Result<[u8; 32], jni::errors::Error> {
+            let element = env.get_object_array_element(&arr, i as i32)?;
+            let bytes: JByteArray = element.into();
+            let blen = env.get_array_length(&bytes)? as usize;
+            if blen != 32 {
+                log::error!("load: field `{field}`[{i}] expected 32 bytes, got {blen}");
+                return Err(jni::errors::Error::WrongJValueType(
+                    "byte[] of expected fixed length",
+                    "byte[] of mismatched length",
+                ));
+            }
+            let mut buf = [0i8; 32];
+            env.get_byte_array_region(&bytes, 0, &mut buf)?;
+            let mut id = [0u8; 32];
+            for (dst, src) in id.iter_mut().zip(buf.iter()) {
+                *dst = *src as u8;
+            }
+            Ok(id)
+        })?;
+        out.push(id);
     }
     Ok(out)
 }

@@ -51,7 +51,9 @@ import org.dashfoundation.example.util.toHex
  * [org.dashfoundation.dashsdk.persistence.dao.DashpayDao] rows when the wallet
  * isn't loaded or the network read fails. Accept is wired via
  * `.acceptIncomingRequest` (the already-bridged accept over the incoming
- * request handle); Send and Reject were already wired.
+ * request handle); Ignore (the reversible per-sender local mute that
+ * replaced the old per-request Reject — Swift `ContactRequestsView`'s
+ * "Ignore" action) is wired via `.ignoreContactSender`.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -156,12 +158,14 @@ fun FriendsScreen(identityIdHex: String, navController: NavHostController) {
                         isSending = true
                         scope.launch {
                             try {
+                                val manager = requireNotNull(
+                                    container.walletManagerStore.activeManager.value,
+                                )
                                 wallet.dashpay.sendContactRequest(
                                     senderIdentityId = idBytes,
                                     recipientIdentityId = recipientId,
-                                    signerHandle = requireNotNull(
-                                        container.walletManagerStore.activeManager.value,
-                                    ).signerHandle,
+                                    signerHandle = manager.signerHandle,
+                                    coreSignerHandle = manager.mnemonicResolverHandle,
                                 ).close()
                                 recipient = null
                                 hydrate()
@@ -193,13 +197,16 @@ fun FriendsScreen(identityIdHex: String, navController: NavHostController) {
                                             acceptingHex = senderHex
                                             scope.launch {
                                                 try {
+                                                    val manager = requireNotNull(
+                                                        container.walletManagerStore
+                                                            .activeManager.value,
+                                                    )
                                                     val ok = w.dashpay.acceptIncomingRequest(
                                                         ourIdentityId = idBytes,
                                                         senderId = senderId,
-                                                        signerHandle = requireNotNull(
-                                                            container.walletManagerStore
-                                                                .activeManager.value,
-                                                        ).signerHandle,
+                                                        signerHandle = manager.signerHandle,
+                                                        coreSignerHandle =
+                                                            manager.mnemonicResolverHandle,
                                                     )
                                                     if (!ok) {
                                                         error = "Request from ${senderHex.take(12)}… " +
@@ -221,18 +228,20 @@ fun FriendsScreen(identityIdHex: String, navController: NavHostController) {
                                             val w = wallet ?: return@TextButton
                                             scope.launch {
                                                 try {
-                                                    w.dashpay.rejectContactRequest(
+                                                    // Reversible per-sender local mute (DP-06);
+                                                    // replaced the old per-request reject.
+                                                    w.dashpay.ignoreContactSender(
                                                         ourIdentityId = idBytes,
                                                         contactIdentityId = senderId,
                                                     )
                                                     hydrate()
                                                 } catch (e: Exception) {
-                                                    error = e.message ?: "Reject failed"
+                                                    error = e.message ?: "Ignore failed"
                                                 }
                                             }
                                         },
-                                        modifier = Modifier.testTag("friends.reject.$senderHex"),
-                                    ) { Text("Reject") }
+                                        modifier = Modifier.testTag("friends.ignore.$senderHex"),
+                                    ) { Text("Ignore") }
                                 }
                             },
                         )

@@ -5,6 +5,8 @@ import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import org.dashfoundation.dashsdk.persistence.converters.Converters
 import org.dashfoundation.dashsdk.persistence.dao.AccountDao
 import org.dashfoundation.dashsdk.persistence.dao.AssetLockDao
@@ -27,6 +29,7 @@ import org.dashfoundation.dashsdk.persistence.entities.AccountEntity
 import org.dashfoundation.dashsdk.persistence.entities.AssetLockEntity
 import org.dashfoundation.dashsdk.persistence.entities.CoreAddressEntity
 import org.dashfoundation.dashsdk.persistence.entities.DashpayContactRequestEntity
+import org.dashfoundation.dashsdk.persistence.entities.DashpayIgnoredSenderEntity
 import org.dashfoundation.dashsdk.persistence.entities.DashpayProfileEntity
 import org.dashfoundation.dashsdk.persistence.entities.DataContractEntity
 import org.dashfoundation.dashsdk.persistence.entities.DocumentEntity
@@ -60,9 +63,16 @@ import org.dashfoundation.dashsdk.persistence.entities.WalletManagerMetadataEnti
  * Version 1 ships with exported schemas (`sdk/schemas/`) so future
  * migrations start from a recorded baseline; destructive fallback is
  * intentionally NOT enabled.
+ *
+ * Version 2 (DashPay ignore + contactInfo metadata, upstream #3841):
+ * adds the `dashpay_ignored_senders` table (durable per-sender mute rows
+ * restored into the Rust `ignored_senders` set at load) and the
+ * established-row metadata columns on `dashpay_contact_requests`
+ * (`paymentChannelBroken` / `contactAlias` / `contactNote` /
+ * `contactHidden` / `contactAccountLabel` / `contactAcceptedAccounts`).
  */
 @Database(
-    version = 1,
+    version = 2,
     exportSchema = true,
     entities = [
         WalletEntity::class,
@@ -76,6 +86,7 @@ import org.dashfoundation.dashsdk.persistence.entities.WalletManagerMetadataEnti
         DpnsNameEntity::class,
         DashpayProfileEntity::class,
         DashpayContactRequestEntity::class,
+        DashpayIgnoredSenderEntity::class,
         DataContractEntity::class,
         DocumentTypeEntity::class,
         DocumentEntity::class,
@@ -120,6 +131,52 @@ abstract class DashDatabase : RoomDatabase() {
         const val DATABASE_NAME: String = "dash-sdk.db"
 
         /**
+         * v1 → v2: the DashPay ignore + contactInfo-metadata reshape
+         * (upstream #3841). New `dashpay_ignored_senders` table + six
+         * metadata columns on `dashpay_contact_requests`. SQL mirrors the
+         * exported `schemas/.../2.json` `createSql` exactly.
+         */
+        val MIGRATION_1_2: Migration = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `dashpay_ignored_senders` (" +
+                        "`networkRaw` INTEGER NOT NULL, " +
+                        "`ownerIdentityId` BLOB NOT NULL, " +
+                        "`ignoredSenderId` BLOB NOT NULL, " +
+                        "`ignoredAt` INTEGER NOT NULL, " +
+                        "PRIMARY KEY(`networkRaw`, `ownerIdentityId`, `ignoredSenderId`), " +
+                        "FOREIGN KEY(`ownerIdentityId`) REFERENCES `identities`(`identityId`) " +
+                        "ON UPDATE NO ACTION ON DELETE CASCADE )",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_dashpay_ignored_senders_ownerIdentityId` " +
+                        "ON `dashpay_ignored_senders` (`ownerIdentityId`)",
+                )
+                db.execSQL(
+                    "ALTER TABLE `dashpay_contact_requests` " +
+                        "ADD COLUMN `paymentChannelBroken` INTEGER NOT NULL DEFAULT 0",
+                )
+                db.execSQL(
+                    "ALTER TABLE `dashpay_contact_requests` ADD COLUMN `contactAlias` TEXT",
+                )
+                db.execSQL(
+                    "ALTER TABLE `dashpay_contact_requests` ADD COLUMN `contactNote` TEXT",
+                )
+                db.execSQL(
+                    "ALTER TABLE `dashpay_contact_requests` " +
+                        "ADD COLUMN `contactHidden` INTEGER NOT NULL DEFAULT 0",
+                )
+                db.execSQL(
+                    "ALTER TABLE `dashpay_contact_requests` ADD COLUMN `contactAccountLabel` TEXT",
+                )
+                db.execSQL(
+                    "ALTER TABLE `dashpay_contact_requests` " +
+                        "ADD COLUMN `contactAcceptedAccounts` BLOB",
+                )
+            }
+        }
+
+        /**
          * Build the on-disk database. WAL is Room's default journal mode on
          * API 16+; writes go through the persistence handler inside
          * `withTransaction`, mirroring the changeset bracketing contract of
@@ -127,6 +184,7 @@ abstract class DashDatabase : RoomDatabase() {
          */
         fun create(context: Context): DashDatabase =
             Room.databaseBuilder(context, DashDatabase::class.java, DATABASE_NAME)
+                .addMigrations(MIGRATION_1_2)
                 .build()
 
         /** In-memory variant for tests. */

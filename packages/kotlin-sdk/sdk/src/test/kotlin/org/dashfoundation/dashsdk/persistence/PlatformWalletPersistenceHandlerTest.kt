@@ -243,6 +243,7 @@ class PlatformWalletPersistenceHandlerTest {
             nonce = 3,
             accountIndex = 0,
             addressIndex = 0,
+            asOfHeight = 777,
         )
         handler.onChangesetEnd(walletId, success = true)
 
@@ -250,6 +251,7 @@ class PlatformWalletPersistenceHandlerTest {
         assertNotNull(row)
         assertEquals(12_345, row!!.balance)
         assertEquals(3, row.nonce)
+        assertEquals(777, row.lastSeenHeight)
         assertTrue(row.isUsed)
     }
 
@@ -264,6 +266,7 @@ class PlatformWalletPersistenceHandlerTest {
             nonce = 0,
             accountIndex = 0,
             addressIndex = 0,
+            asOfHeight = 0,
         )
         handler.onChangesetEnd(walletId, success = true)
 
@@ -602,6 +605,131 @@ class PlatformWalletPersistenceHandlerTest {
         assertEquals(2.toByte(), key.contractBoundsKind)
         assertTrue(boundsId.contentEquals(key.contractBoundsId))
         assertEquals("contactRequest", key.contractBoundsDocumentType)
+    }
+
+    // ── DashPay contacts: upsert metadata, ignore delta, restore ──────
+
+    /** Persist one incoming contact row for [senderId] owned by [ownerId]. */
+    private suspend fun persistIncomingContact(ownerId: ByteArray, senderId: ByteArray) {
+        handler.onChangesetBegin(walletId)
+        handler.onPersistContactUpsert(
+            walletId = walletId,
+            ownerId = ownerId,
+            contactId = senderId,
+            isOutgoing = false,
+            senderKeyIndex = 2,
+            recipientKeyIndex = 3,
+            accountReference = 4,
+            encryptedPublicKey = ByteArray(96) { 5 },
+            encryptedAccountLabel = ByteArray(3) { 6 },
+            autoAcceptProof = null,
+            coreHeightCreatedAt = 100_000,
+            createdAt = 1_700_000_000_000,
+            paymentChannelBroken = true,
+            alias = "ally",
+            note = "a note",
+            isHidden = true,
+            contactAccountLabel = "Main wallet",
+            acceptedAccounts = intArrayOf(0, 7),
+        )
+        handler.onChangesetEnd(walletId, success = true)
+    }
+
+    @Test
+    fun contactUpsertPersistsEstablishedRowMetadata() = runTest {
+        // The contactInfo / DIP-15 metadata block added by upstream #3841
+        // must land in Room — dropping it here would wipe alias/note/hidden
+        // (and the broken-channel flag) on Android relative to Swift.
+        val ownerId = ByteArray(32) { 15 }
+        val senderId = ByteArray(32) { 16 }
+        seedIdentity(ownerId)
+        persistIncomingContact(ownerId, senderId)
+
+        val rows = db.dashpayDao().getContactRequestsByOwner(ownerId)
+        assertEquals(1, rows.size)
+        val row = rows[0]
+        assertTrue(row.paymentChannelBroken)
+        assertEquals("ally", row.contactAlias)
+        assertEquals("a note", row.contactNote)
+        assertTrue(row.contactHidden)
+        assertEquals("Main wallet", row.contactAccountLabel)
+        assertTrue(
+            intArrayOf(0, 7).contentEquals(decodeAcceptedAccounts(row.contactAcceptedAccounts)),
+        )
+    }
+
+    @Test
+    fun contactIgnoreDeltaDropsIncomingRowAndRoundTripsIgnoredSender() = runTest {
+        // Ignore (isIgnored=true): the sender's incoming row goes and a
+        // durable ignored-sender row appears; un-ignore deletes it again.
+        val ownerId = ByteArray(32) { 17 }
+        val senderId = ByteArray(32) { 18 }
+        seedIdentity(ownerId)
+        persistIncomingContact(ownerId, senderId)
+
+        handler.onChangesetBegin(walletId)
+        assertEquals(0, handler.onPersistContactIgnored(walletId, ownerId, senderId, true))
+        handler.onChangesetEnd(walletId, success = true)
+
+        assertTrue(db.dashpayDao().getContactRequestsByOwner(ownerId).isEmpty())
+        val ignored = db.dashpayDao().getIgnoredSendersByOwner(ownerId)
+        assertEquals(1, ignored.size)
+        assertTrue(senderId.contentEquals(ignored[0].ignoredSenderId))
+        assertEquals(testnet, ignored[0].networkRaw)
+
+        handler.onChangesetBegin(walletId)
+        assertEquals(0, handler.onPersistContactIgnored(walletId, ownerId, senderId, false))
+        handler.onChangesetEnd(walletId, success = true)
+        assertTrue(db.dashpayDao().getIgnoredSendersByOwner(ownerId).isEmpty())
+    }
+
+    @Test
+    fun loadWalletListRoundTripsContactsAndIgnoredSenders() = runTest {
+        // Relaunch-durability: the restore rows must carry the contact
+        // (with its metadata) and the ignored-sender id back to Rust, or
+        // contact metadata is wiped and ignored senders resurface after
+        // every cold start.
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+        val xpub = ByteArray(78) { 30 }
+        handler.onPersistAccountRegistration(
+            walletId, 0, 0, 0, 0, 0, ByteArray(0), ByteArray(0), xpub,
+        )
+        val ownerId = ByteArray(32) { 19 }
+        val contactId = ByteArray(32) { 20 }
+        val mutedId = ByteArray(32) { 21 }
+        seedIdentity(ownerId)
+        persistIncomingContact(ownerId, contactId)
+        handler.onChangesetBegin(walletId)
+        handler.onPersistContactIgnored(walletId, ownerId, mutedId, true)
+        handler.onChangesetEnd(walletId, success = true)
+
+        val list = handler.onLoadWalletList()
+        assertEquals(1, list.size)
+        assertEquals(1, list[0].identities.size)
+        val identity = list[0].identities[0]
+
+        assertEquals(1, identity.contacts.size)
+        val contact = identity.contacts[0]
+        assertTrue(ownerId.contentEquals(contact.ownerIdentityId))
+        assertTrue(contactId.contentEquals(contact.contactIdentityId))
+        assertFalse(contact.isOutgoing)
+        assertEquals(2, contact.senderKeyIndex)
+        assertEquals(3, contact.recipientKeyIndex)
+        assertEquals(4, contact.accountReference)
+        assertTrue(ByteArray(96) { 5 }.contentEquals(contact.encryptedPublicKey))
+        assertTrue(ByteArray(3) { 6 }.contentEquals(contact.encryptedAccountLabel!!))
+        assertNull(contact.autoAcceptProof)
+        assertEquals(100_000, contact.coreHeightCreatedAt)
+        assertEquals(1_700_000_000_000, contact.createdAtMillis)
+        assertTrue(contact.paymentChannelBroken)
+        assertEquals("ally", contact.alias)
+        assertEquals("a note", contact.note)
+        assertTrue(contact.isHidden)
+        assertEquals("Main wallet", contact.contactAccountLabel)
+        assertTrue(intArrayOf(0, 7).contentEquals(contact.acceptedAccounts))
+
+        assertEquals(1, identity.ignoredSenders.size)
+        assertTrue(mutedId.contentEquals(identity.ignoredSenders[0]))
     }
 
     @Test

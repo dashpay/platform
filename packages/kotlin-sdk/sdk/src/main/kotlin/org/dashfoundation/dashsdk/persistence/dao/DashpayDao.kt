@@ -5,15 +5,19 @@ import androidx.room.Query
 import androidx.room.Upsert
 import kotlinx.coroutines.flow.Flow
 import org.dashfoundation.dashsdk.persistence.entities.DashpayContactRequestEntity
+import org.dashfoundation.dashsdk.persistence.entities.DashpayIgnoredSenderEntity
 import org.dashfoundation.dashsdk.persistence.entities.DashpayProfileEntity
 
 /**
- * Queries over [DashpayProfileEntity] and [DashpayContactRequestEntity],
- * mirroring `PersistentDashpayProfile.predicate(identityId:)`,
+ * Queries over [DashpayProfileEntity], [DashpayContactRequestEntity] and
+ * [DashpayIgnoredSenderEntity], mirroring
+ * `PersistentDashpayProfile.predicate(identityId:)`,
  * `PersistentDashpayContactRequest.predicate(ownerIdentityId:)` /
- * `predicate(ownerIdentityId:isOutgoing:)`, and the persister's
- * upsert / tombstone paths keyed on
- * `(networkRaw, ownerIdentityId, contactIdentityId, isOutgoing)`.
+ * `predicate(ownerIdentityId:isOutgoing:)`,
+ * `PersistentDashpayIgnoredSender.predicate(...)`, and the persister's
+ * upsert / tombstone / ignore-delta paths keyed on
+ * `(networkRaw, ownerIdentityId, contactIdentityId, isOutgoing)` and
+ * `(networkRaw, ownerIdentityId, ignoredSenderId)`.
  */
 @Dao
 interface DashpayDao {
@@ -87,8 +91,39 @@ interface DashpayDao {
         isOutgoing: Boolean,
     )
 
+    /** Restore-path read: every contact row owned by [ownerIdentityId]. */
+    @Query("SELECT * FROM dashpay_contact_requests WHERE ownerIdentityId = :ownerIdentityId")
+    suspend fun getContactRequestsByOwner(
+        ownerIdentityId: ByteArray,
+    ): List<DashpayContactRequestEntity>
+
     @Query("DELETE FROM dashpay_contact_requests")
     suspend fun deleteAllContactRequests()
+
+    // MARK: Ignored senders (per-sender mute, local-only)
+
+    /** Ignore-delta upsert (`isIgnored == true`). */
+    @Upsert
+    suspend fun upsertIgnoredSender(row: DashpayIgnoredSenderEntity)
+
+    /** Ignore-delta delete (`isIgnored == false`, an un-ignore). */
+    @Query(
+        "DELETE FROM dashpay_ignored_senders WHERE ownerIdentityId = :ownerIdentityId " +
+            "AND ignoredSenderId = :ignoredSenderId"
+    )
+    suspend fun deleteIgnoredSender(ownerIdentityId: ByteArray, ignoredSenderId: ByteArray)
+
+    /** Restore-path read: every sender ignored by [ownerIdentityId]. */
+    @Query("SELECT * FROM dashpay_ignored_senders WHERE ownerIdentityId = :ownerIdentityId")
+    suspend fun getIgnoredSendersByOwner(
+        ownerIdentityId: ByteArray,
+    ): List<DashpayIgnoredSenderEntity>
+
+    /** Ignored screen (mirror of Swift `IgnoredContactsView`'s `@Query`). */
+    @Query("SELECT * FROM dashpay_ignored_senders WHERE ownerIdentityId = :ownerIdentityId")
+    fun observeIgnoredSenders(
+        ownerIdentityId: ByteArray,
+    ): Flow<List<DashpayIgnoredSenderEntity>>
 
     /** StorageExplorer row count. */
     @Query("SELECT COUNT(*) FROM dashpay_contact_requests")

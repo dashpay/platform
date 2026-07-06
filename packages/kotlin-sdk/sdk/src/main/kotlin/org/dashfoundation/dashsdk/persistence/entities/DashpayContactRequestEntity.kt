@@ -1,5 +1,6 @@
 package org.dashfoundation.dashsdk.persistence.entities
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
@@ -54,6 +55,32 @@ data class DashpayContactRequestEntity(
     val coreHeightCreatedAt: Int,
     /** Document `created_at` in Unix millis; Swift `UInt64` → [Long]. */
     val createdAtMillis: Long,
+    /**
+     * Whether the established relationship's payment channel is
+     * permanently broken (disables "Send Dash" in the UI). Only stamped
+     * on established rows; always false while pending. Swift
+     * `paymentChannelBroken`.
+     */
+    @ColumnInfo(defaultValue = "0")
+    val paymentChannelBroken: Boolean = false,
+    /** Owner-private alias for the contact (contactInfo). Swift `contactAlias`. */
+    val contactAlias: String? = null,
+    /** Owner-private note (contactInfo). Swift `contactNote`. */
+    val contactNote: String? = null,
+    /** `contactInfo.displayHidden`. Swift `contactHidden`. */
+    @ColumnInfo(defaultValue = "0")
+    val contactHidden: Boolean = false,
+    /**
+     * The contact's decrypted DIP-15 account label — direction-specific
+     * (incoming established row only). Swift `contactAccountLabel`.
+     */
+    val contactAccountLabel: String? = null,
+    /**
+     * DIP-15 accepted-account acceptances, big-endian `u32`s packed 4
+     * bytes each (see `encodeAcceptedAccounts`). Null when empty. Swift
+     * `contactAcceptedAccounts` (`[UInt32]`).
+     */
+    val contactAcceptedAccounts: ByteArray? = null,
     val createdAt: Date = Date(),
     val lastUpdated: Date = Date(),
 )

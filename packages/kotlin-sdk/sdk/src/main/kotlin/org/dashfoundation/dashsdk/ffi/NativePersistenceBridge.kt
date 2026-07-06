@@ -63,7 +63,7 @@ abstract class NativePersistenceBridge {
 
     /**
      * `on_persist_address_balances_fn`, one call per `AddressBalanceEntryFFI`.
-     * Descriptor `([BB[BJIII)I`.
+     * Descriptor `([BB[BJIIIJ)I`.
      *
      * @param addressType 0 = P2PKH, 1 = P2SH
      * @param addressHash 20-byte platform-address hash
@@ -76,6 +76,7 @@ abstract class NativePersistenceBridge {
         nonce: Int,
         accountIndex: Int,
         addressIndex: Int,
+        asOfHeight: Long,
     ): Int = 0
 
     // ── Sync state ────────────────────────────────────────────────────
@@ -329,7 +330,16 @@ abstract class NativePersistenceBridge {
 
     // ── Contacts ──────────────────────────────────────────────────────
 
-    /** One `ContactRequestFFI` upsert. Descriptor `([B[B[BZIII[B[B[BIJ)I`. */
+    /**
+     * One `ContactRequestFFI` upsert. Descriptor
+     * `([B[B[BZIII[B[B[BIJZLjava/lang/String;Ljava/lang/String;ZLjava/lang/String;[I)I`.
+     *
+     * The tail block ([paymentChannelBroken] / [alias] / [note] /
+     * [isHidden] / [contactAccountLabel] / [acceptedAccounts]) is
+     * established-row relationship metadata (contactInfo + DIP-15
+     * accepted accounts) — null / false / empty on pending rows.
+     * [acceptedAccounts] is never null (empty when absent).
+     */
     @Suppress("LongParameterList")
     open fun onPersistContactUpsert(
         walletId: ByteArray,
@@ -344,6 +354,12 @@ abstract class NativePersistenceBridge {
         autoAcceptProof: ByteArray?,
         coreHeightCreatedAt: Int,
         createdAt: Long,
+        paymentChannelBroken: Boolean,
+        alias: String?,
+        note: String?,
+        isHidden: Boolean,
+        contactAccountLabel: String?,
+        acceptedAccounts: IntArray,
     ): Int = 0
 
     /** One sent-side `ContactRequestRemovalFFI`. Descriptor `([B[B[B)I`. */
@@ -358,6 +374,22 @@ abstract class NativePersistenceBridge {
         walletId: ByteArray,
         ownerId: ByteArray,
         contactId: ByteArray,
+    ): Int = 0
+
+    /**
+     * One `ContactIgnoredSenderFFI` per-sender ignore delta. Descriptor
+     * `([B[B[BZ)I`.
+     *
+     * [isIgnored] `true` ⇒ persist the ignored-sender row (an ignore —
+     * also drop every incoming request row from that sender, rotations
+     * included); `false` ⇒ delete it (an un-ignore). Ignore is a
+     * local-only per-sender mute keyed `(ownerId, senderId)`.
+     */
+    open fun onPersistContactIgnored(
+        walletId: ByteArray,
+        ownerId: ByteArray,
+        senderId: ByteArray,
+        isIgnored: Boolean,
     ): Int = 0
 
     // ── Asset locks ───────────────────────────────────────────────────
@@ -541,7 +573,10 @@ class AccountSpecData(
  * One flat identity-restore row — mirror of `IdentityRestoreEntryFFI`.
  *
  * DPNS names ride separately (empty for this pass; the Rust trampoline
- * passes null/0). `status` uses the `IdentityStatus` discriminant encoding
+ * passes null/0), as do the DashPay payment-history and cached
+ * contact-profile arrays (Kotlin has no persist source for those yet —
+ * the trampoline stages them null/0 and the post-load sweeps rebuild
+ * them). `status` uses the `IdentityStatus` discriminant encoding
  * (0 Unknown, 1 PendingCreation, 2 Active, 3 FailedCreation, 4 NotFound).
  */
 class IdentityRestoreData(
@@ -551,6 +586,53 @@ class IdentityRestoreData(
     @JvmField val identityIndex: Int,
     @JvmField val status: Byte,
     @JvmField val keys: Array<IdentityKeyRestoreData>,
+    /**
+     * DashPay contact rows (pending + established, with their contactInfo
+     * metadata) to rehydrate the Rust contact state at load — without
+     * this, contacts only re-derive from chain on the first sync sweep
+     * and the owner-private metadata is wiped during the DIP-15
+     * deferred-publish window. Mirror of the Swift
+     * `buildIdentityRestoreBuffer` contact block.
+     */
+    @JvmField val contacts: Array<ContactRequestRestoreData>,
+    /**
+     * 32-byte ids of ignored senders (per-sender mute, local-only) to
+     * rehydrate the Rust `ignored_senders` set at load — without this a
+     * previously-ignored sender's still-on-platform immutable
+     * `contactRequest` documents re-ingest on the next sweep and the
+     * sender resurfaces after every relaunch.
+     */
+    @JvmField val ignoredSenders: Array<ByteArray>,
+)
+
+/**
+ * One flat DashPay contact-request restore row — mirror of the
+ * `ContactRequestFFI` rows carried on `IdentityRestoreEntryFFI.contacts`
+ * (and of [NativePersistenceBridge.onPersistContactUpsert]'s parameter
+ * list, whose Room rows feed this back).
+ *
+ * [encryptedAccountLabel] / [autoAcceptProof] use null for absent (the
+ * trampoline maps null/empty back to `(null, 0)`); the metadata strings
+ * use null for unset; [acceptedAccounts] is empty when absent.
+ */
+class ContactRequestRestoreData(
+    @JvmField val ownerIdentityId: ByteArray,
+    @JvmField val contactIdentityId: ByteArray,
+    @JvmField val isOutgoing: Boolean,
+    @JvmField val senderKeyIndex: Int,
+    @JvmField val recipientKeyIndex: Int,
+    @JvmField val accountReference: Int,
+    @JvmField val encryptedPublicKey: ByteArray,
+    @JvmField val encryptedAccountLabel: ByteArray?,
+    @JvmField val autoAcceptProof: ByteArray?,
+    @JvmField val coreHeightCreatedAt: Int,
+    @JvmField val createdAtMillis: Long,
+    @JvmField val paymentChannelBroken: Boolean,
+    @JvmField val alias: String?,
+    @JvmField val note: String?,
+    @JvmField val isHidden: Boolean,
+    @JvmField val contactAccountLabel: String?,
+    @JvmField val acceptedAccounts: IntArray,
 )
 
 /**

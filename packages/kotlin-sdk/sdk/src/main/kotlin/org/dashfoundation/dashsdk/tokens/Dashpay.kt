@@ -11,11 +11,13 @@ import org.dashfoundation.dashsdk.ffi.TokensNative
  * Swift `ManagedPlatformWallet` DashPay calls driving `FriendsView`
  * (`packages/swift-sdk/.../PlatformWallet/ManagedPlatformWallet.swift`).
  *
- * Covers the single-call operations: send / accept / reject a contact
- * request, send a payment, and read / sync the cached DashPay profile —
- * plus the `FriendsView` hydration surface ([syncContactRequests] /
- * [fetchSentContactRequests] + [contacts] / [acceptIncomingRequest]) built
- * over the managed-identity contact-id enumerators.
+ * Covers the single-call operations: send / accept a contact request,
+ * ignore / un-ignore a sender (the reversible local mute that replaced the
+ * old per-request reject), send a payment, and read / sync the cached
+ * DashPay profile — plus the `FriendsView` hydration surface
+ * ([syncContactRequests] / [fetchSentContactRequests] + [contacts] /
+ * [acceptIncomingRequest]) built over the managed-identity contact-id
+ * enumerators.
  *
  * Contact-request and established-contact handles are opaque native handles
  * (`Long`); [ContactRequestRef] / [EstablishedContactRef] wrap them as
@@ -28,22 +30,28 @@ import org.dashfoundation.dashsdk.ffi.TokensNative
 class Dashpay internal constructor(private val walletHandle: Long) {
 
     /**
-     * Send a contact request to [recipientIdentityId], signing with
-     * [signerHandle]. [accountLabel] (encrypted by the SDK) and
-     * [autoAcceptProof] are optional. Returns a [ContactRequestRef] wrapping
-     * the created native handle — close it (or `use {}`) when done.
+     * Send a contact request to [recipientIdentityId], signing the document
+     * state-transition with [signerHandle] and keying the contact crypto
+     * (friendship xpub, ECDH, DIP-15 accountReference) through
+     * [coreSignerHandle] — the manager's `MnemonicResolverHandle`
+     * (`PlatformWalletManager.mnemonicResolverHandle`), matching the Swift
+     * wrapper's internally-pinned `MnemonicResolver`. [accountLabel]
+     * (encrypted by the SDK) and [autoAcceptProof] are optional. Returns a
+     * [ContactRequestRef] wrapping the created native handle — close it
+     * (or `use {}`) when done.
      */
     suspend fun sendContactRequest(
         senderIdentityId: ByteArray,
         recipientIdentityId: ByteArray,
         signerHandle: Long,
+        coreSignerHandle: Long,
         accountLabel: String? = null,
         autoAcceptProof: ByteArray? = null,
     ): ContactRequestRef = withContext(Dispatchers.IO) {
         val handle = mapNativeErrors {
             TokensNative.sendContactRequest(
                 walletHandle, senderIdentityId, recipientIdentityId,
-                accountLabel, autoAcceptProof, signerHandle,
+                accountLabel, autoAcceptProof, signerHandle, coreSignerHandle,
             )
         }
         ContactRequestRef(handle)
@@ -51,31 +59,60 @@ class Dashpay internal constructor(private val walletHandle: Long) {
 
     /**
      * Accept the incoming request wrapped by [request], sending the
-     * reciprocal request via [signerHandle]. Returns an
+     * reciprocal request via [signerHandle] and keying the reciprocal
+     * send + external-account registration through [coreSignerHandle]
+     * (the manager's `MnemonicResolverHandle`). Returns an
      * [EstablishedContactRef] for the newly-established contact.
      */
     suspend fun acceptContactRequest(
         request: ContactRequestRef,
         signerHandle: Long,
+        coreSignerHandle: Long,
     ): EstablishedContactRef = withContext(Dispatchers.IO) {
         val handle = mapNativeErrors {
-            TokensNative.acceptContactRequest(walletHandle, request.value, signerHandle)
+            TokensNative.acceptContactRequest(
+                walletHandle, request.value, signerHandle, coreSignerHandle,
+            )
         }
         EstablishedContactRef(handle)
     }
 
-    /** Reject an incoming contact request from [contactIdentityId] (local drop). */
-    suspend fun rejectContactRequest(
+    /**
+     * Ignore the contact sender [contactIdentityId] (per-sender mute, =
+     * block, reversible, **local-only** — no on-chain artifact). Drops
+     * their pending incoming request and suppresses ALL of their requests
+     * (including rotated ones) from future sweeps; persisted through the
+     * changeset pipeline so it survives a relaunch. Replaces the removed
+     * per-request reject. ← Swift `wallet.ignoreContactSender`.
+     */
+    suspend fun ignoreContactSender(
         ourIdentityId: ByteArray,
         contactIdentityId: ByteArray,
     ): Unit = withContext(Dispatchers.IO) {
         mapNativeErrors {
-            TokensNative.rejectContactRequest(walletHandle, ourIdentityId, contactIdentityId)
+            TokensNative.ignoreContactSender(walletHandle, ourIdentityId, contactIdentityId)
         }
     }
 
     /**
-     * Send a Dash payment from [fromIdentityId] to [toContactIdentityId].
+     * Un-ignore the contact sender [contactIdentityId] (reverse
+     * [ignoreContactSender]); their on-chain requests re-fetch on the next
+     * sweep. A no-op when the sender wasn't ignored. ← Swift
+     * `wallet.unignoreContactSender`.
+     */
+    suspend fun unignoreContactSender(
+        ourIdentityId: ByteArray,
+        contactIdentityId: ByteArray,
+    ): Unit = withContext(Dispatchers.IO) {
+        mapNativeErrors {
+            TokensNative.unignoreContactSender(walletHandle, ourIdentityId, contactIdentityId)
+        }
+    }
+
+    /**
+     * Send a Dash payment from [fromIdentityId] to [toContactIdentityId],
+     * signing the funding inputs through [coreSignerHandle] (the manager's
+     * `MnemonicResolverHandle` — the seed never becomes resident).
      * [amountDuffs] is in duffs (not DASH). Returns the 32-byte transaction
      * id, or null.
      */
@@ -83,12 +120,14 @@ class Dashpay internal constructor(private val walletHandle: Long) {
         fromIdentityId: ByteArray,
         toContactIdentityId: ByteArray,
         amountDuffs: Long,
+        coreSignerHandle: Long,
         memo: String? = null,
     ): ByteArray? = withContext(Dispatchers.IO) {
         require(amountDuffs > 0) { "amountDuffs must be positive, got $amountDuffs" }
         mapNativeErrors {
             TokensNative.sendDashPayPayment(
                 walletHandle, fromIdentityId, toContactIdentityId, amountDuffs, memo,
+                coreSignerHandle,
             )
         }
     }
@@ -177,7 +216,8 @@ class Dashpay internal constructor(private val walletHandle: Long) {
 
     /**
      * Accept the incoming contact request from [senderId] to [ourIdentityId],
-     * sending the reciprocal request via [signerHandle] — port of Swift's
+     * sending the reciprocal request via [signerHandle] and keying the
+     * contact crypto through [coreSignerHandle] — port of Swift's
      * `FriendsView.acceptRequest`. Snapshots the managed identity, looks up
      * the incoming request handle by sender, calls the (already-bridged)
      * accept, and frees every transient handle. Returns false when no such
@@ -187,6 +227,7 @@ class Dashpay internal constructor(private val walletHandle: Long) {
         ourIdentityId: ByteArray,
         senderId: ByteArray,
         signerHandle: Long,
+        coreSignerHandle: Long,
     ): Boolean = withContext(Dispatchers.IO) {
         mapNativeErrors {
             val identityHandle = TokensNative.getManagedIdentity(walletHandle, ourIdentityId)
@@ -196,8 +237,9 @@ class Dashpay internal constructor(private val walletHandle: Long) {
                     TokensNative.getIncomingContactRequest(identityHandle, senderId)
                 if (requestHandle == 0L) return@mapNativeErrors false
                 try {
-                    val established =
-                        TokensNative.acceptContactRequest(walletHandle, requestHandle, signerHandle)
+                    val established = TokensNative.acceptContactRequest(
+                        walletHandle, requestHandle, signerHandle, coreSignerHandle,
+                    )
                     if (established != 0L) TokensNative.establishedContactDestroy(established)
                     true
                 } finally {

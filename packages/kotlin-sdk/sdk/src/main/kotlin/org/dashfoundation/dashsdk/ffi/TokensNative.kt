@@ -238,9 +238,12 @@ internal object TokensNative {
 
     /**
      * Send a contact request. [accountLabel] / [autoAcceptProof] may be null.
-     * Returns a native `ContactRequest` handle (release via
-     * [contactRequestDestroy]).
+     * [coreSignerHandle] is the manager's `MnemonicResolverHandle` — the
+     * friendship xpub / ECDH / DIP-15 accountReference derivations all
+     * route through it Rust-side. Returns a native `ContactRequest` handle
+     * (release via [contactRequestDestroy]).
      */
+    @Suppress("LongParameterList")
     external fun sendContactRequest(
         walletHandle: Long,
         senderIdentityId: ByteArray,
@@ -248,20 +251,38 @@ internal object TokensNative {
         accountLabel: String?,
         autoAcceptProof: ByteArray?,
         signerHandle: Long,
+        coreSignerHandle: Long,
     ): Long
 
     /**
-     * Accept an incoming contact request (by its handle). Returns a native
-     * `EstablishedContact` handle (release via [establishedContactDestroy]).
+     * Accept an incoming contact request (by its handle), keying the
+     * reciprocal send + external-account registration through
+     * [coreSignerHandle]. Returns a native `EstablishedContact` handle
+     * (release via [establishedContactDestroy]).
      */
     external fun acceptContactRequest(
         walletHandle: Long,
         requestHandle: Long,
         signerHandle: Long,
+        coreSignerHandle: Long,
     ): Long
 
-    /** Reject an incoming contact request (local drop). */
-    external fun rejectContactRequest(
+    /**
+     * Ignore a contact sender (per-sender mute, = block, reversible,
+     * local-only — replaces the removed per-request reject). Reverse via
+     * [unignoreContactSender].
+     */
+    external fun ignoreContactSender(
+        walletHandle: Long,
+        ourIdentityId: ByteArray,
+        contactIdentityId: ByteArray,
+    )
+
+    /**
+     * Un-ignore a contact sender (reverse [ignoreContactSender]); rewinds
+     * the received cursor so their requests re-fetch on the next sweep.
+     */
+    external fun unignoreContactSender(
         walletHandle: Long,
         ourIdentityId: ByteArray,
         contactIdentityId: ByteArray,
@@ -273,13 +294,18 @@ internal object TokensNative {
     /** Release an `EstablishedContact` handle from [acceptContactRequest]. Safe on 0. */
     external fun establishedContactDestroy(handle: Long)
 
-    /** Send a Dash payment ([amountDuffs] in duffs). Returns the 32-byte txid, or null. */
+    /**
+     * Send a Dash payment ([amountDuffs] in duffs), signing the funding
+     * inputs through [coreSignerHandle] (the manager's
+     * `MnemonicResolverHandle`). Returns the 32-byte txid, or null.
+     */
     external fun sendDashPayPayment(
         walletHandle: Long,
         fromIdentityId: ByteArray,
         toContactIdentityId: ByteArray,
         amountDuffs: Long,
         memo: String?,
+        coreSignerHandle: Long,
     ): ByteArray?
 
     /** Sync DashPay profiles for every managed identity. Returns the synced count. */

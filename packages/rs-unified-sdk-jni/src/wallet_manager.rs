@@ -892,6 +892,9 @@ fn decode_credit_outputs(
             nonce: 0,
             account_index: 0,
             address_index: 0,
+            // Request path names only outputs/amounts — 0 per the FFI doc
+            // (the height pin is a persistence-round-trip concern).
+            as_of_height: 0,
         });
     }
     Some(outputs)

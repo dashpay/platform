@@ -53,7 +53,7 @@ use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 use std::ptr;
 
-use rs_sdk_ffi::SignerHandle;
+use rs_sdk_ffi::{MnemonicResolverHandle, SignerHandle};
 
 // ── Argument marshalling helpers ──────────────────────────────────────
 
@@ -1134,7 +1134,12 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TokensNative_groupAct
 
 /// Send a contact request to `recipientIdentityId`, signing the document
 /// state-transition with `signerHandle`. `accountLabel` may be null.
-/// `autoAcceptProof` may be null (no proof). Returns the created
+/// `autoAcceptProof` may be null (no proof). `coreSignerHandle` is the
+/// manager's `MnemonicResolverHandle` — the Rust side derives the
+/// friendship xpub, the ECDH shared secret and the DIP-15
+/// `accountReference` through it, so no resident seed is needed (mirror
+/// of the Swift `sendContactRequest` wrapper, which pins a
+/// `MnemonicResolver` for the call). Returns the created
 /// `ContactRequest` handle as a jlong for follow-up reads; release with
 /// [`Java_..._contactRequestDestroy`].
 #[no_mangle]
@@ -1148,6 +1153,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TokensNative_sendCont
     account_label: JString,
     auto_accept_proof: JByteArray,
     signer_handle: jlong,
+    core_signer_handle: jlong,
 ) -> jlong {
     guard(&mut env, 0, |env| {
         let Some(sender) = read_id32(env, &sender_identity_id, "senderIdentityId") else {
@@ -1186,6 +1192,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TokensNative_sendCont
                 proof_ptr,
                 proof_len,
                 signer_handle as *mut SignerHandle,
+                core_signer_handle as *mut MnemonicResolverHandle,
                 &mut out_handle as *mut Handle,
             )
         };
@@ -1197,7 +1204,10 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TokensNative_sendCont
 }
 
 /// Accept an incoming contact request (by its `ContactRequest` handle),
-/// sending the reciprocal request via `signerHandle`. Returns the
+/// sending the reciprocal request via `signerHandle`. `coreSignerHandle`
+/// is the manager's `MnemonicResolverHandle` — the reciprocal send and
+/// the external-account registration source all key material through it
+/// (mirror of the Swift `acceptContactRequest` wrapper). Returns the
 /// resulting `EstablishedContact` handle as a jlong; release with
 /// [`Java_..._establishedContactDestroy`].
 #[no_mangle]
@@ -1207,6 +1217,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TokensNative_acceptCo
     wallet_handle: jlong,
     request_handle: jlong,
     signer_handle: jlong,
+    core_signer_handle: jlong,
 ) -> jlong {
     guard(&mut env, 0, |env| {
         let mut out_handle: Handle = 0;
@@ -1215,6 +1226,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TokensNative_acceptCo
                 wallet_handle as Handle,
                 request_handle as Handle,
                 signer_handle as *mut SignerHandle,
+                core_signer_handle as *mut MnemonicResolverHandle,
                 &mut out_handle as *mut Handle,
             )
         };
@@ -1225,9 +1237,16 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TokensNative_acceptCo
     })
 }
 
-/// Reject an incoming contact request from `contactIdentityId` (local drop).
+/// Ignore a contact sender (per-sender mute, = block, reversible,
+/// **local-only** — no on-chain artifact). Drops the sender's pending
+/// incoming request and suppresses ALL of their requests (including
+/// rotated ones) from future sync sweeps; persisted through the
+/// changeset pipeline so it survives a relaunch. Replaces the removed
+/// per-request `rejectContactRequest` (upstream swapped reject for
+/// ignore semantics — mirror of the Swift `wallet.ignoreContactSender`).
+/// Reverse with [`Java_..._unignoreContactSender`].
 #[no_mangle]
-pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TokensNative_rejectContactRequest(
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TokensNative_ignoreContactSender(
     mut env: JNIEnv,
     _class: JClass,
     wallet_handle: jlong,
@@ -1242,7 +1261,37 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TokensNative_rejectCo
             return;
         };
         let result = unsafe {
-            platform_wallet_ffi::platform_wallet_reject_contact_request(
+            platform_wallet_ffi::platform_wallet_ignore_contact_sender(
+                wallet_handle as Handle,
+                our_id.as_ptr(),
+                contact_id.as_ptr(),
+            )
+        };
+        let _ = take_pwffi_error(env, result);
+    })
+}
+
+/// Un-ignore a contact sender (reverse [`Java_..._ignoreContactSender`]).
+/// Removes the sender from the ignore set AND rewinds the received
+/// high-water cursor so the next sweep re-fetches their on-chain
+/// requests. A no-op when the sender wasn't ignored.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TokensNative_unignoreContactSender(
+    mut env: JNIEnv,
+    _class: JClass,
+    wallet_handle: jlong,
+    our_identity_id: JByteArray,
+    contact_identity_id: JByteArray,
+) {
+    guard(&mut env, (), |env| {
+        let Some(our_id) = read_id32(env, &our_identity_id, "ourIdentityId") else {
+            return;
+        };
+        let Some(contact_id) = read_id32(env, &contact_identity_id, "contactIdentityId") else {
+            return;
+        };
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_unignore_contact_sender(
                 wallet_handle as Handle,
                 our_id.as_ptr(),
                 contact_id.as_ptr(),
@@ -1289,7 +1338,10 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TokensNative_establis
 
 /// Send a Dash payment from `fromIdentityId` to `toContactIdentityId`.
 /// `amountDuffs` is in duffs (satoshi-equivalent), `memo` may be null.
-/// Returns the 32-byte transaction id as a `byte[]`, or null on error.
+/// `coreSignerHandle` is the manager's `MnemonicResolverHandle` — the
+/// funding inputs are signed through it (the wallet seed is never made
+/// resident; mirror of the Swift `sendPayment` wrapper). Returns the
+/// 32-byte transaction id as a `byte[]`, or null on error.
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
 pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TokensNative_sendDashPayPayment(
@@ -1300,6 +1352,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TokensNative_sendDash
     to_contact_identity_id: JByteArray,
     amount_duffs: jlong,
     memo: JString,
+    core_signer_handle: jlong,
 ) -> jbyteArray {
     guard(&mut env, ptr::null_mut(), |env| {
         // Reject a non-positive amount at the boundary — a negative jlong
@@ -1325,6 +1378,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TokensNative_sendDash
                 to_id.as_ptr(),
                 amount_duffs as u64, // sign-checked above
                 opt_c_ptr(&memo_c),
+                core_signer_handle as *mut MnemonicResolverHandle,
                 &mut txid as *mut [u8; 32],
             )
         };
