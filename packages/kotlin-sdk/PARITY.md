@@ -34,7 +34,7 @@ Status legend:
 | DocumentTypeDetailsView.swift | ui/contracts/DocumentTypeDetailsScreen.kt · `DocumentTypeDetail` | ported |
 | DocumentWithPriceView.swift | ui/contracts/DocumentWithPriceScreen.kt · `DocumentWithPrice` | ported — debounced document-id probe (price / owner / ownership badging via `Documents.fetch`), plus the purchase (`DocumentTransactions.purchase` → `platform_wallet_document_purchase`) and owner set-price (`DocumentTransactions.setPrice` → `platform_wallet_document_set_price`) submit flows that live in `PurchaseDocumentView` / the set-price sheet on iOS, hosted as one screen; entries from DocumentsScreen rows ("Price…") and the transition catalog |
 | DocumentsView.swift | ui/contracts/DocumentsScreen.kt · `Documents` | ported (query role; viewer role in DocumentFieldsScreen; the row-level Purchase… / Set Price… actions drill into DocumentWithPriceScreen; create / replace / delete / transfer stay unbridged — see TransitionDetailView) |
-| FriendsView.swift | ui/identity/FriendsScreen.kt · `Friends` | ported — full `loadFriends()` hydration: network sync (`platform_wallet_sync_contact_requests` / `platform_wallet_fetch_sent_contact_requests`) + managed-identity id enumeration (`platform_wallet_get_managed_identity` → `managed_identity_get_{incoming,sent}_contact_request_ids` / `..._established_contact_ids`, Room fallback); send / reject / accept all wired (accept via `managed_identity_get_incoming_contact_request` + the bridged `platform_wallet_accept_contact_request_with_signer`) |
+| ~~FriendsView.swift~~ (deleted upstream) | ui/identity/FriendsScreen.kt · `Friends` | **in migration** — the Swift view was deleted by PR #3841 and replaced by the first-class DashPay tab (`Views/DashPay/`, 10 views: DashPayTabView, ContactsView, ContactRequestsView, AddContactView, ContactDetailView, SendDashPayPaymentSheet, DashPayProfileView, IgnoredContactsView, HiddenContactsView, DashPayContactMeta), none of which are ported yet. FriendsScreen still covers a slice (sync / list / send / accept / ignore over the 17 bridged exports, reconciled with the post-#3841 FFI in `2298a2059f`); it is retired and superseded per `docs/dashpay/KOTLIN_MIGRATION_SPEC.md` (milestones K1–K3) |
 | FundFromAssetLockPlatformAddressView.swift | ui/funding/FundFromAssetLockScreen.kt · `FundFromAssetLock` | ported — submit picks a fresh unused Platform address and funds via the now-bridged `platform_address_wallet_fund_from_asset_lock_signer` (+ resume variant on `ManagedPlatformWallet`); coordinator/progress/pending list drive the flow |
 | TransferPlatformAddressView.swift (ADDR-02, #3923) | ui/credits/TransferPlatformAddressScreen.kt · `TransferPlatformAddress` | ported — wallet-signed DIP-17 credit transfer via the now-bridged `platform_address_wallet_transfer` (`ManagedPlatformWallet.transferCredits`, AUTO selection, null inputs/fee-strategy); source account + destination (own-wallet / external P2PKH hash) + amount only; gate reads version-locked `minInput`/`minOutput` via `walletPlatformAddressMinAmounts`. Launched from WalletDetailScreen's Platform Credits section |
 | WithdrawPlatformAddressView.swift (ADDR-04, #3923) | ui/credits/WithdrawPlatformAddressScreen.kt · `WithdrawPlatformAddress` | ported — wallet-signed full-balance DIP-17 withdrawal to a Core L1 address via the now-bridged `platform_address_wallet_withdraw_to_address` (`ManagedPlatformWallet.withdrawCredits`); submit gated on `platform_address_wallet_preflight_withdrawal` (`preflightWithdrawal`, off the main thread on `Dispatchers.IO`), and when the gate refuses, the advisory "why not" from `preflightWithdrawalReason` (`platform_address_wallet_preflight_withdrawal_reason`) renders under the status row; Fibonacci fee-rate picker mirrors `WithdrawalCoreFeeRates`. Launched from WalletDetailScreen's Platform Credits section |
@@ -129,9 +129,13 @@ Status legend:
 
 ## Totals
 
-- **ported**: 88 (of 90 Swift views)
+- **ported**: 87 (of the 90 pre-#3841 Swift views; the FriendsView row above
+  no longer counts — its Swift source is deleted)
 - **partial**: 2 (TransitionDetailView — 5 of 23 catalog entries lack backing FFIs: dataContractUpdate, documentCreate/Replace/Delete/Transfer; WalletMemoryExplorerView — asset-lock drill-down summary only)
 - **deferred**: 0
+- **in migration**: the DashPay tab (10 `Views/DashPay/` views added by
+  PR #3841) — see `docs/dashpay/KOTLIN_MIGRATION_SPEC.md`; this table gets
+  its `Views/DashPay/` section when milestone K3 lands
 
 Every partial/deferred row names the missing FFI export; the app
 surfaces the same name in a dialog at the point of use (grep for
