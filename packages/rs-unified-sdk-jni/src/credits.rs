@@ -11,11 +11,11 @@
 //! - [`platform_wallet_transfer_credits_with_signer`] — identity → identity.
 //! - [`platform_wallet_withdraw_credits_with_signer`] — identity → L1 address.
 //! - [`platform_wallet_top_up_from_addresses_with_signer`] — top up an
-//!   existing identity from Platform-address inputs.
-//!
-//! All three take a plain `SignerHandle` (the identity- or platform-address
-//! signer the manager owns) — no asset lock is involved, so these are the
-//! credit movements the B-M6 credits screens invoke directly.
+//!   existing identity from Platform-address inputs (ID-06).
+//! - [`platform_wallet_top_up_identity_with_funding_signer`] — top up an
+//!   existing identity from a **new Core asset lock** (ID-05); this one
+//!   takes a `MnemonicResolverHandle` (the Core asset-lock signer) rather
+//!   than a plain `SignerHandle`.
 //!
 //! ## Result convention
 //!
@@ -27,12 +27,12 @@
 
 use crate::support::{guard, take_pwffi_error, throw_sdk_exception};
 use jni::objects::{JByteArray, JClass, JString};
-use jni::sys::jlong;
+use jni::sys::{jint, jlong};
 use jni::JNIEnv;
 use platform_wallet_ffi::handle::Handle;
 use platform_wallet_ffi::identity_registration::IdentityFundingInputFFI;
 use platform_wallet_ffi::identity_transfer::PlatformAddressCreditOutputFFI;
-use rs_sdk_ffi::SignerHandle;
+use rs_sdk_ffi::{MnemonicResolverHandle, SignerHandle};
 use std::ffi::CString;
 
 /// Read a required 32-byte id from a Java `byte[]`; throws + returns None
@@ -201,6 +201,65 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_CreditsNative_topUpFr
                 inputs.as_ptr(),
                 inputs.len(),
                 signer_handle as *mut SignerHandle,
+                &mut out_balance as *mut u64,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return 0;
+        }
+        out_balance as i64
+    })
+}
+
+// ── Top up (existing identity ← new Core asset lock) ───────────────────
+
+/// Top up an existing identity's credit balance by building and
+/// broadcasting a **new Core asset lock** — the same funding mechanism as
+/// identity registration (ID-05), distinct from `topUpFromAddresses`
+/// (ID-06) which spends already-funded Platform-payment addresses.
+///
+/// `amountDuffs` is the Dash amount (in duffs) to lock; `accountIndex`
+/// selects which BIP44 standard account funds the asset lock.
+/// `coreSignerHandle` is the manager's `MnemonicResolverHandle` — the
+/// `IdentityTopUp` transition is signed entirely by the asset lock's
+/// Core key, so no identity signer is required. Returns the
+/// post-transition credit balance.
+///
+/// Wraps `platform_wallet_top_up_identity_with_funding_signer`.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_CreditsNative_topUpIdentityFromCore(
+    mut env: JNIEnv,
+    _class: JClass,
+    wallet_handle: jlong,
+    identity_id: JByteArray,
+    amount_duffs: jlong,
+    account_index: jint,
+    core_signer_handle: jlong,
+) -> jlong {
+    guard(&mut env, 0i64, |env| {
+        // Reject sign errors at the boundary — a negative amount / index
+        // would otherwise bit-cast to a huge unsigned value (and a clamped
+        // 0 amount would post a meaningless 0-duff top-up).
+        if amount_duffs <= 0 {
+            throw_sdk_exception(env, 1, "amountDuffs must be positive");
+            return 0;
+        }
+        if account_index < 0 {
+            throw_sdk_exception(env, 1, "accountIndex must be non-negative");
+            return 0;
+        }
+        let Some(id) = read_id32(env, &identity_id, "identityId") else {
+            return 0;
+        };
+
+        let mut out_balance: u64 = 0;
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_top_up_identity_with_funding_signer(
+                wallet_handle as Handle,
+                &id as *const [u8; 32],
+                amount_duffs as u64,
+                account_index as u32,
+                core_signer_handle as *mut MnemonicResolverHandle,
                 &mut out_balance as *mut u64,
             )
         };

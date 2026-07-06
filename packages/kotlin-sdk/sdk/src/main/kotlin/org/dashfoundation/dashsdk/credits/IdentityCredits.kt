@@ -130,4 +130,34 @@ class IdentityCredits internal constructor() {
             )
         }
     }
+
+    /**
+     * Top up [identityId] (32 bytes) by building + broadcasting a **new
+     * Core asset lock** — the ID-05 funding path (same mechanism as
+     * identity registration), distinct from [topUpFromAddresses] (ID-06).
+     * [amountDuffs] is the Dash amount in duffs to lock; [accountIndex]
+     * selects the BIP44 standard account; [coreSignerHandle] is the
+     * manager's `MnemonicResolverHandle`. Returns the post-transition
+     * balance. Port of the create-identity funding path applied to an
+     * existing identity.
+     */
+    suspend fun topUpFromCore(
+        walletHandle: Long,
+        identityId: ByteArray,
+        amountDuffs: Long,
+        accountIndex: Int,
+        coreSignerHandle: Long,
+    ): Long = withContext(Dispatchers.IO) {
+        require(amountDuffs > 0) { "amountDuffs must be positive, got $amountDuffs" }
+        require(accountIndex >= 0) { "accountIndex must be non-negative, got $accountIndex" }
+        mapNativeErrors {
+            CreditsNative.topUpIdentityFromCore(
+                walletHandle,
+                identityId,
+                amountDuffs,
+                accountIndex,
+                coreSignerHandle,
+            )
+        }
+    }
 }

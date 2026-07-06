@@ -106,6 +106,9 @@ import kotlinx.serialization.Serializable
 /** Top up an identity from Platform addresses (← `TopUpIdentityView.swift`). */
 @Serializable data class TopUpIdentity(val identityIdHex: String)
 
+/** Top up an identity from a new Core asset lock (ID-05). */
+@Serializable data class TopUpIdentityFromCore(val identityIdHex: String)
+
 /** Transfer credits identity → identity (← `TransferCreditsView.swift`). */
 @Serializable data class TransferCredits(val identityIdHex: String)
 

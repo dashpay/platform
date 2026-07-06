@@ -47,7 +47,7 @@ impl IdentityWallet {
         settings: Option<PutSettings>,
     ) -> Result<(), PlatformWalletError>
     where
-        AS: ::key_wallet::signer::Signer + Send + Sync,
+        AS: ::key_wallet::signer::ExtendedPubKeySigner + Send + Sync,
     {
         self.top_up_identity_with_funding(
             identity_id,
