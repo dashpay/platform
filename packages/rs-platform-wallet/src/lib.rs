@@ -19,7 +19,6 @@ pub mod error;
 pub mod events;
 pub mod manager;
 pub mod spv;
-pub mod transaction_decode;
 pub mod wallet;
 
 pub use error::PlatformWalletError;
@@ -47,7 +46,6 @@ pub use manager::platform_address_sync::{
 };
 pub use manager::PlatformWalletManager;
 pub use spv::SpvRuntime;
-pub use transaction_decode::{decode_transaction, DecodedInput, DecodedOutput, DecodedTransaction};
 pub use wallet::asset_lock::manager::AssetLockManager;
 pub use wallet::asset_lock::tracked::{AssetLockStatus, TrackedAssetLock};
 pub use wallet::asset_lock::AssetLockFunding;
