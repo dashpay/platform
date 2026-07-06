@@ -18,6 +18,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.dashfoundation.dashsdk.Network
 import org.dashfoundation.dashsdk.Sdk
+import org.dashfoundation.dashsdk.errors.DashSdkError
 import org.dashfoundation.dashsdk.errors.mapNativeErrors
 import org.dashfoundation.dashsdk.ffi.DashpayNative
 import org.dashfoundation.dashsdk.ffi.FundingNative
@@ -457,7 +458,6 @@ class PlatformWalletManager(
      * per restorable id to obtain a [ManagedPlatformWallet] handle.
      *
      * Idempotent: with no persisted state, leaves [wallets] untouched.
-     * Signing fails on watch-only wallets until a future unlock flow.
      */
     suspend fun loadPersistedWallets(): List<ManagedPlatformWallet> = withContext(Dispatchers.IO) {
         mapNativeErrors { WalletManagerNative.loadFromPersistor(managerHandle) }
@@ -482,6 +482,23 @@ class PlatformWalletManager(
             val managed = ManagedPlatformWallet(handle = handle, walletId = walletId)
             restored.add(managed)
             additions[walletId.toHex()] = managed
+
+            // Seedless unlock of the just-restored external-signable wallet:
+            // verify the Keystore-resolved seed binds to this wallet and
+            // drain any deferred contact-crypto. Best-effort, per wallet —
+            // this call is LOAD-BEARING for DashPay recovery: the deferred
+            // contact-crypto queue is in-memory only (rebuilt by the sweep,
+            // cleared by the drain), so recovery is self-healing ONLY when
+            // every launch runs load → unlock → sweep. A banner-triggered
+            // unlock alone would leave contacts half-established after each
+            // process restart. Mirrors Swift `loadFromPersistor`.
+            try {
+                unlockWalletFromKeystore(managed)
+            } catch (_: Exception) {
+                // Logged inside (seedMismatch published on the status flow);
+                // one wallet's unlock failure can't fail the whole restore —
+                // the wallet simply stays external-signable (cannot sign).
+            }
         }
         if (additions.isNotEmpty()) {
             _wallets.update { it + additions }
@@ -1143,6 +1160,226 @@ class PlatformWalletManager(
         }
     }
 
+    // ── DashPay sync + seedless unlock ────────────────────────────────
+    //
+    // Port of `PlatformWalletManagerDashPaySync.swift` + the unlock flow
+    // in `PlatformWalletManager.swift` (563-668). The recurring sweep is
+    // Rust-owned and manager-scoped; like the SPV/identity/shielded loops
+    // above, its surface lives on the manager (Swift keeps it in a manager
+    // extension). Status is REFLECTED via the same 1 Hz change-gated poll
+    // pattern as [spvProgress] — polling, not events, is deliberate: it is
+    // exactly how iOS does it, and naive re-assignment burned CPU there.
+
+    private val _dashPaySyncIsSyncing = MutableStateFlow(false)
+
+    /** Whether a DashPay sweep pass is executing right now (1 Hz poll). */
+    val dashPaySyncIsSyncing: StateFlow<Boolean> = _dashPaySyncIsSyncing.asStateFlow()
+
+    private val _dashPayUnlockStatus =
+        MutableStateFlow<Map<String, DashPayUnlockStatus>>(emptyMap())
+
+    /**
+     * Per-wallet seedless-unlock status, keyed by wallet-id hex — Swift
+     * `dashPayUnlockStatus`. `draining` while a deferred-contact-crypto
+     * drain is in flight; `seedMismatch` when the stored seed failed the
+     * binding verify (security-relevant: a mis-mapped Keystore slot);
+     * `pendingAccountBuilds` from the 1 Hz poll (drives the unlock banner).
+     */
+    val dashPayUnlockStatus: StateFlow<Map<String, DashPayUnlockStatus>> =
+        _dashPayUnlockStatus.asStateFlow()
+
+    private var dashPayPollJob: Job? = null
+
+    /** Start the recurring DashPay sweep + the 1 Hz status poll. */
+    suspend fun startDashPaySync() = withContext(Dispatchers.IO) {
+        mapNativeErrors { DashpayNative.dashPaySyncStart(managerHandle) }
+        startDashPayStatusPolling()
+    }
+
+    /** Stop the recurring sweep (restartable) and its status poll. */
+    suspend fun stopDashPaySync() = withContext(Dispatchers.IO) {
+        dashPayPollJob?.cancel()
+        dashPayPollJob = null
+        mapNativeErrors { DashpayNative.dashPaySyncStop(managerHandle) }
+        _dashPaySyncIsSyncing.value = false
+    }
+
+    suspend fun isDashPaySyncRunning(): Boolean = withContext(Dispatchers.IO) {
+        mapNativeErrors { DashpayNative.dashPaySyncIsRunning(managerHandle) }
+    }
+
+    suspend fun isDashPaySyncing(): Boolean = withContext(Dispatchers.IO) {
+        mapNativeErrors { DashpayNative.dashPaySyncIsSyncing(managerHandle) }
+    }
+
+    /** Unix seconds of the last completed sweep; 0 when never. */
+    suspend fun dashPayLastSyncUnixSeconds(): Long = withContext(Dispatchers.IO) {
+        mapNativeErrors { DashpayNative.dashPaySyncLastSyncUnixSeconds(managerHandle) }
+    }
+
+    /** Set the sweep interval (seconds); applies from the next tick. */
+    suspend fun setDashPaySyncInterval(seconds: Long) = withContext(Dispatchers.IO) {
+        mapNativeErrors { DashpayNative.dashPaySyncSetInterval(managerHandle, seconds) }
+    }
+
+    /**
+     * Run one sweep pass NOW (pull-to-refresh), blocking until it
+     * completes. ← Swift `dashPaySyncNow()`.
+     */
+    suspend fun dashPaySyncNow(): DashPaySyncSummary = withContext(Dispatchers.IO) {
+        val json = mapNativeErrors { DashpayNative.dashPaySyncNow(managerHandle) }
+            ?: return@withContext DashPaySyncSummary(0, 0, 0)
+        val obj = org.json.JSONObject(json)
+        DashPaySyncSummary(
+            success = obj.optInt("success"),
+            errors = obj.optInt("errors"),
+            syncUnixSeconds = obj.optLong("syncUnixSeconds"),
+        )
+    }
+
+    /** Deferred contact-crypto entries queued on [walletId]'s wallet. */
+    suspend fun contactCryptoPendingCount(walletId: ByteArray): Int =
+        withContext(Dispatchers.IO) {
+            val managed = wallet(forWalletId = walletId) ?: return@withContext 0
+            mapNativeErrors { DashpayNative.pendingContactCryptoCount(managed.handle) }
+        }
+
+    /**
+     * Seedless unlock of a restored external-signable wallet — port of
+     * Swift `unlockWalletFromKeychain` (verify → drain; the identity-key
+     * breadcrumb backfill step is deliberately NOT ported: the Kotlin SDK
+     * has no pre-breadcrumb installs to heal).
+     *
+     * 1. **Verify** the Keystore-resolved seed binds to this wallet
+     *    (derives the BIP44 account-0 xpub through the resolver and
+     *    compares with the persisted one) — a mis-mapped Keystore slot
+     *    fails here and the wallet stays external-signable, so a wrong
+     *    seed can never sign.
+     * 2. **Drain** deferred contact-crypto in the background (network +
+     *    ECDH per entry). Guarded against stacking on an in-flight drain.
+     *
+     * The seed never crosses into Kotlin: the mnemonic → seed conversion
+     * happens inside the resolver vtable, and the existence check is
+     * [WalletStorage.hasMnemonic] (no decrypt).
+     *
+     * @return true when the seed verified (drain scheduled); false when
+     *   no mnemonic is stored (a genuine watch-only wallet).
+     * @throws DashSdkError when the verify fails — a seed mismatch is
+     *   published on [dashPayUnlockStatus] before rethrowing.
+     */
+    suspend fun unlockWalletFromKeystore(managed: ManagedPlatformWallet): Boolean {
+        val walletId = managed.walletId
+        require(walletId.size == 32) { "walletId must be 32 bytes, got ${walletId.size}" }
+        if (!walletStorage.hasMnemonic(walletId)) return false
+
+        val key = walletId.toHex()
+        // Wrong-seed / wrong-wallet gate. `seedMismatch` is published from
+        // the verify result itself, scoped to JUST this call: the verify
+        // FFI maps Rust `SeedMismatch` → ErrorInvalidParameter (de-offset
+        // native code 2), and scoping the check here keeps any other
+        // invalid-parameter failure elsewhere from being mistaken for a
+        // seed mismatch. Rethrown so callers keep their own handling.
+        try {
+            withContext(Dispatchers.IO) {
+                mapNativeErrors {
+                    DashpayNative.verifySeedBindsToWallet(
+                        managed.handle,
+                        mnemonicResolver.nativeHandle,
+                    )
+                }
+            }
+            updateUnlockStatus(key) { it.copy(seedMismatch = false) }
+        } catch (e: DashSdkError.PlatformWallet.Generic) {
+            if (e.nativeCode == PWFFI_INVALID_PARAMETER) {
+                updateUnlockStatus(key) { it.copy(seedMismatch = true) }
+            }
+            throw e
+        }
+
+        // Don't stack a second drain on an in-flight one: a banner Unlock
+        // tap while a drain runs would duplicate the network re-fetch +
+        // ECDH work and race the channel-broken writes.
+        if (_dashPayUnlockStatus.value[key]?.draining == true) return true
+        updateUnlockStatus(key) { it.copy(draining = true) }
+
+        // Drain in the background — it re-fetches and decrypts over the
+        // network, so it must not block the caller. [signer] and
+        // [mnemonicResolver] are manager members (strongly reachable for
+        // the manager's lifetime), so their bridge GlobalRefs outlive the
+        // call. The raw wallet handle is captured, not the wrapper: a
+        // wallet destroyed before the drain runs just misses Rust-side
+        // (NotFound) — no use-after-free. An auth-gated signing failure
+        // inside the drain (Android-only: identity keys are biometric-
+        // gated here, unlike iOS) leaves the entry queued — the sweep
+        // self-heals — and surfaces like any other drain error.
+        val walletHandle = managed.handle
+        scope.launch(Dispatchers.IO) {
+            try {
+                mapNativeErrors {
+                    DashpayNative.drainPendingContactCrypto(
+                        walletHandle,
+                        signer.nativeHandle,
+                        mnemonicResolver.nativeHandle,
+                    )
+                }
+            } catch (_: Exception) {
+                // Not fatal: the next signer-present DashPay action (or the
+                // next unlock) re-attempts; the queue rebuilds via the sweep.
+            } finally {
+                updateUnlockStatus(key) { it.copy(draining = false) }
+            }
+        }
+        return true
+    }
+
+    private inline fun updateUnlockStatus(
+        key: String,
+        transform: (DashPayUnlockStatus) -> DashPayUnlockStatus,
+    ) {
+        _dashPayUnlockStatus.update { map ->
+            val next = transform(map[key] ?: DashPayUnlockStatus())
+            if (map[key] == next) map else map + (key to next)
+        }
+    }
+
+    /**
+     * Launch the 1 Hz DashPay status poll (idempotent). Change-gated like
+     * [startSpvProgressPolling]: `isSyncing` plus per-wallet
+     * `pendingAccountBuilds`, with stale wallet keys pruned — mirror of
+     * the Swift `startProgressPolling` DashPay block.
+     */
+    private fun startDashPayStatusPolling() {
+        if (dashPayPollJob?.isActive == true) return
+        dashPayPollJob = scope.launch {
+            while (isActive && !isClosed) {
+                val syncing = runCatching {
+                    DashpayNative.dashPaySyncIsSyncing(managerHandle)
+                }.getOrDefault(false)
+                if (syncing != _dashPaySyncIsSyncing.value) {
+                    _dashPaySyncIsSyncing.value = syncing
+                }
+
+                val current = _wallets.value
+                _dashPayUnlockStatus.update { map ->
+                    var next = map
+                    // Prune wallets that no longer exist on this manager.
+                    for (staleKey in map.keys - current.keys) next = next - staleKey
+                    for ((hexId, managed) in current) {
+                        val pending = runCatching {
+                            DashpayNative.pendingContactCryptoCount(managed.handle)
+                        }.getOrDefault(0)
+                        val prev = next[hexId] ?: DashPayUnlockStatus()
+                        if (prev.pendingAccountBuilds != pending) {
+                            next = next + (hexId to prev.copy(pendingAccountBuilds = pending))
+                        }
+                    }
+                    next
+                }
+                delay(POLL_INTERVAL_MS)
+            }
+        }
+    }
+
     // ── Lifecycle ─────────────────────────────────────────────────────
 
     val isClosed: Boolean get() = bundleRef.get() == 0L
@@ -1166,12 +1403,14 @@ class PlatformWalletManager(
         val bundle = bundleRef.getAndSet(0)
         if (bundle == 0L) return
 
-        // Stop the progress poll loop + event fan-out scope before teardown
+        // Stop the progress poll loops + event fan-out scope before teardown
         // so no collector touches a destroyed handle.
         progressPollJob?.cancel()
+        dashPayPollJob?.cancel()
         scope.cancel()
 
         // Best-effort stop; ignore failures (destroy shuts everything down).
+        runCatching { DashpayNative.dashPaySyncStop(managerHandle) }
         runCatching { WalletManagerNative.platformAddressSyncStop(managerHandle) }
         runCatching { WalletManagerNative.identitySyncStop(managerHandle) }
         runCatching { WalletManagerNative.shieldedSyncStop(managerHandle) }
@@ -1193,5 +1432,36 @@ class PlatformWalletManager(
     private companion object {
         /** SPV progress poll cadence — matches Swift's 1 Hz `startProgressPolling`. */
         const val POLL_INTERVAL_MS = 1_000L
+
+        /** De-offset `PlatformWalletFFIResultCode::ErrorInvalidParameter`. */
+        const val PWFFI_INVALID_PARAMETER = 2
     }
 }
+
+/**
+ * Per-wallet seedless-unlock status — Swift `DashPayUnlockStatus`.
+ * Published on [PlatformWalletManager.dashPayUnlockStatus]; drives the
+ * DashPay tab's unlock banner.
+ */
+data class DashPayUnlockStatus(
+    /** A deferred-contact-crypto drain is in flight for this wallet. */
+    val draining: Boolean = false,
+    /**
+     * The stored seed failed the binding verify — a mis-mapped Keystore
+     * slot. Security-relevant: the wallet stays external-signable, so the
+     * wrong seed can never sign for it.
+     */
+    val seedMismatch: Boolean = false,
+    /** Deferred contact-crypto entries queued (from the 1 Hz poll). */
+    val pendingAccountBuilds: Int = 0,
+)
+
+/**
+ * One `dashPaySyncNow` result — Swift `DashPaySyncSummary`:
+ * per-identity success/error counts + the sweep's unix-seconds stamp.
+ */
+data class DashPaySyncSummary(
+    val success: Int,
+    val errors: Int,
+    val syncUnixSeconds: Long,
+)

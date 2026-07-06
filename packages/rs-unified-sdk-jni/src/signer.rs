@@ -30,6 +30,14 @@ use std::ffi::{c_void, CString};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::ptr;
 
+/// Zero a [`CString`]'s backing buffer before releasing it. For buffers
+/// holding key material (the mnemonic) — a plain drop would return the
+/// plaintext bytes to the allocator intact.
+fn scrub_cstring(c: CString) {
+    let mut bytes = c.into_bytes();
+    bytes.iter_mut().for_each(|b| *b = 0);
+}
+
 struct KotlinSignerCtx {
     bridge: GlobalRef,
 }
@@ -359,13 +367,24 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_SignerNative_signWith
         };
 
         // Interior NULs would truncate the C string mid-derivation-path;
-        // reject rather than silently sign under a wrong path.
-        let (Ok(mnemonic_c), Ok(path_c)) = (CString::new(mnemonic_str), CString::new(path_str))
-        else {
+        // reject rather than silently sign under a wrong path. The
+        // mnemonic buffer is scrubbed on every path — including the
+        // NulError one, which hands the allocation back via into_vec().
+        let mnemonic_c = match CString::new(mnemonic_str) {
+            Ok(c) => c,
+            Err(e) => {
+                let mut leaked = e.into_vec();
+                leaked.iter_mut().for_each(|b| *b = 0);
+                crate::support::throw_sdk_exception(env, 1, "mnemonic contained an interior NUL");
+                return ptr::null_mut();
+            }
+        };
+        let Ok(path_c) = CString::new(path_str) else {
+            scrub_cstring(mnemonic_c);
             crate::support::throw_sdk_exception(
                 env,
                 1,
-                "mnemonic or derivation path contained an interior NUL",
+                "derivation path contained an interior NUL",
             );
             return ptr::null_mut();
         };
@@ -400,6 +419,12 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_SignerNative_signWith
                 &mut err_tag as *mut u8,
             )
         };
+
+        // The actual secret this function holds is the mnemonic, not the
+        // signature — scrub it before either return path. (The JVM-side
+        // String the caller passed remains the pre-existing exposure;
+        // tracked as the KeystoreSigner follow-up.)
+        scrub_cstring(mnemonic_c);
 
         if rc != 0 || err_tag != SIGN_WITH_MNEMONIC_OK {
             crate::support::throw_sdk_exception(

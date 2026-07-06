@@ -173,13 +173,14 @@ class KeystoreSigner(
     override fun canSignWith(pubkeyBytes: ByteArray, keyType: Int): Boolean = try {
         if (keyType == PLATFORM_ADDRESS_HASH_KEY_TYPE) {
             // Prerequisites for the derive-and-sign path: a row with a
-            // non-empty derivation path plus a stored wallet mnemonic. Do
-            // NOT materialize the mnemonic here — existence only.
+            // non-empty derivation path plus a stored wallet mnemonic.
+            // Existence-only — hasMnemonic never decrypts, so no plaintext
+            // is materialized for a mere capability check.
             runBlocking {
                 val row = platformAddressDao.getByAddressHash(pubkeyBytes)
                 row != null &&
                     row.derivationPath.isNotEmpty() &&
-                    storage.retrieveMnemonic(row.walletId) != null
+                    storage.hasMnemonic(row.walletId)
             }
         } else {
             runBlocking { storage.hasPrivateKey(storageKeyFor(pubkeyBytes)) }

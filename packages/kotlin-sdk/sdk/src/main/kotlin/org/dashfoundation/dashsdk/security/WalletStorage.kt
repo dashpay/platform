@@ -37,6 +37,12 @@ class WalletStorage(
         store.edit { it[mnemonicKey(walletId)] = encode(blob) }
     }
 
+    /**
+     * Decrypt the mnemonic as a display `String`. For explicit
+     * user-facing reveal flows ONLY (seed backup, biometric reveal) —
+     * a String cannot be scrubbed afterwards. Programmatic consumers
+     * (the FFI resolver, signers) must use [retrieveMnemonicUtf8].
+     */
     suspend fun retrieveMnemonic(walletId: ByteArray): String? {
         val encoded = store.data.first()[mnemonicKey(walletId)] ?: return null
         val plain = keystore.decrypt(decode(encoded))
@@ -44,6 +50,26 @@ class WalletStorage(
         plain.fill(0)
         return phrase
     }
+
+    /**
+     * Decrypt the mnemonic as raw UTF-8 bytes, never materializing a JVM
+     * `String` (the iOS `retrieveMnemonicUTF8Bytes` discipline). The
+     * caller OWNS the returned array and MUST `fill(0)` it as soon as the
+     * bytes are consumed — unlike a String, a ByteArray can actually be
+     * scrubbed, so the plaintext exposure window is bounded by the call
+     * instead of by the garbage collector.
+     */
+    suspend fun retrieveMnemonicUtf8(walletId: ByteArray): ByteArray? {
+        val encoded = store.data.first()[mnemonicKey(walletId)] ?: return null
+        return keystore.decrypt(decode(encoded))
+    }
+
+    /**
+     * Whether a mnemonic is stored for [walletId]. Existence-only — never
+     * decrypts, never materializes plaintext (Swift `hasMnemonic(for:)`).
+     */
+    suspend fun hasMnemonic(walletId: ByteArray): Boolean =
+        store.data.first().contains(mnemonicKey(walletId))
 
     suspend fun deleteMnemonic(walletId: ByteArray) {
         store.edit { it.remove(mnemonicKey(walletId)) }

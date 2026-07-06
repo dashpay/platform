@@ -7,7 +7,7 @@
 //! which decrypts the Keystore-wrapped mnemonic on demand.
 
 use crate::support::{guard, JVM};
-use jni::objects::{GlobalRef, JClass, JObject, JString};
+use jni::objects::{GlobalRef, JClass, JObject};
 use jni::sys::jlong;
 use jni::JNIEnv;
 use rs_sdk_ffi::{
@@ -23,15 +23,24 @@ const RESULT_NOT_FOUND: i32 = 1;
 const RESULT_BUFFER_TOO_SMALL: i32 = 2;
 const RESULT_OTHER: i32 = 3;
 
+/// Sentinel returns from `NativeMnemonicBridge.resolveMnemonicInto`
+/// (keep in sync with the Kotlin companion constants).
+const RESOLVE_NOT_FOUND: i32 = -1;
+const RESOLVE_BUFFER_TOO_SMALL: i32 = -2;
+
 struct KotlinMnemonicCtx {
     bridge: GlobalRef,
 }
 
 /// The synchronous resolve trampoline. May fire on Tokio worker threads —
-/// attaches as daemon, calls
-/// `NativeMnemonicBridge.resolveMnemonic(byte[]): String`, copies the
-/// UTF-8 bytes into the Rust-owned buffer, and zeroes the intermediate
-/// copy. Never unwinds.
+/// attaches as daemon and calls
+/// `NativeMnemonicBridge.resolveMnemonicInto(byte[], byte[]): int` — the
+/// out-buffer contract: Kotlin writes raw UTF-8 phrase bytes into a Java
+/// buffer sized to the Rust caller's capacity, this trampoline copies
+/// them straight into the Rust-owned buffer and then ZEROES the Java
+/// buffer. No `java.lang.String` of the phrase ever exists (an immutable
+/// String can't be scrubbed and would sit in the JVM heap, recoverable
+/// from a heap dump, until — if ever — collected). Never unwinds.
 unsafe extern "C" fn resolve_trampoline(
     ctx: *const c_void,
     wallet_id_bytes: *const u8,
@@ -54,40 +63,38 @@ unsafe extern "C" fn resolve_trampoline(
         match env.with_local_frame(16, |env| -> Result<i32, jni::errors::Error> {
             let wallet_id = std::slice::from_raw_parts(wallet_id_bytes, 32);
             let jwallet_id = env.byte_array_from_slice(wallet_id)?;
-            let value = env
+            // Reserve one byte of the Rust capacity for the NUL terminator.
+            let usable = out_capacity.saturating_sub(1);
+            let jout = env.new_byte_array(usable as i32)?;
+            let written = env
                 .call_method(
                     ctx.bridge.as_obj(),
-                    "resolveMnemonic",
-                    "([B)Ljava/lang/String;",
-                    &[(&jwallet_id).into()],
+                    "resolveMnemonicInto",
+                    "([B[B)I",
+                    &[(&jwallet_id).into(), (&jout).into()],
                 )?
-                .l()?;
-            if value.is_null() {
-                return Ok(RESULT_NOT_FOUND);
-            }
+                .i()?;
 
-            let jstr = JString::from(value);
-            let java_str = env.get_string(&jstr)?;
-            let mut bytes = java_str.to_bytes().to_vec();
-            drop(java_str);
-
-            let code = if bytes.len() + 1 > out_capacity {
-                RESULT_BUFFER_TOO_SMALL
-            } else {
-                std::ptr::copy_nonoverlapping(
-                    bytes.as_ptr(),
-                    out_mnemonic_utf8 as *mut u8,
-                    bytes.len(),
-                );
-                *(out_mnemonic_utf8.add(bytes.len())) = 0;
-                *out_len = bytes.len();
-                RESULT_OK
+            let code = match written {
+                RESOLVE_NOT_FOUND => RESULT_NOT_FOUND,
+                RESOLVE_BUFFER_TOO_SMALL => RESULT_BUFFER_TOO_SMALL,
+                len if len < 0 || len as usize > usable => RESULT_OTHER,
+                len => {
+                    let len = len as usize;
+                    // Copy the phrase bytes straight from the Java buffer
+                    // into the Rust-owned out buffer, then scrub the Java
+                    // buffer — the only JVM-side plaintext copy.
+                    // `.cast()`: c_char is i8 on x86_64 but u8 on
+                    // aarch64-linux-android; jbyte is always i8.
+                    let dst = std::slice::from_raw_parts_mut(out_mnemonic_utf8.cast::<i8>(), len);
+                    env.get_byte_array_region(&jout, 0, dst)?;
+                    *(out_mnemonic_utf8.add(len)) = 0;
+                    *out_len = len;
+                    RESULT_OK
+                }
             };
-
-            // Zero the intermediate Rust copy of the phrase. (The JVM String
-            // itself is garbage-collected — same residual exposure the iOS
-            // Swift String has.)
-            bytes.iter_mut().for_each(|b| *b = 0);
+            let zeros = vec![0i8; usable];
+            env.set_byte_array_region(&jout, 0, &zeros)?;
             Ok(code)
         }) {
             Ok(code) => code,

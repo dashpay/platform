@@ -319,6 +319,62 @@ class Dashpay internal constructor(private val walletHandle: Long) {
             mapNativeErrors { DashpayNative.searchDpnsNames(walletHandle, prefix, limit) }
         }
 
+    // ── Profile / contactInfo writes (upstream #3841 parity) ──────────
+
+    /**
+     * Create ([doCreate] = true) or update the DashPay profile for
+     * [identityId], signing with [signerHandle]. [avatarBytes] is the raw
+     * image — Rust computes the SHA-256 hash + perceptual fingerprint.
+     * Broadcasts a real document state transition (blocking, network).
+     * Returns the resulting profile JSON (same shape as [getProfile]).
+     * ← Swift `createDashPayProfile` / `updateDashPayProfile`.
+     */
+    @Suppress("LongParameterList")
+    suspend fun createOrUpdateProfile(
+        identityId: ByteArray,
+        displayName: String?,
+        publicMessage: String?,
+        avatarUrl: String?,
+        avatarBytes: ByteArray? = null,
+        doCreate: Boolean,
+        signerHandle: Long,
+    ): String? = withContext(Dispatchers.IO) {
+        mapNativeErrors {
+            DashpayNative.createOrUpdateProfile(
+                walletHandle, identityId, displayName, publicMessage,
+                avatarUrl, avatarBytes, doCreate, signerHandle,
+            )
+        }
+    }
+
+    /**
+     * Set the owner-private contactInfo (alias / note / [displayHidden])
+     * for `(identityId, contactId)`. Local state ALWAYS updates; the
+     * encrypted on-chain publish is DIP-15-gated — the returned
+     * [ContactInfoPublishOutcome] tells the UI whether the change is
+     * cross-device yet ([ContactInfoPublishOutcome.DEFERRED_UNTIL_TWO_CONTACTS]
+     * means local-only until a second contact establishes; surface that,
+     * matching iOS). ← Swift `setDashPayContactInfo`.
+     */
+    @Suppress("LongParameterList")
+    suspend fun setContactInfo(
+        identityId: ByteArray,
+        contactId: ByteArray,
+        alias: String?,
+        note: String?,
+        displayHidden: Boolean,
+        signerHandle: Long,
+        coreSignerHandle: Long,
+    ): ContactInfoPublishOutcome = withContext(Dispatchers.IO) {
+        val raw = mapNativeErrors {
+            DashpayNative.setContactInfo(
+                walletHandle, identityId, contactId, alias, note,
+                displayHidden, signerHandle, coreSignerHandle,
+            )
+        }
+        ContactInfoPublishOutcome.fromRaw(raw)
+    }
+
     /**
      * Open the managed-identity handle for [identityId], run [block],
      * and destroy the handle before returning (the [contacts] /
@@ -350,6 +406,36 @@ class Dashpay internal constructor(private val walletHandle: Long) {
             out.add(id)
         }
         return out
+    }
+}
+
+/**
+ * Outcome of a contactInfo write — mirror of the Rust
+ * `CONTACT_INFO_*` discriminants (Swift `ContactInfoPublishOutcome`).
+ * Local state always updated; this describes the on-chain publish.
+ */
+enum class ContactInfoPublishOutcome(val raw: Int) {
+    /** Encrypted contactInfo document broadcast — cross-device. */
+    PUBLISHED(0),
+
+    /**
+     * DIP-15 gate: fewer than two established contacts, so the encrypted
+     * publish is deferred (local-only until a second contact establishes).
+     */
+    DEFERRED_UNTIL_TWO_CONTACTS(1),
+
+    /** Watch-only wallet — cannot sign the publish; local-only. */
+    SKIPPED_WATCH_ONLY(2),
+    ;
+
+    companion object {
+        /**
+         * Unknown discriminants degrade to [DEFERRED_UNTIL_TWO_CONTACTS]
+         * (the "local-only, not yet cross-device" reading — the safe
+         * assumption for a newer Rust enum case).
+         */
+        fun fromRaw(raw: Int): ContactInfoPublishOutcome =
+            entries.firstOrNull { it.raw == raw } ?: DEFERRED_UNTIL_TWO_CONTACTS
     }
 }
 
