@@ -158,6 +158,11 @@ pub fn load_state(
     let mut stmt = conn.prepare(
         "SELECT identity_id, entry_blob, tombstoned FROM identities WHERE wallet_id = ?1",
     )?;
+    // The ignored-senders TABLE is the authoritative ignore record (every
+    // ignore/un-ignore maintains it transactionally); the `entry_blob`'s
+    // snapshot copy can be stale — see `contacts::load_ignored_senders`.
+    let mut ignored_by_owner =
+        crate::sqlite::schema::contacts::load_ignored_senders(conn, wallet_id)?;
     let mut state = IdentityManagerStartState::default();
     let mut rows = stmt.query(params![wallet_id.as_slice()])?;
     while let Some(row) = rows.next()? {
@@ -168,7 +173,8 @@ pub fn load_state(
             continue;
         }
         let entry: IdentityEntry = blob::decode(&payload)?;
-        let managed = managed_identity_from_entry(&entry, wallet_id);
+        let ignored = ignored_by_owner.remove(&entry.id).unwrap_or_default();
+        let managed = managed_identity_from_entry(&entry, wallet_id, ignored);
         match entry.identity_index {
             Some(idx) => {
                 state
@@ -193,6 +199,7 @@ pub fn load_state(
 fn managed_identity_from_entry(
     entry: &IdentityEntry,
     wallet_id: &WalletId,
+    ignored_senders: std::collections::BTreeSet<dpp::prelude::Identifier>,
 ) -> platform_wallet::wallet::identity::ManagedIdentity {
     use dpp::identity::v0::IdentityV0;
     use dpp::identity::Identity;
@@ -214,17 +221,25 @@ fn managed_identity_from_entry(
     managed.contested_dpns_names = entry.contested_dpns_names.clone();
     managed.wallet_id = entry.wallet_id.or(Some(*wallet_id));
     // Scalar-snapshot collections ride the identity `entry_blob`
-    // (payments / profile / contact_profiles / ignored_senders), so they
-    // restore from `entry`. The relational request collections are loaded
-    // separately from the `contacts` table and stay defaulted here.
+    // (payments / profile / contact_profiles), so they restore from
+    // `entry`. The relational request collections are loaded separately
+    // from the `contacts` table and stay defaulted here.
     // High-water sync cursors, the per-session rescan guard, the
     // verify-failed auto-accept markers, and the deferred contact-crypto
     // queue (not persisted; a signerless sweep re-enqueues its ops on
     // load) are in-memory by design: a cold restore starts them at their
-    // defaults so the next sweep re-fetches / re-evaluates safely. The
-    // constructor starts a fresh empty ignored set, so per-element apply
-    // reproduces the persisted set exactly.
-    for sender in &entry.ignored_senders {
+    // defaults so the next sweep re-fetches / re-evaluates safely.
+    //
+    // Ignored senders restore from the `ignored_senders` TABLE (passed in
+    // by the loader), NOT from `entry.ignored_senders`: an un-ignore
+    // deletes only the table row (no fresh identity-entry flush), and the
+    // changeset merge UNIONs the blob's set across buffered snapshots —
+    // so the blob copy can resurrect an un-ignored sender. The table is
+    // maintained transactionally by both the ignore and un-ignore writers
+    // and is therefore authoritative. The constructor starts a fresh
+    // empty ignored set, so per-element apply reproduces the table's set
+    // exactly.
+    for sender in &ignored_senders {
         managed.apply_ignored_sender(*sender);
     }
     *managed.dashpay_profile_mut() = entry.dashpay_profile.clone();

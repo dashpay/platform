@@ -54,6 +54,16 @@ const PRIVATE_DATA_MIN_LEN: usize = 48;
 /// 48-byte ciphertext floor: a 17-byte plaintext pads to 32 (CBC) + 16 (IV).
 const MIN_PLAINTEXT_LEN: usize = PRIVATE_DATA_MIN_LEN - 16 - 15;
 
+/// The deployed schema's `privateData` maximum length (bytes, IV included):
+/// `"privateData": { "maxItems": 2048 }` in `dashpay.schema.json`.
+const PRIVATE_DATA_MAX_LEN: usize = 2048;
+
+/// Plaintext ceiling so `IV(16) ‖ AES-256-CBC/PKCS7(plaintext)` fits the
+/// schema's 2048-byte cap: PKCS7 always adds 1..=16 padding bytes, so the
+/// largest admissible plaintext is `(2048 - 16) - 1 = 2031` bytes (a
+/// 2031-byte plaintext pads to a 2032-byte ciphertext; 2032 + 16 = 2048).
+pub const MAX_PLAINTEXT_LEN: usize = PRIVATE_DATA_MAX_LEN - 16 - 1;
+
 /// DIP-15 `version` for the v0 field set: `major(0) << 16 | minor(0)`.
 const PRIVATE_DATA_VERSION_V0: u32 = 0;
 
@@ -245,6 +255,31 @@ pub fn encode_private_data(data: &ContactInfoPrivateData) -> Vec<u8> {
     out
 }
 
+/// [`encode_private_data`] with the schema's size cap enforced.
+///
+/// The publish path MUST use this (before persisting any local state):
+/// an over-cap plaintext produces a `privateData` blob the contract's
+/// 2048-byte `maxItems` rejects at broadcast — a PERMANENT failure, not a
+/// transient one, so it has to surface as an error to the caller instead
+/// of leaving locally-persisted metadata durably divergent from chain.
+/// Unlike the account-label codec (which truncates to its 80-byte field),
+/// alias/note are user-visible verbatim, so we reject rather than
+/// silently truncate.
+pub fn encode_private_data_bounded(
+    data: &ContactInfoPrivateData,
+) -> Result<Vec<u8>, PlatformWalletError> {
+    let out = encode_private_data(data);
+    if out.len() > MAX_PLAINTEXT_LEN {
+        return Err(PlatformWalletError::InvalidIdentityData(format!(
+            "contactInfo privateData plaintext is {} bytes; the encrypted document would \
+             exceed the contract's {PRIVATE_DATA_MAX_LEN}-byte cap (max plaintext \
+             {MAX_PLAINTEXT_LEN} bytes) — shorten the alias/note",
+            out.len()
+        )));
+    }
+    Ok(out)
+}
+
 /// Decode a `privateData` plaintext (inverse of [`encode_private_data`]).
 ///
 /// Tolerant per DIP-15 versioning: an unknown **major** version discards the
@@ -382,6 +417,54 @@ mod tests {
             empty,
             "padding must be ignored"
         );
+    }
+
+    /// Over-cap payloads are rejected BEFORE encryption/persist: the
+    /// contract's `privateData` cap is 2048 bytes (IV + CBC ciphertext),
+    /// so a plaintext past [`MAX_PLAINTEXT_LEN`] would fail the broadcast
+    /// permanently — after the publish path already persisted local
+    /// metadata. The bounded encoder must error, not truncate. Was red
+    /// against the cap-less encoder.
+    #[test]
+    fn private_data_over_cap_is_rejected_at_cap_is_accepted() {
+        // Fixed overhead around the note: version(4) + alias varstr(1, empty)
+        // + note varint prefix + displayHidden(1) + accepted count varint(1).
+        // A ~2100-byte note is safely over the 2031-byte plaintext cap.
+        let over = ContactInfoPrivateData {
+            alias_name: None,
+            note: Some("x".repeat(2100)),
+            display_hidden: false,
+            accepted_accounts: Vec::new(),
+        };
+        assert!(
+            encode_private_data_bounded(&over).is_err(),
+            "a plaintext past MAX_PLAINTEXT_LEN must be rejected, not encrypted"
+        );
+
+        // Boundary: size the note so the encoded plaintext lands EXACTLY on
+        // MAX_PLAINTEXT_LEN — must be accepted and round-trip.
+        let mut at_cap = ContactInfoPrivateData {
+            alias_name: None,
+            note: Some(String::new()),
+            display_hidden: false,
+            accepted_accounts: Vec::new(),
+        };
+        // Find the note length whose encoding hits the cap exactly: encode
+        // once to measure the fixed overhead of a 3-byte varstr prefix
+        // (lengths ≥ 253 use 0xFD + u16).
+        let overhead = {
+            let probe = ContactInfoPrivateData {
+                alias_name: None,
+                note: Some("y".repeat(300)),
+                display_hidden: false,
+                accepted_accounts: Vec::new(),
+            };
+            encode_private_data(&probe).len() - 300
+        };
+        at_cap.note = Some("y".repeat(MAX_PLAINTEXT_LEN - overhead));
+        let encoded = encode_private_data_bounded(&at_cap).expect("at-cap payload is admissible");
+        assert_eq!(encoded.len(), MAX_PLAINTEXT_LEN);
+        assert_eq!(decode_private_data(&encoded).expect("decode"), at_cap);
     }
 
     /// Forward-compat: a v0 decoder reading bytes with extra trailing data

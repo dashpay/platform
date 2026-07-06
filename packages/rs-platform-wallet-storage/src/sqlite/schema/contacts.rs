@@ -16,7 +16,10 @@ use platform_wallet::wallet::platform_wallet::WalletId;
 use crate::sqlite::error::WalletStorageError;
 use crate::sqlite::schema::blob;
 
-#[cfg(feature = "__test-helpers")]
+// `any(test, …)`, not `__test-helpers`-only: `load_ignored_senders` (and its
+// `decode_pair_key` helper) are gated the same way — they're reached by
+// `identities::load_state`, whose gate includes plain `test`.
+#[cfg(any(test, feature = "__test-helpers"))]
 use dpp::prelude::Identifier;
 #[cfg(feature = "__test-helpers")]
 use platform_wallet::changeset::{
@@ -24,9 +27,9 @@ use platform_wallet::changeset::{
 };
 #[cfg(feature = "__test-helpers")]
 use platform_wallet::wallet::identity::{ContactRequest, EstablishedContact};
-#[cfg(feature = "__test-helpers")]
+#[cfg(any(test, feature = "__test-helpers"))]
 use rusqlite::Connection;
-#[cfg(feature = "__test-helpers")]
+#[cfg(any(test, feature = "__test-helpers"))]
 use std::collections::BTreeMap;
 
 /// Single source of truth for the `contacts.state` TEXT-column domain.
@@ -140,14 +143,24 @@ pub fn apply(
         }
     }
     if !cs.removed_sent.is_empty() {
+        // Pending-sent tombstone. State-filtered: the contacts table is one
+        // row per pair, so an unfiltered DELETE would also destroy an
+        // `established` row — both request blobs plus the user's
+        // alias/note/hidden/accepted-accounts — if an emitter ever produced
+        // a pending tombstone for an established pair. The changeset
+        // contract says `removed_sent` means "the pending sent entry was
+        // removed", so the writer only ever deletes a pending-sent row.
+        let sent = contact_state_db_label(ContactState::Sent);
         let mut stmt = tx.prepare_cached(
-            "DELETE FROM contacts WHERE wallet_id = ?1 AND owner_id = ?2 AND contact_id = ?3",
+            "DELETE FROM contacts \
+             WHERE wallet_id = ?1 AND owner_id = ?2 AND contact_id = ?3 AND state = ?4",
         )?;
         for key in &cs.removed_sent {
             stmt.execute(params![
                 wallet_id.as_slice(),
                 key.owner_id.as_slice(),
                 key.recipient_id.as_slice(),
+                sent,
             ])?;
         }
     }
@@ -180,14 +193,20 @@ pub fn apply(
         }
     }
     if !cs.removed_incoming.is_empty() {
+        // Pending-received tombstone. State-filtered for the same reason
+        // as `removed_sent` above: never let a pending tombstone destroy
+        // an `established` pair-row.
+        let received = contact_state_db_label(ContactState::Received);
         let mut stmt = tx.prepare_cached(
-            "DELETE FROM contacts WHERE wallet_id = ?1 AND owner_id = ?2 AND contact_id = ?3",
+            "DELETE FROM contacts \
+             WHERE wallet_id = ?1 AND owner_id = ?2 AND contact_id = ?3 AND state = ?4",
         )?;
         for key in &cs.removed_incoming {
             stmt.execute(params![
                 wallet_id.as_slice(),
                 key.owner_id.as_slice(),
                 key.sender_id.as_slice(),
+                received,
             ])?;
         }
     }
@@ -377,7 +396,9 @@ fn decode_request(
     }
 }
 
-#[cfg(feature = "__test-helpers")]
+// Widened to `any(test, …)` alongside `load_ignored_senders`, its only
+// `test`-arm caller (the `__test-helpers`-gated readers use it too).
+#[cfg(any(test, feature = "__test-helpers"))]
 fn decode_pair_key(a: &[u8], b: &[u8]) -> Result<(Identifier, Identifier), WalletStorageError> {
     let a32 = <[u8; 32]>::try_from(a)
         .map_err(|_| WalletStorageError::blob_decode("contacts.id column is not 32 bytes"))?;
@@ -395,6 +416,36 @@ pub fn load_state_for_test(
     wallet_id: &WalletId,
 ) -> Result<ContactsRecords, WalletStorageError> {
     load_state(conn, wallet_id)
+}
+
+/// Read the wallet's `ignored_senders` rows, grouped per owner identity.
+///
+/// This table — not the `ignored_senders` snapshot inside the identity
+/// `entry_blob` — is the AUTHORITATIVE ignore record at load time: every
+/// ignore INSERTs a row and every un-ignore DELETEs it transactionally,
+/// while the blob is only as fresh as the last identity-entry flush.
+/// An un-ignore never re-flushes the identity entry (it persists only the
+/// `ContactChangeSet`), and `IdentityChangeSet::merge` UNIONs the blob's
+/// ignored set across buffered snapshots — so a blob-based restore would
+/// resurrect un-ignored senders, stickily (the next snapshot re-persists
+/// the resurrected entry). The identity loader therefore restores the
+/// ignored set from this reader and disregards the blob field.
+#[cfg(any(test, feature = "__test-helpers"))]
+pub(crate) fn load_ignored_senders(
+    conn: &Connection,
+    wallet_id: &WalletId,
+) -> Result<BTreeMap<Identifier, std::collections::BTreeSet<Identifier>>, WalletStorageError> {
+    let mut stmt =
+        conn.prepare("SELECT owner_id, sender_id FROM ignored_senders WHERE wallet_id = ?1")?;
+    let mut map: BTreeMap<Identifier, std::collections::BTreeSet<Identifier>> = BTreeMap::new();
+    let mut rows = stmt.query(params![wallet_id.as_slice()])?;
+    while let Some(row) = rows.next()? {
+        let owner: Vec<u8> = row.get(0)?;
+        let sender: Vec<u8> = row.get(1)?;
+        let (owner, sender) = decode_pair_key(&owner, &sender)?;
+        map.entry(owner).or_default().insert(sender);
+    }
+    Ok(map)
 }
 
 #[cfg(test)]

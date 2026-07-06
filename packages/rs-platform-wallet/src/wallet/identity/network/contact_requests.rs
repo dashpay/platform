@@ -419,19 +419,12 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
 
         // 3. Resolve key indices. The sender selects its own ENCRYPTION key
         //    (the live convention for both cohorts); ECDSA_SECP256K1 is
-        //    required for ECDH.
-        let sender_encryption_key = sender_identity
-            .public_keys()
-            .iter()
-            .find(|(_, k)| {
-                k.purpose() == Purpose::ENCRYPTION && k.key_type() == KeyType::ECDSA_SECP256K1
-            })
-            .map(|(_, k)| k.clone())
-            .ok_or_else(|| {
-                PlatformWalletError::InvalidIdentityData(
-                    "Sender identity has no ECDSA_SECP256K1 encryption key".to_string(),
-                )
-            })?;
+        //    required for ECDH. Shared selector — same enabled-only policy
+        //    as the contactInfo publish path, so both DashPay surfaces
+        //    agree on the ECDH root and a disabled (rotated-away) first
+        //    key can't hard-fail the pre-send validator below while an
+        //    enabled replacement exists.
+        let sender_encryption_key = select_own_encryption_key(&sender_identity)?.clone();
         let sender_key_index = sender_encryption_key.id();
 
         let recipient_key_index = select_recipient_key_index(&recipient_identity)?;
@@ -946,6 +939,35 @@ fn select_recipient_key_index(recipient_identity: &Identity) -> Result<u32, Plat
         "Recipient identity has no enabled ECDSA_SECP256K1 DECRYPTION or ENCRYPTION key"
             .to_string(),
     ))
+}
+
+/// Select our OWN ECDH root key: the first **enabled** `ECDSA_SECP256K1`
+/// ENCRYPTION key on the identity (`BTreeMap` order → lowest key id).
+///
+/// The single selection policy shared by the contact-request send path and
+/// the contactInfo publish path, so the two DashPay surfaces always agree
+/// on which key is the ECDH root. Skipping disabled keys mirrors
+/// [`select_recipient_key_index`] and the validator's disabled-key gate:
+/// after a disable-and-replace key rotation, selecting the disabled
+/// lowest-id key would hard-fail pre-send validation on every new outgoing
+/// request even though an enabled replacement exists.
+pub(crate) fn select_own_encryption_key(
+    identity: &Identity,
+) -> Result<&IdentityPublicKey, PlatformWalletError> {
+    identity
+        .public_keys()
+        .iter()
+        .find(|(_, k)| {
+            k.purpose() == Purpose::ENCRYPTION
+                && k.key_type() == KeyType::ECDSA_SECP256K1
+                && k.disabled_at().is_none()
+        })
+        .map(|(_, k)| k)
+        .ok_or_else(|| {
+            PlatformWalletError::InvalidIdentityData(
+                "Identity has no enabled ECDSA_SECP256K1 encryption key".to_string(),
+            )
+        })
 }
 
 // ---------------------------------------------------------------------------
@@ -2030,6 +2052,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                                 self.note_external_account_registered(
                                     &entry.owner_identity_id,
                                     &entry.contact_id,
+                                    encrypted_public_key,
                                 )
                                 .await;
                             }
@@ -2475,10 +2498,24 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     ///
     /// Idempotent (skips the persist when nothing changed). Takes its own
     /// write guard; the caller must hold no wallet-manager guard.
+    ///
+    /// `built_from_ciphertext` is the `encryptedPublicKey` blob the account
+    /// was actually registered from. Registration and this stamp run under
+    /// SEPARATE guards (the drain awaits the ECDH provider lock-free in
+    /// between), so a rotation sweep can advance `incoming_request` after
+    /// the payload was snapshotted but before this stamp. Stamping the LIVE
+    /// reference in that window would mark an account built from the
+    /// rotated-away xpub as current — `external_account_needs_rebuild` then
+    /// never fires and `send_payment` silently derives addresses the
+    /// contact no longer watches. Comparing the live ciphertext against the
+    /// one we built from detects the race; on mismatch the marker is left
+    /// stale (or `None`) so the sweep's teardown + rebuild picks up the
+    /// fresh request.
     pub(crate) async fn note_external_account_registered(
         &self,
         identity_id: &Identifier,
         contact_id: &Identifier,
+        built_from_ciphertext: &[u8],
     ) {
         let mut wm = self.wallet_manager.write().await;
         let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) else {
@@ -2490,6 +2527,14 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         let Some(contact) = managed.established_contact_mut(contact_id) else {
             return;
         };
+        if contact.incoming_request.encrypted_public_key != built_from_ciphertext {
+            tracing::warn!(
+                owner = %identity_id, contact = %contact_id,
+                "external account registered from a superseded payload (rotation raced \
+                 the registration); leaving the self-heal marker stale so the sweep rebuilds"
+            );
+            return;
+        }
         let current_reference = contact.incoming_request.account_reference;
         let already_current = contact.external_account_reference == Some(current_reference);
         if already_current && !contact.payment_channel_broken {
@@ -2923,8 +2968,12 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         // the sweep detects the stale marker and rebuilds; its build path
         // stamps + clears broken then.
         if registration == ExternalAccountRegistration::Built {
-            self.note_external_account_registered(our_identity_id, contact_id)
-                .await;
+            self.note_external_account_registered(
+                our_identity_id,
+                contact_id,
+                contact_encrypted_xpub,
+            )
+            .await;
         }
 
         // Surface the contact's account label from the same ECDH shared key
@@ -3985,6 +4034,49 @@ mod recipient_key_selection_tests {
             "a sole disabled key must error, got {err:?}"
         );
     }
+
+    /// **Own-key selector: a disabled first ENCRYPTION key is skipped in
+    /// favour of the enabled replacement.** After a disable-and-replace key
+    /// rotation the lowest-id ENCRYPTION key is disabled; selecting it
+    /// would hard-fail the pre-send validator on every new outgoing contact
+    /// request ("Sender key N is disabled") even though an enabled
+    /// replacement exists — while the contactInfo path (which already
+    /// filtered disabled keys) would use the replacement, splitting the two
+    /// surfaces' notion of the ECDH root. Was red against the send path's
+    /// unfiltered inline selection.
+    #[test]
+    fn own_key_selector_skips_disabled_first_encryption_key() {
+        let identity = identity_with_keys(vec![
+            key(0, KeyType::ECDSA_SECP256K1, Purpose::AUTHENTICATION),
+            disabled_key(1, KeyType::ECDSA_SECP256K1, Purpose::ENCRYPTION),
+            key(2, KeyType::ECDSA_SECP256K1, Purpose::ENCRYPTION),
+        ]);
+
+        let selected = select_own_encryption_key(&identity)
+            .expect("must skip the disabled key and select the enabled replacement");
+        assert_eq!(
+            selected.id(),
+            2,
+            "the disabled lowest-id ENCRYPTION key (id 1) must not be the ECDH root"
+        );
+    }
+
+    /// Own-key selector: enabled-only, so an identity whose ONLY
+    /// ENCRYPTION key is disabled errors instead of deriving ECDH from a
+    /// revoked key.
+    #[test]
+    fn own_key_selector_errors_when_only_encryption_key_is_disabled() {
+        let identity = identity_with_keys(vec![
+            key(0, KeyType::ECDSA_SECP256K1, Purpose::AUTHENTICATION),
+            disabled_key(1, KeyType::ECDSA_SECP256K1, Purpose::ENCRYPTION),
+        ]);
+
+        let err = select_own_encryption_key(&identity).unwrap_err();
+        assert!(
+            matches!(err, PlatformWalletError::InvalidIdentityData(_)),
+            "a sole disabled ENCRYPTION key must error, got {err:?}"
+        );
+    }
 }
 
 #[cfg(test)]
@@ -4177,5 +4269,128 @@ mod contact_info_provider_tests {
 
         // Empty queue is zero.
         assert_eq!(count_account_build_ops(&[]), 0);
+    }
+}
+
+#[cfg(test)]
+mod stamp_race_tests {
+    //! The rotation self-heal stamp must be payload-bound, not live-state
+    //! bound: registration (drain / accept) and the stamp run under separate
+    //! guards, so a rotation sweep can advance `incoming_request` in between.
+    //! Stamping the live reference onto an account built from the superseded
+    //! payload would silence `external_account_needs_rebuild` forever.
+
+    use super::*;
+    use crate::events::{EventHandler, PlatformEventHandler};
+    use crate::wallet::identity::EstablishedContact;
+    use crate::wallet::persister::{NoPlatformPersistence, WalletPersister};
+    use dpp::identity::v0::IdentityV0;
+    use dpp::identity::Identity;
+    use key_wallet::mnemonic::{Language, Mnemonic};
+    use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+    use key_wallet::Network;
+    use std::collections::BTreeMap;
+    use std::sync::Arc;
+
+    const TEST_MNEMONIC: &str = "abandon abandon abandon abandon abandon abandon \
+         abandon abandon abandon abandon abandon about";
+
+    struct NoopEventHandler;
+    impl EventHandler for NoopEventHandler {}
+    impl PlatformEventHandler for NoopEventHandler {}
+
+    fn bare_identity(id: [u8; 32]) -> Identity {
+        Identity::V0(IdentityV0 {
+            id: Identifier::from(id),
+            public_keys: BTreeMap::new(),
+            balance: 0,
+            revision: 0,
+        })
+    }
+
+    /// The stamp must be a no-op when the live incoming request's ciphertext
+    /// no longer matches the payload the account was registered from (a
+    /// rotation raced the registration), and must stamp normally when they
+    /// match. Was red against the live-reference stamp.
+    #[tokio::test]
+    async fn stamp_skips_when_registration_raced_a_rotation() {
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let persister = Arc::new(NoPlatformPersistence);
+        let handler: Arc<dyn PlatformEventHandler> = Arc::new(NoopEventHandler);
+        let manager = Arc::new(crate::PlatformWalletManager::new(
+            sdk,
+            Arc::clone(&persister),
+            handler,
+        ));
+        let mnemonic =
+            Mnemonic::from_phrase(TEST_MNEMONIC, Language::English).expect("valid mnemonic");
+        let seed = mnemonic.to_seed("");
+        let wallet = manager
+            .create_wallet_from_seed_bytes(
+                Network::Testnet,
+                &seed,
+                WalletAccountCreationOptions::None,
+                Some(0),
+            )
+            .await
+            .expect("wallet creation");
+        let wallet_id = wallet.wallet_id();
+        let iw = wallet.identity();
+        let p = WalletPersister::new(wallet_id, Arc::clone(&persister) as _);
+
+        let owner = Identifier::from([0xAA; 32]);
+        let contact = Identifier::from([0xBB; 32]);
+        // Live state: the contact ROTATED — incoming_request now carries the
+        // fresh ciphertext (7s) under reference 7; no marker yet.
+        let fresh_cipher = vec![7u8; 96];
+        let stale_cipher = vec![9u8; 96];
+        {
+            let mut wm = iw.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("info");
+            info.identity_manager
+                .add_identity(bare_identity([0xAA; 32]), 0, wallet_id, &p)
+                .expect("add owner");
+            let outgoing = ContactRequest::new(owner, contact, 0, 0, 0, vec![0u8; 96], 100, 0);
+            let incoming =
+                ContactRequest::new(contact, owner, 0, 0, 7, fresh_cipher.clone(), 100, 0);
+            info.identity_manager
+                .managed_identity_mut(&owner)
+                .expect("managed")
+                .apply_established_contact(EstablishedContact::new(contact, outgoing, incoming));
+        }
+
+        let marker = |iw: &IdentityWallet<crate::broadcaster::SpvBroadcaster>| {
+            let iw = iw.clone();
+            async move {
+                let wm = iw.wallet_manager.read().await;
+                wm.get_wallet_info(&wallet_id)
+                    .and_then(|info| info.identity_manager.managed_identity(&owner))
+                    .and_then(|m| m.dashpay().established_contacts().get(&contact).cloned())
+                    .expect("established contact")
+                    .external_account_reference
+            }
+        };
+
+        // Drain finished registering from the STALE (pre-rotation) payload:
+        // the stamp must detect the mismatch and leave the marker unset so
+        // the sweep's teardown + rebuild path picks up the fresh request.
+        iw.dashpay()
+            .note_external_account_registered(&owner, &contact, &stale_cipher)
+            .await;
+        assert_eq!(
+            marker(iw).await,
+            None,
+            "a stamp from a superseded payload must NOT mark the account current"
+        );
+
+        // Registration from the LIVE payload stamps the tracked reference.
+        iw.dashpay()
+            .note_external_account_registered(&owner, &contact, &fresh_cipher)
+            .await;
+        assert_eq!(
+            marker(iw).await,
+            Some(7),
+            "a stamp from the live payload records the tracked reference"
+        );
     }
 }
