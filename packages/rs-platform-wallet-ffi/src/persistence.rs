@@ -626,6 +626,12 @@ impl FFIPersister {
 }
 
 impl PlatformWalletPersistence for FFIPersister {
+    // Fan-out coverage note: `pending_contact_crypto_added` /
+    // `pending_contact_crypto_cleared` have no vtable slots yet, so the
+    // deferred contact-crypto queue is NOT durable on FFI hosts — the
+    // recurring sweep re-enqueues after a restart (see the field docs on
+    // `PlatformWalletChangeSet`). Wire host callbacks before relying on
+    // restart-immediate drains.
     fn store(
         &self,
         wallet_id: WalletId,

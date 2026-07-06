@@ -19,6 +19,9 @@ use key_wallet::wallet::managed_wallet_info::managed_account_operations::Managed
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::Wallet;
 
+use crate::changeset::{
+    AccountAddressPoolEntry, AccountRegistrationEntry, PlatformWalletChangeSet,
+};
 use crate::error::PlatformWalletError;
 use crate::wallet::platform_wallet::PlatformWalletInfo;
 
@@ -80,7 +83,8 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         //    keyed by the identity's registration index and can't be
         //    enumerated ahead of time, so we derive one on demand here.
         if funding_type == AssetLockFundingType::IdentityTopUp {
-            Self::ensure_identity_topup_account(wallet, info, identity_index, signer).await?;
+            self.ensure_identity_topup_account(wallet, info, identity_index, signer)
+                .await?;
         }
 
         // 1. Peek at the next unused address from the funding account to
@@ -282,17 +286,38 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
 
     /// Idempotently derive + insert the per-index `IdentityTopUp`
     /// derivation account into BOTH the xpub-bearing `Wallet.accounts`
-    /// and the managed `ManagedWalletInfo.accounts`.
+    /// and the managed `ManagedWalletInfo.accounts`, and persist its
+    /// registration.
     ///
     /// Wallet setup (`create_special_purpose_accounts`) only derives the
     /// *singleton* special accounts (`identity_registration`, etc.);
     /// per-index topup accounts are keyed by the identity's registration
     /// index, so we derive one on demand the first time a given identity
-    /// is topped up. Deterministic from the wallet seed — the same
-    /// derivation used for `IdentityRegistration`, with the
-    /// `registration_index` appended to the DIP-9 topup path — so it needs
-    /// no persistence and is safe to call on every build / retry: existing
+    /// is topped up. Safe to call on every build / retry: existing
     /// accounts are left untouched by the `contains_*` guards.
+    ///
+    /// ## Persistence
+    ///
+    /// A newly created account is persisted as an
+    /// [`AccountRegistrationEntry`] plus its initial address-pool
+    /// snapshot(s) — the same round shape `manager::wallet_lifecycle`
+    /// emits at wallet registration — before this method returns. This
+    /// is load-bearing for crash recovery: the load path rebuilds
+    /// `Wallet.accounts` from persisted registrations only (the
+    /// `account_registrations` / `account_address_pools` changeset
+    /// fields are not replayed by `apply_changeset`), so without this
+    /// round a restart between broadcast and consumption leaves
+    /// `resume_asset_lock` unable to re-derive the credit-output path
+    /// ("Funding account IdentityTopUp not found for re-derivation")
+    /// and the already-broadcast top-up stranded. Re-deriving the
+    /// account at resume time instead is not an option: the hardened
+    /// topup xpub needs the external signer on production wallets, and
+    /// `resume_asset_lock` (and the FFI launch-time catch-up that
+    /// drives it) runs without one.
+    ///
+    /// A failed store rolls back the in-memory inserts, so a later
+    /// retry re-creates AND re-persists the account instead of the
+    /// `contains_*` guards skipping a persist that never happened.
     ///
     /// ## Two derivation paths
     ///
@@ -310,6 +335,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// Full-signable wallets (unit tests, in-memory soft wallets) keep the
     /// cheaper local `add_account(_, None)` path — no signer round-trip.
     async fn ensure_identity_topup_account<S: ExtendedPubKeySigner>(
+        &self,
         wallet: &mut Wallet,
         info: &mut PlatformWalletInfo,
         identity_index: u32,
@@ -321,7 +347,8 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
 
         // (a) xpub side — insert the account into `Wallet.accounts` if it
         //     isn't there yet.
-        if !wallet.accounts.contains_account_type(&account_type) {
+        let created_xpub_side = !wallet.accounts.contains_account_type(&account_type);
+        if created_xpub_side {
             // NOTE: gate on `is_external_signable()`, NOT `can_sign()` —
             // `can_sign()` is `!watch_only`, so it's TRUE for external-signable
             // wallets (they CAN sign, just via the external signer), which
@@ -366,12 +393,12 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         // (b) managed side — mirror the account (keys-bearing, with its
         //     address pool initialized from the xpub) into
         //     `ManagedWalletInfo.accounts.identity_topup`.
-        if !info
+        let created_managed_side = !info
             .core_wallet
             .accounts
             .identity_topup
-            .contains_key(&identity_index)
-        {
+            .contains_key(&identity_index);
+        if created_managed_side {
             info.add_managed_account(wallet, account_type)
                 .map_err(|e| {
                     PlatformWalletError::AssetLockTransaction(format!(
@@ -379,6 +406,69 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                         identity_index, e
                     ))
                 })?;
+        }
+
+        if !(created_xpub_side || created_managed_side) {
+            return Ok(());
+        }
+
+        // (c) persist the new account as an `AccountRegistrationEntry`
+        //     + initial pool snapshot(s) — the only record the load
+        //     path can rebuild the account from (see the method docs).
+        let account_xpub = wallet
+            .accounts
+            .identity_topup
+            .get(&identity_index)
+            .map(|a| a.account_xpub)
+            .ok_or_else(|| {
+                PlatformWalletError::AssetLockTransaction(format!(
+                    "Identity top-up account for index {} missing after insert",
+                    identity_index
+                ))
+            })?;
+        let mut cs = PlatformWalletChangeSet {
+            account_registrations: vec![AccountRegistrationEntry {
+                account_type,
+                account_xpub,
+            }],
+            ..Default::default()
+        };
+        if let Some(managed) = info
+            .core_wallet
+            .accounts
+            .identity_topup
+            .get(&identity_index)
+        {
+            for pool in managed.managed_account_type().address_pools() {
+                let addresses: Vec<key_wallet::AddressInfo> =
+                    pool.addresses.values().cloned().collect();
+                if addresses.is_empty() {
+                    continue;
+                }
+                cs.account_address_pools.push(AccountAddressPoolEntry {
+                    account_type,
+                    pool_type: pool.pool_type,
+                    addresses,
+                });
+            }
+        }
+        if let Err(e) = self.persister.store(cs) {
+            // Roll back whichever sides this call inserted: a resident
+            // but unpersisted account would make every retry hit the
+            // `contains_*` guards above and skip the persist forever.
+            if created_xpub_side {
+                wallet.accounts.identity_topup.remove(&identity_index);
+            }
+            if created_managed_side {
+                info.core_wallet
+                    .accounts
+                    .identity_topup
+                    .remove(&identity_index);
+            }
+            return Err(PlatformWalletError::Persistence(format!(
+                "Failed to persist identity top-up account registration for index {}: {}",
+                identity_index, e
+            )));
         }
 
         Ok(())

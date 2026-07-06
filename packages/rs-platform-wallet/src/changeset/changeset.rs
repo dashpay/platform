@@ -1186,6 +1186,12 @@ pub struct PlatformWalletChangeSet {
     /// (key material unavailable). Append-only delta; apply inserts into the
     /// persisted queue, deduped by [`PendingContactCryptoKey`]. Secret-free.
     /// See [`PendingContactCrypto`].
+    ///
+    /// Durability caveat: the FFI persister vtable (iOS/Android hosts) has
+    /// no slot for this field yet, so on those hosts the queue is
+    /// process-lifetime only — a restart before a signer-backed drain
+    /// loses the entries until the recurring sweep re-discovers and
+    /// re-enqueues them (self-healing, but not immediate).
     pub pending_contact_crypto_added: Vec<PendingContactCrypto>,
     /// Keys of deferred ops to remove (drained successfully, or permanently
     /// failed). Append-only delta; apply removes matching `(owner, contact,

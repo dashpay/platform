@@ -29,25 +29,42 @@ fn dashpay_account_registration_changeset(
     account_xpub: key_wallet::bip32::ExtendedPubKey,
     managed: &key_wallet::managed_account::ManagedCoreFundsAccount,
 ) -> PlatformWalletChangeSet {
-    let mut cs = PlatformWalletChangeSet {
+    PlatformWalletChangeSet {
         account_registrations: vec![AccountRegistrationEntry {
             account_type,
             account_xpub,
         }],
+        account_address_pools: dashpay_account_pool_entries(account_type, managed),
         ..Default::default()
-    };
+    }
+}
+
+/// Snapshot every non-empty address pool of a DashPay managed account
+/// into [`AccountAddressPoolEntry`] rows. Pool snapshots are whole-pool
+/// and last-write-wins on the persistence side, so each emission must
+/// carry the full pool state. Emitted at account registration (initial
+/// gap-limit window) and after `send_payment` consumes a payment
+/// address (used-flag flip + gap-window extension) — without the
+/// latter, a relaunch rehydrates the address as unused and the next
+/// payment to the same contact reuses it, breaking DIP-15 per-payment
+/// rotation and linking the payments on-chain.
+pub(super) fn dashpay_account_pool_entries(
+    account_type: AccountType,
+    managed: &key_wallet::managed_account::ManagedCoreFundsAccount,
+) -> Vec<AccountAddressPoolEntry> {
+    let mut entries = Vec::new();
     for pool in managed.managed_account_type().address_pools() {
         let addresses: Vec<key_wallet::AddressInfo> = pool.addresses.values().cloned().collect();
         if addresses.is_empty() {
             continue;
         }
-        cs.account_address_pools.push(AccountAddressPoolEntry {
+        entries.push(AccountAddressPoolEntry {
             account_type,
             pool_type: pool.pool_type,
             addresses,
         });
     }
-    cs
+    entries
 }
 
 /// Why a [`register_external_contact_account`] attempt failed, classified
