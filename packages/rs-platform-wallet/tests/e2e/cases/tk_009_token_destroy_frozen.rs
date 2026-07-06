@@ -154,10 +154,28 @@ async fn tk_009_token_destroy_frozen() {
         .await
         .expect("destroy frozen funds");
 
-    let owner_credits_post = IdentityBalance::fetch(ctx.sdk(), owner.id)
-        .await
-        .expect("fetch owner credits post-destroy")
-        .expect("owner identity present");
+    // The fee debit lands on whichever replica served the destroy
+    // broadcast, so a bare post-fetch can round-robin onto a sibling still
+    // serving the pre-debit balance (Marvin TK-007/008). Poll until credits
+    // drop below the pre snapshot across a consecutive-success streak — a
+    // stale `== pre` read fails the `< pre` gate and keeps waiting, and a
+    // timeout still reds (credits genuinely never dropped).
+    let owner_credits_post = wait_for_token_predicate(
+        "owner credits < pre (post-destroy fee debit)",
+        || async {
+            match IdentityBalance::fetch(ctx.sdk(), owner.id).await {
+                Ok(Some(post)) if post < owner_credits_pre => Ok(Some(post)),
+                Ok(_) => Ok(None),
+                Err(err) => Err(FrameworkError::Sdk(format!(
+                    "fetch owner credits post-destroy: {err}"
+                ))),
+            }
+        },
+        CHAIN_CONFIRMED_CONSECUTIVE_SUCCESSES,
+        STEP_TIMEOUT,
+    )
+    .await
+    .expect("owner credits did not drop below the pre-destroy snapshot");
 
     // Post-destroy reads round-robin across DAPI replicas; one that hasn't
     // applied the burn yet still serves stale pre-destroy state. Gate each
