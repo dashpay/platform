@@ -39,6 +39,7 @@ import org.dashfoundation.example.ui.identity.RegisterNameScreen
 import org.dashfoundation.example.ui.identity.RegistrationProgressScreen
 import org.dashfoundation.example.ui.identity.SearchWalletsForIdentitiesScreen
 import org.dashfoundation.example.ui.identity.SelectMainNameScreen
+import org.dashfoundation.example.ui.credits.TopUpIdentityFromCoreScreen
 import org.dashfoundation.example.ui.credits.TopUpIdentityScreen
 import org.dashfoundation.example.ui.credits.TransferCreditsScreen
 import org.dashfoundation.example.ui.credits.TransferPlatformAddressScreen
@@ -187,6 +188,13 @@ fun AppNavHost(
 
         composable<TopUpIdentity> { entry ->
             TopUpIdentityScreen(entry.toRoute<TopUpIdentity>().identityIdHex, navController)
+        }
+
+        composable<TopUpIdentityFromCore> { entry ->
+            TopUpIdentityFromCoreScreen(
+                entry.toRoute<TopUpIdentityFromCore>().identityIdHex,
+                navController,
+            )
         }
 
         composable<TransferCredits> { entry ->

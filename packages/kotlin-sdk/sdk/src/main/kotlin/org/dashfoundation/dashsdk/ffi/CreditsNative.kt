@@ -59,4 +59,22 @@ internal object CreditsNative {
         inputsBlob: ByteArray,
         signerHandle: Long,
     ): Long
+
+    /**
+     * Top up [identityId] (32 bytes) by building + broadcasting a **new
+     * Core asset lock** — the ID-05 funding path, distinct from
+     * [topUpFromAddresses] (ID-06). [amountDuffs] is the Dash amount in
+     * duffs to lock; [accountIndex] is the BIP44 standard account the
+     * asset lock draws from; [coreSignerHandle] is the manager's
+     * `MnemonicResolverHandle` (the asset lock's Core key signs the
+     * `IdentityTopUp` transition — no identity signer is needed). Returns
+     * the post-transition credit balance.
+     */
+    external fun topUpIdentityFromCore(
+        walletHandle: Long,
+        identityId: ByteArray,
+        amountDuffs: Long,
+        accountIndex: Int,
+        coreSignerHandle: Long,
+    ): Long
 }

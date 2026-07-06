@@ -39,6 +39,7 @@ import org.dashfoundation.example.navigation.KeysList
 import org.dashfoundation.example.navigation.RegisterName
 import org.dashfoundation.example.navigation.SelectMainName
 import org.dashfoundation.example.navigation.TopUpIdentity
+import org.dashfoundation.example.navigation.TopUpIdentityFromCore
 import org.dashfoundation.example.navigation.TransferCredits
 import org.dashfoundation.example.navigation.WithdrawCredits
 import org.dashfoundation.example.ui.components.FormSection
@@ -162,7 +163,15 @@ fun IdentityDetailScreen(identityIdHex: String, navController: NavHostController
                 LabeledContent("Credits", "${identity?.balance ?: 0}")
                 HorizontalDivider(Modifier.padding(vertical = 8.dp))
                 ListItem(
-                    headlineContent = { Text("Top Up") },
+                    headlineContent = { Text("Top Up from Core") },
+                    supportingContent = { Text("Build a new Core asset lock") },
+                    modifier = Modifier
+                        .clickable { navController.navigate(TopUpIdentityFromCore(identityIdHex)) }
+                        .testTag("identityDetail.topUpFromCore"),
+                )
+                ListItem(
+                    headlineContent = { Text("Top Up from Platform addresses") },
+                    supportingContent = { Text("Spend funded Platform-payment addresses") },
                     modifier = Modifier
                         .clickable { navController.navigate(TopUpIdentity(identityIdHex)) }
                         .testTag("identityDetail.topUp"),
