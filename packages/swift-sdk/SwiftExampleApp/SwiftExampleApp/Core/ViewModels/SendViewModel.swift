@@ -496,19 +496,38 @@ class SendViewModel: ObservableObject {
                     error = "Core wallet not available"
                     return
                 }
-                // Build the ordered output list (primary + any extra
-                // rows). `coreRecipients` is nil unless every row is a
-                // valid on-network Core address with a > 0 duffs amount —
-                // the same condition `canSend` gates on, re-checked here
-                // so a stale enabled-Send tap can't slip an invalid batch
-                // through. Coin selection + multi-output tx building are
-                // entirely Rust-side; we only marshal the parallel
-                // address/amount arrays into `sendToAddresses`.
+                // `coreRecipients` is nil unless every row is a valid
+                // on-network Core address with a > 0 duffs amount — the
+                // same condition `canSend` gates on, re-checked here so a
+                // stale enabled-Send tap can't slip an invalid batch
+                // through.
                 guard let recipients = coreRecipients else {
                     error = "Invalid recipient or amount"
                     return
                 }
-                let _ = try core.sendToAddresses(recipients: recipients)
+                // Coin selection, funding, and signing are Rust-side; we
+                // marshal the outputs into the builder, fund + sign from
+                // the sender account, then broadcast the signed tx. The
+                // signed tx carries its funding account, so a failed
+                // broadcast releases its UTXO reservation for retry.
+                let builder = try CoreTransactionBuilder(network: core.network())
+                for recipient in recipients {
+                    try builder.addOutput(
+                        address: recipient.address,
+                        amountDuffs: recipient.amountDuffs
+                    )
+                }
+                try builder.setFunding(
+                    wallet: core,
+                    accountType: .bip44,
+                    accountIndex: senderAccountIndex
+                )
+                let signedTx = try builder.buildSigned(
+                    wallet: core,
+                    accountType: .bip44,
+                    accountIndex: senderAccountIndex
+                )
+                let _ = try core.broadcastTransaction(signedTx)
                 successMessage = recipients.count > 1
                     ? "Payment sent to \(recipients.count) recipients"
                     : "Payment sent"
