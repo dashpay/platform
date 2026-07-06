@@ -334,6 +334,11 @@ pub unsafe extern "C" fn platform_wallet_create_or_update_dashpay_profile_with_s
 ) -> PlatformWalletFFIResult {
     check_ptr!(out_profile);
     check_ptr!(signer_handle);
+    // `DashPayProfileFFI` owns heap C-string pointer fields freed by
+    // `dashpay_profile_ffi_free`; publish the empty sentinel before any
+    // fallible work so an error path never leaves uninitialized stack bytes
+    // in those pointer fields. Matches the read-side helpers in this file.
+    *out_profile = DashPayProfileFFI::empty();
 
     let id = unwrap_result_or_return!(read_identifier(identity_id));
 

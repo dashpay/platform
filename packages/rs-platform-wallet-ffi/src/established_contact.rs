@@ -159,6 +159,11 @@ pub unsafe extern "C" fn established_contact_get_note(
     out_note: *mut *mut std::os::raw::c_char,
 ) -> PlatformWalletFFIResult {
     check_ptr!(out_note);
+    // Null the out-pointer before the fallible lookup so a cleanup-on-error
+    // caller that unconditionally `platform_wallet_string_free`s the variable
+    // frees null, not garbage — matching the null-sentinel-first convention
+    // used across the rest of this FFI surface.
+    unsafe { *out_note = std::ptr::null_mut() };
 
     let option =
         ESTABLISHED_CONTACT_STORAGE.with_item(contact_handle, |contact| contact.note.clone());

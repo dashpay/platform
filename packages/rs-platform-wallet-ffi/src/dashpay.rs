@@ -173,6 +173,12 @@ pub unsafe extern "C" fn platform_wallet_sync_contact_requests(
     out_array: *mut ContactRequestHandleArray,
 ) -> PlatformWalletFFIResult {
     check_ptr!(out_array);
+    // Publish an FFI-safe sentinel before any fallible work so every early
+    // return leaves `*out_array` well-defined — a caller that runs symmetric
+    // cleanup-on-error then feeds an empty (null, 0) array into
+    // `platform_wallet_contact_request_handle_array_free`, never stale stack
+    // bytes.
+    unsafe { *out_array = ContactRequestHandleArray::empty() };
 
     let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
         let identity = wallet.identity().clone();
@@ -494,6 +500,10 @@ pub unsafe extern "C" fn platform_wallet_fetch_sent_contact_requests(
     out_array: *mut ContactRequestHandleArray,
 ) -> PlatformWalletFFIResult {
     check_ptr!(out_array);
+    // Sentinel first: identifier parsing and the gRPC query below are both
+    // fallible, so publish an empty array before them to keep every early
+    // return FFI-safe for a cleanup-on-error caller.
+    unsafe { *out_array = ContactRequestHandleArray::empty() };
     let id = unwrap_result_or_return!(unsafe { read_identifier(identity_id) });
 
     let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
