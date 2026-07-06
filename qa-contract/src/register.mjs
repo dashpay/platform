@@ -86,4 +86,11 @@ async function main() {
   console.log(`   wrote: ${path}`);
 }
 
-main().catch((e) => { console.error('register failed:', e?.stack || e); process.exit(1); });
+main().catch((e) => {
+  console.error('register failed:');
+  try { console.error('  message :', e?.message); } catch {}
+  try { console.error('  toString:', e?.toString?.()); } catch {}
+  try { console.error('  String  :', String(e)); } catch {}
+  try { console.error('  stack   :', e?.stack); } catch {}
+  process.exit(1);
+});

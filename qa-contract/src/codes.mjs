@@ -10,7 +10,6 @@
 
 export const APPS = [
   { code: 0, name: 'SwiftExampleApp', platform: 'iOS', description: 'Dash Platform iOS example wallet (Core SPV + Platform).' },
-  { code: 1, name: 'KotlinExampleApp', platform: 'Android', description: 'Dash Platform Android example wallet (Core SPV + Platform).' },
 ];
 
 export const TIERS = [
@@ -66,7 +65,7 @@ export const TAGS = [
 export const TESTID_REMAP = {
   'MW-01': 'ID-14',
   'MW-02': 'TOK-17',
-  'MW-03': 'DP-11',
+  'MW-03': 'DP-11', // DashPay grew to DP-10 (label / QR / contactInfo / backfill); the loop lands at DP-11
   'MW-04': 'DOC-15',
   'MW-05': 'DPNS-08',
   'MW-06': 'SH-14',

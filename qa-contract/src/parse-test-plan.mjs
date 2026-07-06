@@ -2,10 +2,8 @@
 //
 // Each catalog row looks like:
 //   | CORE-05 | Send Core L1 transaction | Core | Essential | ✅ |  | `SendTransactionView` ... |
-// Columns: ID | Action(title) | Layer | Tier | Status(implStatus) | [Tags] | Entry point & notes
-// The Tags column is optional per table: each table's header row declares whether it is
-// present, so 6-column (pre-tags) and 7-column plans can coexist. Tags is a
-// comma-separated, lowercase cell (often empty); attached to the row only when non-empty.
+// Columns: ID | Action(title) | Layer | Tier | Status(implStatus) | Tags | Entry point & notes
+// Tags is a comma-separated, lowercase cell (often empty); attached to the row only when non-empty.
 // The Category/Domain is NOT a column — it comes from the section header, e.g.
 //   ### 4.1 Core / Wallet — `Domain=Core`
 // Only content between "## 4." and "## 5." is parsed.
@@ -76,7 +74,6 @@ export function parseTestPlan(planPath = DEFAULT_TEST_PLAN, planCommit) {
   const rows = [];
   let inCatalog = false;
   let currentCategory;
-  let hasTagsColumn = false;
 
   for (const line of lines) {
     const trimmed = line.trim();
@@ -93,23 +90,13 @@ export function parseTestPlan(planPath = DEFAULT_TEST_PLAN, planCommit) {
 
     if (!trimmed.startsWith('|')) continue;
     const cells = splitRow(trimmed);
+    // Catalog rows are 7 cells: ID | Action | Layer | Tier | Status | Tags | Notes.
+    // Require all 7 so a short row can't shift Notes into the Tags cell.
+    if (cells.length < 7) continue;
     if (isSeparator(cells)) continue;
 
-    // A header row declares its table's shape: only consume a Tags cell when
-    // the header actually carries a Tags column.
-    if ((cells[0] || '').toLowerCase() === 'id') {
-      hasTagsColumn = cells.some((c) => c.toLowerCase() === 'tags');
-      continue;
-    }
-    const testId = cells[0] || '';
-    if (!ID_RE.test(testId)) continue; // non-catalog row
-    // Require all columns except the trailing notes cell, which splitRow pops
-    // when it is empty (6-column tables need 5 cells; 7-column need 6).
-    if (cells.length < (hasTagsColumn ? 6 : 5)) continue;
-
-    const [, title, layer, tier, status] = cells;
-    const tagsCell = hasTagsColumn ? cells[5] : '';
-    const rest = cells.slice(hasTagsColumn ? 6 : 5);
+    const [testId, title, layer, tier, status, tagsCell, ...rest] = cells;
+    if (!ID_RE.test(testId)) continue; // header row or non-catalog row
 
     const tags = (tagsCell || '')
       .split(',')
