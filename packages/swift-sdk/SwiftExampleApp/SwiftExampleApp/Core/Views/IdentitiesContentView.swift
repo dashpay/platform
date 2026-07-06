@@ -570,32 +570,37 @@ private struct ResumableRegistrationRow: View {
         .padding(.vertical, 2)
     }
 
-    /// Trailing view that depends on the lock's stage. At Broadcast
-    /// (`!canFundIdentity`) the lock isn't usable yet — SPV is waiting
-    /// on the masternodes to sign an InstantSendLock — so we show
-    /// a spinner instead of a button. SwiftData `@Query` is
-    /// reactive, so when the persister flips the row to
-    /// `InstantSendLocked` this view re-renders into the Resume
-    /// button without any extra plumbing.
-    @ViewBuilder
+    /// Trailing Resume button. Every lock reaching this row is
+    /// `statusRaw` 1...3 (per `crossWalletResumableLocks`) AND — by the
+    /// list's `(walletId, identityIndex)` slot anti-join, which unions
+    /// active-controller slots — is NOT owned by an in-flight
+    /// registration. So every row is a genuinely-orphaned lock with no
+    /// driver, and offering Resume is always safe:
+    /// - InstantSendLocked / ChainLocked (`canFundIdentity`) submits the
+    ///   IdentityCreate as soon as it's tapped.
+    /// - Broadcast (statusRaw 1) has no proof yet; resuming re-enters the
+    ///   finality wait via `resume_asset_lock` (which re-broadcasts the
+    ///   tx, then waits for the ChainLock — guaranteed finality, however
+    ///   long it takes). This previously rendered a permanent spinner,
+    ///   stranding a broadcast-but-interrupted registration lock (app
+    ///   killed mid-wait, or an aged lock whose IS quorum rotated) with
+    ///   no in-app recovery path.
+    ///
+    /// Unlike the address-funding sibling, no `hasActiveFunding` gate is
+    /// needed here: identity locks carry their `identityIndex`, so the
+    /// anti-join excludes the in-flight lock precisely, where the
+    /// address flow (whose lock doesn't know its recipient) cannot.
+    ///
+    /// SwiftData `@Query` re-renders this row as the persister advances
+    /// the lock's status.
     private var trailingAffordance: some View {
-        if lock.canFundIdentity {
-            Button(action: onResume) {
-                Label("Resume", systemImage: "arrow.clockwise")
-                    .labelStyle(.titleAndIcon)
-                    .font(.callout)
-            }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.small)
-        } else {
-            HStack(spacing: 6) {
-                ProgressView()
-                    .controlSize(.small)
-                Text("Waiting for InstantSendLock or ChainLock…")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
+        Button(action: onResume) {
+            Label("Resume", systemImage: "arrow.clockwise")
+                .labelStyle(.titleAndIcon)
+                .font(.callout)
         }
+        .buttonStyle(.borderedProminent)
+        .controlSize(.small)
     }
 
     private func formatDuffs(_ amountDuffs: Int64) -> String {

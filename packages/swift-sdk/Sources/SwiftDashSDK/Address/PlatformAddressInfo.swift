@@ -44,9 +44,9 @@ public struct PlatformAddressInfo: Sendable, Equatable, Codable {
     /// Convert address bytes to bech32m string (requires network parameter)
     /// Format: [type_byte][20_byte_hash]
     public func toBech32m(network: Network) -> String? {
-        guard addressBytes.count == 21 else { return nil }
-        let hrp = network == .mainnet ? "dashevo" : "tdashevo"
-        return Bech32m.encode(hrp: hrp, data: addressBytes)
+        guard let payload = Bech32m.bech32mPayload(fromStorageBytes: addressBytes) else { return nil }
+        let hrp = Bech32m.platformHrp(mainnet: network == .mainnet)
+        return Bech32m.encode(hrp: hrp, data: payload)
     }
 }
 
@@ -180,9 +180,9 @@ public struct AddressBalanceChange: Sendable, Equatable {
 
     /// Convert address bytes to bech32m string
     public func toBech32m(network: Network) -> String? {
-        guard addressBytes.count == 21 else { return nil }
-        let hrp = network == .mainnet ? "dashevo" : "tdashevo"
-        return Bech32m.encode(hrp: hrp, data: addressBytes)
+        guard let payload = Bech32m.bech32mPayload(fromStorageBytes: addressBytes) else { return nil }
+        let hrp = Bech32m.platformHrp(mainnet: network == .mainnet)
+        return Bech32m.encode(hrp: hrp, data: payload)
     }
 }
 
@@ -264,9 +264,9 @@ public struct CompactedAddressChange: Sendable, Equatable {
 
     /// Convert address bytes to bech32m string
     public func toBech32m(network: Network) -> String? {
-        guard addressBytes.count == 21 else { return nil }
-        let hrp = network == .mainnet ? "dashevo" : "tdashevo"
-        return Bech32m.encode(hrp: hrp, data: addressBytes)
+        guard let payload = Bech32m.bech32mPayload(fromStorageBytes: addressBytes) else { return nil }
+        let hrp = Bech32m.platformHrp(mainnet: network == .mainnet)
+        return Bech32m.encode(hrp: hrp, data: payload)
     }
 }
 
@@ -316,6 +316,68 @@ public enum Bech32m {
         }
         return map
     }()
+
+    /// DIP-0018 human-readable part for mainnet Platform addresses.
+    public static let platformHrpMainnet = "dash"
+    /// DIP-0018 human-readable part for testnet/devnet/regtest Platform addresses.
+    public static let platformHrpTestnet = "tdash"
+
+    /// HRP for the given network per DIP-0018 (mainnet = "dash", all others = "tdash").
+    public static func platformHrp(mainnet: Bool) -> String {
+        mainnet ? platformHrpMainnet : platformHrpTestnet
+    }
+
+    /// Whether a string looks like a bech32m Platform address (starts with the
+    /// mainnet or testnet HRP + separator). Detection only — `decode` still
+    /// validates the checksum, HRP, and 21-byte length. A 42-char hex address
+    /// can never match, since neither HRP prefix is valid hex.
+    public static func looksLikePlatformAddress(_ address: String) -> Bool {
+        let lower = address.lowercased()
+        return lower.hasPrefix(platformHrpMainnet + "1")
+            || lower.hasPrefix(platformHrpTestnet + "1")
+    }
+
+    // Platform addresses have two distinct 21-byte serializations that differ
+    // only in the leading type byte (per DIP-0018, mirrored in rs-dpp
+    // `PlatformAddress`):
+    //   • bech32m payload  — user-facing: 0xb0 = P2PKH, 0x80 = P2SH
+    //   • storage / FFI    — bincode `PlatformAddress`: 0x00 = P2PKH, 0x01 = P2SH
+    // The FFI (`PlatformAddress::from_bytes`) consumes and (`address_fetch_info`)
+    // returns the storage form; only bech32m strings carry the user-facing byte.
+    static let p2pkhBech32mTypeByte: UInt8 = 0xb0
+    static let p2shBech32mTypeByte: UInt8 = 0x80
+    static let p2pkhStorageTypeByte: UInt8 = 0x00
+    static let p2shStorageTypeByte: UInt8 = 0x01
+
+    /// Convert a decoded bech32m payload (`[0xb0|0x80] || 20-byte hash`) to the
+    /// storage/FFI form (`[0x00|0x01] || hash`) that the FFI expects. Returns
+    /// nil for a bad length or an unknown type byte.
+    public static func storageBytes(fromBech32mPayload data: Data) -> Data? {
+        let bytes = [UInt8](data)
+        guard bytes.count == 21 else { return nil }
+        let mapped: UInt8
+        switch bytes[0] {
+        case p2pkhBech32mTypeByte: mapped = p2pkhStorageTypeByte
+        case p2shBech32mTypeByte: mapped = p2shStorageTypeByte
+        default: return nil
+        }
+        return Data([mapped] + bytes[1...])
+    }
+
+    /// Inverse of `storageBytes(fromBech32mPayload:)`: convert the storage/FFI
+    /// form (`[0x00|0x01] || hash`) to a bech32m payload (`[0xb0|0x80] || hash`)
+    /// for encoding. Returns nil for a bad length or an unknown type byte.
+    public static func bech32mPayload(fromStorageBytes data: Data) -> Data? {
+        let bytes = [UInt8](data)
+        guard bytes.count == 21 else { return nil }
+        let mapped: UInt8
+        switch bytes[0] {
+        case p2pkhStorageTypeByte: mapped = p2pkhBech32mTypeByte
+        case p2shStorageTypeByte: mapped = p2shBech32mTypeByte
+        default: return nil
+        }
+        return Data([mapped] + bytes[1...])
+    }
 
     /// Decode result containing HRP and data
     public struct DecodeResult {
@@ -373,8 +435,8 @@ public enum Bech32m {
         guard let result = decode(address) else {
             return false
         }
-        // Valid Platform addresses have dashevo or tdashevo HRP and 21 bytes of data
-        let validHrp = result.hrp == "dashevo" || result.hrp == "tdashevo"
+        // Valid Platform addresses have the DIP-0018 dash/tdash HRP and 21 bytes of data
+        let validHrp = result.hrp == platformHrpMainnet || result.hrp == platformHrpTestnet
         let validLength = result.data.count == 21
         return validHrp && validLength
     }

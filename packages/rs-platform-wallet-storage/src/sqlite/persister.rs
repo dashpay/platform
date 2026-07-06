@@ -932,13 +932,14 @@ impl PlatformWalletPersistence for SqlitePersister {
                 schema::accounts::load_state(&conn, &wallet_id).map_err(PersistenceError::from)?;
             let core_state = schema::core_state::load_state(&conn, &wallet_id, network)
                 .map_err(PersistenceError::from)?;
-            let identity_manager = schema::identities::load_state(&conn, &wallet_id)
+            // Pre-keyed rehydration: each `ManagedIdentity` leaves the loader
+            // already carrying its own public keys + contact state (matching
+            // the FFI persister), so signing works immediately post-load
+            // without a key sync. `ClientWalletStartState.contacts` /
+            // `.identity_keys` stay empty — nothing is layered on afterwards.
+            let identity_manager = schema::identities::load_prekeyed(&conn, &wallet_id)
                 .map_err(PersistenceError::from)?;
             let unused_asset_locks = schema::asset_locks::load_unconsumed(&conn, &wallet_id)
-                .map_err(PersistenceError::from)?;
-            let contacts = schema::contacts::load_changeset(&conn, &wallet_id)
-                .map_err(PersistenceError::from)?;
-            let identity_keys = schema::identity_keys::load_state(&conn, &wallet_id)
                 .map_err(PersistenceError::from)?;
             // Used addresses drive the reuse guard: a used-then-emptied
             // address must never be handed back as a fresh receive address.
@@ -962,21 +963,62 @@ impl PlatformWalletPersistence for SqlitePersister {
                 union
             };
 
+            // Reconstruct a populated `ManagedWalletInfo` from typed rows:
+            // rebuild the wallet watch-only from the manifest, then layer the
+            // persisted core-state projection (UTXOs, sync watermarks,
+            // chainlock, used-address pool depth) onto it. The manager consumes
+            // this directly — the old skeleton + core_state replay fallback is
+            // gone.
+            let watch_only = if account_manifest.is_empty() {
+                // Placeholder empty wallet: the manager re-checks the empty
+                // manifest and skips this wallet as MissingManifest one layer
+                // up (see rt_corrupt_row_skipped_and_other_loads). It exists so
+                // one unregistered wallet doesn't abort load() for all others via `?`.
+                key_wallet::wallet::Wallet::new_watch_only(
+                    network,
+                    wallet_id,
+                    key_wallet::account::account_collection::AccountCollection::new(),
+                )
+            } else {
+                platform_wallet::rehydrate::build_watch_only_wallet(
+                    network,
+                    wallet_id,
+                    &account_manifest,
+                )
+                .map_err(|e| {
+                    PersistenceError::backend(format!(
+                        "watch-only wallet rebuild failed for {}: {e}",
+                        hex::encode(wallet_id)
+                    ))
+                })?
+            };
+            let mut core_wallet_info =
+                key_wallet::wallet::managed_wallet_info::ManagedWalletInfo::from_wallet(
+                    &watch_only,
+                    birth_height,
+                );
+            platform_wallet::rehydrate::apply_persisted_core_state(
+                &mut core_wallet_info,
+                &account_manifest,
+                &core_state,
+                &used_core_addresses,
+            )
+            .map_err(|e| {
+                PersistenceError::backend(format!(
+                    "core-state rehydration failed for {}: {e}",
+                    hex::encode(wallet_id)
+                ))
+            })?;
+
             state.wallets.insert(
                 wallet_id,
                 platform_wallet::changeset::ClientWalletStartState {
                     network,
                     birth_height,
                     account_manifest,
-                    // SQLite rehydration replays the keyless projection onto a
-                    // fresh skeleton; it mints no full snapshot.
-                    core_wallet_info: None,
-                    core_state,
+                    core_wallet_info: Box::new(core_wallet_info),
                     identity_manager,
                     unused_asset_locks,
-                    contacts,
-                    identity_keys,
-                    used_core_addresses,
                 },
             );
         }
@@ -1094,6 +1136,15 @@ fn apply_changeset_to_tx(
     // freshly-written `core_address_pool` row.
     if !cs.account_address_pools.is_empty() {
         schema::core_pool::apply_pools(tx, wallet_id, &cs.account_address_pools)?;
+    }
+    if !cs.pending_contact_crypto_added.is_empty() || !cs.pending_contact_crypto_cleared.is_empty()
+    {
+        schema::pending_contact_crypto::apply_pending_contact_crypto(
+            tx,
+            wallet_id,
+            &cs.pending_contact_crypto_added,
+            &cs.pending_contact_crypto_cleared,
+        )?;
     }
     if let Some(core) = cs.core.as_ref() {
         schema::core_state::apply(tx, wallet_id, core)?;

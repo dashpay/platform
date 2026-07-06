@@ -1,13 +1,14 @@
 #![allow(clippy::field_reassign_with_default)]
 
-//! `load()` reconstructs `ClientWalletStartState.used_core_addresses` from
-//! the full `core_utxos` set (spent + unspent). A used-then-emptied
-//! address must still come back marked used so the rehydrated wallet never
-//! hands it out again as a fresh receive address (address reuse).
+//! `load()` marks a used-then-emptied address as used in the assembled
+//! `core_wallet_info` pools (derived from the full `core_utxos` set, spent +
+//! unspent) so the rehydrated wallet never hands it out again as a fresh
+//! receive address (address reuse).
 
 mod common;
 
 use common::{fresh_persister, wid};
+use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
 use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
@@ -118,12 +119,27 @@ fn spent_utxo_address_is_marked_used() {
     let state = p2.load().expect("load");
     let slice = state.wallets.get(&w).expect("wallet slice");
 
-    assert!(
-        slice.core_state.new_utxos.is_empty(),
-        "the spent UTXO must not come back as unspent"
+    // Spent UTXO: contributes no balance, but its address is still marked used
+    // in the assembled wallet's pool so it is never handed out as fresh again.
+    assert_eq!(
+        slice.core_wallet_info.balance.total(),
+        0,
+        "the spent UTXO must not contribute balance"
     );
+    let funds = slice
+        .core_wallet_info
+        .accounts
+        .all_funding_accounts()
+        .into_iter()
+        .next()
+        .expect("funds account present");
+    let marked_used = funds
+        .managed_account_type()
+        .address_pools()
+        .iter()
+        .any(|p| p.address_info(&address).map(|i| i.used).unwrap_or(false));
     assert!(
-        slice.used_core_addresses.contains(&address),
-        "a spent UTXO's address must still be reported as used"
+        marked_used,
+        "a spent UTXO's address must still be marked used in the pool"
     );
 }

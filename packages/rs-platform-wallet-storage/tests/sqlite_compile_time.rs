@@ -101,6 +101,14 @@ const READ_ONLY_PREPARE_ALLOWED: &[(&str, &str)] = &[
         "length(entry_blob), entry_blob, tombstoned",
     ),
     ("contacts.rs", "SELECT owner_id, contact_id, state"),
+    (
+        "contacts.rs",
+        "SELECT owner_id, sender_id FROM ignored_senders",
+    ),
+    (
+        "pending_contact_crypto.rs",
+        "SELECT wallet_id, payload FROM pending_contact_crypto",
+    ),
 ];
 
 /// TC-P1-003: writer paths in `src/sqlite/schema/*.rs` must not call

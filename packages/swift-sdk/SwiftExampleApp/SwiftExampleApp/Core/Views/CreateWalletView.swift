@@ -355,10 +355,16 @@ struct CreateWalletView: View {
                     for net in selectedNetworks {
                         do {
                             let mgr = try walletManagerStore.backgroundManager(for: net)
+                            // An imported mnemonic may already have on-chain
+                            // history (incl. DashPay payments) from before this
+                            // device — scan from genesis (birthHeight 0) so it
+                            // is seen. A freshly generated mnemonic has nothing
+                            // before now, so scan from the tip (nil).
                             let managed = try mgr.createWallet(
                                 mnemonic: mnemonicPhrase,
                                 network: net,
-                                name: walletLabel
+                                name: walletLabel,
+                                birthHeight: showImportOption ? 0 : nil
                             )
                             createdWallets.append((net, managed.walletId))
                         } catch {

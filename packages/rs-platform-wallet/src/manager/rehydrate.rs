@@ -1,9 +1,12 @@
 //! Watch-only wallet reconstruction + persisted core-state application.
 //!
-//! Load is **seedless** (see [`load_from_persistor`]). For each
-//! persisted wallet we build a watch-only [`Wallet`] from its keyless
-//! `AccountRegistrationEntry` manifest, then apply the keyless
-//! core-state projection on top. No seed, no signing-key derivation.
+//! Load is **seedless** (see [`load_from_persistor`]). Every persisted
+//! wallet is rebuilt watch-only from its keyless `AccountRegistrationEntry`
+//! manifest via [`build_watch_only_wallet`]. Persisters that carry a full
+//! [`ManagedWalletInfo`] snapshot (FFI) hand it to the manager directly;
+//! the SQLite persister instead reconstructs one from typed rows and layers
+//! the keyless core-state projection on with [`apply_persisted_core_state`].
+//! No seed, no signing-key derivation.
 //!
 //! Because load never touches the seed, it performs no wrong-seed check.
 //! Wrong-seed validation lives in the resolver-backed signing
@@ -37,17 +40,27 @@ use crate::manager::load_outcome::CorruptKind;
 ///
 /// # Trust boundary
 ///
-/// `expected_wallet_id` is stamped in verbatim and is **not** cryptographically
-/// bound to the manifest: the id hashes the *root* xpub, but only account-level
-/// (hardened, one-way) xpubs are persisted, so the root cannot be recovered to
-/// re-derive and verify it. Only structural decode runs here, so a well-formed
-/// but wrong xpub (corrupted/tampered store) is accepted and yields receive
-/// addresses from the wrong key under the original id — the caller must ensure
-/// the persisted manifest for `expected_wallet_id` is authentic. A real binding
-/// (a MAC/commitment over `{wallet_id, network, manifest}` keyed to a
-/// secure-enclave secret, verified fail-closed on load) needs a storage-schema
-/// change and is tracked as a follow-up.
-pub(super) fn build_watch_only_wallet(
+/// `expected_wallet_id` is stamped onto the reconstructed [`Wallet`]
+/// verbatim and is **not** cryptographically bound to the manifest: the
+/// id hashes the *root* xpub, but only account-level (hardened, one-way)
+/// xpubs are persisted, so the root cannot be recovered here to re-derive
+/// and verify the id. Only a structural decode runs, so a well-formed but
+/// **wrong** `account_xpub` is accepted.
+///
+/// Concretely, the attack this leaves open: an attacker who can write to
+/// the backing store (or a malicious/rolled-back backup restored into it)
+/// substitutes a valid xpub of their own for a wallet's `account_xpub`,
+/// leaving `expected_wallet_id` unchanged. The wallet is rebuilt under the
+/// original id but now derives its receive addresses from the attacker's
+/// key, so future incoming funds are silently redirected — the id looks
+/// unchanged to the user while the money flows elsewhere. This crate
+/// **does not** defend against it: closing the gap requires the storage
+/// layer to authenticate the manifest (a persisted commitment/MAC over
+/// `{wallet_id, network, manifest}`, verified fail-closed on load), which
+/// is a storage-schema change tracked in the `platform-wallet-storage`
+/// crate. See the trust-boundary note on
+/// [`PlatformWalletPersistence::load`](crate::changeset::PlatformWalletPersistence::load).
+pub fn build_watch_only_wallet(
     network: Network,
     expected_wallet_id: [u8; 32],
     manifest: &[AccountRegistrationEntry],
@@ -194,6 +207,13 @@ pub fn apply_persisted_core_state(
         wallet_info.metadata.last_applied_chain_lock = Some(cl.clone());
     }
 
+    // TODO(rehydration gaps): `core` also carries instant-send locks and
+    // transaction records, but neither can be replayed here —
+    // `ManagedWalletInfo.instant_send_locks` is `pub(crate)` with no public
+    // setter, and there is no public API to inject tx records. Both re-warm on
+    // the next sync (no regression vs. the prior loader); populating them at
+    // load needs an upstream key_wallet change.
+
     // Restore the UTXO set. Persisted attribution is lost at write time
     // (account_index is always 0), so route every restored UTXO to the
     // wallet's first funds-bearing account *of any topology* (BIP44,
@@ -201,6 +221,9 @@ pub fn apply_persisted_core_state(
     // funds accounts and stays exact. A wallet with persisted UTXOs but
     // no funds account at all cannot be represented: fail closed rather
     // than silently reconstruct a zero balance.
+    // TODO(#3986): route each restored UTXO to its true owning account via the
+    // persisted per-account attribution once PR #3986's core_address_pool table
+    // lands, instead of collapsing every UTXO onto account 0 here.
     let spent_outpoints: std::collections::HashSet<dashcore::OutPoint> =
         core.spent_utxos.iter().map(|u| u.outpoint).collect();
     let unspent: Vec<&key_wallet::Utxo> = core
@@ -1158,9 +1181,9 @@ mod tests {
         );
     }
 
-    /// #3692 review (privacy / address-reuse): a previously-used address
-    /// whose UTXO was SINCE SPENT must still come back marked `used` when the
-    /// snapshot carries it via `ClientWalletStartState::used_core_addresses`.
+    /// Privacy / address-reuse: a previously-used address whose UTXO was
+    /// SINCE SPENT must still come back marked `used` when the caller passes
+    /// it via `used_pool_addresses`.
     /// Without it the address resets to `used = false` and could be handed
     /// out again as a fresh receive address. The used flag must survive even
     /// though the UTXO is gone (`spent_utxos` cancels `new_utxos` → zero
@@ -1169,7 +1192,7 @@ mod tests {
     /// (idx 30), and asserts the empty-snapshot baseline does NOT mark them.
     #[test]
     fn rehydration_used_state_survives_spent_utxo() {
-        use crate::changeset::{ClientWalletStartState, CoreChangeSet};
+        use crate::changeset::CoreChangeSet;
         use dashcore::blockdata::transaction::txout::TxOut;
         use dashcore::{OutPoint, Txid};
         use key_wallet::bip32::DerivationPath;
@@ -1242,32 +1265,15 @@ mod tests {
             ..Default::default()
         };
 
-        // The keyless slice the persister hands back, carrying the pool
-        // used-state for both addresses.
-        let state = ClientWalletStartState {
-            network: Network::Testnet,
-            birth_height: 1,
-            account_manifest: manifest.clone(),
-            core_wallet_info: None,
-            core_state: core,
-            identity_manager: Default::default(),
-            unused_asset_locks: Default::default(),
-            contacts: Default::default(),
-            identity_keys: Default::default(),
-            used_core_addresses: vec![in_window_used.clone(), deep_used.clone()],
-        };
+        // Pool used-state carried for both addresses (the reuse guard the
+        // SQLite persister feeds via `core_state::load_used_addresses`).
+        let used_core_addresses = vec![in_window_used.clone(), deep_used.clone()];
 
         // Baseline: drop the pool used-state (empty) — the spent-out address
         // resets to unused (the pre-fix behaviour, and the reuse hazard).
         {
             let mut baseline = ManagedWalletInfo::from_wallet(&wallet, 1);
-            apply_persisted_core_state(
-                &mut baseline,
-                &state.account_manifest,
-                &state.core_state,
-                &[],
-            )
-            .unwrap();
+            apply_persisted_core_state(&mut baseline, &manifest, &core, &[]).unwrap();
             let funds = baseline
                 .accounts
                 .all_funding_accounts()
@@ -1285,16 +1291,11 @@ mod tests {
             );
         }
 
-        // With the snapshot's used-state — routed through
-        // ClientWalletStartState::used_core_addresses — both come back used.
+        // With the persisted used-state passed as `used_pool_addresses`, both
+        // come back used.
         let mut wallet_info = ManagedWalletInfo::from_wallet(&wallet, 1);
-        apply_persisted_core_state(
-            &mut wallet_info,
-            &state.account_manifest,
-            &state.core_state,
-            &state.used_core_addresses,
-        )
-        .unwrap();
+        apply_persisted_core_state(&mut wallet_info, &manifest, &core, &used_core_addresses)
+            .unwrap();
 
         // The spent UTXO contributes no balance — the used flag is NOT a
         // side effect of a live UTXO.

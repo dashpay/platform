@@ -7,7 +7,8 @@ use crate::platform_address_types::*;
 use crate::{unwrap_option_or_return, unwrap_result_or_return};
 use rs_sdk_ffi::{SignerHandle, VTableSigner};
 
-use super::{parse_input_selection, runtime};
+use super::parse_input_selection;
+use crate::runtime::block_on_worker;
 
 /// Transfer credits between platform addresses.
 ///
@@ -36,6 +37,10 @@ pub unsafe extern "C" fn platform_address_wallet_transfer(
     out_changeset: *mut PlatformAddressChangeSetFFI,
 ) -> PlatformWalletFFIResult {
     check_ptr!(out_changeset);
+    // Sentinel first: output/input parsing, the wallet lookup, and the async
+    // transfer below are all fallible. See
+    // `PlatformAddressChangeSetFFI::empty` for the double-free rationale.
+    *out_changeset = PlatformAddressChangeSetFFI::empty();
     check_ptr!(signer_address_handle);
 
     let output_map = unwrap_result_or_return!(parse_outputs(outputs, outputs_count));
@@ -50,21 +55,31 @@ pub unsafe extern "C" fn platform_address_wallet_transfer(
 
     let fee = parse_fee_strategy(fee_strategy, fee_strategy_count);
 
-    // SAFETY: caller guarantees `signer_address_handle` is a valid,
-    // non-destroyed handle that outlives this call.
-    let address_signer: &VTableSigner = &*(signer_address_handle as *const VTableSigner);
-
-    let option = PLATFORM_ADDRESS_WALLET_STORAGE.with_item(handle, |wallet| {
-        runtime().block_on(wallet.transfer(
-            account_index,
-            input_selection,
-            output_map,
-            fee,
-            None, // platform_version = latest
-            address_signer,
-        ))
+    // Clone the wallet out of handle storage so the read lock is released
+    // before the long-running transfer, then poll on a worker thread
+    // (8 MB stack): the transfer future verifies the execution proof, and
+    // GroveDB proof verification recurses past the ~512 KB stacks of iOS
+    // dispatch / Swift-concurrency threads (see runtime.rs) — polling it
+    // on the calling thread crashes with EXC_BAD_ACCESS after the funds
+    // already moved on-chain. Round-trip the signer pointer through
+    // `usize` so the future's capture is `Send + 'static`; the caller
+    // guarantees the handle outlives this synchronously-awaited call.
+    let option = PLATFORM_ADDRESS_WALLET_STORAGE.with_item(handle, |wallet| wallet.clone());
+    let wallet = unwrap_option_or_return!(option);
+    let signer_addr = signer_address_handle as usize;
+    let result = block_on_worker(async move {
+        let address_signer: &VTableSigner = unsafe { &*(signer_addr as *const VTableSigner) };
+        wallet
+            .transfer(
+                account_index,
+                input_selection,
+                output_map,
+                fee,
+                None, // platform_version -> wallet SDK version
+                address_signer,
+            )
+            .await
     });
-    let result = unwrap_option_or_return!(option);
     let changeset = unwrap_result_or_return!(result);
     *out_changeset = PlatformAddressChangeSetFFI::from(&changeset);
     PlatformWalletFFIResult::ok()

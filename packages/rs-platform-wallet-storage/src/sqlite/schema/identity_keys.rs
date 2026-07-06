@@ -9,6 +9,7 @@
 use rusqlite::{params, Connection, Transaction};
 use serde::{Deserialize, Serialize};
 
+use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::IdentityPublicKey;
 use dpp::identity::KeyID;
 use dpp::prelude::Identifier;
@@ -172,7 +173,13 @@ pub fn load_state(
         // selected by (mirrors `accounts`/`asset_locks` readers): a row whose
         // blob names a different identity / key / wallet than its indexed
         // columns is corruption, never silently mis-keyed into the map.
-        if entry.identity_id != identity_id || entry.key_id != key_id {
+        // `public_key.id()` is verified too — it becomes the DPP
+        // signing-selection map key via `add_public_key`, so a mismatch would
+        // file the key under a wrong KeyID rather than being caught here.
+        if entry.identity_id != identity_id
+            || entry.key_id != key_id
+            || entry.public_key.id() != key_id
+        {
             return Err(WalletStorageError::IdentityKeyEntryMismatch);
         }
         if let Some(entry_wallet_id) = entry.wallet_id {
@@ -317,6 +324,44 @@ mod tests {
         );
     }
 
+    /// `load_state` rejects a row whose inner `IdentityPublicKey.id()`
+    /// disagrees with the typed `key_id` column. That inner id becomes the
+    /// DPP signing-selection map key via `add_public_key`, so a mismatch
+    /// must hard-error, not file the key under the wrong KeyID.
+    #[test]
+    fn load_state_rejects_public_key_id_mismatch() {
+        let conn = migrated_conn();
+        let wallet = [0x33u8; 32];
+        let typed_identity = [0xEEu8; 32];
+        // Inner key carries id=5, but insert_key_row stamps the key_id column 0.
+        let mismatched_pk = IdentityPublicKey::V0(IdentityPublicKeyV0 {
+            id: 5,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::HIGH,
+            contract_bounds: None,
+            key_type: KeyType::ECDSA_SECP256K1,
+            read_only: false,
+            data: BinaryData::new(vec![2u8; 33]),
+            disabled_at: None,
+        });
+        let wire = IdentityKeyWire {
+            identity_id: Identifier::from(typed_identity),
+            key_id: 0, // agrees with the typed column
+            public_key_bincode: bincode::encode_to_vec(&mismatched_pk, blob::bounded_config())
+                .unwrap(),
+            public_key_hash: [0u8; 20],
+            wallet_id: None,
+            derivation_indices: None,
+        };
+        insert_key_row(&conn, &wallet, &typed_identity, &wire);
+
+        let err = load_state(&conn, &wallet).expect_err("public_key.id() mismatch must fail");
+        assert!(
+            matches!(err, WalletStorageError::IdentityKeyEntryMismatch),
+            "expected IdentityKeyEntryMismatch, got {err:?}"
+        );
+    }
+
     /// A `public_key_bincode` payload whose IdentityPublicKey prefix is
     /// valid but carries trailing garbage is refused at decode time
     /// rather than silently dropping the trailing bytes.
@@ -348,5 +393,44 @@ mod tests {
             matches!(err, WalletStorageError::BlobDecode { .. }),
             "expected BlobDecode for trailing-byte garbage, got {err:?}"
         );
+    }
+
+    /// `IdentityKeyEntry` carries no key material by construction
+    /// (derive-sign-destroy removed the carried scalar; the client derives it
+    /// on demand from the keychain), so the "no key material at rest outside
+    /// the keychain" guarantee is enforced at the type level and the wire
+    /// shape only has the breadcrumb metadata to preserve. Pins that a
+    /// `from_entry` → `into_entry` round-trip keeps the `(wallet_id,
+    /// derivation_indices)` breadcrumb intact.
+    #[test]
+    fn wire_round_trip_preserves_breadcrumb_metadata() {
+        let pk = IdentityPublicKey::V0(IdentityPublicKeyV0 {
+            id: 0,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::HIGH,
+            contract_bounds: None,
+            key_type: KeyType::ECDSA_SECP256K1,
+            read_only: false,
+            data: BinaryData::new(vec![2u8; 33]),
+            disabled_at: None,
+        });
+        let entry = IdentityKeyEntry {
+            identity_id: dpp::prelude::Identifier::from([0xAA; 32]),
+            key_id: 0,
+            public_key: pk,
+            public_key_hash: [0x11; 20],
+            wallet_id: Some([0x9A; 32]),
+            derivation_indices: Some(IdentityKeyDerivationIndices {
+                identity_index: 1,
+                key_index: 2,
+            }),
+        };
+
+        let wire = IdentityKeyWire::from_entry(&entry).expect("encode wire");
+        let restored = wire.into_entry().expect("decode wire");
+
+        // The breadcrumb metadata survives the round-trip.
+        assert_eq!(restored.wallet_id, entry.wallet_id);
+        assert_eq!(restored.derivation_indices, entry.derivation_indices);
     }
 }

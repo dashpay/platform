@@ -25,9 +25,11 @@ pub mod shielded_sync_start_state;
 pub mod traits;
 
 pub use changeset::{
-    AccountAddressPoolEntry, AccountRegistrationEntry, AssetLockChangeSet, AssetLockEntry,
-    ContactChangeSet, ContactRequestEntry, CoreChangeSet, IdentityChangeSet, IdentityEntry,
-    IdentityKeyDerivationIndices, IdentityKeyEntry, IdentityKeysChangeSet,
+    upsert_pending_contact_crypto, AccountAddressPoolEntry, AccountRegistrationEntry,
+    AssetLockChangeSet, AssetLockEntry, ContactChangeSet, ContactRequestEntry, CoreChangeSet,
+    IdentityChangeSet, IdentityEntry, IdentityKeyDerivationIndices, IdentityKeyEntry,
+    IdentityKeysChangeSet, KeyDerivationBreadcrumb, KeyWithBreadcrumb, PendingContactCrypto,
+    PendingContactCryptoKey, PendingContactCryptoKind, PendingContactCryptoOp,
     PlatformAddressBalanceEntry, PlatformAddressChangeSet, PlatformWalletChangeSet,
     ReceivedContactRequestKey, SentContactRequestKey, TokenBalanceChangeSet, WalletMetadataEntry,
 };

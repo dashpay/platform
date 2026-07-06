@@ -115,16 +115,16 @@ code review.
   empty at process start.
 - **The persisted store** is the authority for state *history*: it is
   the only copy of the wallet that survives a restart, and it doubles
-  as the client's **read model** — UIs render persisted rows directly
+  as the client's **read model** — UIs *may* render persisted rows directly
   and reactively. Display therefore never blocks on platform-wallet
-  being loaded, unlocked, or synced.
+  being unlocked or synced; the local seedless restore is still a startup gate.
 - **Clients** (dash-evo-tool, the iOS SDK app, …) issue commands to
   platform-wallet and read the store freely. They never write
   wallet-state rows.
 
 ### Invariants
 
-1. **Single writer.** Only platform-wallet's changesets mutate
+1. **Single writer** (enforced by review, not the storage layer). Only platform-wallet's changesets mutate
    wallet-state tables. Clients may keep their own tables (UI
    preferences, view state) in the same database; ownership is per
    table family, never shared.
