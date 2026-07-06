@@ -110,8 +110,31 @@ class ShieldedService(private val database: DashDatabase) {
     /** Whether shielded support is compiled into the native library. */
     val isAvailable: Boolean get() = Sdk.hasShielded()
 
-    /** Whether the service is currently bound to a wallet. */
-    val isBound: Boolean get() = boundWalletId != null
+    private val _isBound = MutableStateFlow(false)
+
+    /**
+     * Whether the Rust-side shielded bind currently holds for this wallet —
+     * observable so the UI recomposes when binding flips (Swift's
+     * `@Published isBound`). Flips `true` only on a successful
+     * [configureShielded][PlatformWalletManager.configureShielded] +
+     * [bindShielded][PlatformWalletManager.bindShielded] pair, back to `false`
+     * on a bind failure or a hard [unbind]. Distinct from [canResume]: a
+     * failed re-bind leaves us NOT bound but still resumable.
+     */
+    val isBound: StateFlow<Boolean> = _isBound.asStateFlow()
+
+    private val _canResume = MutableStateFlow(false)
+
+    /**
+     * Whether the service has stashed enough bind credentials (manager +
+     * walletId + dbPath) to re-bind on demand — port of Swift's `canResume`.
+     * Kept `true` across a bind failure AND across [clearLocalState] so the
+     * "Clear" / "Sync Now" buttons stay usable even when the tree froze and
+     * the Rust bind is momentarily down (exactly when Clear is needed). Only a
+     * hard [unbind] (no wallet on the network) clears it. This — NOT the
+     * transient [isBound] — is what the Clear button gates on.
+     */
+    val canResume: StateFlow<Boolean> = _canResume.asStateFlow()
 
     /**
      * Bind to [manager]'s [walletId] shielded sub-wallet and start
@@ -145,34 +168,70 @@ class ShieldedService(private val database: DashDatabase) {
         accounts: List<Int> = listOf(0),
     ) {
         if (!isAvailable) return
-        unbind()
         val sortedAccounts = accounts.distinct().sorted()
-        try {
-            manager.configureShielded(dbPath)
-            manager.bindShielded(walletId, sortedAccounts)
-        } catch (e: Exception) {
-            android.util.Log.w(TAG, "Shielded bind failed: ${e.message}", e)
-            return
-        }
+
+        // Cancel the prior subscriptions and zero the published mirror, but —
+        // UNLIKE unbind() — RETAIN the bind credentials: assign the new set up
+        // front so [canResume] (and therefore the Clear/Sync-Now buttons) stay
+        // usable even if the Rust bind below fails. This mirrors Swift's
+        // `ShieldedService.bind`, which sets `boundWalletId` before the `try`
+        // and keeps it on failure; only [isBound] tracks the actual outcome.
+        // The earlier port called `unbind()` here, which nulled the manager /
+        // walletId / dbPath — so a re-bind whose `bindShielded` step threw
+        // (e.g. the mnemonic resolver declined in the background) left the
+        // service permanently unbound with no path back, disabling Clear while
+        // the coordinator kept syncing. That was the on-device "Clear disabled
+        // when needed" defect.
+        eventJob?.cancel()
+        eventJob = null
+        pollJob?.cancel()
+        pollJob = null
         this.manager = manager
         this.boundWalletId = walletId.copyOf()
         this.boundDbPath = dbPath
         _boundAccounts.value = sortedAccounts
+        _canResume.value = true
+        _isBound.value = false
         _state.value = ShieldedSyncState()
         _shieldedBalance.value = database.shieldedDao()
             .observeUnspentNotesByWallet(walletId)
             .map { notes -> notes.sumOf { it.value } }
 
+        try {
+            manager.configureShielded(dbPath)
+            manager.bindShielded(walletId, sortedAccounts)
+            _isBound.value = true
+        } catch (e: Exception) {
+            // Stay resumable: credentials are retained above, so a later
+            // bind() retry (or the Clear→re-bind path) picks up cleanly.
+            android.util.Log.w(
+                TAG,
+                "Shielded bind failed (credentials retained for resume): ${e.message}",
+                e,
+            )
+        }
+
+        // Attach subscriptions regardless of bind outcome (Swift keeps
+        // subscribing so a later successful retry / the running loop's events
+        // update the mirror). Harmless when unbound: the coordinator emits no
+        // events for an unregistered wallet and the balance flow just reflects
+        // whatever rows persist.
         eventJob = scope.launch {
             manager.syncEvents.collect { event -> reduce(walletId, event) }
         }
 
         pollJob = scope.launch {
             while (true) {
-                val running = runCatching { manager.isShieldedSyncRunning() }
+                // Poll the PASS-IN-FLIGHT flag, not the loop-alive flag. The
+                // background loop stays alive (isShieldedSyncRunning == true)
+                // for its whole lifetime, so polling that pinned "Syncing…" on
+                // forever and left the Clear button's `!isSyncing` gate never
+                // satisfiable. Swift polls `isShieldedSyncing()` here for the
+                // same reason.
+                val syncing = runCatching { manager.isShieldedSyncing() }
                     .getOrDefault(false)
-                if (running != _state.value.isSyncing) {
-                    _state.update { it.copy(isSyncing = running) }
+                if (syncing != _state.value.isSyncing) {
+                    _state.update { it.copy(isSyncing = syncing) }
                 }
                 kotlinx.coroutines.delay(POLL_INTERVAL_MS)
             }
@@ -225,9 +284,13 @@ class ShieldedService(private val database: DashDatabase) {
     }
 
     /**
-     * Unbind — port of Swift `reset()` / the soft-cleanup path. Cancels
-     * subscriptions, clears the bound wallet, and zeroes the published
-     * state, keeping the service reusable via a later [bind].
+     * Hard unbind — port of Swift `reset()`. Cancels subscriptions, DROPS the
+     * stashed bind credentials (manager / walletId / dbPath / accounts), and
+     * zeroes the published state including [isBound] and [canResume]. Used
+     * when the active network genuinely has no wallet to bind (a network
+     * switch), where there is nothing to resume to. NOT used by [bind]'s
+     * re-bind path — that retains credentials so [canResume] survives a failed
+     * re-bind (see [bind]).
      */
     fun unbind() {
         eventJob?.cancel()
@@ -240,6 +303,8 @@ class ShieldedService(private val database: DashDatabase) {
         _boundAccounts.value = emptyList()
         _shieldedBalance.value = emptyFlow()
         _state.value = ShieldedSyncState()
+        _isBound.value = false
+        _canResume.value = false
     }
 
     /**
@@ -279,8 +344,9 @@ class ShieldedService(private val database: DashDatabase) {
      */
     suspend fun clearLocalState(db: DashDatabase = database) {
         val walletId = boundWalletId ?: return
-        // Snapshot bind credentials BEFORE the wipe: bind() → unbind() nulls
-        // these, and we need them to re-bind at the end.
+        // Snapshot bind credentials up front so the re-bind at the end is
+        // driven off a stable set (bind() retains credentials across its own
+        // re-entry, but snapshotting keeps this flow independent of that).
         val mgr = manager
         val dbPath = boundDbPath
         val accounts = _boundAccounts.value.ifEmpty { listOf(0) }

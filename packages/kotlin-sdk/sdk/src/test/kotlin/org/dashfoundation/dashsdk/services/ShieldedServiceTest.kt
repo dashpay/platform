@@ -182,4 +182,17 @@ class ShieldedServiceTest {
         assertEquals(0L, s.totalScanned)
         assertEquals(0, s.syncCountSinceLaunch)
     }
+
+    @Test
+    fun bindingFlowsDefaultFalseAndHardUnbindResetsThem() {
+        // A fresh service is neither bound nor resumable.
+        assertEquals(false, service.isBound.value)
+        assertEquals(false, service.canResume.value)
+        // A hard unbind (network-switch path) must drive both back to false so
+        // the Clear button's `canResume` gate disables when there is nothing
+        // to resume to.
+        service.unbind()
+        assertEquals(false, service.isBound.value)
+        assertEquals(false, service.canResume.value)
+    }
 }

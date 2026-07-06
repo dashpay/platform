@@ -241,6 +241,16 @@ internal object WalletManagerNative {
     external fun shieldedSyncIsRunning(managerHandle: Long): Boolean
 
     /**
+     * Whether a shielded sync **pass is in flight right now** — distinct from
+     * [shieldedSyncIsRunning], which reports whether the background *loop* is
+     * alive (and stays `true` for the loop's whole lifetime, even while it
+     * sleeps between passes). Drives the UI "isSyncing" mirror; gating the
+     * shielded "Clear" button on the loop-alive flag would pin it disabled
+     * forever. Only present when the native library is built with shielded.
+     */
+    external fun shieldedSyncIsSyncing(managerHandle: Long): Boolean
+
+    /**
      * Configure the network-scoped shielded coordinator: open (or create)
      * the per-network commitment-tree SQLite file at [dbPath], reused by
      * every subsequent [shieldedBind] on this manager. Idempotent at the

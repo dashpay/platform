@@ -256,6 +256,10 @@ fun SyncStatusScreen() {
                 LabeledContent("State", "Not available in this build")
             } else {
                 val shielded by container.shieldedService.state.collectAsStateWithLifecycle()
+                val isBound by container.shieldedService.isBound
+                    .collectAsStateWithLifecycle()
+                val canResume by container.shieldedService.canResume
+                    .collectAsStateWithLifecycle()
                 val balanceFlow by container.shieldedService.shieldedBalance
                     .collectAsStateWithLifecycle()
                 val balance by remember(balanceFlow) { balanceFlow }
@@ -265,7 +269,7 @@ fun SyncStatusScreen() {
                     "State",
                     when {
                         shielded.isSyncing -> "Syncing…"
-                        !container.shieldedService.isBound -> "Not bound"
+                        !isBound -> "Not bound"
                         shielded.syncCountSinceLaunch == 0 -> "Not synced yet"
                         else -> "Idle"
                     },
@@ -314,7 +318,15 @@ fun SyncStatusScreen() {
                                 }
                             }
                         },
-                        enabled = container.shieldedService.isBound && !shielded.isSyncing,
+                        // Gate on `canResume` (stashed bind credentials), not
+                        // the transient `isBound` (← CoreContentView.swift, which
+                        // gates on `!isSyncing` alone with credentials kept by
+                        // clearLocalState). A frozen tree leaves us unbound but
+                        // resumable — that's exactly when Clear is needed — so
+                        // gating on `isBound` pinned it disabled. `!isSyncing`
+                        // uses the pass-in-flight flag now, so it's satisfiable
+                        // between passes instead of stuck on the loop-alive flag.
+                        enabled = canResume && !shielded.isSyncing,
                         modifier = Modifier.testTag("sync.shieldedClear"),
                     ) { Text("Clear") }
                 }

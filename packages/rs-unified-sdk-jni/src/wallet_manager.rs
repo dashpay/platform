@@ -1606,6 +1606,40 @@ sync_start_stop!(
     platform_wallet_ffi::platform_wallet_manager_shielded_sync_is_running
 );
 
+/// Whether a shielded sync **pass is in flight right now** — distinct from
+/// `shieldedSyncIsRunning` (which reports whether the background *loop* is
+/// alive, and stays `true` for the loop's whole lifetime, including while it
+/// sleeps between passes). The Kotlin `ShieldedService` polls THIS to drive
+/// its `isSyncing` mirror, mirroring Swift's `isShieldedSyncing()` poll —
+/// gating the shielded "Clear" button on the loop-alive flag instead would
+/// pin it disabled forever. Backs
+/// `PlatformWalletManager.isShieldedSyncing()`.
+#[cfg(feature = "shielded")]
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_shieldedSyncIsSyncing(
+    mut env: JNIEnv,
+    _class: JClass,
+    manager_handle: jlong,
+) -> jboolean {
+    guard(&mut env, JNI_FALSE, |env| {
+        let mut syncing = false;
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_manager_shielded_sync_is_syncing(
+                manager_handle as Handle,
+                &mut syncing as *mut bool,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return JNI_FALSE;
+        }
+        if syncing {
+            JNI_TRUE
+        } else {
+            JNI_FALSE
+        }
+    })
+}
+
 /// Configure the network-scoped shielded coordinator — opens (or creates)
 /// the per-network commitment-tree SQLite file at `db_path` that every
 /// subsequent `shieldedBind` on this manager reuses. Idempotent at the

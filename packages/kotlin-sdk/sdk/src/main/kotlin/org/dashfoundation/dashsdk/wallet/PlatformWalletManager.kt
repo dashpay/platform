@@ -548,6 +548,20 @@ class PlatformWalletManager(
     }
 
     /**
+     * Whether a shielded sync **pass is currently in flight** — port of
+     * Swift's `PlatformWalletManager.isShieldedSyncing()` (polled into
+     * `shieldedSyncIsSyncing`). Distinct from [isShieldedSyncRunning], which
+     * reports whether the background *loop* is alive and stays `true` for its
+     * whole lifetime (including between passes). Use this — not the loop-alive
+     * flag — for the UI "syncing…" indicator and for gating actions (like the
+     * shielded Clear button) that only need to avoid a pass mutating the store
+     * underneath them.
+     */
+    suspend fun isShieldedSyncing(): Boolean = withContext(Dispatchers.IO) {
+        mapNativeErrors { WalletManagerNative.shieldedSyncIsSyncing(managerHandle) }
+    }
+
+    /**
      * Configure the network-scoped shielded coordinator — port of Swift's
      * `PlatformWalletManager.configureShielded(dbPath:)`
      * (`PlatformWalletManagerShieldedSync.swift`). Opens (or creates) the
