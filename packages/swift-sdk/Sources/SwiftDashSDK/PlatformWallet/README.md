@@ -221,10 +221,11 @@ try identity.sendContactRequest(
 )
 ```
 
-**Accept/Reject Requests:**
+**Accept / Ignore Requests:**
 ```swift
 func acceptContactRequest(senderId: Identifier) throws
-func rejectContactRequest(senderId: Identifier) throws
+func ignoreContactSender(senderId: Identifier) throws   // per-sender, reversible
+func unignoreContactSender(senderId: Identifier) throws
 ```
 
 **Query Contact Requests:**
@@ -244,7 +245,7 @@ for senderId in incomingIds {
         let sender = try request.getSenderId()
         print("Request from \(sender.hexString)")
 
-        // Accept or reject
+        // Accept or ignore
         try identity.acceptContactRequest(senderId: senderId)
     }
 }

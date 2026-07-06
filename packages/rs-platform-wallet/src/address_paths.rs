@@ -23,8 +23,10 @@
 //!
 //! `<account-prefix>` comes from
 //! [`AccountType::derivation_path`](key_wallet::account::AccountType::derivation_path).
-//! Network is read directly off `DerivedAddress.address.network()`
-//! so callers don't have to thread it.
+//! The path's only network-dependent part is the BIP44 coin type
+//! (`5'` on mainnet, `1'` otherwise), so resolving mainnet-vs-not off
+//! the address is sufficient and callers don't have to thread a
+//! network.
 //!
 //! Returns `None` only for account variants whose
 //! `derivation_path()` returns `Err` (some non-Standard variants
@@ -42,6 +44,10 @@ use crate::DerivedAddress;
 /// Render the BIP32 derivation path for a `DerivedAddress` event
 /// payload. See module-level docs for the path layout rules.
 pub fn derivation_path_for_derived_address(derived: &DerivedAddress) -> Option<DerivationPath> {
+    // `Address` no longer exposes its network directly — its base58/bech32
+    // prefix is ambiguous across testnet/devnet/regtest. The derivation path
+    // only distinguishes mainnet (coin type `5'`) from everything else (`1'`),
+    // so probe for mainnet and fall back to testnet otherwise.
     let network = if derived
         .address
         .as_unchecked()

@@ -271,6 +271,10 @@ unsafe fn dash_sdk_address_top_up_from_asset_lock_inner(
             .map_err(FFIError::from)?;
 
         // Convert to FFI type (same as transfer)
+        let (address_infos, _proof_height) = address_infos;
+        // The `_proof_height` pin matters to callers that PERSIST these
+        // absolutes (the platform-wallet reconcile seam); this raw debug
+        // path only renders the proof entries, so it drops the height.
         let entries: Vec<DashSDKAddressInfoEntry> = address_infos
             .iter()
             .map(|(address, info_opt)| {

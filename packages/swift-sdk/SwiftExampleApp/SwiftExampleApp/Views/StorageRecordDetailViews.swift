@@ -246,6 +246,130 @@ struct DashpayProfileStorageDetailView: View {
     }
 }
 
+// MARK: - PersistentDashpayContactProfile
+
+/// Detail view for one cached contact profile — a counterparty's DashPay
+/// profile as seen by an owner identity. One row per (owner, contact).
+/// Optional fields render as "—" when nil so partial profiles stay visible.
+struct DashpayContactProfileStorageDetailView: View {
+    let record: PersistentDashpayContactProfile
+
+    var body: some View {
+        Form {
+            Section("Core") {
+                FieldRow(label: "Display Name", value: record.displayName ?? "—")
+                FieldRow(label: "Public Message", value: record.publicMessage ?? "—")
+                FieldRow(label: "Bio", value: record.bio ?? "—")
+                FieldRow(label: "Network", value: record.network.displayName)
+            }
+            Section("Avatar") {
+                FieldRow(label: "URL", value: record.avatarUrl ?? "—")
+                FieldRow(
+                    label: "Hash (32 B)",
+                    value: record.avatarHash.map { hexString($0) } ?? "—"
+                )
+                FieldRow(
+                    label: "Fingerprint (8 B)",
+                    value: record.avatarFingerprint.map { hexString($0) } ?? "—"
+                )
+            }
+            Section("Relationships") {
+                NavigationLink(destination: IdentityStorageDetailView(record: record.owner)) {
+                    FieldRow(
+                        label: "Owner Identity",
+                        value: record.owner.identityIdBase58
+                    )
+                }
+                FieldRow(label: "Owner ID (Hex)", value: hexString(record.ownerIdentityId))
+                FieldRow(label: "Contact ID (Hex)", value: hexString(record.contactIdentityId))
+            }
+            Section("Timestamps") {
+                FieldRow(label: "Checked At (ms)", value: String(record.checkedAtMs))
+                FieldRow(label: "Created", value: dateString(record.createdAt))
+                FieldRow(label: "Updated", value: dateString(record.lastUpdated))
+            }
+        }
+        .navigationTitle("Contact Profile")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+// MARK: - PersistentDashpayPayment
+
+/// Detail view for one DashPay payment-history row. Read-only dump
+/// of every column the persister bridge writes, mirroring the other
+/// storage detail views.
+struct DashpayPaymentStorageDetailView: View {
+    let record: PersistentDashpayPayment
+
+    var body: some View {
+        Form {
+            Section("Core") {
+                FieldRow(
+                    label: "Direction",
+                    value: record.direction == .sent ? "Sent" : "Received"
+                )
+                FieldRow(label: "Status", value: statusText)
+                FieldRow(
+                    label: "Amount",
+                    value: String(format: "%.8f DASH", Double(record.amountDuffs) / 100_000_000)
+                )
+                FieldRow(label: "Amount (duffs)", value: "\(record.amountDuffs)")
+                FieldRow(label: "Network", value: record.network.displayName)
+                FieldRow(label: "Memo", value: record.memo ?? "—")
+            }
+            Section("Transaction") {
+                FieldRow(label: "Txid", value: record.txid)
+            }
+            Section("Identities") {
+                FieldRow(label: "Owner", value: record.ownerIdentityId.map { String(format: "%02x", $0) }.joined())
+                FieldRow(
+                    label: "Counterparty",
+                    value: record.counterpartyIdentityId.map { String(format: "%02x", $0) }.joined()
+                )
+            }
+            Section("Timestamps") {
+                FieldRow(label: "Created", value: AppDate.formatted(record.createdAt, dateStyle: .abbreviated, timeStyle: .standard))
+                FieldRow(label: "Updated", value: AppDate.formatted(record.lastUpdated, dateStyle: .abbreviated, timeStyle: .standard))
+            }
+        }
+        .navigationTitle("DashPay Payment")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private var statusText: String {
+        switch record.status {
+        case .pending: return "Pending"
+        case .confirmed: return "Confirmed"
+        case .failed: return "Failed"
+        }
+    }
+}
+
+// MARK: - PersistentDashpayIgnoredSender
+
+/// Detail view for one DashPay ignored sender (per-sender mute,
+/// local-only). Read-only dump of every column, mirroring the other
+/// storage detail views.
+struct DashpayIgnoredSenderStorageDetailView: View {
+    let record: PersistentDashpayIgnoredSender
+
+    var body: some View {
+        Form {
+            Section("Suppression key") {
+                FieldRow(label: "Owner", value: record.ownerIdentityId.toHexString())
+                FieldRow(label: "Ignored sender", value: record.ignoredSenderId.toHexString())
+                FieldRow(label: "Network", value: record.network.displayName)
+            }
+            Section("Audit") {
+                FieldRow(label: "Ignored", value: AppDate.formatted(record.ignoredAt, dateStyle: .abbreviated, timeStyle: .standard))
+            }
+        }
+        .navigationTitle("Ignored Sender")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
 // MARK: - PersistentDashpayContactRequest
 
 /// Detail view for one DashPay contact-request row. Surfaces every
@@ -286,6 +410,10 @@ struct DashpayContactRequestStorageDetailView: View {
                 FieldRow(
                     label: "Encrypted Account Label",
                     value: record.encryptedAccountLabel.map { "\($0.count) bytes" } ?? "—"
+                )
+                FieldRow(
+                    label: "Account Label (decrypted)",
+                    value: record.contactAccountLabel ?? "—"
                 )
                 FieldRow(
                     label: "Auto-Accept Proof",

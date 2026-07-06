@@ -53,7 +53,7 @@ impl IdentityManager {
             existing.last_updated_balance_block_time = entry.last_updated_balance_block_time;
             existing.last_synced_keys_block_time = entry.last_synced_keys_block_time;
             existing.status = entry.status;
-            existing.dashpay_profile = entry.dashpay_profile;
+            *existing.dashpay_profile_mut() = entry.dashpay_profile;
             for name in entry.dpns_names {
                 if !existing.dpns_names.iter().any(|n| n.label == name.label) {
                     existing.dpns_names.push(name);
@@ -64,7 +64,17 @@ impl IdentityManager {
                     existing.contested_dpns_names.push(label);
                 }
             }
-            existing.dashpay_payments.extend(entry.dashpay_payments);
+            existing
+                .dashpay_payments_mut()
+                .extend(entry.dashpay_payments);
+            existing
+                .dashpay_contact_profiles_mut()
+                .extend(entry.contact_profiles);
+            // Ignored senders: union (un-ignore is carried by an explicit
+            // `ContactChangeSet::unignored` removal, applied separately).
+            for sender in entry.ignored_senders {
+                existing.apply_ignored_sender(sender);
+            }
             return;
         }
 
@@ -105,8 +115,14 @@ impl IdentityManager {
                 managed.wallet_id = Some(wallet_id);
                 managed.dpns_names = entry.dpns_names;
                 managed.contested_dpns_names = entry.contested_dpns_names;
-                managed.dashpay_profile = entry.dashpay_profile;
-                managed.dashpay_payments = entry.dashpay_payments;
+                *managed.dashpay_profile_mut() = entry.dashpay_profile;
+                *managed.dashpay_payments_mut() = entry.dashpay_payments;
+                *managed.dashpay_contact_profiles_mut() = entry.contact_profiles;
+                // Fresh-constructed identity: the ignored set starts empty,
+                // so per-element apply reproduces the wholesale assign.
+                for sender in entry.ignored_senders {
+                    managed.apply_ignored_sender(sender);
+                }
 
                 self.wallet_identities
                     .entry(wallet_id)
@@ -131,8 +147,14 @@ impl IdentityManager {
                 // initialized it that way.
                 managed.dpns_names = entry.dpns_names;
                 managed.contested_dpns_names = entry.contested_dpns_names;
-                managed.dashpay_profile = entry.dashpay_profile;
-                managed.dashpay_payments = entry.dashpay_payments;
+                *managed.dashpay_profile_mut() = entry.dashpay_profile;
+                *managed.dashpay_payments_mut() = entry.dashpay_payments;
+                *managed.dashpay_contact_profiles_mut() = entry.contact_profiles;
+                // Fresh-constructed identity: the ignored set starts empty,
+                // so per-element apply reproduces the wholesale assign.
+                for sender in entry.ignored_senders {
+                    managed.apply_ignored_sender(sender);
+                }
 
                 self.out_of_wallet_identities.insert(id, managed);
                 self.location_index_insert(id, IdentityLocation::OutOfWallet);
@@ -192,9 +214,9 @@ impl IdentityManager {
     /// ([`load_from_persistor`](crate::PlatformWalletManager::load_from_persistor)).
     /// Identity keys are applied first so a contact entry never lands
     /// before its owner's keys; orphan entries (owner not in the
-    /// wallet) are logged and skipped, never fatal. `removed_*` are
-    /// honoured for the replay path; the rehydration feed leaves them
-    /// empty.
+    /// wallet) are logged and skipped, never fatal. `removed_*` and
+    /// `ignored`/`unignored` are honoured for the replay path; the
+    /// rehydration feed leaves them empty.
     pub(crate) fn apply_contacts_and_keys(
         &mut self,
         contacts: ContactChangeSet,
@@ -215,14 +237,12 @@ impl IdentityManager {
             incoming_requests,
             removed_incoming,
             established,
+            ignored,
+            unignored,
         } = contacts;
         for (key, entry) in sent_requests {
             match self.managed_identity_mut(&key.owner_id) {
-                Some(managed) => {
-                    managed
-                        .sent_contact_requests
-                        .insert(entry.request.recipient_id, entry.request);
-                }
+                Some(managed) => managed.apply_sent_contact_request(entry.request),
                 None => tracing::warn!(
                     owner = %key.owner_id,
                     "skipping sent contact request: owner identity not in wallet"
@@ -231,11 +251,7 @@ impl IdentityManager {
         }
         for (key, entry) in incoming_requests {
             match self.managed_identity_mut(&key.owner_id) {
-                Some(managed) => {
-                    managed
-                        .incoming_contact_requests
-                        .insert(entry.request.sender_id, entry.request);
-                }
+                Some(managed) => managed.apply_incoming_contact_request(entry.request),
                 None => tracing::warn!(
                     owner = %key.owner_id,
                     "skipping incoming contact request: owner identity not in wallet"
@@ -244,12 +260,12 @@ impl IdentityManager {
         }
         for key in removed_sent {
             if let Some(managed) = self.managed_identity_mut(&key.owner_id) {
-                managed.sent_contact_requests.remove(&key.recipient_id);
+                managed.apply_removed_sent(&key.recipient_id);
             }
         }
         for key in removed_incoming {
             if let Some(managed) = self.managed_identity_mut(&key.owner_id) {
-                managed.incoming_contact_requests.remove(&key.sender_id);
+                managed.apply_removed_incoming(&key.sender_id);
             }
         }
         for (key, established) in established {
@@ -259,6 +275,23 @@ impl IdentityManager {
                     owner = %key.owner_id,
                     "skipping established contact: owner identity not in wallet"
                 ),
+            }
+        }
+        // `ignored` is applied before `unignored` so a same-delta
+        // un-ignore wins (last-write-wins). Orphan owners are logged
+        // and skipped; un-ignore of an absent owner is a silent no-op.
+        for (owner_id, sender_id) in ignored {
+            match self.managed_identity_mut(&owner_id) {
+                Some(managed) => managed.apply_ignored_sender(sender_id),
+                None => tracing::warn!(
+                    owner = %owner_id,
+                    "skipping ignored sender: owner identity not in wallet"
+                ),
+            }
+        }
+        for (owner_id, sender_id) in unignored {
+            if let Some(managed) = self.managed_identity_mut(&owner_id) {
+                managed.apply_unignored_sender(&sender_id);
             }
         }
     }

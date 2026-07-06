@@ -158,6 +158,11 @@ pub fn load_state(
     let mut stmt = conn.prepare(
         "SELECT identity_id, entry_blob, tombstoned FROM identities WHERE wallet_id = ?1",
     )?;
+    // The ignored-senders TABLE is the authoritative ignore record (every
+    // ignore/un-ignore maintains it transactionally); the `entry_blob`'s
+    // snapshot copy can be stale — see `contacts::load_ignored_senders`.
+    let mut ignored_by_owner =
+        crate::sqlite::schema::contacts::load_ignored_senders(conn, wallet_id)?;
     let mut state = IdentityManagerStartState::default();
     let mut rows = stmt.query(params![wallet_id.as_slice()])?;
     while let Some(row) = rows.next()? {
@@ -168,7 +173,8 @@ pub fn load_state(
             continue;
         }
         let entry: IdentityEntry = blob::decode(&payload)?;
-        let managed = managed_identity_from_entry(&entry, wallet_id);
+        let ignored = ignored_by_owner.remove(&entry.id).unwrap_or_default();
+        let managed = managed_identity_from_entry(&entry, wallet_id, ignored);
         match entry.identity_index {
             Some(idx) => {
                 state
@@ -193,6 +199,7 @@ pub fn load_state(
 fn managed_identity_from_entry(
     entry: &IdentityEntry,
     wallet_id: &WalletId,
+    ignored_senders: std::collections::BTreeSet<dpp::prelude::Identifier>,
 ) -> platform_wallet::wallet::identity::ManagedIdentity {
     use dpp::identity::v0::IdentityV0;
     use dpp::identity::Identity;
@@ -203,21 +210,42 @@ fn managed_identity_from_entry(
         balance: entry.balance,
         revision: entry.revision,
     });
-    ManagedIdentity {
-        identity,
-        identity_index: entry.identity_index,
-        last_updated_balance_block_time: entry.last_updated_balance_block_time,
-        last_synced_keys_block_time: entry.last_synced_keys_block_time,
-        established_contacts: Default::default(),
-        sent_contact_requests: Default::default(),
-        incoming_contact_requests: Default::default(),
-        status: entry.status,
-        dpns_names: entry.dpns_names.clone(),
-        contested_dpns_names: entry.contested_dpns_names.clone(),
-        wallet_id: entry.wallet_id.or(Some(*wallet_id)),
-        dashpay_profile: entry.dashpay_profile.clone(),
-        dashpay_payments: entry.dashpay_payments.clone(),
+    let mut managed = match entry.identity_index {
+        Some(index) => ManagedIdentity::new(identity, index),
+        None => ManagedIdentity::new_out_of_wallet(identity),
+    };
+    managed.last_updated_balance_block_time = entry.last_updated_balance_block_time;
+    managed.last_synced_keys_block_time = entry.last_synced_keys_block_time;
+    managed.status = entry.status;
+    managed.dpns_names = entry.dpns_names.clone();
+    managed.contested_dpns_names = entry.contested_dpns_names.clone();
+    managed.wallet_id = entry.wallet_id.or(Some(*wallet_id));
+    // Scalar-snapshot collections ride the identity `entry_blob`
+    // (payments / profile / contact_profiles), so they restore from
+    // `entry`. The relational request collections are loaded separately
+    // from the `contacts` table and stay defaulted here.
+    // High-water sync cursors, the per-session rescan guard, the
+    // verify-failed auto-accept markers, and the deferred contact-crypto
+    // queue (not persisted; a signerless sweep re-enqueues its ops on
+    // load) are in-memory by design: a cold restore starts them at their
+    // defaults so the next sweep re-fetches / re-evaluates safely.
+    //
+    // Ignored senders restore from the `ignored_senders` TABLE (passed in
+    // by the loader), NOT from `entry.ignored_senders`: an un-ignore
+    // deletes only the table row (no fresh identity-entry flush), and the
+    // changeset merge UNIONs the blob's set across buffered snapshots —
+    // so the blob copy can resurrect an un-ignored sender. The table is
+    // maintained transactionally by both the ignore and un-ignore writers
+    // and is therefore authoritative. The constructor starts a fresh
+    // empty ignored set, so per-element apply reproduces the table's set
+    // exactly.
+    for sender in &ignored_senders {
+        managed.apply_ignored_sender(*sender);
     }
+    *managed.dashpay_profile_mut() = entry.dashpay_profile.clone();
+    *managed.dashpay_payments_mut() = entry.dashpay_payments.clone();
+    *managed.dashpay_contact_profiles_mut() = entry.contact_profiles.clone();
+    managed
 }
 
 /// Insert a stub identity row so identity_keys / dashpay_profiles can
@@ -248,6 +276,8 @@ pub fn ensure_exists(
         wallet_id: None,
         dashpay_profile: None,
         dashpay_payments: Default::default(),
+        contact_profiles: Default::default(),
+        ignored_senders: Default::default(),
     };
     let payload = blob::encode(&stub)?;
     let wallet_id_param = wallet_id_to_param(wallet_id);

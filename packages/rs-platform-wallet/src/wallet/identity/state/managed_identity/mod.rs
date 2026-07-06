@@ -5,8 +5,11 @@
 
 mod contact_requests;
 mod contacts;
+mod dashpay;
 mod identity_ops;
 mod sync;
+
+pub use dashpay::DashPayState;
 
 // `block_time` + `key_storage` moved to `crate::wallet::identity::types`.
 // Re-export so every `impl ManagedIdentity` block below keeps working
@@ -17,10 +20,7 @@ pub use crate::wallet::identity::types::key_storage::{
     self, DpnsNameInfo, IdentityStatus, KeyStorage, PrivateKeyData,
 };
 
-use crate::wallet::identity::{ContactRequest, DashPayProfile, EstablishedContact, PaymentEntry};
 use dpp::identity::Identity;
-use dpp::prelude::Identifier;
-use std::collections::BTreeMap;
 
 /// A managed identity that combines an Identity with wallet-specific metadata.
 ///
@@ -56,15 +56,6 @@ pub struct ManagedIdentity {
     /// Last block time when keys were synced for this identity
     pub last_synced_keys_block_time: Option<BlockTime>,
 
-    /// Map of established contacts (bidirectional relationships) keyed by contact identity ID
-    pub established_contacts: BTreeMap<Identifier, EstablishedContact>,
-
-    /// Map of sent contact requests (outgoing, not yet reciprocated) keyed by recipient ID
-    pub sent_contact_requests: BTreeMap<Identifier, ContactRequest>,
-
-    /// Map of incoming contact requests (not yet accepted) keyed by sender ID
-    pub incoming_contact_requests: BTreeMap<Identifier, ContactRequest>,
-
     /// Identity lifecycle status on Platform.
     pub status: IdentityStatus,
 
@@ -93,22 +84,89 @@ pub struct ManagedIdentity {
     /// lives in the out-of-wallet bucket (observed only).
     pub wallet_id: Option<[u8; 32]>,
 
-    /// DashPay profile (display name, bio, avatar, public message)
-    /// published via the DashPay data contract. `None` until the
-    /// profile has been fetched or set.
-    pub dashpay_profile: Option<DashPayProfile>,
+    /// DashPay social state layered on this identity: contacts, contact
+    /// requests, profile, payments, sync cursors, deferred crypto. See
+    /// [`DashPayState`] for the per-field contracts.
+    ///
+    /// Module-private on purpose: reads go through [`Self::dashpay`],
+    /// invariant-carrying mutations through the methods on this type,
+    /// and open-tier cache writes through the `*_mut` accessors. Keeping
+    /// the field sealed also rules out whole-value replacement
+    /// (`mem::take` / reassignment), which would silently wipe the
+    /// guarded relationship maps and sync cursors.
+    dashpay: DashPayState,
+}
 
-    /// DashPay payment history keyed by transaction id (hex string).
-    /// Each entry records a single Dash payment to or from a contact
-    /// identity, with direction, amount, memo, and status.
-    pub dashpay_payments: BTreeMap<String, PaymentEntry>,
+impl ManagedIdentity {
+    /// Read access to this identity's DashPay social state.
+    pub fn dashpay(&self) -> &DashPayState {
+        &self.dashpay
+    }
+
+    /// Mutable access to the DashPay profile cache.
+    ///
+    /// Replay/restore surface: bypasses persistence on purpose (the
+    /// changeset being applied is already durable). Live mutations that
+    /// must persist go through [`Self::set_dashpay_profile`].
+    pub fn dashpay_profile_mut(&mut self) -> &mut Option<crate::wallet::identity::DashPayProfile> {
+        &mut self.dashpay.profile
+    }
+
+    /// Mutable access to the DashPay payment-history cache.
+    ///
+    /// Replay/restore surface: bypasses persistence and the
+    /// rollback-on-persist-failure contract of
+    /// [`Self::record_dashpay_payment`], which live mutations must use.
+    pub fn dashpay_payments_mut(
+        &mut self,
+    ) -> &mut std::collections::BTreeMap<String, crate::wallet::identity::PaymentEntry> {
+        &mut self.dashpay.payments
+    }
+
+    /// Mutable access to the cached contact profiles.
+    ///
+    /// Replay/restore surface: bypasses persistence on purpose (the
+    /// changeset being applied is already durable). The live writer is
+    /// the profile sync sweep, which persists a snapshot after writing.
+    pub fn dashpay_contact_profiles_mut(
+        &mut self,
+    ) -> &mut std::collections::BTreeMap<
+        dpp::prelude::Identifier,
+        crate::wallet::identity::ContactProfileEntry,
+    > {
+        &mut self.dashpay.contact_profiles
+    }
+
+    /// Mutable access to the per-session contact-rescan guard set.
+    ///
+    /// In-memory only — never persisted; see the field docs on
+    /// [`DashPayState::rescan_triggered`] for the self-healing contract.
+    pub fn dashpay_rescan_triggered_mut(
+        &mut self,
+    ) -> &mut std::collections::BTreeSet<dpp::prelude::Identifier> {
+        &mut self.dashpay.rescan_triggered
+    }
+
+    /// Mutable access to the deferred contact-crypto queue.
+    ///
+    /// The queue's dedup invariant (≤ 1 entry per
+    /// `(owner, contact, kind)`) lives in
+    /// [`upsert_pending_contact_crypto`](crate::changeset::upsert_pending_contact_crypto) —
+    /// callers inserting entries must go through it.
+    pub fn dashpay_pending_contact_crypto_mut(
+        &mut self,
+    ) -> &mut Vec<crate::changeset::PendingContactCrypto> {
+        &mut self.dashpay.pending_contact_crypto
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::wallet::identity::ContactRequest;
     use crate::wallet::persister::{NoPlatformPersistence, WalletPersister};
     use dpp::identity::v0::IdentityV0;
+    use dpp::prelude::Identifier;
     use std::collections::BTreeMap;
     use std::sync::Arc;
 
@@ -239,11 +297,13 @@ mod tests {
             100000,
             1234567890,
         );
-        managed.add_incoming_contact_request(incoming_request, &p);
+        managed
+            .add_incoming_contact_request(incoming_request, &p)
+            .expect("setup persists");
 
         // Verify it's in incoming requests
-        assert_eq!(managed.incoming_contact_requests.len(), 1);
-        assert_eq!(managed.established_contacts.len(), 0);
+        assert_eq!(managed.dashpay.incoming_contact_requests.len(), 1);
+        assert_eq!(managed.dashpay.established_contacts.len(), 0);
 
         // Now add a sent request to the same contact - should auto-establish
         let outgoing_request = ContactRequest::new(
@@ -256,13 +316,18 @@ mod tests {
             100000,
             1234567891,
         );
-        managed.add_sent_contact_request(outgoing_request, &p);
+        managed
+            .add_sent_contact_request(outgoing_request, &p)
+            .expect("setup persists");
 
         // Verify contact was established
-        assert_eq!(managed.incoming_contact_requests.len(), 0);
-        assert_eq!(managed.sent_contact_requests.len(), 0);
-        assert_eq!(managed.established_contacts.len(), 1);
-        assert!(managed.established_contacts.contains_key(&contact_id));
+        assert_eq!(managed.dashpay.incoming_contact_requests.len(), 0);
+        assert_eq!(managed.dashpay.sent_contact_requests.len(), 0);
+        assert_eq!(managed.dashpay.established_contacts.len(), 1);
+        assert!(managed
+            .dashpay
+            .established_contacts
+            .contains_key(&contact_id));
     }
 
     #[test]
@@ -285,11 +350,13 @@ mod tests {
             100000,
             1234567890,
         );
-        managed.add_sent_contact_request(outgoing_request, &p);
+        managed
+            .add_sent_contact_request(outgoing_request, &p)
+            .expect("setup persists");
 
         // Verify it's in sent requests
-        assert_eq!(managed.sent_contact_requests.len(), 1);
-        assert_eq!(managed.established_contacts.len(), 0);
+        assert_eq!(managed.dashpay.sent_contact_requests.len(), 1);
+        assert_eq!(managed.dashpay.established_contacts.len(), 0);
 
         // Now add an incoming request from the same contact - should auto-establish
         let incoming_request = ContactRequest::new(
@@ -302,13 +369,18 @@ mod tests {
             100000,
             1234567891,
         );
-        managed.add_incoming_contact_request(incoming_request, &p);
+        managed
+            .add_incoming_contact_request(incoming_request, &p)
+            .expect("setup persists");
 
         // Verify contact was established
-        assert_eq!(managed.incoming_contact_requests.len(), 0);
-        assert_eq!(managed.sent_contact_requests.len(), 0);
-        assert_eq!(managed.established_contacts.len(), 1);
-        assert!(managed.established_contacts.contains_key(&contact_id));
+        assert_eq!(managed.dashpay.incoming_contact_requests.len(), 0);
+        assert_eq!(managed.dashpay.sent_contact_requests.len(), 0);
+        assert_eq!(managed.dashpay.established_contacts.len(), 1);
+        assert!(managed
+            .dashpay
+            .established_contacts
+            .contains_key(&contact_id));
     }
 
     #[test]
@@ -331,11 +403,13 @@ mod tests {
             100000,
             1234567890,
         );
-        managed.add_sent_contact_request(outgoing_request, &p);
+        managed
+            .add_sent_contact_request(outgoing_request, &p)
+            .expect("setup persists");
 
         // Verify it stays in sent requests
-        assert_eq!(managed.sent_contact_requests.len(), 1);
-        assert_eq!(managed.established_contacts.len(), 0);
+        assert_eq!(managed.dashpay.sent_contact_requests.len(), 1);
+        assert_eq!(managed.dashpay.established_contacts.len(), 0);
 
         // Add an incoming request from a different contact
         let other_contact_id = Identifier::from([3u8; 32]);
@@ -349,12 +423,14 @@ mod tests {
             100000,
             1234567891,
         );
-        managed.add_incoming_contact_request(incoming_request, &p);
+        managed
+            .add_incoming_contact_request(incoming_request, &p)
+            .expect("setup persists");
 
         // Verify both requests stay separate
-        assert_eq!(managed.sent_contact_requests.len(), 1);
-        assert_eq!(managed.incoming_contact_requests.len(), 1);
-        assert_eq!(managed.established_contacts.len(), 0);
+        assert_eq!(managed.dashpay.sent_contact_requests.len(), 1);
+        assert_eq!(managed.dashpay.incoming_contact_requests.len(), 1);
+        assert_eq!(managed.dashpay.established_contacts.len(), 0);
     }
 
     #[test]

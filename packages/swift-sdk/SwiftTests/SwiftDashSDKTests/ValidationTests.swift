@@ -76,15 +76,19 @@ final class ValidationTests: XCTestCase {
     }
 
     func testValidateBech32mAddress_valid() {
-        // Valid testnet address (tdashevo1...)
-        // Using a well-formed bech32m address
-        let validTestnetAddress = "tdashevo1qz4242424242424242424242424242424g4dj6u7"
+        // A real DIP-0018 testnet platform address (tdash1..., 21-byte
+        // payload, valid bech32m checksum) — proof-verified on testnet.
+        let validTestnetAddress = "tdash1kzdl4c3apkekqevkqrzctgagv2v2ng5hysegt5x4"
         XCTAssertTrue(AddressValidator.validateBech32mAddress(validTestnetAddress))
     }
 
     func testValidateBech32mAddress_invalid() {
         // Wrong HRP
         XCTAssertFalse(AddressValidator.validateBech32mAddress("bitcoin1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq"))
+        // Pre-DIP-0018 HRP ("tdashevo") — rejected since the DIP-0018
+        // decode fix; the canonical testnet HRP is "tdash".
+        XCTAssertFalse(
+            AddressValidator.validateBech32mAddress("tdashevo1qz4242424242424242424242424242424g4dj6u7"))
         // No separator
         XCTAssertFalse(AddressValidator.validateBech32mAddress("tdashevoqqqqqqqqqqq"))
         // Empty
@@ -98,8 +102,8 @@ final class ValidationTests: XCTestCase {
         let hexAddr = "00aaff11223344556677889900aabbccddeeff0011"
         XCTAssertTrue(AddressValidator.validateAddress(hexAddr))
 
-        // Bech32m address (if valid)
-        let bech32mAddr = "tdashevo1qz4242424242424242424242424242424g4dj6u7"
+        // DIP-0018 bech32m address
+        let bech32mAddr = "tdash1kzdl4c3apkekqevkqrzctgagv2v2ng5hysegt5x4"
         XCTAssertTrue(AddressValidator.validateAddress(bech32mAddr))
 
         // Invalid

@@ -9,14 +9,16 @@ final class GetAddressInfoViewModel: BaseViewModel {
   @Published var addressInput = ""
   @Published var result: PlatformAddressInfo?
 
-  static let testBech32m = "tdashevo1qqyfsqyzcn5hzu7echru54njypdq0v4d7gv8pkdf"
+  static let testBech32m = "tdash1kzdl4c3apkekqevkqrzctgagv2v2ng5hysegt5x4"
+  // Hex field feeds the FFI directly, which expects the storage-form type byte
+  // (0x00 = P2PKH), not the user-facing bech32m byte (0xb0).
   static let testAddressHex = "00" + "1234567890abcdef1234567890abcdef12345678"
 
   var isFormValid: Bool { !addressInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
   var detectedFormat: (icon: String, color: Color, description: String) {
     let trimmed = addressInput.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-    if trimmed.hasPrefix("dashevo1") || trimmed.hasPrefix("tdashevo1") {
+    if Bech32m.looksLikePlatformAddress(trimmed) {
       if Bech32m.isValidPlatformAddress(trimmed) {
         return ("checkmark.circle.fill", .green, "Valid bech32m address")
       } else {
