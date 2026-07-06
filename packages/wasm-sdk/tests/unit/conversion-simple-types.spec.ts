@@ -52,17 +52,13 @@ describe('Simple Type Conversions', () => {
     const jsonFixture = {
       currentProtocolVersion: 7,
       nextProtocolVersion: 8,
-      activationHeight: 50000,
       voteCount: 100,
-      thresholdReached: false,
     };
 
     const objectFixture = {
       currentProtocolVersion: 7,
       nextProtocolVersion: 8,
-      activationHeight: 50000n,
-      voteCount: 100,
-      thresholdReached: false,
+      voteCount: 100n,
     };
 
     describe('toJSON()', () => {
@@ -84,8 +80,7 @@ describe('Simple Type Conversions', () => {
         const result = sdk.ProtocolVersionUpgradeState.fromJSON(jsonFixture);
         expect(result.currentProtocolVersion).to.equal(7);
         expect(result.nextProtocolVersion).to.equal(8);
-        expect(result.voteCount).to.equal(100);
-        expect(result.isThresholdReached).to.equal(false);
+        expect(result.voteCount).to.equal(100n);
       });
     });
 
@@ -94,17 +89,13 @@ describe('Simple Type Conversions', () => {
         const fixture = {
           currentProtocolVersion: 7,
           nextProtocolVersion: null,
-          activationHeight: null,
           voteCount: null,
-          thresholdReached: true,
         };
 
         const result = sdk.ProtocolVersionUpgradeState.fromJSON(fixture);
         expect(result.currentProtocolVersion).to.equal(7);
         expect(result.nextProtocolVersion).to.be.undefined();
-        expect(result.activationHeight).to.be.undefined();
         expect(result.voteCount).to.be.undefined();
-        expect(result.isThresholdReached).to.equal(true);
       });
     });
   });
