@@ -956,10 +956,10 @@ impl PlatformWalletPersistence for SqlitePersister {
             // this directly — the old skeleton + core_state replay fallback is
             // gone.
             let watch_only = if account_manifest.is_empty() {
-                // A metadata-only wallet (created, no accounts registered yet)
-                // has no manifest to rebuild from; represent it as an empty
-                // watch-only wallet so it still appears with a zero balance
-                // rather than being dropped.
+                // Placeholder empty wallet: the manager re-checks the empty
+                // manifest and skips this wallet as MissingManifest one layer
+                // up (see rt_corrupt_row_skipped_and_other_loads). It exists so
+                // one unregistered wallet doesn't abort load() for all others via `?`.
                 key_wallet::wallet::Wallet::new_watch_only(
                     network,
                     wallet_id,
