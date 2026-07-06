@@ -550,6 +550,60 @@ class PlatformWalletPersistenceHandlerTest {
     }
 
     @Test
+    fun loadWalletListRoundTripsPlatformAddressBalancesWithHeightPin() = runTest {
+        // SH-06 regression: the persisted platform-address balance +
+        // its `as_of_height` pin MUST come back on the restore row, or a
+        // credit at/below the trusted watermark is re-gated off (ADDR-09
+        // double-count guard) and lost after every relaunch on Android.
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+        val xpub = ByteArray(78) { 30 }
+        handler.onPersistAccountRegistration(
+            walletId, 0, 0, 0, 0, 0, ByteArray(0), ByteArray(0), xpub,
+        )
+
+        // Seed the platform-address row (the pool-emit path in
+        // production), then land a BLAST balance + height pin on it.
+        val hash = ByteArray(20) { 8 }
+        db.platformAddressDao().upsert(
+            PlatformAddressEntity(
+                address = "dash1seed",
+                addressType = 0,
+                addressHash = hash,
+                accountIndex = 2,
+                addressIndex = 0,
+                derivationPath = "m/9'/5'/17'/2'/0'/0",
+                walletId = walletId,
+            ),
+        )
+        handler.onChangesetBegin(walletId)
+        handler.onPersistAddressBalance(
+            walletId = walletId,
+            addressType = 0,
+            addressHash = hash,
+            balance = 5_000_000,
+            nonce = 1,
+            accountIndex = 2,
+            addressIndex = 0,
+            asOfHeight = 380_987,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        val list = handler.onLoadWalletList()
+        assertEquals(1, list.size)
+        val balances = list[0].platformAddressBalances
+        assertEquals(1, balances.size)
+        val restored = balances[0]
+        assertEquals(0.toByte(), restored.addressType)
+        assertTrue(hash.contentEquals(restored.addressHash))
+        assertEquals(5_000_000L, restored.balance)
+        assertEquals(1, restored.nonce)
+        assertEquals(2, restored.accountIndex)
+        assertEquals(0, restored.addressIndex)
+        // The height pin must survive the round-trip unchanged.
+        assertEquals(380_987L, restored.asOfHeight)
+    }
+
+    @Test
     fun loadWalletListRoundTripsIdentityKeysWithContractBounds() = runTest {
         // Signing-critical restore path: a cold-started wallet must get its
         // identities and public keys back exactly as persisted — keyId,

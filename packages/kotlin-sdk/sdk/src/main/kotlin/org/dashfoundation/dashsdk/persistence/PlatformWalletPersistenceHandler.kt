@@ -12,6 +12,7 @@ import org.dashfoundation.dashsdk.ffi.CoreTxRecordData
 import org.dashfoundation.dashsdk.ffi.IdentityKeyRestoreData
 import org.dashfoundation.dashsdk.ffi.IdentityRestoreData
 import org.dashfoundation.dashsdk.ffi.NativePersistenceBridge
+import org.dashfoundation.dashsdk.ffi.PlatformAddressBalanceRestoreData
 import org.dashfoundation.dashsdk.ffi.ShieldedActivityData
 import org.dashfoundation.dashsdk.ffi.ShieldedNoteData
 import org.dashfoundation.dashsdk.ffi.ShieldedOutgoingNoteData
@@ -1138,6 +1139,14 @@ class PlatformWalletPersistenceHandler(
                 // cold-started identities keyless and every write rejected
                 // at DPP validation (mirror of Swift `buildIdentityRestoreBuffer`).
                 val identities = buildIdentityRestoreData(w.walletId)
+                // Cached platform-address balances — re-seeds the Rust
+                // provider's per-account balance map + `as_of_height` pins
+                // on cold start so the next BLAST sync resumes from the
+                // persisted absolute instead of an empty found map. Without
+                // this a credit at/below the trusted watermark is lost
+                // across relaunches (SH-06). Mirror of the Swift
+                // `loadCachedBalances` slice on `loadWalletList`.
+                val platformAddressBalances = buildPlatformAddressBalances(w.walletId)
                 out.add(
                     WalletRestoreData(
                         walletId = w.walletId,
@@ -1152,6 +1161,7 @@ class PlatformWalletPersistenceHandler(
                         lastProcessedHeight = w.syncedHeight,
                         lastSynced = w.lastSynced,
                         identities = identities,
+                        platformAddressBalances = platformAddressBalances,
                     ),
                 )
             }
@@ -1366,6 +1376,50 @@ class PlatformWalletPersistenceHandler(
             )
         }.toTypedArray()
     }
+
+    /**
+     * Assemble the [PlatformAddressBalanceRestoreData] rows for one
+     * wallet: every persisted `platform_addresses` row, mapped to the
+     * `AddressBalanceEntryFFI` field set so the Rust load path re-seeds
+     * the provider's per-account balance map (mirror of the Swift
+     * `loadCachedBalances`).
+     *
+     * The durable derivation metadata (`addressType`, 20-byte
+     * `addressHash`, `accountIndex`, `addressIndex`) and the sync-derived
+     * state (`balance`, `nonce`, and the `lastSeenHeight` height pin) all
+     * round-trip. The height pin (→ `as_of_height`) is load-bearing for
+     * ADDR-09: it MUST carry through unchanged, or a persisted credit at
+     * or below the trusted watermark is re-gated off and lost after
+     * relaunch (SH-06).
+     *
+     * Rows whose `addressHash` isn't 20 bytes are dropped up front — the
+     * trampoline packs exactly `platformAddressBalances.size` fixed-hash
+     * `AddressBalanceEntryFFI` slots, so a wrong-length hash would fail
+     * the fixed-length read and abort the whole load (matching the
+     * abort-on-corrupt convention of the other restore builders; the
+     * Swift buffer builder skips the row for the same reason).
+     */
+    private suspend fun buildPlatformAddressBalances(
+        walletId: ByteArray,
+    ): Array<PlatformAddressBalanceRestoreData> =
+        database.platformAddressDao().observeByWallet(walletId).first()
+            .filter { it.addressHash.size == 20 }
+            .map { row ->
+                PlatformAddressBalanceRestoreData(
+                    addressType = row.addressType.toByte(),
+                    addressHash = row.addressHash,
+                    balance = row.balance,
+                    nonce = row.nonce,
+                    accountIndex = row.accountIndex,
+                    addressIndex = row.addressIndex,
+                    // `lastSeenHeight` is the persisted `as_of_height`
+                    // pin (see onPersistAddressBalance); a stored `0`
+                    // (never-synced) yields to the first pinned absolute
+                    // on the Rust load path — the self-healing full
+                    // reconcile.
+                    asOfHeight = row.lastSeenHeight.toLong(),
+                )
+            }.toTypedArray()
 
     // ── Shared write helpers ──────────────────────────────────────────
 

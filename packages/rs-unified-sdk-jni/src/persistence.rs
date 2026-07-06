@@ -1456,10 +1456,17 @@ unsafe extern "C" fn tramp_persist_shielded_activity(
 /// [`seal_wallet_entries`] mints the raw pointers once the whole load
 /// succeeded.
 struct WalletRestoreStaged {
-    /// FFI row with `accounts` / `identities` still null / 0 until sealed.
+    /// FFI row with `accounts` / `identities` / `platform_address_balances`
+    /// still null / 0 until sealed.
     entry: WalletRestoreEntryFFI,
     specs: Vec<AccountSpecStaged>,
     identities: Vec<IdentityRestoreStaged>,
+    /// Cached platform-address balances. `AddressBalanceEntryFFI` is
+    /// `Copy` POD (the `hash` is an inline `[u8; 20]`), so the whole row
+    /// stages as a plain owned `Vec` and the raw pointer minted at seal is
+    /// freed with a single `free_raw_slice` — no nested buffers, mirroring
+    /// the flat `ignored_senders` array.
+    platform_address_balances: Vec<AddressBalanceEntryFFI>,
 }
 
 /// Staged account spec: FFI struct with a null xpub pointer plus the
@@ -1532,7 +1539,17 @@ fn seal_wallet_entries(staged: Vec<WalletRestoreStaged>) -> Vec<WalletRestoreEnt
                  mut entry,
                  specs,
                  identities,
+                 platform_address_balances,
              }| {
+                // Flat POD array — no nested owned buffers, so the whole
+                // `Vec<AddressBalanceEntryFFI>` mints in one shot and
+                // `tramp_load_wallet_list_free` reclaims it with a single
+                // `free_raw_slice`.
+                (
+                    entry.platform_address_balances,
+                    entry.platform_address_balances_count,
+                ) = vec_into_raw(platform_address_balances);
+
                 let specs: Vec<AccountSpecFFI> = specs
                     .into_iter()
                     .map(|AccountSpecStaged { mut spec, xpub }| {
@@ -1672,8 +1689,10 @@ unsafe extern "C" fn tramp_load_wallet_list(
 /// Rebuild one wallet row from a Kotlin `WalletRestoreData` into a
 /// [`WalletRestoreStaged`] (owned buffers only; raw pointers are minted by
 /// [`seal_wallet_entries`] and freed in [`tramp_load_wallet_list_free`]).
-/// Nested arrays we don't rehydrate this milestone (identities, utxos,
-/// tracked locks, address pools, platform balances) are null / 0.
+/// Nested arrays we don't rehydrate this milestone (utxos, tracked locks,
+/// address pools) are null / 0. `identities` and `platform_address_balances`
+/// ARE rehydrated (the latter re-seeds the provider balance map + ADDR-09
+/// height pins on cold start; see [`build_platform_address_balances`]).
 fn build_wallet_restore_entry(
     env: &mut JNIEnv,
     holder: &JObject,
@@ -1728,6 +1747,11 @@ fn build_wallet_restore_entry(
         identities.push(id);
     }
 
+    // Cached platform-address balances (re-seed the provider balance map
+    // + ADDR-09 `as_of_height` pins on cold start; see SH-06). Staged as
+    // owned POD; the raw pointer is minted at seal.
+    let platform_address_balances = build_platform_address_balances(env, holder)?;
+
     let entry = WalletRestoreEntryFFI {
         wallet_id,
         network: net_from_ord(network_ord),
@@ -1759,7 +1783,64 @@ fn build_wallet_restore_entry(
         entry,
         specs,
         identities,
+        platform_address_balances,
     })
+}
+
+/// Read the Kotlin `WalletRestoreData.platformAddressBalances` array into
+/// an owned `Vec<AddressBalanceEntryFFI>` (the `#4019` layout carrying
+/// `as_of_height`). Empty / null field → empty vec (staged as `(null, 0)`
+/// at seal).
+///
+/// Each holder is a `PlatformAddressBalanceRestoreData`; the 20-byte
+/// `addressHash` is read fixed-length (a wrong length aborts the whole
+/// load — the same altered-key rationale as the id fields, and the reason
+/// the Kotlin builder pre-drops non-20-byte hashes). `asOfHeight` is the
+/// persisted `lastSeenHeight` height pin and MUST round-trip unchanged, or
+/// the ADDR-09 double-count gate re-opens (SH-06). Mirror of the Swift
+/// `loadCachedBalances` → `AddressBalanceEntryFFI` buffer path.
+fn build_platform_address_balances(
+    env: &mut JNIEnv,
+    holder: &JObject,
+) -> Result<Vec<AddressBalanceEntryFFI>, jni::errors::Error> {
+    let arr_obj = env
+        .get_field(
+            holder,
+            "platformAddressBalances",
+            "[Lorg/dashfoundation/dashsdk/ffi/PlatformAddressBalanceRestoreData;",
+        )?
+        .l()?;
+    if arr_obj.is_null() {
+        return Ok(Vec::new());
+    }
+    let arr: jni::objects::JObjectArray = arr_obj.into();
+    let len = env.get_array_length(&arr)? as usize;
+    let mut out: Vec<AddressBalanceEntryFFI> = Vec::with_capacity(len);
+    for i in 0..len {
+        let e = env.with_local_frame(
+            16,
+            |env| -> Result<AddressBalanceEntryFFI, jni::errors::Error> {
+                let h = env.get_object_array_element(&arr, i as i32)?;
+                let address_type = env.get_field(&h, "addressType", "B")?.b()? as u8;
+                let hash = read_bytes_field_fixed::<20>(env, &h, "addressHash")?;
+                let balance = env.get_field(&h, "balance", "J")?.j()? as u64;
+                let nonce = env.get_field(&h, "nonce", "I")?.i()? as u32;
+                let account_index = env.get_field(&h, "accountIndex", "I")?.i()? as u32;
+                let address_index = env.get_field(&h, "addressIndex", "I")?.i()? as u32;
+                let as_of_height = env.get_field(&h, "asOfHeight", "J")?.j()? as u64;
+                Ok(AddressBalanceEntryFFI {
+                    address: PlatformAddressFFI { address_type, hash },
+                    balance,
+                    nonce,
+                    account_index,
+                    address_index,
+                    as_of_height,
+                })
+            },
+        )?;
+        out.push(e);
+    }
+    Ok(out)
 }
 
 /// Rebuild one identity-restore row from a Kotlin `IdentityRestoreData`
@@ -2028,6 +2109,14 @@ unsafe extern "C" fn tramp_load_wallet_list_free(
             std::ptr::slice_from_raw_parts_mut(entries as *mut WalletRestoreEntryFFI, count),
         );
         for e in boxed.iter() {
+            // Cached platform-address balances — flat POD slice minted by
+            // `seal_wallet_entries` (`AddressBalanceEntryFFI` is `Copy`
+            // with an inline `[u8; 20]` hash, no nested buffers).
+            free_raw_slice(
+                e.platform_address_balances,
+                e.platform_address_balances_count,
+            );
+
             // accounts + nested xpub buffers.
             if !e.accounts.is_null() && e.accounts_count > 0 {
                 let specs: Box<[AccountSpecFFI]> =

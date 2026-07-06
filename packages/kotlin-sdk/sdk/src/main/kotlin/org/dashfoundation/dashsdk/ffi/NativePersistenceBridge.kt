@@ -496,9 +496,10 @@ abstract class NativePersistenceBridge {
      * `()[Lorg/dashfoundation/dashsdk/ffi/WalletRestoreData;`.
      *
      * A minimal-but-correct restore populates `accounts` (with xpub
-     * bytes) and the platform / core sync watermarks; the richer nested
-     * arrays (identities, utxos, tracked asset locks) are optional for
-     * this milestone and default to empty.
+     * bytes), the platform / core sync watermarks, the wallet's
+     * identities, and its cached platform-address balances; the
+     * remaining nested arrays (utxos, tracked asset locks) are optional
+     * for this milestone and default to empty.
      */
     open fun onLoadWalletList(): Array<WalletRestoreData> = emptyArray()
 
@@ -559,6 +560,46 @@ class WalletRestoreData(
      * `buildIdentityRestoreBuffer`).
      */
     @JvmField val identities: Array<IdentityRestoreData>,
+    /**
+     * Cached platform-address balances for this wallet, re-seeding the
+     * Rust provider's per-account balance map on cold start so the next
+     * BLAST sync resumes from the persisted `(balance, as_of_height)` pin
+     * instead of an empty found map. Empty when the wallet has no
+     * persisted platform-address rows. The Rust trampoline re-packs each
+     * into an `AddressBalanceEntryFFI`.
+     *
+     * Without this, a persisted credit whose height is at or below the
+     * trusted sync watermark is never rehydrated: the tree-scan re-pins
+     * the address at the checkpoint height, the incremental delta at the
+     * same height is gated off by the ADDR-09 height pin
+     * (`op_height <= as_of_height`), and the balance stays 0 across
+     * relaunches (SH-06). Mirror of the Swift
+     * `loadCachedBalances` → `AddressBalanceEntryFFI` buffer path.
+     */
+    @JvmField val platformAddressBalances: Array<PlatformAddressBalanceRestoreData>,
+)
+
+/**
+ * One flat cached platform-address balance row — mirror of
+ * `AddressBalanceEntryFFI` (the `#4019` layout with `as_of_height`).
+ *
+ * [addressType] is the DIP-0018 discriminant (0 = P2PKH, 1 = P2SH); the
+ * Rust load path currently rehydrates P2PKH (0) only and skip-warns other
+ * types. [addressHash] is the 20-byte platform-address hash. [asOfHeight]
+ * is the platform block height [balance] is current as of — the ADDR-09
+ * height pin (from the persisted `lastSeenHeight`); it MUST round-trip
+ * faithfully (a reset to 0 would re-open the double-count gate the pin
+ * closes). A persisted `0` means "unknown provenance" and self-heals by
+ * yielding to the first pinned absolute on the next sync.
+ */
+class PlatformAddressBalanceRestoreData(
+    @JvmField val addressType: Byte,
+    @JvmField val addressHash: ByteArray,
+    @JvmField val balance: Long,
+    @JvmField val nonce: Int,
+    @JvmField val accountIndex: Int,
+    @JvmField val addressIndex: Int,
+    @JvmField val asOfHeight: Long,
 )
 
 /** One flat account spec — mirror of `AccountSpecFFI`. */
