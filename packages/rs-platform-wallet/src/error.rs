@@ -28,6 +28,16 @@ pub enum PlatformWalletError {
     #[error("Invalid identity data: {0}")]
     InvalidIdentityData(String),
 
+    #[error("Failed to persist state: {0}")]
+    /// A persister `store(...)` round failed. Returned (not swallowed) by
+    /// user-initiated writes whose loss leaves a silent, non-self-healing
+    /// broken state — e.g. a reject tombstone that, if not persisted, lets
+    /// the rejected contact resurrect on the next launch. The in-memory
+    /// mutation has already happened for this session; the error tells the
+    /// caller (FFI → UI) to surface the failure and retry rather than
+    /// reporting a success that didn't reach disk.
+    Persistence(String),
+
     #[error("Contact request not found: {0}")]
     ContactRequestNotFound(Identifier),
 
@@ -164,6 +174,20 @@ pub enum PlatformWalletError {
 
     #[error("Wallet is locked — unlock it before performing this operation")]
     WalletLocked,
+
+    #[error(
+        "Signer does not bind to wallet {wallet_id}: it derives a different \
+         BIP44 account-0 xpub (refusing to sign with the wrong seed)"
+    )]
+    /// The host signer derives a BIP44 account-0 extended public key that does
+    /// not equal this wallet's persisted account xpub — the signer resolves a
+    /// different seed than the one that owns the wallet (e.g. a mis-mapped
+    /// Keychain slot). The operation is refused so a wrong seed can never sign
+    /// for this wallet. Surfaced by [`crate::PlatformWallet::verify_seed_binds`].
+    SeedMismatch {
+        /// Hex of the wallet id whose binding check failed.
+        wallet_id: String,
+    },
 
     #[error("SPV is already running — stop it before starting again")]
     SpvAlreadyRunning,

@@ -551,68 +551,6 @@ impl PlatformPaymentAddressProvider {
         }
     }
 
-    /// Zero the incremental-sync watermark ONLY, so the next
-    /// `sync_balances` takes the full-scan branch — WITHOUT dropping the
-    /// cached `found` seed (unlike [`reset_sync_state`](Self::reset_sync_state),
-    /// which is the "Clear" flow).
-    ///
-    /// WHY (ADDR-09): every flow that credits a wallet-owned address via
-    /// an on-chain `AddBalanceToAddress` DELTA (`AddToCredits` in Drive's
-    /// recent-address-balance-changes tree) — asset-lock top-up recipients,
-    /// same-wallet transfer outputs, identity-registration change,
-    /// identity→address credit-transfer recipients — reconciles the
-    /// proof-attested ABSOLUTE balance `X` into both the managed account
-    /// and the provider's committed `found` seed. If the next pass ran
-    /// INCREMENTALLY it would seed `result.found` from `current_balances()`
-    /// (already `X`) and then re-apply that recent `AddToCredits(X)` delta
-    /// from the stale watermark, landing at `X + X = 2X` — the ADDR-09
-    /// double-count. An optimistic absolute write is fundamentally
-    /// inconsistent with incremental delta re-application, so we force the
-    /// very next pass to full-scan-reconcile. The single call site is the
-    /// gate inside `PlatformAddressWallet::reconcile_address_infos`, which
-    /// fires when a committed entry matches the caller-declared
-    /// `credited_outputs` set — inside the seam's provider-lock critical
-    /// section, so no sync pass can interleave between the seed commit and
-    /// this invalidation with the stale watermark.
-    ///
-    /// DURABILITY: in-memory only. The persisted sync watermark cannot be
-    /// reset to 0 through the normal changeset —
-    /// `PlatformAddressChangeSet::merge` combines `sync_height` with
-    /// `.max()` and the FFI persister only fires `on_persist_sync_state_fn`
-    /// when a component is `> 0` — so a durable zero would have to fight
-    /// both the merge and the `> 0` gate. Instead we rely on the in-session
-    /// BLAST cadence (~15s): the next pass full-scans, reconciles to `X`,
-    /// and persists a correct FORWARD watermark, so durable state
-    /// self-corrects within ~15s. The only residual gap is an app kill
-    /// inside that window; a restart then resumes incremental sync from the
-    /// stale persisted watermark and the double-count could briefly
-    /// reappear until the next full rescan (or a manual Clear). That narrow
-    /// window is accepted rather than over-engineering a durable
-    /// invalidation against the `.max()` merge / `> 0` gate.
-    ///
-    /// With `sync_timestamp == 0`, [`last_sync_timestamp`](Self::last_sync_timestamp)
-    /// returns `None`, which makes `sync_address_balances` choose the
-    /// full-scan branch: `result.found` is re-seeded ABSOLUTELY from the
-    /// tree (the `found` seed is only consulted on the incremental branch,
-    /// which is skipped), and incremental catch-up runs from the fresh
-    /// full-scan checkpoint rather than the stale height, so no recent
-    /// delta is re-applied. `last_known_recent_block` is zeroed too since
-    /// catch-up reads it as its recent-tree boundary.
-    ///
-    /// The `found` seed is deliberately KEPT (not cleared): a full scan
-    /// ignores it as a seed, and preserving it means display and
-    /// `auto_select_inputs` budgeting keep the just-applied balance `X`
-    /// visible during the ~15s until the reconciling scan completes,
-    /// instead of the momentary zero `reset_sync_state` would show.
-    ///
-    /// This is the in-memory equivalent of the manual Sync-tab
-    /// "Clear" + "Sync Now" that also fixes the double-count.
-    pub(crate) fn invalidate_sync_watermark(&mut self) {
-        self.sync_height = 0;
-        self.sync_timestamp = 0;
-        self.last_known_recent_block = 0;
-    }
-
     /// Diagnostic snapshot counts used by the read-only memory
     /// explorer surface on
     /// [`crate::manager::PlatformWalletManager::platform_address_provider_state_blocking`].
@@ -883,7 +821,27 @@ impl AddressProvider for PlatformPaymentAddressProvider {
                 };
                 let PerAccountInSyncPlatformAddressState { found, absent } = &mut account_scratch;
                 absent.retain(|addr| !found.contains_key(addr));
-                account_state.found.extend(account_scratch.found);
+                // Height-pin freshness on the merge: a pass that ran
+                // against a lagging node can stage a stale-but-valid
+                // absolute for a row a fresher reconcile already
+                // committed (its pin is older). Keeping the fresher
+                // committed entry mirrors `commit_reconciliation`'s
+                // rule AND `compute_address_balance_diff`'s persist
+                // guard, so the in-memory seed and the durable rows
+                // never diverge over which of the two is truth.
+                for (addr, incoming) in account_scratch.found {
+                    match account_state.found.get(&addr) {
+                        Some(existing) if existing.as_of_height > incoming.as_of_height => {}
+                        _ => {
+                            account_state.found.insert(addr, incoming);
+                        }
+                    }
+                }
+                // Absence carries no per-entry height, so a stale pass's
+                // removal is NOT pin-guarded here; the persist diff skips
+                // the durable zero for fresher-pinned rows, and the next
+                // pass reconstructs the in-memory entry from a full
+                // replay (base 0, pin 0 → every delta applies).
                 for absent_addr in &account_scratch.absent {
                     account_state.found.remove(absent_addr);
                 }
@@ -930,6 +888,11 @@ impl AddressProvider for PlatformPaymentAddressProvider {
 /// (e.g. a fully consumed input). Pure and lock-free so every caller's
 /// translation is unit-testable.
 ///
+/// `as_of_height` is the proof's block height: every produced entry is an
+/// absolute attested at that height, so its funds carry it as the height
+/// pin (see `AddressFunds::as_of_height`) — including removals, which are
+/// equally height-attested statements.
+///
 /// Callers supply the resolver so every reconciliation path can resolve
 /// through the provider's persisted `index <-> address` bijection —
 /// covering addresses restored from disk that are no longer in a live
@@ -940,6 +903,7 @@ pub(crate) fn build_address_balance_entries(
     wallet_id: WalletId,
     resolve_index: impl Fn(&PlatformP2PKHAddress) -> Option<(u32, AddressIndex)>,
     address_infos: &AddressInfos,
+    as_of_height: u64,
 ) -> Vec<PlatformAddressBalanceEntry> {
     let mut entries = Vec::new();
     for (addr, maybe_info) in address_infos.iter() {
@@ -954,10 +918,12 @@ pub(crate) fn build_address_balance_entries(
             Some(ai) => AddressFunds {
                 balance: ai.balance,
                 nonce: ai.nonce,
+                as_of_height,
             },
             None => AddressFunds {
                 balance: 0,
                 nonce: 0,
+                as_of_height,
             },
         };
         entries.push(PlatformAddressBalanceEntry {
@@ -1012,15 +978,23 @@ impl PlatformPaymentAddressProvider {
     /// Pool-resolved addresses are merged into the bijection so
     /// `current_balances` can yield their committed funds.
     ///
-    /// Freshness guard, per resolved entry:
-    /// * zero funds (balance 0, nonce 0 — the address was removed from
-    ///   Platform state, e.g. a fully consumed input) is an authoritative
-    ///   removal: always applied, and the address is dropped from `found`
-    ///   (mirroring the sync's absent handling);
-    /// * otherwise, an entry whose nonce is *below* the committed seed's
-    ///   nonce is stale — a concurrent sync pass or later transition
-    ///   already committed fresher state — and is dropped;
+    /// Freshness guard, per resolved entry — height-pin authority (see
+    /// `AddressFunds::as_of_height`):
+    /// * an entry whose pin is *below* the committed seed's pin is stale —
+    ///   a sync pass or later transition already committed state attested
+    ///   at a later block — and is dropped. This applies to removals too:
+    ///   an older removal proof must not clobber a newer re-credit.
+    /// * on equal pins (same block), the nonce breaks the tie — it only
+    ///   advances on outgoing ops, so it can order same-block states but
+    ///   not receive-only states across blocks (the pin does that);
     /// * entries identical to the committed seed are dropped as no-ops.
+    ///
+    /// Zero funds (balance 0, nonce 0 — the address was removed from
+    /// Platform state, e.g. a fully consumed input) that survive the guard
+    /// drop the address from `found`, mirroring the sync's absent handling.
+    ///
+    /// `as_of_height` is the proof's block height and becomes the pin on
+    /// every committed entry.
     ///
     /// Callers must hold the provider write lock (i.e. call through
     /// `&mut self`) across this commit AND the managed-account balance
@@ -1031,6 +1005,7 @@ impl PlatformPaymentAddressProvider {
         wallet_id: &WalletId,
         address_infos: &AddressInfos,
         pool_indexes: &BTreeMap<PlatformP2PKHAddress, (u32, AddressIndex)>,
+        as_of_height: u64,
     ) -> ReconciliationOutcome {
         let mut outcome = ReconciliationOutcome::default();
         let Some(wallet_state) = self.per_wallet.get_mut(wallet_id) else {
@@ -1058,6 +1033,7 @@ impl PlatformPaymentAddressProvider {
                     .filter(|(account_index, _)| wallet_state.contains_key(account_index))
             },
             address_infos,
+            as_of_height,
         );
         outcome.resolved = resolved_entries.len();
 
@@ -1075,21 +1051,28 @@ impl PlatformPaymentAddressProvider {
                 continue;
             };
             let existing = state.found.get(&entry.address).copied();
-            // Zero funds = the address no longer exists in Platform state.
-            // That removal is attested by the proof, so it bypasses the
-            // nonce guard (the pre-spend seed necessarily has a lower
-            // nonce than "gone").
+            // Zero funds = the address no longer exists in Platform state
+            // (e.g. a fully consumed input); survivors of the freshness
+            // guard drop the address from `found` below.
             let is_removal = entry.funds.balance == 0 && entry.funds.nonce == 0;
-            if !is_removal {
-                if let Some(existing) = existing {
-                    if existing.nonce > entry.funds.nonce {
-                        outcome.stale_skipped += 1;
-                        continue;
-                    }
-                    if existing == entry.funds {
-                        outcome.unchanged_skipped += 1;
-                        continue;
-                    }
+            if let Some(existing) = existing {
+                // Height-pin authority: a committed absolute pinned at a
+                // later block supersedes this proof — removals included
+                // (an older removal must not clobber a newer re-credit).
+                // Equal pins (same block) fall back to the nonce, which
+                // orders same-block outgoing ops. Legacy pin-0 rows lose
+                // to any pinned proof, which is the self-healing path for
+                // state persisted before the pin existed.
+                let stale = existing.as_of_height > entry.funds.as_of_height
+                    || (existing.as_of_height == entry.funds.as_of_height
+                        && existing.nonce > entry.funds.nonce);
+                if stale {
+                    outcome.stale_skipped += 1;
+                    continue;
+                }
+                if existing == entry.funds {
+                    outcome.unchanged_skipped += 1;
+                    continue;
                 }
             }
             // Derivation-index conflict: `entry.address` isn't yet in the
@@ -1179,7 +1162,19 @@ mod tests {
     }
 
     fn funds(balance: u64, nonce: u32) -> AddressFunds {
-        AddressFunds { balance, nonce }
+        AddressFunds {
+            balance,
+            nonce,
+            as_of_height: 0,
+        }
+    }
+
+    fn funds_at(balance: u64, nonce: u32, as_of_height: u64) -> AddressFunds {
+        AddressFunds {
+            balance,
+            nonce,
+            as_of_height,
+        }
     }
 
     /// Regression for the top-up reconciliation: a spent platform address
@@ -1215,6 +1210,7 @@ mod tests {
             WALLET,
             |p2pkh| bimap.get_by_right(p2pkh).map(|&idx| (ACCOUNT, idx)),
             &address_infos,
+            42,
         );
 
         assert_eq!(
@@ -1270,6 +1266,7 @@ mod tests {
             WALLET,
             |p2pkh| bimap.get_by_right(p2pkh).map(|&idx| (ACCOUNT, idx)),
             &address_infos,
+            42,
         );
 
         assert_eq!(entries.len(), 1, "external recipient must be filtered out");
@@ -1341,6 +1338,54 @@ mod tests {
             .or_default()
             .absent
             .insert(addr);
+    }
+
+    /// Stage `addr` as found with `f` in the in-sync scratch — the shape
+    /// `on_address_found` produces (without the wallet-manager write).
+    fn stage_found(
+        provider: &mut PlatformPaymentAddressProvider,
+        addr: PlatformP2PKHAddress,
+        f: AddressFunds,
+    ) {
+        provider
+            .per_wallet_in_sync
+            .entry(WALLET)
+            .or_default()
+            .entry(ACCOUNT)
+            .or_default()
+            .found
+            .insert(addr, f);
+    }
+
+    /// `sync_finished`'s scratch merge applies height-pin freshness: a
+    /// pass that ran against a lagging node stages a stale-but-valid
+    /// absolute (older pin) for a row a fresher reconcile committed —
+    /// the committed entry must survive, mirroring the persist diff's
+    /// guard so memory and disk agree. A same-or-newer pin still lands.
+    #[tokio::test]
+    async fn sync_finished_keeps_fresher_pinned_committed_entry() {
+        let addr = p2pkh(1);
+        // Committed by the reconcile seam at the funding proof height.
+        let mut provider =
+            provider_with_one_funded_address(addr, funds_at(9_985_071_720, 0, 379_731));
+
+        // A lagging pass stages the pre-funding absolute at an older pin.
+        stage_found(&mut provider, addr, funds_at(0, 0, 379_728));
+        provider.sync_finished().await;
+
+        let seed: Vec<_> = provider.current_balances().collect();
+        assert_eq!(
+            seed[0].2,
+            funds_at(9_985_071_720, 0, 379_731),
+            "a stale-pinned scratch entry must not clobber a fresher \
+             committed row"
+        );
+
+        // A genuinely newer pass replaces it.
+        stage_found(&mut provider, addr, funds_at(5, 1, 379_740));
+        provider.sync_finished().await;
+        let seed: Vec<_> = provider.current_balances().collect();
+        assert_eq!(seed[0].2, funds_at(5, 1, 379_740));
     }
 
     /// `sync_finished` must drop an address proven absent this pass from
@@ -1685,7 +1730,7 @@ mod tests {
         );
 
         wallet
-            .reconcile_address_infos(&address_infos, &BTreeSet::new(), "test top-up")
+            .reconcile_address_infos(&address_infos, 42, "test top-up")
             .await;
 
         // The reconciliation must have PERSISTED the decremented entry — the
@@ -1721,20 +1766,22 @@ mod tests {
         assert_eq!(seed.len(), 1);
         assert_eq!(
             seed[0].2,
-            funds(5, 4),
-            "committed found seed must carry the reconciled funds"
+            funds_at(5, 4, 42),
+            "committed found seed must carry the reconciled funds pinned \
+             at the proof height"
         );
     }
 
-    /// ADDR-09 watermark gate, credit side: when the seam COMMITS an entry
-    /// for an address the caller declared as a delta-credited output, it
-    /// must invalidate the incremental sync watermark INSIDE its critical
-    /// section (forcing the next BLAST pass to full-scan-reconcile instead
-    /// of re-applying the on-chain `AddToCredits` delta on top of the
-    /// just-committed absolute seed) — while KEEPING the reconciled `found`
-    /// seed visible for display / input budgeting.
+    /// ADDR-09, credit side: a committed credit is pinned at the proof
+    /// height (`AddressFunds::as_of_height`), which is what stops the
+    /// sync's delta replay from re-applying the on-chain `AddToCredits`
+    /// on top of the just-committed absolute — so the seam no longer
+    /// needs to invalidate the incremental watermark (the old gate,
+    /// which forced a full rescan yet could not protect the rescan
+    /// itself from the same replay). The fast incremental cadence is
+    /// preserved for every flow.
     #[tokio::test]
-    async fn reconcile_invalidates_watermark_when_credited_output_committed() {
+    async fn reconcile_pins_committed_credit_and_keeps_watermark() {
         use dash_sdk::query_types::AddressInfo;
 
         let recorder = Arc::new(CapturingPersister::default());
@@ -1761,41 +1808,45 @@ mod tests {
                 balance: 600,
             }),
         );
-        let credited_outputs: BTreeSet<PlatformP2PKHAddress> = [addr].into_iter().collect();
-
         let cs = wallet
-            .reconcile_address_infos(&address_infos, &credited_outputs, "test credit")
+            .reconcile_address_infos(&address_infos, 42, "test credit")
             .await;
         assert_eq!(cs.addresses.len(), 1, "the credit must be committed");
+        assert_eq!(
+            cs.addresses[0].funds,
+            funds_at(600, 1, 42),
+            "the persisted entry must carry the proof-height pin — the \
+             sync's replay gate reads it to drop the on-chain credit delta"
+        );
 
         let guard = wallet.provider.read().await;
         let provider = guard.as_ref().expect("provider present");
         assert_eq!(
             provider.last_sync_timestamp(),
-            None,
-            "committed credited output must zero the watermark so the next \
-             pass takes the full-scan branch (the ADDR-09 gate)"
+            Some(20),
+            "a committed credit must keep the incremental watermark — the \
+             pin, not a forced full rescan, is what prevents the ADDR-09 \
+             double-count"
         );
-        assert_eq!(provider.last_sync_height(), 0);
-        assert_eq!(provider.last_known_recent_block(), 0);
-        // The reconciled seed survives the invalidation.
+        assert_eq!(provider.last_sync_height(), 10);
+        assert_eq!(provider.last_known_recent_block(), 30);
         let seed: Vec<_> = provider.current_balances().collect();
         assert_eq!(seed.len(), 1);
         assert_eq!(
             seed[0].2,
-            funds(600, 1),
-            "invalidation must not drop the just-reconciled found seed"
+            funds_at(600, 1, 42),
+            "the committed found seed must carry the pinned funds"
         );
     }
 
-    /// ADDR-09 watermark gate, drain side: a reconciliation that only
-    /// touches INPUT addresses (empty `credited_outputs` — e.g. an
-    /// external-recipient transfer or a withdrawal) must PRESERVE the
-    /// incremental watermark. Inputs are recorded on-chain as absolute
-    /// `SetBalanceToAddress` ops, idempotent under incremental re-apply,
-    /// so forcing a full scan would only burn the fast cadence.
+    /// Drain side: an input-only reconciliation (e.g. an
+    /// external-recipient transfer or a withdrawal) keeps the incremental
+    /// watermark, exactly as before the pin existed. Inputs are recorded
+    /// on-chain as absolute `SetBalanceToAddress` ops; the pin makes them
+    /// (and any future change output) replay-safe without touching the
+    /// sync cadence.
     #[tokio::test]
-    async fn reconcile_keeps_watermark_without_credited_outputs() {
+    async fn reconcile_keeps_watermark_on_input_only_drain() {
         use dash_sdk::query_types::AddressInfo;
 
         let recorder = Arc::new(CapturingPersister::default());
@@ -1821,7 +1872,7 @@ mod tests {
         );
 
         let cs = wallet
-            .reconcile_address_infos(&address_infos, &BTreeSet::new(), "test drain")
+            .reconcile_address_infos(&address_infos, 42, "test drain")
             .await;
         assert_eq!(cs.addresses.len(), 1, "the drain must be committed");
 
@@ -1836,23 +1887,27 @@ mod tests {
         assert_eq!(provider.last_known_recent_block(), 30);
     }
 
-    /// ADDR-09 watermark gate keys on entries actually COMMITTED, not
-    /// merely requested: a credited output whose proof entry matches the
-    /// committed seed exactly (`unchanged_skipped` — a background sync
-    /// already applied this credit and advanced the watermark past it)
-    /// must NOT trigger invalidation.
+    /// No-op skip: a proof entry identical to the committed seed —
+    /// including the pin — is dropped (`unchanged_skipped`) instead of
+    /// re-committed, avoiding persister churn when a background sync
+    /// already applied this credit at the same height.
     #[tokio::test]
-    async fn reconcile_keeps_watermark_when_credited_output_not_committed() {
+    async fn reconcile_skips_entry_identical_to_committed_seed() {
         use dash_sdk::query_types::AddressInfo;
 
         let recorder = Arc::new(CapturingPersister::default());
         let (wallet, wallet_manager) = reconcile_seam_wallet(recorder).await;
 
-        // Seed already carries the post-credit state (600, nonce 1) — the
+        // Seed already carries the post-credit state (600, nonce 1)
+        // pinned at the same height this reconcile will use — the
         // background sync applied the credit before this reconcile ran.
         let addr = p2pkh(0x11);
-        let mut provider =
-            provider_tracking_address(Arc::clone(&wallet_manager), WALLET, addr, funds(600, 1));
+        let mut provider = provider_tracking_address(
+            Arc::clone(&wallet_manager),
+            WALLET,
+            addr,
+            funds_at(600, 1, 42),
+        );
         provider.set_stored_sync_state(10, 20, 30);
         *wallet.provider.write().await = Some(provider);
 
@@ -1866,10 +1921,8 @@ mod tests {
                 balance: 600,
             }),
         );
-        let credited_outputs: BTreeSet<PlatformP2PKHAddress> = [addr].into_iter().collect();
-
         let cs = wallet
-            .reconcile_address_infos(&address_infos, &credited_outputs, "test unchanged")
+            .reconcile_address_infos(&address_infos, 42, "test unchanged")
             .await;
         assert!(
             cs.addresses.is_empty(),
@@ -1881,8 +1934,7 @@ mod tests {
         assert_eq!(
             provider.last_sync_timestamp(),
             Some(20),
-            "a credit the sync already applied (and advanced the watermark \
-             past) must not force a full rescan"
+            "a no-op reconcile must leave the sync watermark untouched"
         );
     }
 
@@ -1909,7 +1961,7 @@ mod tests {
             }),
         );
 
-        let outcome = provider.commit_reconciliation(&WALLET, &address_infos, &BTreeMap::new());
+        let outcome = provider.commit_reconciliation(&WALLET, &address_infos, &BTreeMap::new(), 0);
 
         assert_eq!(outcome.resolved, 1);
         assert_eq!(outcome.stale_skipped, 1);
@@ -1958,12 +2010,12 @@ mod tests {
         // Fully-consumed input: Drive elides the info → removal entry.
         address_infos.insert(removed_addr, None);
 
-        let outcome = provider.commit_reconciliation(&WALLET, &address_infos, &pool_indexes);
+        let outcome = provider.commit_reconciliation(&WALLET, &address_infos, &pool_indexes, 42);
 
         // The removal is emitted so the durable persister writes the zero.
         assert_eq!(outcome.entries.len(), 1, "removal survives the guard");
         assert_eq!(outcome.entries[0].address, removed);
-        assert_eq!(outcome.entries[0].funds, funds(0, 0));
+        assert_eq!(outcome.entries[0].funds, funds_at(0, 0, 42));
 
         let state = provider
             .per_wallet
@@ -2020,7 +2072,7 @@ mod tests {
             }),
         );
 
-        let outcome = provider.commit_reconciliation(&WALLET, &address_infos, &pool_indexes);
+        let outcome = provider.commit_reconciliation(&WALLET, &address_infos, &pool_indexes, 42);
 
         assert!(
             outcome.entries.is_empty(),
@@ -2162,7 +2214,7 @@ mod tests {
             }),
         );
 
-        let outcome = provider.commit_reconciliation(&WALLET, &address_infos, &BTreeMap::new());
+        let outcome = provider.commit_reconciliation(&WALLET, &address_infos, &BTreeMap::new(), 0);
 
         assert_eq!(outcome.resolved, 1);
         assert_eq!(outcome.unchanged_skipped, 1);
@@ -2189,7 +2241,7 @@ mod tests {
             }),
         );
 
-        let outcome = provider.commit_reconciliation(&WALLET, &address_infos, &BTreeMap::new());
+        let outcome = provider.commit_reconciliation(&WALLET, &address_infos, &BTreeMap::new(), 0);
 
         assert_eq!(outcome.entries.len(), 1);
         assert_eq!(outcome.entries[0].funds, funds(50, 4));
@@ -2200,9 +2252,10 @@ mod tests {
     }
 
     /// Zero funds (balance 0, nonce 0) means the address was removed from
-    /// Platform state (fully consumed input). That removal is authoritative:
-    /// it bypasses the nonce guard and drops the address from the committed
-    /// `found` seed, mirroring the sync's absent handling.
+    /// Platform state (fully consumed input). Pinned at a height above the
+    /// committed seed's, the removal wins by height authority (nonces
+    /// cannot order a "gone" state) and drops the address from the
+    /// committed `found` seed, mirroring the sync's absent handling.
     #[test]
     fn commit_reconciliation_zero_funds_removes_from_found() {
         let addr = p2pkh(0x11);
@@ -2213,10 +2266,10 @@ mod tests {
         // Drive elides the info for a fully consumed input.
         address_infos.insert(consumed, None);
 
-        let outcome = provider.commit_reconciliation(&WALLET, &address_infos, &BTreeMap::new());
+        let outcome = provider.commit_reconciliation(&WALLET, &address_infos, &BTreeMap::new(), 42);
 
         assert_eq!(outcome.entries.len(), 1);
-        assert_eq!(outcome.entries[0].funds, funds(0, 0));
+        assert_eq!(outcome.entries[0].funds, funds_at(0, 0, 42));
         assert!(
             provider.current_balances().next().is_none(),
             "consumed address must be dropped from the found seed"
@@ -2252,13 +2305,85 @@ mod tests {
             }),
         );
 
-        let outcome = provider.commit_reconciliation(&WALLET, &address_infos, &pool_indexes);
+        let outcome = provider.commit_reconciliation(&WALLET, &address_infos, &pool_indexes, 42);
 
         assert_eq!(
             outcome.resolved, 0,
             "an untracked account's pool address must stay unresolved"
         );
         assert!(outcome.entries.is_empty());
+    }
+
+    /// Height authority: an absolute pinned at a LATER height is
+    /// authoritative even when it revises the balance DOWNWARD — this is
+    /// the ADDR-09 healing property. A poisoned legacy row (e.g. a
+    /// double-counted balance persisted before the pin existed, pin 0)
+    /// must yield to a proof-attested absolute at any real height.
+    #[test]
+    fn commit_reconciliation_later_pin_revises_balance_downward() {
+        use dash_sdk::query_types::AddressInfo;
+
+        let addr = p2pkh(0x11);
+        // Poisoned pre-pin seed: 2X with "unknown provenance" (pin 0).
+        let mut provider = provider_with_one_funded_address(addr, funds(19_970_143_440, 0));
+
+        let credited = PlatformAddress::P2pkh([0x11; 20]);
+        let mut address_infos = AddressInfos::new();
+        address_infos.insert(
+            credited,
+            Some(AddressInfo {
+                address: credited,
+                nonce: 0,
+                balance: 9_985_071_720,
+            }),
+        );
+
+        let outcome =
+            provider.commit_reconciliation(&WALLET, &address_infos, &BTreeMap::new(), 379_395);
+
+        assert_eq!(outcome.entries.len(), 1, "the downward revision commits");
+        assert_eq!(outcome.stale_skipped, 0);
+        let seed: Vec<_> = provider.current_balances().collect();
+        assert_eq!(
+            seed[0].2,
+            funds_at(9_985_071_720, 0, 379_395),
+            "the later-pinned single-counted absolute replaces the 2x row"
+        );
+    }
+
+    /// Height authority, stale side: an absolute pinned BELOW the
+    /// committed seed's pin is stale — a sync pass or later transition
+    /// already committed state attested at a later block — and must be
+    /// dropped even though its nonce is not below the seed's (nonces
+    /// cannot order receive-only states across blocks).
+    #[test]
+    fn commit_reconciliation_drops_stale_height() {
+        use dash_sdk::query_types::AddressInfo;
+
+        let addr = p2pkh(0x11);
+        let mut provider = provider_with_one_funded_address(addr, funds_at(1_000, 0, 100));
+
+        let credited = PlatformAddress::P2pkh([0x11; 20]);
+        let mut address_infos = AddressInfos::new();
+        address_infos.insert(
+            credited,
+            Some(AddressInfo {
+                address: credited,
+                nonce: 0,
+                balance: 600,
+            }),
+        );
+
+        let outcome = provider.commit_reconciliation(&WALLET, &address_infos, &BTreeMap::new(), 50);
+
+        assert_eq!(outcome.stale_skipped, 1, "older-pinned absolute is stale");
+        assert!(outcome.entries.is_empty());
+        let seed: Vec<_> = provider.current_balances().collect();
+        assert_eq!(
+            seed[0].2,
+            funds_at(1_000, 0, 100),
+            "the fresher committed funds survive"
+        );
     }
 
     /// An address missing from the provider bijection (derived since the
@@ -2288,7 +2413,7 @@ mod tests {
             }),
         );
 
-        let outcome = provider.commit_reconciliation(&WALLET, &address_infos, &pool_indexes);
+        let outcome = provider.commit_reconciliation(&WALLET, &address_infos, &pool_indexes, 42);
 
         assert_eq!(outcome.entries.len(), 1);
         assert_eq!(
@@ -2303,7 +2428,7 @@ mod tests {
             .find(|(_, a, _)| *a == fresh)
             .expect("fresh address must appear in the found seed");
         assert_eq!(fresh_row.0, (WALLET, ACCOUNT, 9));
-        assert_eq!(fresh_row.2, funds(1_234, 0));
+        assert_eq!(fresh_row.2, funds_at(1_234, 0, 42));
     }
 
     /// `reset_sync_state` must zero the incremental watermark AND drop
@@ -2338,50 +2463,5 @@ mod tests {
             0,
             "reset must drop the cached `found` seed"
         );
-    }
-
-    /// ADDR-09: after an asset-lock top-up reconciles an absolute balance,
-    /// the fund path calls `invalidate_sync_watermark` to force the next
-    /// BLAST pass into full-scan mode. Unlike `reset_sync_state`, it must
-    /// zero all three watermark scalars (so `last_sync_timestamp()` returns
-    /// `None`, the full-scan trigger) WITHOUT dropping the freshly
-    /// reconciled `found` seed — display and input budgeting rely on the
-    /// balance staying visible until the reconciling scan completes.
-    #[tokio::test]
-    async fn invalidate_sync_watermark_forces_full_scan_keeps_seed() {
-        let addr = p2pkh(1);
-        let mut provider = provider_with_one_funded_address(addr, funds(294_627_247_940, 5));
-
-        // Simulate a wallet mid-incremental-sync: non-zero watermark and a
-        // populated balance seed (the just-reconciled top-up balance `X`).
-        provider.set_stored_sync_state(10, 20, 30);
-        assert_eq!(provider.last_sync_height(), 10);
-        assert_eq!(provider.last_sync_timestamp(), Some(20));
-        assert_eq!(provider.last_known_recent_block(), 30);
-        assert_eq!(provider.current_balances().count(), 1);
-
-        provider.invalidate_sync_watermark();
-
-        // Watermark fully zeroed → SDK drops back to full-scan mode.
-        assert_eq!(provider.last_sync_height(), 0);
-        assert_eq!(
-            provider.last_sync_timestamp(),
-            None,
-            "invalidated watermark must report no last-sync timestamp so the \
-             next pass takes the full-scan branch (the ADDR-09 fix)"
-        );
-        assert_eq!(provider.last_known_recent_block(), 0);
-
-        // The reconciled `found` seed SURVIVES — a full scan ignores it as
-        // a seed, but keeping it means the balance `X` stays visible for
-        // display / input budgeting during the ~15s until the scan runs.
-        let seed: Vec<_> = provider.current_balances().collect();
-        assert_eq!(
-            seed.len(),
-            1,
-            "invalidate_sync_watermark must NOT drop the cached `found` seed"
-        );
-        assert_eq!(seed[0].1, addr);
-        assert_eq!(seed[0].2, funds(294_627_247_940, 5));
     }
 }

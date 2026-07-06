@@ -100,11 +100,18 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     pub async fn create_wallet_from_seed_bytes(
         &self,
         network: Network,
-        seed_bytes: [u8; 64],
+        // By reference: the named stack copy we hold of the master secret is
+        // wrapped in `Zeroizing` and scrubbed on drop. (`[u8; 64]` is `Copy`,
+        // so a transient by-value copy still
+        // crosses into key-wallet's `from_seed_bytes`, which consumes it into
+        // its own zeroizing `Seed`; fully eliminating that residual copy
+        // needs `from_seed_bytes` to take `&[u8; 64]` upstream in key-wallet.)
+        seed_bytes: &[u8; 64],
         accounts: WalletAccountCreationOptions,
         birth_height_override: Option<u32>,
     ) -> Result<Arc<PlatformWallet>, PlatformWalletError> {
-        let wallet = Wallet::from_seed_bytes(seed_bytes, network, accounts).map_err(|e| {
+        let seed = zeroize::Zeroizing::new(*seed_bytes);
+        let wallet = Wallet::from_seed_bytes(*seed, network, accounts).map_err(|e| {
             PlatformWalletError::WalletCreation(format!(
                 "Failed to create wallet from seed bytes: {}",
                 e
@@ -325,7 +332,13 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 "failed to persist wallet registration changeset"
             );
             let mut wm = self.wallet_manager.write().await;
-            let _ = wm.remove_wallet(&wallet_id);
+            if let Err(e) = wm.remove_wallet(&wallet_id) {
+                tracing::warn!(
+                    wallet_id = %hex::encode(wallet_id),
+                    error = %e,
+                    "rollback: remove_wallet failed while unwinding a failed wallet registration"
+                );
+            }
             return Err(PlatformWalletError::WalletCreation(format!(
                 "Failed to persist wallet registration changeset: {}",
                 e
@@ -368,7 +381,13 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             Ok(state) => state,
             Err(e) => {
                 let mut wm = self.wallet_manager.write().await;
-                let _ = wm.remove_wallet(&wallet_id);
+                if let Err(e) = wm.remove_wallet(&wallet_id) {
+                    tracing::warn!(
+                        wallet_id = %hex::encode(wallet_id),
+                        error = %e,
+                        "rollback: remove_wallet failed while unwinding a failed wallet setup"
+                    );
+                }
                 return Err(PlatformWalletError::WalletCreation(format!(
                     "Failed to load persisted wallet state: {}",
                     e
@@ -383,7 +402,13 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 .await
             {
                 let mut wm = self.wallet_manager.write().await;
-                let _ = wm.remove_wallet(&wallet_id);
+                if let Err(e) = wm.remove_wallet(&wallet_id) {
+                    tracing::warn!(
+                        wallet_id = %hex::encode(wallet_id),
+                        error = %e,
+                        "rollback: remove_wallet failed while unwinding a failed wallet setup"
+                    );
+                }
                 return Err(PlatformWalletError::WalletCreation(format!(
                     "Failed to restore persisted platform address state: {}",
                     e
@@ -444,7 +469,13 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                     .unwrap_or_default(),
                 None => Vec::new(),
             };
-            let _ = wm.remove_wallet(wallet_id);
+            if let Err(e) = wm.remove_wallet(wallet_id) {
+                tracing::warn!(
+                    wallet_id = %hex::encode(wallet_id),
+                    error = %e,
+                    "remove_wallet: inner wallet-manager removal failed (state may be inconsistent)"
+                );
+            }
             ids
         };
 
@@ -668,7 +699,7 @@ mod register_wallet_duplicate_tests {
         manager
             .create_wallet_from_seed_bytes(
                 network,
-                seed_bytes,
+                &seed_bytes,
                 WalletAccountCreationOptions::Default,
                 Some(0),
             )
@@ -681,7 +712,7 @@ mod register_wallet_duplicate_tests {
         let err = manager
             .create_wallet_from_seed_bytes(
                 network,
-                seed_bytes,
+                &seed_bytes,
                 WalletAccountCreationOptions::Default,
                 Some(0),
             )

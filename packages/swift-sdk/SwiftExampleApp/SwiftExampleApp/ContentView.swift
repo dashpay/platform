@@ -4,7 +4,7 @@ import SwiftData
 import LocalAuthentication
 
 enum RootTab: Hashable {
-    case sync, wallets, identities, contracts, settings
+    case sync, wallets, identities, dashpay, settings
 }
 
 struct ContentView: View {
@@ -12,16 +12,21 @@ struct ContentView: View {
     let bootstrapError: Error?
     let onRetry: () -> Void
 
-    // NOTE: `walletManager` and `appUIState` are intentionally NOT
-    // declared here. An `@EnvironmentObject` subscribes the entire view
-    // to that object's `objectWillChange`, so holding `walletManager`
-    // (which publishes `spvProgress` on a fast cadence during sync) on
-    // this root view re-rendered the whole `TabView` several times a
-    // second — tearing down each tab's content and any sheet/pushed
-    // view inside it. Both observations now live in the leaf
-    // `GlobalSyncIndicatorOverlay` instead, so sync ticks no longer
-    // invalidate `ContentView.body`.
+    // NOTE: `walletManager` is intentionally NOT declared here. An
+    // `@EnvironmentObject` subscribes the entire view to that object's
+    // `objectWillChange`, and `walletManager` publishes `spvProgress` on
+    // a fast cadence during sync — holding it on this root view
+    // re-rendered the whole `TabView` several times a second, tearing
+    // down each tab's content and any sheet/pushed view inside it. That
+    // observation now lives in the leaf `GlobalSyncIndicatorOverlay`, so
+    // sync ticks no longer invalidate `ContentView.body`.
+    //
+    // `appUIState` IS declared: it owns the root tab selection (so deep
+    // views like DashPayTabView / IdentityDetailView can switch tabs)
+    // and only publishes on low-frequency UI events (tab switch, banner
+    // toggle), never on sync progress.
     @EnvironmentObject var walletManagerStore: WalletManagerStore
+    @EnvironmentObject var appUIState: AppUIState
     @EnvironmentObject var platformState: AppState
     @Environment(\.modelContext) private var modelContext
 
@@ -32,7 +37,14 @@ struct ContentView: View {
     /// re-derive or delete.
     @Query private var persistentWallets: [PersistentWallet]
 
-    @State private var selectedTab: RootTab = .sync
+    /// Root tab selection — owned by AppUIState so deep views (e.g.
+    /// IdentityDetailView's Contacts row) can switch tabs.
+    private var selectedTab: Binding<RootTab> {
+        Binding(
+            get: { appUIState.selectedTab },
+            set: { appUIState.selectedTab = $0 }
+        )
+    }
 
     // Orphan-mnemonic recovery flow. The whole batch surfaces in one
     // alert + one sheet now: the primary "Recover Wallets?" alert
@@ -80,7 +92,7 @@ struct ContentView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
-            TabView(selection: $selectedTab) {
+            TabView(selection: selectedTab) {
                 // Tab 1: Sync Status
                 SyncStatusView()
                     .tabItem {
@@ -103,21 +115,23 @@ struct ContentView: View {
                     }
                     .tag(RootTab.identities)
 
-                // Tab 4: Contracts (locally-persisted data contracts +
-                // their tokens). Friends moved to a per-identity drill-in
-                // under the DashPay section of IdentityDetailView.
-                //
-                // The current network is threaded in so the contracts +
-                // tokens lists stay scoped to it — `PersistentDataContract`
-                // rows from another network would otherwise leak into
-                // the picker after a network switch.
-                ContractsTabView(network: platformState.currentNetwork)
-                    .tabItem {
-                        Label("Contracts", systemImage: "doc.text")
-                    }
-                    .tag(RootTab.contracts)
+                // Tab 4: DashPay — first-class contacts / requests /
+                // payments surface. The root-tab
+                // selection binding lets its empty states
+                // deep-link to the Wallets / Identities tabs.
+                DashPayTabView(
+                    network: platformState.currentNetwork,
+                    selectedTab: selectedTab
+                )
+                .accessibilityIdentifier("dashpay.tab")
+                .tabItem {
+                    Label("DashPay", systemImage: "person.2.fill")
+                }
+                .tag(RootTab.dashpay)
 
-                // Tab 5: Settings (includes Platform section)
+                // Tab 5: Settings (Platform section + Contracts, which
+                // moved here from its own tab so the bar shows 5 tabs
+                // directly instead of collapsing into iOS's "More").
                 SettingsView()
                     .tabItem {
                         Label("Settings", systemImage: "gearshape")
@@ -129,13 +143,13 @@ struct ContentView: View {
                 // which publishes on a fast cadence while syncing. Reading
                 // it directly in `ContentView.body` would subscribe the
                 // whole `TabView` to every progress tick, re-creating each
-                // tab's content (including `ContractsTabView` and any sheet
-                // it presents) several times a second — which tears down a
-                // pushed drill-down and dismisses sheets presented from it
-                // (e.g. the document-create flow). Isolating the volatile
-                // observation in this leaf keeps the tab content stable;
-                // only the overlay re-renders on progress.
-                GlobalSyncIndicatorOverlay(isSyncTab: selectedTab == .sync)
+                // tab's content (and any sheet it presents) several times a
+                // second — which tears down a pushed drill-down and
+                // dismisses sheets presented from it (e.g. the
+                // document-create flow). Isolating the volatile observation
+                // in this leaf keeps the tab content stable; only the
+                // overlay re-renders on progress.
+                GlobalSyncIndicatorOverlay(isSyncTab: selectedTab.wrappedValue == .sync)
             }
             .onAppear { checkForOrphanMnemonic() }
             .onChange(of: persistentWallets.count) { _, _ in
@@ -490,10 +504,17 @@ struct ContentView: View {
         }
 
         do {
+            // Recovery restores an existing wallet that may have prior on-chain
+            // history (incl. DashPay payments). Scan from the wallet's persisted
+            // birth height when known (avoids re-scanning years of irrelevant
+            // history), falling back to genesis only for wallets that predate
+            // that metadata — never the current tip, which would skip the
+            // history recovery exists to recover.
             let managed = try recoveryManager.createWallet(
                 mnemonic: mnemonic,
                 network: restoredNetwork,
-                name: restoredName
+                name: restoredName,
+                birthHeight: restoredBirthHeight ?? 0
             )
             let walletIdMatch = managed.walletId
             let descriptor = FetchDescriptor<PersistentWallet>(
