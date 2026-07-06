@@ -1735,6 +1735,30 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_s
     })
 }
 
+/// Reset the Rust-side shielded state on this manager: quiesce the
+/// background sync loop, drop every wallet registration on the
+/// network-scoped coordinator, empty the shared commitment tree, and
+/// reset the caught-up cooldown. The per-network SQLite file stays on
+/// disk but its contents are reset so the next `shieldedBind` +
+/// sync cold-rebuilds from index 0. Throws `DashSDKException` on a
+/// store-reset failure — the host must NOT wipe its own persistence
+/// unless this succeeds. Mirrors Swift's
+/// `PlatformWalletManager.clearShieldedStorage()`.
+#[cfg(feature = "shielded")]
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_shieldedClear(
+    mut env: JNIEnv,
+    _class: JClass,
+    manager_handle: jlong,
+) {
+    guard(&mut env, (), |env| {
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_manager_shielded_clear(manager_handle as Handle)
+        };
+        let _ = take_pwffi_error(env, result);
+    })
+}
+
 /// Run one forced shielded sync pass across all registered wallets — the
 /// user-initiated "Sync Now" entry point (`force=true` on the Rust side
 /// bypasses the caught-up cooldown). Blocks the calling thread for the

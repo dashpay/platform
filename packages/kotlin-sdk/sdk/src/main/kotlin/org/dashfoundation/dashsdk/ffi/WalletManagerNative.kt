@@ -279,6 +279,16 @@ internal object WalletManagerNative {
     external fun shieldedSyncNow(managerHandle: Long)
 
     /**
+     * Reset the Rust-side shielded state — stop the background sync loop,
+     * drop every wallet registration from the network-scoped coordinator,
+     * empty the shared commitment tree, and reset the caught-up cooldown.
+     * The per-network SQLite file stays on disk (contents reset). Throws on
+     * a store-reset failure. Only present when the native library is built
+     * with shielded.
+     */
+    external fun shieldedClear(managerHandle: Long)
+
+    /**
      * Start the Core SPV client — flattened form of
      * `platform_wallet_manager_spv_start` (11 discrete params, no config
      * struct). [userAgent] / [devnetName] pass JVM null → FFI null;

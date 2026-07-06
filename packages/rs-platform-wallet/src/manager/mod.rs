@@ -298,21 +298,53 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// first **quiesce** the sync manager (cancel the loop *and* drain
     /// any in-flight pass, including its persister-callback fan-out, so
     /// nothing can re-persist notes after this returns), then **clear**
-    /// the network coordinator's per-subwallet registries. Idempotent —
-    /// the coordinator step is a no-op when shielded support was never
-    /// configured. The per-network commitment-tree SQLite file stays on
-    /// disk but its contents are reset to empty so the next bind cold-
-    /// resyncs from index 0.
+    /// the network coordinator's per-subwallet registries AND reset the
+    /// on-disk commitment-tree SQLite store. The per-network
+    /// commitment-tree SQLite file stays on disk but its contents are
+    /// reset to empty so the next bind cold-resyncs from index 0.
     ///
-    /// Returns an error if the coordinator's store reset fails; the host
-    /// must not commit its own persistence wipe in that case.
+    /// # The missing-coordinator case is an ERROR, not a silent no-op
+    ///
+    /// This used to `Ok(())` when `shielded_coordinator()` was `None`,
+    /// treating "no coordinator" as "nothing to clear". That masked the exact
+    /// on-device failure this fix targets: the host taps Clear on a manager
+    /// whose coordinator is **not installed on this instance** — e.g. an SDK
+    /// rebuild handed the host a fresh `PlatformWalletManager` whose
+    /// `configure_shielded` never ran (or ran on a different instance than the
+    /// one currently syncing). The quiesce runs (sync loop stops), the call
+    /// returns `Ok`, and the host then wipes its own Room/SwiftData rows —
+    /// while the **on-disk commitment tree is never touched** (file mtime
+    /// unchanged on device, no `reset_commitment_tree` call). The next bind
+    /// reloads the still-full tree + its persisted watermark and re-freezes
+    /// everything.
+    ///
+    /// The FFI only exposes this call behind a bound, shielded-enabled host
+    /// surface (the "Clear" button), so reaching it with no coordinator is a
+    /// genuine wiring fault, not a benign "shielded was never used" case.
+    /// Returning an error makes the host fail closed (keep its rows) and
+    /// surfaces the real problem instead of a phantom success.
+    ///
+    /// Returns an error if the coordinator is absent, or if the coordinator's
+    /// store reset (which resets the on-disk tree to 0 leaves and verifies it)
+    /// fails; the host must not commit its own persistence wipe in that case.
     #[cfg(feature = "shielded")]
     pub async fn clear_shielded(&self) -> Result<(), crate::error::PlatformWalletError> {
         self.shielded_sync_manager.quiesce().await;
-        if let Some(coord) = self.shielded_coordinator().await {
-            coord.clear().await?;
+        match self.shielded_coordinator().await {
+            Some(coord) => coord.clear().await,
+            None => {
+                tracing::error!(
+                    "clear_shielded: no shielded coordinator installed on this manager — the \
+                     on-disk commitment tree cannot be reset. configure_shielded never ran on \
+                     THIS manager instance (or ran on a different one)."
+                );
+                Err(crate::error::PlatformWalletError::ShieldedStoreError(
+                    "shielded clear requested but no coordinator is configured on this manager — \
+                     on-disk tree not reset"
+                        .to_string(),
+                ))
+            }
         }
-        Ok(())
     }
 
     /// Reset the platform-address (BLAST/DIP-17) incremental-sync

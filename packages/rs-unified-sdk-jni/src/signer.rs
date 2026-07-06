@@ -22,8 +22,9 @@ use jni::objects::{GlobalRef, JByteArray, JClass, JObject, JString};
 use jni::sys::{jbyteArray, jint, jlong};
 use jni::JNIEnv;
 use rs_sdk_ffi::{
-    dash_sdk_signer_create_from_private_key, dash_sdk_signer_create_with_ctx,
-    dash_sdk_signer_destroy, dash_sdk_signer_sign, SignCompletionCallback, SignerHandle,
+    dash_sdk_sign_with_mnemonic_and_path, dash_sdk_signer_create_from_private_key,
+    dash_sdk_signer_create_with_ctx, dash_sdk_signer_destroy, dash_sdk_signer_sign,
+    SignCompletionCallback, SignerHandle, SIGN_WITH_MNEMONIC_OK,
 };
 use std::ffi::{c_void, CString};
 use std::panic::{catch_unwind, AssertUnwindSafe};
@@ -310,6 +311,112 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_SignerNative_signWith
             .unwrap_or(ptr::null_mut());
 
         unsafe { dash_sdk_signer_destroy(signer as *mut SignerHandle) };
+        result
+    })
+}
+
+/// One-shot derive-then-sign for platform-address keys — the Kotlin
+/// counterpart of `KeychainSigner.signPlatformAddressOnDemand` on iOS.
+///
+/// Platform-payment address private keys are NEVER persisted (the
+/// production wallet is external-signable: it holds only account XPUBs, no
+/// root xpriv). They are derivation outputs of `(mnemonic, derivationPath)`
+/// and exist only for the duration of one signing call. The
+/// `Signer<PlatformAddress>` branch of the FFI vtable (`key_type == 0xFF`)
+/// therefore cannot look up a stored key by address hash the way the
+/// identity-key branch does — it must derive on demand.
+///
+/// This wraps the existing `dash_sdk_sign_with_mnemonic_and_path` FFI: the
+/// mnemonic + derivation path go in, only the signature comes back. The
+/// derived key never crosses JNI as bytes — both the seed and the derived
+/// scalar are held in Rust-owned `Zeroizing` buffers and scrubbed before
+/// return. Platform addresses are always ECDSA secp256k1 P2PKH, so the key
+/// type is hardcoded to `ECDSA_SECP256K1 = 0` inside the FFI.
+///
+/// Caller (`KeystoreSigner`) is responsible for pulling the path off the
+/// `PlatformAddressEntity.derivationPath` row and the mnemonic off
+/// `WalletStorage.retrieveMnemonic(walletId)` per signing call, exactly as
+/// the Swift caller does. Throws `DashSDKException` on any derivation /
+/// signing failure.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_SignerNative_signWithMnemonicAndPath(
+    mut env: JNIEnv,
+    _class: JClass,
+    mnemonic: JString,
+    derivation_path: JString,
+    network: jint,
+    data: JByteArray,
+) -> jbyteArray {
+    guard(&mut env, ptr::null_mut(), |env| {
+        let (Ok(mnemonic_str), Ok(path_str), Ok(payload)) = (
+            env.get_string(&mnemonic).map(String::from),
+            env.get_string(&derivation_path).map(String::from),
+            env.convert_byte_array(&data),
+        ) else {
+            let _ = env.exception_clear();
+            crate::support::throw_sdk_exception(env, 1, "invalid mnemonic-sign arguments");
+            return ptr::null_mut();
+        };
+
+        // Interior NULs would truncate the C string mid-derivation-path;
+        // reject rather than silently sign under a wrong path.
+        let (Ok(mnemonic_c), Ok(path_c)) = (CString::new(mnemonic_str), CString::new(path_str))
+        else {
+            crate::support::throw_sdk_exception(
+                env,
+                1,
+                "mnemonic or derivation path contained an interior NUL",
+            );
+            return ptr::null_mut();
+        };
+
+        let network = match network {
+            0 => dash_network::ffi::FFINetwork::Mainnet,
+            2 => dash_network::ffi::FFINetwork::Devnet,
+            3 => dash_network::ffi::FFINetwork::Regtest,
+            _ => dash_network::ffi::FFINetwork::Testnet,
+        };
+
+        // ECDSA compact-recoverable signatures are 65 bytes; 128 leaves
+        // headroom without an ABI change (matches the Swift buffer).
+        let mut sig_buf = [0u8; 128];
+        let mut sig_len: usize = 0;
+        let mut err_tag: u8 = 0;
+        // Platform addresses are always ECDSA secp256k1 (`KeyType::ECDSA_SECP256K1 = 0`).
+        let ecdsa_secp256k1_key_type: u8 = 0;
+
+        let rc = unsafe {
+            dash_sdk_sign_with_mnemonic_and_path(
+                mnemonic_c.as_ptr(),
+                ptr::null(), // empty passphrase
+                path_c.as_ptr(),
+                payload.as_ptr(),
+                payload.len(),
+                ecdsa_secp256k1_key_type,
+                network,
+                sig_buf.as_mut_ptr(),
+                sig_buf.len(),
+                &mut sig_len as *mut usize,
+                &mut err_tag as *mut u8,
+            )
+        };
+
+        if rc != 0 || err_tag != SIGN_WITH_MNEMONIC_OK {
+            crate::support::throw_sdk_exception(
+                env,
+                1,
+                &format!("derive-and-sign failed (tag {err_tag})"),
+            );
+            return ptr::null_mut();
+        }
+
+        let result = env
+            .byte_array_from_slice(&sig_buf[..sig_len])
+            .map(|arr| arr.into_raw())
+            .unwrap_or(ptr::null_mut());
+        // Scrub the local signature copy is unnecessary (signatures are
+        // public), but wipe the buffer for tidiness / parity with Swift.
+        sig_buf.iter_mut().for_each(|b| *b = 0);
         result
     })
 }

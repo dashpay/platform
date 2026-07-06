@@ -25,6 +25,25 @@ internal object SignerNative {
      * @throws DashSDKException on failure
      */
     external fun signWithPrivateKey(privateKey: ByteArray, network: Int, data: ByteArray): ByteArray?
+
+    /**
+     * One-shot derive-then-sign for platform-address keys (the
+     * `keyType == 0xFF` branch). Derives an ECDSA secp256k1 key from
+     * `(mnemonic, derivationPath)`, signs [data], returns the signature —
+     * entirely inside Rust (`dash_sdk_sign_with_mnemonic_and_path`). The
+     * derived key never crosses JNI; the seed + scalar are held in
+     * Rust-owned zeroizing buffers. Mirrors
+     * `KeychainSigner.signPlatformAddressOnDemand` on iOS. Caller zeroes
+     * nothing itself — the mnemonic `String` is Kotlin-owned; wipe it if a
+     * `CharArray` is used upstream.
+     * @throws DashSDKException on any derivation/signing failure
+     */
+    external fun signWithMnemonicAndPath(
+        mnemonic: String,
+        derivationPath: String,
+        network: Int,
+        data: ByteArray,
+    ): ByteArray?
 }
 
 /**

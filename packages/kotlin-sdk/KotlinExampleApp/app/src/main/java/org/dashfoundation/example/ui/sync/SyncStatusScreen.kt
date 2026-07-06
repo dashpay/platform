@@ -290,6 +290,34 @@ fun SyncStatusScreen() {
                         "${shielded.treeLeavesCommitted} / ${shielded.treeTotalTarget} leaves",
                     )
                 }
+
+                // ← CoreContentView.swift "Clear" (SH-12): Rust-side cold
+                // reset (`clearShielded`) + Room wipe, fail-closed. Resets the
+                // shared commitment tree + every wallet's watermark so the
+                // next bind + sync cold-rebuilds from index 0 — the fix for a
+                // tree frozen at N/N with zero notes scanned after a
+                // watermark/notes desync. Disabled mid-pass so we never clear
+                // underneath a running sync.
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+                ) {
+                    OutlinedButton(
+                        onClick = {
+                            scope.launch {
+                                try {
+                                    container.shieldedService.clearLocalState()
+                                } catch (e: Exception) {
+                                    error = e.message ?: "Failed to clear shielded data"
+                                }
+                            }
+                        },
+                        enabled = container.shieldedService.isBound && !shielded.isSyncing,
+                        modifier = Modifier.testTag("sync.shieldedClear"),
+                    ) { Text("Clear") }
+                }
             }
         }
     }

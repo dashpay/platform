@@ -214,7 +214,8 @@ class PlatformWalletManager(
      * attach to the SDK per-call, NOT to the manager.
      */
     private val mnemonicResolver = MnemonicResolverAndPersister(walletStorage)
-    private val signer = KeystoreSigner(walletStorage, network, biometricGate)
+    private val signer =
+        KeystoreSigner(walletStorage, network, biometricGate, database.platformAddressDao())
 
     /**
      * Persistence handler (Room writer). Constructed here — after
@@ -621,6 +622,27 @@ class PlatformWalletManager(
      */
     suspend fun syncShieldedNow() = withContext(Dispatchers.IO) {
         mapNativeErrors { WalletManagerNative.shieldedSyncNow(managerHandle) }
+    }
+
+    /**
+     * Reset the Rust-side shielded state on this manager — port of Swift's
+     * `PlatformWalletManager.clearShielded()`
+     * (`PlatformWalletManagerShieldedSync.swift`). Quiesces the background
+     * sync loop, drops every wallet registration from the network-scoped
+     * coordinator, empties the shared commitment tree, and resets the
+     * caught-up cooldown, so the next [bindShielded] + sync cold-rebuilds
+     * from index 0.
+     *
+     * The per-network SQLite file stays on disk (its contents are reset);
+     * the host must wipe its own Room rows AFTER this succeeds
+     * ([org.dashfoundation.dashsdk.services.ShieldedService.clearLocalState]
+     * orders the two). Throws on a store-reset failure so the caller can
+     * fail closed and keep its rows rather than orphan a still-populated
+     * tree. Only meaningful on a shielded build ([Sdk.hasShielded]); the
+     * native entry point is absent otherwise and this throws.
+     */
+    suspend fun clearShieldedStorage() = withContext(Dispatchers.IO) {
+        mapNativeErrors { WalletManagerNative.shieldedClear(managerHandle) }
     }
 
     // ── Shielded funding submits ──────────────────────────────────────
