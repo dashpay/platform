@@ -28,8 +28,8 @@ import org.dashfoundation.example.ui.diagnostics.WalletMemoryExplorerScreen
 import org.dashfoundation.example.ui.identity.AddIdentityKeyScreen
 import org.dashfoundation.example.ui.identity.ContestDetailScreen
 import org.dashfoundation.example.ui.identity.CreateIdentityScreen
+import org.dashfoundation.example.ui.dashpay.DashPayTabScreen
 import org.dashfoundation.example.ui.identity.DpnsTestScreen
-import org.dashfoundation.example.ui.identity.FriendsScreen
 import org.dashfoundation.example.ui.identity.IdentitiesHomeScreen
 import org.dashfoundation.example.ui.identity.IdentityDetailScreen
 import org.dashfoundation.example.ui.identity.KeyDetailScreen
@@ -162,11 +162,6 @@ fun AppNavHost(
         composable<SelectMainName> { entry ->
             val route = entry.toRoute<SelectMainName>()
             SelectMainNameScreen(route.identityIdHex, navController)
-        }
-
-        composable<Friends> { entry ->
-            val route = entry.toRoute<Friends>()
-            FriendsScreen(route.identityIdHex, navController)
         }
 
         composable<KeysList> { entry ->
@@ -365,6 +360,10 @@ fun AppNavHost(
         composable<CoSignProposal> { entry ->
             CoSignProposalScreen(entry.toRoute<CoSignProposal>(), navController)
         }
+
+        // ── DashPay graph ──────────────────────────────────────────────
+
+        composable<DashPayHome> { DashPayTabScreen(navController) }
 
         // ── Diagnostics graph ──────────────────────────────────────────
 

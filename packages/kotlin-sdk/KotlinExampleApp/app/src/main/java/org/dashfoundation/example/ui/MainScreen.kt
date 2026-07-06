@@ -5,7 +5,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountBalanceWallet
-import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Sync
@@ -95,7 +95,7 @@ private val RootTab.icon: ImageVector
         RootTab.SYNC -> Icons.Default.Sync
         RootTab.WALLETS -> Icons.Default.AccountBalanceWallet
         RootTab.IDENTITIES -> Icons.Default.Person
-        RootTab.CONTRACTS -> Icons.Default.Description
+        RootTab.DASHPAY -> Icons.Default.Group
         RootTab.SETTINGS -> Icons.Default.Settings
     }
 
@@ -104,6 +104,6 @@ private val RootTab.label: String
         RootTab.SYNC -> "Sync"
         RootTab.WALLETS -> "Wallets"
         RootTab.IDENTITIES -> "Identities"
-        RootTab.CONTRACTS -> "Contracts"
+        RootTab.DASHPAY -> "DashPay"
         RootTab.SETTINGS -> "Settings"
     }

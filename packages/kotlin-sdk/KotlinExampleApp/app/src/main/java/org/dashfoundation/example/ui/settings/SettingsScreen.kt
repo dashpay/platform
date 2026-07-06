@@ -207,9 +207,17 @@ fun SettingsScreen(navController: NavHostController) {
             }
 
             // Platform section — mirrors OptionsView.swift's Platform
-            // section (Queries / State Transitions + SDK status), with
-            // Diagnostics as the run-all-queries entry point.
+            // section (Contracts / Queries / State Transitions + SDK
+            // status), with Diagnostics as the run-all-queries entry point.
+            // Contracts is demoted here from a top-level tab, matching iOS
+            // hosting it as the first Platform NavigationLink.
             FormSection(title = "Platform") {
+                androidx.compose.material3.TextButton(
+                    onClick = { navController.navigate(org.dashfoundation.example.navigation.ContractsHome) },
+                    modifier = Modifier.testTag("settings.contracts"),
+                ) {
+                    Text("Contracts")
+                }
                 androidx.compose.material3.TextButton(
                     onClick = { navController.navigate(org.dashfoundation.example.navigation.QueriesList) },
                     modifier = Modifier.testTag("settings.queries"),

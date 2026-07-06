@@ -14,6 +14,7 @@ navigationCompose = "2.9.0"
 camerax = "1.4.2"
 mlkitBarcode = "17.3.0"
 zxing = "3.5.3"
+coil = "2.7.0"
 junit = "4.13.2"
 androidxTestExtJunit = "1.2.1"
 androidxTestRunner = "1.6.2"
@@ -47,6 +48,7 @@ camera-lifecycle = { group = "androidx.camera", name = "camera-lifecycle", versi
 camera-view = { group = "androidx.camera", name = "camera-view", version.ref = "camerax" }
 mlkit-barcode-scanning = { group = "com.google.mlkit", name = "barcode-scanning", version.ref = "mlkitBarcode" }
 zxing-core = { group = "com.google.zxing", name = "core", version.ref = "zxing" }
+coil-compose = { group = "io.coil-kt", name = "coil-compose", version.ref = "coil" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 androidx-test-core = { group = "androidx.test", name = "core", version = "1.6.1" }
 androidx-test-ext-junit = { group = "androidx.test.ext", name = "junit", version.ref = "androidxTestExtJunit" }
