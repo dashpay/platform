@@ -16,7 +16,10 @@ use platform_wallet::wallet::platform_wallet::WalletId;
 use crate::sqlite::error::WalletStorageError;
 use crate::sqlite::schema::blob;
 
-#[cfg(feature = "__test-helpers")]
+// `any(test, …)`, not `__test-helpers`-only: `load_ignored_senders` (and its
+// `decode_pair_key` helper) are gated the same way — they're reached by
+// `identities::load_state`, whose gate includes plain `test`.
+#[cfg(any(test, feature = "__test-helpers"))]
 use dpp::prelude::Identifier;
 #[cfg(feature = "__test-helpers")]
 use platform_wallet::changeset::{
@@ -24,9 +27,9 @@ use platform_wallet::changeset::{
 };
 #[cfg(feature = "__test-helpers")]
 use platform_wallet::wallet::identity::{ContactRequest, EstablishedContact};
-#[cfg(feature = "__test-helpers")]
+#[cfg(any(test, feature = "__test-helpers"))]
 use rusqlite::Connection;
-#[cfg(feature = "__test-helpers")]
+#[cfg(any(test, feature = "__test-helpers"))]
 use std::collections::BTreeMap;
 
 /// Single source of truth for the `contacts.state` TEXT-column domain.
@@ -393,7 +396,9 @@ fn decode_request(
     }
 }
 
-#[cfg(feature = "__test-helpers")]
+// Widened to `any(test, …)` alongside `load_ignored_senders`, its only
+// `test`-arm caller (the `__test-helpers`-gated readers use it too).
+#[cfg(any(test, feature = "__test-helpers"))]
 fn decode_pair_key(a: &[u8], b: &[u8]) -> Result<(Identifier, Identifier), WalletStorageError> {
     let a32 = <[u8; 32]>::try_from(a)
         .map_err(|_| WalletStorageError::blob_decode("contacts.id column is not 32 bytes"))?;
