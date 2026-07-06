@@ -20,18 +20,21 @@
 //!   deep pool addresses survive the reload; a snapshot whose
 //!   `wallet_id` mismatches its row is skipped as corrupt.
 
+use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 
+use dpp::prelude::Identifier;
 use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 use key_wallet::wallet::Wallet;
 use platform_wallet::changeset::{
-    AccountRegistrationEntry, ClientStartState, ClientWalletStartState, PersistenceError,
-    PersistenceErrorKind, PlatformWalletChangeSet, PlatformWalletPersistence,
+    AccountRegistrationEntry, ClientStartState, ClientWalletStartState, IdentityManagerStartState,
+    PersistenceError, PersistenceErrorKind, PlatformWalletChangeSet, PlatformWalletPersistence,
 };
 use platform_wallet::error::PlatformWalletError;
 use platform_wallet::events::{EventHandler, PlatformEventHandler};
 use platform_wallet::manager::load_outcome::CorruptKind;
 use platform_wallet::wallet::platform_wallet::WalletId;
+use platform_wallet::ManagedIdentity;
 use platform_wallet::{LoadOutcome, PlatformWalletManager, SkipReason};
 
 // ---- test doubles ----
@@ -77,8 +80,6 @@ impl PlatformWalletPersistence for FixedLoadPersister {
                             core_wallet_info: w.core_wallet_info.clone(),
                             identity_manager: Default::default(),
                             unused_asset_locks: Default::default(),
-                            contacts: Default::default(),
-                            identity_keys: Default::default(),
                         },
                     );
                 }
@@ -177,8 +178,6 @@ fn slice(seed: [u8; 64]) -> (WalletId, ClientWalletStartState) {
             core_wallet_info: Box::new(info),
             identity_manager: Default::default(),
             unused_asset_locks: Default::default(),
-            contacts: Default::default(),
-            identity_keys: Default::default(),
         },
     )
 }
@@ -892,4 +891,115 @@ async fn rt_concurrent_loads_register_each_wallet_exactly_once() {
             );
         }
     }
+}
+
+/// Persister for TC-3692-011. Rebuilds — fresh on each `load()`, since the
+/// identity-manager snapshot is intentionally not `Clone` — a
+/// `ClientStartState` carrying one wallet-owned identity whose
+/// `Identity.public_keys` already holds a CRITICAL / AUTHENTICATION /
+/// ECDSA_SECP256K1 key, the shape the FFI/iOS path produces via
+/// `build_wallet_identity_bucket` (never through an `IdentityKeysChangeSet`).
+struct IdentityKeyedLoadPersister {
+    seed: [u8; 64],
+    identity_id: Identifier,
+}
+
+impl PlatformWalletPersistence for IdentityKeyedLoadPersister {
+    fn store(&self, _: WalletId, _: PlatformWalletChangeSet) -> Result<(), PersistenceError> {
+        Ok(())
+    }
+    fn flush(&self, _: WalletId) -> Result<(), PersistenceError> {
+        Ok(())
+    }
+    fn load(&self) -> Result<ClientStartState, PersistenceError> {
+        use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+        use dpp::identity::identity_public_key::{IdentityPublicKey, Purpose};
+        use dpp::identity::v0::IdentityV0;
+        use dpp::identity::{Identity, KeyType, SecurityLevel};
+
+        let (id, mut s) = slice(self.seed);
+
+        let key = IdentityPublicKey::V0(IdentityPublicKeyV0 {
+            id: 0,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::CRITICAL,
+            contract_bounds: None,
+            key_type: KeyType::ECDSA_SECP256K1,
+            read_only: false,
+            data: dpp::platform_value::BinaryData::new(vec![2u8; 33]),
+            disabled_at: None,
+        });
+        let mut public_keys = BTreeMap::new();
+        public_keys.insert(0, key);
+        let identity = Identity::V0(IdentityV0 {
+            id: self.identity_id,
+            public_keys,
+            balance: 0,
+            revision: 0,
+        });
+
+        let mut inner = BTreeMap::new();
+        inner.insert(0u32, ManagedIdentity::new(identity, 0));
+        let mut ims = IdentityManagerStartState::default();
+        ims.wallet_identities.insert(id, inner);
+        s.identity_manager = ims;
+
+        let mut st = ClientStartState::default();
+        st.wallets.insert(id, s);
+        Ok(st)
+    }
+}
+
+/// TC-3692-011 [CRITICAL]: the restored identity's signing key is
+/// selectable via the exact `get_first_public_key_matching` predicate the
+/// real signing path uses (`contract.rs`, `dpns.rs`, ...) immediately
+/// after `load_from_persistor`, with zero sync. The FFI/iOS path populates
+/// `Identity.public_keys` at construction, so dropping
+/// `ClientWalletStartState.identity_keys` must not change this — the key
+/// must sit in the exact map slot the lookup reads, with no reliance on
+/// `apply_identity_key_entry` ever running on the load path.
+#[tokio::test]
+async fn rt_signing_key_selectable_immediately_after_load() {
+    use dpp::identity::accessors::IdentityGettersV0;
+    use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+    use dpp::identity::identity_public_key::Purpose;
+    use dpp::identity::{KeyType, SecurityLevel};
+
+    let seed = [0x5A; 64];
+    let identity_id = Identifier::from([0x11; 32]);
+    let p = Arc::new(IdentityKeyedLoadPersister { seed, identity_id });
+    let h = Arc::new(RecordingHandler::default());
+    let sdk = Arc::new(dash_sdk::Sdk::new_mock());
+    let mgr = Arc::new(PlatformWalletManager::new(sdk, Arc::clone(&p), h));
+
+    let outcome = mgr.load_from_persistor().await.expect("Ok");
+    assert!(
+        outcome.skipped().is_empty(),
+        "identity row must not be skipped"
+    );
+    let id = outcome
+        .loaded()
+        .first()
+        .copied()
+        .expect("exactly one wallet loaded");
+
+    // Immediately — no SPV sync, no identity refresh — drive the exact
+    // predicate a real signing flow uses to pick its authentication key.
+    let wallet = mgr.get_wallet(&id).await.expect("wallet registered");
+    let wm = wallet.wallet_manager().read().await;
+    let info = wm.get_wallet_info(&id).expect("wallet info present");
+    let managed = info
+        .identity_manager
+        .identity(&identity_id)
+        .expect("identity restored into the manager");
+    let selected = managed
+        .identity
+        .get_first_public_key_matching(
+            Purpose::AUTHENTICATION,
+            [SecurityLevel::CRITICAL].into(),
+            [KeyType::ECDSA_SECP256K1].into(),
+            false,
+        )
+        .expect("CRITICAL/AUTH/ECDSA signing key must be selectable post-load, zero sync");
+    assert_eq!(selected.id(), 0, "the exact installed key is selected");
 }

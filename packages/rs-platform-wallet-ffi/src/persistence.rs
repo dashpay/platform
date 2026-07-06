@@ -3556,16 +3556,10 @@ fn build_wallet_start_state(
         })
         .collect();
 
-    // `contacts` / `identity_keys` are the PR-3 keyless feed the
-    // manager layers onto the managed identities via
-    // `apply_contacts_and_keys`. The iOS path does NOT use them:
-    // identity PUBLIC keys are already reconstructed straight into
-    // `Identity.public_keys` by `build_wallet_identity_bucket` (feeding
-    // the slot too would double-apply), and `WalletRestoreEntryFFI`
-    // carries no contacts back from Swift on load — surfacing them
-    // would need a new cross-boundary struct field + Swift wiring,
-    // tracked as a follow-up. Empty slots make `apply_contacts_and_keys`
-    // a no-op for this path, preserving the established iOS behaviour.
+    // Identity PUBLIC keys and DashPay contacts are already restored
+    // into `identity_manager` by `build_wallet_identity_bucket`
+    // (contacts inline via `restore_dashpay_contacts`), so the load
+    // path carries no separate keyless contact/key feed.
     let wallet_state = ClientWalletStartState {
         network,
         birth_height: entry.birth_height,
@@ -3573,8 +3567,6 @@ fn build_wallet_start_state(
         core_wallet_info: Box::new(wallet_info),
         identity_manager,
         unused_asset_locks,
-        contacts: Default::default(),
-        identity_keys: Default::default(),
     };
 
     let platform_address_state = if per_account.is_empty()

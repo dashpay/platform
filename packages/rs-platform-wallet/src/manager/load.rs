@@ -122,8 +122,6 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 core_wallet_info,
                 identity_manager,
                 unused_asset_locks,
-                contacts,
-                identity_keys,
             } = wallet_state;
 
             // Idempotency, checked FIRST: a wallet already registered (a
@@ -211,12 +209,10 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 core_balance.immature(),
                 core_balance.locked(),
             );
-            // Build the identity manager from the (id, balance,
-            // revision) skeleton, then layer the persisted PUBLIC
-            // contacts + identity keys onto it — the same routing the
-            // runtime changeset-replay path uses.
-            let mut identity_manager = IdentityManager::from(identity_manager);
-            identity_manager.apply_contacts_and_keys(contacts, identity_keys, network);
+            // Build the identity manager from the snapshot; public keys
+            // and contacts are already reconstructed into it upstream by
+            // the FFI persister (`build_wallet_identity_bucket`).
+            let identity_manager = IdentityManager::from(identity_manager);
             let platform_info = PlatformWalletInfo {
                 core_wallet: wallet_info,
                 balance: Arc::clone(&balance),
@@ -413,8 +409,6 @@ mod rollback_tests {
                 core_wallet_info: Box::new(info),
                 identity_manager: Default::default(),
                 unused_asset_locks: Default::default(),
-                contacts: Default::default(),
-                identity_keys: Default::default(),
             },
         )
     }
