@@ -15,11 +15,12 @@ struct StackSizeArgs {
     /// Stack size in bytes for the driving thread and the async runtime's
     /// worker threads.
     stack_size: Expr,
-    /// Gate that must be set before `worker_threads` may be overridden. Async
-    /// bodies always run on a multi-threaded runtime regardless of this flag.
+    /// Accepted legacy flag. Async bodies always run on a multi-threaded
+    /// runtime, so it no longer affects the runtime; it is still rejected on
+    /// non-`async` functions.
     multi_thread: bool,
     /// Worker-thread count for the async runtime; `None` uses
-    /// [`DEFAULT_MULTI_THREAD_WORKERS`].
+    /// [`DEFAULT_MULTI_THREAD_WORKERS`]. Valid with or without `multi_thread`.
     worker_threads: Option<Expr>,
 }
 
@@ -53,13 +54,6 @@ impl Parse for StackSizeArgs {
             }
         }
 
-        if worker_threads.is_some() && !multi_thread {
-            return Err(syn::Error::new(
-                input.span(),
-                "`worker_threads` requires the `multi_thread` argument",
-            ));
-        }
-
         Ok(Self {
             stack_size,
             multi_thread,
@@ -77,11 +71,17 @@ impl Parse for StackSizeArgs {
 ///
 /// # Arguments
 ///
-/// - `#[stack_size(EXPR)]` — the default: an `async` body runs on a
-///   multi-threaded tokio runtime with two worker threads; a sync body runs
-///   directly on the spawned thread.
-/// - `#[stack_size(EXPR, multi_thread, worker_threads = N)]` — same, but with
-///   `N` worker threads instead of two (only valid on `async` functions).
+/// - `#[stack_size(EXPR)]` — an `async` body runs on a multi-threaded tokio
+///   runtime with two worker threads; a sync body runs directly on the spawned
+///   thread.
+/// - `#[stack_size(EXPR, worker_threads = N)]` — same, but the async runtime
+///   uses `N` worker threads instead of two.
+///
+/// `multi_thread` is an accepted but optional legacy token: async bodies are
+/// always multi-threaded now, so it has no effect on the runtime and may be
+/// combined with `worker_threads` or omitted entirely. Both `worker_threads`
+/// and `multi_thread` configure the async runtime, so using either on a sync
+/// `#[stack_size]` function is a compile error.
 ///
 /// Worker threads inherit `EXPR` as their stack size, so tasks spawned onto the
 /// runtime share the driving thread's recursion budget. Driving async bodies on
@@ -127,10 +127,15 @@ pub fn stack_size(attr: TokenStream, item: TokenStream) -> TokenStream {
         sig.asyncness = None;
     }
 
-    if multi_thread && !is_async {
-        return syn::Error::new_spanned(&fn_ident, "`multi_thread` requires an `async fn`")
-            .to_compile_error()
-            .into();
+    // `worker_threads`/`multi_thread` configure the async runtime; a sync body
+    // builds no runtime, so passing them there is a mistake worth flagging.
+    if !is_async && (multi_thread || worker_threads.is_some()) {
+        return syn::Error::new_spanned(
+            &fn_ident,
+            "`worker_threads`/`multi_thread` only apply to async `#[stack_size]` functions",
+        )
+        .to_compile_error()
+        .into();
     }
 
     // Async bodies run on a multi-threaded runtime whose workers inherit the
