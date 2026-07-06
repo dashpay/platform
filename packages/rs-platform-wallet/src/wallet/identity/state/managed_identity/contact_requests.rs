@@ -53,11 +53,11 @@ impl ManagedIdentity {
     /// contact per sweep, and an `EstablishedContact::new` for an
     /// already-established pair would wipe the user's alias / note /
     /// hide-flag / accepted-accounts. So this method is a **no-op** when
-    /// the recipient is already tracked as established with the SAME
-    /// outgoing `accountReference` or already in the sent map (symmetric
-    /// to the received-side dedup in `sync_contact_requests`). When it
-    /// must (re-)establish against a pre-existing incoming request, it
-    /// MERGES into any existing `EstablishedContact` to preserve metadata.
+    /// the recipient is already tracked — established or pending-sent —
+    /// with the SAME outgoing `accountReference` (symmetric to the
+    /// received-side dedup in `sync_contact_requests`). When it must
+    /// (re-)establish against a pre-existing incoming request, it MERGES
+    /// into any existing `EstablishedContact` to preserve metadata.
     ///
     /// **Sent-side rotation supersede.** When we re-send to an
     /// already-established contact with a *different* outgoing
@@ -111,13 +111,36 @@ impl ManagedIdentity {
                 .insert(recipient_id, updated);
             return Ok(());
         }
-        // Already tracked as a pending sent request → no-op (no phantom
-        // row, no redundant changeset write).
-        if self
-            .dashpay
-            .sent_contact_requests
-            .contains_key(&recipient_id)
-        {
+        // Already tracked as a pending sent request. Same outgoing
+        // reference → no-op (no phantom row, no redundant changeset
+        // write). Different reference → the pending mirror of the
+        // established-branch rotation supersede above: we rotated and
+        // broadcast a superseding request to a recipient who hasn't
+        // reciprocated yet. Without the supersede the pending map stays
+        // frozen at the first send's reference, so the NEXT rotation
+        // re-derives (un-mask → bump) from the stale version and
+        // reproduces an already-broadcast reference — rejected forever
+        // by the contract's `($ownerId, toUserId, accountReference)`
+        // unique index. Persist BEFORE committing to memory, same as
+        // the established branch and for the same retry reason.
+        if let Some(existing) = self.dashpay.sent_contact_requests.get(&recipient_id) {
+            if existing.account_reference == request.account_reference {
+                return Ok(());
+            }
+            let mut cs = ContactChangeSet::default();
+            cs.sent_requests.insert(
+                SentContactRequestKey {
+                    owner_id,
+                    recipient_id,
+                },
+                ContactRequestEntry {
+                    request: request.clone(),
+                },
+            );
+            persister.store(cs.into())?;
+            self.dashpay
+                .sent_contact_requests
+                .insert(recipient_id, request);
             return Ok(());
         }
 
@@ -180,7 +203,11 @@ impl ManagedIdentity {
     /// for persisting it through the same write guard it holds).
     pub fn ignore_sender(&mut self, sender_id: &Identifier) -> ContactChangeSet {
         let owner_id = self.id();
-        self.dashpay.incoming_contact_requests.remove(sender_id);
+        let removed = self
+            .dashpay
+            .incoming_contact_requests
+            .remove(sender_id)
+            .is_some();
         self.dashpay.ignored_senders.insert(*sender_id);
 
         let mut cs = ContactChangeSet::default();
@@ -193,10 +220,22 @@ impl ManagedIdentity {
         // user's ignore is silently undone on that backend. (The SwiftData
         // persister already deletes the row via its `ignored` handler, so
         // this makes the two backends consistent.)
-        cs.removed_incoming.insert(ReceivedContactRequestKey {
-            owner_id,
-            sender_id: *sender_id,
-        });
+        //
+        // Guarded on an ACTUAL removal — the same `removed.is_some()`
+        // discipline as `remove_incoming_contact_request` /
+        // `remove_sent_contact_request`. Ignoring a sender who has no
+        // pending incoming entry (e.g. an already-established contact, or
+        // one that raced auto-establish) must not emit a tombstone: the
+        // contacts table is one row per pair, so an unconditional
+        // tombstone would DELETE the established row — outgoing/incoming
+        // blobs plus the user's alias/note/hidden/accepted-accounts —
+        // while memory keeps the contact established.
+        if removed {
+            cs.removed_incoming.insert(ReceivedContactRequestKey {
+                owner_id,
+                sender_id: *sender_id,
+            });
+        }
         cs.ignored.insert((owner_id, *sender_id));
         cs
     }
@@ -883,6 +922,50 @@ mod tests {
         );
     }
 
+    /// **Ignore of a sender with NO pending incoming entry must not emit a
+    /// `removed_incoming` tombstone.** The contacts table is one row per
+    /// pair, so a tombstone for an ESTABLISHED contact (ignore tapped after
+    /// auto-establish, or on an established pair directly) would DELETE the
+    /// established row — both request blobs plus the user's
+    /// alias/note/hidden/accepted-accounts — while memory keeps the contact
+    /// established. Mirrors the `removed.is_some()` guard already used by
+    /// `remove_incoming_contact_request`. Was red against the unconditional
+    /// emission.
+    #[test]
+    fn ignore_sender_without_pending_incoming_emits_no_tombstone() {
+        let mut managed = create_test_identity([1u8; 32]);
+        let owner_id = managed.id();
+        let contact_id = Identifier::from([2u8; 32]);
+        let p = noop_persister();
+
+        // Establish the pair (incoming + sent → auto-establish), leaving NO
+        // pending incoming entry.
+        managed
+            .add_incoming_contact_request(create_contact_request(contact_id, owner_id, 1), &p)
+            .expect("setup persists");
+        managed
+            .add_sent_contact_request(create_contact_request(owner_id, contact_id, 2), &p)
+            .expect("setup persists");
+        assert_eq!(managed.dashpay.established_contacts.len(), 1);
+        assert!(managed.dashpay.incoming_contact_requests.is_empty());
+
+        let cs = managed.ignore_sender(&contact_id);
+
+        // The suppression is recorded...
+        assert!(
+            cs.ignored.contains(&(owner_id, contact_id)),
+            "ignore must record the per-sender suppression"
+        );
+        // ...but NO row tombstone is emitted — nothing pending was removed,
+        // and an unconditional tombstone would destroy the established row.
+        assert!(
+            cs.removed_incoming.is_empty(),
+            "no pending incoming entry was removed, so no tombstone may be emitted"
+        );
+        // The established contact survives in memory untouched.
+        assert_eq!(managed.dashpay.established_contacts.len(), 1);
+    }
+
     #[test]
     fn test_add_incoming_contact_request_without_reciprocal() {
         let mut managed = create_test_identity([1u8; 32]);
@@ -1486,6 +1569,71 @@ mod tests {
             .unwrap();
         assert_eq!(est.outgoing_request.account_reference, 102);
         assert_eq!(est.alias, Some("Carol".to_string()));
+    }
+
+    /// Pending-branch rotation supersede: re-sending to a recipient who
+    /// has NOT yet reciprocated (still in the pending sent map) with a
+    /// DIFFERENT outgoing `accountReference` must advance the pending
+    /// entry — the pending mirror of
+    /// [`add_sent_contact_request_rotation_supersedes_outgoing_reference`].
+    /// Without it the pending map (and `prior_sent_account_reference`)
+    /// stays frozen at the first send, so the next rotation re-derives the
+    /// already-broadcast reference and collides on the contract's unique
+    /// index. Was red against the `contains_key` no-op guard.
+    #[test]
+    fn add_sent_contact_request_rotation_supersedes_pending_reference() {
+        let mut managed = create_test_identity([1u8; 32]);
+        let our_id = Identifier::from([1u8; 32]);
+        let contact_id = Identifier::from([2u8; 32]);
+        let p = noop_persister();
+
+        // First send to a recipient with no incoming request → pending.
+        let mut first_send = create_contact_request(our_id, contact_id, 1);
+        first_send.account_reference = 100; // R0
+        managed
+            .add_sent_contact_request(first_send, &p)
+            .expect("setup persists");
+        assert!(managed.dashpay.established_contacts.is_empty());
+        assert_eq!(managed.prior_sent_account_reference(&contact_id), Some(100));
+
+        // Rotation re-send while STILL pending: bumped reference R1.
+        let mut rotation = create_contact_request(our_id, contact_id, 2);
+        rotation.account_reference = 101; // R1
+        managed
+            .add_sent_contact_request(rotation, &p)
+            .expect("pending rotation persists");
+        assert_eq!(
+            managed.prior_sent_account_reference(&contact_id),
+            Some(101),
+            "pending rotation must advance the tracked reference (not freeze at R0)"
+        );
+        // Still pending — the supersede must not fabricate an establishment.
+        assert!(managed.dashpay.established_contacts.is_empty());
+        assert_eq!(managed.dashpay.sent_contact_requests.len(), 1);
+
+        // Same-reference re-ingest (the sweep re-reading the newest doc)
+        // stays a no-op.
+        let mut resend_same = create_contact_request(our_id, contact_id, 3);
+        resend_same.account_reference = 101;
+        managed
+            .add_sent_contact_request(resend_same, &p)
+            .expect("same-reference re-ingest is a no-op");
+        assert_eq!(managed.prior_sent_account_reference(&contact_id), Some(101));
+
+        // The recipient finally reciprocates: establishment must capture
+        // the NEWEST outgoing reference, not the original.
+        managed
+            .add_incoming_contact_request(create_contact_request(contact_id, our_id, 4), &p)
+            .expect("reciprocal persists");
+        let est = managed
+            .dashpay
+            .established_contacts
+            .get(&contact_id)
+            .expect("reciprocal establishes");
+        assert_eq!(
+            est.outgoing_request.account_reference, 101,
+            "establishment must adopt the superseded (newest) outgoing reference"
+        );
     }
 
     /// When a sent request auto-establishes against a pre-existing

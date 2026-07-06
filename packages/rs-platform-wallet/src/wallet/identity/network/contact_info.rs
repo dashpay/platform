@@ -27,7 +27,8 @@ use super::*;
 use crate::broadcaster::TransactionBroadcaster;
 use crate::error::PlatformWalletError;
 use crate::wallet::identity::crypto::contact_info::{
-    decode_private_data, derive_contact_info_keys, encode_private_data, ContactInfoPrivateData,
+    decode_private_data, derive_contact_info_keys, encode_private_data_bounded,
+    ContactInfoPrivateData,
 };
 
 /// One decrypted `contactInfo` document — the fields the sweep applies. (The
@@ -531,6 +532,14 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             accepted_accounts: Vec::new(),
         };
 
+        // 0. Size gate BEFORE any local persist. An over-cap alias/note
+        // would fail the broadcast against the contract's 2048-byte
+        // `privateData` cap — a PERMANENT failure with no retry queue —
+        // after step 1 already durably persisted the local metadata,
+        // leaving local state divergent from chain for good. Encode once
+        // here; the encrypt step below reuses these bytes.
+        let plaintext = encode_private_data_bounded(&metadata)?;
+
         // 1. Local state first — works offline and feeds SwiftData.
         let (established_count, identity_index, signing_key, root_key_id) = {
             let mut wm = self.wallet_manager.write().await;
@@ -564,16 +573,15 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                     false,
                 )
                 .cloned();
-            let root_key_id = managed
-                .identity
-                .public_keys()
-                .iter()
-                .find(|(_, k)| {
-                    k.purpose() == Purpose::ENCRYPTION
-                        && k.key_type() == KeyType::ECDSA_SECP256K1
-                        && k.disabled_at().is_none()
-                })
-                .map(|(_, k)| k.id());
+            // Shared own-ECDH-root selector (same policy as the
+            // contact-request send path); `Option` preserved — a missing
+            // key defers the publish rather than erroring here.
+            let root_key_id =
+                crate::wallet::identity::network::contact_requests::select_own_encryption_key(
+                    &managed.identity,
+                )
+                .ok()
+                .map(|k| k.id());
             (established_count, identity_index, signing_key, root_key_id)
         };
 
@@ -695,7 +703,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 &root_path,
                 derivation_index,
                 &contact_id.to_buffer(),
-                &encode_private_data(&metadata),
+                // Pre-encoded (and size-gated) in step 0.
+                &plaintext,
                 &iv,
             )
             .await?;
