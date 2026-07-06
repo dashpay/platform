@@ -139,9 +139,9 @@ pub unsafe extern "C" fn platform_wallet_decode_transaction(
     network: FFINetwork,
     out_decoded: *mut *mut DecodedTransactionFFI,
 ) -> PlatformWalletFFIResult {
-    check_ptr!(tx_bytes);
     check_ptr!(out_decoded);
     *out_decoded = std::ptr::null_mut();
+    check_ptr!(tx_bytes);
     if tx_bytes_len == 0 {
         return PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorInvalidParameter,
@@ -539,7 +539,8 @@ mod tests {
     #[test]
     fn rejects_null_and_empty_input() {
         unsafe {
-            let mut out: *mut DecodedTransactionFFI = std::ptr::null_mut();
+            // Pre-poison the out param to pin that failures null it.
+            let mut out: *mut DecodedTransactionFFI = std::ptr::NonNull::dangling().as_ptr();
             let res = platform_wallet_decode_transaction(
                 std::ptr::null(),
                 4,
@@ -547,8 +548,10 @@ mod tests {
                 &mut out,
             );
             assert_eq!(res.code, PlatformWalletFFIResultCode::ErrorNullPointer);
+            assert!(out.is_null(), "out param is nulled on failure");
 
             let bytes = [0u8; 4];
+            out = std::ptr::NonNull::dangling().as_ptr();
             let res = platform_wallet_decode_transaction(
                 bytes.as_ptr(),
                 0,
@@ -556,6 +559,7 @@ mod tests {
                 &mut out,
             );
             assert_eq!(res.code, PlatformWalletFFIResultCode::ErrorInvalidParameter);
+            assert!(out.is_null(), "out param is nulled on failure");
         }
     }
 
