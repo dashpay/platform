@@ -3769,6 +3769,10 @@ fn status_from_u8(b: u8) -> Result<platform_wallet::AssetLockStatus, Persistence
     })
 }
 
+// TODO: no end-to-end test drives this fn with all four restore_* categories
+// at once. Each restore_* helper is unit-tested in isolation and their calls
+// below are presence-checked, but a full WalletRestoreEntryFFI fixture
+// covering every category together is still missing.
 fn build_wallet_identity_bucket(
     entry: &WalletRestoreEntryFFI,
 ) -> Result<BTreeMap<u32, ManagedIdentity>, PersistenceError> {
