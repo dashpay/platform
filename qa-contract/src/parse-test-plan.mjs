@@ -1,8 +1,9 @@
 // Parse the §4 catalog tables of SwiftExampleApp/TEST_PLAN.md into testCase rows.
 //
 // Each catalog row looks like:
-//   | CORE-05 | Send Core L1 transaction | Core | Essential | ✅ | `SendTransactionView` ... |
-// Columns: ID | Action(title) | Layer | Tier | Status(implStatus) | Entry point & notes
+//   | CORE-05 | Send Core L1 transaction | Core | Essential | ✅ |  | `SendTransactionView` ... |
+// Columns: ID | Action(title) | Layer | Tier | Status(implStatus) | Tags | Entry point & notes
+// Tags is a comma-separated, lowercase cell (often empty); attached to the row only when non-empty.
 // The Category/Domain is NOT a column — it comes from the section header, e.g.
 //   ### 4.1 Core / Wallet — `Domain=Core`
 // Only content between "## 4." and "## 5." is parsed.
@@ -89,12 +90,18 @@ export function parseTestPlan(planPath = DEFAULT_TEST_PLAN, planCommit) {
 
     if (!trimmed.startsWith('|')) continue;
     const cells = splitRow(trimmed);
-    if (cells.length < 6) continue;
+    // Catalog rows are 7 cells: ID | Action | Layer | Tier | Status | Tags | Notes.
+    // Require all 7 so a short row can't shift Notes into the Tags cell.
+    if (cells.length < 7) continue;
     if (isSeparator(cells)) continue;
 
-    const [testId, title, layer, tier, status, ...rest] = cells;
+    const [testId, title, layer, tier, status, tagsCell, ...rest] = cells;
     if (!ID_RE.test(testId)) continue; // header row or non-catalog row
 
+    const tags = (tagsCell || '')
+      .split(',')
+      .map((s) => s.trim().toLowerCase())
+      .filter(Boolean);
     const notes = rest.join(' | ').trim();
     rows.push({
       testId,
@@ -105,6 +112,7 @@ export function parseTestPlan(planPath = DEFAULT_TEST_PLAN, planCommit) {
       implStatus: truncate(status || '?', 32),
       description: truncate(notes, 2048),
       entryPoint: truncate(firstCodeToken(notes), 512) || undefined,
+      ...(tags.length ? { tags } : {}),
       ...(planCommit ? { planCommit: truncate(planCommit, 64) } : {}),
     });
   }
