@@ -377,10 +377,12 @@ public final class ManagedIdentity: @unchecked Sendable {
         try managed_identity_accept_contact_request(handle, request.handle).check()
     }
 
-    /// Reject a contact request from another identity
-    public func rejectContactRequest(senderId: Identifier) throws {
+    /// Ignore a contact sender (per-sender mute, = block, reversible).
+    /// Local in-memory path on this handle (no persister) — the durable
+    /// path is `ManagedPlatformWallet.ignoreContactSender`.
+    public func ignoreContactSender(senderId: Identifier) throws {
         try senderId.withFFIBytes { idPtr in
-            try managed_identity_reject_contact_request(handle, idPtr).check()
+            try managed_identity_ignore_contact_sender(handle, idPtr).check()
         }
     }
 
@@ -454,5 +456,66 @@ public final class ManagedIdentity: @unchecked Sendable {
 
         guard hasProfile else { return nil }
         return DashPayProfile(ffi: ffiProfile)
+    }
+
+    /// Live in-memory DashPay sync state — collection counts + the high-water
+    /// sync cursors. The cursors are not persisted (they reset on cold restart),
+    /// so this live read is the only window onto them.
+    public struct DashPaySyncState: Sendable {
+        public let establishedContacts: UInt32
+        public let incomingRequests: UInt32
+        public let sentRequests: UInt32
+        public let ignoredSenders: UInt32
+        public let contactProfiles: UInt32
+        public let presentContactProfiles: UInt32
+        public let dashpayPayments: UInt32
+        public let hasDashPayProfile: Bool
+        /// `nil` when the cursor hasn't advanced yet (no sweep has fetched).
+        public let highWaterReceivedMs: UInt64?
+        public let highWaterSentMs: UInt64?
+    }
+
+    /// Read the live DashPay sync state for this managed identity. All scalars,
+    /// so nothing to free.
+    public func getDashPaySyncState() throws -> DashPaySyncState {
+        var ffi = DashPaySyncStateFFI()
+        try managed_identity_get_dashpay_sync_state(handle, &ffi).check()
+        return DashPaySyncState(
+            establishedContacts: ffi.established_contacts,
+            incomingRequests: ffi.incoming_requests,
+            sentRequests: ffi.sent_requests,
+            ignoredSenders: ffi.ignored_senders,
+            contactProfiles: ffi.contact_profiles,
+            presentContactProfiles: ffi.present_contact_profiles,
+            dashpayPayments: ffi.dashpay_payments,
+            hasDashPayProfile: ffi.has_dashpay_profile,
+            highWaterReceivedMs: ffi.has_high_water_received ? ffi.high_water_received_ms : nil,
+            highWaterSentMs: ffi.has_high_water_sent ? ffi.high_water_sent_ms : nil
+        )
+    }
+
+    // MARK: - DashPay payment history
+
+    /// Read this identity's DashPay payment history — the
+    /// `dashpay_payments` map (keyed by txid) maintained by the Rust
+    /// wallet — as Swift-owned values.
+    ///
+    /// Sync, lock-free read of the in-memory cache. The source
+    /// `PaymentEntry` carries no timestamp, so entries are unordered
+    /// beyond the map's txid keying. Empty array when no payments
+    /// have been recorded.
+    public func getDashPayPayments() throws -> [DashPayPayment] {
+        var array = DashpayPaymentArray()
+        try managed_identity_get_dashpay_payments(handle, &array).check()
+        defer { dashpay_payment_array_free(&array) }
+        guard let items = array.items, array.count > 0 else {
+            return []
+        }
+        var payments: [DashPayPayment] = []
+        payments.reserveCapacity(Int(array.count))
+        for i in 0..<Int(array.count) {
+            payments.append(DashPayPayment(ffi: items[i]))
+        }
+        return payments
     }
 }

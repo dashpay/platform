@@ -1,8 +1,12 @@
 //! Writer + account-attribution helper for the `core_address_pool` table.
 //!
 //! Per-index address-pool rows carrying a `used` flag, scoped by
-//! `(wallet_id, account_type, account_index, key_class, pool_type,
-//! address_index)`. The first-class row store the reader consumes verbatim —
+//! `(wallet_id, account_type, account_index, key_class, user_identity_id,
+//! friend_identity_id, pool_type, address_index)` — the DashPay identity pair
+//! is in the PK (mirroring `account_registrations`) so distinct contacts on
+//! one wallet, which otherwise collapse to the same `(dashpay_receiving, 0)`
+//! sentinel, never overwrite each other's pool rows. The first-class row
+//! store the reader consumes verbatim —
 //! no `core_utxos` script-derivation, no horizon-walk re-derivation. Populated
 //! from the `account_address_pools` changeset snapshots; the UTXO writer reads
 //! it back to attribute an outpoint to its owning account.
@@ -30,9 +34,11 @@ pub(crate) fn pool_type_to_i64(pool_type: AddressPoolType) -> i64 {
 }
 
 const UPSERT_POOL_SQL: &str = "INSERT INTO core_address_pool \
-        (wallet_id, account_type, account_index, key_class, pool_type, address_index, script, used) \
-     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8) \
-     ON CONFLICT(wallet_id, account_type, account_index, key_class, pool_type, address_index) \
+        (wallet_id, account_type, account_index, key_class, user_identity_id, friend_identity_id, \
+         pool_type, address_index, script, used) \
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10) \
+     ON CONFLICT(wallet_id, account_type, account_index, key_class, user_identity_id, \
+                 friend_identity_id, pool_type, address_index) \
      DO UPDATE SET \
         script = excluded.script, \
         used = MAX(used, excluded.used)";
@@ -61,6 +67,11 @@ pub fn apply_pools(
         // other account maps to the 0 sentinel until the pool snapshot
         // threads a per-pool key class.
         let key_class = i64::from(accounts::account_key_class(&entry.account_type));
+        // DashPay accounts all collapse to (dashpay_receiving/dashpay_external,
+        // account_index=0); the identity pair is the real per-contact
+        // discriminator, all-zero for every other account type.
+        let (user_identity_id, friend_identity_id) =
+            accounts::account_dashpay_ids(&entry.account_type);
         let pool_type = pool_type_to_i64(entry.pool_type);
         for info in &entry.addresses {
             stmt.execute(params![
@@ -68,6 +79,8 @@ pub fn apply_pools(
                 account_type,
                 account_index,
                 key_class,
+                user_identity_id.as_slice(),
+                friend_identity_id.as_slice(),
                 pool_type,
                 i64::from(info.index),
                 info.script_pubkey.as_bytes(),
@@ -88,14 +101,15 @@ pub fn account_index_for_script(
     script: &[u8],
 ) -> Result<Option<u32>, WalletStorageError> {
     // A script can appear under several pool rows (distinct account_type /
-    // key_class / pool_type share the same `script_pubkey` for reused keys);
-    // an explicit PK-ordered tie-break makes the pick deterministic instead of
-    // relying on SQLite's arbitrary `LIMIT 1` row.
+    // key_class / identity pair / pool_type share the same `script_pubkey`
+    // for reused keys); an explicit PK-ordered tie-break makes the pick
+    // deterministic instead of relying on SQLite's arbitrary `LIMIT 1` row.
     let idx: Option<i64> = tx
         .prepare_cached(
             "SELECT account_index FROM core_address_pool \
              WHERE wallet_id = ?1 AND script = ?2 \
-             ORDER BY account_type, account_index, key_class, pool_type, address_index ASC \
+             ORDER BY account_type, account_index, key_class, user_identity_id, \
+                      friend_identity_id, pool_type, address_index ASC \
              LIMIT 1",
         )?
         .query_row(params![wallet_id.as_slice(), script], |row| row.get(0))

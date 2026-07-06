@@ -108,6 +108,12 @@ impl PlatformWalletInfo {
             wallet_metadata: _,
             account_registrations: _,
             account_address_pools: _,
+            // The deferred contact-crypto queue is persistence-only here too:
+            // the in-memory queue is mutated directly at the enqueue (sweep)
+            // and drain (signer-present) sites, and restored at load via the
+            // start-state path. No changeset-replay hook in apply.
+            pending_contact_crypto_added: _,
+            pending_contact_crypto_cleared: _,
             // Shielded deltas are owned by `ShieldedWallet` (which
             // mutates its store directly during sync / spend); the
             // canonical in-memory state lives there and the
@@ -167,14 +173,14 @@ impl PlatformWalletInfo {
         if let Some(profiles) = dashpay_profiles {
             for (id, profile) in profiles {
                 if let Some(managed) = self.identity_manager.managed_identity_mut(&id) {
-                    managed.dashpay_profile = profile;
+                    *managed.dashpay_profile_mut() = profile;
                 }
             }
         }
         if let Some(payments) = dashpay_payments_overlay {
             for (id, payments_map) in payments {
                 if let Some(managed) = self.identity_manager.managed_identity_mut(&id) {
-                    managed.dashpay_payments.extend(payments_map);
+                    managed.dashpay_payments_mut().extend(payments_map);
                 }
             }
         }
@@ -453,12 +459,8 @@ mod tests {
 
         let mut id_cs = IdentityChangeSet::default();
         let mut managed = ManagedIdentity::new(make_test_identity(1, 0), 0);
-        managed
-            .sent_contact_requests
-            .insert(other_id, make_test_contact_request(1, 2));
-        managed
-            .incoming_contact_requests
-            .insert(other_id, make_test_contact_request(2, 1));
+        managed.apply_sent_contact_request(make_test_contact_request(1, 2));
+        managed.apply_incoming_contact_request(make_test_contact_request(2, 1));
         id_cs
             .identities
             .insert(owner_id, IdentityEntry::from_managed(&managed));
@@ -490,9 +492,18 @@ mod tests {
             .identity_manager
             .managed_identity(&owner_id)
             .expect("owner present");
-        assert!(managed.established_contacts.contains_key(&other_id));
-        assert!(!managed.sent_contact_requests.contains_key(&other_id));
-        assert!(!managed.incoming_contact_requests.contains_key(&other_id));
+        assert!(managed
+            .dashpay()
+            .established_contacts()
+            .contains_key(&other_id));
+        assert!(!managed
+            .dashpay()
+            .sent_contact_requests()
+            .contains_key(&other_id));
+        assert!(!managed
+            .dashpay()
+            .incoming_contact_requests()
+            .contains_key(&other_id));
     }
 
     #[test]
@@ -528,7 +539,11 @@ mod tests {
         let p2pkh2 = PlatformP2PKHAddress::new([20u8; 20]);
 
         use dash_sdk::platform::address_sync::AddressFunds;
-        let funds = |balance, nonce| AddressFunds { balance, nonce };
+        let funds = |balance, nonce| AddressFunds {
+            balance,
+            nonce,
+            as_of_height: 0,
+        };
         let wallet_id: crate::wallet::platform_wallet::WalletId = [0u8; 32];
         let entry = |address_index, address, funds| crate::PlatformAddressBalanceEntry {
             wallet_id,
@@ -683,6 +698,56 @@ mod tests {
             contacts: Some(contact_cs),
             ..Default::default()
         }
+    }
+
+    /// TC-3692-025: a `ContactChangeSet` carrying `ignored` / `unignored`
+    /// replayed through `apply_changeset` must reach the owner's
+    /// ignored-sender set. Guards against `apply_contacts_and_keys`
+    /// destructuring `contacts` with `..` — which compiles clean but
+    /// silently drops per-sender mute state (dev-plan risk #1).
+    #[test]
+    fn apply_contacts_threads_ignored_and_unignored_through() {
+        let mut wallet = build_test_wallet();
+        let mut info = empty_info(&wallet);
+
+        // Register the owning identity so contact routing has a target.
+        let owner = Identifier::from([1u8; 32]);
+        let sender = Identifier::from([2u8; 32]);
+        let mut managed = ManagedIdentity::new(make_test_identity(1, 0), 0);
+        managed.wallet_id = Some([9u8; 32]);
+        let mut id_cs = IdentityChangeSet::default();
+        id_cs
+            .identities
+            .insert(owner, IdentityEntry::from_managed(&managed));
+        let mut cs = PlatformWalletChangeSet::default();
+        cs.identities = Some(id_cs);
+        info.apply_changeset(&mut wallet, cs).expect("seed owner");
+
+        // Replay an `ignored` delta — the sender must land in the mute set.
+        let mut contact_cs = ContactChangeSet::default();
+        contact_cs.ignored.insert((owner, sender));
+        info.apply_changeset(&mut wallet, wrap_contacts(contact_cs))
+            .expect("apply ignored");
+        assert!(info
+            .identity_manager
+            .managed_identity(&owner)
+            .expect("owner present")
+            .dashpay()
+            .ignored_senders()
+            .contains(&sender));
+
+        // Replay an `unignored` delta for the same pair — it must clear.
+        let mut contact_cs = ContactChangeSet::default();
+        contact_cs.unignored.insert((owner, sender));
+        info.apply_changeset(&mut wallet, wrap_contacts(contact_cs))
+            .expect("apply unignored");
+        assert!(!info
+            .identity_manager
+            .managed_identity(&owner)
+            .expect("owner present")
+            .dashpay()
+            .ignored_senders()
+            .contains(&sender));
     }
 
     /// Wallet id used by every wallet-owned round-trip test below.
@@ -936,7 +1001,8 @@ mod tests {
             .identity_manager
             .managed_identity_mut(&owner)
             .expect("a owner")
-            .add_sent_contact_request(make_test_contact_request(1, 2), &p);
+            .add_sent_contact_request(make_test_contact_request(1, 2), &p)
+            .expect("setup persists");
 
         // Build the replay changeset from A's state: the request ended up in
         // `sent_contact_requests` (no auto-establishment because there was no
@@ -961,9 +1027,12 @@ mod tests {
             .identity_manager
             .managed_identity(&owner)
             .expect("b owner");
-        assert!(b_owner.sent_contact_requests.contains_key(&recipient));
-        assert!(b_owner.incoming_contact_requests.is_empty());
-        assert!(b_owner.established_contacts.is_empty());
+        assert!(b_owner
+            .dashpay()
+            .sent_contact_requests()
+            .contains_key(&recipient));
+        assert!(b_owner.dashpay().incoming_contact_requests().is_empty());
+        assert!(b_owner.dashpay().established_contacts().is_empty());
     }
 
     #[test]
@@ -988,7 +1057,8 @@ mod tests {
             .identity_manager
             .managed_identity_mut(&owner)
             .expect("a owner")
-            .add_incoming_contact_request(make_test_contact_request(2, 1), &p);
+            .add_incoming_contact_request(make_test_contact_request(2, 1), &p)
+            .expect("setup persists");
 
         // Snapshot the incoming request changeset for B replay step 1.
         let incoming_req = make_test_contact_request(2, 1);
@@ -1008,14 +1078,16 @@ mod tests {
             .identity_manager
             .managed_identity_mut(&owner)
             .expect("a owner")
-            .add_sent_contact_request(make_test_contact_request(1, 2), &p);
+            .add_sent_contact_request(make_test_contact_request(1, 2), &p)
+            .expect("setup persists");
 
         // After auto-establishment: A's established_contacts should have `other`.
         let a_established = info_a
             .identity_manager
             .managed_identity(&owner)
             .expect("a owner")
-            .established_contacts
+            .dashpay()
+            .established_contacts()
             .get(&other)
             .cloned()
             .expect("established in A");
@@ -1049,12 +1121,18 @@ mod tests {
             .identity_manager
             .managed_identity(&owner)
             .expect("b owner");
-        assert!(a_owner.established_contacts.contains_key(&other));
-        assert!(b_owner.established_contacts.contains_key(&other));
-        assert!(a_owner.sent_contact_requests.is_empty());
-        assert!(b_owner.sent_contact_requests.is_empty());
-        assert!(a_owner.incoming_contact_requests.is_empty());
-        assert!(b_owner.incoming_contact_requests.is_empty());
+        assert!(a_owner
+            .dashpay()
+            .established_contacts()
+            .contains_key(&other));
+        assert!(b_owner
+            .dashpay()
+            .established_contacts()
+            .contains_key(&other));
+        assert!(a_owner.dashpay().sent_contact_requests().is_empty());
+        assert!(b_owner.dashpay().sent_contact_requests().is_empty());
+        assert!(a_owner.dashpay().incoming_contact_requests().is_empty());
+        assert!(b_owner.dashpay().incoming_contact_requests().is_empty());
     }
 
     #[test]
@@ -1079,7 +1157,8 @@ mod tests {
             .identity_manager
             .managed_identity_mut(&owner)
             .expect("a")
-            .add_sent_contact_request(make_test_contact_request(1, 2), &p);
+            .add_sent_contact_request(make_test_contact_request(1, 2), &p)
+            .expect("setup persists");
         let mut insert_cs = ContactChangeSet::default();
         insert_cs.sent_requests.insert(
             SentContactRequestKey {
@@ -1112,8 +1191,8 @@ mod tests {
 
         let a_owner = info_a.identity_manager.managed_identity(&owner).expect("a");
         let b_owner = info_b.identity_manager.managed_identity(&owner).expect("b");
-        assert!(a_owner.sent_contact_requests.is_empty());
-        assert!(b_owner.sent_contact_requests.is_empty());
+        assert!(a_owner.dashpay().sent_contact_requests().is_empty());
+        assert!(b_owner.dashpay().sent_contact_requests().is_empty());
     }
 
     // ----------------------------------------------------------------------
@@ -1235,9 +1314,7 @@ mod tests {
         let owner = Identifier::from([1u8; 32]);
         let other = Identifier::from([2u8; 32]);
         let mut managed = ManagedIdentity::new(make_test_identity(1, 0), 0);
-        managed
-            .sent_contact_requests
-            .insert(other, make_test_contact_request(1, 2));
+        managed.apply_sent_contact_request(make_test_contact_request(1, 2));
         let mut id_cs = IdentityChangeSet::default();
         id_cs
             .identities
@@ -1258,7 +1335,10 @@ mod tests {
             .identity_manager
             .managed_identity(&owner)
             .expect("present");
-        assert!(!restored.sent_contact_requests.contains_key(&other));
+        assert!(!restored
+            .dashpay()
+            .sent_contact_requests()
+            .contains_key(&other));
     }
 
     #[test]
@@ -1307,8 +1387,8 @@ mod tests {
 
         let a = info_a.identity_manager.managed_identity(&id).expect("a");
         let b = info_b.identity_manager.managed_identity(&id).expect("b");
-        assert_eq!(a.dashpay_profile, b.dashpay_profile);
-        assert_eq!(b.dashpay_profile, Some(profile));
+        assert_eq!(a.dashpay().profile, b.dashpay().profile);
+        assert_eq!(b.dashpay().profile, Some(profile));
     }
 
     #[test]
@@ -1336,7 +1416,8 @@ mod tests {
             .identity_manager
             .managed_identity_mut(&owner)
             .expect("a managed")
-            .record_dashpay_payment(tx_id.clone(), payment.clone(), &p);
+            .record_dashpay_payment(tx_id.clone(), payment.clone(), &p)
+            .expect("record");
 
         // Build the replay changeset from A's mutated state.
         let managed = info_a.identity_manager.managed_identity(&owner).expect("a");
@@ -1354,7 +1435,7 @@ mod tests {
             .identity_manager
             .managed_identity(&owner)
             .expect("b managed");
-        assert_eq!(b_managed.dashpay_payments.get(&tx_id), Some(&payment));
+        assert_eq!(b_managed.dashpay().payments.get(&tx_id), Some(&payment));
     }
 
     #[test]
@@ -1382,7 +1463,8 @@ mod tests {
             .identity_manager
             .managed_identity_mut(&owner)
             .expect("a managed")
-            .record_dashpay_payment(tx_id.clone(), pending, &p);
+            .record_dashpay_payment(tx_id.clone(), pending, &p)
+            .expect("record");
         let managed = info_a.identity_manager.managed_identity(&owner).expect("a");
         let mut id_cs = IdentityChangeSet::default();
         id_cs
@@ -1399,7 +1481,8 @@ mod tests {
             .identity_manager
             .managed_identity_mut(&owner)
             .expect("a managed")
-            .record_dashpay_payment(tx_id.clone(), confirmed.clone(), &p);
+            .record_dashpay_payment(tx_id.clone(), confirmed.clone(), &p)
+            .expect("record");
         let managed = info_a.identity_manager.managed_identity(&owner).expect("a");
         let mut id_cs = IdentityChangeSet::default();
         id_cs
@@ -1415,8 +1498,107 @@ mod tests {
             .managed_identity(&owner)
             .expect("b managed");
         assert_eq!(
-            b_managed.dashpay_payments.get(&tx_id).map(|p| p.status),
+            b_managed.dashpay().payments.get(&tx_id).map(|p| p.status),
             Some(PaymentStatus::Confirmed)
+        );
+    }
+
+    /// A cached contact profile round-trips through the changeset
+    /// (snapshot → apply), and a later update overwrites it (full-replace,
+    /// last-write-wins per contact id) — so contact names/avatars survive
+    /// relaunch instead of vanishing.
+    #[test]
+    fn round_trip_contact_profile_persists_and_overwrites() {
+        use crate::wallet::identity::{ContactProfileEntry, DashPayProfile};
+
+        let wallet_a = build_test_wallet();
+        let mut info_a = empty_info(&wallet_a);
+        let mut wallet_b = build_test_wallet();
+        let mut info_b = empty_info(&wallet_b);
+        let p = noop_persister();
+
+        for info in [&mut info_a, &mut info_b] {
+            info.identity_manager
+                .add_identity(make_test_identity(1, 1), 0, ROUND_TRIP_WALLET_ID, &p)
+                .expect("add");
+        }
+        let owner = Identifier::from([1u8; 32]);
+        let contact = Identifier::from([2u8; 32]);
+
+        // Cache a contact profile on A, snapshot, apply to B.
+        info_a
+            .identity_manager
+            .managed_identity_mut(&owner)
+            .expect("a managed")
+            .dashpay_contact_profiles_mut()
+            .insert(
+                contact,
+                ContactProfileEntry {
+                    profile: Some(DashPayProfile {
+                        display_name: Some("Bob".into()),
+                        avatar_url: Some("https://x/b.png".into()),
+                        ..Default::default()
+                    }),
+                    checked_at_ms: 100,
+                },
+            );
+        let managed = info_a.identity_manager.managed_identity(&owner).expect("a");
+        let mut id_cs = IdentityChangeSet::default();
+        id_cs
+            .identities
+            .insert(owner, IdentityEntry::from_managed(managed));
+        info_b
+            .apply_changeset(&mut wallet_b, wrap_id(id_cs))
+            .expect("apply profile");
+
+        let b_managed = info_b.identity_manager.managed_identity(&owner).expect("b");
+        assert_eq!(
+            b_managed
+                .dashpay()
+                .contact_profiles
+                .get(&contact)
+                .and_then(|e| e.profile.as_ref())
+                .and_then(|pr| pr.display_name.as_deref()),
+            Some("Bob"),
+            "contact profile must survive the changeset round-trip"
+        );
+
+        // Contact updated their profile (removed the avatar) → overwrite.
+        info_a
+            .identity_manager
+            .managed_identity_mut(&owner)
+            .expect("a managed")
+            .dashpay_contact_profiles_mut()
+            .insert(
+                contact,
+                ContactProfileEntry {
+                    profile: Some(DashPayProfile {
+                        display_name: Some("Bob".into()),
+                        avatar_url: None,
+                        ..Default::default()
+                    }),
+                    checked_at_ms: 200,
+                },
+            );
+        let managed = info_a.identity_manager.managed_identity(&owner).expect("a");
+        let mut id_cs = IdentityChangeSet::default();
+        id_cs
+            .identities
+            .insert(owner, IdentityEntry::from_managed(managed));
+        info_b
+            .apply_changeset(&mut wallet_b, wrap_id(id_cs))
+            .expect("apply updated profile");
+
+        let b_managed = info_b.identity_manager.managed_identity(&owner).expect("b");
+        assert_eq!(
+            b_managed
+                .dashpay()
+                .contact_profiles
+                .get(&contact)
+                .and_then(|e| e.profile.as_ref())
+                .and_then(|pr| pr.avatar_url.clone()),
+            None,
+            "a removed avatar must be cleared on the apply side (full-replace)"
         );
     }
 
@@ -1472,7 +1654,8 @@ mod tests {
                 .identity_manager
                 .managed_identity(&id)
                 .expect("a")
-                .dashpay_profile,
+                .dashpay()
+                .profile,
             None
         );
         assert_eq!(
@@ -1480,7 +1663,8 @@ mod tests {
                 .identity_manager
                 .managed_identity(&id)
                 .expect("b")
-                .dashpay_profile,
+                .dashpay()
+                .profile,
             None
         );
     }
@@ -1572,6 +1756,7 @@ mod tests {
             funds: dash_sdk::platform::address_sync::AddressFunds {
                 balance: 1_000,
                 nonce: 0,
+                as_of_height: 0,
             },
         });
 

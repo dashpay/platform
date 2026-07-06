@@ -6,7 +6,7 @@
 //! multi-wallet store, built by the CURRENT V001-only persister, to
 //! `tests/fixtures/populated_v001.db`. That committed `.db` is the
 //! regression anchor for the migration-execution suites (TC-B-031/032/033/
-//! 035/036): once V002 lands, a populated V001-only store is no longer
+//! 035/036): once V002/V003 land, a populated V001-only store is no longer
 //! reproducible from source, so the bytes must be captured before any
 //! schema change.
 //!
@@ -154,6 +154,8 @@ fn identity_entry() -> IdentityEntry {
         wallet_id: None,
         dashpay_profile: None,
         dashpay_payments: Default::default(),
+        contact_profiles: Default::default(),
+        ignored_senders: Default::default(),
     }
 }
 

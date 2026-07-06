@@ -5,6 +5,14 @@
 //! (deep-derivation window — no horizon-walk truncation), TC-B-025/007
 //! (empty wallet loads empty-but-valid), multi-wallet isolation (TC-B-026),
 //! and the pool ∪ `core_utxos` used-set union (pre-pool + mixed stores).
+//!
+//! TODO(post-#3986/#3968 reconcile): this file does not compile against the
+//! shipped `ClientWalletStartState` — it assumes a `used_core_addresses`
+//! field that was never added; the shipped design folds used-address data
+//! into `core_wallet_info` instead (see `persister.rs::load`'s
+//! `used_core_addresses` local + `apply_persisted_core_state`). Pre-existing
+//! from the #3986 squash-merge, unrelated to the T5 PK-collision fix — needs
+//! a rewrite against the real struct shape, out of scope here.
 
 mod common;
 

@@ -5,6 +5,11 @@
 //! TC-B-033 (backup restorable + re-migration determinism), TC-B-034
 //! (forward-version rejection at the new max), TC-B-035 (idempotent
 //! re-entry), TC-B-036 (empty wallet through migration).
+//!
+//! TODO(post-#3986/#3968 reconcile): does not compile against the shipped
+//! `ClientWalletStartState` — same phantom `used_core_addresses` field gap as
+//! `sqlite_pool_reader.rs`; see that file's TODO. Pre-existing, unrelated to
+//! the T5 PK-collision fix.
 
 mod common;
 
@@ -194,7 +199,7 @@ fn tc_b_032_pre_migration_backup_created() {
         .expect("pre-migration backup must exist");
 
     // The backup captured the PRE-migration state: schema version 1, and no
-    // V002 table.
+    // V003 table.
     let bconn = ro_conn(&backup);
     assert_eq!(
         schema_version(&bconn),
@@ -203,7 +208,7 @@ fn tc_b_032_pre_migration_backup_created() {
     );
     assert!(
         !table_exists(&bconn, "core_address_pool"),
-        "backup must predate the V002 schema"
+        "backup must predate the V003 schema"
     );
     assert_eq!(
         bconn
@@ -274,7 +279,7 @@ fn tc_b_034_forward_version_rejected_at_new_max() {
             max_supported,
         }) => {
             assert_eq!(found, 4);
-            assert_eq!(max_supported, 3, "max must reflect the post-V003 schema");
+            assert_eq!(max_supported, 3, "max must reflect the post-redirect V003");
         }
         Err(other) => panic!("expected SchemaVersionUnsupported, got {other:?}"),
         Ok(_) => panic!("forward-version DB must be refused"),
@@ -321,8 +326,8 @@ fn migration_snapshot(conn: &Connection) -> Vec<i64> {
     ]
 }
 
-/// TC-B-035 — crash mid-migrate: an interrupted V002 (partial DDL, no commit)
-/// leaves the store at the last committed version (V001) with no partial
+/// TC-B-035 — crash mid-migrate: an interrupted V003 (partial DDL, no commit)
+/// leaves the store at the last committed version (V002) with no partial
 /// tables; re-opening resumes and converges byte-equal to a clean direct
 /// migration. Empirically demonstrates refinery's per-migration transaction
 /// guarantee (one tx per migration — no `set_grouped`/`no_transaction`).
@@ -338,7 +343,7 @@ fn tc_b_035_interrupted_migration_recovers_to_clean_state() {
     };
     assert_eq!(clean_snapshot[0], 3, "clean migration reaches V003");
 
-    // Crash simulation: apply part of V002's DDL inside a transaction that is
+    // Crash simulation: apply part of V003's DDL inside a transaction that is
     // rolled back before commit — exactly what a crash before the migration's
     // single COMMIT leaves behind (SQLite DDL is transactional).
     let crash_dir = tempfile::tempdir().unwrap();

@@ -505,3 +505,81 @@ fn standard_and_coinjoin_index_zero_do_not_collide() {
         0,
     );
 }
+
+/// Two DashPay contacts on one wallet both collapse to
+/// `(account_type='dashpay_receiving', account_index=0, key_class=0)` — the
+/// same `user_identity_id`, distinct `friend_identity_id`. Before the PK
+/// carried the DashPay identity pair, the second contact's pool row would
+/// silently overwrite the first's via `ON CONFLICT DO UPDATE`.
+#[test]
+fn distinct_dashpay_friends_do_not_collide_in_pool() {
+    let (persister, _tmp, _path) = fresh_persister();
+    let w: WalletId = wid(0xA8);
+    ensure_wallet_meta(&persister, &w);
+
+    let user_identity_id = [0xABu8; 32];
+    let friend_a = index_zero_info(0x81, true);
+    let friend_b = index_zero_info(0x82, false);
+    assert_ne!(
+        friend_a[0].script_pubkey, friend_b[0].script_pubkey,
+        "the two contacts must carry distinct scripts to prove no overwrite"
+    );
+
+    let dashpay_account = |friend_identity_id: [u8; 32]| AccountType::DashpayReceivingFunds {
+        index: 0,
+        user_identity_id,
+        friend_identity_id,
+    };
+
+    persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                account_address_pools: vec![
+                    pool_entry(
+                        dashpay_account([0x01; 32]),
+                        AddressPoolType::External,
+                        friend_a.clone(),
+                    ),
+                    pool_entry(
+                        dashpay_account([0x02; 32]),
+                        AddressPoolType::External,
+                        friend_b.clone(),
+                    ),
+                ],
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+    let conn = persister.lock_conn_for_test();
+    let assert_friend_row = |friend_identity_id: [u8; 32], want_script: &[u8], want_used: i64| {
+        let (script, used): (Vec<u8>, i64) = conn
+            .query_row(
+                "SELECT script, used FROM core_address_pool \
+                 WHERE wallet_id = ?1 AND account_type = 'dashpay_receiving' \
+                 AND user_identity_id = ?2 AND friend_identity_id = ?3",
+                rusqlite::params![w.as_slice(), &user_identity_id[..], &friend_identity_id[..]],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap_or_else(|e| {
+                panic!("expected exactly one row for friend {friend_identity_id:?}: {e}")
+            });
+        assert_eq!(
+            script, want_script,
+            "contact's script must survive verbatim"
+        );
+        assert_eq!(used, want_used, "contact's used flag must survive");
+    };
+    assert_friend_row([0x01; 32], friend_a[0].script_pubkey.as_bytes(), 1);
+    assert_friend_row([0x02; 32], friend_b[0].script_pubkey.as_bytes(), 0);
+
+    let total: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM core_address_pool WHERE wallet_id = ?1",
+            rusqlite::params![w.as_slice()],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(total, 2, "both contacts must persist as separate rows");
+}

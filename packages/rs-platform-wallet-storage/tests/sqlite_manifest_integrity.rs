@@ -163,7 +163,7 @@ fn tc_c_004_wrong_wallet_row_is_skipped() {
     assert!(is_manifest_skip(&state.skipped[0].1));
 }
 
-/// TC-C-005 — a NULL checksum on a V003+ store is treated as corruption
+/// TC-C-005 — a NULL checksum on a V004+ store is treated as corruption
 /// (fail-closed) and skipped. The backfill guarantees NULLs never survive
 /// `open()`, so this forces one post-open on the live connection.
 #[test]

@@ -1,9 +1,13 @@
 //! Unified additive migration for `platform-wallet-storage` (#3968).
 //!
 //! Additive-only: V001 stays byte-identical so refinery's applied-migration
-//! checksum for version 1 never diverges on an existing store. V002 lifts
-//! `max_supported_version()` from 1 to 2 automatically (the value is derived
-//! from the embedded list) and lands three concerns in one migration event:
+//! checksum for version 1 never diverges on an existing store. Numbered V003,
+//! not V002: PR #4019 (ADDR-09, `V002__address_height_pin.rs`) independently
+//! claimed version 2 and landed on this branch first — two migrations cannot
+//! share a version number (refinery's `refinery_schema_history` collides on
+//! it), so this one sequences after. V003 lifts `max_supported_version()`
+//! from 2 to 3 automatically (the value is derived from the embedded list)
+//! and lands three concerns in one migration event:
 //!
 //! - `core_address_pool` — per-index address-pool rows with a `used` flag,
 //!   the first-class row store that replaces `core_utxos` script-derivation
@@ -12,10 +16,15 @@
 //!   `(account_index, key_class)` sentinel (e.g. `IdentityRegistration` and
 //!   `ProviderVotingKeys`, both `0, 0`) never overwrite each other, and
 //!   `pool_type` so an External (receive) and Internal (change) pool never
-//!   collide at the same `address_index`. `script` (the address'
-//!   `script_pubkey`) is stored so the reader returns used addresses verbatim
-//!   and the UTXO writer can attribute an outpoint to its owning account, both
-//!   without re-deriving.
+//!   collide at the same `address_index`. The PK also carries the DashPay
+//!   `(user_identity_id, friend_identity_id)` pair, mirroring
+//!   `account_registrations` (V001): `DashpayReceivingFunds` accounts all
+//!   collapse to `(account_type='dashpay_receiving', account_index=0)`, so
+//!   without the identity pair two contacts on one wallet would upsert onto
+//!   the same PK and silently overwrite each other's pool rows. `script` (the
+//!   address' `script_pubkey`) is stored so the reader returns used addresses
+//!   verbatim and the UTXO writer can attribute an outpoint to its owning
+//!   account, both without re-deriving.
 //! - `meta_data_versions` — per-`(wallet_id, domain)` monotonic `seq`
 //!   bumped inside the flush transaction, the cache-invalidation keystone.
 //!   No FK (a domain row may be written before its typed parent syncs,
@@ -36,11 +45,13 @@ CREATE TABLE core_address_pool (
     account_type TEXT NOT NULL,
     account_index INTEGER NOT NULL,
     key_class INTEGER NOT NULL DEFAULT 0,
+    user_identity_id BLOB NOT NULL DEFAULT (zeroblob(32)),
+    friend_identity_id BLOB NOT NULL DEFAULT (zeroblob(32)),
     pool_type INTEGER NOT NULL CHECK (pool_type IN (0, 1, 2, 3)),
     address_index INTEGER NOT NULL,
     script BLOB NOT NULL,
     used INTEGER NOT NULL DEFAULT 0 CHECK (used IN (0, 1)),
-    PRIMARY KEY (wallet_id, account_type, account_index, key_class, pool_type, address_index),
+    PRIMARY KEY (wallet_id, account_type, account_index, key_class, user_identity_id, friend_identity_id, pool_type, address_index),
     FOREIGN KEY (wallet_id) REFERENCES wallets(wallet_id) ON DELETE CASCADE
 );
 

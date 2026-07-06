@@ -207,7 +207,7 @@ pub enum WalletStorageError {
 
     /// An `account_registrations` row's stored `checksum` did not match a
     /// recompute of `SHA-256(wallet_id ‖ account_xpub_bytes)` — or was NULL on
-    /// a V003+ store, which the `open()` backfill guarantees never survives.
+    /// a V004+ store, which the `open()` backfill guarantees never survives.
     /// Tamper-evidence for the Risk-6 class (a manifest row bound to the wrong
     /// `wallet_id`, or a blob mutated in place). Unlike the other
     /// mismatch variants this is caught at `load` and converted to a per-wallet

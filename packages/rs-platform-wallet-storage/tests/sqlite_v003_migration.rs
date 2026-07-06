@@ -1,6 +1,8 @@
 #![allow(clippy::field_reassign_with_default)]
 
-//! V002 unified-migration schema tests.
+//! V003 unified-migration schema tests. Numbered V003, not V002: PR #4019
+//! (ADDR-09) independently claimed version 2 (`V002__address_height_pin.rs`)
+//! and landed first, so the unified migration sequences after it.
 //!
 //! Covers TC-B-030 (fresh store migrates clean to the new target version),
 //! TC-B-003 (`meta_data_versions` shape + PK), the schema half of TC-B-001
@@ -49,19 +51,19 @@ impl OptionalExists for rusqlite::Result<()> {
     }
 }
 
-/// The additive V003 checksum migration lifts the supported schema version
-/// to 3 (derived from the embedded list's `MAX(version)`).
+/// The embedded set tops out at V004 (manifest checksum), so
+/// `max_supported_version` is 4; the V003 unified tables still land at V003.
 #[test]
-fn max_supported_version_is_three() {
+fn max_supported_version_is_four() {
     assert_eq!(
         mig::max_supported_version(),
-        3,
-        "V003 must raise max_supported_version to 3"
+        4,
+        "V004 must raise max_supported_version to 4"
     );
 }
 
 /// TC-B-030 — a fresh store migrates clean to the latest target version and
-/// every V002 table exists.
+/// every unified (V003) table exists.
 #[test]
 fn tc_b_030_fresh_store_migrates_to_latest_version() {
     let (persister, _tmp, _path) = fresh_persister();
@@ -73,7 +75,7 @@ fn tc_b_030_fresh_store_migrates_to_latest_version() {
             |r| r.get(0),
         )
         .unwrap();
-    assert_eq!(max, 3, "fresh store must land at the latest schema version");
+    assert_eq!(max, 4, "fresh store must land at the latest schema version");
     for table in [
         "core_address_pool",
         "meta_data_versions",
@@ -84,8 +86,12 @@ fn tc_b_030_fresh_store_migrates_to_latest_version() {
 }
 
 /// Schema half of TC-B-001 — `core_address_pool` carries per-index rows
-/// scoped by `(wallet_id, account_type, account_index, key_class, pool_type,
-/// address_index)`, a stored `script`, and a `used` flag.
+/// scoped by `(wallet_id, account_type, account_index, key_class,
+/// user_identity_id, friend_identity_id, pool_type, address_index)`, a
+/// stored `script`, and a `used` flag. The DashPay identity pair is in the PK
+/// (mirroring `account_registrations`) so distinct contacts, which otherwise
+/// collapse to the same `(dashpay_receiving, 0)` sentinel, never overwrite
+/// each other's pool rows (T5).
 #[test]
 fn tc_b_001_core_address_pool_shape() {
     let (persister, _tmp, _path) = fresh_persister();
@@ -97,6 +103,8 @@ fn tc_b_001_core_address_pool_shape() {
         ("account_type", "TEXT"),
         ("account_index", "INTEGER"),
         ("key_class", "INTEGER"),
+        ("user_identity_id", "BLOB"),
+        ("friend_identity_id", "BLOB"),
         ("pool_type", "INTEGER"),
         ("address_index", "INTEGER"),
         ("script", "BLOB"),
@@ -109,8 +117,10 @@ fn tc_b_001_core_address_pool_shape() {
     }
 
     // Composite PK includes account_type so accounts collapsing to the same
-    // (account_index, key_class) sentinel never overwrite each other, and
-    // pool_type so External/Internal pools never collide at one address_index.
+    // (account_index, key_class) sentinel never overwrite each other, the
+    // DashPay identity pair so distinct contacts never overwrite each other,
+    // and pool_type so External/Internal pools never collide at one
+    // address_index.
     let pk: BTreeMap<i64, String> = cols
         .iter()
         .filter(|(_, (_, _, pk))| *pk > 0)
@@ -124,11 +134,13 @@ fn tc_b_001_core_address_pool_shape() {
             "account_type",
             "account_index",
             "key_class",
+            "user_identity_id",
+            "friend_identity_id",
             "pool_type",
             "address_index"
         ],
         "core_address_pool PK must be (wallet_id, account_type, account_index, key_class, \
-         pool_type, address_index)"
+         user_identity_id, friend_identity_id, pool_type, address_index)"
     );
 }
 

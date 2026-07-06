@@ -105,7 +105,9 @@ unsafe fn create_wallet_from_seed_impl(
 
     let network: Network = network.into();
 
-    let mut seed = [0u8; 64];
+    // Zeroize the FFI-boundary copy of the master secret on drop. Passed by
+    // reference so the manager method doesn't take an un-zeroized owned copy.
+    let mut seed = zeroize::Zeroizing::new([0u8; 64]);
     std::ptr::copy_nonoverlapping(seed_bytes, seed.as_mut_ptr(), 64);
 
     let accounts = match account_options {
@@ -117,7 +119,7 @@ unsafe fn create_wallet_from_seed_impl(
     let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(manager_handle, |manager| {
         runtime().block_on(manager.create_wallet_from_seed_bytes(
             network,
-            seed,
+            &seed,
             accounts,
             birth_height_override,
         ))
@@ -197,6 +199,10 @@ pub const LOAD_SKIP_REASON_CORRUPT_OTHER: u32 = 199;
 /// `reason_code`: an unrecognized `SkipReason` — forward-compat
 /// fallback until this crate maps a newly added skip reason.
 pub const LOAD_SKIP_REASON_OTHER: u32 = 200;
+/// `reason_code`: the wallet was already registered before this load
+/// pass reached it (a prior load, or a runtime-created wallet), so its
+/// persisted row was not freshly loaded. Not corruption.
+pub const LOAD_SKIP_REASON_ALREADY_REGISTERED: u32 = 300;
 
 /// One wallet skipped during `load_from_persistor` because its
 /// persisted row was structurally corrupt (per-row decode failure).
@@ -207,21 +213,26 @@ pub const LOAD_SKIP_REASON_OTHER: u32 = 200;
 pub struct SkippedWalletFFI {
     /// The (public) 32-byte wallet id that was skipped.
     pub wallet_id: [u8; 32],
-    /// Structural skip reason — one of the `LOAD_SKIP_REASON_*`
-    /// constants: [`LOAD_SKIP_REASON_MISSING_MANIFEST`] (100),
+    /// Skip reason — one of the `LOAD_SKIP_REASON_*` constants:
+    /// [`LOAD_SKIP_REASON_MISSING_MANIFEST`] (100),
     /// [`LOAD_SKIP_REASON_MALFORMED_XPUB`] (101),
     /// [`LOAD_SKIP_REASON_DECODE_ERROR`] (102),
     /// [`LOAD_SKIP_REASON_SNAPSHOT_IDENTITY_MISMATCH`] (103),
     /// [`LOAD_SKIP_REASON_MANIFEST_INTEGRITY_MISMATCH`] (104),
-    /// [`LOAD_SKIP_REASON_CORRUPT_OTHER`] (199), or
-    /// [`LOAD_SKIP_REASON_OTHER`] (200). No secret material is ever
-    /// carried.
+    /// [`LOAD_SKIP_REASON_CORRUPT_OTHER`] (199),
+    /// [`LOAD_SKIP_REASON_OTHER`] (200), or
+    /// [`LOAD_SKIP_REASON_ALREADY_REGISTERED`] (300). No secret material
+    /// is ever carried.
     pub reason_code: u32,
 }
 
 /// C-visible summary of one `load_from_persistor` pass so the host can
 /// see which wallets loaded and which were skipped (and why) instead
 /// of the outcome being silently discarded.
+///
+/// The count pair encodes the Rust `LoadOutcome` 3-state: `skipped_count
+/// == 0` is a full load, `loaded_count == 0` with skips is
+/// nothing-usable, and both non-zero is a partial load.
 ///
 /// `skipped` is a heap array of length `skipped_count`; pass this
 /// struct (by pointer) to
@@ -251,6 +262,7 @@ fn skip_reason_code(reason: &platform_wallet::SkipReason) -> u32 {
             // generic corrupt-row code until this mapping is extended.
             _ => LOAD_SKIP_REASON_CORRUPT_OTHER,
         },
+        platform_wallet::SkipReason::AlreadyRegistered => LOAD_SKIP_REASON_ALREADY_REGISTERED,
         // `SkipReason` is #[non_exhaustive]; a future reason maps to a
         // generic skip code until this mapping is extended.
         _ => LOAD_SKIP_REASON_OTHER,
@@ -426,23 +438,26 @@ pub unsafe extern "C" fn platform_wallet_manager_load_from_persistor(
 
     // Never silently drop the outcome: log a structured summary plus
     // one line per skipped wallet (the host can inspect / clear the
-    // corrupt rows).
+    // corrupt rows). The `loaded_count`/`skipped_count` pair below
+    // encodes the Rust `LoadOutcome` 3-state for the host: skipped == 0
+    // is a full load, loaded == 0 with skips is nothing-usable, and both
+    // non-zero is a partial load.
     tracing::info!(
-        loaded = outcome.loaded.len(),
-        skipped = outcome.skipped.len(),
+        loaded = outcome.loaded().len(),
+        skipped = outcome.skipped().len(),
         "platform_wallet_manager_load_from_persistor complete"
     );
-    for (wid, reason) in &outcome.skipped {
+    for (wid, reason) in outcome.skipped() {
         tracing::warn!(
             wallet_id = %hex::encode(wid),
             reason = %reason,
-            "load_from_persistor skipped wallet (corrupt persisted row)"
+            "load_from_persistor skipped a persisted wallet"
         );
     }
 
     if !out_outcome.is_null() {
         let skipped_vec: Vec<SkippedWalletFFI> = outcome
-            .skipped
+            .skipped()
             .iter()
             .map(|(wid, reason)| SkippedWalletFFI {
                 wallet_id: *wid,
@@ -454,7 +469,7 @@ pub unsafe extern "C" fn platform_wallet_manager_load_from_persistor(
         std::ptr::write(
             out_outcome,
             LoadOutcomeFFI {
-                loaded_count: outcome.loaded.len(),
+                loaded_count: outcome.loaded().len(),
                 skipped_count,
                 skipped: skipped_ptr,
             },

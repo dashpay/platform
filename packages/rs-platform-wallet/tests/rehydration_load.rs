@@ -20,19 +20,22 @@
 //!   deep pool addresses survive the reload; a snapshot whose
 //!   `wallet_id` mismatches its row is skipped as corrupt.
 
+use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 
+use dpp::prelude::Identifier;
 use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 use key_wallet::wallet::Wallet;
 use platform_wallet::changeset::{
-    AccountRegistrationEntry, ClientStartState, ClientWalletStartState, CoreChangeSet,
+    AccountRegistrationEntry, ClientStartState, ClientWalletStartState, IdentityManagerStartState,
     PersistenceError, PersistenceErrorKind, PlatformWalletChangeSet, PlatformWalletPersistence,
 };
 use platform_wallet::error::PlatformWalletError;
 use platform_wallet::events::{EventHandler, PlatformEventHandler};
 use platform_wallet::manager::load_outcome::CorruptKind;
 use platform_wallet::wallet::platform_wallet::WalletId;
-use platform_wallet::{PlatformWalletManager, SkipReason};
+use platform_wallet::ManagedIdentity;
+use platform_wallet::{LoadOutcome, PlatformWalletManager, SkipReason};
 
 // ---- test doubles ----
 
@@ -75,12 +78,8 @@ impl PlatformWalletPersistence for FixedLoadPersister {
                             birth_height: w.birth_height,
                             account_manifest: w.account_manifest.clone(),
                             core_wallet_info: w.core_wallet_info.clone(),
-                            core_state: w.core_state.clone(),
                             identity_manager: Default::default(),
                             unused_asset_locks: Default::default(),
-                            contacts: Default::default(),
-                            identity_keys: Default::default(),
-                            used_core_addresses: w.used_core_addresses.clone(),
                         },
                     );
                 }
@@ -153,20 +152,32 @@ fn manifest_and_id(seed: [u8; 64]) -> (Vec<AccountRegistrationEntry>, [u8; 32]) 
 }
 
 fn slice(seed: [u8; 64]) -> (WalletId, ClientWalletStartState) {
-    let (manifest, id) = manifest_and_id(seed);
+    let wallet = Wallet::from_seed_bytes(
+        seed,
+        key_wallet::Network::Testnet,
+        WalletAccountCreationOptions::Default,
+    )
+    .unwrap();
+    let id = wallet.compute_wallet_id();
+    let account_manifest = wallet
+        .accounts
+        .all_accounts()
+        .into_iter()
+        .map(|a| AccountRegistrationEntry {
+            account_type: a.account_type,
+            account_xpub: a.account_xpub,
+        })
+        .collect();
+    let info = key_wallet::wallet::managed_wallet_info::ManagedWalletInfo::from_wallet(&wallet, 1);
     (
         id,
         ClientWalletStartState {
             network: key_wallet::Network::Testnet,
             birth_height: 1,
-            account_manifest: manifest,
-            core_wallet_info: None,
-            core_state: CoreChangeSet::default(),
+            account_manifest,
+            core_wallet_info: Box::new(info),
             identity_manager: Default::default(),
             unused_asset_locks: Default::default(),
-            contacts: Default::default(),
-            identity_keys: Default::default(),
-            used_core_addresses: Default::default(),
         },
     )
 }
@@ -196,8 +207,8 @@ async fn rt_wo_watch_only_roundtrip() {
     let mgr = manager(Arc::clone(&p), Arc::clone(&h)).await;
     let outcome = mgr.load_from_persistor().await.expect("Ok");
 
-    assert_eq!(outcome.loaded, vec![id]);
-    assert!(outcome.skipped.is_empty());
+    assert_eq!(outcome.loaded(), vec![id].as_slice());
+    assert!(outcome.skipped().is_empty());
     assert!(
         mgr.get_wallet(&id).await.is_some(),
         "watch-only restored wallet must be registered"
@@ -207,9 +218,9 @@ async fn rt_wo_watch_only_roundtrip() {
 
 /// RT-Idem: a second `load_from_persistor` with the wallet already
 /// registered (a repeat restore, or a wallet created at runtime) must be
-/// idempotent. `WalletExists` from `insert_wallet` is treated as
-/// already-satisfied — counted as loaded — not a fatal `WalletCreation`
-/// that aborts the whole batch.
+/// idempotent — never a hard error. The already-present wallet is
+/// reported as an `AlreadyRegistered` skip (not a fresh load), so the
+/// caller can tell it apart from one this pass genuinely loaded.
 #[tokio::test]
 async fn rt_idempotent_repeat_restore() {
     let seed = [0x55; 64];
@@ -223,21 +234,31 @@ async fn rt_idempotent_repeat_restore() {
     let mgr = manager(Arc::clone(&p), Arc::clone(&h)).await;
 
     let first = mgr.load_from_persistor().await.expect("first load Ok");
-    assert_eq!(first.loaded, vec![id]);
-    assert!(first.skipped.is_empty());
+    assert_eq!(first.loaded(), vec![id].as_slice());
+    assert!(first.skipped().is_empty());
+    assert!(
+        matches!(first, LoadOutcome::Loaded { .. }),
+        "a clean first load is the Loaded variant"
+    );
 
-    // Second load: the wallet is already registered. Must NOT hard-error.
+    // Second load: the wallet is already registered. Must NOT hard-error;
+    // the row is reported as an AlreadyRegistered skip, not freshly loaded.
     let second = mgr
         .load_from_persistor()
         .await
         .expect("repeat load must be idempotent, not a hard error");
     assert!(
-        second.loaded.contains(&id),
-        "already-present wallet is reported loaded (already-satisfied)"
+        !second.loaded().contains(&id),
+        "an already-registered wallet is not reported as freshly loaded"
+    );
+    assert_eq!(
+        second.skipped(),
+        [(id, SkipReason::AlreadyRegistered)].as_slice(),
+        "the already-present wallet surfaces as an AlreadyRegistered skip"
     );
     assert!(
-        second.skipped.is_empty(),
-        "an idempotent re-load is not a skip"
+        matches!(second, LoadOutcome::NoneUsable { .. }),
+        "nothing freshly loaded on the repeat pass"
     );
     assert!(
         mgr.get_wallet(&id).await.is_some(),
@@ -276,12 +297,12 @@ async fn rt_persister_skipped_folds_into_outcome() {
         .expect("Ok despite a persister-rejected row");
 
     assert!(
-        outcome.loaded.contains(&id_ok),
+        outcome.loaded().contains(&id_ok),
         "healthy wallet still loads"
     );
-    assert!(!outcome.loaded.contains(&bad_id));
-    assert_eq!(outcome.skipped.len(), 1, "the rejected row surfaces once");
-    assert_eq!(outcome.skipped[0], (bad_id, reason.clone()));
+    assert!(!outcome.loaded().contains(&bad_id));
+    assert_eq!(outcome.skipped().len(), 1, "the rejected row surfaces once");
+    assert_eq!(outcome.skipped()[0], (bad_id, reason.clone()));
     assert!(mgr.get_wallet(&id_ok).await.is_some());
     assert!(
         mgr.get_wallet(&bad_id).await.is_none(),
@@ -305,21 +326,11 @@ async fn rt_corrupt_row_skipped_and_other_loads() {
     let p = Arc::new(FixedLoadPersister::new());
     let h = Arc::new(RecordingHandler::default());
     let (id_a, sa) = slice(seed_a);
-    let (id_b, _sb) = slice(seed_b);
+    let (id_b, mut sb_corrupt) = slice(seed_b);
 
-    // B's row is structurally corrupt — empty manifest.
-    let sb_corrupt = ClientWalletStartState {
-        network: key_wallet::Network::Testnet,
-        birth_height: 1,
-        account_manifest: Vec::new(),
-        core_wallet_info: None,
-        core_state: CoreChangeSet::default(),
-        identity_manager: Default::default(),
-        unused_asset_locks: Default::default(),
-        contacts: Default::default(),
-        identity_keys: Default::default(),
-        used_core_addresses: Default::default(),
-    };
+    // B's row is structurally corrupt — empty manifest. The empty manifest
+    // aborts the watch-only rebuild before the snapshot is ever consulted.
+    sb_corrupt.account_manifest = Vec::new();
 
     let mut st = ClientStartState::default();
     st.wallets.insert(id_a, sa);
@@ -332,10 +343,13 @@ async fn rt_corrupt_row_skipped_and_other_loads() {
         .await
         .expect("Ok despite per-row skip");
 
-    assert!(outcome.loaded.contains(&id_a), "A loads fully");
-    assert!(!outcome.loaded.contains(&id_b), "B is skipped, not loaded");
-    assert_eq!(outcome.skipped.len(), 1);
-    let (skipped_id, skipped_reason) = &outcome.skipped[0];
+    assert!(outcome.loaded().contains(&id_a), "A loads fully");
+    assert!(
+        !outcome.loaded().contains(&id_b),
+        "B is skipped, not loaded"
+    );
+    assert_eq!(outcome.skipped().len(), 1);
+    let (skipped_id, skipped_reason) = &outcome.skipped()[0];
     assert_eq!(*skipped_id, id_b);
     assert!(matches!(
         skipped_reason,
@@ -373,21 +387,10 @@ async fn rt_z_secret_hygiene_surfaces() {
     let seed = [0xAB; 64];
     let p = Arc::new(FixedLoadPersister::new());
     let h = Arc::new(RecordingHandler::default());
-    let (id, _s) = slice(seed);
+    let (id, mut corrupt) = slice(seed);
 
     // Corrupt row to force a skip and inspect every public surface.
-    let corrupt = ClientWalletStartState {
-        network: key_wallet::Network::Testnet,
-        birth_height: 1,
-        account_manifest: Vec::new(),
-        core_wallet_info: None,
-        core_state: CoreChangeSet::default(),
-        identity_manager: Default::default(),
-        unused_asset_locks: Default::default(),
-        contacts: Default::default(),
-        identity_keys: Default::default(),
-        used_core_addresses: Default::default(),
-    };
+    corrupt.account_manifest = Vec::new();
     let mut st = ClientStartState::default();
     st.wallets.insert(id, corrupt);
     p.set(st);
@@ -398,7 +401,7 @@ async fn rt_z_secret_hygiene_surfaces() {
     // 0xAB seed bytes must not appear hex-rendered anywhere.
     assert!(!dbg.to_lowercase().contains(&"ab".repeat(10)));
     // The structural skip reason renders without any row bytes.
-    for (_, reason) in &outcome.skipped {
+    for (_, reason) in outcome.skipped() {
         let rendered = format!("{reason} {reason:?}");
         assert!(!rendered.to_lowercase().contains(&"ab".repeat(10)));
     }
@@ -529,7 +532,7 @@ async fn rt_snapshot_preserves_attribution_and_pools() {
     info.update_balance();
 
     let (_, mut s) = slice(seed);
-    s.core_wallet_info = Some(Box::new(info));
+    s.core_wallet_info = Box::new(info);
     let p = Arc::new(FixedLoadPersister::new());
     let h = Arc::new(RecordingHandler::default());
     let mut st = ClientStartState::default();
@@ -538,8 +541,8 @@ async fn rt_snapshot_preserves_attribution_and_pools() {
 
     let mgr = manager(Arc::clone(&p), Arc::clone(&h)).await;
     let outcome = mgr.load_from_persistor().await.expect("Ok");
-    assert_eq!(outcome.loaded, vec![id]);
-    assert!(outcome.skipped.is_empty());
+    assert_eq!(outcome.loaded(), vec![id].as_slice());
+    assert!(outcome.skipped().is_empty());
 
     let rows = {
         let mgr = Arc::clone(&mgr);
@@ -589,7 +592,7 @@ async fn rt_snapshot_wallet_id_mismatch_is_skipped() {
         WalletAccountCreationOptions::Default,
     )
     .unwrap();
-    s.core_wallet_info = Some(Box::new(ManagedWalletInfo::from_wallet(&wallet_b, 1)));
+    s.core_wallet_info = Box::new(ManagedWalletInfo::from_wallet(&wallet_b, 1));
 
     let mut st = ClientStartState::default();
     st.wallets.insert(id_a, s);
@@ -598,9 +601,9 @@ async fn rt_snapshot_wallet_id_mismatch_is_skipped() {
     let mgr = manager(Arc::clone(&p), Arc::clone(&h)).await;
     let outcome = mgr.load_from_persistor().await.expect("Ok");
 
-    assert!(outcome.loaded.is_empty(), "mismatched row must not load");
-    assert_eq!(outcome.skipped.len(), 1);
-    let (skipped_id, reason) = &outcome.skipped[0];
+    assert!(outcome.loaded().is_empty(), "mismatched row must not load");
+    assert_eq!(outcome.skipped().len(), 1);
+    let (skipped_id, reason) = &outcome.skipped()[0];
     assert_eq!(*skipped_id, id_a);
     assert!(matches!(
         reason,
@@ -643,7 +646,7 @@ async fn rt_snapshot_account_set_mismatch_is_skipped() {
 
     let (_, mut s) = slice(seed);
     s.account_manifest = truncated_manifest;
-    s.core_wallet_info = Some(Box::new(ManagedWalletInfo::from_wallet(&wallet_a, 1)));
+    s.core_wallet_info = Box::new(ManagedWalletInfo::from_wallet(&wallet_a, 1));
 
     let mut st = ClientStartState::default();
     st.wallets.insert(id_a, s);
@@ -653,11 +656,11 @@ async fn rt_snapshot_account_set_mismatch_is_skipped() {
     let outcome = mgr.load_from_persistor().await.expect("Ok");
 
     assert!(
-        outcome.loaded.is_empty(),
+        outcome.loaded().is_empty(),
         "account-set mismatch must not load"
     );
-    assert_eq!(outcome.skipped.len(), 1);
-    let (skipped_id, reason) = &outcome.skipped[0];
+    assert_eq!(outcome.skipped().len(), 1);
+    let (skipped_id, reason) = &outcome.skipped()[0];
     assert_eq!(*skipped_id, id_a);
     assert!(matches!(
         reason,
@@ -693,7 +696,7 @@ async fn rt_snapshot_mismatch_skip_coexists_with_healthy_load() {
     .unwrap();
     let id_ok = wallet_ok.compute_wallet_id();
     let (_, mut s_ok) = slice(seed_ok);
-    s_ok.core_wallet_info = Some(Box::new(ManagedWalletInfo::from_wallet(&wallet_ok, 1)));
+    s_ok.core_wallet_info = Box::new(ManagedWalletInfo::from_wallet(&wallet_ok, 1));
 
     // Mismatched row: keyed by wallet BAD, snapshot built from wallet OTHER.
     let (id_bad, mut s_bad) = slice(seed_bad);
@@ -703,7 +706,7 @@ async fn rt_snapshot_mismatch_skip_coexists_with_healthy_load() {
         WalletAccountCreationOptions::Default,
     )
     .unwrap();
-    s_bad.core_wallet_info = Some(Box::new(ManagedWalletInfo::from_wallet(&wallet_other, 1)));
+    s_bad.core_wallet_info = Box::new(ManagedWalletInfo::from_wallet(&wallet_other, 1));
 
     let mut st = ClientStartState::default();
     st.wallets.insert(id_ok, s_ok);
@@ -716,9 +719,13 @@ async fn rt_snapshot_mismatch_skip_coexists_with_healthy_load() {
         .await
         .expect("Ok despite the per-row snapshot mismatch");
 
-    assert_eq!(outcome.loaded, vec![id_ok], "only the healthy row loads");
-    assert_eq!(outcome.skipped.len(), 1);
-    let (skipped_id, reason) = &outcome.skipped[0];
+    assert_eq!(
+        outcome.loaded(),
+        vec![id_ok].as_slice(),
+        "only the healthy row loads"
+    );
+    assert_eq!(outcome.skipped().len(), 1);
+    let (skipped_id, reason) = &outcome.skipped()[0];
     assert_eq!(*skipped_id, id_bad);
     assert!(matches!(
         reason,
@@ -787,4 +794,212 @@ async fn rt_persister_load_permanent_error_is_typed_and_not_retryable() {
         }
         other => panic!("expected PersisterLoad, got {other:?}"),
     }
+}
+
+/// RT-EmptyFirstRun: a genuinely fresh install — the persister returns
+/// `ClientStartState::default()` with no rows at all — loads cleanly as
+/// `LoadOutcome::Loaded` with empty loaded/skipped and fires zero skip
+/// handlers. This is the condition every first launch hits.
+#[tokio::test]
+async fn rt_empty_first_run_is_clean_with_no_handler_calls() {
+    // `FixedLoadPersister::new()` without `set()` returns the default
+    // (empty) ClientStartState from `load()`.
+    let p = Arc::new(FixedLoadPersister::new());
+    let h = Arc::new(RecordingHandler::default());
+
+    let mgr = manager(Arc::clone(&p), Arc::clone(&h)).await;
+    let outcome = mgr
+        .load_from_persistor()
+        .await
+        .expect("an empty store must load cleanly");
+
+    assert!(
+        matches!(outcome, LoadOutcome::Loaded { .. }),
+        "an empty store is a full (Loaded) outcome, not partial/none-usable"
+    );
+    assert!(
+        outcome.loaded().is_empty(),
+        "nothing to load on a fresh install"
+    );
+    assert!(
+        outcome.skipped().is_empty(),
+        "nothing to skip on a fresh install"
+    );
+    assert!(mgr.wallet_ids().await.is_empty(), "no wallets registered");
+    assert!(
+        h.skipped.lock().unwrap().is_empty(),
+        "no skip handler fires on a fresh install"
+    );
+}
+
+/// RT-Concurrent: two concurrent `load_from_persistor` passes against the
+/// same manager and multi-wallet snapshot. Both must complete without
+/// error, every wallet must register exactly once (the idempotency check
+/// releases its read lock before the write-lock insert — a check-then-act
+/// window), and the outcomes must be consistent: each wallet is freshly
+/// loaded by exactly one pass and reported `AlreadyRegistered` by the
+/// other (never a corruption skip, never a hard error).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn rt_concurrent_loads_register_each_wallet_exactly_once() {
+    let p = Arc::new(FixedLoadPersister::new());
+    let h = Arc::new(RecordingHandler::default());
+    let (id1, s1) = slice([0xC1; 64]);
+    let (id2, s2) = slice([0xC2; 64]);
+    let mut st = ClientStartState::default();
+    st.wallets.insert(id1, s1);
+    st.wallets.insert(id2, s2);
+    p.set(st);
+
+    let mgr = manager(Arc::clone(&p), Arc::clone(&h)).await;
+    let m1 = Arc::clone(&mgr);
+    let m2 = Arc::clone(&mgr);
+    let t1 = tokio::spawn(async move { m1.load_from_persistor().await });
+    let t2 = tokio::spawn(async move { m2.load_from_persistor().await });
+    let o1 = t1.await.unwrap().expect("first concurrent load Ok");
+    let o2 = t2.await.unwrap().expect("second concurrent load Ok");
+
+    // Each wallet registered exactly once, in both maps.
+    assert!(mgr.get_wallet(&id1).await.is_some());
+    assert!(mgr.get_wallet(&id2).await.is_some());
+    assert_eq!(
+        mgr.wallet_ids().await.len(),
+        2,
+        "each wallet registered exactly once despite the concurrent passes"
+    );
+
+    // Every wallet is freshly loaded by exactly one of the two passes.
+    let mut loaded_union: std::collections::BTreeSet<WalletId> =
+        o1.loaded().iter().copied().collect();
+    for id in o2.loaded() {
+        assert!(
+            loaded_union.insert(*id),
+            "a wallet must be freshly loaded by at most one pass"
+        );
+    }
+    assert!(
+        loaded_union.contains(&id1) && loaded_union.contains(&id2),
+        "both wallets loaded across the two passes"
+    );
+
+    // Any overlap surfaces as an AlreadyRegistered skip, never corruption.
+    for outcome in [&o1, &o2] {
+        for (_, reason) in outcome.skipped() {
+            assert_eq!(
+                *reason,
+                SkipReason::AlreadyRegistered,
+                "a concurrent overlap is an AlreadyRegistered skip, not a corrupt row"
+            );
+        }
+    }
+}
+
+/// Persister for TC-3692-011. Rebuilds — fresh on each `load()`, since the
+/// identity-manager snapshot is intentionally not `Clone` — a
+/// `ClientStartState` carrying one wallet-owned identity whose
+/// `Identity.public_keys` already holds a CRITICAL / AUTHENTICATION /
+/// ECDSA_SECP256K1 key, the shape the FFI/iOS path produces via
+/// `build_wallet_identity_bucket` (never through an `IdentityKeysChangeSet`).
+struct IdentityKeyedLoadPersister {
+    seed: [u8; 64],
+    identity_id: Identifier,
+}
+
+impl PlatformWalletPersistence for IdentityKeyedLoadPersister {
+    fn store(&self, _: WalletId, _: PlatformWalletChangeSet) -> Result<(), PersistenceError> {
+        Ok(())
+    }
+    fn flush(&self, _: WalletId) -> Result<(), PersistenceError> {
+        Ok(())
+    }
+    fn load(&self) -> Result<ClientStartState, PersistenceError> {
+        use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+        use dpp::identity::identity_public_key::{IdentityPublicKey, Purpose};
+        use dpp::identity::v0::IdentityV0;
+        use dpp::identity::{Identity, KeyType, SecurityLevel};
+
+        let (id, mut s) = slice(self.seed);
+
+        let key = IdentityPublicKey::V0(IdentityPublicKeyV0 {
+            id: 0,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::CRITICAL,
+            contract_bounds: None,
+            key_type: KeyType::ECDSA_SECP256K1,
+            read_only: false,
+            data: dpp::platform_value::BinaryData::new(vec![2u8; 33]),
+            disabled_at: None,
+        });
+        let mut public_keys = BTreeMap::new();
+        public_keys.insert(0, key);
+        let identity = Identity::V0(IdentityV0 {
+            id: self.identity_id,
+            public_keys,
+            balance: 0,
+            revision: 0,
+        });
+
+        let mut inner = BTreeMap::new();
+        inner.insert(0u32, ManagedIdentity::new(identity, 0));
+        let mut ims = IdentityManagerStartState::default();
+        ims.wallet_identities.insert(id, inner);
+        s.identity_manager = ims;
+
+        let mut st = ClientStartState::default();
+        st.wallets.insert(id, s);
+        Ok(st)
+    }
+}
+
+/// TC-3692-011 [CRITICAL]: the restored identity's signing key is
+/// selectable via the exact `get_first_public_key_matching` predicate the
+/// real signing path uses (`contract.rs`, `dpns.rs`, ...) immediately
+/// after `load_from_persistor`, with zero sync. The FFI/iOS path populates
+/// `Identity.public_keys` at construction, so dropping
+/// `ClientWalletStartState.identity_keys` must not change this — the key
+/// must sit in the exact map slot the lookup reads, with no reliance on
+/// `apply_identity_key_entry` ever running on the load path.
+#[tokio::test]
+async fn rt_signing_key_selectable_immediately_after_load() {
+    use dpp::identity::accessors::IdentityGettersV0;
+    use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+    use dpp::identity::identity_public_key::Purpose;
+    use dpp::identity::{KeyType, SecurityLevel};
+
+    let seed = [0x5A; 64];
+    let identity_id = Identifier::from([0x11; 32]);
+    let p = Arc::new(IdentityKeyedLoadPersister { seed, identity_id });
+    let h = Arc::new(RecordingHandler::default());
+    let sdk = Arc::new(dash_sdk::Sdk::new_mock());
+    let mgr = Arc::new(PlatformWalletManager::new(sdk, Arc::clone(&p), h));
+
+    let outcome = mgr.load_from_persistor().await.expect("Ok");
+    assert!(
+        outcome.skipped().is_empty(),
+        "identity row must not be skipped"
+    );
+    let id = outcome
+        .loaded()
+        .first()
+        .copied()
+        .expect("exactly one wallet loaded");
+
+    // Immediately — no SPV sync, no identity refresh — drive the exact
+    // predicate a real signing flow uses to pick its authentication key.
+    let wallet = mgr.get_wallet(&id).await.expect("wallet registered");
+    let wm = wallet.wallet_manager().read().await;
+    let info = wm.get_wallet_info(&id).expect("wallet info present");
+    let managed = info
+        .identity_manager
+        .identity(&identity_id)
+        .expect("identity restored into the manager");
+    let selected = managed
+        .identity
+        .get_first_public_key_matching(
+            Purpose::AUTHENTICATION,
+            [SecurityLevel::CRITICAL].into(),
+            [KeyType::ECDSA_SECP256K1].into(),
+            false,
+        )
+        .expect("CRITICAL/AUTH/ECDSA signing key must be selectable post-load, zero sync");
+    assert_eq!(selected.id(), 0, "the exact installed key is selected");
 }

@@ -245,7 +245,7 @@ pub fn load_state(
 /// For each row, recomputes `SHA-256(wallet_id ‖ account_xpub_bytes)` and
 /// compares it to the stored `checksum` column. A mismatch — or a NULL
 /// checksum, which the mandatory `open()` backfill guarantees never survives
-/// on a V003+ store — yields [`WalletStorageError::ManifestIntegrityMismatch`].
+/// on a V004+ store — yields [`WalletStorageError::ManifestIntegrityMismatch`].
 /// A row copied under the wrong `wallet_id`, or a blob mutated in place, fails
 /// here because `wallet_id` is part of the preimage.
 ///
@@ -275,13 +275,13 @@ pub fn verify_manifest_checksums(
 }
 
 /// Fill the manifest `checksum` for every `account_registrations` row that
-/// still carries NULL — pre-V003 rows migrated forward, which SQLite cannot
+/// still carries NULL — pre-V004 rows migrated forward, which SQLite cannot
 /// checksum in pure SQL (no SHA-256 builtin). Runs in its own transaction.
 ///
 /// Idempotent: a second pass touches nothing because the first left no NULLs,
 /// and a fresh/empty store is a no-op. Returns the number of rows filled.
 /// Called once from [`SqlitePersister::open`](crate::SqlitePersister) right
-/// after migrations, so `load()` never sees a NULL checksum on a V003+ store.
+/// after migrations, so `load()` never sees a NULL checksum on a V004+ store.
 pub fn backfill_missing_checksums(conn: &mut Connection) -> Result<usize, WalletStorageError> {
     let tx = conn.transaction()?;
     let pending: Vec<(i64, Vec<u8>, Vec<u8>)> = {
@@ -848,7 +848,7 @@ mod tests {
             apply_registrations(&tx, &w, std::slice::from_ref(&entry)).unwrap();
             tx.commit().unwrap();
         }
-        // Simulate a pre-V003 row: strip the checksum the writer just set.
+        // Simulate a pre-V004 row: strip the checksum the writer just set.
         conn.execute(
             "UPDATE account_registrations SET checksum = NULL WHERE wallet_id = ?1",
             rusqlite::params![&w[..]],
