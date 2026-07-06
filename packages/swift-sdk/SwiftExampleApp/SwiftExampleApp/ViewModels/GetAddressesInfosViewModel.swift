@@ -10,10 +10,12 @@ final class GetAddressesInfosViewModel: BaseViewModel {
   @Published var result: PlatformAddressInfosResult?
 
   static let testBech32mAddresses = """
-    tdashevo1qqyfsqyzcn5hzu7echru54njypdq0v4d7gv8pkdf
-    tdashevo1qq0rs5w7e3xv6ls3f7s4hz82e44p29e38fqlmhs
+    tdash1kzdl4c3apkekqevkqrzctgagv2v2ng5hysegt5x4
+    tdash1kz4ummcjx3t83y9tehh3ydzk0zg2hn00zgc6jtwv
     """
 
+  // Hex field feeds the FFI directly, which expects the storage-form type byte
+  // (0x00 = P2PKH), not the user-facing bech32m byte (0xb0).
   static let testHexAddresses = """
     001234567890abcdef1234567890abcdef12345678
     00abcdef1234567890abcdef1234567890abcdef12
