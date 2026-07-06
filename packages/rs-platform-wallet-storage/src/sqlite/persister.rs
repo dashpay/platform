@@ -949,7 +949,9 @@ impl PlatformWalletPersistence for SqlitePersister {
                         .push((wallet_id, SkipReason::CorruptPersistedRow { kind }));
                 }
                 Err(LoadOneWalletError::Storage(e)) => return Err(PersistenceError::from(e)),
-                Err(LoadOneWalletError::Backend(msg)) => return Err(PersistenceError::backend(msg)),
+                Err(LoadOneWalletError::Backend(msg)) => {
+                    return Err(PersistenceError::backend(msg))
+                }
             }
         }
         let wallets_rehydrated = state.wallets.len();
@@ -1088,10 +1090,11 @@ fn load_one_wallet_state(
                 ))
             })?
     };
-    let mut core_wallet_info = key_wallet::wallet::managed_wallet_info::ManagedWalletInfo::from_wallet(
-        &watch_only,
-        birth_height,
-    );
+    let mut core_wallet_info =
+        key_wallet::wallet::managed_wallet_info::ManagedWalletInfo::from_wallet(
+            &watch_only,
+            birth_height,
+        );
     platform_wallet::rehydrate::apply_persisted_core_state(
         &mut core_wallet_info,
         &account_manifest,
