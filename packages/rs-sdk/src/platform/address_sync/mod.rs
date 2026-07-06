@@ -343,14 +343,14 @@ pub async fn sync_address_balances<P: AddressProvider>(
     // Initialize result
     let mut result: AddressSyncResult<P::Tag, P::Address> = AddressSyncResult::new();
 
-    // Nothing to scan when no addresses are pending. Still surface any
-    // current-balance-only address (an invariant-violating provider can
-    // expose one with an empty pending set) so its known base balance is
-    // not silently dropped by the early return.
+    // Nothing to scan when no addresses are pending. Return a visibly-empty
+    // result: the watermark fields stay 0 and `sync_finished` is not called,
+    // so a caller that persists `new_sync_height` after each sync can tell
+    // this pass did no work and will not regress its watermark to 0. We
+    // deliberately do NOT seed `found` from `current_balances` here — doing so
+    // would only echo the caller's own base balances back while disguising a
+    // zero-watermark no-op as a populated, successful sync.
     if !provider.has_pending() {
-        for (tag, address, funds) in provider.current_balances() {
-            result.found.entry((tag, address)).or_insert(funds);
-        }
         return Ok(result);
     }
 
@@ -387,9 +387,7 @@ pub async fn sync_address_balances<P: AddressProvider>(
             "Address sync: incremental-only from height {}",
             start_height
         );
-        for (tag, address, funds) in provider.current_balances() {
-            result.found.insert((tag, address), funds);
-        }
+        seed_base_balances(&mut result, &key_to_tag, &*provider);
         start_height
     } else {
         // Full tree scan via the shared algorithm
@@ -415,9 +413,7 @@ pub async fn sync_address_balances<P: AddressProvider>(
     // Seed base balances the scan missed (invariant-violating bridge case).
     // Runs after the authoritative scan inserts, so the scan wins on overlap;
     // fills gaps so a later `AddToCredits` delta is `existing + X`, not `0 + X`.
-    for (tag, address, funds) in provider.current_balances() {
-        result.found.entry((tag, address)).or_insert(funds);
-    }
+    seed_base_balances(&mut result, &key_to_tag, &*provider);
 
     // Incremental catch-up from catch_up_from to chain tip.
     // Queries recent first to get a proof, then checks if the boundary height
@@ -441,6 +437,45 @@ pub async fn sync_address_balances<P: AddressProvider>(
     provider.sync_finished().await;
 
     Ok(result)
+}
+
+/// Seed `result.found` with the provider's known base balances for any
+/// address the authoritative scan did not already record, so a later
+/// `AddToCredits` delta accumulates on `existing + X` rather than `0 + X`.
+/// This is the defensive bridge for a provider that violates the
+/// [`current_balances`](AddressProvider::current_balances) invariant (e.g. the
+/// FFI batch provider built from two independent caller-supplied arrays).
+///
+/// Two guards keep this defensive seed from corrupting the scan's result:
+///
+/// - **Tag reconciliation.** The `(tag, address)` key is resolved through
+///   `key_to_tag` (which folds `pending_addresses` first, so *pending wins*)
+///   rather than trusting the `current_balances` tag. A tag mismatch between
+///   the two views would otherwise split one address across two result keys —
+///   the seeded base under one tag, a later delta under the pending tag — and
+///   double-count it.
+///
+/// - **Absent-scan wins.** An address the tree scan proved absent is skipped:
+///   the scan is authoritative, so a stale cached balance must never resurrect
+///   a proven-absent address back into `found` (which would violate
+///   `found`/`absent` disjointness and inflate `total_balance`).
+fn seed_base_balances<P: AddressProvider>(
+    result: &mut AddressSyncResult<P::Tag, P::Address>,
+    key_to_tag: &HashMap<Vec<u8>, (P::Tag, P::Address)>,
+    provider: &P,
+) {
+    for (tag, address, funds) in provider.current_balances() {
+        // Resolve to the key the delta path will use (pending wins).
+        let result_key = key_to_tag
+            .get(&address.to_bytes())
+            .copied()
+            .unwrap_or((tag, address));
+        // Never resurrect a scan-proven-absent address from a cached balance.
+        if result.absent.contains(&result_key) {
+            continue;
+        }
+        result.found.entry(result_key).or_insert(funds);
+    }
 }
 
 // ── Incremental catch-up (address-specific) ──────────────────────────
@@ -784,6 +819,54 @@ fn borrow_op(op: &OwnedBalanceOp) -> BalanceOp<'_> {
     }
 }
 
+/// Apply a single balance change to `result` for an already-resolved
+/// `(tag, address)`. Returns `Some(funds)` when the balance moved — the
+/// caller records the update and fires `on_address_found` — or `None` on a
+/// no-op.
+///
+/// This is the single home for the two invariants the forward apply pass
+/// ([`apply_block_changes`]) and the end-of-pass replay
+/// ([`refresh_and_replay_unknown`]) must keep byte-for-byte identical: the
+/// `found`/`absent` disjointness rule, and the synthesized-nonce rule. A
+/// future change to either lands here once instead of on two divergent
+/// copies.
+fn apply_change<P: AddressProvider>(
+    result: &mut AddressSyncResult<P::Tag, P::Address>,
+    tag: P::Tag,
+    address: P::Address,
+    op: BalanceOp<'_>,
+    current_height: u64,
+) -> Option<AddressFunds> {
+    let result_key = (tag, address);
+    let current_balance = result
+        .found
+        .get(&result_key)
+        .map(|f| f.balance)
+        .unwrap_or(0);
+
+    let new_balance = apply_op(op, current_balance, current_height);
+    if new_balance == current_balance {
+        return None;
+    }
+
+    // INTENTIONAL — accepted risk: incremental RPCs carry no nonce, so a
+    // catch-up-discovered address synthesizes nonce=0. It is published and
+    // persisted but NON-AUTHORITATIVE — every spend re-fetches the on-chain
+    // nonce. Callers MUST NOT treat this as the authoritative nonce.
+    // (Option<u32> rework deliberately skipped.)
+    let nonce = result.found.get(&result_key).map(|f| f.nonce).unwrap_or(0);
+    let funds = AddressFunds {
+        nonce,
+        balance: new_balance,
+    };
+    // Keep `found` and `absent` disjoint: a post-checkpoint funding can land
+    // on an address the branch scan proved absent, so clear any stale
+    // `absent` entry before recording it as found.
+    result.absent.remove(&result_key);
+    result.found.insert(result_key, funds);
+    Some(funds)
+}
+
 /// Apply one block's changes against the borrowed entry-time lookup, drive
 /// `on_address_found` for every known address whose balance moved, and
 /// append unknown-address changes to `pending_unknown` for a single
@@ -806,32 +889,7 @@ async fn apply_block_changes<'a, P, I>(
     for (platform_addr, change) in changes {
         let addr_bytes = platform_addr.to_bytes();
         if let Some(&(tag, address)) = address_lookup.get(&addr_bytes) {
-            let result_key = (tag, address);
-            let current_balance = result
-                .found
-                .get(&result_key)
-                .map(|f| f.balance)
-                .unwrap_or(0);
-
-            let new_balance = apply_op(change, current_balance, current_height);
-
-            if new_balance != current_balance {
-                // INTENTIONAL — accepted risk: incremental RPCs carry no nonce,
-                // so a catch-up-discovered address synthesizes nonce=0. It is
-                // published and persisted but NON-AUTHORITATIVE — every spend
-                // re-fetches the on-chain nonce. Callers MUST NOT treat this as
-                // the authoritative nonce. (Option<u32> rework deliberately skipped.)
-                let nonce = result.found.get(&result_key).map(|f| f.nonce).unwrap_or(0);
-                let funds = AddressFunds {
-                    nonce,
-                    balance: new_balance,
-                };
-                // Keep `found` and `absent` disjoint: a post-checkpoint
-                // funding can land on an address the branch scan proved
-                // absent, so clear any stale `absent` entry before recording
-                // it as found.
-                result.absent.remove(&result_key);
-                result.found.insert(result_key, funds);
+            if let Some(funds) = apply_change::<P>(result, tag, address, change, current_height) {
                 local_applied.push((tag, address, funds));
             }
         } else {
@@ -845,9 +903,14 @@ async fn apply_block_changes<'a, P, I>(
             // memory heuristics. We log a one-shot warning above a generous
             // threshold so a future operator can observe whether this path
             // actually exceeds the threshold of buffered foreign-wallet
-            // changes in real workloads. If it does, the bounded-memory fix
-            // is to buffer only the `Vec<u8>` keys here and re-derive the
-            // replay changes after the refresh resolves them.
+            // changes in real workloads. If it ever does, the owned change
+            // must still be buffered here rather than just its `Vec<u8>` key:
+            // the RPC response entries are dropped at the end of each
+            // pagination iteration, so once the end-of-pass refresh resolves a
+            // key there is nothing left in memory to re-derive its dropped
+            // change from. A bounded-memory fix would therefore have to
+            // re-query the changes for the resolved keys, not merely stash
+            // their keys.
             if pending_unknown.len() == PENDING_UNKNOWN_WARN_THRESHOLD {
                 warn!(
                     "Address sync: pending_unknown buffer reached {} entries — \
@@ -930,11 +993,12 @@ async fn refresh_and_replay_unknown<P: AddressProvider>(
 
         if extras.is_empty() {
             if iteration == 0 {
-                // Common case on a populated multi-wallet chain: every
-                // buffered unknown belongs to another wallet.
+                // Common case on a populated multi-wallet chain: the provider
+                // offers none of the buffered unknowns even after a refresh —
+                // typically because they belong to another wallet.
                 debug!(
                     "Address sync: {} platform-reported balance change(s) reference \
-                     address(es) not tracked by this wallet; ignoring",
+                     address(es) the provider did not offer during this pass; ignoring",
                     pending_unknown.len()
                 );
                 return;
@@ -958,26 +1022,8 @@ async fn refresh_and_replay_unknown<P: AddressProvider>(
             let Some(&(tag, address)) = extras.get(key.as_slice()) else {
                 continue;
             };
-            let result_key = (tag, address);
-            let current_balance = result
-                .found
-                .get(&result_key)
-                .map(|f| f.balance)
-                .unwrap_or(0);
-            let new_balance = apply_op(borrow_op(change), current_balance, *height);
-
-            if new_balance != current_balance {
-                // INTENTIONAL — same synthesized nonce=0 as the forward pass:
-                // non-authoritative, callers MUST NOT treat it as authoritative.
-                // See the note in `apply_block_changes`.
-                let nonce = result.found.get(&result_key).map(|f| f.nonce).unwrap_or(0);
-                let funds = AddressFunds {
-                    nonce,
-                    balance: new_balance,
-                };
-                // Keep `found` and `absent` disjoint (see `apply_block_changes`).
-                result.absent.remove(&result_key);
-                result.found.insert(result_key, funds);
+            if let Some(funds) = apply_change::<P>(result, tag, address, borrow_op(change), *height)
+            {
                 iteration_applied.push((tag, address, funds));
             }
         }
@@ -1011,8 +1057,12 @@ async fn refresh_and_replay_unknown<P: AddressProvider>(
     // Classify the still-unresolved tail. A key the provider can still
     // produce is wallet-owned loss the livelock guard stranded — only a
     // full rescan recovers it, since the next RangeAfter sync skips the
-    // block. A key the provider no longer offers is a foreign (other
-    // wallet) address that a full rescan re-ignores, not lost data.
+    // block. A key the provider never offered during this pass is treated as
+    // foreign (other-wallet) noise and ignored. That is a heuristic, not a
+    // proof of foreignness: an address this wallet derived just after the
+    // pass ended also lands here. Ignoring it now is still safe because the
+    // periodic full rescan reads absolute balances and recovers it — so this
+    // path must never be reported as definitive data loss.
     let provider_keys: std::collections::HashSet<Vec<u8>> = provider
         .pending_addresses()
         .map(|(_, address)| address.to_bytes())
@@ -1044,8 +1094,8 @@ async fn refresh_and_replay_unknown<P: AddressProvider>(
     } else if foreign > 0 {
         debug!(
             "Address sync: {} platform-reported balance change(s) reference \
-             address(es) not tracked by this wallet (refresh recovered {} \
-             other(s)); ignoring the untracked entries",
+             address(es) the provider did not offer during this pass (refresh \
+             recovered {} other(s)); ignoring the un-offered entries",
             foreign, total_replay_applied
         );
     }
@@ -2838,9 +2888,7 @@ mod tests {
         }
 
         let mut result: AddressSyncResult<u32, PlatformAddress> = AddressSyncResult::new();
-        for (tag, address, funds) in provider.current_balances() {
-            result.found.entry((tag, address)).or_insert(funds);
-        }
+        seed_base_balances(&mut result, &key_to_tag, &provider);
 
         assert!(
             key_to_tag.contains_key(&seeded.to_bytes()),
@@ -2877,6 +2925,203 @@ mod tests {
             result.found.get(&(7u32, seeded)).map(|f| f.balance),
             Some(6_500),
             "AddToCredits must compute existing + X (5000 + 1500), not 0 + X"
+        );
+    }
+
+    /// Finding-1 regression: the post-scan base-balance seed must not
+    /// resurrect an address the tree scan already proved absent. The scan is
+    /// authoritative — a stale `current_balances` cache entry must stay out of
+    /// `found`, preserving `found`/`absent` disjointness and the total.
+    #[test]
+    fn seed_base_balances_skips_scan_proven_absent() {
+        use async_trait::async_trait;
+
+        let addr = p2pkh(0x60);
+
+        struct PrunedProvider {
+            addr: PlatformAddress,
+        }
+
+        #[async_trait]
+        impl AddressProvider for PrunedProvider {
+            type Tag = u32;
+            type Address = PlatformAddress;
+
+            fn gap_limit(&self) -> AddressIndex {
+                0
+            }
+
+            fn pending_addresses(&self) -> impl Iterator<Item = (Self::Tag, Self::Address)> + '_ {
+                std::iter::once((3u32, self.addr))
+            }
+
+            async fn on_address_found(
+                &mut self,
+                _tag: Self::Tag,
+                _address: &Self::Address,
+                _funds: AddressFunds,
+            ) {
+            }
+
+            async fn on_address_absent(&mut self, _tag: Self::Tag, _address: &Self::Address) {}
+
+            // Stale cache from a previous sync still lists a balance for an
+            // address whose on-chain entry was pruned this pass.
+            fn current_balances(
+                &self,
+            ) -> impl Iterator<Item = (Self::Tag, Self::Address, AddressFunds)> + '_ {
+                std::iter::once((
+                    3u32,
+                    self.addr,
+                    AddressFunds {
+                        nonce: 0,
+                        balance: 5_000,
+                    },
+                ))
+            }
+        }
+
+        let provider = PrunedProvider { addr };
+
+        let mut key_to_tag: HashMap<Vec<u8>, (u32, PlatformAddress)> = HashMap::new();
+        for (tag, address) in provider.pending_addresses() {
+            key_to_tag.insert(address.to_bytes(), (tag, address));
+        }
+
+        // The tree scan proved the address absent this pass.
+        let mut result: AddressSyncResult<u32, PlatformAddress> = AddressSyncResult::new();
+        result.absent.insert((3u32, addr));
+
+        seed_base_balances(&mut result, &key_to_tag, &provider);
+
+        assert!(
+            !result.found.contains_key(&(3u32, addr)),
+            "must not resurrect a scan-proven-absent address into found"
+        );
+        assert!(
+            result.absent.contains(&(3u32, addr)),
+            "the address stays absent — the scan is authoritative"
+        );
+        assert_eq!(
+            result.total_balance(),
+            0,
+            "no stale cached balance leaks into the total"
+        );
+    }
+
+    /// Finding-2 regression: when `pending_addresses` and `current_balances`
+    /// disagree on the tag for one address, the base-balance seed must resolve
+    /// the tag through `key_to_tag` (pending wins) so the seed and a later
+    /// delta land on the SAME result key — not two keys that double-count.
+    #[tokio::test]
+    async fn seed_base_balances_resolves_tag_through_lookup() {
+        use async_trait::async_trait;
+
+        let addr = p2pkh(0x61);
+
+        struct MismatchedTagProvider {
+            addr: PlatformAddress,
+        }
+
+        #[async_trait]
+        impl AddressProvider for MismatchedTagProvider {
+            type Tag = u32;
+            type Address = PlatformAddress;
+
+            fn gap_limit(&self) -> AddressIndex {
+                0
+            }
+
+            // Pending view tags the address 10.
+            fn pending_addresses(&self) -> impl Iterator<Item = (Self::Tag, Self::Address)> + '_ {
+                std::iter::once((10u32, self.addr))
+            }
+
+            async fn on_address_found(
+                &mut self,
+                _tag: Self::Tag,
+                _address: &Self::Address,
+                _funds: AddressFunds,
+            ) {
+            }
+
+            async fn on_address_absent(&mut self, _tag: Self::Tag, _address: &Self::Address) {}
+
+            // current_balances disagrees, tagging the SAME address 11
+            // (violates the same-(tag, address)-pairing invariant).
+            fn current_balances(
+                &self,
+            ) -> impl Iterator<Item = (Self::Tag, Self::Address, AddressFunds)> + '_ {
+                std::iter::once((
+                    11u32,
+                    self.addr,
+                    AddressFunds {
+                        nonce: 0,
+                        balance: 5_000,
+                    },
+                ))
+            }
+        }
+
+        let mut provider = MismatchedTagProvider { addr };
+
+        // Build the lookup exactly as `sync_address_balances` does: pending
+        // first, then the current_balances fold (pending wins on conflict).
+        let mut key_to_tag: HashMap<Vec<u8>, (u32, PlatformAddress)> = HashMap::new();
+        for (tag, address) in provider.pending_addresses() {
+            key_to_tag.insert(address.to_bytes(), (tag, address));
+        }
+        for (tag, address, _funds) in provider.current_balances() {
+            key_to_tag
+                .entry(address.to_bytes())
+                .or_insert((tag, address));
+        }
+
+        let mut result: AddressSyncResult<u32, PlatformAddress> = AddressSyncResult::new();
+        seed_base_balances(&mut result, &key_to_tag, &provider);
+
+        // Seeded under the pending tag (10), never the current_balances tag (11).
+        assert_eq!(
+            result.found.get(&(10u32, addr)).map(|f| f.balance),
+            Some(5_000),
+            "base seed lands under the resolved (pending) tag"
+        );
+        assert!(
+            !result.found.contains_key(&(11u32, addr)),
+            "must not seed under the mismatched current_balances tag"
+        );
+        assert_eq!(
+            result.found.len(),
+            1,
+            "one address resolves to exactly one result key"
+        );
+
+        // A later AddToCredits delta resolves via key_to_tag to (10, addr) and
+        // accumulates on the seeded base: 5000 + 1500 = 6500 under ONE key.
+        let op = BlockAwareCreditOperation::AddToCreditsOperations(
+            std::iter::once((0u64, 1_500u64)).collect(),
+        );
+        let changes = [(&addr, BalanceOp::Compacted(&op))];
+        let mut pending_unknown: Vec<PendingMiss> = Vec::new();
+        apply_block_changes(
+            &key_to_tag,
+            changes.iter().map(|(a, c)| (*a, *c)),
+            0,
+            &mut provider,
+            &mut result,
+            &mut pending_unknown,
+        )
+        .await;
+
+        assert_eq!(
+            result.found.get(&(10u32, addr)).map(|f| f.balance),
+            Some(6_500),
+            "delta accumulates once on the seeded base under the resolved key"
+        );
+        assert_eq!(
+            result.found.len(),
+            1,
+            "still exactly one result key — no split, no double-count"
         );
     }
 }
