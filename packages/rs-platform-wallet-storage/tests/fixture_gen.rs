@@ -2,13 +2,15 @@
 
 //! Populated-V001 fixture capture.
 //!
-//! `regenerate_populated_v001_fixture` (`#[ignore]`) writes a realistic
-//! multi-wallet store, built by the CURRENT V001-only persister, to
-//! `tests/fixtures/populated_v001.db`. That committed `.db` is the
-//! regression anchor for the migration-execution suites (TC-B-031/032/033/
-//! 035/036): once V002/V003 land, a populated V001-only store is no longer
-//! reproducible from source, so the bytes must be captured before any
-//! schema change.
+//! `regenerate_populated_v001_fixture` (`#[ignore]`) seeds a realistic
+//! multi-wallet store via the persister, then lifts its V001-table rows onto a
+//! destination capped at V001 only (`runner().set_target(Version(1))`), writing
+//! `tests/fixtures/populated_v001.db`. Seeding runs fully-migrated because the
+//! writers reference V002/V003 tables; the V001-capped copy is what the
+//! migration-execution suites (TC-B-031/032/033/035/036) migrate forward.
+//! Re-run it whenever V001's shape changes so the committed fixture's
+//! applied-V001 checksum stays in lockstep with `V001__initial.rs` — otherwise
+//! migrating the frozen store forward trips refinery's divergent-version guard.
 //!
 //! `populated_v001_fixture_is_present_and_openable` is the always-run guard
 //! that keeps the committed fixture honest: it opens read-only, asserts the
@@ -276,17 +278,72 @@ fn build_populated_store(path: &Path) {
 fn regenerate_populated_v001_fixture() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let src = tmp.path().join("build.db");
+    // Seed on a fully-migrated store: the writers (core_state UTXO attribution,
+    // the meta_data_versions bump) reference V002/V003 tables, so a V001-only
+    // seed is not expressible directly. The rows the migration suite reads all
+    // live in V001 tables, which we lift onto a V001-capped destination below.
     build_populated_store(&src);
 
-    // Re-open the source and take a checkpointed single-file backup so the
-    // committed fixture carries no side WAL/journal.
-    let persister =
-        SqlitePersister::open(SqlitePersisterConfig::new(&src)).expect("reopen built store");
     let dest = fixture_path();
     if dest.exists() {
         std::fs::remove_file(&dest).expect("remove stale fixture");
     }
-    persister.backup_to(&dest).expect("capture fixture backup");
+
+    // Cap the destination at V001 only, via the `runner()` set_target helper, so
+    // the committed fixture is a genuine pre-V002 store carrying the CURRENT
+    // V001 schema — migratable forward by the TC-B-031/032/033/035/036 suite
+    // without a refinery applied-migration checksum divergence.
+    let mut conn = rusqlite::Connection::open(&dest).expect("create dest db");
+    platform_wallet_storage::sqlite::migrations::runner()
+        .set_target(refinery::Target::Version(1))
+        .run(&mut conn)
+        .expect("apply V001 only to fixture");
+
+    // Lift every populated V001 table from the built store. FKs are off for the
+    // bulk load (the source is already consistent). `refinery_schema_history`
+    // and empty tables (e.g. the V002-altered, unpopulated `platform_addresses`)
+    // are skipped, so `SELECT *` never straddles a V002/V003 column change.
+    conn.execute(
+        "ATTACH DATABASE ?1 AS built",
+        rusqlite::params![src.to_str().expect("utf8 src path")],
+    )
+    .expect("attach built store");
+    conn.execute_batch("PRAGMA foreign_keys = OFF;").unwrap();
+    let tables: Vec<String> = {
+        let mut stmt = conn
+            .prepare(
+                "SELECT name FROM main.sqlite_master \
+                 WHERE type = 'table' AND name NOT LIKE 'sqlite_%' \
+                   AND name <> 'refinery_schema_history'",
+            )
+            .unwrap();
+        let rows = stmt
+            .query_map([], |r| r.get::<_, String>(0))
+            .unwrap()
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .unwrap();
+        rows
+    };
+    for t in &tables {
+        let count: i64 = conn
+            .query_row(&format!("SELECT COUNT(*) FROM built.\"{t}\""), [], |r| {
+                r.get(0)
+            })
+            .unwrap_or(0);
+        if count > 0 {
+            conn.execute_batch(&format!(
+                "INSERT INTO main.\"{t}\" SELECT * FROM built.\"{t}\";"
+            ))
+            .unwrap_or_else(|e| panic!("copy V001 table {t}: {e}"));
+        }
+    }
+    conn.execute_batch("DETACH DATABASE built;").unwrap();
+
+    // Collapse to a single committed file: rollback-journal mode + VACUUM leaves
+    // no side WAL/journal alongside the fixture.
+    conn.pragma_update(None, "journal_mode", "DELETE").unwrap();
+    conn.execute_batch("VACUUM;").unwrap();
+    drop(conn);
 }
 
 /// Always-run guard: the committed fixture opens, is at schema version 1,
