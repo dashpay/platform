@@ -3558,8 +3558,7 @@ fn build_wallet_start_state(
 
     // Identity PUBLIC keys and DashPay contacts are already restored
     // into `identity_manager` by `build_wallet_identity_bucket`
-    // (contacts inline via `restore_dashpay_contacts`), so the load
-    // path carries no separate keyless contact/key feed.
+    // (contacts inline via `restore_dashpay_contacts`).
     let wallet_state = ClientWalletStartState {
         network,
         birth_height: entry.birth_height,

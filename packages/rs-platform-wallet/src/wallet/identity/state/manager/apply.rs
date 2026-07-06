@@ -205,18 +205,13 @@ impl IdentityManager {
     }
 
     /// Layer a [`ContactChangeSet`] + [`IdentityKeysChangeSet`] onto the
-    /// already-restored managed identities.
-    ///
-    /// Single source of truth for the contact / identity-key routing —
-    /// shared by the runtime changeset-replay path
-    /// ([`apply_changeset`](crate::wallet::PlatformWalletInfo::apply_changeset))
-    /// and the persister rehydration path
-    /// ([`load_from_persistor`](crate::PlatformWalletManager::load_from_persistor)).
+    /// already-restored managed identities, for the runtime
+    /// changeset-replay path
+    /// ([`apply_changeset`](crate::wallet::PlatformWalletInfo::apply_changeset)).
     /// Identity keys are applied first so a contact entry never lands
     /// before its owner's keys; orphan entries (owner not in the
     /// wallet) are logged and skipped, never fatal. `removed_*` and
-    /// `ignored`/`unignored` are honoured for the replay path; the
-    /// rehydration feed leaves them empty.
+    /// `ignored`/`unignored` are honoured.
     pub(crate) fn apply_contacts_and_keys(
         &mut self,
         contacts: ContactChangeSet,
