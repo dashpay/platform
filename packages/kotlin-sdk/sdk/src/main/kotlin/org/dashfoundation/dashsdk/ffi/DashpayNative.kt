@@ -173,4 +173,35 @@ internal object DashpayNative {
      * ← Swift `KeychainSigner.resolverCanDeriveSign`.
      */
     external fun resolverSupportsKeyType(keyType: Int): Boolean
+
+    // ── DIP-15 auto-accept QR ─────────────────────────────────────────
+
+    /**
+     * Build the owner's DIP-15 auto-accept QR payload
+     * (`dash:?du=…&dapk=…`) for [identityId], keying the proof through
+     * [coreSignerHandle]. [username] is a display hint (nullable).
+     * ← Swift `ManagedPlatformWallet.buildAutoAcceptQR`.
+     */
+    external fun buildAutoAcceptQr(
+        walletHandle: Long,
+        identityId: ByteArray,
+        username: String?,
+        coreSignerHandle: Long,
+    ): String?
+
+    /**
+     * Scan-to-send: parse a DIP-15 auto-accept QR [uri] and send the
+     * contact request it describes from [senderIdentityId] (the embedded
+     * proof key lets the owner auto-accept). Blocking (network). Returns
+     * the created `ContactRequest` handle — destroy via
+     * [TokensNative.contactRequestDestroy].
+     * ← Swift `ManagedPlatformWallet.sendContactRequestFromQR`.
+     */
+    external fun sendContactRequestFromQr(
+        walletHandle: Long,
+        senderIdentityId: ByteArray,
+        uri: String,
+        signerHandle: Long,
+        coreSignerHandle: Long,
+    ): Long
 }

@@ -319,6 +319,44 @@ class Dashpay internal constructor(private val walletHandle: Long) {
             mapNativeErrors { DashpayNative.searchDpnsNames(walletHandle, prefix, limit) }
         }
 
+    // ── DIP-15 auto-accept QR (upstream #3841 parity) ──────────────────
+
+    /**
+     * Build the owner's DIP-15 auto-accept QR URI for [identityId]
+     * (`dash:?du=…&dapk=…`), keying the proof through [coreSignerHandle].
+     * The UI renders it as a QR (ZXing). ← Swift `buildAutoAcceptQR`.
+     */
+    suspend fun buildAutoAcceptQr(
+        identityId: ByteArray,
+        username: String? = null,
+        coreSignerHandle: Long,
+    ): String? = withContext(Dispatchers.IO) {
+        mapNativeErrors {
+            DashpayNative.buildAutoAcceptQr(walletHandle, identityId, username, coreSignerHandle)
+        }
+    }
+
+    /**
+     * Scan-to-send: parse an auto-accept QR [uri] and send the contact
+     * request it describes from [senderIdentityId]. Blocking network
+     * call; runs on IO. Returns the created request wrapped as a
+     * [ContactRequestRef] — close it (or `use {}`) when done.
+     * ← Swift `sendContactRequestFromQR`.
+     */
+    suspend fun sendContactRequestFromQr(
+        senderIdentityId: ByteArray,
+        uri: String,
+        signerHandle: Long,
+        coreSignerHandle: Long,
+    ): ContactRequestRef = withContext(Dispatchers.IO) {
+        val handle = mapNativeErrors {
+            DashpayNative.sendContactRequestFromQr(
+                walletHandle, senderIdentityId, uri, signerHandle, coreSignerHandle,
+            )
+        }
+        ContactRequestRef(handle)
+    }
+
     // ── Profile / contactInfo writes (upstream #3841 parity) ──────────
 
     /**

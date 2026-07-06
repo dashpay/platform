@@ -807,3 +807,85 @@ fn opt_jstring_to_cstring(env: &mut JNIEnv, s: &JString) -> Option<std::ffi::CSt
     let value: String = env.get_string(s).ok()?.into();
     std::ffi::CString::new(value).ok()
 }
+
+// ── DIP-15 auto-accept QR ─────────────────────────────────────────────
+
+/// Build the owner's DIP-15 auto-accept QR payload
+/// (`dash:?du=…&dapk=…`) for `identityId`, keying the proof through
+/// `core_signer_handle` (bridges `platform_wallet_build_auto_accept_qr`).
+/// `username` is the display hint embedded in the URI (nullable).
+/// Returns the URI string; the Rust-owned C string is freed here.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_buildAutoAcceptQr(
+    mut env: JNIEnv,
+    _class: JClass,
+    wallet_handle: jlong,
+    identity_id: JByteArray,
+    username: JString,
+    core_signer_handle: jlong,
+) -> jstring {
+    guard(&mut env, ptr::null_mut(), |env| {
+        let Some(id) = read_id32(env, &identity_id, "identityId") else {
+            return ptr::null_mut();
+        };
+        let username_c = opt_jstring_to_cstring(env, &username);
+        let mut uri: *mut c_char = ptr::null_mut();
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_build_auto_accept_qr(
+                wallet_handle as Handle,
+                id.as_ptr(),
+                username_c.as_ref().map_or(ptr::null(), |c| c.as_ptr()),
+                core_signer_handle as *mut MnemonicResolverHandle,
+                &mut uri as *mut *mut c_char,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return ptr::null_mut();
+        }
+        let value = unsafe { opt_cstr(uri) }.unwrap_or_default();
+        unsafe { platform_wallet_ffi::platform_wallet_string_free(uri) };
+        new_jstring(env, value)
+    })
+}
+
+/// Scan-to-send: parse a DIP-15 auto-accept QR `uri` and send the
+/// contact request it describes from `senderIdentityId` (bridges
+/// `platform_wallet_send_contact_request_from_qr`) — the recipient's
+/// embedded proof key lets the owner auto-accept. Blocking (network).
+/// Returns the created `ContactRequest` handle (destroy via
+/// `TokensNative.contactRequestDestroy`).
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_sendContactRequestFromQr(
+    mut env: JNIEnv,
+    _class: JClass,
+    wallet_handle: jlong,
+    sender_identity_id: JByteArray,
+    uri: JString,
+    signer_handle: jlong,
+    core_signer_handle: jlong,
+) -> jlong {
+    guard(&mut env, 0, |env| {
+        let Some(id) = read_id32(env, &sender_identity_id, "senderIdentityId") else {
+            return 0;
+        };
+        let Some(uri_c) = opt_jstring_to_cstring(env, &uri) else {
+            crate::support::throw_sdk_exception(env, 1, "uri must not be null");
+            return 0;
+        };
+        let mut request_handle: Handle = 0;
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_send_contact_request_from_qr(
+                wallet_handle as Handle,
+                id.as_ptr(),
+                uri_c.as_ptr(),
+                signer_handle as *mut SignerHandle,
+                core_signer_handle as *mut MnemonicResolverHandle,
+                &mut request_handle as *mut Handle,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return 0;
+        }
+        request_handle as jlong
+    })
+}
