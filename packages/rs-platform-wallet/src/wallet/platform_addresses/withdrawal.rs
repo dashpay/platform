@@ -326,15 +326,23 @@ impl PlatformAddressWallet {
                     ))
                 })?;
 
+            // Union the transient derived pool with the hydrated
+            // `address_balances` map so the candidate SET survives a fresh
+            // relaunch: the pool (`addresses.addresses`) is empty until a
+            // sync repopulates it, but `address_balances` is hydrated on
+            // wallet load by `initialize_from_persisted` from the persisted
+            // `platform_addresses` rows — the same source Platform Balance
+            // reads. Without the union a withdraw right after launch failed
+            // with "No funded addresses available" even though the balances
+            // were on disk and on-chain. Balances are still read fresh from
+            // the chain below; this only decides which addresses to query.
             account
                 .addresses
                 .addresses
                 .values()
-                .filter_map(|addr_info| {
-                    PlatformP2PKHAddress::from_address(&addr_info.address)
-                        .ok()
-                        .map(|p2pkh| PlatformAddress::P2pkh(p2pkh.to_bytes()))
-                })
+                .filter_map(|addr_info| PlatformP2PKHAddress::from_address(&addr_info.address).ok())
+                .chain(account.address_balances.keys().copied())
+                .map(|p2pkh| PlatformAddress::P2pkh(p2pkh.to_bytes()))
                 .collect()
         };
 
@@ -1447,6 +1455,127 @@ mod plan_withdrawal_seam_tests {
             origin_planned,
             origin_balance - plan.estimated_fee,
             "the fee source keeps exactly the estimated-fee headroom"
+        );
+    }
+
+    /// Post-relaunch hydration bug: right after a fresh app relaunch the
+    /// derived pool (`addresses.addresses`) is EMPTY until a platform sync
+    /// repopulates it, but `initialize_from_persisted` has already hydrated
+    /// the `address_balances` map from the persisted `platform_addresses`
+    /// rows via `set_address_credit_balance(.., None)` — which writes the
+    /// balance map but never the pool. A candidate enumeration that read only
+    /// the pool saw zero candidates and failed with "No funded addresses
+    /// available" even though the balance (and the on-chain funds) were
+    /// present. This pins the fix: the candidate SET is the UNION of the pool
+    /// and the balance-map keys, so a withdraw works immediately after launch.
+    /// (`auto_select_inputs` on the transfer path shares the identical union
+    /// enumeration.)
+    #[tokio::test]
+    async fn plan_withdrawal_finds_candidates_from_balance_map_when_pool_empty() {
+        use dash_sdk::query_types::{AddressInfo, AddressInfos};
+
+        const ACCOUNT: u32 = 0;
+        let funded_byte = 0x33u8;
+        let funded_balance: u64 = dpp::dash_to_credits!(0.05);
+
+        // --- Mock SDK: the candidate SET must be built from the hydrated
+        // balance map alone (the pool is empty), so the fetch_many query key
+        // is exactly the single funded address.
+        let mut sdk = dash_sdk::Sdk::new_mock();
+        let query: BTreeSet<PlatformAddress> = [platform_addr(funded_byte)].into_iter().collect();
+        let response: AddressInfos = [(
+            platform_addr(funded_byte),
+            Some(AddressInfo {
+                address: platform_addr(funded_byte),
+                nonce: 1,
+                balance: funded_balance,
+            }),
+        )]
+        .into_iter()
+        .collect();
+        sdk.mock()
+            .expect_fetch_many::<PlatformAddress, AddressInfo, _, AddressInfos>(
+                query,
+                Some(response),
+            )
+            .await
+            .expect("set fetch_many expectation");
+        let sdk = Arc::new(sdk);
+
+        // --- Wallet manager with a platform account whose derived pool is
+        // EMPTY (the post-relaunch state) but whose `address_balances` map is
+        // hydrated exactly the way `initialize_from_persisted` leaves it.
+        let mut wm = WalletManager::<crate::wallet::platform_wallet::PlatformWalletInfo>::new(
+            Network::Testnet,
+        );
+        let wallet_id = wm
+            .create_wallet_with_random_mnemonic(WalletAccountCreationOptions::None)
+            .expect("create wallet");
+        {
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("wallet info");
+            let base_path = DerivationPath::from(vec![
+                ChildNumber::from_hardened_idx(9).expect("purpose"),
+                ChildNumber::from_hardened_idx(1).expect("coin type"),
+                ChildNumber::from_hardened_idx(17).expect("feature"),
+                ChildNumber::from_hardened_idx(0).expect("subfeature"),
+                ChildNumber::from_hardened_idx(0).expect("account"),
+            ]);
+            // Empty pool: no `pool.addresses.insert(..)` — the derived pool
+            // has not been repopulated by a sync yet.
+            let pool = AddressPool::new_without_generation(
+                base_path,
+                AddressPoolType::Absent,
+                20,
+                Network::Testnet,
+            );
+            let mut platform_account = ManagedPlatformAccount::new(ACCOUNT, 0, pool, false);
+            // Hydrate ONLY the balance map (key_source None ⇒ pool untouched),
+            // mirroring `initialize_from_persisted`.
+            platform_account.set_address_credit_balance(
+                PlatformP2PKHAddress::new([funded_byte; 20]),
+                funded_balance,
+                None,
+            );
+            info.core_wallet
+                .accounts
+                .insert_platform_account(platform_account);
+        }
+
+        // Sanity: the derived pool really is empty — the bug's precondition.
+        {
+            let account = wm
+                .get_wallet_info(&wallet_id)
+                .expect("wallet info")
+                .core_wallet
+                .platform_payment_managed_account_at_index(ACCOUNT)
+                .expect("platform account");
+            assert!(
+                account.addresses.addresses.is_empty(),
+                "test setup: the derived pool must be empty (post-relaunch state)"
+            );
+        }
+
+        let wallet_manager = Arc::new(RwLock::new(wm));
+        let wallet = build_seam_test_wallet(sdk, wallet_manager, wallet_id);
+
+        let pv = PlatformVersion::latest();
+        let plan = wallet
+            .plan_withdrawal(ACCOUNT, pv)
+            .await
+            .expect("plan must succeed from the hydrated balance map even with an empty pool");
+
+        // The funded address — discoverable ONLY via the balance-map union —
+        // is the sole input, and as the only (largest) input it is the fee
+        // source, planned at balance − fee.
+        let planned = plan
+            .inputs
+            .get(&platform_addr(funded_byte))
+            .copied()
+            .expect("the balance-map-only address must be selected as an input");
+        assert_eq!(
+            planned,
+            funded_balance - plan.estimated_fee,
+            "the sole input is the fee source, planned at balance − estimated fee"
         );
     }
 

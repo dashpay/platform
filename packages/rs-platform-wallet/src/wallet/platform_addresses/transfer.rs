@@ -487,6 +487,18 @@ impl PlatformAddressWallet {
         // gate and the spend path in lockstep and immune to a stale/zero cache.
         // Drop the read lock before the network fetch so a concurrent sync /
         // reconcile can't be blocked behind a proof round-trip.
+        //
+        // The candidate SET is the UNION of the transient derived pool
+        // (`addresses.addresses`) and the hydrated per-address balance map
+        // (`address_balances`). Immediately after a fresh app relaunch the
+        // derived pool is empty until a platform sync / navigation repopulates
+        // it, but `address_balances` is hydrated synchronously on wallet load
+        // by `initialize_from_persisted` from the persisted `platform_addresses`
+        // rows — the same source Platform Balance / the recipient list read.
+        // Enumerating only the pool made auto-selection find no candidates and
+        // fail with "available 0 credits" right after launch even though the
+        // balances were present on disk and on-chain; unioning the balance-map
+        // keys in lets selection work immediately (mirrors `plan_withdrawal`).
         let candidate_addresses: BTreeSet<PlatformAddress> = {
             let wm = self.wallet_manager.read().await;
             let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
@@ -510,11 +522,9 @@ impl PlatformAddressWallet {
                 .addresses
                 .addresses
                 .values()
-                .filter_map(|addr_info| {
-                    PlatformP2PKHAddress::from_address(&addr_info.address)
-                        .ok()
-                        .map(|p2pkh| PlatformAddress::P2pkh(p2pkh.to_bytes()))
-                })
+                .filter_map(|addr_info| PlatformP2PKHAddress::from_address(&addr_info.address).ok())
+                .chain(account.address_balances.keys().copied())
+                .map(|p2pkh| PlatformAddress::P2pkh(p2pkh.to_bytes()))
                 .collect()
         };
 
