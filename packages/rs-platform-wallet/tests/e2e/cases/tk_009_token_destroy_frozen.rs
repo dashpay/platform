@@ -16,8 +16,10 @@ use std::time::Duration;
 use crate::framework::prelude::*;
 use crate::framework::tokens::{
     setup_with_token_and_two_identities, token_balance_of, token_frozen_balance_of,
-    token_supply_of, wait_for_token_balance, TK_OWNER_FUNDING_SIMPLE, TK_PEER_FUNDING,
+    token_supply_of, wait_for_token_balance, wait_for_token_supply, TK_OWNER_FUNDING_SIMPLE,
+    TK_PEER_FUNDING,
 };
+use crate::framework::wait::{wait_for_token_predicate, CHAIN_CONFIRMED_CONSECUTIVE_SUCCESSES};
 
 use dash_sdk::platform::Fetch;
 use dash_sdk::query_types::IdentityBalance;
@@ -157,17 +159,38 @@ async fn tk_009_token_destroy_frozen() {
         .expect("fetch owner credits post-destroy")
         .expect("owner identity present");
 
-    let peer_balance = token_balance_of(ctx, contract_id, position, peer.id)
-        .await
-        .expect("peer balance post-destroy");
+    // Post-destroy reads round-robin across DAPI replicas; one that hasn't
+    // applied the burn yet still serves stale pre-destroy state. Gate each
+    // read on a consecutive-success streak so a lagging sibling can't red
+    // the run (see `wait_for_token_predicate`).
+    let peer_balance = wait_for_token_predicate(
+        "peer token_balance_of == 0 (post-destroy)",
+        || async {
+            match token_balance_of(ctx, contract_id, position, peer.id).await {
+                Ok(b) if b == 0 => Ok(Some(b)),
+                Ok(_) => Ok(None),
+                Err(err) => Err(err),
+            }
+        },
+        CHAIN_CONFIRMED_CONSECUTIVE_SUCCESSES,
+        STEP_TIMEOUT,
+    )
+    .await
+    .expect("peer balance did not settle to 0 post-destroy");
     assert_eq!(
         peer_balance, 0,
         "peer balance must be 0 after destroy_frozen_funds; observed {peer_balance}"
     );
 
-    let supply_post_destroy = token_supply_of(ctx, contract_id, position)
-        .await
-        .expect("supply post-destroy");
+    let supply_post_destroy = wait_for_token_supply(
+        ctx,
+        contract_id,
+        position,
+        supply_pre_destroy - TRANSFER_TO_PEER,
+        STEP_TIMEOUT,
+    )
+    .await
+    .expect("total supply did not settle to the post-destroy target");
     assert_eq!(
         supply_post_destroy,
         supply_pre_destroy - TRANSFER_TO_PEER,
@@ -178,9 +201,20 @@ async fn tk_009_token_destroy_frozen() {
     // Frozen-balance helper: with the peer's balance now zero, the
     // helper returns 0 even though the `IdentityTokenInfo.frozen`
     // flag may still be set (full balance × frozen-flag = 0).
-    let frozen_balance = token_frozen_balance_of(ctx, contract_id, position, peer.id)
-        .await
-        .expect("frozen balance fetch post-destroy");
+    let frozen_balance = wait_for_token_predicate(
+        "peer token_frozen_balance_of == 0 (post-destroy)",
+        || async {
+            match token_frozen_balance_of(ctx, contract_id, position, peer.id).await {
+                Ok(f) if f == 0 => Ok(Some(f)),
+                Ok(_) => Ok(None),
+                Err(err) => Err(err),
+            }
+        },
+        CHAIN_CONFIRMED_CONSECUTIVE_SUCCESSES,
+        STEP_TIMEOUT,
+    )
+    .await
+    .expect("frozen balance did not settle to 0 post-destroy");
     assert_eq!(
         frozen_balance, 0,
         "post-destroy frozen-balance must be 0 (nothing left to freeze); observed {frozen_balance}"

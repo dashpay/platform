@@ -1029,6 +1029,53 @@ pub async fn wait_for_token_balance(
     .await
 }
 
+/// Poll [`token_supply_raw`] until the chain-side total supply equals
+/// `expected` on [`CHAIN_CONFIRMED_CONSECUTIVE_SUCCESSES`] back-to-back
+/// fetches, then return the observed value. Supply-side companion to
+/// [`wait_for_token_balance`].
+///
+/// Gated on exact equality, not `>=` like the balance waiter: a burn
+/// (destroy / destroy-frozen) DROPS total supply, so the stale pre-burn
+/// value a lagging replica still serves is *larger* than the target — a
+/// `>=` gate would clear immediately on it and defeat the purpose. Exact
+/// match is correct in both directions (a mint raises supply to an exact
+/// figure too) and is what a deterministic mint/burn amount lets us pin.
+/// The streak gate is the same round-robin defense
+/// [`wait_for_token_balance`] documents.
+pub async fn wait_for_token_supply(
+    ctx: &E2eContext,
+    contract_id: Identifier,
+    position: TokenContractPosition,
+    expected: TokenAmount,
+    timeout: Duration,
+) -> FrameworkResult<TokenAmount> {
+    let description =
+        format!("token supply == {expected} (contract={contract_id} position={position})");
+    super::wait::wait_for_token_predicate(
+        &description,
+        || async {
+            match token_supply_raw(ctx.sdk(), contract_id, position).await {
+                Ok(current) if current == expected => Ok(Some(current)),
+                Ok(current) => {
+                    tracing::debug!(
+                        target: "platform_wallet::e2e::tokens",
+                        ?contract_id,
+                        position,
+                        current,
+                        expected,
+                        "token supply not yet at target"
+                    );
+                    Ok(None)
+                }
+                Err(err) => Err(err),
+            }
+        },
+        super::wait::CHAIN_CONFIRMED_CONSECUTIVE_SUCCESSES,
+        timeout,
+    )
+    .await
+}
+
 // ---------------------------------------------------------------------------
 // 19. register_extra_identity
 // ---------------------------------------------------------------------------
