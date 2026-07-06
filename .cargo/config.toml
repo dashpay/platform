@@ -1,3 +1,8 @@
+# Mirror CI's RUST_MIN_STACK (tests-rs-wallet.yml / tests-rs-workspace.yml): deep
+# dashcore::sml quorum verification overflows the default 2 MiB libtest thread stack.
+[env]
+RUST_MIN_STACK = "4194304"
+
 [target.aarch64-unknown-linux-musl]
 rustflags = ["-C", "target-feature=-crt-static"]
 
