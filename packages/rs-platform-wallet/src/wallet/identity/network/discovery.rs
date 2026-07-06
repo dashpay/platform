@@ -31,6 +31,84 @@ enum KeyHashSource<'a> {
     Master(&'a ExtendedPrivKey),
 }
 
+/// For each on-chain key of `identity`, decide its derivation breadcrumb:
+/// `Some((wallet_id, identity_index, key_id))` when `candidate_scalars`
+/// holds a scalar that reproduces the on-chain key — so the client can
+/// re-derive that key's private material from the wallet seed — else
+/// `None`, a watch-only key the wallet cannot sign with.
+///
+/// Verification uses the canonical
+/// [`IdentityPublicKey::validate_private_key_bytes`] — the same primitive
+/// the protocol uses to validate key ownership — so the wallet's match is
+/// identical to consensus and cannot drift. For ECDSA it recomputes the
+/// compressed public key from the candidate scalar and compares; every key
+/// the wallet could own is 33-byte compressed, so this matches all of them.
+/// A key that is NOT reproducible from this wallet's seed stays watch-only:
+/// a foreign key, a BLS/EdDSA key (an ECDSA-derived candidate never
+/// reproduces a different-curve key), or an uncompressed externally-
+/// registered ECDSA key (Platform's signature checks accept uncompressed
+/// keys, but the wallet only ever derives the compressed form, so such a key
+/// simply isn't wallet-derivable). So a non-reproducible key is never handed
+/// a (wrong) breadcrumb — the load-bearing guard that stops the client from
+/// materializing and signing with a key the identity does not authorize
+/// on-chain. An ECDSA *authentication* key that fails to verify at its
+/// `key_id` candidate is logged at `warn` so a still-unsignable import is
+/// diagnosable in the field (no key material is logged).
+fn breadcrumb_decisions(
+    identity: &Identity,
+    identity_index: u32,
+    wallet_id: [u8; 32],
+    network: key_wallet::Network,
+    candidate_scalars: &std::collections::BTreeMap<
+        dpp::identity::KeyID,
+        zeroize::Zeroizing<[u8; 32]>,
+    >,
+) -> Vec<crate::changeset::KeyWithBreadcrumb> {
+    use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+    use dpp::identity::identity_public_key::methods::hash::IdentityPublicKeyHashMethodsV0;
+    use dpp::identity::KeyType;
+
+    identity
+        .public_keys()
+        .iter()
+        .map(|(key_id, on_chain_key)| {
+            let reproduces = candidate_scalars
+                .get(key_id)
+                .map(|scalar| {
+                    on_chain_key
+                        .validate_private_key_bytes(scalar, network)
+                        .unwrap_or(false)
+                })
+                .unwrap_or(false);
+            let breadcrumb = if reproduces {
+                // The candidate scalar reproduced the on-chain key, so this
+                // wallet owns it: emit the DIP-9 coordinates. The scalar is
+                // verified here and dropped — never carried out. The client
+                // re-derives the key on demand from the Keychain seed at this
+                // breadcrumb path when it needs to sign.
+                Some((wallet_id, identity_index, *key_id))
+            } else {
+                if matches!(
+                    on_chain_key.key_type(),
+                    KeyType::ECDSA_SECP256K1 | KeyType::ECDSA_HASH160
+                ) {
+                    tracing::warn!(
+                        identity = %identity.id(),
+                        key_id = *key_id,
+                        "discovered identity ECDSA key did not verify at its key_id \
+                         derivation candidate; left watch-only (cannot sign with this key)"
+                    );
+                }
+                None
+            };
+            crate::changeset::KeyWithBreadcrumb {
+                key: on_chain_key.clone(),
+                breadcrumb,
+            }
+        })
+        .collect()
+}
+
 // ---------------------------------------------------------------------------
 // Identity discovery (gap-limit scan)
 // ---------------------------------------------------------------------------
@@ -135,6 +213,81 @@ impl IdentityWallet {
             .await
     }
 
+    /// Derive a candidate ECDSA auth scalar for every on-chain key of a
+    /// just-found `identity`, verify each reproduces the published key, and
+    /// return the per-key derivation-breadcrumb decisions (see
+    /// [`breadcrumb_decisions`]). Shared by the discovery scan and the
+    /// index-load path so both materialize the identity's *full* signable
+    /// key set — not just the MASTER key — letting an imported identity
+    /// sign with its HIGH / CRITICAL keys.
+    ///
+    /// `master == Some(..)` derives lock-free from the resolved master
+    /// xpriv (external-signable wallets); `None` derives from the resident
+    /// in-memory wallet under a brief read lock that is dropped before the
+    /// caller takes the write lock to emit. `key_index == key_id` mirrors
+    /// the registration path; the per-key verify makes a wrong assumption
+    /// fail safe (watch-only).
+    pub(crate) async fn derive_key_breadcrumbs(
+        &self,
+        identity: &Identity,
+        identity_index: u32,
+        network: key_wallet::Network,
+        master: Option<&ExtendedPrivKey>,
+    ) -> Result<Vec<crate::changeset::KeyWithBreadcrumb>, PlatformWalletError> {
+        use super::identity_handle::{
+            derive_ecdsa_identity_auth_keypair_from_master, derive_identity_auth_keypair,
+        };
+
+        let mut candidate_scalars: std::collections::BTreeMap<
+            dpp::identity::KeyID,
+            zeroize::Zeroizing<[u8; 32]>,
+        > = std::collections::BTreeMap::new();
+        match master {
+            Some(master) => {
+                for key_id in identity.public_keys().keys() {
+                    if let Ok(kp) = derive_ecdsa_identity_auth_keypair_from_master(
+                        master,
+                        network,
+                        identity_index,
+                        *key_id,
+                    ) {
+                        candidate_scalars.insert(*key_id, kp.private_key);
+                    }
+                }
+            }
+            None => {
+                let wm_read = self.wallet_manager.read().await;
+                // The wallet was present for the master probe one step
+                // earlier; its absence here is a genuine error, so fail loud
+                // (consistent with every other manager lookup in this file)
+                // rather than silently leaving every key watch-only.
+                let wallet = wm_read.get_wallet(&self.wallet_id).ok_or_else(|| {
+                    crate::error::PlatformWalletError::WalletNotFound(
+                        "Wallet not found in wallet manager".to_string(),
+                    )
+                })?;
+                for key_id in identity.public_keys().keys() {
+                    if let Ok((_, xpriv, _)) =
+                        derive_identity_auth_keypair(wallet, network, identity_index, *key_id)
+                    {
+                        candidate_scalars.insert(
+                            *key_id,
+                            zeroize::Zeroizing::new(xpriv.private_key.secret_bytes()),
+                        );
+                    }
+                }
+            }
+        }
+
+        Ok(breadcrumb_decisions(
+            identity,
+            identity_index,
+            self.wallet_id,
+            network,
+            &candidate_scalars,
+        ))
+    }
+
     /// Shared gap-limit scan body for [`Self::discover`] and
     /// [`Self::discover_from_master`]. The only thing the two callers
     /// vary is `source`, which decides how each probe's MASTER auth
@@ -148,16 +301,11 @@ impl IdentityWallet {
         opts: IdentityDiscoveryOptions,
         source: KeyHashSource<'_>,
     ) -> Result<Vec<Identity>, PlatformWalletError> {
-        use super::identity_handle::{
-            derive_identity_auth_key_hash_from_master, identity_auth_derivation_path,
-            MASTER_KEY_INDEX,
-        };
+        use super::identity_handle::{derive_identity_auth_key_hash_from_master, MASTER_KEY_INDEX};
         use crate::wallet::identity::state::managed_identity::key_storage::DpnsNameInfo;
         use crate::wallet::identity::state::managed_identity::key_storage::IdentityStatus;
         use dash_sdk::platform::types::identity::PublicKeyHash;
         use dash_sdk::platform::Fetch;
-        use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-        use dpp::util::hash::ripemd160_sha256;
 
         // `MASTER_KEY_INDEX = 0` pulled in from `identity_handle` —
         // only key_index 0 is ever registered as the MASTER auth
@@ -229,25 +377,24 @@ impl IdentityWallet {
                 Ok(Some(identity)) => {
                     let identity_id = identity.id();
 
-                    // Same helper the FFI-side preview uses —
-                    // keeps the scan and the preview on a single
-                    // path-building code path.
-                    let full_path =
-                        identity_auth_derivation_path(network, identity_index, MASTER_KEY_INDEX)?;
+                    // Derive + verify a candidate for every on-chain key
+                    // (shared with the index-load path) BEFORE taking the write
+                    // lock — candidate derivation borrows the resident wallet /
+                    // master xpriv, while breadcrumb emission needs `&mut info`.
+                    let key_decisions = self
+                        .derive_key_breadcrumbs(
+                            &identity,
+                            identity_index,
+                            network,
+                            match source {
+                                KeyHashSource::Master(master) => Some(master),
+                                KeyHashSource::ResidentWallet => None,
+                            },
+                        )
+                        .await?;
 
-                    // Find the KeyID in the on-chain identity whose
-                    // hash matches our derived key so the derivation
-                    // path gets stored against the right KeyID.
-                    let matched_key_id_and_pub = identity
-                        .public_keys()
-                        .iter()
-                        .find(|(_, pk)| {
-                            let pk_hash = ripemd160_sha256(pk.data().as_slice());
-                            pk_hash.as_slice() == key_hash_array
-                        })
-                        .map(|(kid, pk)| (*kid, pk.clone()));
-
-                    // Acquire write lock to add/enrich the identity.
+                    // Acquire write lock to add/enrich the identity, then emit
+                    // every per-key breadcrumb in one batched changeset.
                     let mut wm_guard = self.wallet_manager.write().await;
                     let info_guard =
                         wm_guard
@@ -273,22 +420,22 @@ impl IdentityWallet {
                     {
                         managed.set_status(IdentityStatus::Active, &self.persister);
                         managed.wallet_id = Some(wallet_id);
-
-                        if let Some((_kid, pub_key)) = matched_key_id_and_pub {
-                            // Pass the DIP-9 breadcrumb so the client can
-                            // re-derive the private key from its wallet
-                            // mnemonic via the iOS Keychain path.
-                            managed.add_key(
-                                pub_key,
-                                Some((wallet_id, identity_index, MASTER_KEY_INDEX)),
-                                &self.persister,
-                            );
-                        }
+                        // Breadcrumbs for every re-derivable key (not just the
+                        // MASTER key) so the client (iOS Keychain) can
+                        // re-derive each signing key's private key — without
+                        // this only the master key is materialized and the
+                        // imported identity cannot sign with its HIGH /
+                        // CRITICAL authentication keys. A failed persist here
+                        // would silently leave the identity watch-only after
+                        // restart, so surface it (matching `add_identity` above).
+                        managed
+                            .add_keys(key_decisions, &self.persister)
+                            .map_err(|e| {
+                                PlatformWalletError::Persistence(format!(
+                                    "identity keys not persisted during discovery: {e}"
+                                ))
+                            })?;
                     }
-                    // `full_path` is no longer needed once `add_key`
-                    // takes the breadcrumb instead of the materialized
-                    // DerivationPath.
-                    let _ = full_path;
                     drop(wm_guard);
 
                     if is_new {
@@ -365,5 +512,264 @@ impl IdentityWallet {
         let _ = identity_index;
 
         Ok(discovered)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::identity_handle::derive_ecdsa_identity_auth_keypair_from_master;
+    use super::breadcrumb_decisions;
+    use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+    use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+    use dpp::identity::v0::IdentityV0;
+    use dpp::identity::{Identity, IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
+    use dpp::prelude::Identifier;
+    use key_wallet::bip32::ExtendedPrivKey;
+    use key_wallet::mnemonic::{Language, Mnemonic};
+    use key_wallet::Network;
+    use std::collections::BTreeMap;
+
+    const TEST_MNEMONIC: &str = "abandon abandon abandon abandon abandon abandon \
+         abandon abandon abandon abandon abandon about";
+
+    fn test_master() -> ExtendedPrivKey {
+        let mnemonic = Mnemonic::from_phrase(TEST_MNEMONIC, Language::English).expect("mnemonic");
+        let seed = mnemonic.to_seed("");
+        ExtendedPrivKey::new_master(Network::Testnet, &seed).expect("master xpriv")
+    }
+
+    fn ecdsa_auth_key(id: KeyID, data: Vec<u8>) -> IdentityPublicKey {
+        IdentityPublicKey::V0(IdentityPublicKeyV0 {
+            id,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::HIGH,
+            contract_bounds: None,
+            key_type: KeyType::ECDSA_SECP256K1,
+            read_only: false,
+            data: dpp::platform_value::BinaryData::new(data),
+            disabled_at: None,
+        })
+    }
+
+    fn identity_with_keys(keys: Vec<IdentityPublicKey>) -> Identity {
+        let mut map = BTreeMap::new();
+        for k in keys {
+            map.insert(k.id(), k);
+        }
+        Identity::V0(IdentityV0 {
+            id: Identifier::from([0x42; 32]),
+            public_keys: map,
+            balance: 0,
+            revision: 0,
+        })
+    }
+
+    /// Every on-chain key re-derivable at `(identity_index, key_id)` earns a
+    /// breadcrumb. This is the fix for "imported identity cannot sign":
+    /// before, only the MASTER key was breadcrumbed, so the non-master
+    /// signing keys had no private material and signing failed.
+    #[test]
+    fn breadcrumb_decisions_emits_for_every_reproducible_key() {
+        let master = test_master();
+        let wallet_id = [0xAB; 32];
+        let identity_index = 0u32;
+
+        let mut scalars = BTreeMap::new();
+        let mut keys = Vec::new();
+        for key_id in 0u32..5 {
+            let kp = derive_ecdsa_identity_auth_keypair_from_master(
+                &master,
+                Network::Testnet,
+                identity_index,
+                key_id,
+            )
+            .expect("derive candidate");
+            keys.push(ecdsa_auth_key(key_id, kp.public_key.to_vec()));
+            scalars.insert(key_id, kp.private_key);
+        }
+        let identity = identity_with_keys(keys);
+
+        let decisions = breadcrumb_decisions(
+            &identity,
+            identity_index,
+            wallet_id,
+            Network::Testnet,
+            &scalars,
+        );
+        assert_eq!(decisions.len(), 5);
+        for decision in &decisions {
+            assert_eq!(
+                decision.breadcrumb,
+                Some((wallet_id, identity_index, decision.key.id())),
+                "key {} must be breadcrumbed",
+                decision.key.id()
+            );
+        }
+    }
+
+    /// A published key whose bytes do NOT match the candidate at its `key_id`
+    /// (a foreign / non-wallet key) stays watch-only — verify-before-emit
+    /// never hands a wrong breadcrumb that would store an unauthorized key.
+    #[test]
+    fn breadcrumb_decisions_leaves_non_reproducible_key_watch_only() {
+        let master = test_master();
+        let wallet_id = [0xAB; 32];
+
+        let kp0 = derive_ecdsa_identity_auth_keypair_from_master(&master, Network::Testnet, 0, 0)
+            .expect("derive");
+        // A foreign pubkey for key_id 1 (derived at an unrelated slot) — the
+        // seed candidate at (0, 1) won't reproduce it.
+        let kp_foreign =
+            derive_ecdsa_identity_auth_keypair_from_master(&master, Network::Testnet, 9, 9)
+                .expect("derive");
+        let kp1_candidate =
+            derive_ecdsa_identity_auth_keypair_from_master(&master, Network::Testnet, 0, 1)
+                .expect("derive");
+
+        let mut scalars = BTreeMap::new();
+        scalars.insert(0u32, kp0.private_key);
+        scalars.insert(1u32, kp1_candidate.private_key);
+
+        let identity = identity_with_keys(vec![
+            ecdsa_auth_key(0, kp0.public_key.to_vec()),
+            ecdsa_auth_key(1, kp_foreign.public_key.to_vec()),
+        ]);
+        let decisions = breadcrumb_decisions(&identity, 0, wallet_id, Network::Testnet, &scalars);
+        let by_id: BTreeMap<KeyID, &crate::changeset::KeyWithBreadcrumb> =
+            decisions.iter().map(|d| (d.key.id(), d)).collect();
+        assert_eq!(
+            by_id[&0].breadcrumb,
+            Some((wallet_id, 0, 0)),
+            "reproducible key breadcrumbed"
+        );
+        assert_eq!(by_id[&1].breadcrumb, None, "foreign key left watch-only");
+    }
+
+    /// An on-chain key typed `ECDSA_HASH160` (data = the 20-byte hash of
+    /// the pubkey) is matched by its hash — `validate_private_key_bytes`
+    /// covers both ECDSA representations. (Uncompressed 65-byte ECDSA keys
+    /// are deliberately NOT tested: the wallet only ever derives the
+    /// compressed pubkey form, so an uncompressed externally-registered key
+    /// is simply not wallet-derivable and stays watch-only by graceful
+    /// non-match — not because the protocol forbids such keys.)
+    #[test]
+    fn breadcrumb_decisions_matches_hash160_key() {
+        use dpp::util::hash::ripemd160_sha256;
+
+        let master = test_master();
+        let wallet_id = [0xAB; 32];
+        let kp = derive_ecdsa_identity_auth_keypair_from_master(&master, Network::Testnet, 0, 0)
+            .expect("derive");
+        let hash = ripemd160_sha256(&kp.public_key).to_vec();
+
+        let key = IdentityPublicKey::V0(IdentityPublicKeyV0 {
+            id: 0,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::HIGH,
+            contract_bounds: None,
+            key_type: KeyType::ECDSA_HASH160,
+            read_only: false,
+            data: dpp::platform_value::BinaryData::new(hash),
+            disabled_at: None,
+        });
+
+        let mut scalars = BTreeMap::new();
+        scalars.insert(0u32, kp.private_key);
+        let identity = identity_with_keys(vec![key]);
+
+        let decisions = breadcrumb_decisions(&identity, 0, wallet_id, Network::Testnet, &scalars);
+        assert_eq!(
+            decisions[0].breadcrumb,
+            Some((wallet_id, 0, 0)),
+            "HASH160 key must verify by hash"
+        );
+    }
+
+    /// Decide key ownership from the candidate's compressed PUBLIC key alone,
+    /// reproducing `IdentityPublicKey::validate_private_key_bytes` without the
+    /// secret scalar: an `ECDSA_SECP256K1` key matches when the on-chain data
+    /// equals the 33-byte compressed pubkey; an `ECDSA_HASH160` key matches
+    /// when `ripemd160_sha256` of that pubkey equals the on-chain 20-byte
+    /// hash. Any other key type (BLS/EdDSA, or an uncompressed ECDSA key the
+    /// wallet never derives) never matches.
+    fn pubkey_reproduces(on_chain_key: &IdentityPublicKey, candidate_pubkey: &[u8; 33]) -> bool {
+        use dpp::util::hash::ripemd160_sha256;
+        match on_chain_key.key_type() {
+            KeyType::ECDSA_SECP256K1 => {
+                on_chain_key.data().as_slice() == candidate_pubkey.as_slice()
+            }
+            KeyType::ECDSA_HASH160 => {
+                ripemd160_sha256(candidate_pubkey.as_slice()).as_slice()
+                    == on_chain_key.data().as_slice()
+            }
+            _ => false,
+        }
+    }
+
+    /// The ownership decision derived from the candidate's PUBLIC key is
+    /// byte-for-byte identical to the one `validate_private_key_bytes` derives
+    /// from the secret scalar — for a matching `ECDSA_SECP256K1` key, a
+    /// matching `ECDSA_HASH160` key, and a foreign (non-reproducible) key.
+    /// This pins the equivalence that lets discovery verify ownership without
+    /// ever materializing the scalar.
+    #[test]
+    fn pubkey_verify_matches_scalar_verify_for_every_key() {
+        use dpp::identity::identity_public_key::methods::hash::IdentityPublicKeyHashMethodsV0;
+        use dpp::util::hash::ripemd160_sha256;
+
+        let master = test_master();
+        let network = Network::Testnet;
+        let identity_index = 0u32;
+
+        // key_id 1 derives the pubkey behind the on-chain HASH160 key; key_id 9'/9
+        // is an unrelated slot standing in for a FOREIGN key the wallet can't own.
+        let kp1 =
+            derive_ecdsa_identity_auth_keypair_from_master(&master, network, 0, 1).expect("derive");
+        let kp_foreign =
+            derive_ecdsa_identity_auth_keypair_from_master(&master, network, 9, 9).expect("derive");
+        let kp0 =
+            derive_ecdsa_identity_auth_keypair_from_master(&master, network, 0, 0).expect("derive");
+
+        let hash160_key = IdentityPublicKey::V0(IdentityPublicKeyV0 {
+            id: 1,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::HIGH,
+            contract_bounds: None,
+            key_type: KeyType::ECDSA_HASH160,
+            read_only: false,
+            data: dpp::platform_value::BinaryData::new(ripemd160_sha256(&kp1.public_key).to_vec()),
+            disabled_at: None,
+        });
+
+        // (on-chain key, the (0, key_id) slot whose candidate is checked, expected).
+        let cases: Vec<(IdentityPublicKey, u32, bool)> = vec![
+            (ecdsa_auth_key(0, kp0.public_key.to_vec()), 0, true),
+            (hash160_key, 1, true),
+            (ecdsa_auth_key(2, kp_foreign.public_key.to_vec()), 2, false),
+        ];
+
+        for (on_chain_key, key_id, expected) in &cases {
+            let candidate = derive_ecdsa_identity_auth_keypair_from_master(
+                &master,
+                network,
+                identity_index,
+                *key_id,
+            )
+            .expect("derive candidate");
+
+            let scalar_decision = on_chain_key
+                .validate_private_key_bytes(&candidate.private_key, network)
+                .unwrap_or(false);
+            let pubkey_decision = pubkey_reproduces(on_chain_key, &candidate.public_key);
+
+            assert_eq!(
+                scalar_decision, pubkey_decision,
+                "pubkey-verify diverged from scalar-verify for key {key_id}"
+            );
+            assert_eq!(
+                pubkey_decision, *expected,
+                "unexpected ownership decision for key {key_id}"
+            );
+        }
     }
 }

@@ -183,7 +183,13 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             if !inserted_in_manager.is_empty() {
                 let mut wm = self.wallet_manager.write().await;
                 for id in &inserted_in_manager {
-                    let _ = wm.remove_wallet(id);
+                    if let Err(e) = wm.remove_wallet(id) {
+                        tracing::warn!(
+                            wallet_id = %hex::encode(id),
+                            error = %e,
+                            "rollback after load failure: remove_wallet failed"
+                        );
+                    }
                 }
             }
             return Err(err);

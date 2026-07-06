@@ -5064,8 +5064,9 @@ version = "4.0.0"
 dependencies = [
  "aes",
  "cbc",
- "dashcore",
- "hex",
+ "hmac",
+ "secp256k1",
+ "sha2",
  "thiserror 1.0.69",
 ]
 
@@ -5175,6 +5176,7 @@ name = "platform-wallet-ffi"
 version = "4.0.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "bincode",
  "bs58",
  "cbindgen 0.27.0",
@@ -6340,6 +6342,7 @@ dependencies = [
  "libc",
  "log",
  "once_cell",
+ "platform-encryption",
  "reqwest 0.12.28",
  "rs-sdk-trusted-context-provider",
  "serde",

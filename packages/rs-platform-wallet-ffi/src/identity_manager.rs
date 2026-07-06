@@ -103,6 +103,10 @@ pub unsafe extern "C" fn identity_manager_get_all_identity_ids(
     out_array: *mut IdentifierArray,
 ) -> PlatformWalletFFIResult {
     check_ptr!(out_array);
+    // Sentinel first: the handle lookup below is fallible, and
+    // `platform_wallet_identifier_array_free` reconstructs a `Vec` from any
+    // non-null pointer/count pair — see `IdentifierArray::empty`.
+    unsafe { *out_array = IdentifierArray::empty() };
 
     let option =
         IDENTITY_MANAGER_STORAGE.with_item(manager_handle, |manager| manager.identity_ids());
