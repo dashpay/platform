@@ -128,7 +128,7 @@ class PlatformBalanceSyncService: ObservableObject {
                 var total: UInt64 = 0
                 var nonZero = 0
 
-                for (_, hash, balance, _, _, _) in cached {
+                for (_, hash, balance, _, _, _, _) in cached {
                     let key = hash.map { String(format: "%02x", $0) }.joined()
                     newBalances[key] = balance
                     total += balance

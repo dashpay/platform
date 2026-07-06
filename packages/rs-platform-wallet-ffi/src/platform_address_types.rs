@@ -232,6 +232,11 @@ pub struct AddressBalanceEntryFFI {
     pub account_index: u32,
     /// DIP-17 derivation index within the account.
     pub address_index: u32,
+    /// Platform block height `balance` is current as of — the height pin
+    /// (see `AddressFunds::as_of_height` in `dash-sdk`). Meaningful on the
+    /// persistence round-trip (persist callback → host storage → load);
+    /// pass 0 on request paths that only name outputs/amounts.
+    pub as_of_height: u64,
 }
 
 /// Parse output entries into the DPP-canonical `BTreeMap`.
@@ -403,6 +408,26 @@ pub struct PlatformAddressChangeSetFFI {
     pub updated_count: usize,
 }
 
+impl PlatformAddressChangeSetFFI {
+    /// FFI-safe empty sentinel: a null pointer with a zero count.
+    ///
+    /// The changeset-producing FFI entry points (transfer / withdraw /
+    /// fund-from-asset-lock) publish this into their `out_changeset`
+    /// out-param *before* any fallible work, so that an error return leaves
+    /// the out-param well-defined. `platform_address_wallet_free_changeset`
+    /// reconstructs `Vec::from_raw_parts(updated, updated_count, ..)` whenever
+    /// `updated` is non-null, so a caller running symmetric cleanup-on-error
+    /// over an uninitialized changeset would otherwise feed stale stack bytes
+    /// into a real `Vec::from_raw_parts` — a double-free. The `(null, 0)`
+    /// sentinel is skipped by that free path.
+    pub fn empty() -> Self {
+        Self {
+            updated: std::ptr::null_mut(),
+            updated_count: 0,
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Conversion helpers
 // ---------------------------------------------------------------------------
@@ -496,6 +521,7 @@ impl From<&platform_wallet::PlatformAddressChangeSet> for PlatformAddressChangeS
                 nonce: entry.funds.nonce,
                 account_index: entry.account_index,
                 address_index: entry.address_index,
+                as_of_height: entry.funds.as_of_height,
             })
             .collect();
 
@@ -533,6 +559,7 @@ mod tests {
                 nonce: 0,
                 account_index: 0,
                 address_index: 0,
+                as_of_height: 0,
             },
             AddressBalanceEntryFFI {
                 address: dup,
@@ -540,6 +567,7 @@ mod tests {
                 nonce: 0,
                 account_index: 0,
                 address_index: 0,
+                as_of_height: 0,
             },
         ];
 
@@ -674,6 +702,7 @@ mod tests {
             nonce: 0,
             account_index: 0,
             address_index: 0,
+            as_of_height: 0,
         }];
         assert_eq!(
             unsafe { parse_outputs(out.as_ptr(), out.len()) }
@@ -719,6 +748,7 @@ mod tests {
                 nonce: 0,
                 account_index: 0,
                 address_index: 0,
+                as_of_height: 0,
             },
             AddressBalanceEntryFFI {
                 address: PlatformAddressFFI {
@@ -729,6 +759,7 @@ mod tests {
                 nonce: 0,
                 account_index: 0,
                 address_index: 0,
+                as_of_height: 0,
             },
         ];
 

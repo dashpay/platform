@@ -1,6 +1,6 @@
 //! Platform address wallet for DIP-17 platform payment addresses.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use dpp::address_funds::PlatformAddress;
@@ -189,9 +189,10 @@ impl PlatformAddressWallet {
     /// balances".
     ///
     /// A freshness guard protects against racing the 15s background sync:
-    /// entries whose nonce is below the committed seed's are dropped (a
-    /// fresher state was already committed), see
-    /// [`PlatformPaymentAddressProvider::commit_reconciliation`]. The
+    /// height-pin authority (see `AddressFunds::as_of_height`) — entries
+    /// whose pin is below the committed seed's are dropped (a fresher
+    /// absolute was already committed; the nonce breaks same-block ties),
+    /// see [`PlatformPaymentAddressProvider::commit_reconciliation`]. The
     /// provider write lock is held across the provider commit, the
     /// account-balance write, AND the persist — mirroring
     /// [`sync_balances`](Self::sync_balances), so the two writers' stores
@@ -199,50 +200,33 @@ impl PlatformAddressWallet {
     /// interleave between (or persist across) the seam's steps; the lock
     /// order (provider → wallet manager) matches the sync callbacks.
     ///
-    /// # `credited_outputs` — the ADDR-09 watermark gate
+    /// # `as_of_height` — the height pin
     ///
-    /// `credited_outputs` names the addresses the transition credited via
-    /// an on-chain `AddBalanceToAddress` op — a DELTA (`AddToCredits`) in
-    /// Drive's recent-address-balance-changes tree — as opposed to inputs,
-    /// which are recorded as absolute `SetBalanceToAddress` ops. Build it
-    /// with [`super::credited_outputs_set`]; pass an empty set when the
-    /// transition credits nothing the wallet could own (e.g. withdrawal,
-    /// which never has a change output).
-    ///
-    /// When the seam commits an entry for one of these addresses, it has
-    /// just written an optimistic ABSOLUTE balance into the sync seed
-    /// while the on-chain record of the same credit is a delta. An
-    /// incremental next sync would seed from `current_balances()` (already
-    /// the absolute `X`) and re-apply the recent delta on top → `X + delta`
-    /// — the ADDR-09 double-count. So the seam invalidates the provider's
-    /// incremental sync watermark ([`PlatformPaymentAddressProvider::invalidate_sync_watermark`])
-    /// INSIDE this same critical section, forcing the next pass to
-    /// full-scan-reconcile (absolute re-seed from the tree). Doing it
-    /// under the lock — rather than caller-side after the seam returns —
-    /// means no sync pass can slip in between the seed commit and the
-    /// invalidation with the stale watermark. Input-only reconciliations
-    /// (empty or non-matching `credited_outputs`) keep the fast
-    /// incremental cadence: re-applying an absolute op is idempotent.
-    ///
-    /// The gate keys on entries actually COMMITTED, not merely requested:
-    /// an entry skipped as stale/unchanged means a sync already applied
-    /// this credit (and advanced the watermark past it), so no forced
-    /// full scan is needed.
+    /// `as_of_height` is the block height of the proof that attested
+    /// `address_infos` (the broadcast result's quorum-authenticated
+    /// `metadata.height`). Every committed entry carries it as its
+    /// balance pin, which is what makes the optimistic absolute write
+    /// safe against delta replay: the transition's on-chain
+    /// `AddBalanceToAddress` credit is recorded as a DELTA
+    /// (`AddToCredits`) at this same height in Drive's
+    /// recent-address-balance-changes tree, and the sync's apply loops
+    /// drop any delta at or below an entry's pin. This replaces the
+    /// former watermark-invalidation gate (`credited_outputs`), which
+    /// forced a full rescan but could not stop the rescan itself from
+    /// replaying the same delta on top of the fresh absolute.
     ///
     /// Persistence errors are logged rather than propagated — Platform
     /// already accepted the transition, and a later sync reconciles.
     ///
     /// [`PlatformPaymentAddressProvider::commit_reconciliation`]:
     /// super::provider::PlatformPaymentAddressProvider::commit_reconciliation
-    /// [`PlatformPaymentAddressProvider::invalidate_sync_watermark`]:
-    /// super::provider::PlatformPaymentAddressProvider::invalidate_sync_watermark
     pub async fn reconcile_address_infos(
         &self,
         address_infos: &AddressInfos,
-        credited_outputs: &BTreeSet<PlatformP2PKHAddress>,
+        as_of_height: u64,
         context: &'static str,
     ) -> crate::PlatformAddressChangeSet {
-        self.reconcile_address_infos_with_persistence(address_infos, credited_outputs, context)
+        self.reconcile_address_infos_with_persistence(address_infos, as_of_height, context)
             .await
             .0
     }
@@ -264,7 +248,7 @@ impl PlatformAddressWallet {
     pub(super) async fn reconcile_address_infos_with_persistence(
         &self,
         address_infos: &AddressInfos,
-        credited_outputs: &BTreeSet<PlatformP2PKHAddress>,
+        as_of_height: u64,
         context: &'static str,
     ) -> (crate::PlatformAddressChangeSet, bool) {
         if address_infos.is_empty() {
@@ -319,7 +303,12 @@ impl PlatformAddressWallet {
             out
         };
 
-        let outcome = provider.commit_reconciliation(&self.wallet_id, address_infos, &pool_indexes);
+        let outcome = provider.commit_reconciliation(
+            &self.wallet_id,
+            address_infos,
+            &pool_indexes,
+            as_of_height,
+        );
 
         if outcome.resolved == 0 {
             tracing::warn!(
@@ -394,20 +383,6 @@ impl PlatformAddressWallet {
             addresses: outcome.entries,
             ..Default::default()
         };
-
-        // ADDR-09 watermark gate (see the method docs): a committed entry
-        // for a delta-credited output means the absolute seed write above
-        // is inconsistent with incremental delta re-application — force
-        // the next pass to full-scan. Still under the provider write lock,
-        // so no sync pass can interleave between the seed commit and this
-        // invalidation with the stale watermark.
-        if cs
-            .addresses
-            .iter()
-            .any(|entry| credited_outputs.contains(&entry.address))
-        {
-            provider.invalidate_sync_watermark();
-        }
 
         let persisted = match self.persister.store(cs.clone().into()) {
             Ok(()) => true,

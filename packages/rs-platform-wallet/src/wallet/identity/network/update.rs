@@ -229,7 +229,13 @@ impl IdentityWallet {
 
                 for key in added_keys_for_local_apply {
                     let breadcrumb = identity_index.map(|idx| (self.wallet_id, idx, key.id()));
-                    managed.add_key(key, breadcrumb, &self.persister);
+                    managed
+                        .add_key(key, breadcrumb, &self.persister)
+                        .map_err(|e| {
+                            PlatformWalletError::Persistence(format!(
+                                "identity key not persisted after update: {e}"
+                            ))
+                        })?;
                 }
 
                 if !disabled_ids_for_local_apply.is_empty() {

@@ -63,6 +63,10 @@ pub unsafe extern "C" fn platform_address_wallet_fund_from_asset_lock_signer(
     out_changeset: *mut PlatformAddressChangeSetFFI,
 ) -> PlatformWalletFFIResult {
     check_ptr!(out_changeset);
+    // Sentinel first: address decoding, the wallet lookup, and the async
+    // fund below are all fallible. See `PlatformAddressChangeSetFFI::empty`
+    // for the double-free rationale.
+    *out_changeset = PlatformAddressChangeSetFFI::empty();
     check_ptr!(addresses);
     check_ptr!(signer_address_handle);
     check_ptr!(core_signer_handle);
@@ -152,6 +156,10 @@ pub unsafe extern "C" fn platform_address_wallet_resume_fund_from_asset_lock_sig
     out_changeset: *mut PlatformAddressChangeSetFFI,
 ) -> PlatformWalletFFIResult {
     check_ptr!(out_changeset);
+    // Sentinel first: address decoding, the wallet lookup, and the async
+    // resume-fund below are all fallible. See
+    // `PlatformAddressChangeSetFFI::empty` for the double-free rationale.
+    *out_changeset = PlatformAddressChangeSetFFI::empty();
     check_ptr!(addresses);
     check_ptr!(out_point);
     check_ptr!(signer_address_handle);

@@ -49,14 +49,13 @@
 use std::collections::BTreeMap;
 use std::sync::{
     atomic::{AtomicBool, AtomicU64, Ordering},
-    Arc, Mutex as StdMutex,
+    Arc,
 };
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use dpp::balances::credits::TokenAmount;
 use dpp::prelude::Identifier;
 use tokio::sync::RwLock;
-use tokio_util::sync::CancellationToken;
 
 use dash_sdk::platform::tokens::identity_token_balances::{
     IdentityTokenBalances, IdentityTokenBalancesQuery,
@@ -64,6 +63,7 @@ use dash_sdk::platform::tokens::identity_token_balances::{
 use dash_sdk::platform::FetchMany;
 
 use crate::changeset::{PlatformWalletPersistence, TokenBalanceChangeSet};
+use crate::manager::loop_cancel::LoopCancelGuard;
 use crate::wallet::platform_wallet::WalletId;
 
 /// Default cadence for the identity-token sync loop.
@@ -158,12 +158,9 @@ where
     /// over `P` so every `persister.store(...)` call on the hot sync
     /// loop dispatches statically.
     persister: Arc<P>,
-    /// Cancel token for the background loop, if running.
-    background_cancel: StdMutex<Option<CancellationToken>>,
-    /// Monotonically increasing generation counter. Incremented each
-    /// time `start()` installs a new cancel token so the exiting
-    /// thread can tell whether its token is still current.
-    background_generation: AtomicU64,
+    /// Generation-guarded cancel-token slot for the background loop —
+    /// see [`LoopCancelGuard`] for the stale-loop shutdown invariant.
+    cancel_guard: LoopCancelGuard,
     interval_secs: AtomicU64,
     is_syncing: AtomicBool,
     /// Set by [`quiesce`](Self::quiesce) to gate new passes while it
@@ -203,8 +200,7 @@ where
         Self {
             sdk,
             persister,
-            background_cancel: StdMutex::new(None),
-            background_generation: AtomicU64::new(0),
+            cancel_guard: LoopCancelGuard::new(),
             interval_secs: AtomicU64::new(DEFAULT_SYNC_INTERVAL_SECS),
             is_syncing: AtomicBool::new(false),
             quiescing: AtomicBool::new(false),
@@ -320,10 +316,7 @@ where
 
     /// Whether the background loop is currently running.
     pub fn is_running(&self) -> bool {
-        self.background_cancel
-            .lock()
-            .map(|g| g.is_some())
-            .unwrap_or(false)
+        self.cancel_guard.is_running()
     }
 
     /// Whether a sync pass is in flight right now.
@@ -395,14 +388,9 @@ where
     /// The first pass runs immediately; subsequent passes fire every
     /// [`interval`](Self::interval).
     pub fn start(self: Arc<Self>) {
-        let mut guard = self.background_cancel.lock().expect("bg_cancel poisoned");
-        if guard.is_some() {
+        let Some((cancel, my_generation)) = self.cancel_guard.install() else {
             return;
-        }
-        let cancel = CancellationToken::new();
-        *guard = Some(cancel.clone());
-        let my_gen = self.background_generation.fetch_add(1, Ordering::AcqRel) + 1;
-        drop(guard);
+        };
 
         let handle = tokio::runtime::Handle::current();
         let this = self;
@@ -424,13 +412,7 @@ where
                         }
                     }
 
-                    // Only clear the slot if no newer start() has
-                    // installed a replacement token since we launched.
-                    if let Ok(mut guard) = this.background_cancel.lock() {
-                        if this.background_generation.load(Ordering::Acquire) == my_gen {
-                            *guard = None;
-                        }
-                    }
+                    this.cancel_guard.clear_if_current(my_generation);
                 });
             })
             .expect("failed to spawn identity-sync thread");
@@ -445,12 +427,7 @@ where
     /// by manager shutdown so the host can free the persister context —
     /// use [`quiesce`](Self::quiesce).
     pub fn stop(&self) {
-        if let Some(token) = self
-            .background_cancel
-            .lock()
-            .expect("bg_cancel poisoned")
-            .take()
-        {
+        if let Some(token) = self.cancel_guard.take() {
             token.cancel();
         }
     }
