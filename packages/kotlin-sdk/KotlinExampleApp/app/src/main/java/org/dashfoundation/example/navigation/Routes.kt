@@ -176,6 +176,32 @@ import kotlinx.serialization.Serializable
 /** Shielded activity timeline for a wallet (← `ShieldedActivityView.swift`). */
 @Serializable data class ShieldedActivity(val walletIdHex: String)
 
+// ── DashPay graph (hosted under the DashPay tab, ← the DashPay/ views) ──
+
+/** Established-contacts list for an identity (← `ContactsView.swift`). */
+@Serializable data class DashPayContacts(val identityIdHex: String)
+
+/** Incoming + outgoing contact requests (← `ContactRequestsView.swift`). */
+@Serializable data class DashPayRequests(val identityIdHex: String)
+
+/** Add-a-contact form (DPNS search / paste id / QR, ← `AddContactView.swift`). */
+@Serializable data class DashPayAddContact(val identityIdHex: String)
+
+/** One contact's detail + payments (← `ContactDetailView.swift`). */
+@Serializable data class DashPayContactDetail(
+    val identityIdHex: String,
+    val contactIdHex: String,
+)
+
+/** Read-only own-profile sheet (← `DashPayProfileView.swift`). */
+@Serializable data class DashPayProfile(val identityIdHex: String)
+
+/** Ignored-senders list (← `IgnoredContactsView.swift`). */
+@Serializable data class DashPayIgnored(val identityIdHex: String)
+
+/** Hidden established-contacts list (← `HiddenContactsView.swift`). */
+@Serializable data class DashPayHidden(val ownerIdentityIdHex: String)
+
 // ── Contracts graph ────────────────────────────────────────────────────
 
 /** Fetch-a-contract screen (← `LocalDataContractsView.swift`). */
