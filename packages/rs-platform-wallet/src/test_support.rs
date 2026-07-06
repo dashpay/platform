@@ -10,11 +10,11 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use dashcore::secp256k1::{ecdsa, Message, PublicKey, Secp256k1};
-use dashcore::{Network, Transaction, Txid};
+use dashcore::{BlockHash, Network, Transaction, Txid};
 use key_wallet::account::account_type::StandardAccountType;
 use key_wallet::signer::{Signer, SignerMethod};
 use key_wallet::test_utils::TestWalletContext;
-use key_wallet::transaction_checking::TransactionContext;
+use key_wallet::transaction_checking::{BlockInfo, TransactionContext};
 use key_wallet::{DerivationPath, Wallet};
 use key_wallet_manager::WalletManager;
 use tokio::sync::RwLock;
@@ -154,10 +154,15 @@ pub(crate) async fn funded_wallet_manager(
         }
     };
 
+    // Funded as an already-mined (confirmed) UTXO, not mempool: since
+    // rust-dashcore#836, asset-lock building excludes unconfirmed/non-
+    // InstantSend inputs (`require_final_inputs`), so a mempool-only fixture
+    // would starve `build_asset_lock`'s coin selection before ever reaching
+    // the broadcast-rejection paths these tests exist to exercise.
     let funding_tx = Transaction::dummy(&receive_address, 0..1, &[10_000_000]);
-    let result = ctx
-        .check_transaction(&funding_tx, TransactionContext::Mempool)
-        .await;
+    let block =
+        TransactionContext::InBlock(BlockInfo::new(600_000, BlockHash::dummy(0), 1_700_000_000));
+    let result = ctx.check_transaction(&funding_tx, block).await;
     assert!(
         result.is_relevant,
         "funding tx should be relevant to {account_type:?}"
