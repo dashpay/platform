@@ -101,24 +101,11 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 tracked_asset_locks,
             };
 
-            // Insert into `wallet_manager` first so we have a wallet
-            // handle to validate against. Track success in
-            // `inserted_in_manager` so the batch-rollback at the
-            // bottom can unwind on any later-iteration failure.
-            let wallet_id = {
-                let mut wm = self.wallet_manager.write().await;
-                match wm.insert_wallet(wallet, platform_info) {
-                    Ok(id) => id,
-                    Err(e) => {
-                        load_error = Some(PlatformWalletError::WalletCreation(format!(
-                            "Failed to register persisted wallet in WalletManager: {}",
-                            e
-                        )));
-                        break 'load;
-                    }
-                }
-            };
-            inserted_in_manager.push(wallet_id);
+            // Canonical id recomputed from the wallet's own key material.
+            // Computed up front — before `insert_wallet` consumes `wallet` —
+            // so we can both validate it against the persisted map key and
+            // detect a wallet that an earlier load already registered.
+            let wallet_id = wallet.compute_wallet_id();
 
             if wallet_id != expected_wallet_id {
                 load_error = Some(PlatformWalletError::WalletCreation(format!(
@@ -128,6 +115,39 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 )));
                 break 'load;
             }
+
+            // Insert into `wallet_manager` first so we have a wallet handle
+            // to build the `PlatformWallet` against. Track success in
+            // `inserted_in_manager` so the batch-rollback at the bottom can
+            // unwind on any later-iteration failure.
+            //
+            // Idempotent: a client re-activates its per-network manager on
+            // every SDK emission (network switch, devnet reconfigure, or a
+            // plain StateFlow re-emission), which re-runs this loader against
+            // a manager that already holds the wallet. Re-inserting would
+            // surface `WalletExists`, and with no manager-reset path across
+            // the FFI boundary that error crashes the app on the main thread.
+            // A wallet already present was fully hydrated (manager +
+            // `self.wallets`) by the earlier call, so skip it. Deliberately
+            // do NOT record it in `inserted_in_manager`, so this call's
+            // rollback only unwinds inserts this call actually made.
+            //
+            // The existence check and the insert share one write-lock scope
+            // so a concurrent loader can't slip between them (TOCTOU).
+            {
+                let mut wm = self.wallet_manager.write().await;
+                if wm.get_wallet(&wallet_id).is_some() {
+                    continue 'load;
+                }
+                if let Err(e) = wm.insert_wallet(wallet, platform_info) {
+                    load_error = Some(PlatformWalletError::WalletCreation(format!(
+                        "Failed to register persisted wallet in WalletManager: {}",
+                        e
+                    )));
+                    break 'load;
+                }
+            }
+            inserted_in_manager.push(wallet_id);
 
             let broadcaster = Arc::new(crate::broadcaster::SpvBroadcaster::new(Arc::clone(
                 &self.spv_manager,
@@ -196,5 +216,125 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod idempotent_load_tests {
+    use std::collections::BTreeMap;
+    use std::sync::Arc;
+
+    use key_wallet::test_utils::TestWalletContext;
+    use key_wallet::wallet::ManagedWalletInfo;
+    use key_wallet::Wallet;
+
+    use crate::changeset::{
+        ClientStartState, ClientWalletStartState, IdentityManagerStartState, PersistenceError,
+        PlatformWalletChangeSet, PlatformWalletPersistence,
+    };
+    use crate::events::{EventHandler, PlatformEventHandler};
+    use crate::wallet::platform_wallet::WalletId;
+    use crate::PlatformWalletManager;
+
+    /// Persister whose `load()` returns a single-wallet snapshot rebuilt
+    /// fresh on every call — `load_from_persistor` moves `wallets` out of
+    /// the returned state, so each hydration needs its own copy. Mirrors a
+    /// real device where the same persisted rows are handed back on every
+    /// `loadFromPersistor` the app fires (once per SDK re-activation).
+    struct SingleWalletPersister {
+        wallet: Wallet,
+        managed: ManagedWalletInfo,
+    }
+
+    impl PlatformWalletPersistence for SingleWalletPersister {
+        fn store(
+            &self,
+            _wallet_id: WalletId,
+            _changeset: PlatformWalletChangeSet,
+        ) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+
+        fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+
+        fn load(&self) -> Result<ClientStartState, PersistenceError> {
+            let wallet_id = self.wallet.compute_wallet_id();
+            let mut wallets = BTreeMap::new();
+            wallets.insert(
+                wallet_id,
+                ClientWalletStartState {
+                    wallet: self.wallet.clone(),
+                    wallet_info: self.managed.clone(),
+                    identity_manager: IdentityManagerStartState::default(),
+                    unused_asset_locks: BTreeMap::new(),
+                },
+            );
+            Ok(ClientStartState {
+                wallets,
+                ..Default::default()
+            })
+        }
+    }
+
+    struct NoopEventHandler;
+    impl EventHandler for NoopEventHandler {}
+    impl PlatformEventHandler for NoopEventHandler {}
+
+    fn make_manager(
+        persister: SingleWalletPersister,
+    ) -> Arc<PlatformWalletManager<SingleWalletPersister>> {
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let event_handler: Arc<dyn PlatformEventHandler> = Arc::new(NoopEventHandler);
+        Arc::new(PlatformWalletManager::new(
+            sdk,
+            Arc::new(persister),
+            event_handler,
+        ))
+    }
+
+    /// The app re-activates its per-network manager on every SDK emission,
+    /// which re-runs `load_from_persistor` against a manager that already
+    /// holds the persisted wallet. The second (and every later) call must
+    /// be a no-op `Ok(())` — NOT the `WalletExists`-wrapped
+    /// `WalletCreation` error that used to crash the app on the main
+    /// thread. Exactly one wallet stays registered across the calls.
+    #[tokio::test]
+    async fn repeated_load_from_persistor_is_idempotent() {
+        let ctx = TestWalletContext::new_random();
+        let expected_id = ctx.wallet.compute_wallet_id();
+        let manager = make_manager(SingleWalletPersister {
+            wallet: ctx.wallet,
+            managed: ctx.managed_wallet,
+        });
+
+        manager
+            .load_from_persistor()
+            .await
+            .expect("first load registers the persisted wallet");
+        assert_eq!(
+            manager.wallet_ids().await,
+            vec![expected_id],
+            "first load must register exactly the persisted wallet"
+        );
+
+        // Re-hydrating with the wallet already present used to surface
+        // `Failed to register persisted wallet in WalletManager: Wallet
+        // already exists`. It must now be a silent no-op.
+        manager
+            .load_from_persistor()
+            .await
+            .expect("second load must be an idempotent no-op, not an error");
+        manager
+            .load_from_persistor()
+            .await
+            .expect("third load must also be idempotent");
+
+        assert_eq!(
+            manager.wallet_ids().await,
+            vec![expected_id],
+            "idempotent reloads must not duplicate or drop the wallet"
+        );
     }
 }
