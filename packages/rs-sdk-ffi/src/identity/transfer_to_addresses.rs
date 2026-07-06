@@ -183,7 +183,7 @@ unsafe fn dash_sdk_identity_transfer_credits_to_addresses_inner(
     // Execute the transfer
     let result: Result<DashSDKIdentityTransferToAddressesResult, FFIError> =
         wrapper.runtime.block_on(async {
-            let (address_infos, identity_balance) = identity
+            let (address_infos, identity_balance, _proof_height) = identity
                 .transfer_credits_to_addresses(
                     &wrapper.sdk,
                     recipient_map,

@@ -747,6 +747,7 @@ impl PlatformWalletPersistence for FFIPersister {
                         nonce: entry.funds.nonce,
                         account_index: entry.account_index,
                         address_index: entry.address_index,
+                        as_of_height: entry.funds.as_of_height,
                     })
                     .collect();
                 if !entries.is_empty() {
@@ -3340,6 +3341,10 @@ fn build_wallet_start_state(
             dash_sdk::platform::address_sync::AddressFunds {
                 nonce: persisted.nonce,
                 balance: persisted.balance,
+                // Height pin round-trip: rows persisted before the pin
+                // existed load as 0 ("unknown provenance") and yield to
+                // the first pinned absolute — the self-healing path.
+                as_of_height: persisted.as_of_height,
             },
         );
     }

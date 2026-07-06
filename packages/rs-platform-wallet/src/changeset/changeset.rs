@@ -1118,7 +1118,11 @@ mod tests {
         let addr1 = PlatformP2PKHAddress::new([1u8; 20]);
         let addr2 = PlatformP2PKHAddress::new([2u8; 20]);
 
-        let funds = |balance, nonce| AddressFunds { balance, nonce };
+        let funds = |balance, nonce| AddressFunds {
+            balance,
+            nonce,
+            as_of_height: 0,
+        };
         let entry = |address_index, address, funds| PlatformAddressBalanceEntry {
             wallet_id,
             account_index: 0,

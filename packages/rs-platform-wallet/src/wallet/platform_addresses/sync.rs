@@ -41,6 +41,7 @@ pub(crate) fn compute_address_balance_diff(
     before: &BTreeMap<PlatformAddressTag, AddressFunds>,
     found: &BTreeMap<(PlatformAddressTag, PlatformP2PKHAddress), AddressFunds>,
     absent: &BTreeSet<(PlatformAddressTag, PlatformP2PKHAddress)>,
+    absent_as_of_height: u64,
 ) -> Vec<PlatformAddressBalanceEntry> {
     let mut entries = Vec::new();
 
@@ -82,10 +83,14 @@ pub(crate) fn compute_address_balance_diff(
             account_index,
             address_index,
             address: p2pkh,
-            // Absent in state ⇒ no balance and no nonce. Reset both.
+            // Absent in state ⇒ no balance and no nonce. Reset both. The
+            // absence was proven by the tree scan, so the zero is pinned
+            // at the scan's checkpoint height (`absent_as_of_height`) —
+            // a later re-credit carries a higher pin and wins.
             funds: AddressFunds {
                 balance: 0,
                 nonce: 0,
+                as_of_height: absent_as_of_height,
             },
         });
     }
@@ -139,7 +144,14 @@ impl PlatformAddressWallet {
         // proven absent this pass that previously carried cached funds.
         // The latter is what zeroes a stale balance after a chain reset.
         let mut cs = PlatformAddressChangeSet {
-            addresses: compute_address_balance_diff(&before, &result.found, &result.absent),
+            addresses: compute_address_balance_diff(
+                &before,
+                &result.found,
+                &result.absent,
+                // Absence is only ever proven by the trunk/branch scan,
+                // so its checkpoint height pins the zeroing entries.
+                result.checkpoint_height,
+            ),
             ..Default::default()
         };
         if result.new_sync_height > 0 {
@@ -186,7 +198,11 @@ mod tests {
     }
 
     fn funds(balance: u64, nonce: u32) -> AddressFunds {
-        AddressFunds { balance, nonce }
+        AddressFunds {
+            balance,
+            nonce,
+            as_of_height: 0,
+        }
     }
 
     /// An address that previously carried a cached balance and is proven
@@ -202,7 +218,7 @@ mod tests {
         let mut absent = BTreeSet::new();
         absent.insert((tag(0), p2pkh(1)));
 
-        let entries = compute_address_balance_diff(&before, &found, &absent);
+        let entries = compute_address_balance_diff(&before, &found, &absent, 0);
 
         assert_eq!(entries.len(), 1);
         let entry = &entries[0];
@@ -224,7 +240,7 @@ mod tests {
         let mut absent = BTreeSet::new();
         absent.insert((tag(0), p2pkh(1)));
 
-        let entries = compute_address_balance_diff(&before, &found, &absent);
+        let entries = compute_address_balance_diff(&before, &found, &absent, 0);
         assert!(entries.is_empty());
     }
 
@@ -241,7 +257,7 @@ mod tests {
         let mut absent = BTreeSet::new();
         absent.insert((tag(0), p2pkh(1)));
 
-        let entries = compute_address_balance_diff(&before, &found, &absent);
+        let entries = compute_address_balance_diff(&before, &found, &absent, 0);
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].funds.balance, 0);
         assert_eq!(entries[0].funds.nonce, 0);
@@ -258,7 +274,7 @@ mod tests {
         let mut absent = BTreeSet::new();
         absent.insert((tag(0), p2pkh(1)));
 
-        let entries = compute_address_balance_diff(&before, &found, &absent);
+        let entries = compute_address_balance_diff(&before, &found, &absent, 0);
         assert!(entries.is_empty());
     }
 
@@ -276,7 +292,7 @@ mod tests {
 
         let absent = BTreeSet::new();
 
-        let entries = compute_address_balance_diff(&before, &found, &absent);
+        let entries = compute_address_balance_diff(&before, &found, &absent, 0);
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].address_index, 0);
         assert_eq!(entries[0].address, p2pkh(10));
@@ -300,7 +316,7 @@ mod tests {
         let mut absent = BTreeSet::new();
         absent.insert((tag(0), p2pkh(1)));
 
-        let entries = compute_address_balance_diff(&before, &found, &absent);
+        let entries = compute_address_balance_diff(&before, &found, &absent, 0);
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].address, p2pkh(1));
@@ -322,7 +338,7 @@ mod tests {
         let mut absent = BTreeSet::new();
         absent.insert((tag(1), p2pkh(20)));
 
-        let mut entries = compute_address_balance_diff(&before, &found, &absent);
+        let mut entries = compute_address_balance_diff(&before, &found, &absent, 0);
         entries.sort_by_key(|e| e.address_index);
 
         assert_eq!(entries.len(), 2);

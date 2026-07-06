@@ -101,12 +101,12 @@ public class PlatformWalletPersistenceHandler {
     /// only; derivation metadata stays as the address-emit path set it.
     func persistAddressBalances(
         walletId: Data,
-        entries: [(UInt8, Data, UInt64, UInt32, UInt32, UInt32)]
+        entries: [(UInt8, Data, UInt64, UInt32, UInt32, UInt32, UInt64)]
     ) {
         onQueue {
             // `accountIndex` / `addressIndex` (tuple slots 5 and 6) are
             // intentionally ignored — see the note above.
-            for (_, addressHash, balance, nonce, _, _) in entries {
+            for (_, addressHash, balance, nonce, _, _, asOfHeight) in entries {
                 // Scope by walletId + hash: a hash-only predicate can match
                 // another wallet's row in a multi-wallet store (same seed
                 // imported on coin-type-sharing networks, watch-only
@@ -121,6 +121,9 @@ public class PlatformWalletPersistenceHandler {
                 }
                 existing.balance = balance
                 existing.nonce = nonce
+                // Balance height pin — persisted verbatim so the load
+                // path can hand it back to Rust (delta-replay gating).
+                existing.lastSeenHeight = asOfHeight
                 if balance > 0 || nonce > 0 {
                     existing.isUsed = true
                 }
@@ -250,7 +253,7 @@ public class PlatformWalletPersistenceHandler {
     /// shape matches the Rust-side `AddressBalanceEntryFFI` layout so
     /// the load-wallet-list path can re-seed the provider on startup
     /// without a full rescan.
-    public func loadCachedBalances(walletId: Data) -> [(UInt8, [UInt8], UInt64, UInt32, UInt32, UInt32)] {
+    public func loadCachedBalances(walletId: Data) -> [(UInt8, [UInt8], UInt64, UInt32, UInt32, UInt32, UInt64)] {
         onQueue { loadCachedBalancesOnQueue(walletId: walletId) }
     }
 
@@ -258,7 +261,7 @@ public class PlatformWalletPersistenceHandler {
     /// already running on `serialQueue`. Lets internal on-queue
     /// callers (`loadWalletList`) reuse the body without recursing
     /// through `onQueue`, which would deadlock.
-    private func loadCachedBalancesOnQueue(walletId: Data) -> [(UInt8, [UInt8], UInt64, UInt32, UInt32, UInt32)] {
+    private func loadCachedBalancesOnQueue(walletId: Data) -> [(UInt8, [UInt8], UInt64, UInt32, UInt32, UInt32, UInt64)] {
         let descriptor = FetchDescriptor<PersistentPlatformAddress>(
             predicate: PersistentPlatformAddress.predicate(walletId: walletId)
         )
@@ -274,7 +277,8 @@ public class PlatformWalletPersistenceHandler {
                 record.balance,
                 record.nonce,
                 record.accountIndex,
-                record.addressIndex
+                record.addressIndex,
+                record.lastSeenHeight
             )
         }
     }
@@ -3588,7 +3592,8 @@ public class PlatformWalletPersistenceHandler {
                 )
                 var written = 0
                 for cached in cachedBalances {
-                    let (addressType, hash, balance, nonce, accountIndex, addressIndex) = cached
+                    let (addressType, hash, balance, nonce, accountIndex, addressIndex, asOfHeight) =
+                        cached
                     guard hash.count == 20 else { continue }
 
                     var hashTuple:
@@ -3605,7 +3610,8 @@ public class PlatformWalletPersistenceHandler {
                         balance: balance,
                         nonce: nonce,
                         account_index: accountIndex,
-                        address_index: addressIndex
+                        address_index: addressIndex,
+                        as_of_height: asOfHeight
                     )
                     written += 1
                 }
@@ -4848,7 +4854,7 @@ private func persistAddressBalancesCallback(
 
     let walletId = Data(bytes: walletIdPtr, count: 32)
 
-    var entries: [(UInt8, Data, UInt64, UInt32, UInt32, UInt32)] = []
+    var entries: [(UInt8, Data, UInt64, UInt32, UInt32, UInt32, UInt64)] = []
     entries.reserveCapacity(Int(count))
 
     for i in 0..<Int(count) {
@@ -4860,7 +4866,8 @@ private func persistAddressBalancesCallback(
             entry.balance,
             entry.nonce,
             entry.account_index,
-            entry.address_index
+            entry.address_index,
+            entry.as_of_height
         ))
     }
 

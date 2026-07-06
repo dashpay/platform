@@ -38,7 +38,7 @@ pub trait TopUpAddress<S: Signer<PlatformAddress>> {
         fee_strategy: AddressFundsFeeStrategy,
         signer: &S,
         settings: Option<PutSettings>,
-    ) -> Result<AddressInfos, Error>;
+    ) -> Result<(AddressInfos, u64), Error>;
 
     /// Top up addresses with an external asset-lock signer.
     ///
@@ -68,7 +68,7 @@ pub trait TopUpAddress<S: Signer<PlatformAddress>> {
         signer: &S,
         asset_lock_signer: &AS,
         settings: Option<PutSettings>,
-    ) -> Result<AddressInfos, Error>
+    ) -> Result<(AddressInfos, u64), Error>
     where
         AS: dpp::key_wallet::signer::Signer + Send + Sync;
 }
@@ -89,7 +89,7 @@ where
         fee_strategy: AddressFundsFeeStrategy,
         signer: &S,
         settings: Option<PutSettings>,
-    ) -> Result<AddressInfos, Error> {
+    ) -> Result<(AddressInfos, u64), Error> {
         BTreeMap::from([(self.0, self.1)])
             .top_up(
                 sdk,
@@ -113,7 +113,7 @@ where
         signer: &S,
         asset_lock_signer: &AS,
         settings: Option<PutSettings>,
-    ) -> Result<AddressInfos, Error>
+    ) -> Result<(AddressInfos, u64), Error>
     where
         AS: dpp::key_wallet::signer::Signer + Send + Sync,
     {
@@ -141,7 +141,7 @@ impl<S: Signer<PlatformAddress>> TopUpAddress<S> for AddressesWithBalances {
         fee_strategy: AddressFundsFeeStrategy,
         signer: &S,
         settings: Option<PutSettings>,
-    ) -> Result<AddressInfos, Error> {
+    ) -> Result<(AddressInfos, u64), Error> {
         if self.is_empty() {
             return Err(Error::from(TransitionNoOutputsError::new()));
         }
@@ -177,7 +177,7 @@ impl<S: Signer<PlatformAddress>> TopUpAddress<S> for AddressesWithBalances {
         signer: &S,
         asset_lock_signer: &AS,
         settings: Option<PutSettings>,
-    ) -> Result<AddressInfos, Error>
+    ) -> Result<(AddressInfos, u64), Error>
     where
         AS: dpp::key_wallet::signer::Signer + Send + Sync,
     {
@@ -215,18 +215,24 @@ impl<S: Signer<PlatformAddress>> TopUpAddress<S> for AddressesWithBalances {
 }
 
 /// Broadcast the address-funding ST and convert the proof into the
-/// `AddressInfos` map. Shared between the legacy private-key path and
-/// the new signer-pair path — both flows want the same proof-shape
-/// guarantee and the same expected-addresses cross-check.
+/// `AddressInfos` map, paired with the proof's committed block height.
+/// Shared between the legacy private-key path and the new signer-pair
+/// path — both flows want the same proof-shape guarantee and the same
+/// expected-addresses cross-check.
+///
+/// The returned height is the balances' height pin (see
+/// `crate::platform::address_sync::AddressFunds::as_of_height`): callers
+/// that persist these absolutes must record it so later balance-change
+/// deltas at or below it are not re-applied on top.
 async fn broadcast_and_collect_address_infos(
     expected: &AddressesWithBalances,
     state_transition: StateTransition,
     sdk: &Sdk,
     settings: Option<PutSettings>,
-) -> Result<AddressInfos, Error> {
+) -> Result<(AddressInfos, u64), Error> {
     ensure_valid_state_transition_structure(&state_transition, sdk.version())?;
-    let st_result = state_transition
-        .broadcast_and_wait::<StateTransitionProofResult>(sdk, settings)
+    let (st_result, metadata) = state_transition
+        .broadcast_and_wait_with_metadata::<StateTransitionProofResult>(sdk, settings)
         .await?;
     match st_result {
         StateTransitionProofResult::VerifiedAddressInfos(address_infos) => {
@@ -235,6 +241,7 @@ async fn broadcast_and_collect_address_infos(
                 .copied()
                 .collect::<BTreeSet<PlatformAddress>>();
             collect_address_infos_from_proof(address_infos, &expected_addresses)
+                .map(|infos| (infos, metadata.height))
         }
         other => Err(Error::InvalidProvedResponse(format!(
             "address info proof was expected for {:?}, but received {:?}",

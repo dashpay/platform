@@ -80,6 +80,7 @@ fn platform_addr_mixed_wallet_rejected() {
             funds: AddressFunds {
                 nonce: 0,
                 balance: 0,
+                as_of_height: 0,
             },
         }],
         ..Default::default()

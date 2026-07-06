@@ -157,7 +157,11 @@ impl<P: AddressProvider> TrunkBranchSyncOps for AddressOps<P> {
         for (tag, address) in pending {
             let key_bytes = address.to_bytes();
             if let Some(element) = trunk_result.elements.get(&key_bytes) {
-                let funds = AddressFunds::try_from(element)?;
+                // Pin the scan absolute at the snapshot height: the trunk
+                // proof attests this balance as of `checkpoint_height`, so
+                // any delta recorded at or below it is already included.
+                let mut funds = AddressFunds::try_from(element)?;
+                funds.as_of_height = context.result.checkpoint_height;
                 context.result.found.insert((tag, address), funds);
                 context
                     .provider
@@ -207,7 +211,10 @@ impl<P: AddressProvider> TrunkBranchSyncOps for AddressOps<P> {
             };
 
             if let Some(element) = branch_result.elements.get(&target_key) {
-                let funds = AddressFunds::try_from(element)?;
+                // Branch queries are checkpointed to the trunk query's
+                // height, so branch absolutes carry the same pin.
+                let mut funds = AddressFunds::try_from(element)?;
+                funds.as_of_height = context.result.checkpoint_height;
                 context.result.found.insert((tag, address), funds);
                 context
                     .provider
@@ -594,10 +601,14 @@ async fn incremental_catch_up<P: AddressProvider>(
                     Err(e) => return Err(e),
                 };
 
-            let entries = match changes {
+            let mut entries = match changes {
                 Some(c) => c.into_inner(),
                 None => break,
             };
+            // Apply in ascending range order so per-address pins advance
+            // monotonically — an out-of-order apply could gate off a
+            // genuinely newer delta.
+            entries.sort_by_key(|e| e.end_block_height);
 
             result.new_sync_timestamp = metadata.time_ms / 1000;
             result.metrics.compacted_queries += 1;
@@ -618,30 +629,59 @@ async fn incremental_catch_up<P: AddressProvider>(
                     let addr_bytes = platform_addr.to_bytes();
                     if let Some(&(tag, address)) = address_lookup.get(&addr_bytes) {
                         let result_key = (tag, address);
-                        let current_balance = result
-                            .found
-                            .get(&result_key)
-                            .map(|f| f.balance)
-                            .unwrap_or(0);
+                        let current =
+                            result
+                                .found
+                                .get(&result_key)
+                                .copied()
+                                .unwrap_or(AddressFunds {
+                                    nonce: 0,
+                                    balance: 0,
+                                    as_of_height: 0,
+                                });
 
-                        let new_balance = match credit_op {
-                            BlockAwareCreditOperation::SetCredits(credits) => *credits,
+                        // Height-pin gating (see `AddressFunds::as_of_height`):
+                        // the pinned balance already includes every block up
+                        // to and including the pin, so only strictly newer
+                        // changes may be applied on top of it.
+                        let funds = match credit_op {
+                            BlockAwareCreditOperation::SetCredits(credits) => {
+                                // Absolute as of the end of this compacted
+                                // range — authoritative only if it postdates
+                                // the pin.
+                                if entry.end_block_height <= current.as_of_height {
+                                    continue;
+                                }
+                                AddressFunds {
+                                    nonce: current.nonce,
+                                    balance: *credits,
+                                    as_of_height: entry.end_block_height,
+                                }
+                            }
                             BlockAwareCreditOperation::AddToCreditsOperations(operations) => {
+                                // Each operation carries its own block
+                                // height, so a pin that falls inside the
+                                // compacted range drops exactly the ops the
+                                // pinned absolute already includes and
+                                // applies the rest.
                                 let total_to_add: u64 = operations
                                     .iter()
-                                    .filter(|(height, _)| **height >= current_height)
+                                    .filter(|(height, _)| **height > current.as_of_height)
                                     .map(|(_, credits)| *credits)
                                     .fold(0u64, |acc, c| acc.saturating_add(c));
-                                current_balance.saturating_add(total_to_add)
+                                AddressFunds {
+                                    nonce: current.nonce,
+                                    balance: current.balance.saturating_add(total_to_add),
+                                    // The entry aggregates every change for
+                                    // this address through its range end, so
+                                    // the balance is now current through
+                                    // there.
+                                    as_of_height: current.as_of_height.max(entry.end_block_height),
+                                }
                             }
                         };
 
-                        if new_balance != current_balance {
-                            let nonce = result.found.get(&result_key).map(|f| f.nonce).unwrap_or(0);
-                            let funds = AddressFunds {
-                                nonce,
-                                balance: new_balance,
-                            };
+                        if funds != current {
                             result.found.insert(result_key, funds);
                             provider.on_address_found(tag, &address, funds).await;
                         }
@@ -668,8 +708,13 @@ async fn incremental_catch_up<P: AddressProvider>(
     let mut highest_recent_block: u64 = 0;
 
     if let Some(changes) = recent_changes {
-        let entries = changes.into_inner();
+        let mut entries = changes.into_inner();
         result.metrics.recent_entries_returned += entries.len();
+
+        // Apply in ascending block order so per-address pins advance
+        // monotonically — an out-of-order apply could gate off a genuinely
+        // newer delta.
+        entries.sort_by_key(|e| e.block_height);
 
         for entry in &entries {
             // Track the highest block height in recent entries
@@ -681,28 +726,42 @@ async fn incremental_catch_up<P: AddressProvider>(
                 let addr_bytes = platform_addr.to_bytes();
                 if let Some(&(tag, address)) = address_lookup.get(&addr_bytes) {
                     let result_key = (tag, address);
-                    let current_balance = result
+                    let current = result
                         .found
                         .get(&result_key)
-                        .map(|f| f.balance)
-                        .unwrap_or(0);
+                        .copied()
+                        .unwrap_or(AddressFunds {
+                            nonce: 0,
+                            balance: 0,
+                            as_of_height: 0,
+                        });
+
+                    // Height-pin gating: a change recorded at or below the
+                    // pin is already included in the pinned absolute.
+                    // Re-applying it is exactly the double-count this module
+                    // used to produce — a fresh trunk/ST absolute plus the
+                    // same block's `AddToCredits` replayed on top.
+                    if entry.block_height <= current.as_of_height {
+                        continue;
+                    }
 
                     let new_balance = match credit_op {
                         CreditOperation::SetCredits(credits) => *credits,
                         CreditOperation::AddToCredits(credits) => {
-                            current_balance.saturating_add(*credits)
+                            current.balance.saturating_add(*credits)
                         }
                     };
 
-                    if new_balance != current_balance {
-                        let nonce = result.found.get(&result_key).map(|f| f.nonce).unwrap_or(0);
-                        let funds = AddressFunds {
-                            nonce,
-                            balance: new_balance,
-                        };
-                        result.found.insert(result_key, funds);
-                        provider.on_address_found(tag, &address, funds).await;
-                    }
+                    // The gate guarantees the pin advances, so always
+                    // commit — even a balance-neutral change persists the
+                    // fresher pin, which hardens future replay gating.
+                    let funds = AddressFunds {
+                        nonce: current.nonce,
+                        balance: new_balance,
+                        as_of_height: entry.block_height,
+                    };
+                    result.found.insert(result_key, funds);
+                    provider.on_address_found(tag, &address, funds).await;
                 }
             }
 
@@ -859,6 +918,10 @@ impl TryFrom<&Element> for AddressFunds {
     /// Convert a GroveDB element into address funds (nonce and balance).
     ///
     /// The address funds tree stores the nonce as the item value and the balance as the sum item.
+    ///
+    /// The element itself carries no block height, so the produced funds
+    /// have `as_of_height == 0`; the caller must pin them at the proof
+    /// height of the query that returned the element.
     fn try_from(element: &Element) -> Result<Self, Self::Error> {
         if let Element::ItemWithSumItem(nonce_bytes, balance, _) = element {
             let nonce_bytes: [u8; 4] = nonce_bytes.as_slice().try_into().map_err(|_| {
@@ -870,7 +933,11 @@ impl TryFrom<&Element> for AddressFunds {
             let balance: u64 = (*balance).try_into().map_err(|_| {
                 Error::InvalidProvedResponse("address funds balance must fit into u64".to_string())
             })?;
-            return Ok(AddressFunds { nonce, balance });
+            return Ok(AddressFunds {
+                nonce,
+                balance,
+                as_of_height: 0,
+            });
         }
 
         Err(Error::InvalidProvedResponse(
@@ -1340,6 +1407,7 @@ mod tests {
             AddressFunds {
                 nonce: 0,
                 balance: 500,
+                as_of_height: 0,
             },
         );
         result.found.insert(
@@ -1347,6 +1415,7 @@ mod tests {
             AddressFunds {
                 nonce: 1,
                 balance: 0,
+                as_of_height: 0,
             },
         );
         result.found.insert(
@@ -1354,6 +1423,7 @@ mod tests {
             AddressFunds {
                 nonce: 2,
                 balance: 1500,
+                as_of_height: 0,
             },
         );
 
