@@ -65,6 +65,10 @@ const READ_ONLY_PREPARE_ALLOWED: &[(&str, &str)] = &[
     ),
     ("contacts.rs", "SELECT owner_id, contact_id, state"),
     (
+        "contacts.rs",
+        "SELECT owner_id, sender_id FROM ignored_senders",
+    ),
+    (
         "pending_contact_crypto.rs",
         "SELECT wallet_id, payload FROM pending_contact_crypto",
     ),
