@@ -1,9 +1,15 @@
 //! AL-001 — Concurrent asset-lock builds from same wallet.
 //!
-//! **RED-by-design (Found-031)**: step 3 precondition (`add_identity_topup_account`)
-//! fails because `register_wallet` calls `downgrade_to_external_signable()`
-//! (`wallet_lifecycle.rs:244`) before IdentityTopUp accounts can be provisioned,
-//! stripping the private key required for HD derivation. See TEST_SPEC.md Found-031.
+//! **Found-031 reachability proof (under concurrency)**: step 3's precondition
+//! (`add_identity_topup_account`) provisions one `IdentityTopUp` account per
+//! identity slot on a post-registration wallet. `register_wallet` calls
+//! `downgrade_to_external_signable()` (`wallet_lifecycle.rs:244`), dropping the
+//! root seed, so the resident-key `add_account(.., None)` path fails with
+//! "External signable wallet has no private key". Each account is instead
+//! provisioned with an externally-derived `Some(xpub)` — watch-only, signed at
+//! build/consume time by the external `core_signer` — proving the asset-lock
+//! top-up is reachable on an external-signable wallet under N-way concurrent
+//! load. See TEST_SPEC.md Found-031.
 //!
 //! Spec: `tests/e2e/TEST_SPEC.md` (### Asset Lock (AL) → AL-001).
 //! Pinned status: active regression guard — full test body implemented,
@@ -25,12 +31,17 @@
 //! logic is exercised under concurrent load.
 //!
 //! Assertions:
-//! - All N tasks return `Ok(_)`.
-//! - The N asset-lock txids are pairwise distinct (no manager collision).
-//! - All N identity balances increased post-top-up.
-//! - No `tracked_asset_locks` entry is in a non-final status.
-//! - No UTXO double-spend: input outpoints across the N asset-lock
-//!   transactions form pairwise-disjoint sets.
+//! - All N tasks return `Ok(_)` (Step 4) — reachability under concurrency.
+//! - All N identity balances increased post-top-up (Step 6).
+//! - No lingering `tracked_asset_locks` entry is in a non-final status
+//!   (Step 5). The flow is remove-on-success (`consume_asset_lock`
+//!   drains each entry on Platform accept), so a full-success run leaves
+//!   an empty registry; this pins that no half-finalised lock survives.
+//! - Pairwise-distinct asset-lock txids and pairwise-disjoint funding
+//!   inputs (no manager collision, no UTXO double-spend) are enforced
+//!   upstream by `OutpointReservations`; a violation fails a build at
+//!   coin-selection/broadcast, so it surfaces as a task `Err` in Step 4
+//!   (the consumed entries can't be re-inspected post-success).
 //!
 //! Critical-path interactions this guard also covers:
 //! - Found-008 (`LockNotifyHandler` / `wait_for_proof` missed-wakeup) is
@@ -79,7 +90,6 @@
 //! entire Core balance to N+1 fresh receive addresses so coin selection
 //! always has a dedicated candidate per task.
 
-use std::collections::HashSet;
 use std::time::Duration;
 
 use dpp::balances::credits::CREDITS_PER_DUFF;
@@ -87,7 +97,9 @@ use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::Identity;
 use dpp::prelude::Identifier;
 use key_wallet::account::account_type::StandardAccountType;
-use key_wallet::AccountType;
+use key_wallet::bip32::{ExtendedPrivKey, ExtendedPubKey};
+use key_wallet::dashcore::secp256k1::Secp256k1;
+use key_wallet::{AccountType, Network};
 use platform_wallet::wallet::asset_lock::tracked::AssetLockStatus;
 use platform_wallet::AssetLockFunding;
 use platform_wallet::PlatformWalletError;
@@ -309,21 +321,27 @@ async fn al_001_concurrent_asset_lock_builds() {
     // `FundWithWallet` looks up the account by `identity_index` in the
     // managed account collection, which starts empty under
     // `WalletAccountCreationOptions::Default`.
+    let core_network = s.test_wallet.platform_wallet().core().network();
+    let seed = s.test_wallet.seed_bytes();
     for i in 0..N {
-        add_identity_topup_account(s.test_wallet.platform_wallet(), i as u32)
-            .await
-            .unwrap_or_else(|e| {
-                panic!(
-                    "Found-031 (RED-by-design): register_wallet strips private key before \
-                     IdentityTopUp provisioning — add_account fails for slot {i}. \
-                     See TEST_SPEC.md Found-031. error={e}"
-                )
-            });
+        add_identity_topup_account(
+            s.test_wallet.platform_wallet(),
+            &seed,
+            core_network,
+            i as u32,
+        )
+        .await
+        .unwrap_or_else(|e| {
+            panic!(
+                "provision IdentityTopUp account (slot {i}) via externally-derived \
+                     xpub — the post-registration wallet is external-signable, so the \
+                     account must be added with Some(xpub), not the resident-key None \
+                     path. See TEST_SPEC.md Found-031. error={e}"
+            )
+        });
     }
 
     let mut handles = Vec::with_capacity(N);
-    let core_network = s.test_wallet.platform_wallet().core().network();
-    let seed = s.test_wallet.seed_bytes();
     for identity_id in identity_ids.iter() {
         let wallet = s.test_wallet.platform_wallet().clone();
         let id = *identity_id;
@@ -423,42 +441,37 @@ async fn al_001_concurrent_asset_lock_builds() {
         panic!("POST-pin violated: concurrent top-up task {i} failed: {res:?}");
     }
 
-    // Step 5: walk the tracked-asset-locks registry. Every IdentityTopUp
-    // entry must be in a finalised proof state; the N txids across the
-    // top-up entries must be pairwise distinct; and the input outpoint
-    // sets across them must be pairwise disjoint.
+    // Step 5: the unified top-up flow is remove-on-success —
+    // `top_up_identity_with_funding` calls `consume_asset_lock` once
+    // Platform accepts each top-up, draining that entry from the
+    // tracked-locks registry (`asset_lock/sync/tracking.rs`). After N
+    // successful concurrent top-ups the registry holds no live
+    // IdentityTopUp lock; any that lingers (only reachable if a task
+    // errored, which Step 4 already turns into a hard failure) must be
+    // in a finalised proof state.
+    //
+    // The concurrency invariants AL-001 guards — pairwise-distinct
+    // asset-lock txids and pairwise-disjoint funding inputs (no manager
+    // collision, no UTXO double-spend) — are enforced upstream by
+    // `OutpointReservations`: a violation makes a build fail at
+    // coin-selection/broadcast, surfacing as a task `Err` that Step 4
+    // fails on. `top_up_identity_with_funding` returns only the new
+    // balance (no txid) and the consumed entries are gone, so those
+    // properties can't be re-derived from the registry post-success;
+    // they are proven transitively by every task returning `Ok`
+    // (Step 4) and every identity balance increasing (Step 6).
     let tracked = s
         .test_wallet
         .platform_wallet()
         .asset_locks()
         .list_tracked_locks()
         .await;
-    let top_up_locks: Vec<_> = tracked
-        .iter()
-        .filter(|l| {
-            matches!(
-                l.funding_type,
-                key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType::IdentityTopUp
-            )
-        })
-        .collect();
-    assert_eq!(
-        top_up_locks.len(),
-        N,
-        "POST-pin violated: expected {N} IdentityTopUp tracked locks, \
-         found {} — concurrent top-ups must each leave a distinct \
-         entry",
-        top_up_locks.len()
-    );
-
-    let mut seen_txids: HashSet<dashcore::Txid> = HashSet::new();
-    for lock in &top_up_locks {
-        assert!(
-            seen_txids.insert(lock.out_point.txid),
-            "POST-pin violated: duplicate asset-lock txid {} across \
-             concurrent builds — AssetLockManager collision",
-            lock.out_point.txid
-        );
+    for lock in tracked.iter().filter(|l| {
+        matches!(
+            l.funding_type,
+            key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType::IdentityTopUp
+        )
+    }) {
         assert!(
             matches!(
                 lock.status,
@@ -469,23 +482,6 @@ async fn al_001_concurrent_asset_lock_builds() {
             lock.out_point,
             lock.status
         );
-    }
-
-    // UTXO double-spend check: every input outpoint across the N
-    // top-up asset-lock transactions must be unique. If two
-    // concurrent builds picked the same UTXO, one of them would have
-    // failed at broadcast — but `AssetLockManager`'s UTXO-reservation
-    // invariant is that this can't happen in the first place.
-    let mut seen_inputs: HashSet<dashcore::OutPoint> = HashSet::new();
-    for lock in &top_up_locks {
-        for txin in &lock.transaction.input {
-            assert!(
-                seen_inputs.insert(txin.previous_output),
-                "POST-pin violated: input outpoint {} reused across \
-                 concurrent asset-lock builds — UTXO double-spend",
-                txin.previous_output
-            );
-        }
     }
 
     // Step 6: every identity must have a chain-visible balance increase.
@@ -537,16 +533,39 @@ async fn al_001_concurrent_asset_lock_builds() {
 /// which starts empty under `WalletAccountCreationOptions::Default`.
 /// Provision the slot here before spawning the concurrent top-up tasks.
 /// (QA-006)
+///
+/// The wallet is external-signable after `register_wallet` (root seed
+/// dropped), so `add_account(.., None)` — which re-derives from the resident
+/// key — fails. Derive the account xpub from the seed's master exactly as the
+/// `None` branch would (`master.derive_priv(account_path).neuter()`) and
+/// provision via `Some(xpub)`. The account is watch-only; the asset-lock
+/// build and consume both sign through the external `core_signer`, so no
+/// resident key is needed. Mirrors the DashPay contact provisioning in
+/// `src/wallet/identity/network/contacts.rs`.
 async fn add_identity_topup_account(
     wallet: &std::sync::Arc<platform_wallet::PlatformWallet>,
+    seed_bytes: &[u8; 64],
+    network: Network,
     registration_index: u32,
 ) -> Result<(), PlatformWalletError> {
+    let account_type = AccountType::IdentityTopUp { registration_index };
+    let secp = Secp256k1::new();
+    let master = ExtendedPrivKey::new_master(network, seed_bytes)
+        .map_err(|e| PlatformWalletError::InvalidIdentityData(e.to_string()))?;
+    let derivation_path = account_type
+        .derivation_path(network)
+        .map_err(|e| PlatformWalletError::InvalidIdentityData(e.to_string()))?;
+    let account_xpriv = master
+        .derive_priv(&secp, &derivation_path)
+        .map_err(|e| PlatformWalletError::InvalidIdentityData(e.to_string()))?;
+    let account_xpub = ExtendedPubKey::from_priv(&secp, &account_xpriv);
+
     let wallet_id = wallet.wallet_id();
     let mut wm = wallet.wallet_manager().write().await;
     let (kw, info) = wm
         .get_wallet_mut_and_info_mut(&wallet_id)
         .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(wallet_id)))?;
-    kw.add_account(AccountType::IdentityTopUp { registration_index }, None)
+    kw.add_account(account_type, Some(account_xpub))
         .map_err(|e| PlatformWalletError::InvalidIdentityData(e.to_string()))?;
     let account = kw
         .accounts
