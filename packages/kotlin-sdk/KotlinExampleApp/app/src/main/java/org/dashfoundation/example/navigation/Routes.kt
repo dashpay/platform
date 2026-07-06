@@ -198,6 +198,14 @@ import kotlinx.serialization.Serializable
 @Serializable data class Documents(val contractIdHex: String, val typeName: String)
 
 /**
+ * Schema-driven create + broadcast form for a new document of this type
+ * (← `CreateDocumentView` + `DocumentFieldsView` in `DocumentsView.swift`).
+ * Reached from `DocumentTypeDetailsScreen`'s "New Document" action, so the
+ * contract + document type are fixed.
+ */
+@Serializable data class NewDocument(val contractIdHex: String, val typeName: String)
+
+/**
  * Single fetched document, pretty-printed key/value (viewer role of
  * `DocumentFieldsView.swift`). The document JSON travels in the route —
  * Platform documents are small JSON objects, well under the nav-args

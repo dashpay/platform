@@ -190,7 +190,7 @@ Most Platform actions have hard preconditions. Establish these fixtures before s
 | ID | Action | Layer | Tier | Status | Tags | Entry point & test notes |
 |---|---|---|---|---|---|---|
 | DOC-01 | Query documents / single document | Platform | Common | ✅ | | `DocumentsScreen` / `QueriesListScreen` → `dash_sdk_document_search` / `_fetch`. |
-| DOC-02 | Create document (broadcast) | Platform | Common | ✅ | | Contracts → contract → document type → **New Document** (`DocumentTypeDetailsScreen` / schema-driven `DocumentFieldsScreen`) → `platform_wallet_create_document_with_signer`. |
+| DOC-02 | Create document (broadcast) | Platform | Common | ✅ | | Contracts → contract → document type → **New Document** (`DocumentTypeDetailsScreen` → schema-driven `CreateDocumentScreen`) → `DocumentTransactions.create` → `platform_wallet_create_document_with_signer`. Rust selects the AUTH+ECDSA signing key from the wallet's `IdentityManager`. |
 | DOC-03 | Replace document | Platform | Thorough | ✅ | | Contracts → **Browse Documents** → document → **⋯** action menu (ownership-gated) → **Replace…** → `platform_wallet_document_replace`. |
 | DOC-04 | Delete document | Platform | Thorough | ✅ | | **Browse Documents** → document → **⋯** → **Delete…** → `platform_wallet_document_delete`. |
 | DOC-05 | Transfer document | Platform | Uncommon | ✅ | | **Browse Documents** → document → **⋯** → **Transfer…** (shown when `documentsTransferable`) → `platform_wallet_document_transfer`. |

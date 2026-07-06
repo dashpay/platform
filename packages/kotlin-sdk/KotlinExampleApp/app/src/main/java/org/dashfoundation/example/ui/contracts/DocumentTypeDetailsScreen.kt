@@ -37,6 +37,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.navigation.CountDocuments
 import org.dashfoundation.example.navigation.Documents
+import org.dashfoundation.example.navigation.NewDocument
 import org.dashfoundation.example.navigation.SumAverageDocuments
 import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.LabeledContent
@@ -48,9 +49,9 @@ import org.dashfoundation.example.util.hexToBytes
  * from the stored contract JSON (iOS reads the same data from the
  * `PersistentDocumentType` rows `DataContractParser` materializes).
  *
- * The iOS "New Document" affordance requires the document-create state
- * transition, which the Kotlin queries layer doesn't expose yet; in its
- * place the query actions (browse / count / sum-average) live here.
+ * The "New Document" affordance broadcasts a real create state transition
+ * via `CreateDocumentScreen` (port of iOS `CreateDocumentView`); the query
+ * actions (browse / count / sum-average) live alongside it.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -101,6 +102,13 @@ fun DocumentTypeDetailsScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
+            FormSection(title = "Actions") {
+                TextButton(
+                    onClick = { navController.navigate(NewDocument(contractIdHex, typeName)) },
+                    modifier = Modifier.testTag("documentType.newDocument"),
+                ) { Text("New Document") }
+            }
+
             FormSection(title = "Queries") {
                 TextButton(
                     onClick = { navController.navigate(Documents(contractIdHex, typeName)) },

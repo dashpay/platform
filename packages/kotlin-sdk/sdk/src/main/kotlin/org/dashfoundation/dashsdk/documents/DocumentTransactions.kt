@@ -96,4 +96,41 @@ class DocumentTransactions internal constructor() {
             )
         }
     }
+
+    /**
+     * Create + broadcast a new document on [contractId]'s [documentType],
+     * owned by [ownerId] — signed via [signerHandle]. Mirrors Swift
+     * `ManagedPlatformWallet.createDocument` (driven by `CreateDocumentView`).
+     * Unlike [purchase] / [setPrice] there is no `signingKeyId`:
+     * `create_document_with_signer` selects an AUTHENTICATION + ECDSA key
+     * satisfying the document type's security level from the wallet's
+     * `IdentityManager`, so the key never crosses the FFI boundary.
+     *
+     * @param propertiesJson JSON object keyed by property name (byte-array
+     *   fields as hex, identifier fields as base58); `"{}"` for a document
+     *   type with no required properties.
+     * @return the confirmed document's canonical JSON (now owned by
+     *   [ownerId]; its 32-byte id is the `$id` field).
+     */
+    suspend fun create(
+        walletHandle: Long,
+        ownerId: ByteArray,
+        contractId: ByteArray,
+        documentType: String,
+        propertiesJson: String,
+        signerHandle: Long,
+    ): String = withContext(Dispatchers.IO) {
+        require(ownerId.size == 32) { "ownerId must be 32 bytes" }
+        require(contractId.size == 32) { "contractId must be 32 bytes" }
+        mapNativeErrors {
+            TransactionsNative.documentCreate(
+                walletHandle,
+                ownerId,
+                contractId,
+                documentType,
+                propertiesJson,
+                signerHandle,
+            )
+        }
+    }
 }

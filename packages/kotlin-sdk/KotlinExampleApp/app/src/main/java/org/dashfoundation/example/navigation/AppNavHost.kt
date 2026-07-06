@@ -8,6 +8,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.toRoute
 import org.dashfoundation.example.ui.contracts.ContractsHomeScreen
 import org.dashfoundation.example.ui.contracts.CountDocumentsScreen
+import org.dashfoundation.example.ui.contracts.CreateDocumentScreen
 import org.dashfoundation.example.ui.contracts.DataContractDetailsScreen
 import org.dashfoundation.example.ui.contracts.DocumentFieldsScreen
 import org.dashfoundation.example.ui.contracts.DocumentTypeDetailsScreen
@@ -301,6 +302,11 @@ fun AppNavHost(
         composable<Documents> { entry ->
             val route = entry.toRoute<Documents>()
             DocumentsScreen(route.contractIdHex, route.typeName, navController)
+        }
+
+        composable<NewDocument> { entry ->
+            val route = entry.toRoute<NewDocument>()
+            CreateDocumentScreen(route.contractIdHex, route.typeName, navController)
         }
 
         composable<DocumentFields> { entry ->

@@ -604,6 +604,88 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_do
     })
 }
 
+// ── Document create ───────────────────────────────────────────────────
+
+/// Create + broadcast a new document on `contractId`'s `documentType`,
+/// owned by `ownerId`, signed via `signerHandle` — the JNI bridge over
+/// `platform_wallet_create_document_with_signer` (Swift
+/// `ManagedPlatformWallet.createDocument`, behind `CreateDocumentView`).
+///
+/// Unlike purchase / set-price, the create FFI takes NO `signingKeyId`:
+/// the Rust side selects an AUTHENTICATION + ECDSA key from the wallet's
+/// in-process `IdentityManager` whose security level satisfies the
+/// document type's requirement, so key selection never crosses JNI.
+/// `propertiesJson` is a JSON object keyed by property name (byte-array
+/// fields as hex, identifier fields as base58); pass `"{}"` for a type
+/// with no required properties.
+///
+/// Returns the confirmed document's canonical query-side JSON — the same
+/// shape a DOC-01 query returns, with the 32-byte id rendered as the
+/// base58 `$id` field, so Kotlin reads the id from there rather than a
+/// second return. Null after throwing on error.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_documentCreate(
+    mut env: JNIEnv,
+    _class: JClass,
+    wallet_handle: jlong,
+    owner_id: JByteArray,
+    contract_id: JByteArray,
+    document_type: JString,
+    properties_json: JString,
+    signer_handle: jlong,
+) -> jstring {
+    guard(&mut env, ptr::null_mut(), |env| {
+        let Some(owner) = read_id32(env, &owner_id, "ownerId") else {
+            return ptr::null_mut();
+        };
+        let Some(contract) = read_id32(env, &contract_id, "contractId") else {
+            return ptr::null_mut();
+        };
+        let Some(doc_type) = read_cstring(env, &document_type, "documentType") else {
+            return ptr::null_mut();
+        };
+        let Some(props) = read_cstring(env, &properties_json, "propertiesJson") else {
+            return ptr::null_mut();
+        };
+
+        let mut out_id = [0u8; 32];
+        let mut out_json: *mut c_char = ptr::null_mut();
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_create_document_with_signer(
+                wallet_handle as Handle,
+                owner.as_ptr(),
+                contract.as_ptr(),
+                doc_type.as_ptr(),
+                props.as_ptr(),
+                signer_handle as *mut SignerHandle,
+                out_id.as_mut_ptr(),
+                &mut out_json as *mut *mut c_char,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return ptr::null_mut();
+        }
+
+        if out_json.is_null() {
+            throw_sdk_exception(
+                env,
+                99,
+                "document create returned success but no canonical JSON",
+            );
+            return ptr::null_mut();
+        }
+        // Copy the JSON out, then free the Rust-owned string.
+        let json = unsafe { CStr::from_ptr(out_json) }
+            .to_string_lossy()
+            .into_owned();
+        unsafe { platform_wallet_ffi::platform_wallet_string_free(out_json) };
+
+        env.new_string(json)
+            .map(|s| s.into_raw())
+            .unwrap_or(ptr::null_mut())
+    })
+}
+
 // ── Contested-resource vote ───────────────────────────────────────────
 
 /// Cast a masternode contested-resource vote and wait for the response —

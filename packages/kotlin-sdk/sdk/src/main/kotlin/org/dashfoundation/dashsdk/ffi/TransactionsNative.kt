@@ -77,6 +77,30 @@ internal object TransactionsNative {
     ): String
 
     /**
+     * Create + broadcast a new document on [contractId]'s [documentType],
+     * owned by [ownerId], signed via [signerHandle]. Bridges
+     * `platform_wallet_create_document_with_signer` (Swift
+     * `ManagedPlatformWallet.createDocument`). Unlike purchase / set-price
+     * there is **no** `signingKeyId` — the Rust side selects an
+     * AUTHENTICATION + ECDSA key satisfying the document type's security
+     * level from the wallet's `IdentityManager`.
+     *
+     * @param propertiesJson JSON object keyed by property name (byte-array
+     *   fields as hex, identifier fields as base58); `"{}"` for a type with
+     *   no required properties.
+     * @return the confirmed document's canonical JSON (its 32-byte id is the
+     *   base58 `$id` field).
+     */
+    external fun documentCreate(
+        walletHandle: Long,
+        ownerId: ByteArray,
+        contractId: ByteArray,
+        documentType: String,
+        propertiesJson: String,
+        signerHandle: Long,
+    ): String
+
+    /**
      * Cast a masternode contested-resource vote and wait for the response.
      * Bridges `dash_sdk_contested_resource_cast_vote` (Swift
      * `SDK.castContestedResourceVote`).
