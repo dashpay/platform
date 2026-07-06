@@ -171,7 +171,9 @@ impl WasmSdk {
         let fee_strategy = fee_strategy_from_steps_or_default(parsed.fee_strategy);
 
         // Use the SDK's transfer_address_funds method which handles nonces, building, and broadcasting
-        let address_infos = self
+        // The returned proof height pins persisted absolutes; the wasm
+        // path only renders the proof entries, so it is unused here.
+        let (address_infos, _proof_height) = self
             .inner_sdk()
             .transfer_address_funds(inputs_map, outputs_map, fee_strategy, &signer, settings)
             .await
@@ -295,7 +297,7 @@ impl WasmSdk {
         let inputs_map = outputs_to_btree_map(parsed.inputs)?;
 
         // Use the SDK's top_up_from_addresses method
-        let (address_infos, new_balance) = identity
+        let (address_infos, new_balance, _proof_height) = identity
             .top_up_from_addresses(self.inner_sdk(), inputs_map, &signer, settings)
             .await
             .map_err(|e| WasmSdkError::generic(format!("Failed to top up identity: {}", e)))?;
@@ -451,7 +453,7 @@ impl WasmSdk {
         let pooling = parsed.pooling.into();
 
         // Use the SDK's withdraw_address_funds method which handles nonces, building, and broadcasting
-        let address_infos = self
+        let (address_infos, _proof_height) = self
             .inner_sdk()
             .withdraw_address_funds(
                 inputs_map,
@@ -507,7 +509,7 @@ impl WasmSdk {
             .transpose()?;
 
         // Use the SDK's transfer_credits_to_addresses method
-        let (address_infos, new_balance) = identity
+        let (address_infos, new_balance, _proof_height) = identity
             .transfer_credits_to_addresses(
                 self.inner_sdk(),
                 outputs_map,
@@ -746,7 +748,7 @@ impl WasmSdk {
         let fee_strategy = fee_strategy_from_steps_or_default(parsed.fee_strategy);
 
         // Use the SDK's top_up method for addresses
-        let address_infos = outputs_map
+        let (address_infos, _proof_height) = outputs_map
             .top_up(
                 self.inner_sdk(),
                 asset_lock_proof,
@@ -915,7 +917,7 @@ impl WasmSdk {
             .transpose()?;
 
         // Use the SDK's put_with_address_funding method
-        let (created_identity, address_infos) = identity
+        let (created_identity, address_infos, _proof_height) = identity
             .put_with_address_funding(
                 self.inner_sdk(),
                 inputs,
