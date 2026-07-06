@@ -192,6 +192,24 @@ pub fn load_state(
     Ok(state)
 }
 
+/// Build a fully pre-keyed
+/// [`IdentityManagerStartState`](platform_wallet::changeset::IdentityManagerStartState)
+/// for one wallet: read the identities, then fold this wallet's persisted
+/// identity keys and contacts onto them so every `ManagedIdentity` carries
+/// its own `public_keys` and contact maps at load time — no separate
+/// changeset layered on afterwards. Fail-hard on a corrupt row, inherited
+/// from the three underlying readers.
+pub fn load_prekeyed(
+    conn: &Connection,
+    wallet_id: &WalletId,
+) -> Result<platform_wallet::changeset::IdentityManagerStartState, WalletStorageError> {
+    let mut state = load_state(conn, wallet_id)?;
+    let identity_keys = crate::sqlite::schema::identity_keys::load_state(conn, wallet_id)?;
+    let contacts = crate::sqlite::schema::contacts::load_changeset(conn, wallet_id)?;
+    state.merge_contacts_and_keys(contacts, identity_keys);
+    Ok(state)
+}
+
 /// Reconstruct a [`ManagedIdentity`] from a persisted [`IdentityEntry`]
 /// using a freshly minted V0 [`Identity`] for `(id, balance, revision)`.
 /// Live runtime fields (contacts maps, public-key derivations) are
@@ -380,6 +398,75 @@ mod tests {
         let (claimed, _) = fetch(&conn, &a, &y).unwrap().expect("A claimed Y");
         assert_eq!(claimed.balance, 500, "promotion applies the new blob");
         assert_eq!(claimed.identity_index, Some(3));
+    }
+
+    /// `load_prekeyed` folds each identity's persisted keys onto it across
+    /// BOTH buckets — a wallet-owned identity (`identity_index = Some`) and
+    /// an out-of-wallet one (`identity_index = None`) each receive their own
+    /// key, with no cross-attribution.
+    #[test]
+    fn load_prekeyed_populates_keys_in_both_buckets() {
+        use dpp::identity::accessors::IdentityGettersV0;
+        use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+        use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+        use dpp::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel};
+        use dpp::platform_value::BinaryData;
+        use platform_wallet::changeset::{IdentityKeyEntry, IdentityKeysChangeSet};
+
+        let mut conn = migrated_conn();
+        let w = [0x0Au8; 32];
+        insert_wallet(&conn, &w);
+
+        let wallet_owned = Identifier::from([0x11u8; 32]);
+        let out_of_wallet = Identifier::from([0x22u8; 32]);
+
+        let mut ids = IdentityChangeSet::default();
+        ids.identities
+            .insert(wallet_owned, entry([0x11; 32], Some(w), 100, Some(0)));
+        ids.identities
+            .insert(out_of_wallet, entry([0x22; 32], Some(w), 200, None));
+
+        let key = |id: Identifier, byte: u8| IdentityKeyEntry {
+            identity_id: id,
+            key_id: 0,
+            public_key: IdentityPublicKey::V0(IdentityPublicKeyV0 {
+                id: 0,
+                purpose: Purpose::AUTHENTICATION,
+                security_level: SecurityLevel::HIGH,
+                contract_bounds: None,
+                key_type: KeyType::ECDSA_SECP256K1,
+                read_only: false,
+                data: BinaryData::new(vec![byte; 33]),
+                disabled_at: None,
+            }),
+            public_key_hash: [byte; 20],
+            wallet_id: None,
+            derivation_indices: None,
+        };
+        let mut keys = IdentityKeysChangeSet::default();
+        keys.upserts
+            .insert((wallet_owned, 0), key(wallet_owned, 0xA1));
+        keys.upserts
+            .insert((out_of_wallet, 0), key(out_of_wallet, 0xB2));
+
+        let tx = conn.transaction().unwrap();
+        apply(&tx, &w, &ids).unwrap();
+        crate::sqlite::schema::identity_keys::apply(&tx, &w, &keys).unwrap();
+        tx.commit().unwrap();
+
+        let state = load_prekeyed(&conn, &w).unwrap();
+        let wo = &state.wallet_identities[&w][&0];
+        assert_eq!(
+            wo.identity.public_keys()[&0].data().as_slice(),
+            &[0xA1; 33],
+            "wallet-owned identity carries its own key"
+        );
+        let oow = &state.out_of_wallet_identities[&out_of_wallet];
+        assert_eq!(
+            oow.identity.public_keys()[&0].data().as_slice(),
+            &[0xB2; 33],
+            "out-of-wallet identity carries its own key"
+        );
     }
 
     /// `load_state` rejects a row whose decoded blob names a different

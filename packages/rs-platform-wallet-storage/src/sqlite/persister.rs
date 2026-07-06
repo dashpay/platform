@@ -932,13 +932,14 @@ impl PlatformWalletPersistence for SqlitePersister {
                 schema::accounts::load_state(&conn, &wallet_id).map_err(PersistenceError::from)?;
             let core_state = schema::core_state::load_state(&conn, &wallet_id, network)
                 .map_err(PersistenceError::from)?;
-            let identity_manager = schema::identities::load_state(&conn, &wallet_id)
+            // Pre-keyed rehydration: each `ManagedIdentity` leaves the loader
+            // already carrying its own public keys + contact state (matching
+            // the FFI persister), so signing works immediately post-load
+            // without a key sync. `ClientWalletStartState.contacts` /
+            // `.identity_keys` stay empty — nothing is layered on afterwards.
+            let identity_manager = schema::identities::load_prekeyed(&conn, &wallet_id)
                 .map_err(PersistenceError::from)?;
             let unused_asset_locks = schema::asset_locks::load_unconsumed(&conn, &wallet_id)
-                .map_err(PersistenceError::from)?;
-            let contacts = schema::contacts::load_changeset(&conn, &wallet_id)
-                .map_err(PersistenceError::from)?;
-            let identity_keys = schema::identity_keys::load_state(&conn, &wallet_id)
                 .map_err(PersistenceError::from)?;
             // Every address that ever held a UTXO (spent + unspent) is "used":
             // the address-reuse guard so a used-then-emptied address is never
@@ -954,11 +955,15 @@ impl PlatformWalletPersistence for SqlitePersister {
                     network,
                     birth_height,
                     account_manifest,
+                    // SQLite persister reconstructs core state from typed rows
+                    // (see `core_state` below), not a full snapshot.
+                    core_wallet_info: None,
                     core_state,
                     identity_manager,
                     unused_asset_locks,
-                    contacts,
-                    identity_keys,
+                    // Pre-keyed into `identity_manager` above; nothing to layer.
+                    contacts: Default::default(),
+                    identity_keys: Default::default(),
                     used_core_addresses,
                 },
             );
