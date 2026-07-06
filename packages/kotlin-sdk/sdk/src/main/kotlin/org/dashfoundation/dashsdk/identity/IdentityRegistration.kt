@@ -45,9 +45,48 @@ class IdentityRegistration internal constructor() {
     }
 
     /**
+     * Derive the full identity-registration key SET for a single identity
+     * — keyId 0..[count] at the fixed [identityIndex]. This is the call
+     * the create-identity flow uses: it fixes the identity index and walks
+     * the key index, so a freshly created identity is provisioned with the
+     * whole canonical key set (keyId 0 MASTER/AUTH, 1 CRITICAL/AUTH, 2
+     * HIGH/AUTH, 3 TRANSFER/CRITICAL) rather than just the MASTER key.
+     *
+     * Without the full set, all Platform writes fail validation right
+     * after creation: document / DPNS / token / contract transitions need
+     * a HIGH-or-CRITICAL AUTHENTICATION key, and credit transfers /
+     * withdrawals need the TRANSFER key ("no transfer public key").
+     *
+     * The per-key DPP role is applied Rust-side by keyId at registration
+     * time; each row here carries only the derived keypair. The caller
+     * persists each row's private key to the Keystore before registering.
+     *
+     * @param count number of keys to derive; < 0 uses the canonical
+     *   default set (4 keys). ([previewRegistrationKeys], by contrast,
+     *   walks the *identity* index at the MASTER slot for the discovery
+     *   preview.)
+     */
+    suspend fun previewRegistrationKeySet(
+        walletHandle: Long,
+        mnemonicResolverHandle: Long,
+        identityIndex: Int,
+        count: Int = -1,
+    ): List<IdentityKeyPreview> = withContext(Dispatchers.IO) {
+        val blob = mapNativeErrors {
+            IdentityNative.previewRegistrationKeySet(
+                walletHandle,
+                mnemonicResolverHandle,
+                identityIndex,
+                count,
+            )
+        }
+        IdentityKeyPreview.decodeAll(blob)
+    }
+
+    /**
      * Register a new identity funded from the wallet's Core balance. The
      * single entry point the registration coordinator's body calls. Keys
-     * must already be derived + persisted (see [previewRegistrationKeys]).
+     * must already be derived + persisted (see [previewRegistrationKeySet]).
      *
      * @return the 32-byte identity id.
      */

@@ -47,6 +47,62 @@ use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 use std::ptr;
 
+// ── Canonical registration key-role table ─────────────────────────────
+
+/// DPP `KeyType::ECDSA_SECP256K1` discriminant byte.
+const KEY_TYPE_ECDSA_SECP256K1: u8 = 0;
+/// DPP `Purpose::AUTHENTICATION` discriminant byte.
+const PURPOSE_AUTHENTICATION: u8 = 0;
+/// DPP `Purpose::TRANSFER` discriminant byte.
+const PURPOSE_TRANSFER: u8 = 3;
+/// DPP `SecurityLevel::MASTER` discriminant byte.
+const SECURITY_LEVEL_MASTER: u8 = 0;
+/// DPP `SecurityLevel::CRITICAL` discriminant byte.
+const SECURITY_LEVEL_CRITICAL: u8 = 1;
+/// DPP `SecurityLevel::HIGH` discriminant byte.
+const SECURITY_LEVEL_HIGH: u8 = 2;
+
+/// Canonical `(key_type, purpose, security_level)` for the registration
+/// key at `key_id`. This is the single Android source of truth for the
+/// per-slot identity-key role layout, byte-for-byte identical to the iOS
+/// reference (`packages/rs-platform-wallet-ffi/src/identity_derive_and_persist.rs`,
+/// and `CreateIdentityView.defaultKeyCount` in the SwiftExampleApp):
+///
+/// | key_id | key_type        | purpose        | security_level |
+/// |--------|-----------------|----------------|----------------|
+/// | 0      | ECDSA_SECP256K1 | AUTHENTICATION | MASTER         |
+/// | 1      | ECDSA_SECP256K1 | AUTHENTICATION | CRITICAL       |
+/// | 2      | ECDSA_SECP256K1 | AUTHENTICATION | HIGH           |
+/// | 3      | ECDSA_SECP256K1 | TRANSFER       | CRITICAL       |
+/// | > 3    | ECDSA_SECP256K1 | AUTHENTICATION | HIGH           |
+///
+/// - keyId 0 (MASTER/AUTH) signs the IdentityCreate transition.
+/// - keyId 1 (CRITICAL/AUTH) signs token state transitions —
+///   `combined_security_level_requirement` collapses any batch with a
+///   token transition to `[CRITICAL]`, so without it the identity can't
+///   mint / burn / freeze tokens.
+/// - keyId 2 (HIGH/AUTH) signs general document / DPNS / contract
+///   transitions.
+/// - keyId 3 (TRANSFER/CRITICAL) signs IdentityCreditTransfer /
+///   IdentityCreditWithdrawal — without it those broadcasts are rejected
+///   on-chain with "no transfer public key".
+///
+/// Previously this JNI hardcoded `purpose = AUTHENTICATION` for every row
+/// and `security_level = MASTER if key_id == 0 else HIGH`, so a freshly
+/// created identity had no CRITICAL auth key and no TRANSFER key, and all
+/// token / credit-transfer / withdrawal writes failed validation right
+/// after creation. If DPP renumbers any discriminant, update this table.
+fn role_for_registration_key_id(key_id: u32) -> (u8, u8, u8) {
+    let (purpose, security_level) = match key_id {
+        0 => (PURPOSE_AUTHENTICATION, SECURITY_LEVEL_MASTER),
+        1 => (PURPOSE_AUTHENTICATION, SECURITY_LEVEL_CRITICAL),
+        2 => (PURPOSE_AUTHENTICATION, SECURITY_LEVEL_HIGH),
+        3 => (PURPOSE_TRANSFER, SECURITY_LEVEL_CRITICAL),
+        _ => (PURPOSE_AUTHENTICATION, SECURITY_LEVEL_HIGH),
+    };
+    (KEY_TYPE_ECDSA_SECP256K1, purpose, security_level)
+}
+
 /// Read a required 32-byte id from a Java `byte[]`; throws + returns None
 /// on the wrong length or a JNI error.
 fn read_id32(env: &mut JNIEnv, arr: &JByteArray, field: &str) -> Option<[u8; 32]> {
@@ -125,6 +181,71 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_previe
         let blob = unsafe { encode_preview_rows(&previews) };
         // Free (and zeroize) the Rust-owned preview buffer now that the
         // payload lives in `blob`.
+        unsafe {
+            platform_wallet_ffi::platform_wallet_preview_identity_registration_keys_free(
+                &mut previews as *mut IdentityKeyPreviewsFFI,
+            )
+        };
+
+        env.byte_array_from_slice(&blob)
+            .map(|a| a.into_raw())
+            .unwrap_or(ptr::null_mut())
+    })
+}
+
+/// Derive the full identity-registration key **set** for a single
+/// identity: keyId 0..`count` at the fixed `identityIndex`. Unlike
+/// [`Java_..._previewRegistrationKeys`] (which fixes the MASTER key slot
+/// and walks the *identity* index for the discovery preview), this fixes
+/// the identity index and walks the *key* index — so it returns every
+/// keypair a freshly-created identity is built from (keyId 0..N).
+///
+/// `count < 0` derives the canonical default set
+/// (`IDENTITY_REGISTRATION_KEY_SET_COUNT` = 4: MASTER auth, CRITICAL
+/// auth, HIGH auth, TRANSFER/CRITICAL). The per-key DPP role is applied
+/// positionally by keyId at registration time
+/// (`role_for_registration_key_id`), NOT carried on the row — every row
+/// is an ECDSA_SECP256K1 keypair.
+///
+/// Returns the same flat `byte[]` BLOB layout as
+/// [`Java_..._previewRegistrationKeys`], decoded by
+/// `IdentityKeyPreview.decodeAll`. The Rust buffer (incl. the sensitive
+/// private material) is zeroized + freed before this returns.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_previewRegistrationKeySet(
+    mut env: JNIEnv,
+    _class: JClass,
+    wallet_handle: jlong,
+    resolver_handle: jlong,
+    identity_index: jint,
+    count: jint,
+) -> jbyteArray {
+    guard(&mut env, ptr::null_mut(), |env| {
+        if identity_index < 0 {
+            throw_sdk_exception(env, 1, "identityIndex must be non-negative");
+            return ptr::null_mut();
+        }
+        let mut previews = IdentityKeyPreviewsFFI {
+            items: ptr::null_mut(),
+            count: 0,
+        };
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_preview_identity_registration_key_set(
+                wallet_handle as Handle,
+                resolver_handle as *mut MnemonicResolverHandle,
+                identity_index as u32,
+                count,
+                &mut previews as *mut IdentityKeyPreviewsFFI,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return ptr::null_mut();
+        }
+
+        let blob = unsafe { encode_preview_rows(&previews) };
+        // Free (and zeroize) the Rust-owned preview buffer now that the
+        // payload lives in `blob`. Same row layout as the discovery
+        // preview, so the same `_free` reclaims it.
         unsafe {
             platform_wallet_ffi::platform_wallet_preview_identity_registration_keys_free(
                 &mut previews as *mut IdentityKeyPreviewsFFI,
@@ -522,23 +643,29 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_regist
         }
 
         // Build the FFI rows referencing the owned buffers. `read_only`
-        // false, no contract bounds (auth keys). Security level is derived
-        // Rust-side from the key layout, so we pass MASTER(0) for row 0 and
-        // HIGH(2) for the rest, matching the identity-key defaults the
-        // preview path produces.
+        // false, no contract bounds (auth / transfer keys never carry
+        // bounds — only ENCRYPTION / DECRYPTION do). The per-key role
+        // (key_type / purpose / security_level) is the canonical,
+        // positional function of `key_id` (see
+        // `role_for_registration_key_id`), matching iOS exactly — so a
+        // freshly created identity gets keyId 0 MASTER/AUTH, keyId 1
+        // CRITICAL/AUTH, keyId 2 HIGH/AUTH, keyId 3 TRANSFER/CRITICAL.
         let ffi_rows: Vec<IdentityPubkeyFFI> = decoded
             .iter()
-            .map(|(key_id, bytes)| IdentityPubkeyFFI {
-                key_id: *key_id,
-                key_type: 0,                                      // ECDSA_SECP256K1
-                purpose: 0,                                       // AUTHENTICATION
-                security_level: if *key_id == 0 { 0 } else { 2 }, // MASTER / HIGH
-                pubkey_bytes: bytes.as_ptr(),
-                pubkey_len: bytes.len(),
-                read_only: false,
-                contract_bounds_kind: 0,
-                contract_bounds_id: ptr::null(),
-                contract_bounds_document_type: ptr::null(),
+            .map(|(key_id, bytes)| {
+                let (key_type, purpose, security_level) = role_for_registration_key_id(*key_id);
+                IdentityPubkeyFFI {
+                    key_id: *key_id,
+                    key_type,
+                    purpose,
+                    security_level,
+                    pubkey_bytes: bytes.as_ptr(),
+                    pubkey_len: bytes.len(),
+                    read_only: false,
+                    contract_bounds_kind: 0,
+                    contract_bounds_id: ptr::null(),
+                    contract_bounds_document_type: ptr::null(),
+                }
             })
             .collect();
 

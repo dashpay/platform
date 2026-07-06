@@ -41,6 +41,32 @@ internal object IdentityNative {
     ): ByteArray
 
     /**
+     * Derive the full identity-registration key **set** for a single
+     * identity: keyId 0..[count] at the fixed [identityIndex]. Unlike
+     * [previewRegistrationKeys] (which fixes the MASTER key slot and walks
+     * the *identity* index for the discovery preview), this fixes the
+     * identity index and walks the *key* index — so it returns every
+     * keypair a freshly-created identity is built from.
+     *
+     * [count] < 0 derives the canonical default set (4 keys: MASTER auth,
+     * CRITICAL auth, HIGH auth, TRANSFER/CRITICAL). Returns the same flat
+     * BLOB layout as [previewRegistrationKeys], decoded by
+     * [org.dashfoundation.dashsdk.identity.IdentityKeyPreview.decodeAll].
+     * The per-key DPP role is applied positionally by keyId at
+     * registration time — the row carries only the derived ECDSA keypair.
+     *
+     * @param resolverHandle `MnemonicResolverHandle`, needed for
+     *   watch-only / external-signable wallets; ignored for resident-key
+     *   wallets.
+     */
+    external fun previewRegistrationKeySet(
+        walletHandle: Long,
+        resolverHandle: Long,
+        identityIndex: Int,
+        count: Int,
+    ): ByteArray
+
+    /**
      * Derive the ready-to-persist 32-byte ECDSA private-key scalar for the
      * identity key at ([identityIndex], [keyIndex]) on the wallet behind
      * [walletHandle].

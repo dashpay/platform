@@ -146,14 +146,20 @@ fun CreateIdentityScreen(navController: NavHostController) {
                 isSubmitting = true
                 scope.launch {
                     try {
-                        // Step 1 (`.preparingKeys`): derive + persist the identity
-                        // keys — the single allowed Kotlin persist step. Rust
-                        // derives; we store each private key under its pubkey hex.
-                        val keys = mgr.identityRegistration.previewRegistrationKeys(
+                        // Step 1 (`.preparingKeys`): derive + persist the full
+                        // canonical identity key SET — the single allowed Kotlin
+                        // persist step. Rust derives keyId 0..3 (MASTER auth,
+                        // CRITICAL auth, HIGH auth, TRANSFER/CRITICAL) at this
+                        // identity index and stamps each key's role by keyId at
+                        // registration; we store each private key under its
+                        // pubkey hex. Deriving only the MASTER key here (the old
+                        // `count = 1` bug) left the identity unable to sign any
+                        // document / token / transfer / withdrawal write.
+                        val keys = mgr.identityRegistration.previewRegistrationKeySet(
                             walletHandle = wallet.handle,
                             mnemonicResolverHandle = mgr.mnemonicResolverHandle,
-                            startIndex = identityIndex,
-                            count = 1,
+                            identityIndex = identityIndex,
+                            count = -1,
                         )
                         keys.forEach { key ->
                             container.walletStorage.storePrivateKey(key.publicKeyHex, key.privateKey)
