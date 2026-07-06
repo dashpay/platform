@@ -5,7 +5,7 @@
 > (DashPay) and [DIP-16](https://github.com/dashpay/dips/blob/master/dip-0016.md)
 > (Headers-First SPV synchronization — DIP-15 §12 is built on it), cross-checked
 > against the **actual code** on `feat/dashpay-m1-sync-correctness` (not the
-> self-reported status in `SPEC.md`/`TODO.md`). The goal was to catch anything the
+> self-reported status in `SPEC.md`/the backlog (now dashpay/platform#4020)). The goal was to catch anything the
 > DIPs require that is **missing, stubbed, or only partially wired**, and to
 > separate genuine gaps from deliberate divergences.
 >
@@ -36,7 +36,7 @@
 | Encrypted xpub = 69-byte compact `fp(4)‖cc(32)‖pk(33)` → 96-byte ciphertext | 8.6 | ✅ **FULLY** | `rs-platform-encryption/src/compact_xpub.rs` (`COMPACT_XPUB_LEN=69`); send asm `network/contact_requests.rs:480-491`; SDK 96-byte assert `rs-sdk/.../contact_request.rs:311-316`; KAT `dip14.rs::compact_xpub_is_69_byte_dip15_plaintext_not_107_byte_encode` |
 | ECDH `SHA256(((y&1)|2)‖x)` | 8.3 | ✅ **FULLY** | `rs-platform-encryption/src/ecdh.rs:16-26` + hand-recomputed KAT `:56-85` |
 | `senderKeyIndex`/`recipientKeyIndex` purpose policy (liberal receive, ENCRYPTION send fallback, no permanent break on purpose mismatch) | 8.3 | ✅ **FULLY** | send sel `contact_requests.rs:846-871`; validator `crypto/validation.rs:141-251`; purpose-only ≠ broken `:90-92` + drain `:1743-1764` |
-| Friendship path `m/9'/coin'/15'/0'/owner256/cp256/index`, DIP-14 256-bit non-hardened CKD | 8.9 | ✅ **FULLY** (account 0) | `crypto/dip14.rs`; byte-identical to dashj per `research/06` |
+| Friendship path `m/9'/coin'/15'/0'/owner256/cp256/index`, DIP-14 256-bit non-hardened CKD | 8.9 | ✅ **FULLY** (account 0) | `crypto/dip14.rs`; byte-identical to dashj per `INTEROP_DESK_CHECK.md` |
 | `profile` (displayName/publicMessage/avatarUrl/avatarHash/avatarFingerprint) | 9 | ✅ **FULLY** | `types/dashpay/profile.rs:85-123` — real SHA-256 hash **and** real 8-byte dHash; non-destructive update `network/profile.rs:319-378` |
 | Batched profile fetch `$ownerId in [ids]` (counterparties of new requests) | 9.10 | ✅ **FULLY** | `network/profile.rs:738-812` (`In` + required `orderBy`) |
 | `contactInfo` (ECB `encToUserId`, CBC `privateData`, `65536'/65537'`, ≥2-contacts gate, varint privateData) | 10 | ✅ **FULLY** | `crypto/contact_info.rs:45-48,232-283`; `rs-platform-encryption/src/contact_info.rs`; gate `network/contact_info.rs:548-556` |
@@ -49,7 +49,7 @@
 | `acceptedAccounts` + first-request bloom gating / flood mitigation | 8.4, 10.8 | ❌ **MISSING** | codec only; unpopulated + dropped on ingest |
 | Multi-account contacts (`Account ≠ 0`) | 7.1, 8.9 | 🟡 **DEFERRED** | `account_index` hardcoded `0`; blocked on upstream |
 | QR auto-accept (`autoAcceptProof`, `m/9'/5'/16'/expiry'`, BIP21/72 URI) | 8.13 | ✅ **FULLY** (iOS-first) | `crypto/auto_accept.rs`; see `QR_AUTO_ACCEPT_SPEC.md` |
-| Invitations (asset-lock voucher + claim onboarding, DIP-13) | — | ❌ **NOT STARTED** | queued as "NEXT" in `TODO.md` |
+| Invitations (asset-lock voucher + claim onboarding, DIP-13) | — | ❌ **NOT STARTED** | queued as "NEXT" in the backlog (dashpay/platform#4020) |
 
 ---
 
@@ -112,9 +112,9 @@ filter layer.
 
 ### 1.2 🟡 `encryptedAccountLabel` — the "DONE" padding fix is dead code
 
-**Status: PARTIAL, and it contradicts a `TODO.md` "DONE + tests pin it" claim.**
+**Status: PARTIAL, and it contradicts a backlog ("DONE + tests pin it") claim (now dashpay/platform#4020).**
 
-`TODO.md` P1 records label padding to ≥16 chars (commit `2419159bb3`) as done. In
+The backlog P1 item records label padding to ≥16 chars (commit `2419159bb3`) as done. In
 reality:
 - The padded helper `IdentityWallet::encrypt_account_label` + `pad_account_label`
   (`network/account_labels.rs:19,49-64`) has **zero live callers** (verified by grep;
@@ -185,12 +185,12 @@ blocker — not oversights.
 
 | Gap | DIP-15 § | Blocker | Doc ref |
 |---|---|---|---|
-| **True multi-account (`Account ≠ 0`)** — `account_index` hardcoded `0` at the only send site (`contact_requests.rs:476`); friendship path structurally `…/15'/0'/…`. (Key *rotation* via version-bump **is** live.) | 7.1, 8.9 | upstream `rust-dashcore#813` (honor the `index` field) | `TODO.md` P1/P2 |
-| **`acceptedAccounts` + §10.8 flood mitigation** — varint codec carries the field, but publish hardcodes it empty (`network/contact_info.rs:499-506`) and `set_contact_metadata` (`managed_identity/contact_requests.rs:289-299`) **drops** it on ingest. No "first request → bloom filter, additional → require acceptance" gating. | 8.4, 10.8 | query-level DoS filter needs a registered contract change | `TODO.md` Contract track |
-| **Cross-device ignore sync** — ignore is local-only; a per-sender `contactInfo` leaks the ignored target (timing correlation, R1). | 10.7 | needs an encrypted field on the `profile` contract (governance) | `TODO.md` Contract track |
-| **DPNS-name on-chain fallback in QR auto-accept build** — `build_auto_accept_qr` (`rs-platform-wallet-ffi/src/dashpay.rs:801`) uses the locally-cached name; empty for imported/devnet identities. `resolve_name` exists but isn't called from the QR path. | 11 | none (small follow-up) | `TODO.md` P3 |
-| **DashPay Invitations** — asset-lock voucher + claim onboarding (DIP-13 sub-feature `3'`). | — | new feature (L1 funding + identity registration + deep-link) | `TODO.md` "NEXT" |
-| **Devnet/testnet e2e + full add→approve→pay XCUITest** | 11 | funded test harness | `TODO.md`, `SPEC.md` Part 7 |
+| **True multi-account (`Account ≠ 0`)** — `account_index` hardcoded `0` at the only send site (`contact_requests.rs:476`); friendship path structurally `…/15'/0'/…`. (Key *rotation* via version-bump **is** live.) | 7.1, 8.9 | upstream `rust-dashcore#813` (honor the `index` field) | backlog dashpay/platform#4020 P1/P2 |
+| **`acceptedAccounts` + §10.8 flood mitigation** — varint codec carries the field, but publish hardcodes it empty (`network/contact_info.rs:499-506`) and `set_contact_metadata` (`managed_identity/contact_requests.rs:289-299`) **drops** it on ingest. No "first request → bloom filter, additional → require acceptance" gating. | 8.4, 10.8 | query-level DoS filter needs a registered contract change | backlog dashpay/platform#4020 Contract track |
+| **Cross-device ignore sync** — ignore is local-only; a per-sender `contactInfo` leaks the ignored target (timing correlation, R1). | 10.7 | needs an encrypted field on the `profile` contract (governance) | backlog dashpay/platform#4020 Contract track |
+| **DPNS-name on-chain fallback in QR auto-accept build** — `build_auto_accept_qr` (`rs-platform-wallet-ffi/src/dashpay.rs:801`) uses the locally-cached name; empty for imported/devnet identities. `resolve_name` exists but isn't called from the QR path. | 11 | none (small follow-up) | backlog dashpay/platform#4020 P3 |
+| **DashPay Invitations** — asset-lock voucher + claim onboarding (DIP-13 sub-feature `3'`). | — | new feature (L1 funding + identity registration + deep-link) | backlog dashpay/platform#4020 "NEXT" |
+| **Devnet/testnet e2e + full add→approve→pay XCUITest** | 11 | funded test harness | backlog dashpay/platform#4020, `SPEC.md` Part 7 |
 
 ---
 

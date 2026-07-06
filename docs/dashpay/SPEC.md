@@ -30,13 +30,17 @@
 > pulled in via the dashcore bump **PR #3936**). Remaining is all blocked on external
 > resources (devnet funding for e2e/UAT; contract governance for cross-device ignore
 > + DoS filter; an upstream rust-dashcore change for multi-account). See
-> [`TODO.md`](./TODO.md) for the authoritative item-by-item status.
+> the DashPay backlog issue [#4020](https://github.com/dashpay/platform/issues/4020) for the authoritative item-by-item status.
 >
 > **How to read.** Part 0 is the TL;DR. Parts 1–2 are reference (protocol +
 > architecture). Part 3 is the current-state inventory. Part 4 is the prioritized
 > gap/bug list. Part 5 is the work plan. Part 6 is the Swift UI design. Part 7 is
-> the test plan. Detailed source-cited research backing every claim lives in
-> [`research/01..05`](./research/).
+> the test plan. The durable evidence base ships alongside this spec:
+> [`INTEROP_DESK_CHECK.md`](./INTEROP_DESK_CHECK.md) (cross-client wire-format
+> verdicts + testnet census) and [`CONTACTINFO_FORMAT_SPEC.md`](./CONTACTINFO_FORMAT_SPEC.md)
+> (Appendix A). The transient working-research files that once backed the
+> remaining citations were trimmed from the tree; they remain in this branch's
+> git history (`docs/dashpay/research/`, up to the trim commit).
 
 ---
 
@@ -85,7 +89,7 @@
 | G11 | **Network layer is untested.** Primitives/state/persistence are well covered, but the *whole* `network/` layer (send/sync/accept/pay/profile-broadcast) has **0 tests**; no full send→sync→accept→pay integration test; Swift has **0** DashPay tests | **P0** | both |
 | G12 | **DashPay sync is not in the recurring sync loop.** The background `IdentitySyncManager` syncs **token balances only**; `dashpay_sync()` (contact requests + profiles) runs **only on-demand via FFI** — it must be folded into the recurring loop alongside the other syncs | **P0** | `rs-platform-wallet` |
 | G13 | **Sync never reconciles own sent requests** — after restore-from-seed or on a second device an established contact renders as a mere incoming request; Accept re-broadcasts a duplicate reciprocal and is **rejected forever** by the unique index | **P1** | `rs-platform-wallet` |
-| G14 | **Wrong encrypted-xpub wire format** (desk-check 2026-06-10, `research/06`): we encrypt the 107-byte DIP-14 `ExtendedPubKey::encode()` instead of DIP-15's **69-byte compact** (`fingerprint‖chaincode‖pubkey`) used by iOS+Android → our send fails its own 96-byte check; our receive can't parse mobile payloads | **P0** | `platform-encryption` + `rs-sdk` + wallet |
+| G14 | **Wrong encrypted-xpub wire format** (desk-check 2026-06-10, `INTEROP_DESK_CHECK.md`): we encrypt the 107-byte DIP-14 `ExtendedPubKey::encode()` instead of DIP-15's **69-byte compact** (`fingerprint‖chaincode‖pubkey`) used by iOS+Android → our send fails its own 96-byte check; our receive can't parse mobile payloads | **P0** | `platform-encryption` + `rs-sdk` + wallet |
 | G15 | **Key-purpose convention mismatch**: mobile clients use key 0 (AUTHENTICATION) for both key indices; our send/validation require ENCRYPTION/DECRYPTION-purpose keys → cross-client requests blocked both directions. Verify against a real testnet mobile contactRequest, then align | **P1** | wallet + `rs-sdk` |
 
 ### UI verdict
@@ -177,7 +181,7 @@ Key architectural facts:
 
 ## Part 2 — Protocol reference (authoritative numbers)
 
-Condensed from [`research/01-dip-spec.md`](./research/01-dip-spec.md) (DIP-9/11/13/14/15,
+Condensed from the DIPs themselves (DIP-9/11/13/14/15,
 cross-checked against the deployed v1 contract). **Where DIP prose and the v1
 schema disagree, the schema wins.**
 
@@ -239,8 +243,8 @@ reads the version.
 ### 2.6 DashPay v1 contract document types
 
 Contract id **`Bwr4WHCPz5rFVAD87RqTs3izo4zpzwsEdKPWUT1NS1C7`**
-(hex `a2a1…71bc`), owner all-zero. Full field/index tables in
-[`research/04-sdk-and-contract.md`](./research/04-sdk-and-contract.md). Summary:
+(hex `a2a1…71bc`), owner all-zero. Full field/index tables in the deployed
+schema, `packages/dashpay-contract/schema/v1/dashpay.schema.json`. Summary:
 
 - **`profile`**: `avatarUrl`(uri,≤2048), `avatarHash`(32B), `avatarFingerprint`(8B),
   `publicMessage`(1–140), `displayName`(1–25). Avatar trio is `dependentRequired`.
@@ -263,7 +267,7 @@ Contract id **`Bwr4WHCPz5rFVAD87RqTs3izo4zpzwsEdKPWUT1NS1C7`**
 ## Part 3 — Current implementation state (inventory)
 
 Master status matrix. **Legend:** ✅ implemented · 🟡 partial/caveated · ❌ missing.
-Citations are abbreviated; full detail in `research/02..05`.
+Citations are abbreviated (file:line against this branch).
 
 ### 3.1 rust-dashcore `key-wallet` (HD primitives)
 
@@ -507,7 +511,7 @@ registration, G1(b)) and runs the same `validate_contact_request` gate before an
 and metadata-preserving across two recurring sweeps".
 
 **G14 — Wrong encrypted-xpub wire format (P0; found by the M1 desk-check,
-`research/06-interop-desk-check.md`).** DIP-15 and BOTH reference clients
+`INTEROP_DESK_CHECK.md`).** DIP-15 and BOTH reference clients
 (iOS dash-shared-core `ecdsa_key.rs:333-341`, Android dashj
 `serializeContactPub()` with a hard `len == 69` receive check) use the compact
 **69-byte** plaintext `parentFingerprint(4) ‖ chainCode(32) ‖ pubKey(33)`. Our
@@ -646,7 +650,7 @@ Ordered so the test seam exists before the TDD-gated tasks that need it.
    against reference DashPay iOS/Android client code or captured vectors; record
    the result. A mismatch found here re-scopes M1 before tests harden the wrong
    format; the live cross-client e2e stays in M4.
-   **DONE (2026-06-10)** — `research/06-interop-desk-check.md`. Verdicts:
+   **DONE (2026-06-10)** — `INTEROP_DESK_CHECK.md`. Verdicts:
    xpub plaintext **FAIL** (→ new **G14**, task 7 below); ECDH **PASS**;
    accountReference **PASS-for-now** (mobile ignores it on receive; our masking
    helper has two latent bugs for M3 — 107-byte HMAC input + ASK28 byte order,
@@ -659,7 +663,7 @@ Ordered so the test seam exists before the TDD-gated tasks that need it.
    already know the derivation path, so depth/child-number are reconstructable).
    Pin with byte-exact vectors mirroring the reference clients (iOS
    `ecdsa_key.rs:333-341`, dashj `serializeContactPub()` — quoted in
-   `research/06`). 69 → PKCS7 → 80 ‖ IV 16 = exactly 96 bytes.
+   `INTEROP_DESK_CHECK.md`). 69 → PKCS7 → 80 ‖ IV 16 = exactly 96 bytes.
    **DONE (2026-06-10):** codec in `platform-encryption`
    (`compact_xpub_bytes`/`parse_compact_xpub`, `COMPACT_XPUB_LEN=69`);
    `ContactXpubData::compact_xpub()` + `reconstruct_contact_xpub` in
@@ -677,7 +681,7 @@ Ordered so the test seam exists before the TDD-gated tasks that need it.
    has no DECRYPTION-purpose key). Implementation in M1 if the verification
    confirms the mismatch; the validation gate from G1(b) stays for key *type*.
    **VERIFIED (2026-06-10, all 368 testnet contactRequests —
-   `research/06` §G15):** the "key 0 AUTHENTICATION" desk-check reading was
+   `INTEROP_DESK_CHECK.md` §G15):** the "key 0 AUTHENTICATION" desk-check reading was
    stale. Dominant mobile cohort (223 docs): **unbound ENCRYPTION/MEDIUM key
    (id 2) for BOTH indices** (recipientKeyIndex → ENCRYPTION — mobile identities
    carry no DECRYPTION key); 2026 cohort (68 docs): contract-bound ENC(4)/DEC(5)
@@ -906,8 +910,8 @@ read-only "Their account" row through Swift `contactAccountLabel` → `ContactDe
 
     **BLOCKED-EXTERNAL (2026-06-13):** requires driving real DashWallet
     iOS/Android builds against a shared network — not runnable in this
-    environment. The M1 desk-check (research/06) + on-chain census remain
-    the interop evidence; the contactInfo research (research/07) found no
+    environment. The M1 desk-check (`INTEROP_DESK_CHECK.md`) + on-chain census remain
+    the interop evidence; the contactInfo research (`CONTACTINFO_FORMAT_SPEC.md` Appendix A) found no
     reference client implements contactInfo at all, shrinking the live-e2e
     surface to contactRequest + payment addresses. Run manually when a
     mobile test build is available.
@@ -1022,7 +1026,7 @@ Wire DashPay sync into the `.task` of `DashPayTabView` and/or the existing globa
 
 ### 6.3 Conventions (must match house style)
 
-From `research/05` §5 / `SwiftExampleApp/CLAUDE.md`:
+From `SwiftExampleApp/CLAUDE.md`:
 - `@EnvironmentObject var walletManager: PlatformWalletManager`,
   `var appState: AppState`; `@Environment(\.modelContext)`.
 - Lists via `@Query` on `Persistent*` (move off the live-snapshot read).
@@ -1301,7 +1305,7 @@ merges). The offline crypto/encode tier likewise lands immediately.
 1. **UI shape — first-class tab vs polish-in-place.** Recommended: first-class
    `DashPay` tab (Part 6). *Decision owner: product.* Fallback documented.
 2. **Cross-client interop. RESOLVED (2026-06-10, desk-check
-   `research/06`):** xpub plaintext FAIL → G14 fix in M1 task 7; ECDH PASS;
+   `INTEROP_DESK_CHECK.md`):** xpub plaintext FAIL → G14 fix in M1 task 7; ECDH PASS;
    accountReference PASS-for-now (+2 latent masking bugs noted for M3); new G15
    key-purpose hazard → verification gate in M1 task 8. Live cross-client e2e
    stays M4. ⚠ A side-finding: our stack was **not** self-consistent either —
@@ -1346,13 +1350,13 @@ coordinated rather than duplicated:
 
 ---
 
-### Appendix — research sources (full detail, source-cited)
+### Appendix — evidence sources
 
-- [`research/01-dip-spec.md`](./research/01-dip-spec.md) — DIP-9/11/13/14/15
-  protocol reference (derivation paths, ECDH, encryption, contract).
-- [`research/04-sdk-and-contract.md`](./research/04-sdk-and-contract.md) — v1
-  contract schema + `rs-sdk`/`rs-sdk-ffi` send flow + the two SDK bugs.
-- [`research/06-interop-desk-check.md`](./research/06-interop-desk-check.md) —
+- [`INTEROP_DESK_CHECK.md`](./INTEROP_DESK_CHECK.md) —
   cross-client (iOS DashSync / Android dashj) interop evidence + testnet census.
-- [`research/07-contactinfo-conventions.md`](./research/07-contactinfo-conventions.md)
-  — contactInfo wire conventions (this repo sets the de-facto convention).
+- [`CONTACTINFO_FORMAT_SPEC.md` Appendix A](./CONTACTINFO_FORMAT_SPEC.md) —
+  contactInfo wire conventions (this repo sets the de-facto convention).
+
+The transient working-research files (DIP paraphrase, SDK/contract survey with
+worktree-relative file:line citations) were trimmed from the tree; find them in
+this branch's git history under `docs/dashpay/research/`.

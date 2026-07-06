@@ -12,8 +12,8 @@
 > **Status.** REVIEWED (4 lenses, 2026-06-24) — **KEEP DEFERRED** (see *Review
 > outcome* below: a foundational blocker B-1 + reopened DoS + abuse surface, and no
 > requirement). This feature was **deliberately
-> deferred** by the team as *"conditional, not a requirement"* (`TODO.md`
-> multi-account item; `DIP_CONFORMANCE_GAPS.md` §2). There is **no current product
+> deferred** by the team as *"conditional, not a requirement"* (backlog
+> dashpay/platform#4020 multi-account item; `DIP_CONFORMANCE_GAPS.md` §2). There is **no current product
 > requirement** forcing simultaneous multi-account. This spec exists so the work is
 > *scoped and reviewed* and can be implemented when a requirement appears — and so
 > the decision to keep deferring is an informed one. **Do not implement before this

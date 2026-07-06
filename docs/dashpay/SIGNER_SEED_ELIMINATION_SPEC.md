@@ -71,13 +71,13 @@ session — see §8 — so there is no off-the-shelf signer-based DashPay to cop
 - Changing `downgrade_to_external_signable` (`wallet_lifecycle.rs:251`) — it
   is what makes the seed absent; it stays.
 - Re-introducing an in-memory-seed wallet (the dashj model).
-- Wiring QR-based auto-accept — tracked in `TODO.md` (helpers KEPT, not
+- Wiring QR-based auto-accept — tracked in the backlog (dashpay/platform#4020) (helpers KEPT, not
   deleted; §2 note).
 
 ### Q2 scope, status & completion criteria (2026-06-23)
 
 **Q2** (the PR reviewer ask) = *remove the assign-seed workaround* = delete
-`attach_wallet_seed` (this §; §4.9). Live status: `TODO.md` (authoritative tracker).
+`attach_wallet_seed` (this §; §4.9). Live status: the backlog issue dashpay/platform#4020 (authoritative tracker).
 
 **Done + verified** (branch `feat/dashpay-m1-sync-correctness`; platform-wallet
 292/292; glue builds host + `aarch64-apple-ios-sim`): §2 inventory sites **#1–#6**
@@ -208,7 +208,7 @@ notes.**
   will retry next sweep"). Contact establishment still succeeds; contact *profiles*
   may not render. Track + fix separately.
 
-**Out of Q2 scope** (tracked in `TODO.md`): §6b queue restore (upstream
+**Out of Q2 scope** (tracked in the backlog (dashpay/platform#4020)): §6b queue restore (upstream
 `ClientStartState::wallets` — note the security review's caveat that until restore
 works, a contact discovered-then-app-killed-before-unlock never finishes setup);
 the §4.8 present-but-zero-keys import caveat; QR auto-accept wiring.
@@ -270,7 +270,7 @@ Notes (unchanged from v2):
 - **#6 is not a separate key** — `calculate_account_reference` is HMAC-keyed by
   the same ECDH scalar as #4/#5; the ECDH handling covers it.
 - **auto-accept (`auto_accept.rs:80`) is KEPT** — real but unwired DIP-15
-  feature; converts cleanly to a sign path when wired. Tracked in `TODO.md`.
+  feature; converts cleanly to a sign path when wired. Tracked in the backlog (dashpay/platform#4020).
 - **Dead read APIs** `contact_xpub` / `contact_payment_addresses` had zero
   callers → **DELETED in Phase 1**.
 

@@ -1,5 +1,12 @@
 # DashPay cross-client interop desk-check
 
+> Promoted from `docs/dashpay/research/06-interop-desk-check.md` when the
+> transient `research/` directory was trimmed — older citations of
+> "`research/06`" refer to this file. Kept in the shipped docs because it is
+> the evidence base for the consensus-facing wire-format decisions
+> (69-byte compact xpub, key-purpose envelope, ASK28 byte order) cited by
+> `SPEC.md` and `DIP_CONFORMANCE_GAPS.md`.
+
 Research date: 2026-06-10 (Milestone 1, task 5 — verify-only).
 Question: do THIS stack's DashPay wire formats match the reference clients (iOS DashSync,
 Android dashj/android-dashpay), per DIP-15? If not, contacts established by our wallet
