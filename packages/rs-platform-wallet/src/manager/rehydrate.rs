@@ -1,9 +1,12 @@
 //! Watch-only wallet reconstruction + persisted core-state application.
 //!
-//! Load is **seedless** (see [`load_from_persistor`]). For each
-//! persisted wallet we build a watch-only [`Wallet`] from its keyless
-//! `AccountRegistrationEntry` manifest, then apply the keyless
-//! core-state projection on top. No seed, no signing-key derivation.
+//! Load is **seedless** (see [`load_from_persistor`]). Every persisted
+//! wallet is rebuilt watch-only from its keyless `AccountRegistrationEntry`
+//! manifest via [`build_watch_only_wallet`]. Persisters that carry a full
+//! [`ManagedWalletInfo`] snapshot (FFI) hand it to the manager directly;
+//! the SQLite persister instead reconstructs one from typed rows and layers
+//! the keyless core-state projection on with [`apply_persisted_core_state`].
+//! No seed, no signing-key derivation.
 //!
 //! Because load never touches the seed, it performs no wrong-seed check.
 //! Wrong-seed validation lives in the resolver-backed signing
@@ -20,7 +23,8 @@ use key_wallet::wallet::Wallet;
 use key_wallet::Network;
 
 use crate::changeset::AccountRegistrationEntry;
-use crate::error::{PlatformWalletError, RehydrateRowError};
+use crate::error::PlatformWalletError;
+use crate::manager::load_outcome::CorruptKind;
 
 /// Build a watch-only [`Wallet`] from the keyless account manifest.
 ///
@@ -29,28 +33,40 @@ use crate::error::{PlatformWalletError, RehydrateRowError};
 /// [`AccountCollection`] is handed to [`Wallet::new_watch_only`] under
 /// the same id. No key material crosses this function.
 ///
-/// Returns [`RehydrateRowError`] when the row is structurally unusable
-/// (caller maps it onto a per-row [`SkipReason`]).
+/// Returns [`CorruptKind`] when the row is structurally unusable
+/// (caller wraps it in a per-row [`SkipReason`]).
+///
+/// [`SkipReason`]: crate::manager::load_outcome::SkipReason
 ///
 /// # Trust boundary
 ///
-/// `expected_wallet_id` is stamped in verbatim and is **not** cryptographically
-/// bound to the manifest: the id hashes the *root* xpub, but only account-level
-/// (hardened, one-way) xpubs are persisted, so the root cannot be recovered to
-/// re-derive and verify it. Only structural decode runs here, so a well-formed
-/// but wrong xpub (corrupted/tampered store) is accepted and yields receive
-/// addresses from the wrong key under the original id — the caller must ensure
-/// the persisted manifest for `expected_wallet_id` is authentic. A real binding
-/// (a MAC/commitment over `{wallet_id, network, manifest}` keyed to a
-/// secure-enclave secret, verified fail-closed on load) needs a storage-schema
-/// change and is tracked as a follow-up.
-pub(super) fn build_watch_only_wallet(
+/// `expected_wallet_id` is stamped onto the reconstructed [`Wallet`]
+/// verbatim and is **not** cryptographically bound to the manifest: the
+/// id hashes the *root* xpub, but only account-level (hardened, one-way)
+/// xpubs are persisted, so the root cannot be recovered here to re-derive
+/// and verify the id. Only a structural decode runs, so a well-formed but
+/// **wrong** `account_xpub` is accepted.
+///
+/// Concretely, the attack this leaves open: an attacker who can write to
+/// the backing store (or a malicious/rolled-back backup restored into it)
+/// substitutes a valid xpub of their own for a wallet's `account_xpub`,
+/// leaving `expected_wallet_id` unchanged. The wallet is rebuilt under the
+/// original id but now derives its receive addresses from the attacker's
+/// key, so future incoming funds are silently redirected — the id looks
+/// unchanged to the user while the money flows elsewhere. This crate
+/// **does not** defend against it: closing the gap requires the storage
+/// layer to authenticate the manifest (a persisted commitment/MAC over
+/// `{wallet_id, network, manifest}`, verified fail-closed on load), which
+/// is a storage-schema change tracked in the `platform-wallet-storage`
+/// crate. See the trust-boundary note on
+/// [`PlatformWalletPersistence::load`](crate::changeset::PlatformWalletPersistence::load).
+pub fn build_watch_only_wallet(
     network: Network,
     expected_wallet_id: [u8; 32],
     manifest: &[AccountRegistrationEntry],
-) -> Result<Wallet, RehydrateRowError> {
+) -> Result<Wallet, CorruptKind> {
     if manifest.is_empty() {
-        return Err(RehydrateRowError::MissingManifest);
+        return Err(CorruptKind::MissingManifest);
     }
     let mut accounts = AccountCollection::new();
     for entry in manifest {
@@ -63,10 +79,10 @@ pub(super) fn build_watch_only_wallet(
             entry.account_xpub,
             network,
         )
-        .map_err(|_| RehydrateRowError::MalformedXpub)?;
+        .map_err(|_| CorruptKind::MalformedXpub)?;
         accounts
             .insert(account)
-            .map_err(|e| RehydrateRowError::DecodeError(e.to_string()))?;
+            .map_err(|e| CorruptKind::DecodeError(e.to_string()))?;
     }
     Ok(Wallet::new_watch_only(
         network,
@@ -191,6 +207,13 @@ pub fn apply_persisted_core_state(
         wallet_info.metadata.last_applied_chain_lock = Some(cl.clone());
     }
 
+    // TODO(rehydration gaps): `core` also carries instant-send locks and
+    // transaction records, but neither can be replayed here —
+    // `ManagedWalletInfo.instant_send_locks` is `pub(crate)` with no public
+    // setter, and there is no public API to inject tx records. Both re-warm on
+    // the next sync (no regression vs. the prior loader); populating them at
+    // load needs an upstream key_wallet change.
+
     // Restore the UTXO set. Persisted attribution is lost at write time
     // (account_index is always 0), so route every restored UTXO to the
     // wallet's first funds-bearing account *of any topology* (BIP44,
@@ -198,6 +221,9 @@ pub fn apply_persisted_core_state(
     // funds accounts and stays exact. A wallet with persisted UTXOs but
     // no funds account at all cannot be represented: fail closed rather
     // than silently reconstruct a zero balance.
+    // TODO(#3986): route each restored UTXO to its true owning account via the
+    // persisted per-account attribution once PR #3986's core_address_pool table
+    // lands, instead of collapsing every UTXO onto account 0 here.
     let spent_outpoints: std::collections::HashSet<dashcore::OutPoint> =
         core.spent_utxos.iter().map(|u| u.outpoint).collect();
     let unspent: Vec<&key_wallet::Utxo> = core
@@ -497,26 +523,42 @@ fn extend_pools_for_restored_addresses(
         // funded address keeps `used = false` and could be handed out as a fresh
         // receive address. `mark_used` is a no-op for addresses not in this
         // pool, so an underived (foreign / sparse) index is never marked.
-        let mut marked_any = false;
-        for addr in restored_addresses {
-            if pool.mark_used(addr) {
-                marked_any = true;
-            }
-        }
-
-        // Refill the gap window past the deepest used index (needs the xpub).
-        if marked_any {
-            if let Some(key_source) = key_source.as_ref() {
-                if let Err(e) = pool.maintain_gap_limit(key_source) {
-                    tracing::warn!(
-                        wallet_id = %hex::encode(wallet_id),
-                        account_type = ?account_type,
-                        pool_type = ?pool.pool_type,
-                        error = %e,
-                        "rehydration: gap-limit maintenance failed; pool window \
-                         may be short until the next sync"
-                    );
+        //
+        // Mark ↔ refill runs to a FIXPOINT: marking raises `highest_used`,
+        // whose gap refill can derive a deeper previously-used address that
+        // the discovery walk missed (e.g. used idx 45 with in-window used
+        // idx 20 and gap 30 — the walk's horizon stops at 30, but the refill
+        // reaches 50 and derives idx 45). A single mark-then-refill pass
+        // would leave that address in the pool with `used = false`, handing
+        // a previously-used address back out as fresh. Terminates: each
+        // round marks at least one new address from the finite restored set
+        // (`mark_used` returns `true` only on an unused→used flip).
+        loop {
+            let mut marked_any = false;
+            for addr in restored_addresses {
+                if pool.mark_used(addr) {
+                    marked_any = true;
                 }
+            }
+            if !marked_any {
+                break;
+            }
+            // Refill the gap window past the deepest used index (needs the
+            // xpub); without one no deeper address can be derived, so a
+            // single mark pass is all that's possible.
+            let Some(key_source) = key_source.as_ref() else {
+                break;
+            };
+            if let Err(e) = pool.maintain_gap_limit(key_source) {
+                tracing::warn!(
+                    wallet_id = %hex::encode(wallet_id),
+                    account_type = ?account_type,
+                    pool_type = ?pool.pool_type,
+                    error = %e,
+                    "rehydration: gap-limit maintenance failed; pool window \
+                     may be short until the next sync"
+                );
+                break;
             }
         }
     }
@@ -592,7 +634,7 @@ mod tests {
     fn empty_manifest_is_missing_manifest() {
         let err = build_watch_only_wallet(Network::Testnet, [0u8; 32], &[])
             .expect_err("empty manifest must be MissingManifest");
-        assert!(matches!(err, RehydrateRowError::MissingManifest));
+        assert!(matches!(err, CorruptKind::MissingManifest));
     }
 
     /// Regression: after restart-in-place the watch-only pools eagerly
@@ -1139,9 +1181,9 @@ mod tests {
         );
     }
 
-    /// #3692 review (privacy / address-reuse): a previously-used address
-    /// whose UTXO was SINCE SPENT must still come back marked `used` when the
-    /// snapshot carries it via `ClientWalletStartState::used_core_addresses`.
+    /// Privacy / address-reuse: a previously-used address whose UTXO was
+    /// SINCE SPENT must still come back marked `used` when the caller passes
+    /// it via `used_pool_addresses`.
     /// Without it the address resets to `used = false` and could be handed
     /// out again as a fresh receive address. The used flag must survive even
     /// though the UTXO is gone (`spent_utxos` cancels `new_utxos` → zero
@@ -1150,7 +1192,7 @@ mod tests {
     /// (idx 30), and asserts the empty-snapshot baseline does NOT mark them.
     #[test]
     fn rehydration_used_state_survives_spent_utxo() {
-        use crate::changeset::{ClientWalletStartState, CoreChangeSet};
+        use crate::changeset::CoreChangeSet;
         use dashcore::blockdata::transaction::txout::TxOut;
         use dashcore::{OutPoint, Txid};
         use key_wallet::bip32::DerivationPath;
@@ -1223,31 +1265,15 @@ mod tests {
             ..Default::default()
         };
 
-        // The keyless slice the persister hands back, carrying the pool
-        // used-state for both addresses.
-        let state = ClientWalletStartState {
-            network: Network::Testnet,
-            birth_height: 1,
-            account_manifest: manifest.clone(),
-            core_state: core,
-            identity_manager: Default::default(),
-            unused_asset_locks: Default::default(),
-            contacts: Default::default(),
-            identity_keys: Default::default(),
-            used_core_addresses: vec![in_window_used.clone(), deep_used.clone()],
-        };
+        // Pool used-state carried for both addresses (the reuse guard the
+        // SQLite persister feeds via `core_state::load_used_addresses`).
+        let used_core_addresses = vec![in_window_used.clone(), deep_used.clone()];
 
         // Baseline: drop the pool used-state (empty) — the spent-out address
         // resets to unused (the pre-fix behaviour, and the reuse hazard).
         {
             let mut baseline = ManagedWalletInfo::from_wallet(&wallet, 1);
-            apply_persisted_core_state(
-                &mut baseline,
-                &state.account_manifest,
-                &state.core_state,
-                &[],
-            )
-            .unwrap();
+            apply_persisted_core_state(&mut baseline, &manifest, &core, &[]).unwrap();
             let funds = baseline
                 .accounts
                 .all_funding_accounts()
@@ -1265,16 +1291,11 @@ mod tests {
             );
         }
 
-        // With the snapshot's used-state — routed through
-        // ClientWalletStartState::used_core_addresses — both come back used.
+        // With the persisted used-state passed as `used_pool_addresses`, both
+        // come back used.
         let mut wallet_info = ManagedWalletInfo::from_wallet(&wallet, 1);
-        apply_persisted_core_state(
-            &mut wallet_info,
-            &state.account_manifest,
-            &state.core_state,
-            &state.used_core_addresses,
-        )
-        .unwrap();
+        apply_persisted_core_state(&mut wallet_info, &manifest, &core, &used_core_addresses)
+            .unwrap();
 
         // The spent UTXO contributes no balance — the used flag is NOT a
         // side effect of a live UTXO.
@@ -1312,6 +1333,116 @@ mod tests {
             external.highest_used,
             Some(30),
             "highest_used must reflect the deepest restored used slot"
+        );
+    }
+
+    /// Regression (mark↔refill fixpoint): a previously-used address in the
+    /// "wedge zone" — past the discovery horizon but within reach of the
+    /// gap refill — must come back `used`. With used addresses at idx 20
+    /// (in the eager window) and idx 45 (gap 30): the discovery walk
+    /// excludes in-window addresses from `unresolved`, so nothing anchors
+    /// the horizon past 30 and idx 45 is never scanned; marking idx 20 then
+    /// makes `maintain_gap_limit` derive out to 20+30=50, which brings the
+    /// idx-45 address into the pool. A single mark-then-refill pass left it
+    /// there with `used = false` — pool-visible as a FRESH address, handed
+    /// out again, and its stale `used = false` persisted back over the
+    /// store's `is_used = true` on the next pool snapshot. The fixpoint
+    /// re-marks after every refill until nothing new resolves.
+    #[test]
+    fn rehydration_wedge_zone_used_address_marked_after_refill() {
+        use key_wallet::bip32::DerivationPath;
+        use key_wallet::gap_limit::DEFAULT_EXTERNAL_GAP_LIMIT;
+        use key_wallet::managed_account::address_pool::{AddressPool, AddressPoolType, KeySource};
+        use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+        use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
+        use key_wallet::Address;
+
+        let wallet = Wallet::from_seed_bytes(
+            [61u8; 64],
+            Network::Testnet,
+            WalletAccountCreationOptions::Default,
+        )
+        .unwrap();
+        let manifest = manifest_for(&wallet);
+        let mut wallet_info = ManagedWalletInfo::from_wallet(&wallet, 1);
+
+        let funds_type = wallet_info
+            .accounts
+            .all_funding_accounts()
+            .first()
+            .unwrap()
+            .managed_account_type()
+            .to_account_type();
+        let xpub = manifest
+            .iter()
+            .find(|e| e.account_type == funds_type)
+            .map(|e| e.account_xpub)
+            .expect("funds account xpub");
+
+        let derive = |index: u32| -> Address {
+            let mut p = AddressPool::new_without_generation(
+                DerivationPath::master(),
+                AddressPoolType::External,
+                DEFAULT_EXTERNAL_GAP_LIMIT,
+                Network::Testnet,
+            );
+            p.generate_addresses(index + 1, &KeySource::Public(xpub), true)
+                .unwrap();
+            p.address_at_index(index).unwrap()
+        };
+        // Reachable multi-device state: this device saw idx 20 used;
+        // another device (same mnemonic) handed out and used idx 45.
+        let in_window_used = derive(20);
+        let wedge_used = derive(45);
+
+        // No UTXOs at all — only the persisted pool used-state.
+        let core = crate::changeset::CoreChangeSet {
+            last_processed_height: Some(1),
+            synced_height: Some(1),
+            ..Default::default()
+        };
+        apply_persisted_core_state(
+            &mut wallet_info,
+            &manifest,
+            &core,
+            &[in_window_used.clone(), wedge_used.clone()],
+        )
+        .unwrap();
+
+        let funds = wallet_info
+            .accounts
+            .all_funding_accounts()
+            .into_iter()
+            .next()
+            .unwrap();
+        let pools = funds.managed_account_type().address_pools();
+        let external = pools.iter().find(|p| p.is_external()).unwrap();
+        assert!(
+            external
+                .address_info(&in_window_used)
+                .expect("in-window used address present")
+                .used,
+            "in-window used address must be restored as used"
+        );
+        let wedge_info = external
+            .address_info(&wedge_used)
+            .expect("wedge-zone address must be derived into the pool by the refill");
+        assert!(
+            wedge_info.used,
+            "wedge-zone previously-used address must be re-marked used, \
+             not left pool-visible as fresh"
+        );
+        assert!(external.used_indices.contains(&45), "idx 45 recorded used");
+        assert_eq!(
+            external.highest_used,
+            Some(45),
+            "highest_used must reflect the wedge-zone slot"
+        );
+        // And the window is refilled past the re-marked slot.
+        assert!(
+            external.highest_generated >= Some(45 + DEFAULT_EXTERNAL_GAP_LIMIT),
+            "gap window must extend past the re-marked wedge slot (got {:?})",
+            external.highest_generated,
         );
     }
 

@@ -39,6 +39,30 @@ pub struct DashPayProfile {
     pub public_message: Option<String>,
 }
 
+/// A cached **contact** profile, keyed by the contact's identity id on the
+/// owning [`ManagedIdentity`](crate::wallet::identity::ManagedIdentity).
+///
+/// Unlike the owner's own `dashpay_profile`, this cache is relationship-
+/// independent — it serves established contacts, pending incoming-request
+/// senders, and (later) ignored senders from one map. Holds **only the public
+/// profile fields** parsed from the on-chain `profile` document; it must never
+/// receive anything derived from the encrypted `contactInfo` path.
+///
+/// `profile` distinguishes three states:
+/// - `Some(p)` — fetched and present;
+/// - `None` — **confirmed absent** (the contact published no profile). This is
+///   the negative cache that, together with `checked_at_ms`, stops the sweep
+///   from re-querying a profile-less contact every tick forever.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct ContactProfileEntry {
+    /// The fetched profile, or `None` for a confirmed-absent profile.
+    pub profile: Option<DashPayProfile>,
+    /// Wall-clock ms of the last fetch attempt — drives the self-heal backoff
+    /// for absent profiles. (Gates re-query cost only, never correctness.)
+    pub checked_at_ms: u64,
+}
+
 /// Input for profile create/update operations. Only caller-provided
 /// fields — platform-wallet computes `avatar_hash` + `avatar_fingerprint`
 /// from `avatar_bytes` internally.

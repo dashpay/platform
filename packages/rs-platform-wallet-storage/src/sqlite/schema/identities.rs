@@ -146,6 +146,11 @@ pub fn load_state(
         "SELECT identity_id, length(entry_blob), entry_blob, tombstoned \
          FROM identities WHERE wallet_id = ?1",
     )?;
+    // The ignored-senders TABLE is the authoritative ignore record (every
+    // ignore/un-ignore maintains it transactionally); the `entry_blob`'s
+    // snapshot copy can be stale — see `contacts::load_ignored_senders`.
+    let mut ignored_by_owner =
+        crate::sqlite::schema::contacts::load_ignored_senders(conn, wallet_id)?;
     let mut state = IdentityManagerStartState::default();
     let mut rows = stmt.query(params![wallet_id.as_slice()])?;
     while let Some(row) = rows.next()? {
@@ -175,7 +180,8 @@ pub fn load_state(
                 });
             }
         }
-        let managed = managed_identity_from_entry(&entry, wallet_id);
+        let ignored = ignored_by_owner.remove(&entry.id).unwrap_or_default();
+        let managed = managed_identity_from_entry(&entry, wallet_id, ignored);
         match entry.identity_index {
             Some(idx) => {
                 state
@@ -192,6 +198,33 @@ pub fn load_state(
     Ok(state)
 }
 
+/// Build a fully pre-keyed
+/// [`IdentityManagerStartState`](platform_wallet::changeset::IdentityManagerStartState)
+/// for one wallet: read the identities, then fold this wallet's persisted
+/// identity keys and contacts onto them so every `ManagedIdentity` carries
+/// its own `public_keys` and contact maps at load time — no separate
+/// changeset layered on afterwards. Fail-hard on a corrupt row, inherited
+/// from the three underlying readers.
+pub fn load_prekeyed(
+    conn: &Connection,
+    wallet_id: &WalletId,
+) -> Result<platform_wallet::changeset::IdentityManagerStartState, WalletStorageError> {
+    let mut state = load_state(conn, wallet_id)?;
+    let identity_keys = crate::sqlite::schema::identity_keys::load_state(conn, wallet_id)?;
+    let records = crate::sqlite::schema::contacts::load_state(conn, wallet_id)?;
+    // Ignored senders restore in `load_state` from the authoritative
+    // `ignored_senders` table, so only the request / established maps ride
+    // this changeset; `removed_*` / `ignored` / `unignored` stay empty.
+    let contacts = platform_wallet::changeset::ContactChangeSet {
+        sent_requests: records.sent_requests,
+        incoming_requests: records.incoming_requests,
+        established: records.established,
+        ..Default::default()
+    };
+    state.merge_contacts_and_keys(contacts, identity_keys);
+    Ok(state)
+}
+
 /// Reconstruct a [`ManagedIdentity`] from a persisted [`IdentityEntry`]
 /// using a freshly minted V0 [`Identity`] for `(id, balance, revision)`.
 /// Live runtime fields (contacts maps, public-key derivations) are
@@ -199,6 +232,7 @@ pub fn load_state(
 fn managed_identity_from_entry(
     entry: &IdentityEntry,
     wallet_id: &WalletId,
+    ignored_senders: std::collections::BTreeSet<dpp::prelude::Identifier>,
 ) -> platform_wallet::wallet::identity::ManagedIdentity {
     use dpp::identity::v0::IdentityV0;
     use dpp::identity::Identity;
@@ -209,21 +243,42 @@ fn managed_identity_from_entry(
         balance: entry.balance,
         revision: entry.revision,
     });
-    ManagedIdentity {
-        identity,
-        identity_index: entry.identity_index,
-        last_updated_balance_block_time: entry.last_updated_balance_block_time,
-        last_synced_keys_block_time: entry.last_synced_keys_block_time,
-        established_contacts: Default::default(),
-        sent_contact_requests: Default::default(),
-        incoming_contact_requests: Default::default(),
-        status: entry.status,
-        dpns_names: entry.dpns_names.clone(),
-        contested_dpns_names: entry.contested_dpns_names.clone(),
-        wallet_id: entry.wallet_id.or(Some(*wallet_id)),
-        dashpay_profile: entry.dashpay_profile.clone(),
-        dashpay_payments: entry.dashpay_payments.clone(),
+    let mut managed = match entry.identity_index {
+        Some(index) => ManagedIdentity::new(identity, index),
+        None => ManagedIdentity::new_out_of_wallet(identity),
+    };
+    managed.last_updated_balance_block_time = entry.last_updated_balance_block_time;
+    managed.last_synced_keys_block_time = entry.last_synced_keys_block_time;
+    managed.status = entry.status;
+    managed.dpns_names = entry.dpns_names.clone();
+    managed.contested_dpns_names = entry.contested_dpns_names.clone();
+    managed.wallet_id = entry.wallet_id.or(Some(*wallet_id));
+    // Scalar-snapshot collections ride the identity `entry_blob`
+    // (payments / profile / contact_profiles), so they restore from
+    // `entry`. The relational request collections are loaded separately
+    // from the `contacts` table and stay defaulted here.
+    // High-water sync cursors, the per-session rescan guard, the
+    // verify-failed auto-accept markers, and the deferred contact-crypto
+    // queue (not persisted; a signerless sweep re-enqueues its ops on
+    // load) are in-memory by design: a cold restore starts them at their
+    // defaults so the next sweep re-fetches / re-evaluates safely.
+    //
+    // Ignored senders restore from the `ignored_senders` TABLE (passed in
+    // by the loader), NOT from `entry.ignored_senders`: an un-ignore
+    // deletes only the table row (no fresh identity-entry flush), and the
+    // changeset merge UNIONs the blob's set across buffered snapshots —
+    // so the blob copy can resurrect an un-ignored sender. The table is
+    // maintained transactionally by both the ignore and un-ignore writers
+    // and is therefore authoritative. The constructor starts a fresh
+    // empty ignored set, so per-element apply reproduces the table's set
+    // exactly.
+    for sender in &ignored_senders {
+        managed.apply_ignored_sender(*sender);
     }
+    *managed.dashpay_profile_mut() = entry.dashpay_profile.clone();
+    *managed.dashpay_payments_mut() = entry.dashpay_payments.clone();
+    *managed.dashpay_contact_profiles_mut() = entry.contact_profiles.clone();
+    managed
 }
 
 /// Insert a stub identity row (test helper) so identity_keys /
@@ -252,6 +307,8 @@ pub fn ensure_exists(
         wallet_id: None,
         dashpay_profile: None,
         dashpay_payments: Default::default(),
+        contact_profiles: Default::default(),
+        ignored_senders: Default::default(),
     };
     let payload = blob::encode(&stub)?;
     let wallet_id_param = wallet_id_to_param(wallet_id);
@@ -304,6 +361,8 @@ mod tests {
             wallet_id,
             dashpay_profile: None,
             dashpay_payments: Default::default(),
+            contact_profiles: Default::default(),
+            ignored_senders: Default::default(),
         }
     }
 
@@ -380,6 +439,75 @@ mod tests {
         let (claimed, _) = fetch(&conn, &a, &y).unwrap().expect("A claimed Y");
         assert_eq!(claimed.balance, 500, "promotion applies the new blob");
         assert_eq!(claimed.identity_index, Some(3));
+    }
+
+    /// `load_prekeyed` folds each identity's persisted keys onto it across
+    /// BOTH buckets — a wallet-owned identity (`identity_index = Some`) and
+    /// an out-of-wallet one (`identity_index = None`) each receive their own
+    /// key, with no cross-attribution.
+    #[test]
+    fn load_prekeyed_populates_keys_in_both_buckets() {
+        use dpp::identity::accessors::IdentityGettersV0;
+        use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+        use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+        use dpp::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel};
+        use dpp::platform_value::BinaryData;
+        use platform_wallet::changeset::{IdentityKeyEntry, IdentityKeysChangeSet};
+
+        let mut conn = migrated_conn();
+        let w = [0x0Au8; 32];
+        insert_wallet(&conn, &w);
+
+        let wallet_owned = Identifier::from([0x11u8; 32]);
+        let out_of_wallet = Identifier::from([0x22u8; 32]);
+
+        let mut ids = IdentityChangeSet::default();
+        ids.identities
+            .insert(wallet_owned, entry([0x11; 32], Some(w), 100, Some(0)));
+        ids.identities
+            .insert(out_of_wallet, entry([0x22; 32], Some(w), 200, None));
+
+        let key = |id: Identifier, byte: u8| IdentityKeyEntry {
+            identity_id: id,
+            key_id: 0,
+            public_key: IdentityPublicKey::V0(IdentityPublicKeyV0 {
+                id: 0,
+                purpose: Purpose::AUTHENTICATION,
+                security_level: SecurityLevel::HIGH,
+                contract_bounds: None,
+                key_type: KeyType::ECDSA_SECP256K1,
+                read_only: false,
+                data: BinaryData::new(vec![byte; 33]),
+                disabled_at: None,
+            }),
+            public_key_hash: [byte; 20],
+            wallet_id: None,
+            derivation_indices: None,
+        };
+        let mut keys = IdentityKeysChangeSet::default();
+        keys.upserts
+            .insert((wallet_owned, 0), key(wallet_owned, 0xA1));
+        keys.upserts
+            .insert((out_of_wallet, 0), key(out_of_wallet, 0xB2));
+
+        let tx = conn.transaction().unwrap();
+        apply(&tx, &w, &ids).unwrap();
+        crate::sqlite::schema::identity_keys::apply(&tx, &w, &keys).unwrap();
+        tx.commit().unwrap();
+
+        let state = load_prekeyed(&conn, &w).unwrap();
+        let wo = &state.wallet_identities[&w][&0];
+        assert_eq!(
+            wo.identity.public_keys()[&0].data().as_slice(),
+            &[0xA1; 33],
+            "wallet-owned identity carries its own key"
+        );
+        let oow = &state.out_of_wallet_identities[&out_of_wallet];
+        assert_eq!(
+            oow.identity.public_keys()[&0].data().as_slice(),
+            &[0xB2; 33],
+            "out-of-wallet identity carries its own key"
+        );
     }
 
     /// `load_state` rejects a row whose decoded blob names a different

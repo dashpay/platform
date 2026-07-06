@@ -5,90 +5,23 @@ use key_wallet::account::StandardAccountType;
 use key_wallet::managed_account::address_pool::AddressPoolType;
 use key_wallet::Network;
 
-use crate::manager::load_outcome::CorruptKind;
-
-/// Per-row failure surfacing during watch-only rehydration of a single
-/// persisted wallet. Maps 1:1 to [`CorruptKind`] for the
-/// [`SkipReason`](crate::manager::load_outcome::SkipReason) the load loop
-/// records.
-#[derive(Debug)]
-pub(crate) enum RehydrateRowError {
-    /// Manifest was empty — no account to rebuild the wallet around.
-    MissingManifest,
-    /// Building a watch-only [`Account`](key_wallet::account::Account) from a
-    /// manifest entry failed (xpub structurally malformed for its
-    /// [`AccountType`](key_wallet::account::AccountType)).
-    MalformedXpub,
-    /// `AccountCollection::insert` rejected an account (typically a
-    /// duplicate `account_type` within the manifest).
-    DecodeError(String),
-}
-
-impl From<RehydrateRowError> for CorruptKind {
-    fn from(e: RehydrateRowError) -> Self {
-        match e {
-            RehydrateRowError::MissingManifest => CorruptKind::MissingManifest,
-            RehydrateRowError::MalformedXpub => CorruptKind::MalformedXpub,
-            RehydrateRowError::DecodeError(s) => CorruptKind::DecodeError(s),
-        }
-    }
-}
-
 /// Errors that can occur in platform wallet operations
 #[derive(Debug, thiserror::Error)]
 pub enum PlatformWalletError {
     #[error("Wallet creation failed: {0}")]
     WalletCreation(String),
 
-    /// The persisted wallet has UTXOs to restore but no funds-bearing
-    /// account in its reconstructed account collection to hold them.
-    /// Fail-closed rather than reconstructing a silent zero balance —
-    /// the no-silent-zero mandate. Carries only the (public) wallet id
-    /// and the dropped-UTXO count, never key material.
-    #[error(
-        "rehydration topology unsupported for wallet {}: {utxo_count} persisted UTXO(s) but no funds-bearing account",
-        hex::encode(wallet_id)
-    )]
-    RehydrationTopologyUnsupported {
-        /// The wallet whose topology could not hold the persisted UTXOs.
-        wallet_id: [u8; 32],
-        /// How many persisted UTXOs would have been silently dropped.
-        utxo_count: usize,
-    },
-
-    /// The deep-index discovery probes did not mirror the account's real
-    /// address pools 1:1 during rehydration, so applying probe depths by
-    /// position would index the wrong pool. Fail-closed instead of risking
-    /// a misattributed derivation — the probes are built directly from the
-    /// same `address_pools()` enumeration, so a mismatch is a structural
-    /// invariant break, not user-reachable.
-    #[error(
-        "rehydration pool/probe mismatch: expected {expected} address pool(s) to mirror the discovery probes, found {found}"
-    )]
-    RehydrationPoolMismatch {
-        /// Number of discovery probes built from `address_pools()`.
-        expected: usize,
-        /// Number of real address pools from `address_pools_mut()`.
-        found: usize,
-    },
-
-    /// During rehydration a discovery probe and the real address pool it maps
-    /// to **by position** disagreed on `pool_type`, so applying the probe's
-    /// discovered depth would target the wrong chain. Fail-closed rather than
-    /// misattribute a derivation depth. The probes are built from the same
-    /// `address_pools()` enumeration, so a mismatch is a structural invariant
-    /// break, not user-reachable.
-    #[error(
-        "rehydration pool/probe chain-order mismatch at position {position}: real pool is {found:?} but probe is {expected:?}"
-    )]
-    RehydrationPoolTypeMismatch {
-        /// Index into the account's address-pool list where the mismatch was found.
-        position: usize,
-        /// The probe's pool type (discovery order).
-        expected: AddressPoolType,
-        /// The real pool's pool type at the same position.
-        found: AddressPoolType,
-    },
+    /// The persister failed to load the client start state during
+    /// rehydration. Carries the typed [`PersistenceError`] so callers keep
+    /// its retry classification (`is_transient()` /
+    /// [`PersistenceErrorKind`]) instead of a flattened string — a
+    /// transient backend hiccup (e.g. `SQLITE_BUSY`) stays distinguishable
+    /// from a permanent failure and can be retried.
+    ///
+    /// [`PersistenceError`]: crate::changeset::PersistenceError
+    /// [`PersistenceErrorKind`]: crate::changeset::PersistenceErrorKind
+    #[error("failed to load persisted client state: {0}")]
+    PersisterLoad(#[from] crate::changeset::PersistenceError),
 
     #[error("Wallet not found: {0}")]
     WalletNotFound(String),
@@ -107,6 +40,16 @@ pub enum PlatformWalletError {
 
     #[error("Invalid identity data: {0}")]
     InvalidIdentityData(String),
+
+    #[error("Failed to persist state: {0}")]
+    /// A persister `store(...)` round failed. Returned (not swallowed) by
+    /// user-initiated writes whose loss leaves a silent, non-self-healing
+    /// broken state — e.g. a reject tombstone that, if not persisted, lets
+    /// the rejected contact resurrect on the next launch. The in-memory
+    /// mutation has already happened for this session; the error tells the
+    /// caller (FFI → UI) to surface the failure and retry rather than
+    /// reporting a success that didn't reach disk.
+    Persistence(String),
 
     #[error("Contact request not found: {0}")]
     ContactRequestNotFound(Identifier),
@@ -139,6 +82,22 @@ pub enum PlatformWalletError {
 
     #[error("Transaction broadcast failed: {0}")]
     TransactionBroadcast(String),
+
+    /// A core transaction broadcast failed with an **ambiguous** outcome — the
+    /// transaction may already have reached the network (transport timeout
+    /// after delivery, partial peer send, or an internal multi-node retry
+    /// whose earlier attempt may have succeeded). The spent inputs'
+    /// reservation is intentionally kept, so an immediate retry fails at
+    /// input selection instead of double-spending; the reservation-TTL
+    /// backstop (or a sync observing the transaction) reconciles the outcome.
+    ///
+    /// The shielded sibling is [`Self::ShieldedSpendUnconfirmed`].
+    #[error(
+        "Transaction broadcast outcome unknown — it may already be on the \
+         network; its inputs stay reserved until a sync or the reservation \
+         TTL reconciles the outcome: {0}"
+    )]
+    TransactionBroadcastUnconfirmed(String),
 
     #[error("Transaction building failed: {0}")]
     TransactionBuild(String),
@@ -183,11 +142,17 @@ pub enum PlatformWalletError {
         min_input_amount: Credits,
     },
 
+    // The `Display` text is surfaced verbatim to the user by the withdrawal
+    // preflight (the FFI carries `e.to_string()` as the can't-fund reason), so
+    // it is kept user-presentable: it explains the situation and the action
+    // ("consolidate funds onto fewer addresses") without naming an internal
+    // selection API. The numeric fields stay in the message as an actionable
+    // breadcrumb.
     #[error(
-        "no selectable inputs: every funded address is below the per-input \
-         minimum (sub_min_count={sub_min_count}, sub_min_aggregate={sub_min_aggregate} \
-         credits, min_input_amount={min_input_amount}); consolidate funds or use \
-         InputSelection::Explicit"
+        "Every funded address holds less than the per-input minimum of \
+         {min_input_amount} credits ({sub_min_count} addresses totaling \
+         {sub_min_aggregate} credits), so none can fund this operation on \
+         its own. Consolidate funds onto fewer addresses, then try again."
     )]
     OnlyDustInputs {
         /// Number of addresses with a positive balance below `min_input_amount`.
@@ -222,6 +187,20 @@ pub enum PlatformWalletError {
 
     #[error("Wallet is locked — unlock it before performing this operation")]
     WalletLocked,
+
+    #[error(
+        "Signer does not bind to wallet {wallet_id}: it derives a different \
+         BIP44 account-0 xpub (refusing to sign with the wrong seed)"
+    )]
+    /// The host signer derives a BIP44 account-0 extended public key that does
+    /// not equal this wallet's persisted account xpub — the signer resolves a
+    /// different seed than the one that owns the wallet (e.g. a mis-mapped
+    /// Keychain slot). The operation is refused so a wrong seed can never sign
+    /// for this wallet. Surfaced by [`crate::PlatformWallet::verify_seed_binds`].
+    SeedMismatch {
+        /// Hex of the wallet id whose binding check failed.
+        wallet_id: String,
+    },
 
     #[error("SPV is already running — stop it before starting again")]
     SpvAlreadyRunning,
@@ -314,11 +293,74 @@ pub enum PlatformWalletError {
     #[error("Shielded Merkle witness unavailable: {0}")]
     ShieldedMerkleWitnessUnavailable(String),
 
+    /// No Platform-recorded anchor covers the notes selected for a shielded
+    /// spend, so the wallet cannot build a proof Platform will accept.
+    ///
+    /// Platform records one commitment-tree anchor per block, but an
+    /// index-chunk sync routinely leaves the wallet's tree mid-block, so the
+    /// current (depth-0) root is frequently a value Platform never recorded.
+    /// This variant is **retryable**: it is returned *before* any broadcast,
+    /// the note reservations are released by the caller's generic error path,
+    /// and the next shielded sync advances the tree onto a recorded boundary.
+    /// `0` carries a human-readable reason.
+    #[error("Shielded spend cannot use a Platform-recorded anchor: {0}")]
+    ShieldedNoRecordedAnchor(String),
+
     #[error("Shielded key derivation failed: {0}")]
     ShieldedKeyDerivation(String),
 
     #[error("Shielded sub-wallet not bound: call bind_shielded first")]
     ShieldedNotBound,
+
+    /// The persisted wallet has UTXOs to restore but no funds-bearing
+    /// account in its reconstructed account collection to hold them.
+    /// Fail-closed rather than reconstructing a silent zero balance —
+    /// the no-silent-zero mandate. Carries only the (public) wallet id
+    /// and the dropped-UTXO count, never key material.
+    #[error(
+        "rehydration topology unsupported for wallet {}: {utxo_count} persisted UTXO(s) but no funds-bearing account",
+        hex::encode(wallet_id)
+    )]
+    RehydrationTopologyUnsupported {
+        /// The wallet whose topology could not hold the persisted UTXOs.
+        wallet_id: [u8; 32],
+        /// How many persisted UTXOs would have been silently dropped.
+        utxo_count: usize,
+    },
+
+    /// The deep-index discovery probes did not mirror the account's real
+    /// address pools 1:1 during rehydration, so applying probe depths by
+    /// position would index the wrong pool. Fail-closed instead of risking
+    /// a misattributed derivation — the probes are built directly from the
+    /// same `address_pools()` enumeration, so a mismatch is a structural
+    /// invariant break, not user-reachable.
+    #[error(
+        "rehydration pool/probe mismatch: expected {expected} address pool(s) to mirror the discovery probes, found {found}"
+    )]
+    RehydrationPoolMismatch {
+        /// Number of discovery probes built from `address_pools()`.
+        expected: usize,
+        /// Number of real address pools from `address_pools_mut()`.
+        found: usize,
+    },
+
+    /// During rehydration a discovery probe and the real address pool it maps
+    /// to **by position** disagreed on `pool_type`, so applying the probe's
+    /// discovered depth would target the wrong chain. Fail-closed rather than
+    /// misattribute a derivation depth. The probes are built from the same
+    /// `address_pools()` enumeration, so a mismatch is a structural invariant
+    /// break, not user-reachable.
+    #[error(
+        "rehydration pool/probe chain-order mismatch at position {position}: real pool is {found:?} but probe is {expected:?}"
+    )]
+    RehydrationPoolTypeMismatch {
+        /// Index into the account's address-pool list where the mismatch was found.
+        position: usize,
+        /// The probe's pool type (discovery order).
+        expected: AddressPoolType,
+        /// The real pool's pool type at the same position.
+        found: AddressPoolType,
+    },
 }
 
 /// Check whether an SDK error indicates that an InstantSend lock proof was

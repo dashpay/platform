@@ -1,23 +1,28 @@
 #![allow(clippy::field_reassign_with_default)]
 
-//! Contacts + identity-keys rehydrate through the keyless `load()` path:
-//! store → drop → reopen → load → assert the
-//! `ClientWalletStartState.contacts` / `.identity_keys` slots carry the
-//! persisted PUBLIC material bit-exact.
+//! Pre-keyed rehydration: identities load from SQLite already carrying
+//! their own public keys + contact state, with nothing layered on
+//! afterwards. store → drop → reopen → `load()` → assert on the
+//! `ManagedIdentity` fields directly (TC-1..TC-10 of the #3968 spec).
 
 mod common;
 
+use std::collections::{BTreeMap, HashSet};
+
 use common::{ensure_wallet_meta, fresh_persister, wid};
+use dpp::identity::accessors::IdentityGettersV0;
+use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
 use dpp::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel};
 use dpp::platform_value::BinaryData;
 use dpp::prelude::Identifier;
 use platform_wallet::changeset::{
-    ContactChangeSet, ContactRequestEntry, IdentityKeyEntry, IdentityKeysChangeSet,
-    PlatformWalletChangeSet, PlatformWalletPersistence, ReceivedContactRequestKey,
-    SentContactRequestKey,
+    ContactChangeSet, ContactRequestEntry, IdentityChangeSet, IdentityEntry, IdentityKeyEntry,
+    IdentityKeysChangeSet, PlatformWalletChangeSet, PlatformWalletPersistence,
+    ReceivedContactRequestKey, SentContactRequestKey,
 };
-use platform_wallet::wallet::identity::ContactRequest;
+use platform_wallet::wallet::identity::{ContactRequest, EstablishedContact, IdentityStatus};
+use platform_wallet::wallet::platform_wallet::WalletId;
 
 fn reopen(path: &std::path::Path) -> platform_wallet_storage::SqlitePersister {
     platform_wallet_storage::SqlitePersister::open(
@@ -26,31 +31,51 @@ fn reopen(path: &std::path::Path) -> platform_wallet_storage::SqlitePersister {
     .expect("reopen persister")
 }
 
-fn req(sender: u8, recipient: u8) -> ContactRequestEntry {
-    ContactRequestEntry {
-        request: ContactRequest {
-            sender_id: Identifier::from([sender; 32]),
-            recipient_id: Identifier::from([recipient; 32]),
-            sender_key_index: 1,
-            recipient_key_index: 2,
-            account_reference: 3,
-            encrypted_account_label: None,
-            encrypted_public_key: vec![9, 9, 9],
-            auto_accept_proof: None,
-            core_height_created_at: 42,
-            created_at: 7,
-        },
+/// A wallet-owned identity entry — lands in `wallet_identities[w][index]`.
+fn wallet_identity_entry(id: Identifier, w: WalletId, index: u32) -> IdentityEntry {
+    IdentityEntry {
+        id,
+        balance: 1_000,
+        revision: 1,
+        identity_index: Some(index),
+        last_updated_balance_block_time: None,
+        last_synced_keys_block_time: None,
+        dpns_names: Vec::new(),
+        contested_dpns_names: Vec::new(),
+        status: IdentityStatus::Unknown,
+        wallet_id: Some(w),
+        dashpay_profile: None,
+        dashpay_payments: Default::default(),
+        contact_profiles: Default::default(),
+        ignored_senders: Default::default(),
     }
 }
 
-fn key_entry(identity: Identifier, key_id: u32, byte: u8) -> IdentityKeyEntry {
+/// An out-of-wallet identity entry (`identity_index = None`) — lands in
+/// `out_of_wallet_identities`.
+fn out_of_wallet_entry(id: Identifier, w: WalletId) -> IdentityEntry {
+    IdentityEntry {
+        identity_index: None,
+        ..wallet_identity_entry(id, w, 0)
+    }
+}
+
+fn id_changeset(entries: impl IntoIterator<Item = IdentityEntry>) -> IdentityChangeSet {
+    let mut cs = IdentityChangeSet::default();
+    for e in entries {
+        cs.identities.insert(e.id, e);
+    }
+    cs
+}
+
+fn key_entry(id: Identifier, key_id: u32, byte: u8, security: SecurityLevel) -> IdentityKeyEntry {
     IdentityKeyEntry {
-        identity_id: identity,
+        identity_id: id,
         key_id,
         public_key: IdentityPublicKey::V0(IdentityPublicKeyV0 {
             id: key_id,
             purpose: Purpose::AUTHENTICATION,
-            security_level: SecurityLevel::HIGH,
+            security_level: security,
             contract_bounds: None,
             key_type: KeyType::ECDSA_SECP256K1,
             read_only: false,
@@ -63,36 +88,136 @@ fn key_entry(identity: Identifier, key_id: u32, byte: u8) -> IdentityKeyEntry {
     }
 }
 
-/// Contacts (sent + received) rehydrate bit-exact into the keyless
-/// `ClientWalletStartState.contacts` slot.
+fn keys_changeset(entries: impl IntoIterator<Item = IdentityKeyEntry>) -> IdentityKeysChangeSet {
+    let mut cs = IdentityKeysChangeSet::default();
+    for e in entries {
+        cs.upserts.insert((e.identity_id, e.key_id), e);
+    }
+    cs
+}
+
+fn contact_request(sender: Identifier, recipient: Identifier) -> ContactRequest {
+    ContactRequest {
+        sender_id: sender,
+        recipient_id: recipient,
+        sender_key_index: 1,
+        recipient_key_index: 2,
+        account_reference: 3,
+        encrypted_account_label: None,
+        encrypted_public_key: vec![9, 9, 9],
+        auto_accept_proof: None,
+        core_height_created_at: 42,
+        created_at: 7,
+    }
+}
+
+fn established(owner: Identifier, contact: Identifier) -> EstablishedContact {
+    EstablishedContact {
+        contact_identity_id: contact,
+        outgoing_request: contact_request(owner, contact),
+        incoming_request: contact_request(contact, owner),
+        alias: Some("friend".into()),
+        note: Some("met at conf".into()),
+        is_hidden: false,
+        accepted_accounts: vec![0, 3, 7],
+        payment_channel_broken: false,
+        contact_account_label: None,
+        external_account_reference: None,
+    }
+}
+
+/// TC-1 — a freshly-loaded identity carries its persisted keys in
+/// `public_keys()` immediately, bit-exact, with no sync.
 #[test]
-fn g_rt1_contacts_rehydrate_into_keyless_payload() {
+fn tc1_identity_keys_populate_public_keys_on_load() {
     let (persister, _tmp, path) = fresh_persister();
-    let w = wid(0xC0);
+    let w = wid(0xC1);
     ensure_wallet_meta(&persister, &w);
-
-    let sent_key = SentContactRequestKey {
-        owner_id: Identifier::from([0x11; 32]),
-        recipient_id: Identifier::from([0x22; 32]),
-    };
-    let recv_key = ReceivedContactRequestKey {
-        owner_id: Identifier::from([0x11; 32]),
-        sender_id: Identifier::from([0x33; 32]),
-    };
-    let sent_entry = req(0x11, 0x22);
-    let recv_entry = req(0x33, 0x11);
-    let mut sent = std::collections::BTreeMap::new();
-    sent.insert(sent_key, sent_entry.clone());
-    let mut recv = std::collections::BTreeMap::new();
-    recv.insert(recv_key, recv_entry.clone());
-
+    let id = Identifier::from([0x44; 32]);
+    let e0 = key_entry(id, 0, 0xAA, SecurityLevel::HIGH);
+    let e1 = key_entry(id, 1, 0xBB, SecurityLevel::HIGH);
     persister
         .store(
             w,
             PlatformWalletChangeSet {
+                identities: Some(id_changeset([wallet_identity_entry(id, w, 0)])),
+                identity_keys: Some(keys_changeset([e0.clone(), e1.clone()])),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    drop(persister);
+
+    let state = reopen(&path).load().expect("load");
+    let managed = &state.wallets[&w].identity_manager.wallet_identities[&w][&0];
+    let pks = managed.identity.public_keys();
+    assert_eq!(pks.len(), 2);
+    assert_eq!(pks.get(&0), Some(&e0.public_key));
+    assert_eq!(pks.get(&1), Some(&e1.public_key));
+}
+
+/// TC-2 (load-bearing) — the freshly-loaded AUTHENTICATION/CRITICAL key is
+/// immediately selectable via the exact `get_first_public_key_matching`
+/// predicate the Platform signing path uses, before any sync.
+#[test]
+fn tc2_loaded_auth_key_is_selectable_for_signing() {
+    let (persister, _tmp, path) = fresh_persister();
+    let w = wid(0xC2);
+    ensure_wallet_meta(&persister, &w);
+    let id = Identifier::from([0x55; 32]);
+    let key = key_entry(id, 0, 0xCC, SecurityLevel::CRITICAL);
+    persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                identities: Some(id_changeset([wallet_identity_entry(id, w, 0)])),
+                identity_keys: Some(keys_changeset([key.clone()])),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    drop(persister);
+
+    let state = reopen(&path).load().expect("load");
+    let managed = &state.wallets[&w].identity_manager.wallet_identities[&w][&0];
+    // Exact call shape from wallet/identity/network/dpns.rs:207 and friends.
+    let selected = managed
+        .identity
+        .get_first_public_key_matching(
+            Purpose::AUTHENTICATION,
+            HashSet::from([SecurityLevel::HIGH, SecurityLevel::CRITICAL]),
+            HashSet::from([KeyType::ECDSA_SECP256K1]),
+            false,
+        )
+        .expect("auth signing key selectable immediately after load, no sync");
+    assert_eq!(selected.id(), 0);
+    assert_eq!(selected, &key.public_key);
+}
+
+/// TC-3 — an established contact restores onto the identity, bit-exact.
+#[test]
+fn tc3_established_contact_restores_onto_identity() {
+    let (persister, _tmp, path) = fresh_persister();
+    let w = wid(0xC3);
+    ensure_wallet_meta(&persister, &w);
+    let owner = Identifier::from([0x11; 32]);
+    let contact = Identifier::from([0x22; 32]);
+    let contact_state = established(owner, contact);
+    let mut established_map = BTreeMap::new();
+    established_map.insert(
+        SentContactRequestKey {
+            owner_id: owner,
+            recipient_id: contact,
+        },
+        contact_state.clone(),
+    );
+    persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                identities: Some(id_changeset([wallet_identity_entry(owner, w, 0)])),
                 contacts: Some(ContactChangeSet {
-                    sent_requests: sent,
-                    incoming_requests: recv,
+                    established: established_map,
                     ..Default::default()
                 }),
                 ..Default::default()
@@ -101,87 +226,387 @@ fn g_rt1_contacts_rehydrate_into_keyless_payload() {
         .unwrap();
     drop(persister);
 
-    let p2 = reopen(&path);
-    let state = p2.load().expect("load");
-    let slice = state.wallets.get(&w).expect("wallet rehydrated");
-
-    let got_sent = slice
-        .contacts
-        .sent_requests
-        .get(&sent_key)
-        .expect("sent request rehydrated");
+    let state = reopen(&path).load().expect("load");
+    let managed = &state.wallets[&w].identity_manager.wallet_identities[&w][&0];
+    assert_eq!(managed.dashpay().established_contacts().len(), 1);
     assert_eq!(
-        got_sent.request.core_height_created_at,
-        sent_entry.request.core_height_created_at
+        managed.dashpay().established_contacts().get(&contact),
+        Some(&contact_state)
     );
-    assert_eq!(
-        got_sent.request.encrypted_public_key,
-        sent_entry.request.encrypted_public_key
-    );
-    let got_recv = slice
-        .contacts
-        .incoming_requests
-        .get(&recv_key)
-        .expect("incoming request rehydrated");
-    assert_eq!(got_recv.request.sender_id, recv_entry.request.sender_id);
-    // The rehydration feed never carries deletes.
-    assert!(slice.contacts.removed_sent.is_empty());
-    assert!(slice.contacts.removed_incoming.is_empty());
+    assert!(managed.dashpay().sent_contact_requests().is_empty());
+    assert!(managed.dashpay().incoming_contact_requests().is_empty());
 }
 
-/// Identity-key entries rehydrate bit-exact into the keyless
-/// `ClientWalletStartState.identity_keys` slot.
+/// TC-4 — pending sent and incoming requests restore with correct
+/// directionality and map keys.
 #[test]
-fn g_rt2_identity_keys_rehydrate_into_keyless_payload() {
+fn tc4_sent_and_incoming_requests_restore_directionally() {
     let (persister, _tmp, path) = fresh_persister();
-    let w = wid(0xC1);
+    let w = wid(0xC4);
     ensure_wallet_meta(&persister, &w);
-    let id = Identifier::from([0x44; 32]);
-    platform_wallet_storage::sqlite::schema::identities::ensure_exists(
-        &persister.lock_conn_for_test(),
-        &w,
-        id.as_slice().try_into().unwrap(),
-    )
-    .unwrap();
+    let owner = Identifier::from([0x11; 32]);
+    let recipient = Identifier::from([0x22; 32]);
+    let sender = Identifier::from([0x33; 32]);
 
-    let e0 = key_entry(id, 0, 0xAA);
-    let e1 = key_entry(id, 1, 0xBB);
-    let mut keys = IdentityKeysChangeSet::default();
-    keys.upserts.insert((id, 0), e0.clone());
-    keys.upserts.insert((id, 1), e1.clone());
+    let mut sent = BTreeMap::new();
+    sent.insert(
+        SentContactRequestKey {
+            owner_id: owner,
+            recipient_id: recipient,
+        },
+        ContactRequestEntry {
+            request: contact_request(owner, recipient),
+        },
+    );
+    let mut incoming = BTreeMap::new();
+    incoming.insert(
+        ReceivedContactRequestKey {
+            owner_id: owner,
+            sender_id: sender,
+        },
+        ContactRequestEntry {
+            request: contact_request(sender, owner),
+        },
+    );
     persister
         .store(
             w,
             PlatformWalletChangeSet {
-                identity_keys: Some(keys),
+                identities: Some(id_changeset([wallet_identity_entry(owner, w, 0)])),
+                contacts: Some(ContactChangeSet {
+                    sent_requests: sent,
+                    incoming_requests: incoming,
+                    ..Default::default()
+                }),
                 ..Default::default()
             },
         )
         .unwrap();
     drop(persister);
 
-    let p2 = reopen(&path);
-    let state = p2.load().expect("load");
-    let slice = state.wallets.get(&w).expect("wallet rehydrated");
-    assert_eq!(slice.identity_keys.upserts.len(), 2);
-    assert_eq!(slice.identity_keys.upserts.get(&(id, 0)), Some(&e0));
-    assert_eq!(slice.identity_keys.upserts.get(&(id, 1)), Some(&e1));
-    assert!(slice.identity_keys.removed.is_empty());
+    let state = reopen(&path).load().expect("load");
+    let managed = &state.wallets[&w].identity_manager.wallet_identities[&w][&0];
+    let s = managed
+        .dashpay()
+        .sent_contact_requests()
+        .get(&recipient)
+        .expect("sent restored, keyed by recipient");
+    assert_eq!(s.sender_id, owner);
+    assert_eq!(s.recipient_id, recipient);
+    let i = managed
+        .dashpay()
+        .incoming_contact_requests()
+        .get(&sender)
+        .expect("incoming restored, keyed by sender");
+    assert_eq!(i.sender_id, sender);
+    assert_eq!(i.recipient_id, owner);
+    assert!(managed.dashpay().established_contacts().is_empty());
 }
 
-/// A metadata-only wallet has empty (not error) contacts /
-/// identity-keys slots.
+/// TC-5 — two identities in one wallet with the same numeric `KeyID` keep
+/// disjoint key maps; the group-by must not misattribute.
 #[test]
-fn g_rt3_empty_slots_for_bare_wallet() {
+fn tc5_no_cross_identity_key_leakage() {
     let (persister, _tmp, path) = fresh_persister();
-    let w = wid(0xC2);
+    let w = wid(0xC5);
     ensure_wallet_meta(&persister, &w);
+    let a = Identifier::from([0xA0; 32]);
+    let b = Identifier::from([0xB0; 32]);
+    let a0 = key_entry(a, 0, 0x0A, SecurityLevel::HIGH);
+    let a1 = key_entry(a, 1, 0x1A, SecurityLevel::HIGH);
+    let b0 = key_entry(b, 0, 0x0B, SecurityLevel::HIGH); // same KeyID 0, different data
+    persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                identities: Some(id_changeset([
+                    wallet_identity_entry(a, w, 0),
+                    wallet_identity_entry(b, w, 1),
+                ])),
+                identity_keys: Some(keys_changeset([a0.clone(), a1.clone(), b0.clone()])),
+                ..Default::default()
+            },
+        )
+        .unwrap();
     drop(persister);
-    let p2 = reopen(&path);
-    let state = p2.load().expect("load");
-    let slice = state.wallets.get(&w).expect("wallet present");
-    assert!(slice.contacts.sent_requests.is_empty());
-    assert!(slice.contacts.incoming_requests.is_empty());
-    assert!(slice.contacts.established.is_empty());
-    assert!(slice.identity_keys.upserts.is_empty());
+
+    let state = reopen(&path).load().expect("load");
+    let wallet = &state.wallets[&w].identity_manager.wallet_identities[&w];
+    let managed_a = &wallet[&0];
+    let managed_b = &wallet[&1];
+    assert_eq!(managed_a.identity.public_keys().len(), 2);
+    assert_eq!(managed_b.identity.public_keys().len(), 1);
+    assert_eq!(
+        managed_a.identity.public_keys().get(&0),
+        Some(&a0.public_key)
+    );
+    assert_eq!(
+        managed_b.identity.public_keys().get(&0),
+        Some(&b0.public_key)
+    );
+    assert_ne!(
+        managed_a.identity.public_keys().get(&0),
+        managed_b.identity.public_keys().get(&0),
+        "same KeyID on different identities must not collapse"
+    );
+}
+
+/// TC-6 — contact state does not leak across identities in one wallet.
+#[test]
+fn tc6_no_cross_identity_contact_leakage() {
+    let (persister, _tmp, path) = fresh_persister();
+    let w = wid(0xC6);
+    ensure_wallet_meta(&persister, &w);
+    let a = Identifier::from([0xA0; 32]);
+    let b = Identifier::from([0xB0; 32]);
+    let c = Identifier::from([0xCC; 32]);
+    let d = Identifier::from([0xDD; 32]);
+
+    let mut established_map = BTreeMap::new();
+    established_map.insert(
+        SentContactRequestKey {
+            owner_id: a,
+            recipient_id: c,
+        },
+        established(a, c),
+    );
+    let mut sent = BTreeMap::new();
+    sent.insert(
+        SentContactRequestKey {
+            owner_id: b,
+            recipient_id: d,
+        },
+        ContactRequestEntry {
+            request: contact_request(b, d),
+        },
+    );
+    persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                identities: Some(id_changeset([
+                    wallet_identity_entry(a, w, 0),
+                    wallet_identity_entry(b, w, 1),
+                ])),
+                contacts: Some(ContactChangeSet {
+                    established: established_map,
+                    sent_requests: sent,
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    drop(persister);
+
+    let state = reopen(&path).load().expect("load");
+    let wallet = &state.wallets[&w].identity_manager.wallet_identities[&w];
+    let managed_a = &wallet[&0];
+    let managed_b = &wallet[&1];
+    assert!(managed_a.dashpay().established_contacts().contains_key(&c));
+    assert!(managed_a.dashpay().sent_contact_requests().is_empty());
+    assert!(managed_b.dashpay().sent_contact_requests().contains_key(&d));
+    assert!(managed_b.dashpay().established_contacts().is_empty());
+}
+
+/// TC-7 — an identity with zero persisted keys loads fine with an empty
+/// key map and its scalar fields intact.
+#[test]
+fn tc7_identity_with_zero_keys_loads_empty() {
+    let (persister, _tmp, path) = fresh_persister();
+    let w = wid(0xC7);
+    ensure_wallet_meta(&persister, &w);
+    let id = Identifier::from([0x77; 32]);
+    persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                identities: Some(id_changeset([wallet_identity_entry(id, w, 0)])),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    drop(persister);
+
+    let state = reopen(&path).load().expect("load succeeds");
+    let managed = &state.wallets[&w].identity_manager.wallet_identities[&w][&0];
+    assert!(managed.identity.public_keys().is_empty());
+    assert_eq!(managed.identity.balance(), 1_000);
+    assert_eq!(managed.identity.revision(), 1);
+    assert!(managed.dashpay().established_contacts().is_empty());
+}
+
+/// TC-8 — an out-of-wallet identity (no `identity_index`) with zero keys
+/// and contacts loads into `out_of_wallet_identities`, empty.
+///
+/// Note: the SQLite `load_state`/`managed_identity_from_entry` path always
+/// fills `wallet_id` with the load scope, so a row read under wallet `w`
+/// carries `wallet_id = Some(w)` even in the out-of-wallet bucket (the
+/// spec's `wallet_id: None` is unreachable through the wallet-scoped
+/// reader). We assert the bucket placement and emptiness — the join's
+/// concern — not that field.
+#[test]
+fn tc8_out_of_wallet_identity_loads_empty() {
+    let (persister, _tmp, path) = fresh_persister();
+    let w = wid(0xC8);
+    ensure_wallet_meta(&persister, &w);
+    let id = Identifier::from([0x88; 32]);
+    persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                identities: Some(id_changeset([out_of_wallet_entry(id, w)])),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    drop(persister);
+
+    let state = reopen(&path).load().expect("load succeeds");
+    let im = &state.wallets[&w].identity_manager;
+    let managed = im
+        .out_of_wallet_identities
+        .get(&id)
+        .expect("out-of-wallet identity present");
+    assert!(managed.identity.public_keys().is_empty());
+    assert!(managed.dashpay().established_contacts().is_empty());
+    assert!(managed.dashpay().sent_contact_requests().is_empty());
+    assert!(managed.dashpay().incoming_contact_requests().is_empty());
+}
+
+/// TC-9 — a tombstoned identity's orphaned key/contact rows don't crash
+/// the join; the identity is absent and its rows are silently unattributed.
+#[test]
+fn tc9_tombstoned_identity_orphan_rows_dont_crash_load() {
+    let (persister, _tmp, path) = fresh_persister();
+    let w = wid(0xC9);
+    ensure_wallet_meta(&persister, &w);
+    let id = Identifier::from([0x99; 32]);
+    let contact = Identifier::from([0xAB; 32]);
+    let mut established_map = BTreeMap::new();
+    established_map.insert(
+        SentContactRequestKey {
+            owner_id: id,
+            recipient_id: contact,
+        },
+        established(id, contact),
+    );
+    // Store identity + key + contact.
+    persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                identities: Some(id_changeset([wallet_identity_entry(id, w, 0)])),
+                identity_keys: Some(keys_changeset([key_entry(
+                    id,
+                    0,
+                    0x99,
+                    SecurityLevel::HIGH,
+                )])),
+                contacts: Some(ContactChangeSet {
+                    established: established_map,
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    // Tombstone the identity only; its key/contact rows are left behind.
+    let mut removed = IdentityChangeSet::default();
+    removed.removed.insert(id);
+    persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                identities: Some(removed),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    drop(persister);
+
+    let state = reopen(&path)
+        .load()
+        .expect("load must succeed despite orphan rows");
+    let im = &state.wallets[&w].identity_manager;
+    let present = im
+        .wallet_identities
+        .values()
+        .flat_map(|m| m.values())
+        .any(|m| m.identity.id() == id)
+        || im.out_of_wallet_identities.contains_key(&id);
+    assert!(
+        !present,
+        "tombstoned identity must be absent from both buckets"
+    );
+}
+
+/// TC-10 — cross-wallet scoping is preserved: two wallets each holding an
+/// identity with the same `KeyID` get only their own key.
+#[test]
+fn tc10_cross_wallet_scoping_preserved() {
+    let (persister, _tmp, path) = fresh_persister();
+    let wa = wid(0xAA);
+    let wb = wid(0xBB);
+    ensure_wallet_meta(&persister, &wa);
+    ensure_wallet_meta(&persister, &wb);
+    let ia = Identifier::from([0x1A; 32]);
+    let ib = Identifier::from([0x1B; 32]);
+    persister
+        .store(
+            wa,
+            PlatformWalletChangeSet {
+                identities: Some(id_changeset([wallet_identity_entry(ia, wa, 0)])),
+                identity_keys: Some(keys_changeset([key_entry(
+                    ia,
+                    0,
+                    0xAA,
+                    SecurityLevel::HIGH,
+                )])),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    persister
+        .store(
+            wb,
+            PlatformWalletChangeSet {
+                identities: Some(id_changeset([wallet_identity_entry(ib, wb, 0)])),
+                identity_keys: Some(keys_changeset([key_entry(
+                    ib,
+                    0,
+                    0xBB,
+                    SecurityLevel::HIGH,
+                )])),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    drop(persister);
+
+    let state = reopen(&path).load().expect("load");
+    let managed_a = &state.wallets[&wa].identity_manager.wallet_identities[&wa][&0];
+    let managed_b = &state.wallets[&wb].identity_manager.wallet_identities[&wb][&0];
+    assert_eq!(managed_a.identity.public_keys().len(), 1);
+    assert_eq!(managed_b.identity.public_keys().len(), 1);
+    assert_eq!(
+        managed_a
+            .identity
+            .public_keys()
+            .get(&0)
+            .unwrap()
+            .data()
+            .as_slice(),
+        &[0xAA; 33]
+    );
+    assert_eq!(
+        managed_b
+            .identity
+            .public_keys()
+            .get(&0)
+            .unwrap()
+            .data()
+            .as_slice(),
+        &[0xBB; 33]
+    );
 }

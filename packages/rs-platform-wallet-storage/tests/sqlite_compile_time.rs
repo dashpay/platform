@@ -67,11 +67,22 @@ const READ_ONLY_PREPARE_ALLOWED: &[(&str, &str)] = &[
         "SELECT length(outpoint), outpoint, value, length(script), script, height",
     ),
     ("core_state.rs", "SELECT DISTINCT script FROM core_utxos"),
+    // Pool reader: verbatim used-set, a one-shot read-only scan per wallet.
+    (
+        "core_pool.rs",
+        "SELECT DISTINCT script FROM core_address_pool",
+    ),
     // Full-rehydration readers — one-shot SELECTs in `load_state`.
     (
         "accounts.rs",
         "SELECT account_type, account_index, key_class, user_identity_id, friend_identity_id,",
     ),
+    // Manifest-integrity read paths: verify recompute + backfill NULL scan.
+    (
+        "accounts.rs",
+        "SELECT length(account_xpub_bytes), account_xpub_bytes, checksum",
+    ),
+    ("accounts.rs", "SELECT rowid, wallet_id, account_xpub_bytes"),
     (
         "core_state.rs",
         "SELECT length(record_blob), record_blob FROM core_transactions",
@@ -96,6 +107,14 @@ const READ_ONLY_PREPARE_ALLOWED: &[(&str, &str)] = &[
         "length(entry_blob), entry_blob, tombstoned",
     ),
     ("contacts.rs", "SELECT owner_id, contact_id, state"),
+    (
+        "contacts.rs",
+        "SELECT owner_id, sender_id FROM ignored_senders",
+    ),
+    (
+        "pending_contact_crypto.rs",
+        "SELECT wallet_id, payload FROM pending_contact_crypto",
+    ),
 ];
 
 /// TC-P1-003: writer paths in `src/sqlite/schema/*.rs` must not call

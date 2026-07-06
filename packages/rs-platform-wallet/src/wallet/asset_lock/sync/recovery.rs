@@ -206,10 +206,15 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// registration or top-up via the `_with_signer` SDK methods. The
     /// caller passes `derivation_path` to the same signer used for the
     /// build phase when the credit output is later consumed on Platform.
+    ///
+    /// `timeout` is `Option<Duration>` and is only consulted when the lock
+    /// still needs a proof (`Built` / `Broadcast`): `None` waits
+    /// **indefinitely** for finality. For `InstantSendLocked` / `ChainLocked`
+    /// the proof already exists and no wait happens, so the value is moot.
     pub async fn resume_asset_lock(
         &self,
         out_point: &OutPoint,
-        timeout: Duration,
+        timeout: Option<Duration>,
     ) -> Result<(dpp::prelude::AssetLockProof, DerivationPath), PlatformWalletError> {
         tracing::info!(outpoint = %out_point, ?timeout, "resume_asset_lock: entered");
 
@@ -260,7 +265,36 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                     .await?
             }
             AssetLockStatus::Broadcast => {
-                // Already broadcast — just wait for proof.
+                // Defensive re-broadcast, then wait for proof. A lock can
+                // sit at `Broadcast` across app restarts long enough for
+                // its funding tx to be evicted from every mempool (Core's
+                // default `-mempoolexpiry` is two weeks), or the original
+                // broadcast may have reached no peers at all (SPV
+                // connectivity gap). Once no node holds the tx, no IS/CL
+                // proof can ever arrive, and the wait — now unbounded for
+                // the user-facing funding flows — would hang forever. A
+                // re-broadcast revives an evicted/undelivered tx.
+                //
+                // Best-effort: unlike the `Built` arm, this tx was already
+                // broadcast once (that's what `Broadcast` means), so it may
+                // still be in a mempool or already mined — in which case the
+                // network reports "already known" / "already in block
+                // chain". The broadcaster can't distinguish that from a real
+                // rejection (DAPI classifies every failure as `MaybeSent`),
+                // so we log and proceed to `wait_for_proof` regardless
+                // rather than failing the resume on a tx that is actually
+                // fine. If the tx really was mined, `wait_for_proof`
+                // resolves immediately from the SPV/persisted record.
+                if let Err(e) = self.broadcaster.broadcast(&tx).await {
+                    tracing::debug!(
+                        outpoint = %out_point,
+                        error = %e,
+                        "resume_asset_lock: defensive re-broadcast of a \
+                         Broadcast-status lock returned an error (likely \
+                         already in a mempool or mined); proceeding to wait \
+                         for proof"
+                    );
+                }
                 let proof = self.wait_for_proof(out_point, timeout).await?;
                 self.validate_or_upgrade_proof(proof, account_index, out_point)
                     .await?

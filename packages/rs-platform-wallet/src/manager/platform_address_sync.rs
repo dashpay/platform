@@ -11,7 +11,7 @@
 use std::collections::BTreeMap;
 use std::sync::{
     atomic::{AtomicBool, AtomicU64, Ordering},
-    Arc, Mutex as StdMutex,
+    Arc,
 };
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -21,10 +21,10 @@ use key_wallet::PlatformP2PKHAddress;
 
 use crate::wallet::PlatformAddressTag;
 use tokio::sync::RwLock;
-use tokio_util::sync::CancellationToken;
 
 use crate::error::PlatformWalletError;
 use crate::events::PlatformEventManager;
+use crate::manager::loop_cancel::LoopCancelGuard;
 use crate::wallet::platform_wallet::WalletId;
 use crate::wallet::PlatformWallet;
 
@@ -95,8 +95,9 @@ impl PlatformAddressSyncSummary {
 pub struct PlatformAddressSyncManager {
     wallets: Arc<RwLock<BTreeMap<WalletId, Arc<PlatformWallet>>>>,
     event_manager: Arc<PlatformEventManager>,
-    /// Cancel token for the background loop, if running.
-    background_cancel: StdMutex<Option<CancellationToken>>,
+    /// Generation-guarded cancel-token slot for the background loop —
+    /// see [`LoopCancelGuard`] for the stale-loop shutdown invariant.
+    cancel_guard: LoopCancelGuard,
     interval_secs: AtomicU64,
     is_syncing: AtomicBool,
     /// Set by [`quiesce`](Self::quiesce) to gate new passes while it
@@ -124,7 +125,7 @@ impl PlatformAddressSyncManager {
         Self {
             wallets,
             event_manager,
-            background_cancel: StdMutex::new(None),
+            cancel_guard: LoopCancelGuard::new(),
             interval_secs: AtomicU64::new(DEFAULT_SYNC_INTERVAL_SECS),
             is_syncing: AtomicBool::new(false),
             quiescing: AtomicBool::new(false),
@@ -160,10 +161,7 @@ impl PlatformAddressSyncManager {
 
     /// Whether the background loop is currently running.
     pub fn is_running(&self) -> bool {
-        self.background_cancel
-            .lock()
-            .map(|g| g.is_some())
-            .unwrap_or(false)
+        self.cancel_guard.is_running()
     }
 
     /// Whether a sync pass is in flight right now.
@@ -195,13 +193,9 @@ impl PlatformAddressSyncManager {
     /// The first pass runs immediately; subsequent passes fire every
     /// [`interval`](Self::interval).
     pub fn start(self: Arc<Self>) {
-        let mut guard = self.background_cancel.lock().expect("bg_cancel poisoned");
-        if guard.is_some() {
+        let Some((cancel, my_generation)) = self.cancel_guard.install() else {
             return;
-        }
-        let cancel = CancellationToken::new();
-        *guard = Some(cancel.clone());
-        drop(guard);
+        };
 
         let handle = tokio::runtime::Handle::current();
         let this = self;
@@ -223,9 +217,7 @@ impl PlatformAddressSyncManager {
                         }
                     }
 
-                    if let Ok(mut guard) = this.background_cancel.lock() {
-                        *guard = None;
-                    }
+                    this.cancel_guard.clear_if_current(my_generation);
                 });
             })
             .expect("failed to spawn platform-address-sync thread");
@@ -241,12 +233,7 @@ impl PlatformAddressSyncManager {
     /// the host can free the event-handler context — use
     /// [`quiesce`](Self::quiesce).
     pub fn stop(&self) {
-        if let Some(token) = self
-            .background_cancel
-            .lock()
-            .expect("bg_cancel poisoned")
-            .take()
-        {
+        if let Some(token) = self.cancel_guard.take() {
             token.cancel();
         }
     }

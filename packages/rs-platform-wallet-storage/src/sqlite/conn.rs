@@ -86,8 +86,8 @@ pub(crate) fn open_conn(path: &Path, access: Access) -> Result<Connection, Walle
         Access::ReadOnly => Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)?,
     };
     // Hard-cap every string/BLOB column at SQLITE_MAX_BLOB_BYTES (32 MiB).
-    // Per-column typed gates (check_size / check_fixed_width) still fire first
-    // on explicitly gated columns because their cap (16 MiB) is smaller.
+    // The per-column `check_size` gate still fires first on explicitly gated
+    // columns because its cap (16 MiB) is smaller.
     // This backstop covers the rest without requiring individual `length()`
     // pre-reads on every column in every reader.
     conn.set_limit(Limit::SQLITE_LIMIT_LENGTH, SQLITE_MAX_BLOB_BYTES)?;

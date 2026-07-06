@@ -135,6 +135,11 @@ assert_cmd = "2"
 predicates = "3"
 static_assertions = "1"
 filetime = "0.2"
+# Test-only: construct the `Zeroizing<[u8; 32]>` secret on an
+# `IdentityKeyEntry` to prove the on-disk wire shape drops it. The
+# production `zeroize` dep is gated behind the `secrets` feature, which
+# the off-state CI build disables, so the test surface needs its own.
+zeroize = { version = "=1.8.2", features = ["derive"] }
 tracing-test = { version = "0.2", features = ["no-env-filter"] }
 serial_test = "3"
 # `default-features = false` so the off-state CI invocation
@@ -248,3 +253,9 @@ __test-helpers = ["sqlite"]
 # e2e tests that drive the #3692 manager-apply path. Default-on in the
 # integrated stack (dash-evo-tool) so the cross-crate manager-apply e2e runs.
 rehydration-apply = []
+# Pass-through to `platform-wallet/shielded` so the feature-gated
+# `PlatformWalletChangeSet::shielded` field is visible to the exhaustive
+# `versions::touched_domains` destructure (the R8 forgotten-domain guard).
+# Storage persists no shielded state itself; this only aligns visibility so
+# an added always-on field stays a compile error.
+shielded = ["platform-wallet/shielded"]

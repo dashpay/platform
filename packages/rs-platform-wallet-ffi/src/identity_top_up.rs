@@ -3,8 +3,9 @@
 //!
 //! Mirrors [`crate::identity_registration_with_signer`] (registration)
 //! but for an *existing* identity. The single entry point —
-//! [`platform_wallet_top_up_from_addresses_with_signer`] — wraps
-//! [`IdentityWallet::top_up_from_addresses`](platform_wallet::IdentityWallet::top_up_from_addresses)
+//! [`platform_wallet_top_up_from_addresses_with_signer`] — wraps the
+//! composite
+//! [`PlatformWallet::top_up_from_addresses`](platform_wallet::PlatformWallet::top_up_from_addresses)
 //! and reuses the same address-input shape (`IdentityFundingInputFFI`)
 //! the registration FFI exposes.
 //!
@@ -17,10 +18,10 @@
 //!
 //! On success the function writes the post-transition credit balance
 //! back through `out_new_balance`. The local `ManagedIdentity`
-//! manager is updated synchronously inside the library call (see
-//! [`top_up_from_addresses`](platform_wallet::IdentityWallet::top_up_from_addresses)
-//! for the bookkeeping); callers can re-read the balance via
-//! `ManagedIdentity` once this returns.
+//! manager is updated and the spent platform-address balances are
+//! reconciled synchronously inside the composite library call;
+//! callers can re-read the balance via `ManagedIdentity` once this
+//! returns.
 
 use std::collections::BTreeMap;
 use std::slice;
@@ -117,10 +118,15 @@ pub unsafe extern "C" fn platform_wallet_top_up_from_addresses_with_signer(
     let signer_addr = signer_address_handle as usize;
 
     let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
-        let identity_wallet = wallet.identity().clone();
+        let wallet = wallet.clone();
         block_on_worker(async move {
             let address_signer: &VTableSigner = unsafe { &*(signer_addr as *const VTableSigner) };
-            identity_wallet
+            // The composite tops up the identity AND reconciles the spent
+            // platform-address balances from the proof, so the wallet's
+            // displayed balance and next input selection reflect the spend
+            // (covering addresses restored from disk that are no longer in
+            // a live derived pool).
+            wallet
                 .top_up_from_addresses(&identity_id, input_map, address_signer, None)
                 .await
         })

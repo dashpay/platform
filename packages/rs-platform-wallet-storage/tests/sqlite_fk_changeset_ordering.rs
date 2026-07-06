@@ -62,6 +62,8 @@ fn identity_entry(id: Identifier, wallet_id: Option<WalletId>) -> IdentityEntry 
         wallet_id,
         dashpay_profile: None,
         dashpay_payments: Default::default(),
+        contact_profiles: Default::default(),
+        ignored_senders: Default::default(),
     }
 }
 

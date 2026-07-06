@@ -5,6 +5,7 @@ use std::collections::BTreeMap;
 
 use key_wallet::bip32::ExtendedPubKey;
 use rusqlite::{params, Connection, Transaction};
+use sha2::{Digest, Sha256};
 
 use platform_wallet::changeset::AccountRegistrationEntry;
 use platform_wallet::wallet::platform_wallet::WalletId;
@@ -12,6 +13,23 @@ use platform_wallet::wallet::platform_wallet::WalletId;
 use crate::sqlite::error::WalletStorageError;
 use crate::sqlite::schema::blob;
 use crate::sqlite::schema::blob::impl_persistable_blob;
+
+/// Per-row manifest integrity checksum: `SHA-256(wallet_id ‖
+/// account_xpub_bytes)` over the wallet id (`WalletId::as_slice`, 32 bytes)
+/// concatenated with the row's stored `account_xpub_bytes` blob, byte-for-byte
+/// as persisted.
+///
+/// Binds `account_xpub_bytes` to its owning `wallet_id` so a row copied under a
+/// different wallet, or a blob mutated in place, fails the recompute at load.
+/// Deliberately excludes `meta_store_generation` and any
+/// `meta_data_versions.seq`: those rotate on a legitimate restore/migrate, and
+/// a restored store must never false-positive as tampered.
+fn account_registration_checksum(wallet_id: &WalletId, account_xpub_bytes: &[u8]) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    hasher.update(wallet_id.as_slice());
+    hasher.update(account_xpub_bytes);
+    hasher.finalize().into()
+}
 
 // PUBLIC material only: the account-registration xpub manifest reaching
 // the `account_xpub_bytes` blob column.
@@ -76,7 +94,7 @@ pub(crate) fn all_platform_payment_registrations(
     conn: &Connection,
 ) -> Result<BTreeMap<WalletId, Vec<PlatformPaymentRegistration>>, WalletStorageError> {
     let mut stmt = conn.prepare(
-        "SELECT wallet_id, account_index, length(account_xpub_bytes), account_xpub_bytes \
+        "SELECT wallet_id, account_index, length(account_xpub_bytes), account_xpub_bytes, checksum \
          FROM account_registrations \
          WHERE account_type = 'platform_payment' \
          ORDER BY wallet_id, account_index",
@@ -94,11 +112,21 @@ pub(crate) fn all_platform_payment_registrations(
             });
         }
         let bytes: Vec<u8> = row.get(3)?;
+        let stored_checksum: Option<Vec<u8>> = row.get(4)?;
         let wallet_id = <[u8; 32]>::try_from(wid_bytes.as_slice()).map_err(|_| {
             WalletStorageError::InvalidWalletIdLength {
                 actual: wid_bytes.len(),
             }
         })?;
+        // Belt-and-suspenders for the manifest integrity checksum: drop a row
+        // that fails the recompute so this bulk oracle scan never fail-hard
+        // decodes a tampered / mis-bound blob. `load()`'s per-wallet verify is
+        // the authoritative recorder — it flags the owning wallet as skipped.
+        let expected = account_registration_checksum(&wallet_id, &bytes);
+        match &stored_checksum {
+            Some(c) if c.as_slice() == expected => {}
+            _ => continue,
+        }
         out.entry(wallet_id)
             .or_default()
             .push(decode_platform_payment_row(idx, &bytes)?);
@@ -121,11 +149,12 @@ pub fn apply_registrations(
     let mut stmt = tx.prepare_cached(
         "INSERT INTO account_registrations \
                 (wallet_id, account_type, account_index, key_class, \
-                 user_identity_id, friend_identity_id, account_xpub_bytes) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7) \
+                 user_identity_id, friend_identity_id, account_xpub_bytes, checksum) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8) \
              ON CONFLICT(wallet_id, account_type, account_index, key_class, \
                  user_identity_id, friend_identity_id) DO UPDATE SET \
-                account_xpub_bytes = excluded.account_xpub_bytes",
+                account_xpub_bytes = excluded.account_xpub_bytes, \
+                checksum           = excluded.checksum",
     )?;
     for entry in entries {
         let account_type = account_type_db_label(&entry.account_type);
@@ -133,6 +162,9 @@ pub fn apply_registrations(
         let key_class = account_key_class(&entry.account_type);
         let (user_identity_id, friend_identity_id) = account_dashpay_ids(&entry.account_type);
         let payload = blob::encode(entry)?;
+        // Binds this row's `account_xpub_bytes` to `wallet_id`; `excluded.checksum`
+        // in the `DO UPDATE` keeps it consistent on the rare re-persist.
+        let checksum = account_registration_checksum(wallet_id, &payload);
         stmt.execute(params![
             wallet_id.as_slice(),
             account_type,
@@ -141,6 +173,7 @@ pub fn apply_registrations(
             &user_identity_id[..],
             &friend_identity_id[..],
             payload,
+            &checksum[..],
         ])?;
     }
     Ok(())
@@ -204,6 +237,83 @@ pub fn load_state(
         out.push(entry);
     }
     Ok(out)
+}
+
+/// Recompute and check the per-row manifest integrity checksum for every
+/// `account_registrations` row of `wallet_id`.
+///
+/// For each row, recomputes `SHA-256(wallet_id ‖ account_xpub_bytes)` and
+/// compares it to the stored `checksum` column. A mismatch — or a NULL
+/// checksum, which the mandatory `open()` backfill guarantees never survives
+/// on a V004+ store — yields [`WalletStorageError::ManifestIntegrityMismatch`].
+/// A row copied under the wrong `wallet_id`, or a blob mutated in place, fails
+/// here because `wallet_id` is part of the preimage.
+///
+/// Read-only, keyless: it never decodes the blob or mints a `Wallet`, so it is
+/// a cheap sibling to [`load_state`] rather than folded into it — that keeps
+/// the fail-hard decode cross-check and the skip-on-tamper verify independent.
+pub fn verify_manifest_checksums(
+    conn: &Connection,
+    wallet_id: &WalletId,
+) -> Result<(), WalletStorageError> {
+    let mut stmt = conn.prepare(
+        "SELECT length(account_xpub_bytes), account_xpub_bytes, checksum \
+         FROM account_registrations WHERE wallet_id = ?1",
+    )?;
+    let mut rows = stmt.query(params![wallet_id.as_slice()])?;
+    while let Some(row) = rows.next()? {
+        blob::check_size(row.get::<_, i64>(0)?)?;
+        let payload: Vec<u8> = row.get(1)?;
+        let stored: Option<Vec<u8>> = row.get(2)?;
+        let expected = account_registration_checksum(wallet_id, &payload);
+        match stored {
+            Some(c) if c.as_slice() == expected => {}
+            _ => return Err(WalletStorageError::ManifestIntegrityMismatch),
+        }
+    }
+    Ok(())
+}
+
+/// Fill the manifest `checksum` for every `account_registrations` row that
+/// still carries NULL — pre-V004 rows migrated forward, which SQLite cannot
+/// checksum in pure SQL (no SHA-256 builtin). Runs in its own transaction.
+///
+/// Idempotent: a second pass touches nothing because the first left no NULLs,
+/// and a fresh/empty store is a no-op. Returns the number of rows filled.
+/// Called once from [`SqlitePersister::open`](crate::SqlitePersister) right
+/// after migrations, so `load()` never sees a NULL checksum on a V004+ store.
+pub fn backfill_missing_checksums(conn: &mut Connection) -> Result<usize, WalletStorageError> {
+    let tx = conn.transaction()?;
+    let pending: Vec<(i64, Vec<u8>, Vec<u8>)> = {
+        let mut stmt = tx.prepare(
+            "SELECT rowid, wallet_id, account_xpub_bytes \
+             FROM account_registrations WHERE checksum IS NULL",
+        )?;
+        let mapped = stmt.query_map([], |row| {
+            let rowid: i64 = row.get(0)?;
+            let wid_bytes: Vec<u8> = row.get(1)?;
+            let payload: Vec<u8> = row.get(2)?;
+            Ok((rowid, wid_bytes, payload))
+        })?;
+        mapped.collect::<Result<Vec<_>, _>>()?
+    };
+    let mut filled = 0usize;
+    {
+        let mut upd =
+            tx.prepare_cached("UPDATE account_registrations SET checksum = ?1 WHERE rowid = ?2")?;
+        for (rowid, wid_bytes, payload) in pending {
+            let wallet_id = <[u8; 32]>::try_from(wid_bytes.as_slice()).map_err(|_| {
+                WalletStorageError::InvalidWalletIdLength {
+                    actual: wid_bytes.len(),
+                }
+            })?;
+            let checksum = account_registration_checksum(&wallet_id, &payload);
+            upd.execute(params![&checksum[..], rowid])?;
+            filled += 1;
+        }
+    }
+    tx.commit()?;
+    Ok(filled)
 }
 
 /// Source of truth for the `account_registrations.account_type` TEXT domain,
@@ -634,6 +744,129 @@ mod tests {
             }
         }
         variants
+    }
+
+    /// Read `(account_xpub_bytes, checksum)` for the single row of `wallet_id`.
+    fn read_blob_and_checksum(
+        conn: &rusqlite::Connection,
+        wallet_id: &WalletId,
+    ) -> (Vec<u8>, Option<Vec<u8>>) {
+        conn.query_row(
+            "SELECT account_xpub_bytes, checksum FROM account_registrations WHERE wallet_id = ?1",
+            rusqlite::params![wallet_id.as_slice()],
+            |row| Ok((row.get::<_, Vec<u8>>(0)?, row.get::<_, Option<Vec<u8>>>(1)?)),
+        )
+        .unwrap()
+    }
+
+    /// TC-C-001 — the writer stores a non-NULL checksum equal to
+    /// `SHA-256(wallet_id ‖ account_xpub_bytes)` on the exact stored blob.
+    #[test]
+    fn write_stores_checksum_over_wallet_id_and_blob() {
+        let mut conn = migrated_conn();
+        let w = [0x77u8; 32];
+        conn.execute(
+            "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
+            rusqlite::params![&w[..]],
+        )
+        .unwrap();
+        let entry = AccountRegistrationEntry {
+            account_type: key_wallet::account::AccountType::PlatformPayment {
+                account: 4,
+                key_class: 0,
+            },
+            account_xpub: test_xpub(),
+        };
+        {
+            let tx = conn.transaction().unwrap();
+            apply_registrations(&tx, &w, std::slice::from_ref(&entry)).unwrap();
+            tx.commit().unwrap();
+        }
+        let (blob, checksum) = read_blob_and_checksum(&conn, &w);
+        let checksum = checksum.expect("checksum must be non-NULL after a write");
+        assert_eq!(
+            checksum.as_slice(),
+            account_registration_checksum(&w, &blob),
+            "stored checksum must equal SHA-256(wallet_id ‖ account_xpub_bytes)"
+        );
+        // The verify path agrees on the freshly written row.
+        verify_manifest_checksums(&conn, &w).expect("freshly written checksum verifies");
+    }
+
+    /// TC-C-009 — re-persisting the same account keeps the checksum correct and
+    /// consistent with the final `account_xpub_bytes`.
+    #[test]
+    fn repersist_keeps_checksum_consistent() {
+        let mut conn = migrated_conn();
+        let w = [0x88u8; 32];
+        conn.execute(
+            "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
+            rusqlite::params![&w[..]],
+        )
+        .unwrap();
+        let entry = AccountRegistrationEntry {
+            account_type: key_wallet::account::AccountType::PlatformPayment {
+                account: 2,
+                key_class: 1,
+            },
+            account_xpub: test_xpub(),
+        };
+        for _ in 0..2 {
+            let tx = conn.transaction().unwrap();
+            apply_registrations(&tx, &w, std::slice::from_ref(&entry)).unwrap();
+            tx.commit().unwrap();
+        }
+        let (blob, checksum) = read_blob_and_checksum(&conn, &w);
+        assert_eq!(
+            checksum.expect("checksum present").as_slice(),
+            account_registration_checksum(&w, &blob),
+        );
+        verify_manifest_checksums(&conn, &w).expect("re-persisted checksum verifies");
+    }
+
+    /// TC-C-007 — the backfill fills every NULL checksum with the exact
+    /// `SHA-256(wallet_id ‖ account_xpub_bytes)`, and is idempotent (a second
+    /// pass fills nothing and leaves every row verifying).
+    #[test]
+    fn backfill_fills_null_checksums_exactly_and_is_idempotent() {
+        let mut conn = migrated_conn();
+        let w = [0x99u8; 32];
+        conn.execute(
+            "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
+            rusqlite::params![&w[..]],
+        )
+        .unwrap();
+        let entry = AccountRegistrationEntry {
+            account_type: key_wallet::account::AccountType::PlatformPayment {
+                account: 1,
+                key_class: 0,
+            },
+            account_xpub: test_xpub(),
+        };
+        {
+            let tx = conn.transaction().unwrap();
+            apply_registrations(&tx, &w, std::slice::from_ref(&entry)).unwrap();
+            tx.commit().unwrap();
+        }
+        // Simulate a pre-V004 row: strip the checksum the writer just set.
+        conn.execute(
+            "UPDATE account_registrations SET checksum = NULL WHERE wallet_id = ?1",
+            rusqlite::params![&w[..]],
+        )
+        .unwrap();
+        assert!(read_blob_and_checksum(&conn, &w).1.is_none());
+
+        let filled = backfill_missing_checksums(&mut conn).unwrap();
+        assert_eq!(filled, 1, "one NULL row must be filled");
+        let (blob, checksum) = read_blob_and_checksum(&conn, &w);
+        assert_eq!(
+            checksum.expect("checksum filled").as_slice(),
+            account_registration_checksum(&w, &blob),
+        );
+        verify_manifest_checksums(&conn, &w).expect("backfilled checksum verifies");
+
+        // Idempotent: nothing left to fill.
+        assert_eq!(backfill_missing_checksums(&mut conn).unwrap(), 0);
     }
 
     #[test]

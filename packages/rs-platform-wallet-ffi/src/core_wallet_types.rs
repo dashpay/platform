@@ -964,7 +964,11 @@ fn tx_record_to_ffi(
     }
 }
 
-fn vec_to_ptr<T>(v: Vec<T>) -> *mut T {
+/// Convert a `Vec` into a raw heap pointer for a C out-array: null for
+/// empty, `Box::into_raw(boxed_slice)` otherwise. The caller owns the
+/// allocation and must free it by reconstructing the boxed slice with
+/// the ORIGINAL length.
+pub(crate) fn vec_to_ptr<T>(v: Vec<T>) -> *mut T {
     if v.is_empty() {
         std::ptr::null_mut()
     } else {

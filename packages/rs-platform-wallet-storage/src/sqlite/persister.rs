@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 use rusqlite::{Connection, OptionalExtension};
 
 use platform_wallet::changeset::{
-    ClientStartState, ClientWalletStartState, Merge, PersistenceError, PlatformWalletChangeSet,
+    ClientStartState, ClientWalletStartState, PersistenceError, PlatformWalletChangeSet,
     PlatformWalletPersistence,
 };
 use platform_wallet::manager::load_outcome::{CorruptKind, SkipReason};
@@ -235,6 +235,12 @@ impl SqlitePersister {
         }
 
         let _report = crate::sqlite::migrations::run_for_open(&mut conn)?;
+
+        // SQLite cannot compute the per-row SHA-256 manifest checksum in pure
+        // SQL, so V004's column lands nullable and any row a forward migration
+        // left without one is filled here — once, before load() ever verifies
+        // it. Idempotent; a no-op on a store whose rows already carry one.
+        schema::accounts::backfill_missing_checksums(&mut conn)?;
 
         // Claim the path LAST so a failed open leaves no stale claim;
         // canonicalize so symlinks / `.`-segments key the same as a
@@ -923,20 +929,27 @@ impl PlatformWalletPersistence for SqlitePersister {
                 Ok(wallet_state) => {
                     state.wallets.insert(wallet_id, wallet_state);
                 }
-                Err(e) if e.is_corrupt_row() => {
+                Err(LoadOneWalletError::Storage(e)) if e.is_corrupt_row() => {
+                    // `ManifestIntegrityMismatch` keeps its own precise
+                    // `CorruptKind`; every other corrupt-row-classified
+                    // failure (a bad manifest/core-state/identity/asset-lock
+                    // blob, etc.) falls back to the generic decode-error kind.
+                    let kind = if matches!(e, WalletStorageError::ManifestIntegrityMismatch) {
+                        CorruptKind::ManifestIntegrityMismatch
+                    } else {
+                        CorruptKind::DecodeError(e.error_kind_str().to_string())
+                    };
                     tracing::warn!(
                         wallet_id = %hex::encode(wallet_id),
                         error_kind = e.error_kind_str(),
                         "load() skipping corrupt persisted wallet row; the rest of the batch continues"
                     );
-                    state.skipped.push((
-                        wallet_id,
-                        SkipReason::CorruptPersistedRow {
-                            kind: CorruptKind::DecodeError(e.error_kind_str().to_string()),
-                        },
-                    ));
+                    state
+                        .skipped
+                        .push((wallet_id, SkipReason::CorruptPersistedRow { kind }));
                 }
-                Err(e) => return Err(PersistenceError::from(e)),
+                Err(LoadOneWalletError::Storage(e)) => return Err(PersistenceError::from(e)),
+                Err(LoadOneWalletError::Backend(msg)) => return Err(PersistenceError::backend(msg)),
             }
         }
         let wallets_rehydrated = state.wallets.len();
@@ -967,15 +980,38 @@ impl PlatformWalletPersistence for SqlitePersister {
     }
 }
 
+/// [`load_one_wallet_state`]'s error shape. Every structural per-row
+/// failure funnels through [`Self::Storage`], classified by
+/// [`WalletStorageError::is_corrupt_row`] at the call site in `load`. The
+/// two rehydration steps that build [`ManagedWalletInfo`] from the manifest
+/// (`build_watch_only_wallet` / `apply_persisted_core_state`) return their
+/// own error types from `platform-wallet`, not `WalletStorageError`; they
+/// land in [`Self::Backend`] and stay fatal (batch-aborting), unchanged
+/// from before this was extracted into a per-wallet function — both are
+/// documented as effectively unreachable defensive guards, not live
+/// per-row corruption paths.
+enum LoadOneWalletError {
+    Storage(WalletStorageError),
+    Backend(String),
+}
+
+impl From<WalletStorageError> for LoadOneWalletError {
+    fn from(e: WalletStorageError) -> Self {
+        Self::Storage(e)
+    }
+}
+
 /// Decode one wallet's keyless rehydration payload from the open
-/// connection. A structural decode failure surfaces as a corrupt-row
-/// [`WalletStorageError`] (see [`WalletStorageError::is_corrupt_row`]) so
-/// `load` can skip just this wallet without aborting the batch; infra
-/// failures propagate unchanged.
+/// connection and assemble its [`ManagedWalletInfo`] snapshot. A structural
+/// decode failure surfaces as [`LoadOneWalletError::Storage`] (see
+/// [`WalletStorageError::is_corrupt_row`]) so `load` can skip just this
+/// wallet without aborting the batch; infra failures propagate unchanged.
+///
+/// [`ManagedWalletInfo`]: key_wallet::wallet::managed_wallet_info::ManagedWalletInfo
 fn load_one_wallet_state(
     conn: &Connection,
     wallet_id: &WalletId,
-) -> Result<ClientWalletStartState, WalletStorageError> {
+) -> Result<ClientWalletStartState, LoadOneWalletError> {
     let (network_str, birth_height) =
         schema::wallets::fetch(conn, wallet_id)?.ok_or(WalletStorageError::WalletNotFound {
             wallet_id: *wallet_id,
@@ -983,28 +1019,99 @@ fn load_one_wallet_state(
     let network = schema::wallets::parse_network(&network_str)
         .ok_or_else(|| WalletStorageError::blob_decode("unknown persisted network value"))?;
 
+    // Manifest integrity is a per-wallet SKIP, not a batch abort: a
+    // tampered / mis-bound row fails this one wallet via the corrupt-row
+    // path above, while every other read error below stays fail-hard
+    // unless it too is corrupt-row-classified.
+    schema::accounts::verify_manifest_checksums(conn, wallet_id)?;
+
     let account_manifest = schema::accounts::load_state(conn, wallet_id)?;
     let core_state = schema::core_state::load_state(conn, wallet_id, network)?;
-    let identity_manager = schema::identities::load_state(conn, wallet_id)?;
+    // Pre-keyed rehydration: each `ManagedIdentity` leaves the loader
+    // already carrying its own public keys + contact state (matching the
+    // FFI persister), so signing works immediately post-load without a key
+    // sync. `ClientWalletStartState.contacts` / `.identity_keys` stay
+    // empty — nothing is layered on afterwards.
+    let identity_manager = schema::identities::load_prekeyed(conn, wallet_id)?;
     let unused_asset_locks = schema::asset_locks::load_unconsumed(conn, wallet_id)?;
-    let contacts = schema::contacts::load_changeset(conn, wallet_id)?;
-    let identity_keys = schema::identity_keys::load_state(conn, wallet_id)?;
-    // Every address that ever held a UTXO (spent + unspent) is "used": the
-    // address-reuse guard so a used-then-emptied address is never handed back
-    // as a fresh receive address. The in-band pool snapshot was retired, so we
-    // derive this from the full core_utxos set.
-    let used_core_addresses = schema::core_state::load_used_addresses(conn, wallet_id, network)?;
+    // Used addresses drive the reuse guard: a used-then-emptied address
+    // must never be handed back as a fresh receive address. Union the
+    // verbatim `core_address_pool` used-set with the `core_utxos`-derived
+    // set (spent + unspent). The guard is monotonic, so a mixed store —
+    // historical UTXOs plus a later partial pool snapshot that never
+    // enumerates them — must surface both; neither source may shadow the
+    // other. Deduped by script.
+    let used_core_addresses = {
+        let mut seen = std::collections::HashSet::new();
+        let mut union = Vec::new();
+        let pool = schema::core_pool::load_used_addresses(conn, wallet_id, network)?;
+        let utxo = schema::core_state::load_used_addresses(conn, wallet_id, network)?;
+        for addr in pool.into_iter().chain(utxo) {
+            if seen.insert(addr.script_pubkey().to_bytes()) {
+                union.push(addr);
+            }
+        }
+        union
+    };
+
+    // Reconstruct a populated `ManagedWalletInfo` from typed rows: rebuild
+    // the wallet watch-only from the manifest, then layer the persisted
+    // core-state projection (UTXOs, sync watermarks, chainlock,
+    // used-address pool depth) onto it. The manager consumes this
+    // directly — the old skeleton + core_state replay fallback is gone.
+    let watch_only = if account_manifest.is_empty() {
+        // Placeholder empty wallet: the manager re-checks the empty
+        // manifest and skips this wallet as MissingManifest one layer up
+        // (see rt_corrupt_row_skipped_and_other_loads). It exists so one
+        // unregistered wallet doesn't abort load() for all others via `?`.
+        //
+        // TODO(product decision needed, task #14): a crash between wallet-row
+        // creation and first-account-registration leaves this row with a
+        // permanently empty manifest. It is not corrupted or lost — every
+        // future load correctly skips it as MissingManifest — but there is no
+        // recovery path today: no re-registration flow, no eviction, no
+        // surfacing to the user. Open question: does this need one (e.g. a
+        // TTL-based cleanup, a re-registration entry point, or a surfaced
+        // "orphaned wallet" diagnostic), or is silent-skip-forever acceptable?
+        // Awaiting product decision; not addressed in this change.
+        key_wallet::wallet::Wallet::new_watch_only(
+            network,
+            *wallet_id,
+            key_wallet::account::account_collection::AccountCollection::new(),
+        )
+    } else {
+        platform_wallet::rehydrate::build_watch_only_wallet(network, *wallet_id, &account_manifest)
+            .map_err(|e| {
+                LoadOneWalletError::Backend(format!(
+                    "watch-only wallet rebuild failed for {}: {e}",
+                    hex::encode(wallet_id)
+                ))
+            })?
+    };
+    let mut core_wallet_info = key_wallet::wallet::managed_wallet_info::ManagedWalletInfo::from_wallet(
+        &watch_only,
+        birth_height,
+    );
+    platform_wallet::rehydrate::apply_persisted_core_state(
+        &mut core_wallet_info,
+        &account_manifest,
+        &core_state,
+        &used_core_addresses,
+    )
+    .map_err(|e| {
+        LoadOneWalletError::Backend(format!(
+            "core-state rehydration failed for {}: {e}",
+            hex::encode(wallet_id)
+        ))
+    })?;
 
     Ok(ClientWalletStartState {
         network,
         birth_height,
         account_manifest,
-        core_state,
+        core_wallet_info: Box::new(core_wallet_info),
         identity_manager,
         unused_asset_locks,
-        contacts,
-        identity_keys,
-        used_core_addresses,
     })
 }
 
@@ -1013,25 +1120,9 @@ fn load_one_wallet_state(
 /// from the public fields so no storage-only helper leaks into the
 /// `rs-platform-wallet` API.
 fn populated_field_count(cs: &PlatformWalletChangeSet) -> usize {
-    [
-        cs.core.is_empty(),
-        cs.identities.is_empty(),
-        cs.identity_keys.is_empty(),
-        cs.contacts.is_empty(),
-        cs.platform_addresses.is_empty(),
-        cs.asset_locks.is_empty(),
-        cs.token_balances.is_empty(),
-        cs.dashpay_profiles.as_ref().is_none_or(|m| m.is_empty()),
-        cs.dashpay_payments_overlay
-            .as_ref()
-            .is_none_or(|m| m.is_empty()),
-        cs.wallet_metadata.is_none(),
-        cs.account_registrations.is_empty(),
-        cs.account_address_pools.is_empty(),
-    ]
-    .iter()
-    .filter(|empty| !**empty)
-    .count()
+    // Single source of truth with the version-domain mapping: each populated
+    // field is exactly one touched domain.
+    schema::versions::touched_domains(cs).len()
 }
 
 fn validate_config(config: &SqlitePersisterConfig) -> Result<(), WalletStorageError> {
@@ -1107,10 +1198,21 @@ fn apply_changeset_to_tx(
     if !cs.account_registrations.is_empty() {
         schema::accounts::apply_registrations(tx, wallet_id, &cs.account_registrations)?;
     }
-    // `account_address_pools` is intentionally NOT applied: UTXO attribution
-    // is hardcoded to the default account (index 0) in `core_state`, so the
-    // pool snapshot is no longer a storage input. The changeset field is kept
-    // for API stability and still feeds non-storage consumers.
+    // Pools land before core so the UTXO writer can attribute each outpoint
+    // to its owning account by matching the outpoint's script against a
+    // freshly-written `core_address_pool` row.
+    if !cs.account_address_pools.is_empty() {
+        schema::core_pool::apply_pools(tx, wallet_id, &cs.account_address_pools)?;
+    }
+    if !cs.pending_contact_crypto_added.is_empty() || !cs.pending_contact_crypto_cleared.is_empty()
+    {
+        schema::pending_contact_crypto::apply_pending_contact_crypto(
+            tx,
+            wallet_id,
+            &cs.pending_contact_crypto_added,
+            &cs.pending_contact_crypto_cleared,
+        )?;
+    }
     if let Some(core) = cs.core.as_ref() {
         schema::core_state::apply(tx, wallet_id, core)?;
     }
@@ -1140,6 +1242,9 @@ fn apply_changeset_to_tx(
             cs.dashpay_payments_overlay.as_ref(),
         )?;
     }
+    // Bump each touched domain's version inside this same tx so a domain's
+    // cache-invalidation marker commits atomically with its data.
+    schema::versions::bump_touched_domains(tx, wallet_id, cs)?;
     Ok(())
 }
 

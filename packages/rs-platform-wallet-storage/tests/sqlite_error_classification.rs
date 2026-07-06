@@ -158,6 +158,7 @@ fn samples() -> Vec<WalletStorageError> {
         WalletStorageError::ConfigInvalid { reason: "bad knob" },
         WalletStorageError::IdentityEntryIdMismatch,
         WalletStorageError::AccountRegistrationEntryMismatch,
+        WalletStorageError::ManifestIntegrityMismatch,
         // BincodeEncode / BincodeDecode / HashDecode / ConsensusCodec
         // need real upstream errors; omitted but covered by their arms.
         WalletStorageError::BlobDecode {
@@ -254,6 +255,7 @@ fn tc_p2_005_is_transient_table() {
             WalletStorageError::AccountRegistrationEntryMismatch => {
                 (false, "account_registration_entry_mismatch")
             }
+            WalletStorageError::ManifestIntegrityMismatch => (false, "manifest_integrity_mismatch"),
         }
     }
 
