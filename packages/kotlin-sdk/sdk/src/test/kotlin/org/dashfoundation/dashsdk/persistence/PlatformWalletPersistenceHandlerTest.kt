@@ -895,6 +895,39 @@ class PlatformWalletPersistenceHandlerTest {
     }
 
     @Test
+    fun contactProfileDeltaIsDiscardedOnChangesetRollback() = runTest {
+        // The delta must ride the stage() buffer like every other
+        // changeset write: a rolled-back round leaves no row (an eager
+        // write here would survive a failed Rust-side round and desync
+        // the mirror from the authoritative state).
+        val ownerId = ByteArray(32) { 28 }
+        val contactId = ByteArray(32) { 29 }
+        seedIdentity(ownerId)
+
+        handler.onChangesetBegin(walletId)
+        handler.onPersistContactProfileDelta(
+            walletId = walletId,
+            ownerId = ownerId,
+            contactId = contactId,
+            isPresent = true,
+            displayName = "Ghost",
+            bio = null,
+            avatarUrl = null,
+            avatarHash = ByteArray(32),
+            avatarHashPresent = false,
+            avatarFingerprint = ByteArray(8),
+            avatarFingerprintPresent = false,
+            publicMessage = null,
+            checkedAtMs = 1,
+        )
+        // Still buffered.
+        assertTrue(db.dashpayDao().getContactProfilesByOwner(ownerId).isEmpty())
+        handler.onChangesetEnd(walletId, success = false)
+
+        assertTrue(db.dashpayDao().getContactProfilesByOwner(ownerId).isEmpty())
+    }
+
+    @Test
     fun loadWalletListRoundTripsPaymentsAndContactProfiles() = runTest {
         // Relaunch-durability for the two #3841 stores: payments (Sent
         // entries + memos are NOT re-derivable from UTXOs — losing them

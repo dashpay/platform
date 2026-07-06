@@ -12,6 +12,7 @@ import org.dashfoundation.dashsdk.security.WalletStorage
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -106,11 +107,19 @@ class WalletManagerRoundTripTest {
      * native marshaling (the staging/seal/free pipeline in
      * `rs-unified-sdk-jni/src/persistence.rs` that JVM/Robolectric tests
      * can never reach): inject payment / contact-profile / ignored-sender
-     * rows into Room exactly as the persist paths would land them, reload
+     * rows into Room in the shape the persist paths land them, reload
      * the wallet on a fresh manager (the load path marshals the rows into
      * Rust wallet state), then read them back out through the DashPay FFI
      * getters and assert field equality. Wrong lengths / nulls /
      * double-frees in the restore marshaling fail here, not at UAT.
+     *
+     * A third reload leg covers the tombstone consequence: a tombstoned
+     * (deleted) profile row must restore as an ABSENT cache entry — and
+     * exercises the empty-contact-profile-array marshaling path.
+     *
+     * Of the K1 getters, `searchDpnsNames` is deliberately untested here:
+     * it is a live network query and belongs to the `-Ptestnet=true`
+     * tier (KOTLIN_MIGRATION_SPEC.md §7.4).
      */
     @Test
     fun dashPayRestoreRoundTripsPaymentsContactProfilesAndSyncState() = runBlocking {
@@ -211,6 +220,42 @@ class WalletManagerRoundTripTest {
             assertEquals(1, state.getInt("dashpayPayments"))
             assertEquals(1, state.getInt("contactProfiles"))
             assertEquals(1, state.getInt("presentContactProfiles"))
+            assertEquals(1, state.getInt("ignoredSenders"))
+
+            // Per-account balance snapshot: exercises the
+            // AccountBalanceEntryFFI array marshal/free path offline — the
+            // freshly-created wallet has default accounts, all zero-balance.
+            val balancesJson = reloaded.accountBalances(walletId)
+            assertNotNull("account balances readable", balancesJson)
+            val balances = org.json.JSONArray(balancesJson!!)
+            assertTrue("default accounts present", balances.length() > 0)
+            for (i in 0 until balances.length()) {
+                val account = balances.getJSONObject(i)
+                assertEquals(0L, account.getLong("confirmed"))
+                assertEquals(64, account.getString("userIdentityId").length)
+            }
+        }
+
+        // ── Third reload: a tombstoned (deleted) profile row restores as
+        // an ABSENT cache entry, and the empty contact-profile array takes
+        // the null/0 marshaling path.
+        db.dashpayDao().deleteContactProfile(
+            Network.TESTNET.ffiValue,
+            identityId,
+            contactId,
+        )
+        PlatformWalletManager(sdk, Network.TESTNET, db, walletStorage).use { third ->
+            third.loadPersistedWallets()
+            val managed = third.wallet(forWalletId = walletId)
+            assertNotNull(managed)
+            assertNull(
+                "tombstoned profile must not resurrect",
+                managed!!.dashpay.getContactProfile(identityId, contactId),
+            )
+            val state = org.json.JSONObject(managed.dashpay.syncState(identityId)!!)
+            assertEquals(0, state.getInt("contactProfiles"))
+            // The other stores are unaffected by the profile tombstone.
+            assertEquals(1, state.getInt("dashpayPayments"))
             assertEquals(1, state.getInt("ignoredSenders"))
         }
     }

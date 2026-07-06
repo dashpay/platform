@@ -925,8 +925,13 @@ class PlatformWalletPersistenceHandler(
         checkedAtMs: Long,
     ): Int = guarded {
         stage(walletId) { db ->
-            // Owner identity must exist (networkRaw is read off it); skip
-            // silently otherwise — replayed next round.
+            // Owner identity must exist (networkRaw is read off it). In the
+            // real flow this lookup always succeeds: the identity upsert is
+            // staged into the same buffer BEFORE its contact-profile deltas
+            // (persist_identity_upsert loops the deltas after the identity
+            // call), so at replay the owner row is visible in the same
+            // transaction. The skip is defensive, matching the sibling
+            // contact paths.
             val owner = db.identityDao().getByIdentityId(ownerId) ?: return@stage
             if (isPresent) {
                 db.dashpayDao().upsertContactProfile(
@@ -1422,7 +1427,11 @@ class PlatformWalletPersistenceHandler(
             // reconciles in-memory without persisting).
             val paymentRows = database.dashpayDao()
                 .getPaymentsByOwner(idRow.identityId)
-                .filter { it.counterpartyIdentityId.size == 32 }
+                // Wrong-length counterparty ids and empty txids are dropped
+                // up front: the Rust restore fold inserts whatever key it is
+                // given (an empty txid would land as an "" map key rather
+                // than being skipped).
+                .filter { it.counterpartyIdentityId.size == 32 && it.txid.isNotEmpty() }
                 .map { p ->
                     PaymentRestoreData(
                         txid = p.txid,

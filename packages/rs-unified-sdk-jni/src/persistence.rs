@@ -2103,10 +2103,11 @@ fn build_payment_restore(
     env: &mut JNIEnv,
     holder: &JObject,
 ) -> Result<PaymentRestoreStaged, jni::errors::Error> {
-    // txid is non-null on the Kotlin class; an interior NUL (impossible
-    // for a hex txid) degrades to an empty string, which the Rust
-    // restore fold skips as an unparseable key rather than aborting the
-    // whole load.
+    // txid is non-null on the Kotlin class and pre-filtered non-empty by
+    // the load path (the restore fold inserts whatever key it is given —
+    // an empty txid would land as an "" map key, not be skipped). An
+    // interior NUL (impossible for a hex txid) degrades to an empty
+    // string here rather than aborting the whole load.
     let txid = read_opt_cstring_field(env, holder, "txid")?
         .unwrap_or_else(|| CString::new("").expect("empty CString"));
     let counterparty_id = read_id32_field(env, holder, "counterpartyId")?;

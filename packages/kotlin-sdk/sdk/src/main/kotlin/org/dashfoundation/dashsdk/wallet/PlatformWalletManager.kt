@@ -556,6 +556,14 @@ class PlatformWalletManager(
             // still succeeds — the rows just aren't persisted this round.
             val networkRaw = database.identityDao().getByIdentityId(identityId)?.networkRaw
                 ?: return@withContext json
+            // Skip-unchanged + preserve createdAt, mirroring Swift's
+            // persistDashpayPayments: a Room @Upsert rewrites every column,
+            // so an unconditional upsert would clobber createdAt with "now"
+            // on every refresh and re-fire the payments Flow (re-rendering
+            // an open payment list) even when nothing moved.
+            val existingByTxid = database.dashpayDao()
+                .getPaymentsByOwner(identityId)
+                .associateBy { it.txid }
             val rows = JSONArray(json)
             val entities = ArrayList<DashpayPaymentEntity>(rows.length())
             for (i in 0 until rows.length()) {
@@ -563,18 +571,25 @@ class PlatformWalletManager(
                 val txid = row.optString("txid", "")
                 val counterparty = row.optString("counterpartyId", "").hexToBytesOrNull()
                 if (txid.isEmpty() || counterparty == null || counterparty.size != 32) continue
-                entities.add(
-                    DashpayPaymentEntity(
-                        networkRaw = networkRaw,
-                        ownerIdentityId = identityId,
-                        counterpartyIdentityId = counterparty,
-                        amountDuffs = row.optLong("amountDuffs"),
-                        directionRaw = row.optInt("direction"),
-                        statusRaw = row.optInt("status"),
-                        txid = txid,
-                        memo = if (row.has("memo")) row.getString("memo") else null,
-                    ),
+                val existing = existingByTxid[txid]
+                val entity = DashpayPaymentEntity(
+                    networkRaw = networkRaw,
+                    ownerIdentityId = identityId,
+                    counterpartyIdentityId = counterparty,
+                    amountDuffs = row.optLong("amountDuffs"),
+                    directionRaw = row.optInt("direction"),
+                    statusRaw = row.optInt("status"),
+                    txid = txid,
+                    memo = if (row.has("memo")) row.getString("memo") else null,
+                    createdAt = existing?.createdAt ?: java.util.Date(),
                 )
+                val unchanged = existing != null &&
+                    existing.counterpartyIdentityId.contentEquals(entity.counterpartyIdentityId) &&
+                    existing.amountDuffs == entity.amountDuffs &&
+                    existing.directionRaw == entity.directionRaw &&
+                    existing.statusRaw == entity.statusRaw &&
+                    existing.memo == entity.memo
+                if (!unchanged) entities.add(entity)
             }
             if (entities.isNotEmpty()) database.dashpayDao().upsertPayments(entities)
             json
