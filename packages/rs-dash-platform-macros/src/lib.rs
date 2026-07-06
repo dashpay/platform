@@ -1,11 +1,89 @@
 use heck::AsSnakeCase;
 use proc_macro::TokenStream;
 use quote::{format_ident, quote};
-use syn::{DeriveInput, Expr, Ident, ItemFn, parse_macro_input};
+use syn::parse::{Parse, ParseStream};
+use syn::{DeriveInput, Expr, Ident, ItemFn, Token, parse_macro_input};
+
+/// Default worker-thread count for the `multi_thread` flavor when
+/// `worker_threads = N` is omitted.
+const DEFAULT_MULTI_THREAD_WORKERS: usize = 4;
+
+/// Parsed arguments of the `#[stack_size(..)]` attribute.
+struct StackSizeArgs {
+    /// Stack size in bytes for the driving thread (and, in `multi_thread`
+    /// mode, for the runtime's worker threads).
+    stack_size: Expr,
+    /// Whether to drive the async body on a multi-threaded tokio runtime.
+    multi_thread: bool,
+    /// Worker-thread count for the multi-threaded runtime; `None` uses
+    /// [`DEFAULT_MULTI_THREAD_WORKERS`].
+    worker_threads: Option<Expr>,
+}
+
+impl Parse for StackSizeArgs {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let stack_size: Expr = input.parse()?;
+        let mut multi_thread = false;
+        let mut worker_threads = None;
+
+        while input.peek(Token![,]) {
+            input.parse::<Token![,]>()?;
+            if input.is_empty() {
+                break;
+            }
+            let key: Ident = input.parse()?;
+            match key.to_string().as_str() {
+                "multi_thread" => multi_thread = true,
+                "worker_threads" => {
+                    input.parse::<Token![=]>()?;
+                    worker_threads = Some(input.parse()?);
+                }
+                other => {
+                    return Err(syn::Error::new(
+                        key.span(),
+                        format!(
+                            "unknown stack_size argument `{other}`; \
+                             expected `multi_thread` or `worker_threads = N`"
+                        ),
+                    ));
+                }
+            }
+        }
+
+        if worker_threads.is_some() && !multi_thread {
+            return Err(syn::Error::new(
+                input.span(),
+                "`worker_threads` requires the `multi_thread` argument",
+            ));
+        }
+
+        Ok(Self {
+            stack_size,
+            multi_thread,
+            worker_threads,
+        })
+    }
+}
 
 /// Runs the annotated function body on a thread with the provided stack size.
 ///
-/// Annotate your test function with `#[stack_size(size_in_bytes)]` to run it
+/// Annotate your test function with `#[stack_size(size_in_bytes)]` to run its
+/// body on a freshly spawned `std::thread` sized to `size_in_bytes`, sidestepping
+/// the small default thread stack that deep recursion (e.g. proof verification)
+/// would overflow.
+///
+/// # Arguments
+///
+/// - `#[stack_size(EXPR)]` — drives an `async` body on a **current-thread** tokio
+///   runtime (sync bodies run directly). This is the default flavor.
+/// - `#[stack_size(EXPR, multi_thread)]` — drives an `async` body on a
+///   **multi-threaded** tokio runtime with a default of 4 worker threads.
+///   Worker threads also get `EXPR` as their stack size, so work spawned onto
+///   the runtime has the same recursion budget as the driving thread.
+/// - `#[stack_size(EXPR, multi_thread, worker_threads = N)]` — as above with `N`
+///   worker threads.
+///
+/// `multi_thread` is only valid on `async` functions.
 ///
 /// # Example
 ///
@@ -24,7 +102,11 @@ use syn::{DeriveInput, Expr, Ident, ItemFn, parse_macro_input};
 ///
 #[proc_macro_attribute]
 pub fn stack_size(attr: TokenStream, item: TokenStream) -> TokenStream {
-    let stack_size_expr = parse_macro_input!(attr as Expr);
+    let StackSizeArgs {
+        stack_size: stack_size_expr,
+        multi_thread,
+        worker_threads,
+    } = parse_macro_input!(attr as StackSizeArgs);
     let function = parse_macro_input!(item as ItemFn);
 
     let attrs = function.attrs;
@@ -34,18 +116,43 @@ pub fn stack_size(attr: TokenStream, item: TokenStream) -> TokenStream {
     let fn_ident = sig.ident.clone();
 
     // If the function is async, we strip async from the outer signature
-    // and run the body on a new tokio current-thread runtime inside the
-    // spawned thread. This keeps the externally-visible function sync so
-    // that it works with `#[test]` (and avoids needing `#[tokio::test]`).
+    // and run the body on a new tokio runtime inside the spawned thread.
+    // This keeps the externally-visible function sync so that it works with
+    // `#[test]` (and avoids needing `#[tokio::test]`).
     let is_async = sig.asyncness.is_some();
     if is_async {
         sig.asyncness = None;
     }
 
+    if multi_thread && !is_async {
+        return syn::Error::new_spanned(&fn_ident, "`multi_thread` requires an `async fn`")
+            .to_compile_error()
+            .into();
+    }
+
     // TODO(issue #3535): migrate to `dash_async::block_on` — the
-    // inline `Builder::new_current_thread().block_on(...)` pattern can
-    // deadlock inside a running runtime.
-    let spawned_body = if is_async {
+    // inline `Builder::block_on(...)` pattern can deadlock inside a
+    // running runtime.
+    let spawned_body = if is_async && multi_thread {
+        let workers = worker_threads
+            .map(|expr| quote!(#expr))
+            .unwrap_or_else(|| quote!(#DEFAULT_MULTI_THREAD_WORKERS));
+        quote! {
+            builder
+                .spawn(move || {
+                    ::tokio::runtime::Builder::new_multi_thread()
+                        .worker_threads(#workers)
+                        .thread_stack_size(#stack_size_expr)
+                        .enable_all()
+                        .build()
+                        .expect("failed to build tokio runtime for stack_size thread")
+                        .block_on(async move #block)
+                })
+                .expect("failed to spawn stack_size thread")
+                .join()
+                .expect("stack_size thread panicked")
+        }
+    } else if is_async {
         quote! {
             builder
                 .spawn(move || {

@@ -14,6 +14,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use dash_platform_macros::stack_size;
 use dash_sdk::platform::Fetch;
 use dpp::data_contract::DataContract;
 use dpp::identity::accessors::IdentityGettersV0;
@@ -40,7 +41,13 @@ const TRANSFER_AMOUNT: u64 = 50;
 /// the SDK + proof verifier rather than a wallet-cached map.
 const STEP_TIMEOUT: Duration = Duration::from_secs(60);
 
-#[tokio_shared_rt::test(shared, flavor = "multi_thread", worker_threads = 12)]
+// 16MB stack (driving thread + tokio worker threads) — the deep SDK GroveDB
+// proof/quorum verification recursion overflows libtest's ~2MB thread stack.
+// The macro strips `async` and drives the body on a multi-threaded tokio
+// runtime whose workers also get the 16MB stack, so this test's concurrent
+// work has the same recursion budget on every thread.
+#[stack_size(16 * 1024 * 1024, multi_thread, worker_threads = 12)]
+#[test]
 async fn tk_001_token_transfer_between_identities() {
     let _ = tracing_subscriber::fmt()
         .with_env_filter(

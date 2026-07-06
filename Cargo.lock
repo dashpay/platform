@@ -5153,6 +5153,7 @@ dependencies = [
  "bip39",
  "bs58",
  "dash-async",
+ "dash-platform-macros",
  "dash-sdk",
  "dash-spv",
  "dashcore",

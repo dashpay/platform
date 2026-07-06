@@ -118,6 +118,11 @@ dash-sdk = { path = "../rs-sdk", default-features = false, features = ["dashpay-
 # names; cargo normalizes dash/underscore in keys but the published
 # name is the source of truth (e.g. `tokio-shared-rt`).
 tokio-shared-rt = "0.1"
+# `stack_size` attribute macro: runs a test body on a std::thread with an
+# explicit stack, sidestepping the ~2MB libtest thread stack that deep SDK
+# GroveDB proof-verification recursion overflows (tk_001). Path dep to the
+# workspace member, mirroring rs-drive-abci's dev-dep on the same crate.
+dash-platform-macros = { path = "../rs-dash-platform-macros" }
 tempfile = "3"
 dotenvy = "0.15"
 bip39 = "2"
