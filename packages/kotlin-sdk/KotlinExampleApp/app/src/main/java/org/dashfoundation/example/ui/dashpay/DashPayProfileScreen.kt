@@ -1,5 +1,6 @@
 package org.dashfoundation.example.ui.dashpay
 
+import android.graphics.Bitmap
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -24,6 +25,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -37,7 +39,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.LabeledContent
@@ -72,6 +76,12 @@ fun DashPayProfileScreen(identityIdHex: String, navController: NavHostController
     var profileExists by remember { mutableStateOf(false) }
     var qrUri by remember { mutableStateOf<String?>(null) }
     var qrError by remember { mutableStateOf<String?>(null) }
+
+    // Encode the QR off the main thread (ZXing is CPU work).
+    val qrBitmap by produceState<Bitmap?>(initialValue = null, qrUri) {
+        val uri = qrUri
+        value = if (uri != null) withContext(Dispatchers.Default) { generateQrBitmap(uri) } else null
+    }
 
     var isEditing by remember { mutableStateOf(false) }
     var displayNameField by remember { mutableStateOf("") }
@@ -226,7 +236,7 @@ fun DashPayProfileScreen(identityIdHex: String, navController: NavHostController
                 val uri = qrUri
                 when {
                     uri != null -> {
-                        val bitmap = remember(uri) { generateQrBitmap(uri) }
+                        val bitmap = qrBitmap
                         Column(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalAlignment = Alignment.CenterHorizontally,

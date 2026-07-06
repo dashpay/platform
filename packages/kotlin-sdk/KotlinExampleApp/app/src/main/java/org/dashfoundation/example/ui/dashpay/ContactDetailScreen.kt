@@ -23,6 +23,7 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -37,7 +38,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -74,14 +74,13 @@ fun ContactDetailScreen(
 ) {
     val container = LocalAppContainer.current
     val appState = LocalAppState.current
-    val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val idBytes = remember(identityIdHex) { identityIdHex.hexToBytes() }
     val contactBytes = remember(contactIdHex) { contactIdHex.hexToBytes() }
 
     val network by appState.currentNetwork.collectAsStateWithLifecycle()
     val manager by container.walletManagerStore.activeManager.collectAsStateWithLifecycle()
-    val metaStore = remember { DashPayContactMetaStore(context) }
+    val metaStore = container.dashPayContactMetaStore
     val metaVersion by metaStore.version.collectAsStateWithLifecycle()
 
     val identity by remember(idBytes) {
@@ -180,9 +179,11 @@ fun ContactDetailScreen(
     }
 
     LaunchedEffect(Unit) { refreshPayments() }
-    val isSyncing by (manager?.dashPaySyncIsSyncing ?: MutableStateFlow(false))
-        .collectAsStateWithLifecycle(false)
+    val syncingFlow = remember(manager) { manager?.dashPaySyncIsSyncing ?: MutableStateFlow(false) }
+    val isSyncing by syncingFlow.collectAsStateWithLifecycle(false)
     LaunchedEffect(isSyncing) { if (!isSyncing) refreshPayments() }
+
+    var paymentSending by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -332,7 +333,14 @@ fun ContactDetailScreen(
     }
 
     if (showPaymentSheet && manager != null && walletId != null) {
-        ModalBottomSheet(onDismissRequest = { showPaymentSheet = false }) {
+        // Block interactive dismissal (swipe / scrim / back) while a send is
+        // in flight, so the sheet can't be torn down mid-broadcast (the send
+        // itself is also NonCancellable — defense in depth).
+        val sheetState = rememberModalBottomSheetState(confirmValueChange = { !paymentSending })
+        ModalBottomSheet(
+            onDismissRequest = { if (!paymentSending) showPaymentSheet = false },
+            sheetState = sheetState,
+        ) {
             SendDashPayPaymentSheet(
                 manager = manager!!,
                 walletId = walletId!!,
@@ -340,6 +348,7 @@ fun ContactDetailScreen(
                 contactId = contactBytes,
                 contactDisplayName = displayName,
                 contactDpnsName = dpnsHint,
+                onSendingChange = { paymentSending = it },
                 onSent = { refreshPayments() },
                 onClose = { showPaymentSheet = false },
             )

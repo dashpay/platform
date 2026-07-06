@@ -22,6 +22,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -74,6 +75,14 @@ fun IgnoredContactsScreen(identityIdHex: String, navController: NavHostControlle
         ignoredRows
             .filter { !removedOverlayIds.contains(it.ignoredSenderId.toHex()) }
             .sortedByDescending { it.ignoredAt.time }
+    }
+
+    // Prune the overlay once Room reflects the un-ignore (the row is deleted):
+    // keep a hex only while its ignored row still exists, so a later re-ignore
+    // of the same sender within this screen session isn't masked.
+    LaunchedEffect(ignoredRows) {
+        val present = ignoredRows.mapTo(HashSet()) { it.ignoredSenderId.toHex() }
+        removedOverlayIds = removedOverlayIds.filter { it in present }.toSet()
     }
 
     fun unignore(senderId: ByteArray) {

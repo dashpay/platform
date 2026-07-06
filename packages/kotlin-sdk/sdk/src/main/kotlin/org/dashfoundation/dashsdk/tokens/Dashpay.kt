@@ -5,6 +5,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.dashfoundation.dashsdk.errors.mapNativeErrors
 import org.dashfoundation.dashsdk.ffi.DashpayNative
+import org.dashfoundation.dashsdk.ffi.NativeCleaner
 import org.dashfoundation.dashsdk.ffi.TokensNative
 
 /**
@@ -325,10 +326,15 @@ class Dashpay internal constructor(private val walletHandle: Long) {
      * Build the owner's DIP-15 auto-accept QR URI for [identityId]
      * (`dash:?du=…&dapk=…`), keying the proof through [coreSignerHandle].
      * The UI renders it as a QR (ZXing). ← Swift `buildAutoAcceptQR`.
+     *
+     * [username] is the owner's DPNS name and is **required** (matching
+     * Swift's `username: String`): the underlying FFI rejects a null string,
+     * so pass `""` for a nameless identity — Rust then resolves the name
+     * on-chain (or surfaces a clear "no name registered" error).
      */
     suspend fun buildAutoAcceptQr(
         identityId: ByteArray,
-        username: String? = null,
+        username: String,
         coreSignerHandle: Long,
     ): String? = withContext(Dispatchers.IO) {
         mapNativeErrors {
@@ -480,27 +486,43 @@ enum class ContactInfoPublishOutcome(val raw: Int) {
 /** Owned native `ContactRequest` handle from [Dashpay.sendContactRequest]. */
 class ContactRequestRef internal constructor(handle: Long) : AutoCloseable {
     private val handleRef = AtomicLong(handle)
+    private val cleanable = NativeCleaner.register(this, HandleCleanup(handleRef))
 
     internal val value: Long
         get() = handleRef.get().also { check(it != 0L) { "ContactRequestRef has been closed" } }
 
-    /** Idempotent: the [AtomicLong] swap destroys the handle exactly once. */
+    /** Idempotent: destroys the handle exactly once, on [close] or the GC backstop. */
     override fun close() {
-        val h = handleRef.getAndSet(0)
-        if (h != 0L) TokensNative.contactRequestDestroy(h)
+        cleanable.clean()
+    }
+
+    /** Runs on [NativeCleaner] or [close]; destroys the handle exactly once. */
+    private class HandleCleanup(private val handleRef: AtomicLong) : Runnable {
+        override fun run() {
+            val h = handleRef.getAndSet(0)
+            if (h != 0L) TokensNative.contactRequestDestroy(h)
+        }
     }
 }
 
 /** Owned native `EstablishedContact` handle from [Dashpay.acceptContactRequest]. */
 class EstablishedContactRef internal constructor(handle: Long) : AutoCloseable {
     private val handleRef = AtomicLong(handle)
+    private val cleanable = NativeCleaner.register(this, HandleCleanup(handleRef))
 
     internal val value: Long
         get() = handleRef.get().also { check(it != 0L) { "EstablishedContactRef has been closed" } }
 
-    /** Idempotent: the [AtomicLong] swap destroys the handle exactly once. */
+    /** Idempotent: destroys the handle exactly once, on [close] or the GC backstop. */
     override fun close() {
-        val h = handleRef.getAndSet(0)
-        if (h != 0L) TokensNative.establishedContactDestroy(h)
+        cleanable.clean()
+    }
+
+    /** Runs on [NativeCleaner] or [close]; destroys the handle exactly once. */
+    private class HandleCleanup(private val handleRef: AtomicLong) : Runnable {
+        override fun run() {
+            val h = handleRef.getAndSet(0)
+            if (h != 0L) TokensNative.establishedContactDestroy(h)
+        }
     }
 }

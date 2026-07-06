@@ -813,7 +813,10 @@ fn opt_jstring_to_cstring(env: &mut JNIEnv, s: &JString) -> Option<std::ffi::CSt
 /// Build the owner's DIP-15 auto-accept QR payload
 /// (`dash:?du=…&dapk=…`) for `identityId`, keying the proof through
 /// `core_signer_handle` (bridges `platform_wallet_build_auto_accept_qr`).
-/// `username` is the display hint embedded in the URI (nullable).
+/// `username` is the owner's DPNS name embedded in the URI and is required:
+/// `platform_wallet_build_auto_accept_qr` rejects a null string, so callers
+/// pass `""` for a nameless identity (the Kotlin `username: String` enforces
+/// this). The null-tolerant marshalling below is a defensive backstop.
 /// Returns the URI string; the Rust-owned C string is freed here.
 #[no_mangle]
 pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_buildAutoAcceptQr(

@@ -43,6 +43,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
+import org.dashfoundation.dashsdk.wallet.DashPayUnlockStatus
 import org.dashfoundation.dashsdk.wallet.ManagedPlatformWallet
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.di.LocalAppState
@@ -245,8 +246,8 @@ private fun BalanceRow(
     // Re-read after each completed sweep so received funds appear without a
     // screen reopen (the balance is an in-memory Rust snapshot pull-refresh
     // advances).
-    val isSyncing by (manager?.dashPaySyncIsSyncing ?: MutableStateFlow(false))
-        .collectAsStateWithLifecycle(false)
+    val syncingFlow = remember(manager) { manager?.dashPaySyncIsSyncing ?: MutableStateFlow(false) }
+    val isSyncing by syncingFlow.collectAsStateWithLifecycle(false)
     LaunchedEffect(manager, walletId, identityId, isSyncing) {
         val m = manager
         receivedDuffs = if (m != null && walletId != null) {
@@ -273,12 +274,20 @@ private fun UnlockBanner(
     managed: ManagedPlatformWallet?,
     onError: (String) -> Unit,
 ) {
-    val m = manager ?: return
-    val statusMap by m.dashPayUnlockStatus.collectAsStateWithLifecycle()
-    val status = walletIdHex?.let { statusMap[it] } ?: return
+    // Keep every composable call unconditional (collect / scope / state), then
+    // render conditionally on the resolved status — avoids the fragile
+    // early-return-before-composable-calls pattern.
+    val statusFlow = remember(manager) {
+        manager?.dashPayUnlockStatus ?: MutableStateFlow(emptyMap<String, DashPayUnlockStatus>())
+    }
+    val statusMap by statusFlow.collectAsStateWithLifecycle()
+    val scope = rememberCoroutineScope()
+    var isUnlocking by remember { mutableStateOf(false) }
+
+    val status = walletIdHex?.let { statusMap[it] }
+    if (manager == null || status == null) return
     val hasSignal = status.draining || status.seedMismatch || status.pendingAccountBuilds > 0
     if (!hasSignal) return
-    val scope = rememberCoroutineScope()
 
     when {
         status.seedMismatch -> BannerRow(
@@ -300,11 +309,16 @@ private fun UnlockBanner(
                 icon = Icons.Default.Lock,
                 tint = MaterialTheme.colorScheme.tertiary,
                 text = "$n contact${if (n == 1) "" else "s"} waiting to finish setup",
+                // Guard against a double-tap stacking concurrent unlocks: the
+                // SDK's `draining` flag only flips true after the verify, so a
+                // second tap in that window would launch a second drain.
+                actionEnabled = !isUnlocking,
                 action = if (managed != null) {
                     {
+                        isUnlocking = true
                         scope.launch {
                             try {
-                                val unlocked = m.unlockWalletFromKeystore(managed)
+                                val unlocked = manager.unlockWalletFromKeystore(managed)
                                 if (!unlocked) {
                                     onError(
                                         "This wallet is watch-only on this device (no mnemonic in " +
@@ -313,6 +327,8 @@ private fun UnlockBanner(
                                 }
                             } catch (e: Exception) {
                                 onError(e.message ?: "Unlock failed")
+                            } finally {
+                                isUnlocking = false
                             }
                         }
                     }
@@ -325,7 +341,13 @@ private fun UnlockBanner(
 }
 
 @Composable
-private fun BannerRow(icon: ImageVector, tint: androidx.compose.ui.graphics.Color, text: String, action: (() -> Unit)?) {
+private fun BannerRow(
+    icon: ImageVector,
+    tint: androidx.compose.ui.graphics.Color,
+    text: String,
+    action: (() -> Unit)?,
+    actionEnabled: Boolean = true,
+) {
     Row(
         modifier = Modifier.fillMaxWidth().testTag("dashpay.unlockBanner"),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -334,7 +356,7 @@ private fun BannerRow(icon: ImageVector, tint: androidx.compose.ui.graphics.Colo
         Icon(icon, contentDescription = null, tint = tint)
         Text(text, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
         if (action != null) {
-            Button(onClick = action) { Text("Unlock") }
+            Button(onClick = action, enabled = actionEnabled) { Text("Unlock") }
         }
     }
 }
