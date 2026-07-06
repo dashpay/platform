@@ -13,7 +13,7 @@ use std::fs::File;
 use std::path::PathBuf;
 use std::sync::atomic::AtomicUsize;
 use std::sync::{Arc, Mutex as StdMutex, Once};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use platform_wallet::wallet::persister::NoPlatformPersistence;
 use platform_wallet::{PlatformEventHandler, PlatformWalletManager, SpvRuntime};
@@ -974,12 +974,15 @@ impl E2eContext {
         // Idempotent: a re-run with balances already at min emits an
         // empty plan (only the self-gating drain).
         //
-        // `snapshot_balances` sizes E5 from `core_balance_confirmed()`, a
-        // lock-free atomic fed asynchronously by the SPV WalletEvent pipeline;
-        // it lags the awaited bootstrap self-fund (resolved on a different
-        // notify path) and can read a stale ~0, sizing E5 to nothing. Poll it
-        // back to the pre-bootstrap baseline (minus the self-fund's max Core
-        // outlay) first, reusing the startup `wait_for_bank_funded` gate.
+        // `snapshot_balances` sizes E5 from `bank.core_balance_confirmed()`,
+        // the lock-free `WalletBalance` atomic written only by the async
+        // wallet_task as it drains the self-fund's WalletEvents. That atomic
+        // is NON-MONOTONIC across the drain: it can still show the stale
+        // pre-spend total, dip toward ~0 as the spent input is removed, then
+        // settle at the post-spend total. A plain "reached target once" poll
+        // clears on the stale-high value and the snapshot then reads the dip.
+        // So poll the SAME atomic the snapshot reads and break only once it is
+        // both at/above `converge_min` AND unchanged since the prior read.
         // SPV-disabled runs never self-fund and can't advance the atomic, skip.
         if !config.disable_spv {
             let converge_min = pre_bootstrap_core_duff
@@ -987,18 +990,43 @@ impl E2eContext {
             let timeout = config
                 .bank_core_gate_timeout
                 .unwrap_or(config::DEFAULT_BANK_CORE_GATE_TIMEOUT);
-            if let Err(err) =
-                wait::wait_for_bank_funded(&bank, spv_runtime.as_deref(), converge_min, timeout)
-                    .await
-            {
-                tracing::warn!(
+            let start = Instant::now();
+            let deadline = start + timeout;
+            let mut iteration = 0u64;
+            let mut prev: Option<u64> = None;
+            loop {
+                let observed = bank.core_balance_confirmed();
+                iteration += 1;
+                let settled = observed >= converge_min && prev == Some(observed);
+                tracing::info!(
                     target: "platform_wallet::e2e::harness",
-                    error = %err,
+                    observed,
                     converge_min,
                     pre_bootstrap_core_duff,
-                    "confirmed Core balance did not reconverge before the fund-planner \
-                     snapshot; E5 may be sized from a stale Core balance"
+                    iteration,
+                    settled,
+                    elapsed = ?start.elapsed(),
+                    "fund-planner Core-balance convergence poll (reads the same \
+                     core_balance_confirmed() atomic the planner snapshot uses)"
                 );
+                if settled {
+                    break;
+                }
+                let remaining = deadline.saturating_duration_since(Instant::now());
+                if remaining.is_zero() {
+                    tracing::warn!(
+                        target: "platform_wallet::e2e::harness",
+                        observed,
+                        converge_min,
+                        pre_bootstrap_core_duff,
+                        iteration,
+                        "confirmed Core balance did not settle at/above target before the \
+                         fund-planner snapshot; E5 may be sized from a stale/transient value"
+                    );
+                    break;
+                }
+                prev = Some(observed);
+                tokio::time::sleep(std::cmp::min(remaining, wait::BACKSTOP_WAKE_INTERVAL)).await;
             }
         }
         let balances = bank_plan::snapshot_balances(&bank, &bank_identity).await;
