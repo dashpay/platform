@@ -90,7 +90,9 @@ export function parseTestPlan(planPath = DEFAULT_TEST_PLAN, planCommit) {
 
     if (!trimmed.startsWith('|')) continue;
     const cells = splitRow(trimmed);
-    if (cells.length < 6) continue;
+    // Catalog rows are 7 cells: ID | Action | Layer | Tier | Status | Tags | Notes.
+    // Require all 7 so a short row can't shift Notes into the Tags cell.
+    if (cells.length < 7) continue;
     if (isSeparator(cells)) continue;
 
     const [testId, title, layer, tier, status, tagsCell, ...rest] = cells;

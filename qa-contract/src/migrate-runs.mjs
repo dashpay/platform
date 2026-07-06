@@ -31,12 +31,32 @@ const OLD_CATEGORY_CODES = Array.from({ length: 16 }, (_, i) => i);
 
 function entropy() { return Uint8Array.from(randomBytes(32)); }
 
+const PAGE = 100;
+
+// Page through every match, not just the first PAGE, using `startAfter` on the
+// last document's $id. `documents.query` caps a page at PAGE rows, so a full
+// page means there may be more. Callers that can exceed PAGE rows (the per-test
+// run history + idempotency lookup) pass a stable `orderBy` so paging is
+// deterministic; the equality-only testCase scan is bounded well under PAGE.
 async function queryAll(sdk, dataContractId, documentTypeName, where, orderBy) {
-  const res = await sdk.documents.query({
-    dataContractId, documentTypeName, where, ...(orderBy ? { orderBy } : {}), limit: 100,
-  });
   const out = [];
-  for (const doc of res.values()) if (doc) out.push(doc.toJSON());
+  let startAfter;
+  for (;;) {
+    const res = await sdk.documents.query({
+      dataContractId,
+      documentTypeName,
+      where,
+      ...(orderBy ? { orderBy } : {}),
+      ...(startAfter ? { startAfter } : {}),
+      limit: PAGE,
+    });
+    const raw = [...res.values()];
+    for (const doc of raw) if (doc) out.push(doc.toJSON());
+    if (raw.length < PAGE) break;
+    const lastId = raw[raw.length - 1]?.toJSON().$id;
+    if (!lastId) break; // can't advance the cursor — stop rather than loop forever
+    startAfter = lastId;
+  }
   return out;
 }
 
@@ -153,6 +173,19 @@ async function main() {
             console.error(`  ~ ${label} nonce desync (attempt ${attempt}) — reconnecting + retrying`);
             await new Promise((r) => setTimeout(r, 2500));
             await reconnect();
+            // A nonce error can be a false negative — the write may have landed
+            // before the ack was lost. Re-check before retrying so we don't
+            // create a duplicate testRun for the same (testId, result, buildRef).
+            const after = await queryAll(
+              sdk, newContractId, 'testRun',
+              [['$ownerId', '==', newOwner], ['app', '==', app], ['testId', '==', newId]],
+              [['$createdAt', 'asc']],
+            );
+            if (after.some((r) => `${r.result}|${r.buildRef}` === `${run.result}|${run.buildRef}`)) {
+              console.log(`  = ${label} (${run.result}/${run.buildRef}) already landed — skipping retry`);
+              skipped += 1;
+              break;
+            }
             continue;
           }
           failed += 1;

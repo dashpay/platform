@@ -24,7 +24,7 @@ Every catalog row carries four orthogonal, machine-filterable fields. Select tes
 
 A test is **automatable now** only if Status is `✅`, `🧪`, or `⚠️` (reachable and drivable in the simulator) **and** `Tier ≠ Manual`. `Tier=Manual` marks implemented features that need a human on a physical device (e.g. a camera) — the automated QA agent must **skip and flag them for manual testing**, never mark them failed. `🔌`/`🚫` rows are listed for completeness — skip them unless asked to confirm absence.
 
-A row's **category** is the §4 section it lives in — every row now lives in its true feature section. Cross-cutting concerns that used to be a separate section (multi-wallet, group) are expressed as **tags** instead: e.g. `TOK-17` (token transfer between two wallets) lives in **Token** and carries `Tag=multiwallet`, and `CORE-21` is `Tag=multiwallet` on the Core/Shielded side. Select cross-cutting sets with the Tags column — `Tag=multiwallet`, `Tag=group`, `Tag=read-only`, etc. — intersected with `Tier`/`Layer`/`Status`/`Category` as needed. This is the axis behind requests like *"run all multi-wallet token tests"* (`Category=Token AND Tag=multiwallet`).
+A row's **primary home** is the §4 section it lives in (its `Domain=…`). **Category** stays a distinct selection axis, though: a handful of rows are cross-cutting and belong to a category *other* than their section — e.g. `ID-06`/`ID-08`/`ID-11` are **Address** tests that live in §4.2 Identity, `SH-11` is an **Identity** test in the Shielded section, and `CORE-21` is **Shielded**. Resolve any `Category=…` selection through the **§6 category index**, which lists every member per category (primary + cross-cutting). Separately, the old MultiWallet/Group *sections* are gone — those cross-cutting concerns are now **tags**: e.g. `TOK-17` (token transfer between two wallets) lives in **Token** and carries `Tag=multiwallet`. Select cross-cutting sets with the Tags column — `Tag=multiwallet`, `Tag=group`, `Tag=read-only`, etc. — intersected with `Tier`/`Layer`/`Status`/`Category` as needed. This is the axis behind requests like *"run all multi-wallet token tests"* (`Category=Token AND Tag=multiwallet`).
 
 **Worked examples of a request → selection:**
 
@@ -336,7 +336,7 @@ Counts are of rows reachable in the app (Status `✅`/`🧪`/`⚠️`); `🔌`/`
 
 ## 6. Category & tag index
 
-Every row now lives in its true feature **category** (the §4 section it's in) — there are no cross-cutting "category" rows living elsewhere anymore. To run a `Category=X` selection, take the category list below; for cross-cutting selections (multi-wallet, group, read-only, …) use the **tag index** that follows. Intersect either with `Tier` / `Layer` / `Status` as needed. `A-01..09` means every id in that span.
+Each row's **primary home** is its §4 section, but a few rows are cross-cutting and are listed under an additional **category** below (e.g. `ID-06`/`ID-08`/`ID-11` under Address, `SH-11` under Identity, `CORE-21` under Shielded). To run a `Category=X` selection, take the category list below — it already includes those cross-cutting members. For cross-cutting *modalities* (multi-wallet, group, read-only, …) use the **tag index** that follows. Intersect either with `Tier` / `Layer` / `Status` as needed. `A-01..09` means every id in that span.
 
 **By category (§4 section):**
 
