@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 use rusqlite::{Connection, OptionalExtension};
 
 use platform_wallet::changeset::{
-    ClientStartState, Merge, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
+    ClientStartState, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
 };
 use platform_wallet::wallet::platform_wallet::WalletId;
 
@@ -941,13 +941,27 @@ impl PlatformWalletPersistence for SqlitePersister {
                 .map_err(PersistenceError::from)?;
             let unused_asset_locks = schema::asset_locks::load_unconsumed(&conn, &wallet_id)
                 .map_err(PersistenceError::from)?;
-            // Every address that ever held a UTXO (spent + unspent) is "used":
-            // the address-reuse guard so a used-then-emptied address is never
-            // handed back as a fresh receive address. The in-band pool snapshot
-            // was retired, so we derive this from the full core_utxos set.
-            let used_core_addresses =
-                schema::core_state::load_used_addresses(&conn, &wallet_id, network)
+            // Used addresses drive the reuse guard: a used-then-emptied
+            // address must never be handed back as a fresh receive address.
+            // Union the verbatim `core_address_pool` used-set with the
+            // `core_utxos`-derived set (spent + unspent). The guard is
+            // monotonic, so a mixed store — historical UTXOs plus a later
+            // partial pool snapshot that never enumerates them — must surface
+            // both; neither source may shadow the other. Deduped by script.
+            let used_core_addresses = {
+                let mut seen = std::collections::HashSet::new();
+                let mut union = Vec::new();
+                let pool = schema::core_pool::load_used_addresses(&conn, &wallet_id, network)
                     .map_err(PersistenceError::from)?;
+                let utxo = schema::core_state::load_used_addresses(&conn, &wallet_id, network)
+                    .map_err(PersistenceError::from)?;
+                for addr in pool.into_iter().chain(utxo) {
+                    if seen.insert(addr.script_pubkey().to_bytes()) {
+                        union.push(addr);
+                    }
+                }
+                union
+            };
 
             // Reconstruct a populated `ManagedWalletInfo` from typed rows:
             // rebuild the wallet watch-only from the manifest, then layer the
@@ -1039,25 +1053,9 @@ impl PlatformWalletPersistence for SqlitePersister {
 /// from the public fields so no storage-only helper leaks into the
 /// `rs-platform-wallet` API.
 fn populated_field_count(cs: &PlatformWalletChangeSet) -> usize {
-    [
-        cs.core.is_empty(),
-        cs.identities.is_empty(),
-        cs.identity_keys.is_empty(),
-        cs.contacts.is_empty(),
-        cs.platform_addresses.is_empty(),
-        cs.asset_locks.is_empty(),
-        cs.token_balances.is_empty(),
-        cs.dashpay_profiles.as_ref().is_none_or(|m| m.is_empty()),
-        cs.dashpay_payments_overlay
-            .as_ref()
-            .is_none_or(|m| m.is_empty()),
-        cs.wallet_metadata.is_none(),
-        cs.account_registrations.is_empty(),
-        cs.account_address_pools.is_empty(),
-    ]
-    .iter()
-    .filter(|empty| !**empty)
-    .count()
+    // Single source of truth with the version-domain mapping: each populated
+    // field is exactly one touched domain.
+    schema::versions::touched_domains(cs).len()
 }
 
 fn validate_config(config: &SqlitePersisterConfig) -> Result<(), WalletStorageError> {
@@ -1133,10 +1131,12 @@ fn apply_changeset_to_tx(
     if !cs.account_registrations.is_empty() {
         schema::accounts::apply_registrations(tx, wallet_id, &cs.account_registrations)?;
     }
-    // `account_address_pools` is intentionally NOT applied: UTXO attribution
-    // is hardcoded to the default account (index 0) in `core_state`, so the
-    // pool snapshot is no longer a storage input. The changeset field is kept
-    // for API stability and still feeds non-storage consumers.
+    // Pools land before core so the UTXO writer can attribute each outpoint
+    // to its owning account by matching the outpoint's script against a
+    // freshly-written `core_address_pool` row.
+    if !cs.account_address_pools.is_empty() {
+        schema::core_pool::apply_pools(tx, wallet_id, &cs.account_address_pools)?;
+    }
     if !cs.pending_contact_crypto_added.is_empty() || !cs.pending_contact_crypto_cleared.is_empty()
     {
         schema::pending_contact_crypto::apply_pending_contact_crypto(
@@ -1175,6 +1175,9 @@ fn apply_changeset_to_tx(
             cs.dashpay_payments_overlay.as_ref(),
         )?;
     }
+    // Bump each touched domain's version inside this same tx so a domain's
+    // cache-invalidation marker commits atomically with its data.
+    schema::versions::bump_touched_domains(tx, wallet_id, cs)?;
     Ok(())
 }
 

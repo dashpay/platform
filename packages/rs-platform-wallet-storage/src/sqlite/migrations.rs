@@ -175,6 +175,52 @@ pub fn embedded_migrations_fingerprint() -> [u8; 32] {
     hasher.finalize().into()
 }
 
+/// SHA-256 over `(version, name, rendered SQL)` of every embedded migration
+/// in version order. Unlike [`embedded_migrations_fingerprint`] this is
+/// content-level: it pins each migration's SQL body, so an in-place DDL edit
+/// (e.g. renaming a table inside a same-named file) breaks the golden test.
+/// This is the guard the D0 schema freeze relies on; the identity-only
+/// fingerprint cannot catch a same-name body edit.
+///
+/// The SQL *text* is deterministic even where a value is generated at run
+/// time (`randomblob(16)`): the literal string is hashed, not the runtime
+/// bytes.
+#[cfg(any(test, feature = "__test-helpers"))]
+pub fn embedded_migrations_sql_fingerprint() -> [u8; 32] {
+    use sha2::{Digest, Sha256};
+    let mut migrations = migrations::runner().get_migrations().clone();
+    migrations.sort_by_key(|m| m.version());
+    let mut hasher = Sha256::new();
+    for m in &migrations {
+        hasher.update((m.version() as u32).to_be_bytes());
+        hasher.update([0u8]);
+        hasher.update(m.name().as_bytes());
+        hasher.update([0u8]);
+        let sql = m
+            .sql()
+            .expect("embedded migrations always carry rendered SQL");
+        hasher.update(sql.as_bytes());
+        hasher.update([0u8]);
+    }
+    hasher.finalize().into()
+}
+
+/// Rendered SQL of every embedded migration, in version order. Used by the
+/// schema-freeze grep guard to scan for retired table names.
+#[cfg(any(test, feature = "__test-helpers"))]
+pub fn embedded_migrations_sql() -> Vec<String> {
+    let mut migrations = migrations::runner().get_migrations().clone();
+    migrations.sort_by_key(|m| m.version());
+    migrations
+        .iter()
+        .map(|m| {
+            m.sql()
+                .expect("embedded migrations always carry rendered SQL")
+                .to_string()
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

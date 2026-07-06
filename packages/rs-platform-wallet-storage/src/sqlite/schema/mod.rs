@@ -10,6 +10,7 @@ pub mod accounts;
 pub mod asset_locks;
 pub mod blob;
 pub mod contacts;
+pub mod core_pool;
 pub mod core_state;
 pub mod dashpay;
 pub mod identities;
@@ -17,6 +18,7 @@ pub mod identity_keys;
 pub mod pending_contact_crypto;
 pub mod platform_addrs;
 pub mod token_balances;
+pub mod versions;
 pub mod wallets;
 
 /// Reject any `identity_id` in `touched` whose `identities` row does not

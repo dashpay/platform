@@ -13,7 +13,9 @@ mod common;
 use common::{ensure_wallet_meta, fresh_persister, wid};
 use rusqlite::params;
 
-use platform_wallet_storage::sqlite::schema::{accounts, core_state, identities, identity_keys};
+use platform_wallet_storage::sqlite::schema::{
+    accounts, core_pool, core_state, identities, identity_keys,
+};
 use platform_wallet_storage::WalletStorageError;
 
 /// Blob larger than the 16 MiB cap: one byte over the limit is enough to
@@ -101,6 +103,68 @@ fn blob_gate_core_state_load_state_rejects_oversize_chain_lock() {
     assert!(
         matches!(err, WalletStorageError::BlobTooLarge { .. }),
         "expected BlobTooLarge, got {err:?}"
+    );
+}
+
+// ── core_pool::load_used_addresses — core_address_pool script ────────────────
+
+/// An oversize `script` blob in `core_address_pool` is caught by the pre-read
+/// `length(script)` gate in `core_pool::load_used_addresses` and returned as
+/// `BlobTooLarge` **before** the Vec is allocated.
+#[test]
+fn blob_gate_core_pool_load_used_addresses_rejects_oversize_script() {
+    let (persister, _tmp, _path) = fresh_persister();
+    let w = wid(0xE1);
+    ensure_wallet_meta(&persister, &w);
+
+    let oversize_script = oversize_blob();
+    let conn = persister.lock_conn_for_test();
+    conn.execute(
+        "INSERT INTO core_address_pool \
+            (wallet_id, account_type, account_index, key_class, pool_type, \
+             address_index, script, used) \
+         VALUES (?1, 'standard_bip44', 0, 0, 0, 0, ?2, 1)",
+        params![w.as_slice(), oversize_script.as_slice()],
+    )
+    .expect("insert oversize pool script row");
+
+    let err = core_pool::load_used_addresses(&conn, &w, dashcore::Network::Testnet)
+        .expect_err("load_used_addresses must reject an oversize pool script blob");
+    assert!(
+        matches!(err, WalletStorageError::BlobTooLarge { .. }),
+        "expected BlobTooLarge for oversize pool script, got {err:?}"
+    );
+}
+
+// ── core_state::load_used_addresses — core_utxos script ──────────────────────
+
+/// An oversize `script` blob in `core_utxos` is caught by the pre-read
+/// `length(script)` gate in `core_state::load_used_addresses` and returned as
+/// `BlobTooLarge` **before** the Vec is allocated.
+#[test]
+fn blob_gate_core_state_load_used_addresses_rejects_oversize_script() {
+    let (persister, _tmp, _path) = fresh_persister();
+    let w = wid(0xE2);
+    ensure_wallet_meta(&persister, &w);
+
+    let oversize_script = oversize_blob();
+    // 33-byte outpoint (txid 32 + vout 1); its own gate passes, only the
+    // script gate fires.
+    let tiny_op = vec![0u8; 33];
+    let conn = persister.lock_conn_for_test();
+    conn.execute(
+        "INSERT INTO core_utxos \
+            (wallet_id, outpoint, value, script, height, account_index, spent, spent_in_txid) \
+         VALUES (?1, ?2, 0, ?3, NULL, 0, 0, NULL)",
+        params![w.as_slice(), tiny_op.as_slice(), oversize_script.as_slice()],
+    )
+    .expect("insert oversize utxo script row");
+
+    let err = core_state::load_used_addresses(&conn, &w, dashcore::Network::Testnet)
+        .expect_err("load_used_addresses must reject an oversize utxo script blob");
+    assert!(
+        matches!(err, WalletStorageError::BlobTooLarge { .. }),
+        "expected BlobTooLarge for oversize utxo script, got {err:?}"
     );
 }
 

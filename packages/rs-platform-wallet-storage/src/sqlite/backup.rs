@@ -132,14 +132,17 @@ pub fn run_to(src: &Connection, dest: &Path) -> Result<(), WalletStorageError> {
 ///
 /// Validation runs against the source and again against the STAGED bytes,
 /// under a SQLite-native `BEGIN EXCLUSIVE` on `dest_db_path` that blocks
-/// every other SQLite peer (which advisory flock could not). The staged
-/// temp is `persist`-ed as an atomic rename only after all gates pass, and
-/// that rename is the commit point: if it fails, the live DB and its WAL/SHM
-/// siblings are left untouched, so a failed restore never strands the old DB
-/// without its WAL-committed state. The now-stale WAL/SHM siblings are
-/// unlinked only AFTER the swap succeeds (so a leftover `-wal` can't shadow
-/// the restored DB); the parent dir is fsynced afterward. See the numbered
-/// steps in the body for the per-phase rationale.
+/// every other SQLite peer (which advisory flock could not). The
+/// store-generation token is rotated INTO the staged temp before the swap,
+/// so the single commit point brings in the restored bytes and the fresh
+/// token together — a peer never observes restored content carrying the
+/// source's stale token. The staged temp is `persist`-ed as an atomic rename
+/// only after all gates pass, and that rename is the commit point: if it
+/// fails, the live DB and its WAL/SHM siblings are left untouched, so a failed
+/// restore never strands the old DB without its WAL-committed state. The
+/// now-stale WAL/SHM siblings are unlinked only AFTER the swap succeeds (so a
+/// leftover `-wal` can't shadow the restored DB); the parent dir is fsynced
+/// afterward. See the numbered steps in the body for the per-phase rationale.
 ///
 /// # Lock-release-before-rename trade-off
 ///
@@ -224,7 +227,27 @@ pub fn restore_from(dest_db_path: &Path, src_backup: &Path) -> Result<(), Wallet
         crate::sqlite::migrations::assert_schema_history_well_formed(&staged)?;
     }
 
-    // 5. chmod 0o600 on the temp BEFORE persist so the destination
+    // 5. Regenerate the store-generation token INTO the staged temp, before
+    //    the atomic rename, so the single commit point (step 8) swaps in the
+    //    restored bytes and the rotated token together — there is no window
+    //    where restored content is observable with the source's stale token.
+    //    The staged DB is switched to DELETE journaling first so the UPDATE
+    //    lands in the main file with no `-wal` frames stranded outside the
+    //    rename; the reopened destination is forced back to its configured
+    //    journal mode on its next open. A pre-V002 backup has no generation
+    //    table; `regenerate_generation` is a no-op there and the token is
+    //    (re)seeded on its later migration to V002.
+    {
+        let conn =
+            crate::sqlite::conn::open_conn(tmp.path(), crate::sqlite::conn::Access::ReadWrite)?;
+        conn.pragma_update(None, "journal_mode", "DELETE")?;
+        crate::sqlite::schema::versions::regenerate_generation(&conn)?;
+        drop(conn);
+        // Durably flush the regenerated token before the rename commits it.
+        tmp.as_file().sync_all()?;
+    }
+
+    // 6. chmod 0o600 on the temp BEFORE persist so the destination
     //    inherits owner-only mode via the rename (post-persist chmod could
     //    fail with the new DB already live).
     #[cfg(unix)]
@@ -234,7 +257,7 @@ pub fn restore_from(dest_db_path: &Path, src_backup: &Path) -> Result<(), Wallet
             .set_permissions(std::fs::Permissions::from_mode(0o600))?;
     }
 
-    // 6. Release the EXCLUSIVE lock before the rename/unlinks: on Windows /
+    // 7. Release the EXCLUSIVE lock before the rename/unlinks: on Windows /
     //    some FUSE mounts `remove_file` on a still-open file returns
     //    `PermissionDenied`, and the rename window wants a clean close (see
     //    lock-release trade-off above).
@@ -243,18 +266,20 @@ pub fn restore_from(dest_db_path: &Path, src_backup: &Path) -> Result<(), Wallet
         drop(conn);
     }
 
-    // 7. Persist the staged DB atomically over the destination FIRST. The
-    //    atomic rename is the commit point: if it fails (disk full, EXDEV,
-    //    perms) the live DB and its WAL/SHM siblings are left untouched, so a
-    //    failed restore can never strand the old DB without its WAL-committed
-    //    state. Sibling cleanup (step 8) runs only once the swap has succeeded.
+    // 8. Persist the staged DB atomically over the destination. The atomic
+    //    rename is the single commit point: it swaps in both the restored
+    //    bytes and the rotated generation token together. If it fails (disk
+    //    full, EXDEV, perms) the live DB and its WAL/SHM siblings are left
+    //    untouched, so a failed restore can never strand the old DB without
+    //    its WAL-committed state. Sibling cleanup (step 9) runs only once the
+    //    swap has succeeded.
     tmp.persist(dest_db_path)
         .map_err(|e| WalletStorageError::Io(e.error))?;
 
-    // 8. Clear the now-stale WAL/SHM siblings AFTER the swap so a leftover
+    // 9. Clear the now-stale WAL/SHM siblings AFTER the swap so a leftover
     //    `-wal` can't shadow the restored DB on the next open. Sibling paths
     //    use `OsString::push` so non-UTF-8 bytes round-trip; `NotFound` is a
-    //    silent no-op. The lock conn was dropped in step 6 for cross-platform
+    //    silent no-op. The lock conn was dropped in step 7 for cross-platform
     //    unlink semantics.
     if let Some(file_name) = dest_db_path.file_name() {
         for ext in ["-wal", "-shm"] {
@@ -269,10 +294,10 @@ pub fn restore_from(dest_db_path: &Path, src_backup: &Path) -> Result<(), Wallet
         }
     }
 
-    // 9. Make the rename + unlink dentry updates durable.
+    // 10. Make the rename + unlink dentry updates durable.
     fsync_parent_dir(dest_db_path)?;
 
-    // 10. Re-tighten perms (idempotent; SQLite may re-materialise -wal/-shm).
+    // 11. Re-tighten perms (idempotent; SQLite may re-materialise -wal/-shm).
     apply_secure_permissions(dest_db_path)?;
     Ok(())
 }

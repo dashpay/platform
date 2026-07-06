@@ -1,0 +1,386 @@
+#![allow(clippy::field_reassign_with_default)]
+
+//! Populated-V001 fixture capture.
+//!
+//! `regenerate_populated_v001_fixture` (`#[ignore]`) writes a realistic
+//! multi-wallet store, built by the CURRENT V001-only persister, to
+//! `tests/fixtures/populated_v001.db`. That committed `.db` is the
+//! regression anchor for the migration-execution suites (TC-B-031/032/033/
+//! 035/036): once V002 lands, a populated V001-only store is no longer
+//! reproducible from source, so the bytes must be captured before any
+//! schema change.
+//!
+//! `populated_v001_fixture_is_present_and_openable` is the always-run guard
+//! that keeps the committed fixture honest: it opens read-only, asserts the
+//! store is at schema version 1, and spot-checks the seeded rows.
+
+mod common;
+
+use std::path::{Path, PathBuf};
+
+use common::wid;
+use dpp::prelude::Identifier;
+use key_wallet::account::{AccountType, StandardAccountType};
+use key_wallet::bip32::ExtendedPubKey;
+use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
+use key_wallet::wallet::Wallet;
+use key_wallet::Network;
+use platform_wallet::changeset::{
+    AccountRegistrationEntry, ContactChangeSet, ContactRequestEntry, CoreChangeSet,
+    IdentityChangeSet, IdentityEntry, PlatformWalletChangeSet, PlatformWalletPersistence,
+    SentContactRequestKey, WalletMetadataEntry,
+};
+use platform_wallet::wallet::identity::{ContactRequest, IdentityStatus};
+use platform_wallet::wallet::platform_wallet::WalletId;
+use platform_wallet_storage::{SqlitePersister, SqlitePersisterConfig};
+
+/// The two wallets the fixture carries.
+const FULL_WALLET: u8 = 0xA1;
+const EMPTY_WALLET: u8 = 0xB2;
+
+/// Absolute path to the committed fixture under the crate's test tree.
+fn fixture_path() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("fixtures")
+        .join("populated_v001.db")
+}
+
+/// A deterministic test xpub decoded from a fixed serialized form, matching
+/// the reconstruction suite so registrations round-trip reproducibly.
+fn test_xpub() -> ExtendedPubKey {
+    ExtendedPubKey::decode(&hex::decode(
+        "0488B21E000000000000000000873DFF81C02F525623FD1FE5167EAC3A55A049DE3D314BB42EE227FFED37D5080339A36013301597DAEF41FBE593A02CC513D0B55527EC2DF1050E2E8FF49C85C2",
+    ).unwrap()).unwrap()
+}
+
+/// First external address of the Standard BIP44 account 0, derived from a
+/// fixed seed so the UTXO lands on a real, script-round-trippable address.
+fn first_external_address(seed_byte: u8) -> dashcore::Address {
+    use key_wallet::managed_account::address_pool::AddressPoolType;
+    let wallet = Wallet::from_seed_bytes(
+        [seed_byte; 64],
+        Network::Testnet,
+        WalletAccountCreationOptions::Default,
+    )
+    .unwrap();
+    let info = ManagedWalletInfo::from_wallet(&wallet, 0);
+    for managed in info.all_managed_accounts() {
+        if !matches!(
+            managed.managed_account_type().to_account_type(),
+            AccountType::Standard { index: 0, .. }
+        ) {
+            continue;
+        }
+        for pool in managed.managed_account_type().address_pools() {
+            if pool.pool_type != AddressPoolType::External || pool.addresses.is_empty() {
+                continue;
+            }
+            let mut infos: Vec<_> = pool.addresses.values().cloned().collect();
+            infos.sort_by_key(|a| a.index);
+            return infos.first().cloned().unwrap().address;
+        }
+    }
+    panic!("wallet must expose a non-empty Standard BIP44 external pool");
+}
+
+fn utxo_at(addr: &dashcore::Address, vout: u32, value: u64) -> key_wallet::Utxo {
+    use dashcore::hashes::Hash;
+    key_wallet::Utxo {
+        outpoint: dashcore::OutPoint {
+            txid: dashcore::Txid::from_byte_array([0x7E; 32]),
+            vout,
+        },
+        txout: dashcore::TxOut {
+            value,
+            script_pubkey: addr.script_pubkey(),
+        },
+        address: addr.clone(),
+        height: 200,
+        is_coinbase: false,
+        is_confirmed: true,
+        is_instantlocked: false,
+        is_locked: false,
+        is_trusted: false,
+    }
+}
+
+fn one_tx_record() -> key_wallet::managed_account::transaction_record::TransactionRecord {
+    use dashcore::hashes::Hash;
+    use dashcore::{BlockHash, Transaction, Txid};
+    use key_wallet::managed_account::transaction_record::{
+        TransactionDirection, TransactionRecord,
+    };
+    use key_wallet::transaction_checking::{BlockInfo, TransactionContext, TransactionType};
+    let mut record = TransactionRecord::new(
+        Transaction {
+            version: 3,
+            lock_time: 0,
+            input: vec![],
+            output: vec![],
+            special_transaction_payload: None,
+        },
+        AccountType::Standard {
+            index: 0,
+            standard_account_type: StandardAccountType::BIP44Account,
+        },
+        TransactionContext::InChainLockedBlock(BlockInfo::new(
+            200,
+            BlockHash::from_byte_array([0x03; 32]),
+            1_735_689_600,
+        )),
+        TransactionType::Standard,
+        TransactionDirection::Incoming,
+        Vec::new(),
+        Vec::new(),
+        150_000,
+    );
+    record.txid = Txid::from_byte_array([0x7E; 32]);
+    record
+}
+
+fn identity_entry() -> IdentityEntry {
+    IdentityEntry {
+        id: Identifier::from([0xC1; 32]),
+        balance: 42,
+        revision: 1,
+        identity_index: Some(0),
+        last_updated_balance_block_time: None,
+        last_synced_keys_block_time: None,
+        dpns_names: Vec::new(),
+        contested_dpns_names: Vec::new(),
+        status: IdentityStatus::Active,
+        wallet_id: None,
+        dashpay_profile: None,
+        dashpay_payments: Default::default(),
+    }
+}
+
+/// Build the populated multi-wallet store at `path` via the real persister.
+fn build_populated_store(path: &Path) {
+    let cfg = SqlitePersisterConfig::new(path);
+    let persister = SqlitePersister::open(cfg).expect("open persister");
+
+    let full: WalletId = wid(FULL_WALLET);
+    let empty: WalletId = wid(EMPTY_WALLET);
+
+    // Empty wallet: registered (a `wallets` row) but never synced.
+    persister
+        .store(
+            empty,
+            PlatformWalletChangeSet {
+                wallet_metadata: Some(WalletMetadataEntry {
+                    network: Network::Testnet,
+                    wallet_group_id: empty,
+                    birth_height: 50,
+                }),
+                ..Default::default()
+            },
+        )
+        .expect("store empty wallet meta");
+
+    // Full wallet: metadata + registration + core state + identity + contact.
+    persister
+        .store(
+            full,
+            PlatformWalletChangeSet {
+                wallet_metadata: Some(WalletMetadataEntry {
+                    network: Network::Testnet,
+                    wallet_group_id: full,
+                    birth_height: 100,
+                }),
+                account_registrations: vec![AccountRegistrationEntry {
+                    account_type: AccountType::Standard {
+                        index: 0,
+                        standard_account_type: StandardAccountType::BIP44Account,
+                    },
+                    account_xpub: test_xpub(),
+                }],
+                ..Default::default()
+            },
+        )
+        .expect("store full wallet meta + registration");
+
+    let addr = first_external_address(FULL_WALLET);
+    persister
+        .store(
+            full,
+            PlatformWalletChangeSet {
+                core: Some(CoreChangeSet {
+                    records: vec![one_tx_record()],
+                    new_utxos: vec![utxo_at(&addr, 0, 150_000)],
+                    last_processed_height: Some(200),
+                    synced_height: Some(200),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        )
+        .expect("store full wallet core state");
+
+    let mut identities = std::collections::BTreeMap::new();
+    let ident = identity_entry();
+    identities.insert(ident.id, ident);
+    let owner = Identifier::from([0xC1; 32]);
+    let recipient = Identifier::from([0xC2; 32]);
+    let mut sent = std::collections::BTreeMap::new();
+    sent.insert(
+        SentContactRequestKey {
+            owner_id: owner,
+            recipient_id: recipient,
+        },
+        ContactRequestEntry {
+            request: ContactRequest {
+                sender_id: owner,
+                recipient_id: recipient,
+                sender_key_index: 0,
+                recipient_key_index: 0,
+                account_reference: 0,
+                encrypted_account_label: None,
+                encrypted_public_key: Vec::new(),
+                auto_accept_proof: None,
+                core_height_created_at: 200,
+                created_at: 0,
+            },
+        },
+    );
+    persister
+        .store(
+            full,
+            PlatformWalletChangeSet {
+                identities: Some(IdentityChangeSet {
+                    identities,
+                    removed: Default::default(),
+                }),
+                contacts: Some(ContactChangeSet {
+                    sent_requests: sent,
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        )
+        .expect("store full wallet identity + contact");
+
+    persister.flush(full).expect("flush full");
+    persister.flush(empty).expect("flush empty");
+}
+
+/// Fixture regenerator. Ignored by default — run explicitly to rebuild the
+/// committed fixture:
+/// `cargo test -p platform-wallet-storage --test fixture_gen -- --ignored regenerate`.
+#[test]
+#[ignore = "regenerator: rewrites the committed fixture on disk"]
+fn regenerate_populated_v001_fixture() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let src = tmp.path().join("build.db");
+    build_populated_store(&src);
+
+    // Re-open the source and take a checkpointed single-file backup so the
+    // committed fixture carries no side WAL/journal.
+    let persister =
+        SqlitePersister::open(SqlitePersisterConfig::new(&src)).expect("reopen built store");
+    let dest = fixture_path();
+    if dest.exists() {
+        std::fs::remove_file(&dest).expect("remove stale fixture");
+    }
+    persister.backup_to(&dest).expect("capture fixture backup");
+}
+
+/// Always-run guard: the committed fixture opens, is at schema version 1,
+/// and carries the seeded rows (full wallet populated, empty wallet bare).
+#[test]
+fn populated_v001_fixture_is_present_and_openable() {
+    let path = fixture_path();
+    assert!(
+        path.exists(),
+        "committed fixture missing at {}; regenerate with the #[ignore] test",
+        path.display()
+    );
+
+    let conn = rusqlite::Connection::open_with_flags(
+        &path,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_URI,
+    )
+    .expect("open fixture read-only");
+
+    // The fixture is a V001-only store: refinery history tops out at 1.
+    let max_version: i64 = conn
+        .query_row(
+            "SELECT MAX(version) FROM refinery_schema_history",
+            [],
+            |r| r.get(0),
+        )
+        .expect("read schema history");
+    assert_eq!(
+        max_version, 1,
+        "fixture must be at V001, not a later schema"
+    );
+
+    let full = wid(FULL_WALLET);
+    let empty = wid(EMPTY_WALLET);
+
+    let wallet_count: i64 = conn
+        .query_row("SELECT COUNT(*) FROM wallets", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(wallet_count, 2, "two wallets: one full, one empty");
+
+    let reg_count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM account_registrations WHERE wallet_id = ?1",
+            rusqlite::params![full.as_slice()],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(reg_count, 1, "full wallet has one account registration");
+
+    let (utxo_count, account_index): (i64, i64) = conn
+        .query_row(
+            "SELECT COUNT(*), MAX(account_index) FROM core_utxos WHERE wallet_id = ?1",
+            rusqlite::params![full.as_slice()],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(utxo_count, 1, "full wallet has one unspent UTXO");
+    assert_eq!(
+        account_index, 0,
+        "V001 hardcodes account_index=0 — the pre-redirect writer gap"
+    );
+
+    let tx_count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM core_transactions WHERE wallet_id = ?1",
+            rusqlite::params![full.as_slice()],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(tx_count, 1, "full wallet has one transaction record");
+
+    let ident_count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM identities WHERE wallet_id = ?1",
+            rusqlite::params![full.as_slice()],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(ident_count, 1, "full wallet has one identity");
+
+    let contact_count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM contacts WHERE wallet_id = ?1",
+            rusqlite::params![full.as_slice()],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(contact_count, 1, "full wallet has one contact");
+
+    // The empty wallet is bare: a `wallets` row and nothing else.
+    let empty_utxos: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM core_utxos WHERE wallet_id = ?1",
+            rusqlite::params![empty.as_slice()],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(empty_utxos, 0, "empty wallet has no core state");
+}
