@@ -308,9 +308,9 @@ fn load_all_count_excludes_unregistered_account_addresses() {
 }
 
 /// `token_balances` is persisted-but-not-rehydrated (deferred) while
-/// contacts rehydrate into `state.wallets[w].contacts`. Both tables are
+/// contacts pre-key onto the owner's managed identity. Both tables are
 /// durable on disk after reopen (direct SQL probes), the contact
-/// round-trips into the keyless payload, and `state.platform_addresses`
+/// round-trips onto the rehydrated identity, and `state.platform_addresses`
 /// stays empty (no platform-address activity was stored).
 #[test]
 fn tc043_non_wired_up_persisted_but_not_returned() {
@@ -378,15 +378,17 @@ fn tc043_non_wired_up_persisted_but_not_returned() {
         !state.platform_addresses.contains_key(&w),
         "no platform-address activity was stored — wallet must be absent"
     );
-    // Contacts rehydrate into the keyless payload.
+    // Contacts pre-key onto the owner's managed identity (out-of-wallet
+    // bucket, since the stub identity carries no `identity_index`).
     let slice = state.wallets.get(&w).expect("wallet rehydrated");
-    let key = SentContactRequestKey {
-        owner_id: owner,
-        recipient_id: recipient,
-    };
+    let managed = slice
+        .identity_manager
+        .out_of_wallet_identities
+        .get(&owner)
+        .expect("owner identity rehydrated");
     assert!(
-        slice.contacts.sent_requests.contains_key(&key),
-        "the persisted sent contact request must rehydrate"
+        managed.sent_contact_requests.contains_key(&recipient),
+        "the persisted sent contact request must rehydrate onto its identity"
     );
     drop(p2);
 
