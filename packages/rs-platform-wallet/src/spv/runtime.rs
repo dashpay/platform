@@ -15,6 +15,7 @@ use dash_spv::{ClientConfig, DashSpvClient, EventHandler, Hash};
 
 use key_wallet_manager::WalletManager;
 
+use crate::broadcaster::BroadcastError;
 use crate::error::PlatformWalletError;
 use crate::events::PlatformEventManager;
 use crate::wallet::platform_wallet::PlatformWalletInfo;
@@ -32,6 +33,31 @@ pub struct SpvRuntime {
     client: RwLock<Option<SpvClient>>,
     task: Mutex<Option<JoinHandle<()>>>,
 }
+/// Classify a dash-spv broadcast failure per the
+/// [`TransactionBroadcaster::broadcast`] contract.
+///
+/// dash-spv's `broadcast_transaction` raises
+/// `NetworkError::NotConnected` from its zero-connected-peers check
+/// *before* handing the transaction to any peer, so it is the only
+/// error safe to classify [`BroadcastError::Rejected`]; anything else
+/// may follow a partial peer send and must stay
+/// [`BroadcastError::MaybeSent`]. Pinned by the tests below so a
+/// dash-spv semantic change is caught at this crate's boundary.
+///
+/// [`TransactionBroadcaster::broadcast`]: crate::broadcaster::TransactionBroadcaster::broadcast
+fn classify_spv_broadcast_error(error: dash_spv::error::SpvError) -> BroadcastError {
+    use dash_spv::error::{NetworkError, SpvError};
+
+    match error {
+        SpvError::Network(NetworkError::NotConnected) => BroadcastError::Rejected {
+            reason: "SPV broadcast failed: no connected peers".to_string(),
+        },
+        other => BroadcastError::MaybeSent {
+            reason: format!("SPV broadcast failed: {}", other),
+        },
+    }
+}
+
 // TODO: We want it better
 impl SpvRuntime {
     /// Create a new SPV runtime.
@@ -92,19 +118,27 @@ impl SpvRuntime {
     }
 
     /// Broadcast a transaction to all connected SPV peers.
+    ///
+    /// Failures are classified per the [`TransactionBroadcaster::broadcast`]
+    /// contract: an unstarted client and dash-spv's zero-peer
+    /// `NetworkError::NotConnected` both fire before any bytes leave the
+    /// process, so they are [`BroadcastError::Rejected`]; any later failure
+    /// may follow a partial peer send and is [`BroadcastError::MaybeSent`].
+    ///
+    /// [`TransactionBroadcaster::broadcast`]: crate::broadcaster::TransactionBroadcaster::broadcast
     pub(crate) async fn broadcast_transaction(
         &self,
         tx: &Transaction,
-    ) -> Result<(), PlatformWalletError> {
+    ) -> Result<(), BroadcastError> {
         let client_guard = self.client.read().await;
-        let client = client_guard.as_ref().ok_or(PlatformWalletError::SpvError(
-            "SPV Client not started".to_string(),
-        ))?;
+        let client = client_guard.as_ref().ok_or(BroadcastError::Rejected {
+            reason: "SPV client not started".to_string(),
+        })?;
 
         client
             .broadcast_transaction(tx)
             .await
-            .map_err(|e| PlatformWalletError::SpvError(e.to_string()))?;
+            .map_err(classify_spv_broadcast_error)?;
 
         Ok(())
     }
@@ -283,5 +317,83 @@ impl std::fmt::Debug for SpvRuntime {
         f.debug_struct("SpvRuntime")
             .field("is_started", &self.is_started())
             .finish()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use dash_spv::error::{NetworkError, SpvError};
+    use dashcore::Network;
+    use key_wallet_manager::WalletManager;
+    use tokio::sync::RwLock;
+
+    use super::{classify_spv_broadcast_error, SpvRuntime};
+    use crate::broadcaster::BroadcastError;
+    use crate::events::PlatformEventManager;
+    use crate::wallet::platform_wallet::PlatformWalletInfo;
+
+    /// A minimal valid transaction — the unstarted-client arm never
+    /// inspects it.
+    fn dummy_tx() -> dashcore::Transaction {
+        dashcore::Transaction {
+            version: 2,
+            lock_time: 0,
+            input: vec![],
+            output: vec![],
+            special_transaction_payload: None,
+        }
+    }
+
+    /// An unstarted SPV client fails before any bytes leave the process,
+    /// so the failure must classify `Rejected` (safe to release the
+    /// transaction's input reservation).
+    #[tokio::test]
+    async fn broadcast_on_unstarted_client_is_rejected() {
+        let wallet_manager = Arc::new(RwLock::new(WalletManager::<PlatformWalletInfo>::new(
+            Network::Testnet,
+        )));
+        let runtime = SpvRuntime::new(wallet_manager, Arc::new(PlatformEventManager::new(vec![])));
+
+        let result = runtime.broadcast_transaction(&dummy_tx()).await;
+        assert!(
+            matches!(result, Err(BroadcastError::Rejected { .. })),
+            "unstarted client must classify Rejected, got {result:?}"
+        );
+    }
+
+    /// dash-spv raises `NetworkError::NotConnected` from its
+    /// zero-connected-peers check before handing the transaction to any
+    /// peer, so it is the one client error safe to classify `Rejected`.
+    /// If dash-spv ever starts raising `NotConnected` after a partial
+    /// send, this pin must be revisited — releasing on a post-send
+    /// failure reopens the double-spend-on-retry window.
+    #[test]
+    fn not_connected_classifies_rejected() {
+        let result = classify_spv_broadcast_error(SpvError::Network(NetworkError::NotConnected));
+        assert!(
+            matches!(result, BroadcastError::Rejected { .. }),
+            "NotConnected must classify Rejected, got {result:?}"
+        );
+    }
+
+    /// Every other dash-spv error may follow a partial peer send and must
+    /// stay `MaybeSent`, keeping the reservation for the TTL backstop.
+    #[test]
+    fn any_other_spv_error_classifies_maybe_sent() {
+        for error in [
+            SpvError::Network(NetworkError::Timeout),
+            SpvError::Network(NetworkError::PeerDisconnected),
+            SpvError::Network(NetworkError::ConnectionFailed("reset by peer".to_string())),
+            SpvError::Config("bad config".to_string()),
+        ] {
+            let rendered = error.to_string();
+            let result = classify_spv_broadcast_error(error);
+            assert!(
+                matches!(result, BroadcastError::MaybeSent { .. }),
+                "{rendered} must classify MaybeSent, got {result:?}"
+            );
+        }
     }
 }

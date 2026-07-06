@@ -60,6 +60,22 @@ pub enum PlatformWalletError {
     #[error("Transaction broadcast failed: {0}")]
     TransactionBroadcast(String),
 
+    /// A core transaction broadcast failed with an **ambiguous** outcome — the
+    /// transaction may already have reached the network (transport timeout
+    /// after delivery, partial peer send, or an internal multi-node retry
+    /// whose earlier attempt may have succeeded). The spent inputs'
+    /// reservation is intentionally kept, so an immediate retry fails at
+    /// input selection instead of double-spending; the reservation-TTL
+    /// backstop (or a sync observing the transaction) reconciles the outcome.
+    ///
+    /// The shielded sibling is [`Self::ShieldedSpendUnconfirmed`].
+    #[error(
+        "Transaction broadcast outcome unknown — it may already be on the \
+         network; its inputs stay reserved until a sync or the reservation \
+         TTL reconciles the outcome: {0}"
+    )]
+    TransactionBroadcastUnconfirmed(String),
+
     #[error("Transaction building failed: {0}")]
     TransactionBuild(String),
 
@@ -103,11 +119,17 @@ pub enum PlatformWalletError {
         min_input_amount: Credits,
     },
 
+    // The `Display` text is surfaced verbatim to the user by the withdrawal
+    // preflight (the FFI carries `e.to_string()` as the can't-fund reason), so
+    // it is kept user-presentable: it explains the situation and the action
+    // ("consolidate funds onto fewer addresses") without naming an internal
+    // selection API. The numeric fields stay in the message as an actionable
+    // breadcrumb.
     #[error(
-        "no selectable inputs: every funded address is below the per-input \
-         minimum (sub_min_count={sub_min_count}, sub_min_aggregate={sub_min_aggregate} \
-         credits, min_input_amount={min_input_amount}); consolidate funds or use \
-         InputSelection::Explicit"
+        "Every funded address holds less than the per-input minimum of \
+         {min_input_amount} credits ({sub_min_count} addresses totaling \
+         {sub_min_aggregate} credits), so none can fund this operation on \
+         its own. Consolidate funds onto fewer addresses, then try again."
     )]
     OnlyDustInputs {
         /// Number of addresses with a positive balance below `min_input_amount`.
@@ -233,6 +255,19 @@ pub enum PlatformWalletError {
 
     #[error("Shielded Merkle witness unavailable: {0}")]
     ShieldedMerkleWitnessUnavailable(String),
+
+    /// No Platform-recorded anchor covers the notes selected for a shielded
+    /// spend, so the wallet cannot build a proof Platform will accept.
+    ///
+    /// Platform records one commitment-tree anchor per block, but an
+    /// index-chunk sync routinely leaves the wallet's tree mid-block, so the
+    /// current (depth-0) root is frequently a value Platform never recorded.
+    /// This variant is **retryable**: it is returned *before* any broadcast,
+    /// the note reservations are released by the caller's generic error path,
+    /// and the next shielded sync advances the tree onto a recorded boundary.
+    /// `0` carries a human-readable reason.
+    #[error("Shielded spend cannot use a Platform-recorded anchor: {0}")]
+    ShieldedNoRecordedAnchor(String),
 
     #[error("Shielded key derivation failed: {0}")]
     ShieldedKeyDerivation(String),

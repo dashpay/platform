@@ -123,6 +123,9 @@ wasm-sdk:
 platform-wallet:
   - packages/rs-platform-wallet/**
 
+platform-wallet-storage:
+  - packages/rs-platform-wallet-storage/**
+
 platform-wallet-ffi:
   - packages/rs-platform-wallet-ffi/**
 

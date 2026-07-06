@@ -28,7 +28,7 @@ public struct ShieldedIdentityCreateUnconfirmedError: LocalizedError {
 /// Per-wallet outcome from a completed shielded sync pass.
 ///
 /// Mirrors the Rust-side
-/// [`ShieldedSyncWalletResultFFI`](https://github.com/dashpay/platform/blob/v3.1-dev/packages/rs-platform-wallet-ffi/src/shielded_types.rs)
+/// [`ShieldedSyncWalletResultFFI`](https://github.com/dashpay/platform/blob/v4.0-dev/packages/rs-platform-wallet-ffi/src/shielded_types.rs)
 /// with three states:
 ///
 /// - `success == true`: sync succeeded; the numeric counters are

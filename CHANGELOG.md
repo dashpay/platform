@@ -1,3 +1,123 @@
+## [4.0.0](https://github.com/dashpay/platform/compare/v4.0.0-rc.2...v4.0.0) (2026-07-01)
+
+
+### ⚠ BREAKING CHANGES
+
+* **dpp:** make platform/orchard address decoders network-agnostic (#3781)
+
+### Features
+
+* **contract:** on-chain QA framework storage layer (testCase + testRun) ([#3910](https://github.com/dashpay/platform/issues/3910))
+* **dpp:** add getters and setters for new shielded state transitions ([#3879](https://github.com/dashpay/platform/issues/3879))
+* **platform-wallet:** external signable wallets ([#3639](https://github.com/dashpay/platform/issues/3639))
+* **platform:** shielded transaction history ([#3870](https://github.com/dashpay/platform/issues/3870))
+* record DAPI address ban reason and expose via platform-wallet FFI ([#3890](https://github.com/dashpay/platform/issues/3890))
+* **rs-sdk-ffi:** add masternode contested-resource vote broadcast (FFI + Swift UI) ([#3883](https://github.com/dashpay/platform/issues/3883))
+* **rs-sdk-ffi:** expose dash_sdk_signer_can_sign for signer-delegated key preflight ([#3924](https://github.com/dashpay/platform/issues/3924))
+* **sdk:** implement document sum/average aggregation FFI (DOC-13/14) ([#3935](https://github.com/dashpay/platform/issues/3935))
+* **swift-example-app:** add identity→identity Transfer Credits production UI ([#3891](https://github.com/dashpay/platform/issues/3891))
+* **swift-example-app:** add production Disable Key action with safety gates (ID-12) ([#3918](https://github.com/dashpay/platform/issues/3918))
+* **swift-example-app:** document count aggregation view (DOC-10/11/12) ([#3926](https://github.com/dashpay/platform/issues/3926))
+* **swift-example-app:** document sum/average aggregation view (DOC-13/14) ([#3942](https://github.com/dashpay/platform/issues/3942))
+* **swift-example-app:** GroveDB path elements diagnostic view (SYS-06) ([#3931](https://github.com/dashpay/platform/issues/3931))
+* **swift-example-app:** multi-recipient Core L1 send (CORE-10) ([#3904](https://github.com/dashpay/platform/issues/3904))
+* **swift-example-app:** one-tap testnet DASH faucet button ([#3905](https://github.com/dashpay/platform/issues/3905))
+* **swift-example-app:** production document replace/delete/transfer/price/purchase UI (DOC-03..07) ([#3945](https://github.com/dashpay/platform/issues/3945))
+* **swift-example-app:** production Withdraw Credits UI on identity detail (ID-10) ([#3906](https://github.com/dashpay/platform/issues/3906))
+* **swift-example-app:** rebrand to "Dash Developer Pro" for TestFlight ([#3952](https://github.com/dashpay/platform/issues/3952))
+* **swift-example-app:** send from Core balance to a shielded recipient ([#3885](https://github.com/dashpay/platform/issues/3885))
+* **swift-sdk:** add BIP39 word-validation helpers for the recover flow ([#3842](https://github.com/dashpay/platform/issues/3842))
+* **swift-sdk:** add identityUpdate handler to the generic transition builder ([#3880](https://github.com/dashpay/platform/issues/3880))
+* **swift-sdk:** add production create-document flow via platform-wallet FFI ([#3908](https://github.com/dashpay/platform/issues/3908))
+* **swift-sdk:** log tokio runtime metrics from rs-sdk-ffi and platform-wallet-ffi ([#3901](https://github.com/dashpay/platform/issues/3901))
+* **swift-sdk:** wire data contract update through the platform-wallet path ([#3882](https://github.com/dashpay/platform/issues/3882))
+
+
+### Bug Fixes
+
+* **dashmate:** use active_dkgs for safe DKG stop ([#3941](https://github.com/dashpay/platform/issues/3941))
+* **dpp:** enforce byte array encoding stability in data contract updates ([#3868](https://github.com/dashpay/platform/issues/3868))
+* **dpp:** guard index property parsing against empty/oversized maps to prevent check_tx panic ([#3866](https://github.com/dashpay/platform/issues/3866))
+* **dpp:** make platform/orchard address decoders network-agnostic ([#3781](https://github.com/dashpay/platform/issues/3781))
+* **dpp:** reject empty token pricing schedules to prevent a direct-purchase chain halt ([#3865](https://github.com/dashpay/platform/issues/3865))
+* **drive:** return empty history for contracts that don't keep history ([#3884](https://github.com/dashpay/platform/issues/3884))
+* **drive:** unify shielded per-action processing fee across all protocol versions ([#3877](https://github.com/dashpay/platform/issues/3877))
+* **platform-wallet:** add TRANSFER key to default identity registration key set ([#3894](https://github.com/dashpay/platform/issues/3894))
+* **platform-wallet:** apply disabled-key flags to local cache after identity update ([#3915](https://github.com/dashpay/platform/issues/3915))
+* **platform-wallet:** build data contract config at the protocol-required version ([#3881](https://github.com/dashpay/platform/issues/3881))
+* **platform-wallet:** free SPV data dir on stop ([#3811](https://github.com/dashpay/platform/issues/3811))
+* **platform-wallet:** spv error propagation ([#3810](https://github.com/dashpay/platform/issues/3810))
+* **rs-sdk-ffi:** classify DAPI transport and timeout errors instead of internalError ([#3916](https://github.com/dashpay/platform/issues/3916))
+* **rs-sdk-ffi:** don't export ContestedResourceVoteChoiceFFI to the C header ([#3892](https://github.com/dashpay/platform/issues/3892))
+* **rs-sdk-ffi:** run blocking FFI calls on a large stack to prevent proof-verification stack overflow ([#3896](https://github.com/dashpay/platform/issues/3896))
+* **rs-sdk-ffi:** stop labeling unclassified SDK errors as "failed to fetch balances" ([#3878](https://github.com/dashpay/platform/issues/3878))
+* **rs-sdk:** case-insensitive .dash suffix in DPNS name resolution ([#3914](https://github.com/dashpay/platform/issues/3914))
+* **sdk:** ban node and retry elsewhere on UNIMPLEMENTED responses ([#3875](https://github.com/dashpay/platform/issues/3875))
+* **sdk:** ban rate-limited node for Envoy-advertised reset window ([#3951](https://github.com/dashpay/platform/issues/3951))
+* **sdk:** default initial protocol version to 10 when unpinned (upgrade-safe ratchet floor) ([#3809](https://github.com/dashpay/platform/issues/3809))
+* **sdk:** default to latest protocol version instead of pinning testnet to v1 ([#3937](https://github.com/dashpay/platform/issues/3937))
+* **sdk:** refresh protocol version via a proven query, not unproved getStatus ([#3893](https://github.com/dashpay/platform/issues/3893))
+* **sdk:** refresh SDK protocol version to the network's on startup and network switch ([#3886](https://github.com/dashpay/platform/issues/3886))
+* **sdk:** verify quorum signature on broadcast wait-path before trusting metadata ([#3872](https://github.com/dashpay/platform/issues/3872))
+* **swift-example-app:** expose Picker options to UI automation ([#3903](https://github.com/dashpay/platform/issues/3903))
+* **swift-example-app:** fix compile timeout on on newest xcode versions ([#3899](https://github.com/dashpay/platform/issues/3899))
+* **swift-example-app:** harden Withdraw Credits amount + address validation ([#3907](https://github.com/dashpay/platform/issues/3907))
+* **swift-example-app:** load document price on Purchase sheet appear ([#3947](https://github.com/dashpay/platform/issues/3947))
+* **swift-example-app:** prevent UInt64.max overflow crash in TransferCreditsView amount parsing ([#3909](https://github.com/dashpay/platform/issues/3909))
+* **swift-example-app:** show success title on DPNS registration alert ([#3873](https://github.com/dashpay/platform/issues/3873))
+* **swift-sdk:** keychain priv key storage indexes by label ([#3946](https://github.com/dashpay/platform/issues/3946))
+* **swift-sdk:** make Document transition contract/type pickers idb-drivable ([#3921](https://github.com/dashpay/platform/issues/3921))
+* **swift-sdk:** parse getIdentitiesTokenBalances NSNumber result ([#3943](https://github.com/dashpay/platform/issues/3943))
+* **swift-sdk:** seed testnet at the per-network protocol-version floor instead of pinning PV11 ([#3944](https://github.com/dashpay/platform/issues/3944))
+* **swift-sdk:** sign document state transitions with an available AUTHENTICATION key ([#3922](https://github.com/dashpay/platform/issues/3922))
+* **swift-sdk:** stamp firstSeen at insert for unconfirmed transactions ([#3874](https://github.com/dashpay/platform/issues/3874))
+* **swift-sdk:** update token balance from the transfer/burn proof result (MW-02) ([#3934](https://github.com/dashpay/platform/issues/3934))
+* **wasm-sdk:** preserve user-supplied addresses in withTrustedContext ([#3912](https://github.com/dashpay/platform/issues/3912))
+
+
+### Continuous Integration
+
+* **swift-sdk:** remove swift-sdk artifact upload ([#3778](https://github.com/dashpay/platform/issues/3778))
+
+
+### Documentation
+
+* **swift-example-app:** add MANUAL tier to iOS test plan ([#3895](https://github.com/dashpay/platform/issues/3895))
+* **swift-example-app:** add multi-wallet test cases (Core + Platform) to iOS test plan ([#3888](https://github.com/dashpay/platform/issues/3888))
+* **swift-example-app:** add tiered iOS feature test plan ([#3887](https://github.com/dashpay/platform/issues/3887))
+* **swift-example-app:** link on-chain QA status dashboard from TEST_PLAN ([#3911](https://github.com/dashpay/platform/issues/3911))
+* **swift-example-app:** re-tier + re-status SH-11 (shielded identity create) → Common, ✅ in-UI ([#3913](https://github.com/dashpay/platform/issues/3913))
+* **swift-example-app:** remove CORE-11/12/13 (not-implemented Core actions) from test plan ([#3919](https://github.com/dashpay/platform/issues/3919))
+* **swift-example-app:** remove TOK-17 (calculate token ID utility) from test plan ([#3925](https://github.com/dashpay/platform/issues/3925))
+* **swift-example-app:** retire GRP-04 from the QA catalog ([#3932](https://github.com/dashpay/platform/issues/3932))
+* **swift-example-app:** retire stub builder rows VOTE-07/ID-13 ([#3929](https://github.com/dashpay/platform/issues/3929))
+
+
+### Tests
+
+* **drive-abci:** fix direct-selling tests broken by empty-schedule validation ([#3876](https://github.com/dashpay/platform/issues/3876))
+* **swift-example-app:** cover KeyDisableGate and correct consensus-framing comments ([#3920](https://github.com/dashpay/platform/issues/3920))
+* **swift-sdk:** move swift-sdk unit test defined in the example app to the swift-sdk unit tests suite ([#3917](https://github.com/dashpay/platform/issues/3917))
+* **wasm-sdk:** raise withdrawal test amount to the v12 minimum ([#3867](https://github.com/dashpay/platform/issues/3867))
+
+
+### Code Refactoring
+
+* **sdk:** per-network protocol-version floor + version_pinned unification ([#3900](https://github.com/dashpay/platform/issues/3900))
+
+
+### Build System
+
+* **dashmate:** update Tenderdash image to v1.6.0 ([#3940](https://github.com/dashpay/platform/issues/3940))
+* update grovedb dependency from git revision to v5.0.0 tag ([#3971](https://github.com/dashpay/platform/issues/3971))
+* update rust-dashcore to v0.44.0 ([#3973](https://github.com/dashpay/platform/issues/3973))
+
+
+### Miscellaneous Chores
+
+* bump rust-dashcore to rev without Address::network() method ([#3788](https://github.com/dashpay/platform/issues/3788))
+* retarget in-repo branch references from v3.1-dev to v4.0-dev ([#3972](https://github.com/dashpay/platform/issues/3972))
+
 ## [4.0.0-rc.2](https://github.com/dashpay/platform/compare/v4.0.0-rc.1...v4.0.0-rc.2) (2026-06-12)
 
 

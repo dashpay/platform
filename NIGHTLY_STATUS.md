@@ -2,9 +2,9 @@
 
 [![Nightly Tests](https://github.com/dashpay/platform/actions/workflows/tests.yml/badge.svg?event=schedule)](https://github.com/dashpay/platform/actions/workflows/tests.yml?query=event%3Aschedule)
 
-> **Note:** This page is manually maintained. For live results, check the [latest nightly run](https://github.com/dashpay/platform/actions/workflows/tests.yml?query=event%3Aschedule+branch%3Av3.1-dev) directly.
+> **Note:** This page is manually maintained. For live results, check the [latest nightly run](https://github.com/dashpay/platform/actions/workflows/tests.yml?query=event%3Aschedule+branch%3Av4.1-dev) directly.
 
-Nightly tests run every day at **23:00 UTC** on the `v3.1-dev` branch via the [Tests workflow](https://github.com/dashpay/platform/actions/workflows/tests.yml?query=event%3Aschedule). They exercise the full CI pipeline including Docker image builds, E2E tests, and the platform test suite.
+Nightly tests run every day at **23:00 UTC** on the `v4.1-dev` branch via the [Tests workflow](https://github.com/dashpay/platform/actions/workflows/tests.yml?query=event%3Aschedule). They exercise the full CI pipeline including Docker image builds, E2E tests, and the platform test suite.
 
 ## Nightly Jobs
 
@@ -52,7 +52,7 @@ The functional tests have been intermittently failing for months. This is a know
 ## Links
 
 - [All nightly runs](https://github.com/dashpay/platform/actions/workflows/tests.yml?query=event%3Aschedule)
-- [Latest nightly run](https://github.com/dashpay/platform/actions/workflows/tests.yml?query=event%3Aschedule+branch%3Av3.1-dev)
+- [Latest nightly run](https://github.com/dashpay/platform/actions/workflows/tests.yml?query=event%3Aschedule+branch%3Av4.1-dev)
 - [Long-running Rust nightly](https://github.com/dashpay/platform/actions/workflows/tests-rs-nightly-long-running.yml)
 - [Security audits (Rust)](https://github.com/dashpay/platform/actions/workflows/security-audit-rust.yml)
 - [Security audits (JS - npm)](https://github.com/dashpay/platform/actions/workflows/security-audit-js-npm.yml)
