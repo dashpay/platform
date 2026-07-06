@@ -4,6 +4,7 @@ import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.dashfoundation.dashsdk.errors.mapNativeErrors
+import org.dashfoundation.dashsdk.ffi.DashpayNative
 import org.dashfoundation.dashsdk.ffi.TokensNative
 
 /**
@@ -248,6 +249,92 @@ class Dashpay internal constructor(private val walletHandle: Long) {
             } finally {
                 TokensNative.managedIdentityDestroy(identityHandle)
             }
+        }
+    }
+
+    // ── DashPay read surface (upstream #3841 parity) ───────────────────
+    //
+    // JSON-string reads over the managed-identity snapshot, following the
+    // [getProfile] precedent (parsing happens at the consumer); see
+    // `DashpayNative` for the field shapes.
+
+    /**
+     * Read [identityId]'s DashPay payment history as a JSON array string
+     * (empty array when none). Local read over a managed-identity
+     * snapshot — no network I/O. This getter is the ONLY durable source
+     * of payment rows: `PlatformWalletManager.refreshDashPayPayments`
+     * upserts its result into Room (the recurring sweep reconciles
+     * payments in-memory without persisting). Returns null when the
+     * identity isn't managed by this wallet.
+     * ← Swift `ManagedIdentity.getDashPayPayments()`.
+     */
+    suspend fun payments(identityId: ByteArray): String? = withContext(Dispatchers.IO) {
+        mapNativeErrors {
+            withManagedIdentity(identityId) { handle ->
+                DashpayNative.managedIdentityDashPayPayments(handle)
+            }
+        }
+    }
+
+    /**
+     * Read [identityId]'s DashPay sync state (collection counts +
+     * high-water cursors) as a JSON object string, or null when the
+     * identity isn't managed by this wallet. Local read.
+     * ← Swift `ManagedIdentity.getDashPaySyncState()`.
+     */
+    suspend fun syncState(identityId: ByteArray): String? = withContext(Dispatchers.IO) {
+        mapNativeErrors {
+            withManagedIdentity(identityId) { handle ->
+                DashpayNative.managedIdentityDashPaySyncState(handle)
+            }
+        }
+    }
+
+    /**
+     * Read the cached public profile of [contactIdentityId] as seen by
+     * [ownerIdentityId] (the contact-profile cache the requests/contacts
+     * UI renders names + avatars from), or null when none is cached.
+     * Same JSON shape as [getProfile]. Local read.
+     * ← Swift `ManagedPlatformWallet.getContactProfile(owner:contact:)`.
+     */
+    suspend fun getContactProfile(
+        ownerIdentityId: ByteArray,
+        contactIdentityId: ByteArray,
+    ): String? = withContext(Dispatchers.IO) {
+        mapNativeErrors {
+            DashpayNative.getContactProfile(walletHandle, ownerIdentityId, contactIdentityId)
+        }
+    }
+
+    /**
+     * Live DPNS prefix search against Platform (wallet-scoped — the call
+     * path iOS `AddContactView` drives). Returns a JSON array string of
+     * `{"label":…,"identityId":…hex}`; [limit] 0 means no limit.
+     * Blocking network call; runs on IO.
+     * ← Swift `ManagedPlatformWallet.searchDpnsNames(prefix:limit:)`.
+     */
+    suspend fun searchDpnsNames(prefix: String, limit: Int = 10): String? =
+        withContext(Dispatchers.IO) {
+            require(limit >= 0) { "limit must be non-negative, got $limit" }
+            mapNativeErrors { DashpayNative.searchDpnsNames(walletHandle, prefix, limit) }
+        }
+
+    /**
+     * Open the managed-identity handle for [identityId], run [block],
+     * and destroy the handle before returning (the [contacts] /
+     * [acceptIncomingRequest] discipline). Returns null when the
+     * identity isn't managed by this wallet.
+     */
+    private inline fun <T> withManagedIdentity(
+        identityId: ByteArray,
+        block: (Long) -> T,
+    ): T? {
+        val handle = TokensNative.getManagedIdentity(walletHandle, identityId)
+        if (handle == 0L) return null
+        return try {
+            block(handle)
+        } finally {
+            TokensNative.managedIdentityDestroy(handle)
         }
     }
 

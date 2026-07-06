@@ -28,8 +28,10 @@ import org.dashfoundation.dashsdk.persistence.dao.WalletManagerMetadataDao
 import org.dashfoundation.dashsdk.persistence.entities.AccountEntity
 import org.dashfoundation.dashsdk.persistence.entities.AssetLockEntity
 import org.dashfoundation.dashsdk.persistence.entities.CoreAddressEntity
+import org.dashfoundation.dashsdk.persistence.entities.DashpayContactProfileEntity
 import org.dashfoundation.dashsdk.persistence.entities.DashpayContactRequestEntity
 import org.dashfoundation.dashsdk.persistence.entities.DashpayIgnoredSenderEntity
+import org.dashfoundation.dashsdk.persistence.entities.DashpayPaymentEntity
 import org.dashfoundation.dashsdk.persistence.entities.DashpayProfileEntity
 import org.dashfoundation.dashsdk.persistence.entities.DataContractEntity
 import org.dashfoundation.dashsdk.persistence.entities.DocumentEntity
@@ -70,9 +72,16 @@ import org.dashfoundation.dashsdk.persistence.entities.WalletManagerMetadataEnti
  * established-row metadata columns on `dashpay_contact_requests`
  * (`paymentChannelBroken` / `contactAlias` / `contactNote` /
  * `contactHidden` / `contactAccountLabel` / `contactAcceptedAccounts`).
+ *
+ * Version 3 (DashPay contact-profile cache + payment history): adds the
+ * `dashpay_contact_profiles` table (mirror of the Rust
+ * `contact_profiles` map — persister-projected with tombstone deletes,
+ * restored at load) and the `dashpay_payments` table (mirror of the Rust
+ * `dashpay_payments` map — pull-persisted via `refreshDashPayPayments`,
+ * restored at load).
  */
 @Database(
-    version = 2,
+    version = 3,
     exportSchema = true,
     entities = [
         WalletEntity::class,
@@ -87,6 +96,8 @@ import org.dashfoundation.dashsdk.persistence.entities.WalletManagerMetadataEnti
         DashpayProfileEntity::class,
         DashpayContactRequestEntity::class,
         DashpayIgnoredSenderEntity::class,
+        DashpayContactProfileEntity::class,
+        DashpayPaymentEntity::class,
         DataContractEntity::class,
         DocumentTypeEntity::class,
         DocumentEntity::class,
@@ -177,6 +188,59 @@ abstract class DashDatabase : RoomDatabase() {
         }
 
         /**
+         * v2 → v3: the DashPay contact-profile cache + payment-history
+         * tables. Purely additive. SQL mirrors the exported
+         * `schemas/.../3.json` `createSql` exactly (column order = entity
+         * field order).
+         */
+        val MIGRATION_2_3: Migration = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `dashpay_contact_profiles` (" +
+                        "`networkRaw` INTEGER NOT NULL, " +
+                        "`ownerIdentityId` BLOB NOT NULL, " +
+                        "`contactIdentityId` BLOB NOT NULL, " +
+                        "`displayName` TEXT, " +
+                        "`publicMessage` TEXT, " +
+                        "`bio` TEXT, " +
+                        "`avatarUrl` TEXT, " +
+                        "`avatarHash` BLOB, " +
+                        "`avatarFingerprint` BLOB, " +
+                        "`checkedAtMs` INTEGER NOT NULL, " +
+                        "`createdAt` INTEGER NOT NULL, " +
+                        "`lastUpdated` INTEGER NOT NULL, " +
+                        "PRIMARY KEY(`networkRaw`, `ownerIdentityId`, `contactIdentityId`), " +
+                        "FOREIGN KEY(`ownerIdentityId`) REFERENCES `identities`(`identityId`) " +
+                        "ON UPDATE NO ACTION ON DELETE CASCADE )",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_dashpay_contact_profiles_ownerIdentityId` " +
+                        "ON `dashpay_contact_profiles` (`ownerIdentityId`)",
+                )
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `dashpay_payments` (" +
+                        "`networkRaw` INTEGER NOT NULL, " +
+                        "`ownerIdentityId` BLOB NOT NULL, " +
+                        "`counterpartyIdentityId` BLOB NOT NULL, " +
+                        "`amountDuffs` INTEGER NOT NULL, " +
+                        "`directionRaw` INTEGER NOT NULL, " +
+                        "`statusRaw` INTEGER NOT NULL, " +
+                        "`txid` TEXT NOT NULL, " +
+                        "`memo` TEXT, " +
+                        "`createdAt` INTEGER NOT NULL, " +
+                        "`lastUpdated` INTEGER NOT NULL, " +
+                        "PRIMARY KEY(`networkRaw`, `ownerIdentityId`, `txid`), " +
+                        "FOREIGN KEY(`ownerIdentityId`) REFERENCES `identities`(`identityId`) " +
+                        "ON UPDATE NO ACTION ON DELETE CASCADE )",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_dashpay_payments_ownerIdentityId` " +
+                        "ON `dashpay_payments` (`ownerIdentityId`)",
+                )
+            }
+        }
+
+        /**
          * Build the on-disk database. WAL is Room's default journal mode on
          * API 16+; writes go through the persistence handler inside
          * `withTransaction`, mirroring the changeset bracketing contract of
@@ -184,7 +248,7 @@ abstract class DashDatabase : RoomDatabase() {
          */
         fun create(context: Context): DashDatabase =
             Room.databaseBuilder(context, DashDatabase::class.java, DATABASE_NAME)
-                .addMigrations(MIGRATION_1_2)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                 .build()
 
         /** In-memory variant for tests. */

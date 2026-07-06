@@ -15,6 +15,7 @@
 //! - Rust→Kotlin callbacks attach their (possibly Tokio) thread as a daemon.
 
 mod credits;
+mod dashpay;
 mod events;
 mod funding;
 mod identity;
