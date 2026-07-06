@@ -183,6 +183,7 @@ class AppContainer(private val context: Context) {
                 if (shieldedService.isAvailable) {
                     manager.stopShieldedSync()
                 }
+                manager.stopDashPaySync()
             } catch (e: Exception) {
                 android.util.Log.w(TAG, "Failed to stop sync coordinators", e)
             }
@@ -213,6 +214,13 @@ class AppContainer(private val context: Context) {
                 )
                 if (shieldedService.isAvailable && !manager.isShieldedSyncRunning()) {
                     manager.startShieldedSync()
+                }
+                // DashPay contact/profile/payment sync — the load-bearing
+                // prerequisite for the DashPay tab (← iOS
+                // rebindWalletScopedServices starting it alongside the
+                // address/shielded loops on the wallet-present branch).
+                if (!manager.isDashPaySyncRunning()) {
+                    manager.startDashPaySync()
                 }
             } catch (e: Exception) {
                 android.util.Log.e(TAG, "Failed to bind wallet-scoped services", e)

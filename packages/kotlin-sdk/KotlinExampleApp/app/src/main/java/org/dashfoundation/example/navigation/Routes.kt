@@ -18,6 +18,8 @@ import kotlinx.serialization.Serializable
 
 @Serializable object ContractsHome
 
+@Serializable object DashPayHome
+
 @Serializable object SettingsHome
 
 // ── Settings graph ─────────────────────────────────────────────────────
@@ -88,9 +90,6 @@ import kotlinx.serialization.Serializable
 
 /** Pick the identity's main DPNS name (← `SelectMainNameView.swift`). */
 @Serializable data class SelectMainName(val identityIdHex: String)
-
-/** DashPay contacts for an identity (← `FriendsView.swift`). */
-@Serializable data class Friends(val identityIdHex: String)
 
 /** All public keys of an identity (← `KeysListView.swift`). */
 @Serializable data class KeysList(val identityIdHex: String)
@@ -356,6 +355,6 @@ enum class RootTab(
     SYNC(SyncHome, SyncHome::class, "rootTab.sync"),
     WALLETS(WalletsHome, WalletsHome::class, "rootTab.wallets"),
     IDENTITIES(IdentitiesHome, IdentitiesHome::class, "rootTab.identities"),
-    CONTRACTS(ContractsHome, ContractsHome::class, "rootTab.contracts"),
+    DASHPAY(DashPayHome, DashPayHome::class, "rootTab.dashpay"),
     SETTINGS(SettingsHome, SettingsHome::class, "rootTab.settings"),
 }
