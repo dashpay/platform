@@ -34,6 +34,11 @@ dash-async = { path = "../rs-dash-async" }
 # this crate.
 key-wallet = { workspace = true }
 
+# DashPay host crypto primitives (ECDH / AES) for the Keychain signer's
+# raw-secret operations, computed in-process so the scalar never crosses
+# FFI. Single source of truth — reused, not re-implemented.
+platform-encryption = { path = "../rs-platform-encryption" }
+
 # Single source of truth for the Network enum and its `#[repr(C)]`
 # FFI variant, both used directly across this crate's FFI surface.
 dash-network = { workspace = true, features = ["ffi"] }

@@ -70,10 +70,12 @@ pub unsafe extern "C" fn managed_identity_get_label(
     out_label: *mut *mut c_char,
 ) -> PlatformWalletFFIResult {
     check_ptr!(out_label);
+    // Null the out-pointer before the fallible handle lookup so even the
+    // invalid-handle error path leaves it well-defined.
+    unsafe { *out_label = std::ptr::null_mut() };
 
     let option = MANAGED_IDENTITY_STORAGE.with_item(identity_handle, |_identity| ());
     unwrap_option_or_return!(option);
-    unsafe { *out_label = std::ptr::null_mut() };
     PlatformWalletFFIResult::ok()
 }
 
@@ -196,6 +198,14 @@ pub unsafe extern "C" fn managed_identity_get_public_keys(
 ) -> PlatformWalletFFIResult {
     check_ptr!(out_keys);
     check_ptr!(out_count);
+    // Sentinel first: the handle lookup below is fallible, and
+    // `managed_identity_free_public_keys` reconstructs the array (and each
+    // entry's owned `data_ptr`) from any non-null pointer / non-zero count
+    // pair — a cleanup-on-error caller must never see stack garbage here.
+    unsafe {
+        *out_keys = std::ptr::null_mut();
+        *out_count = 0;
+    }
 
     let option = MANAGED_IDENTITY_STORAGE.with_item(identity_handle, |identity| {
         let keys = identity.identity.public_keys();
@@ -228,10 +238,7 @@ pub unsafe extern "C" fn managed_identity_get_public_keys(
     let buf = unwrap_option_or_return!(option);
 
     if buf.is_empty() {
-        unsafe {
-            *out_keys = std::ptr::null_mut();
-            *out_count = 0;
-        }
+        // Out-params already hold the (null, 0) sentinel written above.
         return PlatformWalletFFIResult::ok();
     }
     let count = buf.len();
