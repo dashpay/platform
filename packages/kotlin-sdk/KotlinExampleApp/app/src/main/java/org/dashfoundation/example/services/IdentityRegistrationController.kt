@@ -36,7 +36,7 @@ class IdentityRegistrationController(
      * path has no asset lock — its long pole is the ZK proof — so it renders
      * its own step set. ← `IdentityRegistrationController.FundingKind`.
      */
-    enum class FundingKind { AssetLock, ShieldedPool }
+    enum class FundingKind { AssetLock, PlatformAddresses, ShieldedPool }
 
     /**
      * Registration phase. Flow: [Idle] → [PreparingKeys] (caller) →

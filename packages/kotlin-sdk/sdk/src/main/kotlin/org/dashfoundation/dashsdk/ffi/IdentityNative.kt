@@ -158,6 +158,33 @@ internal object IdentityNative {
     ): ByteArray
 
     /**
+     * Register a new identity funded by the wallet's already-committed
+     * Platform-payment (DIP-17) address balances — the ID-08 create path,
+     * distinct from [registerIdentityWithFunding] (ID-01) which builds a
+     * new Core asset lock.
+     *
+     * @param pubkeysBlob the keys to register (same layout as
+     *   [registerIdentityWithFunding]). Built by
+     *   [org.dashfoundation.dashsdk.identity.IdentityKeyPreview.encodeForRegistration].
+     * @param signerHandle used for **both** the identity-key and the
+     *   platform-address signing roles (the native `VTableSigner`
+     *   dispatches by key-type byte).
+     * @param inputsBlob the funding addresses, big-endian: `u32 rowCount`
+     *   then per row `u8 addressType (0 P2PKH / 1 P2SH), u8[20] hash,
+     *   u64 credits`. Built by
+     *   [org.dashfoundation.dashsdk.credits.FundingInput.encode]. Nonces
+     *   are auto-fetched Rust-side.
+     * @return the 32-byte identity id.
+     */
+    external fun registerIdentityFromAddresses(
+        walletHandle: Long,
+        identityIndex: Int,
+        pubkeysBlob: ByteArray,
+        signerHandle: Long,
+        inputsBlob: ByteArray,
+    ): ByteArray
+
+    /**
      * Scan the wallet's identity-authentication tree for registered
      * identities (gap-limit walk, Rust-side). Returns the concatenated
      * 32-byte ids (length is a multiple of 32). [startIndex] < 0 uses the

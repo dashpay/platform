@@ -132,6 +132,32 @@ class IdentityCredits internal constructor() {
     }
 
     /**
+     * Transfer credits from [fromIdentityId] (32 bytes) to one or more
+     * Platform-address recipients ([outputs]), signed by the identity's
+     * transfer key via [signerHandle] — the ID-11 path. Each output's
+     * `credits` is the amount routed to that recipient address (the
+     * [FundingInput] row shape is reused since it is the identical
+     * `addressType / hash / credits` triple the FFI marshals). Returns the
+     * sender's post-transfer credit balance.
+     */
+    suspend fun transferToAddresses(
+        walletHandle: Long,
+        fromIdentityId: ByteArray,
+        outputs: List<FundingInput>,
+        signerHandle: Long,
+    ): Long = withContext(Dispatchers.IO) {
+        require(outputs.isNotEmpty()) { "outputs must not be empty" }
+        mapNativeErrors {
+            CreditsNative.transferCreditsToAddresses(
+                walletHandle,
+                fromIdentityId,
+                FundingInput.encode(outputs),
+                signerHandle,
+            )
+        }
+    }
+
+    /**
      * Top up [identityId] (32 bytes) by building + broadcasting a **new
      * Core asset lock** — the ID-05 funding path (same mechanism as
      * identity registration), distinct from [topUpFromAddresses] (ID-06).

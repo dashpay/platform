@@ -2,6 +2,7 @@ package org.dashfoundation.dashsdk.identity
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.dashfoundation.dashsdk.credits.FundingInput
 import org.dashfoundation.dashsdk.errors.mapNativeErrors
 import org.dashfoundation.dashsdk.ffi.IdentityNative
 
@@ -111,6 +112,38 @@ class IdentityRegistration internal constructor() {
                 IdentityKeyPreview.encodeForRegistration(keys),
                 signerHandle,
                 coreSignerHandle,
+            )
+        }
+    }
+
+    /**
+     * Register a new identity funded by the wallet's already-committed
+     * Platform-payment (DIP-17) address balances — the ID-08 path, distinct
+     * from [registerWithWalletFunding] (ID-01) which builds a new Core asset
+     * lock. Keys must already be derived + persisted (see
+     * [previewRegistrationKeySet]); [inputs] are the funding addresses (the
+     * greedily-packed balance-carrying Platform-payment addresses). The same
+     * [signerHandle] drives both the identity-key and platform-address
+     * signing roles. Nonces are auto-fetched Rust-side.
+     *
+     * @return the 32-byte identity id.
+     */
+    suspend fun registerFromAddresses(
+        walletHandle: Long,
+        identityIndex: Int,
+        keys: List<IdentityKeyPreview>,
+        signerHandle: Long,
+        inputs: List<FundingInput>,
+    ): ByteArray = withContext(Dispatchers.IO) {
+        require(identityIndex >= 0) { "identityIndex must be non-negative, got $identityIndex" }
+        require(inputs.isNotEmpty()) { "inputs must not be empty" }
+        mapNativeErrors {
+            IdentityNative.registerIdentityFromAddresses(
+                walletHandle,
+                identityIndex,
+                IdentityKeyPreview.encodeForRegistration(keys),
+                signerHandle,
+                FundingInput.encode(inputs),
             )
         }
     }

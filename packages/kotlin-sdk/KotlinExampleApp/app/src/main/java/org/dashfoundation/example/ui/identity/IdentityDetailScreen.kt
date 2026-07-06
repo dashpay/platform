@@ -41,6 +41,7 @@ import org.dashfoundation.example.navigation.SelectMainName
 import org.dashfoundation.example.navigation.TopUpIdentity
 import org.dashfoundation.example.navigation.TopUpIdentityFromCore
 import org.dashfoundation.example.navigation.TransferCredits
+import org.dashfoundation.example.navigation.TransferToAddress
 import org.dashfoundation.example.navigation.WithdrawCredits
 import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.LabeledContent
@@ -181,6 +182,13 @@ fun IdentityDetailScreen(identityIdHex: String, navController: NavHostController
                     modifier = Modifier
                         .clickable { navController.navigate(TransferCredits(identityIdHex)) }
                         .testTag("identityDetail.transfer"),
+                )
+                ListItem(
+                    headlineContent = { Text("Transfer to Platform Address") },
+                    supportingContent = { Text("Send credits to a DIP-17 address") },
+                    modifier = Modifier
+                        .clickable { navController.navigate(TransferToAddress(identityIdHex)) }
+                        .testTag("identityDetail.transferToAddress"),
                 )
                 ListItem(
                     headlineContent = { Text("Withdraw") },

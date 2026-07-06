@@ -42,6 +42,7 @@ import org.dashfoundation.example.ui.identity.SelectMainNameScreen
 import org.dashfoundation.example.ui.credits.TopUpIdentityFromCoreScreen
 import org.dashfoundation.example.ui.credits.TopUpIdentityScreen
 import org.dashfoundation.example.ui.credits.TransferCreditsScreen
+import org.dashfoundation.example.ui.credits.TransferIdentityToAddressScreen
 import org.dashfoundation.example.ui.credits.TransferPlatformAddressScreen
 import org.dashfoundation.example.ui.credits.WithdrawCreditsScreen
 import org.dashfoundation.example.ui.credits.WithdrawPlatformAddressScreen
@@ -199,6 +200,13 @@ fun AppNavHost(
 
         composable<TransferCredits> { entry ->
             TransferCreditsScreen(entry.toRoute<TransferCredits>().identityIdHex, navController)
+        }
+
+        composable<TransferToAddress> { entry ->
+            TransferIdentityToAddressScreen(
+                entry.toRoute<TransferToAddress>().identityIdHex,
+                navController,
+            )
         }
 
         composable<WithdrawCredits> { entry ->
