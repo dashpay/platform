@@ -247,7 +247,6 @@ struct SendTransactionView: View {
                             // and this view's `wallet` may not
                             // be the one that was last created.
                             let managed = walletManager.wallet(for: wallet.walletId)
-                            let coreWallet = try? managed?.coreWallet()
                             let platformAddressWallet = try? managed?.platformAddressWallet()
                             // Pick the account that will FUND a platform →
                             // platform transfer. The Rust Auto selector
@@ -295,7 +294,7 @@ struct SendTransactionView: View {
                                 shieldedService: shieldedService,
                                 platformState: platformState,
                                 wallet: wallet,
-                                coreWallet: coreWallet,
+                                platformWallet: managed,
                                 platformAddressWallet: platformAddressWallet,
                                 signer: signer,
                                 senderAccountIndex: senderAccountIndex,
