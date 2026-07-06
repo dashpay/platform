@@ -190,6 +190,11 @@ class AppContainer(private val context: Context) {
             shieldedService.unbind()
         } else {
             try {
+                // Re-attach the balance-sync UI reflector: a prior no-wallet
+                // pass reset() it (nulling its manager), and without this the
+                // Sync tab stays "Not synced yet" with Sync Now a no-op until
+                // an app restart.
+                platformBalanceSyncService.configure(manager)
                 if (!manager.isPlatformAddressSyncRunning()) {
                     manager.startPlatformAddressSync()
                 }

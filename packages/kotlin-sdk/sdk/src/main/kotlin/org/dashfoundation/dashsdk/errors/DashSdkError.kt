@@ -119,6 +119,18 @@ sealed class DashSdkError(
             )
 
         /**
+         * `ErrorShieldedBroadcastFailed` (native code 16). A DEFINITIVE
+         * non-execution outcome — relay/CheckTx rejected the transaction
+         * before it entered the chain, and any note reservations were
+         * released. Safe to retry (the opposite of the ambiguous
+         * [ShieldedSpendUnconfirmed]).
+         */
+        class ShieldedBroadcastFailed(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause) {
+            override val isRetryable: Boolean get() = true
+        }
+
+        /**
          * `ErrorTransactionBroadcastUnconfirmed` (native code 20). A core
          * transaction broadcast had an AMBIGUOUS outcome — it may already be
          * on the network. The wallet keeps the spent inputs reserved so a
@@ -189,6 +201,7 @@ sealed class DashSdkError(
             // PlatformWalletFFIResultCode variants (platform-wallet-ffi/src/error.rs)
             1 -> PlatformWallet.InvalidHandle(message, cause) // ErrorInvalidHandle
             6 -> PlatformWallet.WalletOperation(message, cause) // ErrorWalletOperation
+            16 -> PlatformWallet.ShieldedBroadcastFailed(message, cause) // ErrorShieldedBroadcastFailed
             18 -> PlatformWallet.ShieldedSpendUnconfirmed(message, cause) // ErrorShieldedSpendUnconfirmed
             19 -> PlatformWallet.ShieldedNoRecordedAnchor(message, cause) // ErrorShieldedNoRecordedAnchor
             20 -> PlatformWallet.TransactionBroadcastUnconfirmed(message, cause) // ErrorTransactionBroadcastUnconfirmed

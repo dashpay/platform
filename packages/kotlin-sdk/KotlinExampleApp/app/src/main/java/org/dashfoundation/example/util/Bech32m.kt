@@ -23,6 +23,9 @@ object Bech32m {
      * when malformed (bad charset, checksum, padding, or HRP length).
      */
     fun decode(input: String): Decoded? {
+        // BIP-350: a string must be entirely lowercase or entirely
+        // uppercase; mixed case is invalid (matches the Swift Bech32m).
+        if (input != input.lowercase() && input != input.uppercase()) return null
         val lower = input.lowercase()
         val sep = lower.lastIndexOf('1')
         if (sep < 1) return null
