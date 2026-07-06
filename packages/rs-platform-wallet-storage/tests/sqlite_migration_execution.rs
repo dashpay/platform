@@ -5,11 +5,6 @@
 //! TC-B-033 (backup restorable + re-migration determinism), TC-B-034
 //! (forward-version rejection at the new max), TC-B-035 (idempotent
 //! re-entry), TC-B-036 (empty wallet through migration).
-//!
-//! TODO(post-#3986/#3968 reconcile): does not compile against the shipped
-//! `ClientWalletStartState` — same phantom `used_core_addresses` field gap as
-//! `sqlite_pool_reader.rs`; see that file's TODO. Pre-existing, unrelated to
-//! the T5 PK-collision fix.
 
 mod common;
 
@@ -17,11 +12,39 @@ use std::path::{Path, PathBuf};
 
 use common::{ro_conn, wid};
 use platform_wallet::changeset::PlatformWalletPersistence;
+use platform_wallet::wallet::platform_wallet::WalletId;
+use platform_wallet_storage::sqlite::schema::{core_pool, core_state};
 use platform_wallet_storage::{SqlitePersister, SqlitePersisterConfig, WalletStorageError};
 use rusqlite::Connection;
 
 const FULL_WALLET: u8 = 0xA1;
 const EMPTY_WALLET: u8 = 0xB2;
+
+/// The reuse-guard used-set `load()` assembles from a migrated store: verbatim
+/// `core_address_pool` used=1 rows unioned with the `core_utxos`-derived (both
+/// spent and unspent) set, deduped by script — read from the two shipped reader
+/// fns the persister itself calls. Asserted at the reader layer (not the
+/// assembled `core_wallet_info`) because the fixture's UTXO sits on a
+/// seed-derived address unrelated to the registered account's xpub, so
+/// `load()`'s pool-marking never claims it; the used-set fact it pins is a
+/// reader-layer one (as in `sqlite_pool_reader.rs`). A migrated store carries no
+/// pool rows, so the set is UTXO-derived here.
+fn used_set(persister: &SqlitePersister, w: &WalletId) -> Vec<dashcore::Address> {
+    let conn = persister.lock_conn_for_test();
+    let pool = core_pool::load_used_addresses(&conn, w, dashcore::Network::Testnet)
+        .expect("pool used-set");
+    let utxo = core_state::load_used_addresses(&conn, w, dashcore::Network::Testnet)
+        .expect("utxo used-set");
+    drop(conn);
+    let mut seen = std::collections::HashSet::new();
+    let mut union = Vec::new();
+    for addr in pool.into_iter().chain(utxo) {
+        if seen.insert(addr.script_pubkey().to_bytes()) {
+            union.push(addr);
+        }
+    }
+    union
+}
 
 fn fixture_src() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -147,9 +170,12 @@ fn tc_b_031_populated_v001_migration_preserves_data() {
     // UTXO-derived address (no pool rows in a migrated store).
     let state = p.load().unwrap();
     let full = wid(FULL_WALLET);
-    let slice = state.wallets.get(&full).expect("full wallet reconstructs");
+    assert!(
+        state.wallets.contains_key(&full),
+        "full wallet reconstructs"
+    );
     assert_eq!(
-        slice.used_core_addresses.len(),
+        used_set(&p, &full).len(),
         1,
         "migrated store falls back to the UTXO-derived used-set"
     );
@@ -164,12 +190,12 @@ fn tc_b_036_empty_wallet_through_migration() {
     let p = SqlitePersister::open(SqlitePersisterConfig::new(&path)).unwrap();
     let state = p.load().unwrap();
     let empty = wid(EMPTY_WALLET);
-    let slice = state
-        .wallets
-        .get(&empty)
-        .expect("empty wallet still surfaces post-migration");
     assert!(
-        slice.used_core_addresses.is_empty(),
+        state.wallets.contains_key(&empty),
+        "empty wallet still surfaces post-migration"
+    );
+    assert!(
+        used_set(&p, &empty).is_empty(),
         "empty wallet is empty-but-valid, not corrupt"
     );
 }

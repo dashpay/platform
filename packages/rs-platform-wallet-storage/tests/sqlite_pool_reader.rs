@@ -6,13 +6,15 @@
 //! (empty wallet loads empty-but-valid), multi-wallet isolation (TC-B-026),
 //! and the pool ∪ `core_utxos` used-set union (pre-pool + mixed stores).
 //!
-//! TODO(post-#3986/#3968 reconcile): this file does not compile against the
-//! shipped `ClientWalletStartState` — it assumes a `used_core_addresses`
-//! field that was never added; the shipped design folds used-address data
-//! into `core_wallet_info` instead (see `persister.rs::load`'s
-//! `used_core_addresses` local + `apply_persisted_core_state`). Pre-existing
-//! from the #3986 squash-merge, unrelated to the T5 PK-collision fix — needs
-//! a rewrite against the real struct shape, out of scope here.
+//! These assert directly on the two shipped reader fns `load()` itself calls —
+//! `core_pool::load_used_addresses` (verbatim pool `used=1`) and
+//! `core_state::load_used_addresses` (`core_utxos`-derived, spent + unspent) —
+//! not on `load()`'s assembled `core_wallet_info`. The reuse-guard facts pinned
+//! here (deep-index no-truncation, pool ∪ UTXO dedup) live at the reader layer:
+//! `load()` only marks addresses that resolve to a *registered* account's
+//! derived pool, which these keyless, arbitrary-address stores deliberately
+//! don't set up. The `load()` → `core_wallet_info` marking path is covered by
+//! `sqlite_used_core_addresses.rs`.
 
 mod common;
 
@@ -30,6 +32,38 @@ use platform_wallet::changeset::{
     AccountAddressPoolEntry, CoreChangeSet, PlatformWalletChangeSet, PlatformWalletPersistence,
 };
 use platform_wallet::wallet::platform_wallet::WalletId;
+use platform_wallet_storage::sqlite::schema::{core_pool, core_state};
+use platform_wallet_storage::SqlitePersister;
+
+/// Verbatim `core_address_pool` `used=1` addresses — the pool half of the
+/// reuse-guard set `load()` reads.
+fn pool_used(persister: &SqlitePersister, w: &WalletId) -> Vec<Address> {
+    let conn = persister.lock_conn_for_test();
+    core_pool::load_used_addresses(&conn, w, Network::Testnet).expect("pool used-set")
+}
+
+/// `core_utxos`-derived used addresses (spent + unspent) — the UTXO half.
+fn utxo_used(persister: &SqlitePersister, w: &WalletId) -> Vec<Address> {
+    let conn = persister.lock_conn_for_test();
+    core_state::load_used_addresses(&conn, w, Network::Testnet).expect("utxo used-set")
+}
+
+/// The assembled reuse-guard set `load()` hands the manager: pool ∪ UTXO,
+/// deduped by script (mirrors `SqlitePersister::load`).
+fn used_set(persister: &SqlitePersister, w: &WalletId) -> Vec<Address> {
+    let conn = persister.lock_conn_for_test();
+    let pool = core_pool::load_used_addresses(&conn, w, Network::Testnet).expect("pool used-set");
+    let utxo = core_state::load_used_addresses(&conn, w, Network::Testnet).expect("utxo used-set");
+    drop(conn);
+    let mut seen = std::collections::HashSet::new();
+    let mut union = Vec::new();
+    for addr in pool.into_iter().chain(utxo) {
+        if seen.insert(addr.script_pubkey().to_bytes()) {
+            union.push(addr);
+        }
+    }
+    union
+}
 
 fn external_infos(seed_byte: u8) -> Vec<AddressInfo> {
     let wallet = Wallet::from_seed_bytes(
@@ -97,10 +131,7 @@ fn tc_b_020_used_set_from_pool_not_utxos() {
         )
         .unwrap();
 
-    let state = persister.load().unwrap();
-    let slice = state.wallets.get(&w).expect("wallet surfaces in load");
-    let got: std::collections::BTreeSet<String> = slice
-        .used_core_addresses
+    let got: std::collections::BTreeSet<String> = pool_used(&persister, &w)
         .iter()
         .map(|a| a.to_string())
         .collect();
@@ -110,6 +141,10 @@ fn tc_b_020_used_set_from_pool_not_utxos() {
         .map(|i| i.address.to_string())
         .collect();
     assert_eq!(got, expected, "used-set must equal the pool's used=1 rows");
+    assert!(
+        utxo_used(&persister, &w).is_empty(),
+        "no UTXO stored: the used-set is pool-derived, not core_utxos-derived"
+    );
 }
 
 /// TC-B-023 — a wallet whose pool advanced past the old horizon-walk window
@@ -140,19 +175,15 @@ fn tc_b_023_deep_derivation_window_not_truncated() {
         }
     }
 
-    let state = persister.load().unwrap();
-    let slice = state.wallets.get(&w).expect("wallet surfaces");
+    let used = pool_used(&persister, &w);
     assert_eq!(
-        slice.used_core_addresses.len(),
+        used.len(),
         46,
         "indices 0..=45 are used and must all restore"
     );
     let want = p2pkh(45).to_string();
     assert!(
-        slice
-            .used_core_addresses
-            .iter()
-            .any(|a| a.to_string() == want),
+        used.iter().any(|a| a.to_string() == want),
         "the index-45 used address must survive (no gap-limit-30 truncation)"
     );
 }
@@ -165,13 +196,8 @@ fn tc_b_025_empty_wallet_is_empty_but_valid() {
     let w: WalletId = wid(0x25);
     ensure_wallet_meta(&persister, &w);
 
-    let state = persister.load().unwrap();
-    let slice = state
-        .wallets
-        .get(&w)
-        .expect("empty wallet must still surface");
     assert!(
-        slice.used_core_addresses.is_empty(),
+        used_set(&persister, &w).is_empty(),
         "empty wallet has an empty used-set"
     );
 }
@@ -211,10 +237,9 @@ fn pre_pool_store_yields_utxo_derived_used_set() {
         )
         .unwrap();
 
-    let state = persister.load().unwrap();
-    let slice = state.wallets.get(&w).expect("wallet surfaces");
-    assert_eq!(slice.used_core_addresses.len(), 1);
-    assert_eq!(slice.used_core_addresses[0].to_string(), addr.to_string());
+    let used = utxo_used(&persister, &w);
+    assert_eq!(used.len(), 1);
+    assert_eq!(used[0].to_string(), addr.to_string());
 }
 
 /// TC-B-026 — reader multi-wallet isolation: two wallets seeded with
@@ -255,14 +280,11 @@ fn tc_b_026_reader_isolates_two_wallets() {
         )
         .unwrap();
 
-    let state = persister.load().unwrap();
-    let a_used: Vec<String> = state.wallets[&a]
-        .used_core_addresses
+    let a_used: Vec<String> = used_set(&persister, &a)
         .iter()
         .map(|x| x.to_string())
         .collect();
-    let b_used: Vec<String> = state.wallets[&b]
-        .used_core_addresses
+    let b_used: Vec<String> = used_set(&persister, &b)
         .iter()
         .map(|x| x.to_string())
         .collect();
@@ -334,10 +356,7 @@ fn mixed_store_unions_utxo_and_pool_used_sets() {
         )
         .unwrap();
 
-    let state = persister.load().unwrap();
-    let slice = state.wallets.get(&w).expect("wallet surfaces");
-    let got: std::collections::BTreeSet<String> = slice
-        .used_core_addresses
+    let got: std::collections::BTreeSet<String> = used_set(&persister, &w)
         .iter()
         .map(|a| a.to_string())
         .collect();
