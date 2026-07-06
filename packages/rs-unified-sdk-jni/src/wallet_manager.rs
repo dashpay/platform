@@ -743,6 +743,17 @@ fn decode_funding_recipients(
         return None;
     };
     let count = u32::from_be_bytes(count_bytes.as_slice().try_into().ok()?) as usize;
+    // Length-before-allocation guard: rows are variable but each consumes
+    // at least one byte, so `count` can never exceed the remaining
+    // payload — bounds `with_capacity` against a hostile raw-JNI blob.
+    if count > bytes.len() - cursor {
+        throw_sdk_exception(
+            env,
+            1,
+            &format!("recipients blob claims {count} rows but body is too short"),
+        );
+        return None;
+    }
     let mut entries = Vec::with_capacity(count);
     let mut remainder_index: Option<u16> = None;
     for i in 0..count {
@@ -851,6 +862,20 @@ fn decode_credit_outputs(
         return None;
     };
     let count = u32::from_be_bytes(count_bytes.as_slice().try_into().ok()?) as usize;
+    // Length-before-allocation guard: rows are a fixed 29 bytes, so a
+    // header claiming more than the remaining payload holds is malformed
+    // — prevents a huge `with_capacity` abort from a raw-JNI blob.
+    if count
+        .checked_mul(29)
+        .is_none_or(|need| bytes.len() - cursor < need)
+    {
+        throw_sdk_exception(
+            env,
+            1,
+            &format!("outputs blob claims {count} rows but body is too short"),
+        );
+        return None;
+    }
     let mut outputs = Vec::with_capacity(count);
     for i in 0..count {
         let Some(type_byte) = read(&mut cursor, 1) else {

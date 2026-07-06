@@ -371,6 +371,22 @@ pub(crate) fn decode_credit_rows(
         return None;
     };
     let count = u32::from_be_bytes(count_bytes.try_into().ok()?) as usize;
+    // Reject an impossible row count before allocating: rows are a fixed
+    // 29 bytes, so a header claiming more than the remaining payload can
+    // hold is malformed. Guards the raw-JNI boundary against a huge
+    // `with_capacity` abort on a short/hostile blob (the per-row reads
+    // below still throw precise truncation errors for valid-sized claims).
+    if count
+        .checked_mul(29)
+        .is_none_or(|need| bytes.len() - cursor < need)
+    {
+        throw_sdk_exception(
+            env,
+            1,
+            &format!("{field} claims {count} rows but body is too short"),
+        );
+        return None;
+    }
     let mut rows = Vec::with_capacity(count);
     for i in 0..count {
         let Some(type_byte) = read(&mut cursor, 1) else {
