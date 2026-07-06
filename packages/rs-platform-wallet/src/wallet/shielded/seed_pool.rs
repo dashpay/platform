@@ -149,7 +149,7 @@ impl PlatformWallet {
         settings: Option<PutSettings>,
     ) -> Result<SeedPoolOutcome, PlatformWalletError>
     where
-        AS: ::key_wallet::signer::Signer + Send + Sync,
+        AS: ::key_wallet::signer::ExtendedPubKeySigner + Send + Sync,
         F: Fn(SeedPoolProgress) + Send + Sync,
     {
         // HARD GATE: this is a devnet/testnet seeding utility. The mainnet

@@ -385,7 +385,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         asset_lock_signer: &AS,
     ) -> Result<FundingResolution, PlatformWalletError>
     where
-        AS: ::key_wallet::signer::Signer + Send + Sync,
+        AS: ::key_wallet::signer::ExtendedPubKeySigner + Send + Sync,
     {
         match funding {
             AssetLockFunding::FromWalletBalance {

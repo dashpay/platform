@@ -12,7 +12,8 @@ use async_trait::async_trait;
 use dashcore::secp256k1::{ecdsa, Message, PublicKey, Secp256k1};
 use dashcore::{Network, Transaction, Txid};
 use key_wallet::account::account_type::StandardAccountType;
-use key_wallet::signer::{Signer, SignerMethod};
+use key_wallet::bip32::ExtendedPubKey;
+use key_wallet::signer::{ExtendedPubKeySigner, Signer, SignerMethod};
 use key_wallet::test_utils::TestWalletContext;
 use key_wallet::transaction_checking::TransactionContext;
 use key_wallet::{DerivationPath, Wallet};
@@ -116,6 +117,22 @@ impl Signer for WalletSigner {
             .derive_private_key(path)
             .map_err(|e| e.to_string())?;
         Ok(PublicKey::from_secret_key(&secp, &key))
+    }
+}
+
+#[async_trait]
+impl ExtendedPubKeySigner for WalletSigner {
+    async fn extended_public_key(
+        &self,
+        path: &DerivationPath,
+    ) -> Result<ExtendedPubKey, Self::Error> {
+        // The test wallet is full-signable, so it can derive an extended
+        // public key at a hardened path from its root xpriv — mirroring
+        // what `MnemonicResolverCoreSigner` does via the Keychain mnemonic
+        // in production.
+        self.wallet
+            .derive_extended_public_key(path)
+            .map_err(|e| e.to_string())
     }
 }
 

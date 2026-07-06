@@ -8,16 +8,19 @@ use std::time::Duration;
 
 use dashcore::Address as DashAddress;
 use dashcore::{OutPoint, Transaction, TxOut};
+use key_wallet::account::AccountType;
 use key_wallet::bip32::DerivationPath;
 use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
-use key_wallet::signer::Signer;
+use key_wallet::signer::ExtendedPubKeySigner;
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::{
     AssetLockFundingType, CreditOutputFunding,
 };
+use key_wallet::wallet::managed_wallet_info::managed_account_operations::ManagedAccountOperations;
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::Wallet;
 
 use crate::error::PlatformWalletError;
+use crate::wallet::platform_wallet::PlatformWalletInfo;
 
 use super::manager::{AssetLockManager, DEFAULT_FEE_PER_KB};
 use super::tracked::{AssetLockStatus, TrackedAssetLock};
@@ -49,7 +52,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     ///   from `platform-wallet-ffi` — built on top of the
     ///   Keychain-resolver vtable so private keys never cross the FFI
     ///   boundary.
-    pub async fn build_asset_lock_transaction<S: Signer>(
+    pub async fn build_asset_lock_transaction<S: ExtendedPubKeySigner>(
         &self,
         amount_duffs: u64,
         account_index: u32,
@@ -65,8 +68,20 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
 
         let mut wm = self.wallet_manager.write().await;
         let (wallet, info) = wm
-            .get_wallet_and_info_mut(&self.wallet_id)
+            .get_wallet_mut_and_info_mut(&self.wallet_id)
             .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
+
+        // 0. For a per-index identity top-up, lazily derive + insert the
+        //    `IdentityTopUp { registration_index }` account (both the
+        //    xpub-bearing `Wallet.accounts` side and the managed
+        //    `ManagedWalletInfo.accounts` side) if it isn't there yet.
+        //    Wallet setup only derives the *singleton* special accounts
+        //    (identity_registration, etc.); per-index topup accounts are
+        //    keyed by the identity's registration index and can't be
+        //    enumerated ahead of time, so we derive one on demand here.
+        if funding_type == AssetLockFundingType::IdentityTopUp {
+            Self::ensure_identity_topup_account(wallet, info, identity_index, signer).await?;
+        }
 
         // 1. Peek at the next unused address from the funding account to
         //    build the credit output P2PKH script.
@@ -265,6 +280,110 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             })
     }
 
+    /// Idempotently derive + insert the per-index `IdentityTopUp`
+    /// derivation account into BOTH the xpub-bearing `Wallet.accounts`
+    /// and the managed `ManagedWalletInfo.accounts`.
+    ///
+    /// Wallet setup (`create_special_purpose_accounts`) only derives the
+    /// *singleton* special accounts (`identity_registration`, etc.);
+    /// per-index topup accounts are keyed by the identity's registration
+    /// index, so we derive one on demand the first time a given identity
+    /// is topped up. Deterministic from the wallet seed — the same
+    /// derivation used for `IdentityRegistration`, with the
+    /// `registration_index` appended to the DIP-9 topup path — so it needs
+    /// no persistence and is safe to call on every build / retry: existing
+    /// accounts are left untouched by the `contains_*` guards.
+    ///
+    /// ## Two derivation paths
+    ///
+    /// The production platform wallet is **external-signable**: at
+    /// registration it is `downgrade_to_external_signable()`'d and holds
+    /// only account xpubs — no root xpriv/seed (that lives behind the
+    /// Swift Keychain, reachable only through the `signer`). The
+    /// `IdentityTopUp` derivation path is HARDENED, so the seedless
+    /// `Wallet::add_account(_, None)` "derive from root xpriv" path fails
+    /// for such wallets. We therefore derive the account xpub through the
+    /// `signer` (`ExtendedPubKeySigner::extended_public_key`, which the
+    /// `MnemonicResolverCoreSigner` resolves via the Keychain mnemonic) and
+    /// insert the resulting xpub explicitly.
+    ///
+    /// Full-signable wallets (unit tests, in-memory soft wallets) keep the
+    /// cheaper local `add_account(_, None)` path — no signer round-trip.
+    async fn ensure_identity_topup_account<S: ExtendedPubKeySigner>(
+        wallet: &mut Wallet,
+        info: &mut PlatformWalletInfo,
+        identity_index: u32,
+        signer: &S,
+    ) -> Result<(), PlatformWalletError> {
+        let account_type = AccountType::IdentityTopUp {
+            registration_index: identity_index,
+        };
+
+        // (a) xpub side — insert the account into `Wallet.accounts` if it
+        //     isn't there yet.
+        if !wallet.accounts.contains_account_type(&account_type) {
+            // NOTE: gate on `is_external_signable()`, NOT `can_sign()` —
+            // `can_sign()` is `!watch_only`, so it's TRUE for external-signable
+            // wallets (they CAN sign, just via the external signer), which
+            // would wrongly take the local `add_account(_, None)` path and fail
+            // with "External signable wallet has no private key".
+            if !wallet.is_external_signable() {
+                // Full-signable wallet (tests / soft wallets): derive the
+                // account xpub locally from the wallet's root xpriv.
+                wallet.add_account(account_type, None).map_err(|e| {
+                    PlatformWalletError::AssetLockTransaction(format!(
+                        "Failed to derive identity top-up account for index {}: {}",
+                        identity_index, e
+                    ))
+                })?;
+            } else {
+                // External-signable wallet (production): no root key at
+                // rest — derive the hardened account xpub through the
+                // external signer, then insert it explicitly.
+                let path = account_type.derivation_path(wallet.network).map_err(|e| {
+                    PlatformWalletError::AssetLockTransaction(format!(
+                        "Failed to compute identity top-up derivation path for index {}: {}",
+                        identity_index, e
+                    ))
+                })?;
+                let account_xpub = signer.extended_public_key(&path).await.map_err(|e| {
+                    PlatformWalletError::AssetLockTransaction(format!(
+                        "Failed to derive identity top-up account xpub for index {} via signer: {}",
+                        identity_index, e
+                    ))
+                })?;
+                wallet
+                    .add_account(account_type, Some(account_xpub))
+                    .map_err(|e| {
+                        PlatformWalletError::AssetLockTransaction(format!(
+                            "Failed to add identity top-up account for index {}: {}",
+                            identity_index, e
+                        ))
+                    })?;
+            }
+        }
+
+        // (b) managed side — mirror the account (keys-bearing, with its
+        //     address pool initialized from the xpub) into
+        //     `ManagedWalletInfo.accounts.identity_topup`.
+        if !info
+            .core_wallet
+            .accounts
+            .identity_topup
+            .contains_key(&identity_index)
+        {
+            info.add_managed_account(wallet, account_type)
+                .map_err(|e| {
+                    PlatformWalletError::AssetLockTransaction(format!(
+                        "Failed to register managed identity top-up account for index {}: {}",
+                        identity_index, e
+                    ))
+                })?;
+        }
+
+        Ok(())
+    }
+
     /// Build, broadcast, and wait for an asset lock proof.
     ///
     /// This is the **unified** entry point for obtaining a funded asset lock
@@ -302,7 +421,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     ///   the registration index identifying which identity is being topped up).
     /// * `signer` — External ECDSA signer (Swift Keychain-backed in
     ///   production via `MnemonicResolverCoreSigner`).
-    pub async fn create_funded_asset_lock_proof<S: Signer>(
+    pub async fn create_funded_asset_lock_proof<S: ExtendedPubKeySigner>(
         &self,
         amount_duffs: u64,
         account_index: u32,
