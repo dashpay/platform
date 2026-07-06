@@ -178,6 +178,14 @@ pub unsafe extern "C" fn contact_request_get_encrypted_public_key(
 ) -> PlatformWalletFFIResult {
     check_ptr!(out_bytes);
     check_ptr!(out_len);
+    // Sentinel first: the handle lookup below is fallible, and
+    // `platform_wallet_bytes_free` reconstructs a `Vec` from any non-null
+    // pointer / non-zero length pair — a cleanup-on-error caller must never
+    // see stack garbage here.
+    unsafe {
+        *out_bytes = std::ptr::null_mut();
+        *out_len = 0;
+    }
 
     let option = CONTACT_REQUEST_STORAGE.with_item(request_handle, |request| {
         request.encrypted_public_key.clone()

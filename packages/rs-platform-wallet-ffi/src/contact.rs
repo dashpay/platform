@@ -12,6 +12,10 @@ pub unsafe extern "C" fn managed_identity_get_sent_contact_request_ids(
     out_array: *mut IdentifierArray,
 ) -> PlatformWalletFFIResult {
     check_ptr!(out_array);
+    // Sentinel first: the handle lookup below is fallible, and
+    // `platform_wallet_identifier_array_free` reconstructs a `Vec` from any
+    // non-null pointer/count pair — see `IdentifierArray::empty`.
+    unsafe { *out_array = IdentifierArray::empty() };
 
     let option = MANAGED_IDENTITY_STORAGE.with_item(identity_handle, |identity| {
         identity
@@ -33,6 +37,8 @@ pub unsafe extern "C" fn managed_identity_get_incoming_contact_request_ids(
     out_array: *mut IdentifierArray,
 ) -> PlatformWalletFFIResult {
     check_ptr!(out_array);
+    // Sentinel first — see `IdentifierArray::empty`.
+    unsafe { *out_array = IdentifierArray::empty() };
 
     let option = MANAGED_IDENTITY_STORAGE.with_item(identity_handle, |identity| {
         identity
@@ -54,6 +60,8 @@ pub unsafe extern "C" fn managed_identity_get_established_contact_ids(
     out_array: *mut IdentifierArray,
 ) -> PlatformWalletFFIResult {
     check_ptr!(out_array);
+    // Sentinel first — see `IdentifierArray::empty`.
+    unsafe { *out_array = IdentifierArray::empty() };
 
     let option = MANAGED_IDENTITY_STORAGE.with_item(identity_handle, |identity| {
         identity

@@ -25,6 +25,14 @@ pub unsafe extern "C" fn platform_wallet_serialize_to_json_bytes(
     check_ptr!(json_string);
     check_ptr!(out_bytes);
     check_ptr!(out_len);
+    // Sentinel first: the UTF-8 check below is fallible, and
+    // `platform_wallet_bytes_free` reconstructs a `Vec` from any non-null
+    // pointer / non-zero length pair — a cleanup-on-error caller must never
+    // see stack garbage here.
+    unsafe {
+        *out_bytes = std::ptr::null_mut();
+        *out_len = 0;
+    }
 
     let json_str =
         unwrap_result_or_return!(unsafe { std::ffi::CStr::from_ptr(json_string).to_str() });
@@ -51,6 +59,10 @@ pub unsafe extern "C" fn platform_wallet_deserialize_from_json_bytes(
 ) -> PlatformWalletFFIResult {
     check_ptr!(bytes);
     check_ptr!(out_json_string);
+    // Null the out-pointer before the fallible UTF-8 / NUL checks below so
+    // an error return never leaves it holding stack garbage for a
+    // cleanup-on-error caller to `platform_wallet_string_free`.
+    unsafe { *out_json_string = std::ptr::null_mut() };
 
     let data = unsafe { std::slice::from_raw_parts(bytes, len) };
     let s = unwrap_result_or_return!(std::str::from_utf8(data));
