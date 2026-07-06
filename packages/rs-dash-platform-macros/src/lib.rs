@@ -4,18 +4,21 @@ use quote::{format_ident, quote};
 use syn::parse::{Parse, ParseStream};
 use syn::{DeriveInput, Expr, Ident, ItemFn, Token, parse_macro_input};
 
-/// Default worker-thread count for the `multi_thread` flavor when
-/// `worker_threads = N` is omitted.
-const DEFAULT_MULTI_THREAD_WORKERS: usize = 4;
+/// Worker-thread count for the async runtime when `worker_threads = N` is
+/// omitted. Two is the minimum that lets `block_in_place` hand off to another
+/// worker, without spawning tokio's unbounded num_cpus default under `cargo
+/// test` concurrency.
+const DEFAULT_MULTI_THREAD_WORKERS: usize = 2;
 
 /// Parsed arguments of the `#[stack_size(..)]` attribute.
 struct StackSizeArgs {
-    /// Stack size in bytes for the driving thread (and, in `multi_thread`
-    /// mode, for the runtime's worker threads).
+    /// Stack size in bytes for the driving thread and the async runtime's
+    /// worker threads.
     stack_size: Expr,
-    /// Whether to drive the async body on a multi-threaded tokio runtime.
+    /// Gate that must be set before `worker_threads` may be overridden. Async
+    /// bodies always run on a multi-threaded runtime regardless of this flag.
     multi_thread: bool,
-    /// Worker-thread count for the multi-threaded runtime; `None` uses
+    /// Worker-thread count for the async runtime; `None` uses
     /// [`DEFAULT_MULTI_THREAD_WORKERS`].
     worker_threads: Option<Expr>,
 }
@@ -74,16 +77,16 @@ impl Parse for StackSizeArgs {
 ///
 /// # Arguments
 ///
-/// - `#[stack_size(EXPR)]` — drives an `async` body on a **current-thread** tokio
-///   runtime (sync bodies run directly). This is the default flavor.
-/// - `#[stack_size(EXPR, multi_thread)]` — drives an `async` body on a
-///   **multi-threaded** tokio runtime with a default of 4 worker threads.
-///   Worker threads also get `EXPR` as their stack size, so work spawned onto
-///   the runtime has the same recursion budget as the driving thread.
-/// - `#[stack_size(EXPR, multi_thread, worker_threads = N)]` — as above with `N`
-///   worker threads.
+/// - `#[stack_size(EXPR)]` — the default: an `async` body runs on a
+///   multi-threaded tokio runtime with two worker threads; a sync body runs
+///   directly on the spawned thread.
+/// - `#[stack_size(EXPR, multi_thread, worker_threads = N)]` — same, but with
+///   `N` worker threads instead of two (only valid on `async` functions).
 ///
-/// `multi_thread` is only valid on `async` functions.
+/// Worker threads inherit `EXPR` as their stack size, so tasks spawned onto the
+/// runtime share the driving thread's recursion budget. Driving async bodies on
+/// a multi-threaded runtime lets nested sync-over-async bridges in the body
+/// (e.g. `tokio::task::block_in_place`) proceed instead of deadlocking (#3535).
 ///
 /// # Example
 ///
@@ -130,10 +133,12 @@ pub fn stack_size(attr: TokenStream, item: TokenStream) -> TokenStream {
             .into();
     }
 
-    // TODO(issue #3535): migrate to `dash_async::block_on` — the
-    // inline `Builder::block_on(...)` pattern can deadlock inside a
-    // running runtime.
-    let spawned_body = if is_async && multi_thread {
+    // Async bodies run on a multi-threaded runtime whose workers inherit the
+    // requested stack size, so nested sync-over-async bridges in the body
+    // (`block_in_place`, nested `block_on`) can't deadlock or panic the way a
+    // single current-thread runtime would (issue #3535). `worker_threads = N`
+    // overrides the default worker count.
+    let spawned_body = if is_async {
         let workers = worker_threads
             .map(|expr| quote!(#expr))
             .unwrap_or_else(|| quote!(#DEFAULT_MULTI_THREAD_WORKERS));
@@ -141,23 +146,9 @@ pub fn stack_size(attr: TokenStream, item: TokenStream) -> TokenStream {
             builder
                 .spawn(move || {
                     ::tokio::runtime::Builder::new_multi_thread()
+                        .enable_all()
                         .worker_threads(#workers)
                         .thread_stack_size(#stack_size_expr)
-                        .enable_all()
-                        .build()
-                        .expect("failed to build tokio runtime for stack_size thread")
-                        .block_on(async move #block)
-                })
-                .expect("failed to spawn stack_size thread")
-                .join()
-                .expect("stack_size thread panicked")
-        }
-    } else if is_async {
-        quote! {
-            builder
-                .spawn(move || {
-                    ::tokio::runtime::Builder::new_current_thread()
-                        .enable_all()
                         .build()
                         .expect("failed to build tokio runtime for stack_size thread")
                         .block_on(async move #block)
