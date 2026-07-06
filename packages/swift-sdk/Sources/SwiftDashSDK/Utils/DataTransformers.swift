@@ -41,29 +41,29 @@ public enum AddressTransformer {
         return nil
     }
 
-    /// Parses a bech32m Platform address to its raw address bytes.
-    /// - Parameter address: Bech32m address string (dashevo1... or tdashevo1...).
-    /// - Returns: Address bytes (21 bytes) if valid, nil otherwise.
+    /// Parses a bech32m Platform address to its raw storage/FFI address bytes.
+    /// - Parameter address: Bech32m address string (dash1... or tdash1...).
+    /// - Returns: Storage-form address bytes (21 bytes, type byte 0x00/0x01) if
+    ///   valid, nil otherwise.
     public static func parseBech32mAddress(_ address: String) -> Data? {
         let trimmed = address.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let result = Bech32m.decode(trimmed),
-              (result.hrp == "dashevo" || result.hrp == "tdashevo"),
-              result.data.count == 21 else {
+              (result.hrp == Bech32m.platformHrpMainnet || result.hrp == Bech32m.platformHrpTestnet) else {
             return nil
         }
-        return result.data
+        return Bech32m.storageBytes(fromBech32mPayload: result.data)
     }
 
     /// Formats address bytes for display, optionally as bech32m.
     /// - Parameters:
     ///   - data: Address bytes (21 bytes for Platform address).
     ///   - asBech32m: If true, encodes as bech32m; otherwise returns hex.
-    ///   - isTestnet: If asBech32m is true, determines testnet (tdashevo1) vs mainnet (dashevo1).
+    ///   - isTestnet: If asBech32m is true, determines testnet (tdash1) vs mainnet (dash1).
     /// - Returns: Formatted address string.
     public static func formatAddress(_ data: Data, asBech32m: Bool = false, isTestnet: Bool = true) -> String {
-        if asBech32m, data.count == 21 {
-            let hrp = isTestnet ? "tdashevo" : "dashevo"
-            return Bech32m.encode(hrp: hrp, data: data) ?? dataToHex(data)
+        if asBech32m, let payload = Bech32m.bech32mPayload(fromStorageBytes: data) {
+            let hrp = Bech32m.platformHrp(mainnet: !isTestnet)
+            return Bech32m.encode(hrp: hrp, data: payload) ?? dataToHex(data)
         }
         return dataToHex(data)
     }
@@ -75,7 +75,7 @@ public enum AddressTransformer {
         let trimmed = address.trimmingCharacters(in: .whitespacesAndNewlines)
 
         // Check if it's a bech32m address
-        if trimmed.lowercased().hasPrefix("dashevo1") || trimmed.lowercased().hasPrefix("tdashevo1") {
+        if Bech32m.looksLikePlatformAddress(trimmed) {
             return parseBech32mAddress(trimmed)
         }
 

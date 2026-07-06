@@ -59,7 +59,7 @@ public enum AddressValidator {
         !id.trimmingCharacters(in: .whitespaces).isEmpty
     }
 
-    /// Validates a bech32m Platform address (dashevo1... or tdashevo1...).
+    /// Validates a bech32m Platform address (dash1... or tdash1...).
     /// - Returns: `true` if string is a valid bech32m address with correct HRP and 21 bytes of data.
     public static func validateBech32mAddress(_ address: String) -> Bool {
         Bech32m.isValidPlatformAddress(address)
@@ -69,7 +69,7 @@ public enum AddressValidator {
     /// - Returns: `true` if string is valid in either format.
     public static func validateAddress(_ address: String) -> Bool {
         let trimmed = address.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.lowercased().hasPrefix("dashevo1") || trimmed.lowercased().hasPrefix("tdashevo1") {
+        if Bech32m.looksLikePlatformAddress(trimmed) {
             return validateBech32mAddress(trimmed)
         }
         return validateHexAddress(trimmed)
