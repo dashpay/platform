@@ -821,7 +821,27 @@ impl AddressProvider for PlatformPaymentAddressProvider {
                 };
                 let PerAccountInSyncPlatformAddressState { found, absent } = &mut account_scratch;
                 absent.retain(|addr| !found.contains_key(addr));
-                account_state.found.extend(account_scratch.found);
+                // Height-pin freshness on the merge: a pass that ran
+                // against a lagging node can stage a stale-but-valid
+                // absolute for a row a fresher reconcile already
+                // committed (its pin is older). Keeping the fresher
+                // committed entry mirrors `commit_reconciliation`'s
+                // rule AND `compute_address_balance_diff`'s persist
+                // guard, so the in-memory seed and the durable rows
+                // never diverge over which of the two is truth.
+                for (addr, incoming) in account_scratch.found {
+                    match account_state.found.get(&addr) {
+                        Some(existing) if existing.as_of_height > incoming.as_of_height => {}
+                        _ => {
+                            account_state.found.insert(addr, incoming);
+                        }
+                    }
+                }
+                // Absence carries no per-entry height, so a stale pass's
+                // removal is NOT pin-guarded here; the persist diff skips
+                // the durable zero for fresher-pinned rows, and the next
+                // pass reconstructs the in-memory entry from a full
+                // replay (base 0, pin 0 → every delta applies).
                 for absent_addr in &account_scratch.absent {
                     account_state.found.remove(absent_addr);
                 }
@@ -1318,6 +1338,54 @@ mod tests {
             .or_default()
             .absent
             .insert(addr);
+    }
+
+    /// Stage `addr` as found with `f` in the in-sync scratch — the shape
+    /// `on_address_found` produces (without the wallet-manager write).
+    fn stage_found(
+        provider: &mut PlatformPaymentAddressProvider,
+        addr: PlatformP2PKHAddress,
+        f: AddressFunds,
+    ) {
+        provider
+            .per_wallet_in_sync
+            .entry(WALLET)
+            .or_default()
+            .entry(ACCOUNT)
+            .or_default()
+            .found
+            .insert(addr, f);
+    }
+
+    /// `sync_finished`'s scratch merge applies height-pin freshness: a
+    /// pass that ran against a lagging node stages a stale-but-valid
+    /// absolute (older pin) for a row a fresher reconcile committed —
+    /// the committed entry must survive, mirroring the persist diff's
+    /// guard so memory and disk agree. A same-or-newer pin still lands.
+    #[tokio::test]
+    async fn sync_finished_keeps_fresher_pinned_committed_entry() {
+        let addr = p2pkh(1);
+        // Committed by the reconcile seam at the funding proof height.
+        let mut provider =
+            provider_with_one_funded_address(addr, funds_at(9_985_071_720, 0, 379_731));
+
+        // A lagging pass stages the pre-funding absolute at an older pin.
+        stage_found(&mut provider, addr, funds_at(0, 0, 379_728));
+        provider.sync_finished().await;
+
+        let seed: Vec<_> = provider.current_balances().collect();
+        assert_eq!(
+            seed[0].2,
+            funds_at(9_985_071_720, 0, 379_731),
+            "a stale-pinned scratch entry must not clobber a fresher \
+             committed row"
+        );
+
+        // A genuinely newer pass replaces it.
+        stage_found(&mut provider, addr, funds_at(5, 1, 379_740));
+        provider.sync_finished().await;
+        let seed: Vec<_> = provider.current_balances().collect();
+        assert_eq!(seed[0].2, funds_at(5, 1, 379_740));
     }
 
     /// `sync_finished` must drop an address proven absent this pass from
