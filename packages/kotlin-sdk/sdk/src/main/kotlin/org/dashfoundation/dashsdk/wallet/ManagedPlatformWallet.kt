@@ -663,7 +663,4 @@ class ManagedPlatformWallet internal constructor(
             }
         }
     }
-
-    private companion object {
-    }
 }
