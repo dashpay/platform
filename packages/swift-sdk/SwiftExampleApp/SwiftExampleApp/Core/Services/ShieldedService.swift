@@ -387,13 +387,17 @@ class ShieldedService: ObservableObject {
     /// affecting the others or the mirror. Idempotent — safe to call
     /// every rebind pass (`configureShielded` no-ops on the same path;
     /// `bindShielded` replaces that wallet's registration).
+    ///
+    /// Returns whether the engine registration succeeded; existing
+    /// callers may ignore it.
+    @discardableResult
     func bindEngine(
         walletManager: PlatformWalletManager,
         walletId: Data,
         network: Network,
         resolver: MnemonicResolver,
         accounts: [UInt32] = [0]
-    ) {
+    ) -> Bool {
         let dbPath = Self.dbPath(for: network)
         let sortedAccounts = Array(Set(accounts)).sorted()
 
@@ -418,11 +422,13 @@ class ShieldedService: ObservableObject {
                 "Shielded engine-bound: walletId=\(walletId.prefix(4).map { String(format: "%02x", $0) }.joined())… network=\(network.networkName) accounts=\(sortedAccounts)",
                 minimumLevel: .medium
             )
+            return true
         } catch {
             SDKLogger.log(
                 "Shielded engine-bind failed for walletId=\(walletId.prefix(4).map { String(format: "%02x", $0) }.joined())…: \(error.localizedDescription)",
                 minimumLevel: .medium
             )
+            return false
         }
     }
 
@@ -494,34 +500,47 @@ class ShieldedService: ObservableObject {
                 resolver: resolver,
                 accounts: accounts
             )
-            // `bind` is best-effort; if it failed (e.g. the
-            // mnemonic resolver was declined), `isBound` stays
-            // false and `lastError` is populated. Bail rather
-            // than chain a sync that will fail the same way.
-            guard isBound else { return }
+            // Mirror bind is best-effort — on failure `lastError` is
+            // already populated by `bind(...)`, and we still run the
+            // engine pass below so other wallets with intact mnemonics
+            // re-register (a mirror-only failure must not dark the whole
+            // fleet).
         }
 
-        // Re-register any loaded wallet that lost its engine binding —
-        // post-Clear, `clearShielded` drops EVERY wallet, and a detail-view
-        // `switchTo` in between re-binds only the wallet being viewed, so
-        // the recovery branch above may not even run. This runs on every
-        // Sync Now: with no cheap coordinator-registration probe (see
-        // `bindEngine`), each pass re-derives every other wallet's keys
-        // (low-millisecond per wallet) — the price of correct post-Clear
-        // re-registration.
+        // Re-register any loaded wallet that lost its engine binding — see
+        // prior comment (post-Clear recovery): `clearShielded` drops EVERY
+        // wallet, and a detail-view `switchTo` in between re-binds only the
+        // wallet being viewed, so the recovery branch above may not even
+        // run. This runs on every Sync Now: with no cheap
+        // coordinator-registration probe (see `bindEngine`), each pass
+        // re-derives every other wallet's keys (low-millisecond per wallet)
+        // — the price of correct post-Clear re-registration. Track whether
+        // ANYTHING is registered: if the mirror bind failed AND no other
+        // wallet bound, a sync pass would skip every wallet and produce a
+        // meaningless result over the bind error the user needs to see.
+        var anyWalletRegistered = isBound
         if let mirrorWalletId = boundWalletId, let resolver, let network {
             engineBindOtherWallets(
                 allWalletIds: walletManager.wallets.keys,
                 mirrorWalletId: mirrorWalletId
             ) { otherWalletId in
-                bindEngine(
+                if bindEngine(
                     walletManager: walletManager,
                     walletId: otherWalletId,
                     network: network,
                     resolver: resolver
-                )
+                ) {
+                    anyWalletRegistered = true
+                }
             }
         }
+        // Nothing registered (mirror failed + every other bind failed, or no
+        // bind credentials at all — the Sync Now button is disabled when
+        // `!canResume`, so this mainly covers the all-binds-failed case):
+        // bail rather than chain a sync that would skip every wallet —
+        // preserves the pre-existing "don't chain a sync that will fail the
+        // same way" intent, per-wallet-ized.
+        guard anyWalletRegistered else { return }
 
         isSyncing = true
         lastError = nil
@@ -709,10 +728,15 @@ class ShieldedService: ObservableObject {
         //    `switchTo` between Clear and Sync Now re-binds only the
         //    viewed wallet (flipping `isBound` true and skipping the
         //    recovery branch), which would otherwise leave the other
-        //    wallets engine-unregistered. So cross-wallet shielded
-        //    flows (SH-14/15/16) come back immediately on the first
-        //    post-Clear Sync Now, not only on the next
-        //    `rebindWalletScopedServices()` fire.
+        //    wallets engine-unregistered. The pass is also best-effort
+        //    across the mirror: a mirror-bind FAILURE (missing mnemonic
+        //    / declined resolver) no longer bails Sync Now — the engine
+        //    pass still runs so every OTHER wallet with an intact
+        //    mnemonic re-registers, and Sync Now only bails when NOTHING
+        //    registered (mirror + every other bind failed). So
+        //    cross-wallet shielded flows (SH-14/15/16) come back
+        //    immediately on the first post-Clear Sync Now, not only on
+        //    the next `rebindWalletScopedServices()` fire.
         //    `rebindWalletScopedServices` remains the recovery path for
         //    wallets loaded LATER (a wallet added after the Clear isn't
         //    in the manager's set at Sync-Now time); it re-`bindEngine`s
