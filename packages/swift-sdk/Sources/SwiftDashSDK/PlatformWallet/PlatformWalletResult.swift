@@ -53,6 +53,14 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// of double-spending; the reservation TTL or a sync reconciles the
     /// outcome. Do NOT auto-retry.
     case errorTransactionBroadcastUnconfirmed = 20
+    /// Definitively-failed address-nonce race: Platform rejected an
+    /// address-funds transition (shield, or identity top-up-from-addresses)
+    /// because the submitted address nonce raced Platform's expected value
+    /// (a lagging DAPI replica read). The transition did NOT execute and any
+    /// notes were released (a shield reserves none) — safe to retry; the retry
+    /// re-fetches the nonce and self-heals. The submitted/expected nonce values
+    /// travel in the message string, not as structured fields.
+    case errorAddressNonceMismatch = 21
     case notFound = 98
     case errorUnknown = 99
 
@@ -100,6 +108,8 @@ public enum PlatformWalletResultCode: Int32, Sendable {
             self = .errorShieldedNoRecordedAnchor
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_TRANSACTION_BROADCAST_UNCONFIRMED:
             self = .errorTransactionBroadcastUnconfirmed
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_ADDRESS_NONCE_MISMATCH:
+            self = .errorAddressNonceMismatch
         case PLATFORM_WALLET_FFI_RESULT_CODE_NOT_FOUND:
             self = .notFound
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_UNKNOWN:
@@ -208,6 +218,13 @@ public enum PlatformWalletError: LocalizedError {
     /// reservation TTL or a later sync reconciles the outcome. Do NOT
     /// auto-retry. Core sibling of `shieldedSpendUnconfirmed`.
     case transactionBroadcastUnconfirmed(String)
+    /// Definitively-failed address-nonce race (shield, or identity
+    /// top-up-from-addresses): Platform rejected the transition because the
+    /// submitted address nonce raced its expected value. The transition did
+    /// NOT execute and any notes were released (a shield reserves none) — safe
+    /// to retry, and the retry re-fetches the address nonce so the mismatch
+    /// self-heals. The submitted/expected nonce values are in the message.
+    case addressNonceMismatch(String)
     case notFound(String)
     case unknown(String)
 
@@ -225,6 +242,7 @@ public enum PlatformWalletError: LocalizedError {
              .shieldedBroadcastUnconfirmed(let m), .shieldedSpendUnconfirmed(let m),
              .shieldedNoRecordedAnchor(let m),
              .transactionBroadcastUnconfirmed(let m),
+             .addressNonceMismatch(let m),
              .notFound(let m), .unknown(let m):
             return m
         }
@@ -258,6 +276,8 @@ public enum PlatformWalletError: LocalizedError {
         case .errorShieldedNoRecordedAnchor: self = .shieldedNoRecordedAnchor(detail)
         case .errorTransactionBroadcastUnconfirmed:
             self = .transactionBroadcastUnconfirmed(detail)
+        case .errorAddressNonceMismatch:
+            self = .addressNonceMismatch(detail)
         case .notFound:               self = .notFound(detail)
         case .errorUnknown:           self = .unknown(detail)
         }

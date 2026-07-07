@@ -1,6 +1,8 @@
 use dpp::address_funds::PlatformAddress;
+use dpp::consensus::state::address_funds::AddressInvalidNonceError;
 use dpp::fee::Credits;
 use dpp::identifier::Identifier;
+use dpp::prelude::AddressNonce;
 use key_wallet::account::StandardAccountType;
 use key_wallet::managed_account::address_pool::AddressPoolType;
 use key_wallet::Network;
@@ -114,6 +116,26 @@ pub enum PlatformWalletError {
 
     #[error("SDK error: {0}")]
     Sdk(#[from] dash_sdk::Error),
+
+    /// Platform rejected an address-funds transition because a spent
+    /// address's provided nonce did not equal Platform's expected next value
+    /// (DPP consensus code 40603, `AddressInvalidNonceError`): the optimistic
+    /// `fetched + 1` nonce raced a lagging DAPI replica's stale read.
+    ///
+    /// The rejection is by design — the address-nonce path is optimistic and
+    /// the caller owns the retry. This variant delivers Platform's
+    /// `expected_nonce` verbatim so the caller can rebuild the transition with
+    /// it (no re-fetch needed) instead of parsing a flattened string.
+    #[error(
+        "Address nonce mismatch for {address}: submitted nonce {provided_nonce}, \
+         Platform expected {expected_nonce}; retry the operation with the \
+         expected nonce"
+    )]
+    AddressNonceMismatch {
+        address: PlatformAddress,
+        provided_nonce: AddressNonce,
+        expected_nonce: AddressNonce,
+    },
 
     #[error("Address sync failed: {0}")]
     AddressSync(String),
@@ -458,5 +480,166 @@ pub fn as_asset_lock_proof_cl_height_too_low(
             BasicError::InvalidAssetLockProofCoreChainHeightError(e),
         )) => Some(e),
         _ => None,
+    }
+}
+
+/// Extract the `AddressInvalidNonceError` (DPP consensus code 40603) from an
+/// SDK error if Platform rejected an address-funds transition because a spent
+/// address's provided nonce did not equal its expected next value.
+///
+/// Returns `Some(&error)` for both `dash_sdk::Error` shapes that carry a
+/// consensus verdict — `StateTransitionBroadcastError` (wait-stream rejection)
+/// and `Protocol(ProtocolError::ConsensusError)` (CheckTx rejection) —
+/// exposing `address()`, `provided_nonce()`, and `expected_nonce()`. Returns
+/// `None` for everything else.
+///
+/// The address-nonce path is optimistic by design: the client submits
+/// `fetched + 1` and Platform rejects a stale/replayed value under a lagging
+/// replica read. This extractor lets a caller recover `expected_nonce` and
+/// retry per that contract. Recurses through
+/// [`dash_sdk::Error::NoAvailableAddressesToRetry`] so it stays in lockstep
+/// with its sibling `broadcast_definitely_failed`; re-audit if a future
+/// `dash_sdk::Error` variant starts carrying consensus errors through yet
+/// another shape.
+pub fn as_address_invalid_nonce(error: &dash_sdk::Error) -> Option<&AddressInvalidNonceError> {
+    use dpp::consensus::state::state_error::StateError;
+    use dpp::consensus::ConsensusError;
+
+    let consensus_error = match error {
+        dash_sdk::Error::StateTransitionBroadcastError(broadcast_err) => {
+            broadcast_err.cause.as_ref()
+        }
+        dash_sdk::Error::Protocol(dpp::ProtocolError::ConsensusError(ce)) => Some(ce.as_ref()),
+        // A consensus rejection can arrive wrapped when the dapi-client
+        // exhausted every address mid-retry; recurse so this predicate stays
+        // in lockstep with `broadcast_definitely_failed`.
+        dash_sdk::Error::NoAvailableAddressesToRetry(inner) => {
+            return as_address_invalid_nonce(inner)
+        }
+        _ => None,
+    };
+    match consensus_error {
+        Some(ConsensusError::StateError(StateError::AddressInvalidNonceError(e))) => Some(e),
+        _ => None,
+    }
+}
+
+/// Promote a nonce-rejection SDK error to the typed
+/// [`PlatformWalletError::AddressNonceMismatch`] so callers can recover
+/// `expected_nonce` and retry, instead of receiving the rejection flattened
+/// to a string.
+///
+/// Returns `None` for any error [`as_address_invalid_nonce`] does not match,
+/// leaving the caller free to keep its existing fallback mapping.
+pub fn promote_address_nonce_error(error: &dash_sdk::Error) -> Option<PlatformWalletError> {
+    as_address_invalid_nonce(error).map(|e| PlatformWalletError::AddressNonceMismatch {
+        address: *e.address(),
+        provided_nonce: e.provided_nonce(),
+        expected_nonce: e.expected_nonce(),
+    })
+}
+
+#[cfg(test)]
+mod address_nonce_tests {
+    use super::*;
+    use dash_sdk::error::StateTransitionBroadcastError;
+
+    const ADDR_BYTES: [u8; 20] = [7u8; 20];
+
+    /// An `AddressInvalidNonceError` wrapped as a `ConsensusError`, plus the
+    /// address it names, for asserting round-trip field fidelity.
+    fn nonce_consensus_error(
+        provided: AddressNonce,
+        expected: AddressNonce,
+    ) -> (PlatformAddress, dpp::consensus::ConsensusError) {
+        let address = PlatformAddress::P2pkh(ADDR_BYTES);
+        let err = AddressInvalidNonceError::new(address, provided, expected);
+        (address, err.into())
+    }
+
+    /// `Protocol(ConsensusError)` — the CheckTx-rejection shape.
+    fn protocol_shape(provided: AddressNonce, expected: AddressNonce) -> dash_sdk::Error {
+        let (_, cause) = nonce_consensus_error(provided, expected);
+        dash_sdk::Error::Protocol(dpp::ProtocolError::ConsensusError(Box::new(cause)))
+    }
+
+    /// `StateTransitionBroadcastError` — the wait-stream-rejection shape.
+    fn broadcast_shape(provided: AddressNonce, expected: AddressNonce) -> dash_sdk::Error {
+        let (_, cause) = nonce_consensus_error(provided, expected);
+        dash_sdk::Error::StateTransitionBroadcastError(StateTransitionBroadcastError {
+            code: 40603,
+            message: "invalid address nonce".to_string(),
+            cause: Some(cause),
+        })
+    }
+
+    #[test]
+    fn extracts_nonce_error_from_protocol_shape() {
+        let err = protocol_shape(1, 2);
+        let got = as_address_invalid_nonce(&err).expect("protocol shape must match");
+        assert_eq!(*got.address(), PlatformAddress::P2pkh(ADDR_BYTES));
+        assert_eq!(got.provided_nonce(), 1);
+        assert_eq!(got.expected_nonce(), 2);
+    }
+
+    #[test]
+    fn extracts_nonce_error_from_broadcast_shape() {
+        let err = broadcast_shape(5, 6);
+        let got = as_address_invalid_nonce(&err).expect("broadcast shape must match");
+        assert_eq!(*got.address(), PlatformAddress::P2pkh(ADDR_BYTES));
+        assert_eq!(got.provided_nonce(), 5);
+        assert_eq!(got.expected_nonce(), 6);
+    }
+
+    #[test]
+    fn ignores_unrelated_and_causeless_errors() {
+        // A plainly unrelated SDK error.
+        assert!(as_address_invalid_nonce(&dash_sdk::Error::Generic("boom".to_string())).is_none());
+        // The DAPI wait-timeout shape: a broadcast error with no consensus
+        // cause must NOT be misread as a nonce rejection.
+        let causeless =
+            dash_sdk::Error::StateTransitionBroadcastError(StateTransitionBroadcastError {
+                code: 0,
+                message: "timeout".to_string(),
+                cause: None,
+            });
+        assert!(as_address_invalid_nonce(&causeless).is_none());
+    }
+
+    #[test]
+    fn promotes_both_shapes_to_typed_variant() {
+        for err in [protocol_shape(1, 2), broadcast_shape(1, 2)] {
+            match promote_address_nonce_error(&err) {
+                Some(PlatformWalletError::AddressNonceMismatch {
+                    address,
+                    provided_nonce,
+                    expected_nonce,
+                }) => {
+                    assert_eq!(address, PlatformAddress::P2pkh(ADDR_BYTES));
+                    assert_eq!(provided_nonce, 1);
+                    assert_eq!(expected_nonce, 2);
+                }
+                other => panic!("expected AddressNonceMismatch, got {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn promotion_leaves_unrelated_errors_for_the_fallback() {
+        assert!(
+            promote_address_nonce_error(&dash_sdk::Error::Generic("boom".to_string())).is_none()
+        );
+    }
+
+    #[test]
+    fn extracts_nonce_error_wrapped_in_no_available_addresses_to_retry() {
+        // The dapi-client wraps the last rejection in `NoAvailableAddressesToRetry`
+        // when every address is exhausted mid-retry; the extractor must recurse
+        // into it (lockstep with `broadcast_definitely_failed`).
+        let inner = Box::new(protocol_shape(9, 10));
+        let wrapped = dash_sdk::Error::NoAvailableAddressesToRetry(inner);
+        let got = as_address_invalid_nonce(&wrapped).expect("must unwrap the retry envelope");
+        assert_eq!(got.provided_nonce(), 9);
+        assert_eq!(got.expected_nonce(), 10);
     }
 }
