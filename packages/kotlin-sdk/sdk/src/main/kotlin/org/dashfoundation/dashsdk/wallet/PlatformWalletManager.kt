@@ -869,6 +869,45 @@ class PlatformWalletManager(
     }
 
     /**
+     * Shield from Platform balance (Type 15) — port of Swift's
+     * `shieldedShield`. Spends [amount] credits from the wallet's
+     * [paymentAccount] Platform-Payment addresses (auto-selected in
+     * ascending derivation order) into its own bound shielded pool
+     * ([shieldedAccount]). Signed by the Keystore address signer
+     * ([signerHandle]); self-shield only (Rust always targets this wallet's
+     * own default Orchard address, so there is no recipient parameter).
+     * Blocks for the ~30s Halo 2 proof; the note arrives on the next
+     * shielded sync pass.
+     *
+     * @param walletId the 32-byte wallet id.
+     * @param amount credits to shield (1 DASH = 1e11).
+     */
+    suspend fun shieldedShield(
+        walletId: ByteArray,
+        amount: Long,
+        shieldedAccount: Int = 0,
+        paymentAccount: Int = 0,
+    ): Unit = withContext(Dispatchers.IO) {
+        require(amount > 0) { "amount must be positive, got $amount" }
+        require(shieldedAccount >= 0) {
+            "shieldedAccount must be non-negative, got $shieldedAccount"
+        }
+        require(paymentAccount >= 0) {
+            "paymentAccount must be non-negative, got $paymentAccount"
+        }
+        mapNativeErrors {
+            FundingNative.shieldedShield(
+                managerHandle,
+                walletId,
+                shieldedAccount,
+                paymentAccount,
+                amount,
+                signerHandle,
+            )
+        }
+    }
+
+    /**
      * Resume a stuck shielded fund-from-asset-lock from an already-tracked
      * lock — port of Swift's `shieldedResumeFundFromAssetLock`.
      *
