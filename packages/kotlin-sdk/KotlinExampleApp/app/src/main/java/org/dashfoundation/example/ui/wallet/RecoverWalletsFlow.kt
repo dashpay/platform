@@ -129,8 +129,18 @@ fun OrphanRecoveryHost() {
                     val mnemonic = container.walletStorage.retrieveMnemonic(id)
                         ?: error("failed to read the stored mnemonic")
                     // Re-derive via the manager — the exact call Swift's
-                    // recoverWallet makes (createWallet(mnemonic:network:name:)).
-                    val managed = manager.createWallet(mnemonic, name = "Recovered Wallet")
+                    // recoverWallet makes. A recovered wallet is an EXISTING
+                    // one that may have received Core funds/payments before
+                    // this device recovered it, so scan from genesis
+                    // (birthHeight 0u) rather than the SPV tip — matching
+                    // Swift recoverWallet's `birthHeight: restoredBirthHeight
+                    // ?? 0` (Android stores no per-orphan birth height, so the
+                    // `?? 0` fallback always applies here).
+                    val managed = manager.createWallet(
+                        mnemonic,
+                        name = "Recovered Wallet",
+                        birthHeight = 0u,
+                    )
                     if (!managed.walletIdHex.equals(idHex, ignoreCase = true)) {
                         // Recovered onto this network under a NEW scoped id
                         // (the orphan was created on another network). The
