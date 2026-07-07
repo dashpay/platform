@@ -299,11 +299,12 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             PlatformWalletError::TransactionBroadcastUnconfirmed(..) => {
                 PlatformWalletFFIResultCode::ErrorTransactionBroadcastUnconfirmed
             }
-            // A definitively-failed address-nonce race (this reaches the blanket
-            // impl via identity `top_up_from_addresses`, which propagates the
-            // error through `?`/`.into()`). Keep the dedicated code so the host
-            // can recognize the self-healing failure and retry; the nonce values
-            // survive in the Display message.
+            // A definitively-failed address-nonce race (reaches the blanket impl
+            // via identity `top_up_from_addresses` → `?`/`.into()`). Exposing
+            // provided/expected nonce as structured out-fields is INTENTIONALLY
+            // out of scope: `PlatformWalletFFIResult` is by-value / ABI-frozen, so
+            // the values travel in the message string and an FFI retry re-fetches
+            // the nonce.
             PlatformWalletError::AddressNonceMismatch { .. } => {
                 PlatformWalletFFIResultCode::ErrorAddressNonceMismatch
             }
@@ -712,10 +713,15 @@ mod tests {
             msg, rendered,
             "Display payload must survive the FFI boundary verbatim"
         );
-        // The nonce values the host needs must be present in the message.
+        // Pin the EXACT rendered substrings, not bare digits, so a
+        // provided/expected transposition would fail the test.
         assert!(
-            msg.contains('1') && msg.contains('2'),
-            "nonce values must survive in the message"
+            msg.contains("submitted nonce 1"),
+            "submitted (provided) nonce must render exactly: {msg}"
+        );
+        assert!(
+            msg.contains("Platform expected 2"),
+            "expected nonce must render exactly: {msg}"
         );
     }
 
