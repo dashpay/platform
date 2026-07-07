@@ -60,6 +60,70 @@ where
     rt.block_on(async move { rt.spawn(future).await.expect("tokio worker panicked") })
 }
 
+/// Run `f` to completion on a freshly spawned scoped OS thread with the
+/// same 8 MB stack the runtime workers get, blocking the caller until it
+/// returns. Errors (instead of panicking) if the OS refuses to spawn
+/// the thread, so `extern "C"` callers can surface the failure through
+/// their `PlatformWalletFFIResult` rather than aborting the host.
+///
+/// Escape hatch for call sites that need big-stack polling but whose
+/// future cannot satisfy [`block_on_worker`]'s `Send + 'static` bounds
+/// (e.g. rustc's implied-lifetime-bound limitation, rust-lang/rust
+/// issue #100013). The closure typically wraps
+/// `runtime().block_on(...)` — the future is then created *and* polled
+/// entirely on the big-stack thread, so no `Send`/`'static` proof is
+/// needed for the future itself. Prefer [`block_on_worker`] where it
+/// compiles: it reuses pooled runtime workers instead of paying a
+/// thread spawn per call.
+///
+/// A panic inside `f` is propagated as a panic here, matching
+/// [`block_on_worker`]'s "tokio worker panicked" convention — a panic
+/// in the pass is a bug, not a recoverable condition.
+pub(crate) fn run_on_big_stack_thread<T: Send>(f: impl FnOnce() -> T + Send) -> std::io::Result<T> {
+    std::thread::scope(|scope| {
+        let handle = std::thread::Builder::new()
+            .name("pw-ffi-bigstack".into())
+            .stack_size(WORKER_STACK_BYTES)
+            .spawn_scoped(scope, f)?;
+        Ok(handle.join().expect("big-stack FFI thread panicked"))
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn run_on_big_stack_thread_round_trips_return_value() {
+        let out = run_on_big_stack_thread(|| 41 + 1).expect("spawn should succeed");
+        assert_eq!(out, 42);
+    }
+
+    /// The whole point of the helper: recursion far past the ~512 KB
+    /// host-thread stacks (and the 2 MB default test-thread stack)
+    /// must complete on the 8 MB thread.
+    #[test]
+    fn run_on_big_stack_thread_survives_deep_recursion() {
+        #[inline(never)]
+        fn recurse(depth: u32) -> u64 {
+            // ~1 KB frame the optimizer can't elide.
+            let frame = std::hint::black_box([depth as u64; 128]);
+            if depth == 0 {
+                frame[0]
+            } else {
+                recurse(depth - 1) + std::hint::black_box(frame[127])
+            }
+        }
+
+        // ~1000 frames * >1 KB each (debug frames run several KB with
+        // the black_box copies) lands well past the ~512 KB iOS host
+        // stacks this helper exists for, while staying comfortably
+        // under WORKER_STACK_BYTES.
+        let out = run_on_big_stack_thread(|| recurse(1_000)).expect("spawn should succeed");
+        assert!(out > 0);
+    }
+}
+
 #[cfg(feature = "tokio-metrics")]
 mod metrics {
     use std::time::Duration;

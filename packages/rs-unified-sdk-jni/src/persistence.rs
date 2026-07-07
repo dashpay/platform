@@ -56,8 +56,8 @@ use platform_wallet_ffi::{
     ContactRequestRemovalFFI, CoreAddressEntryFFI, IdentityEntryFFI, IdentityKeyEntryFFI,
     IdentityKeyRemovalFFI, IdentityKeyRestoreFFI, IdentityRestoreEntryFFI, PaymentRestoreEntryFFI,
     PersistenceCallbacks, PlatformAddressFFI, SpentOutPointFFI, TokenBalanceRemovalFFI,
-    TokenBalanceUpsertFFI, TransactionRecordFFI, UtxoEntryFFI, WalletChangeSetFFI,
-    WalletRestoreEntryFFI,
+    TokenBalanceUpsertFFI, TransactionRecordFFI, UtxoEntryFFI, UtxoRestoreEntryFFI,
+    WalletChangeSetFFI, WalletRestoreEntryFFI,
 };
 use std::ffi::{c_void, CStr, CString};
 use std::os::raw::c_char;
@@ -1507,7 +1507,7 @@ unsafe extern "C" fn tramp_persist_shielded_activity(
 /// succeeded.
 struct WalletRestoreStaged {
     /// FFI row with `accounts` / `identities` / `platform_address_balances`
-    /// still null / 0 until sealed.
+    /// / `utxos` still null / 0 until sealed.
     entry: WalletRestoreEntryFFI,
     specs: Vec<AccountSpecStaged>,
     identities: Vec<IdentityRestoreStaged>,
@@ -1517,6 +1517,11 @@ struct WalletRestoreStaged {
     /// freed with a single `free_raw_slice` — no nested buffers, mirroring
     /// the flat `ignored_senders` array.
     platform_address_balances: Vec<AddressBalanceEntryFFI>,
+    /// Unspent Core UTXOs. Each row carries an owned `script_pubkey`
+    /// buffer (variable length), so it stages like the account xpubs —
+    /// per-row buffer pointer minted at seal, freed row-by-row before
+    /// the array itself (CORE-06).
+    utxos: Vec<UtxoRestoreStaged>,
 }
 
 /// Staged account spec: FFI struct with a null xpub pointer plus the
@@ -1525,6 +1530,14 @@ struct AccountSpecStaged {
     /// FFI spec with `account_xpub_bytes` still null / 0 until sealed.
     spec: AccountSpecFFI,
     xpub: Vec<u8>,
+}
+
+/// Staged unspent-UTXO row: FFI struct with a null `script_pubkey`
+/// pointer plus the owned script bytes (CORE-06 restore path).
+struct UtxoRestoreStaged {
+    /// FFI row with `script_pubkey` still null / 0 until sealed.
+    entry: UtxoRestoreEntryFFI,
+    script: Vec<u8>,
 }
 
 /// Staged identity-restore row: FFI struct with `keys` / `contacts` /
@@ -1612,6 +1625,7 @@ fn seal_wallet_entries(staged: Vec<WalletRestoreStaged>) -> Vec<WalletRestoreEnt
                  specs,
                  identities,
                  platform_address_balances,
+                 utxos,
              }| {
                 // Flat POD array — no nested owned buffers, so the whole
                 // `Vec<AddressBalanceEntryFFI>` mints in one shot and
@@ -1630,6 +1644,19 @@ fn seal_wallet_entries(staged: Vec<WalletRestoreStaged>) -> Vec<WalletRestoreEnt
                     })
                     .collect();
                 (entry.accounts, entry.accounts_count) = vec_into_raw(specs);
+
+                // Unspent Core UTXOs — mint each row's script buffer,
+                // then the array (CORE-06; freed row-by-row in
+                // `tramp_load_wallet_list_free`, mirroring the account
+                // xpub discipline).
+                let utxos: Vec<UtxoRestoreEntryFFI> = utxos
+                    .into_iter()
+                    .map(|UtxoRestoreStaged { mut entry, script }| {
+                        (entry.script_pubkey, entry.script_pubkey_len) = vec_into_raw(script);
+                        entry
+                    })
+                    .collect();
+                (entry.utxos, entry.utxos_count) = vec_into_raw(utxos);
 
                 // Identities: mint each identity's nested key / contact /
                 // ignored-sender arrays first, then the identity array
@@ -1802,10 +1829,12 @@ unsafe extern "C" fn tramp_load_wallet_list(
 /// Rebuild one wallet row from a Kotlin `WalletRestoreData` into a
 /// [`WalletRestoreStaged`] (owned buffers only; raw pointers are minted by
 /// [`seal_wallet_entries`] and freed in [`tramp_load_wallet_list_free`]).
-/// Nested arrays we don't rehydrate this milestone (utxos, tracked locks,
-/// address pools) are null / 0. `identities` and `platform_address_balances`
-/// ARE rehydrated (the latter re-seeds the provider balance map + ADDR-09
-/// height pins on cold start; see [`build_platform_address_balances`]).
+/// Nested arrays we don't rehydrate this milestone (tracked locks,
+/// address pools) are null / 0. `identities`, `platform_address_balances`
+/// (re-seeds the provider balance map + ADDR-09 height pins on cold
+/// start; see [`build_platform_address_balances`]), and `utxos` (re-seeds
+/// the funds accounts' UTXO maps + Core balance; CORE-06, see
+/// [`build_utxo_restore_entries`]) ARE rehydrated.
 fn build_wallet_restore_entry(
     env: &mut JNIEnv,
     holder: &JObject,
@@ -1865,6 +1894,11 @@ fn build_wallet_restore_entry(
     // owned POD; the raw pointer is minted at seal.
     let platform_address_balances = build_platform_address_balances(env, holder)?;
 
+    // Unspent Core UTXOs (re-seed the funds accounts' UTXO maps + the
+    // Core balance on cold start; see CORE-06). Each row's script buffer
+    // stays owned until seal.
+    let utxos = build_utxo_restore_entries(env, holder)?;
+
     let entry = WalletRestoreEntryFFI {
         wallet_id,
         network: net_from_ord(network_ord),
@@ -1897,7 +1931,86 @@ fn build_wallet_restore_entry(
         specs,
         identities,
         platform_address_balances,
+        utxos,
     })
+}
+
+/// Read the Kotlin `WalletRestoreData.utxos` array into staged
+/// [`UtxoRestoreStaged`] rows (CORE-06 restore path). Empty / null field
+/// → empty vec (staged as `(null, 0)` at seal).
+///
+/// Each holder is a `UtxoRestoreData`. The leading account-tag block
+/// mirrors `AccountSpecData` (identity ids via the optional-id32 read —
+/// ordinary accounts persist them empty); `prevTxid` is a fixed 32-byte
+/// read (the Kotlin builder pre-drops wrong-length rows for the same
+/// abort-on-corrupt rationale as the SH-06 hash filter); `scriptPubKey`
+/// stages as an owned byte `Vec` whose pointer is minted at seal. The
+/// platform-wallet load side routes each row into the matching funds
+/// account and recomputes balances (`update_balance`). Mirror of the
+/// Swift `buildUtxoRestoreBuffer`.
+fn build_utxo_restore_entries(
+    env: &mut JNIEnv,
+    holder: &JObject,
+) -> Result<Vec<UtxoRestoreStaged>, jni::errors::Error> {
+    let arr_obj = env
+        .get_field(
+            holder,
+            "utxos",
+            "[Lorg/dashfoundation/dashsdk/ffi/UtxoRestoreData;",
+        )?
+        .l()?;
+    if arr_obj.is_null() {
+        return Ok(Vec::new());
+    }
+    let arr: jni::objects::JObjectArray = arr_obj.into();
+    let len = env.get_array_length(&arr)? as usize;
+    let mut out: Vec<UtxoRestoreStaged> = Vec::with_capacity(len);
+    for i in 0..len {
+        let staged =
+            env.with_local_frame(32, |env| -> Result<UtxoRestoreStaged, jni::errors::Error> {
+                let h = env.get_object_array_element(&arr, i as i32)?;
+                let type_tag = env.get_field(&h, "typeTag", "B")?.b()? as u8;
+                let standard_tag = env.get_field(&h, "standardTag", "B")?.b()? as u8;
+                let account_index = env.get_field(&h, "accountIndex", "I")?.i()? as u32;
+                let registration_index = env.get_field(&h, "registrationIndex", "I")?.i()? as u32;
+                let key_class = env.get_field(&h, "keyClass", "I")?.i()? as u32;
+                let user_identity_id = read_optional_id32_field(env, &h, "userIdentityId")?;
+                let friend_identity_id = read_optional_id32_field(env, &h, "friendIdentityId")?;
+                let prev_txid = read_bytes_field_fixed::<32>(env, &h, "prevTxid")?;
+                let vout = env.get_field(&h, "vout", "I")?.i()? as u32;
+                let value_duffs = env.get_field(&h, "valueDuffs", "J")?.j()? as u64;
+                let script = read_bytes_field_vec(env, &h, "scriptPubKey")?;
+                let height = env.get_field(&h, "height", "I")?.i()? as u32;
+                let is_coinbase = env.get_field(&h, "isCoinbase", "Z")?.z()?;
+                let is_confirmed = env.get_field(&h, "isConfirmed", "Z")?.z()?;
+                let is_instantlocked = env.get_field(&h, "isInstantLocked", "Z")?.z()?;
+                let is_locked = env.get_field(&h, "isLocked", "Z")?.z()?;
+                Ok(UtxoRestoreStaged {
+                    entry: UtxoRestoreEntryFFI {
+                        type_tag,
+                        standard_tag,
+                        account_index,
+                        registration_index,
+                        key_class,
+                        user_identity_id,
+                        friend_identity_id,
+                        prev_txid,
+                        vout,
+                        value_duffs,
+                        script_pubkey: ptr::null(),
+                        script_pubkey_len: 0,
+                        height,
+                        is_coinbase,
+                        is_confirmed,
+                        is_instantlocked,
+                        is_locked,
+                    },
+                    script,
+                })
+            })?;
+        out.push(staged);
+    }
+    Ok(out)
 }
 
 /// Read the Kotlin `WalletRestoreData.platformAddressBalances` array into
@@ -2366,6 +2479,20 @@ unsafe extern "C" fn tramp_load_wallet_list_free(
                     free_raw_bytes(s.account_xpub_bytes, s.account_xpub_bytes_len);
                 }
                 drop(specs);
+            }
+
+            // Unspent Core UTXOs + nested script buffers (CORE-06) —
+            // mirrors exactly what `seal_wallet_entries` minted.
+            if !e.utxos.is_null() && e.utxos_count > 0 {
+                let utxos: Box<[UtxoRestoreEntryFFI]> =
+                    Box::from_raw(std::ptr::slice_from_raw_parts_mut(
+                        e.utxos as *mut UtxoRestoreEntryFFI,
+                        e.utxos_count,
+                    ));
+                for u in utxos.iter() {
+                    free_raw_bytes(u.script_pubkey, u.script_pubkey_len);
+                }
+                drop(utxos);
             }
 
             // identities + nested key / contact / ignored-sender /

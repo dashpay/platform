@@ -17,6 +17,7 @@ import org.dashfoundation.dashsdk.ffi.NativePersistenceBridge
 import org.dashfoundation.dashsdk.ffi.PlatformAddressBalanceRestoreData
 import org.dashfoundation.dashsdk.ffi.ShieldedActivityData
 import org.dashfoundation.dashsdk.ffi.ShieldedNoteData
+import org.dashfoundation.dashsdk.ffi.UtxoRestoreData
 import org.dashfoundation.dashsdk.ffi.ShieldedOutgoingNoteData
 import org.dashfoundation.dashsdk.ffi.ShieldedSyncStateData
 import org.dashfoundation.dashsdk.ffi.WalletRestoreData
@@ -491,6 +492,20 @@ class PlatformWalletPersistenceHandler(
                     lastUpdated = now(),
                 ),
             )
+            // Spend-flip reconcile: a TXO spent while this tx was still
+            // pre-block got its `spendingTxid` linked but kept
+            // `isSpent = false` (see onWalletChangesetUtxoSpent's
+            // in-block guard). iOS flips it on the next upsert of the
+            // spending tx with a confirmed context
+            // (`resolveInputOutpoint`); without this pass the flag
+            // never converges on Android and the UTXO-restore path
+            // (CORE-06) would hand a consumed output back to Rust as
+            // spendable after relaunch.
+            if (context >= CONTEXT_IN_BLOCK) {
+                for (txo in db.txoDao().getUnspentBySpendingTxid(txid)) {
+                    db.txoDao().upsert(txo.copy(isSpent = true, lastUpdated = now()))
+                }
+            }
         }
         0
     }
@@ -1206,6 +1221,13 @@ class PlatformWalletPersistenceHandler(
                 // across relaunches (SH-06). Mirror of the Swift
                 // `loadCachedBalances` slice on `loadWalletList`.
                 val platformAddressBalances = buildPlatformAddressBalances(w.walletId)
+                // Unspent Core UTXOs — rehydrates the funds-bearing
+                // accounts' UTXO maps (and via Rust's `update_balance`
+                // the Core balance) on cold start. Without this the
+                // balance reads 0 after every relaunch until a full SPV
+                // re-scan (CORE-06). Mirror of the Swift
+                // `buildUtxoRestoreBuffer` slice on `loadWalletList`.
+                val utxos = buildUtxoRestoreData(w.walletId)
                 out.add(
                     WalletRestoreData(
                         walletId = w.walletId,
@@ -1221,6 +1243,7 @@ class PlatformWalletPersistenceHandler(
                         lastSynced = w.lastSynced,
                         identities = identities,
                         platformAddressBalances = platformAddressBalances,
+                        utxos = utxos,
                     ),
                 )
             }
@@ -1522,6 +1545,95 @@ class PlatformWalletPersistenceHandler(
                     asOfHeight = row.lastSeenHeight.toLong(),
                 )
             }.toTypedArray()
+
+    /**
+     * Assemble the [UtxoRestoreData] rows for one wallet: every unspent
+     * `txos` row, routed to its owning account for the leading
+     * account-tag block the Rust load path uses to file the UTXO into
+     * the right funds account (mirror of the Swift
+     * `buildUtxoRestoreBuffer`).
+     *
+     * Routing: Swift reads the txo's parent-account relationship; on
+     * Android `txos.accountId` is not populated by the changeset write
+     * path, so the owning account resolves through the address instead
+     * (`txos.address → core_addresses.accountId → accounts`) with the
+     * FK as a fast path when present. Rows that resolve to no account
+     * are skipped with a log (the Swift builder skips them the same
+     * way) — a UTXO the wallet can't attribute can't be routed.
+     *
+     * Stale-flag guard: a row still `isSpent = false` whose linked
+     * spending tx is already in-block was consumed but missed its flip
+     * (pre-reconcile rows; see `onWalletChangesetTransaction`). Handing
+     * it back to Rust would overstate the balance as spendable, so it
+     * is excluded here. Mempool-linked spends (spending tx not yet
+     * in-block) stay IN the restore set — same semantics as iOS, where
+     * the post-restart catch-up classifier needs the TXO back to
+     * recognise the spend.
+     *
+     * `prevTxid` must be exactly 32 bytes (the trampoline's fixed-length
+     * read aborts the whole load otherwise), so wrong-length rows are
+     * pre-dropped like the SH-06 hash filter. Account tags outside the
+     * u8 range are dropped for the same reason Swift aborts on them —
+     * except here the single row is skipped rather than failing the
+     * whole load, matching this builder's per-row-skip convention.
+     */
+    private suspend fun buildUtxoRestoreData(walletId: ByteArray): Array<UtxoRestoreData> {
+        val rows = database.txoDao().observeUnspentByWallet(walletId).first()
+        if (rows.isEmpty()) return emptyArray()
+        val out = ArrayList<UtxoRestoreData>(rows.size)
+        // Per-call memo of address → account row (a wallet's UTXOs
+        // cluster on few addresses/accounts; avoids N duplicate joins).
+        val accountByAddress = HashMap<String, AccountEntity?>()
+        for (txo in rows) {
+            // Stale-flag guard (see doc): consumed-but-unflipped rows
+            // must not rehydrate as spendable.
+            val spendingTxid = txo.spendingTxid
+            if (spendingTxid != null) {
+                val spending = database.transactionDao().getByTxid(spendingTxid)
+                if (spending != null && spending.context >= CONTEXT_IN_BLOCK) continue
+            }
+            val account = txo.accountId?.let { database.accountDao().getById(it) }
+                ?: accountByAddress.getOrPut(txo.address) {
+                    database.coreAddressDao().getByAddress(txo.address)
+                        ?.accountId?.let { database.accountDao().getById(it) }
+                }
+            if (account == null) {
+                Log.w(TAG, "load: skipping UTXO with no resolvable account (address=${txo.address})")
+                continue
+            }
+            if (account.accountType !in 0..255) {
+                Log.w(TAG, "load: skipping UTXO with out-of-range accountType=${account.accountType}")
+                continue
+            }
+            val typeTag = account.accountType.toByte()
+            val prevTxid = txo.txid ?: txo.outpoint.copyOfRange(0, minOf(32, txo.outpoint.size))
+            if (prevTxid.size != 32) {
+                Log.w(TAG, "load: skipping UTXO with ${prevTxid.size}-byte txid")
+                continue
+            }
+            out.add(
+                UtxoRestoreData(
+                    typeTag = typeTag,
+                    standardTag = account.standardTag.toByte(),
+                    accountIndex = account.accountIndex,
+                    registrationIndex = account.registrationIndex,
+                    keyClass = account.keyClass,
+                    userIdentityId = account.userIdentityId,
+                    friendIdentityId = account.friendIdentityId,
+                    prevTxid = prevTxid,
+                    vout = txo.vout,
+                    valueDuffs = txo.amount,
+                    scriptPubKey = txo.scriptPubKey,
+                    height = txo.height,
+                    isCoinbase = txo.isCoinbase,
+                    isConfirmed = txo.isConfirmed,
+                    isInstantLocked = txo.isInstantLocked,
+                    isLocked = txo.isLocked,
+                ),
+            )
+        }
+        return out.toTypedArray()
+    }
 
     // ── Shared write helpers ──────────────────────────────────────────
 

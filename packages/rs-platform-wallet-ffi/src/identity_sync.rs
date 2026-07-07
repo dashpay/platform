@@ -18,7 +18,7 @@ use platform_wallet::{IdentityTokenSyncInfo, IdentityTokenSyncState};
 
 use crate::error::*;
 use crate::handle::*;
-use crate::runtime::runtime;
+use crate::runtime::{block_on_worker, runtime};
 use crate::{check_ptr, unwrap_option_or_return};
 
 /// Flattened per-(identity, token) row mirroring
@@ -170,7 +170,12 @@ pub unsafe extern "C" fn platform_wallet_manager_identity_sync_sync_now(
     handle: Handle,
 ) -> PlatformWalletFFIResult {
     let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
-        runtime().block_on(manager.identity_sync().sync_now());
+        // `block_on_worker`, NOT `runtime().block_on`: the pass
+        // verifies GroveDB proofs whose recursion blows the ~512 KB
+        // stack of the host's dispatch/concurrency calling thread
+        // (same SIGBUS as the shielded/dashpay Sync Now buttons).
+        let mgr = manager.identity_sync_arc();
+        block_on_worker(async move { mgr.sync_now().await });
     });
     unwrap_option_or_return!(option);
     PlatformWalletFFIResult::ok()

@@ -526,9 +526,10 @@ abstract class NativePersistenceBridge {
      *
      * A minimal-but-correct restore populates `accounts` (with xpub
      * bytes), the platform / core sync watermarks, the wallet's
-     * identities, and its cached platform-address balances; the
-     * remaining nested arrays (utxos, tracked asset locks) are optional
-     * for this milestone and default to empty.
+     * identities, its cached platform-address balances, and its unspent
+     * Core UTXOs; the remaining nested arrays (tracked asset locks,
+     * address pools) are optional for this milestone and default to
+     * empty.
      */
     open fun onLoadWalletList(): Array<WalletRestoreData> = emptyArray()
 
@@ -606,6 +607,54 @@ class WalletRestoreData(
      * `loadCachedBalances` → `AddressBalanceEntryFFI` buffer path.
      */
     @JvmField val platformAddressBalances: Array<PlatformAddressBalanceRestoreData>,
+    /**
+     * Unspent Core UTXOs to rehydrate into the wallet's funds-bearing
+     * accounts on cold start. Empty when the wallet has no persisted
+     * unspent TXO rows. The Rust trampoline re-packs each into a
+     * `UtxoRestoreEntryFFI`; the platform-wallet load path routes every
+     * row into the matching account's `utxos` map and recomputes the
+     * per-account + wallet balances (`update_balance`).
+     *
+     * Without this, the Core balance is served only from the in-memory
+     * FFI state: a relaunch loads the wallet with an empty UTXO set and
+     * the balance reads 0 until a full SPV re-scan (CORE-06). Mirror of
+     * the Swift `buildUtxoRestoreBuffer` slice on `loadWalletList`.
+     */
+    @JvmField val utxos: Array<UtxoRestoreData>,
+)
+
+/**
+ * One flat unspent-UTXO row — mirror of `UtxoRestoreEntryFFI`.
+ *
+ * The leading account-tag block (`typeTag` … `friendIdentityId`) is the
+ * same shape as [AccountSpecData] so the Rust load path can route the
+ * row into the owning funds account via `account_type_from_spec`.
+ * Keys-only and PlatformPayment tags never carry UTXOs and are skipped
+ * Rust-side.
+ *
+ * [prevTxid] is the 32-byte txid in wire order (as persisted by
+ * `onWalletChangesetUtxoAdded`); [scriptPubKey] is the output script —
+ * the Rust side reconstructs the address from `(script, network)`, so
+ * no address string crosses the FFI. `isTrusted` is runtime-only and
+ * recomputed on the next SPV pass (not carried).
+ */
+class UtxoRestoreData(
+    @JvmField val typeTag: Byte,
+    @JvmField val standardTag: Byte,
+    @JvmField val accountIndex: Int,
+    @JvmField val registrationIndex: Int,
+    @JvmField val keyClass: Int,
+    @JvmField val userIdentityId: ByteArray,
+    @JvmField val friendIdentityId: ByteArray,
+    @JvmField val prevTxid: ByteArray,
+    @JvmField val vout: Int,
+    @JvmField val valueDuffs: Long,
+    @JvmField val scriptPubKey: ByteArray,
+    @JvmField val height: Int,
+    @JvmField val isCoinbase: Boolean,
+    @JvmField val isConfirmed: Boolean,
+    @JvmField val isInstantLocked: Boolean,
+    @JvmField val isLocked: Boolean,
 )
 
 /**

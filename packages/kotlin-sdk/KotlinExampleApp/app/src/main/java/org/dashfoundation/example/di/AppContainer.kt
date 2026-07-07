@@ -10,12 +10,14 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import org.dashfoundation.dashsdk.Sdk
 import org.dashfoundation.dashsdk.persistence.DashDatabase
 import org.dashfoundation.example.state.AppState
 import org.dashfoundation.example.state.AppUiState
+import org.dashfoundation.example.util.Base58
 
 private val Context.preferencesStore by preferencesDataStore(name = "example_prefs")
 
@@ -261,10 +263,54 @@ class AppContainer(private val context: Context) {
             Sdk.enableLogging(Sdk.LogLevel.DEBUG)
             appState.restorePreferences()
             appState.initializeSdk()
+            loadKnownContractsIntoSdk()
             activateManager()
             _bootstrapState.value = BootstrapState.Ready
         } catch (e: Exception) {
             _bootstrapState.value = BootstrapState.Failed(e)
+        }
+    }
+
+    /**
+     * Pre-load every locally-stored data contract into the SDK's trusted
+     * context provider — port of `AppState.loadKnownContractsIntoSDK`. This
+     * lets proof verification resolve those contracts without a network
+     * fetch. Best-effort and non-fatal: any failure is logged, never thrown,
+     * so it can't stall or fail bootstrap (mirrors iOS, where the load is
+     * "not critical for SDK operation").
+     *
+     * Only contracts with a non-null [DataContractEntity.binarySerialization]
+     * are loaded — that field holds the versioned binary serialization the
+     * trusted provider deserializes; the JSON `serializedContract` is the
+     * wrong shape. Ids are base58-encoded to match what the native
+     * `addKnownContracts` splits from its CSV.
+     */
+    private suspend fun loadKnownContractsIntoSdk() {
+        val sdk = appState.sdk.value ?: return
+        try {
+            // Scope to the SDK's own network: the trusted-context cache is
+            // keyed only by contract id, so seeding a network-locked SDK with
+            // another network's contract could resolve the wrong/stale schema
+            // (same network-scoping rule as onLoadWalletList).
+            val stored = database.dataContractDao().observeByNetwork(sdk.network.ffiValue).first()
+            val contracts = stored.mapNotNull { entity ->
+                entity.binarySerialization?.let { bytes ->
+                    Base58.encode(entity.id) to bytes
+                }
+            }
+            if (contracts.isEmpty()) {
+                android.util.Log.i(TAG, "No stored contracts with binary serialization to load")
+                return
+            }
+            sdk.contracts.loadKnownContracts(contracts)
+            android.util.Log.i(
+                TAG,
+                "Loaded ${contracts.size} known contracts into SDK's trusted provider",
+            )
+        } catch (e: Exception) {
+            // Non-fatal, exactly like iOS — a preload failure must not block
+            // the SDK from operating (it falls back to network fetches).
+            android.util.Log.w(TAG, "Failed to load known contracts into SDK", e)
         }
     }
 

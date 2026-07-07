@@ -4,6 +4,7 @@ import androidx.test.core.app.ApplicationProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
+import org.dashfoundation.dashsdk.persistence.entities.CoreAddressEntity
 import org.dashfoundation.dashsdk.persistence.entities.PlatformAddressEntity
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -601,6 +602,87 @@ class PlatformWalletPersistenceHandlerTest {
         assertEquals(0, restored.addressIndex)
         // The height pin must survive the round-trip unchanged.
         assertEquals(380_987L, restored.asOfHeight)
+    }
+
+    @Test
+    fun loadWalletListRestoresUnspentUtxosAndExcludesConfirmedSpends() = runTest {
+        // CORE-06 regression: persisted unspent TXOs must come back on
+        // the restore row (routed to their owning account through
+        // core_addresses — Android txos carry no accountId FK), and a
+        // TXO whose spend has confirmed must NOT rehydrate as spendable.
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+        val xpub = ByteArray(78) { 30 }
+        handler.onPersistAccountRegistration(
+            walletId, 0, 0, 0, 0, 0, ByteArray(0), ByteArray(0), xpub,
+        )
+        val account = db.accountDao().observeByWallet(walletId).first().single()
+        db.coreAddressDao().upsert(
+            CoreAddressEntity(
+                address = "yUtxoAddr",
+                poolTypeTag = 0,
+                addressIndex = 0,
+                derivationPath = "m/44'/1'/0'/0/0",
+                accountId = account.id,
+            ),
+        )
+
+        val fundingTxid = ByteArray(32) { 21 }
+        val spendingTxid = ByteArray(32) { 22 }
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransaction(
+            walletId, fundingTxid, ByteArray(10) { 4 }, 2, 100, ByteArray(32) { 7 },
+            1_700_000_000, 0, "Standard", 0, 100_000, 0, false, "", 1_699_999_000,
+        )
+        handler.onWalletChangesetUtxoAdded(
+            walletId, fundingTxid, 0, 60_000, "yUtxoAddr", ByteArray(25) { 6 },
+            100, false, true, false, false,
+        )
+        handler.onWalletChangesetUtxoAdded(
+            walletId, fundingTxid, 1, 40_000, "yUtxoAddr", ByteArray(25) { 9 },
+            100, false, true, true, false,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        // Spend vout 1 while the spending tx is still pre-block
+        // (InstantSend): the linkage lands but `isSpent` must not flip,
+        // and the row stays in the restore set (iOS semantics — the
+        // post-restart classifier needs the TXO back).
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransaction(
+            walletId, spendingTxid, ByteArray(10) { 5 }, 1, 0, ByteArray(32),
+            0, 1, "Standard", 0, -40_000, 0, false, "", 1_700_000_100,
+        )
+        handler.onWalletChangesetUtxoSpent(walletId, fundingTxid, 1, spendingTxid)
+        handler.onChangesetEnd(walletId, success = true)
+        val linked = db.txoDao().getByOutpoint(makeOutpoint(fundingTxid, 1))
+        assertNotNull(linked)
+        assertFalse(linked!!.isSpent)
+        assertEquals(2, handler.onLoadWalletList().single().utxos.size)
+
+        // The spending tx confirms in-block: the tx-upsert reconcile
+        // must flip `isSpent` (the flag would otherwise never converge
+        // — the CORE-06 over-count hazard)…
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransaction(
+            walletId, spendingTxid, ByteArray(10) { 5 }, 2, 101, ByteArray(32) { 8 },
+            1_700_000_200, 1, "Standard", 0, -40_000, 0, false, "", 1_700_000_100,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+        assertTrue(db.txoDao().getByOutpoint(makeOutpoint(fundingTxid, 1))!!.isSpent)
+
+        // …and the restore set shrinks to the truly-unspent row, fully
+        // round-tripped with its account routing tag.
+        val restored = handler.onLoadWalletList().single().utxos.single()
+        assertEquals(0.toByte(), restored.typeTag)
+        assertEquals(0.toByte(), restored.standardTag)
+        assertEquals(0, restored.accountIndex)
+        assertTrue(fundingTxid.contentEquals(restored.prevTxid))
+        assertEquals(0, restored.vout)
+        assertEquals(60_000L, restored.valueDuffs)
+        assertEquals(25, restored.scriptPubKey.size)
+        assertEquals(100, restored.height)
+        assertTrue(restored.isConfirmed)
+        assertFalse(restored.isInstantLocked)
     }
 
     @Test

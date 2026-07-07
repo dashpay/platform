@@ -777,6 +777,12 @@ impl ContextProvider for TrustedHttpContextProvider {
         }
     }
 
+    fn register_data_contract(&self, contract: Arc<DataContract>) {
+        let id = contract.id();
+        let mut known = self.known_contracts.lock().unwrap();
+        known.insert(id, contract);
+    }
+
     fn get_token_configuration(
         &self,
         token_id: &Identifier,

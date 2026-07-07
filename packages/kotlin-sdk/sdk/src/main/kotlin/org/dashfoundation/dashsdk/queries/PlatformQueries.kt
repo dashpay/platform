@@ -587,6 +587,29 @@ class Contracts internal constructor(private val sdk: Sdk) {
         val handle = mapNativeErrors { QueriesNative.dataContractFetch(sdk.handle, contractId) }
         DataContractRef(handle)
     }
+
+    /**
+     * Pre-load known contracts into the SDK's trusted context provider so
+     * proof verification resolves them without a network fetch — mirrors
+     * Swift's `SDK.loadKnownContracts`. Each pair is
+     * `(base58ContractId, versionedBinarySerialization)`; the second element
+     * must be the contract's versioned binary serialization (what
+     * `DataContract.versionedDeserialize` expects), NOT its JSON. Entries with
+     * an empty id or empty bytes are skipped; empty input short-circuits.
+     * Throws on error (missing trusted provider or a malformed contract).
+     */
+    suspend fun loadKnownContracts(contracts: List<Pair<String, ByteArray>>) =
+        withContext(Dispatchers.IO) {
+            val filtered = contracts.filter { it.first.isNotEmpty() && it.second.isNotEmpty() }
+            if (filtered.isEmpty()) return@withContext
+            mapNativeErrors {
+                QueriesNative.addKnownContracts(
+                    sdk.handle,
+                    filtered.joinToString(",") { it.first },
+                    filtered.map { it.second }.toTypedArray(),
+                )
+            }
+        }
 }
 
 /**
