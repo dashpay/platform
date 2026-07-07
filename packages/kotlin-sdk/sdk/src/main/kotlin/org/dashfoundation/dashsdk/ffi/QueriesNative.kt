@@ -44,6 +44,20 @@ internal object QueriesNative {
     /** Release a handle from [dataContractFetch]. Safe on 0. */
     external fun dataContractDestroy(handle: Long)
 
+    /**
+     * Pre-load data contracts into the SDK's trusted context provider so
+     * proof verification resolves them without a network fetch. [contractIds]
+     * is a comma-separated list of base58 contract ids; [serializedContracts]
+     * holds each contract's versioned binary serialization in the SAME order.
+     * Empty input is a no-op. Throws on error (missing trusted provider,
+     * malformed contract, or id/contract count mismatch).
+     */
+    external fun addKnownContracts(
+        sdk: Long,
+        contractIds: String,
+        serializedContracts: Array<ByteArray>,
+    )
+
     /** JSON array of documents. whereJson/orderByJson may be null. */
     external fun documentSearch(
         sdk: Long,
