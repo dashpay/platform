@@ -48,6 +48,16 @@ class AppContainer(private val context: Context) {
     val walletStorage = org.dashfoundation.dashsdk.security.WalletStorage(context)
 
     /**
+     * Device-local DashPay contact metadata (alias / note / hidden / DPNS
+     * hint). A single shared instance so a write's `version` bump invalidates
+     * every DashPay screen that reads through it — a per-screen instance would
+     * only recompose its own creator.
+     */
+    val dashPayContactMetaStore by lazy {
+        org.dashfoundation.example.ui.dashpay.DashPayContactMetaStore(context)
+    }
+
+    /**
      * Auth gate for secret reveals / out-of-window key access. The
      * container is Application-scoped, so the gate is a delegating shell;
      * MainActivity binds the real Activity-bound `AuthPrompt` on create
@@ -185,6 +195,7 @@ class AppContainer(private val context: Context) {
                 if (shieldedService.isAvailable) {
                     manager.stopShieldedSync()
                 }
+                manager.stopDashPaySync()
             } catch (e: Exception) {
                 android.util.Log.w(TAG, "Failed to stop sync coordinators", e)
             }
@@ -215,6 +226,13 @@ class AppContainer(private val context: Context) {
                 )
                 if (shieldedService.isAvailable && !manager.isShieldedSyncRunning()) {
                     manager.startShieldedSync()
+                }
+                // DashPay contact/profile/payment sync — the load-bearing
+                // prerequisite for the DashPay tab (← iOS
+                // rebindWalletScopedServices starting it alongside the
+                // address/shielded loops on the wallet-present branch).
+                if (!manager.isDashPaySyncRunning()) {
+                    manager.startDashPaySync()
                 }
             } catch (e: Exception) {
                 android.util.Log.e(TAG, "Failed to bind wallet-scoped services", e)

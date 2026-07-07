@@ -34,7 +34,7 @@ class AppSmokeTest {
         listOf(
             "rootTab.wallets",
             "rootTab.identities",
-            "rootTab.contracts",
+            "rootTab.dashpay",
             "rootTab.settings",
             "rootTab.sync",
         ).forEach { tag ->

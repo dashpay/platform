@@ -335,21 +335,27 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_SignerNative_signWith
 ///
 /// Caller (`KeystoreSigner`) is responsible for pulling the path off the
 /// `PlatformAddressEntity.derivationPath` row and the mnemonic off
-/// `WalletStorage.retrieveMnemonic(walletId)` per signing call, exactly as
+/// `WalletStorage.retrieveMnemonicUtf8(walletId)` per signing call, exactly as
 /// the Swift caller does. Throws `DashSDKException` on any derivation /
 /// signing failure.
+///
+/// The mnemonic crosses JNI as raw UTF-8 `byte[]` (never a `java.lang.String`,
+/// which cannot be scrubbed): the caller owns and zeroes the array after the
+/// call, and Rust holds the only remaining copy in a scrubbed `CString`.
 #[no_mangle]
-pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_SignerNative_signWithMnemonicAndPath(
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_SignerNative_signWithMnemonicAndPathInto(
     mut env: JNIEnv,
     _class: JClass,
-    mnemonic: JString,
+    mnemonic_utf8: JByteArray,
     derivation_path: JString,
     network: jint,
     data: JByteArray,
 ) -> jbyteArray {
     guard(&mut env, ptr::null_mut(), |env| {
-        let (Ok(mnemonic_str), Ok(path_str), Ok(payload)) = (
-            env.get_string(&mnemonic).map(String::from),
+        // Decode the non-secret arguments FIRST, the mnemonic LAST: a
+        // sibling-conversion failure must never orphan an already-decoded
+        // plaintext copy of the phrase.
+        let (Ok(path_str), Ok(payload)) = (
             env.get_string(&derivation_path).map(String::from),
             env.convert_byte_array(&data),
         ) else {
@@ -357,18 +363,57 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_SignerNative_signWith
             crate::support::throw_sdk_exception(env, 1, "invalid mnemonic-sign arguments");
             return ptr::null_mut();
         };
-
-        // Interior NULs would truncate the C string mid-derivation-path;
-        // reject rather than silently sign under a wrong path.
-        let (Ok(mnemonic_c), Ok(path_c)) = (CString::new(mnemonic_str), CString::new(path_str))
-        else {
+        let Ok(path_c) = CString::new(path_str) else {
+            // Interior NULs would truncate the C string mid-derivation-path;
+            // reject rather than silently sign under a wrong path.
             crate::support::throw_sdk_exception(
                 env,
                 1,
-                "mnemonic or derivation path contained an interior NUL",
+                "derivation path contained an interior NUL",
             );
             return ptr::null_mut();
         };
+
+        // Read the phrase into a `Zeroizing` buffer sized to N+1 and keep the
+        // plaintext inside it end-to-end: reject interior NULs, NUL-terminate in
+        // place (the spare slot means `push` never reallocates), and hand the
+        // FFI a pointer straight into this buffer. Routing the secret through a
+        // `CString` instead would move it into a plain (non-`Zeroizing`)
+        // allocation whose `into_boxed_slice` shrink-to-fit can silently realloc
+        // and free the plaintext UNSCRUBBED; keeping it in the `Zeroizing`
+        // buffer means it is scrubbed on drop AND on any panic unwind, across
+        // the FFI call. (`convert_byte_array` is avoided for the same reason —
+        // its capacity==len buffer would force such a realloc.)
+        let n = match env.get_array_length(&mnemonic_utf8) {
+            Ok(len) if len >= 0 => len as usize,
+            _ => {
+                let _ = env.exception_clear();
+                crate::support::throw_sdk_exception(env, 1, "invalid mnemonic argument");
+                return ptr::null_mut();
+            }
+        };
+        let mut mnemonic_bytes: zeroize::Zeroizing<Vec<u8>> =
+            zeroize::Zeroizing::new(Vec::with_capacity(n + 1));
+        mnemonic_bytes.resize(n, 0);
+        {
+            // `get_byte_array_region` copies straight into Rust memory (no
+            // pinned JVM buffer). jbyte is i8; the Vec is u8 — same layout.
+            let dst =
+                unsafe { std::slice::from_raw_parts_mut(mnemonic_bytes.as_mut_ptr().cast::<i8>(), n) };
+            if env.get_byte_array_region(&mnemonic_utf8, 0, dst).is_err() {
+                let _ = env.exception_clear();
+                crate::support::throw_sdk_exception(env, 1, "invalid mnemonic argument");
+                return ptr::null_mut();
+            }
+        }
+        // An interior NUL would truncate the phrase at the C boundary; reject it
+        // rather than sign under a partial phrase. Then NUL-terminate in place —
+        // capacity is already N+1, so this `push` cannot reallocate.
+        if mnemonic_bytes.contains(&0) {
+            crate::support::throw_sdk_exception(env, 1, "mnemonic contained an interior NUL");
+            return ptr::null_mut();
+        }
+        mnemonic_bytes.push(0);
 
         let network = match network {
             0 => dash_network::ffi::FFINetwork::Mainnet,
@@ -387,7 +432,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_SignerNative_signWith
 
         let rc = unsafe {
             dash_sdk_sign_with_mnemonic_and_path(
-                mnemonic_c.as_ptr(),
+                mnemonic_bytes.as_ptr().cast::<std::os::raw::c_char>(),
                 ptr::null(), // empty passphrase
                 path_c.as_ptr(),
                 payload.as_ptr(),
@@ -400,6 +445,12 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_SignerNative_signWith
                 &mut err_tag as *mut u8,
             )
         };
+
+        // The secret this function holds is the mnemonic; scrub it the instant
+        // signing is done — dropping the `Zeroizing` buffer zeroes the sole
+        // Rust-side copy. The caller's `byte[]` is scrubbed Kotlin-side; no
+        // un-scrubbable `String` of the phrase exists.
+        drop(mnemonic_bytes);
 
         if rc != 0 || err_tag != SIGN_WITH_MNEMONIC_OK {
             crate::support::throw_sdk_exception(

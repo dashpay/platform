@@ -8,9 +8,12 @@ import org.dashfoundation.dashsdk.ffi.NativeMnemonicBridge
  * Decrypt-on-demand mnemonic resolver — port of
  * `MnemonicResolverAndPersister.swift`.
  *
- * Rust calls [resolveMnemonic] synchronously whenever a derivation needs
- * the seed; per the CLAUDE.md doctrine the phrase crosses the boundary
- * exactly there and nowhere else. Persisting new mnemonics goes through
+ * Rust calls [resolveMnemonicInto] synchronously whenever a derivation
+ * needs the seed; per the CLAUDE.md doctrine the phrase crosses the
+ * boundary exactly there and nowhere else, as raw UTF-8 bytes written
+ * into the caller's buffer — never a JVM `String` (the iOS out-buffer
+ * discipline; an immutable String can't be scrubbed and would sit in the
+ * heap recoverable from a dump). Persisting new mnemonics goes through
  * [WalletStorage.storeMnemonic] (Keystore-wrapped AES-GCM in DataStore).
  *
  * [nativeHandle] is the `MnemonicResolverHandle` to pass into FFI entry
@@ -31,14 +34,31 @@ class MnemonicResolverAndPersister(
     /**
      * Synchronous resolve on the calling (Tokio) thread. `runBlocking` is
      * required — the FFI contract is synchronous write-into-buffer — and
-     * safe: this never runs on the main thread.
+     * safe: this never runs on the main thread. Every intermediate copy
+     * of the phrase is zeroed before returning; [out] itself is zeroed by
+     * the native trampoline after the copy into Rust-owned memory.
      */
-    override fun resolveMnemonic(walletId: ByteArray): String? = try {
-        runBlocking { storage.retrieveMnemonic(walletId) }
+    override fun resolveMnemonicInto(walletId: ByteArray, out: ByteArray): Int = try {
+        val plain = runBlocking { storage.retrieveMnemonicUtf8(walletId) }
+        when {
+            plain == null -> RESOLVE_NOT_FOUND
+            plain.size > out.size -> {
+                plain.fill(0)
+                RESOLVE_BUFFER_TOO_SMALL
+            }
+            else -> {
+                plain.copyInto(out)
+                val len = plain.size
+                plain.fill(0)
+                len
+            }
+        }
     } catch (_: Exception) {
-        // Contract: never throw across JNI; null → NOT_FOUND on the Rust
-        // side, which surfaces as a wallet-operation error.
-        null
+        // Contract: never throw across JNI. A decrypt/Keystore failure on
+        // a wallet that MAY have a stored seed is OTHER, not NOT_FOUND —
+        // reporting it as "no seed (watch-only)" would misdirect recovery
+        // (the iOS `.other` discipline).
+        RESOLVE_OTHER
     }
 
     override fun close() {

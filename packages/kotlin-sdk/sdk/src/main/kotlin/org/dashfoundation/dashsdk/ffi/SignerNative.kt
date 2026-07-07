@@ -29,17 +29,20 @@ internal object SignerNative {
     /**
      * One-shot derive-then-sign for platform-address keys (the
      * `keyType == 0xFF` branch). Derives an ECDSA secp256k1 key from
-     * `(mnemonic, derivationPath)`, signs [data], returns the signature —
+     * `(mnemonicUtf8, derivationPath)`, signs [data], returns the signature —
      * entirely inside Rust (`dash_sdk_sign_with_mnemonic_and_path`). The
      * derived key never crosses JNI; the seed + scalar are held in
      * Rust-owned zeroizing buffers. Mirrors
-     * `KeychainSigner.signPlatformAddressOnDemand` on iOS. Caller zeroes
-     * nothing itself — the mnemonic `String` is Kotlin-owned; wipe it if a
-     * `CharArray` is used upstream.
+     * `KeychainSigner.signPlatformAddressOnDemand` on iOS.
+     *
+     * [mnemonicUtf8] is the raw UTF-8 phrase bytes (never a `java.lang.String`,
+     * which cannot be scrubbed). The caller OWNS the array and MUST `fill(0)`
+     * it after the call; Rust copies it into a scrubbed buffer and holds no
+     * other copy.
      * @throws DashSDKException on any derivation/signing failure
      */
-    external fun signWithMnemonicAndPath(
-        mnemonic: String,
+    external fun signWithMnemonicAndPathInto(
+        mnemonicUtf8: ByteArray,
         derivationPath: String,
         network: Int,
         data: ByteArray,

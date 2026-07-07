@@ -34,7 +34,7 @@ import androidx.navigation.NavHostController
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.di.LocalAppState
 import org.dashfoundation.example.navigation.ContestDetail
-import org.dashfoundation.example.navigation.Friends
+import org.dashfoundation.example.navigation.DashPayHome
 import org.dashfoundation.example.navigation.KeysList
 import org.dashfoundation.example.navigation.RegisterName
 import org.dashfoundation.example.navigation.SelectMainName
@@ -52,7 +52,8 @@ import org.dashfoundation.example.util.hexToBytes
  * One identity's detail — port of `IdentityDetailView.swift`: identity info,
  * balance + credit actions, DPNS names (settled rows plus contested-name
  * rows linking into [ContestDetailScreen], with Register / Select-Main
- * entries), DashPay (Friends entry), and the keys summary (View All Keys).
+ * entries), DashPay (opens the DashPay tab), and the keys summary
+ * (View All Keys).
  *
  * Contested-name rows probe each locally-known label with the bridged
  * `Voting.contestedResourceVoteState` read and surface the labels whose
@@ -252,10 +253,10 @@ fun IdentityDetailScreen(identityIdHex: String, navController: NavHostController
 
             FormSection(title = "DashPay") {
                 ListItem(
-                    headlineContent = { Text("Friends") },
+                    headlineContent = { Text("DashPay") },
                     modifier = Modifier
-                        .clickable { navController.navigate(Friends(identityIdHex)) }
-                        .testTag("identityDetail.friends"),
+                        .clickable { navController.navigate(DashPayHome) }
+                        .testTag("identityDetail.dashpay"),
                 )
             }
 

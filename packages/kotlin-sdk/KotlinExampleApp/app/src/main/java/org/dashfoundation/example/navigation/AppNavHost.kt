@@ -29,8 +29,15 @@ import org.dashfoundation.example.ui.diagnostics.WalletMemoryExplorerScreen
 import org.dashfoundation.example.ui.identity.AddIdentityKeyScreen
 import org.dashfoundation.example.ui.identity.ContestDetailScreen
 import org.dashfoundation.example.ui.identity.CreateIdentityScreen
+import org.dashfoundation.example.ui.dashpay.AddContactScreen
+import org.dashfoundation.example.ui.dashpay.ContactDetailScreen
+import org.dashfoundation.example.ui.dashpay.ContactRequestsScreen
+import org.dashfoundation.example.ui.dashpay.ContactsScreen
+import org.dashfoundation.example.ui.dashpay.DashPayProfileScreen
+import org.dashfoundation.example.ui.dashpay.DashPayTabScreen
+import org.dashfoundation.example.ui.dashpay.HiddenContactsScreen
+import org.dashfoundation.example.ui.dashpay.IgnoredContactsScreen
 import org.dashfoundation.example.ui.identity.DpnsTestScreen
-import org.dashfoundation.example.ui.identity.FriendsScreen
 import org.dashfoundation.example.ui.identity.IdentitiesHomeScreen
 import org.dashfoundation.example.ui.identity.IdentityDetailScreen
 import org.dashfoundation.example.ui.identity.KeyDetailScreen
@@ -164,11 +171,6 @@ fun AppNavHost(
         composable<SelectMainName> { entry ->
             val route = entry.toRoute<SelectMainName>()
             SelectMainNameScreen(route.identityIdHex, navController)
-        }
-
-        composable<Friends> { entry ->
-            val route = entry.toRoute<Friends>()
-            FriendsScreen(route.identityIdHex, navController)
         }
 
         composable<KeysList> { entry ->
@@ -378,6 +380,39 @@ fun AppNavHost(
 
         composable<CoSignProposal> { entry ->
             CoSignProposalScreen(entry.toRoute<CoSignProposal>(), navController)
+        }
+
+        // ── DashPay graph ──────────────────────────────────────────────
+
+        composable<DashPayHome> { DashPayTabScreen(navController) }
+
+        composable<DashPayContacts> { entry ->
+            ContactsScreen(entry.toRoute<DashPayContacts>().identityIdHex, navController)
+        }
+
+        composable<DashPayRequests> { entry ->
+            ContactRequestsScreen(entry.toRoute<DashPayRequests>().identityIdHex, navController)
+        }
+
+        composable<DashPayAddContact> { entry ->
+            AddContactScreen(entry.toRoute<DashPayAddContact>().identityIdHex, navController)
+        }
+
+        composable<DashPayContactDetail> { entry ->
+            val route = entry.toRoute<DashPayContactDetail>()
+            ContactDetailScreen(route.identityIdHex, route.contactIdHex, navController)
+        }
+
+        composable<DashPayProfile> { entry ->
+            DashPayProfileScreen(entry.toRoute<DashPayProfile>().identityIdHex, navController)
+        }
+
+        composable<DashPayIgnored> { entry ->
+            IgnoredContactsScreen(entry.toRoute<DashPayIgnored>().identityIdHex, navController)
+        }
+
+        composable<DashPayHidden> { entry ->
+            HiddenContactsScreen(entry.toRoute<DashPayHidden>().ownerIdentityIdHex, navController)
         }
 
         // ── Diagnostics graph ──────────────────────────────────────────

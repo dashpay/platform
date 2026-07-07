@@ -4,6 +4,8 @@ import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.dashfoundation.dashsdk.errors.mapNativeErrors
+import org.dashfoundation.dashsdk.ffi.DashpayNative
+import org.dashfoundation.dashsdk.ffi.NativeCleaner
 import org.dashfoundation.dashsdk.ffi.TokensNative
 
 /**
@@ -251,6 +253,191 @@ class Dashpay internal constructor(private val walletHandle: Long) {
         }
     }
 
+    // ── DashPay read surface (upstream #3841 parity) ───────────────────
+    //
+    // JSON-string reads over the managed-identity snapshot, following the
+    // [getProfile] precedent (parsing happens at the consumer); see
+    // `DashpayNative` for the field shapes.
+
+    /**
+     * Read [identityId]'s DashPay payment history as a JSON array string
+     * (empty array when none). Local read over a managed-identity
+     * snapshot — no network I/O. This getter is the ONLY durable source
+     * of payment rows: `PlatformWalletManager.refreshDashPayPayments`
+     * upserts its result into Room (the recurring sweep reconciles
+     * payments in-memory without persisting). Returns null when the
+     * identity isn't managed by this wallet.
+     * ← Swift `ManagedIdentity.getDashPayPayments()`.
+     */
+    suspend fun payments(identityId: ByteArray): String? = withContext(Dispatchers.IO) {
+        mapNativeErrors {
+            withManagedIdentity(identityId) { handle ->
+                DashpayNative.managedIdentityDashPayPayments(handle)
+            }
+        }
+    }
+
+    /**
+     * Read [identityId]'s DashPay sync state (collection counts +
+     * high-water cursors) as a JSON object string, or null when the
+     * identity isn't managed by this wallet. Local read.
+     * ← Swift `ManagedIdentity.getDashPaySyncState()`.
+     */
+    suspend fun syncState(identityId: ByteArray): String? = withContext(Dispatchers.IO) {
+        mapNativeErrors {
+            withManagedIdentity(identityId) { handle ->
+                DashpayNative.managedIdentityDashPaySyncState(handle)
+            }
+        }
+    }
+
+    /**
+     * Read the cached public profile of [contactIdentityId] as seen by
+     * [ownerIdentityId] (the contact-profile cache the requests/contacts
+     * UI renders names + avatars from), or null when none is cached.
+     * Same JSON shape as [getProfile]. Local read.
+     * ← Swift `ManagedPlatformWallet.getContactProfile(owner:contact:)`.
+     */
+    suspend fun getContactProfile(
+        ownerIdentityId: ByteArray,
+        contactIdentityId: ByteArray,
+    ): String? = withContext(Dispatchers.IO) {
+        mapNativeErrors {
+            DashpayNative.getContactProfile(walletHandle, ownerIdentityId, contactIdentityId)
+        }
+    }
+
+    /**
+     * Live DPNS prefix search against Platform (wallet-scoped — the call
+     * path iOS `AddContactView` drives). Returns a JSON array string of
+     * `{"label":…,"identityId":…hex}`; [limit] 0 means no limit.
+     * Blocking network call; runs on IO.
+     * ← Swift `ManagedPlatformWallet.searchDpnsNames(prefix:limit:)`.
+     */
+    suspend fun searchDpnsNames(prefix: String, limit: Int = 10): String? =
+        withContext(Dispatchers.IO) {
+            require(limit >= 0) { "limit must be non-negative, got $limit" }
+            mapNativeErrors { DashpayNative.searchDpnsNames(walletHandle, prefix, limit) }
+        }
+
+    // ── DIP-15 auto-accept QR (upstream #3841 parity) ──────────────────
+
+    /**
+     * Build the owner's DIP-15 auto-accept QR URI for [identityId]
+     * (`dash:?du=…&dapk=…`), keying the proof through [coreSignerHandle].
+     * The UI renders it as a QR (ZXing). ← Swift `buildAutoAcceptQR`.
+     *
+     * [username] is the owner's DPNS name and is **required** (matching
+     * Swift's `username: String`): the underlying FFI rejects a null string,
+     * so pass `""` for a nameless identity — Rust then resolves the name
+     * on-chain (or surfaces a clear "no name registered" error).
+     */
+    suspend fun buildAutoAcceptQr(
+        identityId: ByteArray,
+        username: String,
+        coreSignerHandle: Long,
+    ): String? = withContext(Dispatchers.IO) {
+        mapNativeErrors {
+            DashpayNative.buildAutoAcceptQr(walletHandle, identityId, username, coreSignerHandle)
+        }
+    }
+
+    /**
+     * Scan-to-send: parse an auto-accept QR [uri] and send the contact
+     * request it describes from [senderIdentityId]. Blocking network
+     * call; runs on IO. Returns the created request wrapped as a
+     * [ContactRequestRef] — close it (or `use {}`) when done.
+     * ← Swift `sendContactRequestFromQR`.
+     */
+    suspend fun sendContactRequestFromQr(
+        senderIdentityId: ByteArray,
+        uri: String,
+        signerHandle: Long,
+        coreSignerHandle: Long,
+    ): ContactRequestRef = withContext(Dispatchers.IO) {
+        val handle = mapNativeErrors {
+            DashpayNative.sendContactRequestFromQr(
+                walletHandle, senderIdentityId, uri, signerHandle, coreSignerHandle,
+            )
+        }
+        ContactRequestRef(handle)
+    }
+
+    // ── Profile / contactInfo writes (upstream #3841 parity) ──────────
+
+    /**
+     * Create ([doCreate] = true) or update the DashPay profile for
+     * [identityId], signing with [signerHandle]. [avatarBytes] is the raw
+     * image — Rust computes the SHA-256 hash + perceptual fingerprint.
+     * Broadcasts a real document state transition (blocking, network).
+     * Returns the resulting profile JSON (same shape as [getProfile]).
+     * ← Swift `createDashPayProfile` / `updateDashPayProfile`.
+     */
+    @Suppress("LongParameterList")
+    suspend fun createOrUpdateProfile(
+        identityId: ByteArray,
+        displayName: String?,
+        publicMessage: String?,
+        avatarUrl: String?,
+        avatarBytes: ByteArray? = null,
+        doCreate: Boolean,
+        signerHandle: Long,
+    ): String? = withContext(Dispatchers.IO) {
+        mapNativeErrors {
+            DashpayNative.createOrUpdateProfile(
+                walletHandle, identityId, displayName, publicMessage,
+                avatarUrl, avatarBytes, doCreate, signerHandle,
+            )
+        }
+    }
+
+    /**
+     * Set the owner-private contactInfo (alias / note / [displayHidden])
+     * for `(identityId, contactId)`. Local state ALWAYS updates; the
+     * encrypted on-chain publish is DIP-15-gated — the returned
+     * [ContactInfoPublishOutcome] tells the UI whether the change is
+     * cross-device yet ([ContactInfoPublishOutcome.DEFERRED_UNTIL_TWO_CONTACTS]
+     * means local-only until a second contact establishes; surface that,
+     * matching iOS). ← Swift `setDashPayContactInfo`.
+     */
+    @Suppress("LongParameterList")
+    suspend fun setContactInfo(
+        identityId: ByteArray,
+        contactId: ByteArray,
+        alias: String?,
+        note: String?,
+        displayHidden: Boolean,
+        signerHandle: Long,
+        coreSignerHandle: Long,
+    ): ContactInfoPublishOutcome = withContext(Dispatchers.IO) {
+        val raw = mapNativeErrors {
+            DashpayNative.setContactInfo(
+                walletHandle, identityId, contactId, alias, note,
+                displayHidden, signerHandle, coreSignerHandle,
+            )
+        }
+        ContactInfoPublishOutcome.fromRaw(raw)
+    }
+
+    /**
+     * Open the managed-identity handle for [identityId], run [block],
+     * and destroy the handle before returning (the [contacts] /
+     * [acceptIncomingRequest] discipline). Returns null when the
+     * identity isn't managed by this wallet.
+     */
+    private inline fun <T> withManagedIdentity(
+        identityId: ByteArray,
+        block: (Long) -> T,
+    ): T? {
+        val handle = TokensNative.getManagedIdentity(walletHandle, identityId)
+        if (handle == 0L) return null
+        return try {
+            block(handle)
+        } finally {
+            TokensNative.managedIdentityDestroy(handle)
+        }
+    }
+
     private fun decodeIdBlob(blob: ByteArray?): List<ByteArray> {
         if (blob == null || blob.size < 4) return emptyList()
         val buffer = java.nio.ByteBuffer.wrap(blob) // big-endian by default
@@ -266,30 +453,76 @@ class Dashpay internal constructor(private val walletHandle: Long) {
     }
 }
 
+/**
+ * Outcome of a contactInfo write — mirror of the Rust
+ * `CONTACT_INFO_*` discriminants (Swift `ContactInfoPublishOutcome`).
+ * Local state always updated; this describes the on-chain publish.
+ */
+enum class ContactInfoPublishOutcome(val raw: Int) {
+    /** Encrypted contactInfo document broadcast — cross-device. */
+    PUBLISHED(0),
+
+    /**
+     * DIP-15 gate: fewer than two established contacts, so the encrypted
+     * publish is deferred (local-only until a second contact establishes).
+     */
+    DEFERRED_UNTIL_TWO_CONTACTS(1),
+
+    /** Watch-only wallet — cannot sign the publish; local-only. */
+    SKIPPED_WATCH_ONLY(2),
+    ;
+
+    companion object {
+        /**
+         * Unknown discriminants degrade to [DEFERRED_UNTIL_TWO_CONTACTS]
+         * (the "local-only, not yet cross-device" reading — the safe
+         * assumption for a newer Rust enum case).
+         */
+        fun fromRaw(raw: Int): ContactInfoPublishOutcome =
+            entries.firstOrNull { it.raw == raw } ?: DEFERRED_UNTIL_TWO_CONTACTS
+    }
+}
+
 /** Owned native `ContactRequest` handle from [Dashpay.sendContactRequest]. */
 class ContactRequestRef internal constructor(handle: Long) : AutoCloseable {
     private val handleRef = AtomicLong(handle)
+    private val cleanable = NativeCleaner.register(this, HandleCleanup(handleRef))
 
     internal val value: Long
         get() = handleRef.get().also { check(it != 0L) { "ContactRequestRef has been closed" } }
 
-    /** Idempotent: the [AtomicLong] swap destroys the handle exactly once. */
+    /** Idempotent: destroys the handle exactly once, on [close] or the GC backstop. */
     override fun close() {
-        val h = handleRef.getAndSet(0)
-        if (h != 0L) TokensNative.contactRequestDestroy(h)
+        cleanable.clean()
+    }
+
+    /** Runs on [NativeCleaner] or [close]; destroys the handle exactly once. */
+    private class HandleCleanup(private val handleRef: AtomicLong) : Runnable {
+        override fun run() {
+            val h = handleRef.getAndSet(0)
+            if (h != 0L) TokensNative.contactRequestDestroy(h)
+        }
     }
 }
 
 /** Owned native `EstablishedContact` handle from [Dashpay.acceptContactRequest]. */
 class EstablishedContactRef internal constructor(handle: Long) : AutoCloseable {
     private val handleRef = AtomicLong(handle)
+    private val cleanable = NativeCleaner.register(this, HandleCleanup(handleRef))
 
     internal val value: Long
         get() = handleRef.get().also { check(it != 0L) { "EstablishedContactRef has been closed" } }
 
-    /** Idempotent: the [AtomicLong] swap destroys the handle exactly once. */
+    /** Idempotent: destroys the handle exactly once, on [close] or the GC backstop. */
     override fun close() {
-        val h = handleRef.getAndSet(0)
-        if (h != 0L) TokensNative.establishedContactDestroy(h)
+        cleanable.clean()
+    }
+
+    /** Runs on [NativeCleaner] or [close]; destroys the handle exactly once. */
+    private class HandleCleanup(private val handleRef: AtomicLong) : Runnable {
+        override fun run() {
+            val h = handleRef.getAndSet(0)
+            if (h != 0L) TokensNative.establishedContactDestroy(h)
+        }
     }
 }

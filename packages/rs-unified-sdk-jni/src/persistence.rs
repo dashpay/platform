@@ -52,12 +52,12 @@ use jni::sys::jlong;
 use jni::JNIEnv;
 use platform_wallet_ffi::{
     AccountAddressPoolFFI, AccountChangeSetFFI, AccountSpecFFI, AddressBalanceEntryFFI,
-    AssetLockEntryFFI, ContactIgnoredSenderFFI, ContactRequestFFI, ContactRequestRemovalFFI,
-    CoreAddressEntryFFI, IdentityEntryFFI, IdentityKeyEntryFFI, IdentityKeyRemovalFFI,
-    IdentityKeyRestoreFFI, IdentityRestoreEntryFFI, PersistenceCallbacks, PlatformAddressFFI,
-    SpentOutPointFFI, TokenBalanceRemovalFFI, TokenBalanceUpsertFFI, TransactionRecordFFI,
-    UnresolvedAssetLockTxRecordFFI, UtxoEntryFFI, UtxoRestoreEntryFFI, WalletChangeSetFFI,
-    WalletRestoreEntryFFI,
+    AssetLockEntryFFI, ContactIgnoredSenderFFI, ContactProfileRestoreEntryFFI, ContactRequestFFI,
+    ContactRequestRemovalFFI, CoreAddressEntryFFI, IdentityEntryFFI, IdentityKeyEntryFFI,
+    IdentityKeyRemovalFFI, IdentityKeyRestoreFFI, IdentityRestoreEntryFFI, PaymentRestoreEntryFFI,
+    PersistenceCallbacks, PlatformAddressFFI, SpentOutPointFFI, TokenBalanceRemovalFFI,
+    TokenBalanceUpsertFFI, TransactionRecordFFI, UnresolvedAssetLockTxRecordFFI, UtxoEntryFFI,
+    UtxoRestoreEntryFFI, WalletChangeSetFFI, WalletRestoreEntryFFI,
 };
 use std::ffi::{c_void, CStr, CString};
 use std::os::raw::c_char;
@@ -864,35 +864,84 @@ unsafe fn persist_identity_upsert(
     let avatar_hash = env.byte_array_from_slice(&e.dashpay_profile_avatar_hash)?;
     let avatar_fp = env.byte_array_from_slice(&e.dashpay_profile_avatar_fingerprint)?;
 
-    env.call_method(
-        bridge,
-        "onPersistIdentityUpsert",
-        "([B[BJJZIBZ[B[Ljava/lang/String;[JZLjava/lang/String;Ljava/lang/String;\
-         Ljava/lang/String;[BZ[BZLjava/lang/String;)I",
-        &[
-            wid.into(),
-            (&identity_id).into(),
-            JValue::Long(e.balance as i64),
-            JValue::Long(e.revision as i64),
-            JValue::Bool(e.identity_index_is_some as u8),
-            JValue::Int(e.identity_index as i32),
-            JValue::Byte(e.status as i8),
-            JValue::Bool(e.wallet_id_is_some as u8),
-            (&identity_wallet_id).into(),
-            (&dpns_arr).into(),
-            (&acquired_arr).into(),
-            JValue::Bool(e.dashpay_profile_present as u8),
-            (&display).into(),
-            (&bio).into(),
-            (&avatar_url).into(),
-            (&avatar_hash).into(),
-            JValue::Bool(e.dashpay_profile_avatar_hash_present as u8),
-            (&avatar_fp).into(),
-            JValue::Bool(e.dashpay_profile_avatar_fingerprint_present as u8),
-            (&public_message).into(),
-        ],
-    )?
-    .i()
+    let code = env
+        .call_method(
+            bridge,
+            "onPersistIdentityUpsert",
+            "([B[BJJZIBZ[B[Ljava/lang/String;[JZLjava/lang/String;Ljava/lang/String;\
+             Ljava/lang/String;[BZ[BZLjava/lang/String;)I",
+            &[
+                wid.into(),
+                (&identity_id).into(),
+                JValue::Long(e.balance as i64),
+                JValue::Long(e.revision as i64),
+                JValue::Bool(e.identity_index_is_some as u8),
+                JValue::Int(e.identity_index as i32),
+                JValue::Byte(e.status as i8),
+                JValue::Bool(e.wallet_id_is_some as u8),
+                (&identity_wallet_id).into(),
+                (&dpns_arr).into(),
+                (&acquired_arr).into(),
+                JValue::Bool(e.dashpay_profile_present as u8),
+                (&display).into(),
+                (&bio).into(),
+                (&avatar_url).into(),
+                (&avatar_hash).into(),
+                JValue::Bool(e.dashpay_profile_avatar_hash_present as u8),
+                (&avatar_fp).into(),
+                JValue::Bool(e.dashpay_profile_avatar_fingerprint_present as u8),
+                (&public_message).into(),
+            ],
+        )?
+        .i()?;
+    if code != 0 {
+        return Ok(code);
+    }
+
+    // Cached contact profiles riding the identity entry
+    // (`IdentityEntryFFI::contact_profiles`): one bridge call per row so
+    // the flat args stay manageable, mirroring the per-delta contacts
+    // callbacks. `is_present == true` upserts the Room row;
+    // `is_present == false` is a tombstone — the contact removed their
+    // on-chain profile and the persisted row must be DELETED (an
+    // upsert-only pipeline would show the stale name/avatar forever).
+    for row in slice_or_empty(e.contact_profiles, e.contact_profiles_count) {
+        let code = env.with_local_frame(16, |env| {
+            let contact_id = env.byte_array_from_slice(&row.contact_id)?;
+            let display = cstr_opt(env, row.display_name)?;
+            let bio = cstr_opt(env, row.bio)?;
+            let avatar_url = cstr_opt(env, row.avatar_url)?;
+            let public_message = cstr_opt(env, row.public_message)?;
+            let avatar_hash = env.byte_array_from_slice(&row.avatar_hash)?;
+            let avatar_fp = env.byte_array_from_slice(&row.avatar_fingerprint)?;
+            env.call_method(
+                bridge,
+                "onPersistContactProfileDelta",
+                "([B[B[BZLjava/lang/String;Ljava/lang/String;Ljava/lang/String;\
+                 [BZ[BZLjava/lang/String;J)I",
+                &[
+                    wid.into(),
+                    (&identity_id).into(),
+                    (&contact_id).into(),
+                    JValue::Bool(row.is_present as u8),
+                    (&display).into(),
+                    (&bio).into(),
+                    (&avatar_url).into(),
+                    (&avatar_hash).into(),
+                    JValue::Bool(row.avatar_hash_present as u8),
+                    (&avatar_fp).into(),
+                    JValue::Bool(row.avatar_fingerprint_present as u8),
+                    (&public_message).into(),
+                    JValue::Long(row.checked_at_ms as i64),
+                ],
+            )?
+            .i()
+        })?;
+        if code != 0 {
+            return Ok(code);
+        }
+    }
+    Ok(0)
 }
 
 // ── Identity keys ─────────────────────────────────────────────────────
@@ -1563,23 +1612,45 @@ struct UnresolvedTxRecordStaged {
 }
 
 /// Staged identity-restore row: FFI struct with `keys` / `contacts` /
-/// `ignored_senders` still null / 0 until sealed, plus the owned per-key
-/// and per-contact staging. `dpns_names` / `contested_dpns_names` are left
-/// null / 0 this pass (not yet ported), and `payments` /
-/// `contact_profiles` stay null / 0 because Kotlin has no persist source
-/// for them yet (no Room analog of `PersistentDashpayPayment` /
-/// `PersistentDashpayContactProfile`), so there is nothing owned for any
-/// of those to free.
+/// `ignored_senders` / `payments` / `contact_profiles` still null / 0
+/// until sealed, plus the owned per-row staging. `dpns_names` /
+/// `contested_dpns_names` are left null / 0 this pass (not yet ported).
 struct IdentityRestoreStaged {
-    /// FFI entry with `keys` / `contacts` / `ignored_senders` (and the
-    /// dpns / payments / contact-profile arrays) still null / 0 until
-    /// sealed.
+    /// FFI entry with the nested arrays still null / 0 until sealed.
     entry: IdentityRestoreEntryFFI,
     keys: Vec<IdentityKeyRestoreStaged>,
     contacts: Vec<ContactRestoreStaged>,
     /// Bare 32-byte ignored-sender ids (per-sender mute) — POD, minted
     /// as a flat `[u8; 32]` array at seal.
     ignored_senders: Vec<[u8; 32]>,
+    payments: Vec<PaymentRestoreStaged>,
+    contact_profiles: Vec<ContactProfileRestoreStaged>,
+}
+
+/// Staged DashPay payment-history row: FFI struct with `txid` / `memo`
+/// still null until sealed, plus the owned strings that back them.
+/// Rehydrates the managed identity's `dashpay_payments` map — without it
+/// *Sent* entries (and their memos) vanish on every relaunch because the
+/// reconcile sweep can only re-derive *Received* entries from UTXOs.
+struct PaymentRestoreStaged {
+    /// FFI row with `txid` / `memo` still null until sealed.
+    row: PaymentRestoreEntryFFI,
+    /// The txid map key. Always present on a persisted row.
+    txid: CString,
+    memo: Option<CString>,
+}
+
+/// Staged cached contact-profile row: FFI struct with the four optional
+/// c-strings still null until sealed, plus the owned strings. Only
+/// **present** profiles are persisted (tombstones delete the Room row),
+/// so every staged row rehydrates as a present cache entry.
+struct ContactProfileRestoreStaged {
+    /// FFI row with the string fields still null until sealed.
+    row: ContactProfileRestoreEntryFFI,
+    display_name: Option<CString>,
+    bio: Option<CString>,
+    avatar_url: Option<CString>,
+    public_message: Option<CString>,
 }
 
 /// Staged DashPay contact-restore row: FFI struct with every pointer
@@ -1758,6 +1829,8 @@ fn seal_wallet_entries(staged: Vec<WalletRestoreStaged>) -> Vec<WalletRestoreEnt
                              keys,
                              contacts,
                              ignored_senders,
+                             payments,
+                             contact_profiles,
                          }| {
                             let keys: Vec<IdentityKeyRestoreFFI> = keys
                                 .into_iter()
@@ -1813,6 +1886,45 @@ fn seal_wallet_entries(staged: Vec<WalletRestoreStaged>) -> Vec<WalletRestoreEnt
                             (entry.contacts, entry.contacts_count) = vec_into_raw(contacts);
                             (entry.ignored_senders, entry.ignored_senders_count) =
                                 vec_into_raw(ignored_senders);
+
+                            let payments: Vec<PaymentRestoreEntryFFI> = payments
+                                .into_iter()
+                                .map(
+                                    |PaymentRestoreStaged {
+                                         mut row,
+                                         txid,
+                                         memo,
+                                     }| {
+                                        row.txid = txid.into_raw() as *const c_char;
+                                        row.memo = opt_cstring_into_raw(memo);
+                                        row
+                                    },
+                                )
+                                .collect();
+                            (entry.payments, entry.payments_count) = vec_into_raw(payments);
+
+                            let contact_profiles: Vec<ContactProfileRestoreEntryFFI> =
+                                contact_profiles
+                                    .into_iter()
+                                    .map(
+                                        |ContactProfileRestoreStaged {
+                                             mut row,
+                                             display_name,
+                                             bio,
+                                             avatar_url,
+                                             public_message,
+                                         }| {
+                                            row.display_name = opt_cstring_into_raw(display_name);
+                                            row.bio = opt_cstring_into_raw(bio);
+                                            row.avatar_url = opt_cstring_into_raw(avatar_url);
+                                            row.public_message =
+                                                opt_cstring_into_raw(public_message);
+                                            row
+                                        },
+                                    )
+                                    .collect();
+                            (entry.contact_profiles, entry.contact_profiles_count) =
+                                vec_into_raw(contact_profiles);
                             entry
                         },
                     )
@@ -2475,6 +2587,51 @@ fn build_identity_restore(
     // contactRequest documents re-ingest on the next sweep.
     let ignored_senders = read_id32_array_field(env, holder, "ignoredSenders")?;
 
+    // DashPay payment history — restores the `dashpay_payments` map so
+    // *Sent* entries (with their user-entered memos) survive relaunch;
+    // the reconcile sweep can only re-derive *Received* entries. Mirror
+    // of the Swift `buildIdentityRestoreBuffer` payments block.
+    let payments_obj = env
+        .get_field(
+            holder,
+            "payments",
+            "[Lorg/dashfoundation/dashsdk/ffi/PaymentRestoreData;",
+        )?
+        .l()?;
+    let payments_arr: jni::objects::JObjectArray = payments_obj.into();
+    let payments_len = env.get_array_length(&payments_arr)? as usize;
+    let mut payments: Vec<PaymentRestoreStaged> = Vec::with_capacity(payments_len);
+    for i in 0..payments_len {
+        let p = env.with_local_frame(16, |env| {
+            let h = env.get_object_array_element(&payments_arr, i as i32)?;
+            build_payment_restore(env, &h)
+        })?;
+        payments.push(p);
+    }
+
+    // Cached contact profiles — restores the `contact_profiles` map so
+    // the contacts/requests UI shows names + avatars immediately after
+    // relaunch instead of raw identity ids until the next profile sweep.
+    // Only present profiles are persisted, so every row rehydrates as a
+    // present cache entry.
+    let profiles_obj = env
+        .get_field(
+            holder,
+            "contactProfiles",
+            "[Lorg/dashfoundation/dashsdk/ffi/ContactProfileRestoreData;",
+        )?
+        .l()?;
+    let profiles_arr: jni::objects::JObjectArray = profiles_obj.into();
+    let profiles_len = env.get_array_length(&profiles_arr)? as usize;
+    let mut contact_profiles: Vec<ContactProfileRestoreStaged> = Vec::with_capacity(profiles_len);
+    for i in 0..profiles_len {
+        let cp = env.with_local_frame(16, |env| {
+            let h = env.get_object_array_element(&profiles_arr, i as i32)?;
+            build_contact_profile_restore(env, &h)
+        })?;
+        contact_profiles.push(cp);
+    }
+
     let entry = IdentityRestoreEntryFFI {
         identity_id,
         balance,
@@ -2489,13 +2646,6 @@ fn build_identity_restore(
         keys_count: 0,
         contacts: ptr::null(),
         contacts_count: 0,
-        // Payments + cached contact profiles stay null / 0 this pass:
-        // Kotlin has no persist source for them yet (no Room analog of
-        // `PersistentDashpayPayment` / `PersistentDashpayContactProfile`),
-        // so there is nothing to rehydrate — the reconcile / profile
-        // sweeps rebuild them after load, exactly as before the arrays
-        // existed. The free trampoline never has to reclaim them because
-        // they are never minted.
         payments: ptr::null(),
         payments_count: 0,
         ignored_senders: ptr::null(),
@@ -2508,6 +2658,93 @@ fn build_identity_restore(
         keys,
         contacts,
         ignored_senders,
+        payments,
+        contact_profiles,
+    })
+}
+
+/// Rebuild one DashPay payment-history row from a Kotlin
+/// `PaymentRestoreData` into a [`PaymentRestoreStaged`]. The txid / memo
+/// strings stay owned here; [`seal_wallet_entries`] mints the raw
+/// pointers only once the whole load succeeded and
+/// [`tramp_load_wallet_list_free`] reclaims them.
+fn build_payment_restore(
+    env: &mut JNIEnv,
+    holder: &JObject,
+) -> Result<PaymentRestoreStaged, jni::errors::Error> {
+    // txid is non-null on the Kotlin class and pre-filtered non-empty by
+    // the load path (the restore fold inserts whatever key it is given —
+    // an empty txid would land as an "" map key, not be skipped). An
+    // interior NUL (impossible for a hex txid) degrades to an empty
+    // string here rather than aborting the whole load.
+    let txid = read_opt_cstring_field(env, holder, "txid")?
+        .unwrap_or_else(|| CString::new("").expect("empty CString"));
+    let counterparty_id = read_id32_field(env, holder, "counterpartyId")?;
+    let amount_duffs = env.get_field(holder, "amountDuffs", "J")?.j()? as u64;
+    let direction_raw = env.get_field(holder, "directionRaw", "B")?.b()? as u8;
+    let status_raw = env.get_field(holder, "statusRaw", "B")?.b()? as u8;
+    let memo = read_opt_cstring_field(env, holder, "memo")?;
+    Ok(PaymentRestoreStaged {
+        row: PaymentRestoreEntryFFI {
+            txid: ptr::null(),
+            counterparty_id,
+            amount_duffs,
+            direction_raw,
+            status_raw,
+            memo: ptr::null(),
+        },
+        txid,
+        memo,
+    })
+}
+
+/// Rebuild one cached contact-profile row from a Kotlin
+/// `ContactProfileRestoreData` into a [`ContactProfileRestoreStaged`].
+/// The four optional strings stay owned here; [`seal_wallet_entries`]
+/// mints the raw pointers and [`tramp_load_wallet_list_free`] reclaims
+/// them. The avatar hash / fingerprint presence flags derive from the
+/// nullable Kotlin byte arrays (null ⇒ absent), mirroring the Swift
+/// restore block's gating.
+fn build_contact_profile_restore(
+    env: &mut JNIEnv,
+    holder: &JObject,
+) -> Result<ContactProfileRestoreStaged, jni::errors::Error> {
+    let contact_id = read_id32_field(env, holder, "contactId")?;
+    let display_name = read_opt_cstring_field(env, holder, "displayName")?;
+    let bio = read_opt_cstring_field(env, holder, "bio")?;
+    let avatar_url = read_opt_cstring_field(env, holder, "avatarUrl")?;
+    let public_message = read_opt_cstring_field(env, holder, "publicMessage")?;
+    let checked_at_ms = env.get_field(holder, "checkedAtMs", "J")?.j()? as u64;
+
+    let hash_vec = read_bytes_field_vec(env, holder, "avatarHash")?;
+    let (avatar_hash, avatar_hash_present) = match <[u8; 32]>::try_from(hash_vec.as_slice()) {
+        Ok(h) => (h, true),
+        Err(_) => ([0u8; 32], false),
+    };
+    let fp_vec = read_bytes_field_vec(env, holder, "avatarFingerprint")?;
+    let (avatar_fingerprint, avatar_fingerprint_present) =
+        match <[u8; 8]>::try_from(fp_vec.as_slice()) {
+            Ok(f) => (f, true),
+            Err(_) => ([0u8; 8], false),
+        };
+
+    Ok(ContactProfileRestoreStaged {
+        row: ContactProfileRestoreEntryFFI {
+            contact_id,
+            display_name: ptr::null(),
+            bio: ptr::null(),
+            avatar_url: ptr::null(),
+            avatar_hash,
+            avatar_hash_present,
+            avatar_fingerprint,
+            avatar_fingerprint_present,
+            public_message: ptr::null(),
+            checked_at_ms,
+        },
+        display_name,
+        bio,
+        avatar_url,
+        public_message,
     })
 }
 
@@ -2815,14 +3052,15 @@ unsafe extern "C" fn tramp_load_wallet_list_free(
                 e.last_applied_chain_lock_bytes_len,
             );
 
-            // identities + nested key / contact / ignored-sender arrays
-            // (each key's `data` buffer + contract-bounds doc-type C-string;
-            // each contact's three byte payloads, three metadata C-strings
-            // and `accepted_accounts` u32 buffer). Mirrors exactly what
+            // identities + nested key / contact / ignored-sender /
+            // payment / contact-profile arrays (each key's `data` buffer +
+            // contract-bounds doc-type C-string; each contact's three byte
+            // payloads, three metadata C-strings and `accepted_accounts`
+            // u32 buffer; each payment's txid/memo C-strings; each contact
+            // profile's four optional C-strings). Mirrors exactly what
             // `seal_wallet_entries` minted. The dpns_names /
-            // contested_dpns_names / payments / contact_profiles arrays are
-            // never minted this pass (staged null / 0), so there is nothing
-            // to reclaim for them.
+            // contested_dpns_names arrays are never minted this pass
+            // (staged null / 0), so there is nothing to reclaim for them.
             if !e.identities.is_null() && e.identities_count > 0 {
                 let idents: Box<[IdentityRestoreEntryFFI]> =
                     Box::from_raw(std::ptr::slice_from_raw_parts_mut(
@@ -2869,6 +3107,32 @@ unsafe extern "C" fn tramp_load_wallet_list_free(
                     // Flat POD array of 32-byte sender ids — no nested
                     // buffers, just the boxed slice itself.
                     free_raw_slice(ident.ignored_senders, ident.ignored_senders_count);
+                    if !ident.payments.is_null() && ident.payments_count > 0 {
+                        let payments: Box<[PaymentRestoreEntryFFI]> =
+                            Box::from_raw(std::ptr::slice_from_raw_parts_mut(
+                                ident.payments as *mut PaymentRestoreEntryFFI,
+                                ident.payments_count,
+                            ));
+                        for p in payments.iter() {
+                            free_raw_cstring(p.txid);
+                            free_raw_cstring(p.memo);
+                        }
+                        drop(payments);
+                    }
+                    if !ident.contact_profiles.is_null() && ident.contact_profiles_count > 0 {
+                        let profiles: Box<[ContactProfileRestoreEntryFFI]> =
+                            Box::from_raw(std::ptr::slice_from_raw_parts_mut(
+                                ident.contact_profiles as *mut ContactProfileRestoreEntryFFI,
+                                ident.contact_profiles_count,
+                            ));
+                        for cp in profiles.iter() {
+                            free_raw_cstring(cp.display_name);
+                            free_raw_cstring(cp.bio);
+                            free_raw_cstring(cp.avatar_url);
+                            free_raw_cstring(cp.public_message);
+                        }
+                        drop(profiles);
+                    }
                 }
                 drop(idents);
             }

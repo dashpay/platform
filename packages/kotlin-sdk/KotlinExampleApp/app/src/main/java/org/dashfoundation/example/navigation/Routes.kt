@@ -18,6 +18,8 @@ import kotlinx.serialization.Serializable
 
 @Serializable object ContractsHome
 
+@Serializable object DashPayHome
+
 @Serializable object SettingsHome
 
 // ── Settings graph ─────────────────────────────────────────────────────
@@ -88,9 +90,6 @@ import kotlinx.serialization.Serializable
 
 /** Pick the identity's main DPNS name (← `SelectMainNameView.swift`). */
 @Serializable data class SelectMainName(val identityIdHex: String)
-
-/** DashPay contacts for an identity (← `FriendsView.swift`). */
-@Serializable data class Friends(val identityIdHex: String)
 
 /** All public keys of an identity (← `KeysListView.swift`). */
 @Serializable data class KeysList(val identityIdHex: String)
@@ -176,6 +175,32 @@ import kotlinx.serialization.Serializable
 
 /** Shielded activity timeline for a wallet (← `ShieldedActivityView.swift`). */
 @Serializable data class ShieldedActivity(val walletIdHex: String)
+
+// ── DashPay graph (hosted under the DashPay tab, ← the DashPay/ views) ──
+
+/** Established-contacts list for an identity (← `ContactsView.swift`). */
+@Serializable data class DashPayContacts(val identityIdHex: String)
+
+/** Incoming + outgoing contact requests (← `ContactRequestsView.swift`). */
+@Serializable data class DashPayRequests(val identityIdHex: String)
+
+/** Add-a-contact form (DPNS search / paste id / QR, ← `AddContactView.swift`). */
+@Serializable data class DashPayAddContact(val identityIdHex: String)
+
+/** One contact's detail + payments (← `ContactDetailView.swift`). */
+@Serializable data class DashPayContactDetail(
+    val identityIdHex: String,
+    val contactIdHex: String,
+)
+
+/** Read-only own-profile sheet (← `DashPayProfileView.swift`). */
+@Serializable data class DashPayProfile(val identityIdHex: String)
+
+/** Ignored-senders list (← `IgnoredContactsView.swift`). */
+@Serializable data class DashPayIgnored(val identityIdHex: String)
+
+/** Hidden established-contacts list (← `HiddenContactsView.swift`). */
+@Serializable data class DashPayHidden(val ownerIdentityIdHex: String)
 
 // ── Contracts graph ────────────────────────────────────────────────────
 
@@ -356,6 +381,6 @@ enum class RootTab(
     SYNC(SyncHome, SyncHome::class, "rootTab.sync"),
     WALLETS(WalletsHome, WalletsHome::class, "rootTab.wallets"),
     IDENTITIES(IdentitiesHome, IdentitiesHome::class, "rootTab.identities"),
-    CONTRACTS(ContractsHome, ContractsHome::class, "rootTab.contracts"),
+    DASHPAY(DashPayHome, DashPayHome::class, "rootTab.dashpay"),
     SETTINGS(SettingsHome, SettingsHome::class, "rootTab.settings"),
 }
