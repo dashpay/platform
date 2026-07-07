@@ -10,6 +10,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -24,6 +26,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
@@ -31,6 +34,11 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
+import kotlinx.coroutines.launch
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.longOrNull
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.di.LocalAppState
 import org.dashfoundation.example.navigation.ContestDetail
@@ -91,6 +99,15 @@ fun IdentityDetailScreen(identityIdHex: String, navController: NavHostController
     val sdk by appState.sdk.collectAsStateWithLifecycle()
     var contestedNames by remember { mutableStateOf<List<String>>(emptyList()) }
 
+    // Pull the identity's on-chain balance (and revision) and persist it —
+    // port of `IdentityDetailView`'s toolbar refresh button. A credit
+    // transfer credits the *recipient* identity, but nothing on this device
+    // observes that until we re-fetch, so a loaded/received-into identity
+    // otherwise shows a stale balance (e.g. ID-14 A→B). `updateBalance` is a
+    // targeted UPDATE, so isLocal / alias / keys are preserved.
+    val scope = rememberCoroutineScope()
+    var isRefreshing by remember { mutableStateOf(false) }
+
     // Probe the locally-known labels for live contests this identity is
     // contending (capped — each probe is one network round-trip).
     LaunchedEffect(sdk, dpnsNames, identity?.dpnsName, identity?.mainDpnsName) {
@@ -130,6 +147,37 @@ fun IdentityDetailScreen(identityIdHex: String, navController: NavHostController
                 navigationIcon = {
                     IconButton(onClick = { navController.popBackStack() }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
+                actions = {
+                    IconButton(
+                        onClick = {
+                            val activeSdk = sdk ?: return@IconButton
+                            isRefreshing = true
+                            scope.launch {
+                                try {
+                                    val json = activeSdk.identities.fetch(identityIdHex)
+                                    if (json != null) {
+                                        val balance = runCatching {
+                                            Json.parseToJsonElement(json).jsonObject["balance"]
+                                                ?.jsonPrimitive?.longOrNull ?: 0L
+                                        }.getOrDefault(0L)
+                                        container.database.identityDao()
+                                            .updateBalance(idBytes, balance, System.currentTimeMillis())
+                                    }
+                                } finally {
+                                    isRefreshing = false
+                                }
+                            }
+                        },
+                        enabled = sdk != null && !isRefreshing,
+                        modifier = Modifier.testTag("identityDetail.refresh"),
+                    ) {
+                        if (isRefreshing) {
+                            CircularProgressIndicator(modifier = Modifier.padding(4.dp))
+                        } else {
+                            Icon(Icons.Filled.Refresh, contentDescription = "Refresh")
+                        }
                     }
                 },
             )

@@ -20,6 +20,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
@@ -29,6 +30,8 @@ import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.navigation.AddIdentityKey
 import org.dashfoundation.example.navigation.KeyDetail
 import org.dashfoundation.example.ui.components.FormSection
+import org.dashfoundation.example.util.Base58
+import org.dashfoundation.example.util.hexToBytes
 
 /**
  * All public keys of an identity — port of `KeysListView.swift`. Rows from
@@ -41,9 +44,18 @@ import org.dashfoundation.example.ui.components.FormSection
 @Composable
 fun KeysListScreen(identityIdHex: String, navController: NavHostController) {
     val container = LocalAppContainer.current
-    val keys by container.database.publicKeyDao()
+    // Identity-creation persists public keys keyed by the Base58 identity id
+    // (ID-08 path), while other rows may be keyed by hex. Mirror
+    // IdentityDetailScreen / KeyDetailScreen's dual lookup (Base58-first, hex
+    // fallback) so the list isn't empty for Base58-keyed identities.
+    val idBase58 = remember(identityIdHex) { Base58.encode(identityIdHex.hexToBytes()) }
+    val keysBase58 by container.database.publicKeyDao()
+        .observeByIdentityId(idBase58)
+        .collectAsStateWithLifecycle(initialValue = emptyList())
+    val keysHex by container.database.publicKeyDao()
         .observeByIdentityId(identityIdHex)
         .collectAsStateWithLifecycle(initialValue = emptyList())
+    val keys = if (keysBase58.isNotEmpty()) keysBase58 else keysHex
 
     Scaffold(
         topBar = {
