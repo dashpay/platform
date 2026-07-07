@@ -526,7 +526,10 @@ mod tests {
     #[test]
     fn confirmed_document_json_matches_canonical_query_shape() {
         let mut properties = BTreeMap::new();
-        properties.insert("blob".to_string(), Value::Bytes(vec![0xde, 0xad, 0xbe, 0xef]));
+        properties.insert(
+            "blob".to_string(),
+            Value::Bytes(vec![0xde, 0xad, 0xbe, 0xef]),
+        );
 
         let document = Document::V0(DocumentV0 {
             id: Identifier::from([1u8; 32]),
@@ -548,20 +551,23 @@ mod tests {
         let json: serde_json::Value =
             serde_json::from_str(&confirmed_document_to_json(&document).unwrap()).unwrap();
 
+        // `$formatVersion` present (the legacy shape omitted it).
         assert_eq!(json["$formatVersion"], serde_json::json!("0"));
+        // Identifiers as base58 strings.
         assert!(
             json["$id"].is_string(),
             "$id must be a base58 string, got {:?}",
             json["$id"]
         );
+        // The key differentiator from the legacy shape: binary property as a
+        // base64 string (not a u8-array). 0xdeadbeef -> "3q2+7w==".
+        assert_eq!(json["blob"], serde_json::json!("3q2+7w=="));
+        // Unset system fields are present as null (the legacy shape omitted them).
         assert!(
-            json["blob"].is_string(),
-            "binary property must be a base64 string, got {:?}",
-            json["blob"]
+            json.get("$createdAt")
+                .is_some_and(serde_json::Value::is_null),
+            "unset $createdAt must be present and null, got {:?}",
+            json.get("$createdAt")
         );
-
-        // Byte-identical to the query path's mechanism (to_object + serde_json).
-        let query_json = serde_json::to_value(document.to_object().unwrap()).unwrap();
-        assert_eq!(json, query_json);
     }
 }

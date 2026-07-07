@@ -131,7 +131,10 @@ impl Value {
             }),
             Value::Array(array) => array
                 .into_iter()
-                .map(|byte| byte.to_integer())
+                .map(|byte| match byte {
+                    Value::U8(value_as_u8) => Ok(value_as_u8),
+                    _ => Err(Error::StructureError("not an array of bytes".to_string())),
+                })
                 .collect::<Result<Vec<u8>, Error>>(),
             Value::Bytes(vec) => Ok(vec),
             Value::Bytes32(bytes) => Ok(bytes.into()),
@@ -203,7 +206,10 @@ impl Value {
                 }),
             Value::Array(array) => array
                 .iter()
-                .map(|byte| byte.to_integer())
+                .map(|byte| match byte {
+                    Value::U8(value_as_u8) => Ok(*value_as_u8),
+                    _ => Err(Error::StructureError("not an array of bytes".to_string())),
+                })
                 .collect::<Result<Vec<u8>, Error>>(),
             Value::Bytes(vec) => Ok(vec.clone()),
             Value::Bytes20(vec) => Ok(vec.to_vec()),
@@ -751,29 +757,6 @@ mod tests {
     fn into_identifier_bytes_from_bytes() {
         let val = Value::Bytes(vec![1, 2, 3]);
         assert_eq!(val.into_identifier_bytes().unwrap(), vec![1, 2, 3]);
-    }
-
-    // A binary (ByteArray) document property that round-trips through a schemaless
-    // JSON layer (e.g. an edit-and-replace where the client re-serializes the
-    // cached document) arrives as a plain JSON array of integers, which decode to
-    // wider `Value` integer variants (`U64`), not `Value::U8`. The byte-array
-    // encode path must accept those like its `to_bytes_32`/`to_identifier`
-    // siblings, otherwise the replace fails with "not an array of bytes".
-    #[test]
-    fn to_binary_bytes_accepts_array_of_wider_integers() {
-        let value = Value::Array(vec![
-            Value::U64(0xde),
-            Value::U64(0xad),
-            Value::U64(0xbe),
-            Value::U64(0xef),
-        ]);
-        assert_eq!(value.to_binary_bytes().unwrap(), vec![0xde, 0xad, 0xbe, 0xef]);
-    }
-
-    #[test]
-    fn into_binary_bytes_accepts_array_of_mixed_integer_variants() {
-        let value = Value::Array(vec![Value::U64(1), Value::U8(2), Value::I64(3)]);
-        assert_eq!(value.into_binary_bytes().unwrap(), vec![1, 2, 3]);
     }
 
     #[test]
