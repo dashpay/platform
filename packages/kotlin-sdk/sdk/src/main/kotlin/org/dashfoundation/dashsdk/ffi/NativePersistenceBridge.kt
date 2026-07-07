@@ -608,6 +608,57 @@ class WalletRestoreData(
      * of the Swift `buildCoreAddressPoolBuffer` slice on `loadWalletList`.
      */
     @JvmField val coreAddressPools: Array<CoreAddressPoolRestoreData>,
+    /**
+     * Tracked asset-lock entries to rehydrate into the Rust
+     * `ClientWalletStartState.unused_asset_locks` map on cold start, so an
+     * identity registration / top-up funding flow interrupted mid-flight
+     * (an asset lock still at `Built` / `Broadcast` / `InstantSendLocked` /
+     * `ChainLocked`) resumes from its latest persisted status without
+     * rebroadcasting the funding transaction. Empty when the wallet has no
+     * persisted asset locks. The Rust trampoline re-packs each into an
+     * `AssetLockEntryFFI`; the platform-wallet load path
+     * (`build_unused_asset_locks`) is the sole filter — it skips `Consumed`
+     * (statusRaw 4) rows itself, so this array carries ALL persisted rows
+     * (matching the Swift `loadCachedAssetLocksOnQueue`, which likewise
+     * emits every row and lets Rust drop the terminal ones).
+     *
+     * Without this, an interrupted registration re-derives a fresh asset
+     * lock on relaunch instead of continuing the persisted one. Mirror of
+     * the Swift `buildAssetLockRestoreBuffer` slice on `loadWalletList`.
+     */
+    @JvmField val trackedAssetLocks: Array<TrackedAssetLockRestoreData>,
+    /**
+     * Funding-transaction records for the tracked asset locks still at
+     * `statusRaw < 2` (Built / Broadcast) whose funding tx has a matching
+     * persisted transaction row. The Rust load path re-inserts each into
+     * the matching `standard_bip44_accounts[accountIndex].transactions_mut()`
+     * bucket so the next incoming chain-lock event can cascade-promote it
+     * via `apply_chain_lock`. Empty when the wallet has no unresolved
+     * locks. The Rust trampoline re-packs each into an
+     * `UnresolvedAssetLockTxRecordFFI`.
+     *
+     * Without this the in-memory transactions map starts empty after every
+     * restart, `apply_chain_lock` finds nothing to promote at the funding
+     * block's height, and an asset lock whose block was already chain-locked
+     * stays stuck at `Broadcast` indefinitely. Mirror of the Swift
+     * `buildUnresolvedAssetLockTxRecordBuffer` slice on `loadWalletList`.
+     */
+    @JvmField val unresolvedAssetLockTxRecords: Array<UnresolvedAssetLockTxRecordData>,
+    /**
+     * Bincode-serialised `dashcore::…::chain_lock::ChainLock` carrying the
+     * wallet's persisted `WalletMetadata.last_applied_chain_lock` from the
+     * last session. Empty when no chainlock was ever persisted (fresh
+     * wallet, or one that hasn't observed a chainlock since metadata-persist
+     * shipped). When present, the Rust load path (`build_wallet_start_state`)
+     * decodes and stamps it into
+     * `wallet_info.metadata.last_applied_chain_lock` before the wallet
+     * enters the manager, so the asset-lock-resume CL-from-metadata fallback
+     * can fire on catch-up tasks at app launch without waiting for SPV to
+     * re-apply a fresh chainlock. The Rust trampoline maps empty → null / 0.
+     * Mirror of the Swift `w.lastAppliedChainLockBytes` slice on
+     * `loadWalletList`.
+     */
+    @JvmField val lastAppliedChainLockBytes: ByteArray,
 )
 
 /**
@@ -681,6 +732,61 @@ class CoreAddressRestoreData(
     @JvmField val balance: Long,
     @JvmField val addressBase58: String,
     @JvmField val derivationPath: String,
+)
+
+/**
+ * One tracked asset-lock row — mirror of `AssetLockEntryFFI`.
+ *
+ * [outPoint] is the 36-byte outpoint the Rust side expects: 32-byte
+ * wire-order txid followed by the 4-byte little-endian vout (the inverse
+ * of `encodeOutPointHex`, decoded from the persisted display-order hex
+ * key). [transactionBytes] is the consensus-encoded funding transaction
+ * (Rust decodes it via `Transaction::consensus_decode`); a row with empty
+ * transaction bytes is dropped Kotlin-side before it reaches here.
+ * [fundingType] and [status] are the `AssetLockFundingType` /
+ * `AssetLockStatus` discriminants — rows whose persisted raw value falls
+ * outside `0..255` are dropped Kotlin-side (matching the Swift
+ * `UInt8(exactly:)` guard). [proofBytes] is the bincode-encoded
+ * `AssetLockProof` and is empty until the lock IS/Chain-locks; the Rust
+ * trampoline maps empty → null / 0 (an absent proof). Mirror of the Swift
+ * `AssetLockEntryFFI` build in `buildAssetLockRestoreBuffer`.
+ */
+class TrackedAssetLockRestoreData(
+    @JvmField val outPoint: ByteArray,
+    @JvmField val transactionBytes: ByteArray,
+    @JvmField val accountIndex: Int,
+    @JvmField val fundingType: Byte,
+    @JvmField val identityIndex: Int,
+    @JvmField val amountDuffs: Long,
+    @JvmField val status: Byte,
+    @JvmField val proofBytes: ByteArray,
+)
+
+/**
+ * One unresolved asset-lock funding-tx record — mirror of
+ * `UnresolvedAssetLockTxRecordFFI`.
+ *
+ * Built from an asset-lock row at `statusRaw < 2` joined to its funding
+ * `TransactionEntity` (matched by the wire-order txid, the first 32 bytes
+ * of the decoded outpoint). [accountIndex] is the persisted BIP44 funding
+ * account — the Rust side routes the record into
+ * `standard_bip44_accounts[accountIndex]` and silently drops the restore
+ * if that account is absent, so a non-zero value is load-bearing.
+ * [txBytes] is the consensus-encoded funding tx; [contextRaw] is the
+ * `TransactionContext` discriminant (0 Mempool, 1 InstantSend, 2 InBlock,
+ * 3 InChainLockedBlock); [blockHash] is 32 wire-order bytes (empty →
+ * zero-filled Rust-side). Mirror of the Swift
+ * `UnresolvedAssetLockTxRecordFFI` build in
+ * `buildUnresolvedAssetLockTxRecordBuffer`.
+ */
+class UnresolvedAssetLockTxRecordData(
+    @JvmField val accountIndex: Int,
+    @JvmField val txBytes: ByteArray,
+    @JvmField val contextRaw: Int,
+    @JvmField val blockHeight: Int,
+    @JvmField val blockHash: ByteArray,
+    @JvmField val blockTimestamp: Long,
+    @JvmField val firstSeen: Long,
 )
 
 /**

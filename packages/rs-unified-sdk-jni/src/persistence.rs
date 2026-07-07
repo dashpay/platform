@@ -56,7 +56,8 @@ use platform_wallet_ffi::{
     CoreAddressEntryFFI, IdentityEntryFFI, IdentityKeyEntryFFI, IdentityKeyRemovalFFI,
     IdentityKeyRestoreFFI, IdentityRestoreEntryFFI, PersistenceCallbacks, PlatformAddressFFI,
     SpentOutPointFFI, TokenBalanceRemovalFFI, TokenBalanceUpsertFFI, TransactionRecordFFI,
-    UtxoEntryFFI, UtxoRestoreEntryFFI, WalletChangeSetFFI, WalletRestoreEntryFFI,
+    UnresolvedAssetLockTxRecordFFI, UtxoEntryFFI, UtxoRestoreEntryFFI, WalletChangeSetFFI,
+    WalletRestoreEntryFFI,
 };
 use std::ffi::{c_void, CStr, CString};
 use std::os::raw::c_char;
@@ -1479,6 +1480,20 @@ struct WalletRestoreStaged {
     /// same nested order (strings → inner array → outer array) by
     /// [`tramp_load_wallet_list_free`].
     core_address_pools: Vec<CoreAddressPoolStaged>,
+    /// Tracked asset locks. Each row owns a `transaction_bytes` buffer
+    /// (always non-empty) and an optional `proof_bytes` buffer (empty →
+    /// minted null / 0 at seal); the per-row buffers are minted before the
+    /// array itself and freed row-by-row before the array, mirroring the
+    /// account-xpub / UTXO-script discipline.
+    tracked_asset_locks: Vec<TrackedAssetLockStaged>,
+    /// Unresolved asset-lock funding-tx records. Each row owns a `tx_bytes`
+    /// buffer (the FFI field is `*mut u8`); minted per row before the array
+    /// and freed row-by-row before the array.
+    unresolved_asset_lock_tx_records: Vec<UnresolvedTxRecordStaged>,
+    /// Bincode-encoded persisted `last_applied_chain_lock`. Empty vec →
+    /// minted null / 0 at seal (no chainlock persisted). A single flat
+    /// buffer, freed with one `free_raw_bytes`.
+    last_applied_chain_lock: Vec<u8>,
 }
 
 /// Staged account spec: FFI struct with a null xpub pointer plus the
@@ -1521,6 +1536,30 @@ struct CoreAddressPoolStaged {
     /// until sealed.
     entry: AccountAddressPoolFFI,
     rows: Vec<CoreAddressRowStaged>,
+}
+
+/// Staged tracked asset-lock row: FFI struct with both variable-length
+/// pointers (`transaction_bytes` / `proof_bytes`) still null / 0 until
+/// sealed, plus the owned byte buffers that back them. `transaction_bytes`
+/// is always non-empty (the Kotlin builder drops empty-tx rows before they
+/// reach here); `proof` is empty until the lock IS/Chain-locks, so an empty
+/// `proof` vec mints null / 0 (an absent optional) at seal.
+struct TrackedAssetLockStaged {
+    /// FFI row with `transaction_bytes` / `proof_bytes` still null / 0
+    /// until sealed.
+    entry: AssetLockEntryFFI,
+    tx: Vec<u8>,
+    proof: Vec<u8>,
+}
+
+/// Staged unresolved asset-lock funding-tx record: FFI struct with its
+/// `tx_bytes` pointer still null / 0 until sealed, plus the owned
+/// consensus-bytes buffer. Note the FFI field is `*mut u8` (not `*const`),
+/// so seal casts the `vec_into_raw` pointer to `*mut u8`.
+struct UnresolvedTxRecordStaged {
+    /// FFI row with `tx_bytes` still null / 0 until sealed.
+    entry: UnresolvedAssetLockTxRecordFFI,
+    tx: Vec<u8>,
 }
 
 /// Staged identity-restore row: FFI struct with `keys` / `contacts` /
@@ -1588,6 +1627,9 @@ fn seal_wallet_entries(staged: Vec<WalletRestoreStaged>) -> Vec<WalletRestoreEnt
                  platform_address_balances,
                  utxos,
                  core_address_pools,
+                 tracked_asset_locks,
+                 unresolved_asset_lock_tx_records,
+                 last_applied_chain_lock,
              }| {
                 // Flat POD array — no nested owned buffers, so the whole
                 // `Vec<AddressBalanceEntryFFI>` mints in one shot and
@@ -1654,6 +1696,55 @@ fn seal_wallet_entries(staged: Vec<WalletRestoreStaged>) -> Vec<WalletRestoreEnt
                     .collect();
                 (entry.core_address_pools, entry.core_address_pools_count) =
                     vec_into_raw(core_address_pools);
+
+                // Tracked asset locks — mint each row's `transaction_bytes`
+                // buffer (always non-empty) and its optional `proof_bytes`
+                // buffer (empty proof → null / 0, an absent optional), then
+                // the array. Freed row-by-row before the array in
+                // `tramp_load_wallet_list_free`, mirroring the UTXO-script
+                // discipline.
+                let tracked_asset_locks: Vec<AssetLockEntryFFI> = tracked_asset_locks
+                    .into_iter()
+                    .map(
+                        |TrackedAssetLockStaged {
+                             mut entry,
+                             tx,
+                             proof,
+                         }| {
+                            (entry.transaction_bytes, entry.transaction_bytes_len) =
+                                vec_into_raw(tx);
+                            (entry.proof_bytes, entry.proof_bytes_len) = vec_into_raw(proof);
+                            entry
+                        },
+                    )
+                    .collect();
+                (entry.tracked_asset_locks, entry.tracked_asset_locks_count) =
+                    vec_into_raw(tracked_asset_locks);
+
+                // Unresolved asset-lock funding-tx records — mint each row's
+                // `tx_bytes` buffer (the FFI field is `*mut u8`, so cast the
+                // `vec_into_raw` `*const u8` to `*mut u8`), then the array.
+                let unresolved_asset_lock_tx_records: Vec<UnresolvedAssetLockTxRecordFFI> =
+                    unresolved_asset_lock_tx_records
+                        .into_iter()
+                        .map(|UnresolvedTxRecordStaged { mut entry, tx }| {
+                            let (tx_ptr, tx_len) = vec_into_raw(tx);
+                            entry.tx_bytes = tx_ptr as *mut u8;
+                            entry.tx_bytes_len = tx_len;
+                            entry
+                        })
+                        .collect();
+                (
+                    entry.unresolved_asset_lock_tx_records,
+                    entry.unresolved_asset_lock_tx_records_count,
+                ) = vec_into_raw(unresolved_asset_lock_tx_records);
+
+                // Persisted last-applied chainlock — a single flat buffer
+                // (empty → null / 0, no chainlock persisted).
+                (
+                    entry.last_applied_chain_lock_bytes,
+                    entry.last_applied_chain_lock_bytes_len,
+                ) = vec_into_raw(last_applied_chain_lock);
 
                 // Identities: mint each identity's nested key / contact /
                 // ignored-sender arrays first, then the identity array
@@ -1785,15 +1876,22 @@ unsafe extern "C" fn tramp_load_wallet_list(
 /// Rebuild one wallet row from a Kotlin `WalletRestoreData` into a
 /// [`WalletRestoreStaged`] (owned buffers only; raw pointers are minted by
 /// [`seal_wallet_entries`] and freed in [`tramp_load_wallet_list_free`]).
-/// Nested arrays we don't rehydrate this milestone (tracked locks) are
-/// null / 0. `identities`, `platform_address_balances` (re-seeds the
-/// provider balance map + ADDR-09 height pins on cold start; see
+/// `identities`, `platform_address_balances` (re-seeds the provider
+/// balance map + ADDR-09 height pins on cold start; see
 /// [`build_platform_address_balances`]), `utxos` (re-seeds the funds
 /// accounts' UTXO maps + Core balance; CORE-06, see
-/// [`build_utxo_restore_entries`]), and `core_address_pools` (re-seeds
-/// each funds account's `AddressPool` so out-of-window restored addresses
-/// keep their derivation-path mapping — the core-to-core-signing fix; see
-/// [`build_core_address_pools`]) ARE rehydrated.
+/// [`build_utxo_restore_entries`]), `core_address_pools` (re-seeds each
+/// funds account's `AddressPool` so out-of-window restored addresses keep
+/// their derivation-path mapping — the core-to-core-signing fix; see
+/// [`build_core_address_pools`]), `tracked_asset_locks` (re-seeds the
+/// `unused_asset_locks` map so an interrupted registration / top-up resumes
+/// from its persisted status; see [`build_tracked_asset_locks`]),
+/// `unresolved_asset_lock_tx_records` (re-seeds the in-memory transactions
+/// map so a still-`Broadcast` lock's chain-locked block can cascade-promote;
+/// see [`build_unresolved_asset_lock_tx_records`]), and
+/// `last_applied_chain_lock_bytes` (stamps the persisted chainlock onto the
+/// restored metadata so the asset-lock-resume CL-from-metadata fallback can
+/// fire at launch) ARE ALL rehydrated.
 fn build_wallet_restore_entry(
     env: &mut JNIEnv,
     holder: &JObject,
@@ -1865,6 +1963,24 @@ fn build_wallet_restore_entry(
     // required C-strings stay owned until seal.
     let core_address_pools = build_core_address_pools(env, holder)?;
 
+    // Tracked asset locks (re-seed the `unused_asset_locks` map so an
+    // identity registration / top-up funding flow killed mid-flight resumes
+    // from its latest persisted status; see the drop-Consumed filter in the
+    // platform-wallet `build_unused_asset_locks`). Each row's transaction /
+    // proof buffers stay owned until seal.
+    let tracked_asset_locks = build_tracked_asset_locks(env, holder)?;
+
+    // Unresolved asset-lock funding-tx records (re-seed the in-memory
+    // transactions map so the next chain-lock event can cascade-promote a
+    // still-`Broadcast` lock whose block was already chain-locked). Each
+    // row's tx buffer stays owned until seal.
+    let unresolved_asset_lock_tx_records = build_unresolved_asset_lock_tx_records(env, holder)?;
+
+    // Persisted last-applied chainlock (bincode `ChainLock`) — stamped onto
+    // the restored metadata so the asset-lock-resume CL-from-metadata
+    // fallback can fire at launch. Empty → null / 0 at seal.
+    let last_applied_chain_lock = read_bytes_field_vec(env, holder, "lastAppliedChainLockBytes")?;
+
     let entry = WalletRestoreEntryFFI {
         wallet_id,
         network: net_from_ord(network_ord),
@@ -1899,6 +2015,9 @@ fn build_wallet_restore_entry(
         platform_address_balances,
         utxos,
         core_address_pools,
+        tracked_asset_locks,
+        unresolved_asset_lock_tx_records,
+        last_applied_chain_lock,
     })
 }
 
@@ -2099,6 +2218,137 @@ fn build_core_address_pools(
                         addresses_count: 0,
                     },
                     rows,
+                })
+            },
+        )?;
+        out.push(staged);
+    }
+    Ok(out)
+}
+
+/// Read the Kotlin `WalletRestoreData.trackedAssetLocks` array into staged
+/// [`TrackedAssetLockStaged`] rows. Empty / null field → empty vec (staged
+/// as `(null, 0)` at seal).
+///
+/// Each holder is a `TrackedAssetLockRestoreData`. `outPoint` is a fixed
+/// 36-byte read (the Kotlin builder pre-drops malformed outpoints, so a
+/// wrong-length value here is a corrupt row and aborts the load, the same
+/// abort-on-corrupt rationale as the UTXO `prevTxid`). `transactionBytes`
+/// and `proofBytes` stage as owned byte `Vec`s whose pointers are minted at
+/// seal (an empty `proofBytes` → null / 0, an absent optional; the Kotlin
+/// builder already dropped empty-tx rows). `fundingType` / `status` are read
+/// as `B` → `u8`. The platform-wallet load side (`build_unused_asset_locks`)
+/// is the sole status filter — it skips `Consumed` rows itself — so this
+/// reader carries every row through. Mirror of the Swift
+/// `buildAssetLockRestoreBuffer`.
+fn build_tracked_asset_locks(
+    env: &mut JNIEnv,
+    holder: &JObject,
+) -> Result<Vec<TrackedAssetLockStaged>, jni::errors::Error> {
+    let arr_obj = env
+        .get_field(
+            holder,
+            "trackedAssetLocks",
+            "[Lorg/dashfoundation/dashsdk/ffi/TrackedAssetLockRestoreData;",
+        )?
+        .l()?;
+    if arr_obj.is_null() {
+        return Ok(Vec::new());
+    }
+    let arr: jni::objects::JObjectArray = arr_obj.into();
+    let len = env.get_array_length(&arr)? as usize;
+    let mut out: Vec<TrackedAssetLockStaged> = Vec::with_capacity(len);
+    for i in 0..len {
+        let staged = env.with_local_frame(
+            32,
+            |env| -> Result<TrackedAssetLockStaged, jni::errors::Error> {
+                let h = env.get_object_array_element(&arr, i as i32)?;
+                let out_point = read_bytes_field_fixed::<36>(env, &h, "outPoint")?;
+                let tx = read_bytes_field_vec(env, &h, "transactionBytes")?;
+                let account_index = env.get_field(&h, "accountIndex", "I")?.i()? as u32;
+                let funding_type = env.get_field(&h, "fundingType", "B")?.b()? as u8;
+                let identity_index = env.get_field(&h, "identityIndex", "I")?.i()? as u32;
+                let amount_duffs = env.get_field(&h, "amountDuffs", "J")?.j()? as u64;
+                let status = env.get_field(&h, "status", "B")?.b()? as u8;
+                let proof = read_bytes_field_vec(env, &h, "proofBytes")?;
+                Ok(TrackedAssetLockStaged {
+                    entry: AssetLockEntryFFI {
+                        out_point,
+                        transaction_bytes: ptr::null(),
+                        transaction_bytes_len: 0,
+                        account_index,
+                        funding_type,
+                        identity_index,
+                        amount_duffs,
+                        status,
+                        proof_bytes: ptr::null(),
+                        proof_bytes_len: 0,
+                    },
+                    tx,
+                    proof,
+                })
+            },
+        )?;
+        out.push(staged);
+    }
+    Ok(out)
+}
+
+/// Read the Kotlin `WalletRestoreData.unresolvedAssetLockTxRecords` array
+/// into staged [`UnresolvedTxRecordStaged`] rows. Empty / null field →
+/// empty vec (staged as `(null, 0)` at seal).
+///
+/// Each holder is an `UnresolvedAssetLockTxRecordData`. `txBytes` stages as
+/// an owned byte `Vec` whose pointer is minted at seal (the FFI field is
+/// `*mut u8`, cast at seal). `blockHash` is a fixed 32-byte read that
+/// tolerates an empty value (`ByteArray(0)` → zero-fill), matching the
+/// Swift `hash.count == 32` guard. Mirror of the Swift
+/// `buildUnresolvedAssetLockTxRecordBuffer`.
+fn build_unresolved_asset_lock_tx_records(
+    env: &mut JNIEnv,
+    holder: &JObject,
+) -> Result<Vec<UnresolvedTxRecordStaged>, jni::errors::Error> {
+    let arr_obj = env
+        .get_field(
+            holder,
+            "unresolvedAssetLockTxRecords",
+            "[Lorg/dashfoundation/dashsdk/ffi/UnresolvedAssetLockTxRecordData;",
+        )?
+        .l()?;
+    if arr_obj.is_null() {
+        return Ok(Vec::new());
+    }
+    let arr: jni::objects::JObjectArray = arr_obj.into();
+    let len = env.get_array_length(&arr)? as usize;
+    let mut out: Vec<UnresolvedTxRecordStaged> = Vec::with_capacity(len);
+    for i in 0..len {
+        let staged = env.with_local_frame(
+            32,
+            |env| -> Result<UnresolvedTxRecordStaged, jni::errors::Error> {
+                let h = env.get_object_array_element(&arr, i as i32)?;
+                let account_index = env.get_field(&h, "accountIndex", "I")?.i()? as u32;
+                let tx = read_bytes_field_vec(env, &h, "txBytes")?;
+                let context_raw = env.get_field(&h, "contextRaw", "I")?.i()? as u32;
+                let block_height = env.get_field(&h, "blockHeight", "I")?.i()? as u32;
+                // Tolerant fixed read: an empty `blockHash` (Mempool /
+                // InstantSend rows carry none) zero-fills, matching the
+                // Swift `hash.count == 32` guard; any other non-32 length
+                // still aborts the load.
+                let block_hash = read_bytes_field_fixed_or_empty::<32>(env, &h, "blockHash")?;
+                let block_timestamp = env.get_field(&h, "blockTimestamp", "J")?.j()? as u64;
+                let first_seen = env.get_field(&h, "firstSeen", "J")?.j()? as u64;
+                Ok(UnresolvedTxRecordStaged {
+                    entry: UnresolvedAssetLockTxRecordFFI {
+                        account_index,
+                        tx_bytes: ptr::null_mut(),
+                        tx_bytes_len: 0,
+                        context_raw,
+                        block_height,
+                        block_hash,
+                        block_timestamp,
+                        first_seen,
+                    },
+                    tx,
                 })
             },
         )?;
@@ -2522,6 +2772,48 @@ unsafe extern "C" fn tramp_load_wallet_list_free(
                 }
                 drop(pools);
             }
+
+            // Tracked asset locks + nested transaction / proof buffers —
+            // mirrors exactly what `seal_wallet_entries` minted. Free each
+            // row's two byte buffers first, then the array. `free_raw_bytes`
+            // no-ops on the null `proof_bytes` of a not-yet-proven lock.
+            if !e.tracked_asset_locks.is_null() && e.tracked_asset_locks_count > 0 {
+                let locks: Box<[AssetLockEntryFFI]> =
+                    Box::from_raw(std::ptr::slice_from_raw_parts_mut(
+                        e.tracked_asset_locks as *mut AssetLockEntryFFI,
+                        e.tracked_asset_locks_count,
+                    ));
+                for l in locks.iter() {
+                    free_raw_bytes(l.transaction_bytes, l.transaction_bytes_len);
+                    free_raw_bytes(l.proof_bytes, l.proof_bytes_len);
+                }
+                drop(locks);
+            }
+
+            // Unresolved asset-lock funding-tx records + nested tx buffers —
+            // mirrors exactly what `seal_wallet_entries` minted. The FFI
+            // `tx_bytes` field is `*mut u8`; `free_raw_bytes` takes a
+            // `*const u8`, so cast on the way in. Free each row's buffer
+            // first, then the array.
+            if !e.unresolved_asset_lock_tx_records.is_null()
+                && e.unresolved_asset_lock_tx_records_count > 0
+            {
+                let recs: Box<[UnresolvedAssetLockTxRecordFFI]> =
+                    Box::from_raw(std::ptr::slice_from_raw_parts_mut(
+                        e.unresolved_asset_lock_tx_records as *mut UnresolvedAssetLockTxRecordFFI,
+                        e.unresolved_asset_lock_tx_records_count,
+                    ));
+                for r in recs.iter() {
+                    free_raw_bytes(r.tx_bytes as *const u8, r.tx_bytes_len);
+                }
+                drop(recs);
+            }
+
+            // Persisted last-applied chainlock — a single flat buffer.
+            free_raw_bytes(
+                e.last_applied_chain_lock_bytes,
+                e.last_applied_chain_lock_bytes_len,
+            );
 
             // identities + nested key / contact / ignored-sender arrays
             // (each key's `data` buffer + contract-bounds doc-type C-string;
@@ -3178,6 +3470,44 @@ fn read_bytes_field_fixed<const N: usize>(
     // read_optional_id32_field instead.
     if len != N {
         log::error!("load: field `{field}` expected {N} bytes, got {len}");
+        return Err(jni::errors::Error::WrongJValueType(
+            "byte[] of expected fixed length",
+            "byte[] of mismatched length",
+        ));
+    }
+    let mut buf = vec![0i8; N];
+    env.get_byte_array_region(&arr, 0, &mut buf)?;
+    for (i, b) in buf.iter().enumerate() {
+        out[i] = *b as u8;
+    }
+    Ok(out)
+}
+
+/// Read a `ByteArray` field into a fixed `[u8; N]`, tolerating an ABSENT
+/// value (null or `ByteArray(0)` → all-zero fill). Any other non-`N` length
+/// still fails the load (same altered-key rationale as
+/// [`read_bytes_field_fixed`]). Used for fields whose empty value is a
+/// legitimate "no hash" sentinel — e.g. the `blockHash` on a Mempool /
+/// InstantSend unresolved-asset-lock record (mirror of the Swift
+/// `hash.count == 32` guard, which likewise leaves the FFI field zeroed
+/// when the persisted hash is absent).
+fn read_bytes_field_fixed_or_empty<const N: usize>(
+    env: &mut JNIEnv,
+    holder: &JObject,
+    field: &str,
+) -> Result<[u8; N], jni::errors::Error> {
+    let obj = env.get_field(holder, field, "[B")?.l()?;
+    let mut out = [0u8; N];
+    if obj.is_null() {
+        return Ok(out);
+    }
+    let arr: JByteArray = obj.into();
+    let len = env.get_array_length(&arr)? as usize;
+    if len == 0 {
+        return Ok(out);
+    }
+    if len != N {
+        log::error!("load: field `{field}` expected {N} or 0 bytes, got {len}");
         return Err(jni::errors::Error::WrongJValueType(
             "byte[] of expected fixed length",
             "byte[] of mismatched length",

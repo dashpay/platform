@@ -20,6 +20,8 @@ import org.dashfoundation.dashsdk.ffi.ShieldedNoteData
 import org.dashfoundation.dashsdk.ffi.UtxoRestoreData
 import org.dashfoundation.dashsdk.ffi.ShieldedOutgoingNoteData
 import org.dashfoundation.dashsdk.ffi.ShieldedSyncStateData
+import org.dashfoundation.dashsdk.ffi.TrackedAssetLockRestoreData
+import org.dashfoundation.dashsdk.ffi.UnresolvedAssetLockTxRecordData
 import org.dashfoundation.dashsdk.ffi.WalletRestoreData
 import org.dashfoundation.dashsdk.persistence.entities.AccountEntity
 import org.dashfoundation.dashsdk.persistence.entities.AssetLockEntity
@@ -1180,6 +1182,28 @@ class PlatformWalletPersistenceHandler(
                 // pool's account tuple matches a restored account. Mirror
                 // of the Swift `buildCoreAddressPoolBuffer` slice.
                 val coreAddressPools = buildCoreAddressPoolData(accounts)
+                // Tracked asset locks — rehydrate the Rust
+                // `unused_asset_locks` map so a registration / top-up
+                // funding flow interrupted mid-flight resumes from its
+                // latest persisted status instead of re-deriving a fresh
+                // lock. ALL rows (Rust drops `Consumed` itself). Mirror of
+                // the Swift `buildAssetLockRestoreBuffer` slice.
+                val trackedAssetLocks = buildTrackedAssetLockData(w.walletId)
+                // Funding-tx records for the `statusRaw < 2` locks — re-seed
+                // the in-memory transactions map so the next chain-lock
+                // event can cascade-promote a still-`Broadcast` lock whose
+                // block was already chain-locked. Mirror of the Swift
+                // `buildUnresolvedAssetLockTxRecordBuffer` slice.
+                val unresolvedAssetLockTxRecords =
+                    buildUnresolvedAssetLockTxRecordData(w.walletId)
+                // Persisted last-applied chainlock — decoded + stamped onto
+                // the restored `WalletMetadata` so the asset-lock-resume
+                // CL-from-metadata fallback can fire at launch without
+                // waiting for a fresh SPV chainlock. Empty → null / 0
+                // Rust-side. Mirror of the Swift `w.lastAppliedChainLockBytes`
+                // slice.
+                val lastAppliedChainLockBytes =
+                    w.lastAppliedChainLockBytes ?: ByteArray(0)
                 out.add(
                     WalletRestoreData(
                         walletId = w.walletId,
@@ -1197,6 +1221,9 @@ class PlatformWalletPersistenceHandler(
                         platformAddressBalances = platformAddressBalances,
                         utxos = utxos,
                         coreAddressPools = coreAddressPools,
+                        trackedAssetLocks = trackedAssetLocks,
+                        unresolvedAssetLockTxRecords = unresolvedAssetLockTxRecords,
+                        lastAppliedChainLockBytes = lastAppliedChainLockBytes,
                     ),
                 )
             }
@@ -1615,6 +1642,107 @@ class PlatformWalletPersistenceHandler(
         return out.toTypedArray()
     }
 
+    /**
+     * Assemble the [TrackedAssetLockRestoreData] rows for one wallet: every
+     * persisted `asset_locks` row (ALL statuses — the Rust load path
+     * `build_unused_asset_locks` is the sole filter and skips `Consumed`
+     * itself, so this builder emits terminal rows too, matching the Swift
+     * `loadCachedAssetLocksOnQueue`).
+     *
+     * The persisted primary key `outPointHex` is display-order; [decodeOutPointHex]
+     * flips it back to the 36-byte wire form the Rust trampoline reads via a
+     * fixed-length field, so a malformed key drops the row rather than
+     * aborting the whole load. A row with empty `transactionBytes` is broken
+     * (the Rust loader rejects it) and is dropped here. `fundingTypeRaw` /
+     * `statusRaw` outside `0..255` are dropped-and-logged — the same
+     * altered-state hazard the Swift `UInt8(exactly:)` guard rejects (a
+     * clamping cast would silently rewrite the lock's effective enum value).
+     *
+     * Without this, an interrupted identity registration re-derives a fresh
+     * asset lock on relaunch instead of resuming the persisted one. Mirror
+     * of the Swift `buildAssetLockRestoreBuffer`.
+     */
+    private suspend fun buildTrackedAssetLockData(
+        walletId: ByteArray,
+    ): Array<TrackedAssetLockRestoreData> {
+        val rows = database.assetLockDao().observeByWallet(walletId).first()
+        if (rows.isEmpty()) return emptyArray()
+        val out = ArrayList<TrackedAssetLockRestoreData>(rows.size)
+        for (row in rows) {
+            val outPoint = decodeOutPointHex(row.outPointHex)
+            if (outPoint == null) {
+                Log.w(TAG, "load: dropping asset-lock row with malformed outPointHex=${row.outPointHex}")
+                continue
+            }
+            if (row.transactionBytes.isEmpty()) {
+                Log.w(TAG, "load: dropping asset-lock row with empty transactionBytes: ${row.outPointHex}")
+                continue
+            }
+            if (row.fundingTypeRaw !in 0..255) {
+                Log.w(TAG, "load: dropping asset-lock row ${row.outPointHex} — fundingTypeRaw out of u8 range: ${row.fundingTypeRaw}")
+                continue
+            }
+            if (row.statusRaw !in 0..255) {
+                Log.w(TAG, "load: dropping asset-lock row ${row.outPointHex} — statusRaw out of u8 range: ${row.statusRaw}")
+                continue
+            }
+            out.add(
+                TrackedAssetLockRestoreData(
+                    outPoint = outPoint,
+                    transactionBytes = row.transactionBytes,
+                    accountIndex = row.accountIndexRaw,
+                    fundingType = row.fundingTypeRaw.toByte(),
+                    identityIndex = row.identityIndexRaw,
+                    amountDuffs = row.amountDuffs,
+                    status = row.statusRaw.toByte(),
+                    // Rust maps empty → null / 0 (an absent proof).
+                    proofBytes = row.proofBytes ?: ByteArray(0),
+                ),
+            )
+        }
+        return out.toTypedArray()
+    }
+
+    /**
+     * Assemble the [UnresolvedAssetLockTxRecordData] rows for one wallet:
+     * one per asset-lock row at `statusRaw < 2` (Built / Broadcast) whose
+     * funding tx has a matching `transactions` row. The Rust load path
+     * re-inserts each into the matching BIP44 account's in-memory
+     * `transactions()` map so the next chain-lock event can cascade-promote
+     * it via `apply_chain_lock`.
+     *
+     * The wire-order txid is the first 32 bytes of the decoded outpoint; a
+     * malformed outpoint, a missing transaction row, or an empty
+     * `transactionData` blob drops the record (Rust can't reconstruct the
+     * funding body without its consensus bytes). Mirror of the Swift
+     * `buildUnresolvedAssetLockTxRecordBuffer`.
+     */
+    private suspend fun buildUnresolvedAssetLockTxRecordData(
+        walletId: ByteArray,
+    ): Array<UnresolvedAssetLockTxRecordData> {
+        val locks = database.assetLockDao().getUnresolvedByWallet(walletId)
+        if (locks.isEmpty()) return emptyArray()
+        val out = ArrayList<UnresolvedAssetLockTxRecordData>(locks.size)
+        for (lock in locks) {
+            val outPoint = decodeOutPointHex(lock.outPointHex) ?: continue
+            val txid = outPoint.copyOfRange(0, 32)
+            val tx = database.transactionDao().getByTxid(txid) ?: continue
+            if (tx.transactionData.isEmpty()) continue
+            out.add(
+                UnresolvedAssetLockTxRecordData(
+                    accountIndex = lock.accountIndexRaw,
+                    txBytes = tx.transactionData,
+                    contextRaw = tx.context,
+                    blockHeight = tx.blockHeight,
+                    blockHash = tx.blockHash ?: ByteArray(0),
+                    blockTimestamp = tx.blockTimestamp.toLong(),
+                    firstSeen = tx.firstSeen,
+                ),
+            )
+        }
+        return out.toTypedArray()
+    }
+
     // ── Shared write helpers ──────────────────────────────────────────
 
     /**
@@ -1860,6 +1988,41 @@ internal fun encodeOutPointHex(outPoint: ByteArray): String {
         ((outPoint[34].toInt() and 0xFF) shl 16) or
         ((outPoint[35].toInt() and 0xFF) shl 24)
     return "${displayTxid.toHex()}:$vout"
+}
+
+/**
+ * Inverse of [encodeOutPointHex]: parse the persisted display-order
+ * `outPointHex` (`<display-txid-hex>:<vout>`) back into the 36-byte
+ * outpoint Rust expects — 32-byte WIRE-order txid (the display hex
+ * reversed) followed by the 4-byte little-endian vout. Returns `null` for
+ * any malformed input (missing `:`, non-64-char / non-hex txid, or a vout
+ * that isn't a valid unsigned 32-bit decimal), so callers can drop the row
+ * rather than manufacture a bad outpoint. Mirror of the Swift
+ * `decodeOutPointHex`.
+ */
+internal fun decodeOutPointHex(hex: String): ByteArray? {
+    val sep = hex.indexOf(':')
+    if (sep < 0) return null
+    val txidHex = hex.substring(0, sep)
+    val voutStr = hex.substring(sep + 1)
+    if (txidHex.length != 64) return null
+    val vout = voutStr.toUIntOrNull()?.toInt() ?: return null
+    val displayTxid = ByteArray(32)
+    for (i in 0 until 32) {
+        val hi = Character.digit(txidHex[i * 2], 16)
+        val lo = Character.digit(txidHex[i * 2 + 1], 16)
+        if (hi < 0 || lo < 0) return null
+        displayTxid[i] = ((hi shl 4) or lo).toByte()
+    }
+    // Reverse display order back to wire order for bytes 0..31.
+    val out = ByteArray(36)
+    for (i in 0 until 32) out[i] = displayTxid[31 - i]
+    // LE-encode the vout into bytes 32..35.
+    out[32] = (vout and 0xFF).toByte()
+    out[33] = ((vout ushr 8) and 0xFF).toByte()
+    out[34] = ((vout ushr 16) and 0xFF).toByte()
+    out[35] = ((vout ushr 24) and 0xFF).toByte()
+    return out
 }
 
 /** Build a 36-byte outpoint from a wire-order txid + vout (matches `makeOutpoint`). */

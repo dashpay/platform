@@ -991,6 +991,136 @@ class PlatformWalletPersistenceHandlerTest {
     }
 
     @Test
+    fun outPointHexDecodeIsExactInverseOfEncode() {
+        // Round-trip a known outpoint (wire-order txid + vout) through
+        // encode → decode and back; the decoded 36 bytes must equal the
+        // original, proving `decodeOutPointHex` is the exact inverse used
+        // to rebuild the Rust-side outpoint from the persisted display-hex
+        // key. Parity with the Swift `decodeOutPointHex` round-trip.
+        val txid = ByteArray(32) { it.toByte() } // 00 01 … 1f wire order
+        val outpoint = makeOutpoint(txid, 7)
+        val hex = encodeOutPointHex(outpoint)
+        val decoded = decodeOutPointHex(hex)
+        assertNotNull(decoded)
+        assertTrue(outpoint.contentEquals(decoded!!))
+        // The wire txid is recoverable as the first 32 bytes (the join key
+        // for the unresolved-record path).
+        assertTrue(txid.contentEquals(decoded.copyOfRange(0, 32)))
+        // Malformed inputs fail closed.
+        assertNull(decodeOutPointHex("not-an-outpoint"))
+        assertNull(decodeOutPointHex("${"ab".repeat(31)}:0")) // 62-char txid
+    }
+
+    @Test
+    fun loadWalletListRestoresAssetLockResumeState() = runTest {
+        // prior-1 regression: the JNI wallet-restore path must carry the
+        // persisted asset-lock resume state across a cold restart —
+        // tracked asset locks (ALL statuses; Rust drops Consumed itself),
+        // the unresolved funding-tx records for the still-Broadcast rows
+        // joined to their transaction, and the last-applied chainlock.
+        // Mirror of the Swift `buildAssetLockRestoreBuffer` /
+        // `buildUnresolvedAssetLockTxRecordBuffer` / `lastAppliedChainLockBytes`
+        // round-trips.
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+        val xpub = ByteArray(78) { 30 }
+        handler.onPersistAccountRegistration(
+            walletId, 0, 0, 0, 0, 0, ByteArray(0), ByteArray(0), xpub,
+        )
+
+        // Stamp the last-applied chainlock onto the wallet (bincode blob is
+        // opaque to Kotlin — round-tripped verbatim).
+        val chainLockBytes = ByteArray(48) { (it + 1).toByte() }
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetHeader(
+            walletId, false, 0, false, 0, 0, 0, 0, chainLockBytes,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        // A still-Broadcast (statusRaw 1) asset lock WITH a matching
+        // funding transaction — the resumable + unresolved case.
+        val fundingTxid = ByteArray(32) { 51 }
+        val fundingOutpoint = makeOutpoint(fundingTxid, 0)
+        val fundingTxData = ByteArray(24) { 52 }
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransaction(
+            walletId, fundingTxid, fundingTxData, 2, 200, ByteArray(32) { 60 },
+            1_700_000_000, 0, "Standard", 0, 90_000, 0, false, "", 1_699_999_000,
+        )
+        handler.onPersistAssetLockUpsert(
+            walletId = walletId,
+            outPoint = fundingOutpoint,
+            transactionBytes = fundingTxData,
+            accountIndex = 0,
+            fundingType = 0, // IdentityRegistration
+            identityIndex = 0,
+            amountDuffs = 90_000,
+            status = 1, // Broadcast (< 2 → resumable + unresolved)
+            proofBytes = null,
+        )
+        // A terminal Consumed (statusRaw 4) asset lock — the Kotlin builder
+        // emits it (Rust `build_unused_asset_locks` is the sole Consumed
+        // filter); it is NOT eligible for the unresolved-record set.
+        val consumedTxid = ByteArray(32) { 71 }
+        val consumedOutpoint = makeOutpoint(consumedTxid, 1)
+        handler.onPersistAssetLockUpsert(
+            walletId = walletId,
+            outPoint = consumedOutpoint,
+            transactionBytes = ByteArray(16) { 72 },
+            accountIndex = 0,
+            fundingType = 0,
+            identityIndex = 1,
+            amountDuffs = 55_000,
+            status = 4, // Consumed
+            proofBytes = ByteArray(8) { 73 },
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        val list = handler.onLoadWalletList()
+        assertEquals(1, list.size)
+        val entry = list[0]
+
+        // ── Last-applied chainlock round-trips verbatim ──────────────
+        assertTrue(chainLockBytes.contentEquals(entry.lastAppliedChainLockBytes))
+
+        // ── Tracked asset locks: BOTH rows, including the Consumed one ─
+        // (Kotlin does not filter; Rust drops Consumed at load).
+        val tracked = entry.trackedAssetLocks.sortedBy { it.status }
+        assertEquals(2, tracked.size)
+
+        val broadcast = tracked[0]
+        assertEquals(1.toByte(), broadcast.status)
+        assertTrue(fundingOutpoint.contentEquals(broadcast.outPoint))
+        assertTrue(fundingTxData.contentEquals(broadcast.transactionBytes))
+        assertEquals(0, broadcast.accountIndex)
+        assertEquals(0.toByte(), broadcast.fundingType)
+        assertEquals(0, broadcast.identityIndex)
+        assertEquals(90_000L, broadcast.amountDuffs)
+        // No proof yet on a Broadcast lock → empty (Rust maps to null/0).
+        assertEquals(0, broadcast.proofBytes.size)
+
+        val consumed = tracked[1]
+        assertEquals(4.toByte(), consumed.status)
+        assertTrue(consumedOutpoint.contentEquals(consumed.outPoint))
+        assertEquals(1, consumed.identityIndex)
+        assertEquals(55_000L, consumed.amountDuffs)
+        assertEquals(8, consumed.proofBytes.size)
+
+        // ── Unresolved funding-tx records: only the statusRaw < 2 row ──
+        // joined to its persisted transaction (the Consumed row is excluded
+        // by the getUnresolvedByWallet filter).
+        assertEquals(1, entry.unresolvedAssetLockTxRecords.size)
+        val rec = entry.unresolvedAssetLockTxRecords[0]
+        assertEquals(0, rec.accountIndex)
+        assertTrue(fundingTxData.contentEquals(rec.txBytes))
+        assertEquals(2, rec.contextRaw) // InBlock
+        assertEquals(200, rec.blockHeight)
+        assertEquals(32, rec.blockHash.size)
+        assertTrue(ByteArray(32) { 60 }.contentEquals(rec.blockHash))
+        assertEquals(1_700_000_000L, rec.blockTimestamp)
+        assertEquals(1_699_999_000L, rec.firstSeen)
+    }
+
+    @Test
     fun assetLockPersistRoundTrips() = runTest {
         val outpoint = makeOutpoint(ByteArray(32) { 40 }, 1)
         handler.onChangesetBegin(walletId)
