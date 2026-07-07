@@ -200,9 +200,15 @@ pub unsafe extern "C" fn platform_wallet_manager_platform_address_sync_sync_now(
         // `block_on_worker`'s `Send + 'static` bounds.
         run_on_big_stack_thread(|| {
             runtime().block_on(manager.platform_address_sync().sync_now());
-        });
+        })
     });
-    unwrap_option_or_return!(option);
+    let spawn_result = unwrap_option_or_return!(option);
+    if let Err(e) = spawn_result {
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorWalletOperation,
+            format!("failed to spawn big-stack thread for address sync: {e}"),
+        );
+    }
     PlatformWalletFFIResult::ok()
 }
 
