@@ -34,7 +34,7 @@ import org.dashfoundation.dashsdk.persistence.dao.PlatformAddressDao
  * derivationPath)` — the `derivationPath` + `walletId` are resolved from the
  * `PlatformAddressEntity` row via [platformAddressDao], the mnemonic from
  * [storage], and the derive-and-sign happens entirely inside Rust
- * ([SignerNative.signWithMnemonicAndPath]). Direct port of
+ * ([SignerNative.signWithMnemonicAndPathInto]). Direct port of
  * `KeychainSigner.signPlatformAddressOnDemand` on iOS.
  */
 class KeystoreSigner(
@@ -148,15 +148,11 @@ class KeystoreSigner(
             )
             return
         }
-        // KNOWN residual seed exposure: this materializes the phrase as an
-        // un-scrubbable JVM String and passes it across JNI — the exact
-        // anti-pattern the resolver path eliminated with
-        // resolveMnemonicInto. Migrating this call to an out-buffer
-        // signWithMnemonicAndPathInto variant is the tracked follow-up;
-        // until then every on-demand platform-address signature re-exposes
-        // the phrase on the JVM heap.
-        val mnemonic = storage.retrieveMnemonic(row.walletId)
-        if (mnemonic == null) {
+        // The phrase crosses JNI as raw UTF-8 bytes the caller scrubs after the
+        // call — never an un-scrubbable JVM String (the resolveMnemonicInto
+        // discipline, applied here to the signing path).
+        val mnemonicUtf8 = storage.retrieveMnemonicUtf8(row.walletId)
+        if (mnemonicUtf8 == null) {
             SignerNative.completeSign(
                 completionToken,
                 null,
@@ -164,12 +160,14 @@ class KeystoreSigner(
             )
             return
         }
-        val signature = SignerNative.signWithMnemonicAndPath(
-            mnemonic,
+        val signature = signWithScrubbedMnemonic(
+            mnemonicUtf8,
             row.derivationPath,
             network.ffiValue,
             data,
-        )
+        ) { m, path, net, payload ->
+            SignerNative.signWithMnemonicAndPathInto(m, path, net, payload)
+        }
         if (signature != null) {
             SignerNative.completeSign(completionToken, signature, null)
         } else {
@@ -231,4 +229,24 @@ class KeystoreSigner(
          */
         const val PLATFORM_ADDRESS_HASH_KEY_TYPE: Int = 0xFF
     }
+}
+
+/**
+ * Runs [sign] with the caller-owned mnemonic bytes and scrubs them on every
+ * exit path (success, null, or throw). The phrase is passed as a [ByteArray]
+ * precisely so it can be zeroed — this helper owns that discipline, so the
+ * platform-address signing path never leaves the plaintext on the JVM heap
+ * past the call. [sign] must consume the bytes synchronously (it does: the JNI
+ * call copies them into a Rust-owned scrubbed buffer before returning).
+ */
+internal fun signWithScrubbedMnemonic(
+    mnemonicUtf8: ByteArray,
+    derivationPath: String,
+    network: Int,
+    data: ByteArray,
+    sign: (ByteArray, String, Int, ByteArray) -> ByteArray?,
+): ByteArray? = try {
+    sign(mnemonicUtf8, derivationPath, network, data)
+} finally {
+    mnemonicUtf8.fill(0)
 }

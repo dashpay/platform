@@ -88,35 +88,30 @@ fun SendDashPayPaymentSheet(
         onSendingChange(true)
         errorMessage = null
         scope.launch {
-            try {
-                // The broadcast + its post-send bookkeeping must complete even
-                // if the sheet is torn down mid-send: the payment leaves the
-                // wallet regardless (the JNI call is uncancellable), so losing
-                // the confirmation + durability refresh (onSent → the parent's
-                // refreshDashPayPayments) would invite a double-send.
-                withContext(NonCancellable) {
-                    val txid = w.dashpay.sendPayment(
+            performDashPaySend(
+                sender = {
+                    w.dashpay.sendPayment(
                         fromIdentityId = senderIdentityId,
                         toContactIdentityId = contactId,
                         amountDuffs = duffs,
                         coreSignerHandle = manager.mnemonicResolverHandle,
                         memo = null,
                     )
-                    successTxidHex = txid?.let { txidDisplayHex(it) }
-                    onSent()
-                }
-                // Best-effort tail (kick a sweep + settle before auto-close).
-                kickDashPaySync(scope, manager)
-                delay(1500)
-                onClose()
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                errorMessage = e.message ?: "Send failed"
-            } finally {
-                isSending = false
-                onSendingChange(false)
-            }
+                },
+                onSuccessTxid = { successTxidHex = it },
+                onError = { errorMessage = it },
+                onSent = onSent,
+                settle = {
+                    // Best-effort tail (kick a sweep + settle before auto-close).
+                    kickDashPaySync(scope, manager)
+                    delay(1500)
+                },
+                onClose = onClose,
+                onSendingDone = {
+                    isSending = false
+                    onSendingChange(false)
+                },
+            )
         }
     }
 
@@ -215,5 +210,47 @@ fun SendDashPayPaymentSheet(
                 ) { Text("Send") }
             }
         }
+    }
+}
+
+/** Broadcasts a DashPay payment; the sole suspend seam so [performDashPaySend] is JVM-testable. */
+internal fun interface PaymentSender {
+    suspend fun send(): ByteArray?
+}
+
+/**
+ * The payment send flow, extracted from [SendDashPayPaymentSheet] so the
+ * dispose-mid-send double-send guard is unit-testable. Runs in the CALLER's Job
+ * (a plain `suspend fun`, no new scope — so cancellation semantics are the ones
+ * under test): the broadcast + its durability bookkeeping ([onSuccessTxid] then
+ * [onSent]) run inside [NonCancellable], so a teardown that cancels mid-send
+ * cannot skip [onSent]. Losing [onSent] after the coin has left the wallet (the
+ * JNI broadcast is uncancellable) would invite a double-send on retry. The
+ * best-effort tail ([settle] then [onClose]) stays cancellable, and a
+ * [CancellationException] still propagates so structured concurrency is intact.
+ */
+internal suspend fun performDashPaySend(
+    sender: PaymentSender,
+    onSuccessTxid: (String?) -> Unit,
+    onError: (String) -> Unit,
+    onSent: () -> Unit,
+    settle: suspend () -> Unit,
+    onClose: () -> Unit,
+    onSendingDone: () -> Unit,
+) {
+    try {
+        withContext(NonCancellable) {
+            val txid = sender.send()
+            onSuccessTxid(txid?.let { txidDisplayHex(it) })
+            onSent()
+        }
+        settle()
+        onClose()
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        onError(e.message ?: "Send failed")
+    } finally {
+        onSendingDone()
     }
 }

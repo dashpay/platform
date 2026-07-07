@@ -5,6 +5,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.dashfoundation.dashsdk.Sdk
 import org.dashfoundation.dashsdk.errors.mapNativeErrors
+import org.dashfoundation.dashsdk.ffi.NativeCleaner
 import org.dashfoundation.dashsdk.ffi.QueriesNative
 
 /**
@@ -621,14 +622,22 @@ data class ContractWithSerialization(
 /** Owned native data-contract handle. */
 class DataContractRef internal constructor(handle: Long) : AutoCloseable {
     private val handleRef = AtomicLong(handle)
+    private val cleanable = NativeCleaner.register(this, HandleCleanup(handleRef))
 
     internal val value: Long
         get() = handleRef.get().also { check(it != 0L) { "DataContractRef has been closed" } }
 
-    /** Idempotent: the [AtomicLong] swap destroys the handle exactly once. */
+    /** Idempotent: destroys the handle exactly once, on [close] or the GC backstop. */
     override fun close() {
-        val h = handleRef.getAndSet(0)
-        if (h != 0L) QueriesNative.dataContractDestroy(h)
+        cleanable.clean()
+    }
+
+    /** Runs on [NativeCleaner] or [close]; destroys the handle exactly once. */
+    private class HandleCleanup(private val handleRef: AtomicLong) : Runnable {
+        override fun run() {
+            val h = handleRef.getAndSet(0)
+            if (h != 0L) QueriesNative.dataContractDestroy(h)
+        }
     }
 }
 
