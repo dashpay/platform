@@ -1,12 +1,26 @@
 // ShieldedService.swift
 // SwiftExampleApp
 //
-// Display-state surface for the Rust-owned shielded (Orchard) sync
-// coordinator. The service binds to a single wallet, subscribes to
-// the platform-wallet manager's shielded sync events, and exposes
-// `@Published` properties for the UI. It does not own any of the
-// shielded crypto: bind, sync, and persistence all live on the Rust
-// `platform-wallet` side.
+// Single UI mirror + multi-engine-bind for the Rust-owned shielded
+// (Orchard) sync coordinator.
+//
+// The service mirrors exactly ONE wallet — the app-level
+// `firstWallet` — for the GLOBAL Sync-status surface: `bind(...)`
+// attaches the published mirror (`boundWalletId`, `shieldedBalance`,
+// subscriptions, timing) to that wallet and drives the Sync tab. It
+// does not own any of the shielded crypto: bind, sync, and
+// persistence all live on the Rust `platform-wallet` side.
+//
+// `bindEngine(...)` is the additive companion used by
+// `rebindWalletScopedServices()` to engine-register EVERY OTHER
+// loaded wallet into the same network-scoped coordinator (no mirror
+// repoint). A single shielded sync pass then trial-decrypts against
+// the union of all wallets' viewing keys and routes note hits to each
+// wallet's own persister (SH-14/15/16 cross-wallet flows). Per-wallet
+// receive addresses and balances are read on demand
+// (`walletManager.shieldedDefaultAddress(walletId:)`,
+// `PersistentShieldedNote` rows) rather than from this singleton
+// mirror.
 
 import Foundation
 import SwiftUI
@@ -353,6 +367,54 @@ class ShieldedService: ObservableObject {
             }
     }
 
+    /// Register `walletId`'s shielded sub-wallet with the Rust
+    /// coordinator WITHOUT repointing this service's display mirror.
+    ///
+    /// `bind(...)` attaches the single UI mirror (boundWalletId,
+    /// shieldedBalance, subscriptions, …) to exactly one wallet — the
+    /// app-level `firstWallet`. `bindEngine(...)` is the additive
+    /// companion: it engine-binds EVERY OTHER loaded wallet into the
+    /// same network-scoped coordinator so a single shielded sync pass
+    /// trial-decrypts against the union of all wallets' viewing keys and
+    /// routes note hits to each wallet's own persister. Per-wallet
+    /// receive addresses and balances are then read on demand
+    /// (`walletManager.shieldedDefaultAddress(walletId:)`,
+    /// `PersistentShieldedNote` rows) rather than from this singleton
+    /// mirror.
+    ///
+    /// Best-effort and independent per wallet: a missing mnemonic /
+    /// declined resolver for one wallet logs and returns without
+    /// affecting the others or the mirror. Idempotent — safe to call
+    /// every rebind pass (`configureShielded` no-ops on the same path;
+    /// `bindShielded` replaces that wallet's registration).
+    func bindEngine(
+        walletManager: PlatformWalletManager,
+        walletId: Data,
+        network: Network,
+        resolver: MnemonicResolver,
+        accounts: [UInt32] = [0]
+    ) {
+        let dbPath = Self.dbPath(for: network)
+        let sortedAccounts = Array(Set(accounts)).sorted()
+        do {
+            try walletManager.configureShielded(dbPath: dbPath)
+            try walletManager.bindShielded(
+                walletId: walletId,
+                resolver: resolver,
+                accounts: sortedAccounts
+            )
+            SDKLogger.log(
+                "Shielded engine-bound: walletId=\(walletId.prefix(4).map { String(format: "%02x", $0) }.joined())… network=\(network.networkName) accounts=\(sortedAccounts)",
+                minimumLevel: .medium
+            )
+        } catch {
+            SDKLogger.log(
+                "Shielded engine-bind failed for walletId=\(walletId.prefix(4).map { String(format: "%02x", $0) }.joined())…: \(error.localizedDescription)",
+                minimumLevel: .medium
+            )
+        }
+    }
+
     /// Re-bind the singleton service to a different wallet using the
     /// `walletManager` / `resolver` / `network` stashed by the first
     /// `bind(...)`. Per-detail-view code paths call this when the
@@ -601,6 +663,24 @@ class ShieldedService: ObservableObject {
         //    registries and the next sync re-saves notes via
         //    the changeset path. Best-effort — failure logs but
         //    doesn't abort the wipe.
+        //
+        //    Re-binding scope after Clear: `clearShielded` drops
+        //    EVERY wallet (not just the mirror's `firstWallet`)
+        //    from the coordinator. Only the mirror wallet gets
+        //    re-registered on the fast path — the "Sync Now"
+        //    button's `manualSync()` self-rebinds via `bind(...)`.
+        //    The OTHER loaded wallets stay dark until the next
+        //    `rebindWalletScopedServices()` fire, which now
+        //    re-`bindEngine`s every wallet (not just the mirror).
+        //    That rebind fires on any wallet-set change or network
+        //    switch, so cross-wallet shielded flows (SH-14/15/16)
+        //    recover on the next such event without a manual
+        //    wallet-swap; the immediate post-Clear window covers
+        //    the mirror wallet only. We keep the WIPE scope global
+        //    on purpose (see the class-level doc below) — this note
+        //    is about the re-BIND scope, which is deliberately left
+        //    to the rebind path rather than duplicated here (the
+        //    service doesn't hold the full wallet set + resolver).
         if let managerForStop {
             do {
                 try managerForStop.clearShielded()

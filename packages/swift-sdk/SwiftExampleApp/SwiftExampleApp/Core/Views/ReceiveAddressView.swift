@@ -14,7 +14,6 @@ struct ReceiveAddressView: View {
     @Environment(\.openURL) private var openURL
     @EnvironmentObject var walletManager: PlatformWalletManager
     @EnvironmentObject var platformState: AppState
-    @EnvironmentObject var shieldedService: ShieldedService
     let wallet: PersistentWallet
 
     /// The single primary BIP44 account for this wallet.
@@ -99,6 +98,22 @@ struct ReceiveAddressView: View {
         return best
     }
 
+    /// Orchard receive address for THE WALLET BEING VIEWED (account 0),
+    /// resolved per-wallet from the engine rather than the single-mirror
+    /// `shieldedService`. Every loaded wallet is engine-bound
+    /// (`rebindWalletScopedServices`), so `shieldedDefaultAddress`
+    /// resolves for any of them; `nil` until this wallet's bind lands.
+    private var shieldedReceiveAddress: String? {
+        guard let raw = try? walletManager.shieldedDefaultAddress(
+            walletId: wallet.walletId,
+            account: 0
+        ) else { return nil }
+        return DashAddress.encodeOrchard(
+            rawBytes: raw,
+            network: platformState.currentNetwork
+        )
+    }
+
     private var currentAddress: String {
         switch selectedTab {
         case .core:
@@ -108,7 +123,7 @@ struct ReceiveAddressView: View {
             return nextPlatformReceiveAddress?.address
                 ?? "No Platform receive address available yet — create a wallet after enabling Platform address persistence."
         case .shielded:
-            return shieldedService.orchardDisplayAddress ?? "Not available"
+            return shieldedReceiveAddress ?? "Not available"
         }
     }
 
@@ -145,7 +160,7 @@ struct ReceiveAddressView: View {
         case .platform:
             return nextPlatformReceiveAddress != nil
         case .shielded:
-            return shieldedService.orchardDisplayAddress != nil
+            return shieldedReceiveAddress != nil
         }
     }
 

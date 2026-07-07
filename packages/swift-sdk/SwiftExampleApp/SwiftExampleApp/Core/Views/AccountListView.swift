@@ -6,7 +6,7 @@ import SwiftData
 struct AccountListView: View {
     let wallet: PersistentWallet
     @EnvironmentObject var walletManager: PlatformWalletManager
-    @EnvironmentObject var shieldedService: ShieldedService
+    @EnvironmentObject var platformState: AppState
 
     @Query private var accounts: [PersistentAccount]
 
@@ -65,16 +65,32 @@ struct AccountListView: View {
     }
 
     /// Bound shielded accounts to render in their own section
-    /// below the Core / Platform accounts. Empty until
-    /// `ShieldedService.bind` has populated the list — which
-    /// happens once per wallet detail open.
+    /// below the Core / Platform accounts. Empty until this wallet's
+    /// engine binding lands (`rebindWalletScopedServices`).
     private var shieldedAccountsForThisWallet: [UInt32] {
-        // Gate on the service's currently-bound wallet id so navigating
-        // between wallet details doesn't briefly show the *previous*
-        // wallet's shielded accounts before the singleton service
-        // finishes rebinding to this wallet.
-        guard shieldedService.boundWalletId == wallet.walletId else { return [] }
-        return shieldedService.boundAccounts
+        // Engine-bound wallets expose account 0 by default. Resolve
+        // per-wallet from the engine rather than the single UI mirror so
+        // the section shows for ANY loaded wallet, not just `firstWallet`.
+        let bound = (try? walletManager.shieldedDefaultAddress(
+            walletId: wallet.walletId,
+            account: 0
+        )) != nil
+        return bound ? [0] : []
+    }
+
+    /// Bech32m Orchard receive address for `account` on the viewed
+    /// wallet, resolved per-wallet from the engine (rather than the
+    /// single UI mirror's `addressesByAccount`). `nil` until this
+    /// wallet's bind lands or if encoding fails.
+    private func shieldedAddress(for account: UInt32) -> String? {
+        guard let raw = try? walletManager.shieldedDefaultAddress(
+            walletId: wallet.walletId,
+            account: account
+        ) else { return nil }
+        return DashAddress.encodeOrchard(
+            rawBytes: raw,
+            network: platformState.currentNetwork
+        )
     }
 
     var body: some View {
@@ -118,7 +134,7 @@ struct AccountListView: View {
                             ForEach(shieldedAccountsForThisWallet, id: \.self) { account in
                                 ShieldedAccountRowView(
                                     accountIndex: account,
-                                    address: shieldedService.addressesByAccount[account]
+                                    address: shieldedAddress(for: account)
                                 )
                             }
                         }

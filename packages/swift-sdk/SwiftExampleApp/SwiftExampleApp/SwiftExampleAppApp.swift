@@ -263,6 +263,32 @@ struct SwiftExampleAppApp: App {
             if try !walletManager.isDashPaySyncRunning() {
                 try walletManager.startDashPaySync()
             }
+
+            // Engine-bind every OTHER loaded wallet into the shared
+            // network-scoped shielded coordinator. `firstWallet` above
+            // already drives the UI mirror AND its own engine
+            // registration via `bind(...)`; this loop registers the
+            // remaining wallets so a single shielded sync pass
+            // trial-decrypts against the union of every wallet's viewing
+            // keys (SH-14/15/16 cross-wallet flows). Each bind is
+            // best-effort + independent — one wallet's missing mnemonic
+            // must not block the others. Reading each mnemonic is a
+            // device-unlock-only keychain read (no biometric prompt), so
+            // eager binding at startup is safe. The iteration seam is a
+            // pure free function (`engineBindOtherWallets`) so its
+            // "visit every non-mirror wallet" contract can be
+            // unit-tested without a configured manager.
+            engineBindOtherWallets(
+                allWalletIds: walletManager.wallets.keys,
+                mirrorWalletId: wallet.walletId
+            ) { otherWalletId in
+                shieldedService.bindEngine(
+                    walletManager: walletManager,
+                    walletId: otherWalletId,
+                    network: platformState.currentNetwork,
+                    resolver: shieldedResolver
+                )
+            }
         } catch {
             SDKLogger.error(
                 "Failed to bind wallet-scoped services: \(error.localizedDescription)"
