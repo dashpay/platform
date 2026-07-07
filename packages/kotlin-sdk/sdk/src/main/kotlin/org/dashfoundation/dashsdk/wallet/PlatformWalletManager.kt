@@ -378,6 +378,20 @@ class PlatformWalletManager(
      */
     val wallets: StateFlow<Map<String, ManagedPlatformWallet>> = _wallets.asStateFlow()
 
+    // Per-wallet-id Core-send locks. Every ManagedPlatformWallet this manager
+    // builds is handed the SAME Mutex for its wallet id, so all wrappers for
+    // one wallet id serialize their split setFunding/buildSigned sequence
+    // together — closing the double-select window even when loadPersistedWallets
+    // hands out a fresh wrapper for a wallet id whose earlier wrapper is still
+    // held (see ManagedPlatformWallet.sendToAddresses). computeIfAbsent (NOT
+    // getOrPut, which is non-atomic on ConcurrentHashMap) guarantees a single
+    // shared instance. Lives on the manager and dies with it.
+    private val coreSendMutexes =
+        java.util.concurrent.ConcurrentHashMap<String, kotlinx.coroutines.sync.Mutex>()
+
+    private fun coreSendMutex(walletIdHex: String): kotlinx.coroutines.sync.Mutex =
+        coreSendMutexes.computeIfAbsent(walletIdHex) { kotlinx.coroutines.sync.Mutex() }
+
     // ── Wallet creation ───────────────────────────────────────────────
 
     /**
@@ -416,7 +430,11 @@ class PlatformWalletManager(
         // Adopt the native handle into its AutoCloseable owner BEFORE the
         // fallible Keystore/Room steps — a raw jlong has no owner, so a
         // throw below would otherwise leak the Rust registry entry.
-        val managed = ManagedPlatformWallet(handle = outHandle[0], walletId = walletId)
+        val managed = ManagedPlatformWallet(
+            handle = outHandle[0],
+            walletId = walletId,
+            coreSendMutex = coreSendMutex(walletId.toHex()),
+        )
         try {
             // Store the mnemonic keyed by the id the FFI just derived.
             walletStorage.storeMnemonic(walletId, mnemonic)
@@ -478,7 +496,11 @@ class PlatformWalletManager(
                 // One wallet failing (id/xpub drift) doesn't fail the batch.
                 continue
             }
-            val managed = ManagedPlatformWallet(handle = handle, walletId = walletId)
+            val managed = ManagedPlatformWallet(
+                handle = handle,
+                walletId = walletId,
+                coreSendMutex = coreSendMutex(walletId.toHex()),
+            )
             restored.add(managed)
             // Publish into [wallets] BEFORE unlocking (Swift's per-wallet
             // ordering): the unlock writes onto [dashPayUnlockStatus], and

@@ -9,6 +9,8 @@ import kotlinx.coroutines.runBlocking
 import org.dashfoundation.dashsdk.ffi.AccountSpecData
 import org.dashfoundation.dashsdk.ffi.ContactProfileRestoreData
 import org.dashfoundation.dashsdk.ffi.ContactRequestRestoreData
+import org.dashfoundation.dashsdk.ffi.CoreAddressPoolRestoreData
+import org.dashfoundation.dashsdk.ffi.CoreAddressRestoreData
 import org.dashfoundation.dashsdk.ffi.CoreTxRecordData
 import org.dashfoundation.dashsdk.ffi.IdentityKeyRestoreData
 import org.dashfoundation.dashsdk.ffi.IdentityRestoreData
@@ -1228,6 +1230,15 @@ class PlatformWalletPersistenceHandler(
                 // re-scan (CORE-06). Mirror of the Swift
                 // `buildUtxoRestoreBuffer` slice on `loadWalletList`.
                 val utxos = buildUtxoRestoreData(w.walletId)
+                // Persisted Core address pools — re-seed each funds
+                // account's `AddressPool` so every restored address (incl.
+                // those past the gap-limit window) maps back to a
+                // derivation path; without this a restored UTXO on an
+                // out-of-window address can't be signed after a cold
+                // restart. Built from the SAME `accounts` list so each
+                // pool's account tuple matches a restored account. Mirror
+                // of the Swift `buildCoreAddressPoolBuffer` slice.
+                val coreAddressPools = buildCoreAddressPoolData(accounts)
                 out.add(
                     WalletRestoreData(
                         walletId = w.walletId,
@@ -1244,6 +1255,7 @@ class PlatformWalletPersistenceHandler(
                         identities = identities,
                         platformAddressBalances = platformAddressBalances,
                         utxos = utxos,
+                        coreAddressPools = coreAddressPools,
                     ),
                 )
             }
@@ -1631,6 +1643,76 @@ class PlatformWalletPersistenceHandler(
                     isLocked = txo.isLocked,
                 ),
             )
+        }
+        return out.toTypedArray()
+    }
+
+    /**
+     * Assemble the [CoreAddressPoolRestoreData] rows for one wallet's
+     * accounts: for each account, its persisted `core_addresses` grouped
+     * by pool type (external / internal / absent), so the Rust load path
+     * can re-seed each funds account's `AddressPool` — restoring the
+     * derivation-path mapping for every address, including those past the
+     * gap-limit window `ManagedWalletInfo::from_wallet` pre-derives.
+     *
+     * Without this, a restored UTXO on an out-of-window address has no
+     * derivation-path mapping and the wallet cannot sign a core-to-core
+     * spend after a cold restart. Mirror of the Swift
+     * `buildCoreAddressPoolBuffer`.
+     *
+     * The account tuple carried on each pool matches an account already
+     * present in the restored wallet (built from the SAME `accounts` list
+     * `onLoadWalletList` gathered), with empty xpub bytes — the Rust
+     * loader ignores the xpub on this path (`account_xpub_bytes` is null on
+     * `AccountAddressPoolFFI.account`). Accounts with no persisted
+     * addresses emit no pool. Groups are sorted by pool tag to match the
+     * Swift ordering.
+     */
+    private suspend fun buildCoreAddressPoolData(
+        accounts: List<AccountEntity>,
+    ): Array<CoreAddressPoolRestoreData> {
+        val out = ArrayList<CoreAddressPoolRestoreData>()
+        for (account in accounts) {
+            val rows = database.coreAddressDao().observeByAccount(account.id).first()
+            if (rows.isEmpty()) continue
+            val spec = AccountSpecData(
+                typeTag = account.accountType.toByte(),
+                standardTag = account.standardTag.toByte(),
+                index = account.accountIndex,
+                registrationIndex = account.registrationIndex,
+                keyClass = account.keyClass,
+                userIdentityId = account.userIdentityId,
+                friendIdentityId = account.friendIdentityId,
+                // Loader ignores the xpub on this path; the account
+                // already carries it via `accountSpecs`.
+                accountXpubBytes = ByteArray(0),
+            )
+            // Group the account's addresses by pool type, then emit one
+            // pool per tag in ascending tag order (Swift ordering).
+            rows.groupBy { it.poolTypeTag }
+                .toSortedMap()
+                .forEach { (poolTypeTag, poolRows) ->
+                    val addresses = poolRows.map { row ->
+                        CoreAddressRestoreData(
+                            // `has_public_key` is derived Rust-side from
+                            // `publicKey.size == 33`; pass the bytes through.
+                            publicKey = row.publicKey,
+                            poolTypeTag = poolTypeTag.toByte(),
+                            addressIndex = row.addressIndex,
+                            isUsed = row.isUsed,
+                            balance = row.balance,
+                            addressBase58 = row.address,
+                            derivationPath = row.derivationPath,
+                        )
+                    }.toTypedArray()
+                    out.add(
+                        CoreAddressPoolRestoreData(
+                            account = spec,
+                            poolTypeTag = poolTypeTag.toByte(),
+                            addresses = addresses,
+                        ),
+                    )
+                }
         }
         return out.toTypedArray()
     }

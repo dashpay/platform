@@ -621,6 +621,22 @@ class WalletRestoreData(
      * the Swift `buildUtxoRestoreBuffer` slice on `loadWalletList`.
      */
     @JvmField val utxos: Array<UtxoRestoreData>,
+    /**
+     * Persisted Core on-chain address pools, re-seeding each funds-bearing
+     * managed account's `AddressPool` on cold start so every restored
+     * address maps back to its derivation path — including addresses past
+     * the gap-limit window `ManagedWalletInfo::from_wallet` pre-derives.
+     * Empty when the wallet has no persisted `core_addresses` rows. The
+     * Rust trampoline re-packs each into an `AccountAddressPoolFFI` (with a
+     * nested `CoreAddressEntryFFI` array).
+     *
+     * Without this, a restored UTXO on an address BEYOND the gap window
+     * has no derivation-path mapping, so `managed.address_derivation_path`
+     * (called from `core_wallet_tx_builder_build_signed`) fails and the
+     * wallet cannot sign a core-to-core spend after a cold restart. Mirror
+     * of the Swift `buildCoreAddressPoolBuffer` slice on `loadWalletList`.
+     */
+    @JvmField val coreAddressPools: Array<CoreAddressPoolRestoreData>,
 )
 
 /**
@@ -655,6 +671,45 @@ class UtxoRestoreData(
     @JvmField val isConfirmed: Boolean,
     @JvmField val isInstantLocked: Boolean,
     @JvmField val isLocked: Boolean,
+)
+
+/**
+ * One persisted Core on-chain address pool for one account — mirror of
+ * `AccountAddressPoolFFI`.
+ *
+ * [account] is the same [AccountSpecData] tuple the Rust load path uses to
+ * route the pool into the owning funds account (`account_type_from_spec`);
+ * its xpub bytes stay empty because the loader ignores the xpub on this
+ * path (the account already carries it from `accountSpecs`). [poolTypeTag]
+ * is the `AddressPoolTypeTagFFI` discriminant (0 External, 1 Internal,
+ * 2 Absent, 3 AbsentHardened); [addresses] carries one row per address in
+ * this pool. Mirror of the Swift `buildCoreAddressPoolBuffer` pool group.
+ */
+class CoreAddressPoolRestoreData(
+    @JvmField val account: AccountSpecData,
+    @JvmField val poolTypeTag: Byte,
+    @JvmField val addresses: Array<CoreAddressRestoreData>,
+)
+
+/**
+ * One flat Core on-chain address row — mirror of `CoreAddressEntryFFI`.
+ *
+ * [publicKey] is the 33-byte compressed secp256k1 pubkey (empty when
+ * unavailable); the Rust trampoline derives `has_public_key` from its
+ * length (`== 33`). [addressBase58] and [derivationPath] are both required
+ * non-null on the Rust load path (`address_info_from_ffi` rejects a null
+ * for either), so the Kotlin builder emits them unconditionally.
+ * [poolTypeTag] mirrors the enclosing pool's tag; [isUsed] and [balance]
+ * round-trip the persisted `AddressInfo.used` / `AddressInfo.balance`.
+ */
+class CoreAddressRestoreData(
+    @JvmField val publicKey: ByteArray,
+    @JvmField val poolTypeTag: Byte,
+    @JvmField val addressIndex: Int,
+    @JvmField val isUsed: Boolean,
+    @JvmField val balance: Long,
+    @JvmField val addressBase58: String,
+    @JvmField val derivationPath: String,
 )
 
 /**

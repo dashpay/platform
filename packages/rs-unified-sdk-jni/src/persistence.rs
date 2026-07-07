@@ -1522,6 +1522,13 @@ struct WalletRestoreStaged {
     /// per-row buffer pointer minted at seal, freed row-by-row before
     /// the array itself (CORE-06).
     utxos: Vec<UtxoRestoreStaged>,
+    /// Persisted Core address pools. Each pool owns a nested `Vec` of
+    /// address rows, and each row owns two `CString`s
+    /// (`address_base58` / `derivation_path`); the raw pointers are minted
+    /// at seal (nested address arrays + per-row strings) and freed in the
+    /// same nested order (strings → inner array → outer array) by
+    /// [`tramp_load_wallet_list_free`].
+    core_address_pools: Vec<CoreAddressPoolStaged>,
 }
 
 /// Staged account spec: FFI struct with a null xpub pointer plus the
@@ -1538,6 +1545,32 @@ struct UtxoRestoreStaged {
     /// FFI row with `script_pubkey` still null / 0 until sealed.
     entry: UtxoRestoreEntryFFI,
     script: Vec<u8>,
+}
+
+/// Staged Core on-chain address row: FFI struct with both C-string
+/// pointers (`address_base58` / `derivation_path`) still null until
+/// sealed, plus the owned `CString`s that back them. Both strings are
+/// REQUIRED on the platform-wallet load path (`address_info_from_ffi`
+/// rejects a null for either), so they stage as plain `CString`s (not
+/// `Option`) and mint via `CString::into_raw` at seal.
+struct CoreAddressRowStaged {
+    /// FFI row with `address_base58` / `derivation_path` still null until
+    /// sealed.
+    entry: CoreAddressEntryFFI,
+    address: CString,
+    path: CString,
+}
+
+/// Staged Core address pool: FFI struct with its nested address-row
+/// pointer (`addresses_ptr`) still null / 0 until sealed, plus the owned
+/// per-row staging. The `account` `AccountSpecFFI` carries a null xpub on
+/// this path (the loader ignores it — the account already re-derives the
+/// xpub from `accounts`), so there is nothing owned for the xpub to free.
+struct CoreAddressPoolStaged {
+    /// FFI pool with `addresses_ptr` / `addresses_count` still null / 0
+    /// until sealed.
+    entry: AccountAddressPoolFFI,
+    rows: Vec<CoreAddressRowStaged>,
 }
 
 /// Staged identity-restore row: FFI struct with `keys` / `contacts` /
@@ -1626,6 +1659,7 @@ fn seal_wallet_entries(staged: Vec<WalletRestoreStaged>) -> Vec<WalletRestoreEnt
                  identities,
                  platform_address_balances,
                  utxos,
+                 core_address_pools,
              }| {
                 // Flat POD array — no nested owned buffers, so the whole
                 // `Vec<AddressBalanceEntryFFI>` mints in one shot and
@@ -1657,6 +1691,41 @@ fn seal_wallet_entries(staged: Vec<WalletRestoreStaged>) -> Vec<WalletRestoreEnt
                     })
                     .collect();
                 (entry.utxos, entry.utxos_count) = vec_into_raw(utxos);
+
+                // Persisted Core address pools — mint each pool's nested
+                // address-row array (each row's two required C-strings
+                // first, via `CString::into_raw`), then the pool array
+                // itself. Freed in the reverse nested order
+                // (strings → inner array → outer array) in
+                // `tramp_load_wallet_list_free`.
+                let core_address_pools: Vec<AccountAddressPoolFFI> = core_address_pools
+                    .into_iter()
+                    .map(|CoreAddressPoolStaged { mut entry, rows }| {
+                        let rows: Vec<CoreAddressEntryFFI> = rows
+                            .into_iter()
+                            .map(
+                                |CoreAddressRowStaged {
+                                     mut entry,
+                                     address,
+                                     path,
+                                 }| {
+                                    // Both strings are required (the loader
+                                    // rejects null); `into_raw` hands
+                                    // ownership to the FFI row, reclaimed
+                                    // via `CString::from_raw` in the free
+                                    // path.
+                                    entry.address_base58 = address.into_raw() as *const c_char;
+                                    entry.derivation_path = path.into_raw() as *const c_char;
+                                    entry
+                                },
+                            )
+                            .collect();
+                        (entry.addresses_ptr, entry.addresses_count) = vec_into_raw(rows);
+                        entry
+                    })
+                    .collect();
+                (entry.core_address_pools, entry.core_address_pools_count) =
+                    vec_into_raw(core_address_pools);
 
                 // Identities: mint each identity's nested key / contact /
                 // ignored-sender arrays first, then the identity array
@@ -1829,12 +1898,15 @@ unsafe extern "C" fn tramp_load_wallet_list(
 /// Rebuild one wallet row from a Kotlin `WalletRestoreData` into a
 /// [`WalletRestoreStaged`] (owned buffers only; raw pointers are minted by
 /// [`seal_wallet_entries`] and freed in [`tramp_load_wallet_list_free`]).
-/// Nested arrays we don't rehydrate this milestone (tracked locks,
-/// address pools) are null / 0. `identities`, `platform_address_balances`
-/// (re-seeds the provider balance map + ADDR-09 height pins on cold
-/// start; see [`build_platform_address_balances`]), and `utxos` (re-seeds
-/// the funds accounts' UTXO maps + Core balance; CORE-06, see
-/// [`build_utxo_restore_entries`]) ARE rehydrated.
+/// Nested arrays we don't rehydrate this milestone (tracked locks) are
+/// null / 0. `identities`, `platform_address_balances` (re-seeds the
+/// provider balance map + ADDR-09 height pins on cold start; see
+/// [`build_platform_address_balances`]), `utxos` (re-seeds the funds
+/// accounts' UTXO maps + Core balance; CORE-06, see
+/// [`build_utxo_restore_entries`]), and `core_address_pools` (re-seeds
+/// each funds account's `AddressPool` so out-of-window restored addresses
+/// keep their derivation-path mapping — the core-to-core-signing fix; see
+/// [`build_core_address_pools`]) ARE rehydrated.
 fn build_wallet_restore_entry(
     env: &mut JNIEnv,
     holder: &JObject,
@@ -1899,6 +1971,13 @@ fn build_wallet_restore_entry(
     // stays owned until seal.
     let utxos = build_utxo_restore_entries(env, holder)?;
 
+    // Persisted Core address pools (re-seed each funds account's
+    // `AddressPool` so out-of-window restored addresses keep their
+    // derivation-path mapping; without it a restored UTXO on such an
+    // address can't be signed after a cold restart). Each row's two
+    // required C-strings stay owned until seal.
+    let core_address_pools = build_core_address_pools(env, holder)?;
+
     let entry = WalletRestoreEntryFFI {
         wallet_id,
         network: net_from_ord(network_ord),
@@ -1932,6 +2011,7 @@ fn build_wallet_restore_entry(
         identities,
         platform_address_balances,
         utxos,
+        core_address_pools,
     })
 }
 
@@ -2008,6 +2088,133 @@ fn build_utxo_restore_entries(
                     script,
                 })
             })?;
+        out.push(staged);
+    }
+    Ok(out)
+}
+
+/// Read the Kotlin `WalletRestoreData.coreAddressPools` array into staged
+/// [`CoreAddressPoolStaged`] rows. Empty / null field → empty vec (staged
+/// as `(null, 0)` at seal).
+///
+/// Each holder is a `CoreAddressPoolRestoreData`; its nested `account` is
+/// read via the shared [`build_account_spec`] reader (the account xpub is
+/// staged empty and minted null at seal — the platform-wallet loader
+/// ignores the xpub on this path). Each `CoreAddressRestoreData` row reads
+/// the 33-byte `publicKey` (zero-filled and `has_public_key = false` when
+/// absent / not exactly 33 bytes, matching the Swift
+/// `publicKey.count == 33` rule) plus the two REQUIRED strings
+/// (`addressBase58` / `derivationPath`) into owned `CString`s — a null or
+/// interior-NUL for either aborts the whole load, because the loader
+/// (`address_info_from_ffi`) rejects a null and an address without its
+/// derivation path is exactly the row that breaks core-to-core signing
+/// after cold restart. Mirror of the Swift `buildCoreAddressPoolBuffer`.
+fn build_core_address_pools(
+    env: &mut JNIEnv,
+    holder: &JObject,
+) -> Result<Vec<CoreAddressPoolStaged>, jni::errors::Error> {
+    let arr_obj = env
+        .get_field(
+            holder,
+            "coreAddressPools",
+            "[Lorg/dashfoundation/dashsdk/ffi/CoreAddressPoolRestoreData;",
+        )?
+        .l()?;
+    if arr_obj.is_null() {
+        return Ok(Vec::new());
+    }
+    let arr: jni::objects::JObjectArray = arr_obj.into();
+    let len = env.get_array_length(&arr)? as usize;
+    let mut out: Vec<CoreAddressPoolStaged> = Vec::with_capacity(len);
+    for i in 0..len {
+        let staged = env.with_local_frame(
+            32,
+            |env| -> Result<CoreAddressPoolStaged, jni::errors::Error> {
+                let h = env.get_object_array_element(&arr, i as i32)?;
+
+                // The account tuple — reuse the shared spec reader. The
+                // staged xpub is discarded (the pool's `account` carries a
+                // null xpub; the loader ignores it), so only the spec is
+                // kept.
+                let account_obj = env
+                    .get_field(
+                        &h,
+                        "account",
+                        "Lorg/dashfoundation/dashsdk/ffi/AccountSpecData;",
+                    )?
+                    .l()?;
+                let AccountSpecStaged { mut spec, xpub: _ } =
+                    build_account_spec(env, &account_obj)?;
+                // Kept explicit for the reader: the pool never carries an
+                // xpub, so it stays null / 0 (already the value
+                // `build_account_spec` leaves it at pre-seal).
+                spec.account_xpub_bytes = ptr::null();
+                spec.account_xpub_bytes_len = 0;
+
+                let pool_type_tag = env.get_field(&h, "poolTypeTag", "B")?.b()? as u8;
+
+                let rows_obj = env
+                    .get_field(
+                        &h,
+                        "addresses",
+                        "[Lorg/dashfoundation/dashsdk/ffi/CoreAddressRestoreData;",
+                    )?
+                    .l()?;
+                let rows_arr: jni::objects::JObjectArray = rows_obj.into();
+                let rows_len = env.get_array_length(&rows_arr)? as usize;
+                let mut rows: Vec<CoreAddressRowStaged> = Vec::with_capacity(rows_len);
+                for j in 0..rows_len {
+                    let row = env.with_local_frame(
+                        16,
+                        |env| -> Result<CoreAddressRowStaged, jni::errors::Error> {
+                            let r = env.get_object_array_element(&rows_arr, j as i32)?;
+                            let pk_bytes = read_bytes_field_vec(env, &r, "publicKey")?;
+                            // `has_public_key` is implied by the exact
+                            // 33-byte length (Swift `publicKey.count == 33`);
+                            // zero-fill the fixed field when absent / short.
+                            let mut public_key = [0u8; 33];
+                            let has_public_key = pk_bytes.len() == 33;
+                            if has_public_key {
+                                public_key.copy_from_slice(&pk_bytes);
+                            }
+                            let address_index = env.get_field(&r, "addressIndex", "I")?.i()? as u32;
+                            let is_used = env.get_field(&r, "isUsed", "Z")?.z()?;
+                            let balance = env.get_field(&r, "balance", "J")?.j()? as u64;
+                            // Both required — a null / interior-NUL aborts
+                            // the load (the loader rejects a null and a row
+                            // missing its path is the signing-break case).
+                            let address = read_req_cstring_field(env, &r, "addressBase58")?;
+                            let path = read_req_cstring_field(env, &r, "derivationPath")?;
+                            Ok(CoreAddressRowStaged {
+                                entry: CoreAddressEntryFFI {
+                                    public_key,
+                                    has_public_key,
+                                    pool_type_tag,
+                                    address_index,
+                                    is_used,
+                                    balance,
+                                    address_base58: ptr::null(),
+                                    derivation_path: ptr::null(),
+                                },
+                                address,
+                                path,
+                            })
+                        },
+                    )?;
+                    rows.push(row);
+                }
+
+                Ok(CoreAddressPoolStaged {
+                    entry: AccountAddressPoolFFI {
+                        account: spec,
+                        pool_type_tag,
+                        addresses_ptr: ptr::null(),
+                        addresses_count: 0,
+                    },
+                    rows,
+                })
+            },
+        )?;
         out.push(staged);
     }
     Ok(out)
@@ -2414,6 +2621,34 @@ fn read_opt_cstring_field(
     Ok(CString::new(s).ok())
 }
 
+/// Read a REQUIRED Java `String` field into an owned `CString`. Unlike
+/// [`read_opt_cstring_field`], a null value or an interior NUL fails the
+/// whole load (surfaced as `ERR_JNI` by the load trampoline): the two
+/// Core-address strings (`addressBase58` / `derivation_path`) are both
+/// mandatory on the platform-wallet load path (`address_info_from_ffi`
+/// rejects a null for either), and a restored address without its
+/// derivation path is exactly the row that breaks core-to-core signing
+/// after a cold restart — dropping it silently would defeat the fix.
+fn read_req_cstring_field(
+    env: &mut JNIEnv,
+    holder: &JObject,
+    field: &str,
+) -> Result<CString, jni::errors::Error> {
+    let obj = env.get_field(holder, field, "Ljava/lang/String;")?.l()?;
+    if obj.is_null() {
+        log::error!("load: required string field `{field}` is null");
+        return Err(jni::errors::Error::WrongJValueType(
+            "non-null String",
+            "null",
+        ));
+    }
+    let s: String = env.get_string(&JString::from(obj))?.into();
+    CString::new(s).map_err(|_| {
+        log::error!("load: required string field `{field}` contains an interior NUL");
+        jni::errors::Error::WrongJValueType("String without interior NUL", "String with NUL")
+    })
+}
+
 /// Rebuild one account spec from a Kotlin `AccountSpecData` into an
 /// [`AccountSpecStaged`]. The xpub stays an owned `Vec<u8>` here; the raw
 /// buffer the wallet-list free trampoline frees is minted by
@@ -2493,6 +2728,37 @@ unsafe extern "C" fn tramp_load_wallet_list_free(
                     free_raw_bytes(u.script_pubkey, u.script_pubkey_len);
                 }
                 drop(utxos);
+            }
+
+            // Persisted Core address pools + nested address-row arrays and
+            // each row's two required C-strings — mirrors exactly what
+            // `seal_wallet_entries` minted. Free order matches the UTXO
+            // discipline: each row's strings first, then the inner
+            // `[CoreAddressEntryFFI]` array, then the outer
+            // `[AccountAddressPoolFFI]` array. The pool's `account`
+            // `AccountSpecFFI` carries a null xpub on this path (never
+            // minted), so there is nothing to reclaim for it.
+            if !e.core_address_pools.is_null() && e.core_address_pools_count > 0 {
+                let pools: Box<[AccountAddressPoolFFI]> =
+                    Box::from_raw(std::ptr::slice_from_raw_parts_mut(
+                        e.core_address_pools as *mut AccountAddressPoolFFI,
+                        e.core_address_pools_count,
+                    ));
+                for pool in pools.iter() {
+                    if !pool.addresses_ptr.is_null() && pool.addresses_count > 0 {
+                        let rows: Box<[CoreAddressEntryFFI]> =
+                            Box::from_raw(std::ptr::slice_from_raw_parts_mut(
+                                pool.addresses_ptr as *mut CoreAddressEntryFFI,
+                                pool.addresses_count,
+                            ));
+                        for row in rows.iter() {
+                            free_raw_cstring(row.address_base58);
+                            free_raw_cstring(row.derivation_path);
+                        }
+                        drop(rows);
+                    }
+                }
+                drop(pools);
             }
 
             // identities + nested key / contact / ignored-sender /
@@ -3274,12 +3540,4 @@ fn read_bytes_field_vec(
     let mut buf = vec![0i8; len];
     env.get_byte_array_region(&arr, 0, &mut buf)?;
     Ok(buf.into_iter().map(|b| b as u8).collect())
-}
-
-// Anchor the imports that are only referenced from inside `unsafe extern`
-// trampolines (which the dead-code pass doesn't always see through) so a
-// stray-import warning never fails the zero-warning gate.
-#[allow(dead_code)]
-fn _anchor(_c: CString) {
-    let _: Option<CoreAddressEntryFFI> = None;
 }
