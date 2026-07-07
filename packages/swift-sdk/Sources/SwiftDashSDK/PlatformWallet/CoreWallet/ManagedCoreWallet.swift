@@ -86,93 +86,30 @@ public class ManagedCoreWallet {
         return String(cString: ptr)
     }
 
+    /// Widen the gap limit for an account, generating the addresses the wider
+    /// limit now requires.
+    public func setGapLimit(
+        accountType: CoreTransactionBuilder.AccountType,
+        accountIndex: UInt32,
+        gapLimit: UInt32
+    ) throws {
+        try core_wallet_set_gap_limit(handle, accountType.ffi, accountIndex, gapLimit).check()
+    }
+
     // MARK: - Transactions
 
-    /// Account type for transaction building.
-    public enum AccountType: UInt32 {
-        case bip44 = 0
-        case bip32 = 1
-    }
-
-    /// Build, sign, and broadcast a payment to the given addresses.
+    /// Broadcast a transaction built by `CoreTransactionBuilder.buildSigned`.
     ///
-    /// Returns the serialized signed transaction.
-    public func sendToAddresses(
-        accountType: AccountType = .bip44,
-        accountIndex: UInt32 = 0,
-        recipients: [(address: String, amountDuffs: UInt64)]
-    ) throws -> Data {
-        var txBytesPtr: UnsafeMutablePointer<UInt8>? = nil
-        var txLen: UInt = 0
-
-        // Own the C-string storage explicitly. The naive shape
-        // `recipients.map { ($0.address as NSString).utf8String }`
-        // yields pointers into a bridged `NSString` temporary whose
-        // lifetime ends with the `.map` closure — Rust would then
-        // `CStr::from_ptr` against freed (or autorelease-pool-
-        // recycled) memory. `strdup` malloc's a fresh NUL-terminated
-        // copy we own through the FFI call; `defer` frees them after
-        // Rust returns.
-        let cStringStorage: [UnsafeMutablePointer<CChar>?] = recipients.map {
-            strdup($0.address)
-        }
-        defer {
-            for ptr in cStringStorage {
-                if let p = ptr { free(p) }
-            }
-        }
-        // Promote the owned buffers to immutable `UnsafePointer<CChar>?`
-        // for the FFI's `*const *const c_char` signature. No
-        // `assumingMemoryBound` re-interpretation needed — the bytes
-        // are already correctly typed.
-        let cStringPointers: [UnsafePointer<CChar>?] = cStringStorage.map { ptr in
-            ptr.map { UnsafePointer($0) }
-        }
-        let amounts = recipients.map { $0.amountDuffs }
-
-        // Resolver-backed signer owns mnemonic access for the lifetime
-        // of this call. Each Core ECDSA signature happens atomically
-        // inside the resolver vtable (mnemonic fetched, key derived,
-        // digest signed, buffers zeroed) — no priv key leaves Swift.
-        let resolver = MnemonicResolver()
-
-        try cStringPointers.withUnsafeBufferPointer { addrBuf in
-            try amounts.withUnsafeBufferPointer { amountBuf in
-                try withExtendedLifetime(resolver) {
-                    try core_wallet_send_to_addresses(
-                        handle,
-                        accountType.rawValue,
-                        accountIndex,
-                        addrBuf.baseAddress,
-                        amountBuf.baseAddress,
-                        UInt(recipients.count),
-                        resolver.handle,
-                        &txBytesPtr,
-                        &txLen
-                    ).check()
-                }
-            }
-        }
-
-        guard let ptr = txBytesPtr, txLen > 0 else {
-            throw PlatformWalletError.unknown("FFI returned success but tx buffer was empty")
-        }
-        defer { core_wallet_free_tx_bytes(ptr, txLen) }
-
-        return Data(bytes: ptr, count: Int(txLen))
-    }
-
-    /// Broadcast a raw signed transaction.
+    /// The funding account captured at build time is forwarded so that a
+    /// definitive broadcast rejection releases the UTXO reservation
+    /// `buildSigned` took, letting an immediate retry reselect those inputs.
     ///
     /// Returns the transaction ID as a hex string.
-    public func broadcastTransaction(_ txData: Data) throws -> String {
+    public func broadcastTransaction(_ tx: CoreTransaction) throws -> String {
         var txidPtr: UnsafeMutablePointer<CChar>? = nil
-        try txData.withUnsafeBytes { txBuf in
+        try withUnsafePointer(to: tx.ffi) { txPtr in
             try core_wallet_broadcast_transaction(
-                handle,
-                txBuf.baseAddress?.assumingMemoryBound(to: UInt8.self),
-                UInt(txData.count),
-                &txidPtr
+                handle, txPtr, tx.accountType.ffi, tx.accountIndex, &txidPtr
             ).check()
         }
 
