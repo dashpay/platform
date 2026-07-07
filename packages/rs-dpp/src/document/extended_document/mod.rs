@@ -350,19 +350,6 @@ impl ExtendedDocument {
         }
     }
 
-    /// Convert the extended document to a pretty JSON object.
-    ///
-    /// This function is a passthrough to the `to_pretty_json` method.
-    #[cfg(feature = "json-conversion")]
-    pub fn to_pretty_json(
-        &self,
-        platform_version: &PlatformVersion,
-    ) -> Result<JsonValue, ProtocolError> {
-        match self {
-            ExtendedDocument::V0(v0) => v0.to_pretty_json(platform_version),
-        }
-    }
-
     /// Convert the extended document to a BTreeMap of string keys and Value instances.
     ///
     /// This function is a passthrough to the `to_map_value` method.
@@ -437,13 +424,12 @@ impl ExtendedDocument {
 #[cfg(test)]
 mod test {
     use anyhow::Result;
-    use serde_json::{json, Value as JsonValue};
+    use serde_json::Value as JsonValue;
     use std::convert::TryInto;
 
-    use crate::document::extended_document::{ExtendedDocument, IDENTIFIER_FIELDS};
+    use crate::document::extended_document::ExtendedDocument;
 
     use crate::data_contract::accessors::v0::DataContractV0Getters;
-    use crate::data_contract::DataContract;
     use crate::document::extended_document::v0::ExtendedDocumentV0;
 
     use crate::prelude::Identifier;
@@ -457,84 +443,14 @@ mod test {
     use platform_version::version::{PlatformVersion, LATEST_PLATFORM_VERSION};
     use pretty_assertions::assert_eq;
 
-    use crate::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
     use crate::data_contract::document_type::random_document::CreateRandomDocument;
     use crate::document::serialization_traits::ExtendedDocumentPlatformConversionMethodsV0;
     use crate::tests::fixtures::get_dashpay_contract_fixture;
-    use base64::prelude::BASE64_STANDARD;
-    use base64::Engine;
 
     fn init() {
         let _ = env_logger::builder()
             .filter_level(log::LevelFilter::Debug)
             .try_init();
-    }
-    pub(crate) fn data_contract_with_dynamic_properties() -> DataContract {
-        let platform_version = PlatformVersion::latest();
-        // The following is equivalent to the data contract
-        // {
-        //     "protocolVersion" :0,
-        //     "$id" : vec![0_u8;32],
-        //     "$schema" : "schema",
-        //     "version" : 0,
-        //     "ownerId" : vec![0_u8;32],
-        //     "documents" : {
-        //         "test" : {
-        //             "properties" : {
-        //                 "alphaIdentifier" :  {
-        //                     "type": "array",
-        //                     "byteArray": true,
-        //                     "contentMediaType": "application/x.dash.dpp.identifier",
-        //                 },
-        //                 "alphaBinary" :  {
-        //                     "type": "array",
-        //                     "byteArray": true,
-        //                 }
-        //             }
-        //         }
-        //     }
-        // }
-        let test_document_properties_alpha_identifier = Value::from([
-            ("type", Value::Text("array".to_string())),
-            ("byteArray", Value::Bool(true)),
-            ("minItems", Value::U64(32)),
-            ("maxItems", Value::U64(32)),
-            ("position", Value::U64(0)),
-            (
-                "contentMediaType",
-                Value::Text("application/x.dash.dpp.identifier".to_string()),
-            ),
-        ]);
-        let test_document_properties_alpha_binary = Value::from([
-            ("type", Value::Text("array".to_string())),
-            ("byteArray", Value::Bool(true)),
-            ("position", Value::U64(1)),
-        ]);
-        let test_document_properties = Value::from([
-            ("alphaIdentifier", test_document_properties_alpha_identifier),
-            ("alphaBinary", test_document_properties_alpha_binary),
-        ]);
-        let test_document = Value::from([
-            ("type", Value::Text("object".to_string())),
-            ("properties", test_document_properties),
-            ("additionalProperties", Value::Bool(false)),
-        ]);
-        let documents = Value::from([("test", test_document)]);
-
-        DataContract::from_value(
-            Value::from([
-                ("protocolVersion", Value::U32(1)),
-                ("id", Value::Identifier([0_u8; 32])),
-                ("$schema", Value::Text("schema".to_string())),
-                ("version", Value::U32(0)),
-                ("ownerId", Value::Identifier([0_u8; 32])),
-                ("documentSchemas", documents),
-                ("$formatVersion", Value::Text("0".to_string())),
-            ]),
-            true,
-            platform_version,
-        )
-        .unwrap()
     }
 
     #[test]
@@ -681,63 +597,6 @@ mod test {
         ExtendedDocument::from_json_string(&document_json, dpns_contract, LATEST_PLATFORM_VERSION)
             .expect("expected extended document");
         Ok(())
-    }
-
-    #[test]
-    fn json_should_generate_human_readable_binaries() {
-        let data_contract = data_contract_with_dynamic_properties();
-        let alpha_value = vec![10_u8; 32];
-        let id = vec![11_u8; 32];
-        let owner_id = vec![12_u8; 32];
-        let data_contract_id = vec![13_u8; 32];
-
-        // JSON binary/identifier fields use the canonical encoded forms
-        // (Identifier=bs58, BinaryData=base64). The previous fixture relied
-        // on the `From<JsonValue> for Value` array→bytes heuristic (Critical-2)
-        // to silently turn `[10, 10, ..., 10]` (32 entries) into Value::Bytes;
-        // that heuristic has been removed, so fixtures must use string
-        // encoding directly.
-        let raw_document = json!({
-            "$protocolVersion"  : 0,
-            "$id" : bs58::encode(&id).into_string(),
-            "$ownerId" : bs58::encode(&owner_id).into_string(),
-            "$type" : "test",
-            "$dataContractId" : bs58::encode(&data_contract_id).into_string(),
-            "$revision" : 1,
-            "alphaBinary" : BASE64_STANDARD.encode(&alpha_value),
-            "alphaIdentifier" : bs58::encode(&alpha_value).into_string(),
-        });
-
-        let document = ExtendedDocument::from_raw_json_document(
-            raw_document,
-            data_contract,
-            LATEST_PLATFORM_VERSION,
-        )
-        .unwrap();
-        let json_document = document
-            .to_pretty_json(LATEST_PLATFORM_VERSION)
-            .expect("no errors");
-
-        assert_eq!(
-            json_document["$id"],
-            JsonValue::String(bs58::encode(&id).into_string())
-        );
-        assert_eq!(
-            json_document["$ownerId"],
-            JsonValue::String(bs58::encode(&owner_id).into_string())
-        );
-        assert_eq!(
-            json_document["$dataContractId"],
-            JsonValue::String(bs58::encode(&data_contract_id).into_string())
-        );
-        assert_eq!(
-            json_document["alphaBinary"],
-            JsonValue::String(BASE64_STANDARD.encode(&alpha_value))
-        );
-        assert_eq!(
-            json_document["alphaIdentifier"],
-            JsonValue::String(BASE64_STANDARD.encode(&alpha_value))
-        );
     }
 
     fn document_bytes() -> Vec<u8> {

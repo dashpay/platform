@@ -123,8 +123,6 @@ pub enum DataContract {
 //     this with `full_validation = true`) — see the Critical-4 doc.
 //   * `DataContractValueConversionMethodsV0::from_value(value, full_validation, pv)` —
 //     same shape for `platform_value::Value`.
-//   * `DataContractJsonConversionMethodsV0::to_validating_json` — JSON output with binary
-//     fields rendered as arrays (for JSON-Schema validators that don't accept base64).
 //
 // For non-validating *serialization*, just use `serde_json::to_value(&dc)?` /
 // `platform_value::to_value(&dc)?` — the manual Serialize impl handles versioning.

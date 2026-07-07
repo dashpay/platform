@@ -1,5 +1,3 @@
-#[cfg(feature = "json-conversion")]
-mod json_conversion;
 #[cfg(feature = "value-conversion")]
 mod platform_value_conversion;
 mod serialize;
@@ -394,49 +392,6 @@ impl ExtendedDocumentV0 {
         Ok(extended_document)
     }
 
-    #[cfg(feature = "json-conversion")]
-    /// Convert the extended document to a pretty JSON object.
-    ///
-    /// # Errors
-    ///
-    /// Returns a `ProtocolError` if there is an error converting the document to pretty JSON.
-    pub fn to_pretty_json(
-        &self,
-        _platform_version: &PlatformVersion,
-    ) -> Result<JsonValue, ProtocolError> {
-        // Inline what the legacy `Document::to_json` body did
-        // (`to_object()?.try_into()`) — goes through platform_value as an
-        // intermediate, which is what the JSON-Schema-validating shape
-        // expects (base64 strings for nested binary, bs58 strings for
-        // identifiers). Canonical `JsonConvertible::to_json` would go
-        // directly via serde_json (one-step), which produces a slightly
-        // different shape due to Critical-1 (is_human_readable divergence).
-        use crate::serialization::ValueConvertible;
-        use std::convert::TryInto;
-        let mut value: JsonValue = self
-            .document
-            .to_object()?
-            .try_into()
-            .map_err(ProtocolError::ValueError)?;
-        let value_mut = value.as_object_mut().unwrap();
-        value_mut.insert(
-            property_names::DOCUMENT_TYPE_NAME.to_string(),
-            JsonValue::String(self.document_type_name.clone()),
-        );
-        value_mut.insert(
-            property_names::DATA_CONTRACT_ID.to_string(),
-            JsonValue::String(bs58::encode(self.data_contract_id.to_buffer()).into_string()),
-        );
-        if let Some(token_payment_info) = self.token_payment_info {
-            let value: Value = token_payment_info.try_into()?;
-            value_mut.insert(
-                property_names::TOKEN_PAYMENT_INFO.to_string(),
-                value.try_into_validating_json()?,
-            );
-        }
-        Ok(value)
-    }
-
     #[cfg(feature = "value-conversion")]
     pub fn to_map_value(&self) -> Result<BTreeMap<String, Value>, ProtocolError> {
         let mut object = self.document.to_map_value()?;
@@ -550,9 +505,7 @@ mod tests {
     use super::*;
     use crate::data_contract::accessors::v0::DataContractV0Getters;
     use crate::data_contract::document_type::random_document::CreateRandomDocument;
-    use crate::document::serialization_traits::{
-        DocumentJsonMethodsV0, ExtendedDocumentPlatformConversionMethodsV0,
-    };
+    use crate::document::serialization_traits::ExtendedDocumentPlatformConversionMethodsV0;
     use crate::document::DocumentV0Getters;
     use crate::tests::json_document::json_document_to_contract;
     use platform_version::version::PlatformVersion;
@@ -844,35 +797,6 @@ mod tests {
             json_data.is_object(),
             "properties_as_json_data should return a JSON object"
         );
-    }
-
-    // ================================================================
-    //  to_pretty_json
-    // ================================================================
-
-    #[test]
-    fn to_pretty_json_includes_type_and_contract_id() {
-        let platform_version = PlatformVersion::latest();
-        let (ext_doc, contract) = make_extended_document(platform_version);
-
-        let pretty = ext_doc
-            .to_pretty_json(platform_version)
-            .expect("to_pretty_json should succeed");
-        let obj = pretty.as_object().expect("should be a JSON object");
-        assert!(
-            obj.contains_key(property_names::DOCUMENT_TYPE_NAME),
-            "pretty JSON should contain $type"
-        );
-        assert!(
-            obj.contains_key(property_names::DATA_CONTRACT_ID),
-            "pretty JSON should contain $dataContractId"
-        );
-        // Verify the contract id is base58-encoded
-        let contract_id_str = obj[property_names::DATA_CONTRACT_ID]
-            .as_str()
-            .expect("$dataContractId should be a string");
-        let expected_b58 = bs58::encode(contract.id().to_buffer()).into_string();
-        assert_eq!(contract_id_str, expected_b58);
     }
 
     // ================================================================
@@ -1233,30 +1157,6 @@ mod tests {
     }
 
     // ================================================================
-    //  to_json / to_json_with_identifiers_using_bytes
-    // ================================================================
-
-    // Note: the previous `to_json_includes_type_and_data_contract` test
-    // exercised the legacy `DocumentJsonMethodsV0::to_json` method on
-    // ExtendedDocumentV0, which was deleted in Phase D step 8 slice A
-    // (it duplicated canonical `JsonConvertible::to_json`). The
-    // canonical-trait round-trip is covered in
-    // `extended_document/mod.rs::json_convertible_tests`.
-
-    #[test]
-    fn to_json_with_identifiers_using_bytes_includes_type_and_contract() {
-        let platform_version = PlatformVersion::latest();
-        let (ext_doc, _) = make_extended_document(platform_version);
-
-        let json = ext_doc
-            .to_json_with_identifiers_using_bytes(platform_version)
-            .expect("to_json_with_identifiers_using_bytes should succeed");
-        let obj = json.as_object().expect("json object");
-        assert!(obj.contains_key(property_names::DOCUMENT_TYPE_NAME));
-        assert!(obj.contains_key(property_names::DATA_CONTRACT));
-    }
-
-    // ================================================================
     //  to_map_value: token_payment_info is serialized when Some
     // ================================================================
 
@@ -1273,8 +1173,7 @@ mod tests {
     }
 
     // ================================================================
-    //  token_payment_info: Some branches for to_map_value / into_map_value /
-    //  to_pretty_json.
+    //  token_payment_info: Some branches for to_map_value / into_map_value.
     //
     //  These exercise the `if let Some(token_payment_info) = ...` arms
     //  that prior tests never hit (since they all used token_payment_info =
@@ -1324,20 +1223,6 @@ mod tests {
         assert!(
             map.contains_key(property_names::TOKEN_PAYMENT_INFO),
             "token_payment_info should be present in map when Some"
-        );
-    }
-
-    #[test]
-    fn to_pretty_json_includes_token_payment_info_when_some() {
-        let platform_version = PlatformVersion::latest();
-        let (ext_doc, _) = make_extended_document_with_token_payment_info(platform_version);
-        let json = ext_doc
-            .to_pretty_json(platform_version)
-            .expect("to_pretty_json ok");
-        let obj = json.as_object().expect("json object");
-        assert!(
-            obj.contains_key(property_names::TOKEN_PAYMENT_INFO),
-            "pretty JSON should include $tokenPaymentInfo when Some"
         );
     }
 
@@ -1531,36 +1416,6 @@ mod tests {
         assert_eq!(
             ext_doc.properties().get("bulkField"),
             Some(&Value::U64(777))
-        );
-    }
-
-    // ================================================================
-    //  to_pretty_json gracefully handles document_type_name that is not
-    //  in the contract (it doesn't look up the type).
-    // ================================================================
-
-    #[test]
-    fn to_pretty_json_fails_for_unknown_document_type_name() {
-        // to_pretty_json calls document.to_json() which succeeds, but later
-        // steps in from_trusted_platform_value / value_conversion would fail.
-        // For pretty-json itself the only invariant that matters is that
-        // document_type_name is a string the impl preserves. Verify that at
-        // least the call succeeds when document_type_name does NOT exist on
-        // the contract — since to_pretty_json doesn't look up the document
-        // type.
-        let platform_version = PlatformVersion::latest();
-        let (mut ext_doc, _) = make_extended_document(platform_version);
-        ext_doc.document_type_name = "doesNotExist".to_string();
-        // to_pretty_json does NOT look up the document type on the contract,
-        // so it should succeed and include the bogus name.
-        let pretty = ext_doc
-            .to_pretty_json(platform_version)
-            .expect("to_pretty_json should succeed for any string name");
-        let obj = pretty.as_object().expect("json object");
-        assert_eq!(
-            obj.get(property_names::DOCUMENT_TYPE_NAME)
-                .and_then(|v| v.as_str()),
-            Some("doesNotExist")
         );
     }
 

@@ -22,12 +22,4 @@ pub trait DataContractJsonConversionMethodsV0 {
     ) -> Result<Self, ProtocolError>
     where
         Self: Sized;
-
-    /// Returns Data Contract as a validating-JSON Value at the given
-    /// platform version (used by JSON Schema validators that don't accept
-    /// base64 string encodings of binary data).
-    fn to_validating_json(
-        &self,
-        platform_version: &PlatformVersion,
-    ) -> Result<JsonValue, ProtocolError>;
 }

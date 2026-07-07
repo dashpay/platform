@@ -6,8 +6,6 @@
 mod accessors;
 #[cfg(feature = "document-cbor-conversion")]
 pub(super) mod cbor_conversion;
-#[cfg(feature = "json-conversion")]
-pub(super) mod json_conversion;
 #[cfg(feature = "value-conversion")]
 mod platform_value_conversion;
 pub mod serialize;
