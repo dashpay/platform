@@ -445,9 +445,11 @@ pub fn as_asset_lock_proof_cl_height_too_low(
 /// The address-nonce path is optimistic by design: the client submits
 /// `fetched + 1` and Platform rejects a stale/replayed value under a lagging
 /// replica read. This extractor lets a caller recover `expected_nonce` and
-/// retry per that contract. Mirrors [`as_asset_lock_proof_cl_height_too_low`];
-/// the same coverage caveat applies — re-audit if a future `dash_sdk::Error`
-/// variant starts carrying consensus errors through a different shape.
+/// retry per that contract. Recurses through
+/// [`dash_sdk::Error::NoAvailableAddressesToRetry`] so it stays in lockstep
+/// with its sibling `broadcast_definitely_failed`; re-audit if a future
+/// `dash_sdk::Error` variant starts carrying consensus errors through yet
+/// another shape.
 pub fn as_address_invalid_nonce(error: &dash_sdk::Error) -> Option<&AddressInvalidNonceError> {
     use dpp::consensus::state::state_error::StateError;
     use dpp::consensus::ConsensusError;
@@ -457,6 +459,12 @@ pub fn as_address_invalid_nonce(error: &dash_sdk::Error) -> Option<&AddressInval
             broadcast_err.cause.as_ref()
         }
         dash_sdk::Error::Protocol(dpp::ProtocolError::ConsensusError(ce)) => Some(ce.as_ref()),
+        // A consensus rejection can arrive wrapped when the dapi-client
+        // exhausted every address mid-retry; recurse so this predicate stays
+        // in lockstep with `broadcast_definitely_failed`.
+        dash_sdk::Error::NoAvailableAddressesToRetry(inner) => {
+            return as_address_invalid_nonce(inner)
+        }
         _ => None,
     };
     match consensus_error {
@@ -570,5 +578,17 @@ mod address_nonce_tests {
         assert!(
             promote_address_nonce_error(&dash_sdk::Error::Generic("boom".to_string())).is_none()
         );
+    }
+
+    #[test]
+    fn extracts_nonce_error_wrapped_in_no_available_addresses_to_retry() {
+        // The dapi-client wraps the last rejection in `NoAvailableAddressesToRetry`
+        // when every address is exhausted mid-retry; the extractor must recurse
+        // into it (lockstep with `broadcast_definitely_failed`).
+        let inner = Box::new(protocol_shape(9, 10));
+        let wrapped = dash_sdk::Error::NoAvailableAddressesToRetry(inner);
+        let got = as_address_invalid_nonce(&wrapped).expect("must unwrap the retry envelope");
+        assert_eq!(got.provided_nonce(), 9);
+        assert_eq!(got.expected_nonce(), 10);
     }
 }
