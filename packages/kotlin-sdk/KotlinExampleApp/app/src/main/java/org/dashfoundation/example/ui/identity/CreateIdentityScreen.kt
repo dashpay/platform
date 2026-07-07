@@ -121,7 +121,17 @@ fun CreateIdentityScreen(navController: NavHostController) {
 
             FundingSection(
                 source = fundingSource,
-                onSourceChange = { fundingSource = it },
+                onSourceChange = { newSource ->
+                    fundingSource = newSource
+                    // The shielded path spends a FIXED denomination, not a
+                    // free-form amount — snap to a valid one when switching in.
+                    if (newSource == CreateIdentityFundingSource.ShieldedBalance &&
+                        amountText.toLongOrNull() !in
+                        SHIELDED_IDENTITY_DENOMINATIONS.map { it.first }
+                    ) {
+                        amountText = SHIELDED_IDENTITY_DENOMINATIONS.first().first.toString()
+                    }
+                },
                 amountText = amountText,
                 onAmountChange = { amountText = it.filter(Char::isDigit) },
             )
@@ -229,6 +239,41 @@ fun CreateIdentityScreen(navController: NavHostController) {
                                     },
                                 )
                             }
+                            CreateIdentityFundingSource.ShieldedBalance -> {
+                                // Type-20: spend a fixed-denomination note from
+                                // the bound shielded pool. `amount` holds the
+                                // chosen denomination (credits) from the picker.
+                                // The 21-byte fallback failure address is REQUIRED
+                                // — build it from the wallet's first Platform-
+                                // payment address (1 variant tag + 20-byte hash),
+                                // the same (addressType, hash) pairing ID-08 feeds.
+                                val fallbackInput = wallet.addressesWithBalances().firstOrNull()
+                                if (fallbackInput == null) {
+                                    error = "This wallet has no Platform-payment address for " +
+                                        "the required Type-20 creation-failure fallback. Fund " +
+                                        "a Platform address first (Wallet → Platform Balance → " +
+                                        "Top Up from Core)."
+                                    return@launch
+                                }
+                                val fallbackAddress =
+                                    byteArrayOf(fallbackInput.addressType.toByte()) +
+                                        fallbackInput.hash
+                                coordinator.startRegistration(
+                                    walletId = wallet.walletId,
+                                    identityIndex = identityIndex,
+                                    fundingKind =
+                                        IdentityRegistrationController.FundingKind.ShieldedPool,
+                                    body = {
+                                        mgr.shieldedIdentityCreateFromPool(
+                                            walletId = wallet.walletId,
+                                            identityIndex = identityIndex,
+                                            keys = keys,
+                                            denomination = amount,
+                                            fallbackAddress = fallbackAddress,
+                                        )
+                                    },
+                                )
+                            }
                             CreateIdentityFundingSource.AssetLockResume -> {
                                 error = "\"${fundingSource.label}\" funding is not wired yet."
                                 return@launch
@@ -269,8 +314,23 @@ enum class CreateIdentityFundingSource(
 ) {
     CoreBalance("Core balance", true, amountInCredits = false),
     PlatformAddress("Platform address", true, amountInCredits = true),
+    ShieldedBalance("Shielded balance", true, amountInCredits = true),
     AssetLockResume("Resume from asset lock", false, amountInCredits = false),
 }
+
+/**
+ * The fixed exit denominations (in CREDITS) a Type-20 shielded identity
+ * create may spend from the pool — 0.1 / 0.3 / 0.5 / 1.0 DASH. Source of
+ * truth: `shielded_identity_create_denominations` in DPP; a submitted
+ * denomination not in the on-chain set is rejected at validation (← iOS
+ * `CreateIdentityView.shieldedIdentityCreateDenominations`).
+ */
+private val SHIELDED_IDENTITY_DENOMINATIONS: List<Pair<Long, String>> = listOf(
+    10_000_000_000L to "0.1 DASH",
+    30_000_000_000L to "0.3 DASH",
+    50_000_000_000L to "0.5 DASH",
+    100_000_000_000L to "1.0 DASH",
+)
 
 /**
  * Funding source + amount — the Swift `CreateIdentityView` funding/amount
@@ -302,14 +362,42 @@ private fun FundingSection(
                 modifier = Modifier.padding(top = 4.dp),
             )
         }
-        OutlinedTextField(
-            value = amountText,
-            onValueChange = onAmountChange,
-            label = { Text(if (source.amountInCredits) "Amount (credits)" else "Amount (duffs)") },
-            singleLine = true,
-            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = KeyboardType.Number),
-            modifier = Modifier.fillMaxWidth().testTag("createIdentity.amount"),
-        )
+        if (source == CreateIdentityFundingSource.ShieldedBalance) {
+            // Type-20 spends a FIXED exit denomination, not a free-form amount
+            // (← iOS's denomination Picker). The picked value flows back through
+            // [amountText] (in credits) so the submit path reads it uniformly.
+            val selectedDenom = SHIELDED_IDENTITY_DENOMINATIONS
+                .firstOrNull { it.first.toString() == amountText }
+                ?: SHIELDED_IDENTITY_DENOMINATIONS.first()
+            org.dashfoundation.example.ui.components.AccessiblePicker(
+                label = "Denomination",
+                options = SHIELDED_IDENTITY_DENOMINATIONS,
+                selected = selectedDenom,
+                optionLabel = { it.second },
+                testTag = "createIdentity.denominationPicker",
+                onSelected = { onAmountChange(it.first.toString()) },
+            )
+            Text(
+                "Spends one fixed-denomination note from the shielded pool. " +
+                    "Requires a synced pool with a note of this size.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 4.dp),
+            )
+        } else {
+            OutlinedTextField(
+                value = amountText,
+                onValueChange = onAmountChange,
+                label = {
+                    Text(if (source.amountInCredits) "Amount (credits)" else "Amount (duffs)")
+                },
+                singleLine = true,
+                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                    keyboardType = KeyboardType.Number,
+                ),
+                modifier = Modifier.fillMaxWidth().testTag("createIdentity.amount"),
+            )
+        }
     }
 }
 

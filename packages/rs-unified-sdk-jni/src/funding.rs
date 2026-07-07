@@ -39,11 +39,13 @@
 #![allow(clippy::missing_safety_doc)]
 #![cfg(feature = "shielded")]
 
+use crate::identity::{decode_pubkeys_blob, role_for_registration_key_id};
 use crate::support::{guard, take_pwffi_error, throw_sdk_exception, JVM};
 use jni::objects::{GlobalRef, JByteArray, JClass, JObject, JString};
 use jni::sys::{jboolean, jint, jlong, JNI_FALSE, JNI_TRUE};
 use jni::JNIEnv;
 use platform_wallet_ffi::handle::Handle;
+use platform_wallet_ffi::identity_registration_with_signer::IdentityPubkeyFFI;
 use std::os::raw::c_void;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::ptr;
@@ -642,6 +644,131 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shielde
             )
         };
         let _ = take_pwffi_error(env, result);
+    })
+}
+
+/// Create an identity funded from the shielded pool, Type 20 (bridges
+/// `platform_wallet_manager_shielded_identity_create_from_pool`).
+///
+/// Mirrors Swift's `PlatformWalletManager.shieldedIdentityCreateFromPool`:
+/// spends a note of the fixed exit `denomination` (credits — one of the
+/// on-chain `shielded_identity_create_denominations`: 0.1 / 0.3 / 0.5 /
+/// 1.0 DASH) from the wallet's bound Orchard pool (`account`) to fund a new
+/// identity at `identity_index`. `pubkeys_blob` is the SAME flat
+/// registration-key blob ID-08 uses (`IdentityKeyPreview.encodeForRegistration`),
+/// decoded + role-stamped by keyId exactly like
+/// [`Java_..._registerIdentityFromAddresses`]. `fallback_address` is the
+/// REQUIRED 21-byte `PlatformAddress` (1 variant tag + 20 hash) that
+/// receives the value (minus a penalty) if creation fails a stateful check
+/// — it is bound into the transition sighash. `signer_handle` is the
+/// Keystore identity signer (`mgr.signerHandle`). Blocks for the ~30s Halo 2
+/// proof; returns the new 32-byte identity id (written on success AND on the
+/// penalty-fallback path).
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shieldedIdentityCreateFromPool(
+    mut env: JNIEnv,
+    _class: JClass,
+    manager_handle: jlong,
+    wallet_id: JByteArray,
+    account: jint,
+    identity_index: jint,
+    pubkeys_blob: JByteArray,
+    denomination: jlong,
+    fallback_address: JByteArray,
+    signer_handle: jlong,
+) -> jni::sys::jbyteArray {
+    guard(&mut env, ptr::null_mut(), |env| {
+        if account < 0 {
+            throw_sdk_exception(env, 1, "account must be non-negative");
+            return ptr::null_mut();
+        }
+        if identity_index < 0 {
+            throw_sdk_exception(env, 1, "identityIndex must be non-negative");
+            return ptr::null_mut();
+        }
+        if denomination <= 0 {
+            throw_sdk_exception(env, 1, "denomination must be positive");
+            return ptr::null_mut();
+        }
+        if signer_handle == 0 {
+            throw_sdk_exception(env, 1, "signerHandle must be non-null");
+            return ptr::null_mut();
+        }
+        let Some(wid) = read_id32(env, &wallet_id, "walletId") else {
+            return ptr::null_mut();
+        };
+
+        let Some(decoded) = decode_pubkeys_blob(env, &pubkeys_blob) else {
+            return ptr::null_mut();
+        };
+        if decoded.is_empty() {
+            throw_sdk_exception(env, 1, "pubkeysBlob contained no keys");
+            return ptr::null_mut();
+        }
+
+        // The 21-byte fallback PlatformAddress (1 variant tag + 20 hash),
+        // REQUIRED for Type-20 — validated exactly here.
+        let fallback = match read_opt_bytes(env, &fallback_address) {
+            Ok(Some(v)) => v,
+            Ok(None) => {
+                throw_sdk_exception(env, 1, "fallbackAddress must not be null");
+                return ptr::null_mut();
+            }
+            Err(()) => return ptr::null_mut(),
+        };
+        if fallback.len() != 21 {
+            throw_sdk_exception(
+                env,
+                1,
+                &format!("fallbackAddress must be 21 bytes, got {}", fallback.len()),
+            );
+            return ptr::null_mut();
+        }
+
+        // Same positional keyId → DPP role assignment as ID-01 / ID-08.
+        let ffi_rows: Vec<IdentityPubkeyFFI> = decoded
+            .iter()
+            .map(|(key_id, bytes)| {
+                let (key_type, purpose, security_level) = role_for_registration_key_id(*key_id);
+                IdentityPubkeyFFI {
+                    key_id: *key_id,
+                    key_type,
+                    purpose,
+                    security_level,
+                    pubkey_bytes: bytes.as_ptr(),
+                    pubkey_len: bytes.len(),
+                    read_only: false,
+                    contract_bounds_kind: 0,
+                    contract_bounds_id: ptr::null(),
+                    contract_bounds_document_type: ptr::null(),
+                }
+            })
+            .collect();
+
+        let mut out_id = [0u8; 32];
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_manager_shielded_identity_create_from_pool(
+                manager_handle as Handle,
+                wid.as_ptr(),
+                account as u32,
+                identity_index as u32,
+                ffi_rows.as_ptr(),
+                ffi_rows.len(),
+                denomination as u64,
+                fallback.as_ptr(),
+                signer_handle as *mut SignerHandle,
+                &mut out_id as *mut [u8; 32],
+            )
+        };
+        // `decoded` / `ffi_rows` / `fallback` own the pointed-to buffers
+        // through the blocking FFI call above.
+        if take_pwffi_error(env, result) {
+            return ptr::null_mut();
+        }
+        env.byte_array_from_slice(&out_id)
+            .map(|a| a.into_raw())
+            .unwrap_or(ptr::null_mut())
     })
 }
 

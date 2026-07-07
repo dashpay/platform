@@ -116,6 +116,29 @@ internal object FundingNative {
         signerAddressHandle: Long,
     )
 
+    /**
+     * Create an identity funded from the shielded pool, Type 20 (bridges
+     * `platform_wallet_manager_shielded_identity_create_from_pool`). Spends a
+     * note of the fixed exit [denomination] (credits — one of the on-chain
+     * 0.1/0.3/0.5/1.0 DASH set) from the wallet's bound Orchard pool
+     * ([account]) to fund a new identity at [identityIndex]. [pubkeysBlob] is
+     * the same flat registration-key blob ID-08 uses; [fallbackAddress] is
+     * the REQUIRED 21-byte PlatformAddress that receives the value (minus a
+     * penalty) if creation fails a stateful check. [signerAddressHandle] is
+     * the Keystore identity signer. Blocks for the ~30s Halo 2 proof; returns
+     * the new 32-byte identity id.
+     */
+    external fun shieldedIdentityCreateFromPool(
+        managerHandle: Long,
+        walletId: ByteArray,
+        account: Int,
+        identityIndex: Int,
+        pubkeysBlob: ByteArray,
+        denomination: Long,
+        fallbackAddress: ByteArray,
+        signerAddressHandle: Long,
+    ): ByteArray
+
     // ── Shielded outgoing spends (types 16/17/19) ─────────────────────
     //
     // Manager-handle calls like the funding submits above; each signs with

@@ -93,7 +93,7 @@ const SECURITY_LEVEL_HIGH: u8 = 2;
 /// created identity had no CRITICAL auth key and no TRANSFER key, and all
 /// token / credit-transfer / withdrawal writes failed validation right
 /// after creation. If DPP renumbers any discriminant, update this table.
-fn role_for_registration_key_id(key_id: u32) -> (u8, u8, u8) {
+pub(crate) fn role_for_registration_key_id(key_id: u32) -> (u8, u8, u8) {
     let (purpose, security_level) = match key_id {
         0 => (PURPOSE_AUTHENTICATION, SECURITY_LEVEL_MASTER),
         1 => (PURPOSE_AUTHENTICATION, SECURITY_LEVEL_CRITICAL),
@@ -834,7 +834,10 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_regist
 /// Decode the registration pubkeys BLOB into `(keyId, bytes)` rows whose
 /// buffers the caller keeps alive across the FFI call. Throws + returns
 /// None on a malformed blob.
-fn decode_pubkeys_blob(env: &mut JNIEnv, arr: &JByteArray) -> Option<Vec<(u32, Vec<u8>)>> {
+pub(crate) fn decode_pubkeys_blob(
+    env: &mut JNIEnv,
+    arr: &JByteArray,
+) -> Option<Vec<(u32, Vec<u8>)>> {
     let bytes = match env.convert_byte_array(arr) {
         Ok(b) => b,
         Err(_) => {

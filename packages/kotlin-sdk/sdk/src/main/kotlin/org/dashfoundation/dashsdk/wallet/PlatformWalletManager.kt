@@ -908,6 +908,48 @@ class PlatformWalletManager(
     }
 
     /**
+     * Create an identity funded from the shielded pool (Type 20) — port of
+     * Swift's `shieldedIdentityCreateFromPool`. Spends a note of the fixed
+     * exit [denomination] (credits — one of the on-chain 0.1/0.3/0.5/1.0 DASH
+     * denominations) from the wallet's bound Orchard pool ([account]) to fund
+     * a new identity at [identityIndex]. [keys] are the derived + persisted
+     * canonical registration keys, encoded to the same blob ID-08 uses.
+     * [fallbackAddress] is the REQUIRED 21-byte PlatformAddress that receives
+     * the value (minus a penalty) if creation fails a stateful check. Signed
+     * by the Keystore identity signer ([signerHandle]). Blocks for the ~30s
+     * Halo 2 proof.
+     *
+     * @return the new 32-byte identity id.
+     */
+    suspend fun shieldedIdentityCreateFromPool(
+        walletId: ByteArray,
+        identityIndex: Int,
+        keys: List<org.dashfoundation.dashsdk.identity.IdentityKeyPreview>,
+        denomination: Long,
+        fallbackAddress: ByteArray,
+        account: Int = 0,
+    ): ByteArray = withContext(Dispatchers.IO) {
+        require(identityIndex >= 0) { "identityIndex must be non-negative, got $identityIndex" }
+        require(denomination > 0) { "denomination must be positive, got $denomination" }
+        require(fallbackAddress.size == 21) {
+            "fallbackAddress must be 21 bytes, got ${fallbackAddress.size}"
+        }
+        require(keys.isNotEmpty()) { "keys must not be empty" }
+        mapNativeErrors {
+            FundingNative.shieldedIdentityCreateFromPool(
+                managerHandle,
+                walletId,
+                account,
+                identityIndex,
+                org.dashfoundation.dashsdk.identity.IdentityKeyPreview.encodeForRegistration(keys),
+                denomination,
+                fallbackAddress,
+                signerHandle,
+            )
+        }
+    }
+
+    /**
      * Resume a stuck shielded fund-from-asset-lock from an already-tracked
      * lock — port of Swift's `shieldedResumeFundFromAssetLock`.
      *
