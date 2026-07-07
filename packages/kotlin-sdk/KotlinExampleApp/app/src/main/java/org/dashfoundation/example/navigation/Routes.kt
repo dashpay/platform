@@ -49,8 +49,22 @@ import kotlinx.serialization.Serializable
 /** Per-wallet transaction timeline (← `TransactionListView.swift`). */
 @Serializable data class WalletTransactions(val walletIdHex: String)
 
-/** One transaction's fields (← `TransactionDetailView.swift`). */
-@Serializable data class WalletTransactionDetail(val txidHex: String)
+/**
+ * One transaction's fields (← `TransactionDetailView.swift`).
+ *
+ * [assetLockAmountDuffs] carries the linked asset-lock burn amount from the
+ * list row (← the iOS view's `assetLockAmountDuffs` init parameter) — nav
+ * args don't support nullable `Long`, so [AMOUNT_ABSENT] stands in for
+ * "none/unknown".
+ */
+@Serializable data class WalletTransactionDetail(
+    val txidHex: String,
+    val assetLockAmountDuffs: Long = AMOUNT_ABSENT,
+) {
+    companion object {
+        const val AMOUNT_ABSENT: Long = Long.MIN_VALUE
+    }
+}
 
 /**
  * Camera QR scanner (← `QRScannerView.swift`). Returns the raw scanned

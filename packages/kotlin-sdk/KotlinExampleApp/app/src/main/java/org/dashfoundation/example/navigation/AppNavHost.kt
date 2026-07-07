@@ -136,7 +136,12 @@ fun AppNavHost(
 
         composable<WalletTransactionDetail> { entry ->
             val route = entry.toRoute<WalletTransactionDetail>()
-            TransactionDetailScreen(route.txidHex, navController)
+            TransactionDetailScreen(
+                route.txidHex,
+                navController,
+                assetLockAmountDuffs = route.assetLockAmountDuffs
+                    .takeIf { it != WalletTransactionDetail.AMOUNT_ABSENT },
+            )
         }
 
         composable<QrScanner> { QrScannerScreen(navController) }
