@@ -220,15 +220,18 @@ fun SendTransactionScreen(
     // .swift:374): the Shielded source appears once the pool holds notes;
     // Core stays first (and always offered) for Core recipients so the
     // plain L1 flow is the default.
-    val availableSources = remember(addressType, hasShielded, shieldedBalance) {
+    val availableSources = remember(addressType, hasShielded, shieldedBalance, platformBalance) {
         val shieldedSource =
             if (hasShielded && shieldedBalance > 0) listOf(FundSource.SHIELDED) else emptyList()
-        // Shield-from-Platform (Type 15, SH-03) is offered for a shielded
-        // recipient on any shielded build — it funds from the transparent
-        // Platform-Payment balance, so it needs no existing pool notes
-        // (← iOS availableSources offering .platform for an .orchard recipient).
+        // Shield-from-Platform (Type 15, SH-03) funds a shielded recipient
+        // from the transparent Platform-Payment balance — it needs no
+        // existing pool notes, but is only offered when that balance is
+        // non-zero, so an empty Platform balance can't auto-select a flow
+        // that shows 0 spendable yet still enables submit
+        // (← iOS SendViewModel.availableSources gates .platform on
+        // platformBalance > 0 for an .orchard recipient).
         val platformShieldSource =
-            if (hasShielded) listOf(FundSource.PLATFORM) else emptyList()
+            if (hasShielded && platformBalance > 0) listOf(FundSource.PLATFORM) else emptyList()
         when (addressType) {
             is DashAddressType.Core -> listOf(FundSource.CORE) + shieldedSource
             is DashAddressType.Orchard -> shieldedSource + platformShieldSource
