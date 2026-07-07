@@ -51,6 +51,7 @@ import org.dashfoundation.example.navigation.TopUpIdentityFromCore
 import org.dashfoundation.example.navigation.TransferCredits
 import org.dashfoundation.example.navigation.TransferToAddress
 import org.dashfoundation.example.navigation.WithdrawCredits
+import org.dashfoundation.example.ui.components.ErrorAlertDialog
 import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.LabeledContent
 import org.dashfoundation.example.util.Base58
@@ -107,6 +108,7 @@ fun IdentityDetailScreen(identityIdHex: String, navController: NavHostController
     // targeted UPDATE, so isLocal / alias / keys are preserved.
     val scope = rememberCoroutineScope()
     var isRefreshing by remember { mutableStateOf(false) }
+    var refreshError by remember { mutableStateOf<String?>(null) }
 
     // Probe the locally-known labels for live contests this identity is
     // contending (capped — each probe is one network round-trip).
@@ -165,6 +167,14 @@ fun IdentityDetailScreen(identityIdHex: String, navController: NavHostController
                                         container.database.identityDao()
                                             .updateBalance(idBytes, balance, System.currentTimeMillis())
                                     }
+                                } catch (e: Exception) {
+                                    // A manual refresh failing (DAPI/network
+                                    // outage, or a Room write error) must not
+                                    // escape this rememberCoroutineScope launch
+                                    // and tear down the screen — surface it and
+                                    // keep the UI usable, like the other
+                                    // SDK-backed identity actions.
+                                    refreshError = e.message ?: "Failed to refresh identity"
                                 } finally {
                                     isRefreshing = false
                                 }
@@ -319,6 +329,8 @@ fun IdentityDetailScreen(identityIdHex: String, navController: NavHostController
             }
         }
     }
+
+    ErrorAlertDialog(message = refreshError, onDismiss = { refreshError = null })
 }
 
 /** Cap on per-label contest probes (each is a network round-trip). */
