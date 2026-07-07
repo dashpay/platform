@@ -34,6 +34,15 @@ interface TxoDao {
     @Query("SELECT * FROM txos WHERE outpoint = :outpoint")
     suspend fun getByOutpoint(outpoint: ByteArray): TxoEntity?
 
+    /**
+     * TXOs linked to a spending transaction but not yet marked spent —
+     * the spend-flip reconcile set for [spendingTxid]'s confirmation
+     * (the tx-upsert pass that flips `isSpent` once the spend is
+     * in-block; see `onWalletChangesetTransaction`).
+     */
+    @Query("SELECT * FROM txos WHERE spendingTxid = :spendingTxid AND isSpent = 0")
+    suspend fun getUnspentBySpendingTxid(spendingTxid: ByteArray): List<TxoEntity>
+
     @Upsert
     suspend fun upsert(txo: TxoEntity)
 
