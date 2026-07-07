@@ -3,7 +3,7 @@
 //! Upstream `key_wallet_manager::WalletManager` exposes a
 //! `broadcast::Sender<WalletEvent>` and a `subscribe_events()` accessor
 //! returning a `broadcast::Receiver<WalletEvent>`; consumers attach at
-//! startup and drain the stream. [`spawn_wallet_event_adapter`] is the
+//! startup and drain the stream. [`wallet_event_adapter_loop`] is the
 //! platform-wallet-side consumer: a tokio task that pulls events off
 //! that broadcast, projects each one into a
 //! [`CoreChangeSet`](crate::changeset::CoreChangeSet), wraps it in a
@@ -19,10 +19,11 @@
 //!
 //! # Lifetime
 //!
-//! [`spawn_wallet_event_adapter`] returns a [`JoinHandle`]. The caller
-//! (typically `PlatformWalletManager`) keeps the handle for the
-//! manager's lifetime; on shutdown, fire the [`CancellationToken`] to
-//! make the task exit cleanly.
+//! [`wallet_event_adapter_loop`] is the task body. The caller (typically
+//! `PlatformWalletManager`) registers it on the shared `ThreadRegistry`
+//! via `start_task`, which owns its [`JoinHandle`](tokio::task::JoinHandle)
+//! and cancellation; on shutdown the registry fires the
+//! [`CancellationToken`] to make the task exit cleanly and joins it.
 
 use std::sync::Arc;
 
@@ -32,89 +33,197 @@ use key_wallet::managed_account::transaction_record::{OutputRole, TransactionRec
 use key_wallet::transaction_checking::TransactionContext;
 use key_wallet::Utxo;
 use key_wallet_manager::{WalletEvent, WalletId, WalletManager};
-use tokio::sync::broadcast::error::RecvError;
+use tokio::sync::broadcast::error::{RecvError, TryRecvError};
+use tokio::sync::broadcast::Receiver;
 use tokio::sync::RwLock;
-use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
 use crate::changeset::changeset::{CoreChangeSet, PlatformWalletChangeSet};
 use crate::changeset::traits::PlatformWalletPersistence;
+use crate::changeset::Merge;
 use crate::wallet::platform_wallet::PlatformWalletInfo;
 
-/// Spawn the wallet-event subscriber task.
+/// Bound on the on-cancel drain — caps how many buffered events the
+/// adapter persists after cancellation before exiting. Sized well above
+/// the upstream broadcast capacity (currently 256) so a normal teardown
+/// drains everything, while a pathological flood can't stall shutdown.
+const CANCEL_DRAIN_BUDGET: usize = 4096;
+
+/// Single-account observation. The storage writer hardcodes
+/// `core_utxos.account_index = 0` (the product uses only the default
+/// account, and that column drives only cosmetic per-account grouping). A
+/// UTXO-bearing record owned by a non-default funds account is STILL
+/// persisted under index 0 — never skipped, because skipping it would
+/// undercount the wallet balance and lose funds. We only `warn!` so the
+/// approximate grouping is visible. Identity/provider account types carry
+/// no funds index (`AccountType::index() == None`) and never emit
+/// `Received`/`Change` UTXOs, so they never warn.
+fn warn_if_non_default_account(record: &TransactionRecord) {
+    if let Some(index) = record.account_type.index() {
+        if index != 0 {
+            tracing::warn!(
+                account_index = index,
+                txid = %record.txid,
+                "non-default account UTXO persisted under account_index 0; \
+                 per-account grouping is approximate"
+            );
+        }
+    }
+}
+
+/// The wallet-event subscriber loop (the task body owned by the registry).
 ///
-/// Subscribes to `wallet_manager.subscribe_events()` from inside the
-/// spawned task (so the call-site doesn't need to be on a tokio
-/// runtime), then loops dispatching events to the persister via
-/// [`PlatformWalletPersistence::store`]. Exits when `cancel` fires
-/// or the upstream broadcast channel closes.
+/// Subscribes to `wallet_manager.subscribe_events()` from inside the task
+/// (so the call-site doesn't need to be on a tokio runtime), then loops
+/// dispatching events to the persister via
+/// [`PlatformWalletPersistence::store`]. Exits when `cancel` fires or the
+/// upstream broadcast channel closes.
 ///
-/// Generic over `P` so the spawned task gets static-dispatch on
-/// every `persister.store(...)` call. Pass the manager's own
-/// `Arc<P>` (not the `Arc<dyn PlatformWalletPersistence>`
-/// coercion) to actually realize the static-dispatch win.
-pub fn spawn_wallet_event_adapter<P>(
+/// On cancellation the adapter drains any events already buffered on the
+/// receiver before exiting (bounded by [`CANCEL_DRAIN_BUDGET`]). Without
+/// that drain, a `TransactionInstantLocked` (which P2P does not replay)
+/// emitted just before stop would be lost — the next sync subscribes
+/// fresh and only sees future events. Other event kinds (block-driven)
+/// are re-emitted on the next SPV resync from `last_processed_height`,
+/// but the drain treats them uniformly.
+///
+/// Generic over `P` so the task gets static-dispatch on every
+/// `persister.store(...)` call. Pass the manager's own `Arc<P>` (not the
+/// `Arc<dyn PlatformWalletPersistence>` coercion) to realize that win.
+pub async fn wallet_event_adapter_loop<P>(
     wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
     persister: Arc<P>,
     cancel: CancellationToken,
-) -> JoinHandle<()>
+) where
+    P: PlatformWalletPersistence + 'static,
+{
+    let mut receiver = {
+        let guard = wallet_manager.read().await;
+        guard.subscribe_events()
+    };
+    tracing::debug!("wallet-event adapter task started");
+
+    loop {
+        tokio::select! {
+            recv = receiver.recv() => {
+                match recv {
+                    Ok(event) => {
+                        process_event(&wallet_manager, persister.as_ref(), event).await;
+                    }
+                    Err(RecvError::Closed) if cancel.is_cancelled() => break,
+                    Err(RecvError::Closed) => {
+                        tracing::error!("WalletEvent broadcast closed unexpectedly");
+                        break;
+                    }
+                    Err(RecvError::Lagged(n)) => {
+                        tracing::warn!(
+                            missed = n,
+                            "wallet-event adapter lagged on broadcast channel; some events were dropped"
+                        );
+                    }
+                }
+            }
+            _ = cancel.cancelled() => {
+                // Drain buffered events before exiting: P2P does not
+                // replay IS-locks, so an event emitted just before
+                // cancel would be silently lost without this drain.
+                let drained = drain_buffered_events(
+                    &mut receiver,
+                    &wallet_manager,
+                    persister.as_ref(),
+                    CANCEL_DRAIN_BUDGET,
+                )
+                .await;
+                if drained > 0 {
+                    tracing::debug!(
+                        drained,
+                        "wallet-event adapter drained buffered events on cancel",
+                    );
+                }
+                break;
+            }
+        }
+    }
+    tracing::debug!("wallet-event adapter task exiting");
+}
+
+/// Project a single event into the persister. Shared by the live loop
+/// and the on-cancel drain so they cannot drift in behaviour.
+async fn process_event<P>(
+    wallet_manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+    persister: &P,
+    event: WalletEvent,
+) where
+    P: PlatformWalletPersistence + 'static,
+{
+    let wallet_id = event.wallet_id();
+    // For events that need to consult per-wallet state (today only
+    // `TransactionInstantLocked`, which checks finality before recording
+    // the IS lock), grab a brief read lock on the manager.
+    let core = build_core_changeset(wallet_manager, &event).await;
+    if core.is_empty() {
+        // SyncHeightAdvanced for an unknown wallet, empty BlockProcessed,
+        // etc. — nothing to persist. Skip the round-trip.
+        return;
+    }
+    let cs = PlatformWalletChangeSet {
+        core: Some(core),
+        ..PlatformWalletChangeSet::default()
+    };
+    if let Err(e) = persister.store(wallet_id, cs) {
+        tracing::warn!(
+            wallet_id = %hex::encode(wallet_id),
+            error = %e,
+            "Persister rejected core changeset; state will be re-emitted on next sync round"
+        );
+    }
+}
+
+/// Drain at most `budget` buffered events from `receiver` through
+/// [`process_event`]. Returns the count drained. Stops on empty, closed
+/// channel, or budget exhaustion; logs a warning on `Lagged`.
+//
+// TODO: add a unit test covering this path — synthesise WalletEvents on
+// the broadcast, fire `cancel`, assert the drained count. Blocked on
+// the absence of an existing test scaffold for `wallet_event_adapter_loop`.
+async fn drain_buffered_events<P>(
+    receiver: &mut Receiver<WalletEvent>,
+    wallet_manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+    persister: &P,
+    budget: usize,
+) -> usize
 where
     P: PlatformWalletPersistence + 'static,
 {
-    tokio::spawn(async move {
-        let mut receiver = {
-            let guard = wallet_manager.read().await;
-            guard.subscribe_events()
-        };
-        tracing::debug!("wallet-event adapter task started");
-
-        loop {
-            tokio::select! {
-                recv = receiver.recv() => {
-                    match recv {
-                        Ok(event) => {
-                            let wallet_id = event.wallet_id();
-                            // For events that need to consult per-wallet
-                            // state (today only `TransactionInstantLocked`,
-                            // which checks finality before recording the IS
-                            // lock), grab a brief read lock on the manager.
-                            let core = build_core_changeset(&wallet_manager, &event).await;
-                            if core.is_empty_no_records() {
-                                // SyncHeightAdvanced for an unknown wallet,
-                                // empty BlockProcessed, etc. — nothing to
-                                // persist. Skip the round-trip.
-                                continue;
-                            }
-                            let cs = PlatformWalletChangeSet {
-                                core: Some(core),
-                                ..PlatformWalletChangeSet::default()
-                            };
-                            if let Err(e) = persister.store(wallet_id, cs) {
-                                tracing::warn!(
-                                    wallet_id = %hex::encode(wallet_id),
-                                    error = %e,
-                                    "Persister rejected core changeset; state will be re-emitted on next sync round"
-                                );
-                            }
-                        }
-                        Err(RecvError::Closed) if cancel.is_cancelled() => break,
-                        Err(RecvError::Closed) => {
-                            tracing::error!("WalletEvent broadcast closed unexpectedly");
-                            break;
-                        }
-                        Err(RecvError::Lagged(n)) => {
-                            tracing::warn!(
-                                missed = n,
-                                "wallet-event adapter lagged on broadcast channel; some events were dropped"
-                            );
-                        }
-                    }
-                }
-                _ = cancel.cancelled() => break,
+    let mut drained = 0;
+    let mut attempts = 0;
+    // `attempts` (not `drained`) bounds the loop so a sustained `Lagged`
+    // stream — which logs but produces no persisted event — still hits
+    // the cap and exits, preserving the bounded-teardown guarantee.
+    while attempts < budget {
+        attempts += 1;
+        match receiver.try_recv() {
+            Ok(event) => {
+                process_event(wallet_manager, persister, event).await;
+                drained += 1;
+            }
+            Err(TryRecvError::Empty) | Err(TryRecvError::Closed) => break,
+            Err(TryRecvError::Lagged(n)) => {
+                tracing::warn!(
+                    missed = n,
+                    "wallet-event adapter lagged during cancel drain; some events were dropped"
+                );
             }
         }
-        tracing::debug!("wallet-event adapter task exiting");
-    })
+    }
+    if attempts == budget {
+        tracing::warn!(
+            budget,
+            drained,
+            "wallet-event adapter cancel-drain hit budget; further buffered events dropped"
+        );
+    }
+    drained
 }
 
 /// Project an upstream [`WalletEvent`] into a [`CoreChangeSet`] suitable
@@ -129,6 +238,8 @@ async fn build_core_changeset(
             addresses_derived,
             ..
         } => {
+            // Persist regardless of account; warn on a non-default account.
+            warn_if_non_default_account(record);
             // Derive UTXO deltas before moving the record into `records`
             // so the per-record borrows are still live.
             CoreChangeSet {
@@ -169,10 +280,9 @@ async fn build_core_changeset(
         } => {
             let mut cs = CoreChangeSet::default();
             // Inserted records bring fresh UTXOs and may consume previous
-            // ones — always project. Per-account attribution is resolved by
-            // the storage layer via the address→account_index lookup over
-            // `addresses_derived` (forwarded below).
+            // ones — warn on a non-default account, but always project.
             for r in inserted {
+                warn_if_non_default_account(r);
                 cs.new_utxos.extend(derive_new_utxos(r));
                 cs.spent_utxos.extend(derive_spent_utxos(r));
             }
@@ -214,12 +324,9 @@ async fn build_core_changeset(
             // persistence, not a re-application.
             //
             // `ChainLockProcessed` fires every time the wallet's
-            // `last_applied_chain_lock` advances,
-            // even when no record was promoted — so a quiescent wallet's
-            // boundary advance is no longer invisible to this bridge.
-            // The earlier `TransactionsChainlocked`-only signal had a
-            // gap on the "metadata advanced but per-account empty"
-            // path; the new event closes it deterministically.
+            // `last_applied_chain_lock` advances (dashpay/rust-dashcore#769),
+            // so a quiescent wallet's boundary advance still reaches
+            // this bridge even when no record was promoted.
             CoreChangeSet {
                 last_applied_chain_lock: Some(chain_lock.clone()),
                 ..CoreChangeSet::default()
@@ -340,24 +447,8 @@ fn derive_spent_utxos(record: &TransactionRecord) -> Vec<Utxo> {
         .collect()
 }
 
-impl CoreChangeSet {
-    /// Cheap "should we bother round-tripping the persister" check used
-    /// by the adapter to drop empty events without locking. Skips the
-    /// `is_empty()` walk over `instant_locks_for_non_final_records`
-    /// since that map is rarely populated and `Vec::is_empty` short-
-    /// circuits on the common case.
-    fn is_empty_no_records(&self) -> bool {
-        self.records.is_empty()
-            && self.spent_utxos.is_empty()
-            && self.new_utxos.is_empty()
-            && self.instant_locks_for_non_final_records.is_empty()
-            && self.last_processed_height.is_none()
-            && self.synced_height.is_none()
-            && self.last_applied_chain_lock.is_none()
-            && self.addresses_derived.is_empty()
-    }
-}
-
+// merge: keep #3953's projection tests; is_empty_no_records dropped by our
+// refactor in favour of Merge::is_empty() (the adapter call site uses it).
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
@@ -459,11 +550,11 @@ mod tests {
     }
 
     /// REGRESSION (fund-loss): a non-default-account (index != 0) UTXO is
-    /// projected — never dropped. Storage resolves its account attribution
-    /// from the derived-address table; dropping it would undercount the
-    /// balance.
+    /// STILL projected — never dropped. Storage persists it under
+    /// `account_index 0`; the only cost is approximate per-account grouping
+    /// (a `warn!` is logged). Dropping it would undercount the balance.
     #[tokio::test]
-    async fn non_default_account_utxo_persists() {
+    async fn non_default_account_utxo_persists_under_zero() {
         let addr = p2pkh(0x22);
         let cs = changeset_for(record_with_received_output(standard(7), &addr, 900_000)).await;
         assert_eq!(

@@ -282,9 +282,9 @@ extension PlatformWalletManager {
             )
         }
         try platform_wallet_manager_shielded_sync_stop(handle).check()
-        // The Rust drain returned; bump the generation so any trailing
-        // completion event the main actor delivers after this point is
-        // dropped (its snapshot predates this bump).
+        // Rust stop is cancel-only. Bump the generation so any trailing
+        // completion event the main actor still delivers from a pre-stop
+        // snapshot is dropped on arrival.
         shieldedSyncGeneration.bump()
         // The dropped completion would normally clear the per-pass
         // progress mirrors; do it here so a pass stopped mid-flight

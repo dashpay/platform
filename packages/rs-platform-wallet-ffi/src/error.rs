@@ -160,6 +160,33 @@ pub enum PlatformWalletFFIResultCode {
     /// require an ABI-breaking change to `PlatformWalletFFIResult`).
     ErrorAddressNonceMismatch = 21,
 
+    /// A background coordinator drain did not complete cleanly within the
+    /// join deadline — one or more `!Send` sync threads may still be alive
+    /// and still hold a reference to the host-owned callback context, so they
+    /// could fire one final callback through it. On this code the host **must
+    /// not** free the callback context immediately: either keep it alive for a
+    /// further grace period, or accept the (statistically tiny) race.
+    ///
+    /// Returned by two callers, which differ in whether the operation may
+    /// be **retried**:
+    /// - `platform_wallet_manager_destroy`: the manager **IS** torn down
+    ///   (removed from storage) regardless — do **not** retry `destroy`; the
+    ///   handle is already gone. Only the callback-context lifetime caveat
+    ///   above applies.
+    /// - `platform_wallet_manager_shielded_clear`: the manager is **NOT** torn
+    ///   down and the store was left **intact** (Clear aborted before touching
+    ///   it). The host may retry the clear, and must **not** commit its own
+    ///   persistence wipe — doing so would desync the host's rows from the
+    ///   still-populated shared tree.
+    ///
+    /// `platform_wallet_manager_shielded_sync_stop` is cancel-only and
+    /// never returns this code; its companion join point is `destroy`.
+    ///
+    /// Distinct from a normal operation error (the underlying operation may
+    /// well have made progress); the terminal coordinator status is rendered
+    /// into the result message.
+    ErrorShutdownIncomplete = 22,
+
     NotFound = 98, // Used exclusively for all the Option that are retuned as errors
     ErrorUnknown = 99,
 }
@@ -307,6 +334,14 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             // the nonce.
             PlatformWalletError::AddressNonceMismatch { .. } => {
                 PlatformWalletFFIResultCode::ErrorAddressNonceMismatch
+            }
+            // A Clear that refused because the in-flight shielded pass didn't
+            // drain cleanly: surface it as ErrorShutdownIncomplete (symmetric
+            // with `platform_wallet_manager_destroy`) so the host defers
+            // freeing its callback context AND does not commit its own
+            // persistence wipe — the store was intentionally left intact.
+            PlatformWalletError::ShieldedShutdownIncomplete { .. } => {
+                PlatformWalletFFIResultCode::ErrorShutdownIncomplete
             }
             _ => PlatformWalletFFIResultCode::ErrorUnknown,
         };
@@ -680,6 +715,29 @@ mod tests {
             result.code,
             PlatformWalletFFIResultCode::ErrorTransactionBroadcastUnconfirmed,
             "TransactionBroadcastUnconfirmed should map to its dedicated code (rendered: {rendered})"
+        );
+        let msg = unsafe { std::ffi::CStr::from_ptr(result.message) }
+            .to_string_lossy()
+            .into_owned();
+        assert_eq!(msg, rendered, "Display payload must survive verbatim");
+    }
+
+    /// A Clear that refused on a non-clean shielded drain must surface as
+    /// `ErrorShutdownIncomplete` (symmetric with `destroy`), not flatten to
+    /// `ErrorUnknown`, so the host knows to defer freeing its callback
+    /// context and to NOT commit its own persistence wipe. The typed Display
+    /// rendering (carrying the terminal coordinator status) survives verbatim.
+    #[test]
+    fn shielded_shutdown_incomplete_maps_to_dedicated_code() {
+        let err = PlatformWalletError::ShieldedShutdownIncomplete {
+            status: platform_wallet::WorkerStatus::Timeout,
+        };
+        let rendered = err.to_string();
+        let result: PlatformWalletFFIResult = err.into();
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorShutdownIncomplete,
+            "ShieldedShutdownIncomplete should map to ErrorShutdownIncomplete (rendered: {rendered})"
         );
         let msg = unsafe { std::ffi::CStr::from_ptr(result.message) }
             .to_string_lossy()

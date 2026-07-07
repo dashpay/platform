@@ -1000,7 +1000,7 @@ pub unsafe fn free_wallet_changeset_ffi(cs: &WalletChangeSetFFI) {
     // round that ONLY advances the watermark (chain-lock arm with
     // empty per_account on the WalletEvent side wouldn't fire, but
     // a coalesced round may still resolve down to "just the CL"
-    // after `is_empty_no_records` filters out the other arms) must
+    // after `is_empty` filters out the other arms) must
     // still release the heap allocation we made in `from_changeset`.
     if !cs.last_applied_chain_lock_bytes.is_null() && cs.last_applied_chain_lock_bytes_len > 0 {
         drop(Vec::from_raw_parts(

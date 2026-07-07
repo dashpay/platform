@@ -135,17 +135,17 @@ public class PlatformWalletManager: ObservableObject {
     /// enqueue time and `handleShieldedSyncCompleted` drops any event whose
     /// snapshot no longer matches the current generation.
     ///
-    /// The Rust quiesce barrier guarantees no persistence after stop/clear,
-    /// but the completion callback is re-dispatched onto this `@MainActor`,
-    /// so a final, already-dispatched event can land just after stop/clear
-    /// returns. A plain boolean gate is bypassable: a caller can stop (set
-    /// the flag) and restart (clear the flag) in the same actor turn, which
-    /// re-opens the gate before the stale, previously-enqueued completion
-    /// task runs — so the old event leaks into the new run. Tying
-    /// suppression to a generation closes that race: the stale task carries
-    /// the pre-stop generation, the restart does not reset the counter, so
-    /// the snapshot mismatches and the event is dropped even on a same-turn
-    /// restart.
+    /// `stop` cancels the in-flight pass before its completion fires;
+    /// `clear` goes further with a full Rust-side quiesce. Either way, an
+    /// already-dispatched completion event can still land on this
+    /// `@MainActor` after stop/clear returns. A plain boolean gate is
+    /// bypassable: a caller can stop (set the flag) and restart (clear it)
+    /// in the same actor turn, re-opening the gate before the stale
+    /// completion task runs — so the old event leaks into the new run.
+    /// Tying suppression to a generation closes that race: the stale task
+    /// carries the pre-stop generation, the restart does not reset the
+    /// counter, so the snapshot mismatches and the event is dropped even
+    /// on a same-turn restart.
     ///
     /// `nonisolated` + lock-guarded so the FFI callback thread can snapshot
     /// it without hopping onto the main actor first.
@@ -193,8 +193,14 @@ public class PlatformWalletManager: ObservableObject {
     internal private(set) var handle: Handle = NULL_HANDLE
 
     /// Retained for the lifetime of the FFI handle so the callback
-    /// context pointer remains valid.
-    private var persistenceHandler: PlatformWalletPersistenceHandler?
+    /// context pointer remains valid. `nonisolated(unsafe)` so the
+    /// nonisolated `deinit` can `passRetained` the handler on an
+    /// incomplete-shutdown without Swift 6 strict-concurrency rejecting
+    /// the cross-isolation access — the FFI lifetime contract makes the
+    /// access safe (the handler is only ever read after the Rust side
+    /// has signalled the worker is wedged + the wrapper class itself is
+    /// being destroyed).
+    nonisolated(unsafe) private var persistenceHandler: PlatformWalletPersistenceHandler?
 
     /// SwiftData container + network captured at `configure`, used to build a
     /// `KeychainSigner` (the identity document signer) for the unlock-time
@@ -204,8 +210,9 @@ public class PlatformWalletManager: ObservableObject {
     private var signerNetwork: Network?
 
     /// Retained for the lifetime of the FFI handle so the event-handler
-    /// context pointer remains valid.
-    private var eventHandler: PlatformWalletEventHandler?
+    /// context pointer remains valid. See `persistenceHandler` for the
+    /// `nonisolated(unsafe)` rationale.
+    nonisolated(unsafe) private var eventHandler: PlatformWalletEventHandler?
 
     /// Background task that polls SPV progress.
     private var progressPollTask: Task<Void, Never>?
@@ -224,11 +231,50 @@ public class PlatformWalletManager: ObservableObject {
 
     deinit {
         progressPollTask?.cancel()
-        if handle != NULL_HANDLE {
-            platform_wallet_manager_platform_address_sync_stop(handle).discard()
-            platform_wallet_manager_shielded_sync_stop(handle).discard()
-            platform_wallet_manager_dashpay_sync_stop(handle).discard()
-            platform_wallet_manager_destroy(handle).discard()
+        guard handle != NULL_HANDLE else { return }
+
+        // Tear down the Rust manager: signal the host-driven sync loops
+        // (platform-address, shielded, DashPay) to cancel and `discard()`
+        // them — all cancel-only on the Rust side and none report an
+        // incomplete drain. Identity-sync, the DashPay drain, and the event
+        // adapter are joined inside `destroy` (which also drains the three
+        // loops signalled here), the single host-visible join point.
+        platform_wallet_manager_platform_address_sync_stop(handle).discard()
+        platform_wallet_manager_shielded_sync_stop(handle).discard()
+        platform_wallet_manager_dashpay_sync_stop(handle).discard()
+
+        // Capture the CODE (not just free the message) for the one call
+        // that CAN report `.errorShutdownIncomplete`: `destroy`. Rust
+        // returns that code when a background coordinator did not drain
+        // within the join deadline, or when a prior-generation shielded
+        // thread is still parked alive as an orphan (a tight
+        // `stop()`→`start()` reap that had to detach it past the wedge
+        // backstop). In either case a lingering `!Send` coordinator
+        // thread may still hold the `passUnretained` context pointers
+        // Rust was handed for our `persistenceHandler` / `eventHandler`
+        // and fire ONE final callback through them. The contract: on
+        // that code the host must NOT free the callback context
+        // immediately.
+        let destroyCode =
+            platform_wallet_manager_destroy(handle).discardReturningCode()
+
+        // Both handlers are passed to Rust via `Unmanaged.passUnretained`
+        // (see `PlatformWalletPersistenceHandler`/`PlatformWalletEventHandler`
+        // `makeCallbacks()`), so Rust holds non-owning pointers and these
+        // objects are kept alive ONLY by the stored properties below. The
+        // instant this deinit returns, ARC releases them — which would be a
+        // use-after-free if a lingering coordinator then fires its final
+        // callback. So, ONLY on an incomplete shutdown, deliberately leak one
+        // extra strong reference to each (an unbalanced `passRetained` that is
+        // never released) so they outlive any lingering thread. A clean
+        // shutdown (the common case) takes neither branch and releases the
+        // handlers normally — we never leak unconditionally. The leak is
+        // bounded by how often a shutdown wedges (rare) and trades two small
+        // objects for guaranteed callback safety, since an incomplete drain
+        // gives no later signal that the lingering thread has finally exited.
+        if destroyCode == .errorShutdownIncomplete {
+            if let persistenceHandler { _ = Unmanaged.passRetained(persistenceHandler) }
+            if let eventHandler { _ = Unmanaged.passRetained(eventHandler) }
         }
     }
 

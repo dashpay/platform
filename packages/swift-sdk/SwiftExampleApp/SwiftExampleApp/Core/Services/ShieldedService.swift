@@ -536,11 +536,15 @@ class ShieldedService: ObservableObject {
     ///
     /// What it does NOT touch:
     ///   * The manager-wide shielded sync loop is `stopShieldedSync`'d
-    ///     first so the persister callback can't re-derive the
-    ///     rows we're deleting. It restarts on either of the two
-    ///     bind paths: [`manualSync`] self-binding (which calls
-    ///     `startShieldedSync()` after a successful self-rebind),
-    ///     or `rebindWalletScopedServices` firing on a navigation.
+    ///     first (cancel-only — signals cancel and returns), then the
+    ///     `clearShielded()` call below provides the actual drain
+    ///     barrier: it raises a continuously-held quiescing gate, joins
+    ///     the in-flight pass, and returns `errorShutdownIncomplete`
+    ///     instead of wiping if the join was non-clean. The loop
+    ///     restarts on either of the two bind paths: [`manualSync`]
+    ///     self-binding (which calls `startShieldedSync()` after a
+    ///     successful self-rebind), or `rebindWalletScopedServices`
+    ///     firing on a navigation.
     ///   * The per-network commitment-tree SQLite file at
     ///     `dbPath(for:)`. Earlier revisions of this helper
     ///     unlinked it for a "true clean slate", but with no
@@ -599,15 +603,19 @@ class ShieldedService: ObservableObject {
         //    The single SQLite commitment-tree file stays open;
         //    the next `bindShielded` call repopulates the
         //    registries and the next sync re-saves notes via
-        //    the changeset path. Best-effort — failure logs but
-        //    doesn't abort the wipe.
+        //    the changeset path. Fail-closed: if `clearShielded`
+        //    throws, the Rust shielded store is still populated, so
+        //    we surface the error and skip the SwiftData wipe below
+        //    to keep the Swift mirror consistent with Rust state.
         if let managerForStop {
             do {
                 try managerForStop.clearShielded()
             } catch {
+                lastError = "Failed to reset Rust shielded state: \(error.localizedDescription)"
                 SDKLogger.error(
                     "ShieldedService.clearLocalState: clearShielded failed: \(error.localizedDescription)"
                 )
+                return
             }
         }
 

@@ -47,11 +47,13 @@
 //! identities are registered and the SDK is connected.
 
 use std::collections::BTreeMap;
-use std::sync::{
-    atomic::{AtomicBool, AtomicU64, Ordering},
-    Arc,
-};
+use std::sync::Arc;
+
+use dash_async::{RefcountedFlagGuard, ThreadRegistry};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+use super::coordinator_lifecycle::CoordinatorLifecycle;
+use super::WalletWorker;
 
 use dpp::balances::credits::TokenAmount;
 use dpp::prelude::Identifier;
@@ -63,7 +65,6 @@ use dash_sdk::platform::tokens::identity_token_balances::{
 use dash_sdk::platform::FetchMany;
 
 use crate::changeset::{PlatformWalletPersistence, TokenBalanceChangeSet};
-use crate::manager::loop_cancel::LoopCancelGuard;
 use crate::wallet::platform_wallet::WalletId;
 
 /// Default cadence for the identity-token sync loop.
@@ -158,22 +159,14 @@ where
     /// over `P` so every `persister.store(...)` call on the hot sync
     /// loop dispatches statically.
     persister: Arc<P>,
-    /// Generation-guarded cancel-token slot for the background loop —
-    /// see [`LoopCancelGuard`] for the stale-loop shutdown invariant.
-    cancel_guard: LoopCancelGuard,
-    interval_secs: AtomicU64,
-    is_syncing: AtomicBool,
-    /// Set by [`quiesce`](Self::quiesce) to gate new passes while it
-    /// drains an in-flight one. `sync_now` bails (after taking the
-    /// `is_syncing` slot) when this is set, so once `quiesce` observes
-    /// `is_syncing == false` no further pass can start — giving shutdown
-    /// a real "no more host-visible persister stores" barrier that
+    /// Shared lifecycle state + pass-gating protocol under the
+    /// [`WalletWorker::IdentitySync`] key: the registry handle, polling
+    /// interval, the `is_syncing` / `quiescing` handshake, and the
+    /// last-sync stamp. `start` / `stop` / `is_running` / `quiesce` and the
+    /// `sync_now` pass gate delegate to it. The `quiescing` half gives
+    /// shutdown a real "no more host-visible persister stores" barrier that
     /// cancel-only [`stop`](Self::stop) does not provide.
-    quiescing: AtomicBool,
-    /// Unix seconds of the last completed pass across all identities.
-    /// `0` = never. Identity-level timestamps live on the per-identity
-    /// rows in [`IdentitySyncManager::state`].
-    last_sync_unix: AtomicU64,
+    lifecycle: CoordinatorLifecycle,
     /// Per-identity registry / cache. Keyed by identity id; each row
     /// carries the per-(identity, token) token rows plus the
     /// per-identity last-sync timestamp.
@@ -196,15 +189,19 @@ where
     /// writes). The registry starts empty — call
     /// [`register_identity`](Self::register_identity) before
     /// [`start`](Self::start).
-    pub fn new(sdk: Arc<dash_sdk::Sdk>, persister: Arc<P>) -> Self {
+    pub fn new(
+        sdk: Arc<dash_sdk::Sdk>,
+        persister: Arc<P>,
+        registry: Arc<ThreadRegistry<WalletWorker>>,
+    ) -> Self {
         Self {
             sdk,
             persister,
-            cancel_guard: LoopCancelGuard::new(),
-            interval_secs: AtomicU64::new(DEFAULT_SYNC_INTERVAL_SECS),
-            is_syncing: AtomicBool::new(false),
-            quiescing: AtomicBool::new(false),
-            last_sync_unix: AtomicU64::new(0),
+            lifecycle: CoordinatorLifecycle::new(
+                registry,
+                WalletWorker::IdentitySync,
+                DEFAULT_SYNC_INTERVAL_SECS,
+            ),
             state: RwLock::new(BTreeMap::new()),
         }
     }
@@ -305,32 +302,28 @@ where
     ///
     /// The running loop picks this up on its next sleep.
     pub fn set_interval(&self, interval: Duration) {
-        let secs = interval.as_secs().max(1);
-        self.interval_secs.store(secs, Ordering::Release);
+        self.lifecycle.set_interval(interval);
     }
 
     /// Current polling interval.
     pub fn interval(&self) -> Duration {
-        Duration::from_secs(self.interval_secs.load(Ordering::Acquire))
+        self.lifecycle.interval()
     }
 
     /// Whether the background loop is currently running.
     pub fn is_running(&self) -> bool {
-        self.cancel_guard.is_running()
+        self.lifecycle.is_running()
     }
 
     /// Whether a sync pass is in flight right now.
     pub fn is_syncing(&self) -> bool {
-        self.is_syncing.load(Ordering::Acquire)
+        self.lifecycle.is_syncing()
     }
 
     /// Unix seconds of the last completed pass (across all identities),
     /// or `None` if no pass has ever completed.
     pub fn last_sync_unix_seconds(&self) -> Option<u64> {
-        match self.last_sync_unix.load(Ordering::Acquire) {
-            0 => None,
-            n => Some(n),
-        }
+        self.lifecycle.last_sync_unix_seconds()
     }
 
     /// Per-identity last-sync timestamp.
@@ -388,48 +381,30 @@ where
     /// The first pass runs immediately; subsequent passes fire every
     /// [`interval`](Self::interval).
     pub fn start(self: Arc<Self>) {
-        let Some((cancel, my_generation)) = self.cancel_guard.install() else {
-            return;
-        };
-
-        let handle = tokio::runtime::Handle::current();
-        let this = self;
-        std::thread::Builder::new()
-            .name("identity-sync".into())
-            .spawn(move || {
-                handle.block_on(async move {
-                    loop {
-                        if cancel.is_cancelled() {
-                            break;
-                        }
-
-                        this.sync_now().await;
-
-                        let interval = this.interval();
-                        tokio::select! {
-                            _ = tokio::time::sleep(interval) => {}
-                            _ = cancel.cancelled() => break,
-                        }
-                    }
-
-                    this.cancel_guard.clear_if_current(my_generation);
-                });
-            })
-            .expect("failed to spawn identity-sync thread");
+        let pass_self = Arc::clone(&self);
+        let interval_self = Arc::clone(&self);
+        self.lifecycle.spawn_periodic_loop(
+            move || {
+                let this = Arc::clone(&pass_self);
+                async move { this.sync_now().await }
+            },
+            move || interval_self.interval(),
+        );
     }
 
     /// Stop the background sync loop. No-op if not running.
     ///
     /// **Cancel-only**: requests cancellation and returns immediately. A
-    /// pass already inside `sync_now` keeps running to completion,
-    /// including its `persister.store(...)` fan-out. For a real "nothing
-    /// is running and nothing more will be persisted" barrier — required
-    /// by manager shutdown so the host can free the persister context —
-    /// use [`quiesce`](Self::quiesce).
+    /// pass already inside `sync_now` is **cancelled mid-flight** at its
+    /// next `.await` (the loop's `biased; cancel-first` select drops the
+    /// `sync_now` future, see `start`). `persister.store(...)` calls that
+    /// completed before the cancel landed are committed; any in-flight
+    /// store is abandoned. For a real "nothing is running and nothing
+    /// more will be persisted" barrier — required by manager shutdown so
+    /// the host can free the persister context — use
+    /// [`quiesce`](Self::quiesce).
     pub fn stop(&self) {
-        if let Some(token) = self.cancel_guard.take() {
-            token.cancel();
-        }
+        self.lifecycle.stop();
     }
 
     /// Cancel the background loop **and wait for any in-flight sync pass
@@ -450,13 +425,22 @@ where
     /// so its falling edge (with the gate up) is a sound "fully drained"
     /// signal. The gate is reopened before returning so a later
     /// start/sync works normally.
-    pub async fn quiesce(&self) {
-        self.quiescing.store(true, Ordering::Release);
-        self.stop();
-        while self.is_syncing.load(Ordering::Acquire) {
-            tokio::time::sleep(Duration::from_millis(20)).await;
-        }
-        self.quiescing.store(false, Ordering::Release);
+    ///
+    /// Finally **joins** the loop's OS thread (after the drain, so the
+    /// thread is on its way out) and returns its terminal status. Joining
+    /// while the runtime is still alive is what lets the manager promise
+    /// the `!Send` loop has stopped touching `tokio::time` before a
+    /// one-shot host drops the runtime.
+    pub async fn quiesce(&self) -> dash_async::WorkerStatus {
+        self.lifecycle.quiesce().await
+    }
+
+    /// Raise this coordinator's `quiescing` gate and hold it until the
+    /// returned guard drops. `PlatformWalletManager::shutdown` holds one
+    /// across the whole teardown so a direct `sync_now` cannot slip past
+    /// `begin_pass` while the registry tears down the store sink.
+    pub(crate) fn hold_quiescing_gate(&self) -> RefcountedFlagGuard<'_> {
+        self.lifecycle.hold_quiescing_gate()
     }
 
     /// Run one sync pass across every registered identity.
@@ -470,22 +454,13 @@ where
     /// `!Send` (no `tokio::spawn`) and because the design brief
     /// explicitly forbids it.
     pub async fn sync_now(&self) {
-        if self
-            .is_syncing
-            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-            .is_err()
-        {
+        // Claim the pass slot and honour the quiescing gate; bail without
+        // work (and without a `persister.store(...)` after quiesce returns)
+        // if a pass is already in flight or a teardown raised the gate. The
+        // returned guard clears `is_syncing` on every exit path.
+        let Some(_pass) = self.lifecycle.begin_pass() else {
             return;
-        }
-
-        // A `quiesce()` may have raised the gate between our CAS and
-        // here; if so, release the slot and bail without running a pass
-        // so the drain can complete and shutdown gets a true barrier
-        // (no further `persister.store(...)` after quiesce returns).
-        if self.quiescing.load(Ordering::Acquire) {
-            self.is_syncing.store(false, Ordering::Release);
-            return;
-        }
+        };
 
         // Snapshot the per-identity watch list under a short read
         // lock and release it before any network call. We keep
@@ -508,8 +483,8 @@ where
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_secs())
             .unwrap_or(0);
-        self.last_sync_unix.store(now, Ordering::Release);
-        self.is_syncing.store(false, Ordering::Release);
+        self.lifecycle.store_last_sync_unix(now);
+        // `_pass` drops here → `is_syncing = false`
     }
 
     /// Sync a single identity's watched tokens against Platform.
@@ -650,7 +625,7 @@ where
         f.debug_struct("IdentitySyncManager")
             .field("is_running", &self.is_running())
             .field("is_syncing", &self.is_syncing())
-            .field("interval_secs", &self.interval_secs.load(Ordering::Acquire))
+            .field("interval_secs", &self.lifecycle.interval_secs())
             .field("last_sync_unix", &self.last_sync_unix_seconds())
             .finish()
     }
@@ -726,7 +701,8 @@ mod tests {
     fn make_manager() -> Arc<IdentitySyncManager<NoopPersister>> {
         let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
         let persister = Arc::new(NoopPersister);
-        Arc::new(IdentitySyncManager::new(sdk, persister))
+        let registry = ThreadRegistry::new();
+        Arc::new(IdentitySyncManager::new(sdk, persister, registry))
     }
 
     fn make_recording_manager() -> (
@@ -735,8 +711,13 @@ mod tests {
     ) {
         let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
         let persister = Arc::new(RecordingPersister::new());
+        let registry = ThreadRegistry::new();
         (
-            Arc::new(IdentitySyncManager::new(sdk, Arc::clone(&persister))),
+            Arc::new(IdentitySyncManager::new(
+                sdk,
+                Arc::clone(&persister),
+                registry,
+            )),
             persister,
         )
     }
@@ -857,63 +838,6 @@ mod tests {
         assert_eq!(mgr.interval(), Duration::from_secs(120));
     }
 
-    /// `quiesce()` must not return while a pass is in flight, and must
-    /// return promptly once the pass drains.
-    ///
-    /// Drives the real `is_syncing` lifecycle: a background task takes
-    /// the slot via the same `compare_exchange` the real `sync_now`
-    /// uses, holds it across a sleep (standing in for the pass body +
-    /// persister fan-out, which `sync_now` keeps the flag set across),
-    /// then clears it. We assert `quiesce()` is still pending while the
-    /// flag is held and completes after it falls — i.e. the falling edge
-    /// of `is_syncing` is what unblocks the barrier.
-    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn quiesce_blocks_until_in_flight_pass_drains() {
-        let mgr = make_manager();
-
-        // Stand in for an in-flight `sync_now`: take the `is_syncing`
-        // slot exactly as the real pass does, hold it, then release.
-        let holder = Arc::clone(&mgr);
-        let pass = tokio::spawn(async move {
-            assert!(
-                holder
-                    .is_syncing
-                    .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-                    .is_ok(),
-                "test should own the is_syncing slot"
-            );
-            tokio::time::sleep(Duration::from_millis(200)).await;
-            holder.is_syncing.store(false, Ordering::Release);
-        });
-
-        // Give the holder task a chance to take the slot before we
-        // start draining.
-        while !mgr.is_syncing() {
-            tokio::time::sleep(Duration::from_millis(5)).await;
-        }
-
-        let quiesce_fut = mgr.quiesce();
-        tokio::pin!(quiesce_fut);
-
-        // While the pass holds the flag, quiesce must stay pending.
-        tokio::select! {
-            _ = &mut quiesce_fut => panic!("quiesce returned while a pass was in flight"),
-            _ = tokio::time::sleep(Duration::from_millis(50)) => {}
-        }
-        assert!(mgr.is_syncing(), "pass should still be in flight");
-
-        // Once the pass drains, quiesce must return (well within a
-        // generous bound — it polls every 20ms).
-        tokio::time::timeout(Duration::from_secs(2), &mut quiesce_fut)
-            .await
-            .expect("quiesce did not return after the pass drained");
-
-        // The gate is reopened before quiesce returns.
-        assert!(!mgr.quiescing.load(Ordering::Acquire));
-        assert!(!mgr.is_syncing());
-        pass.await.unwrap();
-    }
-
     /// A `sync_now()` invoked while `quiescing` is set must bail without
     /// running the pass — in particular, without calling
     /// `persister.store(...)`. This is the gate that prevents a pass
@@ -925,8 +849,8 @@ mod tests {
         let token_x = Identifier::from([10u8; 32]);
         mgr.register_identity(id_a, [token_x]).await;
 
-        // Raise the gate as `quiesce()` would.
-        mgr.quiescing.store(true, Ordering::Release);
+        // Raise the gate as `quiesce()` would, held across the pass.
+        let _gate = mgr.lifecycle.hold_quiescing_gate();
 
         mgr.sync_now().await;
 

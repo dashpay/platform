@@ -547,7 +547,28 @@ pub unsafe extern "C" fn platform_wallet_manager_destroy(
         // left alive to fire a callback against freed memory.
         // `shutdown()` is idempotent, so this is safe even if the host
         // already stopped some sync managers before calling destroy.
-        runtime().block_on(manager.shutdown());
+        // It now joins the coordinator OS threads and returns their
+        // per-thread exit status; the C ABI exposes none of that, so we
+        // just log it (a panicked loop is worth surfacing) and drop it.
+        let status = runtime().block_on(manager.shutdown());
+        if !status.all_clean() {
+            tracing::warn!(
+                ?status,
+                "platform wallet coordinator(s) did not exit cleanly; \
+                 host must not free the callback context immediately"
+            );
+            // Return a distinct non-ok code so the host can delay freeing
+            // its callback context. A lingering coordinator thread (e.g. one
+            // that timed out) still holds an Arc to the event handler and may
+            // fire one final callback through the host-owned context pointer;
+            // returning ok() here would signal that the context is safe to
+            // free when it may not be yet.
+            return PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorShutdownIncomplete,
+                format!("coordinator(s) did not exit cleanly: {status:?}"),
+            );
+        }
+        tracing::debug!(?status, "platform wallet coordinators joined cleanly");
     }
     PlatformWalletFFIResult::ok()
 }

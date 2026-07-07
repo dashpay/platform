@@ -383,6 +383,24 @@ pub enum PlatformWalletError {
         /// The real pool's pool type at the same position.
         found: AddressPoolType,
     },
+
+    /// A Clear/wipe could not safely complete because the shielded sync
+    /// coordinator's in-flight pass did not drain cleanly first — it either
+    /// timed out on the join backstop or its loop ended non-cleanly
+    /// (cancelled / panicked). The shared commitment-tree store is therefore
+    /// **left intact** (not wiped): a still-running pass could re-persist
+    /// notes into the store immediately after a `clear()`, desyncing the
+    /// host's wiped rows from a repopulated tree and gate-skipping every
+    /// re-downloaded position on the next cold resync. The host **must not**
+    /// commit its own persistence wipe; retry Clear once the pass settles.
+    /// Carries the terminal [`WorkerStatus`](dash_async::WorkerStatus) for
+    /// diagnostics.
+    #[error(
+        "shielded clear aborted: sync coordinator did not drain cleanly \
+         ({status:?}); commitment-tree store left intact so an in-flight pass \
+         cannot re-persist into a wiped store — retry once the pass settles"
+    )]
+    ShieldedShutdownIncomplete { status: dash_async::WorkerStatus },
 }
 
 /// Check whether an SDK error indicates that an InstantSend lock proof was

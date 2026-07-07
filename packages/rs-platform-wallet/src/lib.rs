@@ -53,7 +53,11 @@ pub use manager::platform_address_sync::{
     DEFAULT_SYNC_INTERVAL_SECS,
 };
 pub use manager::rehydrate;
-pub use manager::PlatformWalletManager;
+pub use manager::{PlatformWalletManager, SHUTDOWN_JOIN_TIMEOUT_SECS};
+// `shutdown()` returns `ShutdownReport<WalletWorker>` and
+// `ShieldedShutdownIncomplete` carries a `WorkerStatus`; re-export both so
+// FFI consumers can read them without a direct `dash_async` dependency.
+pub use dash_async::{ShutdownReport, WorkerStatus};
 pub use spv::SpvRuntime;
 pub use wallet::asset_lock::manager::AssetLockManager;
 pub use wallet::asset_lock::tracked::{AssetLockStatus, TrackedAssetLock};

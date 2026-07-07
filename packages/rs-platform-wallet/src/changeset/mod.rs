@@ -35,7 +35,7 @@ pub use changeset::{
 };
 pub use client_start_state::ClientStartState;
 pub use client_wallet_start_state::ClientWalletStartState;
-pub use core_bridge::spawn_wallet_event_adapter;
+pub use core_bridge::wallet_event_adapter_loop;
 pub use identity_manager_start_state::IdentityManagerStartState;
 pub use merge::Merge;
 pub use platform_address_sync_start_state::PlatformAddressSyncStartState;
