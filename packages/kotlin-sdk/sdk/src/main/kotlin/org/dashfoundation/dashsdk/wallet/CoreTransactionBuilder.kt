@@ -19,10 +19,24 @@ import java.util.concurrent.atomic.AtomicLong
  * backstop; the class is NOT thread-safe (the FFI builder must be used from
  * one thread at a time).
  *
+ * ## Not a public API — drive only through [ManagedPlatformWallet.sendToAddresses]
+ *
+ * The constructor and the funding/signing steps are `internal`. [setFunding]
+ * performs native coin selection, but the selected UTXOs are only *reserved*
+ * later, inside [buildSigned] — and the wallet-manager lock cannot be held
+ * across the two separate FFI calls (see the `core_wallet_tx_builder_set_funding`
+ * doc-comment in `rs-platform-wallet-ffi`). So two concurrent same-account
+ * builds could both select the same UTXO and sign competing transactions.
+ * [ManagedPlatformWallet.sendToAddresses] is the only driver and serializes the
+ * whole `new → setFunding → buildSigned → broadcast` sequence under a per-wallet
+ * mutex; keeping the split API `internal` guarantees no external caller can
+ * reopen that race. (Swift leaves the builder `public` and relies only on
+ * incidental `@MainActor` single-threading between `setFunding` and `buildSigned`.)
+ *
  * @param network the wallet network — output and change addresses are
  *   validated against it Rust-side.
  */
-class CoreTransactionBuilder(network: Network) : AutoCloseable {
+class CoreTransactionBuilder internal constructor(network: Network) : AutoCloseable {
 
     /** Standard account derivation shape (mirror of `CoreAccountTypeFFI`). */
     enum class AccountType(val ffiValue: Int) {
@@ -53,32 +67,32 @@ class CoreTransactionBuilder(network: Network) : AutoCloseable {
         }
 
     /** Append a recipient output ([amountDuffs] > 0). */
-    fun addOutput(address: String, amountDuffs: Long): CoreTransactionBuilder = apply {
+    internal fun addOutput(address: String, amountDuffs: Long): CoreTransactionBuilder = apply {
         WalletManagerNative.coreTxBuilderAddOutput(handle, address, amountDuffs)
     }
 
     /** Override the change address (network-checked Rust-side). */
-    fun setChangeAddress(address: String): CoreTransactionBuilder = apply {
+    internal fun setChangeAddress(address: String): CoreTransactionBuilder = apply {
         WalletManagerNative.coreTxBuilderSetChangeAddress(handle, address)
     }
 
     /** Set the fee rate in duffs/kB (> 0). */
-    fun setFeeRate(satPerKb: Long): CoreTransactionBuilder = apply {
+    internal fun setFeeRate(satPerKb: Long): CoreTransactionBuilder = apply {
         WalletManagerNative.coreTxBuilderSetFeeRate(handle, satPerKb)
     }
 
     /** Set the coin-selection strategy. */
-    fun setSelectionStrategy(strategy: SelectionStrategy): CoreTransactionBuilder = apply {
+    internal fun setSelectionStrategy(strategy: SelectionStrategy): CoreTransactionBuilder = apply {
         WalletManagerNative.coreTxBuilderSetSelectionStrategy(handle, strategy.ffiValue)
     }
 
     /** Set the advisory chain-tip height (non-negative). */
-    fun setCurrentHeight(height: Int): CoreTransactionBuilder = apply {
+    internal fun setCurrentHeight(height: Int): CoreTransactionBuilder = apply {
         WalletManagerNative.coreTxBuilderSetCurrentHeight(handle, height)
     }
 
     /** Fund from the account's UTXOs and set its change address. */
-    fun setFunding(
+    internal fun setFunding(
         wallet: ManagedPlatformWallet,
         accountType: AccountType,
         accountIndex: Int,
@@ -99,7 +113,7 @@ class CoreTransactionBuilder(network: Network) : AutoCloseable {
      * @param coreSignerHandle a `MnemonicResolverHandle` (the manager's
      *   resolver) used for the Core ECDSA signatures.
      */
-    fun buildSigned(
+    internal fun buildSigned(
         wallet: ManagedPlatformWallet,
         accountType: AccountType,
         accountIndex: Int,
