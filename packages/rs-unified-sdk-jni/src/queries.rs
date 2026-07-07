@@ -9,13 +9,13 @@ use crate::results::{
     unwrap_string,
 };
 use crate::support::{guard, throw_sdk_exception};
-use jni::objects::{JByteArray, JClass, JObject, JString};
+use jni::objects::{JByteArray, JClass, JObject, JObjectArray, JString};
 use jni::sys::{jboolean, jint, jlong, jobject, jstring};
 use jni::JNIEnv;
 use rs_sdk_ffi::{
-    dash_sdk_address_fetch_info, dash_sdk_addresses_fetch_infos, dash_sdk_calculate_token_id,
-    dash_sdk_contested_resource_get_identity_votes, dash_sdk_contested_resource_get_resources,
-    dash_sdk_contested_resource_get_vote_state,
+    dash_sdk_add_known_contracts, dash_sdk_address_fetch_info, dash_sdk_addresses_fetch_infos,
+    dash_sdk_calculate_token_id, dash_sdk_contested_resource_get_identity_votes,
+    dash_sdk_contested_resource_get_resources, dash_sdk_contested_resource_get_vote_state,
     dash_sdk_contested_resource_get_voters_for_identity, dash_sdk_data_contract_destroy,
     dash_sdk_data_contract_fetch, dash_sdk_data_contract_fetch_json,
     dash_sdk_data_contract_fetch_result_free, dash_sdk_data_contract_fetch_with_serialization,
@@ -1460,5 +1460,115 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_QueriesNative_dataCon
             return ptr::null_mut();
         }
         array.into_raw()
+    })
+}
+
+/// Pre-load locally-stored data contracts into the SDK's trusted context
+/// provider so proof verification resolves them without a network fetch —
+/// the JNI bridge over `dash_sdk_add_known_contracts` (Swift
+/// `SDK.loadKnownContracts`, called at SDK init from
+/// `AppState.loadKnownContractsIntoSDK`).
+///
+/// * `contract_ids` — a comma-separated list of base58 contract ids.
+/// * `serialized_contracts` — a `byte[][]` of each contract's **versioned
+///   binary serialization** (the bytes `DataContract::versioned_deserialize`
+///   expects — i.e. `DataContractEntity.binarySerialization`, NOT the JSON),
+///   in the SAME order as `contract_ids`.
+///
+/// Trusted-provider config keyed off the SDK handle (like
+/// `dataContractFetchWithSerialization`), not a per-query fetch. The FFI
+/// splits the ids CSV itself and rejects an id/contract count mismatch, so
+/// this must pass exactly one `byte[]` per id. Returns nothing on success
+/// (throws on error): a missing trusted provider, a malformed contract, or a
+/// count mismatch all surface as a thrown `DashSDKException`.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_QueriesNative_addKnownContracts(
+    mut env: JNIEnv,
+    _class: JClass,
+    sdk: jlong,
+    contract_ids: JString,
+    serialized_contracts: JObjectArray,
+) {
+    guard(&mut env, (), |env| {
+        let ids = match opt_c_string(env, &contract_ids) {
+            Some(s) => s,
+            None => {
+                throw_sdk_exception(env, 1, "contractIds was null");
+                return;
+            }
+        };
+
+        if serialized_contracts.is_null() {
+            throw_sdk_exception(env, 1, "serializedContracts was null");
+            return;
+        }
+
+        let count = match env.get_array_length(&serialized_contracts) {
+            Ok(len) if len >= 0 => len as usize,
+            _ => {
+                let _ = env.exception_clear();
+                throw_sdk_exception(env, 1, "serializedContracts length was invalid");
+                return;
+            }
+        };
+
+        // Empty input is a legitimate no-op (nothing stored to preload).
+        if count == 0 {
+            return;
+        }
+
+        // Copy every contract's bytes into owned buffers that outlive the FFI
+        // call (the FFI borrows each pointer for the call duration).
+        let mut buffers: Vec<Vec<u8>> = Vec::with_capacity(count);
+        for i in 0..count {
+            let bytes = match env.get_object_array_element(&serialized_contracts, i as i32) {
+                Ok(obj) => {
+                    let arr: JByteArray = obj.into();
+                    if arr.is_null() {
+                        throw_sdk_exception(env, 1, &format!("serializedContracts[{i}] was null"));
+                        return;
+                    }
+                    match env.convert_byte_array(&arr) {
+                        Ok(b) => b,
+                        Err(_) => {
+                            let _ = env.exception_clear();
+                            throw_sdk_exception(
+                                env,
+                                1,
+                                &format!("serializedContracts[{i}] byte[] was invalid"),
+                            );
+                            return;
+                        }
+                    }
+                }
+                Err(_) => {
+                    let _ = env.exception_clear();
+                    throw_sdk_exception(
+                        env,
+                        1,
+                        &format!("serializedContracts[{i}] could not be read"),
+                    );
+                    return;
+                }
+            };
+            buffers.push(bytes);
+        }
+
+        // Build the pointer + length arrays the FFI expects. Both `buffers`
+        // and these two Vecs outlive the synchronous FFI call.
+        let ptrs: Vec<*const u8> = buffers.iter().map(|b| b.as_ptr()).collect();
+        let lengths: Vec<usize> = buffers.iter().map(|b| b.len()).collect();
+
+        let result = unsafe {
+            dash_sdk_add_known_contracts(
+                sdk as *const SDKHandle,
+                ids.as_ptr(),
+                ptrs.as_ptr(),
+                lengths.as_ptr(),
+                count,
+            )
+        };
+        // Success carries no payload; take_error throws + frees on error.
+        unsafe { crate::results::take_error(env, &result) };
     })
 }

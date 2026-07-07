@@ -60,8 +60,13 @@ object ContractDownloader {
         val trimmedId = contractIdBase58.trim()
         require(trimmedId.isNotEmpty()) { "Please enter a contract ID" }
 
-        val json = try {
-            sdk.contracts.fetchJson(trimmedId)
+        // Fetch JSON + the versioned binary serialization in one round trip
+        // (← Swift's `dataContractGetWithSerialization`). The binary blob is
+        // what the trusted context provider deserializes, so persisting it
+        // lets `AppContainer.loadKnownContractsIntoSdk` preload this contract
+        // for proof verification without a network fetch.
+        val fetched = try {
+            sdk.contracts.fetchWithSerialization(trimmedId)
         } catch (e: Exception) {
             val message = e.message ?: "Unknown error"
             if (message.contains("not found", ignoreCase = true)) {
@@ -69,6 +74,8 @@ object ContractDownloader {
             }
             throw Exception("Failed to fetch data contract: $message", e)
         } ?: throw ContractNotFoundException("Data contract not found")
+        val json = fetched.json
+        val binarySerialization = fetched.binarySerialization
 
         val root = LenientJson.parseToJsonElement(json).jsonObject
 
@@ -82,7 +89,15 @@ object ContractDownloader {
         val dao = database.dataContractDao()
         val preExisting = dao.getById(contractIdBytes)
         if (preExisting != null) {
-            dao.upsert(preExisting.copy(lastAccessedAt = Date()))
+            // Backfill the binary serialization for rows persisted before the
+            // with-serialization fetch, so the startup preload can pick them
+            // up. Keep any existing value when the node didn't return one.
+            dao.upsert(
+                preExisting.copy(
+                    lastAccessedAt = Date(),
+                    binarySerialization = binarySerialization ?: preExisting.binarySerialization,
+                ),
+            )
             // Re-runs are how rows stored before the token materializer
             // landed pick up their token children.
             org.dashfoundation.example.services.tokens.TokenMaterializer
@@ -99,6 +114,7 @@ object ContractDownloader {
             id = contractIdBytes,
             name = resolveName(suggestedName, trimmedId, documents, tokens),
             serializedContract = json.toByteArray(Charsets.UTF_8),
+            binarySerialization = binarySerialization,
             version = (root["version"] as? JsonPrimitive)?.content?.toIntOrNull() ?: 1,
             ownerId = (root["ownerId"] as? JsonPrimitive)?.content
                 ?.let { Base58.decodeIdentifier(it) },
