@@ -96,6 +96,26 @@ internal object FundingNative {
         progressBridge: SeedPoolProgressBridge?,
     )
 
+    /**
+     * Shield from Platform balance, Type 15 (bridges
+     * `platform_wallet_manager_shielded_shield`). Spends [amount] credits
+     * (1 DASH = 1e11) from the wallet's [paymentAccount] Platform-Payment
+     * addresses into its own bound shielded pool ([shieldedAccount]).
+     * Unlike the pool-internal spends below, the shield touches the
+     * transparent Platform-address side, so it takes the Keystore address
+     * signer [signerAddressHandle] (the manager's `signerHandle`), not a
+     * resolver. Self-shield only (Rust always targets this wallet's own
+     * default Orchard address). Blocks for the ~30s Halo 2 proof.
+     */
+    external fun shieldedShield(
+        managerHandle: Long,
+        walletId: ByteArray,
+        shieldedAccount: Int,
+        paymentAccount: Int,
+        amount: Long,
+        signerAddressHandle: Long,
+    )
+
     // ── Shielded outgoing spends (types 16/17/19) ─────────────────────
     //
     // Manager-handle calls like the funding submits above; each signs with

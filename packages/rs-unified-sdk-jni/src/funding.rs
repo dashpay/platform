@@ -48,7 +48,7 @@ use std::os::raw::c_void;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::ptr;
 
-use rs_sdk_ffi::MnemonicResolverHandle;
+use rs_sdk_ffi::{MnemonicResolverHandle, SignerHandle};
 
 /// Kick the Halo 2 proving-key build onto a background thread so the
 /// first shielded transition doesn't pay the ~30s cost inline. Idempotent
@@ -581,6 +581,69 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shielde
 // `ErrorShieldedNoRecordedAnchor` / `ErrorShieldedBroadcastFailed` =
 // retryable) surface through `take_pwffi_error`'s offset codes and map to
 // the dedicated `DashSdkError.PlatformWallet` types on the Kotlin side.
+
+/// Shield from Platform balance (Type 15) — bridges
+/// `platform_wallet_manager_shielded_shield`.
+///
+/// Mirrors Swift's `PlatformWalletManager.shieldedShield`
+/// (`PlatformWalletManagerShieldedSync.swift`): spends `amount` credits
+/// (1 DASH = 1e11) from the wallet's `payment_account` Platform-Payment
+/// addresses (auto-selected in ascending derivation order) into the
+/// wallet's own bound shielded pool (`shielded_account`). Unlike the
+/// transfer/unshield/withdraw spends — which move notes already inside the
+/// pool and need no host signer — the shield spends the *transparent*
+/// Platform-address side, so it takes the Keystore address signer
+/// (`signer_address_handle` = `mgr.signerHandle`, a `*const SignerHandle`
+/// / `VTableSigner` callback variant), NOT a `MnemonicResolverHandle`. The
+/// ~30s Halo 2 proof runs inside the call; nothing is returned on success.
+/// Rust always shields to this wallet's own default Orchard address, so
+/// there is no recipient parameter (self-shield only).
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shieldedShield(
+    mut env: JNIEnv,
+    _class: JClass,
+    manager_handle: jlong,
+    wallet_id: JByteArray,
+    shielded_account: jint,
+    payment_account: jint,
+    amount: jlong,
+    signer_address_handle: jlong,
+) {
+    guard(&mut env, (), |env| {
+        // Reject sign errors at the boundary — negatives would otherwise
+        // bit-cast to huge unsigned values (never clamp).
+        if amount <= 0 {
+            throw_sdk_exception(env, 1, "amount must be positive");
+            return;
+        }
+        if shielded_account < 0 {
+            throw_sdk_exception(env, 1, "shieldedAccount must be non-negative");
+            return;
+        }
+        if payment_account < 0 {
+            throw_sdk_exception(env, 1, "paymentAccount must be non-negative");
+            return;
+        }
+        if signer_address_handle == 0 {
+            throw_sdk_exception(env, 1, "signerAddressHandle must be non-null");
+            return;
+        }
+        let Some(wid) = read_id32(env, &wallet_id, "walletId") else {
+            return;
+        };
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_manager_shielded_shield(
+                manager_handle as Handle,
+                wid.as_ptr(),
+                shielded_account as u32,
+                payment_account as u32,
+                amount as u64,
+                signer_address_handle as *const SignerHandle,
+            )
+        };
+        let _ = take_pwffi_error(env, result);
+    })
+}
 
 /// Shielded → shielded transfer (Type 16) — bridges
 /// `platform_wallet_manager_shielded_transfer`.

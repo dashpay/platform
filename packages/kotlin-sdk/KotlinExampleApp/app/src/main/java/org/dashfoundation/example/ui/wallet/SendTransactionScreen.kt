@@ -78,6 +78,7 @@ import org.dashfoundation.example.util.parseDashToDuffs
  */
 private enum class SendFlow(val displayName: String) {
     CORE_TO_CORE("Core Payment"),
+    PLATFORM_TO_SHIELDED("Shield Credits"),
     SHIELDED_TO_SHIELDED("Shielded Transfer"),
     SHIELDED_TO_PLATFORM("Unshield"),
     SHIELDED_TO_CORE("Withdrawal to Core"),
@@ -86,6 +87,7 @@ private enum class SendFlow(val displayName: String) {
 /** Fund source for sending (← iOS `FundSource`, SendViewModel.swift:58). */
 private enum class FundSource(val label: String) {
     CORE("Core"),
+    PLATFORM("Platform"),
     SHIELDED("Shielded"),
 }
 
@@ -199,6 +201,13 @@ fun SendTransactionScreen(
         }
     }.collectAsStateWithLifecycle(initialValue = 0L)
 
+    // Transparent Platform-Payment balance (credits) — the fund source for a
+    // shield (Type 15). Same DAO sum WalletDetailScreen's Platform row reads.
+    val platformBalance by remember(walletIdHex) {
+        container.database.platformAddressDao().observeByWallet(walletId)
+            .map { rows -> rows.sumOf { it.balance } }
+    }.collectAsStateWithLifecycle(initialValue = 0L)
+
     // ── Address detection + flow routing (← SendViewModel.detectAddressType /
     //    updateFlow) ────────────────────────────────────────────────────
     val trimmedRecipient = recipient.trim()
@@ -214,9 +223,15 @@ fun SendTransactionScreen(
     val availableSources = remember(addressType, hasShielded, shieldedBalance) {
         val shieldedSource =
             if (hasShielded && shieldedBalance > 0) listOf(FundSource.SHIELDED) else emptyList()
+        // Shield-from-Platform (Type 15, SH-03) is offered for a shielded
+        // recipient on any shielded build — it funds from the transparent
+        // Platform-Payment balance, so it needs no existing pool notes
+        // (← iOS availableSources offering .platform for an .orchard recipient).
+        val platformShieldSource =
+            if (hasShielded) listOf(FundSource.PLATFORM) else emptyList()
         when (addressType) {
             is DashAddressType.Core -> listOf(FundSource.CORE) + shieldedSource
-            is DashAddressType.Orchard -> shieldedSource
+            is DashAddressType.Orchard -> shieldedSource + platformShieldSource
             is DashAddressType.Platform -> shieldedSource
             DashAddressType.Unknown -> emptyList()
         }
@@ -234,7 +249,11 @@ fun SendTransactionScreen(
             if (selectedSource == FundSource.SHIELDED) SendFlow.SHIELDED_TO_CORE
             else SendFlow.CORE_TO_CORE
         is DashAddressType.Orchard ->
-            if (selectedSource == FundSource.SHIELDED) SendFlow.SHIELDED_TO_SHIELDED else null
+            when (selectedSource) {
+                FundSource.SHIELDED -> SendFlow.SHIELDED_TO_SHIELDED
+                FundSource.PLATFORM -> SendFlow.PLATFORM_TO_SHIELDED
+                else -> null
+            }
         is DashAddressType.Platform ->
             if (selectedSource == FundSource.SHIELDED) SendFlow.SHIELDED_TO_PLATFORM else null
         DashAddressType.Unknown -> null
@@ -268,7 +287,10 @@ fun SendTransactionScreen(
     }
     val shieldedFeeEstimate by produceState<Long?>(initialValue = null, flow) {
         value = when (flow) {
-            SendFlow.SHIELDED_TO_SHIELDED ->
+            // Type 15 Shield reserves the same compute_minimum_shielded_fee(2)
+            // base as a shielded→shielded transfer (← iOS estimateFee: .transfer
+            // for .platformToShielded), so they share the TransferOrShield kind.
+            SendFlow.SHIELDED_TO_SHIELDED, SendFlow.PLATFORM_TO_SHIELDED ->
                 runCatching {
                     ShieldedProver.estimateFee(ShieldedProver.FeeKind.TransferOrShield, 2)
                 }.getOrNull()
@@ -317,6 +339,7 @@ fun SendTransactionScreen(
     val canSend = when (flow) {
         SendFlow.CORE_TO_CORE -> coreRecipients != null
         SendFlow.SHIELDED_TO_SHIELDED -> (amountCredits ?: 0) > 0 && !memoOverLimit
+        SendFlow.PLATFORM_TO_SHIELDED,
         SendFlow.SHIELDED_TO_PLATFORM, SendFlow.SHIELDED_TO_CORE -> (amountCredits ?: 0) > 0
         null -> false
     }
@@ -524,6 +547,7 @@ fun SendTransactionScreen(
                     "Spendable",
                     when (selectedSource) {
                         FundSource.CORE -> balance?.let { formatDuffs(it.confirmed) } ?: "—"
+                        FundSource.PLATFORM -> formatCredits(platformBalance)
                         FundSource.SHIELDED -> formatCredits(shieldedBalance)
                     },
                 )
@@ -596,6 +620,39 @@ fun SendTransactionScreen(
                                     network = network,
                                     coreSignerHandle = activeManager.mnemonicResolverHandle,
                                 )
+                            }
+
+                            SendFlow.PLATFORM_TO_SHIELDED -> {
+                                val recipientRaw =
+                                    (addressType as? DashAddressType.Orchard)?.raw43
+                                val credits = amountCredits
+                                if (recipientRaw == null || credits == null) {
+                                    error = "Invalid recipient or amount"
+                                    return@launch
+                                }
+                                // Shield from Platform balance (Type 15, SH-03):
+                                // Rust always shields into THIS wallet's own
+                                // default Orchard pool, so the typed recipient is
+                                // ignored on-chain. Constrain to self-shield so a
+                                // different pasted Orchard address can't read as
+                                // success while nothing reaches it (← iOS
+                                // platformToShielded guard).
+                                val ownShielded = runCatching {
+                                    activeManager.shieldedDefaultAddress(walletId)
+                                }.getOrNull()
+                                if (ownShielded != null &&
+                                    !ownShielded.contentEquals(recipientRaw)
+                                ) {
+                                    error = "Shield always sends to your own shielded " +
+                                        "address — enter this wallet's own shielded " +
+                                        "address as the recipient."
+                                    return@launch
+                                }
+                                activeManager.shieldedShield(
+                                    walletId = walletId,
+                                    amount = credits,
+                                )
+                                successMessage = "Shielding complete"
                             }
 
                             SendFlow.SHIELDED_TO_SHIELDED -> {
