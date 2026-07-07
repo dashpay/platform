@@ -411,19 +411,31 @@ class PlatformWalletManager(
      *   `CreateWalletView` writes `walletLabel` onto the persisted wallet
      *   (name via the manager + keychain metadata blob).
      * @param createDefaultAccounts whether to seed default accounts.
+     * @param birthHeight the SPV compact-filter scan-start height.
+     *   `null` (fresh wallet) resolves the birth height from SPV's
+     *   confirmed header tip, so nothing funded before init is scanned.
+     *   `0u` requests a full historical scan from genesis — pass it when
+     *   **importing/restoring** an existing mnemonic so Core funds and
+     *   payments received before this device registered the wallet are
+     *   seen (`Some(h)` pins a specific height). Mirror of Swift
+     *   `PlatformWalletManager.createWallet(..., birthHeight:)`
+     *   (`birthHeight: showImportOption ? 0 : nil`).
      */
     suspend fun createWallet(
         mnemonic: String,
         name: String? = null,
         createDefaultAccounts: Boolean = true,
+        birthHeight: UInt? = null,
     ): ManagedPlatformWallet = withContext(Dispatchers.IO) {
         val outHandle = LongArray(1)
         val walletId = mapNativeErrors {
-            WalletManagerNative.createWalletFromMnemonic(
+            WalletManagerNative.createWalletFromMnemonicWithBirthHeight(
                 managerHandle,
                 mnemonic,
                 network.ffiValue,
                 createDefaultAccounts,
+                birthHeight != null,
+                (birthHeight ?: 0u).toInt(),
                 outHandle,
             )
         }
