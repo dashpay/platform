@@ -2,6 +2,7 @@ package org.dashfoundation.example.ui.wallet
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
@@ -11,6 +12,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -22,16 +25,19 @@ import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.KeyboardType
@@ -84,6 +90,19 @@ private enum class FundSource(val label: String) {
 }
 
 /**
+ * An extra Core output beyond the primary recipient (← iOS `CoreRecipient`,
+ * SendViewModel.swift:91). Only the CORE_TO_CORE flow appends these; each
+ * field is observable so a row edit recomposes just that row. Held in a plain
+ * `mutableStateListOf` (not `rememberSaveable`) — transient like the iOS
+ * `@Published` array, and the primary row still round-trips a saved single
+ * recipient.
+ */
+private class AdditionalRecipient {
+    var address by mutableStateOf("")
+    var amountText by mutableStateOf("")
+}
+
+/**
  * Maximum UTF-8 byte length of a shielded memo (the 32-byte payload of the
  * 36-byte `DashMemo`) — mirrors `SendViewModel.memoByteLimit` /
  * `dpp::shielded::MEMO_PAYLOAD_SIZE`. Rust re-validates.
@@ -126,6 +145,9 @@ fun SendTransactionScreen(
     var recipient by rememberSaveable { mutableStateOf("") }
     var amountText by rememberSaveable { mutableStateOf("") }
     var memoText by rememberSaveable { mutableStateOf("") }
+    // Extra Core outputs beyond the primary recipient (CORE_TO_CORE only, ←
+    // SendViewModel.additionalCoreRecipients). Empty until "Add recipient".
+    val additionalRecipients = remember { mutableStateListOf<AdditionalRecipient>() }
     var selectedSource by rememberSaveable { mutableStateOf(FundSource.CORE) }
     var error by remember { mutableStateOf<String?>(null) }
     var isSending by remember { mutableStateOf(false) }
@@ -263,8 +285,37 @@ fun SendTransactionScreen(
     }
 
     val recipientKnown = addressType != DashAddressType.Unknown
+
+    // Validated Core batch for CORE_TO_CORE: the ordered output list (primary
+    // row + each additional row, in display order) or null if ANY row is
+    // invalid (← SendViewModel.coreRecipientPlan / coreRecipients). "Valid"
+    // per row = the address parses as a Core address on this network AND its
+    // duffs amount is > 0. Built atomically so a single bad extra row blocks
+    // the whole send rather than silently dropping an output.
+    val coreRecipients: List<Pair<String, Long>>? = run {
+        if (flow != SendFlow.CORE_TO_CORE) return@run null
+        val out = ArrayList<Pair<String, Long>>(1 + additionalRecipients.size)
+        val primaryDuffs = amountDuffs
+        if (addressType !is DashAddressType.Core || primaryDuffs == null || primaryDuffs <= 0L) {
+            return@run null
+        }
+        out.add(trimmedRecipient to primaryDuffs)
+        for (row in additionalRecipients) {
+            val addr = row.address.trim()
+            val duffs = parseDashToDuffs(row.amountText)
+            if (DashAddress.parse(addr, network) !is DashAddressType.Core ||
+                duffs == null || duffs <= 0L
+            ) {
+                return@run null
+            }
+            out.add(addr to duffs)
+        }
+        out
+    }
+    val coreSendTotalDuffs = coreRecipients?.sumOf { it.second } ?: 0L
+
     val canSend = when (flow) {
-        SendFlow.CORE_TO_CORE -> (amountDuffs ?: 0) > 0
+        SendFlow.CORE_TO_CORE -> coreRecipients != null
         SendFlow.SHIELDED_TO_SHIELDED -> (amountCredits ?: 0) > 0 && !memoOverLimit
         SendFlow.SHIELDED_TO_PLATFORM, SendFlow.SHIELDED_TO_CORE -> (amountCredits ?: 0) > 0
         null -> false
@@ -357,6 +408,65 @@ fun SendTransactionScreen(
                 }
             }
 
+            // Additional recipients (CORE_TO_CORE only, ← the iOS
+            // `additionalRecipientsSection`): extra address/amount rows the
+            // batch appends as extra outputs of the same L1 tx (CORE-10). Each
+            // row has its own Core-address + amount validation via
+            // `coreRecipients`; the Rust coin-selector handles any output count.
+            if (flow == SendFlow.CORE_TO_CORE) {
+                FormSection(title = "Additional Recipients") {
+                    additionalRecipients.forEachIndexed { index, row ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.Top,
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                OutlinedTextField(
+                                    value = row.address,
+                                    onValueChange = { row.address = it },
+                                    label = { Text("Dash address") },
+                                    singleLine = true,
+                                    isError = row.address.trim().isNotEmpty() &&
+                                        DashAddress.parse(row.address.trim(), network)
+                                        !is DashAddressType.Core,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .testTag("send.extraRecipient.$index.address"),
+                                )
+                                OutlinedTextField(
+                                    value = row.amountText,
+                                    onValueChange = { row.amountText = it },
+                                    label = { Text("Amount (DASH)") },
+                                    singleLine = true,
+                                    keyboardOptions = KeyboardOptions(
+                                        keyboardType = KeyboardType.Decimal,
+                                    ),
+                                    isError = row.amountText.isNotBlank() &&
+                                        (parseDashToDuffs(row.amountText)?.let { it <= 0L } ?: true),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(top = 4.dp)
+                                        .testTag("send.extraRecipient.$index.amount"),
+                                )
+                            }
+                            IconButton(
+                                onClick = { additionalRecipients.removeAt(index) },
+                                modifier = Modifier.testTag("send.extraRecipient.$index.remove"),
+                            ) {
+                                Icon(Icons.Default.Close, contentDescription = "Remove recipient")
+                            }
+                        }
+                    }
+                    TextButton(
+                        onClick = { additionalRecipients.add(AdditionalRecipient()) },
+                        modifier = Modifier.testTag("send.addRecipient"),
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = null)
+                        Text("Add recipient", modifier = Modifier.padding(start = 8.dp))
+                    }
+                }
+            }
+
             // Send From (← the iOS "Send From" section) — only shown once
             // the recipient resolves and more than one source can fund it.
             if (availableSources.size > 1) {
@@ -417,6 +527,14 @@ fun SendTransactionScreen(
                         FundSource.SHIELDED -> formatCredits(shieldedBalance)
                     },
                 )
+                // Multi-output batch total (← the iOS "Outputs" summary's
+                // Total row): the sum across every output of this one L1 tx.
+                if (flow == SendFlow.CORE_TO_CORE && (coreRecipients?.size ?: 0) > 1) {
+                    LabeledContent(
+                        "Total to send (${coreRecipients?.size} outputs)",
+                        formatDuffs(coreSendTotalDuffs),
+                    )
+                }
                 if (isShieldedFlow) {
                     // Consensus-pinned flat shielded fee in credits (2-action
                     // single-note spend with change), from the Rust estimator.
@@ -466,13 +584,15 @@ fun SendTransactionScreen(
                         when (flow) {
                             SendFlow.CORE_TO_CORE -> {
                                 val wallet = managed
-                                val amount = amountDuffs
-                                if (wallet == null || amount == null) {
+                                val outputs = coreRecipients
+                                if (wallet == null || outputs == null) {
                                     error = "Wallet is not ready. Try again in a moment."
                                     return@launch
                                 }
+                                // One L1 tx, N outputs (primary + additionals) —
+                                // the batch is already fully validated (CORE-10).
                                 sentTxidHex = wallet.sendToAddresses(
-                                    recipients = listOf(trimmedRecipient to amount),
+                                    recipients = outputs,
                                     network = network,
                                     coreSignerHandle = activeManager.mnemonicResolverHandle,
                                 )
