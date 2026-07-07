@@ -2,6 +2,7 @@ package org.dashfoundation.dashsdk.wallet
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.withLock
 import org.dashfoundation.dashsdk.errors.mapNativeErrors
 import org.dashfoundation.dashsdk.ffi.NativeCleaner
 import org.dashfoundation.dashsdk.ffi.TokensNative
@@ -32,6 +33,17 @@ class ManagedPlatformWallet internal constructor(
 
     private val handleRef = AtomicLong(handle)
     private val cleanable = NativeCleaner.register(this, HandleCleanup(handleRef))
+
+    // Serializes this wallet's Core sends. The split TransactionBuilder
+    // selects UTXOs in setFunding but only reserves them in buildSigned,
+    // so two concurrent same-account sends could otherwise both select the
+    // same UTXO and build competing txs (double-spend / broadcast failure).
+    // The removed one-shot core_wallet_send_to_addresses held the
+    // wallet-manager write lock across select+sign+broadcast; this restores
+    // that atomicity at the orchestration layer. Per-wallet is sufficient —
+    // a same-account collision is necessarily same-wallet, and different
+    // wallets do not share UTXOs.
+    private val coreSendMutex = kotlinx.coroutines.sync.Mutex()
 
     /** Raw native `PlatformWallet` handle; throws if the wrapper was closed. */
     val handle: Long
@@ -150,6 +162,7 @@ class ManagedPlatformWallet internal constructor(
             AccountType.BIP44 -> CoreTransactionBuilder.AccountType.BIP44
             AccountType.BIP32 -> CoreTransactionBuilder.AccountType.BIP32
         }
+        coreSendMutex.withLock {
         mapNativeErrors {
             val builder = CoreTransactionBuilder(network)
             // `buildSigned` consumes the builder; `use` still safely destroys
@@ -169,6 +182,7 @@ class ManagedPlatformWallet internal constructor(
             signedTx.use { tx ->
                 coreWallet().use { core -> core.broadcastTransaction(tx) }
             }
+        }
         }
     }
 
