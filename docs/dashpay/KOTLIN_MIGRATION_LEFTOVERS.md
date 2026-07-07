@@ -44,9 +44,12 @@ when the four stacked PRs collapse into one.
   helper test never loads the native symbol. `cargo check` + an emulator/on-device
   platform-address signature are what pin the actual native call.
 
-- **PARITY: 8 partial / 7 deferred Swift views.** Each partial/deferred row in
-  `packages/kotlin-sdk/PARITY.md` names the exact missing FFI export it needs; those
-  land as the corresponding exports are added.
+- **PARITY: 97 ported / 2 partial / 0 deferred views** (`packages/kotlin-sdk/PARITY.md`).
+  Neither partial is DashPay — all 10 DashPay screens are fully ported. The two are
+  `TransitionDetailView` (5 of 23 transition-catalog forms lack backing FFIs:
+  dataContractUpdate, documentCreate/Replace/Delete/Transfer) and
+  `WalletMemoryExplorerView` (asset-lock drill-down summary only). Each partial row
+  names the exact missing FFI export; they land as those exports are added.
 
 ## Environment-bound (cannot be code-fixed here)
 
