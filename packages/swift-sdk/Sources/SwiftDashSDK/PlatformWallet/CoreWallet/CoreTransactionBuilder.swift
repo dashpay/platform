@@ -1,11 +1,24 @@
 import Foundation
 import DashSDKFFI
 
-/// A built, signed core transaction. Broadcast it via
-/// `ManagedCoreWallet.broadcastTransaction`; its bytes are freed when this
-/// object is released.
 public final class CoreTransaction {
-    var ffi: FFICoreTransaction
+    public struct Input: Sendable, Equatable {
+        public let prevTxid: Data
+        public let prevVout: UInt32
+        public let address: String?
+
+        public var prevTxidDisplayHex: String {
+            prevTxid.reversed().map { String(format: "%02x", $0) }.joined()
+        }
+    }
+
+    public struct Output: Sendable, Equatable {
+        public let address: String?
+        public let valueDuffs: UInt64
+        public let scriptPubKey: Data
+    }
+
+    let ffi: UnsafeMutablePointer<FFICoreTransaction>
 
     /// The account that funded this transaction, captured at build time.
     /// `broadcastTransaction` forwards it so a failed broadcast can release
@@ -13,25 +26,71 @@ public final class CoreTransaction {
     let accountType: CoreTransactionBuilder.AccountType
     let accountIndex: UInt32
 
+    public let fee: UInt64
+    public let txid: Data
+    public let inputs: [Input]
+    public let outputs: [Output]
+
     init(
-        ffi: FFICoreTransaction,
+        ffi: UnsafeMutablePointer<FFICoreTransaction>,
         accountType: CoreTransactionBuilder.AccountType,
         accountIndex: UInt32
     ) {
         self.ffi = ffi
         self.accountType = accountType
         self.accountIndex = accountIndex
+
+        // Copy the value fields out of the heap struct now; the pointer stays
+        // alive (freed in deinit) so `data` and broadcast can still read it.
+        var entry = ffi.pointee
+        self.fee = entry.fee
+        self.txid = withUnsafeBytes(of: &entry.txid) { Data($0) }
+
+        var inputs: [Input] = []
+        if let ptr = entry.inputs, entry.inputs_count > 0 {
+            inputs = (0..<Int(entry.inputs_count)).map { i in
+                var input = ptr[i]
+                let prevTxid = withUnsafeBytes(of: &input.prev_txid) { Data($0) }
+                let address = input.address.map { String(cString: $0) }
+                return Input(
+                    prevTxid: prevTxid,
+                    prevVout: input.prev_vout,
+                    address: address
+                )
+            }
+        }
+        self.inputs = inputs
+
+        var outputs: [Output] = []
+        if let ptr = entry.outputs, entry.outputs_count > 0 {
+            outputs = (0..<Int(entry.outputs_count)).map { i in
+                let output = ptr[i]
+                let address = output.address.map { String(cString: $0) }
+                let script: Data
+                if let sptr = output.script_pubkey, output.script_pubkey_len > 0 {
+                    script = Data(bytes: sptr, count: Int(output.script_pubkey_len))
+                } else {
+                    script = Data()
+                }
+                return Output(
+                    address: address,
+                    valueDuffs: output.value_duffs,
+                    scriptPubKey: script
+                )
+            }
+        }
+        self.outputs = outputs
     }
 
-    deinit { withUnsafeMutablePointer(to: &ffi) { core_wallet_transaction_free($0) } }
+    deinit { core_wallet_transaction_free(ffi) }
 
-    /// Network fee in duffs.
-    public var fee: UInt64 { ffi.fee }
+    public var txidDisplayHex: String {
+        txid.reversed().map { String(format: "%02x", $0) }.joined()
+    }
 
-    /// Consensus-serialized signed transaction bytes (copied out).
     public var data: Data {
-        guard let p = ffi.tx_bytes, ffi.tx_len > 0 else { return Data() }
-        return Data(bytes: p, count: Int(ffi.tx_len))
+        guard let p = ffi.pointee.tx_bytes, ffi.pointee.tx_len > 0 else { return Data() }
+        return Data(bytes: p, count: Int(ffi.pointee.tx_len))
     }
 }
 
@@ -199,7 +258,7 @@ public final class CoreTransactionBuilder {
         guard !consumed else {
             throw PlatformWalletError.unknown("CoreTransactionBuilder already consumed")
         }
-        var out = FFICoreTransaction(tx_bytes: nil, tx_len: 0, fee: 0)
+        var out: UnsafeMutablePointer<FFICoreTransaction>? = nil
 
         let resolver = MnemonicResolver()
         let result = withExtendedLifetime(resolver) {
@@ -216,10 +275,12 @@ public final class CoreTransactionBuilder {
         consumed = true
         try result.check()
 
-        guard out.tx_bytes != nil, out.tx_len > 0 else {
-            throw PlatformWalletError.unknown("FFI returned success but tx buffer was empty")
+        guard let ptr = out else {
+            throw PlatformWalletError.nullPointer(
+                "FFI returned success but no transaction pointer"
+            )
         }
 
-        return CoreTransaction(ffi: out, accountType: accountType, accountIndex: accountIndex)
+        return CoreTransaction(ffi: ptr, accountType: accountType, accountIndex: accountIndex)
     }
 }

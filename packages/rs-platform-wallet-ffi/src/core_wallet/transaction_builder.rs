@@ -4,9 +4,10 @@ use crate::handle::{Handle, PLATFORM_WALLET_STORAGE};
 use crate::runtime::runtime;
 use crate::types::{FFINetwork, Network};
 use crate::{check_ptr, unwrap_option_or_return, unwrap_result_or_return};
+use dashcore::blockdata::script::Instruction;
 use dashcore::blockdata::transaction::special_transaction::TransactionPayload;
 use dashcore::hashes::Hash;
-use dashcore::{Address as DashAddress, OutPoint, Transaction, Txid};
+use dashcore::{Address as DashAddress, OutPoint, PublicKey, ScriptBuf, Transaction, Txid};
 use key_wallet::account::account_type::StandardAccountType;
 use key_wallet::account::ManagedAccountCollection;
 use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
@@ -17,6 +18,7 @@ use key_wallet::wallet::managed_wallet_info::transaction_builder::TransactionBui
 use key_wallet::wallet::managed_wallet_info::transaction_building::AccountTypePreference;
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 use rs_sdk_ffi::{MnemonicResolverCoreSigner, MnemonicResolverHandle};
+use std::ffi::CString;
 use std::os::raw::{c_char, c_void};
 use std::str::FromStr;
 
@@ -33,13 +35,170 @@ pub struct FFITransactionBuilder {
     network: FFINetwork,
 }
 
-/// Broadcast it with `core_wallet_broadcast_transaction`, then release it
-/// with `core_wallet_transaction_free`.
+#[repr(C)]
+pub struct FFICoreTransactionInput {
+    prev_txid: [u8; 32],
+    prev_vout: u32,
+    address: *mut c_char,
+}
+
+#[repr(C)]
+pub struct FFICoreTransactionOutput {
+    address: *mut c_char,
+    value_duffs: u64,
+    script_pubkey: *mut u8,
+    script_pubkey_len: usize,
+}
+
 #[repr(C)]
 pub struct FFICoreTransaction {
     tx_bytes: *mut u8,
     tx_len: usize,
     fee: u64,
+    txid: [u8; 32],
+    inputs: *mut FFICoreTransactionInput,
+    inputs_count: usize,
+    outputs: *mut FFICoreTransactionOutput,
+    outputs_count: usize,
+}
+
+fn vec_to_ptr<T>(v: Vec<T>) -> *mut T {
+    if v.is_empty() {
+        std::ptr::null_mut()
+    } else {
+        Box::into_raw(v.into_boxed_slice()) as *mut T
+    }
+}
+
+fn addr_to_cstr(address: Option<DashAddress>) -> *mut c_char {
+    address
+        .and_then(|a| CString::new(a.to_string()).ok())
+        .map(CString::into_raw)
+        .unwrap_or(std::ptr::null_mut())
+}
+
+fn input_address_from_script_sig(script_sig: &ScriptBuf, network: Network) -> Option<DashAddress> {
+    let mut sig: Option<&[u8]> = None;
+    let mut pubkey_bytes: Option<&[u8]> = None;
+    for instruction in script_sig.instructions() {
+        match instruction {
+            Ok(Instruction::PushBytes(bytes)) => match (sig, pubkey_bytes) {
+                (None, None) => sig = Some(bytes.as_bytes()),
+                (Some(_), None) => pubkey_bytes = Some(bytes.as_bytes()),
+                _ => return None, // more than two pushes
+            },
+            _ => return None, // non-push opcode or unparseable script
+        }
+    }
+    let (sig, pubkey_bytes) = (sig?, pubkey_bytes?);
+    if sig.is_empty() || sig[0] != 0x30 || sig.len() > 73 {
+        return None;
+    }
+    if pubkey_bytes.len() != 33 && pubkey_bytes.len() != 65 {
+        return None;
+    }
+    let pubkey = PublicKey::from_slice(pubkey_bytes).ok()?;
+    Some(DashAddress::p2pkh(&pubkey, network))
+}
+
+impl From<(&Transaction, u64, Network)> for FFICoreTransaction {
+    fn from((tx, fee, network): (&Transaction, u64, Network)) -> Self {
+        let serialized = dashcore::consensus::serialize(tx);
+        let tx_len = serialized.len();
+        let tx_bytes = if tx_len == 0 {
+            std::ptr::null_mut()
+        } else {
+            Box::into_raw(serialized.into_boxed_slice()) as *mut u8
+        };
+
+        let inputs: Vec<FFICoreTransactionInput> = tx
+            .input
+            .iter()
+            .map(|txin| {
+                let address = if txin.previous_output.is_null() {
+                    None // coinbase
+                } else {
+                    input_address_from_script_sig(&txin.script_sig, network)
+                };
+                FFICoreTransactionInput {
+                    prev_txid: txin.previous_output.txid.to_byte_array(),
+                    prev_vout: txin.previous_output.vout,
+                    address: addr_to_cstr(address),
+                }
+            })
+            .collect();
+
+        let outputs: Vec<FFICoreTransactionOutput> = tx
+            .output
+            .iter()
+            .map(|txout| {
+                let address = DashAddress::from_script(&txout.script_pubkey, network).ok();
+                let script = txout.script_pubkey.to_bytes();
+                let script_len = script.len();
+                FFICoreTransactionOutput {
+                    address: addr_to_cstr(address),
+                    value_duffs: txout.value,
+                    script_pubkey: vec_to_ptr(script),
+                    script_pubkey_len: script_len,
+                }
+            })
+            .collect();
+
+        let inputs_count = inputs.len();
+        let outputs_count = outputs.len();
+
+        FFICoreTransaction {
+            tx_bytes,
+            tx_len,
+            fee,
+            txid: tx.txid().to_byte_array(),
+            inputs: vec_to_ptr(inputs),
+            inputs_count,
+            outputs: vec_to_ptr(outputs),
+            outputs_count,
+        }
+    }
+}
+
+impl Drop for FFICoreTransaction {
+    fn drop(&mut self) {
+        unsafe {
+            if !self.tx_bytes.is_null() && self.tx_len > 0 {
+                drop(Box::from_raw(std::ptr::slice_from_raw_parts_mut(
+                    self.tx_bytes,
+                    self.tx_len,
+                )));
+            }
+
+            if !self.inputs.is_null() {
+                let inputs = Vec::from_raw_parts(self.inputs, self.inputs_count, self.inputs_count);
+                for input in &inputs {
+                    if !input.address.is_null() {
+                        drop(CString::from_raw(input.address));
+                    }
+                }
+                drop(inputs);
+            }
+
+            if !self.outputs.is_null() {
+                let outputs =
+                    Vec::from_raw_parts(self.outputs, self.outputs_count, self.outputs_count);
+                for output in &outputs {
+                    if !output.address.is_null() {
+                        drop(CString::from_raw(output.address));
+                    }
+                    if !output.script_pubkey.is_null() {
+                        drop(Vec::from_raw_parts(
+                            output.script_pubkey,
+                            output.script_pubkey_len,
+                            output.script_pubkey_len,
+                        ));
+                    }
+                }
+                drop(outputs);
+            }
+        }
+    }
 }
 
 impl FFICoreTransaction {
@@ -500,7 +659,8 @@ pub unsafe extern "C" fn core_wallet_tx_builder_add_inputs_from_outpoints(
 /// # Safety
 /// `builder` must be a valid, non-destroyed pointer; `wallet` a valid platform-wallet handle;
 /// `core_signer_handle` a valid, non-destroyed resolver handle; `out_tx` a
-/// writable pointer the caller later frees with `core_wallet_transaction_free`.
+/// writable pointer that, on success, receives an owned `*mut FFICoreTransaction`
+/// the caller later frees with `core_wallet_transaction_free`.
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
 pub unsafe extern "C" fn core_wallet_tx_builder_build_signed(
@@ -509,7 +669,7 @@ pub unsafe extern "C" fn core_wallet_tx_builder_build_signed(
     account_type: CoreAccountTypeFFI,
     account_index: u32,
     core_signer_handle: *mut MnemonicResolverHandle,
-    out_tx: *mut FFICoreTransaction,
+    out_tx: *mut *mut FFICoreTransaction,
 ) -> PlatformWalletFFIResult {
     check_ptr!(builder);
     // `build` consumes the builder: reclaim both heap boxes up front so they
@@ -519,6 +679,7 @@ pub unsafe extern "C" fn core_wallet_tx_builder_build_signed(
 
     check_ptr!(core_signer_handle);
     check_ptr!(out_tx);
+    *out_tx = std::ptr::null_mut();
 
     let wallet = unwrap_option_or_return!(PLATFORM_WALLET_STORAGE.with_item(wallet, |w| w.clone()));
 
@@ -564,14 +725,14 @@ pub unsafe extern "C" fn core_wallet_tx_builder_build_signed(
         }
     };
 
-    let serialized = dashcore::consensus::serialize(&tx);
-    let len = serialized.len();
-
-    *out_tx = FFICoreTransaction {
-        tx_bytes: Box::into_raw(serialized.into_boxed_slice()) as *mut u8,
-        tx_len: len,
+    // Marshal the whole transaction (bytes, fee, txid, decoded inputs/outputs)
+    // into a heap-owned struct. Uses the wallet's network (already validated
+    // above) to render addresses.
+    *out_tx = Box::into_raw(Box::new(FFICoreTransaction::from((
+        &tx,
         fee,
-    };
+        wallet.network(),
+    ))));
 
     PlatformWalletFFIResult::ok()
 }
@@ -591,22 +752,259 @@ pub unsafe extern "C" fn core_wallet_tx_builder_destroy(builder: *mut FFITransac
 }
 
 /// Free a transaction returned by `core_wallet_tx_builder_build_signed`.
-/// Idempotent: the fields are nulled, so a second call is a no-op.
+/// Reclaims the box; its [`Drop`] impl frees the bytes and input/output arrays.
+/// Safe to call with null.
 ///
 /// # Safety
-/// `tx` must be a valid pointer to an `FFICoreTransaction` from
-/// `core_wallet_tx_builder_build_signed` (or null).
+/// `tx` must be null or a pointer returned by
+/// `core_wallet_tx_builder_build_signed` that has not been freed yet.
 #[no_mangle]
 pub unsafe extern "C" fn core_wallet_transaction_free(tx: *mut FFICoreTransaction) {
     if tx.is_null() {
         return;
     }
+    drop(Box::from_raw(tx)); // Drop frees bytes + inputs + outputs
+}
 
-    let tx = &mut *tx;
-    if !tx.tx_bytes.is_null() && tx.tx_len > 0 {
-        let _ = Box::from_raw(std::ptr::slice_from_raw_parts_mut(tx.tx_bytes, tx.tx_len));
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dashcore::secp256k1::{Secp256k1, SecretKey};
+    use dashcore::{OutPoint, TxIn, TxOut, Txid, Witness};
+    use std::ffi::CStr;
+
+    struct Marshalled {
+        txid: [u8; 32],
+        inputs: Vec<([u8; 32], u32, Option<String>)>,
+        outputs: Vec<(Option<String>, u64, Vec<u8>)>,
     }
 
-    tx.tx_bytes = std::ptr::null_mut();
-    tx.tx_len = 0;
+    unsafe fn cstr_opt(ptr: *mut c_char) -> Option<String> {
+        if ptr.is_null() {
+            None
+        } else {
+            Some(CStr::from_ptr(ptr).to_str().unwrap().to_owned())
+        }
+    }
+
+    fn marshal_ok(tx: &Transaction, network: Network) -> Marshalled {
+        let ffi = FFICoreTransaction::from((tx, 0, network));
+        unsafe {
+            let inputs = if ffi.inputs.is_null() {
+                Vec::new()
+            } else {
+                std::slice::from_raw_parts(ffi.inputs, ffi.inputs_count)
+                    .iter()
+                    .map(|i| (i.prev_txid, i.prev_vout, cstr_opt(i.address)))
+                    .collect()
+            };
+            let outputs = if ffi.outputs.is_null() {
+                Vec::new()
+            } else {
+                std::slice::from_raw_parts(ffi.outputs, ffi.outputs_count)
+                    .iter()
+                    .map(|o| {
+                        let script = if o.script_pubkey.is_null() {
+                            Vec::new()
+                        } else {
+                            std::slice::from_raw_parts(o.script_pubkey, o.script_pubkey_len)
+                                .to_vec()
+                        };
+                        (cstr_opt(o.address), o.value_duffs, script)
+                    })
+                    .collect()
+            };
+            Marshalled {
+                txid: ffi.txid,
+                inputs,
+                outputs,
+            }
+        }
+        // `ffi` drops here, freeing bytes + inputs + outputs.
+    }
+
+    fn test_pubkey() -> PublicKey {
+        let secp = Secp256k1::new();
+        let sk = SecretKey::from_slice(&[0x42u8; 32]).expect("valid secret key");
+        PublicKey::new(sk.public_key(&secp))
+    }
+
+    fn p2pkh_spend_tx(network: Network) -> (Transaction, DashAddress) {
+        let pubkey = test_pubkey();
+        let addr = DashAddress::p2pkh(&pubkey, network);
+        let script_sig = dashcore::blockdata::script::Builder::new()
+            .push_slice([0x30u8; 71]) // DER-shaped: 0x30 tag, ≤ 73 bytes
+            .push_key(&pubkey)
+            .into_script();
+        let tx = Transaction {
+            version: 1,
+            lock_time: 0,
+            input: vec![TxIn {
+                previous_output: OutPoint {
+                    txid: Txid::from_byte_array([0x11u8; 32]),
+                    vout: 3,
+                },
+                script_sig,
+                sequence: 0xffffffff,
+                witness: Witness::default(),
+            }],
+            output: vec![
+                TxOut {
+                    value: 151_072,
+                    script_pubkey: addr.script_pubkey(),
+                },
+                TxOut {
+                    value: 0,
+                    script_pubkey: ScriptBuf::new_op_return(&[0xAAu8; 4]),
+                },
+            ],
+            special_transaction_payload: None,
+        };
+        (tx, addr)
+    }
+
+    fn tx_with_script_sig(script_sig: ScriptBuf) -> Transaction {
+        let addr = DashAddress::dummy(Network::Testnet, 1);
+        let mut tx = Transaction::dummy(&addr, 1..2, &[9_000]);
+        tx.input[0].script_sig = script_sig;
+        tx
+    }
+
+    #[test]
+    fn marshals_outputs_with_addresses_and_values() {
+        let addr = DashAddress::dummy(Network::Testnet, 7);
+        let tx = Transaction::dummy(&addr, 1..2, &[151_072, 20_002]);
+        let marshalled = marshal_ok(&tx, Network::Testnet);
+
+        assert_eq!(marshalled.txid, tx.txid().to_byte_array());
+        assert_eq!(marshalled.outputs.len(), 2);
+        assert_eq!(marshalled.outputs[0].0, Some(addr.to_string()));
+        assert_eq!(marshalled.outputs[0].1, 151_072);
+        assert_eq!(marshalled.outputs[0].2, addr.script_pubkey().into_bytes());
+        assert_eq!(marshalled.outputs[1].0, Some(addr.to_string()));
+        assert_eq!(marshalled.outputs[1].1, 20_002);
+        assert!(
+            addr.to_string().starts_with('y'),
+            "testnet P2PKH starts with 'y'"
+        );
+    }
+
+    #[test]
+    fn op_return_output_has_no_address() {
+        let (tx, _) = p2pkh_spend_tx(Network::Testnet);
+        let marshalled = marshal_ok(&tx, Network::Testnet);
+        assert!(marshalled.outputs[1].0.is_none());
+        assert!(
+            !marshalled.outputs[1].2.is_empty(),
+            "script bytes still present"
+        );
+    }
+
+    #[test]
+    fn recovers_p2pkh_input_address_from_script_sig() {
+        let (tx, addr) = p2pkh_spend_tx(Network::Testnet);
+        let marshalled = marshal_ok(&tx, Network::Testnet);
+
+        assert_eq!(marshalled.inputs.len(), 1);
+        assert_eq!(marshalled.inputs[0].0, [0x11u8; 32]);
+        assert_eq!(marshalled.inputs[0].1, 3);
+        assert_eq!(marshalled.inputs[0].2, Some(addr.to_string()));
+    }
+
+    #[test]
+    fn network_changes_rendered_addresses() {
+        let addr = DashAddress::dummy(Network::Testnet, 7);
+        let tx = Transaction::dummy(&addr, 1..2, &[151_072]);
+        let marshalled = marshal_ok(&tx, Network::Mainnet);
+        let rendered = marshalled.outputs[0].0.clone().unwrap();
+        assert_ne!(rendered, addr.to_string());
+        assert!(rendered.starts_with('X'), "mainnet P2PKH starts with 'X'");
+    }
+
+    #[test]
+    fn coinbase_input_has_no_address() {
+        let addr = DashAddress::dummy(Network::Testnet, 3);
+        let tx = Transaction::dummy_coinbase(&addr, 50_000);
+        let marshalled = marshal_ok(&tx, Network::Testnet);
+        assert!(marshalled.inputs[0].2.is_none());
+    }
+
+    #[test]
+    fn non_p2pkh_script_sig_yields_no_input_address() {
+        // Transaction::dummy fills script_sig with a *lock* script
+        // (OP_DUP OP_HASH160 <20 B> OP_EQUALVERIFY OP_CHECKSIG): opcodes
+        // present, last push 20 bytes — must not produce an address.
+        let addr = DashAddress::dummy(Network::Testnet, 9);
+        let tx = Transaction::dummy(&addr, 1..2, &[1_000]);
+        let marshalled = marshal_ok(&tx, Network::Testnet);
+        assert!(marshalled.inputs[0].2.is_none());
+    }
+
+    #[test]
+    fn redeem_script_collision_yields_no_input_address() {
+        // Three pushes ending in a valid 33-byte pubkey — the P2SH
+        // redeem-script shape the exactly-two-pushes rule exists to reject.
+        let script_sig = dashcore::blockdata::script::Builder::new()
+            .push_slice([0x30u8; 71])
+            .push_slice([0x01u8; 20])
+            .push_key(&test_pubkey())
+            .into_script();
+        let marshalled = marshal_ok(&tx_with_script_sig(script_sig), Network::Testnet);
+        assert!(marshalled.inputs[0].2.is_none());
+    }
+
+    #[test]
+    fn non_signature_first_push_yields_no_input_address() {
+        // Two pushes, but the first is not DER-shaped (no 0x30 tag).
+        let script_sig = dashcore::blockdata::script::Builder::new()
+            .push_slice([0xAAu8; 10])
+            .push_key(&test_pubkey())
+            .into_script();
+        let marshalled = marshal_ok(&tx_with_script_sig(script_sig), Network::Testnet);
+        assert!(marshalled.inputs[0].2.is_none());
+    }
+
+    #[test]
+    fn from_populates_whole_struct() {
+        // Exercises `From` end to end (bytes, fee, txid, and the C-side
+        // input/output layout) with a raw pointer walk that pins the memory
+        // layout. The struct's `Drop` frees everything at scope end.
+        let (tx, _) = p2pkh_spend_tx(Network::Testnet);
+        let ffi = FFICoreTransaction::from((&tx, 4321, Network::Testnet));
+
+        assert_eq!(ffi.fee, 4321);
+        assert_eq!(ffi.txid, tx.txid().to_byte_array());
+        assert_eq!(ffi.bytes(), dashcore::consensus::serialize(&tx).as_slice());
+
+        unsafe {
+            let inputs = std::slice::from_raw_parts(ffi.inputs, ffi.inputs_count);
+            let outputs = std::slice::from_raw_parts(ffi.outputs, ffi.outputs_count);
+            assert_eq!(ffi.inputs_count, 1);
+            assert_eq!(ffi.outputs_count, 2);
+            assert_eq!(inputs[0].prev_vout, 3);
+            assert!(!inputs[0].address.is_null());
+            assert_eq!(outputs[0].value_duffs, 151_072);
+            let addr = CStr::from_ptr(outputs[0].address).to_str().unwrap();
+            assert!(addr.starts_with('y'));
+            assert!(outputs[0].script_pubkey_len > 0);
+        }
+    }
+
+    #[test]
+    fn transaction_free_is_null_safe_and_frees_boxed() {
+        unsafe {
+            // Null is a no-op.
+            core_wallet_transaction_free(std::ptr::null_mut());
+
+            // A heap-owned tx is reclaimed and its `Drop` frees every
+            // allocation (run under Miri to catch leaks / double-frees).
+            let (tx, _) = p2pkh_spend_tx(Network::Testnet);
+            let boxed = Box::into_raw(Box::new(FFICoreTransaction::from((
+                &tx,
+                10,
+                Network::Testnet,
+            ))));
+            core_wallet_transaction_free(boxed);
+        }
+    }
 }

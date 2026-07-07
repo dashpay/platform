@@ -107,11 +107,10 @@ public class ManagedCoreWallet {
     /// Returns the transaction ID as a hex string.
     public func broadcastTransaction(_ tx: CoreTransaction) throws -> String {
         var txidPtr: UnsafeMutablePointer<CChar>? = nil
-        try withUnsafePointer(to: tx.ffi) { txPtr in
-            try core_wallet_broadcast_transaction(
-                handle, txPtr, tx.accountType.ffi, tx.accountIndex, &txidPtr
-            ).check()
-        }
+        // `tx.ffi` is already the heap-owned pointer; pass it as `*const`.
+        try core_wallet_broadcast_transaction(
+            handle, tx.ffi, tx.accountType.ffi, tx.accountIndex, &txidPtr
+        ).check()
 
         guard let ptr = txidPtr else {
             throw PlatformWalletError.nullPointer(
