@@ -8,7 +8,7 @@ use dash_sdk::platform::address_sync::AddressSyncMetrics;
 use crate::error::*;
 use crate::handle::*;
 use crate::platform_address_types::AddressSyncConfigFFI;
-use crate::runtime::runtime;
+use crate::runtime::{run_on_big_stack_thread, runtime};
 use crate::{check_ptr, unwrap_option_or_return};
 
 /// Flattened sync metrics for one wallet result in a platform-address sync pass.
@@ -190,7 +190,17 @@ pub unsafe extern "C" fn platform_wallet_manager_platform_address_sync_sync_now(
     handle: Handle,
 ) -> PlatformWalletFFIResult {
     let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
-        runtime().block_on(manager.platform_address_sync().sync_now());
+        // Big-stack polling, NOT bare `runtime().block_on`: the pass
+        // verifies GroveDB proofs whose recursion blows the ~512 KB
+        // stack of the host's dispatch/concurrency calling thread
+        // (same SIGBUS as the shielded/dashpay Sync Now buttons).
+        // `run_on_big_stack_thread` rather than `block_on_worker`
+        // because this future trips rustc's implied-lifetime-bound
+        // limitation (rust-lang/rust issue #100013) against
+        // `block_on_worker`'s `Send + 'static` bounds.
+        run_on_big_stack_thread(|| {
+            runtime().block_on(manager.platform_address_sync().sync_now());
+        });
     });
     unwrap_option_or_return!(option);
     PlatformWalletFFIResult::ok()

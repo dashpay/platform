@@ -60,6 +60,31 @@ where
     rt.block_on(async move { rt.spawn(future).await.expect("tokio worker panicked") })
 }
 
+/// Run `f` to completion on a freshly spawned scoped OS thread with the
+/// same 8 MB stack the runtime workers get, blocking the caller until it
+/// returns.
+///
+/// Escape hatch for call sites that need big-stack polling but whose
+/// future cannot satisfy [`block_on_worker`]'s `Send + 'static` bounds
+/// (e.g. rustc's implied-lifetime-bound limitation, rust-lang/rust
+/// issue #100013). The closure typically wraps
+/// `runtime().block_on(...)` — the future is then created *and* polled
+/// entirely on the big-stack thread, so no `Send`/`'static` proof is
+/// needed for the future itself. Prefer [`block_on_worker`] where it
+/// compiles: it reuses pooled runtime workers instead of paying a
+/// thread spawn per call.
+pub(crate) fn run_on_big_stack_thread<T: Send>(f: impl FnOnce() -> T + Send) -> T {
+    std::thread::scope(|scope| {
+        std::thread::Builder::new()
+            .name("pw-ffi-bigstack".into())
+            .stack_size(WORKER_STACK_BYTES)
+            .spawn_scoped(scope, f)
+            .expect("failed to spawn big-stack FFI thread")
+            .join()
+            .expect("big-stack FFI thread panicked")
+    })
+}
+
 #[cfg(feature = "tokio-metrics")]
 mod metrics {
     use std::time::Duration;
