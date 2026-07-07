@@ -27,7 +27,8 @@ pub unsafe extern "C" fn managed_identity_get_established_contact(
 
     let option = MANAGED_IDENTITY_STORAGE.with_item(identity_handle, |identity| {
         identity
-            .established_contacts
+            .dashpay()
+            .established_contacts()
             .get(&contact_identifier)
             .cloned()
     });
@@ -158,6 +159,11 @@ pub unsafe extern "C" fn established_contact_get_note(
     out_note: *mut *mut std::os::raw::c_char,
 ) -> PlatformWalletFFIResult {
     check_ptr!(out_note);
+    // Null the out-pointer before the fallible lookup so a cleanup-on-error
+    // caller that unconditionally `platform_wallet_string_free`s the variable
+    // frees null, not garbage — matching the null-sentinel-first convention
+    // used across the rest of this FFI surface.
+    unsafe { *out_note = std::ptr::null_mut() };
 
     let option =
         ESTABLISHED_CONTACT_STORAGE.with_item(contact_handle, |contact| contact.note.clone());
@@ -213,6 +219,28 @@ pub unsafe extern "C" fn established_contact_is_hidden(
 
     let option = ESTABLISHED_CONTACT_STORAGE.with_item(contact_handle, |contact| contact.is_hidden);
     *out_is_hidden = unwrap_option_or_return!(option);
+    PlatformWalletFFIResult::ok()
+}
+
+/// Check whether an established contact's DashPay payment channel is
+/// permanently broken.
+///
+/// `true` means the account-building sweep hit a permanent failure
+/// (decrypt/decode of the counterparty xpub, or a key-index validation
+/// failure) and stopped retrying. The UI should disable "Send Dash" and
+/// surface "Payment channel broken — ask the contact to send a new
+/// request"; the flag clears automatically when a superseding contact
+/// request (re-)establishes the relationship.
+#[no_mangle]
+pub unsafe extern "C" fn established_contact_is_payment_channel_broken(
+    contact_handle: Handle,
+    out_is_broken: *mut bool,
+) -> PlatformWalletFFIResult {
+    check_ptr!(out_is_broken);
+
+    let option = ESTABLISHED_CONTACT_STORAGE
+        .with_item(contact_handle, |contact| contact.payment_channel_broken);
+    *out_is_broken = unwrap_option_or_return!(option);
     PlatformWalletFFIResult::ok()
 }
 

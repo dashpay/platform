@@ -17,6 +17,12 @@ import SwiftDashSDK
 final class AppUIState: ObservableObject {
     /// Whether the detailed sync banner should be shown on the Wallets tab.
     @Published var showWalletsSyncDetails: Bool = true
+
+    /// Root tab selection. Lives here (not as ContentView @State) so views
+    /// deep inside other tabs' navigation stacks can deep-link — e.g.
+    /// IdentityDetailView's "Contacts" row jumps to the DashPay tab with
+    /// that identity pre-selected.
+    @Published var selectedTab: RootTab = .sync
 }
 
 @main
@@ -208,6 +214,7 @@ struct SwiftExampleAppApp: App {
             do {
                 try walletManager.stopPlatformAddressSync()
                 try walletManager.stopShieldedSync()
+                try walletManager.stopDashPaySync()
             } catch {
                 SDKLogger.error(
                     "Failed to stop sync coordinators: \(error.localizedDescription)"
@@ -246,6 +253,15 @@ struct SwiftExampleAppApp: App {
             )
             if try !walletManager.isShieldedSyncRunning() {
                 try walletManager.startShieldedSync()
+            }
+
+            // DashPay contact-request + profile sweep (background
+            // loop). Wallet-driven — every registered wallet is swept
+            // each pass — so manager scope is the right place to start
+            // it, same as the address / shielded loops above.
+            // Idempotent: starting while running is a no-op.
+            if try !walletManager.isDashPaySyncRunning() {
+                try walletManager.startDashPaySync()
             }
         } catch {
             SDKLogger.error(

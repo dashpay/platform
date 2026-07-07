@@ -118,6 +118,37 @@ public final class PersistentIdentity {
     @Relationship(deleteRule: .cascade, inverse: \PersistentDashpayContactRequest.owner)
     public var contactRequests: [PersistentDashpayContactRequest] = []
 
+    /// DashPay payment-history rows owned by this identity.
+    /// Cascade-deleted from the parent. Same
+    /// query-by-denormalized-id pattern as `contactRequests`: filters
+    /// use `PersistentDashpayPayment.predicate(ownerIdentityId:)`
+    /// rather than walking this collection from a SwiftUI view.
+    /// Populated by `PlatformWalletManager.refreshDashPayPayments`
+    /// (FFI getter → upsert), not by the persister callback.
+    @Relationship(deleteRule: .cascade, inverse: \PersistentDashpayPayment.owner)
+    public var dashpayPayments: [PersistentDashpayPayment] = []
+
+    /// DashPay ignored senders (per-sender mute, = block, reversible,
+    /// local-only) owned by this identity. Cascade-deleted from the parent.
+    /// Persisted from the `ignored` changeset array by `persistContacts`
+    /// and read back at load to rebuild the Rust `ignored_senders` set —
+    /// without them an ignored sender resurfaces on relaunch. Filters use
+    /// `PersistentDashpayIgnoredSender.predicate(ownerIdentityId:)`.
+    @Relationship(deleteRule: .cascade, inverse: \PersistentDashpayIgnoredSender.owner)
+    public var dashpayIgnoredSenders: [PersistentDashpayIgnoredSender] = []
+
+    /// Cached DashPay **contact** profiles owned by this identity (one
+    /// per contact whose public profile has been fetched). Cascade-deleted
+    /// from the parent. Same query-by-denormalized-id pattern as
+    /// `contactRequests`: filters use
+    /// `PersistentDashpayContactProfile.predicate(ownerIdentityId:)` rather
+    /// than walking this collection from a SwiftUI view. Populated by the
+    /// persister callback (`IdentityEntryFFI.contact_profiles` rows) and
+    /// read back at load to rebuild the Rust `contact_profiles` map.
+    /// Distinct from the owner's own `dashpayProfile`.
+    @Relationship(deleteRule: .cascade, inverse: \PersistentDashpayContactProfile.owner)
+    public var contactProfiles: [PersistentDashpayContactProfile] = []
+
     // Contracts in the local store that name this identity as their
     // owner. `.nullify` so deleting the identity leaves the contract
     // rows alive (with `ownerIdentity` nulled) — matches the user's
@@ -163,6 +194,9 @@ public final class PersistentIdentity {
         self.dpnsNames = []
         self.dashpayProfile = nil
         self.contactRequests = []
+        self.dashpayPayments = []
+        self.dashpayIgnoredSenders = []
+        self.contactProfiles = []
         self.ownedDataContracts = []
         self.createdAt = Date()
         self.lastUpdated = Date()

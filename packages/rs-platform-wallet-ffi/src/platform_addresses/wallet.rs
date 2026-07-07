@@ -76,6 +76,52 @@ pub unsafe extern "C" fn platform_address_wallet_total_credits(
     PlatformWalletFFIResult::ok()
 }
 
+/// Get the per-input minimum credit amount (`min_input_amount`) the
+/// chain enforces for address-funds transitions, read from the wallet's
+/// current platform version.
+///
+/// Pure getter: resolve the handle, read
+/// `PlatformAddressWallet::min_input_amount()` (which reads the constant
+/// off the wallet's SDK-resolved `PlatformVersion`), write it to
+/// `out_min_input_amount`. This is the same floor the transfer/withdraw
+/// auto-selectors use to drop sub-minimum dust inputs, so a UI gate that
+/// sums only balances ≥ this stays in step with what Rust will spend.
+#[no_mangle]
+pub unsafe extern "C" fn platform_address_wallet_min_input_amount(
+    handle: Handle,
+    out_min_input_amount: *mut u64,
+) -> PlatformWalletFFIResult {
+    check_ptr!(out_min_input_amount);
+
+    let option =
+        PLATFORM_ADDRESS_WALLET_STORAGE.with_item(handle, |wallet| wallet.min_input_amount());
+    *out_min_input_amount = unwrap_option_or_return!(option);
+    PlatformWalletFFIResult::ok()
+}
+
+/// Get the per-output minimum credit amount (`min_output_amount`) the
+/// chain enforces for address-funds transitions, read from the wallet's
+/// current platform version.
+///
+/// Pure getter: resolve the handle, read
+/// `PlatformAddressWallet::min_output_amount()` (which reads the constant
+/// off the wallet's SDK-resolved `PlatformVersion`), write it to
+/// `out_min_output_amount`. DPP rejects any address-funds output below
+/// this floor, so a transfer UI gate that requires the requested amount to
+/// reach it stays in step with what DPP will accept.
+#[no_mangle]
+pub unsafe extern "C" fn platform_address_wallet_min_output_amount(
+    handle: Handle,
+    out_min_output_amount: *mut u64,
+) -> PlatformWalletFFIResult {
+    check_ptr!(out_min_output_amount);
+
+    let option =
+        PLATFORM_ADDRESS_WALLET_STORAGE.with_item(handle, |wallet| wallet.min_output_amount());
+    *out_min_output_amount = unwrap_option_or_return!(option);
+    PlatformWalletFFIResult::ok()
+}
+
 /// Get all platform addresses with their cached balances.
 ///
 /// On success, `out_entries` and `out_count` are set to a heap-allocated array.
@@ -99,6 +145,7 @@ pub unsafe extern "C" fn platform_address_wallet_addresses_with_balances(
                 nonce: 0,
                 account_index: 0,
                 address_index: 0,
+                as_of_height: 0,
             })
             .collect::<Vec<_>>()
     });

@@ -46,11 +46,23 @@ use crate::wallet::asset_lock::manager::AssetLockManager;
 // Timeout policy
 // ---------------------------------------------------------------------------
 
-/// Time we will wait for a ChainLock to materialise after an IS-lock
-/// fallback is triggered. 180s mirrors the existing fallback shape and
-/// is roughly the worst-case ChainLock latency we've observed in
-/// testnet operation. Promoted to a constant so the registration,
-/// top-up, and address-funding flows can't drift apart on this number.
+/// Bounded ChainLock wait used *only* by the shielded seed pool, where a
+/// `FinalityTimeout` is a deliberate pacing signal — rapid back-to-back
+/// batches chain unconfirmed L1 change outputs, and around core's
+/// unconfirmed-ancestor depth limit IS/CL proofs stop arriving until a
+/// block lands; the seed pool catches the timeout, pauses, and resumes
+/// the tracked lock (see `shielded/seed_pool.rs`).
+///
+/// The user-facing funding flows (identity registration / top-up,
+/// platform-address top-up, and user-initiated shielded funding) do NOT
+/// use this: they wait for a ChainLock **indefinitely**
+/// (`upgrade_to_chain_lock_proof(None)`), because a ChainLock is
+/// deterministic finality that will eventually cover any broadcast
+/// asset-lock tx — so a broadcast lock is *pending*, never *failed*.
+///
+/// Only the shielded seed pool consumes this, so it is `shielded`-gated
+/// to avoid a dead-code warning in builds without that feature.
+#[cfg(feature = "shielded")]
 pub(crate) const CL_FALLBACK_TIMEOUT: Duration = Duration::from_secs(180);
 
 /// Delay between retries when Platform rejected with CL-height-too-low.
@@ -408,8 +420,12 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 }
             }
             AssetLockFunding::FromExistingAssetLock { out_point } => {
+                // 300s is an InstantSend-preference window, not a finality
+                // timeout: on expiry the caller falls back to an unbounded
+                // ChainLock wait, so a resumed broadcast lock never fails
+                // just because IS was slow.
                 match self
-                    .resume_asset_lock(&out_point, Duration::from_secs(300))
+                    .resume_asset_lock(&out_point, Some(Duration::from_secs(300)))
                     .await
                 {
                     Ok((proof, path)) => Ok(FundingResolution::Resolved(ResolvedFunding {

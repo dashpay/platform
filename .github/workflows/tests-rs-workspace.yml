@@ -65,6 +65,13 @@ jobs:
       - name: Check formatting
         run: cargo fmt --check --all
 
+      # Fails the PR that introduces a new workspace dependent of the wallet
+      # crates, keeping the wallet-only fast path (tests-rs-wallet.yml) sound:
+      # such a PR always takes this full path, so the check must live here to
+      # fire at the moment the invariant breaks.
+      - name: Verify wallet reverse-dependency closure
+        run: python3 .github/scripts/check-wallet-closure.py
+
       - name: Clippy lints
         run: |
           cargo clippy \

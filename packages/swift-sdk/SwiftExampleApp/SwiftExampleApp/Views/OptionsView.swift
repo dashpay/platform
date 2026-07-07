@@ -9,7 +9,6 @@ struct OptionsView: View {
     @EnvironmentObject var shieldedService: ShieldedService
     @State private var showingDataManagement = false
     @State private var showingAbout = false
-    @State private var showingContracts = false
     @State private var isSwitchingNetwork = false
     @State private var sdkStatus: SDKStatus?
     @State private var isLoadingStatus = false
@@ -428,6 +427,19 @@ struct OptionsView: View {
                 }
 
                 Section(header: Text("Platform")) {
+                    // Contracts moved here from its own root tab. Pushed
+                    // without its own NavigationStack so it attaches to
+                    // this Settings stack (native back button), matching
+                    // the other rows in this screen.
+                    NavigationLink(
+                        destination: ContractsTabView(
+                            network: appState.currentNetwork,
+                            embedsOwnNavigationStack: false
+                        )
+                    ) {
+                        Label("Contracts", systemImage: "doc.text")
+                    }
+
                     NavigationLink(destination: PlatformQueriesView()) {
                         Label("Queries", systemImage: "magnifyingglass")
                     }

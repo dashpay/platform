@@ -14,6 +14,27 @@ struct SendTransactionView: View {
     /// Drives the camera QR scanner sheet launched from the recipient row.
     @State private var showQRScanner = false
 
+    /// Per-input minimum credit amount (`min_input_amount`) the chain
+    /// enforces for address-funds transitions, resolved from the wallet's
+    /// current platform version via
+    /// `ManagedPlatformAddressWallet.minInputAmount()` once on appear —
+    /// mirroring `TransferPlatformAddressView`. The Rust Auto selector's
+    /// `build_auto_select_candidates` drops any funded address below this
+    /// floor, so the per-account aggregation in
+    /// `resolvePlatformSenderAccountIndex()` must sum only balances `>=` it to
+    /// match the input set Rust will actually consume; counting dust could
+    /// rank a dust-heavy account above a sibling whose spendable (≥ floor)
+    /// balance actually covers amount + fee.
+    ///
+    /// `nil` until resolved (or if resolution fails). Unlike the dedicated
+    /// sheet — which also gates its submit button on this being non-nil — the
+    /// generic Send picker only uses it to score per-account coverage, and the
+    /// account picker falls back to a conservative `balance > 0` floor when
+    /// it's unresolved (see `resolvePlatformSenderAccountIndex()`). The
+    /// separate `platformMinOutputAmount` gate on the view model keeps the
+    /// Send button closed for sub-minimum platform amounts regardless.
+    @State private var minInputAmount: UInt64? = nil
+
     @Environment(\.modelContext) private var modelContext
 
     /// BLAST-synced platform-address balances for this wallet —
@@ -226,30 +247,44 @@ struct SendTransactionView: View {
                             // and this view's `wallet` may not
                             // be the one that was last created.
                             let managed = walletManager.wallet(for: wallet.walletId)
-                            let coreWallet = try? managed?.coreWallet()
                             let platformAddressWallet = try? managed?.platformAddressWallet()
-                            // Pick the account holding the platform
-                            // balance. Most wallets have a single
-                            // PlatformPayment account (index 0);
-                            // fallback handles that case too.
-                            let senderAccountIndex = addressBalances
-                                .first(where: { $0.balance > 0 })?
-                                .accountIndex ?? 0
-                            // Mirror ReceiveAddressView's selection:
-                            // the lowest-indexed HD address that has
-                            // never been used. Used as the change
-                            // destination so the transition doesn't
-                            // collide with any input address. Scoped
-                            // to `senderAccountIndex` so multi-account
-                            // wallets don't land change on a different
-                            // platform-payment account than the inputs.
-                            let changeAddressRow = addressBalances
-                                .filter {
-                                    $0.accountIndex == senderAccountIndex
-                                        && !$0.isUsed
-                                        && $0.balance == 0
+                            // Pick the account that will FUND a platform →
+                            // platform transfer. The Rust Auto selector
+                            // resolves the source via
+                            // `platform_payment_managed_account_at_index`
+                            // (key class 0) and selects its inputs WITHIN
+                            // that single account — it does not span
+                            // accounts. `canSend` only gates on the
+                            // aggregate platform balance, so with multiple
+                            // key-class-0 Platform Payment accounts we must
+                            // choose an account whose OWN balance covers the
+                            // requested amount + fee; otherwise we'd enable a
+                            // send Rust rejects. The selection is factored
+                            // into the pure, unit-tested
+                            // `PlatformPaymentAccountSelection` helper.
+                            //
+                            // Only the platform → platform path needs this
+                            // coverage-aware pick; every other flow ignores
+                            // `senderAccountIndex`, so the prior
+                            // "first key-class-0 positive balance, else 0"
+                            // behaviour is preserved for them.
+                            let senderAccountIndex: UInt32
+                            if viewModel.detectedFlow == .platformToPlatform {
+                                guard let resolved = resolvePlatformSenderAccountIndex() else {
+                                    viewModel.error = "No single Platform Payment account has enough credits for this transfer."
+                                    return
                                 }
-                                .min(by: { $0.addressIndex < $1.addressIndex })
+                                senderAccountIndex = resolved
+                            } else {
+                                senderAccountIndex = addressBalances
+                                    .filter { $0.account?.keyClass == 0 }
+                                    .first(where: { $0.balance > 0 })?
+                                    .accountIndex ?? 0
+                            }
+                            // Input selection and surplus handling are owned
+                            // by the Rust Auto path (surplus stays on the
+                            // source addresses in the credit-balance model),
+                            // so there's no change address to pick here.
                             let signer = KeychainSigner(
                                 modelContainer: modelContext.container
                             )
@@ -259,11 +294,10 @@ struct SendTransactionView: View {
                                 shieldedService: shieldedService,
                                 platformState: platformState,
                                 wallet: wallet,
-                                coreWallet: coreWallet,
+                                platformWallet: managed,
                                 platformAddressWallet: platformAddressWallet,
                                 signer: signer,
                                 senderAccountIndex: senderAccountIndex,
-                                changeAddressRow: changeAddressRow,
                                 modelContext: modelContext
                             )
                         }
@@ -293,6 +327,17 @@ struct SendTransactionView: View {
                 if let msg = viewModel.successMessage {
                     Text(msg)
                 }
+            }
+            .onAppear {
+                // Resolve the version-locked address-funds limits once from
+                // the wallet's current platform version (read Rust-side), the
+                // same accessors the dedicated TransferPlatformAddressView
+                // reads on appear. `minInputAmount` floors per-account
+                // coverage scoring in `resolvePlatformSenderAccountIndex()`;
+                // `platformMinOutputAmount` is pushed to the view model so
+                // `canSend` can reject a sub-`min_output_amount` platform
+                // transfer up front instead of after submit.
+                resolvePlatformLimits()
             }
             .onChange(of: viewModel.detectedAddressType) { _, _ in
                 autoSelectSource()
@@ -428,6 +473,151 @@ struct SendTransactionView: View {
             return blastBalance
         }
         return wallet.identities.reduce(UInt64(0)) { $0 + UInt64(bitPattern: $1.balance) }
+    }
+
+    /// Resolve the chain's per-input (`min_input_amount`) and per-output
+    /// (`min_output_amount`) credit floors once from the wallet's current
+    /// platform version (version-locked, read on the Rust side), mirroring
+    /// `TransferPlatformAddressView.resolveMinInputAmount` /
+    /// `resolveMinOutputAmount`. Both are obtained from the SAME
+    /// `ManagedPlatformAddressWallet` the dedicated sheet uses (looked up by
+    /// this view's `wallet`, not the manager's "active" slot). On any failure
+    /// the corresponding field is left `nil`:
+    ///
+    /// - `minInputAmount == nil` → the account picker falls back to a
+    ///   conservative `balance > 0` floor (see
+    ///   `resolvePlatformSenderAccountIndex()`); it never UNDER-counts.
+    /// - `platformMinOutputAmount == nil` → `canSend`'s `.platformToPlatform`
+    ///   branch stays CLOSED (never *under*-gates), matching how the dedicated
+    ///   sheet treats an unresolved output floor.
+    private func resolvePlatformLimits() {
+        guard let managed = walletManager.wallet(for: wallet.walletId) else { return }
+        guard let addressWallet = try? managed.platformAddressWallet() else { return }
+        if minInputAmount == nil {
+            minInputAmount = try? addressWallet.minInputAmount()
+        }
+        if viewModel.platformMinOutputAmount == nil {
+            viewModel.platformMinOutputAmount = try? addressWallet.minOutputAmount()
+        }
+    }
+
+    /// Choose which key-class-0 Platform Payment account funds a
+    /// platform → platform transfer, returning `nil` when no single
+    /// account can cover the requested amount + fee.
+    ///
+    /// Aggregates each key-class-0 PlatformPayment account's balance from
+    /// the BLAST-synced `addressBalances` rows (scoping by
+    /// `accountType == 14 && keyClass == 0`, matching the dedicated
+    /// transfer/withdraw sheets and the Rust source resolution) — but
+    /// counts only rows whose balance clears the per-input minimum
+    /// (`minInputAmount`) AND EXCLUDES the recipient's own row (an own-wallet
+    /// send to a key-class-0 address), since the Rust Auto selector can't use
+    /// the output address as an input — then delegates the pick to the pure
+    /// `PlatformPaymentAccountSelection` helper. The Rust Auto selector
+    /// spends inputs WITHIN one account only, so a covering account must hold
+    /// the whole amount + fee on its own (minus any recipient-collision row)
+    /// — not merely contribute to the aggregate the Send button gates on.
+    ///
+    /// Dust floor: Rust's `build_auto_select_candidates` drops any funded
+    /// address below `min_input_amount`, so a sub-floor "dust" balance is NOT
+    /// spendable as an input. Summing it here would inflate an account's
+    /// coverage and could rank a dust-heavy account above a sibling whose
+    /// spendable (≥ floor) balance actually covers amount + fee — the picker
+    /// would then choose the dust account and Rust would reject the send
+    /// post-submit. We use the same resolved `minInputAmount`
+    /// (`ManagedPlatformAddressWallet.minInputAmount()`) the dedicated
+    /// `TransferPlatformAddressView` reads. When the floor is unresolved
+    /// (`nil`) we fall back to the conservative `balance > 0` floor — the same
+    /// fallback the dedicated sheet's `sourceInputHashes` uses — so we never
+    /// UNDER-count a real input; the separate `platformMinOutputAmount` gate
+    /// on the view model independently keeps the Send button closed for a
+    /// sub-minimum platform amount.
+    ///
+    /// `viewModel.amountCredits` and `viewModel.estimatedFee` are both
+    /// available on this path (`canSend` requires `amountCredits > 0` for
+    /// the credits flows, and `updateFlow()` populates `estimatedFee`).
+    /// If either is somehow absent we fall back to the largest-balance
+    /// account — strictly better than the prior "first positive" pick —
+    /// rather than blocking the send.
+    private func resolvePlatformSenderAccountIndex() -> UInt32? {
+        // The Rust Auto selector excludes the recipient address from its
+        // input set — DPP forbids an address being both an input and an
+        // output of the same transfer (the invariant
+        // `TransferPlatformAddressView.sourceInputHashes` also enforces).
+        // So when the recipient is an own-wallet address in a key-class-0
+        // Platform Payment account, its balance must NOT count toward that
+        // account's spendable coverage; otherwise the picker could choose an
+        // account whose recipient-excluded balance is below amount + fee and
+        // Rust would reject the send the UI enabled. `platformRecipientHash`
+        // is the already-decoded recipient hash (no address decoding is
+        // re-run here); a non-platform recipient yields `nil`, which excludes
+        // nothing.
+        let recipientHash = viewModel.platformRecipientHash
+
+        // Per-input spendable floor: an address can only be an Auto-selected
+        // input when its balance reaches the chain's `min_input_amount`. With
+        // the floor resolved, require `balance >= minInputAmount`; with it
+        // unresolved (`nil`), fall back to `balance > 0` so we never UNDER-
+        // count a real input (same conservative fallback the dedicated sheet's
+        // `sourceInputHashes` uses). See this function's doc comment.
+        let isSpendableInput: (UInt64) -> Bool = { balance in
+            if let floor = minInputAmount {
+                return balance >= floor
+            }
+            return balance > 0
+        }
+
+        // Aggregate balance per key-class-0 PlatformPayment account,
+        // counting only spendable (≥ floor) rows and excluding any row that IS
+        // the recipient.
+        var totals: [UInt32: UInt64] = [:]
+        for row in addressBalances {
+            guard let account = row.account,
+                  account.accountType == 14,
+                  account.keyClass == 0 else { continue }
+            // Drop sub-`min_input_amount` dust: Rust's Auto selector won't
+            // spend it, so summing it would inflate this account's coverage
+            // and could outrank a sibling whose spendable balance actually
+            // covers amount + fee.
+            guard isSpendableInput(row.balance) else { continue }
+            // Skip the recipient row: it's an output, so the Auto selector
+            // won't spend it. Scoped to this same key-class-0 / account-type
+            // set (and this wallet via `addressBalances`' query predicate),
+            // mirroring `sourceInputHashes`.
+            if let recipientHash, row.addressHash == recipientHash { continue }
+            let (sum, overflow) = (totals[row.accountIndex] ?? 0)
+                .addingReportingOverflow(row.balance)
+            // An overflowing per-account sum is treated as "saturated" so
+            // it still ranks as a (more than) covering account rather than
+            // wrapping to a small value.
+            totals[row.accountIndex] = overflow ? UInt64.max : sum
+        }
+
+        let candidates = totals.map {
+            PlatformPaymentAccountSelection.Candidate(
+                accountIndex: $0.key,
+                balance: $0.value
+            )
+        }
+
+        // Amount + fee for this transfer (credits). `?? 0` only triggers
+        // off-path; with a 0 requirement the largest account trivially
+        // "covers" it, yielding the largest-balance fallback.
+        let amount = viewModel.amountCredits ?? 0
+        let fee = viewModel.estimatedFee ?? SendFlow.platformToPlatform.estimatedFee
+
+        switch PlatformPaymentAccountSelection.choose(
+            from: candidates,
+            amount: amount,
+            fee: fee
+        ) {
+        case .covering(let accountIndex):
+            return accountIndex
+        case .insufficient:
+            // No single account covers amount + fee — don't silently pick
+            // an underfunded account; let the caller surface a clear error.
+            return nil
+        }
     }
 
     private func availableSources(coreBalance: UInt64) -> [FundSource] {

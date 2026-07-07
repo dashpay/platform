@@ -6,6 +6,7 @@ pub mod persister;
 pub mod platform_addresses;
 pub mod platform_wallet;
 mod platform_wallet_traits;
+pub(crate) mod reservations;
 #[cfg(feature = "shielded")]
 pub mod shielded;
 pub mod tokens;

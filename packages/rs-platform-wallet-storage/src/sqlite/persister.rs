@@ -1060,6 +1060,15 @@ fn apply_changeset_to_tx(
     if !cs.account_address_pools.is_empty() {
         schema::accounts::apply_pools(tx, wallet_id, &cs.account_address_pools)?;
     }
+    if !cs.pending_contact_crypto_added.is_empty() || !cs.pending_contact_crypto_cleared.is_empty()
+    {
+        schema::pending_contact_crypto::apply_pending_contact_crypto(
+            tx,
+            wallet_id,
+            &cs.pending_contact_crypto_added,
+            &cs.pending_contact_crypto_cleared,
+        )?;
+    }
     if let Some(core) = cs.core.as_ref() {
         schema::core_state::apply(tx, wallet_id, core)?;
     }
