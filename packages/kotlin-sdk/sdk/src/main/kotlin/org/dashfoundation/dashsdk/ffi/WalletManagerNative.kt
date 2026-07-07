@@ -76,32 +76,118 @@ internal object WalletManagerNative {
     /** Balance as `long[4]` = {confirmed, unconfirmed, immature, locked}. */
     external fun walletGetBalance(walletHandle: Long): LongArray
 
+    // ── Core transaction builder (1:1 over `core_wallet_tx_builder_*`) ─
+    //
+    // Each step is a thin extern (one export = one FFI call, per
+    // `packages/kotlin-sdk/CLAUDE.md`); the `CoreTransactionBuilder` Kotlin
+    // class orchestrates the sequence, mirroring the Swift
+    // `CoreTransactionBuilder` + the `.coreToCore` flow in
+    // `SendViewModel.swift`. `builder` and `tx` are opaque native pointers
+    // carried as `Long` (the builder's `FFITransactionBuilder`, and a
+    // heap-boxed `FFICoreTransaction` from [coreTxBuilderBuildSigned]).
+
     /**
-     * Build, sign, and broadcast a Core payment from this platform wallet
-     * to [addresses]/[amounts], returning the serialized signed
-     * transaction bytes.
-     *
-     * Single composite (item 2): the Rust side acquires the core-wallet
-     * handle, invokes `core_wallet_send_to_addresses` (build + sign via the
-     * resolver-backed core signer AND broadcast), then releases the
-     * transient handle — no orchestration crosses this boundary.
-     *
-     * @param accountType 0 = BIP44, 1 = BIP32.
-     * @param accountIndex account index (0 for the default account).
-     * @param addresses recipient Dash addresses (base58).
-     * @param amounts matching duff amounts (same length as [addresses]).
-     * @param coreSignerHandle a `MnemonicResolverHandle` (the manager's
-     *   resolver) used for the Core ECDSA signatures.
-     * @return the serialized signed transaction bytes.
+     * `core_wallet_tx_builder_new` — create a builder for [network]
+     * (`Network.ffiValue`). Returns the builder pointer (0 after throwing);
+     * free with [coreTxBuilderDestroy] or [coreTxBuilderBuildSigned] (which
+     * consumes it).
      */
-    external fun walletCoreSendToAddresses(
+    external fun coreTxBuilderNew(network: Int): Long
+
+    /**
+     * `core_wallet_tx_builder_add_output` — append a recipient output.
+     * [address] is network-checked Rust-side; [amount] (duffs) must be
+     * positive.
+     */
+    external fun coreTxBuilderAddOutput(builder: Long, address: String, amount: Long)
+
+    /**
+     * `core_wallet_tx_builder_set_change_address` — override the change
+     * address (network-checked). Optional; the Core→Core send relies on
+     * [coreTxBuilderSetFunding], which also sets a change address.
+     */
+    external fun coreTxBuilderSetChangeAddress(builder: Long, address: String)
+
+    /** `core_wallet_tx_builder_set_fee_rate` — fee rate in duffs/kB (> 0). */
+    external fun coreTxBuilderSetFeeRate(builder: Long, satPerKb: Long)
+
+    /**
+     * `core_wallet_tx_builder_set_selection_strategy` — coin-selection
+     * strategy by discriminant (0 SmallestFirst, 1 LargestFirst,
+     * 2 BranchAndBound, 3 OptimalConsolidation, 4 Random, 5 All).
+     */
+    external fun coreTxBuilderSetSelectionStrategy(builder: Long, strategy: Int)
+
+    /**
+     * `core_wallet_tx_builder_set_current_height` — advisory chain-tip
+     * height (funding / build override it with the wallet's last processed
+     * height). Non-negative.
+     */
+    external fun coreTxBuilderSetCurrentHeight(builder: Long, height: Int)
+
+    /**
+     * `core_wallet_tx_builder_set_funding` — fund from a wallet account,
+     * setting inputs AND the change address. [accountType]: 0 BIP44,
+     * 1 BIP32, 2 CoinJoin.
+     */
+    external fun coreTxBuilderSetFunding(
+        builder: Long,
         walletHandle: Long,
         accountType: Int,
         accountIndex: Int,
-        addresses: Array<String>,
-        amounts: LongArray,
+    )
+
+    /**
+     * `core_wallet_tx_builder_build_signed` — build + sign against the wallet
+     * account, resolving Core ECDSA signatures via [coreSignerHandle] (a
+     * `MnemonicResolverHandle`). CONSUMES the builder (do not reuse the
+     * builder handle afterwards). Returns an opaque built-transaction pointer
+     * (0 after throwing) for [coreWalletBroadcastTransaction] /
+     * [coreTransactionFree].
+     */
+    external fun coreTxBuilderBuildSigned(
+        builder: Long,
+        walletHandle: Long,
+        accountType: Int,
+        accountIndex: Int,
         coreSignerHandle: Long,
-    ): ByteArray
+    ): Long
+
+    /**
+     * `core_wallet_tx_builder_destroy` — free a builder from [coreTxBuilderNew]
+     * that was NOT consumed by [coreTxBuilderBuildSigned]. Safe on 0.
+     */
+    external fun coreTxBuilderDestroy(builder: Long)
+
+    /**
+     * `platform_wallet_get_core` — resolve the transient core-wallet handle
+     * from a `PlatformWallet` handle, for [coreWalletBroadcastTransaction].
+     * Free with [coreWalletDestroy]. Returns 0 after throwing.
+     */
+    external fun platformWalletGetCore(walletHandle: Long): Long
+
+    /**
+     * `core_wallet_broadcast_transaction` — broadcast a transaction built by
+     * [coreTxBuilderBuildSigned]. [accountType]/[accountIndex] identify the
+     * funding account so a definitive rejection releases its UTXO
+     * reservation. Returns the txid as a lowercase hex string.
+     */
+    external fun coreWalletBroadcastTransaction(
+        coreHandle: Long,
+        tx: Long,
+        accountType: Int,
+        accountIndex: Int,
+    ): String
+
+    /** `core_wallet_destroy` — release a core handle from [platformWalletGetCore]. Safe on 0. */
+    external fun coreWalletDestroy(coreHandle: Long)
+
+    /**
+     * `core_wallet_transaction_free` — free a transaction from
+     * [coreTxBuilderBuildSigned] (its box AND the tx bytes it owns). Safe on
+     * 0; call exactly once per built transaction.
+     */
+    external fun coreTransactionFree(tx: Long)
 
     /**
      * Enumerate the wallet's Platform-payment addresses with cached credit

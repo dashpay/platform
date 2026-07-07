@@ -95,7 +95,8 @@ private const val MEMO_BYTE_LIMIT = 32
  * recipient with address-family detection (Core / Platform / Shielded via
  * [DashAddress.parse]), a "Send From" source selector, and per-flow routing:
  *
- * - **Core → Core** — `ManagedPlatformWallet.sendToAddresses` (unchanged).
+ * - **Core → Core** — `ManagedPlatformWallet.sendToAddresses` (drives the
+ *   `CoreTransactionBuilder` steps + broadcast; returns the txid).
  * - **Shielded → Shielded** (Type 16, SH-05) —
  *   `PlatformWalletManager.shieldedTransfer`, optional ≤32-byte UTF-8 memo.
  * - **Shielded → Platform** (Type 17, SH-06) —
@@ -109,7 +110,7 @@ private const val MEMO_BYTE_LIMIT = 32
  * surfaced through the SUCCESS path ("may have gone through — do not
  * retry"), mirroring iOS SendViewModel.swift:790.
  */
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalStdlibApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SendTransactionScreen(
     walletIdHex: String,
@@ -470,11 +471,11 @@ fun SendTransactionScreen(
                                     error = "Wallet is not ready. Try again in a moment."
                                     return@launch
                                 }
-                                val txBytes = wallet.sendToAddresses(
+                                sentTxidHex = wallet.sendToAddresses(
                                     recipients = listOf(trimmedRecipient to amount),
+                                    network = network,
                                     coreSignerHandle = activeManager.mnemonicResolverHandle,
                                 )
-                                sentTxidHex = txidHexOf(txBytes)
                             }
 
                             SendFlow.SHIELDED_TO_SHIELDED -> {
@@ -590,20 +591,4 @@ fun SendTransactionScreen(
     }
 
     ErrorAlertDialog(message = error, onDismiss = { error = null })
-}
-
-/**
- * Standard Dash/Bitcoin txid of a serialized transaction: the
- * double-SHA-256 of the raw bytes, byte-reversed, rendered as lowercase
- * hex — matches what block explorers display. Computed on-device because
- * `core_wallet_send_to_addresses` returns the serialized tx, not the id.
- */
-@OptIn(ExperimentalStdlibApi::class)
-private fun txidHexOf(txBytes: ByteArray): String {
-    val sha = java.security.MessageDigest.getInstance("SHA-256")
-    val once = sha.digest(txBytes)
-    sha.reset()
-    val twice = sha.digest(once)
-    twice.reverse()
-    return twice.toHexString()
 }

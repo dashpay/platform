@@ -119,7 +119,7 @@ Status legend:
 | QRScannerView.swift | ui/scanner/QrScannerScreen.kt · `QrScanner` | ported |
 | ReceiveAddressView.swift | ui/wallet/ReceiveAddressSheet.kt | ported |
 | SeedBackupView.swift | ui/wallet/SeedBackupScreen.kt · `SeedBackup` | ported |
-| SendTransactionView.swift | ui/wallet/SendTransactionScreen.kt · `SendTransaction` | ported — broadcast wired via `ManagedPlatformWallet.sendToAddresses` (the now-bridged `core_wallet_send_to_addresses` composite) |
+| SendTransactionView.swift | ui/wallet/SendTransactionScreen.kt · `SendTransaction` | ported — broadcast wired via `ManagedPlatformWallet.sendToAddresses`, which drives the `CoreTransactionBuilder` (`core_wallet_tx_builder_*` + `core_wallet_broadcast_transaction`) |
 | ShieldedActivityView.swift | ui/shielded/ShieldedActivityScreen.kt · `ShieldedActivity` | ported |
 | TransactionDetailView.swift | ui/wallet/TransactionDetailScreen.kt · `WalletTransactionDetail` | ported |
 | TransactionListView.swift | ui/wallet/TransactionListScreen.kt · `WalletTransactions` | ported |

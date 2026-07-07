@@ -96,12 +96,12 @@ Most Platform actions have hard preconditions. Establish these fixtures before s
 | CORE-02 | Restore wallet (existing mnemonic) | Core | Essential | ✅ | | `CreateWalletScreen` (Import Existing toggle). After sync, derived addresses + balance populate. |
 | CORE-03 | Backup / view recovery phrase | Core | Essential | ✅ | | `SeedBackupScreen`. Phrase matches creation; biometric-gated reveal on Android. |
 | CORE-04 | Receive (derive address + QR) | Core | Essential | ✅ | | `ReceiveAddressSheet` → `core_wallet_next_receive_address`. Fresh external address + scannable QR. |
-| CORE-05 | Send Core L1 transaction | Core | Essential | ✅ | | Send flow (`SendTransactionScreen`, mode Core→Core) → `core_wallet_send_to_addresses`. Tx broadcasts; balance drops; appears in history. |
+| CORE-05 | Send Core L1 transaction | Core | Essential | ✅ | | Send flow (`SendTransactionScreen`, mode Core→Core) → `ManagedPlatformWallet.sendToAddresses` → `CoreTransactionBuilder` (build+sign) → `core_wallet_broadcast_transaction`. Tx broadcasts; balance drops; appears in history. |
 | CORE-06 | View balance / tx history / UTXOs | Core | Essential | ✅ | | `WalletDetailScreen`, `TransactionListScreen`, `AccountDetailScreen` (Room). |
 | CORE-07 | SPV sync (start / stop / progress) | Core | Essential | ✅ | | Global sync indicator (`GlobalSyncIndicator`) → `platform_wallet_manager_spv_*`. Headers/filters/masternodes advance to tip. |
 | CORE-08 | QR scan recipient | Core | Manual | ✅ | | `QrScannerScreen` (CameraX), reachable in the Send flow. Emulators can use a virtual camera scene but reliability varies — treat as `Tier=Manual`. |
 | CORE-09 | Multiple HD accounts (within one wallet) | Core | Common | ✅ | | Account selection / `AccountDetailScreen`; balances per `account_index`. |
-| CORE-10 | Multi-recipient Core send | Core | Common | ✅ | | Send flow (`SendTransactionScreen`, Core→Core) → "Add recipient" appends extra address/amount rows → `core_wallet_send_to_addresses`. One tx with N outputs. |
+| CORE-10 | Multi-recipient Core send | Core | Common | ✅ | | Send flow (`SendTransactionScreen`, Core→Core) → "Add recipient" appends extra address/amount rows → `CoreTransactionBuilder` (one `addOutput` per recipient) → `core_wallet_broadcast_transaction`. One tx with N outputs. |
 
 #### Multiple wallets on one device
 

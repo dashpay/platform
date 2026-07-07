@@ -104,39 +104,71 @@ class ManagedPlatformWallet internal constructor(
     }
 
     /**
-     * Build, sign, and broadcast a Core payment to [recipients] — port of
-     * Swift's `ManagedCoreWallet.sendToAddresses`.
+     * The transient core-wallet handle for UTXO management, addresses, and
+     * transaction broadcasting — port of Swift's
+     * `ManagedPlatformWallet.coreWallet()`. The returned [ManagedCoreWallet]
+     * owns the handle and destroys it on `close()` / GC.
+     */
+    fun coreWallet(): ManagedCoreWallet =
+        ManagedCoreWallet(mapNativeErrors { WalletManagerNative.platformWalletGetCore(handle) })
+
+    /**
+     * Build, sign, and broadcast a Core payment to [recipients], returning
+     * the broadcast txid as a lowercase hex string.
      *
-     * One Rust call does the whole thing (acquire core handle → build +
-     * sign via the resolver-backed core signer → broadcast → release
-     * handle); Kotlin only marshals the recipient list. Returns the
-     * serialized signed transaction bytes.
+     * Mirrors the `.coreToCore` flow in Swift's `SendViewModel.executeSend`
+     * (SendViewModel.swift:515-533): drive a [CoreTransactionBuilder] step by
+     * step (`new → addOutput* → setFunding → buildSigned`), then broadcast the
+     * signed tx via the core wallet. `setFunding` sets inputs AND the change
+     * address, and the fee rate / selection strategy / current height come
+     * from the builder defaults — exactly as iOS's plain send does (it calls
+     * none of those setters). Coin selection, funding, and signing are all
+     * Rust-side; Kotlin only marshals the outputs. The signed tx carries its
+     * funding account, so a failed broadcast releases its UTXO reservation.
      *
+     * @param network the wallet network — output/change addresses are
+     *   validated against it Rust-side (Swift's `SendViewModel` likewise hands
+     *   the app network to the builder). `setFunding` / `buildSigned` re-check
+     *   it against the wallet's own network.
      * @param coreSignerHandle the manager's `MnemonicResolverHandle`
      *   (`PlatformWalletManager.mnemonicResolverHandle`) — used for the
      *   Core ECDSA signatures. No private key crosses the boundary.
      */
     suspend fun sendToAddresses(
         recipients: List<Pair<String, Long>>,
+        network: org.dashfoundation.dashsdk.Network,
         coreSignerHandle: Long,
         accountType: AccountType = AccountType.BIP44,
         accountIndex: Int = 0,
-    ): ByteArray = withContext(Dispatchers.IO) {
+    ): String = withContext(Dispatchers.IO) {
         require(accountIndex >= 0) { "accountIndex must be non-negative, got $accountIndex" }
+        require(recipients.isNotEmpty()) { "recipients must not be empty" }
         require(recipients.all { it.second > 0 }) {
             "every recipient amount must be positive"
         }
-        val addresses = recipients.map { it.first }.toTypedArray()
-        val amounts = recipients.map { it.second }.toLongArray()
+        val builderAccountType = when (accountType) {
+            AccountType.BIP44 -> CoreTransactionBuilder.AccountType.BIP44
+            AccountType.BIP32 -> CoreTransactionBuilder.AccountType.BIP32
+        }
         mapNativeErrors {
-            WalletManagerNative.walletCoreSendToAddresses(
-                walletHandle = handle,
-                accountType = accountType.ffiValue,
-                accountIndex = accountIndex,
-                addresses = addresses,
-                amounts = amounts,
-                coreSignerHandle = coreSignerHandle,
-            )
+            val builder = CoreTransactionBuilder(network)
+            // `buildSigned` consumes the builder; `use` still safely destroys
+            // it on the pre-build failure paths (addOutput / setFunding throw).
+            val signedTx = builder.use {
+                for ((address, amount) in recipients) {
+                    it.addOutput(address, amount)
+                }
+                it.setFunding(this@ManagedPlatformWallet, builderAccountType, accountIndex)
+                it.buildSigned(
+                    this@ManagedPlatformWallet,
+                    builderAccountType,
+                    accountIndex,
+                    coreSignerHandle,
+                )
+            }
+            signedTx.use { tx ->
+                coreWallet().use { core -> core.broadcastTransaction(tx) }
+            }
         }
     }
 
