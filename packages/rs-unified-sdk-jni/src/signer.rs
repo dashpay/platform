@@ -398,8 +398,9 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_SignerNative_signWith
         {
             // `get_byte_array_region` copies straight into Rust memory (no
             // pinned JVM buffer). jbyte is i8; the Vec is u8 — same layout.
-            let dst =
-                unsafe { std::slice::from_raw_parts_mut(mnemonic_bytes.as_mut_ptr().cast::<i8>(), n) };
+            let dst = unsafe {
+                std::slice::from_raw_parts_mut(mnemonic_bytes.as_mut_ptr().cast::<i8>(), n)
+            };
             if env.get_byte_array_region(&mnemonic_utf8, 0, dst).is_err() {
                 let _ = env.exception_clear();
                 crate::support::throw_sdk_exception(env, 1, "invalid mnemonic argument");
