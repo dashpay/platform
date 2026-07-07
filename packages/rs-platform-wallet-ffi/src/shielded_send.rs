@@ -1467,9 +1467,15 @@ mod tests {
             "shield nonce rejection must not regress to ErrorWalletOperation"
         );
         let msg = message_of(&result);
+        // Pin the EXACT rendered substrings, not bare digits, so a
+        // provided/expected transposition would fail the test.
         assert!(
-            msg.contains('1') && msg.contains('2'),
-            "nonce values must survive in the message"
+            msg.contains("submitted nonce 1"),
+            "submitted (provided) nonce must render exactly: {msg}"
+        );
+        assert!(
+            msg.contains("Platform expected 2"),
+            "expected nonce must render exactly: {msg}"
         );
     }
 }
