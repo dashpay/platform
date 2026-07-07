@@ -270,7 +270,11 @@ class AppContainer(private val context: Context) {
     private suspend fun loadKnownContractsIntoSdk() {
         val sdk = appState.sdk.value ?: return
         try {
-            val stored = database.dataContractDao().observeAll().first()
+            // Scope to the SDK's own network: the trusted-context cache is
+            // keyed only by contract id, so seeding a network-locked SDK with
+            // another network's contract could resolve the wrong/stale schema
+            // (same network-scoping rule as onLoadWalletList).
+            val stored = database.dataContractDao().observeByNetwork(sdk.network.ffiValue).first()
             val contracts = stored.mapNotNull { entity ->
                 entity.binarySerialization?.let { bytes ->
                     Base58.encode(entity.id) to bytes

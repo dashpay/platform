@@ -857,6 +857,21 @@ fn decode_pubkeys_blob(env: &mut JNIEnv, arr: &JByteArray) -> Option<Vec<(u32, V
         return None;
     };
     let count = u32::from_be_bytes(count_bytes.try_into().ok()?) as usize;
+    // Length-before-allocation guard: each row is at least 6 bytes
+    // (u32 keyId + u16 len), so a header claiming more rows than the
+    // remaining payload can hold is malformed — prevents a huge
+    // `with_capacity` abort from a raw-JNI blob.
+    if count
+        .checked_mul(6)
+        .is_none_or(|need| bytes.len() - cursor < need)
+    {
+        throw_sdk_exception(
+            env,
+            1,
+            &format!("pubkeysBlob claims {count} rows but body is too short"),
+        );
+        return None;
+    }
     let mut rows = Vec::with_capacity(count);
     for i in 0..count {
         let Some(id_bytes) = read(&mut cursor, 4) else {
