@@ -178,7 +178,18 @@ fun ContactDetailScreen(
         }
     }
 
-    LaunchedEffect(Unit) { refreshPayments() }
+    // Key on the manager instance + wallet-id availability, NOT Unit:
+    // refreshPayments() no-ops until both `manager` and `walletId` are
+    // non-null, and the Room identity emits null first (initialValue), so a
+    // one-shot LaunchedEffect(Unit) runs the initial refresh too early, skips
+    // the durable refreshDashPayPayments load, and never retries once the
+    // wallet association arrives. Re-firing when they become available drives
+    // the refresh at the right moment. (Keyed on `walletId != null` rather
+    // than the ByteArray so an identity-row re-emit with the same wallet
+    // doesn't trigger a redundant refresh.)
+    LaunchedEffect(manager, walletId != null) {
+        if (manager != null && walletId != null) refreshPayments()
+    }
     val syncingFlow = remember(manager) { manager?.dashPaySyncIsSyncing ?: MutableStateFlow(false) }
     val isSyncing by syncingFlow.collectAsStateWithLifecycle(false)
     LaunchedEffect(isSyncing) { if (!isSyncing) refreshPayments() }
