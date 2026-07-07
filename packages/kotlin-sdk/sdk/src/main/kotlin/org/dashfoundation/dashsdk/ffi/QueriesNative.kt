@@ -320,12 +320,6 @@ internal object QueriesNative {
     external fun groupGetInfo(sdk: Long, contractId: String, groupContractPosition: Int): String?
 
     /**
-     * All groups in a contract as a JSON array. [startAtPosition] (decimal
-     * string) may be null. Returns JSON, or null.
-     */
-    external fun groupGetInfos(sdk: Long, startAtPosition: String?, limit: Int): String?
-
-    /**
      * Group actions at a position filtered by [status] (u8 enum discriminant).
      * [startAtActionId] may be null. Returns JSON, or null.
      */

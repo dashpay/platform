@@ -686,21 +686,6 @@ internal val QUERY_REGISTRY: List<QueryDefinition> = listOf(
         )
     },
     QueryDefinition(
-        name = "getGroupInfos",
-        label = "Get Group Infos",
-        description = "All groups in a contract, paginated by position.",
-        inputs = listOf(
-            QueryInput("startAtPosition", "Start At Position", required = false),
-            QueryInput("limit", "Limit", required = false, placeholder = "5"),
-        ),
-        diagnosticInputs = mapOf("limit" to "5"),
-    ) { sdk, inputs ->
-        sdk.groups.infos(
-            startAtPosition = inputs["startAtPosition"]?.takeIf { it.isNotBlank() },
-            limit = inputs["limit"]?.trim()?.toIntOrNull() ?: 0,
-        )
-    },
-    QueryDefinition(
         name = "getGroupActions",
         label = "Get Group Actions",
         description = "Group actions at a position filtered by status (0 active, 1 closed).",

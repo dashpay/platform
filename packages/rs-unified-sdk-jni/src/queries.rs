@@ -23,7 +23,7 @@ use rs_sdk_ffi::{
     dash_sdk_document_sum, dash_sdk_dpns_check_availability, dash_sdk_dpns_get_usernames,
     dash_sdk_dpns_resolve, dash_sdk_dpns_search, dash_sdk_evonode_get_proposed_epoch_blocks_by_ids,
     dash_sdk_evonode_get_proposed_epoch_blocks_by_range, dash_sdk_group_get_action_signers,
-    dash_sdk_group_get_actions, dash_sdk_group_get_info, dash_sdk_group_get_infos,
+    dash_sdk_group_get_actions, dash_sdk_group_get_info,
     dash_sdk_identities_fetch_balances, dash_sdk_identities_fetch_contract_keys,
     dash_sdk_identity_fetch, dash_sdk_identity_fetch_balance,
     dash_sdk_identity_fetch_balance_and_revision,
@@ -1096,27 +1096,6 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_QueriesNative_groupGe
                 contract.as_ptr(),
                 group_contract_position.clamp(0, u16::MAX as jint) as u16,
             )
-        };
-        unsafe { unwrap_string(env, result) }
-            .map(|s| s.into_raw())
-            .unwrap_or(ptr::null_mut())
-    })
-}
-
-/// All groups in a contract, as a JSON array. `startAtPosition` (decimal
-/// string) may be null. Returns JSON, or null.
-#[no_mangle]
-pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_QueriesNative_groupGetInfos(
-    mut env: JNIEnv,
-    _class: JClass,
-    sdk: jlong,
-    start_at_position: JString,
-    limit: jint,
-) -> jstring {
-    guard(&mut env, ptr::null_mut(), |env| {
-        let start = opt_c_string(env, &start_at_position);
-        let result = unsafe {
-            dash_sdk_group_get_infos(sdk as *const SDKHandle, c_ptr(&start), limit.max(0) as u32)
         };
         unsafe { unwrap_string(env, result) }
             .map(|s| s.into_raw())

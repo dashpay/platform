@@ -391,15 +391,6 @@ class Groups internal constructor(private val sdk: Sdk) {
         }
 
     /**
-     * All groups in a contract as a JSON array. [startAtPosition] (decimal
-     * string) may be null. Returns JSON, or null.
-     */
-    suspend fun infos(startAtPosition: String? = null, limit: Int = 0): String? =
-        withContext(Dispatchers.IO) {
-            mapNativeErrors { QueriesNative.groupGetInfos(sdk.handle, startAtPosition, limit) }
-        }
-
-    /**
      * Group actions at a position filtered by [status] (u8 enum discriminant).
      * [startAtActionId] may be null. Returns JSON, or null.
      */
