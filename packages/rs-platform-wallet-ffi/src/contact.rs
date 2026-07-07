@@ -12,10 +12,15 @@ pub unsafe extern "C" fn managed_identity_get_sent_contact_request_ids(
     out_array: *mut IdentifierArray,
 ) -> PlatformWalletFFIResult {
     check_ptr!(out_array);
+    // Sentinel first: the handle lookup below is fallible, and
+    // `platform_wallet_identifier_array_free` reconstructs a `Vec` from any
+    // non-null pointer/count pair — see `IdentifierArray::empty`.
+    unsafe { *out_array = IdentifierArray::empty() };
 
     let option = MANAGED_IDENTITY_STORAGE.with_item(identity_handle, |identity| {
         identity
-            .sent_contact_requests
+            .dashpay()
+            .sent_contact_requests()
             .keys()
             .cloned()
             .collect::<Vec<_>>()
@@ -32,10 +37,13 @@ pub unsafe extern "C" fn managed_identity_get_incoming_contact_request_ids(
     out_array: *mut IdentifierArray,
 ) -> PlatformWalletFFIResult {
     check_ptr!(out_array);
+    // Sentinel first — see `IdentifierArray::empty`.
+    unsafe { *out_array = IdentifierArray::empty() };
 
     let option = MANAGED_IDENTITY_STORAGE.with_item(identity_handle, |identity| {
         identity
-            .incoming_contact_requests
+            .dashpay()
+            .incoming_contact_requests()
             .keys()
             .cloned()
             .collect::<Vec<_>>()
@@ -52,10 +60,13 @@ pub unsafe extern "C" fn managed_identity_get_established_contact_ids(
     out_array: *mut IdentifierArray,
 ) -> PlatformWalletFFIResult {
     check_ptr!(out_array);
+    // Sentinel first — see `IdentifierArray::empty`.
+    unsafe { *out_array = IdentifierArray::empty() };
 
     let option = MANAGED_IDENTITY_STORAGE.with_item(identity_handle, |identity| {
         identity
-            .established_contacts
+            .dashpay()
+            .established_contacts()
             .keys()
             .cloned()
             .collect::<Vec<_>>()
@@ -78,7 +89,7 @@ pub unsafe extern "C" fn managed_identity_is_contact_established(
     let id = unwrap_result_or_return!(unsafe { read_identifier(contact_id) });
 
     let option = MANAGED_IDENTITY_STORAGE.with_item(identity_handle, |identity| {
-        identity.established_contacts.contains_key(&id)
+        identity.dashpay().established_contacts().contains_key(&id)
     });
     *out_is_established = unwrap_option_or_return!(option);
     PlatformWalletFFIResult::ok()
@@ -97,9 +108,12 @@ pub unsafe extern "C" fn managed_identity_send_contact_request(
     let request = unwrap_option_or_return!(request_result);
 
     let option = MANAGED_IDENTITY_STORAGE.with_item_mut(identity_handle, |identity| {
-        identity.add_sent_contact_request(request, &ffi_noop_persister());
+        // Return the persist result so a failure surfaces through the FFI
+        // result instead of being swallowed — correct for any persister on this
+        // handle path (today the infallible `ffi_noop_persister`).
+        identity.add_sent_contact_request(request, &ffi_noop_persister())
     });
-    unwrap_option_or_return!(option);
+    unwrap_result_or_return!(unwrap_option_or_return!(option));
     PlatformWalletFFIResult::ok()
 }
 
@@ -116,33 +130,37 @@ pub unsafe extern "C" fn managed_identity_accept_contact_request(
     let request = unwrap_option_or_return!(request_result);
 
     let option = MANAGED_IDENTITY_STORAGE.with_item_mut(identity_handle, |identity| {
-        identity.add_incoming_contact_request(request, &ffi_noop_persister());
+        // Return the persist result so a failure surfaces through the FFI
+        // result instead of being swallowed — correct for any persister on this
+        // handle path (today the infallible `ffi_noop_persister`).
+        identity.add_incoming_contact_request(request, &ffi_noop_persister())
     });
-    unwrap_option_or_return!(option);
+    unwrap_result_or_return!(unwrap_option_or_return!(option));
     PlatformWalletFFIResult::ok()
 }
 
-/// Reject an incoming contact request
-/// This will remove the request from incoming_contact_requests
+/// Ignore a contact sender (per-sender mute, = block, reversible).
+///
+/// Local in-memory path on a managed-identity handle (no persister) —
+/// drops the sender's pending incoming request and records them in
+/// `ignored_senders`. The durable, persisted path is the wallet-scoped
+/// `platform_wallet_ignore_contact_sender`.
 #[no_mangle]
-pub unsafe extern "C" fn managed_identity_reject_contact_request(
+pub unsafe extern "C" fn managed_identity_ignore_contact_sender(
     identity_handle: Handle,
     sender_id: *const u8,
 ) -> PlatformWalletFFIResult {
     let id = unwrap_result_or_return!(unsafe { read_identifier(sender_id) });
 
     let option = MANAGED_IDENTITY_STORAGE.with_item_mut(identity_handle, |identity| {
-        identity.remove_incoming_contact_request(&id).0.is_some()
+        // `ignore_sender` returns a `ContactChangeSet`, not a `Result` — there is
+        // no error to surface. This handle has no persister, so the changeset is
+        // intentionally dropped; the durable `platform_wallet_ignore_contact_sender`
+        // path persists it.
+        drop(identity.ignore_sender(&id));
     });
-    let removed = unwrap_option_or_return!(option);
-    if removed {
-        PlatformWalletFFIResult::ok()
-    } else {
-        PlatformWalletFFIResult::err(
-            PlatformWalletFFIResultCode::ErrorContactNotFound,
-            "Contact request not found",
-        )
-    }
+    unwrap_option_or_return!(option);
+    PlatformWalletFFIResult::ok()
 }
 
 #[cfg(test)]

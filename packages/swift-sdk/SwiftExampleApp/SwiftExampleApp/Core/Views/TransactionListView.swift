@@ -26,6 +26,20 @@ struct TransactionListView: View {
     /// output as "to-self" and reports ~0 for asset locks. The
     /// `amountDuffs` on the asset-lock row is the actual L1 burn.
     @Query private var assetLocks: [PersistentAssetLock]
+    /// This wallet's owning identities. The DashPay payment / contact
+    /// join below must be scoped to these — two identities in one store
+    /// (A pays B) each persist a row for the same txid, and joining by
+    /// txid alone would let B's incoming payment resolve to A's `.sent`
+    /// row (or the wrong counterparty name). `ownerIdentityIds` narrows
+    /// the join to this wallet's identities, leaving at most one payment
+    /// row per txid.
+    @Query private var walletIdentities: [PersistentIdentity]
+    /// DashPay payments + the contact-name sources, to label a tx that is a
+    /// DashPay payment with who it's with (+ memo). Scoped to this wallet's
+    /// identities in the joins below.
+    @Query private var dashpayPayments: [PersistentDashpayPayment]
+    @Query private var contactProfiles: [PersistentDashpayContactProfile]
+    @Query private var contactRequests: [PersistentDashpayContactRequest]
     @State private var selectedTransaction: PersistentTransaction?
 
     init(walletId: Data) {
@@ -38,6 +52,15 @@ struct TransactionListView: View {
             predicate: PersistentAssetLock.predicate(walletId: walletId)
         )
         _assetLocks = Query(assetLockDescriptor)
+        _walletIdentities = Query(
+            filter: #Predicate<PersistentIdentity> { $0.wallet?.walletId == walletId }
+        )
+    }
+
+    /// The owning identity ids of this wallet — the scope for the
+    /// DashPay payment / contact joins below.
+    private var ownerIdentityIds: Set<Data> {
+        Set(walletIdentities.map(\.identityId))
     }
 
     /// Lookup `txid (display-order hex) → total asset-lock amount in
@@ -59,6 +82,38 @@ struct TransactionListView: View {
             map[txidHex, default: 0] += lock.amountDuffs
         }
         return map
+    }
+
+    /// `txid (display-order hex) → DashPay payment`, so a row can tell whether
+    /// the tx it's rendering is a DashPay payment (and to whom). Scoped to
+    /// this wallet's identities so a txid another identity in the same store
+    /// also recorded (A pays B) can't resolve to the wrong direction/row.
+    private var dashpayPaymentByTxid: [String: PersistentDashpayPayment] {
+        let owners = ownerIdentityIds
+        let scoped = dashpayPayments.filter { owners.contains($0.ownerIdentityId) }
+        return Dictionary(scoped.map { ($0.txid, $0) }, uniquingKeysWith: { first, _ in first })
+    }
+
+    /// Resolve a counterparty identity id → best display name (alias > profile
+    /// > DPNS > truncated id), reusing the shared DashPay name helper. Scoped
+    /// to this wallet's identities so a contact row owned by a sibling
+    /// identity can't leak the wrong alias/name.
+    private func dashpayCounterpartyName(for contactId: Data) -> String {
+        let owners = ownerIdentityIds
+        let alias = contactRequests.first {
+            owners.contains($0.ownerIdentityId)
+                && $0.contactIdentityId == contactId
+                && ($0.contactAlias?.isEmpty == false)
+        }?.contactAlias
+        let profileName = contactProfiles.first {
+            owners.contains($0.ownerIdentityId) && $0.contactIdentityId == contactId
+        }?.displayName
+        return dashPayContactDisplayName(
+            contactId: contactId,
+            alias: alias,
+            profileDisplayName: profileName,
+            dpnsLabel: nil
+        )
     }
 
     private var transactions: [PersistentTransaction] {
@@ -119,13 +174,19 @@ struct TransactionListView: View {
 
     private var transactionsList: some View {
         let assetLockAmounts = assetLockAmountByTxid
+        let payments = dashpayPaymentByTxid
         return List(transactions) { transaction in
+            let payment = payments[transaction.txidHex]
             Button {
                 selectedTransaction = transaction
             } label: {
                 TransactionRowView(
                     transaction: transaction,
-                    assetLockAmountDuffs: assetLockAmounts[transaction.txidHex]
+                    assetLockAmountDuffs: assetLockAmounts[transaction.txidHex],
+                    dashpayPayment: payment,
+                    dashpayCounterpartyName: payment.map {
+                        dashpayCounterpartyName(for: $0.counterpartyIdentityId)
+                    }
                 )
             }
             .buttonStyle(.plain)
@@ -145,8 +206,22 @@ struct TransactionRowView: View {
     /// to mint platform credits. `nil` for non-asset-lock rows or
     /// when no matching row was found.
     var assetLockAmountDuffs: Int64? = nil
+    /// The DashPay payment this tx belongs to, if any — joined by `txid` in
+    /// `TransactionListView`. When set, the row shows the contact context
+    /// (who + memo + a DashPay badge) instead of a bare txid; a DashPay
+    /// payment is otherwise an ordinary `standard` core tx, indistinguishable
+    /// from a plain send.
+    var dashpayPayment: PersistentDashpayPayment? = nil
+    /// The counterparty's resolved display name (alias / profile / DPNS), or
+    /// nil to fall through to a truncated identity id.
+    var dashpayCounterpartyName: String? = nil
+
+    private var isDashPay: Bool { dashpayPayment != nil }
 
     private var typeIcon: String {
+        // A DashPay payment is a person-to-person send/receive — mark it with
+        // a contact glyph so it reads differently from a raw on-chain tx.
+        if isDashPay { return "person.crop.circle.fill" }
         // Asset-lock / asset-unlock txs override direction-based icons
         // since the `direction` classifier reports `Internal` (the
         // credit output is structurally self-owned), but the intent
@@ -165,6 +240,9 @@ struct TransactionRowView: View {
     }
 
     private var typeColor: Color {
+        // DashPay rows are indigo — a third axis distinct from the
+        // green/red send-receive and the purple asset-lock rows.
+        if isDashPay { return .indigo }
         // Asset-lock txs render purple — distinct from the red
         // outgoing / green incoming axis so the user can scan the
         // list and immediately spot identity-funding rows.
@@ -177,6 +255,29 @@ struct TransactionRowView: View {
         case 3: return .blue
         default: return .secondary
         }
+    }
+
+    /// Primary label: the contact context for a DashPay payment, else the
+    /// truncated txid.
+    private var primaryText: String {
+        guard let payment = dashpayPayment else { return truncatedTxid }
+        let verb = payment.direction == .sent ? "Sent to" : "Received from"
+        return "\(verb) \(dashpayCounterpartyName ?? "contact")"
+    }
+
+    @ViewBuilder
+    private var dashPayBadge: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "person.2.fill")
+                .font(.caption2)
+            Text("DashPay")
+                .font(.caption2)
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 2)
+        .background(Color.indigo.opacity(0.2))
+        .foregroundColor(.indigo)
+        .cornerRadius(4)
     }
 
     private var isConfirmed: Bool {
@@ -232,11 +333,12 @@ struct TransactionRowView: View {
                 .frame(width: 40)
 
             VStack(alignment: .leading, spacing: 4) {
-                // Transaction ID (truncated) and timestamp
+                // DashPay payment → contact context; otherwise the txid.
                 HStack {
-                    Text(truncatedTxid)
-                        .font(.system(.subheadline, design: .monospaced))
+                    Text(primaryText)
+                        .font(isDashPay ? .subheadline : .system(.subheadline, design: .monospaced))
                         .foregroundColor(.primary)
+                        .lineLimit(1)
 
                     Spacer()
 
@@ -245,9 +347,22 @@ struct TransactionRowView: View {
                         .foregroundColor(.secondary)
                 }
 
+                // DashPay memo (if the sender attached one).
+                if let memo = dashpayPayment?.memo,
+                    !memo.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    Text(memo)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                }
+
                 // confirmation and amount
                 HStack {
                     confirmationBadge
+
+                    if isDashPay {
+                        dashPayBadge
+                    }
 
                     Spacer()
 

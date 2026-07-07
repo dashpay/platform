@@ -63,13 +63,26 @@ impl IdentityWallet {
     ///
     /// Signing is routed through the supplied `&S: Signer<IdentityPublicKey>`.
     /// Required for external-signable wallets.
+    ///
+    /// Returns the proof-attested post-transfer `AddressInfos` for the
+    /// recipient addresses alongside the sender's new balance. Prefer the
+    /// composite [`PlatformWallet::transfer_credits_to_addresses_with_external_signer`],
+    /// which feeds the returned `AddressInfos` through
+    /// [`PlatformAddressWallet::reconcile_address_infos`] so recipients
+    /// owned by this wallet see their new balance immediately instead of
+    /// waiting for the next BLAST sync round.
+    ///
+    /// [`PlatformWallet::transfer_credits_to_addresses_with_external_signer`]:
+    /// crate::wallet::PlatformWallet::transfer_credits_to_addresses_with_external_signer
+    /// [`PlatformAddressWallet::reconcile_address_infos`]:
+    /// crate::wallet::PlatformAddressWallet::reconcile_address_infos
     pub async fn transfer_credits_to_addresses_with_external_signer<S>(
         &self,
         identity_id: &Identifier,
         recipient_addresses: BTreeMap<PlatformAddress, Credits>,
         signer: &S,
         settings: Option<PutSettings>,
-    ) -> Result<Credits, PlatformWalletError>
+    ) -> Result<(dash_sdk::query_types::AddressInfos, Credits, u64), PlatformWalletError>
     where
         S: Signer<IdentityPublicKey> + Send + Sync,
     {
@@ -87,7 +100,7 @@ impl IdentityWallet {
                 .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?
         };
 
-        let (_address_infos, new_balance) = identity
+        let (address_infos, new_balance, proof_height) = identity
             .transfer_credits_to_addresses(
                 &self.sdk,
                 recipient_addresses,
@@ -126,6 +139,10 @@ impl IdentityWallet {
             }
         }
 
-        Ok(new_balance)
+        // Recipient platform-address balances are reconciled by the
+        // composite `PlatformWallet::transfer_credits_to_addresses_with_external_signer`,
+        // which routes the returned `AddressInfos` through the
+        // platform-address wallet's shared reconciliation seam.
+        Ok((address_infos, new_balance, proof_height))
     }
 }

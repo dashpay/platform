@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import SwiftDashSDK
 
@@ -29,6 +30,20 @@ final class AddressFundFromAssetLockCoordinator: ObservableObject {
     /// the "Pending Platform Top Ups" row on the Wallet Detail
     /// screen can observe map mutations via `objectWillChange`.
     @Published private(set) var controllers: [SlotKey: AddressFundFromAssetLockController] = [:]
+
+    /// Per-slot subscriptions that forward each controller's
+    /// `objectWillChange` (fired on a `phase` transition) to this
+    /// coordinator's own `objectWillChange`.
+    ///
+    /// The `@Published controllers` map only re-publishes on
+    /// insert/remove, NOT when a controller already in the map flips
+    /// phase (`.inFlight → .failed`/`.completed`, or a `.failed`-slot
+    /// retry that reuses the controller). A view that observes only the
+    /// coordinator — e.g. the wallet-detail "Pending Top Ups" list, whose
+    /// Resume gate reads controller `phase` — would otherwise render from
+    /// stale phase state across those transitions. Keyed by slot so the
+    /// subscription is torn down with the controller it tracks.
+    private var phaseObservers: [SlotKey: AnyCancellable] = [:]
 
     /// True when at least one slot is currently in flight (phase
     /// `.inFlight`). Used by the network toggle's `.disabled(_:)`
@@ -117,6 +132,12 @@ final class AddressFundFromAssetLockCoordinator: ObservableObject {
             recipientType: recipientType
         )
         controllers[key] = controller
+        // Forward this controller's phase transitions to observers of the
+        // coordinator (see `phaseObservers`). Registered before `submit()`
+        // so the initial `.idle → .inFlight` flip re-publishes too.
+        phaseObservers[key] = controller.objectWillChange.sink { [weak self] _ in
+            self?.objectWillChange.send()
+        }
         controller.submit(body: body)
         scheduleRetentionSweep(key: key, controller: controller)
         return controller
@@ -137,6 +158,7 @@ final class AddressFundFromAssetLockCoordinator: ObservableObject {
             recipientHash: recipientHash
         )
         controllers.removeValue(forKey: key)
+        phaseObservers.removeValue(forKey: key)
     }
 
     // MARK: - Retention sweep
@@ -163,6 +185,7 @@ final class AddressFundFromAssetLockCoordinator: ObservableObject {
                               Date().timeIntervalSince(at) >= 30 {
                         await MainActor.run {
                             _ = self?.controllers.removeValue(forKey: key)
+                            self?.phaseObservers.removeValue(forKey: key)
                         }
                         return
                     }

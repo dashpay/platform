@@ -54,6 +54,11 @@ pub unsafe extern "C" fn platform_wallet_register_dpns_name_with_signer(
 ) -> PlatformWalletFFIResult {
     check_ptr!(name);
     check_ptr!(out_full_domain_name);
+    // Null the out-pointer before the fallible work below (identifier/name
+    // parsing, the async registration) so an error return never leaves it
+    // holding stack garbage for a cleanup-on-error caller to
+    // `platform_wallet_string_free`.
+    unsafe { *out_full_domain_name = std::ptr::null_mut() };
     check_ptr!(signer_handle);
 
     let id = unwrap_result_or_return!(unsafe { read_identifier(identity_id) });

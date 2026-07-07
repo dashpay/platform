@@ -75,7 +75,9 @@ fn option_string_to_c(s: Option<&str>) -> *mut c_char {
     }
 }
 
-unsafe fn decode_opt_c_str(ptr: *const c_char) -> Result<Option<String>, PlatformWalletFFIResult> {
+pub(crate) unsafe fn decode_opt_c_str(
+    ptr: *const c_char,
+) -> Result<Option<String>, PlatformWalletFFIResult> {
     if ptr.is_null() {
         return Ok(None);
     }
@@ -92,9 +94,18 @@ pub unsafe extern "C" fn managed_identity_get_dashpay_profile(
 ) -> PlatformWalletFFIResult {
     check_ptr!(out_profile);
     check_ptr!(out_has_profile);
+    // Zero-init the out-params before any fallible work so an early return
+    // (bad id, missing wallet) leaves a safe all-null struct rather than
+    // uninitialized memory — `DashPayProfileFFI` owns C-string pointers a
+    // caller might otherwise free on the error path.
+    unsafe {
+        *out_profile = DashPayProfileFFI::empty();
+        *out_has_profile = false;
+    }
 
-    let option = MANAGED_IDENTITY_STORAGE
-        .with_item(identity_handle, |identity| identity.dashpay_profile.clone());
+    let option = MANAGED_IDENTITY_STORAGE.with_item(identity_handle, |identity| {
+        identity.dashpay().profile.clone()
+    });
     let profile_opt = unwrap_option_or_return!(option);
     match profile_opt {
         Some(profile) => unsafe {
@@ -109,6 +120,73 @@ pub unsafe extern "C" fn managed_identity_get_dashpay_profile(
     PlatformWalletFFIResult::ok()
 }
 
+/// Live in-memory DashPay sync state for a [`ManagedIdentity`] — the collection
+/// counts plus the high-water sync cursors. All scalars (no heap), so no free
+/// is needed. The cursors are NOT persisted (they reset to `None` on cold
+/// restart), so reading the live handle is the only way to inspect them; the
+/// counts let a debugger compare the in-memory state against the persisted
+/// SwiftData rows.
+#[repr(C)]
+pub struct DashPaySyncStateFFI {
+    pub established_contacts: u32,
+    pub incoming_requests: u32,
+    pub sent_requests: u32,
+    pub ignored_senders: u32,
+    /// Total cached contact-profile entries (present + negative-cache).
+    pub contact_profiles: u32,
+    /// Of `contact_profiles`, how many hold a present profile (the rest are
+    /// confirmed-absent negative-cache entries).
+    pub present_contact_profiles: u32,
+    pub dashpay_payments: u32,
+    pub has_dashpay_profile: bool,
+    pub has_high_water_received: bool,
+    pub high_water_received_ms: u64,
+    pub has_high_water_sent: bool,
+    pub high_water_sent_ms: u64,
+}
+
+/// Read the live [`ManagedIdentity`] DashPay sync state — see
+/// [`DashPaySyncStateFFI`]. The cursors are in-memory only (not persisted).
+#[no_mangle]
+pub unsafe extern "C" fn managed_identity_get_dashpay_sync_state(
+    identity_handle: Handle,
+    out_state: *mut DashPaySyncStateFFI,
+) -> PlatformWalletFFIResult {
+    check_ptr!(out_state);
+    let option = MANAGED_IDENTITY_STORAGE.with_item(identity_handle, |identity| {
+        let (has_received, received) = match identity.dashpay().high_water_received_ms() {
+            Some(v) => (true, v),
+            None => (false, 0),
+        };
+        let (has_sent, sent) = match identity.dashpay().high_water_sent_ms() {
+            Some(v) => (true, v),
+            None => (false, 0),
+        };
+        DashPaySyncStateFFI {
+            established_contacts: identity.dashpay().established_contacts().len() as u32,
+            incoming_requests: identity.dashpay().incoming_contact_requests().len() as u32,
+            sent_requests: identity.dashpay().sent_contact_requests().len() as u32,
+            ignored_senders: identity.dashpay().ignored_senders().len() as u32,
+            contact_profiles: identity.dashpay().contact_profiles.len() as u32,
+            present_contact_profiles: identity
+                .dashpay()
+                .contact_profiles
+                .values()
+                .filter(|e| e.profile.is_some())
+                .count() as u32,
+            dashpay_payments: identity.dashpay().payments.len() as u32,
+            has_dashpay_profile: identity.dashpay().profile.is_some(),
+            has_high_water_received: has_received,
+            high_water_received_ms: received,
+            has_high_water_sent: has_sent,
+            high_water_sent_ms: sent,
+        }
+    });
+    let state = unwrap_option_or_return!(option);
+    unsafe { *out_state = state };
+    PlatformWalletFFIResult::ok()
+}
+
 /// Read the cached DashPay profile for a specific identity owned by a wallet.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_get_dashpay_profile(
@@ -119,17 +197,80 @@ pub unsafe extern "C" fn platform_wallet_get_dashpay_profile(
 ) -> PlatformWalletFFIResult {
     check_ptr!(out_profile);
     check_ptr!(out_has_profile);
+    // Zero-init the out-params before any fallible work so an early return
+    // (bad id, missing wallet) leaves a safe all-null struct rather than
+    // uninitialized memory — `DashPayProfileFFI` owns C-string pointers a
+    // caller might otherwise free on the error path.
+    unsafe {
+        *out_profile = DashPayProfileFFI::empty();
+        *out_has_profile = false;
+    }
 
     let id = unwrap_result_or_return!(unsafe { read_identifier(identity_id) });
+
+    // Clone only the `Option<DashPayProfile>` field, not the whole
+    // `ManagedIdentity` (which carries the full Identity plus the
+    // established/sent/incoming BTreeMaps and payment history). The two
+    // unwraps preserve the caller contract unchanged: a missing wallet or
+    // identity is a NotFound error, a present identity with no profile is a
+    // successful read with `has_profile == false`.
+    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
+        let wm = wallet.wallet_manager().blocking_read();
+        let info = wm.get_wallet_info(&wallet.wallet_id())?;
+        let managed = info.identity_manager.managed_identity(&id)?;
+        Some(managed.dashpay().profile.clone())
+    });
+    let inner = unwrap_option_or_return!(option);
+    let profile = unwrap_option_or_return!(inner);
+    match profile {
+        Some(profile) => unsafe {
+            *out_profile = DashPayProfileFFI::from_profile(&profile);
+            *out_has_profile = true;
+        },
+        None => unsafe {
+            *out_profile = DashPayProfileFFI::empty();
+            *out_has_profile = false;
+        },
+    }
+    PlatformWalletFFIResult::ok()
+}
+
+/// Read the cached profile of a **contact** (by contact identity id) under
+/// the given owner identity. `out_has_profile` is false when the owner has no
+/// cached entry for that contact, or the entry is confirmed-absent (the
+/// contact published no profile on Platform). Populated by the background
+/// contact-profile sync; covers established contacts and pending senders.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_get_contact_profile(
+    wallet_handle: Handle,
+    owner_identity_id: *const u8,
+    contact_identity_id: *const u8,
+    out_profile: *mut DashPayProfileFFI,
+    out_has_profile: *mut bool,
+) -> PlatformWalletFFIResult {
+    check_ptr!(out_profile);
+    check_ptr!(out_has_profile);
+    // Zero-init the out-params before any fallible work so an early return
+    // (bad id, missing wallet) leaves a safe all-null struct rather than
+    // uninitialized memory — `DashPayProfileFFI` owns C-string pointers a
+    // caller might otherwise free on the error path.
+    unsafe {
+        *out_profile = DashPayProfileFFI::empty();
+        *out_has_profile = false;
+    }
+
+    let owner = unwrap_result_or_return!(unsafe { read_identifier(owner_identity_id) });
+    let contact = unwrap_result_or_return!(unsafe { read_identifier(contact_identity_id) });
 
     let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
         let wm = wallet.wallet_manager().blocking_read();
         let info = wm.get_wallet_info(&wallet.wallet_id())?;
-        info.identity_manager.managed_identity(&id).cloned()
+        info.identity_manager
+            .managed_identity(&owner)
+            .and_then(|m| m.dashpay().contact_profiles.get(&contact).cloned())
     });
-    let inner = unwrap_option_or_return!(option);
-    let managed = unwrap_option_or_return!(inner);
-    match managed.dashpay_profile {
+    let entry = unwrap_option_or_return!(option);
+    match entry.and_then(|e| e.profile) {
         Some(profile) => unsafe {
             *out_profile = DashPayProfileFFI::from_profile(&profile);
             *out_has_profile = true;
@@ -166,7 +307,7 @@ pub unsafe extern "C" fn platform_wallet_sync_dashpay_profiles(
 ) -> PlatformWalletFFIResult {
     let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
         let identity = wallet.identity().clone();
-        block_on_worker(async move { identity.sync_profiles().await })
+        block_on_worker(async move { identity.dashpay().sync_profiles().await })
     });
     let result = unwrap_option_or_return!(option);
     let count = unwrap_result_or_return!(result);
@@ -193,6 +334,11 @@ pub unsafe extern "C" fn platform_wallet_create_or_update_dashpay_profile_with_s
 ) -> PlatformWalletFFIResult {
     check_ptr!(out_profile);
     check_ptr!(signer_handle);
+    // `DashPayProfileFFI` owns heap C-string pointer fields freed by
+    // `dashpay_profile_ffi_free`; publish the empty sentinel before any
+    // fallible work so an error path never leaves uninitialized stack bytes
+    // in those pointer fields. Matches the read-side helpers in this file.
+    *out_profile = DashPayProfileFFI::empty();
 
     let id = unwrap_result_or_return!(read_identifier(identity_id));
 
@@ -221,10 +367,12 @@ pub unsafe extern "C" fn platform_wallet_create_or_update_dashpay_profile_with_s
             let signer: &VTableSigner = &*(signer_addr as *const VTableSigner);
             if do_create {
                 identity
+                    .dashpay()
                     .create_profile_with_external_signer(&id, input, signer)
                     .await
             } else {
                 identity
+                    .dashpay()
                     .update_profile_with_external_signer(&id, input, signer)
                     .await
             }
@@ -282,7 +430,7 @@ mod tests {
             let mut managed = platform_wallet::ManagedIdentity::new(make_test_identity(), 0);
             let mut hash = [0u8; 32];
             hash[0] = 0xAB;
-            managed.dashpay_profile = Some(DashPayProfile {
+            *managed.dashpay_profile_mut() = Some(DashPayProfile {
                 display_name: Some("Alice".to_string()),
                 bio: Some("Bio text".to_string()),
                 avatar_url: Some("https://example.com/a.png".to_string()),

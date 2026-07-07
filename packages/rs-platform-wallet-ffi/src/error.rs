@@ -124,6 +124,27 @@ pub enum PlatformWalletFFIResultCode {
     /// must NOT auto-retry — a retry would select different unreserved notes
     /// and could double-send if the original spend landed.
     ErrorShieldedSpendUnconfirmed = 18,
+    /// Maps `PlatformWalletError::ShieldedNoRecordedAnchor`. The wallet could
+    /// not build the spend against any Platform-recorded anchor yet: its local
+    /// commitment tree is mid-block (an index-chunk sync routinely stops
+    /// between block boundaries) while Platform records an anchor only at each
+    /// block boundary. The transition was NOT broadcast and any note
+    /// reservations were released, so this is RETRYABLE — the host should wait
+    /// for the next shielded sync (which advances the tree onto a recorded
+    /// boundary) and try again. Distinct from `ErrorShieldedSpendUnconfirmed`,
+    /// where a spend WAS broadcast and must NOT be retried.
+    ErrorShieldedNoRecordedAnchor = 19,
+    /// Maps `PlatformWalletError::TransactionBroadcastUnconfirmed`. A core
+    /// transaction broadcast (send-to-addresses, DashPay payment, or
+    /// asset-lock funding) failed with an AMBIGUOUS outcome — the transaction
+    /// may already be on the network (transport timeout after delivery,
+    /// partial peer send, or an internal multi-node retry whose earlier
+    /// attempt may have delivered). The wallet intentionally KEEPS the spent
+    /// inputs' UTXO reservation, so an immediate retry fails at input
+    /// selection instead of double-spending; the reservation TTL or a sync
+    /// observing the transaction reconciles the outcome. The host must NOT
+    /// auto-retry. Shielded sibling: [`Self::ErrorShieldedSpendUnconfirmed`].
+    ErrorTransactionBroadcastUnconfirmed = 20,
 
     NotFound = 98, // Used exclusively for all the Option that are retuned as errors
     ErrorUnknown = 99,
@@ -161,6 +182,24 @@ impl PlatformWalletFFIResult {
         let c_msg = CString::new(msg).unwrap_or_else(|_| CString::new("<invalid UTF-8>").unwrap());
         Self {
             code,
+            message: c_msg.into_raw(),
+        }
+    }
+
+    /// A `Success`-coded result that still carries an advisory `message`.
+    ///
+    /// Used by non-error outcomes that want to convey a human-readable
+    /// explanation alongside an out-parameter — e.g. the withdrawal preflight's
+    /// "can't fund" case, where `can_withdraw = false` is the authoritative
+    /// signal and the message is the planner's typed reason. The `Success` code
+    /// keeps it off the error path (`.check()` on language bindings only
+    /// inspects the code); the message is freed like any other via
+    /// [`platform_wallet_ffi_result_free`] / `Drop`.
+    pub fn success_with_message(message: impl Into<String>) -> Self {
+        let msg = message.into();
+        let c_msg = CString::new(msg).unwrap_or_else(|_| CString::new("<invalid UTF-8>").unwrap());
+        Self {
+            code: PlatformWalletFFIResultCode::Success,
             message: c_msg.into_raw(),
         }
     }
@@ -236,6 +275,15 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             }
             PlatformWalletError::ShieldedSpendUnconfirmed { .. } => {
                 PlatformWalletFFIResultCode::ErrorShieldedSpendUnconfirmed
+            }
+            PlatformWalletError::ShieldedNoRecordedAnchor(..) => {
+                PlatformWalletFFIResultCode::ErrorShieldedNoRecordedAnchor
+            }
+            // The core-transaction sibling of the shielded pair above: the
+            // do-not-retry signal must survive the boundary as a typed code
+            // so hosts can distinguish it from a definitive rejection.
+            PlatformWalletError::TransactionBroadcastUnconfirmed(..) => {
+                PlatformWalletFFIResultCode::ErrorTransactionBroadcastUnconfirmed
             }
             _ => PlatformWalletFFIResultCode::ErrorUnknown,
         };
@@ -588,6 +636,27 @@ mod tests {
             result.code,
             PlatformWalletFFIResultCode::ErrorShieldedSpendUnconfirmed,
             "ShieldedSpendUnconfirmed should map to ErrorShieldedSpendUnconfirmed (rendered: {rendered})"
+        );
+        let msg = unsafe { std::ffi::CStr::from_ptr(result.message) }
+            .to_string_lossy()
+            .into_owned();
+        assert_eq!(msg, rendered, "Display payload must survive verbatim");
+    }
+
+    /// The ambiguous core-broadcast outcome keeps its typed code across the
+    /// boundary — flattening it to `ErrorUnknown` would erase the
+    /// do-not-retry signal the variant exists to carry.
+    #[test]
+    fn transaction_broadcast_unconfirmed_maps_to_dedicated_code() {
+        let unconfirmed = PlatformWalletError::TransactionBroadcastUnconfirmed(
+            "gRPC deadline exceeded after delivery".to_string(),
+        );
+        let rendered = unconfirmed.to_string();
+        let result: PlatformWalletFFIResult = unconfirmed.into();
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorTransactionBroadcastUnconfirmed,
+            "TransactionBroadcastUnconfirmed should map to its dedicated code (rendered: {rendered})"
         );
         let msg = unsafe { std::ffi::CStr::from_ptr(result.message) }
             .to_string_lossy()

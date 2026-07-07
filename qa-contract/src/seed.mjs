@@ -15,12 +15,12 @@ import { randomBytes } from 'node:crypto';
 import { loadDotEnv, connect, loadOwnerAuth, readConfig } from './sdk.mjs';
 import { parseTestPlan, resolvePlanCommit, DEFAULT_TEST_PLAN } from './parse-test-plan.mjs';
 import {
-  APPS, TIERS, CATEGORIES, DEFAULT_APP, appCode, tierCode, categoryCode,
+  APPS, TIERS, CATEGORIES, DEFAULT_APP, appCode, tierCode, categoryCode, checkTags,
 } from './codes.mjs';
 
 const CONTENT_FIELDS = [
   'testId', 'app', 'tier', 'category', 'title', 'layer', 'implStatus',
-  'description', 'entryPoint', 'prerequisites', 'planCommit',
+  'description', 'entryPoint', 'prerequisites', 'planCommit', 'tags',
 ];
 
 function entropy() { return Uint8Array.from(randomBytes(32)); }
@@ -38,6 +38,10 @@ function testCaseProps(row, app) {
   for (const f of ['description', 'entryPoint', 'prerequisites', 'planCommit']) {
     if (row[f]) props[f] = row[f];
   }
+  // DPP document schemas don't support typed arrays, so tags are stored as a
+  // comma-separated string (the dashboard splits on ',').
+  const tags = checkTags(row.tags, row.testId);
+  if (tags.length) props.tags = tags.join(',');
   return props;
 }
 

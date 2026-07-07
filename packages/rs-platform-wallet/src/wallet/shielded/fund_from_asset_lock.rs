@@ -37,10 +37,12 @@ use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundin
 
 use crate::wallet::asset_lock::tracked::TrackedAssetLock;
 
+use std::time::Duration;
+
 use crate::error::is_instant_lock_proof_invalid;
 use crate::wallet::asset_lock::orchestration::{
     out_point_from_proof, submit_with_cl_height_retry, AssetLockFunding, FundingResolution,
-    ResolvedFunding, CL_FALLBACK_TIMEOUT,
+    ResolvedFunding,
 };
 use crate::wallet::PlatformWallet;
 use crate::PlatformWalletError;
@@ -119,6 +121,12 @@ impl PlatformWallet {
     ///   even though each attempt re-signs a freshly-randomized bundle.
     /// * `settings` — Optional `PutSettings`; `user_fee_increase` is
     ///   bumped by the CL-height retry wrapper on consensus 10506.
+    /// * `cl_wait` — ChainLock-fallback wait policy (`Option<Duration>`).
+    ///   User-facing funding passes `None` to wait for the ChainLock
+    ///   **indefinitely** (a broadcast lock is pending, never failed). The
+    ///   shielded seed pool passes `Some(CL_FALLBACK_TIMEOUT)` so a
+    ///   `FinalityTimeout` surfaces as its unconfirmed-ancestor pacing
+    ///   signal (see `seed_pool.rs`).
     #[cfg(feature = "shielded")]
     #[allow(clippy::too_many_arguments)]
     pub async fn shielded_fund_from_asset_lock<AS, P>(
@@ -131,6 +139,7 @@ impl PlatformWallet {
         surplus_output: Option<PlatformAddress>,
         dummy_outputs: usize,
         settings: Option<PutSettings>,
+        cl_wait: Option<Duration>,
     ) -> Result<(), PlatformWalletError>
     where
         AS: ::key_wallet::signer::Signer + Send + Sync,
@@ -216,11 +225,11 @@ impl PlatformWallet {
                 );
                 let chain_proof = self
                     .asset_locks
-                    .upgrade_to_chain_lock_proof(&out_point, CL_FALLBACK_TIMEOUT)
+                    .upgrade_to_chain_lock_proof(&out_point, cl_wait)
                     .await?;
                 let (_, path) = self
                     .asset_locks
-                    .resume_asset_lock(&out_point, CL_FALLBACK_TIMEOUT)
+                    .resume_asset_lock(&out_point, cl_wait)
                     .await?;
                 ResolvedFunding {
                     proof: chain_proof,
@@ -370,7 +379,7 @@ impl PlatformWallet {
                     );
                     let chain_proof = self
                         .asset_locks
-                        .upgrade_to_chain_lock_proof(&out_point, CL_FALLBACK_TIMEOUT)
+                        .upgrade_to_chain_lock_proof(&out_point, cl_wait)
                         .await?;
                     let cs = self
                         .asset_locks

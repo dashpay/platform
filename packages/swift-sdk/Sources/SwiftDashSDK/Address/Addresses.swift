@@ -71,29 +71,30 @@ public class Addresses: @unchecked Sendable {
 
     /// Fetch information about a single Platform address using bech32m string
     ///
-    /// - Parameter bech32mAddress: Bech32m-encoded address (e.g., "tdashevo1qqyfsqyzcn5hzu7echru54njypdq0v4d7gv8pkdf")
+    /// - Parameter bech32mAddress: Bech32m-encoded address (e.g., "tdash1kzdl4c3apkekqevkqrzctgagv2v2ng5hysegt5x4")
     /// - Returns: PlatformAddressInfo containing nonce and balance, or nil if address not found
     /// - Throws: SDKError if the query fails or bech32m is invalid
     public func getInfo(bech32mAddress: String) throws -> PlatformAddressInfo? {
         guard let decoded = Bech32m.decode(bech32mAddress) else {
             throw SDKError.invalidParameter("Invalid bech32m address")
         }
-        guard decoded.data.count == 21 else {
-            throw SDKError.invalidParameter("Invalid Platform address: expected 21 bytes, got \(decoded.data.count)")
+        guard let storageBytes = Bech32m.storageBytes(fromBech32mPayload: decoded.data) else {
+            throw SDKError.invalidParameter(
+                "Invalid Platform address: expected 21 bytes with a P2PKH (0xb0) or P2SH (0x80) type byte, got \(decoded.data.count) bytes")
         }
-        return try getInfo(addressBytes: decoded.data)
+        return try getInfo(addressBytes: storageBytes)
     }
 
     /// Fetch information about a single Platform address (auto-detects format)
     ///
-    /// - Parameter address: Address string - can be hex (42 chars) or bech32m (tdashevo1.../dashevo1...)
+    /// - Parameter address: Address string - can be hex (42 chars) or bech32m (tdash1.../dash1...)
     /// - Returns: PlatformAddressInfo containing nonce and balance, or nil if address not found
     /// - Throws: SDKError if the query fails or address format is invalid
     public func getInfo(address: String) throws -> PlatformAddressInfo? {
         let trimmed = address.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        // Check if it's a bech32m address (starts with dashevo1 or tdashevo1)
-        if trimmed.lowercased().hasPrefix("dashevo1") || trimmed.lowercased().hasPrefix("tdashevo1") {
+        // Check if it's a bech32m address (starts with the dash/tdash HRP)
+        if Bech32m.looksLikePlatformAddress(trimmed) {
             return try getInfo(bech32mAddress: trimmed)
         }
 
@@ -223,10 +224,10 @@ public class Addresses: @unchecked Sendable {
             guard let decoded = Bech32m.decode(bech32m) else {
                 throw SDKError.invalidParameter("Invalid bech32m address at index \(index)")
             }
-            guard decoded.data.count == 21 else {
-                throw SDKError.invalidParameter("Invalid Platform address at index \(index): expected 21 bytes")
+            guard let storageBytes = Bech32m.storageBytes(fromBech32mPayload: decoded.data) else {
+                throw SDKError.invalidParameter("Invalid Platform address at index \(index): expected 21 bytes with a P2PKH/P2SH type byte")
             }
-            return decoded.data
+            return storageBytes
         }
         return try getInfos(addressesBytesList: addressesBytesList)
     }
@@ -241,14 +242,14 @@ public class Addresses: @unchecked Sendable {
             let trimmed = address.trimmingCharacters(in: .whitespacesAndNewlines)
 
             // Check if it's a bech32m address
-            if trimmed.lowercased().hasPrefix("dashevo1") || trimmed.lowercased().hasPrefix("tdashevo1") {
+            if Bech32m.looksLikePlatformAddress(trimmed) {
                 guard let decoded = Bech32m.decode(trimmed) else {
                     throw SDKError.invalidParameter("Invalid bech32m address at index \(index)")
                 }
-                guard decoded.data.count == 21 else {
-                    throw SDKError.invalidParameter("Invalid Platform address at index \(index): expected 21 bytes")
+                guard let storageBytes = Bech32m.storageBytes(fromBech32mPayload: decoded.data) else {
+                    throw SDKError.invalidParameter("Invalid Platform address at index \(index): expected 21 bytes with a P2PKH/P2SH type byte")
                 }
-                return decoded.data
+                return storageBytes
             }
 
             // Otherwise try as hex

@@ -1323,9 +1323,13 @@ extension ManagedPlatformWallet {
 
 /// Simple search-result struct surfaced by `searchDpnsNames`. Mirrors
 /// the Rust `DpnsSearchResultFFI` row shape in a Sendable Swift value.
-public struct DpnsSearchResult: Sendable, Equatable {
+public struct DpnsSearchResult: Sendable, Equatable, Identifiable {
     public let identityId: Identifier
     public let fullName: String
+    /// Unique per row: a single identity can own several names that
+    /// match a prefix, and a contested name shares `fullName` across
+    /// contenders — so neither field alone is unique. Combine both.
+    public var id: String { "\(fullName)|\(identityId.toBase58String())" }
 }
 
 extension ManagedPlatformWallet {
@@ -1635,6 +1639,11 @@ extension ManagedPlatformWallet {
     ) async throws -> ContactRequest {
         let handle = self.handle
         let signerHandle = signer.handle
+        // Resolver-backed core signer: the contact-request crypto (friendship
+        // xpub, ECDH shared secret, DIP-15 accountReference) is derived through
+        // the Keychain mnemonic resolver Rust-side, so no resident seed is
+        // needed and watch-only / external-signable wallets work.
+        let coreSigner = MnemonicResolver()
         let senderBytes: [UInt8] = senderIdentityId.withFFIBytes { ptr in
             Array(UnsafeBufferPointer(start: ptr, count: 32))
         }
@@ -1646,45 +1655,132 @@ extension ManagedPlatformWallet {
 
         let requestHandle: Handle = try await Task.detached(priority: .userInitiated) {
             () -> Handle in
-            _ = signer
             var outHandle: Handle = NULL_HANDLE
-            let result: PlatformWalletFFIResult = senderBytes.withUnsafeBufferPointer {
-                senderBp -> PlatformWalletFFIResult in
-                recipientBytes.withUnsafeBufferPointer { recipientBp -> PlatformWalletFFIResult in
-                    let callWithLabel: (UnsafePointer<CChar>?) -> PlatformWalletFFIResult = {
-                        labelPtr in
-                        if let autoAcceptProof, !autoAcceptProof.isEmpty {
-                            return autoAcceptProof.withUnsafeBytes { rawBuf in
-                                let bytesPtr = rawBuf.baseAddress?
-                                    .assumingMemoryBound(to: UInt8.self)
+            // `withExtendedLifetime` keeps both the document signer and the
+            // resolver alive across the synchronous FFI call — the optimizer
+            // can otherwise drop them mid-call and a vtable callback would
+            // use-after-free.
+            let result: PlatformWalletFFIResult = withExtendedLifetime((signer, coreSigner)) {
+                senderBytes.withUnsafeBufferPointer {
+                    senderBp -> PlatformWalletFFIResult in
+                    recipientBytes.withUnsafeBufferPointer { recipientBp -> PlatformWalletFFIResult in
+                        let callWithLabel: (UnsafePointer<CChar>?) -> PlatformWalletFFIResult = {
+                            labelPtr in
+                            if let autoAcceptProof, !autoAcceptProof.isEmpty {
+                                return autoAcceptProof.withUnsafeBytes { rawBuf in
+                                    let bytesPtr = rawBuf.baseAddress?
+                                        .assumingMemoryBound(to: UInt8.self)
+                                    return platform_wallet_send_contact_request_with_signer(
+                                        handle,
+                                        senderBp.baseAddress!,
+                                        recipientBp.baseAddress!,
+                                        labelPtr,
+                                        bytesPtr,
+                                        UInt(autoAcceptProof.count),
+                                        signerHandle,
+                                        coreSigner.handle,
+                                        &outHandle
+                                    )
+                                }
+                            } else {
                                 return platform_wallet_send_contact_request_with_signer(
                                     handle,
                                     senderBp.baseAddress!,
                                     recipientBp.baseAddress!,
                                     labelPtr,
-                                    bytesPtr,
-                                    UInt(autoAcceptProof.count),
+                                    nil,
+                                    0,
                                     signerHandle,
+                                    coreSigner.handle,
                                     &outHandle
                                 )
                             }
+                        }
+                        if let accountLabel {
+                            return accountLabel.withCString { callWithLabel($0) }
                         } else {
-                            return platform_wallet_send_contact_request_with_signer(
-                                handle,
-                                senderBp.baseAddress!,
-                                recipientBp.baseAddress!,
-                                labelPtr,
-                                nil,
-                                0,
-                                signerHandle,
-                                &outHandle
-                            )
+                            return callWithLabel(nil)
                         }
                     }
-                    if let accountLabel {
-                        return accountLabel.withCString { callWithLabel($0) }
-                    } else {
-                        return callWithLabel(nil)
+                }
+            }
+            try result.check()
+            return outHandle
+        }.value
+
+        return ContactRequest(handle: requestHandle)
+    }
+
+    /// Build a DIP-15 auto-accept QR URI (`dash:?du=<username>&dapk=<key_blob>`)
+    /// for `ownerIdentityId`, valid for 1 hour. The QR's `du` is the owner's DPNS
+    /// name; pass the locally-cached `username` when known, or an empty string to
+    /// have Rust resolve it on-chain (needed for imported/restored identities
+    /// whose name isn't cached locally). The returned URI is rendered as a QR; a
+    /// scanner sends a contact request the owner auto-accepts. All
+    /// derivation/encoding/resolution happens Rust-side.
+    public func buildAutoAcceptQR(
+        ownerIdentityId: Identifier,
+        username: String
+    ) async throws -> String {
+        let handle = self.handle
+        let coreSigner = MnemonicResolver()
+        let ownerBytes: [UInt8] = ownerIdentityId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
+        return try await Task.detached(priority: .userInitiated) { () -> String in
+            var outURI: UnsafeMutablePointer<CChar>?
+            let result: PlatformWalletFFIResult = withExtendedLifetime(coreSigner) {
+                ownerBytes.withUnsafeBufferPointer { ownerBp in
+                    username.withCString { uPtr in
+                        platform_wallet_build_auto_accept_qr(
+                            handle,
+                            ownerBp.baseAddress!,
+                            uPtr,
+                            coreSigner.handle,
+                            &outURI
+                        )
+                    }
+                }
+            }
+            try result.check()
+            guard let outURI else {
+                throw PlatformWalletError.nullPointer("auto-accept QR returned a null URI")
+            }
+            let uri = String(cString: outURI)
+            platform_wallet_string_free(outURI)
+            return uri
+        }.value
+    }
+
+    /// Send a contact request from a scanned DIP-15 auto-accept QR
+    /// (`dash:?du=<username>&dapk=<key_blob>`): resolve the username, decode the
+    /// handed key, sign the proof, and broadcast — so the owner auto-accepts it.
+    public func sendContactRequestFromQR(
+        senderIdentityId: Identifier,
+        uri: String,
+        signer: KeychainSigner
+    ) async throws -> ContactRequest {
+        let handle = self.handle
+        let signerHandle = signer.handle
+        let coreSigner = MnemonicResolver()
+        let senderBytes: [UInt8] = senderIdentityId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
+
+        let requestHandle: Handle = try await Task.detached(priority: .userInitiated) {
+            () -> Handle in
+            var outHandle: Handle = NULL_HANDLE
+            let result: PlatformWalletFFIResult = withExtendedLifetime((signer, coreSigner)) {
+                senderBytes.withUnsafeBufferPointer { senderBp -> PlatformWalletFFIResult in
+                    uri.withCString { uriPtr in
+                        platform_wallet_send_contact_request_from_qr(
+                            handle,
+                            senderBp.baseAddress!,
+                            uriPtr,
+                            signerHandle,
+                            coreSigner.handle,
+                            &outHandle
+                        )
                     }
                 }
             }
@@ -1705,29 +1801,39 @@ extension ManagedPlatformWallet {
         let walletHandle = self.handle
         let requestHandle = request.handle
         let signerHandle = signer.handle
+        // Resolver-backed core signer: the reciprocal request's contact crypto
+        // (ECDH + external-account registration) is derived through the Keychain
+        // mnemonic resolver Rust-side, so no resident seed is needed.
+        let coreSigner = MnemonicResolver()
         let establishedHandle: Handle = try await Task.detached(
             priority: .userInitiated
         ) { () -> Handle in
-            _ = signer
             var outHandle: Handle = NULL_HANDLE
-            let result = platform_wallet_accept_contact_request_with_signer(
-                walletHandle,
-                requestHandle,
-                signerHandle,
-                &outHandle
-            )
+            // Keep both signers alive across the FFI call (vtable callbacks fire
+            // during it); a bare `_ = ...` lets the optimizer drop them.
+            let result = withExtendedLifetime((signer, coreSigner)) {
+                platform_wallet_accept_contact_request_with_signer(
+                    walletHandle,
+                    requestHandle,
+                    signerHandle,
+                    coreSigner.handle,
+                    &outHandle
+                )
+            }
             try result.check()
             return outHandle
         }.value
         return EstablishedContact(handle: establishedHandle)
     }
 
-    /// Reject an incoming contact request. Today the effect is
-    /// local — drops it from `ManagedIdentity.incoming_contact_requests`.
-    /// A future follow-up (TODO in the Rust `reject_contact_request`)
-    /// will also write a `display_hidden` contactInfo document so
-    /// the rejection persists across devices.
-    public func rejectContactRequest(
+    /// Ignore a contact sender (per-sender mute, = block, reversible).
+    ///
+    /// Drops the sender's pending incoming request and suppresses ALL of
+    /// their requests (including rotated ones) from the main pending list
+    /// on every future sync sweep. Ignore is **local-only** — no on-chain
+    /// artifact; it's persisted through the changeset → SwiftData pipeline
+    /// so it survives a relaunch. Reverse with `unignoreContactSender`.
+    public func ignoreContactSender(
         ourIdentityId: Identifier,
         contactIdentityId: Identifier
     ) async throws {
@@ -1742,7 +1848,39 @@ extension ManagedPlatformWallet {
             let result = ourBytes.withUnsafeBufferPointer {
                 ourBp -> PlatformWalletFFIResult in
                 contactBytes.withUnsafeBufferPointer { contactBp in
-                    platform_wallet_reject_contact_request(
+                    platform_wallet_ignore_contact_sender(
+                        handle,
+                        ourBp.baseAddress!,
+                        contactBp.baseAddress!
+                    )
+                }
+            }
+            try result.check()
+        }.value
+    }
+
+    /// Un-ignore a contact sender (reverse `ignoreContactSender`).
+    ///
+    /// Removes the sender from the ignore set and rewinds the received
+    /// sync cursor so the next sweep re-fetches their on-chain requests
+    /// (otherwise the cursor has already passed them and they'd never
+    /// reappear). A no-op when the sender wasn't ignored.
+    public func unignoreContactSender(
+        ourIdentityId: Identifier,
+        contactIdentityId: Identifier
+    ) async throws {
+        let handle = self.handle
+        let ourBytes: [UInt8] = ourIdentityId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
+        let contactBytes: [UInt8] = contactIdentityId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
+        try await Task.detached(priority: .userInitiated) {
+            let result = ourBytes.withUnsafeBufferPointer {
+                ourBp -> PlatformWalletFFIResult in
+                contactBytes.withUnsafeBufferPointer { contactBp in
+                    platform_wallet_unignore_contact_sender(
                         handle,
                         ourBp.baseAddress!,
                         contactBp.baseAddress!
@@ -1807,6 +1945,12 @@ extension ManagedPlatformWallet {
             Array(UnsafeBufferPointer(start: ptr, count: 32))
         }
         let memoCopy = memo
+        // Resolver-backed core signer owns mnemonic access for the lifetime
+        // of this call. Each funding-input ECDSA signature happens atomically
+        // inside the resolver vtable (mnemonic fetched from Keychain, key
+        // derived, digest signed, buffers zeroed) — the seed never becomes
+        // resident and no private key leaves Swift.
+        let coreSigner = MnemonicResolver()
         return try await Task.detached(priority: .userInitiated) { () -> Data in
             var txidTuple: (
                 UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
@@ -1817,23 +1961,29 @@ extension ManagedPlatformWallet {
                 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
             )
-            let result: PlatformWalletFFIResult = fromBytes.withUnsafeBufferPointer {
-                fromBp -> PlatformWalletFFIResult in
-                toBytes.withUnsafeBufferPointer { toBp -> PlatformWalletFFIResult in
-                    let call: (UnsafePointer<CChar>?) -> PlatformWalletFFIResult = { memoPtr in
-                        platform_wallet_send_dashpay_payment(
-                            handle,
-                            fromBp.baseAddress!,
-                            toBp.baseAddress!,
-                            amountDuffs,
-                            memoPtr,
-                            &txidTuple
-                        )
-                    }
-                    if let memoCopy {
-                        return memoCopy.withCString { call($0) }
-                    } else {
-                        return call(nil)
+            // `withExtendedLifetime` (not a bare `_ = coreSigner`) keeps the
+            // resolver alive across the synchronous FFI call — the optimizer
+            // can otherwise drop it mid-call and the vtable callback would
+            // use-after-free.
+            let result: PlatformWalletFFIResult = withExtendedLifetime(coreSigner) {
+                fromBytes.withUnsafeBufferPointer { fromBp -> PlatformWalletFFIResult in
+                    toBytes.withUnsafeBufferPointer { toBp -> PlatformWalletFFIResult in
+                        let call: (UnsafePointer<CChar>?) -> PlatformWalletFFIResult = { memoPtr in
+                            platform_wallet_send_dashpay_payment(
+                                handle,
+                                fromBp.baseAddress!,
+                                toBp.baseAddress!,
+                                amountDuffs,
+                                memoPtr,
+                                coreSigner.handle,
+                                &txidTuple
+                            )
+                        }
+                        if let memoCopy {
+                            return memoCopy.withCString { call($0) }
+                        } else {
+                            return call(nil)
+                        }
                     }
                 }
             }
@@ -1873,6 +2023,59 @@ extension ManagedPlatformWallet {
         try result.check()
         guard hasProfile else { return nil }
         return DashPayProfile(ffi: ffiProfile)
+    }
+
+    /// Read the cached profile of a **contact** (by contact identity id)
+    /// under `ownerIdentityId`, from this wallet's live state.
+    ///
+    /// Returns `nil` when the owner has no cached entry for that contact, or
+    /// the contact published no profile on Platform. The cache is populated by
+    /// the background contact-profile sync and covers established contacts and
+    /// pending senders. For a contact that is itself one of the wallet's own
+    /// identities, use `getDashPayProfile(identityId:)` (its own profile is
+    /// authoritative) — the contact cache intentionally skips such ids.
+    ///
+    /// Sync, lock-free read of the in-memory cache.
+    public func getContactProfile(
+        ownerIdentityId: Identifier,
+        contactIdentityId: Identifier
+    ) throws -> DashPayProfile? {
+        var ffiProfile = DashPayProfileFFI()
+        var hasProfile: Bool = false
+
+        let result = ownerIdentityId.withFFIBytes { ownerPtr in
+            contactIdentityId.withFFIBytes { contactPtr in
+                platform_wallet_get_contact_profile(
+                    handle,
+                    ownerPtr,
+                    contactPtr,
+                    &ffiProfile,
+                    &hasProfile
+                )
+            }
+        }
+        defer { dashpay_profile_ffi_free(&ffiProfile) }
+
+        try result.check()
+        guard hasProfile else { return nil }
+        return DashPayProfile(ffi: ffiProfile)
+    }
+
+    /// Read the DashPay payment history for `identityId` directly
+    /// from this wallet's live state.
+    ///
+    /// Convenient for UI layers that track identities by ID and don't
+    /// hold a live `ManagedIdentity` handle. Throws
+    /// `.identityNotFound` when the wallet doesn't know this
+    /// identity; returns an empty array when no payments have been
+    /// recorded.
+    ///
+    /// Sync, lock-free read of the in-memory cache. To land the rows
+    /// in SwiftData for `@Query` consumption, go through
+    /// `PlatformWalletManager.refreshDashPayPayments(walletId:identityId:)`
+    /// instead.
+    public func getDashPayPayments(identityId: Identifier) throws -> [DashPayPayment] {
+        try managedIdentity(identityId: identityId).getDashPayPayments()
     }
 
     /// Refresh every managed identity's DashPay profile cache from
@@ -1954,48 +2157,54 @@ extension ManagedPlatformWallet {
         let avatarBytes = update.avatarBytes
 
         return try await Task.detached(priority: .userInitiated) { () -> DashPayProfile in
-            _ = signer
             var outProfile = DashPayProfileFFI()
 
-            let result: PlatformWalletFFIResult = idBytes.withUnsafeBufferPointer {
-                idBp -> PlatformWalletFFIResult in
-                let idPtr = idBp.baseAddress!
-                return invokeWithOptionalCStrings(
-                    displayName,
-                    publicMessage,
-                    avatarUrl
-                ) { namePtr, msgPtr, urlPtr -> PlatformWalletFFIResult in
-                    let bytes = avatarBytes ?? Data()
-                    if let avatarBytes, !avatarBytes.isEmpty {
-                        return avatarBytes.withUnsafeBytes { rawBuf -> PlatformWalletFFIResult in
-                            let bytesPtr = rawBuf.baseAddress?.assumingMemoryBound(to: UInt8.self)
+            // Pin the KeychainSigner across the whole synchronous FFI call:
+            // Rust holds a `passUnretained` ctx pointer to it via `signerHandle`,
+            // so a bare `_ = signer` keepalive can be released under -O before the
+            // call returns. `withExtendedLifetime` keeps ARC holding it for the
+            // call's duration (matches the other *_with_signer wrappers).
+            let result: PlatformWalletFFIResult = withExtendedLifetime(signer) {
+                idBytes.withUnsafeBufferPointer {
+                    idBp -> PlatformWalletFFIResult in
+                    let idPtr = idBp.baseAddress!
+                    return invokeWithOptionalCStrings(
+                        displayName,
+                        publicMessage,
+                        avatarUrl
+                    ) { namePtr, msgPtr, urlPtr -> PlatformWalletFFIResult in
+                        let bytes = avatarBytes ?? Data()
+                        if let avatarBytes, !avatarBytes.isEmpty {
+                            return avatarBytes.withUnsafeBytes { rawBuf -> PlatformWalletFFIResult in
+                                let bytesPtr = rawBuf.baseAddress?.assumingMemoryBound(to: UInt8.self)
+                                return platform_wallet_create_or_update_dashpay_profile_with_signer(
+                                    handle,
+                                    idPtr,
+                                    namePtr,
+                                    msgPtr,
+                                    urlPtr,
+                                    bytesPtr,
+                                    UInt(avatarBytes.count),
+                                    doCreate,
+                                    signerHandle,
+                                    &outProfile
+                                )
+                            }
+                        } else {
+                            _ = bytes
                             return platform_wallet_create_or_update_dashpay_profile_with_signer(
                                 handle,
                                 idPtr,
                                 namePtr,
                                 msgPtr,
                                 urlPtr,
-                                bytesPtr,
-                                UInt(avatarBytes.count),
+                                nil,
+                                0,
                                 doCreate,
                                 signerHandle,
                                 &outProfile
                             )
                         }
-                    } else {
-                        _ = bytes
-                        return platform_wallet_create_or_update_dashpay_profile_with_signer(
-                            handle,
-                            idPtr,
-                            namePtr,
-                            msgPtr,
-                            urlPtr,
-                            nil,
-                            0,
-                            doCreate,
-                            signerHandle,
-                            &outProfile
-                        )
                     }
                 }
             }
@@ -2005,6 +2214,85 @@ extension ManagedPlatformWallet {
             try result.check()
             return DashPayProfile(ffi: outProfile)
         }.value
+    }
+
+    /// Set the owner-private alias / note / hidden flag for an
+    /// established contact and publish the self-encrypted
+    /// `contactInfo` document. Local state (and hence
+    /// the SwiftData contact rows) updates immediately; the network
+    /// write is deferred by the Rust side under DIP-15's
+    /// ≥2-established-contacts privacy rule.
+    /// Outcome of `setDashPayContactInfo`: local state is always updated,
+    /// but the cross-device document publish may be deferred or skipped.
+    /// Mirrors the Rust `ContactInfoPublishOutcome` / the FFI
+    /// `CONTACT_INFO_*` discriminants.
+    public enum ContactInfoPublishOutcome: Sendable {
+        /// Published on Platform — synced cross-device.
+        case published
+        /// Saved locally; publish deferred by DIP-15 until the identity
+        /// has at least two established contacts.
+        case deferredUntilTwoContacts
+        /// Saved locally; publish not possible for a watch-only identity.
+        case skippedWatchOnly
+    }
+
+    @discardableResult
+    public func setDashPayContactInfo(
+        identityId: Identifier,
+        contactId: Identifier,
+        alias: String?,
+        note: String?,
+        hidden: Bool,
+        signer: KeychainSigner
+    ) async throws -> ContactInfoPublishOutcome {
+        let handle = self.handle
+        let signerHandle = signer.handle
+        // Resolver-backed core signer: the contactInfo seal/find-existing crypto
+        // is derived through the Keychain mnemonic resolver Rust-side, so no
+        // resident seed is needed.
+        let coreSigner = MnemonicResolver()
+        let idBytes: [UInt8] = identityId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
+        let contactBytes: [UInt8] = contactId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
+
+        let outcomeRaw: UInt8 = try await Task.detached(priority: .userInitiated) {
+            var outcomeRaw: UInt8 = 0
+            // Keep both signers alive across the FFI call (vtable callbacks fire
+            // during it); a bare `_ = ...` lets the optimizer drop them.
+            let result: PlatformWalletFFIResult = withExtendedLifetime((signer, coreSigner)) {
+                idBytes.withUnsafeBufferPointer { idBp in
+                    contactBytes.withUnsafeBufferPointer { contactBp in
+                        invokeWithOptionalCStrings(alias, note, nil) { aliasPtr, notePtr, _ in
+                            platform_wallet_set_dashpay_contact_info_with_signer(
+                                handle,
+                                idBp.baseAddress!,
+                                contactBp.baseAddress!,
+                                aliasPtr,
+                                notePtr,
+                                hidden,
+                                signerHandle,
+                                coreSigner.handle,
+                                &outcomeRaw
+                            )
+                        }
+                    }
+                }
+            }
+            try result.check()
+            return outcomeRaw
+        }.value
+
+        switch outcomeRaw {
+        case UInt8(CONTACT_INFO_DEFERRED_UNTIL_TWO_CONTACTS):
+            return .deferredUntilTwoContacts
+        case UInt8(CONTACT_INFO_SKIPPED_WATCH_ONLY):
+            return .skippedWatchOnly
+        default:
+            return .published
+        }
     }
 
 }

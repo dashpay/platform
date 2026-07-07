@@ -118,6 +118,24 @@ class SendViewModel: ObservableObject {
     @Published var error: String?
     @Published var successMessage: String?
 
+    /// Per-output minimum credit amount (`min_output_amount`) the chain
+    /// enforces for address-funds transitions, resolved on the Rust side from
+    /// the wallet's current platform version and pushed in by the VIEW
+    /// (`SendTransactionView.resolvePlatformLimits()`) on appear — the view
+    /// model has no wallet handle of its own. A `platformToPlatform` transfer
+    /// sends a single output, and DPP rejects any output below this floor, so
+    /// `canSend` requires the requested credits to reach it.
+    ///
+    /// `nil` until the view resolves it (or if resolution fails). An
+    /// unresolved floor keeps the `.platformToPlatform` Send gate CLOSED
+    /// (never *under*-gates) — the same conservative treatment the dedicated
+    /// `TransferPlatformAddressView` gives a nil `minOutputAmount`. Resolved
+    /// via `ManagedPlatformAddressWallet.minOutputAmount()` rather than
+    /// mirroring the protocol constant in Swift, which would drift if the
+    /// version changed it. Only the platform path consults this; the
+    /// core/shielded flows are unaffected.
+    @Published var platformMinOutputAmount: UInt64?
+
     private let network: Network
 
     init(network: Network) {
@@ -146,6 +164,27 @@ class SendViewModel: ObservableObject {
     /// shielded send flows that read `amountDuffs` stay self-documenting
     /// (Core uses duffs; Platform / shielded use credits).
     var amountDuffs: UInt64? { amount }
+
+    /// The recipient's 20-byte platform address hash, when the typed/scanned
+    /// recipient resolves to a platform address (`detectedAddressType ==
+    /// .platform`). `nil` for every other address type or a malformed
+    /// payload.
+    ///
+    /// This is the SAME already-decoded payload `executeSend`'s
+    /// `.platformToPlatform` branch reads — `detectedAddressType` is
+    /// populated by `DashAddress.parse` (via the `recipientAddress` `didSet`),
+    /// and the 21-byte platform payload is `[type byte] + [20-byte hash]`
+    /// (see rs-dpp/src/address_funds/platform_address.rs). We slice the hash
+    /// out here rather than re-running any address decoding, so the view can
+    /// exclude an own-wallet recipient that collides with a candidate source
+    /// input — mirroring `TransferPlatformAddressView.sourceInputHashes` and
+    /// the Rust Auto selector, which forbid an address being both an input
+    /// and an output of the same transfer.
+    var platformRecipientHash: Data? {
+        guard case .platform(let payload) = detectedAddressType,
+              payload.count == 21 else { return nil }
+        return payload.subdata(in: 1..<21)
+    }
 
     // MARK: - Multi-recipient (coreToCore only)
 
@@ -314,7 +353,18 @@ class SendViewModel: ObservableObject {
             // the lock floor so a doomed (sub-fee) amount can't kick off
             // the lock-build + proof pipeline.
             return (amountDuffs ?? 0) >= Self.minShieldFromCoreDuffs
-        case .platformToPlatform, .platformToShielded,
+        case .platformToPlatform:
+            // An address-funds transfer sends exactly one output, and DPP
+            // rejects any output below `min_output_amount`. Gate on the
+            // version-locked floor (resolved Rust-side and pushed in by the
+            // view) so the button reflects what DPP will accept, rather than
+            // only `> 0`, which would enable a sub-minimum amount that fails
+            // structure validation after submit — matching the dedicated
+            // `TransferPlatformAddressView`. An unresolved floor (`nil`) keeps
+            // the gate CLOSED (never *under*-gates); it loads on appear.
+            guard let minOutput = platformMinOutputAmount else { return false }
+            return (amountCredits ?? 0) >= minOutput
+        case .platformToShielded,
              .shieldedToShielded, .shieldedToPlatform, .shieldedToCore:
             return (amountCredits ?? 0) > 0
         }
@@ -426,11 +476,10 @@ class SendViewModel: ObservableObject {
         shieldedService: ShieldedService,
         platformState: AppState,
         wallet: PersistentWallet,
-        coreWallet: ManagedCoreWallet?,
+        platformWallet: ManagedPlatformWallet?,
         platformAddressWallet: ManagedPlatformAddressWallet?,
         signer: KeychainSigner?,
         senderAccountIndex: UInt32,
-        changeAddressRow: PersistentPlatformAddress?,
         modelContext: ModelContext
     ) async {
         guard let flow = detectedFlow else { return }
@@ -443,23 +492,45 @@ class SendViewModel: ObservableObject {
         do {
             switch flow {
             case .coreToCore:
-                guard let core = coreWallet else {
-                    error = "Core wallet not available"
+                guard let platformWallet else {
+                    error = "Wallet not available"
                     return
                 }
-                // Build the ordered output list (primary + any extra
-                // rows). `coreRecipients` is nil unless every row is a
-                // valid on-network Core address with a > 0 duffs amount —
-                // the same condition `canSend` gates on, re-checked here
-                // so a stale enabled-Send tap can't slip an invalid batch
-                // through. Coin selection + multi-output tx building are
-                // entirely Rust-side; we only marshal the parallel
-                // address/amount arrays into `sendToAddresses`.
+                // `coreRecipients` is nil unless every row is a valid
+                // on-network Core address with a > 0 duffs amount — the
+                // same condition `canSend` gates on, re-checked here so a
+                // stale enabled-Send tap can't slip an invalid batch
+                // through.
                 guard let recipients = coreRecipients else {
                     error = "Invalid recipient or amount"
                     return
                 }
-                let _ = try core.sendToAddresses(recipients: recipients)
+                // Coin selection, funding, and signing are Rust-side; we
+                // marshal the outputs into the builder, fund + sign from
+                // the sender account, then broadcast the signed tx. The
+                // signed tx carries its funding account, so a failed
+                // broadcast releases its UTXO reservation for retry. The
+                // builder validates addresses against `self.network`, which
+                // the Rust side re-checks against the wallet's own network.
+                let builder = try CoreTransactionBuilder(network: network)
+                for recipient in recipients {
+                    try builder.addOutput(
+                        address: recipient.address,
+                        amountDuffs: recipient.amountDuffs
+                    )
+                }
+                try builder.setFunding(
+                    wallet: platformWallet,
+                    accountType: .bip44,
+                    accountIndex: senderAccountIndex
+                )
+                let signedTx = try builder.buildSigned(
+                    wallet: platformWallet,
+                    accountType: .bip44,
+                    accountIndex: senderAccountIndex
+                )
+                // Broadcast lives on the core wallet; grab it locally.
+                let _ = try platformWallet.coreWallet().broadcastTransaction(signedTx)
                 successMessage = recipients.count > 1
                     ? "Payment sent to \(recipients.count) recipients"
                     : "Payment sent"
@@ -497,10 +568,11 @@ class SendViewModel: ObservableObject {
                     return
                 }
                 // The Rust FFI's `PlatformAddressFFI → PlatformAddress`
-                // conversion (rs-platform-wallet-ffi/src/platform_address_types.rs:42)
-                // only accepts P2PKH; sending to a P2SH platform address
-                // would surface a raw "Unsupported address type" string
-                // from Rust. Fail fast with a user-readable message.
+                // conversion (rs-platform-wallet-ffi/src/platform_address_types.rs,
+                // `impl TryFrom<PlatformAddressFFI>`) accepts P2PKH only;
+                // sending to a P2SH platform address would surface a
+                // P2SH-specific rejection from Rust. Fail fast here with a
+                // user-readable message instead.
                 guard ffiAddressType == 0 else {
                     error = "P2SH platform addresses aren't supported yet. Use a P2PKH recipient."
                     return
@@ -511,19 +583,12 @@ class SendViewModel: ObservableObject {
                     hash: hash,
                     credits: credits
                 )
-                // If the view passed a fresh unused HD address from the
-                // pool, use it as the dedicated change destination —
-                // matches the Receive screen's lowest-unused selection.
-                let change: ManagedPlatformAddressWallet.ChangeAddress? = changeAddressRow.map {
-                    ManagedPlatformAddressWallet.ChangeAddress(
-                        addressType: $0.addressType,
-                        hash: $0.addressHash
-                    )
-                }
+                // Input selection, fee strategy, and the surplus (left on
+                // the source addresses in the credit-balance model) are all
+                // owned by the Rust Auto path — no change address to pass.
                 let updated = try await addressWallet.transfer(
                     accountIndex: senderAccountIndex,
                     outputs: [output],
-                    changeAddress: change,
                     signer: signer
                 )
 
@@ -537,16 +602,21 @@ class SendViewModel: ObservableObject {
                 // persister callback ordering ever changes.
                 //
                 // Mirrors PlatformWalletPersistenceHandler.persistAddressBalances:
-                // fetch each row by `addressHash`, update the
-                // volatile fields, stamp `lastUpdated`. Every entry
-                // returned was touched by the transition, so
-                // `isUsed = true` unconditionally. Rows that aren't
-                // found are silently skipped — same defensive shape
-                // the BLAST handler uses.
+                // fetch each row by `walletId + addressHash`, update the
+                // volatile fields, stamp `lastUpdated`. Scope by `walletId`
+                // too (mirroring the dedicated transfer sheet): a hash-only
+                // predicate can match another wallet's row in a multi-wallet
+                // store. Every entry returned was touched by the transition,
+                // so `isUsed = true` unconditionally. Rows that aren't found
+                // are silently skipped — same defensive shape the BLAST
+                // handler uses.
+                let walletId = wallet.walletId
                 for entry in updated {
                     let entryHash = entry.hash
                     let descriptor = FetchDescriptor<PersistentPlatformAddress>(
-                        predicate: #Predicate { $0.addressHash == entryHash }
+                        predicate: #Predicate {
+                            $0.walletId == walletId && $0.addressHash == entryHash
+                        }
                     )
                     guard let row = try? modelContext.fetch(descriptor).first else {
                         continue
@@ -556,14 +626,22 @@ class SendViewModel: ObservableObject {
                     row.isUsed = true
                     row.lastUpdated = Date()
                 }
+                // The transfer has ALREADY succeeded on-chain by this point,
+                // and a DIP-17 resync corrects balances regardless. So a
+                // local SwiftData `save()` failure must NOT be reported as
+                // the transfer having failed (that would make the user
+                // think credits didn't move when they did) — but it also
+                // must not be silently swallowed. Keep the SUCCESS message
+                // and append a non-fatal caveat noting balances will refresh
+                // on the next sync.
                 do {
                     try modelContext.save()
+                    successMessage = "Platform transfer sent"
                 } catch {
-                    self.error = "Couldn't persist post-transfer balances: \(error.localizedDescription)"
-                    return
+                    successMessage = "Platform transfer sent. Local balances "
+                        + "couldn't be updated — they'll refresh on the next "
+                        + "sync: \(error.localizedDescription)"
                 }
-
-                successMessage = "Platform transfer sent"
 
             case .shieldedToShielded:
                 // Shielded → Shielded: spend notes from this

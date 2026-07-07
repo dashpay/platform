@@ -214,7 +214,7 @@ async fn build_core_changeset(
             // persistence, not a re-application.
             //
             // `ChainLockProcessed` fires every time the wallet's
-            // `last_applied_chain_lock` advances (dashpay/rust-dashcore#769),
+            // `last_applied_chain_lock` advances,
             // even when no record was promoted — so a quiescent wallet's
             // boundary advance is no longer invisible to this bridge.
             // The earlier `TransactionsChainlocked`-only signal had a
