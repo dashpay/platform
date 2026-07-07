@@ -53,6 +53,13 @@ import java.util.Date
 fun TransactionDetailScreen(
     txidHex: String,
     navController: NavHostController,
+    /**
+     * Locked duffs for asset-lock txs, passed from the list row (← the iOS
+     * view's `assetLockAmountDuffs`) — `netAmount` is ~0 for these, so the
+     * header substitutes the actual L1 burn. `null` for other tx types or
+     * when the tracking row is gone.
+     */
+    assetLockAmountDuffs: Long? = null,
 ) {
     val container = LocalAppContainer.current
     val context = LocalContext.current
@@ -97,6 +104,8 @@ fun TransactionDetailScreen(
 
         val confirmed = tx.context >= 2
         val typeDescription = when {
+            tx.isAssetLock -> "Asset Lock"
+            tx.isAssetUnlock -> "Asset Unlock"
             tx.netAmount > 0 -> "Received"
             tx.netAmount < 0 -> "Sent"
             else -> "Self-Transfer"
@@ -122,7 +131,7 @@ fun TransactionDetailScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Text(
-                    formattedNetAmount(tx),
+                    displayAmount(tx, assetLockAmountDuffs),
                     style = MaterialTheme.typography.headlineSmall,
                     color = transactionColor(tx),
                 )
@@ -137,7 +146,9 @@ fun TransactionDetailScreen(
                 if (tx.blockHeight != 0) {
                     LabeledContent("Block Height", tx.blockHeight.toString())
                 }
-                tx.fee?.takeIf { tx.netAmount < 0 }?.let { fee ->
+                // netAmount is ~0 for asset locks (self-owned credit
+                // output), yet the wallet did pay the fee — keep the row.
+                tx.fee?.takeIf { tx.netAmount < 0 || tx.isAssetLock }?.let { fee ->
                     LabeledContent("Network Fee", formatDuffs(fee))
                 }
                 LabeledContent("Type", tx.transactionType)
