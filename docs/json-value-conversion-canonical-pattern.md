@@ -4,9 +4,7 @@ Authoritative reference for adding a new domain type to `rs-dpp` and exposing
 it through `wasm-dpp2`. If you're tempted to write a custom `to_json` /
 `to_object` inherent method, read this first.
 
-For the long-form rationale and per-type history, see
-[json-value-unification-plan.md](json-value-unification-plan.md). This doc
-covers **how to do it correctly today**, not why.
+This doc covers **how to do it correctly today**.
 
 ## TL;DR
 
@@ -259,8 +257,6 @@ on the wasm struct and call the rs-dpp conversion methods directly. See
 
 ## Quick references
 
-- Plan & history: [json-value-unification-plan.md](json-value-unification-plan.md)
-- Per-type inventory: [json-value-conversion-inventory.md](json-value-conversion-inventory.md)
 - Trait definitions: `packages/rs-dpp/src/serialization/serialization_traits.rs`
 - Bytes serde helpers: `packages/rs-dpp/src/serialization/serde_bytes.rs`,
   `serde_bytes_var.rs`

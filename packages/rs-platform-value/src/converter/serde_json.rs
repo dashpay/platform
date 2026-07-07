@@ -714,8 +714,7 @@ mod tests {
     // From<JsonValue> for Value — array conversion is faithful
     //
     // The previous `len >= 10 && all u8-range` heuristic that silently
-    // reclassified JSON arrays as `Value::Bytes` (Critical-2 in
-    // docs/json-value-unification-plan.md) was removed. JSON arrays now
+    // reclassified JSON arrays as `Value::Bytes` was removed. JSON arrays now
     // always become `Value::Array(...)` regardless of length / content
     // shape. Binary fields should flow through canonical encodings
     // (base64 strings in JSON, decoded by the receiver's Deserialize impl).

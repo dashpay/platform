@@ -30,8 +30,7 @@
 //! output to process-global state. This is by design — `DataContract` is a
 //! versioned enum routed through `DataContractInSerializationFormat`, and the
 //! format depends on the current platform. The stateless alternative is the
-//! bincode storage path (`serialize_to_bytes_with_platform_version`). See
-//! `docs/json-value-unification-plan.md` §3.0 Critical-4.
+//! bincode storage path (`serialize_to_bytes_with_platform_version`).
 //!
 //! The `data_contract_serde_pins_critical_4` test module below pins this
 //! behavior (validate-by-default + explicit `false` opt-out) so future
