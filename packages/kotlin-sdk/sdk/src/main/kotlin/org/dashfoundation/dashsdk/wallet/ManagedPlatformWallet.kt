@@ -29,21 +29,26 @@ import java.util.concurrent.atomic.AtomicLong
 class ManagedPlatformWallet internal constructor(
     handle: Long,
     val walletId: ByteArray,
+    // Serializes this wallet's Core sends, and is SHARED across every wrapper
+    // for the same wallet id: the PlatformWalletManager owns it (keyed by
+    // wallet id) and hands the same instance to each wrapper it builds. The
+    // split TransactionBuilder selects UTXOs in setFunding but only reserves
+    // them in buildSigned, so two sends crossing that window could both select
+    // the same UTXO and build competing txs (double-spend / broadcast failure).
+    // A per-instance lock is NOT enough — loadPersistedWallets can hand out a
+    // fresh wrapper (new getWallet handle) for a wallet id whose earlier
+    // wrapper a caller still holds, and the two wrappers would hold distinct
+    // locks. Keying the shared lock by wallet id closes that: a same-account
+    // collision is necessarily same-wallet, and different wallets don't share
+    // UTXOs, so wallet-id granularity is a safe superset. The removed one-shot
+    // core_wallet_send_to_addresses held the wallet-manager write lock across
+    // select+sign+broadcast; this restores that atomicity at the orchestration
+    // layer.
+    private val coreSendMutex: kotlinx.coroutines.sync.Mutex,
 ) : AutoCloseable {
 
     private val handleRef = AtomicLong(handle)
     private val cleanable = NativeCleaner.register(this, HandleCleanup(handleRef))
-
-    // Serializes this wallet's Core sends. The split TransactionBuilder
-    // selects UTXOs in setFunding but only reserves them in buildSigned,
-    // so two concurrent same-account sends could otherwise both select the
-    // same UTXO and build competing txs (double-spend / broadcast failure).
-    // The removed one-shot core_wallet_send_to_addresses held the
-    // wallet-manager write lock across select+sign+broadcast; this restores
-    // that atomicity at the orchestration layer. Per-wallet is sufficient —
-    // a same-account collision is necessarily same-wallet, and different
-    // wallets do not share UTXOs.
-    private val coreSendMutex = kotlinx.coroutines.sync.Mutex()
 
     /** Raw native `PlatformWallet` handle; throws if the wrapper was closed. */
     val handle: Long
