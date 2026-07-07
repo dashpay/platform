@@ -206,6 +206,17 @@ struct CreateIdentityView: View {
     @Query(sort: [SortDescriptor(\PersistentAssetLock.updatedAt, order: .reverse)])
     private var allAssetLocks: [PersistentAssetLock]
 
+    /// All wallets' unspent shielded notes. The shielded funding
+    /// picker spans multiple wallets, so this uses the all-wallets
+    /// predicate and `shieldedPoolBalance(for:)` scopes by walletId in
+    /// memory — a single-walletId `@Query` couldn't serve every row
+    /// the picker needs. Being a `@Query` (rather than a one-off
+    /// `modelContext.fetch`) makes the funding option and denomination
+    /// list update live: rows arriving while this sheet is open
+    /// re-render the view.
+    @Query(filter: PersistentShieldedNote.unspentPredicate)
+    private var unspentShieldedNotes: [PersistentShieldedNote]
+
     // MARK: - Selection state
 
     /// The source wallet selection. `nil` encodes "pick nothing yet";
@@ -1764,16 +1775,21 @@ struct CreateIdentityView: View {
     }
 
     /// Per-wallet shielded pool balance: sum of `walletId`'s unspent
-    /// `PersistentShieldedNote` values, fetched from `modelContext`
-    /// rather than the single-mirror `shieldedService.shieldedBalance`.
-    /// Correct for ANY loaded wallet, not just the mirror's
-    /// `firstWallet`.
+    /// `PersistentShieldedNote` values, filtered in memory from the
+    /// `unspentShieldedNotes` `@Query` (rather than the single-mirror
+    /// `shieldedService.shieldedBalance`). Correct for ANY loaded
+    /// wallet, not just the mirror's `firstWallet`.
+    ///
+    /// Reactive via `@Query`: note rows arriving while this sheet is
+    /// open re-render the view, so the funding option and denomination
+    /// list stay live (vs. the previous one-off `modelContext.fetch`,
+    /// which froze the balance at first render). One shared query
+    /// materialized once per render also removes the per-call-site
+    /// FetchDescriptor round-trip.
     private func shieldedPoolBalance(for walletId: Data) -> UInt64 {
-        let descriptor = FetchDescriptor<PersistentShieldedNote>(
-            predicate: #Predicate { $0.walletId == walletId && $0.isSpent == false }
-        )
-        let notes = (try? modelContext.fetch(descriptor)) ?? []
-        return notes.reduce(0) { $0 + $1.value }
+        unspentShieldedNotes
+            .filter { $0.walletId == walletId }
+            .reduce(0) { $0 + $1.value }
     }
 
     /// The wallet id currently chosen in the source-wallet picker, or

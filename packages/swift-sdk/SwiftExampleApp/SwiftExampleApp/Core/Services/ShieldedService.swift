@@ -396,6 +396,17 @@ class ShieldedService: ObservableObject {
     ) {
         let dbPath = Self.dbPath(for: network)
         let sortedAccounts = Array(Set(accounts)).sorted()
+
+        // No "already bound" fast path on purpose: the only cheap probe,
+        // `shieldedDefaultAddress`, reflects the wallet-level sub-wallet
+        // binding — which SURVIVES `clearShielded` (Clear drops only the
+        // coordinator registrations; there is no sub-wallet unbind FFI).
+        // Skipping on that signal would silently leave post-Clear wallets
+        // unregistered (sync passes would never scan them again). Coordinator
+        // registration has no cheap query, so we always re-bind; the
+        // mnemonic read + ZIP-32 re-derivation is low-millisecond per wallet
+        // and rebind fires are rare (wallet-set change, network switch,
+        // Sync Now).
         do {
             try walletManager.configureShielded(dbPath: dbPath)
             try walletManager.bindShielded(
@@ -488,6 +499,28 @@ class ShieldedService: ObservableObject {
             // false and `lastError` is populated. Bail rather
             // than chain a sync that will fail the same way.
             guard isBound else { return }
+        }
+
+        // Re-register any loaded wallet that lost its engine binding —
+        // post-Clear, `clearShielded` drops EVERY wallet, and a detail-view
+        // `switchTo` in between re-binds only the wallet being viewed, so
+        // the recovery branch above may not even run. This runs on every
+        // Sync Now: with no cheap coordinator-registration probe (see
+        // `bindEngine`), each pass re-derives every other wallet's keys
+        // (low-millisecond per wallet) — the price of correct post-Clear
+        // re-registration.
+        if let mirrorWalletId = boundWalletId, let resolver, let network {
+            engineBindOtherWallets(
+                allWalletIds: walletManager.wallets.keys,
+                mirrorWalletId: mirrorWalletId
+            ) { otherWalletId in
+                bindEngine(
+                    walletManager: walletManager,
+                    walletId: otherWalletId,
+                    network: network,
+                    resolver: resolver
+                )
+            }
         }
 
         isSyncing = true
@@ -666,21 +699,26 @@ class ShieldedService: ObservableObject {
         //
         //    Re-binding scope after Clear: `clearShielded` drops
         //    EVERY wallet (not just the mirror's `firstWallet`)
-        //    from the coordinator. Only the mirror wallet gets
-        //    re-registered on the fast path — the "Sync Now"
-        //    button's `manualSync()` self-rebinds via `bind(...)`.
-        //    The OTHER loaded wallets stay dark until the next
-        //    `rebindWalletScopedServices()` fire, which now
-        //    re-`bindEngine`s every wallet (not just the mirror).
-        //    That rebind fires on any wallet-set change or network
-        //    switch, so cross-wallet shielded flows (SH-14/15/16)
-        //    recover on the next such event without a manual
-        //    wallet-swap; the immediate post-Clear window covers
-        //    the mirror wallet only. We keep the WIPE scope global
-        //    on purpose (see the class-level doc below) — this note
-        //    is about the re-BIND scope, which is deliberately left
-        //    to the rebind path rather than duplicated here (the
-        //    service doesn't hold the full wallet set + resolver).
+        //    from the coordinator. "Sync Now" (`manualSync()`)
+        //    UNCONDITIONALLY re-registers EVERY loaded wallet on each
+        //    tap: the mirror wallet via `bind(...)` (in the recovery
+        //    branch, only when unbound), and every OTHER loaded wallet
+        //    via a `engineBindOtherWallets` / `bindEngine` pass that
+        //    runs on every Sync Now regardless of the recovery branch.
+        //    That unconditional pass matters because a detail-view
+        //    `switchTo` between Clear and Sync Now re-binds only the
+        //    viewed wallet (flipping `isBound` true and skipping the
+        //    recovery branch), which would otherwise leave the other
+        //    wallets engine-unregistered. So cross-wallet shielded
+        //    flows (SH-14/15/16) come back immediately on the first
+        //    post-Clear Sync Now, not only on the next
+        //    `rebindWalletScopedServices()` fire.
+        //    `rebindWalletScopedServices` remains the recovery path for
+        //    wallets loaded LATER (a wallet added after the Clear isn't
+        //    in the manager's set at Sync-Now time); it re-`bindEngine`s
+        //    every wallet on any wallet-set change or network switch. We
+        //    keep the WIPE scope global on purpose (see the class-level
+        //    doc below) — this note is about the re-BIND scope.
         if let managerForStop {
             do {
                 try managerForStop.clearShielded()

@@ -201,10 +201,36 @@ if [ "$PROFILE" = "dev-ios" ]; then
   log_info "  → tokio-metrics enabled (dev profile)"
 fi
 
+# Force header regeneration for every bundled-header crate. Each
+# crate's build.rs writes its cbindgen header to the SHARED
+# `target/<triple>/<profile>/include/<crate>/` path, but cargo only
+# re-executes a build script when the crate's fingerprint changes —
+# and it caches artifacts for MULTIPLE revs of the same crate side by
+# side. On a target dir reused across branches (CI runners preserve
+# it; local checkouts switch branches), a branch pinning a different
+# rust-dashcore rev runs its build.rs and overwrites the shared
+# header; switching back to a branch whose artifacts are still
+# fingerprint-fresh skips build.rs entirely, so Swift compiles
+# against the OTHER rev's header (seen as phantom FFI signature
+# mismatches in `WalletManager.swift` on CI). Cleaning the header
+# crates for the triple being built forces their build scripts to
+# re-run so headers always match this checkout's pins. Costs a
+# rebuild of the FFI crates only; the heavy dependency graph stays
+# cached. NOTE: `cargo clean -p` must be scoped with --target and
+# --profile — unscoped it only touches the host-default dirs and
+# leaves the cross-compiled artifacts (and the stale header) intact.
+clean_header_crates() {
+  local triple="$1"
+  log_info "  → cleaning header crates for $triple/$PROFILE (forces cbindgen re-run)"
+  cargo clean -p dash-network -p key-wallet-ffi -p rs-sdk-ffi -p platform-wallet-ffi \
+    --target "$triple" --profile "$PROFILE"
+}
+
 # iOS device
 if $BUILD_IOS; then
   IOS_TARGET="aarch64-apple-ios"
   log_info "Building iOS device ($IOS_TARGET)..."
+  clean_header_crates "$IOS_TARGET"
   cargo build -p "$PACKAGE" --profile "$PROFILE" --target "$IOS_TARGET" --features "$CARGO_FEATURES"
   IOS_LIB="$TARGET_DIR/$IOS_TARGET/$OUTPUT_DIR/librs_unified_sdk_ffi.a"
   IOS_HEADERS="$TARGET_DIR/$IOS_TARGET/$OUTPUT_DIR/include"
@@ -215,6 +241,7 @@ fi
 if $BUILD_SIM; then
   SIM_TARGET="aarch64-apple-ios-sim"
   log_info "Building iOS simulator ($SIM_TARGET)..."
+  clean_header_crates "$SIM_TARGET"
   cargo build -p "$PACKAGE" --profile "$PROFILE" --target "$SIM_TARGET" --features "$CARGO_FEATURES"
   SIM_LIB="$TARGET_DIR/$SIM_TARGET/$OUTPUT_DIR/librs_unified_sdk_ffi.a"
   SIM_HEADERS="$TARGET_DIR/$SIM_TARGET/$OUTPUT_DIR/include"
@@ -225,6 +252,7 @@ fi
 if $BUILD_MAC; then
   MAC_TARGET="aarch64-apple-darwin"
   log_info "Building macOS ($MAC_TARGET)..."
+  clean_header_crates "$MAC_TARGET"
   cargo build -p "$PACKAGE" --profile "$PROFILE" --target "$MAC_TARGET" --features "$CARGO_FEATURES"
   MAC_LIB="$TARGET_DIR/$MAC_TARGET/$OUTPUT_DIR/librs_unified_sdk_ffi.a"
   MAC_HEADERS="$TARGET_DIR/$MAC_TARGET/$OUTPUT_DIR/include"

@@ -1005,9 +1005,7 @@ struct BalanceCardView: View {
             filter: #Predicate<PersistentPlatformAddressesSyncState> { $0.networkRaw == walletNetworkRaw }
         )
         _shieldedNotes = Query(
-            filter: #Predicate<PersistentShieldedNote> {
-                $0.walletId == walletId && $0.isSpent == false
-            }
+            filter: PersistentShieldedNote.unspentPredicate(walletId: walletId)
         )
     }
 

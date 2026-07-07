@@ -104,12 +104,8 @@ struct ReceiveAddressView: View {
     /// (`rebindWalletScopedServices`), so `shieldedDefaultAddress`
     /// resolves for any of them; `nil` until this wallet's bind lands.
     private var shieldedReceiveAddress: String? {
-        guard let raw = try? walletManager.shieldedDefaultAddress(
+        walletManager.shieldedDisplayAddress(
             walletId: wallet.walletId,
-            account: 0
-        ) else { return nil }
-        return DashAddress.encodeOrchard(
-            rawBytes: raw,
             network: platformState.currentNetwork
         )
     }

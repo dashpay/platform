@@ -69,13 +69,10 @@ struct AccountListView: View {
     /// engine binding lands (`rebindWalletScopedServices`).
     private var shieldedAccountsForThisWallet: [UInt32] {
         // Engine-bound wallets expose account 0 by default. Resolve
-        // per-wallet from the engine rather than the single UI mirror so
-        // the section shows for ANY loaded wallet, not just `firstWallet`.
-        let bound = (try? walletManager.shieldedDefaultAddress(
-            walletId: wallet.walletId,
-            account: 0
-        )) != nil
-        return bound ? [0] : []
+        // per-wallet from the engine (via `shieldedAddress(for:)`) rather
+        // than the single UI mirror so the section shows for ANY loaded
+        // wallet, not just `firstWallet`.
+        shieldedAddress(for: 0) != nil ? [0] : []
     }
 
     /// Bech32m Orchard receive address for `account` on the viewed
@@ -83,12 +80,9 @@ struct AccountListView: View {
     /// single UI mirror's `addressesByAccount`). `nil` until this
     /// wallet's bind lands or if encoding fails.
     private func shieldedAddress(for account: UInt32) -> String? {
-        guard let raw = try? walletManager.shieldedDefaultAddress(
+        walletManager.shieldedDisplayAddress(
             walletId: wallet.walletId,
-            account: account
-        ) else { return nil }
-        return DashAddress.encodeOrchard(
-            rawBytes: raw,
+            account: account,
             network: platformState.currentNetwork
         )
     }

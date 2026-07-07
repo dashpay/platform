@@ -251,18 +251,6 @@ struct SwiftExampleAppApp: App {
                 network: platformState.currentNetwork,
                 resolver: shieldedResolver
             )
-            if try !walletManager.isShieldedSyncRunning() {
-                try walletManager.startShieldedSync()
-            }
-
-            // DashPay contact-request + profile sweep (background
-            // loop). Wallet-driven — every registered wallet is swept
-            // each pass — so manager scope is the right place to start
-            // it, same as the address / shielded loops above.
-            // Idempotent: starting while running is a no-op.
-            if try !walletManager.isDashPaySyncRunning() {
-                try walletManager.startDashPaySync()
-            }
 
             // Engine-bind every OTHER loaded wallet into the shared
             // network-scoped shielded coordinator. `firstWallet` above
@@ -278,6 +266,12 @@ struct SwiftExampleAppApp: App {
             // pure free function (`engineBindOtherWallets`) so its
             // "visit every non-mirror wallet" contract can be
             // unit-tested without a configured manager.
+            //
+            // Runs BEFORE the shielded/DashPay start calls below:
+            // engine-binding must not depend on those fallible calls — a
+            // throw there (e.g. `startShieldedSync` failing) must not
+            // leave the non-mirror wallets unbound for the rest of the
+            // session.
             engineBindOtherWallets(
                 allWalletIds: walletManager.wallets.keys,
                 mirrorWalletId: wallet.walletId
@@ -288,6 +282,19 @@ struct SwiftExampleAppApp: App {
                     network: platformState.currentNetwork,
                     resolver: shieldedResolver
                 )
+            }
+
+            if try !walletManager.isShieldedSyncRunning() {
+                try walletManager.startShieldedSync()
+            }
+
+            // DashPay contact-request + profile sweep (background
+            // loop). Wallet-driven — every registered wallet is swept
+            // each pass — so manager scope is the right place to start
+            // it, same as the address / shielded loops above.
+            // Idempotent: starting while running is a no-op.
+            if try !walletManager.isDashPaySyncRunning() {
+                try walletManager.startDashPaySync()
             }
         } catch {
             SDKLogger.error(
