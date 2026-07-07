@@ -181,6 +181,21 @@ impl ExtendedDocumentWasm {
         Ok(js_value)
     }
 
+    #[wasm_bindgen(js_name=toObject)]
+    pub fn to_object(&self) -> Result<JsValue, JsValue> {
+        // Canonical object shape: every `$`-prefixed system field (id, ownerId,
+        // type, dataContractId, revision, timestamps/block-heights, creatorId)
+        // plus the flattened document properties, with identifiers and binary
+        // data rendered as `Uint8Array`. Serializing the non-human-readable
+        // `to_map_value()` turns every identifier/bytes node — including nested
+        // document properties — into a `Uint8Array` in one pass, so there is no
+        // need to walk the document type's identifier/binary paths.
+        let map = self.0.to_map_value().with_js_error()?;
+        let serializer =
+            serde_wasm_bindgen::Serializer::json_compatible().serialize_bytes_as_arrays(false);
+        Ok(map.serialize(&serializer)?)
+    }
+
     #[wasm_bindgen(js_name=set)]
     pub fn set(&mut self, path: String, js_value_to_set: JsValue) -> Result<(), JsValue> {
         let value: Value = js_value_to_set.with_serde_to_platform_value()?;
