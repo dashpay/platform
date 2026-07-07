@@ -50,14 +50,16 @@ members = [
 ]
 
 [workspace.dependencies]
-dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "647fa9820f3614090e4e5f5f2b709961d68e538b" }
-dash-network-seeds = { git = "https://github.com/dashpay/rust-dashcore", rev = "647fa9820f3614090e4e5f5f2b709961d68e538b" }
-dash-spv = { git = "https://github.com/dashpay/rust-dashcore", rev = "647fa9820f3614090e4e5f5f2b709961d68e538b" }
-key-wallet = { git = "https://github.com/dashpay/rust-dashcore", rev = "647fa9820f3614090e4e5f5f2b709961d68e538b" }
-key-wallet-ffi = { git = "https://github.com/dashpay/rust-dashcore", rev = "647fa9820f3614090e4e5f5f2b709961d68e538b" }
-key-wallet-manager = { git = "https://github.com/dashpay/rust-dashcore", rev = "647fa9820f3614090e4e5f5f2b709961d68e538b" }
-dash-network = { git = "https://github.com/dashpay/rust-dashcore", rev = "647fa9820f3614090e4e5f5f2b709961d68e538b" }
-dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", rev = "647fa9820f3614090e4e5f5f2b709961d68e538b" }
+# TODO(pin): tracks dashpay/rust-dashcore#850 (draft) — asset-lock explicit
+# UTXO override. Bump to the merged `dev` SHA once that PR lands.
+dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "d42081e7bc916fb5c4f994cdfa1c01cf5ede9e0f" }
+dash-network-seeds = { git = "https://github.com/dashpay/rust-dashcore", rev = "d42081e7bc916fb5c4f994cdfa1c01cf5ede9e0f" }
+dash-spv = { git = "https://github.com/dashpay/rust-dashcore", rev = "d42081e7bc916fb5c4f994cdfa1c01cf5ede9e0f" }
+key-wallet = { git = "https://github.com/dashpay/rust-dashcore", rev = "d42081e7bc916fb5c4f994cdfa1c01cf5ede9e0f" }
+key-wallet-ffi = { git = "https://github.com/dashpay/rust-dashcore", rev = "d42081e7bc916fb5c4f994cdfa1c01cf5ede9e0f" }
+key-wallet-manager = { git = "https://github.com/dashpay/rust-dashcore", rev = "d42081e7bc916fb5c4f994cdfa1c01cf5ede9e0f" }
+dash-network = { git = "https://github.com/dashpay/rust-dashcore", rev = "d42081e7bc916fb5c4f994cdfa1c01cf5ede9e0f" }
+dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", rev = "d42081e7bc916fb5c4f994cdfa1c01cf5ede9e0f" }
 
 tokio-metrics = "0.5"
 

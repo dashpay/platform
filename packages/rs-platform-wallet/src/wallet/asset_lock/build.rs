@@ -98,6 +98,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 vec![funding],
                 DEFAULT_FEE_PER_KB,
                 signer,
+                None,
             )
             .await
             .map_err(|e| {
