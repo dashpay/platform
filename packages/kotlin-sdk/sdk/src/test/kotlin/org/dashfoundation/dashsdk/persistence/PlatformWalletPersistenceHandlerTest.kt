@@ -686,6 +686,89 @@ class PlatformWalletPersistenceHandlerTest {
     }
 
     @Test
+    fun loadWalletListRestoresCoreAddressPoolsBeyondGapWindow() = runTest {
+        // prior-2 regression: the persisted Core address pools must come
+        // back on the restore row so every restored address maps to its
+        // derivation path — including addresses PAST the gap-limit window
+        // (`DEFAULT_GAP_LIMIT` = 20) that `ManagedWalletInfo::from_wallet`
+        // pre-derives. Without this, a restored UTXO on an out-of-window
+        // address has no derivation-path mapping and the wallet cannot
+        // sign a core-to-core spend after a cold restart. Mirror of the
+        // Swift `buildCoreAddressPoolBuffer` round-trip.
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+        val xpub = ByteArray(78) { 30 }
+        handler.onPersistAccountRegistration(
+            walletId, 0, 0, 0, 0, 0, ByteArray(0), ByteArray(0), xpub,
+        )
+        val account = db.accountDao().observeByWallet(walletId).first().single()
+
+        // An external (pool tag 0) address well beyond the gap window,
+        // used and carrying a balance + a full derivation path + pubkey.
+        val pubkey = ByteArray(33) { 4 }
+        db.coreAddressDao().upsert(
+            CoreAddressEntity(
+                address = "yFarAddr",
+                publicKey = pubkey,
+                poolTypeTag = 0,
+                addressIndex = 100,
+                derivationPath = "m/44'/1'/0'/0/100",
+                isUsed = true,
+                balance = 12_345,
+                accountId = account.id,
+            ),
+        )
+        // A second, unused internal (pool tag 1) address — proves grouping
+        // by pool type emits a distinct pool for the change chain.
+        db.coreAddressDao().upsert(
+            CoreAddressEntity(
+                address = "yChangeAddr",
+                publicKey = ByteArray(0),
+                poolTypeTag = 1,
+                addressIndex = 3,
+                derivationPath = "m/44'/1'/0'/1/3",
+                isUsed = false,
+                accountId = account.id,
+            ),
+        )
+
+        val list = handler.onLoadWalletList()
+        assertEquals(1, list.size)
+        val pools = list[0].coreAddressPools
+        // One pool per (account, poolType) group, ascending tag order.
+        assertEquals(2, pools.size)
+
+        val external = pools[0]
+        assertEquals(0.toByte(), external.poolTypeTag)
+        // The pool routes via the account tuple (xpub omitted — the loader
+        // ignores it on this path).
+        assertEquals(0.toByte(), external.account.typeTag)
+        assertEquals(0, external.account.index)
+        assertEquals(0, external.account.accountXpubBytes.size)
+        assertEquals(1, external.addresses.size)
+        val far = external.addresses[0]
+        assertEquals("yFarAddr", far.addressBase58)
+        // The out-of-window address keeps its derivation path — the whole
+        // point of the fix.
+        assertEquals("m/44'/1'/0'/0/100", far.derivationPath)
+        assertEquals(100, far.addressIndex)
+        assertTrue(far.isUsed)
+        assertEquals(12_345L, far.balance)
+        assertTrue(pubkey.contentEquals(far.publicKey))
+        assertEquals(0.toByte(), far.poolTypeTag)
+
+        val internal = pools[1]
+        assertEquals(1.toByte(), internal.poolTypeTag)
+        assertEquals(1, internal.addresses.size)
+        val change = internal.addresses[0]
+        assertEquals("yChangeAddr", change.addressBase58)
+        assertEquals("m/44'/1'/0'/1/3", change.derivationPath)
+        assertEquals(3, change.addressIndex)
+        assertFalse(change.isUsed)
+        // No pubkey persisted → empty (Rust derives has_public_key = false).
+        assertEquals(0, change.publicKey.size)
+    }
+
+    @Test
     fun loadWalletListRoundTripsIdentityKeysWithContractBounds() = runTest {
         // Signing-critical restore path: a cold-started wallet must get its
         // identities and public keys back exactly as persisted — keyId,
