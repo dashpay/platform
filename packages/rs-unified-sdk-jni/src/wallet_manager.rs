@@ -218,9 +218,108 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_n
 
 // ── Exports: wallet creation / restore ────────────────────────────────
 
-/// Create a wallet from a BIP39 mnemonic. Returns the 32-byte wallet id
-/// as a `byte[]`; the created `PlatformWallet` handle is written into
-/// `out_wallet_handle[0]`. `createDefaultAccounts` maps to account
+/// Shared body for the two create-from-mnemonic JNI exports. Always routes
+/// through the platform-wallet `_with_birth_height` FFI: `(false, 0)` maps
+/// to `None` (birth height resolved from SPV's confirmed header tip — the
+/// fresh-wallet default, identical to the legacy no-override entry point),
+/// `(true, h)` pins the SPV compact-filter scan start to height `h`
+/// (imported/restored mnemonics pass `0` for a full historical scan).
+/// Returns the 32-byte wallet id as a `byte[]`; the created `PlatformWallet`
+/// handle is written into `out_wallet_handle[0]`. `createDefaultAccounts`
+/// maps to account options 1 (Default) / 0 (None).
+// The arg list mirrors the platform-wallet `_with_birth_height` FFI surface
+// (handle + phrase + network + account options + the birth-height override
+// pair + the wallet-id/handle out-params); grouping them into a struct would
+// only add indirection over a 1:1 FFI passthrough.
+#[allow(clippy::too_many_arguments)]
+fn create_wallet_from_mnemonic_impl(
+    env: &mut JNIEnv,
+    manager_handle: jlong,
+    mnemonic: &JString,
+    network: jni::sys::jint,
+    create_default_accounts: jboolean,
+    has_birth_height_override: bool,
+    birth_height_override: u32,
+    out_wallet_handle: &jni::objects::JLongArray,
+) -> jbyteArray {
+    let phrase: String = match env.get_string(mnemonic) {
+        Ok(s) => s.into(),
+        Err(_) => {
+            let _ = env.exception_clear();
+            throw_sdk_exception(env, 1, "mnemonic string was null/invalid");
+            return ptr::null_mut();
+        }
+    };
+    let c_phrase = match std::ffi::CString::new(phrase) {
+        Ok(c) => c,
+        Err(_) => {
+            throw_sdk_exception(env, 1, "mnemonic contained an interior NUL");
+            return ptr::null_mut();
+        }
+    };
+    let account_options: u32 = if create_default_accounts == JNI_TRUE {
+        1
+    } else {
+        0
+    };
+    let mut wallet_handle: Handle = 0;
+    let mut wallet_id = [0u8; 32];
+    let result = unsafe {
+        platform_wallet_ffi::platform_wallet_manager_create_wallet_from_mnemonic_with_birth_height(
+            manager_handle as Handle,
+            c_phrase.as_ptr(),
+            ffi_network(network),
+            account_options,
+            has_birth_height_override,
+            birth_height_override,
+            &mut wallet_handle as *mut Handle,
+            &mut wallet_id as *mut [u8; 32],
+        )
+    };
+    if take_pwffi_error(env, result) {
+        return ptr::null_mut();
+    }
+    // Publish the wallet handle out-param, then the id return value.
+    // The wallet is already REGISTERED in the native manager (and the
+    // persistence callbacks may have written rows), so a failure to
+    // reach a Kotlin owner must roll back the registration too —
+    // remove_wallet runs the persistence cascade; destroying only the
+    // handle would leave an orphan for the next load to resurrect.
+    let rollback = |wallet_handle: jlong| unsafe {
+        let _ = platform_wallet_ffi::platform_wallet_manager_remove_wallet(
+            manager_handle as Handle,
+            &wallet_id as *const [u8; 32],
+        );
+        platform_wallet_ffi::platform_wallet_destroy(wallet_handle as Handle);
+    };
+    let published = !out_wallet_handle.is_null() && {
+        let one = [wallet_handle as jlong];
+        env.set_long_array_region(out_wallet_handle, 0, &one)
+            .is_ok()
+    };
+    if !published {
+        rollback(wallet_handle as jlong);
+        throw_sdk_exception(env, 1, "outWalletHandle must be a non-null long[1]");
+        return ptr::null_mut();
+    }
+    match env.byte_array_from_slice(&wallet_id) {
+        Ok(array) => array.into_raw(),
+        Err(_) => {
+            // The handle was already published, but Kotlin observes a
+            // thrown exception (not a silent null id) and never adopts
+            // it — roll the registration back here.
+            rollback(wallet_handle as jlong);
+            let _ = env.exception_clear();
+            throw_sdk_exception(env, 1, "failed to allocate wallet id byte[]");
+            ptr::null_mut()
+        }
+    }
+}
+
+/// Create a wallet from a BIP39 mnemonic (fresh-wallet default: birth
+/// height resolved from SPV's confirmed header tip). Returns the 32-byte
+/// wallet id as a `byte[]`; the created `PlatformWallet` handle is written
+/// into `out_wallet_handle[0]`. `createDefaultAccounts` maps to account
 /// options 1 (Default) / 0 (None).
 #[no_mangle]
 pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_createWalletFromMnemonic(
@@ -233,76 +332,50 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_c
     out_wallet_handle: jni::objects::JLongArray,
 ) -> jbyteArray {
     guard(&mut env, ptr::null_mut(), |env| {
-        let phrase: String = match env.get_string(&mnemonic) {
-            Ok(s) => s.into(),
-            Err(_) => {
-                let _ = env.exception_clear();
-                throw_sdk_exception(env, 1, "mnemonic string was null/invalid");
-                return ptr::null_mut();
-            }
-        };
-        let c_phrase = match std::ffi::CString::new(phrase) {
-            Ok(c) => c,
-            Err(_) => {
-                throw_sdk_exception(env, 1, "mnemonic contained an interior NUL");
-                return ptr::null_mut();
-            }
-        };
-        let account_options: u32 = if create_default_accounts == JNI_TRUE {
-            1
-        } else {
-            0
-        };
-        let mut wallet_handle: Handle = 0;
-        let mut wallet_id = [0u8; 32];
-        let result = unsafe {
-            platform_wallet_ffi::platform_wallet_manager_create_wallet_from_mnemonic(
-                manager_handle as Handle,
-                c_phrase.as_ptr(),
-                ffi_network(network),
-                account_options,
-                &mut wallet_handle as *mut Handle,
-                &mut wallet_id as *mut [u8; 32],
-            )
-        };
-        if take_pwffi_error(env, result) {
-            return ptr::null_mut();
-        }
-        // Publish the wallet handle out-param, then the id return value.
-        // The wallet is already REGISTERED in the native manager (and the
-        // persistence callbacks may have written rows), so a failure to
-        // reach a Kotlin owner must roll back the registration too —
-        // remove_wallet runs the persistence cascade; destroying only the
-        // handle would leave an orphan for the next load to resurrect.
-        let rollback = |wallet_handle: jlong| unsafe {
-            let _ = platform_wallet_ffi::platform_wallet_manager_remove_wallet(
-                manager_handle as Handle,
-                &wallet_id as *const [u8; 32],
-            );
-            platform_wallet_ffi::platform_wallet_destroy(wallet_handle as Handle);
-        };
-        let published = !out_wallet_handle.is_null() && {
-            let one = [wallet_handle as jlong];
-            env.set_long_array_region(&out_wallet_handle, 0, &one)
-                .is_ok()
-        };
-        if !published {
-            rollback(wallet_handle as jlong);
-            throw_sdk_exception(env, 1, "outWalletHandle must be a non-null long[1]");
-            return ptr::null_mut();
-        }
-        match env.byte_array_from_slice(&wallet_id) {
-            Ok(array) => array.into_raw(),
-            Err(_) => {
-                // The handle was already published, but Kotlin observes a
-                // thrown exception (not a silent null id) and never adopts
-                // it — roll the registration back here.
-                rollback(wallet_handle as jlong);
-                let _ = env.exception_clear();
-                throw_sdk_exception(env, 1, "failed to allocate wallet id byte[]");
-                ptr::null_mut()
-            }
-        }
+        create_wallet_from_mnemonic_impl(
+            env,
+            manager_handle,
+            &mnemonic,
+            network,
+            create_default_accounts,
+            false,
+            0,
+            &out_wallet_handle,
+        )
+    })
+}
+
+/// Create a wallet from a BIP39 mnemonic with an explicit SPV birth-height
+/// override. `hasBirthHeightOverride == false` behaves exactly like
+/// [`Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_createWalletFromMnemonic`]
+/// (birth height from the confirmed header tip); `true` pins the
+/// compact-filter scan start to `birthHeightOverride` — an imported /
+/// restored mnemonic passes `0` for a full historical scan so Core funds
+/// and payments received before this device registered the wallet are seen.
+/// Mirror of Swift `PlatformWalletManager.createWallet(..., birthHeight:)`.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_createWalletFromMnemonicWithBirthHeight(
+    mut env: JNIEnv,
+    _class: JClass,
+    manager_handle: jlong,
+    mnemonic: JString,
+    network: jni::sys::jint,
+    create_default_accounts: jboolean,
+    has_birth_height_override: jboolean,
+    birth_height_override: jni::sys::jint,
+    out_wallet_handle: jni::objects::JLongArray,
+) -> jbyteArray {
+    guard(&mut env, ptr::null_mut(), |env| {
+        create_wallet_from_mnemonic_impl(
+            env,
+            manager_handle,
+            &mnemonic,
+            network,
+            create_default_accounts,
+            has_birth_height_override == JNI_TRUE,
+            birth_height_override as u32,
+            &out_wallet_handle,
+        )
     })
 }
 

@@ -59,6 +59,29 @@ internal object WalletManagerNative {
         outWalletHandle: LongArray,
     ): ByteArray
 
+    /**
+     * Create a wallet from a BIP39 mnemonic with an explicit SPV
+     * birth-height override.
+     *
+     * @param hasBirthHeightOverride when `false`, behaves exactly like
+     *   [createWalletFromMnemonic] (birth height from the confirmed header
+     *   tip — the fresh-wallet default).
+     * @param birthHeightOverride the SPV compact-filter scan start height
+     *   when [hasBirthHeightOverride] is `true` (reinterpreted as `u32`);
+     *   imported/restored mnemonics pass `0` for a full historical scan.
+     * @param outWalletHandle a `LongArray(1)` receiving the created handle.
+     * @return the 32-byte wallet id.
+     */
+    external fun createWalletFromMnemonicWithBirthHeight(
+        managerHandle: Long,
+        mnemonic: String,
+        network: Int,
+        createDefaultAccounts: Boolean,
+        hasBirthHeightOverride: Boolean,
+        birthHeightOverride: Int,
+        outWalletHandle: LongArray,
+    ): ByteArray
+
     /** Rehydrate the manager from its persister (fires `onLoadWalletList`). */
     external fun loadFromPersistor(managerHandle: Long)
 

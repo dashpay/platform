@@ -179,7 +179,14 @@ fun CreateWalletScreen(navController: NavHostController) {
                             val phrase = importMnemonic.trim()
                                 .split(Regex("\\s+"))
                                 .joinToString(" ")
-                            manager.createWallet(phrase, name = name.trim())
+                            // An imported mnemonic may already have on-chain
+                            // history (incl. DashPay payments) from before
+                            // this device — scan from genesis (birthHeight 0)
+                            // so it is seen. A freshly generated phrase (else
+                            // branch) has nothing before now, so it scans from
+                            // the SPV tip (birthHeight null). ← SendViewModel/
+                            // CreateWalletView `birthHeight: showImportOption ? 0 : nil`.
+                            manager.createWallet(phrase, name = name.trim(), birthHeight = 0u)
                             // The user already holds the phrase — skip the
                             // backup handoff and return to the wallets list
                             // (← iOS "go straight to creation").
