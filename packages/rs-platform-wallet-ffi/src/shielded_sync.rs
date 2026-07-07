@@ -20,7 +20,7 @@ use zeroize::Zeroizing;
 use crate::error::*;
 use crate::handle::*;
 use crate::identity_keys_from_mnemonic::parse_mnemonic_any_language;
-use crate::runtime::runtime;
+use crate::runtime::{block_on_worker, runtime};
 use crate::shielded_types::ShieldedSyncWalletResultFFI;
 use crate::{check_ptr, unwrap_option_or_return};
 use rs_sdk_ffi::{
@@ -170,7 +170,15 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_sync_sync_now(
     handle: Handle,
 ) -> PlatformWalletFFIResult {
     let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
-        runtime().block_on(manager.shielded_sync().sync_now(true));
+        let mgr = manager.shielded_sync_arc();
+        // `block_on_worker`, NOT `runtime().block_on`: the host calls
+        // this from a dispatch/concurrency thread with ~512 KB of
+        // stack, and polling the whole notes-sync future there blows
+        // it (SIGBUS "Thread stack size exceeded" observed on-device
+        // and on-sim 2026-07-07 from the Sync Now button). The worker
+        // dispatch moves the compute onto the runtime's 8 MB-stack
+        // threads (see runtime.rs) — same fix as dashpay_sync.
+        block_on_worker(async move { mgr.sync_now(true).await });
     });
     unwrap_option_or_return!(option);
     PlatformWalletFFIResult::ok()
@@ -551,9 +559,11 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_sync_wallet(
 
     let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
         // Per-wallet sync_wallet is exclusively a user-initiated
-        // entry point — same `force=true` reasoning as
+        // entry point — same `force=true` reasoning and same
+        // `block_on_worker` stack-size requirement as
         // `platform_wallet_manager_shielded_sync_sync_now`.
-        runtime().block_on(manager.shielded_sync().sync_wallet(&wallet_id, true))
+        let mgr = manager.shielded_sync_arc();
+        block_on_worker(async move { mgr.sync_wallet(&wallet_id, true).await })
     });
     let result = unwrap_option_or_return!(option);
     match result {

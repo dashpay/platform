@@ -7,6 +7,9 @@ use super::balance::WalletBalance;
 use dashcore::Address as DashAddress;
 use tokio::sync::RwLock;
 
+use key_wallet::managed_account::address_pool::KeySource;
+use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+use key_wallet::wallet::managed_wallet_info::transaction_building::AccountTypePreference;
 use key_wallet_manager::WalletManager;
 
 use crate::broadcaster::TransactionBroadcaster;
@@ -61,6 +64,58 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
     /// the resolver callback will receive.
     pub fn wallet_id(&self) -> WalletId {
         self.wallet_id
+    }
+
+    pub async fn set_gap_limit(
+        &self,
+        account_type: AccountTypePreference,
+        account_index: u32,
+        gap_limit: u32,
+    ) -> Result<(), PlatformWalletError> {
+        let mut wm = self.wallet_manager.write().await;
+        let (wallet, info) = wm.get_wallet_and_info_mut(&self.wallet_id).ok_or_else(|| {
+            PlatformWalletError::WalletNotFound("Wallet not found in wallet manager".to_string())
+        })?;
+
+        let xpub = match account_type {
+            AccountTypePreference::BIP44 => wallet.get_bip44_account(account_index),
+            AccountTypePreference::BIP32 => wallet.get_bip32_account(account_index),
+            AccountTypePreference::CoinJoin => wallet.get_coinjoin_account(account_index),
+        }
+        .map(|a| a.account_xpub)
+        .ok_or_else(|| {
+            PlatformWalletError::WalletNotFound(format!(
+                "wallet account {account_type:?} #{account_index} not found"
+            ))
+        })?;
+
+        let account = match account_type {
+            AccountTypePreference::BIP44 => info
+                .core_wallet
+                .accounts
+                .standard_bip44_accounts
+                .get_mut(&account_index),
+            AccountTypePreference::BIP32 => info
+                .core_wallet
+                .accounts
+                .standard_bip32_accounts
+                .get_mut(&account_index),
+            AccountTypePreference::CoinJoin => info
+                .core_wallet
+                .accounts
+                .coinjoin_accounts
+                .get_mut(&account_index),
+        }
+        .ok_or_else(|| {
+            PlatformWalletError::WalletNotFound(format!(
+                "managed account {account_type:?} #{account_index} not found"
+            ))
+        })?;
+
+        account
+            .set_gap_limit(gap_limit, &KeySource::Public(xpub))
+            .map(|_| ())
+            .map_err(|e| PlatformWalletError::AddressOperation(e.to_string()))
     }
 
     /// Get the next unused BIP-44 external (receive) address for a specific account.
