@@ -6,6 +6,7 @@
 pub mod auto_accept;
 pub mod contact_info;
 pub mod dip14;
+pub mod invitation;
 pub mod validation;
 
 pub use auto_accept::derive_auto_accept_private_key;
@@ -16,5 +17,8 @@ pub use contact_info::{
 pub use dip14::{
     calculate_account_reference, derive_contact_payment_address, derive_contact_payment_addresses,
     derive_contact_xpub, unmask_account_reference, ContactXpubData, DEFAULT_CONTACT_GAP_LIMIT,
+};
+pub use invitation::{
+    encode_invitation_uri, parse_invitation_uri, validate_claimable, InviterInfo, ParsedInvitation,
 };
 pub use validation::pubkey_binds_expected_key_data;
