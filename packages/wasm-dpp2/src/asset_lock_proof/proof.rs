@@ -22,7 +22,7 @@ const TS_TYPES: &str = r#"
  *
  * Internally-tagged discriminated union — `$type` discriminates the variant and
  * the variant's fields sit alongside it. Mirrors the rs-dpp serde shape (which
- * uses `#[serde(tag = "type")]` on the enum) and the convention used by
+ * uses `#[serde(tag = "$type")]` on the enum) and the convention used by
  * `AddressWitness` / `AddressFundsFeeStrategyStep`.
  */
 export type AssetLockProofObject =

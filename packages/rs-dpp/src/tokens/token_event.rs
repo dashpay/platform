@@ -305,7 +305,7 @@ impl<'de> serde::Deserialize<'de> for TokenEvent {
             type Value = TokenEvent;
 
             fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-                f.write_str("TokenEvent as a map with `type` discriminator + variant fields")
+                f.write_str("TokenEvent as a map with `$type` discriminator + variant fields")
             }
 
             fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<TokenEvent, A::Error> {
