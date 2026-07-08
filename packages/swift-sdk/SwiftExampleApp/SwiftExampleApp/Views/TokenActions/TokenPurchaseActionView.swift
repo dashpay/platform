@@ -35,13 +35,16 @@ struct TokenPurchaseActionView: View {
     /// after the user pops + repushes mid-broadcast.
     @State private var submitGeneration: Int = 0
 
-    /// Loading / loaded state of the token's configured direct-purchase price.
-    /// Stays `.loading` until the SDK connects and the query resolves; on a
-    /// resolved query with no price set it becomes `.loaded(nil)` and Buy stays
-    /// disabled with a clear reason.
+    /// Loading / loaded / failed state of the token's configured
+    /// direct-purchase price. Stays `.loading` until the SDK connects and the
+    /// query resolves; on a resolved query with no price set it becomes
+    /// `.loaded(nil)` and Buy stays disabled with a clear reason. A query
+    /// *failure* is `.failed`, not `.loaded(nil)` — "couldn't fetch the price"
+    /// must not read as "this token isn't for sale", and it offers a retry.
     private enum PriceState {
         case loading
         case loaded(TokenDirectPurchasePricing?)
+        case failed
     }
 
     @State private var priceState: PriceState = .loading
@@ -129,6 +132,15 @@ struct TokenPurchaseActionView: View {
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
+
+        case .failed:
+            Text("Couldn't load the configured direct-purchase price.")
+                .font(.caption)
+                .foregroundColor(.red)
+            Button("Retry") {
+                Task { await loadPrice() }
+            }
+            .font(.caption)
         }
     }
 
@@ -197,11 +209,11 @@ struct TokenPurchaseActionView: View {
     /// query is keyed by — is derived the same way `TokenActionPermissionsView`
     /// derives it (`calculateTokenId(contractId:position:)` on the base58
     /// contract id), *not* the persisted `(contractId + position)` composite.
-    /// An invalid position or a failed query resolves to `.loaded(nil)` so Buy
-    /// is disabled with a clear reason rather than left spinning; a
+    /// An invalid position resolves to `.loaded(nil)` (nothing a retry can
+    /// fix); a failed id-derivation or query resolves to `.failed` so the user
+    /// sees a retryable error instead of a false "no price configured"; a
     /// not-yet-connected SDK stays `.loading` — the `.task(id:)` key re-runs
-    /// this once the SDK lands, so "no price configured" is never shown for a
-    /// price that simply hasn't been fetchable yet.
+    /// this once the SDK lands.
     private func loadPrice() async {
         priceState = .loading
 
@@ -227,7 +239,7 @@ struct TokenPurchaseActionView: View {
             priceState = .loaded(pricing)
         } catch {
             print("⚠️ TokenPurchaseActionView: failed to load direct-purchase price for \(contractIdString):\(token.position): \(error)")
-            priceState = .loaded(nil)
+            priceState = .failed
         }
     }
 
