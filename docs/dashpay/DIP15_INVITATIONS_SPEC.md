@@ -122,26 +122,27 @@ code is (a) the create orchestration + voucher-key export, (b) the claim orchest
 
 **Create (inviter):**
 ```
-async fn create_invitation(
+async fn create_invitation<AS, CP>(
     &self,
-    amount_duffs: u64,            // rejected if > MAX_INVITATION_DUFFS (§8 Finding 4)
+    amount_duffs: u64,            // rejected if 0 or > MAX_INVITATION_DUFFS
     funding_account_index: u32,   // BIP44 account supplying the L1 UTXOs
-    invitation_index: u32,        // DIP-13 funding_index' (sequential; next-unused)
-    inviter_identity: Option<InviterInfo>, // id + username + display_name (contact-bootstrap)
-    expiry_unix: u32,             // advisory; ≤ now + MAX_INVITATION_TTL (§8 Finding 3)
-    asset_lock_signer: &AS,       // MnemonicResolverCoreSigner (funding-input + credit-output)
+    inviter: Option<InviterInfo>, // id + username + display_name (contact-bootstrap)
+    expiry_unix: u32,             // advisory; the FFI sets now + MAX_INVITATION_TTL_SECS
+    asset_lock_signer: &AS,       // funds the asset-lock (funding-input + credit-output)
+    crypto_provider: &CP,         // exports the voucher scalar (path-gated resolver)
 ) -> Result<Invitation, PlatformWalletError>
 ```
-where `inviter_identity: Option<InviterInfo>` is `Some` only when the inviter ticked "send a
+where `inviter: Option<InviterInfo>` is `Some` only when the inviter ticked "send a
 contact request back to me" (§ owner decision). Steps: (1) **bound the amount**
-(`amount_duffs ≤ MAX_INVITATION_DUFFS`) and the expiry (`≤ now + MAX_INVITATION_TTL`), else err;
-(2) `create_funded_asset_lock_proof(amount, funding_account_index, IdentityInvitation,
-invitation_index, signer)` → `(IS proof, path, out_point)` — **keep the IS proof, no CL upgrade**
-(§5.1); (3) **export the voucher private key** via the seedless resolver hook, **path-gated to
+(`0 < amount_duffs ≤ MAX_INVITATION_DUFFS`) and the expiry (non-zero), else err;
+(2) `create_funded_asset_lock_proof(amount, funding_account_index, IdentityInvitation, signer)`
+→ `(IS proof, path, out_point)` — **the builder auto-selects the next unused funding index** and
+returns its derivation `path`; **keep the IS proof, no CL upgrade** (§5.1); (3) **export the
+voucher private key** via the seedless resolver hook, **path-gated to the fully-hardened
 `9'/coin'/5'/3'/idx'`** (§5.3); (4) build the `Invitation` struct + `dashpay://invite` URI (§6);
 (5) **persist an invitation record** through the wallet persister (§4.2) — created status,
-outpoint, funding_index, amount, expiry, optional inviter info; **the voucher key is never
-persisted** (re-derived from `funding_index`).
+outpoint, funding_index (from `path`), amount, expiry, optional inviter info; **the voucher key is
+never persisted** (re-derived from `funding_index`).
 
 **Claim (invitee):**
 ```
@@ -371,22 +372,22 @@ no analytics, sensitive-pasteboard flag on the Swift side (§8 Finding 3).
 
 **Decision: one opaque, versioned payload** behind a `dashpay://invite?data=<base58(payload)>`
 deep link (keeping the reference's `dashpay://invite` scheme name for familiarity), **not** the
-reference's six loose query params. Rationale in §7. The payload is a small versioned struct
-(serde → bincode via platform-serialization), so the envelope can evolve without breaking older
-links:
+reference's six loose query params. Rationale in §7. The payload is a small versioned blob in a
+**hand-rolled little-endian binary encoding** (deliberately *not* serde/bincode — the crate's
+`serde` feature is optional and off, and `AssetLockProof` is internally-tagged so bincode-serde
+rejects it), so the envelope can evolve without breaking older links. The as-built wire order
+(see `crypto/invitation.rs`) is:
 
 ```
-InvitationPayloadV0 {
-    version:      u8,                    // = 0
-    voucher_key:  [u8; 32],             // one-time ECDSA private key (secret; zeroized)
-    asset_lock:   AssetLockProof,        // InstantSend proof per §5.1 — embeds tx + islock
-    expiry_unix:  u32,                   // ADVISORY, IS-scoped (§5.1/§8 Finding 3); not consensus
-    inviter:      Option<InviterInfo> {  // present iff the inviter opted in ("send request back")
-        identity_id:  [u8; 32],
-        username:     String,            // DPNS name (whom the invitee's contactRequest targets)
-        display_name: Option<String>,
-    },  // NO auto-accept dapk — v1 sends a normal contactRequest, invitee-confirmed (§2)
-}
+wire = version:u8               // = 0
+     ‖ voucher_key:[u8; 32]     // one-time ECDSA private key (secret; zeroized)
+     ‖ expiry_unix:u32(LE)      // ADVISORY, IS-scoped (§5.1); not consensus
+     ‖ inviter_present:u8       // 0 = none, 1 = InviterInfo follows
+       [ identity_id:[u8; 32]
+       ‖ username:len-prefixed  // DPNS name (whom the invitee's contactRequest targets)
+       ‖ display_present:u8 [ display_name:len-prefixed ] ]
+     ‖ asset_lock:len-prefixed  // InstantSend proof (§5.1) — embeds tx + islock; LAST, length-prefixed
+       // NO auto-accept dapk — v1 sends a normal contactRequest, invitee-confirmed (§2)
 ```
 - Serializing the `InstantAssetLockProof` directly means the link **embeds the full funding tx +
   islock**, so the invitee needs **no L1 tx fetch** (an improvement over the reference, which
@@ -398,10 +399,29 @@ InvitationPayloadV0 {
   bounded and panic-free** on arbitrary bytes (dashcore `MAX_VEC_SIZE`, finite cursor, all
   `Result`-based — verified), so the residual is only "a huge blob is fully buffered," which the
   pre-decode char cap closes. A fuzz test is cheap insurance, not a blocker.
-- A pure `encode_invitation_uri(&InvitationPayload) -> String` / `parse_invitation_uri(&str) ->
-  Result<InvitationPayload>` pair in `crypto/invitation.rs`, fully unit-tested (round-trip +
+- The codec pair in `crypto/invitation.rs` is
+  `encode_invitation_uri(voucher_key: &SecretKey, asset_lock: &AssetLockProof, expiry_unix: u32,
+  inviter: Option<&InviterInfo>) -> Result<String, _>` and
+  `parse_invitation_uri(uri: &str) -> Result<ParsedInvitation, _>`, fully unit-tested (round-trip +
   every malformed rejection). A plain `https://…` fallback host can wrap the same `?data=` for
-  users without the app installed — deferred (no hosting in v1).
+  users without the app installed — deferred (no hosting in v1; see §6.1).
+
+### 6.1 Transport security & the custom-scheme limitation
+
+The `data=` payload is a **bearer credential**: whoever reads the plaintext link controls the
+voucher and can claim (front-run) it. Because the app registers the `dashpay://` **custom URL
+scheme**, any other app that also registers `dashpay` can intercept an invite link on the same
+device and steal the claim. The load-bearing mitigation is therefore **economic, not transport**:
+`MAX_INVITATION_DUFFS` caps the loss at 0.01 DASH, and the inviter can reclaim an unclaimed voucher
+(best-effort race). The advisory expiry does **not** bound a leak (a leaked-link holder ignores it).
+
+A hardened production transport would use **Universal Links** (HTTPS + a hosted
+`apple-app-site-association`, `associated-domains` entitlement) or another verified handoff so the
+OS can't hand the link to an impostor app. That is **out of scope for this example app** — it
+needs hosting infrastructure the sample doesn't have, and the amount cap already bounds the blast
+radius — but it is the recommended path for the production wallet and is tracked as a follow-up.
+The `?data=` shape is transport-agnostic, so moving from the custom scheme to a Universal Link is a
+routing change, not an envelope change.
 
 ---
 
