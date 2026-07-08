@@ -32,15 +32,7 @@ final class CoreSendIntegrationTests: IntegrationTestCase {
             let recipientAddress = try receiver.getCoreWallet().nextReceiveAddress()
 
             let beforeTxids = try await readTxids()
-            // #3970 replaced ManagedCoreWallet.sendToAddresses with the split
-            // CoreTransactionBuilder; drive it as SendViewModel's .coreToCore
-            // flow does (build → fund → sign → broadcast).
-            let senderWallet = sender.getPlatformWallet()
-            let builder = try CoreTransactionBuilder(network: .regtest)
-            try builder.addOutput(address: recipientAddress, amountDuffs: amount)
-            try builder.setFunding(wallet: senderWallet, accountType: .bip44, accountIndex: 0)
-            let signedTx = try builder.buildSigned(wallet: senderWallet, accountType: .bip44, accountIndex: 0)
-            _ = try senderWallet.coreWallet().broadcastTransaction(signedTx)
+            _ = try sender.send(to: recipientAddress, amountDuffs: amount)
             guard let sendTxid = try await waitForNewTxid(notIn: beforeTxids) else {
                 XCTFail("send PersistentTransaction row never appeared on iteration \(i)")
                 return

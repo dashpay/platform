@@ -19,16 +19,8 @@ final class PersisterRestartClassificationIntegrationTests: IntegrationTestCase 
         try await alice.waitForSpendable(exactly: fundingDuffs, timeout: 90)
 
         let aliceSecondAddr = try alice.getCoreWallet().nextReceiveAddress()
-        // #3970 replaced ManagedCoreWallet.sendToAddresses with the split
-        // CoreTransactionBuilder; build → fund → sign → broadcast, then derive
-        // the txid from the signed bytes exactly as before (sha256d).
-        let aliceWallet = alice.getPlatformWallet()
-        let builder = try CoreTransactionBuilder(network: .regtest)
-        try builder.addOutput(address: aliceSecondAddr, amountDuffs: sendAmount)
-        try builder.setFunding(wallet: aliceWallet, accountType: .bip44, accountIndex: 0)
-        let signedTx = try builder.buildSigned(wallet: aliceWallet, accountType: .bip44, accountIndex: 0)
-        _ = try aliceWallet.coreWallet().broadcastTransaction(signedTx)
-        let sendTxid = Self.txid(ofRawTx: signedTx.data)
+        let sendTx = try alice.send(to: aliceSecondAddr, amountDuffs: sendAmount)
+        let sendTxid = Self.txid(ofRawTx: sendTx.data)
         try await waitForTxRow(sendTxid)
 
         // First sighting must already classify as Internal / -fee.
