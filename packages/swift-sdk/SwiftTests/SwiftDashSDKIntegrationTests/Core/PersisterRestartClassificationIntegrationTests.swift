@@ -19,10 +19,8 @@ final class PersisterRestartClassificationIntegrationTests: IntegrationTestCase 
         try await alice.waitForSpendable(exactly: fundingDuffs, timeout: 90)
 
         let aliceSecondAddr = try alice.getCoreWallet().nextReceiveAddress()
-        let sendTxData = try alice.getCoreWallet().sendToAddresses(
-            recipients: [(address: aliceSecondAddr, amountDuffs: sendAmount)]
-        )
-        let sendTxid = Self.txid(ofRawTx: sendTxData)
+        let signedTx = try alice.send(toAddress: aliceSecondAddr, amountDuffs: sendAmount)
+        let sendTxid = Self.txid(ofRawTx: signedTx.data)
         try await waitForTxRow(sendTxid)
 
         // First sighting must already classify as Internal / -fee.

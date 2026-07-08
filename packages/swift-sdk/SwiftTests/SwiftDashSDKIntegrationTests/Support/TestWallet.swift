@@ -28,6 +28,24 @@ final class TestWalletWrapper {
             try wallet.balance().spendable == duffs
         }
     }
+
+    /// Build, sign, and broadcast a single-recipient send from BIP44 account 0,
+    /// mirroring `SendViewModel`'s `.coreToCore` flow (the SDK no longer exposes
+    /// a one-shot `sendToAddresses`). Returns the signed transaction so callers
+    /// can read its consensus-serialized `data` or derive the broadcast txid.
+    @discardableResult
+    func send(toAddress address: String, amountDuffs: UInt64) throws -> CoreTransaction {
+        let builder = try CoreTransactionBuilder(network: core.network())
+        try builder.addOutput(address: address, amountDuffs: amountDuffs)
+        try builder.setFunding(wallet: wallet, accountType: .bip44, accountIndex: 0)
+        let signedTx = try builder.buildSigned(
+            wallet: wallet,
+            accountType: .bip44,
+            accountIndex: 0
+        )
+        _ = try core.broadcastTransaction(signedTx)
+        return signedTx
+    }
 }
 
 enum Wait {
