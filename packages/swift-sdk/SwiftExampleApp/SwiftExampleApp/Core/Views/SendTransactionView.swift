@@ -52,6 +52,11 @@ struct SendTransactionView: View {
     /// credits".
     @Query private var syncStates: [PersistentPlatformAddressesSyncState]
 
+    /// This wallet's unspent shielded (Orchard) notes. Summed into
+    /// `shieldedBalance` below so the shielded source row reflects THIS
+    /// wallet's own pool, not the single-mirror `shieldedService`.
+    @Query private var shieldedNotes: [PersistentShieldedNote]
+
     init(wallet: PersistentWallet) {
         self.wallet = wallet
         _viewModel = StateObject(wrappedValue: SendViewModel(network: wallet.network ?? .testnet))
@@ -64,6 +69,9 @@ struct SendTransactionView: View {
             filter: #Predicate<PersistentPlatformAddressesSyncState> {
                 $0.networkRaw == walletNetworkRaw
             }
+        )
+        _shieldedNotes = Query(
+            filter: PersistentShieldedNote.unspentPredicate(walletId: walletId)
         )
     }
 
@@ -461,8 +469,14 @@ struct SendTransactionView: View {
             .reduce(0) { $0 + $1.confirmed }
     }
 
+    /// Per-wallet shielded balance: sum of THIS wallet's unspent
+    /// `PersistentShieldedNote` values (Rust pushes note rows via the
+    /// shielded persister). Reads SwiftData rather than the
+    /// single-mirror `shieldedService.shieldedBalance`, so the shielded
+    /// send source is correct for a non-`firstWallet` wallet whose
+    /// engine binding is live but whose UI mirror is pointed elsewhere.
     private var shieldedBalance: UInt64 {
-        shieldedService.shieldedBalance
+        shieldedNotes.reduce(0) { $0 + $1.value }
     }
 
     /// Mirrors `WalletDetailView.platformBalance`: BLAST-synced

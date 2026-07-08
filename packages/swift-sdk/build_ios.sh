@@ -126,6 +126,29 @@ log_info "Package: $PACKAGE"
 log_info "Profile: $PROFILE"
 
 # -------------------------------
+# Force header regeneration
+# -------------------------------
+# TODO: this is a temporal fix. Because this script
+# was modifying the headers in place, this PR, that removes
+# that weird behaviour, hits an issue, cargo doesnt re-run
+# the build.rs scripts, leaving the old modified headers,
+# so I have to force the headers generation for this PR
+#
+# Once this change is in the dev branch a new PR will be open
+# removing this step
+log_info "Forcing cbindgen header regeneration: ${INCLUDED_CRATES[*]}"
+TRIPLES=()
+if $BUILD_IOS; then TRIPLES+=("aarch64-apple-ios"); fi
+if $BUILD_SIM; then TRIPLES+=("aarch64-apple-ios-sim"); fi
+if $BUILD_MAC; then TRIPLES+=("aarch64-apple-darwin"); fi
+for triple in "${TRIPLES[@]}"; do
+  for c in "${INCLUDED_CRATES[@]}"; do
+    cargo clean -p "$c" --profile "$PROFILE" --target "$triple"
+  done
+  rm -rf "$TARGET_DIR/$triple/$OUTPUT_DIR/include"
+done
+
+# -------------------------------
 # Build commands
 # -------------------------------
 
@@ -173,20 +196,6 @@ module DashSDKFFI {
 }
 EOF
   log_info "  → module.modulemap + umbrella header injected in $HEADERS_DIR"
-
-  # Give opaque struct forward declarations a body so Swift can use UnsafeMutablePointer<T>.
-  # Skip types that already have a full definition in another header to avoid redefinition.
-  local defined
-  defined=$(grep -oh 'typedef struct [A-Za-z_][A-Za-z_0-9]* {' "$HEADERS_DIR"/*/*.h 2>/dev/null \
-    | sed 's/typedef struct \([^ ]*\) {/\1/' | sort -u | paste -sd'|' - || true)
-  for h in "$HEADERS_DIR"/*/*.h; do
-    if [ -n "$defined" ]; then
-      perl -i -pe "s/^typedef struct (\w+) \1;\$/
-        my \$n=\$1; \$n=~m{^($defined)\$} ? \$_ : \"typedef struct \$n { uint8_t _opaque; } \$n;\n\"/e" "$h"
-    else
-      perl -i -pe 's/^typedef struct (\w+) \1;$/typedef struct $1 { uint8_t _opaque; } $1;/' "$h"
-    fi
-  done
 }
 
 # Shielded (Orchard / ZK) support is compiled in by default. The

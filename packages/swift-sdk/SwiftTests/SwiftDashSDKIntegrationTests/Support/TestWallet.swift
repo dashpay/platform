@@ -19,6 +19,20 @@ final class TestWalletWrapper {
         wallet
     }
 
+    /// Build + sign + broadcast a single-output payment from this wallet's
+    /// BIP-44 account 0 — the integration-test replacement for the removed
+    /// one-shot `ManagedCoreWallet.sendToAddresses`. Returns the built
+    /// `CoreTransaction` (its `.data` is the raw signed bytes).
+    @discardableResult
+    func send(to address: String, amountDuffs: UInt64) throws -> CoreTransaction {
+        let builder = try CoreTransactionBuilder(network: core.network())
+        _ = try builder.addOutput(address: address, amountDuffs: amountDuffs)
+        try builder.setFunding(wallet: wallet, accountType: .bip44, accountIndex: 0)
+        let tx = try builder.buildSigned(wallet: wallet, accountType: .bip44, accountIndex: 0)
+        _ = try core.broadcastTransaction(tx)
+        return tx
+    }
+
     func waitForSpendable(exactly duffs: UInt64, timeout: TimeInterval = 60) async throws {
         try await Wait.until(
             "wallet spendable == \(duffs) duffs",
@@ -27,24 +41,6 @@ final class TestWalletWrapper {
         ) {
             try wallet.balance().spendable == duffs
         }
-    }
-
-    /// Build, sign, and broadcast a single-recipient send from BIP44 account 0,
-    /// mirroring `SendViewModel`'s `.coreToCore` flow (the SDK no longer exposes
-    /// a one-shot `sendToAddresses`). Returns the signed transaction so callers
-    /// can read its consensus-serialized `data` or derive the broadcast txid.
-    @discardableResult
-    func send(toAddress address: String, amountDuffs: UInt64) throws -> CoreTransaction {
-        let builder = try CoreTransactionBuilder(network: core.network())
-        try builder.addOutput(address: address, amountDuffs: amountDuffs)
-        try builder.setFunding(wallet: wallet, accountType: .bip44, accountIndex: 0)
-        let signedTx = try builder.buildSigned(
-            wallet: wallet,
-            accountType: .bip44,
-            accountIndex: 0
-        )
-        _ = try core.broadcastTransaction(signedTx)
-        return signedTx
     }
 }
 

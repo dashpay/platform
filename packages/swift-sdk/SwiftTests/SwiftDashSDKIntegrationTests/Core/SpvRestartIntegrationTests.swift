@@ -64,7 +64,7 @@ final class SpvRestartIntegrationTests: IntegrationTestCase {
         let recipientAddress = try receiver.getCoreWallet().nextReceiveAddress()
 
         let beforeTxids = try await readTxids()
-        try sender.send(toAddress: recipientAddress, amountDuffs: amount)
+        _ = try sender.send(to: recipientAddress, amountDuffs: amount)
         guard let sendTxid = try await waitForNewTxid(notIn: beforeTxids) else {
             XCTFail("send PersistentTransaction row never appeared")
             return
