@@ -16,6 +16,7 @@ import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -41,12 +42,15 @@ import org.dashfoundation.example.services.tokens.GroupActionRuleEvaluator.Banne
 import org.dashfoundation.example.services.tokens.ProvenBalances
 import org.dashfoundation.example.services.tokens.TokenActionKind
 import org.dashfoundation.example.services.tokens.TokenAmounts
+import org.dashfoundation.example.services.tokens.TokenDirectPurchasePricing
 import org.dashfoundation.example.services.tokens.TokenDistributionChangeRules
 import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.LabeledContent
 import org.dashfoundation.example.ui.components.RecipientPicker
 import org.dashfoundation.example.ui.components.RecipientSelection
+import org.dashfoundation.example.util.Base58
 import org.dashfoundation.example.util.hexToBytes
+import org.dashfoundation.example.util.toHex
 import java.math.BigInteger
 
 /**
@@ -658,6 +662,12 @@ private fun ClaimForm(
 
 // ── Direct Purchase (← TokenPurchaseActionView.swift) ──────────────────
 
+/** Loading / loaded state of the token's direct-purchase price. */
+private sealed interface PurchasePriceState {
+    data object Loading : PurchasePriceState
+    data class Loaded(val pricing: TokenDirectPurchasePricing?) : PurchasePriceState
+}
+
 @Composable
 private fun PurchaseForm(
     context: TokenActionContext,
@@ -666,14 +676,41 @@ private fun PurchaseForm(
 ) {
     val token = context.token
     var amountText by rememberSaveable { mutableStateOf("") }
+    val sdk by LocalAppState.current.sdk.collectAsStateWithLifecycle()
 
-    // iOS parity: the configured direct-purchase price isn't modelled
-    // locally (`priceKnown` is hard-coded false in
-    // TokenPurchaseActionView.swift:116), so Buy stays disabled and the
-    // form explains why. When the price lands on the token row this
-    // becomes a real computation of `expectedTotalCost`.
-    val priceKnown = false
+    // Fetch the configured direct-purchase price when the form opens
+    // (mirrors the live balance/status fetch in
+    // TokenActionPermissionsView). The canonical token id — needed by the
+    // price query — is derived the same way the permissions screen does
+    // (`calculateTokenId`). Stays `Loading` until the SDK connects; on a
+    // resolved query with no price set it becomes `Loaded(null)` and Buy
+    // stays disabled with a clear reason.
+    var priceState by remember { mutableStateOf<PurchasePriceState>(PurchasePriceState.Loading) }
+    LaunchedEffect(sdk, token.id.toHex()) {
+        priceState = PurchasePriceState.Loading
+        val activeSdk = sdk ?: return@LaunchedEffect
+        val canonicalId = runCatching {
+            activeSdk.tokenQueries.calculateTokenId(Base58.encode(token.contractId), token.position)
+        }.getOrNull()
+        if (canonicalId == null) {
+            priceState = PurchasePriceState.Loaded(null)
+            return@LaunchedEffect
+        }
+        val pricing = runCatching {
+            activeSdk.tokenQueries.directPurchasePrices(listOf(canonicalId))
+        }.getOrNull()?.let { TokenDirectPurchasePricing.parse(it, canonicalId) }
+        priceState = PurchasePriceState.Loaded(pricing)
+    }
+
     val amountRaw = TokenAmounts.parse(amountText, token.decimals)
+    val pricing = (priceState as? PurchasePriceState.Loaded)?.pricing
+    // `costFor` applies the exact tier rule Drive uses to validate the
+    // purchase, so this equals the chain's required price. Null means the
+    // amount isn't purchasable (below the minimum, free tier, or out of the
+    // Long range the FFI accepts).
+    val expectedTotalCost = amountRaw?.let { pricing?.costFor(it) }
+    val canSubmit = amountRaw != null && amountRaw > 0 &&
+        expectedTotalCost != null && expectedTotalCost > 0
 
     TokenActionScaffold(
         title = "Direct Purchase",
@@ -681,22 +718,21 @@ private fun PurchaseForm(
         banner = BannerState.None, // purchase is never group-gated
         bannerActionLabel = "purchase",
         submitLabel = "Buy",
-        canSubmit = priceKnown && amountRaw != null && amountRaw > 0,
+        canSubmit = canSubmit,
         viewModel = viewModel,
         navController = navController,
         onSubmit = {
             val wallet = context.wallet ?: return@TokenActionScaffold
             val signer = context.signerHandle ?: return@TokenActionScaffold
             val amount = amountRaw ?: return@TokenActionScaffold
+            val totalCost = expectedTotalCost ?: return@TokenActionScaffold
             viewModel.submit {
                 wallet.tokens.purchase(
                     identityId = context.identity.identityId,
                     tokenContractId = token.contractId,
                     tokenPosition = token.position,
                     amount = amount,
-                    // Unreachable while priceKnown == false; mirrors the
-                    // Swift fallback.
-                    expectedTotalCost = 0,
+                    expectedTotalCost = totalCost,
                     signingKeyId = TokenActionContext.SIGNING_KEY_ID,
                     signerHandle = signer,
                 )
@@ -709,13 +745,62 @@ private fun PurchaseForm(
             errorText = null,
         )
         FormSection {
-            Text(
-                "The configured direct-purchase price isn't available locally yet, so the " +
-                    "expected total cost can't be computed and Buy is disabled.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            when (val state = priceState) {
+                PurchasePriceState.Loading -> Text(
+                    "Loading the configured direct-purchase price…",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.testTag("tokenAction.purchase.status"),
+                )
+                is PurchasePriceState.Loaded -> {
+                    val loadedPricing = state.pricing
+                    when {
+                        loadedPricing == null -> Text(
+                            "This token has no direct-purchase price configured, so it can't " +
+                                "be bought directly.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.testTag("tokenAction.purchase.status"),
+                        )
+                        amountRaw == null || amountRaw <= 0 -> Text(
+                            "Enter an amount to see the total cost.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.testTag("tokenAction.purchase.status"),
+                        )
+                        expectedTotalCost == null -> Text(
+                            purchaseUnavailableReason(loadedPricing, amountRaw, token.decimals),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.testTag("tokenAction.purchase.status"),
+                        )
+                        else -> LabeledContent(
+                            "Total cost",
+                            "%,d credits".format(expectedTotalCost),
+                        )
+                    }
+                }
+            }
         }
+    }
+}
+
+/**
+ * Why an entered [amount] can't be purchased at [pricing] — an under-minimum
+ * hint for a tiered schedule, otherwise a generic "not available at this
+ * amount" (covers a free tier or a total beyond the FFI's Long range).
+ */
+private fun purchaseUnavailableReason(
+    pricing: TokenDirectPurchasePricing,
+    amount: Long,
+    decimals: Int,
+): String {
+    val minimum = pricing.minimumPurchaseAmount
+    return if (BigInteger.valueOf(amount) < minimum) {
+        "The minimum direct purchase for this token is " +
+            "${TokenAmounts.format(minimum.toString(), decimals)}."
+    } else {
+        "This amount can't be purchased at the configured price."
     }
 }
 
