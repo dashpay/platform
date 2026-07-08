@@ -9,16 +9,16 @@ const TS_TYPES: &str = r#"
 /**
  * GroupActionEvent serialized as a plain object.
  *
- * Internally tagged with `kind` (chosen over `type` to avoid colliding with
- * the inner TokenEvent's own `type` discriminator). The inner TokenEvent
+ * Internally tagged with `$kind` (chosen over `$type` to avoid colliding with
+ * the inner TokenEvent's own `$type` discriminator). The inner TokenEvent
  * fields flatten at the same level — both keys coexist.
  */
-export type GroupActionEventObject = { kind: "tokenEvent" } & TokenEventObject;
+export type GroupActionEventObject = { $kind: "tokenEvent" } & TokenEventObject;
 
 /**
  * GroupActionEvent serialized as JSON.
  */
-export type GroupActionEventJSON = { kind: "tokenEvent" } & TokenEventJSON;
+export type GroupActionEventJSON = { $kind: "tokenEvent" } & TokenEventJSON;
 "#;
 
 #[wasm_bindgen]

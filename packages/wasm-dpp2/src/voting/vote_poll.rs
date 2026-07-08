@@ -36,7 +36,7 @@ export interface VotePollOptions {
  * the same level — no `data` wrapper.
  */
 export interface VotePollObject {
-    type: "contestedDocumentResourceVotePoll";
+    $type: "contestedDocumentResourceVotePoll";
     contractId: Uint8Array;
     documentTypeName: string;
     indexName: string;
@@ -47,7 +47,7 @@ export interface VotePollObject {
  * VotePoll serialized as JSON.
  */
 export interface VotePollJSON {
-    type: "contestedDocumentResourceVotePoll";
+    $type: "contestedDocumentResourceVotePoll";
     contractId: string;
     documentTypeName: string;
     indexName: string;

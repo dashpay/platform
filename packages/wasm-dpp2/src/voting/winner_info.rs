@@ -15,17 +15,17 @@ const TS_TYPES: &str = r#"
  * variant.
  */
 export type ContestedDocumentVotePollWinnerInfoObject =
-    | { type: "noWinner" }
-    | { type: "locked" }
-    | { type: "wonByIdentity"; identity: Uint8Array };
+    | { $type: "noWinner" }
+    | { $type: "locked" }
+    | { $type: "wonByIdentity"; identity: Uint8Array };
 
 /**
  * ContestedDocumentVotePollWinnerInfo serialized as JSON.
  */
 export type ContestedDocumentVotePollWinnerInfoJSON =
-    | { type: "noWinner" }
-    | { type: "locked" }
-    | { type: "wonByIdentity"; identity: string };
+    | { $type: "noWinner" }
+    | { $type: "locked" }
+    | { $type: "wonByIdentity"; identity: string };
 "#;
 
 #[wasm_bindgen]

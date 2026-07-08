@@ -8,30 +8,30 @@ const TS_TYPES: &str = r#"
 /**
  * TokenEvent serialized as a plain object.
  *
- * Custom Serialize emits an internally-tagged flat shape: `type:` is the
+ * Custom Serialize emits an internally-tagged flat shape: `$type:` is the
  * variant discriminator, positional tuple fields are mapped to named JSON
  * keys per variant. No `data` wrapper.
  *
  * Common per-variant payloads:
- *   - Mint:    { type: "mint",    amount, recipient, publicNote }
- *   - Burn:    { type: "burn",    amount, burnFromIdentifier, publicNote }
- *   - Freeze:  { type: "freeze",  frozenIdentifier, publicNote }
- *   - Unfreeze:{ type: "unfreeze",frozenIdentifier, publicNote }
- *   - DestroyFrozenFunds:        { type, frozenIdentifier, amount, publicNote }
- *   - Transfer:{ type, recipient, publicNote, sharedEncryptedNote,
+ *   - Mint:    { $type: "mint",    amount, recipient, publicNote }
+ *   - Burn:    { $type: "burn",    amount, burnFromIdentifier, publicNote }
+ *   - Freeze:  { $type: "freeze",  frozenIdentifier, publicNote }
+ *   - Unfreeze:{ $type: "unfreeze",frozenIdentifier, publicNote }
+ *   - DestroyFrozenFunds:        { $type, frozenIdentifier, amount, publicNote }
+ *   - Transfer:{ $type, recipient, publicNote, sharedEncryptedNote,
  *                personalEncryptedNote, amount }
- *   - Claim:   { type, distributionType, amount, publicNote }
- *   - EmergencyAction:           { type, emergencyAction, publicNote }
- *   - ConfigUpdate:              { type, configChange, publicNote }
- *   - ChangePriceForDirectPurchase: { type, pricingSchedule, publicNote }
- *   - DirectPurchase: { type, amount, credits }
+ *   - Claim:   { $type, distributionType, amount, publicNote }
+ *   - EmergencyAction:           { $type, emergencyAction, publicNote }
+ *   - ConfigUpdate:              { $type, configChange, publicNote }
+ *   - ChangePriceForDirectPurchase: { $type, pricingSchedule, publicNote }
+ *   - DirectPurchase: { $type, amount, credits }
  *
  * `amount`/`credits` are routed through json_safe_u64 — small numbers, JS
  * BigInt-safe stringification above 2^53. Identifier fields use base58 in
  * JSON, Uint8Array in toObject().
  */
 export interface TokenEventObject {
-    type: string;
+    $type: string;
     [field: string]: unknown;
 }
 
@@ -40,7 +40,7 @@ export interface TokenEventObject {
  * Identifier fields rendered as base58 strings.
  */
 export interface TokenEventJSON {
-    type: string;
+    $type: string;
     [field: string]: unknown;
 }
 "#;

@@ -22,10 +22,8 @@ pub mod contested_document_resource_vote_poll;
 #[cfg_attr(
     feature = "serde-conversion",
     derive(Serialize, Deserialize),
-    // Internal tagging with plain `type` — convention rule: use `$`-prefix on
-    // discriminators only when the same wire-shape level has other `$`-prefixed
-    // fields. Inner `ContestedDocumentResourceVotePoll` has only camelCase
-    // fields, so plain `type` is the right discriminator key here.
+    // Internally tagged with a `$type` discriminator; inner
+    // `ContestedDocumentResourceVotePoll` fields flatten at the same level.
     serde(tag = "$type", rename_all = "camelCase")
 )]
 #[cfg_attr(feature = "value-conversion", derive(ValueConvertible))]

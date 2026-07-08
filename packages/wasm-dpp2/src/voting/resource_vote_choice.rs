@@ -16,17 +16,17 @@ const TS_TYPES: &str = r#"
  * variant.
  */
 export type ResourceVoteChoiceObject =
-    | { type: "towardsIdentity"; identity: Uint8Array }
-    | { type: "abstain" }
-    | { type: "lock" };
+    | { $type: "towardsIdentity"; identity: Uint8Array }
+    | { $type: "abstain" }
+    | { $type: "lock" };
 
 /**
  * ResourceVoteChoice serialized as JSON.
  */
 export type ResourceVoteChoiceJSON =
-    | { type: "towardsIdentity"; identity: string }
-    | { type: "abstain" }
-    | { type: "lock" };
+    | { $type: "towardsIdentity"; identity: string }
+    | { $type: "abstain" }
+    | { $type: "lock" };
 "#;
 
 #[wasm_bindgen]

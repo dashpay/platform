@@ -20,21 +20,21 @@ const TS_TYPES: &str = r#"
 /**
  * AssetLockProof serialized as a plain object.
  *
- * Internally-tagged discriminated union — `type` discriminates the variant and
+ * Internally-tagged discriminated union — `$type` discriminates the variant and
  * the variant's fields sit alongside it. Mirrors the rs-dpp serde shape (which
  * uses `#[serde(tag = "type")]` on the enum) and the convention used by
  * `AddressWitness` / `AddressFundsFeeStrategyStep`.
  */
 export type AssetLockProofObject =
-    | ({ type: "instant" } & InstantAssetLockProofObject)
-    | ({ type: "chain" } & ChainAssetLockProofObject);
+    | ({ $type: "instant" } & InstantAssetLockProofObject)
+    | ({ $type: "chain" } & ChainAssetLockProofObject);
 
 /**
  * AssetLockProof serialized as JSON.
  */
 export type AssetLockProofJSON =
-    | ({ type: "instant" } & InstantAssetLockProofJSON)
-    | ({ type: "chain" } & ChainAssetLockProofJSON);
+    | ({ $type: "instant" } & InstantAssetLockProofJSON)
+    | ({ $type: "chain" } & ChainAssetLockProofJSON);
 "#;
 
 #[wasm_bindgen]
@@ -166,7 +166,7 @@ impl AssetLockProofWasm {
     }
 
     /// Returns the lock type as a lowercase wire-shape string ("instant" or
-    /// "chain") — matching the `type` discriminator emitted by `toObject()` /
+    /// "chain") — matching the `$type` discriminator emitted by `toObject()` /
     /// `toJSON()`.
     #[wasm_bindgen(getter = "lockType")]
     pub fn lock_type(&self) -> String {

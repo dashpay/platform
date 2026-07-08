@@ -64,8 +64,8 @@ pub type FrozenIdentifier = Identifier;
 // with all-tuple variants. Internal tagging requires struct variants or
 // newtype-of-named-struct, which doesn't apply to tuple shapes. The custom
 // impl maps positional tuple fields to named JSON keys per variant, emits
-// internal `tag = "$type"` (no `data` wrapper, plain `type` per the rule
-// because no `$`-fields exist at this level), and uses the `json_safe_u64`
+// an internal `$type` discriminator (no `data` wrapper), and uses the
+// `json_safe_u64`
 // / `json_safe_option_encrypted_note` helpers for u64 + encrypted-note
 // fields. Bincode `Encode` / `Decode` derives above are untouched —
 // consensus binary path is unaffected.

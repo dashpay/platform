@@ -14,7 +14,7 @@ const ADDRESS_WITNESS_TS_TYPES: &str = r#"
  * Address witness for P2PKH spending in Object form.
  */
 export interface AddressWitnessP2pkhObject {
-    type: "p2pkh";
+    $type: "p2pkh";
     signature: Uint8Array;
 }
 
@@ -22,7 +22,7 @@ export interface AddressWitnessP2pkhObject {
  * Address witness for P2SH spending in Object form.
  */
 export interface AddressWitnessP2shObject {
-    type: "p2sh";
+    $type: "p2sh";
     signatures: Uint8Array[];
     redeemScript: Uint8Array;
 }
@@ -36,7 +36,7 @@ export type AddressWitnessObject = AddressWitnessP2pkhObject | AddressWitnessP2s
  * Address witness for P2PKH spending in JSON form.
  */
 export interface AddressWitnessP2pkhJSON {
-    type: "p2pkh";
+    $type: "p2pkh";
     signature: string;
 }
 
@@ -44,7 +44,7 @@ export interface AddressWitnessP2pkhJSON {
  * Address witness for P2SH spending in JSON form.
  */
 export interface AddressWitnessP2shJSON {
-    type: "p2sh";
+    $type: "p2sh";
     signatures: string[];
     redeemScript: string;
 }
