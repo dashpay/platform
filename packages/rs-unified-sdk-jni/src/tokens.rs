@@ -219,6 +219,8 @@ unsafe fn consume_pw_free_string(env: &mut JNIEnv, c_str: *mut c_char) -> jstrin
 
 /// Mint `amount` of the token at `tokenPosition` on `tokenContractId`.
 /// `issuedToIdentityId` may be null (mint to the transition owner).
+/// Returns the post-mint balances JSON (`{"<recipientBase58>": "<new>"}`)
+/// or null.
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
 pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TokensNative_tokenMint(
@@ -237,45 +239,46 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TokensNative_tokenMin
     group_info_action_is_proposer: jboolean,
     signing_key_id: jint,
     signer_handle: jlong,
-) {
-    guard(&mut env, (), |env| {
+) -> jstring {
+    guard(&mut env, ptr::null_mut(), |env| {
         // Reject a non-positive amount at the boundary — a negative jlong
         // would otherwise bit-cast to a huge u64.
         if amount <= 0 {
             throw_sdk_exception(env, 1, "amount must be positive");
-            return;
+            return ptr::null_mut();
         }
         let Some(id) = read_id32(env, &identity_id, "identityId") else {
-            return;
+            return ptr::null_mut();
         };
         let Some(contract) = read_id32(env, &token_contract_id, "tokenContractId") else {
-            return;
+            return ptr::null_mut();
         };
         let recipient = match read_opt_id32(env, &issued_to_identity_id, "issuedToIdentityId") {
             Ok(v) => v,
-            Err(()) => return,
+            Err(()) => return ptr::null_mut(),
         };
         let Ok(note) = read_cstring_opt(env, &public_note) else {
-            return;
+            return ptr::null_mut();
         };
         let action = match read_opt_id32(env, &group_info_action_id, "groupInfoActionId") {
             Ok(v) => v,
-            Err(()) => return,
+            Err(()) => return ptr::null_mut(),
         };
         let Some(token_position) = checked_position(env, token_position, "tokenPosition") else {
-            return;
+            return ptr::null_mut();
         };
         let Some(group_info_position) =
             checked_position(env, group_info_position, "groupInfoPosition")
         else {
-            return;
+            return ptr::null_mut();
         };
         let Some(signing_key_id) = checked_signing_key_id(env, signing_key_id) else {
-            return;
+            return ptr::null_mut();
         };
         let Some(group_info_kind) = checked_group_info_kind(env, group_info_kind) else {
-            return;
+            return ptr::null_mut();
         };
+        let mut out_json: *mut c_char = ptr::null_mut();
         let result = unsafe {
             platform_wallet_ffi::platform_wallet_token_mint(
                 wallet_handle as Handle,
@@ -291,9 +294,14 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TokensNative_tokenMin
                 group_info_action_is_proposer == JNI_TRUE,
                 signing_key_id,
                 signer_handle as *mut SignerHandle,
+                &mut out_json as *mut *mut c_char,
             )
         };
-        let _ = take_pwffi_error(env, result);
+        if take_pwffi_error(env, result) {
+            // On error nothing was written through out_json (FFI nulls it).
+            return ptr::null_mut();
+        }
+        unsafe { consume_pw_string(env, out_json) }
     })
 }
 

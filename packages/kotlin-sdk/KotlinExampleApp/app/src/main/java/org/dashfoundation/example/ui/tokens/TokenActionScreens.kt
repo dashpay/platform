@@ -235,6 +235,8 @@ private fun MintForm(
     var recipient by rememberSaveable(stateSaver = RecipientSaver) { mutableStateOf(null) }
     var amountText by rememberSaveable { mutableStateOf("") }
     var note by rememberSaveable { mutableStateOf("") }
+    val container = LocalAppContainer.current
+    val sdk by LocalAppState.current.sdk.collectAsStateWithLifecycle()
 
     val banner = GroupActionRuleEvaluator.bannerState(
         token.manualMintingRules, token.mainControlGroupPosition,
@@ -276,7 +278,7 @@ private fun MintForm(
             val groupAction = banner.toGroupAction()
             val noteOrNull = note.toPublicNoteOrNull()
             viewModel.submit {
-                wallet.tokens.mint(
+                val balances = wallet.tokens.mint(
                     identityId = context.identity.identityId,
                     tokenContractId = token.contractId,
                     tokenPosition = token.position,
@@ -286,6 +288,10 @@ private fun MintForm(
                     groupAction = groupAction,
                     signingKeyId = TokenActionContext.SIGNING_KEY_ID,
                     signerHandle = signer,
+                )
+                ProvenBalances.persist(
+                    balances, token, container.database.tokenDao(),
+                    sdk, context.identity.networkRaw,
                 )
             }
         },

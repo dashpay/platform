@@ -27,12 +27,15 @@ import org.dashfoundation.dashsdk.ffi.TokensNative
  * claim are always single-signer.
  *
  * Return values are the raw JSON strings the FFI produces (balances maps for
- * burn/transfer); the caller decodes them, mirroring how the Swift wrappers
- * hand JSON up to their callers.
+ * mint/burn/transfer); the caller decodes them, mirroring how the Swift
+ * wrappers hand JSON up to their callers.
  */
 class Tokens internal constructor(private val walletHandle: Long) {
 
-    /** Mint [amount]; [issuedToIdentityId] null mints to [identityId]. */
+    /**
+     * Mint [amount]; [issuedToIdentityId] null mints to [identityId].
+     * Returns the post-mint balances JSON (keyed by the recipient), or null.
+     */
     suspend fun mint(
         identityId: ByteArray,
         tokenContractId: ByteArray,
@@ -43,7 +46,7 @@ class Tokens internal constructor(private val walletHandle: Long) {
         groupAction: GroupAction = GroupAction.None,
         signingKeyId: Int,
         signerHandle: Long,
-    ): Unit = withContext(Dispatchers.IO) {
+    ): String? = withContext(Dispatchers.IO) {
         validateSelectors(tokenPosition, signingKeyId)
         require(amount > 0) { "amount must be positive, got $amount" }
         val g = groupAction.flatten()

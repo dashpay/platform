@@ -238,10 +238,10 @@ fun CoSignProposalScreen(route: CoSignProposal, navController: NavHostController
                         context = context,
                         mode = mode,
                         signerHandle = signer,
-                        onBurnBalances = { balances ->
-                            // A signature that CLOSES the group burn returns
-                            // the proof-verified post-burn balance — persist
-                            // it so the closing co-signer's row updates
+                        onBalances = { balances ->
+                            // A signature that CLOSES a group mint / burn
+                            // returns the proof-verified post-action balance —
+                            // persist it so the closing co-signer's row updates
                             // immediately (← persistCoSignedBurnBalances).
                             ProvenBalances.persist(
                                 balances, context.token, container.database.tokenDao(),
@@ -336,7 +336,7 @@ private suspend fun dispatchCoSign(
     context: TokenActionContext,
     mode: GroupAction,
     signerHandle: Long,
-    onBurnBalances: suspend (String?) -> Unit,
+    onBalances: suspend (String?) -> Unit,
 ) {
     val wallet = context.wallet ?: throw IllegalStateException("Wallet not loaded")
     val identityId = context.identity.identityId
@@ -345,19 +345,22 @@ private suspend fun dispatchCoSign(
     val note = proposal.paramString("publicNote")
 
     when (proposal.type) {
-        "mint" -> wallet.tokens.mint(
-            identityId = identityId,
-            tokenContractId = contractId,
-            tokenPosition = tokenPosition,
-            amount = proposal.paramAmount()
-                ?: throw IllegalStateException("Proposal amount missing"),
-            issuedToIdentityId = proposal.paramString("recipient")
-                ?.let { Base58.decodeIdentifier(it) },
-            publicNote = note,
-            groupAction = mode,
-            signingKeyId = TokenActionContext.SIGNING_KEY_ID,
-            signerHandle = signerHandle,
-        )
+        "mint" -> {
+            val balances = wallet.tokens.mint(
+                identityId = identityId,
+                tokenContractId = contractId,
+                tokenPosition = tokenPosition,
+                amount = proposal.paramAmount()
+                    ?: throw IllegalStateException("Proposal amount missing"),
+                issuedToIdentityId = proposal.paramString("recipient")
+                    ?.let { Base58.decodeIdentifier(it) },
+                publicNote = note,
+                groupAction = mode,
+                signingKeyId = TokenActionContext.SIGNING_KEY_ID,
+                signerHandle = signerHandle,
+            )
+            onBalances(balances)
+        }
         "burn" -> {
             // The proposal carries `burnFrom`, but the FFI burns from
             // `identityId` — Platform validates the signature against the
@@ -373,7 +376,7 @@ private suspend fun dispatchCoSign(
                 signingKeyId = TokenActionContext.SIGNING_KEY_ID,
                 signerHandle = signerHandle,
             )
-            onBurnBalances(balances)
+            onBalances(balances)
         }
         "freeze" -> wallet.tokens.freeze(
             identityId = identityId,

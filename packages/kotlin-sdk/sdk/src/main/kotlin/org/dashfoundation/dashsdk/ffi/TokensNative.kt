@@ -24,6 +24,7 @@ internal object TokensNative {
     /**
      * Mint [amount] of the token. [issuedToIdentityId] may be null (mint to
      * the transition owner). Group-gatable — pass the group tuple.
+     * Returns post-mint balances JSON (keyed by the recipient) or null.
      */
     external fun tokenMint(
         walletHandle: Long,
@@ -39,7 +40,7 @@ internal object TokensNative {
         groupInfoActionIsProposer: Boolean,
         signingKeyId: Int,
         signerHandle: Long,
-    )
+    ): String?
 
     /** Burn [amount] from the caller. Returns post-burn balances JSON or null. */
     external fun tokenBurn(
