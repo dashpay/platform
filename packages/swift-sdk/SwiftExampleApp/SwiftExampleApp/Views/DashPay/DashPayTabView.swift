@@ -33,6 +33,7 @@ struct DashPayTabView: View {
     @State private var segment: DashPaySegment = .contacts
     @State private var showAddContact = false
     @State private var showAddViaQR = false
+    @State private var showClaimInvitation = false
 
     /// Optimistic overlay for *send*: contact ids whose request
     /// was just broadcast but whose outgoing row hasn't landed via
@@ -111,6 +112,14 @@ struct DashPayTabView: View {
         return eligibleIdentities.first
     }
 
+    /// Wallet the "Claim invitation" flow registers the new identity under.
+    /// Prefers the active identity's wallet, else the first loaded wallet on
+    /// this network — so a fresh invitee with no identity yet can still claim.
+    private var claimWalletId: Data? {
+        activeIdentity?.wallet?.walletId
+            ?? walletManager.wallets.keys.sorted { $0.lexicographicallyPrecedes($1) }.first
+    }
+
     var body: some View {
         NavigationStack {
             content
@@ -148,6 +157,15 @@ struct DashPayTabView: View {
                         .disabled(activeIdentity == nil)
                         .accessibilityIdentifier("dashpay.addViaQR")
                     }
+                    ToolbarItem(placement: .navigationBarTrailing) {
+                        Button {
+                            showClaimInvitation = true
+                        } label: {
+                            Image(systemName: "gift")
+                        }
+                        .disabled(claimWalletId == nil)
+                        .accessibilityIdentifier("dashpay.claimInvitation")
+                    }
                     ToolbarItem(placement: .navigationBarLeading) {
                         if let identity = activeIdentity {
                             NavigationLink {
@@ -163,6 +181,12 @@ struct DashPayTabView: View {
                 .sheet(isPresented: $showAddViaQR) {
                     if let identity = activeIdentity {
                         AddViaQRSheet(identity: identity)
+                            .environmentObject(walletManager)
+                    }
+                }
+                .sheet(isPresented: $showClaimInvitation) {
+                    if let walletId = claimWalletId {
+                        ClaimInvitationSheet(walletId: walletId, network: network)
                             .environmentObject(walletManager)
                     }
                 }
