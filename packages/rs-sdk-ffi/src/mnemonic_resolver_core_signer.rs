@@ -392,10 +392,17 @@ impl MnemonicResolverCoreSigner {
         let subfeature3 = ChildNumber::from_hardened_idx(3)
             .map_err(|e| MnemonicResolverSignerError::DerivationFailed(e.to_string()))?;
         let comps: &[ChildNumber] = path.as_ref();
+        // Every component of an invitation-funding path is hardened. Enforcing
+        // that on `coin_type` and `funding_index` (not just the fixed
+        // purpose/feature/sub-feature) keeps this raw-scalar export boundary
+        // exactly as strict as its documented scope: a non-hardened tail is
+        // never a real voucher path, so refuse to export a key for it.
         if comps.len() != 5
             || comps[0] != purpose9
+            || !matches!(comps[1], ChildNumber::Hardened { .. })
             || comps[2] != feature5
             || comps[3] != subfeature3
+            || !matches!(comps[4], ChildNumber::Hardened { .. })
         {
             return Err(MnemonicResolverSignerError::DerivationFailed(
                 "export_invitation_private_key: path is not an invitation-funding path".to_string(),
@@ -755,9 +762,9 @@ mod tests {
     }
 
     /// The invitation export gate is stricter than the auto-accept one: it must
-    /// bind the full `9'/coin'/5'/3'/idx'` shape, because feature `5'` is shared
-    /// with the user's own identity-auth / registration-funding / top-up keys —
-    /// a looser gate would be a key-exfiltration hole (spec §5.3 Finding 2).
+    /// bind the full, fully-hardened `9'/coin'/5'/3'/idx'` shape, because feature
+    /// `5'` is shared with the user's own identity-auth / registration-funding /
+    /// top-up keys — a looser gate would be a key-exfiltration hole.
     #[test]
     fn export_invitation_private_key_gates_to_the_invitation_path() {
         let resolver = make_resolver(english_resolve);
@@ -781,6 +788,8 @@ mod tests {
             "m/8'/1'/5'/3'/0'",       // wrong purpose (comps[0] != 9')
             "m/9'/1'/5'/3'",          // too short (len != 5)
             "m/9'/1'/5'/3'/0'/0'",    // too long (len != 5)
+            "m/9'/1'/5'/3'/0",        // non-hardened funding_index (comps[4])
+            "m/9'/1/5'/3'/0'",        // non-hardened coin_type (comps[1])
         ] {
             let path = DerivationPath::from_str(bad).expect("valid path string");
             assert!(
