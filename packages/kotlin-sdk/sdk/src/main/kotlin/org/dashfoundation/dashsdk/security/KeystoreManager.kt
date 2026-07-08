@@ -1,5 +1,6 @@
 package org.dashfoundation.dashsdk.security
 
+import android.os.Build
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.security.keystore.StrongBoxUnavailableException
@@ -147,19 +148,36 @@ class KeystoreManager {
     // decrypts under user auth within AUTH_VALIDITY_SECONDS (signing prompts).
 
     private fun keysPublicKey(): PublicKey =
-        androidKeyStore().getCertificate(KEYS_ALIAS)?.publicKey ?: generateKeysKeyPair().public
+        androidKeyStore().getCertificate(KEYS_ALIAS)?.publicKey ?: ensureKeysKeyPair().public
 
     private fun keysPrivateKey(): PrivateKey =
-        (androidKeyStore().getKey(KEYS_ALIAS, null) as? PrivateKey) ?: generateKeysKeyPair().private
+        (androidKeyStore().getKey(KEYS_ALIAS, null) as? PrivateKey) ?: ensureKeysKeyPair().private
 
-    private fun generateKeysKeyPair(): KeyPair {
-        // Migration: an earlier build created KEYS_ALIAS as a symmetric AES key,
-        // which gated encrypt too and broke the unprompted identity-key writes.
-        // Drop any such stale entry so the alias is cleanly re-created as the
-        // RSA keypair. The accessors above only reach here when the entry is
-        // absent or the wrong type (a `SecretKeyEntry` has no certificate and
-        // is not a `PrivateKey`), so a valid RSA keypair is never destroyed.
-        runCatching { androidKeyStore().deleteEntry(KEYS_ALIAS) }
+    /**
+     * Return the RSA [KEYS_ALIAS] keypair, creating it on first use.
+     *
+     * Serialized on a process-wide lock (the AndroidKeyStore alias is
+     * process-global, and this manager is instantiated per [WalletStorage])
+     * and double-checked under it: if a valid RSA pair is already present —
+     * because another thread raced us to first use — it is reused, never
+     * deleted. Only an absent or wrong-type (stale symmetric) entry is
+     * dropped and regenerated. Without this, two concurrent first-use writes
+     * could both regenerate, and the second's `deleteEntry` would orphan the
+     * public key the first already encrypted with, leaving that stored
+     * private key undecryptable by the surviving alias.
+     */
+    private fun ensureKeysKeyPair(): KeyPair = synchronized(KEYS_ALIAS_LOCK) {
+        val keyStore = androidKeyStore()
+        val existingPrivate = keyStore.getKey(KEYS_ALIAS, null) as? PrivateKey
+        val existingCert = keyStore.getCertificate(KEYS_ALIAS)
+        if (existingPrivate != null && existingCert != null) {
+            // A valid RSA pair already exists (possibly just created by a
+            // thread that raced us) — reuse it, never delete it.
+            return@synchronized KeyPair(existingCert.publicKey, existingPrivate)
+        }
+        // Absent, or a stale symmetric entry from an earlier build (which
+        // gated encrypt too and broke unprompted writes) — drop and recreate.
+        runCatching { keyStore.deleteEntry(KEYS_ALIAS) }
 
         fun spec(strongBox: Boolean): KeyGenParameterSpec {
             val builder = KeyGenParameterSpec.Builder(
@@ -175,10 +193,20 @@ class KeystoreManager {
                 .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_RSA_OAEP)
                 .setUnlockedDeviceRequired(true)
                 .setUserAuthenticationRequired(true)
-                .setUserAuthenticationParameters(
+            // setUserAuthenticationParameters is API 30+ (Android 11); on the
+            // minSdk-29 (Android 10) floor fall back to the deprecated pre-30
+            // time-bound API. Pre-30 the key accepts any enrolled authenticator
+            // for the window; the STRONG|DEVICE_CREDENTIAL restriction (and the
+            // AuthPrompt that requests it) still applies on 30+.
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                builder.setUserAuthenticationParameters(
                     AUTH_VALIDITY_SECONDS,
                     KeyProperties.AUTH_BIOMETRIC_STRONG or KeyProperties.AUTH_DEVICE_CREDENTIAL,
                 )
+            } else {
+                @Suppress("DEPRECATION")
+                builder.setUserAuthenticationValidityDurationSeconds(AUTH_VALIDITY_SECONDS)
+            }
             if (strongBox) builder.setIsStrongBoxBacked(true)
             return builder.build()
         }
@@ -187,7 +215,7 @@ class KeystoreManager {
             KeyProperties.KEY_ALGORITHM_RSA,
             ANDROID_KEYSTORE,
         )
-        return try {
+        try {
             generator.initialize(spec(strongBox = true))
             generator.generateKeyPair()
         } catch (_: StrongBoxUnavailableException) {
@@ -211,6 +239,11 @@ class KeystoreManager {
 
         /** Auth window for the identity-keys alias, in seconds. */
         const val AUTH_VALIDITY_SECONDS = 30
+
+        // Guards first-use creation/migration of the process-global
+        // KEYS_ALIAS entry across concurrent callers (and across the
+        // per-WalletStorage KeystoreManager instances).
+        private val KEYS_ALIAS_LOCK = Any()
 
         private const val ANDROID_KEYSTORE = "AndroidKeyStore"
         private const val AES_TRANSFORMATION = "AES/GCM/NoPadding"
