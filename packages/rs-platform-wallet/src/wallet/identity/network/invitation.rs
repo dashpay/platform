@@ -185,9 +185,14 @@ impl IdentityWallet {
         // Export the one-time voucher private key at the funding path. This is
         // the one deliberate raw-key export (the whole point of an invitation);
         // it is path-gated to the invitation sub-feature inside the provider.
-        let voucher_key = crypto_provider.export_invitation_private_key(&path).await?;
+        let mut voucher_key = crypto_provider.export_invitation_private_key(&path).await?;
 
         let uri = encode_invitation_uri(&voucher_key, &proof, expiry_unix, inviter.as_ref())?;
+
+        // Scrub the exported scalar now that it lives in the (secret) URI.
+        // secp256k1's `SecretKey` has no Drop-zeroize, so wipe it explicitly —
+        // matching the resolver signer's key hygiene (review LOW-1).
+        voucher_key.non_secure_erase();
 
         Ok(Invitation {
             uri,
