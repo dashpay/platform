@@ -34,8 +34,19 @@ struct DashPayTabView: View {
     @State private var segment: DashPaySegment = .contacts
     @State private var showAddContact = false
     @State private var showAddViaQR = false
-    @State private var showClaimInvitation = false
-    @State private var claimInitialURI = ""
+
+    /// Drives the claim sheet via `.sheet(item:)`. A fresh value (new `id`)
+    /// re-presents the sheet — so a second `dashpay://invite` link arriving while
+    /// the sheet is already open re-seeds it with the new URI instead of being
+    /// dropped (`.sheet(isPresented:)` can't re-seed an already-presented sheet
+    /// whose `uri` is seeded once at init).
+    private struct ClaimInvite: Identifiable {
+        let id = UUID()
+        let walletId: Data
+        let initialURI: String
+    }
+
+    @State private var claimInvite: ClaimInvite?
 
     /// Optimistic overlay for *send*: contact ids whose request
     /// was just broadcast but whose outgoing row hasn't landed via
@@ -129,9 +140,14 @@ struct DashPayTabView: View {
     /// the second call after the first clears it a no-op (no double-present).
     private func consumePendingInviteURL() {
         guard let urlString = appUIState.pendingInviteURL else { return }
-        claimInitialURI = urlString
-        showClaimInvitation = true
+        // Clear the bearer URL immediately so it can't linger in @Published; the
+        // nil-write re-fires this via .onChange, where the guard above no-ops.
         appUIState.pendingInviteURL = nil
+        guard let walletId = claimWalletId else { return }
+        // A fresh ClaimInvite (new id) presents the sheet — and RE-presents it if
+        // one is already open, so a second invite link arriving mid-claim
+        // re-seeds it with the new URI instead of being dropped.
+        claimInvite = ClaimInvite(walletId: walletId, initialURI: urlString)
     }
 
     var body: some View {
@@ -173,7 +189,9 @@ struct DashPayTabView: View {
                     }
                     ToolbarItem(placement: .navigationBarTrailing) {
                         Button {
-                            showClaimInvitation = true
+                            if let walletId = claimWalletId {
+                                claimInvite = ClaimInvite(walletId: walletId, initialURI: "")
+                            }
                         } label: {
                             Image(systemName: "gift")
                         }
@@ -199,15 +217,13 @@ struct DashPayTabView: View {
                             .environmentObject(walletManager)
                     }
                 }
-                .sheet(isPresented: $showClaimInvitation) {
-                    if let walletId = claimWalletId {
-                        ClaimInvitationSheet(
-                            walletId: walletId,
-                            network: network,
-                            initialURI: claimInitialURI
-                        )
-                        .environmentObject(walletManager)
-                    }
+                .sheet(item: $claimInvite) { invite in
+                    ClaimInvitationSheet(
+                        walletId: invite.walletId,
+                        network: network,
+                        initialURI: invite.initialURI
+                    )
+                    .environmentObject(walletManager)
                 }
                 .onChange(of: appUIState.pendingInviteURL) { _, _ in
                     // Warm path: the app is already running, so the tab observes
