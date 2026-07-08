@@ -151,6 +151,15 @@ impl<'de> Visitor<'de> for BlsPublicKeyVisitor {
     fn visit_seq<A: serde::de::SeqAccess<'de>>(self, mut seq: A) -> Result<Self::Value, A::Error> {
         let mut bytes = Vec::with_capacity(COMPRESSED_G1_LEN);
         while let Some(b) = seq.next_element::<u8>()? {
+            // A valid compressed-G1 public key is exactly COMPRESSED_G1_LEN
+            // bytes; reject as soon as a hostile payload exceeds that rather
+            // than allocating/parsing an arbitrarily long sequence first.
+            if bytes.len() == COMPRESSED_G1_LEN {
+                return Err(serde::de::Error::invalid_length(
+                    bytes.len() + 1,
+                    &self,
+                ));
+            }
             bytes.push(b);
         }
         from_compressed_g1_bytes(&bytes)
