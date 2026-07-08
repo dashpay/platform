@@ -552,6 +552,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         (
             dashcore::Txid,
             crate::wallet::identity::types::dashpay::payment::PaymentEntry,
+            u64, // network fee in duffs, from the broadcast transaction
         ),
         PlatformWalletError,
     >
@@ -575,7 +576,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         // re-acquires that (non-reentrant) lock internally.
         self.drain_pending_contact_crypto(provider).await;
 
-        let (payment_address, tx) = {
+        let (payment_address, tx, fee) = {
             let mut wm = self.wallet_manager.write().await;
 
             // Resolve the external account's xpub so we can derive addresses.
@@ -664,14 +665,14 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             // `impl<S: Signer> TransactionSigner for S`) rather than the
             // resident `wallet`, so funding-input signatures are produced
             // from Keychain-derived keys without a resident seed.
-            let (tx, _fee) = builder
+            let (tx, fee) = builder
                 .build_signed(signer, |addr| {
                     managed_account.address_derivation_path(&addr)
                 })
                 .await
                 .map_err(|e| PlatformWalletError::TransactionBuild(e.to_string()))?;
 
-            (payment_address, tx)
+            (payment_address, tx, fee)
         };
 
         // --- 3. Broadcast the transaction, releasing the build's UTXO
@@ -726,7 +727,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 })?;
         }
 
-        Ok((txid, entry))
+        Ok((txid, entry, fee))
     }
 }
 
