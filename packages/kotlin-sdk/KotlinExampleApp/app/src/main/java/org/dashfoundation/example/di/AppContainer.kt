@@ -185,8 +185,8 @@ class AppContainer(private val context: Context) {
         // Mirrors iOS `PlatformWalletManager.firstWallet` — the
         // lexicographically smallest wallet id; the map keys are fixed-width
         // lowercase hex, so string order equals byte order.
-        val wallet = manager.wallets.value.entries.minByOrNull { it.key }?.value
-        if (wallet == null) {
+        val walletEntry = manager.wallets.value.entries.minByOrNull { it.key }
+        if (walletEntry == null) {
             // No wallets on the active network: stop the loops and reset the
             // per-wallet service surfaces, so the Sync tab shows zeros instead
             // of leaking values from another network's wallet.
@@ -202,6 +202,7 @@ class AppContainer(private val context: Context) {
             platformBalanceSyncService.reset()
             shieldedService.unbind()
         } else {
+            val wallet = walletEntry.value
             try {
                 // Re-attach the balance-sync UI reflector: a prior no-wallet
                 // pass reset() it (nulling its manager), and without this the
@@ -216,14 +217,38 @@ class AppContainer(private val context: Context) {
                 // and doesn't throw. dbPath mirrors iOS's
                 // `ShieldedService.dbPath(for:)` naming
                 // (`shielded_tree_<networkName>.sqlite`), rooted in filesDir.
+                val shieldedDbPath = java.io.File(
+                    context.filesDir,
+                    "shielded_tree_${manager.network.networkName}.sqlite",
+                ).absolutePath
                 shieldedService.bind(
                     manager = manager,
                     walletId = wallet.walletId,
-                    dbPath = java.io.File(
-                        context.filesDir,
-                        "shielded_tree_${manager.network.networkName}.sqlite",
-                    ).absolutePath,
+                    dbPath = shieldedDbPath,
                 )
+                // Engine-bind every OTHER loaded wallet into the shared
+                // network-scoped shielded coordinator (← iOS
+                // rebindWalletScopedServices, the multi-wallet SH-14/15/16
+                // enabler). The mirror bind above already registered the
+                // first wallet; this pass registers the rest so a single
+                // sync pass trial-decrypts against the union of every
+                // wallet's viewing keys. Each bind is best-effort +
+                // independent — one wallet's missing mnemonic must not
+                // block the others — and the pass runs BEFORE the fallible
+                // sync-start calls below so a start failure cannot leave
+                // non-mirror wallets unregistered (iOS review lesson).
+                org.dashfoundation.dashsdk.services.engineBindOtherWallets(
+                    allWalletIds = manager.wallets.value.keys,
+                    mirrorWalletId = walletEntry.key,
+                ) { otherKey ->
+                    manager.wallets.value[otherKey]?.let { other ->
+                        shieldedService.bindEngine(
+                            manager = manager,
+                            walletId = other.walletId,
+                            dbPath = shieldedDbPath,
+                        )
+                    }
+                }
                 if (shieldedService.isAvailable && !manager.isShieldedSyncRunning()) {
                     manager.startShieldedSync()
                 }

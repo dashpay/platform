@@ -37,6 +37,19 @@ import org.dashfoundation.dashsdk.wallet.WalletSyncEvent
  * [bind] drives the Rust-side shielded bind (configure + bind, like the
  * Swift service) and then reflects the loop; start/stop stay on
  * [PlatformWalletManager].
+ *
+ * **Single UI mirror + multi-engine-bind** (port of the same design in
+ * `ShieldedService.swift`): the service mirrors exactly ONE wallet — the
+ * app-level first wallet — for the global Sync-status surface via [bind].
+ * [bindEngine] is the additive companion used by
+ * `AppContainer.rebindWalletScopedServices()` to engine-register EVERY
+ * OTHER loaded wallet into the same network-scoped coordinator (no mirror
+ * repoint). A single shielded sync pass then trial-decrypts against the
+ * union of all wallets' viewing keys and routes note hits to each
+ * wallet's own persister (SH-14/15/16 cross-wallet flows). Per-wallet
+ * receive addresses and balances are read on demand
+ * ([PlatformWalletManager.shieldedDefaultAddress], per-wallet Room
+ * queries) rather than from this singleton mirror.
  */
 class ShieldedService(private val database: DashDatabase) {
 
@@ -239,6 +252,69 @@ class ShieldedService(private val database: DashDatabase) {
     }
 
     /**
+     * Register [walletId]'s shielded sub-wallet with the Rust coordinator
+     * WITHOUT repointing this service's display mirror — port of Swift
+     * `ShieldedService.bindEngine`.
+     *
+     * [bind] attaches the single UI mirror (bound wallet, counters,
+     * subscriptions) to exactly one wallet — the app-level first wallet.
+     * [bindEngine] is the additive companion: it engine-binds EVERY OTHER
+     * loaded wallet into the same network-scoped coordinator so a single
+     * shielded sync pass trial-decrypts against the union of all wallets'
+     * viewing keys and routes note hits to each wallet's own persister.
+     * Per-wallet receive addresses and balances are then read on demand
+     * ([PlatformWalletManager.shieldedDefaultAddress], per-wallet Room
+     * queries) rather than from this singleton mirror.
+     *
+     * Best-effort and independent per wallet: a missing mnemonic /
+     * declined keystore read for one wallet logs and returns `false`
+     * without affecting the others or the mirror. Idempotent — safe to
+     * call every rebind pass ([PlatformWalletManager.configureShielded]
+     * no-ops on the same path; [PlatformWalletManager.bindShielded]
+     * replaces that wallet's registration).
+     *
+     * No "already bound" fast path on purpose (iOS lesson): the only
+     * cheap probe, [PlatformWalletManager.shieldedDefaultAddress],
+     * reflects the wallet-level sub-wallet binding — which SURVIVES
+     * [PlatformWalletManager.clearShieldedStorage] (Clear drops only the
+     * coordinator registrations; there is no sub-wallet unbind FFI).
+     * Skipping on that signal would silently leave post-Clear wallets
+     * unregistered (sync passes would never scan them again). Coordinator
+     * registration has no cheap query, so we always re-bind; the mnemonic
+     * read + ZIP-32 re-derivation is low-millisecond per wallet and
+     * rebind fires are rare (wallet-set change, network switch, Clear).
+     *
+     * @return whether the engine registration succeeded; callers running
+     *   a best-effort fleet pass may ignore it.
+     */
+    suspend fun bindEngine(
+        manager: PlatformWalletManager,
+        walletId: ByteArray,
+        dbPath: String,
+        accounts: List<Int> = listOf(0),
+    ): Boolean {
+        if (!isAvailable) return false
+        val sortedAccounts = accounts.distinct().sorted()
+        val walletIdHex4 = walletId.take(4).joinToString("") { "%02x".format(it) }
+        return try {
+            manager.configureShielded(dbPath)
+            manager.bindShielded(walletId, sortedAccounts)
+            android.util.Log.i(
+                TAG,
+                "Shielded engine-bound: walletId=$walletIdHex4… accounts=$sortedAccounts",
+            )
+            true
+        } catch (e: Exception) {
+            android.util.Log.w(
+                TAG,
+                "Shielded engine-bind failed for walletId=$walletIdHex4…: ${e.message}",
+                e,
+            )
+            false
+        }
+    }
+
+    /**
      * Reduce one event for the bound wallet. Per-wallet completion results
      * accumulate the cumulative counters; a `cooldownSkip` preserves the
      * prior cache (its numeric fields are zero). Progress / tree events
@@ -323,19 +399,28 @@ class ShieldedService(private val database: DashDatabase) {
      *    the post-clear resync cold-rebuilds from index 0 instead of
      *    gate-skipping every re-downloaded position against a stale tree
      *    (the frozen-tree / zero-notes desync this Clear exists to fix).
-     * 2. **Room wipe** — delete the wallet's shielded rows (INCLUDING
-     *    `shielded_sync_states`, the per-subwallet watermark; leaving it
+     * 2. **Room wipe — EVERY wallet's shielded rows** (INCLUDING
+     *    `shielded_sync_states`, the per-subwallet watermark; leaving any
      *    would let [bind]'s `restore_for_wallet` re-seed a caught-up
      *    watermark and re-freeze the tree) in one transaction, and zero the
-     *    published counters.
+     *    published counters. The wipe is deliberately GLOBAL, not scoped to
+     *    the bound wallet: with multi-engine-bind, every loaded wallet has
+     *    rows, and [clearShieldedStorage] empties the SHARED tree — a
+     *    non-mirror wallet whose Room watermark survived would restore a
+     *    position ahead of the now-empty tree on re-bind and gate-skip
+     *    every note (the exact Room↔SQLite watermark-divergence freeze
+     *    this Clear exists to fix).
      * 3. **Re-bind + restart sync** — [clearShieldedStorage] dropped every
      *    coordinator registration and quiesced the sync loop, so nothing
      *    would resync until the next app relaunch otherwise. Re-run [bind]
-     *    (re-registers the viewing keys on the now-empty coordinator, its
-     *    `restore_for_wallet` finding no watermark → starts at index 0) and
-     *    restart the background loop, so the button alone triggers an
-     *    in-session cold rebuild 0→N. Mirrors Swift's
-     *    "keep bind credentials, re-bind on next sync" intent, done eagerly.
+     *    for the mirror wallet (re-registers the viewing keys on the
+     *    now-empty coordinator, its `restore_for_wallet` finding no
+     *    watermark → starts at index 0), then [bindEngine] every OTHER
+     *    loaded wallet — mirror-bind failure does NOT skip the others
+     *    ([bind] swallows its errors; the fleet pass runs regardless, the
+     *    iOS best-effort lesson) — and restart the background loop, so the
+     *    button alone triggers an in-session cold rebuild 0→N for the
+     *    whole fleet.
      *
      * Fail-closed: if the Rust reset throws, the exception propagates and the
      * Room rows are left intact — the FFI's contract is that the host must
@@ -371,11 +456,15 @@ class ShieldedService(private val database: DashDatabase) {
         mgr.clearShieldedStorage()
         android.util.Log.i(TAG, "Shielded clear: Rust store reset OK; wiping Room rows")
 
+        // Global wipe — every wallet's rows, not just the mirror's. The
+        // Rust reset above emptied the SHARED tree for all wallets; any
+        // surviving Room watermark would restore a position ahead of the
+        // empty tree on re-bind and gate-skip every note (see doc, step 2).
         db.withTransaction {
-            db.shieldedDao().deleteActivityByWallet(walletId)
-            db.shieldedDao().deleteOutgoingNotesByWallet(walletId)
-            db.shieldedDao().deleteNotesByWallet(walletId)
-            db.shieldedDao().deleteSyncStatesByWallet(walletId)
+            db.shieldedDao().deleteAllActivity()
+            db.shieldedDao().deleteAllOutgoingNotes()
+            db.shieldedDao().deleteAllNotes()
+            db.shieldedDao().deleteAllSyncStates()
         }
         _state.update { it.copy(shieldedBalance = 0, totalScanned = 0, totalNewNotes = 0) }
 
@@ -385,6 +474,21 @@ class ShieldedService(private val database: DashDatabase) {
         // restore_for_wallet finds no watermark → starts at index 0).
         if (dbPath != null) {
             bind(mgr, walletId, dbPath, accounts)
+            // Fleet recovery: clearShieldedStorage dropped EVERY wallet's
+            // coordinator registration, and the mirror bind above restores
+            // only one. Re-register every other loaded wallet so the next
+            // pass scans the whole fleet (SH-14/15/16 survive an SH-12 run
+            // without a relaunch). Runs regardless of the mirror bind's
+            // outcome — bind() swallows its errors, and one wallet's
+            // failure must not dark the others (iOS best-effort lesson).
+            engineBindOtherWallets(
+                allWalletIds = mgr.wallets.value.keys,
+                mirrorWalletId = walletIdHex,
+            ) { otherKey ->
+                mgr.wallets.value[otherKey]?.let { other ->
+                    bindEngine(mgr, other.walletId, dbPath)
+                }
+            }
             val notRunning = runCatching { !mgr.isShieldedSyncRunning() }.getOrDefault(false)
             if (isAvailable && notRunning) {
                 runCatching { mgr.startShieldedSync() }.onFailure {
