@@ -386,4 +386,22 @@ mod json_convertible_tests_token_distribution_info {
         let recovered = TokenDistributionInfo::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
     }
+
+    #[test]
+    fn json_round_trip_perpetual_variant() {
+        use crate::data_contract::associated_token::token_perpetual_distribution::distribution_recipient::TokenDistributionResolvedRecipient;
+        use crate::data_contract::associated_token::token_perpetual_distribution::reward_distribution_moment::RewardDistributionMoment;
+        use crate::serialization::JsonConvertible;
+        // The Perpetual variant (moment + resolved recipient) complements the
+        // PreProgrammed wire-shape test above; pin its `$type` discriminator and
+        // full round-trip so a silent variant flip is caught.
+        let original = TokenDistributionInfo::Perpetual(
+            RewardDistributionMoment::BlockBasedMoment(500),
+            TokenDistributionResolvedRecipient::Identity(Identifier::new([0x77; 32])),
+        );
+        let json = original.to_json().expect("to_json");
+        assert_eq!(json["$type"], json!("perpetual"));
+        let recovered = TokenDistributionInfo::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
 }

@@ -779,6 +779,30 @@ mod json_convertible_tests {
     }
 
     #[test]
+    fn json_round_trip_boolean_variant() {
+        use crate::serialization::JsonConvertible;
+        use serde_json::json;
+        // `Boolean` is a unit variant → `{"$type":"boolean"}` (camelCase name).
+        let original = ArrayItemType::Boolean;
+        let json = original.to_json().expect("to_json");
+        assert_eq!(json, json!({"$type": "boolean"}));
+        let recovered = ArrayItemType::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn json_round_trip_date_variant() {
+        use crate::serialization::JsonConvertible;
+        use serde_json::json;
+        // `Date` is a unit variant → `{"$type":"date"}` (camelCase name).
+        let original = ArrayItemType::Date;
+        let json = original.to_json().expect("to_json");
+        assert_eq!(json, json!({"$type": "date"}));
+        let recovered = ArrayItemType::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
     fn value_round_trip_integer_variant() {
         use crate::serialization::ValueConvertible;
         use platform_value::platform_value;
