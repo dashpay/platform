@@ -64,7 +64,7 @@ final class WalletManagerStore: ObservableObject {
     /// otherwise the cached manager keeps using its own Sdk clone
     /// with stale DAPI / quorum endpoints, and proof verification
     /// fails forever ("no available addresses to use").
-    private var managerSdkHandles: [Network: UnsafeMutablePointer<SDKHandle>] = [:]
+    private var managerSdkHandles: [Network: OpaquePointer] = [:]
 
     /// SwiftData container shared across every manager. Each
     /// manager's persistence handler narrows its `loadWalletList`
