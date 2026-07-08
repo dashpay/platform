@@ -348,9 +348,11 @@ object TokenActionResolver {
         // Claim.
         rows += ResolvedTokenAction(TokenActionKind.CLAIM, resolveClaim(token, identity))
 
-        // Direct purchase — the configured price isn't modelled locally
-        // (`priceKnown` is hard-coded false on iOS too), so the row is
-        // denied with the same reason.
+        // Direct purchase — allowed whenever pricing rules exist and the
+        // token isn't paused. `PurchaseForm` fetches the configured price on
+        // open (`directPurchasePrices`) and computes the total cost
+        // client-side — including the "no price configured" case — so the
+        // price no longer needs to be pre-resolved here to gate the row.
         val distributionChange = TokenDistributionChangeRules.parse(token.distributionChangeRules)
         val pricingRule = distributionChange?.changeDirectPurchasePricingRules
         rows += ResolvedTokenAction(
@@ -358,9 +360,7 @@ object TokenActionResolver {
             when {
                 pricingRule == null -> TokenActionPermission.Hidden
                 token.isPaused -> TokenActionPermission.Denied("Token is paused")
-                else -> TokenActionPermission.Denied(
-                    "Direct-purchase price not available locally yet",
-                )
+                else -> TokenActionPermission.Allowed
             },
         )
 
