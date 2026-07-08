@@ -706,10 +706,9 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
         return .success(signature)
     }
 
-    /// v1 sign primitive. Wraps the raw 32-byte ECDSA scalar in a
-    /// throwaway FFI signer just long enough to produce a signature;
-    /// the keychain bytes are zeroed from the local copy as soon as
-    /// the FFI call returns.
+    /// v1 sign primitive — delegates to the public `RawKeySigner`
+    /// (the extracted throwaway-FFI-signer implementation), mapping
+    /// its errors onto this type's `Error` cases.
     ///
     /// TODO(KeychainSigner v2): replace this whole function with a
     /// native-Swift `secp256k1` invocation once we add the
@@ -718,65 +717,15 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
         privateKey: Data,
         data: Data
     ) -> Result<Data, Error> {
-        // Defensive copy into a mutable buffer we can zero on exit.
-        var keyCopy = [UInt8](privateKey)
-        defer {
-            // Best-effort scrub. Swift doesn't guarantee this won't be
-            // optimised away, but an explicit `withContiguousMutableStorageIfAvailable`
-            // pattern does keep the touch in the IR.
-            keyCopy.withUnsafeMutableBufferPointer { buf in
-                if let base = buf.baseAddress {
-                    memset_s(UnsafeMutableRawPointer(base), buf.count, 0, buf.count)
-                }
-            }
-        }
-
-        let signerResult = keyCopy.withUnsafeBufferPointer { keyBuf -> DashSDKResult in
-            dash_sdk_signer_create_from_private_key(
-                keyBuf.baseAddress!,
-                UInt(keyBuf.count),
-                self.network.ffiValue
-            )
-        }
-
-        if let errPtr = signerResult.error {
-            let message = errPtr.pointee.message.map { String(cString: $0) } ?? "unknown"
-            dash_sdk_error_free(errPtr)
+        do {
+            return .success(try RawKeySigner.sign(data: data, privateKey: privateKey, network: network))
+        } catch RawKeySigner.Error.signerCreationFailed(let message) {
             return .failure(.ffiSignerCreationFailed(message: message))
-        }
-        guard let rawSigner = signerResult.data else {
-            return .failure(.ffiSignerCreationFailed(message: "null handle"))
-        }
-        let signerHandle = rawSigner.assumingMemoryBound(to: SignerHandle.self)
-        defer { dash_sdk_signer_destroy(signerHandle) }
-
-        let signResult = data.withUnsafeBytes { dataBuf -> DashSDKResult in
-            dash_sdk_signer_sign(
-                signerHandle,
-                dataBuf.bindMemory(to: UInt8.self).baseAddress,
-                UInt(dataBuf.count)
-            )
-        }
-
-        if let errPtr = signResult.error {
-            let message = errPtr.pointee.message.map { String(cString: $0) } ?? "unknown"
-            dash_sdk_error_free(errPtr)
+        } catch RawKeySigner.Error.signFailed(let message) {
             return .failure(.ffiSignFailed(message: message))
+        } catch {
+            return .failure(.ffiSignFailed(message: String(describing: error)))
         }
-        guard let sigPtr = signResult.data else {
-            return .failure(.ffiSignFailed(message: "null signature"))
-        }
-
-        let sigStruct = sigPtr.assumingMemoryBound(to: DashSDKSignature.self)
-        defer { dash_sdk_signature_free(sigStruct) }
-
-        let sigBytes: Data
-        if let bytes = sigStruct.pointee.signature {
-            sigBytes = Data(bytes: bytes, count: Int(sigStruct.pointee.signature_len))
-        } else {
-            sigBytes = Data()
-        }
-        return .success(sigBytes)
     }
 
     // MARK: - Signer protocol conformance (legacy)
