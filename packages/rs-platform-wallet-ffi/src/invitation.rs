@@ -29,6 +29,7 @@ use std::ffi::CStr;
 use std::os::raw::c_char;
 
 use dpp::identity::accessors::IdentityGettersV0;
+use dpp::prelude::AssetLockProof;
 use platform_wallet::wallet::identity::crypto::{parse_invitation_uri, InviterInfo};
 use rs_sdk_ffi::{MnemonicResolverCoreSigner, MnemonicResolverHandle, SignerHandle, VTableSigner};
 
@@ -309,6 +310,118 @@ pub unsafe extern "C" fn platform_wallet_claim_invitation(
     PlatformWalletFFIResult::ok()
 }
 
+/// Read-only preview of a `dashpay://invite` link — decode + surface the
+/// invitation's metadata WITHOUT claiming it (no wallet handle, no network, no
+/// side effects). The claim UI uses this to show the amount, sender, and expiry
+/// before the user commits, and to drive the contact-bootstrap prompt.
+#[repr(C)]
+pub struct InvitationPreviewFFI {
+    /// The link decoded structurally (base58 envelope + version + fields). When
+    /// false, every other field is unset/zero and the link is malformed.
+    pub structurally_valid: bool,
+    /// The embedded asset-lock proof is an InstantSend proof. Claim only accepts
+    /// Instant proofs, so a Chain proof (`false`) is unclaimable via this path.
+    pub is_instant: bool,
+    /// The link carries inviter info (the contact-bootstrap is available).
+    pub has_inviter: bool,
+    /// Inviter identity id (32 bytes); zeroed when `has_inviter` is false.
+    pub inviter_id: [u8; 32],
+    /// Inviter DPNS username — heap C string, or null when `has_inviter` is
+    /// false. Free with [`crate::platform_wallet_string_free`].
+    pub inviter_username: *mut c_char,
+    /// Amount locked in the voucher (duffs) — the Instant proof's credit-output
+    /// value; 0 for a non-Instant proof.
+    pub amount_duffs: u64,
+    /// Advisory expiry (unix seconds). The caller compares it against the current
+    /// time for an "expired" badge (the FFI stays clock-free).
+    pub expiry_unix: u32,
+}
+
+impl InvitationPreviewFFI {
+    /// An all-unset preview — the shape returned for a malformed link
+    /// (`structurally_valid == false`) and the pre-work sentinel.
+    fn invalid() -> Self {
+        Self {
+            structurally_valid: false,
+            is_instant: false,
+            has_inviter: false,
+            inviter_id: [0u8; 32],
+            inviter_username: std::ptr::null_mut(),
+            amount_duffs: 0,
+            expiry_unix: 0,
+        }
+    }
+}
+
+/// Decode a `dashpay://invite?data=…` link into a read-only
+/// [`InvitationPreviewFFI`] — NO claim, NO network, NO wallet handle.
+///
+/// A well-formed-but-invalid link (bad base58, unsupported version, truncated,
+/// bad key/proof) yields `structurally_valid == false` rather than an error, so
+/// the UI can render a clean "invalid invitation" state; only a null / non-UTF-8
+/// `uri` argument returns an error result.
+///
+/// When `has_inviter` is set, `*out_preview.inviter_username` is a heap C string
+/// the caller frees with [`crate::platform_wallet_string_free`].
+///
+/// # Safety
+/// - `uri` must be a valid NUL-terminated UTF-8 C string.
+/// - `out_preview` must be a valid `*mut InvitationPreviewFFI`.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_parse_invitation(
+    uri: *const c_char,
+    out_preview: *mut InvitationPreviewFFI,
+) -> PlatformWalletFFIResult {
+    check_ptr!(out_preview);
+    check_ptr!(uri);
+    // Publish the invalid sentinel before any fallible work so every early
+    // return leaves the out-param well-defined.
+    unsafe {
+        *out_preview = InvitationPreviewFFI::invalid();
+    }
+
+    let uri = unwrap_result_or_return!(unsafe { CStr::from_ptr(uri) }.to_str());
+
+    // A malformed link is a normal "invalid invitation" preview, not an FFI
+    // error — the UI shows it as unclaimable instead of surfacing an opaque
+    // failure dialog.
+    let parsed = match parse_invitation_uri(uri) {
+        Ok(p) => p,
+        Err(_) => return PlatformWalletFFIResult::ok(),
+    };
+
+    let is_instant = matches!(parsed.asset_lock, AssetLockProof::Instant(_));
+    let amount_duffs = match &parsed.asset_lock {
+        AssetLockProof::Instant(instant) => instant.output().map(|o| o.value).unwrap_or(0),
+        AssetLockProof::Chain(_) => 0,
+    };
+
+    let (has_inviter, inviter_id, inviter_username) = match parsed.inviter.as_ref() {
+        Some(info) => {
+            // An interior NUL can't occur in a decoded UTF-8 DPNS label, but fall
+            // back to a null username rather than fail the whole preview.
+            let username = std::ffi::CString::new(info.username.clone())
+                .map(|c| c.into_raw())
+                .unwrap_or(std::ptr::null_mut());
+            (true, info.identity_id, username)
+        }
+        None => (false, [0u8; 32], std::ptr::null_mut()),
+    };
+
+    unsafe {
+        *out_preview = InvitationPreviewFFI {
+            structurally_valid: true,
+            is_instant,
+            has_inviter,
+            inviter_id,
+            inviter_username,
+            amount_duffs,
+            expiry_unix: parsed.expiry_unix,
+        };
+    }
+    PlatformWalletFFIResult::ok()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -473,5 +586,25 @@ mod tests {
         };
         // parse_invitation_uri rejects the scheme → surfaced as an error result.
         assert_ne!(r.code, PlatformWalletFFIResultCode::Success);
+    }
+
+    /// A null `uri` is rejected with `ErrorNullPointer` before any parsing.
+    #[test]
+    fn parse_invitation_null_uri_is_null_pointer() {
+        let mut preview = InvitationPreviewFFI::invalid();
+        let r = unsafe { platform_wallet_parse_invitation(std::ptr::null(), &mut preview) };
+        assert_eq!(r.code, PlatformWalletFFIResultCode::ErrorNullPointer);
+    }
+
+    /// A malformed link (wrong scheme) is a clean invalid PREVIEW, not an FFI
+    /// error — the sheet renders it as unclaimable instead of failing.
+    #[test]
+    fn parse_invitation_malformed_is_invalid_preview_not_error() {
+        let bad = std::ffi::CString::new("https://not-an-invite").unwrap();
+        let mut preview = InvitationPreviewFFI::invalid();
+        let r = unsafe { platform_wallet_parse_invitation(bad.as_ptr(), &mut preview) };
+        assert_eq!(r.code, PlatformWalletFFIResultCode::Success);
+        assert!(!preview.structurally_valid);
+        assert!(preview.inviter_username.is_null());
     }
 }

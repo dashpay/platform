@@ -1793,6 +1793,29 @@ extension ManagedPlatformWallet {
 
     // MARK: - DashPay invitations (DIP-13)
 
+    /// Read-only preview of a `dashpay://invite` link, decoded via
+    /// `parseInvitation(uri:)` without claiming it. Drives the claim sheet's
+    /// pre-claim summary + the contact-bootstrap decision.
+    public struct InvitationPreview: Sendable {
+        /// The link decoded structurally. When false, every other field is unset
+        /// and the link is malformed / unreadable.
+        public let structurallyValid: Bool
+        /// The embedded asset-lock proof is an InstantSend proof. Claim only
+        /// accepts Instant proofs, so `false` means the link is unclaimable.
+        public let isInstant: Bool
+        /// The link carries inviter info (the contact-bootstrap is available).
+        public let hasInviter: Bool
+        /// Inviter identity id (32 bytes) when `hasInviter`, else nil.
+        public let inviterId: Data?
+        /// Inviter DPNS username when `hasInviter`, else nil.
+        public let inviterUsername: String?
+        /// Amount locked in the voucher (duffs); 0 for a non-Instant proof.
+        public let amountDuffs: UInt64
+        /// Advisory expiry (unix seconds). Compare against the current time for
+        /// an "expired" badge.
+        public let expiryUnix: UInt32
+    }
+
     /// Create a DashPay invitation (DIP-13): fund a one-time asset-lock voucher
     /// at the invitation derivation path and return a shareable
     /// `dashpay://invite` link.
@@ -1951,6 +1974,42 @@ extension ManagedPlatformWallet {
             }
             return ManagedIdentity(handle: outManagedHandle)
         }.value
+    }
+
+    /// Read-only preview of a DashPay invitation link (DIP-13): decode a
+    /// `dashpay://invite` URI and surface its metadata WITHOUT claiming it — no
+    /// network, no identity registered. The claim UI uses this to show the
+    /// amount, sender, and expiry before the user commits, and to decide whether
+    /// to offer the "establish contact with <sender>?" bootstrap.
+    ///
+    /// A malformed link is reported as `structurallyValid == false` rather than
+    /// throwing, so the UI can render a clean "invalid link" state.
+    public func parseInvitation(uri: String) throws -> InvitationPreview {
+        var out = InvitationPreviewFFI()
+        let result = uri.withCString { uriPtr in
+            platform_wallet_parse_invitation(uriPtr, &out)
+        }
+        try result.check()
+        // The Rust side heap-allocates the username C string when the link
+        // carries an inviter; free it once we've copied it into Swift.
+        defer {
+            if out.inviter_username != nil {
+                platform_wallet_string_free(out.inviter_username)
+            }
+        }
+        let inviterId: Data? = out.has_inviter
+            ? withUnsafeBytes(of: out.inviter_id) { Data($0) }
+            : nil
+        let inviterUsername: String? = out.inviter_username.map { String(cString: $0) }
+        return InvitationPreview(
+            structurallyValid: out.structurally_valid,
+            isInstant: out.is_instant,
+            hasInviter: out.has_inviter,
+            inviterId: inviterId,
+            inviterUsername: inviterUsername,
+            amountDuffs: out.amount_duffs,
+            expiryUnix: out.expiry_unix
+        )
     }
 
     /// Accept an incoming contact request using an externally-supplied
