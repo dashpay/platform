@@ -88,7 +88,7 @@
         "minLength": 1,
         "maxLength": 32,
         "position": 1,
-        "description": "Feature-area / Domain name (Core, Identity, DPNS, Token, Shielded, MultiWallet, ...)."
+        "description": "Feature-area / Domain name (Core, Identity, DPNS, Token, Shielded, DashPay, System, ...). Modalities like multi-wallet / group are tags, not categories."
       }
     },
     "required": ["code", "name"],
@@ -185,11 +185,17 @@
         "maxLength": 64,
         "position": 10,
         "description": "git commit of the source plan this testCase was seeded from."
+      },
+      "tags": {
+        "type": "string",
+        "maxLength": 200,
+        "position": 11,
+        "description": "Comma-separated cross-cutting labels orthogonal to category (e.g. \"multiwallet,contested\"). Drawn from the canonical TAGS vocabulary in src/codes.mjs; stored as a string because DPP document schemas only support byte arrays, not typed arrays. The dashboard splits on ',' and filters client-side."
       }
     },
     "required": ["testId", "app", "tier", "category", "title", "layer", "implStatus"],
     "additionalProperties": false,
-    "description": "A single test definition, mirroring one row of an app's test plan. Unique per (testId, app); tier/category/app are integer foreign keys into the lookup document types. Mutable; owner-only creation (v1 single QA identity)."
+    "description": "A single test definition, mirroring one row of an app's test plan. Unique per (testId, app); tier/category/app are integer foreign keys into the lookup document types; tags are cross-cutting string labels. Mutable; owner-only creation (single QA-owner identity)."
   },
   "testRun": {
     "type": "object",
