@@ -205,6 +205,16 @@ pub enum WalletStorageError {
     )]
     AccountRegistrationEntryMismatch,
 
+    /// An `account_registrations` row's stored `checksum` did not match a
+    /// recompute of `SHA-256(wallet_id ‖ account_xpub_bytes)` — or was NULL on
+    /// a V004+ store, which the `open()` backfill guarantees never survives.
+    /// Tamper-evidence for the Risk-6 class (a manifest row bound to the wrong
+    /// `wallet_id`, or a blob mutated in place). Unlike the other
+    /// mismatch variants this is caught at `load` and converted to a per-wallet
+    /// skip rather than aborting the batch.
+    #[error("account_registrations manifest integrity checksum mismatch")]
+    ManifestIntegrityMismatch,
+
     /// An `asset_locks` row's typed-column `(outpoint, account_index)`
     /// disagreed with the lifecycle blob's. Rejected at decode time rather
     /// than mis-bucketing the lock under the wrong account.
@@ -375,6 +385,7 @@ impl WalletStorageError {
             | Self::IdentityKeyEntryMismatch
             | Self::IdentityEntryIdMismatch
             | Self::AccountRegistrationEntryMismatch
+            | Self::ManifestIntegrityMismatch
             | Self::AssetLockEntryMismatch { .. }
             | Self::BlobTooLarge { .. }
             | Self::IntegerOverflow { .. } => false,
@@ -452,6 +463,7 @@ impl WalletStorageError {
             Self::IdentityKeyEntryMismatch => "identity_key_entry_mismatch",
             Self::IdentityEntryIdMismatch => "identity_entry_id_mismatch",
             Self::AccountRegistrationEntryMismatch => "account_registration_entry_mismatch",
+            Self::ManifestIntegrityMismatch => "manifest_integrity_mismatch",
             Self::AssetLockEntryMismatch { .. } => "asset_lock_entry_mismatch",
             Self::BlobTooLarge { .. } => "blob_too_large",
             Self::IntegerOverflow { .. } => "integer_overflow",

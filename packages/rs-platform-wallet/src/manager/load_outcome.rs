@@ -62,6 +62,12 @@ pub enum CorruptKind {
     /// persister. The string is a structural projection — never a raw
     /// row byte slice or a hex-encoded key.
     DecodeError(String),
+    /// A persisted account-manifest row failed its integrity checksum: the
+    /// recomputed `SHA-256(wallet_id ‖ account_xpub_bytes)` did not match the
+    /// stored value (a row bound to the wrong `wallet_id`, or a blob mutated in
+    /// place). Tamper-evidence, not authentication — a local writer can forge
+    /// it; the checksum only catches accidental corruption and migration bugs.
+    ManifestIntegrityMismatch,
 }
 
 impl std::fmt::Display for CorruptKind {
@@ -73,6 +79,7 @@ impl std::fmt::Display for CorruptKind {
                 f.write_str("snapshot does not match its persisted row")
             }
             Self::DecodeError(s) => write!(f, "decode error: {s}"),
+            Self::ManifestIntegrityMismatch => f.write_str("manifest integrity mismatch"),
         }
     }
 }

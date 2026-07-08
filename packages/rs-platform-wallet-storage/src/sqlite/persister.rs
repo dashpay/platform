@@ -9,6 +9,7 @@ use rusqlite::{Connection, OptionalExtension};
 use platform_wallet::changeset::{
     ClientStartState, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
 };
+use platform_wallet::manager::load_outcome::{CorruptKind, SkipReason};
 use platform_wallet::wallet::platform_wallet::WalletId;
 
 use crate::sqlite::backup::{self, BackupKind};
@@ -233,6 +234,12 @@ impl SqlitePersister {
         }
 
         let _report = crate::sqlite::migrations::run_for_open(&mut conn)?;
+
+        // SQLite cannot compute the per-row SHA-256 manifest checksum in pure
+        // SQL, so V004's column lands nullable and any row a forward migration
+        // left without one is filled here — once, before load() ever verifies
+        // it. Idempotent; a no-op on a store whose rows already carry one.
+        schema::accounts::backfill_missing_checksums(&mut conn)?;
 
         // Claim the path LAST so a failed open leaves no stale claim;
         // canonicalize so symlinks / `.`-segments key the same as a
@@ -927,6 +934,23 @@ impl PlatformWalletPersistence for SqlitePersister {
                     hex::encode(wallet_id)
                 ))
             })?;
+
+            // Manifest integrity is a per-wallet SKIP, not a batch abort: a
+            // tampered / mis-bound row fails this one wallet and records it in
+            // `skipped`, while every other read error below stays fail-hard.
+            match schema::accounts::verify_manifest_checksums(&conn, &wallet_id) {
+                Ok(()) => {}
+                Err(WalletStorageError::ManifestIntegrityMismatch) => {
+                    state.skipped.push((
+                        wallet_id,
+                        SkipReason::CorruptPersistedRow {
+                            kind: CorruptKind::ManifestIntegrityMismatch,
+                        },
+                    ));
+                    continue;
+                }
+                Err(other) => return Err(PersistenceError::from(other)),
+            }
 
             let account_manifest =
                 schema::accounts::load_state(&conn, &wallet_id).map_err(PersistenceError::from)?;
