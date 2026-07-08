@@ -88,13 +88,13 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
 
     /// FFI signer handle. Pass to any `*_with_signer` entry point;
     /// the underlying pointer is the C-imported
-    /// `UnsafeMutablePointer<SignerHandle>` from `platform-wallet-ffi.h`
+    /// `OpaquePointer` from `platform-wallet-ffi.h`
     /// (and equivalently `rs-sdk-ffi.h`). Owned by this object —
     /// freed in `deinit` via `dash_sdk_signer_destroy`. Caller must
     /// keep the `KeychainSigner` alive for the duration of any FFI
     /// call that captured this pointer (see the keepalive contract
     /// above).
-    public var handle: UnsafeMutablePointer<SignerHandle> {
+    public var handle: OpaquePointer {
         handlePtr
     }
 
@@ -182,7 +182,7 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
 
     /// Raw pointer to the FFI signer handle. Boxed by Rust and freed
     /// in `deinit`.
-    private var handlePtr: UnsafeMutablePointer<SignerHandle>!
+    private var handlePtr: OpaquePointer!
 
     // MARK: Init
 
@@ -747,7 +747,7 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
         guard let rawSigner = signerResult.data else {
             return .failure(.ffiSignerCreationFailed(message: "null handle"))
         }
-        let signerHandle = rawSigner.assumingMemoryBound(to: SignerHandle.self)
+        let signerHandle = OpaquePointer(rawSigner)
         defer { dash_sdk_signer_destroy(signerHandle) }
 
         let signResult = data.withUnsafeBytes { dataBuf -> DashSDKResult in

@@ -348,8 +348,7 @@ public final class KeyManager: Sendable {
   /// Destroy a signer handle
   /// - Parameter signer: The signer handle to destroy
   public func destroySigner(_ signer: OpaquePointer) {
-    let signerPtr = UnsafeMutablePointer<SignerHandle>(signer)
-    dash_sdk_signer_destroy(signerPtr)
+    dash_sdk_signer_destroy(signer)
   }
 
   // MARK: - Key Validation

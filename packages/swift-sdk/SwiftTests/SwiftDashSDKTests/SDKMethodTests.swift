@@ -71,7 +71,7 @@ final class SDKMethodTests: XCTestCase {
       }
 
       defer {
-        dash_sdk_signer_destroy(signer.assumingMemoryBound(to: SignerHandle.self))
+        dash_sdk_signer_destroy(OpaquePointer(signer))
       }
 
       nonisolated(unsafe) let signerPtr = OpaquePointer(signer)
