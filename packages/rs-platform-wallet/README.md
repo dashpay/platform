@@ -172,7 +172,7 @@ operational state that only lives in platform-wallet's memory:
   and fresh-receive-address (`used`) state.
 
 Persisters that can reconstruct the full keyless snapshot hand it back
-as `ClientWalletStartState::core_wallet_info` (consumed verbatim, per
+as `ClientWalletStartState::wallet_info` (consumed verbatim, per
 invariant 4). The flattened projection fields
 (`core_state`/`used_core_addresses`) are a transitional fallback for
 persisters that cannot build a snapshot yet, and are slated for

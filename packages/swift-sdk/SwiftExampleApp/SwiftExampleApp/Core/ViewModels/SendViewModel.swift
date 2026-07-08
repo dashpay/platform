@@ -725,9 +725,15 @@ class SendViewModel: ObservableObject {
                 // to self-shield only.
                 let enteredRecipient = recipientAddress
                     .trimmingCharacters(in: .whitespacesAndNewlines)
-                let ownShieldedAddress =
-                    shieldedService.addressesByAccount[0]
-                    ?? shieldedService.orchardDisplayAddress
+                // Resolve THIS wallet's own default Orchard address from
+                // the engine rather than the single-mirror
+                // `shieldedService` (which tracks `firstWallet`). Every
+                // loaded wallet is engine-bound, so `shieldedDefaultAddress`
+                // resolves for the wallet actually being sent from.
+                let ownShieldedAddress = walletManager.shieldedDisplayAddress(
+                    walletId: wallet.walletId,
+                    network: network
+                )
                 if !enteredRecipient.isEmpty,
                    enteredRecipient != ownShieldedAddress {
                     // Don't advertise "leave it blank": a blank recipient

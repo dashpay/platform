@@ -1,12 +1,11 @@
-//! Item E — `load_from_persistor` (seedless / watch-only) end-to-end
-//! through a real `PlatformWalletManager`.
+//! End-to-end coverage of `PlatformWalletManager::load_from_persistor`, the
+//! seedless / watch-only load path, through a real `PlatformWalletManager`.
 //!
-//! Scope after the seedless rework: load reconstructs every persisted
-//! wallet **watch-only** from its keyless account manifest. The load
-//! path never touches the seed, so it performs no wrong-seed check;
-//! wrong-seed validation lives in the resolver-backed signing
-//! entrypoints, not in this load path. Per-row decode failures surface
-//! as [`SkipReason::CorruptPersistedRow`] without aborting the batch.
+//! Load reconstructs every persisted wallet **watch-only** from its keyless
+//! account manifest. The load path never touches the seed, so it performs no
+//! wrong-seed check; wrong-seed validation lives in the resolver-backed signing
+//! entrypoints, not here. Per-row decode failures surface as
+//! [`SkipReason::CorruptPersistedRow`] without aborting the batch.
 //!
 //! RT cases here:
 //! - RT-WO: round-trip — watch-only wallet is registered after reload.
@@ -15,7 +14,7 @@
 //!   fires on the registered handler, `load` returns `Ok`.
 //! - RT-Z: no key/seed material in any `LoadOutcome` / `SkipReason`
 //!   surface (the structural-only contract).
-//! - RT-Snapshot: a carried `core_wallet_info` snapshot is consumed
+//! - RT-Snapshot: a carried `wallet_info` snapshot is consumed
 //!   verbatim — per-account UTXO attribution and derived-but-unused
 //!   deep pool addresses survive the reload; a snapshot whose
 //!   `wallet_id` mismatches its row is skipped as corrupt.
@@ -77,7 +76,7 @@ impl PlatformWalletPersistence for FixedLoadPersister {
                             network: w.network,
                             birth_height: w.birth_height,
                             account_manifest: w.account_manifest.clone(),
-                            core_wallet_info: w.core_wallet_info.clone(),
+                            wallet_info: w.wallet_info.clone(),
                             identity_manager: Default::default(),
                             unused_asset_locks: Default::default(),
                         },
@@ -175,7 +174,7 @@ fn slice(seed: [u8; 64]) -> (WalletId, ClientWalletStartState) {
             network: key_wallet::Network::Testnet,
             birth_height: 1,
             account_manifest,
-            core_wallet_info: Box::new(info),
+            wallet_info: Box::new(info),
             identity_manager: Default::default(),
             unused_asset_locks: Default::default(),
         },
@@ -407,7 +406,7 @@ async fn rt_z_secret_hygiene_surfaces() {
     }
 }
 
-/// RT-Snapshot: a carried `core_wallet_info` snapshot is consumed
+/// RT-Snapshot: a carried `wallet_info` snapshot is consumed
 /// verbatim. Two properties the projection replay could NOT provide:
 /// - per-account UTXO attribution — a CoinJoin-account UTXO stays on the
 ///   CoinJoin account (the fallback path routed every UTXO to the first
@@ -532,7 +531,7 @@ async fn rt_snapshot_preserves_attribution_and_pools() {
     info.update_balance();
 
     let (_, mut s) = slice(seed);
-    s.core_wallet_info = Box::new(info);
+    s.wallet_info = Box::new(info);
     let p = Arc::new(FixedLoadPersister::new());
     let h = Arc::new(RecordingHandler::default());
     let mut st = ClientStartState::default();
@@ -592,7 +591,7 @@ async fn rt_snapshot_wallet_id_mismatch_is_skipped() {
         WalletAccountCreationOptions::Default,
     )
     .unwrap();
-    s.core_wallet_info = Box::new(ManagedWalletInfo::from_wallet(&wallet_b, 1));
+    s.wallet_info = Box::new(ManagedWalletInfo::from_wallet(&wallet_b, 1));
 
     let mut st = ClientStartState::default();
     st.wallets.insert(id_a, s);
@@ -646,7 +645,7 @@ async fn rt_snapshot_account_set_mismatch_is_skipped() {
 
     let (_, mut s) = slice(seed);
     s.account_manifest = truncated_manifest;
-    s.core_wallet_info = Box::new(ManagedWalletInfo::from_wallet(&wallet_a, 1));
+    s.wallet_info = Box::new(ManagedWalletInfo::from_wallet(&wallet_a, 1));
 
     let mut st = ClientStartState::default();
     st.wallets.insert(id_a, s);
@@ -696,7 +695,7 @@ async fn rt_snapshot_mismatch_skip_coexists_with_healthy_load() {
     .unwrap();
     let id_ok = wallet_ok.compute_wallet_id();
     let (_, mut s_ok) = slice(seed_ok);
-    s_ok.core_wallet_info = Box::new(ManagedWalletInfo::from_wallet(&wallet_ok, 1));
+    s_ok.wallet_info = Box::new(ManagedWalletInfo::from_wallet(&wallet_ok, 1));
 
     // Mismatched row: keyed by wallet BAD, snapshot built from wallet OTHER.
     let (id_bad, mut s_bad) = slice(seed_bad);
@@ -706,7 +705,7 @@ async fn rt_snapshot_mismatch_skip_coexists_with_healthy_load() {
         WalletAccountCreationOptions::Default,
     )
     .unwrap();
-    s_bad.core_wallet_info = Box::new(ManagedWalletInfo::from_wallet(&wallet_other, 1));
+    s_bad.wallet_info = Box::new(ManagedWalletInfo::from_wallet(&wallet_other, 1));
 
     let mut st = ClientStartState::default();
     st.wallets.insert(id_ok, s_ok);

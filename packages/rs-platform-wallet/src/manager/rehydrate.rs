@@ -1,20 +1,8 @@
 //! Watch-only wallet reconstruction + persisted core-state application.
 //!
-//! Load is **seedless** (see [`load_from_persistor`]). Every persisted
-//! wallet is rebuilt watch-only from its keyless `AccountRegistrationEntry`
-//! manifest via [`build_watch_only_wallet`]. Persisters that carry a full
-//! [`ManagedWalletInfo`] snapshot (FFI) hand it to the manager directly;
-//! the SQLite persister instead reconstructs one from typed rows and layers
-//! the keyless core-state projection on with [`apply_persisted_core_state`].
-//! No seed, no signing-key derivation.
-//!
-//! Because load never touches the seed, it performs no wrong-seed check.
-//! Wrong-seed validation lives in the resolver-backed signing
-//! entrypoints (`sign_with_mnemonic_resolver` and the FFI resolver sign
-//! path), which fail-closed gate the resolver-supplied seed against the
-//! loaded `wallet_id`; the seedless load path here never sees the seed.
-//!
-//! [`load_from_persistor`]: super::PlatformWalletManager::load_from_persistor
+//! Load is seedless — each wallet is rebuilt watch-only from its manifest and
+//! the manager consumes the carried snapshot directly, so no wrong-seed check
+//! runs here; that gate lives in the resolver-backed signing entrypoints.
 
 use key_wallet::account::account_collection::AccountCollection;
 use key_wallet::account::Account;
@@ -26,41 +14,22 @@ use crate::changeset::AccountRegistrationEntry;
 use crate::error::PlatformWalletError;
 use crate::manager::load_outcome::CorruptKind;
 
-/// Build a watch-only [`Wallet`] from the keyless account manifest.
-///
-/// Each `AccountRegistrationEntry` becomes an [`Account::from_xpub`]
-/// (watch-only) keyed to `expected_wallet_id`; the assembled
-/// [`AccountCollection`] is handed to [`Wallet::new_watch_only`] under
-/// the same id. No key material crosses this function.
-///
-/// Returns [`CorruptKind`] when the row is structurally unusable
-/// (caller wraps it in a per-row [`SkipReason`]).
-///
-/// [`SkipReason`]: crate::manager::load_outcome::SkipReason
+/// Build a watch-only [`Wallet`] from the keyless account manifest, stamping
+/// `expected_wallet_id` onto the reconstructed [`AccountCollection`]. Returns
+/// [`CorruptKind`] when the row is structurally unusable; no key material
+/// crosses this function.
 ///
 /// # Trust boundary
 ///
-/// `expected_wallet_id` is stamped onto the reconstructed [`Wallet`]
-/// verbatim and is **not** cryptographically bound to the manifest: the
-/// id hashes the *root* xpub, but only account-level (hardened, one-way)
-/// xpubs are persisted, so the root cannot be recovered here to re-derive
-/// and verify the id. Only a structural decode runs, so a well-formed but
-/// **wrong** `account_xpub` is accepted.
-///
-/// Concretely, the attack this leaves open: an attacker who can write to
-/// the backing store (or a malicious/rolled-back backup restored into it)
-/// substitutes a valid xpub of their own for a wallet's `account_xpub`,
-/// leaving `expected_wallet_id` unchanged. The wallet is rebuilt under the
-/// original id but now derives its receive addresses from the attacker's
-/// key, so future incoming funds are silently redirected — the id looks
-/// unchanged to the user while the money flows elsewhere. This crate
-/// **does not** defend against it: closing the gap requires the storage
-/// layer to authenticate the manifest (a persisted commitment/MAC over
-/// `{wallet_id, network, manifest}`, verified fail-closed on load), which
-/// is a storage-schema change tracked in the `platform-wallet-storage`
-/// crate. See the trust-boundary note on
-/// [`PlatformWalletPersistence::load`](crate::changeset::PlatformWalletPersistence::load).
-pub fn build_watch_only_wallet(
+/// `expected_wallet_id` is **not** cryptographically bound to the manifest: the
+/// id hashes the *root* xpub, but only account-level xpubs are persisted, so the
+/// root cannot be recovered here to re-verify it. A well-formed but **wrong**
+/// `account_xpub` is therefore accepted — anyone able to write the backing store
+/// can swap in their own xpub under the unchanged id and silently redirect
+/// incoming funds. Closing this needs storage-layer manifest authentication (a
+/// MAC over `{wallet_id, network, manifest}`, verified fail-closed on load),
+/// tracked in the `platform-wallet-storage` crate.
+pub(super) fn build_watch_only_wallet(
     network: Network,
     expected_wallet_id: [u8; 32],
     manifest: &[AccountRegistrationEntry],
@@ -70,9 +39,8 @@ pub fn build_watch_only_wallet(
     }
     let mut accounts = AccountCollection::new();
     for entry in manifest {
-        // NOTE: `Account::from_xpub` is infallible in the pinned key-wallet rev
-        // (unconditional `Ok`); this map_err is a defensive guard for when its
-        // signature becomes fallible (e.g. xpub/type validation).
+        // `Account::from_xpub` is infallible in the pinned key-wallet rev; this
+        // map_err is a defensive guard for when that signature becomes fallible.
         let account = Account::from_xpub(
             Some(expected_wallet_id),
             entry.account_type,
@@ -616,7 +584,6 @@ mod tests {
         let restored = build_watch_only_wallet(Network::Testnet, id, &manifest).unwrap();
         assert_eq!(restored.wallet_id, id);
         assert_eq!(restored.compute_wallet_id(), id);
-        // Every manifest account survives the round trip (count, types).
         let restored_types: Vec<_> = restored
             .accounts
             .all_accounts()

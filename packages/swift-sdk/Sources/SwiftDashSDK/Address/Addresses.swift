@@ -1294,7 +1294,7 @@ public class Addresses: @unchecked Sendable {
             throw SDKError.internalError("Failed to parse identity")
         }
 
-        let identityHandle = identityHandlePtr.assumingMemoryBound(to: IdentityHandle.self)
+        let identityHandle = OpaquePointer(identityHandlePtr)
         defer { dash_sdk_identity_destroy(identityHandle) }
 
         // Prepare FFI inputs
@@ -1333,7 +1333,7 @@ public class Addresses: @unchecked Sendable {
         let result = ffiInputs.withUnsafeMutableBufferPointer { inputsBuffer -> DashSDKResult in
             dash_sdk_identity_top_up_from_addresses(
                 handle,
-                UnsafePointer(identityHandle),
+                identityHandle,
                 inputsBuffer.baseAddress,
                 UInt(inputs.count),
                 nil // put_settings
@@ -1434,7 +1434,7 @@ public class Addresses: @unchecked Sendable {
             throw SDKError.internalError("Failed to parse identity")
         }
 
-        let identityHandle = identityHandlePtr.assumingMemoryBound(to: IdentityHandle.self)
+        let identityHandle = OpaquePointer(identityHandlePtr)
         defer { dash_sdk_identity_destroy(identityHandle) }
 
         // Create signer from private key
@@ -1457,7 +1457,7 @@ public class Addresses: @unchecked Sendable {
         }
 
         defer {
-            dash_sdk_signer_destroy(signer.assumingMemoryBound(to: SignerHandle.self))
+            dash_sdk_signer_destroy(OpaquePointer(signer))
         }
 
         // Prepare FFI outputs
@@ -1484,11 +1484,11 @@ public class Addresses: @unchecked Sendable {
         let result = ffiOutputs.withUnsafeMutableBufferPointer { outputsBuffer -> DashSDKResult in
             dash_sdk_identity_transfer_credits_to_addresses(
                 handle,
-                UnsafePointer(identityHandle),
+                identityHandle,
                 outputsBuffer.baseAddress,
                 UInt(outputs.count),
                 publicKeyId,
-                signer.assumingMemoryBound(to: SignerHandle.self),
+                OpaquePointer(signer),
                 nil // put_settings
             )
         }
@@ -1588,7 +1588,7 @@ public class Addresses: @unchecked Sendable {
             throw SDKError.internalError("Failed to parse identity")
         }
 
-        let identityHandle = identityHandlePtr.assumingMemoryBound(to: IdentityHandle.self)
+        let identityHandle = OpaquePointer(identityHandlePtr)
         // Note: We don't destroy this handle here because it will be replaced by the created identity
 
         // Create signer from private key
@@ -1612,7 +1612,7 @@ public class Addresses: @unchecked Sendable {
         }
 
         defer {
-            dash_sdk_signer_destroy(signer.assumingMemoryBound(to: SignerHandle.self))
+            dash_sdk_signer_destroy(OpaquePointer(signer))
         }
 
         // Prepare FFI inputs
@@ -1670,11 +1670,11 @@ public class Addresses: @unchecked Sendable {
         let result = ffiInputs.withUnsafeMutableBufferPointer { inputsBuffer -> DashSDKResult in
             dash_sdk_identity_create_from_addresses(
                 handle,
-                UnsafePointer(identityHandle),
+                identityHandle,
                 inputsBuffer.baseAddress,
                 UInt(inputs.count),
                 ffiOutput,
-                signer.assumingMemoryBound(to: SignerHandle.self),
+                OpaquePointer(signer),
                 nil // put_settings
             )
         }
@@ -1729,10 +1729,6 @@ public class Addresses: @unchecked Sendable {
         // Free the result (but keep the identity handle - caller must free it)
         dash_sdk_identity_create_from_addresses_result_free(resultPtr)
 
-        // Convert UnsafeMutablePointer<IdentityHandle> to OpaquePointer
-        // OpaquePointer initializer returns optional, so we force unwrap since we know it's valid
-        let createdIdentityHandle = OpaquePointer(UnsafeRawPointer(identityHandlePtr))!
-
-        return (createdIdentityHandle, PlatformAddressInfosResult(infos: infos))
+        return (identityHandlePtr, PlatformAddressInfosResult(infos: infos))
     }
 }

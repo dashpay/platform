@@ -237,8 +237,6 @@ extension PlatformWalletManager {
     }
 
     /// Clear all persisted SPV storage (headers, filters, state).
-    ///
-    /// The SPV client must be running.
     public func clearSpvStorage() throws {
         try platform_wallet_manager_spv_clear_storage(handle).check()
     }

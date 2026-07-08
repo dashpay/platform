@@ -159,6 +159,26 @@ pub enum PlatformWalletFFIResultCode {
     /// `Display`); they are not exposed as structured out-fields (that would
     /// require an ABI-breaking change to `PlatformWalletFFIResult`).
     ErrorAddressNonceMismatch = 21,
+    /// Maps `PlatformWalletError::PersisterLoad` when the wrapped
+    /// [`PersistenceError`] classifies as transient
+    /// (`is_transient() == true`, e.g. `SQLITE_BUSY`). Rehydration could not
+    /// load the persisted client state, but the backend reports the failure
+    /// as recoverable, so the host MAY retry the load with backoff. Split
+    /// from [`Self::ErrorPersisterLoadFatal`] so the retry classification
+    /// proven on the Rust side survives the boundary instead of flattening
+    /// to `ErrorUnknown`.
+    ///
+    /// [`PersistenceError`]: platform_wallet::changeset::PersistenceError
+    ErrorPersisterLoadTransient = 22,
+    /// Maps `PlatformWalletError::PersisterLoad` when the wrapped
+    /// [`PersistenceError`] is non-transient (a `Fatal` or `Constraint`
+    /// backend failure, or a poisoned lock). Rehydration could not load the
+    /// persisted client state and the failure is unrecoverable, so the host
+    /// MUST NOT retry the same load. Sibling of
+    /// [`Self::ErrorPersisterLoadTransient`].
+    ///
+    /// [`PersistenceError`]: platform_wallet::changeset::PersistenceError
+    ErrorPersisterLoadFatal = 23,
 
     NotFound = 98, // Used exclusively for all the Option that are retuned as errors
     ErrorUnknown = 99,
@@ -307,6 +327,18 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             // the nonce.
             PlatformWalletError::AddressNonceMismatch { .. } => {
                 PlatformWalletFFIResultCode::ErrorAddressNonceMismatch
+            }
+            // A rehydration persister-load failure. The Rust side already proves
+            // the transient-vs-fatal classification (rehydration_load.rs), so
+            // split the code on `is_transient()` — flattening to `ErrorUnknown`
+            // would erase the retry signal. Fatal/Constraint/LockPoisoned all
+            // read as non-transient, i.e. do-not-retry.
+            PlatformWalletError::PersisterLoad(inner) => {
+                if inner.is_transient() {
+                    PlatformWalletFFIResultCode::ErrorPersisterLoadTransient
+                } else {
+                    PlatformWalletFFIResultCode::ErrorPersisterLoadFatal
+                }
             }
             _ => PlatformWalletFFIResultCode::ErrorUnknown,
         };
@@ -723,6 +755,50 @@ mod tests {
             msg.contains("Platform expected 2"),
             "expected nonce must render exactly: {msg}"
         );
+    }
+
+    /// A rehydration `PersisterLoad` failure keeps its transient-vs-fatal
+    /// classification across the boundary: a transient backend failure maps to
+    /// `ErrorPersisterLoadTransient` (retryable) and every non-transient case
+    /// (`Fatal`, `Constraint`, `LockPoisoned`) maps to `ErrorPersisterLoadFatal`
+    /// (do-not-retry), rather than both flattening to `ErrorUnknown`. The typed
+    /// Display rendering survives verbatim as the message.
+    #[test]
+    fn persister_load_maps_by_retry_classification() {
+        use platform_wallet::changeset::{PersistenceError, PersistenceErrorKind};
+
+        let transient: Vec<PlatformWalletError> = vec![PlatformWalletError::PersisterLoad(
+            PersistenceError::backend_with_kind(PersistenceErrorKind::Transient, "database busy"),
+        )];
+        let fatal: Vec<PlatformWalletError> = vec![
+            PlatformWalletError::PersisterLoad(PersistenceError::backend("schema corrupt")),
+            PlatformWalletError::PersisterLoad(PersistenceError::backend_with_kind(
+                PersistenceErrorKind::Constraint,
+                "foreign key violation",
+            )),
+            PlatformWalletError::PersisterLoad(PersistenceError::LockPoisoned),
+        ];
+
+        for (cases, expected) in [
+            (
+                transient,
+                PlatformWalletFFIResultCode::ErrorPersisterLoadTransient,
+            ),
+            (fatal, PlatformWalletFFIResultCode::ErrorPersisterLoadFatal),
+        ] {
+            for err in cases {
+                let rendered = err.to_string();
+                let result: PlatformWalletFFIResult = err.into();
+                assert_eq!(
+                    result.code, expected,
+                    "PersisterLoad must map by retry classification (rendered: {rendered})"
+                );
+                let msg = unsafe { std::ffi::CStr::from_ptr(result.message) }
+                    .to_string_lossy()
+                    .into_owned();
+                assert_eq!(msg, rendered, "Display payload must survive verbatim");
+            }
+        }
     }
 
     /// Other wallet-error variants without a dedicated FFI arm still
