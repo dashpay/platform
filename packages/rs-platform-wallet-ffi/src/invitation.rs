@@ -111,8 +111,8 @@ pub unsafe extern "C" fn platform_wallet_create_invitation(
         );
     }
     // Derive the advisory expiry: a fixed ~24h window from now, inside the
-    // InstantSend validity bound (spec §5.1). `saturating_add` can't overflow a
-    // realistic `now`, but keeps the arithmetic total.
+    // InstantSend validity bound. `saturating_add` can't overflow a realistic
+    // `now`, but keeps the arithmetic total.
     let expiry_unix = now_unix.saturating_add(MAX_INVITATION_TTL_SECS);
 
     // Build the optional inviter info: present iff `inviter_identity_id` is
@@ -258,6 +258,14 @@ pub unsafe extern "C" fn platform_wallet_claim_invitation(
     check_ptr!(identity_pubkeys);
     check_ptr!(out_identity_id);
     check_ptr!(out_identity_handle);
+    // Publish FFI-safe sentinels before any fallible work so every early return
+    // leaves the out-params well-defined (matching the create/parse siblings):
+    // a caller that reads them without checking the result code gets zeros, not
+    // an uninitialized handle it might feed into `MANAGED_IDENTITY_STORAGE`.
+    unsafe {
+        *out_identity_id = [0u8; 32];
+        *out_identity_handle = NULL_HANDLE;
+    }
     if identity_pubkeys_count == 0 {
         return PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorInvalidParameter,

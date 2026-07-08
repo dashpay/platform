@@ -40,8 +40,8 @@ use super::*;
 
 /// Hard cap on the amount an invitation can lock (0.01 DASH). The voucher is a
 /// bearer credential, so the blast radius of a leaked link is bounded here in
-/// Rust — not just in the UI (spec §8 Finding 4). Generous enough for identity
-/// registration plus a small starting balance; tune if onboarding needs more.
+/// Rust — not just in the UI. Generous enough for identity registration plus a
+/// small starting balance; tune if onboarding needs more.
 pub const MAX_INVITATION_DUFFS: u64 = 1_000_000;
 
 /// Default TTL (24h) for an invitation's advisory expiry. The FFI sets
@@ -49,8 +49,21 @@ pub const MAX_INVITATION_DUFFS: u64 = 1_000_000;
 /// leaked-link finder holds the voucher key and ignores it — so it bounds only
 /// the honest UI (don't submit an about-to-go-stale IS proof) and the reclaim
 /// signal, NOT a leaked-link window. The real leak bound is `MAX_INVITATION_DUFFS`.
-/// See spec §8.
 pub const MAX_INVITATION_TTL_SECS: u32 = 24 * 60 * 60;
+
+/// RAII scrub for the voucher `PrivateKey` copy used on the claim path.
+/// `dashcore::PrivateKey` wraps a `secp256k1::SecretKey` that has no
+/// Drop-zeroize, so the imported bearer scalar would otherwise linger in memory
+/// after `claim_invitation` returns on every exit path (success or error).
+/// Wiping it here mirrors the create path's explicit scrub of the exported
+/// scalar — the voucher key is treated as bearer money end to end.
+struct WipingPrivateKey(PrivateKey);
+
+impl Drop for WipingPrivateKey {
+    fn drop(&mut self) {
+        self.0.inner.non_secure_erase();
+    }
+}
 
 /// A freshly-created invitation: the shareable link plus the bookkeeping the
 /// inviter tracks to reclaim an unclaimed voucher.
@@ -190,42 +203,53 @@ impl IdentityWallet {
         // it is path-gated to the invitation sub-feature inside the provider.
         let mut voucher_key = crypto_provider.export_invitation_private_key(&path).await?;
 
-        let uri = encode_invitation_uri(&voucher_key, &proof, expiry_unix, inviter.as_ref())?;
-
-        // Scrub the exported scalar now that it lives in the (secret) URI.
-        // secp256k1's `SecretKey` has no Drop-zeroize, so wipe it explicitly —
-        // matching the resolver signer's key hygiene (review LOW-1).
+        // Build the (secret) URI, then scrub the exported scalar on BOTH the
+        // success and the encode-error path. `secp256k1::SecretKey` has no
+        // Drop-zeroize, so wipe it explicitly; scrubbing before propagating an
+        // encode failure matters most there — on that path the key never
+        // legitimately left the device, so a lingering copy is the worst kind.
+        let uri_result = encode_invitation_uri(&voucher_key, &proof, expiry_unix, inviter.as_ref());
         voucher_key.non_secure_erase();
+        let uri = uri_result?;
 
         // Persist an inviter-side invitation record for the "Sent invitations"
         // list + (future) reclaim. No secret is stored — `funding_index`
-        // re-derives the voucher key. Best-effort: the link is already valid, so
-        // a persistence failure must not fail the create.
-        let funding_index = match path.as_ref().last() {
-            Some(ChildNumber::Hardened { index }) => *index,
-            _ => 0,
-        };
-        let mut inv_cs = InvitationChangeSet::default();
-        inv_cs.invitations.insert(
-            out_point,
-            InvitationEntry {
-                out_point,
-                funding_index,
-                amount_duffs,
-                expiry_unix,
-                created_at_secs: expiry_unix.saturating_sub(MAX_INVITATION_TTL_SECS),
-                has_inviter: inviter.is_some(),
-                status: InvitationStatus::Created,
-            },
-        );
-        if let Err(e) = self
-            .persister
-            .store(crate::changeset::PlatformWalletChangeSet {
-                invitations: Some(inv_cs),
-                ..Default::default()
-            })
+        // re-derives the voucher key, so it MUST be the real hardened index.
+        // If the derivation path ever has an unexpected (non-hardened) tail,
+        // skip the record with a warning rather than persist a wrong index that
+        // would re-derive the wrong key on reclaim. Best-effort either way: the
+        // link is already valid, so neither branch fails the create.
+        if let Some(ChildNumber::Hardened {
+            index: funding_index,
+        }) = path.as_ref().last().copied()
         {
-            tracing::warn!(error = %e, "failed to persist invitation record; the link is still valid");
+            let mut inv_cs = InvitationChangeSet::default();
+            inv_cs.invitations.insert(
+                out_point,
+                InvitationEntry {
+                    out_point,
+                    funding_index,
+                    amount_duffs,
+                    expiry_unix,
+                    created_at_secs: expiry_unix.saturating_sub(MAX_INVITATION_TTL_SECS),
+                    has_inviter: inviter.is_some(),
+                    status: InvitationStatus::Created,
+                },
+            );
+            if let Err(e) = self
+                .persister
+                .store(crate::changeset::PlatformWalletChangeSet {
+                    invitations: Some(inv_cs),
+                    ..Default::default()
+                })
+            {
+                tracing::warn!(error = %e, "failed to persist invitation record; the link is still valid");
+            }
+        } else {
+            tracing::warn!(
+                "invitation funding path has an unexpected non-hardened tail; \
+                 skipping the local invitation record to avoid persisting a wrong funding index"
+            );
         }
 
         Ok(Invitation {
@@ -261,14 +285,16 @@ impl IdentityWallet {
     where
         S: Signer<IdentityPublicKey> + Send + Sync,
     {
-        // Fail fast on a stale / wrong-type / mismatched link before any network.
+        // Fail fast on a stale / wrong-type / mismatched link (and a zero clock
+        // read) before any network.
         validate_claimable(&invitation, now_unix)?;
         preflight_keys_map(&keys_map)?;
 
         // The voucher key signs the asset lock's outer ST signature (ECDSA over
-        // the credit-output pubkey hash). Convert to the SDK's `PrivateKey`.
+        // the credit-output pubkey hash). Convert to the SDK's `PrivateKey`,
+        // scrubbed on every exit path by the `WipingPrivateKey` guard.
         let network = self.sdk.network;
-        let voucher_priv = PrivateKey::new(invitation.voucher_key, network);
+        let voucher_priv = WipingPrivateKey(PrivateKey::new(invitation.voucher_key, network));
 
         let placeholder = Identity::V0(IdentityV0 {
             id: Identifier::default(),
@@ -286,7 +312,7 @@ impl IdentityWallet {
             .put_to_platform_and_wait_for_response_with_private_key(
                 &self.sdk,
                 invitation.asset_lock.clone(),
-                &voucher_priv,
+                &voucher_priv.0,
                 identity_signer,
                 settings,
             )

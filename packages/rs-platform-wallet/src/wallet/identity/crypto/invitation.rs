@@ -32,7 +32,7 @@ use zeroize::Zeroizing;
 use crate::error::PlatformWalletError;
 
 /// URI prefix for an invitation deep link. The `dashpay://invite` scheme matches
-/// the reference wallets for familiarity; the payload is our own (§7 of the spec).
+/// the reference wallets for familiarity; the payload is our own.
 const INVITATION_URI_PREFIX: &str = "dashpay://invite?data=";
 
 /// Max base58 chars of the `data=` value accepted **before** decoding (anti-DoS).
@@ -308,17 +308,26 @@ pub fn parse_invitation_uri(uri: &str) -> Result<ParsedInvitation, PlatformWalle
     })
 }
 
-/// Fail-fast validation before any network call (spec §8 Finding 5).
+/// Fail-fast validation before any network call.
 ///
-/// Rejects a link whose advisory expiry has passed, whose proof is not an
-/// InstantSend proof (per the owner's proof-type decision), or whose voucher key
-/// does not control the funded credit output — turning an otherwise opaque
-/// consensus rejection into a clear, local error. The credit-output binding is
-/// itself consensus-enforced, so this is a UX guard, not a security boundary.
+/// Rejects a link with a zero clock read, whose advisory expiry has passed,
+/// whose proof is not an InstantSend proof (per the owner's proof-type
+/// decision), or whose voucher key does not control the funded credit output —
+/// turning an otherwise opaque consensus rejection into a clear, local error.
+/// The credit-output binding is itself consensus-enforced, so this is a UX
+/// guard, not a security boundary.
 pub fn validate_claimable(
     invitation: &ParsedInvitation,
     now_unix: u32,
 ) -> Result<(), PlatformWalletError> {
+    // A zero `now` would make the `now > expiry` test below pass for any
+    // positive expiry, silently treating an expired link as fresh. Reject it up
+    // front, mirroring the create side's non-zero timestamp guard.
+    if now_unix == 0 {
+        return Err(invalid(
+            "invitation claim requires a valid clock (now_unix is zero)",
+        ));
+    }
     if now_unix > invitation.expiry_unix {
         return Err(invalid(format!(
             "invitation expired (expiry {}, now {now_unix}) — ask the sender for a new one",
@@ -521,6 +530,23 @@ mod tests {
         };
         let err = validate_claimable(&parsed, 2_000).unwrap_err();
         assert!(err.to_string().contains("expired"));
+    }
+
+    #[test]
+    fn validate_rejects_zero_clock() {
+        // A zero clock read must be rejected up front: otherwise `now(0) >
+        // expiry` is false and even a long-expired link looks claimable. Here
+        // the expiry is well in the past, so only the zero-clock guard can
+        // reject it — a regression that dropped the guard would return `Ok`.
+        let key = voucher();
+        let parsed = ParsedInvitation {
+            voucher_key: key,
+            asset_lock: instant_proof_paying_to(&key),
+            expiry_unix: 1_000,
+            inviter: None,
+        };
+        let err = validate_claimable(&parsed, 0).unwrap_err();
+        assert!(err.to_string().contains("clock"));
     }
 
     #[test]

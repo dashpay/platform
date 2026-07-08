@@ -919,7 +919,14 @@ pub struct InvitationChangeSet {
 
 impl Merge for InvitationChangeSet {
     fn merge(&mut self, other: Self) {
-        // Last write wins — later status is higher finality.
+        // Last write wins — later status is higher finality. `invitations` and
+        // `removed` merge independently with no per-key reconciliation, and the
+        // sqlite writer applies inserts before deletes, so an outpoint present
+        // in both a merged round's insert and remove sets resolves to "removed"
+        // (same hazard/mitigation as `IdentityChangeSet`: emit at most one
+        // action per key per mutation). The only current emitter,
+        // `create_invitation`, is insert-only, so this is latent until reclaim /
+        // status-sync emitters land.
         self.invitations.extend(other.invitations);
         self.removed.extend(other.removed);
     }
