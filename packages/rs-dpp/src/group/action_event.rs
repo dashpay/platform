@@ -15,13 +15,11 @@ use serde::{Deserialize, Serialize};
 #[cfg_attr(
     feature = "serde-conversion",
     derive(Serialize, Deserialize),
-    // Internal tagging with `kind`. Plain (no `$` prefix) per the rule —
-    // the wire-shape level has no other `$`-prefixed fields. Cannot use
-    // `type` because the inner `TokenEvent` already uses `type` as its own
-    // adjacent-tag discriminator (and is consensus-binary-locked, can't
-    // rename). `kind` is distinct, semantically reads naturally ("the kind
-    // is tokenEvent"), and lets us drop the `data` wrapper. Wire shape:
-    //   {"$kind": "tokenEvent", "$type": "mint", "data": [...]}
+    // Internally tagged with `$kind`. The inner `TokenEvent` is itself
+    // internally tagged with `$type`, so its fields flatten alongside `$kind`
+    // into one object. `$kind` keeps the two discriminators distinct. Wire
+    // shape, e.g.:
+    //   {"$kind": "tokenEvent", "$type": "mint", "amount": <n>, "recipient": <id>}
     serde(tag = "$kind", rename_all = "camelCase")
 )]
 #[cfg_attr(feature = "value-conversion", derive(ValueConvertible))]
