@@ -291,6 +291,10 @@ Shielded notes/balance/activity have **no read-side FFI** by design — Rust pus
 | DP-09 | Publish encrypted on-chain `contactInfo` (private contact metadata) | Platform | Thorough | ✅ |  | DIP-15 §10. `ContactDetailView` → edit **Alias** / **Note** / **Hide contact** (`dashpay.detail.aliasEdit` / `dashpay.detail.noteEdit` / `dashpay.detail.hideToggle`) → `saveContactInfo` → `platform_wallet_set_dashpay_contact_info_with_signer` (ECB `encToUserId` + CBC `privateData`). These fields are locally cached **and** published encrypted to Platform once the identity has **≥2 established contacts** (stated in the in-app footer) → outcomes `.published` / `.deferredUntilTwoContacts` / `.skippedWatchOnly`. |
 | DP-10 | Incoming-payment backfill rescan (restore-from-seed / pre-watch window) | Cross | Manual | ✅ | regression | DIP-15 §8.7 / §12.6 (on the DIP-16 SPV base). No UI trigger — automatic in DashPay sync: `reconcile_dashpay_rescan` lowers SPV `synced_height` to `min($coreHeightCreatedAt)` across new receival contacts so the filter manager backfills. Pass: a DashPay payment that landed on a contact's address **before** it was watched (restore-from-seed / second device / the offline-accept→pay window) appears after restore + SPV sync. Environment-limited (must construct the skew window); the regression pin for the §12.6 payment-loss gap. |
 | DP-11 | DashPay request → accept → payment, both endpoints on device | Platform | Thorough | ✅ | multiwallet | A's identity sends a contact request (`DP-01`) to B's; switch to wallet B's identity and accept (`DP-02`); then pay (`DP-03`). Full bidirectional loop entirely local. |
+| DP-12 | Create invitation (DIP-13) | Cross | Common | 🔌 | funding | DashPay → **Create invitation** (planned `dashpay.invite.create`, beside "Add me QR" in `DashPayProfileView`) → amount entry + **"send a contact request back to me"** checkbox → `createInvitation` → `platform_wallet_create_invitation`. Builds an **InstantSend** asset-lock voucher at the DIP-13 invitation funding path (`3'`), amount Rust-capped at `MAX_INVITATION_DUFFS`, and returns a `dashpay://invite?data=…` link rendered as a QR + share sheet. Builds an **L1 asset lock** → needs the Core SPV client running + **testnet funds** (fund via Wallet → Receive → "request from testnet"). The link embeds a one-time voucher **private key** — a bearer credential; the UI must not log it and should flag the pasteboard sensitive. `🔌` until the UI lands. |
+| DP-13 | Claim invitation (DIP-13) | Platform | Common | 🔌 |  | Paste/scan a `dashpay://invite` link → claim sheet (planned `dashpay.invite.claim`, mirroring `AddViaQRSheet`) → `claimInvitation` → `platform_wallet_claim_invitation`. Registers a **new identity for the invitee funded by the imported voucher** (no L1 Dash on the invitee side; the asset-lock signature uses the imported voucher key). If the link carries inviter info, prompt **"establish contact with \<sender\>?"** → on confirm, send the existing contact request (`DP-01` path). New identity lands in Identities; optional contact in Contacts. `🔌` until the UI lands. |
+| DP-14 | Invite → claim two-wallet e2e | Cross | Thorough | 🔌 | multiwallet | The feature's acceptance gate. Wallet A (funded, SPV running) creates an invitation (`DP-12`); wallet B (no funds) claims it (`DP-13`) → B gains a funded identity with no L1 Dash; if the inviter opted into the bootstrap **and** the invitee confirms, the contact establishes on both ends (cf. `DP-11`). Requires testnet funding + both wallets on the same network. `🔌` until the UI lands. |
+| DP-15 | Reject malformed / reused / expired invitation | Platform | Uncommon | 🔌 |  | Negative paths all fail loudly with a clear message and no side effects: a malformed link (wrong scheme / non-base58 / truncated), a **reused** link (asset lock already consumed → deterministic "invitation already used"), and a **past-expiry** link (`validate_claimable` refuses before any network call). `🔌` until the UI lands. |
 
 ### 4.11 System / Protocol / Diagnostics — `Domain=System`
 
@@ -349,12 +353,12 @@ Each row's **primary home** is its §4 section, but a few rows are cross-cutting
 - **Document** — `DOC-01..15`
 - **Token** — `TOK-01..20`
 - **Shielded** — `SH-01..16`, `CORE-21`
-- **DashPay** — `DP-01..11`
+- **DashPay** — `DP-01..15` (`DP-12..15` = DIP-13 invitations, `🔌` until the UI lands)
 - **System / Diagnostics** — `SYS-01..08`
 
 **By tag (cross-cutting, the Tags column):**
 
-- **multiwallet** — `CORE-14..23`, `ID-14`, `ID-15`, `TOK-17`, `DPNS-08`, `DP-11`, `DOC-15`, `SH-14`, `SH-15`, `SH-16`, `SYS-07`, `SYS-08`
+- **multiwallet** — `CORE-14..23`, `ID-14`, `ID-15`, `TOK-17`, `DPNS-08`, `DP-11`, `DP-14`, `DOC-15`, `SH-14`, `SH-15`, `SH-16`, `SYS-07`, `SYS-08`
 - **group** — `TOK-15`, `TOK-16`, `TOK-18`, `TOK-19`, `TOK-20`
 - **contested** — `DPNS-05`, `DPNS-08`, `VOTE-01..07`
 - **withdrawal** — `ID-10`, `ADDR-04`, `SH-08`, `SH-16`
