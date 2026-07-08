@@ -620,18 +620,15 @@ enum TokenActionResolver {
         if token.isPaused {
             return .denied(reason: "Token is paused")
         }
-        // Wave 1: PersistentToken doesn't carry the configured purchase
-        // price. `TokenPurchaseActionView.priceKnown` is hard-coded
-        // `false` until that field lands, so the Buy button is *always*
-        // disabled — routing the user to a permanently-broken screen
-        // is dishonest. Deny here with the same reason the action view
-        // shows. When the price field lands on PersistentToken, this
-        // becomes a real conditional check; until then it short-circuits.
-        // TODO: surface direct-purchase price on PersistentToken and
-        // gate this row on it (and pre-fill the form's total cost).
+        // The token has direct-purchase pricing rules and isn't paused, so
+        // the row is tappable. `TokenPurchaseActionView` fetches the
+        // configured price on appear (`getTokenDirectPurchasePrices`) and
+        // computes the buyer's total cost client-side — including the
+        // "no price configured" case — so the price no longer needs to be
+        // pre-resolved here to keep the user off a broken screen.
         _ = identity
         _ = contract
-        return .denied(reason: "Direct-purchase price not available locally yet")
+        return .allowed
     }
 }
 

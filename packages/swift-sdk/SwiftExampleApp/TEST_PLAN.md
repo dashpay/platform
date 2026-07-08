@@ -234,7 +234,7 @@ All token actions support single-signer **and** group (propose / co-sign) modes 
 |---|---|---|---|---|---|---|
 | TOK-01 | View token balances / details / search | Platform | Common | ✅ | read-only | `TokenDetailsView`, `TokensView`, `TokenSearchView`. |
 | TOK-02 | Transfer token | Platform | Common | ✅ |  | `TokenTransferActionView` → `wallet.tokenTransfer`. |
-| TOK-03 | Direct purchase token | Platform | Common | ✅ |  | `TokenPurchaseActionView` → `wallet.tokenPurchase`. |
+| TOK-03 | Direct purchase token | Platform | Common | ✅ |  | `TokenPurchaseActionView` → `wallet.tokenPurchase`. Fetches the configured price via `getTokenDirectPurchasePrices` (canonical id from `calculateTokenId`), models it as `TokenDirectPurchasePricing`, and computes `expectedTotalCost` client-side with Drive's tier rule so Buy enables only for a purchasable amount. |
 | TOK-04 | Token queries (statuses / prices / contract info / supply / distributions) | Platform | Common | ✅ | read-only | `PlatformQueriesView` token category → `dash_sdk_token_get_*`. |
 | TOK-05 | Mint (issuance) | Platform | Thorough | ✅ |  | `TokenMintActionView` → `wallet.tokenMint`. |
 | TOK-06 | Burn | Platform | Thorough | ✅ |  | `TokenBurnActionView` → `wallet.tokenBurn`. |
