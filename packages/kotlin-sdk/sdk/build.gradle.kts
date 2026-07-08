@@ -3,7 +3,11 @@ plugins {
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.ksp)
+    `maven-publish`
 }
+
+group = "org.dashfoundation"
+version = project.findProperty("sdkVersion")?.toString() ?: "0.1.0-SNAPSHOT"
 
 android {
     namespace = "org.dashfoundation.dashsdk"
@@ -35,6 +39,12 @@ android {
     // libdash_sdk_jni.so is produced by ../build_android.sh (cargo-ndk) into
     // src/main/jniLibs/<abi>/ — AGP packages it from there. NDK r28 emits
     // 16 KB-aligned ELF segments by default (Android 15+ requirement).
+    publishing {
+        singleVariant("release") {
+            withSourcesJar()
+        }
+    }
+
     packaging {
         jniLibs {
             useLegacyPackaging = false
@@ -82,4 +92,34 @@ dependencies {
     androidTestImplementation(libs.androidx.test.runner)
     androidTestImplementation(libs.espresso.core)
     androidTestImplementation(libs.room.testing)
+}
+
+// Publishes the release AAR (incl. libdash_sdk_jni.so if ../build_android.sh ran first) with a
+// POM carrying the Room/DataStore/Biometric api dependencies.
+// Local: ./gradlew :sdk:publishToMavenLocal   Coordinates: org.dashfoundation:dash-sdk-android:<version>
+// Override the version with -PsdkVersion=x.y.z (defaults to 0.1.0-SNAPSHOT).
+afterEvaluate {
+    publishing {
+        publications {
+            create<MavenPublication>("release") {
+                from(components["release"])
+                groupId = "org.dashfoundation"
+                artifactId = "dash-sdk-android"
+                pom {
+                    name.set("Dash Platform Kotlin SDK")
+                    description.set(
+                        "Kotlin SDK for Dash Core (L1 SPV) and Dash Platform " +
+                            "(identities, DPNS, DashPay, shielded balances)"
+                    )
+                    url.set("https://github.com/dashpay/platform")
+                    licenses {
+                        license {
+                            name.set("MIT License")
+                            url.set("https://github.com/dashpay/platform/blob/master/LICENSE")
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
