@@ -2435,8 +2435,8 @@ mod tests {
                     .collect(),
             );
 
-            let contract = DataContract::from_value(val, true, platform_version)
-                .expect("from_value");
+            let contract =
+                DataContract::from_value(val, true, platform_version).expect("from_value");
 
             let create = DataContractCreateTransition::new_from_data_contract(
                 contract,
@@ -2822,8 +2822,8 @@ mod tests {
 
             val["description"] = Value::Text(description.to_string());
 
-            let contract = DataContract::from_value(val, true, platform_version)
-                .expect("from_value");
+            let contract =
+                DataContract::from_value(val, true, platform_version).expect("from_value");
 
             let create = DataContractCreateTransition::new_from_data_contract(
                 contract,

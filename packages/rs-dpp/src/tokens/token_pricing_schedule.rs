@@ -28,10 +28,7 @@ use std::fmt::{self, Display, Formatter};
 #[cfg_attr(
     feature = "serde-conversion",
     derive(Serialize, Deserialize),
-    serde(
-        into = "TokenPricingScheduleRepr",
-        from = "TokenPricingScheduleRepr"
-    )
+    serde(into = "TokenPricingScheduleRepr", from = "TokenPricingScheduleRepr")
 )]
 pub enum TokenPricingSchedule {
     /// A single flat price in credits for all token amounts.

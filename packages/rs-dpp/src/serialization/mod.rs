@@ -5,11 +5,11 @@ pub mod json;
 // `block::extended_block_info::ExtendedBlockInfo`), so it must resolve in every
 // feature configuration. It only depends on `serde` and `base64`, both
 // non-optional dependencies.
+#[cfg(feature = "serde-conversion")]
+pub mod dashcore;
 pub mod serde_bytes;
 #[cfg(feature = "serde-conversion")]
 pub mod serde_bytes_var;
-#[cfg(feature = "serde-conversion")]
-pub mod dashcore;
 pub(crate) mod serialization_traits;
 
 pub use dpp_json_convertible_derive::json_safe_fields;

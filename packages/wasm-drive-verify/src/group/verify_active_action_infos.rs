@@ -343,7 +343,10 @@ mod tests {
         // Internally tagged: `$kind` (GroupActionEvent) + `$type` (TokenEvent),
         // flattened into one object. Amount stays a typed `U64` (-> BigInt),
         // recipient a typed `Identifier` (-> Uint8Array) at serialize time.
-        assert_eq!(field(&v, "$kind").and_then(Value::as_text), Some("tokenEvent"));
+        assert_eq!(
+            field(&v, "$kind").and_then(Value::as_text),
+            Some("tokenEvent")
+        );
         assert_eq!(field(&v, "$type").and_then(Value::as_text), Some("mint"));
         assert_eq!(field(&v, "amount"), Some(&Value::U64(1234)));
         assert!(matches!(field(&v, "recipient"), Some(Value::Identifier(_))));
@@ -375,10 +378,7 @@ mod tests {
                         if matches!(val, Value::U64(_)) && matches!(k, Value::U64(_)) {
                             panic!("u64 map key survived normalization: {k:?}");
                         }
-                        assert!(
-                            matches!(k, Value::Text(_)),
-                            "non-string map key: {k:?}"
-                        );
+                        assert!(matches!(k, Value::Text(_)), "non-string map key: {k:?}");
                         *found = true;
                         assert_all_keys_text(val, found);
                     }

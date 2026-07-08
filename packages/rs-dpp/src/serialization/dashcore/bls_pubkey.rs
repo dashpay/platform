@@ -155,10 +155,7 @@ impl<'de> Visitor<'de> for BlsPublicKeyVisitor {
             // bytes; reject as soon as a hostile payload exceeds that rather
             // than allocating/parsing an arbitrarily long sequence first.
             if bytes.len() == COMPRESSED_G1_LEN {
-                return Err(serde::de::Error::invalid_length(
-                    bytes.len() + 1,
-                    &self,
-                ));
+                return Err(serde::de::Error::invalid_length(bytes.len() + 1, &self));
             }
             bytes.push(b);
         }

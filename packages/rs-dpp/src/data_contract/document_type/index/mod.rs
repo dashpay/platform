@@ -2252,7 +2252,10 @@ mod json_convertible_tests {
         use crate::serialization::JsonConvertible;
         let original = ContestedIndexFieldMatch::Regex(LazyRegex::new("^dash$".to_string()));
         let json = original.to_json().expect("to_json");
-        assert_eq!(json, serde_json::json!({ "$type": "regex", "value": "^dash$" }));
+        assert_eq!(
+            json,
+            serde_json::json!({ "$type": "regex", "value": "^dash$" })
+        );
         let recovered = ContestedIndexFieldMatch::from_json(json).expect("from_json");
         match recovered {
             ContestedIndexFieldMatch::Regex(r) => assert_eq!(r.as_str(), "^dash$"),

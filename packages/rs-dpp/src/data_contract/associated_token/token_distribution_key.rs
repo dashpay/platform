@@ -46,8 +46,12 @@ pub enum TokenDistributionTypeWithResolvedRecipient {
 #[derive(Serialize, Deserialize)]
 #[serde(tag = "$type", rename_all = "camelCase")]
 enum TokenDistributionTypeWithResolvedRecipientRepr {
-    PreProgrammed { value: Identifier },
-    Perpetual { value: TokenDistributionResolvedRecipient },
+    PreProgrammed {
+        value: Identifier,
+    },
+    Perpetual {
+        value: TokenDistributionResolvedRecipient,
+    },
 }
 
 impl From<TokenDistributionTypeWithResolvedRecipient>
@@ -122,16 +126,13 @@ enum TokenDistributionInfoRepr {
 impl From<TokenDistributionInfo> for TokenDistributionInfoRepr {
     fn from(m: TokenDistributionInfo) -> Self {
         match m {
-            TokenDistributionInfo::PreProgrammed(timestamp, identity) => {
-                Self::PreProgrammed {
-                    timestamp,
-                    identity,
-                }
-            }
-            TokenDistributionInfo::Perpetual(moment, recipient) => Self::Perpetual {
-                moment,
-                recipient,
+            TokenDistributionInfo::PreProgrammed(timestamp, identity) => Self::PreProgrammed {
+                timestamp,
+                identity,
             },
+            TokenDistributionInfo::Perpetual(moment, recipient) => {
+                Self::Perpetual { moment, recipient }
+            }
         }
     }
 }

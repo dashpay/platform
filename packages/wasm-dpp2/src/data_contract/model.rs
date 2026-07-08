@@ -292,8 +292,9 @@ impl DataContractWasm {
         let value: JsValue = value.into();
         let platform_value: Value = serialization::platform_value_from_object(&value)?;
 
-        let contract = DataContract::from_value(platform_value, full_validation, &platform_version.into())
-            .map_err(WasmDppError::from)?;
+        let contract =
+            DataContract::from_value(platform_value, full_validation, &platform_version.into())
+                .map_err(WasmDppError::from)?;
 
         Ok(DataContractWasm(contract))
     }
