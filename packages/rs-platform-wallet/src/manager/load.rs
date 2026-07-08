@@ -25,7 +25,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// registered into the manager.
     ///
     /// Core state arrives as a full keyless snapshot
-    /// ([`ClientWalletStartState::core_wallet_info`]) — consumed directly,
+    /// ([`ClientWalletStartState::wallet_info`]) — consumed directly,
     /// preserving per-account UTXO/record attribution and exact pool
     /// contents — after its `wallet_id`/`network`/account-set are
     /// validated against the row.
@@ -119,7 +119,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 // the row's birth height is not needed on this path.
                 birth_height: _,
                 account_manifest,
-                core_wallet_info,
+                wallet_info,
                 identity_manager,
                 unused_asset_locks,
             } = wallet_state;
@@ -167,7 +167,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             // the exact pool contents (derived-but-unused addresses stay in
             // the SPV watch set), and per-index used flags.
             let wallet_info = {
-                let mut info = *core_wallet_info;
+                let mut info = *wallet_info;
                 // The snapshot must describe this row's wallet and its
                 // account set must agree with the manifest that built the
                 // watch-only wallet above. Either mismatch is a wrong-row
@@ -406,7 +406,7 @@ mod rollback_tests {
                 network: key_wallet::Network::Testnet,
                 birth_height: 1,
                 account_manifest,
-                core_wallet_info: Box::new(info),
+                wallet_info: Box::new(info),
                 identity_manager: Default::default(),
                 unused_asset_locks: Default::default(),
             },

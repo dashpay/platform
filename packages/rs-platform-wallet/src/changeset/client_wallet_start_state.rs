@@ -47,7 +47,7 @@ pub struct ClientWalletStartState {
     /// the manifest — preserving per-account attribution, the full SPV
     /// watch set, and pool used-state verbatim, without re-deriving
     /// anything. The FFI/iOS persister populates this.
-    pub core_wallet_info: Box<ManagedWalletInfo>,
+    pub wallet_info: Box<ManagedWalletInfo>,
     /// Lean snapshot of this wallet's
     /// [`IdentityManager`](crate::wallet::identity::IdentityManager).
     pub identity_manager: IdentityManagerStartState,

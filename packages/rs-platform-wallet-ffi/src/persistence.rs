@@ -3563,7 +3563,7 @@ fn build_wallet_start_state(
         network,
         birth_height: entry.birth_height,
         account_manifest,
-        core_wallet_info: Box::new(wallet_info),
+        wallet_info: Box::new(wallet_info),
         identity_manager,
         unused_asset_locks,
     };
