@@ -23,6 +23,12 @@ final class AppUIState: ObservableObject {
     /// IdentityDetailView's "Contacts" row jumps to the DashPay tab with
     /// that identity pre-selected.
     @Published var selectedTab: RootTab = .sync
+
+    /// A `dashpay://invite?data=…` link opened via `.onOpenURL`, awaiting the
+    /// DashPay tab to pick it up and present the claim sheet pre-filled. Cleared
+    /// by the tab once consumed. (The URL embeds a one-time voucher key — treat
+    /// it as a secret; never log it.)
+    @Published var pendingInviteURL: String?
 }
 
 @main
@@ -126,6 +132,14 @@ struct SwiftExampleAppApp: App {
                 .environmentObject(transitionState)
                 .environmentObject(appUIState)
                 .environment(\.modelContext, modelContainer.mainContext)
+                .onOpenURL { url in
+                    // DashPay invitation deep link: route to the DashPay tab and
+                    // hand the URL to the claim sheet. The URL carries a bearer
+                    // voucher key, so it is NOT logged here.
+                    guard url.scheme?.lowercased() == "dashpay" else { return }
+                    appUIState.selectedTab = .dashpay
+                    appUIState.pendingInviteURL = url.absoluteString
+                }
                 .task {
                     SDKLogger.log("🚀 SwiftExampleApp: Starting initialization...", minimumLevel: .medium)
                     await bootstrap()

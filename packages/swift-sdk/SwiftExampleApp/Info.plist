@@ -30,6 +30,21 @@
 	<key>NSCameraUsageDescription</key>
 	<string>The camera is used to scan Dash address QR codes.</string>
 
+	<!-- Custom URL scheme for DashPay invitation deep links
+	     (dashpay://invite?data=…). Opening such a link routes to the DashPay
+	     tab and pre-fills the claim sheet. -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>$(PRODUCT_BUNDLE_IDENTIFIER).dashpay-invite</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>dashpay</string>
+			</array>
+		</dict>
+	</array>
+
 	<!-- UIKit / Scene config (auto-generated equivalents). -->
 	<key>UIApplicationSceneManifest</key>
 	<dict>

@@ -13,6 +13,7 @@ struct DashPayTabView: View {
     @Binding var selectedTab: RootTab
 
     @EnvironmentObject var walletManager: PlatformWalletManager
+    @EnvironmentObject private var appUIState: AppUIState
     @EnvironmentObject var appState: AppState
     @Environment(\.modelContext) private var modelContext
     @Environment(\.scenePhase) private var scenePhase
@@ -34,6 +35,7 @@ struct DashPayTabView: View {
     @State private var showAddContact = false
     @State private var showAddViaQR = false
     @State private var showClaimInvitation = false
+    @State private var claimInitialURI = ""
 
     /// Optimistic overlay for *send*: contact ids whose request
     /// was just broadcast but whose outgoing row hasn't landed via
@@ -186,9 +188,22 @@ struct DashPayTabView: View {
                 }
                 .sheet(isPresented: $showClaimInvitation) {
                     if let walletId = claimWalletId {
-                        ClaimInvitationSheet(walletId: walletId, network: network)
-                            .environmentObject(walletManager)
+                        ClaimInvitationSheet(
+                            walletId: walletId,
+                            network: network,
+                            initialURI: claimInitialURI
+                        )
+                        .environmentObject(walletManager)
                     }
+                }
+                .onChange(of: appUIState.pendingInviteURL) { _, newValue in
+                    // A dashpay://invite link opened via the app's .onOpenURL:
+                    // pre-fill + present the claim sheet, then clear the pending
+                    // URL so it isn't re-triggered.
+                    guard let urlString = newValue else { return }
+                    claimInitialURI = urlString
+                    showClaimInvitation = true
+                    appUIState.pendingInviteURL = nil
                 }
                 .sheet(isPresented: $showAddContact) {
                     if let identity = activeIdentity {
