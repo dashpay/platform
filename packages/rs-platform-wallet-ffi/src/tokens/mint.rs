@@ -3,8 +3,10 @@
 use std::ffi::CStr;
 use std::os::raw::c_char;
 
+use dash_sdk::platform::tokens::transitions::MintResult;
 use rs_sdk_ffi::{SignerHandle, VTableSigner};
 
+use super::balances_json::{single_token_balance_to_json_cstring, write_empty_balances_json};
 use super::group_info::decode_group_info;
 use crate::check_ptr;
 use crate::error::*;
@@ -14,6 +16,17 @@ use crate::types::read_identifier;
 use crate::{unwrap_option_or_return, unwrap_result_or_return};
 
 /// Mint `amount` of token at `token_position` on `token_contract_id`.
+///
+/// On success, `out_balances_json` is written with a heap-allocated C
+/// string holding a JSON object mapping the recipient identity's base58
+/// id to its proof-verified post-mint balance, encoded as a decimal
+/// **string** (u64 exceeds JSON's safe-integer range), e.g.
+/// `{"<recipientBase58>": "<newBalance>"}`. History-tracking / group
+/// tokens carry no per-identity balance in the proof result, so an empty
+/// object `{}` is written. The caller owns the string and must free it
+/// via [`platform_wallet_string_free`](crate::types::platform_wallet_string_free).
+/// On error nothing is written through `out_balances_json` (it is set to
+/// null first) and the failure surfaces via the returned result.
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
 pub unsafe extern "C" fn platform_wallet_token_mint(
@@ -30,8 +43,11 @@ pub unsafe extern "C" fn platform_wallet_token_mint(
     group_info_action_is_proposer: bool,
     _signing_key_id: u32,
     signer_handle: *mut SignerHandle,
+    out_balances_json: *mut *mut c_char,
 ) -> PlatformWalletFFIResult {
     check_ptr!(signer_handle);
+    check_ptr!(out_balances_json);
+    *out_balances_json = std::ptr::null_mut();
 
     let id = unwrap_result_or_return!(read_identifier(identity_id));
     let contract_id = unwrap_result_or_return!(read_identifier(token_contract_id));
@@ -85,6 +101,45 @@ pub unsafe extern "C" fn platform_wallet_token_mint(
         })
     });
     let result = unwrap_option_or_return!(option);
-    unwrap_result_or_return!(result);
+    let mint_result = unwrap_result_or_return!(result);
+
+    // Map the proof-verified outcome to the balances JSON, mirroring the
+    // burn path. A standard mint carries the recipient's new balance
+    // straight from the proof (`TokenBalance`), so it is always keyed
+    // correctly. A group-authorized mint, once the action CLOSES, carries
+    // only the raw balance — not the identity it belongs to — so we can
+    // only key it when the caller passed an explicit `recipient`. A
+    // `recipient == None` group mint resolves to the token's configured
+    // `newTokensDestinationIdentity` on the Rust/DPP side, an identity we
+    // do not have here; keying it under the signer would upsert the wrong
+    // local row, so we emit an empty object and let the periodic sync
+    // reconcile that holder. The document variants and an action still
+    // awaiting co-signatures (`balance == None`) likewise persist nothing.
+    match mint_result {
+        MintResult::TokenBalance(recipient_id, new_balance) => {
+            let c_str = unwrap_result_or_return!(single_token_balance_to_json_cstring(
+                &recipient_id,
+                new_balance
+            ));
+            *out_balances_json = c_str;
+        }
+        MintResult::GroupActionWithBalance(_, _, Some(new_balance)) => {
+            if let Some(target) = recipient {
+                let c_str = unwrap_result_or_return!(single_token_balance_to_json_cstring(
+                    &target,
+                    new_balance
+                ));
+                *out_balances_json = c_str;
+            } else {
+                *out_balances_json = unwrap_result_or_return!(write_empty_balances_json());
+            }
+        }
+        MintResult::HistoricalDocument(_)
+        | MintResult::GroupActionWithDocument(_, _)
+        | MintResult::GroupActionWithBalance(_, _, None) => {
+            *out_balances_json = unwrap_result_or_return!(write_empty_balances_json());
+        }
+    }
+
     PlatformWalletFFIResult::ok()
 }
