@@ -47,12 +47,10 @@ pub use manager::identity_sync::{
     DEFAULT_SYNC_INTERVAL_SECS as IDENTITY_SYNC_DEFAULT_INTERVAL_SECS,
     MAX_TOKENS_PER_BALANCE_BATCH as IDENTITY_SYNC_MAX_TOKENS_PER_BATCH,
 };
-pub use manager::load_outcome::{LoadOutcome, SkipReason};
 pub use manager::platform_address_sync::{
     PlatformAddressSyncManager, PlatformAddressSyncSummary, WalletSyncOutcome,
     DEFAULT_SYNC_INTERVAL_SECS,
 };
-pub use manager::rehydrate;
 pub use manager::PlatformWalletManager;
 pub use spv::SpvRuntime;
 pub use wallet::asset_lock::manager::AssetLockManager;

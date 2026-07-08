@@ -375,7 +375,6 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         let crate::changeset::ClientStartState {
             mut platform_addresses,
             wallets: _,
-            skipped: _,
             #[cfg(feature = "shielded")]
                 shielded: _,
         } = match platform_wallet.load_persisted() {

@@ -171,6 +171,24 @@ fn samples() -> Vec<WalletStorageError> {
             value: u64::MAX,
             target: SafeCastTarget::U64,
         },
+        WalletStorageError::MissingAccount {
+            wallet_id: [3u8; 32],
+        },
+        WalletStorageError::AccountRecordInvalid {
+            e: key_wallet::error::Error::WatchOnly,
+        },
+        WalletStorageError::AccountRejected {
+            cause: "unknown account_type".into(),
+        },
+        WalletStorageError::RehydrationPoolMismatch {
+            expected: 2,
+            found: 1,
+        },
+        WalletStorageError::RehydrationPoolTypeMismatch {
+            position: 0,
+            expected: key_wallet::managed_account::address_pool::AddressPoolType::External,
+            found: key_wallet::managed_account::address_pool::AddressPoolType::Internal,
+        },
         WalletStorageError::FlushRetryable {
             wallet_id: [0xAB; 32],
             source: SqlErr::SqliteFailure(
@@ -253,6 +271,17 @@ fn tc_p2_005_is_transient_table() {
             WalletStorageError::IntegerOverflow { .. } => (false, "integer_overflow"),
             WalletStorageError::AccountRegistrationEntryMismatch => {
                 (false, "account_registration_entry_mismatch")
+            }
+            WalletStorageError::MissingAccount { .. } => {
+                (false, "missing_account_registration_entry")
+            }
+            WalletStorageError::AccountRecordInvalid { .. } => (false, "account_record_invalid"),
+            WalletStorageError::AccountRejected { .. } => (false, "account_rejected"),
+            WalletStorageError::RehydrationPoolMismatch { .. } => {
+                (false, "rehydration_pool_mismatch")
+            }
+            WalletStorageError::RehydrationPoolTypeMismatch { .. } => {
+                (false, "rehydration_pool_type_mismatch")
             }
         }
     }

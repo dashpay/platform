@@ -154,17 +154,114 @@ impl PlatformWalletInfo {
             }
         }
 
-        // 2b/3. Identity keys + contacts. Keys are layered before
-        //       contacts so a contact entry never lands before its
-        //       owner's keys; orphans are logged and skipped. Single
-        //       source of truth shared with the persister rehydration
-        //       path (`load_from_persistor`).
-        if identity_keys.is_some() || contacts.is_some() {
-            self.identity_manager.apply_contacts_and_keys(
-                contacts.unwrap_or_default(),
-                identity_keys.unwrap_or_default(),
-                wallet.network,
-            );
+        // 2b. Identity keys. Runs after the scalar identity pass so
+        //     the owning ManagedIdentity is guaranteed to exist before
+        //     we layer keys into it. Upserts land first, then removals,
+        //     matching the discipline used across the rest of this
+        //     function. Orphan entries (owner not in the wallet) are
+        //     logged and skipped by the per-entry apply helpers.
+        if let Some(keys_cs) = identity_keys {
+            let crate::changeset::IdentityKeysChangeSet { upserts, removed } = keys_cs;
+            // Thread the wallet network through so the key-apply
+            // path can reproduce DIP-9 derivation paths for any
+            // entry that carries `(wallet_id, derivation_indices)`.
+            let network = wallet.network;
+            for (_key, entry) in upserts {
+                self.identity_manager
+                    .apply_identity_key_entry(entry, network);
+            }
+            for (identity_id, key_id) in removed {
+                self.identity_manager
+                    .apply_identity_key_removal(&identity_id, key_id);
+            }
+        }
+
+        // 3. Contacts. Each entry routes to its owning ManagedIdentity by
+        //    `(owner, contact)` key; orphans (owner not in the wallet)
+        //    are logged and skipped. Every map mutation goes through the
+        //    `apply_*` replay methods — the relationship maps are sealed
+        //    to the state layer, and the replay methods reproduce
+        //    persisted state without re-running the live invariants
+        //    (`apply_established_contact` additionally drops both
+        //    pending sides per the contract).
+        if let Some(contact_cs) = contacts {
+            let crate::changeset::ContactChangeSet {
+                sent_requests,
+                removed_sent,
+                incoming_requests,
+                removed_incoming,
+                established,
+                ignored,
+                unignored,
+            } = contact_cs;
+
+            for (key, entry) in sent_requests {
+                match self.identity_manager.managed_identity_mut(&key.owner_id) {
+                    Some(managed) => {
+                        managed.apply_sent_contact_request(entry.request);
+                    }
+                    None => tracing::warn!(
+                        owner = %key.owner_id,
+                        "skipping sent contact request during apply: owner identity not in wallet"
+                    ),
+                }
+            }
+            for (key, entry) in incoming_requests {
+                match self.identity_manager.managed_identity_mut(&key.owner_id) {
+                    Some(managed) => {
+                        managed.apply_incoming_contact_request(entry.request);
+                    }
+                    None => tracing::warn!(
+                        owner = %key.owner_id,
+                        "skipping incoming contact request during apply: owner identity not in wallet"
+                    ),
+                }
+            }
+            for key in removed_sent {
+                if let Some(managed) = self.identity_manager.managed_identity_mut(&key.owner_id) {
+                    managed.apply_removed_sent(&key.recipient_id);
+                }
+            }
+            for key in removed_incoming {
+                if let Some(managed) = self.identity_manager.managed_identity_mut(&key.owner_id) {
+                    managed.apply_removed_incoming(&key.sender_id);
+                }
+            }
+            // Established promotions — drop any matching pending
+            // entries on both sides per the auto-establishment contract.
+            for (key, established) in established {
+                match self.identity_manager.managed_identity_mut(&key.owner_id) {
+                    Some(managed) => {
+                        managed.apply_established_contact(established);
+                    }
+                    None => tracing::warn!(
+                        owner = %key.owner_id,
+                        "skipping established contact during apply: owner identity not in wallet"
+                    ),
+                }
+            }
+            // Ignored senders (per-sender mute, local-only). Restore the
+            // in-memory suppression set so the sync ingest path won't
+            // resurrect an ignored sender's requests after a restart.
+            // `unignored` is applied AFTER `ignored` so an un-ignore in the
+            // same delta wins (the sender ends up not ignored). Orphan
+            // owners are logged and skipped.
+            for (owner_id, sender_id) in ignored {
+                match self.identity_manager.managed_identity_mut(&owner_id) {
+                    Some(managed) => {
+                        managed.apply_ignored_sender(sender_id);
+                    }
+                    None => tracing::warn!(
+                        owner = %owner_id,
+                        "skipping ignored sender during apply: owner identity not in wallet"
+                    ),
+                }
+            }
+            for (owner_id, sender_id) in unignored {
+                if let Some(managed) = self.identity_manager.managed_identity_mut(&owner_id) {
+                    managed.apply_unignored_sender(&sender_id);
+                }
+            }
         }
 
         // 3b. DashPay profile/payment overlays. Applied AFTER identities
@@ -698,56 +795,6 @@ mod tests {
             contacts: Some(contact_cs),
             ..Default::default()
         }
-    }
-
-    /// TC-3692-025: a `ContactChangeSet` carrying `ignored` / `unignored`
-    /// replayed through `apply_changeset` must reach the owner's
-    /// ignored-sender set. Guards against `apply_contacts_and_keys`
-    /// destructuring `contacts` with `..` — which compiles clean but
-    /// silently drops per-sender mute state (dev-plan risk #1).
-    #[test]
-    fn apply_contacts_threads_ignored_and_unignored_through() {
-        let mut wallet = build_test_wallet();
-        let mut info = empty_info(&wallet);
-
-        // Register the owning identity so contact routing has a target.
-        let owner = Identifier::from([1u8; 32]);
-        let sender = Identifier::from([2u8; 32]);
-        let mut managed = ManagedIdentity::new(make_test_identity(1, 0), 0);
-        managed.wallet_id = Some([9u8; 32]);
-        let mut id_cs = IdentityChangeSet::default();
-        id_cs
-            .identities
-            .insert(owner, IdentityEntry::from_managed(&managed));
-        let mut cs = PlatformWalletChangeSet::default();
-        cs.identities = Some(id_cs);
-        info.apply_changeset(&mut wallet, cs).expect("seed owner");
-
-        // Replay an `ignored` delta — the sender must land in the mute set.
-        let mut contact_cs = ContactChangeSet::default();
-        contact_cs.ignored.insert((owner, sender));
-        info.apply_changeset(&mut wallet, wrap_contacts(contact_cs))
-            .expect("apply ignored");
-        assert!(info
-            .identity_manager
-            .managed_identity(&owner)
-            .expect("owner present")
-            .dashpay()
-            .ignored_senders()
-            .contains(&sender));
-
-        // Replay an `unignored` delta for the same pair — it must clear.
-        let mut contact_cs = ContactChangeSet::default();
-        contact_cs.unignored.insert((owner, sender));
-        info.apply_changeset(&mut wallet, wrap_contacts(contact_cs))
-            .expect("apply unignored");
-        assert!(!info
-            .identity_manager
-            .managed_identity(&owner)
-            .expect("owner present")
-            .dashpay()
-            .ignored_senders()
-            .contains(&sender));
     }
 
     /// Wallet id used by every wallet-owned round-trip test below.

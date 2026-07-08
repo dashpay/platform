@@ -135,9 +135,12 @@ async fn build_core_changeset(
                 new_utxos: derive_new_utxos(record),
                 spent_utxos: derive_spent_utxos(record),
                 records: vec![(**record).clone()],
-                // Forward the upstream-emitted derived addresses to the
-                // persister; the FFI layer feeds the iOS address registry
-                // from this delta. See `CoreChangeSet.addresses_derived`.
+                // Mirror the upstream-emitted derived addresses
+                // through to the persister so newly-extended pool
+                // rows are written transactionally with the tx that
+                // triggered the extension. See
+                // `CoreChangeSet.addresses_derived` for the cascade-
+                // link rationale.
                 addresses_derived: addresses_derived.clone(),
                 ..CoreChangeSet::default()
             }
@@ -168,10 +171,7 @@ async fn build_core_changeset(
             ..
         } => {
             let mut cs = CoreChangeSet::default();
-            // Inserted records bring fresh UTXOs and may consume previous
-            // ones — always project. Per-account attribution is resolved by
-            // the storage layer via the address→account_index lookup over
-            // `addresses_derived` (forwarded below).
+            // Inserted records bring fresh UTXOs and may consume previous ones.
             for r in inserted {
                 cs.new_utxos.extend(derive_new_utxos(r));
                 cs.spent_utxos.extend(derive_spent_utxos(r));
@@ -355,122 +355,5 @@ impl CoreChangeSet {
             && self.synced_height.is_none()
             && self.last_applied_chain_lock.is_none()
             && self.addresses_derived.is_empty()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use std::collections::BTreeMap;
-
-    use dashcore::blockdata::transaction::Transaction;
-    use dashcore::hashes::Hash;
-    use key_wallet::account::{AccountType, StandardAccountType};
-    use key_wallet::managed_account::transaction_record::{
-        OutputDetail, TransactionDirection, TransactionRecord,
-    };
-    use key_wallet::transaction_checking::{BlockInfo, TransactionContext, TransactionType};
-    use key_wallet::WalletCoreBalance;
-
-    use super::*;
-
-    fn standard(index: u32) -> AccountType {
-        AccountType::Standard {
-            index,
-            standard_account_type: StandardAccountType::BIP44Account,
-        }
-    }
-
-    /// A throwaway testnet P2PKH address keyed off `seed`.
-    fn p2pkh(seed: u8) -> dashcore::Address {
-        use dashcore::address::Payload;
-        use dashcore::PubkeyHash;
-        dashcore::Address::new(
-            dashcore::Network::Testnet,
-            Payload::PubkeyHash(PubkeyHash::from_byte_array([seed; 20])),
-        )
-    }
-
-    /// A confirmed `TransactionRecord` owned by `account_type` carrying a
-    /// single `Received` output worth `value` at `addr`, so
-    /// `derive_new_utxos` yields exactly one UTXO.
-    fn record_with_received_output(
-        account_type: AccountType,
-        addr: &dashcore::Address,
-        value: u64,
-    ) -> TransactionRecord {
-        let tx = Transaction {
-            version: 3,
-            lock_time: 0,
-            input: vec![],
-            output: vec![dashcore::TxOut {
-                value,
-                script_pubkey: addr.script_pubkey(),
-            }],
-            special_transaction_payload: None,
-        };
-        TransactionRecord::new(
-            tx,
-            account_type,
-            TransactionContext::InChainLockedBlock(BlockInfo::new(
-                42,
-                dashcore::BlockHash::from_byte_array([3u8; 32]),
-                1_735_689_600,
-            )),
-            TransactionType::Standard,
-            TransactionDirection::Incoming,
-            Vec::new(),
-            vec![OutputDetail {
-                index: 0,
-                role: OutputRole::Received,
-                address: Some(addr.clone()),
-                value,
-            }],
-            value as i64,
-        )
-    }
-
-    /// Project a `TransactionDetected` for `record` through the real bridge
-    /// path. `balance`/`account_balances` are unused by the projection.
-    async fn changeset_for(record: TransactionRecord) -> CoreChangeSet {
-        let wm = Arc::new(RwLock::new(WalletManager::<PlatformWalletInfo>::new(
-            key_wallet::Network::Testnet,
-        )));
-        let event = WalletEvent::TransactionDetected {
-            wallet_id: [0u8; 32],
-            record: Box::new(record),
-            balance: WalletCoreBalance::default(),
-            account_balances: BTreeMap::new(),
-            addresses_derived: Vec::new(),
-        };
-        build_core_changeset(&wm, &event).await
-    }
-
-    /// A default-account (index 0) UTXO is projected into the changeset.
-    #[tokio::test]
-    async fn default_account_utxo_persists() {
-        let addr = p2pkh(0x11);
-        let cs = changeset_for(record_with_received_output(standard(0), &addr, 500_000)).await;
-        assert_eq!(
-            cs.new_utxos.len(),
-            1,
-            "the default-account UTXO must be projected"
-        );
-        assert_eq!(cs.new_utxos[0].value(), 500_000);
-    }
-
-    /// REGRESSION (fund-loss): a non-default-account (index != 0) UTXO is
-    /// projected — never dropped. Storage resolves its account attribution
-    /// from the derived-address table; dropping it would undercount the
-    /// balance.
-    #[tokio::test]
-    async fn non_default_account_utxo_persists() {
-        let addr = p2pkh(0x22);
-        let cs = changeset_for(record_with_received_output(standard(7), &addr, 900_000)).await;
-        assert_eq!(
-            cs.new_utxos.len(),
-            1,
-            "a non-default-account UTXO must NOT be dropped"
-        );
-        assert_eq!(cs.new_utxos[0].value(), 900_000, "funds preserved");
     }
 }

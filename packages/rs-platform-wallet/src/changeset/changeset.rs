@@ -1178,12 +1178,8 @@ pub struct PlatformWalletChangeSet {
     /// the merge policy (plain `Vec::extend`, dedup is the apply-side
     /// caller's job).
     pub account_registrations: Vec<AccountRegistrationEntry>,
-    /// Full address-pool snapshots: emitted once at wallet registration and
-    /// on later pool extension / used-flag flips. Incremental derivations
-    /// also arrive via `core.addresses_derived` (the `WalletEvent` bus / FFI
-    /// path). The storage persister expands these into per-index
-    /// `core_address_pool` rows (per-index `used` state + owning account for
-    /// UTXO attribution); the reader restores the used-set from them verbatim.
+    /// Address-pool snapshots emitted at wallet create (initial
+    /// gap-limit population) and on any pool extension / "used" flip.
     /// See [`AccountAddressPoolEntry`] for the merge policy.
     pub account_address_pools: Vec<AccountAddressPoolEntry>,
     /// Deferred contact-crypto ops enqueued by the seedless background sweep

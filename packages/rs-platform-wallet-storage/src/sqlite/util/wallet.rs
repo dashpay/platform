@@ -1,4 +1,4 @@
-//! Watch-only wallet reconstruction + persisted core-state application.
+//! External-signable wallet reconstruction
 //!
 //! Load is seedless — each wallet is rebuilt watch-only from its manifest and
 //! the manager consumes the carried snapshot directly, so no wrong-seed check
@@ -10,32 +10,20 @@ use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::Wallet;
 use key_wallet::Network;
 
-use crate::changeset::AccountRegistrationEntry;
-use crate::error::PlatformWalletError;
-use crate::manager::load_outcome::CorruptKind;
+use platform_wallet::changeset::{AccountRegistrationEntry, CoreChangeSet};
 
-/// Build a watch-only [`Wallet`] from the keyless account manifest, stamping
-/// `expected_wallet_id` onto the reconstructed [`AccountCollection`]. Returns
-/// [`CorruptKind`] when the row is structurally unusable; no key material
-/// crosses this function.
-///
-/// # Trust boundary
-///
-/// `expected_wallet_id` is **not** cryptographically bound to the manifest: the
-/// id hashes the *root* xpub, but only account-level xpubs are persisted, so the
-/// root cannot be recovered here to re-verify it. A well-formed but **wrong**
-/// `account_xpub` is therefore accepted — anyone able to write the backing store
-/// can swap in their own xpub under the unchanged id and silently redirect
-/// incoming funds. Closing this needs storage-layer manifest authentication (a
-/// MAC over `{wallet_id, network, manifest}`, verified fail-closed on load),
-/// tracked in the `platform-wallet-storage` crate.
-pub(super) fn build_watch_only_wallet(
+use crate::WalletStorageError;
+
+/// Build a [`Wallet`] that will be provided to the platform-wallet during rehydration.
+pub(crate) fn build_wallet(
     network: Network,
     expected_wallet_id: [u8; 32],
     manifest: &[AccountRegistrationEntry],
-) -> Result<Wallet, CorruptKind> {
+) -> Result<Wallet, WalletStorageError> {
     if manifest.is_empty() {
-        return Err(CorruptKind::MissingManifest);
+        return Err(WalletStorageError::MissingAccount {
+            wallet_id: expected_wallet_id,
+        });
     }
     let mut accounts = AccountCollection::new();
     for entry in manifest {
@@ -47,12 +35,12 @@ pub(super) fn build_watch_only_wallet(
             entry.account_xpub,
             network,
         )
-        .map_err(|_| CorruptKind::MalformedXpub)?;
+        .map_err(|e| WalletStorageError::AccountRecordInvalid { e })?;
         accounts
             .insert(account)
-            .map_err(|e| CorruptKind::DecodeError(e.to_string()))?;
+            .map_err(|_| WalletStorageError::AccountRegistrationEntryMismatch)?;
     }
-    Ok(Wallet::new_watch_only(
+    Ok(Wallet::new_external_signable(
         network,
         expected_wallet_id,
         accounts,
@@ -101,7 +89,7 @@ pub(super) fn build_watch_only_wallet(
 /// # Reconstructed when the persister supplies it
 ///
 /// - **`last_applied_chain_lock`**: restored from `core` when the
-///   supplied [`CoreChangeSet`](crate::changeset::CoreChangeSet) carries
+///   supplied [`CoreChangeSet`](platform_wallet::changeset::CoreChangeSet) carries
 ///   it (the FFI/iOS persister round-trips the value Swift held), so the
 ///   asset-lock-resume CL-from-metadata fallback (`proof.rs`) fires at
 ///   launch instead of waiting for SPV. The SQLite storage path has no
@@ -140,19 +128,19 @@ pub(super) fn build_watch_only_wallet(
 ///
 /// # Errors
 ///
-/// [`PlatformWalletError::RehydrationTopologyUnsupported`] if there are
-/// persisted UTXOs to restore but the reconstructed account collection
-/// has **no** funds-bearing account to hold them. Fail-closed rather
-/// than reconstructing a silent zero balance (the no-silent-zero
-/// mandate). An empty UTXO set is always `Ok`.
+/// [`WalletStorageError::MissingAccount`] if there are persisted UTXOs to
+/// restore but the reconstructed account collection has **no**
+/// funds-bearing account to hold them. Fail-closed rather than
+/// reconstructing a silent zero balance (the no-silent-zero mandate). An
+/// empty UTXO set is always `Ok`.
 ///
 /// This never touches key material.
 pub fn apply_persisted_core_state(
     wallet_info: &mut ManagedWalletInfo,
     manifest: &[AccountRegistrationEntry],
-    core: &crate::changeset::CoreChangeSet,
+    core: &CoreChangeSet,
     used_pool_addresses: &[key_wallet::Address],
-) -> Result<(), PlatformWalletError> {
+) -> Result<(), WalletStorageError> {
     use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 
     // Captured before the mutable account borrow below so it can flow into
@@ -175,7 +163,7 @@ pub fn apply_persisted_core_state(
         wallet_info.metadata.last_applied_chain_lock = Some(cl.clone());
     }
 
-    // TODO(rehydration gaps): `core` also carries instant-send locks and
+    // INTENTIONAL(rehydration gaps): `core` also carries instant-send locks and
     // transaction records, but neither can be replayed here —
     // `ManagedWalletInfo.instant_send_locks` is `pub(crate)` with no public
     // setter, and there is no public API to inject tx records. Both re-warm on
@@ -232,10 +220,7 @@ pub fn apply_persisted_core_state(
                 )?;
             }
             None => {
-                return Err(PlatformWalletError::RehydrationTopologyUnsupported {
-                    wallet_id,
-                    utxo_count: unspent.len(),
-                });
+                return Err(WalletStorageError::MissingAccount { wallet_id });
             }
         }
     } else if !addresses_to_mark.is_empty() {
@@ -303,7 +288,7 @@ const REHYDRATION_DEEP_SCAN_WARN_INDEX: u32 = 1_000;
 ///
 /// # Errors
 ///
-/// [`PlatformWalletError::RehydrationPoolMismatch`] if the discovery probes
+/// [`WalletStorageError::RehydrationPoolMismatch`] if the discovery probes
 /// don't mirror the real pools 1:1 (a structural invariant break, not
 /// user-reachable). Fail-closed rather than apply a probe depth to the wrong
 /// pool by position.
@@ -314,7 +299,7 @@ fn extend_pools_for_restored_addresses(
     manifest: &[AccountRegistrationEntry],
     restored_addresses: &[key_wallet::Address],
     wallet_id: [u8; 32],
-) -> Result<(), PlatformWalletError> {
+) -> Result<(), WalletStorageError> {
     use key_wallet::managed_account::address_pool::{AddressPool, KeySource};
     use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
     use std::collections::HashSet;
@@ -445,7 +430,7 @@ fn extend_pools_for_restored_addresses(
     // 1:1 and in chain order; verify that invariant before zipping by position.
     let mut pools = account.managed_account_type_mut().address_pools_mut();
     if pools.len() != probes.len() {
-        return Err(PlatformWalletError::RehydrationPoolMismatch {
+        return Err(WalletStorageError::RehydrationPoolMismatch {
             expected: probes.len(),
             found: pools.len(),
         });
@@ -461,7 +446,7 @@ fn extend_pools_for_restored_addresses(
         // `debug_assert!`): applying a probe's depth to a pool of a different
         // chain would misattribute derivation to the wrong pool by position.
         if pool.pool_type != probe.pool_type {
-            return Err(PlatformWalletError::RehydrationPoolTypeMismatch {
+            return Err(WalletStorageError::RehydrationPoolTypeMismatch {
                 position,
                 expected: probe.pool_type,
                 found: pool.pool_type,
@@ -581,7 +566,7 @@ mod tests {
         let id = w.compute_wallet_id();
         let manifest = manifest_for(&w);
 
-        let restored = build_watch_only_wallet(Network::Testnet, id, &manifest).unwrap();
+        let restored = build_wallet(Network::Testnet, id, &manifest).unwrap();
         assert_eq!(restored.wallet_id, id);
         assert_eq!(restored.compute_wallet_id(), id);
         let restored_types: Vec<_> = restored
@@ -599,9 +584,9 @@ mod tests {
 
     #[test]
     fn empty_manifest_is_missing_manifest() {
-        let err = build_watch_only_wallet(Network::Testnet, [0u8; 32], &[])
+        let err = build_wallet(Network::Testnet, [0u8; 32], &[])
             .expect_err("empty manifest must be MissingManifest");
-        assert!(matches!(err, CorruptKind::MissingManifest));
+        assert!(matches!(err, WalletStorageError::MissingAccount { .. }));
     }
 
     /// Regression: after restart-in-place the watch-only pools eagerly
@@ -707,7 +692,7 @@ mod tests {
             utxo(deep_change.clone(), 300_000, 4),
         ];
         let expected_total: u64 = new_utxos.iter().map(|u| u.value()).sum();
-        let core = crate::changeset::CoreChangeSet {
+        let core = platform_wallet::changeset::CoreChangeSet {
             new_utxos,
             last_processed_height: Some(1),
             synced_height: Some(1),
@@ -867,7 +852,7 @@ mod tests {
         let foreign_val = 200_000u64;
         let expected_total = normal_val + foreign_val;
 
-        let core = crate::changeset::CoreChangeSet {
+        let core = platform_wallet::changeset::CoreChangeSet {
             new_utxos: vec![
                 utxo(normal_addr, normal_val, 1),
                 utxo(foreign_addr, foreign_val, 2),
@@ -1010,7 +995,7 @@ mod tests {
             is_trusted: false,
         };
 
-        let core = crate::changeset::CoreChangeSet {
+        let core = platform_wallet::changeset::CoreChangeSet {
             new_utxos: vec![utxo],
             last_processed_height: Some(1),
             synced_height: Some(1),
@@ -1097,7 +1082,7 @@ mod tests {
             p.address_at_index(3).unwrap()
         };
 
-        let core = crate::changeset::CoreChangeSet {
+        let core = platform_wallet::changeset::CoreChangeSet {
             new_utxos: vec![Utxo {
                 outpoint: OutPoint {
                     txid: Txid::from([1u8; 32]),
@@ -1159,7 +1144,7 @@ mod tests {
     /// (idx 30), and asserts the empty-snapshot baseline does NOT mark them.
     #[test]
     fn rehydration_used_state_survives_spent_utxo() {
-        use crate::changeset::CoreChangeSet;
+        use platform_wallet::changeset::CoreChangeSet;
         use dashcore::blockdata::transaction::txout::TxOut;
         use dashcore::{OutPoint, Txid};
         use key_wallet::bip32::DerivationPath;
@@ -1363,7 +1348,7 @@ mod tests {
         let wedge_used = derive(45);
 
         // No UTXOs at all — only the persisted pool used-state.
-        let core = crate::changeset::CoreChangeSet {
+        let core = platform_wallet::changeset::CoreChangeSet {
             last_processed_height: Some(1),
             synced_height: Some(1),
             ..Default::default()
@@ -1468,7 +1453,7 @@ mod tests {
         };
 
         let value = 500_000u64;
-        let core = crate::changeset::CoreChangeSet {
+        let core = platform_wallet::changeset::CoreChangeSet {
             new_utxos: vec![Utxo {
                 outpoint: OutPoint {
                     txid: Txid::from([4u8; 32]),
@@ -1563,7 +1548,7 @@ mod tests {
             Network::Testnet,
             Payload::PubkeyHash(PubkeyHash::from_byte_array([9u8; 20])),
         );
-        let core = crate::changeset::CoreChangeSet {
+        let core = platform_wallet::changeset::CoreChangeSet {
             new_utxos: vec![Utxo {
                 outpoint: OutPoint {
                     txid: Txid::from([2u8; 32]),
@@ -1589,10 +1574,10 @@ mod tests {
         let err = apply_persisted_core_state(&mut wallet_info, &manifest, &core, &[])
             .expect_err("must fail closed when no funds account can hold the UTXOs");
         match err {
-            PlatformWalletError::RehydrationTopologyUnsupported { utxo_count, .. } => {
-                assert_eq!(utxo_count, 1, "utxo_count must match the persisted set");
+            WalletStorageError::MissingAccount { wallet_id: id } => {
+                assert_eq!(id, wallet_info.wallet_id, "wallet_id must match the rehydrated wallet");
             }
-            other => panic!("expected RehydrationTopologyUnsupported, got {other:?}"),
+            other => panic!("expected MissingAccount, got {other:?}"),
         }
     }
 
@@ -1618,7 +1603,7 @@ mod tests {
         let mut wallet_info = ManagedWalletInfo::from_wallet(&wallet, 1);
         assert!(wallet_info.accounts.all_funding_accounts().is_empty());
 
-        let core = crate::changeset::CoreChangeSet {
+        let core = platform_wallet::changeset::CoreChangeSet {
             last_processed_height: Some(1),
             synced_height: Some(1),
             ..Default::default()
@@ -1658,7 +1643,7 @@ mod tests {
             block_hash: BlockHash::from_byte_array([7u8; 32]),
             signature: [9u8; 96].into(),
         };
-        let core = crate::changeset::CoreChangeSet {
+        let core = platform_wallet::changeset::CoreChangeSet {
             last_applied_chain_lock: Some(cl.clone()),
             ..Default::default()
         };

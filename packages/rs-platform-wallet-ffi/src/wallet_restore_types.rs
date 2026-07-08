@@ -5,11 +5,12 @@
 //! On write: `on_persist_account_registrations_fn` fires with the
 //! `AccountSpecFFI` shape so Swift can store accounts in SwiftData.
 //! On load: `on_load_wallet_list_fn` returns an array of
-//! `WalletRestoreEntryFFI` which Rust assembles into a transient
-//! `Wallet` (via `Wallet::new_external_signable` + per-account
-//! `Account::from_xpub`) used only to shape the keyless start-state
-//! projection; the manager then re-registers the wallet watch-only and
-//! signs on demand via the host mnemonic resolver.
+//! `WalletRestoreEntryFFI` which Rust assembles into an
+//! external-signable `Wallet` via `Wallet::new_external_signable` +
+//! per-account `Account::from_xpub`. (The mnemonic stays in the
+//! host's keychain; signing routes back through the configured
+//! signer surface. Earlier revisions reconstructed a `WatchOnly`
+//! wallet — that path has been replaced.)
 //!
 //! All `*const u8` pointers must stay valid for the duration of the
 //! load callback. Swift owns the allocation and is asked to free it

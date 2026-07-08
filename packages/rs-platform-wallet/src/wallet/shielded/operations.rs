@@ -556,8 +556,7 @@ pub async fn shield<S: ShieldedStore, Sig: Signer<PlatformAddress>, P: OrchardPr
                 format_addresses_with_info(rich.addresses_with_info(), network),
             ))
         } else {
-            crate::error::promote_address_nonce_error(e)
-                .unwrap_or_else(|| PlatformWalletError::ShieldedBroadcastFailed(e.to_string()))
+            PlatformWalletError::ShieldedBroadcastFailed(e.to_string())
         }
     };
 
@@ -2336,8 +2335,7 @@ async fn broadcast_shielded_spend(
     match state_transition.broadcast(sdk, None).await {
         Ok(()) => {}
         Err(e) if broadcast_definitely_failed(&e) => {
-            return Err(crate::error::promote_address_nonce_error(&e)
-                .unwrap_or_else(|| PlatformWalletError::ShieldedBroadcastFailed(e.to_string())));
+            return Err(PlatformWalletError::ShieldedBroadcastFailed(e.to_string()));
         }
         Err(e) => {
             warn!(
@@ -2445,8 +2443,7 @@ fn classify_spend_wait_failure(
     wait_err: &dash_sdk::Error,
 ) -> PlatformWalletError {
     if carries_consensus_rejection(wait_err) {
-        crate::error::promote_address_nonce_error(wait_err)
-            .unwrap_or_else(|| PlatformWalletError::ShieldedBroadcastFailed(wait_err.to_string()))
+        PlatformWalletError::ShieldedBroadcastFailed(wait_err.to_string())
     } else {
         warn!(
             operation,

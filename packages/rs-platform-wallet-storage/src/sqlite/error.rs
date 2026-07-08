@@ -205,6 +205,22 @@ pub enum WalletStorageError {
     )]
     AccountRegistrationEntryMismatch,
 
+    /// Account was rejected by the wallet manager (e.g. `account_type` is unknown, or
+    /// `account_index` is out of range). The `cause` is a static string describing the reason.
+    #[error("account rejected by wallet manager: {cause}")]
+    AccountRejected { cause: String },
+
+    /// An `account_registrations` row is missing for a given `(account_type, account_index)`.
+    #[error("required account information is missing for wallet_id {wallet_id:?}")]
+    MissingAccount { wallet_id: [u8; 32] },
+
+    /// Account record is invalid
+    #[error("account record is corrupted or invalid: {e}")]
+    AccountRecordInvalid {
+        #[source]
+        e: key_wallet::error::Error,
+    },
+
     /// An `asset_locks` row's typed-column `(outpoint, account_index)`
     /// disagreed with the lifecycle blob's. Rejected at decode time rather
     /// than mis-bucketing the lock under the wrong account.
@@ -295,6 +311,28 @@ pub enum WalletStorageError {
         #[source]
         source: rusqlite::Error,
     },
+
+    /// Rehydration's discovery probes don't mirror the real account's
+    /// address pools 1:1 (`probes.len() != pools.len()`) — a structural
+    /// invariant break, not user-reachable. Fail-closed rather than apply a
+    /// probe's discovered depth to the wrong pool by position.
+    #[error(
+        "rehydration pool count mismatch: expected {expected} probe pool(s), found {found}"
+    )]
+    RehydrationPoolMismatch { expected: usize, found: usize },
+
+    /// Rehydration's discovery probes mirror the real account's pools by
+    /// count but not by chain identity at `position` — applying the
+    /// probe's discovered depth here would misattribute derivation to the
+    /// wrong pool.
+    #[error(
+        "rehydration pool type mismatch at position {position}: expected {expected:?}, found {found:?}"
+    )]
+    RehydrationPoolTypeMismatch {
+        position: usize,
+        expected: key_wallet::managed_account::address_pool::AddressPoolType,
+        found: key_wallet::managed_account::address_pool::AddressPoolType,
+    },
 }
 
 impl From<WalletStorageError> for PersistenceError {
@@ -375,9 +413,14 @@ impl WalletStorageError {
             | Self::IdentityKeyEntryMismatch
             | Self::IdentityEntryIdMismatch
             | Self::AccountRegistrationEntryMismatch
+            | Self::AccountRecordInvalid { .. }
+            | Self::MissingAccount { .. }
+            | Self::AccountRejected { .. }
             | Self::AssetLockEntryMismatch { .. }
             | Self::BlobTooLarge { .. }
-            | Self::IntegerOverflow { .. } => false,
+            | Self::IntegerOverflow { .. }
+            | Self::RehydrationPoolMismatch { .. }
+            | Self::RehydrationPoolTypeMismatch { .. } => false,
         }
     }
 
@@ -451,10 +494,15 @@ impl WalletStorageError {
             Self::AlreadyOpen { .. } => "already_open",
             Self::IdentityKeyEntryMismatch => "identity_key_entry_mismatch",
             Self::IdentityEntryIdMismatch => "identity_entry_id_mismatch",
+            Self::AccountRecordInvalid { .. } => "account_record_invalid",
+            Self::MissingAccount { .. } => "missing_account_registration_entry",
+            Self::AccountRejected { .. } => "account_rejected",
             Self::AccountRegistrationEntryMismatch => "account_registration_entry_mismatch",
             Self::AssetLockEntryMismatch { .. } => "asset_lock_entry_mismatch",
             Self::BlobTooLarge { .. } => "blob_too_large",
             Self::IntegerOverflow { .. } => "integer_overflow",
+            Self::RehydrationPoolMismatch { .. } => "rehydration_pool_mismatch",
+            Self::RehydrationPoolTypeMismatch { .. } => "rehydration_pool_type_mismatch",
         }
     }
 }

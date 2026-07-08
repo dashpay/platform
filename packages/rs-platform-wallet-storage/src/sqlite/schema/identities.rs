@@ -1,9 +1,14 @@
 //! `identities` table writer.
 
+use std::collections::HashMap;
+
+use dpp::identity::accessors::IdentityGettersV0;
+use dpp::prelude::Identifier;
+use platform_wallet::{ContactChangeSet, IdentityKeysChangeSet, ManagedIdentity};
 use rusqlite::{params, Transaction};
 
-use platform_wallet::changeset::IdentityChangeSet;
 use platform_wallet::wallet::platform_wallet::WalletId;
+use platform_wallet::{changeset::IdentityChangeSet, IdentityManagerStartState};
 
 use {platform_wallet::changeset::IdentityEntry, rusqlite::Connection};
 
@@ -221,7 +226,7 @@ pub fn load_prekeyed(
         established: records.established,
         ..Default::default()
     };
-    state.merge_contacts_and_keys(contacts, identity_keys);
+    merge_contacts_and_keys(&mut state, contacts, identity_keys);
     Ok(state)
 }
 
@@ -319,6 +324,75 @@ pub fn ensure_exists(
         params![&identity_id[..], wallet_id_param, payload],
     )?;
     Ok(())
+}
+
+/// Fold persisted PUBLIC keys and contact state onto the already-built
+/// managed identities so `Identity.public_keys` and the contact maps
+/// are populated at load time — the FFI persister's pre-keyed shape,
+/// with no separate changeset layered on afterwards.
+///
+/// Entries route by owner `identity_id` across BOTH buckets; one whose
+/// owner is absent (e.g. a tombstoned identity's orphaned rows) is
+/// logged and skipped, never fatal. Only key `upserts` and the
+/// `sent` / `incoming` / `established` maps are routed; `removed_*`
+/// (insert-only feed) and `ignored` / `unignored` (restored in the
+/// identity reader from the `ignored_senders` table) are skipped. No
+/// `Network` needed — key insert is network-independent.
+pub fn merge_contacts_and_keys(
+    state: &mut IdentityManagerStartState,
+    contacts: ContactChangeSet,
+    identity_keys: IdentityKeysChangeSet,
+) {
+    // One transient id → &mut ManagedIdentity view over both buckets so
+    // routing is O(1) per entry rather than a per-entry bucket scan. The
+    // two buckets are disjoint fields, so their mutable borrows coexist.
+    let mut by_id: HashMap<Identifier, &mut ManagedIdentity> = HashMap::new();
+    for managed in state.out_of_wallet_identities.values_mut() {
+        by_id.insert(managed.identity.id(), managed);
+    }
+    for inner in state.wallet_identities.values_mut() {
+        for managed in inner.values_mut() {
+            by_id.insert(managed.identity.id(), managed);
+        }
+    }
+
+    for (_key, entry) in identity_keys.upserts {
+        match by_id.get_mut(&entry.identity_id) {
+            Some(managed) => managed.identity.add_public_key(entry.public_key),
+            None => tracing::warn!(
+                identity = %entry.identity_id,
+                key_id = entry.key_id,
+                "skipping identity key during rehydration merge: owner identity not loaded"
+            ),
+        }
+    }
+    for (key, entry) in contacts.sent_requests {
+        match by_id.get_mut(&key.owner_id) {
+            Some(managed) => managed.apply_sent_contact_request(entry.request),
+            None => tracing::warn!(
+                owner = %key.owner_id,
+                "skipping sent contact request during rehydration merge: owner identity not loaded"
+            ),
+        }
+    }
+    for (key, entry) in contacts.incoming_requests {
+        match by_id.get_mut(&key.owner_id) {
+            Some(managed) => managed.apply_incoming_contact_request(entry.request),
+            None => tracing::warn!(
+                owner = %key.owner_id,
+                "skipping incoming contact request during rehydration merge: owner identity not loaded"
+            ),
+        }
+    }
+    for (key, established) in contacts.established {
+        match by_id.get_mut(&key.owner_id) {
+            Some(managed) => managed.apply_established_contact(established),
+            None => tracing::warn!(
+                owner = %key.owner_id,
+                "skipping established contact during rehydration merge: owner identity not loaded"
+            ),
+        }
+    }
 }
 
 #[cfg(test)]

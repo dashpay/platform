@@ -516,15 +516,6 @@ fn map_spend_result(
             PlatformWalletFFIResultCode::ErrorShieldedBroadcastFailed,
             format!("{operation} failed: {e}"),
         ),
-        // Definitively failed on an address-nonce race (a shield spends platform
-        // address funds; a shield reserves no notes). Its own code carries the
-        // safe-to-retry contract AND lets the host recognize the self-healing
-        // nonce mismatch — a plain retry re-fetches the nonce. Without this arm
-        // it would regress to the generic `ErrorWalletOperation` below.
-        Err(e @ PlatformWalletError::AddressNonceMismatch { .. }) => PlatformWalletFFIResult::err(
-            PlatformWalletFFIResultCode::ErrorAddressNonceMismatch,
-            format!("{operation} failed: {e}"),
-        ),
         Err(e) => PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorWalletOperation,
             format!("{operation} failed: {e}"),
@@ -1445,37 +1436,6 @@ mod tests {
         assert_eq!(
             map_spend_result(Ok(()), "shielded transfer").code,
             PlatformWalletFFIResultCode::Success
-        );
-    }
-
-    /// A shield (Type 15) definitively rejected on an address-nonce race must
-    /// map to the dedicated `ErrorAddressNonceMismatch` — NOT regress to the
-    /// generic `ErrorWalletOperation` — so hosts keep the safe-to-retry signal.
-    /// The submitted/expected nonce values must survive in the message.
-    #[test]
-    fn map_spend_result_maps_address_nonce_mismatch_to_dedicated_code() {
-        let mismatch: Result<(), PlatformWalletError> =
-            Err(PlatformWalletError::AddressNonceMismatch {
-                address: PlatformAddress::P2pkh([7u8; 20]),
-                provided_nonce: 1,
-                expected_nonce: 2,
-            });
-        let result = map_spend_result(mismatch, "shielded shield");
-        assert_eq!(
-            result.code,
-            PlatformWalletFFIResultCode::ErrorAddressNonceMismatch,
-            "shield nonce rejection must not regress to ErrorWalletOperation"
-        );
-        let msg = message_of(&result);
-        // Pin the EXACT rendered substrings, not bare digits, so a
-        // provided/expected transposition would fail the test.
-        assert!(
-            msg.contains("submitted nonce 1"),
-            "submitted (provided) nonce must render exactly: {msg}"
-        );
-        assert!(
-            msg.contains("Platform expected 2"),
-            "expected nonce must render exactly: {msg}"
         );
     }
 }

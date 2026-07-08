@@ -156,12 +156,11 @@ pub(crate) async fn funded_wallet_manager(
         }
     };
 
-    // Funded as a chain-locked (confirmed) UTXO, not mempool: since
-    // rust-dashcore#836, asset-lock building excludes unconfirmed/non-
-    // InstantSend inputs (`require_final_inputs`), so a mempool-only fixture
-    // would starve `build_asset_lock`'s coin selection before ever reaching
-    // the broadcast-rejection paths these tests exist to exercise.
     let funding_tx = Transaction::dummy(&receive_address, 0..1, &[10_000_000]);
+    // Chain-locked funding, not `Mempool`: asset-lock builders only
+    // select final (confirmed / InstantSend-locked) inputs since
+    // rust-dashcore#836, so a mempool-funded fixture leaves the
+    // asset-lock tests with no eligible UTXO.
     let result = ctx
         .check_transaction(
             &funding_tx,

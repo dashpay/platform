@@ -15,9 +15,10 @@
 //! [`IdentityManager::apply_identity_key_entry`].
 
 use super::{IdentityLocation, IdentityManager};
-use crate::changeset::{ContactChangeSet, IdentityEntry, IdentityKeyEntry, IdentityKeysChangeSet};
+use crate::changeset::{IdentityEntry, IdentityKeyEntry};
 use crate::wallet::identity::state::managed_identity::ManagedIdentity;
 use dpp::identity::accessors::IdentityGettersV0;
+use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::v0::IdentityV0;
 use dpp::identity::{Identity, KeyID};
 use dpp::prelude::Identifier;
@@ -175,10 +176,16 @@ impl IdentityManager {
     /// keys changeset was persisted without its scalar sibling, or the
     /// owner was removed since), the entry is logged and skipped.
     pub(crate) fn apply_identity_key_entry(&mut self, entry: IdentityKeyEntry, _network: Network) {
+        // `add_public_key` lives on `IdentityFactory` / V0 setter trait;
+        // bring it into scope here.
+        use dpp::identity::accessors::IdentitySettersV0;
+
         if let Some(managed) = self.locate_mut(&entry.identity_id) {
             // Insert into the DPP `Identity`'s `public_keys` map by id;
             // replay-safe (idempotent overwrite).
-            managed.identity.add_public_key(entry.public_key);
+            let mut keys = managed.identity.public_keys().clone();
+            keys.insert(entry.public_key.id(), entry.public_key.clone());
+            managed.identity.set_public_keys(keys);
         } else {
             tracing::warn!(
                 identity = %entry.identity_id,
@@ -194,93 +201,6 @@ impl IdentityManager {
     pub(crate) fn apply_identity_key_removal(&mut self, identity_id: &Identifier, key_id: KeyID) {
         if let Some(managed) = self.locate_mut(identity_id) {
             managed.identity.public_keys_mut().remove(&key_id);
-        }
-    }
-
-    /// Layer a [`ContactChangeSet`] + [`IdentityKeysChangeSet`] onto the
-    /// already-restored managed identities, for the runtime
-    /// changeset-replay path
-    /// ([`apply_changeset`](crate::wallet::PlatformWalletInfo::apply_changeset)).
-    /// Identity keys are applied first so a contact entry never lands
-    /// before its owner's keys; orphan entries (owner not in the
-    /// wallet) are logged and skipped, never fatal. `removed_*` and
-    /// `ignored`/`unignored` are honoured.
-    pub(crate) fn apply_contacts_and_keys(
-        &mut self,
-        contacts: ContactChangeSet,
-        identity_keys: IdentityKeysChangeSet,
-        network: Network,
-    ) {
-        let IdentityKeysChangeSet { upserts, removed } = identity_keys;
-        for (_key, entry) in upserts {
-            self.apply_identity_key_entry(entry, network);
-        }
-        for (identity_id, key_id) in removed {
-            self.apply_identity_key_removal(&identity_id, key_id);
-        }
-
-        let ContactChangeSet {
-            sent_requests,
-            removed_sent,
-            incoming_requests,
-            removed_incoming,
-            established,
-            ignored,
-            unignored,
-        } = contacts;
-        for (key, entry) in sent_requests {
-            match self.managed_identity_mut(&key.owner_id) {
-                Some(managed) => managed.apply_sent_contact_request(entry.request),
-                None => tracing::warn!(
-                    owner = %key.owner_id,
-                    "skipping sent contact request: owner identity not in wallet"
-                ),
-            }
-        }
-        for (key, entry) in incoming_requests {
-            match self.managed_identity_mut(&key.owner_id) {
-                Some(managed) => managed.apply_incoming_contact_request(entry.request),
-                None => tracing::warn!(
-                    owner = %key.owner_id,
-                    "skipping incoming contact request: owner identity not in wallet"
-                ),
-            }
-        }
-        for key in removed_sent {
-            if let Some(managed) = self.managed_identity_mut(&key.owner_id) {
-                managed.apply_removed_sent(&key.recipient_id);
-            }
-        }
-        for key in removed_incoming {
-            if let Some(managed) = self.managed_identity_mut(&key.owner_id) {
-                managed.apply_removed_incoming(&key.sender_id);
-            }
-        }
-        for (key, established) in established {
-            match self.managed_identity_mut(&key.owner_id) {
-                Some(managed) => managed.apply_established_contact(established),
-                None => tracing::warn!(
-                    owner = %key.owner_id,
-                    "skipping established contact: owner identity not in wallet"
-                ),
-            }
-        }
-        // `ignored` is applied before `unignored` so a same-delta
-        // un-ignore wins (last-write-wins). Orphan owners are logged
-        // and skipped; un-ignore of an absent owner is a silent no-op.
-        for (owner_id, sender_id) in ignored {
-            match self.managed_identity_mut(&owner_id) {
-                Some(managed) => managed.apply_ignored_sender(sender_id),
-                None => tracing::warn!(
-                    owner = %owner_id,
-                    "skipping ignored sender: owner identity not in wallet"
-                ),
-            }
-        }
-        for (owner_id, sender_id) in unignored {
-            if let Some(managed) = self.managed_identity_mut(&owner_id) {
-                managed.apply_unignored_sender(&sender_id);
-            }
         }
     }
 }

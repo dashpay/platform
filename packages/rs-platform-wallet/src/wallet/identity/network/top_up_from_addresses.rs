@@ -76,12 +76,10 @@ impl IdentityWallet {
             .top_up_from_addresses(&self.sdk, inputs, address_signer, settings)
             .await
             .map_err(|e| {
-                crate::error::promote_address_nonce_error(&e).unwrap_or_else(|| {
-                    PlatformWalletError::InvalidIdentityData(format!(
-                        "Failed to top up identity from addresses: {}",
-                        e
-                    ))
-                })
+                PlatformWalletError::InvalidIdentityData(format!(
+                    "Failed to top up identity from addresses: {}",
+                    e
+                ))
             })?;
 
         // Update the identity's balance in the local manager and

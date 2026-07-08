@@ -19,6 +19,7 @@ use crate::sqlite::reports::{CommitReport, DeleteWalletReport};
 use crate::sqlite::schema;
 use crate::sqlite::util::permissions::{apply_secure_permissions, precreate_secure};
 use crate::sqlite::util::safe_cast;
+use crate::sqlite::util::wallet::{apply_persisted_core_state, build_wallet};
 
 /// Persisted-but-not-rehydrated areas, surfaced in the structured
 /// `tracing::info!` summary on every `load()`.
@@ -969,7 +970,7 @@ impl PlatformWalletPersistence for SqlitePersister {
             // chainlock, used-address pool depth) onto it. The manager consumes
             // this directly — the old skeleton + core_state replay fallback is
             // gone.
-            let watch_only = if account_manifest.is_empty() {
+            let wallet = if account_manifest.is_empty() {
                 // Placeholder empty wallet: the manager re-checks the empty
                 // manifest and skips this wallet as MissingManifest one layer
                 // up (see rt_corrupt_row_skipped_and_other_loads). It exists so
@@ -984,31 +985,26 @@ impl PlatformWalletPersistence for SqlitePersister {
                 // TTL-based cleanup, a re-registration entry point, or a surfaced
                 // "orphaned wallet" diagnostic), or is silent-skip-forever acceptable?
                 // Awaiting product decision; not addressed in this change.
-                key_wallet::wallet::Wallet::new_watch_only(
+                key_wallet::wallet::Wallet::new_external_signable(
                     network,
                     wallet_id,
                     key_wallet::account::account_collection::AccountCollection::new(),
                 )
             } else {
-                platform_wallet::rehydrate::build_watch_only_wallet(
-                    network,
-                    wallet_id,
-                    &account_manifest,
-                )
-                .map_err(|e| {
+                build_wallet(network, wallet_id, &account_manifest).map_err(|e| {
                     PersistenceError::backend(format!(
                         "watch-only wallet rebuild failed for {}: {e}",
                         hex::encode(wallet_id)
                     ))
                 })?
             };
-            let mut core_wallet_info =
+            let mut wallet_info =
                 key_wallet::wallet::managed_wallet_info::ManagedWalletInfo::from_wallet(
-                    &watch_only,
+                    &wallet,
                     birth_height,
                 );
-            platform_wallet::rehydrate::apply_persisted_core_state(
-                &mut core_wallet_info,
+            apply_persisted_core_state(
+                &mut wallet_info,
                 &account_manifest,
                 &core_state,
                 &used_core_addresses,
@@ -1023,10 +1019,8 @@ impl PlatformWalletPersistence for SqlitePersister {
             state.wallets.insert(
                 wallet_id,
                 platform_wallet::changeset::ClientWalletStartState {
-                    network,
-                    birth_height,
-                    account_manifest,
-                    core_wallet_info: Box::new(core_wallet_info),
+                    wallet,
+                    wallet_info,
                     identity_manager,
                     unused_asset_locks,
                 },

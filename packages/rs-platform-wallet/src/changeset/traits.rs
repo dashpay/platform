@@ -255,20 +255,6 @@ pub trait PlatformWalletPersistence: Send + Sync {
     /// per-wallet one, because `ClientStartState::platform_addresses` is
     /// already keyed by wallet id and the sub-changesets carry their own
     /// wallet attribution where needed.
-    ///
-    /// # Trust boundary
-    ///
-    /// This trait does not authenticate the [`ClientStartState`] it
-    /// returns: nothing here binds a wallet's account manifest to the
-    /// `wallet_id` it is returned under, and this contract neither
-    /// mandates nor performs such a check. Verifying manifest integrity
-    /// against a tampered or untrusted-backup store is the storage
-    /// layer's responsibility (a persisted commitment over the manifest,
-    /// keyed to the store) — see the manifest-integrity work in the
-    /// `platform-wallet-storage` crate. Implementors and callers must not
-    /// assume a manifest handed back here has been verified authentic;
-    /// `build_watch_only_wallet` in the `rehydrate` module documents the
-    /// concrete key-substitution risk this leaves open.
     fn load(&self) -> Result<ClientStartState, PersistenceError>;
 
     /// Look up a single core transaction record by `txid` for `wallet_id`.

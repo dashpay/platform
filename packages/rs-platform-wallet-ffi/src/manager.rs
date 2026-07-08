@@ -176,93 +176,6 @@ unsafe fn create_wallet_from_mnemonic_impl(
     PlatformWalletFFIResult::ok()
 }
 
-/// `reason_code`: the persisted row had no usable account manifest to
-/// rebuild the account collection from.
-pub const LOAD_SKIP_REASON_MISSING_MANIFEST: u32 = 100;
-/// `reason_code`: a manifest `account_xpub` failed to parse as a
-/// well-formed extended public key.
-pub const LOAD_SKIP_REASON_MALFORMED_XPUB: u32 = 101;
-/// `reason_code`: any other structural decode / projection failure on
-/// the persisted row.
-pub const LOAD_SKIP_REASON_DECODE_ERROR: u32 = 102;
-/// `reason_code`: the carried managed-info snapshot does not describe its
-/// persisted row (wallet_id/network differ, or its account set diverges
-/// from the row's account manifest) — a wrong-row snapshot.
-pub const LOAD_SKIP_REASON_SNAPSHOT_IDENTITY_MISMATCH: u32 = 103;
-/// `reason_code`: an unrecognized `CorruptKind` — forward-compat
-/// fallback until this crate maps a newly added corrupt-row family.
-pub const LOAD_SKIP_REASON_CORRUPT_OTHER: u32 = 199;
-/// `reason_code`: an unrecognized `SkipReason` — forward-compat
-/// fallback until this crate maps a newly added skip reason.
-pub const LOAD_SKIP_REASON_OTHER: u32 = 200;
-/// `reason_code`: the wallet was already registered before this load
-/// pass reached it (a prior load, or a runtime-created wallet), so its
-/// persisted row was not freshly loaded. Not corruption.
-pub const LOAD_SKIP_REASON_ALREADY_REGISTERED: u32 = 300;
-
-/// One wallet skipped during `load_from_persistor` because its
-/// persisted row was structurally corrupt (per-row decode failure).
-/// The load path is seedless and watch-only, so this is the only skip
-/// reason. `reason_code` is per-`CorruptKind` family — see its table.
-#[repr(C)]
-#[derive(Debug, Clone, Copy)]
-pub struct SkippedWalletFFI {
-    /// The (public) 32-byte wallet id that was skipped.
-    pub wallet_id: [u8; 32],
-    /// Skip reason — one of the `LOAD_SKIP_REASON_*` constants:
-    /// [`LOAD_SKIP_REASON_MISSING_MANIFEST`] (100),
-    /// [`LOAD_SKIP_REASON_MALFORMED_XPUB`] (101),
-    /// [`LOAD_SKIP_REASON_DECODE_ERROR`] (102),
-    /// [`LOAD_SKIP_REASON_SNAPSHOT_IDENTITY_MISMATCH`] (103),
-    /// [`LOAD_SKIP_REASON_CORRUPT_OTHER`] (199),
-    /// [`LOAD_SKIP_REASON_OTHER`] (200), or
-    /// [`LOAD_SKIP_REASON_ALREADY_REGISTERED`] (300). No secret material
-    /// is ever carried.
-    pub reason_code: u32,
-}
-
-/// C-visible summary of one `load_from_persistor` pass so the host can
-/// see which wallets loaded and which were skipped (and why) instead
-/// of the outcome being silently discarded.
-///
-/// The count pair encodes the Rust `LoadOutcome` 3-state: `skipped_count
-/// == 0` is a full load, `loaded_count == 0` with skips is
-/// nothing-usable, and both non-zero is a partial load.
-///
-/// `skipped` is a heap array of length `skipped_count`; pass this
-/// struct (by pointer) to
-/// [`platform_wallet_load_outcome_free`] exactly once to release it.
-#[repr(C)]
-#[derive(Debug)]
-pub struct LoadOutcomeFFI {
-    /// Number of wallets fully reconstructed + registered.
-    pub loaded_count: usize,
-    /// Length of the `skipped` array.
-    pub skipped_count: usize,
-    /// Heap-allocated skipped-wallet array (null iff `skipped_count`
-    /// is 0). Owned by Rust until `platform_wallet_load_outcome_free`.
-    pub skipped: *mut SkippedWalletFFI,
-}
-
-fn skip_reason_code(reason: &platform_wallet::SkipReason) -> u32 {
-    use platform_wallet::manager::load_outcome::CorruptKind;
-    match reason {
-        platform_wallet::SkipReason::CorruptPersistedRow { kind } => match kind {
-            CorruptKind::MissingManifest => LOAD_SKIP_REASON_MISSING_MANIFEST,
-            CorruptKind::MalformedXpub => LOAD_SKIP_REASON_MALFORMED_XPUB,
-            CorruptKind::SnapshotIdentityMismatch => LOAD_SKIP_REASON_SNAPSHOT_IDENTITY_MISMATCH,
-            CorruptKind::DecodeError(_) => LOAD_SKIP_REASON_DECODE_ERROR,
-            // `CorruptKind` is #[non_exhaustive]; a future variant maps to a
-            // generic corrupt-row code until this mapping is extended.
-            _ => LOAD_SKIP_REASON_CORRUPT_OTHER,
-        },
-        platform_wallet::SkipReason::AlreadyRegistered => LOAD_SKIP_REASON_ALREADY_REGISTERED,
-        // `SkipReason` is #[non_exhaustive]; a future reason maps to a
-        // generic skip code until this mapping is extended.
-        _ => LOAD_SKIP_REASON_OTHER,
-    }
-}
-
 /// Create a wallet from raw seed bytes (64 bytes).
 ///
 /// On success, `out_wallet_handle` is set to a `PlatformWallet` handle and
@@ -385,113 +298,21 @@ pub unsafe extern "C" fn platform_wallet_manager_create_wallet_from_mnemonic_wit
 ///
 /// Triggers `on_load_wallet_list_fn` on the persistence callbacks to
 /// fetch the persisted wallet list from the client side (SwiftData),
-/// builds a keyless reconstruction payload per wallet, then registers
-/// each one as a **watch-only** wallet. No signing keys are derived
-/// here — signing happens later, on demand, via the configured
-/// `MnemonicResolverHandle` (`sign_with_mnemonic_resolver` and its
-/// siblings), which fail-closed gate the resolver-supplied seed
-/// against the loaded `wallet_id`. Does not produce wallet handles —
-/// follow up with [`platform_wallet_manager_get_wallet`] per
-/// `wallet_id`.
-///
-/// A wallet whose persisted row is structurally corrupt is
-/// **skipped**, not failed: the call still returns `Success`, every
-/// skipped `(wallet_id, reason)` is logged, and — when `out_outcome`
-/// is non-null — surfaced through it.
-///
-/// # Safety
-/// - `out_outcome` may be null (caller doesn't want the summary);
-///   otherwise it must point to writable `LoadOutcomeFFI` storage and
-///   the caller must later release it via
-///   [`platform_wallet_load_outcome_free`].
+/// reconstructs each wallet as **watch-only** via its stored root +
+/// per-account xpubs, and registers them inside the manager. Does not
+/// produce wallet handles — the caller should follow up with
+/// [`platform_wallet_manager_get_wallet`] per `wallet_id` it knows
+/// about.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_manager_load_from_persistor(
     manager_handle: Handle,
-    out_outcome: *mut LoadOutcomeFFI,
 ) -> PlatformWalletFFIResult {
-    // Initialize the out-param first so every early-return path below
-    // leaves it releasable (zeroed counts, null `skipped`) — matches this
-    // crate's null-init-first out-pointer idiom and keeps
-    // `platform_wallet_load_outcome_free` safe on the error paths too.
-    if !out_outcome.is_null() {
-        std::ptr::write(
-            out_outcome,
-            LoadOutcomeFFI {
-                loaded_count: 0,
-                skipped_count: 0,
-                skipped: std::ptr::null_mut(),
-            },
-        );
-    }
-
     let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(manager_handle, |manager| {
         runtime().block_on(manager.load_from_persistor())
     });
     let result = unwrap_option_or_return!(option);
-    let outcome = unwrap_result_or_return!(result);
-
-    // Never silently drop the outcome: log a structured summary plus
-    // one line per skipped wallet (the host can inspect / clear the
-    // corrupt rows). The `loaded_count`/`skipped_count` pair below
-    // encodes the Rust `LoadOutcome` 3-state for the host: skipped == 0
-    // is a full load, loaded == 0 with skips is nothing-usable, and both
-    // non-zero is a partial load.
-    tracing::info!(
-        loaded = outcome.loaded().len(),
-        skipped = outcome.skipped().len(),
-        "platform_wallet_manager_load_from_persistor complete"
-    );
-    for (wid, reason) in outcome.skipped() {
-        tracing::warn!(
-            wallet_id = %hex::encode(wid),
-            reason = %reason,
-            "load_from_persistor skipped a persisted wallet"
-        );
-    }
-
-    if !out_outcome.is_null() {
-        let skipped_vec: Vec<SkippedWalletFFI> = outcome
-            .skipped()
-            .iter()
-            .map(|(wid, reason)| SkippedWalletFFI {
-                wallet_id: *wid,
-                reason_code: skip_reason_code(reason),
-            })
-            .collect();
-        let skipped_count = skipped_vec.len();
-        let skipped_ptr = crate::core_wallet_types::vec_to_ptr(skipped_vec);
-        std::ptr::write(
-            out_outcome,
-            LoadOutcomeFFI {
-                loaded_count: outcome.loaded().len(),
-                skipped_count,
-                skipped: skipped_ptr,
-            },
-        );
-    }
+    unwrap_result_or_return!(result);
     PlatformWalletFFIResult::ok()
-}
-
-/// Release the heap `skipped` array a successful
-/// [`platform_wallet_manager_load_from_persistor`] wrote into a
-/// `LoadOutcomeFFI`. Idempotent: nulls the pointer after freeing, and
-/// a null `outcome` (or already-freed array) is a no-op.
-///
-/// # Safety
-/// `outcome` must point to a `LoadOutcomeFFI` previously populated by
-/// `platform_wallet_manager_load_from_persistor`, not freed already.
-#[no_mangle]
-pub unsafe extern "C" fn platform_wallet_load_outcome_free(outcome: *mut LoadOutcomeFFI) {
-    if outcome.is_null() {
-        return;
-    }
-    let o = &mut *outcome;
-    if !o.skipped.is_null() && o.skipped_count > 0 {
-        let slice = std::slice::from_raw_parts_mut(o.skipped, o.skipped_count);
-        drop(Box::from_raw(slice as *mut [SkippedWalletFFI]));
-    }
-    o.skipped = std::ptr::null_mut();
-    o.skipped_count = 0;
 }
 
 /// Get a `PlatformWallet` handle for a wallet registered in the
@@ -595,64 +416,5 @@ mod tests {
     fn birth_height_override_opt_false_is_none_regardless_of_value() {
         assert_eq!(birth_height_override_opt(false, 0), None);
         assert_eq!(birth_height_override_opt(false, 99), None);
-    }
-
-    #[test]
-    fn load_skip_reason_wire_values_are_stable() {
-        // FFI consumers hardcode these numbers; the ABI must not drift.
-        assert_eq!(LOAD_SKIP_REASON_MISSING_MANIFEST, 100);
-        assert_eq!(LOAD_SKIP_REASON_MALFORMED_XPUB, 101);
-        assert_eq!(LOAD_SKIP_REASON_DECODE_ERROR, 102);
-        assert_eq!(LOAD_SKIP_REASON_SNAPSHOT_IDENTITY_MISMATCH, 103);
-        assert_eq!(LOAD_SKIP_REASON_CORRUPT_OTHER, 199);
-        assert_eq!(LOAD_SKIP_REASON_OTHER, 200);
-    }
-
-    #[test]
-    fn skip_reason_code_maps_known_kinds_to_constants() {
-        use platform_wallet::manager::load_outcome::CorruptKind;
-        use platform_wallet::SkipReason;
-
-        let corrupt = |kind| SkipReason::CorruptPersistedRow { kind };
-        assert_eq!(
-            skip_reason_code(&corrupt(CorruptKind::MissingManifest)),
-            LOAD_SKIP_REASON_MISSING_MANIFEST
-        );
-        assert_eq!(
-            skip_reason_code(&corrupt(CorruptKind::MalformedXpub)),
-            LOAD_SKIP_REASON_MALFORMED_XPUB
-        );
-        assert_eq!(
-            skip_reason_code(&corrupt(CorruptKind::SnapshotIdentityMismatch)),
-            LOAD_SKIP_REASON_SNAPSHOT_IDENTITY_MISMATCH
-        );
-        assert_eq!(
-            skip_reason_code(&corrupt(CorruptKind::DecodeError("boom".into()))),
-            LOAD_SKIP_REASON_DECODE_ERROR
-        );
-    }
-
-    #[test]
-    fn load_from_persistor_initializes_out_param_on_early_return() {
-        // An unknown handle early-returns before the success block. The
-        // out-param must be reset to a releasable zeroed state so a caller
-        // that later calls `platform_wallet_load_outcome_free` never does
-        // `Box::from_raw` on the uninitialized `skipped` pointer.
-        let mut outcome = LoadOutcomeFFI {
-            loaded_count: 42,
-            skipped_count: 7,
-            skipped: std::ptr::NonNull::<SkippedWalletFFI>::dangling().as_ptr(),
-        };
-
-        let result =
-            unsafe { platform_wallet_manager_load_from_persistor(NULL_HANDLE, &mut outcome) };
-
-        assert_ne!(result.code, PlatformWalletFFIResultCode::Success);
-        assert_eq!(outcome.loaded_count, 0);
-        assert_eq!(outcome.skipped_count, 0);
-        assert!(outcome.skipped.is_null());
-
-        // Null `skipped` now makes the release path a safe no-op.
-        unsafe { platform_wallet_load_outcome_free(&mut outcome) };
     }
 }

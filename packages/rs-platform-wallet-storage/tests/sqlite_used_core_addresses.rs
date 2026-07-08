@@ -122,12 +122,12 @@ fn spent_utxo_address_is_marked_used() {
     // Spent UTXO: contributes no balance, but its address is still marked used
     // in the assembled wallet's pool so it is never handed out as fresh again.
     assert_eq!(
-        slice.core_wallet_info.balance.total(),
+        slice.wallet_info.balance.total(),
         0,
         "the spent UTXO must not contribute balance"
     );
     let funds = slice
-        .core_wallet_info
+        .wallet_info
         .accounts
         .all_funding_accounts()
         .into_iter()

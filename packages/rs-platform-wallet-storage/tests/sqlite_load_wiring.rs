@@ -105,26 +105,31 @@ fn c1_load_populates_keyless_wallet_payload() {
 
     assert_eq!(state.wallets.len(), 1, "the wallet must be in the payload");
     let slice = state.wallets.get(&w).expect("wallet slice");
-    assert_eq!(slice.network, key_wallet::Network::Testnet);
-    assert_eq!(slice.birth_height, 7);
+    assert_eq!(slice.wallet.network, key_wallet::Network::Testnet);
+    assert_eq!(slice.wallet_info.metadata.birth_height, 7);
     // Every persisted account round-trips: the registration PK carries the
     // full discriminator set (account_type, index, key_class, dashpay ids),
-    // so distinct variants never collapse onto one row. The manifest is a
-    // faithful read of what is on disk — non-empty, containing the primary
-    // BIP44 account.
-    assert!(!slice.account_manifest.is_empty());
+    // so distinct variants never collapse onto one row. The rebuilt wallet's
+    // account collection is a faithful read of what is on disk — non-empty,
+    // containing the primary BIP44 account.
+    assert!(!slice.wallet.accounts.all_accounts().is_empty());
     assert!(
-        slice.account_manifest.iter().any(|e| matches!(
-            e.account_type,
-            key_wallet::account::AccountType::Standard { .. }
-        )),
+        slice
+            .wallet
+            .accounts
+            .all_accounts()
+            .into_iter()
+            .any(|a| matches!(
+                a.account_type,
+                key_wallet::account::AccountType::Standard { .. }
+            )),
         "BIP44 account must be in the manifest"
     );
     // Core state now lives inside the assembled `core_wallet_info`: the single
     // confirmed 777_000-duff UTXO restores as the wallet balance and the sync
     // watermark carries over.
-    assert_eq!(slice.core_wallet_info.balance.total(), 777_000);
-    assert_eq!(slice.core_wallet_info.metadata.last_processed_height, 50);
+    assert_eq!(slice.wallet_info.balance.total(), 777_000);
+    assert_eq!(slice.wallet_info.metadata.last_processed_height, 50);
 }
 
 /// Empty DB → empty `wallets`, no error (the `load()` doctest contract).
@@ -149,6 +154,6 @@ fn c3_metadata_only_wallet_present() {
     let p2 = reopen(&path);
     let state = p2.load().unwrap();
     let slice = state.wallets.get(&w).expect("metadata-only wallet present");
-    assert!(slice.account_manifest.is_empty());
-    assert_eq!(slice.core_wallet_info.balance.total(), 0);
+    assert!(slice.wallet.accounts.all_accounts().is_empty());
+    assert_eq!(slice.wallet_info.balance.total(), 0);
 }

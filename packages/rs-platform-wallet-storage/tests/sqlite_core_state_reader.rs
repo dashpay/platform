@@ -387,7 +387,7 @@ fn b5_last_applied_chain_lock_round_trips() {
         .expect("wallet must be in load output");
     assert_eq!(
         wallet_start
-            .core_wallet_info
+            .wallet_info
             .metadata
             .last_applied_chain_lock
             .as_ref(),
