@@ -211,16 +211,26 @@ pub unsafe extern "C" fn platform_wallet_get_dashpay_profile(
     // Clone only the `Option<DashPayProfile>` field, not the whole
     // `ManagedIdentity` (which carries the full Identity plus the
     // established/sent/incoming BTreeMaps and payment history). The two
-    // unwraps preserve the caller contract unchanged: a missing wallet or
-    // identity is a NotFound error, a present identity with no profile is a
-    // successful read with `has_profile == false`.
+    // unwraps distinguish the failure modes: a missing/stale/destroyed
+    // wallet handle (`with_item` → None) is an `ErrorInvalidHandle`
+    // lifecycle error, while a present wallet that simply doesn't manage
+    // this identity (inner None) is a `NotFound` — the latter is the
+    // unmanaged-recipient case the Add-Contact preview treats as "no
+    // profile", the former must surface so a use-after-close isn't
+    // silently masked as a missing profile. A present identity with no
+    // profile is a successful read with `has_profile == false`.
     let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
         let wm = wallet.wallet_manager().blocking_read();
         let info = wm.get_wallet_info(&wallet.wallet_id())?;
         let managed = info.identity_manager.managed_identity(&id)?;
         Some(managed.dashpay().profile.clone())
     });
-    let inner = unwrap_option_or_return!(option);
+    let Some(inner) = option else {
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidHandle,
+            "Wallet not found in wallet manager",
+        );
+    };
     let profile = unwrap_option_or_return!(inner);
     match profile {
         Some(profile) => unsafe {
