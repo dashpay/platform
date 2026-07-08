@@ -1419,6 +1419,16 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TokensNative_syncDash
 /// Returns a JSON object string (fields: displayName, publicMessage,
 /// avatarUrl, avatarHash hex, avatarFingerprint hex) or null when the
 /// identity has no cached profile. Parsing happens Kotlin-side.
+///
+/// An identity the wallet does not manage is folded into the same `null`
+/// result as a managed identity with no profile: the Kotlin `getProfile`
+/// contract only promises "null when there is no cached profile", and both
+/// cases mean exactly that. This matters because the Add Contact preview
+/// probes `getProfile()` on a not-yet-managed recipient id; the shared FFI
+/// maps that missing identity to a `NotFound` result, and surfacing it here
+/// as an exception crashes the app. (The shared FFI keeps returning the error
+/// for the Swift `getDashPayProfile`, which documents throwing for unknown
+/// ids — only this JNI surface is lenient.)
 #[no_mangle]
 pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TokensNative_getDashPayProfile(
     mut env: JNIEnv,
@@ -1432,7 +1442,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TokensNative_getDashP
         };
         let mut profile = DashPayProfileFFI::empty();
         let mut has_profile = false;
-        let result = unsafe {
+        let mut result = unsafe {
             platform_wallet_ffi::platform_wallet_get_dashpay_profile(
                 wallet_handle as Handle,
                 id.as_ptr(),
@@ -1440,6 +1450,14 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TokensNative_getDashP
                 &mut has_profile as *mut bool,
             )
         };
+        if result.code == PlatformWalletFFIResultCode::NotFound {
+            // The wallet doesn't manage this identity (the FFI maps the missing
+            // `ManagedIdentity` to the generic `NotFound` Option mapping) → no
+            // cached profile → null, not a thrown exception. Free the error
+            // message ourselves since we're bypassing take_pwffi_error.
+            unsafe { platform_wallet_ffi_result_free(&mut result) };
+            return ptr::null_mut();
+        }
         if take_pwffi_error(env, result) {
             return ptr::null_mut();
         }

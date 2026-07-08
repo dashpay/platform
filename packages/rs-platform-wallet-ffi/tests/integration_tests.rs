@@ -310,3 +310,55 @@ fn test_full_workflow() {
         platform_wallet_info_destroy(wallet_handle);
     }
 }
+
+/// Regression: reading a DashPay profile for an identity the wallet does not
+/// manage must report `NotFound` (the generic `Option::None` mapping), not
+/// succeed. The JNI `getDashPayProfile` bridge relies on exactly this code to
+/// translate an unknown-to-the-wallet id into a clean Kotlin `null` (see
+/// `rs-unified-sdk-jni`), instead of throwing — which is what crashed the
+/// Android Add Contact preview when it probed `getProfile()` on a not-yet-a-
+/// contact recipient id. Locking the code down here keeps that translation
+/// honest.
+#[test]
+fn test_get_dashpay_profile_unmanaged_identity_reports_not_found() {
+    use platform_wallet_ffi::dashpay_profile::{
+        dashpay_profile_ffi_free, platform_wallet_get_dashpay_profile, DashPayProfileFFI,
+    };
+
+    unsafe {
+        let seed = [0u8; 64];
+        let mut wallet_handle: Handle = NULL_HANDLE;
+        let result = platform_wallet_info_create_from_seed(
+            Network::Testnet.into(),
+            seed.as_ptr(),
+            seed.len(),
+            &mut wallet_handle,
+        );
+        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+
+        // A fresh wallet manages no identities, so any id is "unknown".
+        let unmanaged_id = [0x11u8; 32];
+        let mut profile = DashPayProfileFFI::empty();
+        let mut has_profile = true;
+
+        let mut result = platform_wallet_get_dashpay_profile(
+            wallet_handle,
+            unmanaged_id.as_ptr(),
+            &mut profile as *mut DashPayProfileFFI,
+            &mut has_profile as *mut bool,
+        );
+
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::NotFound,
+            "an unmanaged identity must surface as the NotFound Option mapping",
+        );
+        // Out-params are zero-initialized on the error path.
+        assert!(!has_profile);
+        assert!(profile.display_name.is_null());
+
+        dashpay_profile_ffi_free(&mut profile as *mut DashPayProfileFFI);
+        platform_wallet_ffi::error::platform_wallet_ffi_result_free(&mut result);
+        platform_wallet_info_destroy(wallet_handle);
+    }
+}
