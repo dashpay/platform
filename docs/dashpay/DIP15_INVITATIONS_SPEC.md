@@ -294,6 +294,16 @@ returns exactly this for a fresh tx (its `validate_or_upgrade_proof` only upgrad
 tx is *old* — not the case at create), so the invitation path **keeps the IS proof, no forced CL
 upgrade**.
 
+> **Slow-IS fallback must be enforced (Rust-core review H1).** `create_funded_asset_lock_proof`
+> *also* falls back to a ChainLock proof if the IS lock doesn't propagate within its 300s
+> preference window. Since the invitee's `validate_claimable` accepts only an InstantSend proof,
+> `create_invitation` **must reject a returned ChainLock proof** — else it would emit a
+> `dashpay://invite` link the invitee silently rejects (a dead voucher: funds locked, no signal).
+> On this rare path create returns a clear error; the funding lock stays tracked/reclaimable, and
+> the inviter retries. *(A future robustness option is to accept a Chain proof on claim too —
+> it never goes stale — skipping the local credit-output pre-check since a Chain proof carries no
+> embedded tx; deferred, as it deviates from the literal Instant-only decision.)*
+
 **Staleness mitigation = a short, IS-scoped advisory expiry (not an IS→CL upgrade in v1).** The
 one real risk is that Platform rejects a *stale* islock (quorum rotated). Rather than build an
 invitee-side IS→CL upgrade (which needs the embedded tx re-tracked — non-trivial, and the
@@ -428,17 +438,20 @@ non-malleable, double-claim is deterministic, the invitee never risks its own fu
   in-flight claim, and two racers target the *same* id (consensus commits exactly one). Every
   claim-theft attack reduces to **"who holds the link."** The invitee's own identity keys sign
   the per-key witnesses separately.
-- **Bearer credential — must-fix hardening:**
-  - **Amount cap enforced in Rust (Finding 4), not just UI.** `create_invitation` rejects
-    `amount_duffs > MAX_INVITATION_DUFFS`. The "small blast radius" argument fails if the cap is
-    UI-only (bypassable by a direct FFI caller / headless host / UI bug).
-  - **Advisory expiry on the voucher (Finding 3).** The voucher key has no on-chain expiry, so a
-    leak is a *permanent* claim until consumed. The payload's `expiry_unix` bounds the practical
-    leak window: the claim path refuses a past-expiry link, and the inviter is prompted to reclaim
-    after expiry. It is advisory (not consensus), but it bounds both the leak and the reclaim
-    window. `expiry` is capped at `now + MAX_INVITATION_TTL` at create.
+- **Bearer credential — the load-bearing leak mitigation is the amount cap + reclaim, NOT the
+  expiry (Rust-security-review LOW-2 honesty fix):**
+  - **Amount cap enforced in Rust (Finding 4).** `create_invitation` rejects
+    `amount_duffs > MAX_INVITATION_DUFFS` — the *actual* bound on a leaked link's blast radius
+    (a direct FFI caller / headless host / UI bug can't exceed it). Never UI-only.
+  - **Expiry is a UX / reclaim signal, not a leak bound.** A malicious *finder* of a leaked link
+    holds the voucher key + proof and can submit directly, **ignoring the honest UI's expiry
+    check** — so `expiry_unix` does not bound a leaked-link window. What it *does* do: (a) stop an
+    **honest** invitee from submitting an about-to-go-stale IS proof (§5.1), and (b) give the
+    inviter a clear reclaim-after signal. Advisory, not consensus. (The FFI sets a sensible
+    default expiry from `MAX_INVITATION_TTL_SECS`; clamping it in Rust is symmetry, not security.)
   - **Single-use** (asset lock consumed on first claim → deterministic reject thereafter), funds
-    are the inviter's to give.
+    are the inviter's to give; the inviter can race to **reclaim** an unclaimed voucher (a race it
+    can lose if already leaked — §8 Finding 6).
 - **The link is plaintext key material — treat the URI as secret end-to-end (Finding 3).** The
   create FFI returns the URI (which *contains* the voucher key) as a C string that flows through
   Swift + a `dashpay://invite` deep-link handler (handlers routinely log URLs) + clipboard

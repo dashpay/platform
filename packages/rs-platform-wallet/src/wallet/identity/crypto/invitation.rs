@@ -27,6 +27,7 @@ use dashcore::secp256k1::{PublicKey, Secp256k1, SecretKey};
 use dashcore::ScriptBuf;
 use dpp::bincode::config;
 use dpp::prelude::AssetLockProof;
+use zeroize::Zeroizing;
 
 use crate::error::PlatformWalletError;
 
@@ -77,6 +78,14 @@ pub struct ParsedInvitation {
     pub expiry_unix: u32,
     /// Inviter contact-bootstrap info; `None` ⇒ pure funding voucher.
     pub inviter: Option<InviterInfo>,
+}
+
+impl Drop for ParsedInvitation {
+    /// Scrub the voucher scalar on drop — it is literal bearer money. Mirrors
+    /// the resolver signer's key hygiene (`WipingSecretKey`).
+    fn drop(&mut self) {
+        self.voucher_key.non_secure_erase();
+    }
 }
 
 impl std::fmt::Debug for ParsedInvitation {
@@ -186,7 +195,9 @@ pub fn encode_invitation_uri(
     let asset_lock_bytes = dpp::bincode::encode_to_vec(asset_lock, config::standard())
         .map_err(|e| invalid(format!("failed to encode asset-lock proof: {e}")))?;
 
-    let mut buf = Vec::with_capacity(64 + asset_lock_bytes.len());
+    // Zeroized: `buf` holds the plaintext voucher scalar until it is base58'd
+    // into the (secret) URI; scrub the intermediate on drop.
+    let mut buf = Zeroizing::new(Vec::with_capacity(64 + asset_lock_bytes.len()));
     buf.push(INVITATION_PAYLOAD_VERSION);
     buf.extend_from_slice(&voucher_key.secret_bytes());
     buf.extend_from_slice(&expiry_unix.to_le_bytes());
@@ -217,7 +228,7 @@ pub fn encode_invitation_uri(
 
     Ok(format!(
         "{INVITATION_URI_PREFIX}{}",
-        bs58::encode(&buf).into_string()
+        bs58::encode(buf.as_slice()).into_string()
     ))
 }
 
@@ -238,9 +249,13 @@ pub fn parse_invitation_uri(uri: &str) -> Result<ParsedInvitation, PlatformWalle
             data.len()
         )));
     }
-    let bytes = bs58::decode(data)
-        .into_vec()
-        .map_err(|e| invalid(format!("invitation data is not valid base58: {e}")))?;
+    // Zeroized: the decoded payload carries the plaintext voucher scalar (at
+    // offset 1..33); scrub it once parsed.
+    let bytes = Zeroizing::new(
+        bs58::decode(data)
+            .into_vec()
+            .map_err(|e| invalid(format!("invitation data is not valid base58: {e}")))?,
+    );
     if bytes.len() > MAX_INVITATION_PAYLOAD_BYTES {
         return Err(invalid(format!(
             "invitation payload too large ({} bytes; max {MAX_INVITATION_PAYLOAD_BYTES})",
@@ -248,7 +263,7 @@ pub fn parse_invitation_uri(uri: &str) -> Result<ParsedInvitation, PlatformWalle
         )));
     }
 
-    let mut r = Reader::new(&bytes);
+    let mut r = Reader::new(bytes.as_slice());
     let version = r.u8()?;
     if version != INVITATION_PAYLOAD_VERSION {
         return Err(invalid(format!(

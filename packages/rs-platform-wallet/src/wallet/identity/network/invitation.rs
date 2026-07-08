@@ -22,14 +22,13 @@ use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV
 use dpp::identity::signer::Signer;
 use dpp::identity::v0::IdentityV0;
 use dpp::identity::{Identity, IdentityPublicKey, KeyID, Purpose, SecurityLevel};
-use dpp::prelude::Identifier;
+use dpp::prelude::{AssetLockProof, Identifier};
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 
 use dash_sdk::platform::transition::put_identity::PutIdentity;
 use dash_sdk::platform::transition::put_settings::PutSettings;
 
 use crate::error::PlatformWalletError;
-use crate::wallet::asset_lock::orchestration::submit_with_cl_height_retry;
 use crate::wallet::identity::crypto::{encode_invitation_uri, validate_claimable};
 use crate::wallet::identity::crypto::{InviterInfo, ParsedInvitation};
 use crate::wallet::identity::network::contact_requests::ContactCryptoProvider;
@@ -41,6 +40,14 @@ use super::*;
 /// Rust — not just in the UI (spec §8 Finding 4). Generous enough for identity
 /// registration plus a small starting balance; tune if onboarding needs more.
 pub const MAX_INVITATION_DUFFS: u64 = 1_000_000;
+
+/// Default TTL (24h) for an invitation's advisory expiry. The FFI sets
+/// `expiry_unix = now + MAX_INVITATION_TTL_SECS`. The expiry is **advisory** — a
+/// leaked-link finder holds the voucher key and ignores it — so it bounds only
+/// the honest UI (don't submit an about-to-go-stale IS proof) and the reclaim
+/// signal, NOT a leaked-link window. The real leak bound is `MAX_INVITATION_DUFFS`.
+/// See spec §8.
+pub const MAX_INVITATION_TTL_SECS: u32 = 24 * 60 * 60;
 
 /// A freshly-created invitation: the shareable link plus the bookkeeping the
 /// inviter tracks to reclaim an unclaimed voucher.
@@ -140,6 +147,11 @@ impl IdentityWallet {
                 "invitation amount {amount_duffs} exceeds the cap {MAX_INVITATION_DUFFS} duffs"
             )));
         }
+        if expiry_unix == 0 {
+            return Err(PlatformWalletError::InvalidIdentityData(
+                "invitation expiry_unix must be set (non-zero)".to_string(),
+            ));
+        }
 
         // Build + broadcast the voucher asset lock at the invitation funding
         // account (the builder auto-selects the next unused funding index and
@@ -155,6 +167,20 @@ impl IdentityWallet {
                 asset_lock_signer,
             )
             .await?;
+
+        // The invitee's `validate_claimable` accepts only an InstantSend proof.
+        // `create_funded_asset_lock_proof` falls back to a ChainLock proof if the
+        // IS lock doesn't propagate within its 300s preference window — reject
+        // that here rather than emit a link the invitee would silently reject (a
+        // dead voucher: funds locked, no signal). The funding lock stays
+        // tracked/reclaimable; the inviter retries.
+        if !matches!(proof, AssetLockProof::Instant(_)) {
+            return Err(PlatformWalletError::AssetLockTransaction(
+                "InstantSend lock did not confirm in time (a ChainLock proof was produced); \
+                 the funding lock is reclaimable — please retry the invitation"
+                    .to_string(),
+            ));
+        }
 
         // Export the one-time voucher private key at the funding path. This is
         // the one deliberate raw-key export (the whole point of an invitation);
@@ -212,20 +238,21 @@ impl IdentityWallet {
             revision: 0,
         });
 
-        // Submit with the CL-height-too-low retry layer. The direct raw-key SDK
-        // call doesn't inherit `register_identity_with_funding`'s retry layers,
-        // so wrap it here (a transient 10506 would otherwise hard-fail the claim).
-        let identity = submit_with_cl_height_retry(settings, |s| {
-            placeholder.put_to_platform_and_wait_for_response_with_private_key(
+        // Submit directly. The CL-height-too-low (10506) retry only helps
+        // ChainLock proofs; the claim path only ever carries an InstantSend proof
+        // (enforced at create, re-checked by `validate_claimable`), so a
+        // CL-height retry would be dead code. A within-expiry IS proof either
+        // lands or is rejected — the inviter re-creates on the rare rejection.
+        let identity = placeholder
+            .put_to_platform_and_wait_for_response_with_private_key(
                 &self.sdk,
                 invitation.asset_lock.clone(),
                 &voucher_priv,
                 identity_signer,
-                s,
+                settings,
             )
-        })
-        .await
-        .map_err(PlatformWalletError::Sdk)?;
+            .await
+            .map_err(PlatformWalletError::Sdk)?;
 
         // Best-effort local bookkeeping — Platform has already accepted the
         // registration, so a local failure must NOT propagate (mirrors
