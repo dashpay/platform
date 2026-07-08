@@ -12,6 +12,7 @@ mod wallet_lifecycle;
 
 use std::sync::Arc;
 
+use dash_async::{ShutdownReport, ShutdownWeight, ThreadRegistry, WorkerConfig};
 use tokio::sync::{Notify, RwLock};
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
@@ -31,6 +32,51 @@ use crate::wallet::core::BalanceUpdateHandler;
 use crate::wallet::identity::network::DashPayPaymentHandler;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 use crate::wallet::PlatformWallet;
+
+/// Registry key identifying each background worker the manager joins at
+/// shutdown.
+///
+/// The four periodic sync coordinators run their `!Send` loops on detached
+/// OS threads. The shared [`ThreadRegistry`] owns their join handles so
+/// [`shutdown`](PlatformWalletManager::shutdown) can join them — and
+/// surface a panicked loop — before the host drops the tokio runtime.
+/// Cancellation is NOT the registry's concern: each coordinator keeps its
+/// own `LoopCancelGuard`, which the registry sits alongside purely for the
+/// join / status handoff.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum WalletWorker {
+    /// Platform-address (BLAST / DIP-17) balance sync coordinator.
+    PlatformAddressSync,
+    /// Per-identity token-state sync coordinator.
+    IdentitySync,
+    /// DashPay (contact requests + profiles) sync coordinator.
+    DashPaySync,
+    /// Shielded (Orchard) note sync coordinator.
+    ShieldedSync,
+}
+
+// `dash_async::RegistryKey` is a blanket impl over
+// `Copy + Ord + Eq + Debug + Send + Sync + 'static`, which the derives above
+// satisfy — no explicit impl needed.
+
+/// Teardown tier for the periodic coordinators. All four share one tier so
+/// [`ThreadRegistry::shutdown`] drains them concurrently.
+pub(crate) const COORDINATOR_WEIGHT: ShutdownWeight = ShutdownWeight(0);
+
+/// Per-coordinator managed-join budget. A wedged loop pass surfaces as
+/// [`WorkerStatus::Timeout`](dash_async::WorkerStatus::Timeout) instead of
+/// hanging shutdown forever.
+pub(crate) const SHUTDOWN_JOIN_TIMEOUT_SECS: u64 = 30;
+
+/// [`WorkerConfig`] each coordinator hands its loop thread to the registry
+/// with — one shared tier, no drain hook, one join budget.
+pub(crate) fn coordinator_worker_config() -> WorkerConfig {
+    WorkerConfig {
+        weight: COORDINATOR_WEIGHT,
+        drain: None,
+        join_budget: std::time::Duration::from_secs(SHUTDOWN_JOIN_TIMEOUT_SECS),
+    }
+}
 
 /// Multi-wallet coordinator with SPV sync and event handling.
 ///
@@ -99,6 +145,12 @@ pub struct PlatformWalletManager<P: PlatformWalletPersistence + 'static> {
     /// is torn down.
     pub(super) event_adapter_cancel: CancellationToken,
     pub(super) event_adapter_join: tokio::sync::Mutex<Option<JoinHandle<()>>>,
+    /// Shared join/status registry for the periodic coordinator threads.
+    /// Each coordinator hands its OS-thread `JoinHandle` here at `start`;
+    /// [`shutdown`](Self::shutdown) joins them and reports per-worker
+    /// terminal status. Cancellation stays with each coordinator's
+    /// `LoopCancelGuard` — the registry only joins.
+    pub(super) registry: Arc<ThreadRegistry<WalletWorker>>,
 }
 
 impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
@@ -115,6 +167,9 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         let wallet_manager = Arc::new(RwLock::new(WalletManager::new(sdk.network)));
         let wallets = Arc::new(RwLock::new(std::collections::BTreeMap::new()));
         let lock_notify = Arc::new(Notify::new());
+        // Shared registry that owns the coordinators' loop-thread join
+        // handles for a clean, panic-aware shutdown join.
+        let registry = ThreadRegistry::<WalletWorker>::new();
 
         // Spawn the wallet-event adapter that translates upstream
         // `WalletEvent`s into `CoreChangeSet`s and forwards them to
@@ -157,14 +212,19 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         let platform_address_sync = Arc::new(PlatformAddressSyncManager::new(
             Arc::clone(&wallets),
             Arc::clone(&event_manager),
+            Arc::clone(&registry),
         ));
         let identity_sync = Arc::new(IdentitySyncManager::new(
             Arc::clone(&sdk),
             Arc::clone(&persister),
+            Arc::clone(&registry),
         ));
         // DashPay sync shares the `wallets` map (not the token
         // registry) so DashPay-only identities sync on every sweep.
-        let dashpay_sync = Arc::new(DashPaySyncManager::new(Arc::clone(&wallets)));
+        let dashpay_sync = Arc::new(DashPaySyncManager::new(
+            Arc::clone(&wallets),
+            Arc::clone(&registry),
+        ));
         #[cfg(feature = "shielded")]
         let shielded_coordinator: Arc<
             RwLock<Option<Arc<crate::wallet::shielded::NetworkShieldedCoordinator>>>,
@@ -173,6 +233,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         let shielded_sync = Arc::new(ShieldedSyncManager::new(
             Arc::clone(&event_manager),
             Arc::clone(&shielded_coordinator),
+            Arc::clone(&registry),
         ));
         Self {
             sdk,
@@ -192,6 +253,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             persister,
             event_adapter_cancel,
             event_adapter_join: tokio::sync::Mutex::new(Some(event_adapter_join)),
+            registry,
         }
     }
 
@@ -308,6 +370,13 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// must not commit its own persistence wipe in that case.
     #[cfg(feature = "shielded")]
     pub async fn clear_shielded(&self) -> Result<(), crate::error::PlatformWalletError> {
+        // Hold the registry's per-key clearing latch across the WHOLE
+        // quiesce -> wipe. While it is up, `ShieldedSyncManager::start`
+        // (and any registry (re)start) is a no-op, so no fresh pass can
+        // slip between the quiesce and the wipe and re-persist notes into
+        // the store `coord.clear()` is about to reset. The guard's Drop
+        // releases the latch on every exit path (including `?` and panic).
+        let _clearing = self.registry.hold_clearing(WalletWorker::ShieldedSync);
         self.shielded_sync_manager.quiesce().await;
         if let Some(coord) = self.shielded_coordinator().await {
             coord.clear().await?;
@@ -351,38 +420,138 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         Ok(())
     }
 
-    /// Stop all background tasks and wait for them to exit.
+    /// Stop all background tasks, join their threads, and report how each
+    /// one ended.
     ///
     /// **Quiesces** the periodic coordinators
     /// (`PlatformAddressSyncManager`, `IdentitySyncManager`,
-    /// `DashPaySyncManager`, `ShieldedSyncManager`) — cancelling each
-    /// loop *and draining any in-flight pass to completion*, including
-    /// its persister / host-callback fan-out — then drains the
-    /// wallet-event adapter task.
-    /// Idempotent. Call before dropping the manager when a clean
-    /// shutdown is required (e.g. on app termination); a dirty drop
-    /// simply leaks the tasks until the runtime exits.
+    /// `DashPaySyncManager`, `ShieldedSyncManager`) — cancelling each loop
+    /// *and draining any in-flight pass to completion*, including its
+    /// persister / host-callback fan-out — then **joins** their loop OS
+    /// threads through the shared [`ThreadRegistry`] and finally drains the
+    /// wallet-event adapter task. Idempotent.
     ///
-    /// Ordering matters: cancel-only `stop()` would let a pass already
-    /// inside `sync_now` keep running and call `persister.store(...)` /
-    /// fire a host completion callback after the FFI's `destroy`
-    /// returned and the host freed the persister / event-handler
-    /// context — a use-after-free. So we `quiesce()` the sync managers
-    /// FIRST (so no further persister store or host callback can start),
-    /// and only THEN cancel + join the event adapter, which is the sink
-    /// those stores feed into.
-    pub async fn shutdown(&self) {
+    /// Ordering matters and is threefold:
+    /// 1. `quiesce()` each coordinator FIRST. Cancel-only `stop()` would
+    ///    let a pass already inside `sync_now` keep running and call
+    ///    `persister.store(...)` / fire a host completion callback after
+    ///    the FFI's `destroy` returned and the host freed the persister /
+    ///    event-handler context — a use-after-free.
+    /// 2. `registry.shutdown()` then JOINS the coordinator OS threads.
+    ///    `quiesce`'s `is_syncing` barrier only proves no pass is *in
+    ///    flight*; the detached thread may still be unwinding out of
+    ///    `Handle::block_on`, touching `tokio::time` on a runtime the host
+    ///    is about to drop. Joining guarantees it has fully exited, and
+    ///    surfaces a panicked loop as a non-clean [`WorkerStatus`] rather
+    ///    than silently dropping it.
+    /// 3. The event adapter — the sink those stores feed into — drains
+    ///    LAST.
+    ///
+    /// Returns a [`ShutdownReport`] keyed by [`WalletWorker`]; inspect
+    /// [`ShutdownReport::all_clean`] before freeing the host callback
+    /// context. A non-clean status flags a still-live worker or orphan.
+    ///
+    /// [`WorkerStatus`]: dash_async::WorkerStatus
+    pub async fn shutdown(&self) -> ShutdownReport<WalletWorker> {
         self.platform_address_sync_manager.quiesce().await;
         self.identity_sync_manager.quiesce().await;
         self.dashpay_sync_manager.quiesce().await;
         #[cfg(feature = "shielded")]
         self.shielded_sync_manager.quiesce().await;
 
+        // Hard-join the coordinator loop threads now that every in-flight
+        // pass has drained. This is the barrier `quiesce` cannot give:
+        // it waits for the actual OS thread to terminate before the host
+        // drops the runtime.
+        let report = self.registry.shutdown().await;
+
+        // The wallet-event adapter is the sink the coordinators' stores
+        // feed into, so it drains AFTER them. It is a plain tokio task, not
+        // a registry worker, so it is joined here rather than in the report.
         self.event_adapter_cancel.cancel();
         if let Some(handle) = self.event_adapter_join.lock().await.take() {
             if let Err(e) = handle.await {
                 tracing::warn!(error = ?e, "Wallet event adapter task join error");
             }
         }
+
+        report
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use dash_async::WorkerStatus;
+
+    use crate::changeset::{
+        ClientStartState, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
+    };
+    use crate::events::{EventHandler, PlatformEventHandler};
+
+    struct NoopPersister;
+    impl PlatformWalletPersistence for NoopPersister {
+        fn store(
+            &self,
+            _wallet_id: WalletId,
+            _changeset: PlatformWalletChangeSet,
+        ) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+        fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+        fn load(&self) -> Result<ClientStartState, PersistenceError> {
+            Ok(ClientStartState::default())
+        }
+    }
+
+    struct NoopEventHandler;
+    impl EventHandler for NoopEventHandler {}
+    impl PlatformEventHandler for NoopEventHandler {}
+
+    fn make_manager() -> Arc<PlatformWalletManager<NoopPersister>> {
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        Arc::new(PlatformWalletManager::new(
+            sdk,
+            Arc::new(NoopPersister),
+            Arc::new(NoopEventHandler) as Arc<dyn PlatformEventHandler>,
+        ))
+    }
+
+    /// `shutdown()` joins every started coordinator through the shared
+    /// [`ThreadRegistry`], reports each as cleanly joined, and is
+    /// idempotent — a second call finds nothing running and still reports
+    /// clean. This is the barrier the previous discard-the-handle `start`
+    /// could not give: proof the loop OS threads have terminated before the
+    /// host drops the runtime.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn shutdown_joins_started_coordinators_and_is_idempotent() {
+        let mgr = make_manager();
+        // Empty wallet/identity state, so each coordinator's first pass is a
+        // no-op and no network I/O happens; the point is thread lifecycle.
+        Arc::clone(&mgr.identity_sync_manager).start();
+        Arc::clone(&mgr.platform_address_sync_manager).start();
+        Arc::clone(&mgr.dashpay_sync_manager).start();
+
+        let report = mgr.shutdown().await;
+        assert!(report.all_clean(), "clean shutdown: {report:?}");
+        for worker in [
+            WalletWorker::IdentitySync,
+            WalletWorker::PlatformAddressSync,
+            WalletWorker::DashPaySync,
+        ] {
+            assert_eq!(
+                report.per_worker.get(&worker),
+                Some(&WorkerStatus::Ok),
+                "{worker:?} must join cleanly"
+            );
+        }
+
+        // Second shutdown: the coordinators already joined, so the registry
+        // reports them NotRunning and the report stays clean.
+        let again = mgr.shutdown().await;
+        assert!(again.all_clean(), "idempotent shutdown: {again:?}");
     }
 }

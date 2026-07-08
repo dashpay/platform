@@ -7,12 +7,20 @@ authors = ["Dash Core Team"]
 license = "MIT"
 description = "Async-sync bridging utilities for Dash Platform"
 
+[features]
+# Exposes cross-crate test seams (e.g. `ThreadRegistry::park_orphan_for_test`)
+# so downstream crates can drive registry regression tests without shipping
+# the seam in their production builds.
+test-util = []
+
 [dependencies]
 thiserror = "2.0"
 tracing = "0.1.41"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 tokio = { version = "1.40", features = ["rt", "rt-multi-thread", "time", "net"] }
+tokio-util = { version = "0.7.12" }
+futures = { version = "0.3.30" }
 
 [dev-dependencies]
-tokio = { version = "1.40", features = ["macros", "rt-multi-thread", "sync"] }
+tokio = { version = "1.40", features = ["macros", "rt-multi-thread", "sync", "time"] }

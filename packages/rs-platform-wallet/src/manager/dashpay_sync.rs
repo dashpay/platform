@@ -53,8 +53,11 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use tokio::sync::RwLock;
 
+use dash_async::ThreadRegistry;
+
 use crate::error::PlatformWalletError;
 use crate::manager::loop_cancel::LoopCancelGuard;
+use crate::manager::{coordinator_worker_config, WalletWorker};
 use crate::wallet::platform_wallet::WalletId;
 use crate::wallet::PlatformWallet;
 
@@ -119,6 +122,10 @@ pub struct DashPaySyncManager {
     /// Generation-guarded cancel-token slot for the background loop —
     /// see [`LoopCancelGuard`] for the stale-loop shutdown invariant.
     cancel_guard: LoopCancelGuard,
+    /// Shared registry that owns this loop's OS-thread join handle for a
+    /// panic-aware shutdown join. Join-only — cancellation stays with
+    /// [`cancel_guard`](Self::cancel_guard).
+    registry: Arc<ThreadRegistry<WalletWorker>>,
     interval_secs: AtomicU64,
     is_syncing: AtomicBool,
     /// Set by [`quiesce`](Self::quiesce) to gate new passes while it
@@ -133,10 +140,14 @@ pub struct DashPaySyncManager {
 }
 
 impl DashPaySyncManager {
-    pub fn new(wallets: Arc<RwLock<BTreeMap<WalletId, Arc<PlatformWallet>>>>) -> Self {
+    pub fn new(
+        wallets: Arc<RwLock<BTreeMap<WalletId, Arc<PlatformWallet>>>>,
+        registry: Arc<ThreadRegistry<WalletWorker>>,
+    ) -> Self {
         Self {
             wallets,
             cancel_guard: LoopCancelGuard::new(),
+            registry,
             interval_secs: AtomicU64::new(DEFAULT_SYNC_INTERVAL_SECS),
             is_syncing: AtomicBool::new(false),
             quiescing: AtomicBool::new(false),
@@ -196,8 +207,9 @@ impl DashPaySyncManager {
         };
 
         let handle = tokio::runtime::Handle::current();
+        let registry = Arc::clone(&self.registry);
         let this = self;
-        std::thread::Builder::new()
+        let join = std::thread::Builder::new()
             .name("dashpay-sync".into())
             // DashPay sync verifies GroveDB *document-query* proofs
             // (contactRequest / profile fetches), whose recursive
@@ -228,6 +240,9 @@ impl DashPaySyncManager {
                 });
             })
             .expect("failed to spawn dashpay-sync thread");
+
+        // Join-only handoff to the shared registry (see `IdentitySyncManager::start`).
+        registry.register_thread(WalletWorker::DashPaySync, coordinator_worker_config(), join);
     }
 
     /// Stop the background sync loop. No-op if not running.

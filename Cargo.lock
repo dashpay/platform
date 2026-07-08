@@ -1617,8 +1617,10 @@ dependencies = [
 name = "dash-async"
 version = "4.0.0"
 dependencies = [
+ "futures",
  "thiserror 2.0.18",
  "tokio",
+ "tokio-util",
  "tracing",
 ]
 
@@ -5142,6 +5144,7 @@ dependencies = [
  "async-trait",
  "bimap",
  "bs58",
+ "dash-async",
  "dash-sdk",
  "dash-spv",
  "dashcore",

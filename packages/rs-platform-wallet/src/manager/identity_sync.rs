@@ -62,8 +62,11 @@ use dash_sdk::platform::tokens::identity_token_balances::{
 };
 use dash_sdk::platform::FetchMany;
 
+use dash_async::ThreadRegistry;
+
 use crate::changeset::{PlatformWalletPersistence, TokenBalanceChangeSet};
 use crate::manager::loop_cancel::LoopCancelGuard;
+use crate::manager::{coordinator_worker_config, WalletWorker};
 use crate::wallet::platform_wallet::WalletId;
 
 /// Default cadence for the identity-token sync loop.
@@ -161,6 +164,10 @@ where
     /// Generation-guarded cancel-token slot for the background loop —
     /// see [`LoopCancelGuard`] for the stale-loop shutdown invariant.
     cancel_guard: LoopCancelGuard,
+    /// Shared registry that owns this loop's OS-thread join handle for a
+    /// panic-aware shutdown join. Registration is join-only —
+    /// cancellation stays with [`cancel_guard`](Self::cancel_guard).
+    registry: Arc<ThreadRegistry<WalletWorker>>,
     interval_secs: AtomicU64,
     is_syncing: AtomicBool,
     /// Set by [`quiesce`](Self::quiesce) to gate new passes while it
@@ -196,11 +203,16 @@ where
     /// writes). The registry starts empty — call
     /// [`register_identity`](Self::register_identity) before
     /// [`start`](Self::start).
-    pub fn new(sdk: Arc<dash_sdk::Sdk>, persister: Arc<P>) -> Self {
+    pub fn new(
+        sdk: Arc<dash_sdk::Sdk>,
+        persister: Arc<P>,
+        registry: Arc<ThreadRegistry<WalletWorker>>,
+    ) -> Self {
         Self {
             sdk,
             persister,
             cancel_guard: LoopCancelGuard::new(),
+            registry,
             interval_secs: AtomicU64::new(DEFAULT_SYNC_INTERVAL_SECS),
             is_syncing: AtomicBool::new(false),
             quiescing: AtomicBool::new(false),
@@ -393,8 +405,9 @@ where
         };
 
         let handle = tokio::runtime::Handle::current();
+        let registry = Arc::clone(&self.registry);
         let this = self;
-        std::thread::Builder::new()
+        let join = std::thread::Builder::new()
             .name("identity-sync".into())
             .spawn(move || {
                 handle.block_on(async move {
@@ -416,6 +429,17 @@ where
                 });
             })
             .expect("failed to spawn identity-sync thread");
+
+        // Hand the loop thread's join handle to the shared registry so
+        // `shutdown()` can join it (and surface a panic). Join-only: the
+        // `cancel_guard` above remains the sole canceller. On a restart the
+        // registry parks any still-draining prior thread rather than
+        // detaching it.
+        registry.register_thread(
+            WalletWorker::IdentitySync,
+            coordinator_worker_config(),
+            join,
+        );
     }
 
     /// Stop the background sync loop. No-op if not running.
@@ -726,7 +750,11 @@ mod tests {
     fn make_manager() -> Arc<IdentitySyncManager<NoopPersister>> {
         let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
         let persister = Arc::new(NoopPersister);
-        Arc::new(IdentitySyncManager::new(sdk, persister))
+        Arc::new(IdentitySyncManager::new(
+            sdk,
+            persister,
+            ThreadRegistry::<WalletWorker>::new(),
+        ))
     }
 
     fn make_recording_manager() -> (
@@ -736,7 +764,11 @@ mod tests {
         let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
         let persister = Arc::new(RecordingPersister::new());
         (
-            Arc::new(IdentitySyncManager::new(sdk, Arc::clone(&persister))),
+            Arc::new(IdentitySyncManager::new(
+                sdk,
+                Arc::clone(&persister),
+                ThreadRegistry::<WalletWorker>::new(),
+            )),
             persister,
         )
     }
