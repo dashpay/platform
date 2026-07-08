@@ -105,11 +105,16 @@ pub unsafe extern "C" fn platform_wallet_token_mint(
 
     // Map the proof-verified outcome to the balances JSON, mirroring the
     // burn path. A standard mint carries the recipient's new balance
-    // (`recipient` from the proof); a group-authorized mint carries the
-    // recipient's balance once the action CLOSES. The recipient defaults
-    // to the minting identity `id` when no explicit destination was given.
-    // The document variants, and a group action still awaiting
-    // co-signatures (`balance == None`), have nothing to persist.
+    // straight from the proof (`TokenBalance`), so it is always keyed
+    // correctly. A group-authorized mint, once the action CLOSES, carries
+    // only the raw balance — not the identity it belongs to — so we can
+    // only key it when the caller passed an explicit `recipient`. A
+    // `recipient == None` group mint resolves to the token's configured
+    // `newTokensDestinationIdentity` on the Rust/DPP side, an identity we
+    // do not have here; keying it under the signer would upsert the wrong
+    // local row, so we emit an empty object and let the periodic sync
+    // reconcile that holder. The document variants and an action still
+    // awaiting co-signatures (`balance == None`) likewise persist nothing.
     match mint_result {
         MintResult::TokenBalance(recipient_id, new_balance) => {
             let c_str = unwrap_result_or_return!(single_token_balance_to_json_cstring(
@@ -119,12 +124,15 @@ pub unsafe extern "C" fn platform_wallet_token_mint(
             *out_balances_json = c_str;
         }
         MintResult::GroupActionWithBalance(_, _, Some(new_balance)) => {
-            let target = recipient.unwrap_or(id);
-            let c_str = unwrap_result_or_return!(single_token_balance_to_json_cstring(
-                &target,
-                new_balance
-            ));
-            *out_balances_json = c_str;
+            if let Some(target) = recipient {
+                let c_str = unwrap_result_or_return!(single_token_balance_to_json_cstring(
+                    &target,
+                    new_balance
+                ));
+                *out_balances_json = c_str;
+            } else {
+                *out_balances_json = unwrap_result_or_return!(write_empty_balances_json());
+            }
         }
         MintResult::HistoricalDocument(_)
         | MintResult::GroupActionWithDocument(_, _)
