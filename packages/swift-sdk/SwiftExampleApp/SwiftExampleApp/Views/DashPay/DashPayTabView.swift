@@ -122,6 +122,18 @@ struct DashPayTabView: View {
             ?? walletManager.wallets.keys.sorted { $0.lexicographicallyPrecedes($1) }.first
     }
 
+    /// Present the claim sheet pre-filled for a pending `dashpay://invite` link
+    /// (captured by the app's `.onOpenURL` into `AppUIState.pendingInviteURL`)
+    /// and clear it so it isn't re-triggered. Invoked on both the warm path
+    /// (`.onChange`) and the cold-launch path (`.onAppear`); the nil guard makes
+    /// the second call after the first clears it a no-op (no double-present).
+    private func consumePendingInviteURL() {
+        guard let urlString = appUIState.pendingInviteURL else { return }
+        claimInitialURI = urlString
+        showClaimInvitation = true
+        appUIState.pendingInviteURL = nil
+    }
+
     var body: some View {
         NavigationStack {
             content
@@ -166,6 +178,7 @@ struct DashPayTabView: View {
                             Image(systemName: "gift")
                         }
                         .disabled(claimWalletId == nil)
+                        .accessibilityLabel("Claim invitation")
                         .accessibilityIdentifier("dashpay.claimInvitation")
                     }
                     ToolbarItem(placement: .navigationBarLeading) {
@@ -196,14 +209,19 @@ struct DashPayTabView: View {
                         .environmentObject(walletManager)
                     }
                 }
-                .onChange(of: appUIState.pendingInviteURL) { _, newValue in
-                    // A dashpay://invite link opened via the app's .onOpenURL:
-                    // pre-fill + present the claim sheet, then clear the pending
-                    // URL so it isn't re-triggered.
-                    guard let urlString = newValue else { return }
-                    claimInitialURI = urlString
-                    showClaimInvitation = true
-                    appUIState.pendingInviteURL = nil
+                .onChange(of: appUIState.pendingInviteURL) { _, _ in
+                    // Warm path: the app is already running, so the tab observes
+                    // the nil→url transition set by .onOpenURL.
+                    consumePendingInviteURL()
+                }
+                .onAppear {
+                    // Cold-launch path: .onOpenURL fires during scene connection,
+                    // before this tab exists (ContentView shows "Initializing…"
+                    // until bootstrap finishes), so .onChange never sees the
+                    // transition. Consume any already-set pending URL when the tab
+                    // first appears (.onOpenURL forces selectedTab = .dashpay, so
+                    // this tab does appear).
+                    consumePendingInviteURL()
                 }
                 .sheet(isPresented: $showAddContact) {
                     if let identity = activeIdentity {

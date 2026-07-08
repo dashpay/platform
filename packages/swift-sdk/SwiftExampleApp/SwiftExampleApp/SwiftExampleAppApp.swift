@@ -136,7 +136,8 @@ struct SwiftExampleAppApp: App {
                     // DashPay invitation deep link: route to the DashPay tab and
                     // hand the URL to the claim sheet. The URL carries a bearer
                     // voucher key, so it is NOT logged here.
-                    guard url.scheme?.lowercased() == "dashpay" else { return }
+                    guard url.scheme?.lowercased() == "dashpay",
+                          url.host?.lowercased() == "invite" else { return }
                     appUIState.selectedTab = .dashpay
                     appUIState.pendingInviteURL = url.absoluteString
                 }

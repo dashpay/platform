@@ -166,6 +166,7 @@ struct CreateInvitationSheet: View {
                         .padding(8)
                         .background(Color.white)
                         .cornerRadius(12)
+                        .accessibilityHidden(true)
                 }
                 Text("Share this link with your friend. It funds their new identity — treat it like cash.")
                     .font(.caption)
