@@ -9,7 +9,7 @@ use dashcore::sml::llmq_type::LLMQType;
 use dashcore::{QuorumHash, Transaction};
 
 use dash_spv::network::PeerNetworkManager;
-use dash_spv::storage::DiskStorageManager;
+use dash_spv::storage::{DiskStorageManager, StorageManager};
 use dash_spv::sync::SyncProgress;
 use dash_spv::{ClientConfig, DashSpvClient, EventHandler, Hash};
 
@@ -31,6 +31,7 @@ pub struct SpvRuntime {
     event_manager: Arc<PlatformEventManager>,
     wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
     client: RwLock<Option<SpvClient>>,
+    last_config: RwLock<Option<ClientConfig>>,
     task: Mutex<Option<JoinHandle<()>>>,
 }
 /// Classify a dash-spv broadcast failure per the
@@ -69,6 +70,7 @@ impl SpvRuntime {
             event_manager,
             wallet_manager,
             client: RwLock::new(None),
+            last_config: RwLock::new(None),
             task: Mutex::new(None),
         }
     }
@@ -96,6 +98,9 @@ impl SpvRuntime {
         // platform event manager's own handler list).
         let event_handlers: Vec<Arc<dyn EventHandler>> =
             vec![Arc::clone(&self.event_manager) as Arc<dyn EventHandler>];
+
+        let retained_config = config.clone();
+
         let spv_client = DashSpvClient::new(
             config,
             network_manager,
@@ -108,6 +113,7 @@ impl SpvRuntime {
 
         let mut client = self.client.write().await;
         *client = Some(spv_client);
+        *self.last_config.write().await = Some(retained_config);
 
         Ok(())
     }
@@ -283,17 +289,37 @@ impl SpvRuntime {
 
     /// Clear all persisted SPV storage (headers, filters, state).
     ///
-    /// The SPV client must be running to perform this operation.
+    /// If the SPVClient is running it will be stopped and the
+    /// storage will be cleaned. If it is not running a tmp
+    /// Storage Manager built from the cached config will be used.
     pub async fn clear_storage(&self) -> Result<(), PlatformWalletError> {
-        let client_guard = self.client.read().await;
-        let client = client_guard.as_ref().ok_or(PlatformWalletError::SpvError(
-            "SPV Client not started".to_string(),
-        ))?;
+        // Fast path: a live client holds the storage lock; clear through it.
+        {
+            let client_guard = self.client.read().await;
+            if let Some(client) = client_guard.as_ref() {
+                return client
+                    .clear_storage()
+                    .await
+                    .map_err(|e| PlatformWalletError::SpvError(e.to_string()));
+            }
+        }
 
-        client
-            .clear_storage()
+        let config = self.last_config.read().await.clone().ok_or_else(|| {
+            PlatformWalletError::SpvError(
+                "SPV storage location unknown; start the client at least once before clearing"
+                    .to_string(),
+            )
+        })?;
+
+        let mut storage = DiskStorageManager::new(&config)
             .await
-            .map_err(|e| PlatformWalletError::SpvError(e.to_string()))
+            .map_err(|e| PlatformWalletError::SpvError(e.to_string()))?;
+        StorageManager::clear(&mut storage)
+            .await
+            .map_err(|e| PlatformWalletError::SpvError(e.to_string()))?;
+        StorageManager::shutdown(&mut storage).await;
+
+        Ok(())
     }
 
     /// Update the running SPV client's configuration.
