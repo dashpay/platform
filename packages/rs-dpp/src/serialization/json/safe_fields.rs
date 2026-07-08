@@ -151,9 +151,10 @@ impl JsonSafeFields
 {
 }
 // `TokenPricingSchedule` has tuple variants holding `Credits` (u64) and
-// `BTreeMap<TokenAmount, Credits>`. Same escape-hatch pattern as `TokenEvent`:
-// `#[json_safe_fields]` can't auto-annotate variant-internal u64s; developer
-// takes responsibility for JS-safe serialization at use sites.
+// `BTreeMap<TokenAmount, Credits>`. `#[json_safe_fields]` can't auto-annotate
+// variant-internal u64s, so it serializes through an internally-`$type`-tagged
+// `Repr` that routes both through `json_safe_u64` / `json_safe_u64_u64_map` —
+// this marker is therefore truthful, not a bare escape hatch.
 impl JsonSafeFields for crate::tokens::token_pricing_schedule::TokenPricingSchedule {}
 // `TokenConfigurationChangeItem` has tuple variants with `Option<TokenAmount>`
 // and `Option<GroupContractPosition>` (u64-shaped). Same escape-hatch pattern.

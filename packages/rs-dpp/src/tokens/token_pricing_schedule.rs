@@ -25,7 +25,14 @@ use std::fmt::{self, Display, Formatter};
     PlatformSerialize,
     PlatformDeserialize,
 )]
-#[cfg_attr(feature = "serde-conversion", derive(Serialize, Deserialize))]
+#[cfg_attr(
+    feature = "serde-conversion",
+    derive(Serialize, Deserialize),
+    serde(
+        into = "TokenPricingScheduleRepr",
+        from = "TokenPricingScheduleRepr"
+    )
+)]
 pub enum TokenPricingSchedule {
     /// A single flat price in credits for all token amounts.
     ///
@@ -42,6 +49,52 @@ pub enum TokenPricingSchedule {
     /// If the first token amount is greater than 1 this means that the user can only
     /// purchase that amount as a minimum at a time.
     SetPrices(BTreeMap<TokenAmount, Credits>),
+}
+
+// Internal-`$type` serde shape. The tuple-variant outer enum can neither
+// auto-derive internal tagging nor annotate its variant-internal u64s, so this
+// struct-variant helper does both: `json_safe_u64` / `json_safe_u64_u64_map`
+// keep the `Credits` and `TokenAmount` values JS-safe (string above
+// `Number.MAX_SAFE_INTEGER`) in human-readable JSON, with no effect on `Value`
+// or the bincode consensus path (which round-trips the outer enum directly).
+#[cfg(feature = "serde-conversion")]
+#[derive(Serialize, Deserialize)]
+#[serde(tag = "$type", rename_all = "camelCase")]
+enum TokenPricingScheduleRepr {
+    SinglePrice {
+        #[cfg_attr(
+            feature = "json-conversion",
+            serde(with = "crate::serialization::json_safe_u64")
+        )]
+        price: Credits,
+    },
+    SetPrices {
+        #[cfg_attr(
+            feature = "json-conversion",
+            serde(with = "crate::serialization::json::safe_integer_map::json_safe_u64_u64_map")
+        )]
+        prices: BTreeMap<TokenAmount, Credits>,
+    },
+}
+
+#[cfg(feature = "serde-conversion")]
+impl From<TokenPricingSchedule> for TokenPricingScheduleRepr {
+    fn from(schedule: TokenPricingSchedule) -> Self {
+        match schedule {
+            TokenPricingSchedule::SinglePrice(price) => Self::SinglePrice { price },
+            TokenPricingSchedule::SetPrices(prices) => Self::SetPrices { prices },
+        }
+    }
+}
+
+#[cfg(feature = "serde-conversion")]
+impl From<TokenPricingScheduleRepr> for TokenPricingSchedule {
+    fn from(repr: TokenPricingScheduleRepr) -> Self {
+        match repr {
+            TokenPricingScheduleRepr::SinglePrice { price } => Self::SinglePrice(price),
+            TokenPricingScheduleRepr::SetPrices { prices } => Self::SetPrices(prices),
+        }
+    }
 }
 
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
@@ -93,16 +146,35 @@ mod json_convertible_tests {
     use platform_value::{platform_value, Value};
     use serde_json::json;
 
-    // Externally tagged enum: `SinglePrice(u64)` → `{"SinglePrice": <n>}`,
-    // `SetPrices(BTreeMap<u64, u64>)` → `{"SetPrices": {<k>: <v>, ...}}`
-    // (JSON forces map keys to strings; platform_value preserves typed keys).
+    // Internally `$type`-tagged: `SinglePrice(u64)` → `{"$type":"singlePrice",
+    // "price": <n>}`, `SetPrices(BTreeMap<u64, u64>)` → `{"$type":"setPrices",
+    // "prices": {<k>: <v>, ...}}`. `Credits`/`TokenAmount` u64s are JS-safe
+    // (number below 2^53, string above); JSON forces map keys to strings while
+    // platform_value preserves typed keys.
 
     #[test]
     fn json_round_trip_single_price() {
         use crate::serialization::JsonConvertible;
         let original = TokenPricingSchedule::SinglePrice(1234);
         let json = original.to_json().expect("to_json");
-        assert_eq!(json, json!({ "SinglePrice": 1234 }));
+        assert_eq!(json, json!({ "$type": "singlePrice", "price": 1234 }));
+        let recovered = TokenPricingSchedule::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn json_single_price_above_max_safe_integer_is_string() {
+        use crate::serialization::JsonConvertible;
+        // Above Number.MAX_SAFE_INTEGER (2^53): json_safe_u64 must stringify the
+        // Credits so JS consumers can't silently round it. (Raw u64 before the
+        // Repr fix; string after.)
+        let big: Credits = (1u64 << 53) + 1;
+        let original = TokenPricingSchedule::SinglePrice(big);
+        let json = original.to_json().expect("to_json");
+        assert_eq!(
+            json,
+            json!({ "$type": "singlePrice", "price": big.to_string() })
+        );
         let recovered = TokenPricingSchedule::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
     }
@@ -117,7 +189,10 @@ mod json_convertible_tests {
         let json = original.to_json().expect("to_json");
         // JSON object keys must be strings — `serde_json` stringifies the
         // u64 amount keys.
-        assert_eq!(json, json!({ "SetPrices": { "5": 50, "10": 80 } }));
+        assert_eq!(
+            json,
+            json!({ "$type": "setPrices", "prices": { "5": 50, "10": 80 } })
+        );
         let recovered = TokenPricingSchedule::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
     }
@@ -127,8 +202,11 @@ mod json_convertible_tests {
         use crate::serialization::ValueConvertible;
         let original = TokenPricingSchedule::SinglePrice(1234);
         let value = original.to_object().expect("to_object");
-        // `Credits` is `u64` → `Value::U64`.
-        assert_eq!(value, platform_value!({ "SinglePrice": 1234u64 }));
+        // `Credits` is `u64` → `Value::U64` (non-HR: json_safe_u64 stays typed).
+        assert_eq!(
+            value,
+            platform_value!({ "$type": "singlePrice", "price": 1234u64 })
+        );
         let recovered = TokenPricingSchedule::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
     }
@@ -142,16 +220,22 @@ mod json_convertible_tests {
         let original = TokenPricingSchedule::SetPrices(prices);
         let value = original.to_object().expect("to_object");
         // platform_value preserves typed map keys: `BTreeMap<u64, u64>` →
-        // map of `(Value::U64, Value::U64)` pairs.
+        // map of `(Value::U64, Value::U64)` pairs. Serialized `$type` first.
         assert_eq!(
             value,
-            Value::Map(vec![(
-                Value::Text("SetPrices".to_string()),
-                Value::Map(vec![
-                    (Value::U64(5), Value::U64(50)),
-                    (Value::U64(10), Value::U64(80)),
-                ]),
-            )])
+            Value::Map(vec![
+                (
+                    Value::Text("$type".to_string()),
+                    Value::Text("setPrices".to_string()),
+                ),
+                (
+                    Value::Text("prices".to_string()),
+                    Value::Map(vec![
+                        (Value::U64(5), Value::U64(50)),
+                        (Value::U64(10), Value::U64(80)),
+                    ]),
+                ),
+            ])
         );
         let recovered = TokenPricingSchedule::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
