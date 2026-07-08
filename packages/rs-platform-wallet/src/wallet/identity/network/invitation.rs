@@ -23,7 +23,10 @@ use dpp::identity::signer::Signer;
 use dpp::identity::v0::IdentityV0;
 use dpp::identity::{Identity, IdentityPublicKey, KeyID, Purpose, SecurityLevel};
 use dpp::prelude::{AssetLockProof, Identifier};
+use key_wallet::bip32::ChildNumber;
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
+
+use crate::changeset::{InvitationChangeSet, InvitationEntry, InvitationStatus};
 
 use dash_sdk::platform::transition::put_identity::PutIdentity;
 use dash_sdk::platform::transition::put_settings::PutSettings;
@@ -193,6 +196,37 @@ impl IdentityWallet {
         // secp256k1's `SecretKey` has no Drop-zeroize, so wipe it explicitly —
         // matching the resolver signer's key hygiene (review LOW-1).
         voucher_key.non_secure_erase();
+
+        // Persist an inviter-side invitation record for the "Sent invitations"
+        // list + (future) reclaim. No secret is stored — `funding_index`
+        // re-derives the voucher key. Best-effort: the link is already valid, so
+        // a persistence failure must not fail the create.
+        let funding_index = match path.as_ref().last() {
+            Some(ChildNumber::Hardened { index }) => *index,
+            _ => 0,
+        };
+        let mut inv_cs = InvitationChangeSet::default();
+        inv_cs.invitations.insert(
+            out_point,
+            InvitationEntry {
+                out_point,
+                funding_index,
+                amount_duffs,
+                expiry_unix,
+                created_at_secs: expiry_unix.saturating_sub(MAX_INVITATION_TTL_SECS),
+                has_inviter: inviter.is_some(),
+                status: InvitationStatus::Created,
+            },
+        );
+        if let Err(e) = self
+            .persister
+            .store(crate::changeset::PlatformWalletChangeSet {
+                invitations: Some(inv_cs),
+                ..Default::default()
+            })
+        {
+            tracing::warn!(error = %e, "failed to persist invitation record; the link is still valid");
+        }
 
         Ok(Invitation {
             uri,

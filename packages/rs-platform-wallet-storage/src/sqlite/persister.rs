@@ -1087,6 +1087,9 @@ fn apply_changeset_to_tx(
     if let Some(locks) = cs.asset_locks.as_ref() {
         schema::asset_locks::apply(tx, wallet_id, locks)?;
     }
+    if let Some(invitations) = cs.invitations.as_ref() {
+        schema::invitations::apply(tx, wallet_id, invitations)?;
+    }
     if let Some(balances) = cs.token_balances.as_ref() {
         schema::token_balances::apply(tx, wallet_id, balances)?;
     }
