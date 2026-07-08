@@ -17,8 +17,11 @@ import kotlin.coroutines.resume
  * `WalletDetailView.authorizeAndRevealMnemonic` and
  * `ContentView.runAuthPrompt` (orphan recovery).
  *
- * Allows biometric OR device credential (= iOS
- * `.deviceOwnerAuthentication`, which also falls back to passcode).
+ * Requests a STRONG (class-3) biometric OR device credential — matching the
+ * identity-key alias policy (`KEYS_ALIAS` uses
+ * `AUTH_BIOMETRIC_STRONG | AUTH_DEVICE_CREDENTIAL`), so a successful prompt
+ * actually refreshes the key's auth window (= iOS `.deviceOwnerAuthentication`,
+ * which also falls back to passcode).
  * Outcome mapping mirrors the Swift `AuthOutcome` enum: user cancel →
  * [BiometricGate.AuthOutcome.DENIED], missing hardware / enrollment →
  * [BiometricGate.AuthOutcome.UNAVAILABLE], everything else →
@@ -30,7 +33,11 @@ class AuthPrompt(private val activity: FragmentActivity) : BiometricGate {
         title: String,
         subtitle: String?,
     ): BiometricGate.AuthOutcome {
-        val authenticators = BiometricManager.Authenticators.BIOMETRIC_WEAK or
+        // STRONG (class-3), not WEAK: the identity-key alias is generated for
+        // AUTH_BIOMETRIC_STRONG | AUTH_DEVICE_CREDENTIAL, so a weak (class-2)
+        // biometric would report success here yet leave the subsequent
+        // private-key decrypt unauthorized (the key's window never refreshes).
+        val authenticators = BiometricManager.Authenticators.BIOMETRIC_STRONG or
             BiometricManager.Authenticators.DEVICE_CREDENTIAL
 
         when (BiometricManager.from(activity).canAuthenticate(authenticators)) {

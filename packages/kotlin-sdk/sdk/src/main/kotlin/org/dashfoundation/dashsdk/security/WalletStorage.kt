@@ -18,11 +18,12 @@ private val Context.secretsStore: DataStore<Preferences> by preferencesDataStore
  * `WalletStorage.swift` (iOS Keychain items under service
  * `org.dashfoundation.wallet`).
  *
- * Values are AES-GCM ciphertext under [KeystoreManager]'s non-exportable
- * master keys, stored base64 in a dedicated Preferences DataStore.
+ * Values are ciphertext under [KeystoreManager]'s non-exportable Keystore
+ * keys, stored base64 in a dedicated Preferences DataStore.
  * Key layout mirrors the iOS account naming:
- * - `mnemonic.<walletIdHex>` — wallet mnemonics (master alias)
- * - `privkey.<pubkeyHex>` — identity private keys (auth-gated keys alias)
+ * - `mnemonic.<walletIdHex>` — wallet mnemonics (master alias, AES-GCM)
+ * - `privkey.<pubkeyHex>` — identity private keys (keys alias: RSA
+ *   public-key encrypt / auth-gated private-key decrypt)
  */
 class WalletStorage(
     context: Context,
@@ -85,9 +86,15 @@ class WalletStorage(
     // ── Identity private keys ─────────────────────────────────────────
 
     /**
-     * Store raw private-key bytes for [pubkeyHex] under the auth-gated
-     * keys alias. Per the CLAUDE.md doctrine this is the one allowed
-     * Kotlin-side persistence of key material: Rust derives, we encrypt.
+     * Store raw private-key bytes for [pubkeyHex], encrypted with the
+     * [KeystoreManager.KEYS_ALIAS] RSA public key. Public-key encrypt is
+     * never auth-gated, so this never prompts and never throws
+     * `UserNotAuthenticatedException` — matching iOS's silent identity-key
+     * write, and letting the persistence callback (which runs on a Rust
+     * Tokio thread under the wallet-manager write lock, where a prompt is
+     * impossible) store keys. Per the CLAUDE.md doctrine this is the one
+     * allowed Kotlin-side persistence of key material: Rust derives, we
+     * encrypt. Reads ([retrievePrivateKey]) still require auth.
      */
     suspend fun storePrivateKey(pubkeyHex: String, privateKey: ByteArray) {
         val blob = keystore.encrypt(privateKey, alias = KeystoreManager.KEYS_ALIAS)
