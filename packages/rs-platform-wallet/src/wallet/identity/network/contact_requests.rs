@@ -65,6 +65,20 @@ pub trait ContactCryptoProvider {
         path: &key_wallet::bip32::DerivationPath,
     ) -> Result<dashcore::secp256k1::SecretKey, PlatformWalletError>;
 
+    /// Export the raw **invitation-funding private key** at `path` (DIP-13
+    /// sub-feature `3'`) — the second deliberate raw-key export (alongside
+    /// [`Self::export_auto_accept_private_key`]). The invitation hands this
+    /// one-time voucher key to the invitee so they can register their own
+    /// identity from the funded asset lock, so it must leave the signer. `path`
+    /// MUST be an invitation path (`m/9'/coin'/5'/3'/funding_index'`); the signer
+    /// gates on the full shape (feature `5'` is shared with the user's own
+    /// identity keys — see `export_invitation_private_key` on the resolver
+    /// signer). The only caller is [`IdentityWallet::create_invitation`].
+    async fn export_invitation_private_key(
+        &self,
+        path: &key_wallet::bip32::DerivationPath,
+    ) -> Result<dashcore::secp256k1::SecretKey, PlatformWalletError>;
+
     /// DIP-15 `accountReference` for a send: the scalar at `path` (the sender's
     /// encryption key) keys the HMAC+mask over `compact_xpub`. Computed in the
     /// signer so the raw scalar never returns to platform-wallet.
@@ -191,6 +205,16 @@ impl ContactCryptoProvider for SeedCryptoProvider {
     ) -> Result<dashcore::secp256k1::SecretKey, PlatformWalletError> {
         let xprv = self.wallet.derive_extended_private_key(path).map_err(|e| {
             PlatformWalletError::InvalidIdentityData(format!("test export auto-accept: {e}"))
+        })?;
+        Ok(xprv.private_key)
+    }
+
+    async fn export_invitation_private_key(
+        &self,
+        path: &key_wallet::bip32::DerivationPath,
+    ) -> Result<dashcore::secp256k1::SecretKey, PlatformWalletError> {
+        let xprv = self.wallet.derive_extended_private_key(path).map_err(|e| {
+            PlatformWalletError::InvalidIdentityData(format!("test export invitation: {e}"))
         })?;
         Ok(xprv.private_key)
     }

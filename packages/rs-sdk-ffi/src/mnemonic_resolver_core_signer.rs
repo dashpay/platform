@@ -367,6 +367,43 @@ impl MnemonicResolverCoreSigner {
         self.derive_priv(path)
     }
 
+    /// Export the raw DIP-13 invitation-funding private scalar at `path`
+    /// (`m/9'/coin_type'/5'/3'/funding_index'`) — the second deliberate raw-key
+    /// export from this signer. An invitation hands the one-time voucher key to
+    /// the invitee so they can register their own identity from the funded asset
+    /// lock, so this key must leave the signer (a scoped, documented bearer
+    /// credential like the auto-accept `dapk`).
+    ///
+    /// Gated to the **exact** invitation sub-feature: `path` MUST have 5
+    /// components with `9'` purpose, `5'` identity feature, and `3'` invitation
+    /// sub-feature. This is deliberately stricter than checking the feature
+    /// alone — feature `5'` is shared with identity authentication (`5'/0'`),
+    /// registration funding (`5'/1'`), and top-up (`5'/2'`), so a looser gate
+    /// could be repurposed to exfiltrate the user's own identity keys. Returns
+    /// the 32-byte scalar `Zeroizing`-wrapped.
+    pub fn export_invitation_private_key(
+        &self,
+        path: &DerivationPath,
+    ) -> Result<Zeroizing<[u8; 32]>, MnemonicResolverSignerError> {
+        let purpose9 = ChildNumber::from_hardened_idx(9)
+            .map_err(|e| MnemonicResolverSignerError::DerivationFailed(e.to_string()))?;
+        let feature5 = ChildNumber::from_hardened_idx(5)
+            .map_err(|e| MnemonicResolverSignerError::DerivationFailed(e.to_string()))?;
+        let subfeature3 = ChildNumber::from_hardened_idx(3)
+            .map_err(|e| MnemonicResolverSignerError::DerivationFailed(e.to_string()))?;
+        let comps: &[ChildNumber] = path.as_ref();
+        if comps.len() != 5
+            || comps[0] != purpose9
+            || comps[2] != feature5
+            || comps[3] != subfeature3
+        {
+            return Err(MnemonicResolverSignerError::DerivationFailed(
+                "export_invitation_private_key: path is not an invitation-funding path".to_string(),
+            ));
+        }
+        self.derive_priv(path)
+    }
+
     /// Compute the DIP-15 ECDH shared secret between our identity-encryption
     /// key (derived at `path`) and the contact's `peer_pubkey`, entirely
     /// in-process. The derived private scalar never leaves this function —
@@ -711,6 +748,47 @@ mod tests {
                     Err(MnemonicResolverSignerError::DerivationFailed(_))
                 ),
                 "non-auto-accept path {bad} must be rejected, not exported"
+            );
+        }
+
+        unsafe { dash_sdk_mnemonic_resolver_destroy(resolver) };
+    }
+
+    /// The invitation export gate is stricter than the auto-accept one: it must
+    /// bind the full `9'/coin'/5'/3'/idx'` shape, because feature `5'` is shared
+    /// with the user's own identity-auth / registration-funding / top-up keys —
+    /// a looser gate would be a key-exfiltration hole (spec §5.3 Finding 2).
+    #[test]
+    fn export_invitation_private_key_gates_to_the_invitation_path() {
+        let resolver = make_resolver(english_resolve);
+        let signer =
+            unsafe { MnemonicResolverCoreSigner::new(resolver, [0u8; 32], Network::Testnet) };
+
+        // A well-formed invitation-funding path exports its 32-byte scalar.
+        let invitation = DerivationPath::from_str("m/9'/1'/5'/3'/0'").expect("valid path");
+        let scalar = signer
+            .export_invitation_private_key(&invitation)
+            .expect("a well-formed invitation path exports its scalar");
+        assert_ne!(*scalar, [0u8; 32], "exported scalar must be non-zero");
+
+        // Every non-invitation path MUST be rejected — especially the sibling
+        // sub-features that share feature `5'` (auth/registration/top-up).
+        for bad in [
+            "m/9'/1'/5'/0'/0'/0'/0'", // identity authentication (sub-feature 0')
+            "m/9'/1'/5'/1'/0'",       // registration funding (sub-feature 1')
+            "m/9'/1'/5'/2'/0'",       // top-up funding (sub-feature 2')
+            "m/9'/1'/16'/123'",       // auto-accept (feature 16', not 5')
+            "m/8'/1'/5'/3'/0'",       // wrong purpose (comps[0] != 9')
+            "m/9'/1'/5'/3'",          // too short (len != 5)
+            "m/9'/1'/5'/3'/0'/0'",    // too long (len != 5)
+        ] {
+            let path = DerivationPath::from_str(bad).expect("valid path string");
+            assert!(
+                matches!(
+                    signer.export_invitation_private_key(&path),
+                    Err(MnemonicResolverSignerError::DerivationFailed(_))
+                ),
+                "non-invitation path {bad} must be rejected, not exported"
             );
         }
 
