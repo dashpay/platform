@@ -1924,7 +1924,8 @@ extension ManagedPlatformWallet {
 
     /// Send a Dash payment to an established DashPay contact.
     /// `amountDuffs` is in duffs (1 DASH = 100_000_000 duffs).
-    /// Returns the 32-byte transaction id.
+    /// Returns the 32-byte transaction id plus the exact network fee
+    /// (duffs) of the broadcast transaction, straight from the builder.
     ///
     /// Prerequisite: `register_external_contact_account` must have
     /// run for the `(fromIdentityId, toContactIdentityId)` pair on
@@ -1936,7 +1937,7 @@ extension ManagedPlatformWallet {
         toContactIdentityId: Identifier,
         amountDuffs: UInt64,
         memo: String? = nil
-    ) async throws -> Data {
+    ) async throws -> (txid: Data, feeDuffs: UInt64) {
         let handle = self.handle
         let fromBytes: [UInt8] = fromIdentityId.withFFIBytes { ptr in
             Array(UnsafeBufferPointer(start: ptr, count: 32))
@@ -1951,7 +1952,8 @@ extension ManagedPlatformWallet {
         // derived, digest signed, buffers zeroed) — the seed never becomes
         // resident and no private key leaves Swift.
         let coreSigner = MnemonicResolver()
-        return try await Task.detached(priority: .userInitiated) { () -> Data in
+        return try await Task.detached(priority: .userInitiated) { () -> (txid: Data, feeDuffs: UInt64) in
+            var feeDuffs: UInt64 = 0
             var txidTuple: (
                 UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
                 UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
@@ -1976,7 +1978,8 @@ extension ManagedPlatformWallet {
                                 amountDuffs,
                                 memoPtr,
                                 coreSigner.handle,
-                                &txidTuple
+                                &txidTuple,
+                                &feeDuffs
                             )
                         }
                         if let memoCopy {
@@ -1988,7 +1991,8 @@ extension ManagedPlatformWallet {
                 }
             }
             try result.check()
-            return Swift.withUnsafeBytes(of: &txidTuple) { Data($0) }
+            let txid = Swift.withUnsafeBytes(of: &txidTuple) { Data($0) }
+            return (txid: txid, feeDuffs: feeDuffs)
         }.value
     }
 }
