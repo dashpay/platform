@@ -177,11 +177,17 @@ pub fn apply_persisted_core_state(
 
     // Restore the UTXO set, routing each unspent outpoint to its true owning
     // funds account via `utxo_accounts` (matched on the same account identity
-    // the writer keyed the pool row on). An outpoint absent from the map — its
-    // script matched no pool row — falls back to the first funds account and
-    // re-attributes on the next sync. A wallet with unspent UTXOs but no funds
-    // account at all fails closed rather than silently reconstructing a zero
-    // balance.
+    // the writer keyed the pool row on). Two miss cases share the first-account
+    // best-effort fallback but differ in signal:
+    //   (a) no side-channel entry — the UTXO's script matched no pool row; an
+    //       expected fallback (deep/sparse or non-funds address) that re-warms
+    //       on the next sync, no log.
+    //   (b) a side-channel entry whose owner is not among this wallet's funds
+    //       accounts — a pool row references an unregistered account (store
+    //       drift). Counted and surfaced via `tracing::warn!` after the loop so
+    //       the misattribution is never silent.
+    // A wallet with unspent UTXOs but no funds account at all fails closed
+    // rather than silently reconstructing a zero balance.
     let spent_outpoints: std::collections::HashSet<dashcore::OutPoint> =
         core.spent_utxos.iter().map(|u| u.outpoint).collect();
     let unspent: Vec<&key_wallet::Utxo> = core
@@ -203,22 +209,42 @@ pub fn apply_persisted_core_state(
         // never scans another account's keys as "unresolved".
         let mut per_account_addrs: Vec<Vec<key_wallet::Address>> = vec![Vec::new(); funding.len()];
 
+        // Owners that resolve to no funds account (case (b) above), collected in
+        // the loop and warned once after it — never log per iteration.
+        let mut orphaned_owners: Vec<String> = Vec::new();
         for utxo in &unspent {
-            let target = utxo_accounts
-                .get(&utxo.outpoint)
-                .and_then(|owner| account_keys.iter().position(|k| k == owner))
-                .unwrap_or(0);
+            let target = match utxo_accounts.get(&utxo.outpoint) {
+                None => 0,
+                Some(owner) => account_keys
+                    .iter()
+                    .position(|k| k == owner)
+                    .unwrap_or_else(|| {
+                        orphaned_owners
+                            .push(format!("{}[{}]", owner.account_type, owner.account_index));
+                        0
+                    }),
+            };
             funding[target].utxos.insert(utxo.outpoint, (*utxo).clone());
             per_account_addrs[target].push(utxo.address.clone());
+        }
+        if !orphaned_owners.is_empty() {
+            tracing::warn!(
+                wallet_id = %hex::encode(wallet_id),
+                orphaned_owners = ?orphaned_owners,
+                count = orphaned_owners.len(),
+                "rehydration: restored UTXO(s) reference a funds account not present \
+                 in this wallet — routed to the first account as best effort; the \
+                 per-account view re-warms on the next sync"
+            );
         }
 
         // The persisted pool used-state restores addresses whose funds were
         // since spent — without it a previously-used address comes back marked
         // unused and could be handed out again as a fresh receive address
         // (address-reuse privacy leak). It carries no per-address owner, so it
-        // re-marks on the first funds account (unchanged from the prior loader);
-        // any cross-account used address re-warms on the next sync. Empty
-        // `used_pool_addresses` preserves the prior unspent-only behaviour.
+        // re-marks on the first funds account; a cross-account used address
+        // re-warms on the next sync. An empty `used_pool_addresses` marks only
+        // the unspent-UTXO addresses.
         per_account_addrs[0].extend(used_pool_addresses.iter().cloned());
 
         // Eager derivation covers only `0..gap_limit`; extend each chain to

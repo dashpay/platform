@@ -455,3 +455,177 @@ fn chain_lock_does_not_regress_on_lower_height_update() {
         "a lower-height chain lock must not regress the stored higher one"
     );
 }
+
+/// First external `AddressInfo` of the account matching `pred` in `wallet`,
+/// sorted by derivation index — a genuine script that round-trips.
+#[cfg(feature = "rehydration-apply")]
+fn first_external_info(
+    wallet: &Wallet,
+    pred: impl Fn(&key_wallet::account::AccountType) -> bool,
+) -> key_wallet::AddressInfo {
+    use key_wallet::managed_account::address_pool::AddressPoolType;
+    let info = ManagedWalletInfo::from_wallet(wallet, 0);
+    for managed in info.all_managed_accounts() {
+        if !pred(&managed.managed_account_type().to_account_type()) {
+            continue;
+        }
+        for pool in managed.managed_account_type().address_pools() {
+            if pool.pool_type != AddressPoolType::External || pool.addresses.is_empty() {
+                continue;
+            }
+            let mut infos: Vec<key_wallet::AddressInfo> =
+                pool.addresses.values().cloned().collect();
+            infos.sort_by_key(|a| a.index);
+            return infos.into_iter().next().unwrap();
+        }
+    }
+    panic!("wallet must expose the requested account with a non-empty external pool");
+}
+
+/// End-to-end regression (dashpay/platform#3968) exercising the REAL SQL
+/// resolver. Persists a `Default` wallet through the actual writer with unspent
+/// UTXOs owned by Standard BIP44[0] and CoinJoin[0] — colliding on numeric
+/// index 0 — plus their `core_address_pool` snapshots, reopens the DB, then
+/// drives `load_state` → `apply_persisted_core_state`. Unlike the hand-built
+/// unit test, the owning-account side channel here is produced by
+/// `owning_account_for_script` (column order, `ORDER BY` tie-break, `[u8;32]`
+/// identity decode), so a broken query would be caught. Each UTXO must land in
+/// its TRUE account with exact per-account balances, not just the wallet total.
+#[cfg(feature = "rehydration-apply")]
+#[test]
+fn rehydration_routes_via_real_sql_resolver() {
+    use key_wallet::account::{AccountType, StandardAccountType};
+    use key_wallet::managed_account::address_pool::AddressPoolType;
+    use platform_wallet::changeset::AccountAddressPoolEntry;
+
+    let (persister, _tmp, path) = fresh_persister();
+    let w = wid(0xC1);
+    ensure_wallet_meta(&persister, &w);
+
+    let wallet = Wallet::from_seed_bytes(
+        [0x9A; 64],
+        key_wallet::Network::Testnet,
+        WalletAccountCreationOptions::Default,
+    )
+    .unwrap();
+
+    let bip44_info = first_external_info(&wallet, |at| {
+        matches!(
+            at,
+            AccountType::Standard {
+                index: 0,
+                standard_account_type: StandardAccountType::BIP44Account,
+            }
+        )
+    });
+    let coinjoin_info = first_external_info(&wallet, |at| {
+        matches!(at, AccountType::CoinJoin { index: 0 })
+    });
+    assert_ne!(
+        bip44_info.script_pubkey, coinjoin_info.script_pubkey,
+        "BIP44[0] and CoinJoin[0] must derive distinct scripts"
+    );
+
+    let utxo_on = |info: &key_wallet::AddressInfo, value: u64, n: u8| Utxo {
+        outpoint: OutPoint {
+            txid: Txid::from_byte_array([n; 32]),
+            vout: 0,
+        },
+        txout: dashcore::TxOut {
+            value,
+            script_pubkey: info.script_pubkey.clone(),
+        },
+        address: info.address.clone(),
+        height: 5,
+        is_coinbase: false,
+        is_confirmed: true,
+        is_instantlocked: false,
+        is_locked: false,
+        is_trusted: false,
+    };
+    let bip44_utxo = utxo_on(&bip44_info, 5_000, 1);
+    let coinjoin_utxo = utxo_on(&coinjoin_info, 7_000, 2);
+    let bip44_op = bip44_utxo.outpoint;
+    let coinjoin_op = coinjoin_utxo.outpoint;
+
+    let pool_entry = |account_type, info: &key_wallet::AddressInfo| AccountAddressPoolEntry {
+        account_type,
+        pool_type: AddressPoolType::External,
+        addresses: vec![info.clone()],
+    };
+    persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                account_address_pools: vec![
+                    pool_entry(
+                        AccountType::Standard {
+                            index: 0,
+                            standard_account_type: StandardAccountType::BIP44Account,
+                        },
+                        &bip44_info,
+                    ),
+                    pool_entry(AccountType::CoinJoin { index: 0 }, &coinjoin_info),
+                ],
+                core: Some(CoreChangeSet {
+                    new_utxos: vec![bip44_utxo, coinjoin_utxo],
+                    last_processed_height: Some(5),
+                    synced_height: Some(5),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        )
+        .expect("store must persist UTXOs + pool snapshots");
+    drop(persister);
+
+    let p2 = reopen(&path);
+    let conn = p2.lock_conn_for_test();
+    let (core, utxo_accounts) =
+        core_state::load_state(&conn, &w, key_wallet::Network::Testnet).expect("load_state");
+    drop(conn);
+
+    // The real resolver populated the side channel from `core_address_pool`.
+    assert_eq!(
+        utxo_accounts.len(),
+        2,
+        "owning_account_for_script must resolve both UTXOs from the persisted pool"
+    );
+
+    let mut managed = ManagedWalletInfo::from_wallet(&wallet, 1);
+    platform_wallet_storage::sqlite::util::apply_persisted_core_state(
+        &mut managed,
+        &manifest_for(&wallet),
+        &core,
+        &utxo_accounts,
+        &[],
+    )
+    .expect("apply must not error");
+
+    let bip44 = managed.accounts.standard_bip44_accounts.get(&0).unwrap();
+    let coinjoin = managed.accounts.coinjoin_accounts.get(&0).unwrap();
+    assert!(
+        bip44.utxos.contains_key(&bip44_op),
+        "BIP44 UTXO must route to the BIP44 account"
+    );
+    assert!(
+        !bip44.utxos.contains_key(&coinjoin_op),
+        "CoinJoin UTXO must NOT collapse onto the first (BIP44) account"
+    );
+    assert!(
+        coinjoin.utxos.contains_key(&coinjoin_op),
+        "CoinJoin UTXO must route to the CoinJoin account"
+    );
+    assert!(!coinjoin.utxos.contains_key(&bip44_op));
+    assert_eq!(
+        bip44.balance.total(),
+        5_000,
+        "per-account BIP44 balance exact"
+    );
+    assert_eq!(
+        coinjoin.balance.total(),
+        7_000,
+        "per-account CoinJoin balance exact, not zero"
+    );
+    assert_eq!(managed.balance.total(), 12_000, "wallet total is the sum");
+}

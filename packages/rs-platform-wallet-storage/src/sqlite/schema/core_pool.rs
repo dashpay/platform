@@ -92,11 +92,17 @@ pub fn apply_pools(
 }
 
 /// Identity of the funds account that owns an address, matched against a
-/// `core_address_pool` row. Carries the same discriminators the writer keys
-/// pool/registration rows on — enough to select one account among funding
-/// accounts that share a numeric `account_index` (Standard BIP44/BIP32 and
-/// CoinJoin can all sit at index 0; DashPay accounts all persist index 0 and
-/// are told apart by the identity pair).
+/// `core_address_pool` row. Enough to select one account among funding accounts
+/// that share a numeric `account_index` (Standard BIP44/BIP32 and CoinJoin can
+/// all sit at index 0; DashPay accounts all persist index 0 and are told apart
+/// by the identity pair).
+///
+/// Carries four of the writer's five pool-PK account discriminators
+/// (`UPSERT_POOL_SQL`); `key_class` is intentionally omitted. Every funds
+/// account maps to the `key_class = 0` sentinel — only the non-funds
+/// `PlatformPayment` account carries a real class, and it is never a funding
+/// account — so `key_class` cannot distinguish two funds accounts and adds
+/// nothing here.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OwningAccount {
     /// `account_type` DB label (see [`accounts::account_type_db_label`]).
