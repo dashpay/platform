@@ -209,9 +209,6 @@ class AppContainer(private val context: Context) {
                 // Sync tab stays "Not synced yet" with Sync Now a no-op until
                 // an app restart.
                 platformBalanceSyncService.configure(manager)
-                if (!manager.isPlatformAddressSyncRunning()) {
-                    manager.startPlatformAddressSync()
-                }
                 // Best-effort like iOS — failures (no mnemonic in the store,
                 // declined biometric) leave the service unbound; bind() logs
                 // and doesn't throw. dbPath mirrors iOS's
@@ -248,6 +245,15 @@ class AppContainer(private val context: Context) {
                             dbPath = shieldedDbPath,
                         )
                     }
+                }
+                // Fallible sync-start calls run AFTER the shielded bind +
+                // engine-bind pass above: if the platform-address running
+                // check or start throws, control jumps to the catch — and
+                // starting it earlier would strand the non-mirror wallets'
+                // shielded coordinators unregistered until a later rebind
+                // or relaunch (review lesson).
+                if (!manager.isPlatformAddressSyncRunning()) {
+                    manager.startPlatformAddressSync()
                 }
                 if (shieldedService.isAvailable && !manager.isShieldedSyncRunning()) {
                     manager.startShieldedSync()
