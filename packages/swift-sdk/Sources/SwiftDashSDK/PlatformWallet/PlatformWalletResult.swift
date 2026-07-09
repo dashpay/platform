@@ -61,6 +61,13 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// re-fetches the nonce and self-heals. The submitted/expected nonce values
     /// travel in the message string, not as structured fields.
     case errorAddressNonceMismatch = 21
+    /// `platform_wallet_manager_destroy` could not join every background sync
+    /// coordinator thread cleanly, even after a retry: a loop panicked,
+    /// exceeded its join budget, or stayed detached. The manager handle is
+    /// still freed, but a lingering coordinator may fire one final callback
+    /// through the about-to-be-freed context — treat this as a real teardown
+    /// fault (log / surface), not a silent success.
+    case errorShutdownIncomplete = 22
     case notFound = 98
     case errorUnknown = 99
 
@@ -110,6 +117,8 @@ public enum PlatformWalletResultCode: Int32, Sendable {
             self = .errorTransactionBroadcastUnconfirmed
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_ADDRESS_NONCE_MISMATCH:
             self = .errorAddressNonceMismatch
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHUTDOWN_INCOMPLETE:
+            self = .errorShutdownIncomplete
         case PLATFORM_WALLET_FFI_RESULT_CODE_NOT_FOUND:
             self = .notFound
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_UNKNOWN:
@@ -225,6 +234,11 @@ public enum PlatformWalletError: LocalizedError {
     /// to retry, and the retry re-fetches the address nonce so the mismatch
     /// self-heals. The submitted/expected nonce values are in the message.
     case addressNonceMismatch(String)
+    /// `destroy` completed but a background coordinator thread did not exit
+    /// cleanly (panic / join-budget timeout / detached). The host should
+    /// treat its callback context as potentially still in use by a lingering
+    /// coordinator that may fire one final callback.
+    case shutdownIncomplete(String)
     case notFound(String)
     case unknown(String)
 
@@ -243,6 +257,7 @@ public enum PlatformWalletError: LocalizedError {
              .shieldedNoRecordedAnchor(let m),
              .transactionBroadcastUnconfirmed(let m),
              .addressNonceMismatch(let m),
+             .shutdownIncomplete(let m),
              .notFound(let m), .unknown(let m):
             return m
         }
@@ -278,6 +293,8 @@ public enum PlatformWalletError: LocalizedError {
             self = .transactionBroadcastUnconfirmed(detail)
         case .errorAddressNonceMismatch:
             self = .addressNonceMismatch(detail)
+        case .errorShutdownIncomplete:
+            self = .shutdownIncomplete(detail)
         case .notFound:               self = .notFound(detail)
         case .errorUnknown:           self = .unknown(detail)
         }
