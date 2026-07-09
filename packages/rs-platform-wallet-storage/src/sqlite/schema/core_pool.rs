@@ -176,23 +176,30 @@ pub fn account_index_for_script(
 }
 
 /// Used addresses for a wallet, read verbatim from `core_address_pool`
-/// (`used = 1`) with no re-derivation. Possibly empty. The caller **unions**
-/// this with the `core_utxos`-derived set — the reuse guard is monotonic, so
-/// a mixed store (historical UTXOs a later partial pool snapshot never
-/// enumerates) must surface both sources, never drop the historical ones.
+/// (`used = 1`), each paired with its owning account. This is the
+/// *known-owner* reuse-guard source: the pool row carries the account
+/// discriminators directly, so no per-script round-trip is needed. Possibly
+/// empty. The caller **unions** this with the `core_utxos`-derived set — the
+/// reuse guard is monotonic, so a mixed store (historical UTXOs a later
+/// partial pool snapshot never enumerates) must surface both sources, never
+/// drop the historical ones.
 ///
-/// `network` turns each stored `script` back into an [`Address`]; a script
-/// that isn't a valid address is a hard error — corruption is never silently
-/// dropped, matching [`crate::sqlite::schema::core_state::load_used_addresses`].
+/// A `script` reused across accounts yields several rows; the owner is picked
+/// by the same PK-ordered tie-break as [`owning_account_for_script`]
+/// (`account_type` first), so both resolvers attribute a shared script
+/// identically. `network` turns each stored `script` back into an
+/// [`Address`](dashcore::Address); a script that isn't a valid address is a
+/// hard error — corruption is never silently dropped, matching
+/// [`crate::sqlite::schema::core_state::load_used_addresses`].
 pub fn load_used_addresses(
     conn: &rusqlite::Connection,
     wallet_id: &WalletId,
     network: dashcore::Network,
-) -> Result<Vec<dashcore::Address>, WalletStorageError> {
+) -> Result<Vec<(dashcore::Address, OwningAccount)>, WalletStorageError> {
     // Gate the largest stored `script` with a cheap aggregate BEFORE the
-    // `DISTINCT ... ORDER BY script` read materializes or sorts any blob, so a
-    // corrupt/oversize column raises a typed `BlobTooLarge` (the crate's 16 MiB
-    // cap) rather than SQLite's own `TooBig` mid-sort, and never OOMs the host.
+    // ordered read materializes or sorts any blob, so a corrupt/oversize
+    // column raises a typed `BlobTooLarge` (the crate's 16 MiB cap) rather
+    // than SQLite's own `TooBig` mid-sort, and never OOMs the host.
     let max_script_len: Option<i64> = conn.query_row(
         "SELECT MAX(length(script)) FROM core_address_pool \
          WHERE wallet_id = ?1 AND used = 1",
@@ -202,20 +209,50 @@ pub fn load_used_addresses(
     if let Some(len) = max_script_len {
         blob::check_size(len)?;
     }
+    // Order by script then the pool PK so the first row per script is the
+    // tie-break winner; a `HashSet` on script drops the trailing duplicates.
     let mut stmt = conn.prepare(
-        "SELECT DISTINCT script FROM core_address_pool \
-         WHERE wallet_id = ?1 AND used = 1 ORDER BY script",
+        "SELECT script, account_type, account_index, user_identity_id, friend_identity_id \
+         FROM core_address_pool \
+         WHERE wallet_id = ?1 AND used = 1 \
+         ORDER BY script, account_type, account_index, key_class, user_identity_id, \
+                  friend_identity_id, pool_type, address_index",
     )?;
     let rows = stmt.query_map(params![wallet_id.as_slice()], |row| {
-        row.get::<_, Vec<u8>>(0)
+        Ok((
+            row.get::<_, Vec<u8>>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, i64>(2)?,
+            row.get::<_, Vec<u8>>(3)?,
+            row.get::<_, Vec<u8>>(4)?,
+        ))
     })?;
+    let mut seen = std::collections::HashSet::new();
     let mut out = Vec::new();
     for r in rows {
-        let script = dashcore::ScriptBuf::from_bytes(r?);
+        let (raw_script, account_type, index, user, friend) = r?;
+        if !seen.insert(raw_script.clone()) {
+            continue;
+        }
+        let script = dashcore::ScriptBuf::from_bytes(raw_script);
         let address = dashcore::Address::from_script(&script, network).map_err(|_| {
             WalletStorageError::blob_decode("core_address_pool.script not an address")
         })?;
-        out.push(address);
+        let account_index =
+            crate::sqlite::util::safe_cast::i64_to_u32("core_address_pool.account_index", index)?;
+        let user_identity_id = <[u8; 32]>::try_from(user.as_slice())
+            .map_err(|_| WalletStorageError::blob_decode("core_address_pool.user_identity_id"))?;
+        let friend_identity_id = <[u8; 32]>::try_from(friend.as_slice())
+            .map_err(|_| WalletStorageError::blob_decode("core_address_pool.friend_identity_id"))?;
+        out.push((
+            address,
+            OwningAccount {
+                account_type,
+                account_index,
+                user_identity_id,
+                friend_identity_id,
+            },
+        ));
     }
     Ok(out)
 }

@@ -446,17 +446,23 @@ pub fn load_state(
 }
 
 /// Every address that has ever held a `core_utxos` row for this wallet —
-/// spent **and** unspent — deduplicated. The rehydration address-reuse
-/// guard: an address whose UTXO was since spent must still be marked used
-/// so it's never handed back out as a fresh receive address. `network`
-/// turns each persisted `script` back into an [`Address`](dashcore::Address);
-/// a script that isn't a valid address is a hard error (corruption is never
-/// silently dropped), matching [`load_state`]'s unspent-UTXO handling.
+/// spent **and** unspent — deduplicated, each paired with its resolved
+/// owning account. The rehydration address-reuse guard: an address whose
+/// UTXO was since spent must still be marked used so it's never handed back
+/// out as a fresh receive address.
+///
+/// `core_utxos` carries no unambiguous account attribution, so ownership is
+/// resolved per script via [`owning_account_for_script`]; the result is
+/// `None` when the script matches no pool row (the caller then routes to the
+/// first funds account). `network` turns each persisted `script` back into an
+/// [`Address`](dashcore::Address); a script that isn't a valid address is a
+/// hard error (corruption is never silently dropped), matching [`load_state`]'s
+/// unspent-UTXO handling.
 pub fn load_used_addresses(
     conn: &Connection,
     wallet_id: &WalletId,
     network: dashcore::Network,
-) -> Result<Vec<dashcore::Address>, WalletStorageError> {
+) -> Result<Vec<(dashcore::Address, Option<OwningAccount>)>, WalletStorageError> {
     // Gate the largest stored `script` with a cheap aggregate BEFORE the
     // `DISTINCT ... ORDER BY script` read materializes or sorts any blob, so a
     // corrupt/oversize column raises a typed `BlobTooLarge` (the crate's 16 MiB
@@ -471,17 +477,25 @@ pub fn load_used_addresses(
     if let Some(len) = max_script_len {
         blob::check_size(len)?;
     }
-    let mut stmt = conn
-        .prepare("SELECT DISTINCT script FROM core_utxos WHERE wallet_id = ?1 ORDER BY script")?;
-    let rows = stmt.query_map(params![wallet_id.as_slice()], |row| {
-        row.get::<_, Vec<u8>>(0)
-    })?;
-    let mut out = Vec::new();
-    for r in rows {
-        let script = dashcore::ScriptBuf::from_bytes(r?);
+    // Materialize the scripts before resolving ownership: `owning_account_for_script`
+    // prepares its own statement on `conn`, so the reader statement must be
+    // finished first.
+    let scripts: Vec<Vec<u8>> = {
+        let mut stmt = conn.prepare(
+            "SELECT DISTINCT script FROM core_utxos WHERE wallet_id = ?1 ORDER BY script",
+        )?;
+        let rows = stmt.query_map(params![wallet_id.as_slice()], |row| {
+            row.get::<_, Vec<u8>>(0)
+        })?;
+        rows.collect::<Result<_, _>>()?
+    };
+    let mut out = Vec::with_capacity(scripts.len());
+    for raw in scripts {
+        let owner = owning_account_for_script(conn, wallet_id, &raw)?;
+        let script = dashcore::ScriptBuf::from_bytes(raw);
         let address = dashcore::Address::from_script(&script, network)
             .map_err(|_| WalletStorageError::blob_decode("core_utxos.script not an address"))?;
-        out.push(address);
+        out.push((address, owner));
     }
     Ok(out)
 }

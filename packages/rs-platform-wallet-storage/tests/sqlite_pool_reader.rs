@@ -36,16 +36,24 @@ use platform_wallet_storage::sqlite::schema::{core_pool, core_state};
 use platform_wallet_storage::SqlitePersister;
 
 /// Verbatim `core_address_pool` `used=1` addresses — the pool half of the
-/// reuse-guard set `load()` reads.
+/// reuse-guard set `load()` reads (owner dropped; these tests assert addresses).
 fn pool_used(persister: &SqlitePersister, w: &WalletId) -> Vec<Address> {
     let conn = persister.lock_conn_for_test();
-    core_pool::load_used_addresses(&conn, w, Network::Testnet).expect("pool used-set")
+    core_pool::load_used_addresses(&conn, w, Network::Testnet)
+        .expect("pool used-set")
+        .into_iter()
+        .map(|(addr, _owner)| addr)
+        .collect()
 }
 
 /// `core_utxos`-derived used addresses (spent + unspent) — the UTXO half.
 fn utxo_used(persister: &SqlitePersister, w: &WalletId) -> Vec<Address> {
     let conn = persister.lock_conn_for_test();
-    core_state::load_used_addresses(&conn, w, Network::Testnet).expect("utxo used-set")
+    core_state::load_used_addresses(&conn, w, Network::Testnet)
+        .expect("utxo used-set")
+        .into_iter()
+        .map(|(addr, _owner)| addr)
+        .collect()
 }
 
 /// The assembled reuse-guard set `load()` hands the manager: pool ∪ UTXO,
@@ -57,7 +65,11 @@ fn used_set(persister: &SqlitePersister, w: &WalletId) -> Vec<Address> {
     drop(conn);
     let mut seen = std::collections::HashSet::new();
     let mut union = Vec::new();
-    for addr in pool.into_iter().chain(utxo) {
+    for addr in pool
+        .into_iter()
+        .map(|(addr, _owner)| addr)
+        .chain(utxo.into_iter().map(|(addr, _owner)| addr))
+    {
         if seen.insert(addr.script_pubkey().to_bytes()) {
             union.push(addr);
         }

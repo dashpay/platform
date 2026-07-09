@@ -38,7 +38,11 @@ fn used_set(persister: &SqlitePersister, w: &WalletId) -> Vec<dashcore::Address>
     drop(conn);
     let mut seen = std::collections::HashSet::new();
     let mut union = Vec::new();
-    for addr in pool.into_iter().chain(utxo) {
+    for addr in pool
+        .into_iter()
+        .map(|(addr, _owner)| addr)
+        .chain(utxo.into_iter().map(|(addr, _owner)| addr))
+    {
         if seen.insert(addr.script_pubkey().to_bytes()) {
             union.push(addr);
         }

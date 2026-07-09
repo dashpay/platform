@@ -70,10 +70,14 @@ pub(crate) fn build_wallet(
 ///   from the map (its script matched no pool row) falls back to the first
 ///   funds account and re-warms on the next sync.
 /// - `used_pool_addresses`: addresses the persisted pool snapshot marked
-///   used (across all accounts/pools). Marked used in union with the
-///   still-unspent UTXO addresses so a previously-used address whose funds
-///   were since spent is never re-handed-out as a fresh receive address
-///   (address-reuse guard). Empty = no pool used-state carried.
+///   used, each mapped to its owning account (`None` when the script matched
+///   no pool row). Each is routed to its owning funds account — via the same
+///   identity match as `utxo_accounts` — and marked used there, in union with
+///   the still-unspent UTXO addresses, so a previously-used address whose
+///   funds were since spent is never re-handed-out as a fresh receive address
+///   from its own account (address-reuse guard). An owner absent from this
+///   wallet's funds accounts, or a `None` owner, falls back to the first
+///   account. Empty = no pool used-state carried.
 ///
 /// # Reconstructed (safety-critical-correct)
 ///
@@ -144,7 +148,7 @@ pub fn apply_persisted_core_state(
     manifest: &[AccountRegistrationEntry],
     core: &CoreChangeSet,
     utxo_accounts: &std::collections::HashMap<dashcore::OutPoint, OwningAccount>,
-    used_pool_addresses: &[key_wallet::Address],
+    used_pool_addresses: &std::collections::HashMap<key_wallet::Address, Option<OwningAccount>>,
 ) -> Result<(), WalletStorageError> {
     use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 
@@ -209,43 +213,44 @@ pub fn apply_persisted_core_state(
         // never scans another account's keys as "unresolved".
         let mut per_account_addrs: Vec<Vec<key_wallet::Address>> = vec![Vec::new(); funding.len()];
 
-        // Owners that resolve to no funds account (case (b) above), collected in
-        // the loop and warned once after it — never log per iteration.
+        // Owners that resolve to no funds account (case (b) above), plus used
+        // addresses with an owner absent from this wallet — collected across
+        // both routing loops and warned once after them, never per iteration.
         let mut orphaned_owners: Vec<String> = Vec::new();
         for utxo in &unspent {
-            let target = match utxo_accounts.get(&utxo.outpoint) {
-                None => 0,
-                Some(owner) => account_keys
-                    .iter()
-                    .position(|k| k == owner)
-                    .unwrap_or_else(|| {
-                        orphaned_owners
-                            .push(format!("{}[{}]", owner.account_type, owner.account_index));
-                        0
-                    }),
-            };
+            let target = route_to_funds_account(
+                &account_keys,
+                utxo_accounts.get(&utxo.outpoint),
+                &mut orphaned_owners,
+            );
             funding[target].utxos.insert(utxo.outpoint, (*utxo).clone());
             per_account_addrs[target].push(utxo.address.clone());
-        }
-        if !orphaned_owners.is_empty() {
-            tracing::warn!(
-                wallet_id = %hex::encode(wallet_id),
-                orphaned_owners = ?orphaned_owners,
-                count = orphaned_owners.len(),
-                "rehydration: restored UTXO(s) reference a funds account not present \
-                 in this wallet — routed to the first account as best effort; the \
-                 per-account view re-warms on the next sync"
-            );
         }
 
         // The persisted pool used-state restores addresses whose funds were
         // since spent — without it a previously-used address comes back marked
         // unused and could be handed out again as a fresh receive address
-        // (address-reuse privacy leak). It carries no per-address owner, so it
-        // re-marks on the first funds account; a cross-account used address
-        // re-warms on the next sync. An empty `used_pool_addresses` marks only
-        // the unspent-UTXO addresses.
-        per_account_addrs[0].extend(used_pool_addresses.iter().cloned());
+        // (address-reuse privacy leak). Each is routed to its owning funds
+        // account (same identity match as the UTXOs), so a used address on a
+        // non-first account is marked used on ITS OWN pool. A `None` owner, or
+        // one absent from this wallet, falls back to the first account. An
+        // empty map marks only the unspent-UTXO addresses.
+        for (addr, owner) in used_pool_addresses {
+            let target =
+                route_to_funds_account(&account_keys, owner.as_ref(), &mut orphaned_owners);
+            per_account_addrs[target].push(addr.clone());
+        }
+
+        if !orphaned_owners.is_empty() {
+            tracing::warn!(
+                wallet_id = %hex::encode(wallet_id),
+                orphaned_owners = ?orphaned_owners,
+                count = orphaned_owners.len(),
+                "rehydration: restored UTXO(s) or used address(es) reference a funds \
+                 account not present in this wallet — routed to the first account as \
+                 best effort; the per-account view re-warms on the next sync"
+            );
+        }
 
         // Eager derivation covers only `0..gap_limit`; extend each chain to
         // cover restored / used addresses at deeper indices.
@@ -266,6 +271,29 @@ pub fn apply_persisted_core_state(
     // silent zero would be a hard FAIL of the rehydration contract.
     wallet_info.update_balance();
     Ok(())
+}
+
+/// Resolve an owning account to its position among `account_keys`, or fall
+/// back to the first funds account. A `None` owner (no attribution available)
+/// falls back silently; an owner not present in `account_keys` (store drift)
+/// falls back too but is recorded in `orphaned_owners` for a single post-loop
+/// `tracing::warn!`. Shared by the UTXO and used-address routing loops so both
+/// bucket funds and used-state by the exact same identity match.
+fn route_to_funds_account(
+    account_keys: &[OwningAccount],
+    owner: Option<&OwningAccount>,
+    orphaned_owners: &mut Vec<String>,
+) -> usize {
+    match owner {
+        None => 0,
+        Some(owner) => account_keys
+            .iter()
+            .position(|k| k == owner)
+            .unwrap_or_else(|| {
+                orphaned_owners.push(format!("{}[{}]", owner.account_type, owner.account_index));
+                0
+            }),
+    }
 }
 
 /// Owning-account identity of a funds account, keyed on the same
@@ -741,8 +769,14 @@ mod tests {
             ..Default::default()
         };
 
-        apply_persisted_core_state(&mut wallet_info, &manifest, &core, &Default::default(), &[])
-            .unwrap();
+        apply_persisted_core_state(
+            &mut wallet_info,
+            &manifest,
+            &core,
+            &Default::default(),
+            &Default::default(),
+        )
+        .unwrap();
 
         // The wallet total is exact regardless (a sum over the UTXO set).
         assert_eq!(wallet_info.balance.total(), expected_total);
@@ -902,8 +936,14 @@ mod tests {
             ..Default::default()
         };
 
-        apply_persisted_core_state(&mut wallet_info, &manifest, &core, &utxo_accounts, &[])
-            .unwrap();
+        apply_persisted_core_state(
+            &mut wallet_info,
+            &manifest,
+            &core,
+            &utxo_accounts,
+            &Default::default(),
+        )
+        .unwrap();
 
         let bip44 = wallet_info
             .accounts
@@ -941,6 +981,113 @@ mod tests {
             12_000,
             "wallet total is the sum across accounts"
         );
+    }
+
+    /// Regression (dashpay/platform#3968): a restored *used* address (its funds
+    /// since spent, so no unspent UTXO anchors it) owned by a non-first funds
+    /// account must be marked used on ITS OWN account's pool — not collapsed
+    /// onto the first account. On a `Default` wallet CoinJoin[0] is not first
+    /// (Standard BIP44[0] is), so a used CoinJoin address routed by owner must
+    /// land `used` in the CoinJoin pool and be absent from the BIP44 pool —
+    /// otherwise it stays "unused" on CoinJoin and could be re-issued as a
+    /// fresh receive address (the address-reuse privacy leak).
+    #[test]
+    fn rehydration_routes_used_address_to_owning_account() {
+        use key_wallet::bip32::DerivationPath;
+        use key_wallet::gap_limit::DEFAULT_EXTERNAL_GAP_LIMIT;
+        use key_wallet::managed_account::address_pool::{AddressPool, AddressPoolType, KeySource};
+        use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+        use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
+        use key_wallet::Address;
+        use std::collections::HashMap;
+
+        let wallet = Wallet::from_seed_bytes(
+            [12u8; 64],
+            Network::Testnet,
+            WalletAccountCreationOptions::Default,
+        )
+        .unwrap();
+        let manifest = manifest_for(&wallet);
+        let mut wallet_info = ManagedWalletInfo::from_wallet(&wallet, 1);
+
+        let coinjoin_type = wallet_info
+            .accounts
+            .coinjoin_accounts
+            .get(&0)
+            .unwrap()
+            .managed_account_type()
+            .to_account_type();
+
+        // CoinJoin external index-0 address (in the eager window, already
+        // derived in the CoinJoin pool) — a previously-used receive address.
+        let coinjoin_used: Address = {
+            let xpub = manifest
+                .iter()
+                .find(|e| e.account_type == coinjoin_type)
+                .map(|e| e.account_xpub)
+                .expect("coinjoin xpub in manifest");
+            let mut p = AddressPool::new_without_generation(
+                DerivationPath::master(),
+                AddressPoolType::External,
+                DEFAULT_EXTERNAL_GAP_LIMIT,
+                Network::Testnet,
+            );
+            p.generate_addresses(1, &KeySource::Public(xpub), true)
+                .unwrap();
+            p.address_at_index(0).unwrap()
+        };
+
+        // Known owner: CoinJoin[0], exactly as the pool resolver attributes it.
+        let mut used: HashMap<Address, Option<OwningAccount>> = HashMap::new();
+        used.insert(
+            coinjoin_used.clone(),
+            Some(owning_account_of(
+                wallet_info.accounts.coinjoin_accounts.get(&0).unwrap(),
+            )),
+        );
+
+        // No UTXOs — only the persisted pool used-state.
+        let core = platform_wallet::changeset::CoreChangeSet {
+            last_processed_height: Some(1),
+            synced_height: Some(1),
+            ..Default::default()
+        };
+        apply_persisted_core_state(
+            &mut wallet_info,
+            &manifest,
+            &core,
+            &Default::default(),
+            &used,
+        )
+        .unwrap();
+
+        let coinjoin = wallet_info.accounts.coinjoin_accounts.get(&0).unwrap();
+        let cj_external = coinjoin
+            .managed_account_type()
+            .address_pools()
+            .into_iter()
+            .find(|p| p.pool_type == AddressPoolType::External)
+            .expect("CoinJoin External pool");
+        assert!(
+            cj_external
+                .address_info(&coinjoin_used)
+                .expect("used address must be present in the CoinJoin pool")
+                .used,
+            "used CoinJoin address must be marked used on the CoinJoin pool, not account 0"
+        );
+
+        // It must NOT have been (mis)routed onto the first (BIP44) account.
+        let bip44 = wallet_info
+            .accounts
+            .standard_bip44_accounts
+            .get(&0)
+            .unwrap();
+        for pool in bip44.managed_account_type().address_pools() {
+            assert!(
+                pool.address_info(&coinjoin_used).is_none(),
+                "the CoinJoin used address must not appear in any BIP44 pool"
+            );
+        }
     }
 
     /// A UTXO whose address is not derivable from this account's
@@ -1057,8 +1204,14 @@ mod tests {
         };
 
         // Must not panic. tracing::warn! fires for the unresolved count.
-        apply_persisted_core_state(&mut wallet_info, &manifest, &core, &Default::default(), &[])
-            .unwrap();
+        apply_persisted_core_state(
+            &mut wallet_info,
+            &manifest,
+            &core,
+            &Default::default(),
+            &Default::default(),
+        )
+        .unwrap();
 
         // Total balance is exact — foreign UTXO is in the set regardless.
         assert_eq!(
@@ -1197,8 +1350,14 @@ mod tests {
             ..Default::default()
         };
 
-        apply_persisted_core_state(&mut wallet_info, &manifest, &core, &Default::default(), &[])
-            .unwrap();
+        apply_persisted_core_state(
+            &mut wallet_info,
+            &manifest,
+            &core,
+            &Default::default(),
+            &Default::default(),
+        )
+        .unwrap();
 
         // Balance is exact.
         assert_eq!(
@@ -1301,8 +1460,14 @@ mod tests {
             ..Default::default()
         };
 
-        apply_persisted_core_state(&mut wallet_info, &manifest, &core, &Default::default(), &[])
-            .unwrap();
+        apply_persisted_core_state(
+            &mut wallet_info,
+            &manifest,
+            &core,
+            &Default::default(),
+            &Default::default(),
+        )
+        .unwrap();
 
         let funds = wallet_info
             .accounts
@@ -1415,15 +1580,26 @@ mod tests {
         };
 
         // Pool used-state carried for both addresses (the reuse guard the
-        // SQLite persister feeds via `core_state::load_used_addresses`).
-        let used_core_addresses = vec![in_window_used.clone(), deep_used.clone()];
+        // SQLite persister feeds via `core_state::load_used_addresses`). Single
+        // funds account, so a `None` owner routes to it.
+        let used_core_addresses: std::collections::HashMap<Address, Option<OwningAccount>> =
+            [in_window_used.clone(), deep_used.clone()]
+                .into_iter()
+                .map(|a| (a, None))
+                .collect();
 
         // Baseline: drop the pool used-state (empty) — the spent-out address
         // resets to unused (the pre-fix behaviour, and the reuse hazard).
         {
             let mut baseline = ManagedWalletInfo::from_wallet(&wallet, 1);
-            apply_persisted_core_state(&mut baseline, &manifest, &core, &Default::default(), &[])
-                .unwrap();
+            apply_persisted_core_state(
+                &mut baseline,
+                &manifest,
+                &core,
+                &Default::default(),
+                &Default::default(),
+            )
+            .unwrap();
             let funds = baseline
                 .accounts
                 .all_funding_accounts()
@@ -1551,18 +1727,24 @@ mod tests {
         let in_window_used = derive(20);
         let wedge_used = derive(45);
 
-        // No UTXOs at all — only the persisted pool used-state.
+        // No UTXOs at all — only the persisted pool used-state. Single funds
+        // account, so a `None` owner routes to it.
         let core = platform_wallet::changeset::CoreChangeSet {
             last_processed_height: Some(1),
             synced_height: Some(1),
             ..Default::default()
         };
+        let used: std::collections::HashMap<Address, Option<OwningAccount>> =
+            [in_window_used.clone(), wedge_used.clone()]
+                .into_iter()
+                .map(|a| (a, None))
+                .collect();
         apply_persisted_core_state(
             &mut wallet_info,
             &manifest,
             &core,
             &Default::default(),
-            &[in_window_used.clone(), wedge_used.clone()],
+            &used,
         )
         .unwrap();
 
@@ -1681,8 +1863,14 @@ mod tests {
             ..Default::default()
         };
 
-        apply_persisted_core_state(&mut wallet_info, &manifest, &core, &Default::default(), &[])
-            .unwrap();
+        apply_persisted_core_state(
+            &mut wallet_info,
+            &manifest,
+            &core,
+            &Default::default(),
+            &Default::default(),
+        )
+        .unwrap();
 
         // The wallet total is exact regardless (a sum over the UTXO set).
         assert_eq!(wallet_info.balance.total(), value);
@@ -1782,7 +1970,7 @@ mod tests {
             &manifest,
             &core,
             &Default::default(),
-            &[],
+            &Default::default(),
         )
         .expect_err("must fail closed when no funds account can hold the UTXOs");
         match err {
@@ -1823,8 +2011,14 @@ mod tests {
             synced_height: Some(1),
             ..Default::default()
         };
-        apply_persisted_core_state(&mut wallet_info, &manifest, &core, &Default::default(), &[])
-            .expect("empty UTXO set must be Ok even with no funds account");
+        apply_persisted_core_state(
+            &mut wallet_info,
+            &manifest,
+            &core,
+            &Default::default(),
+            &Default::default(),
+        )
+        .expect("empty UTXO set must be Ok even with no funds account");
     }
 
     /// Regression: a `last_applied_chain_lock` carried in the persisted
@@ -1863,8 +2057,14 @@ mod tests {
             ..Default::default()
         };
 
-        apply_persisted_core_state(&mut wallet_info, &manifest, &core, &Default::default(), &[])
-            .unwrap();
+        apply_persisted_core_state(
+            &mut wallet_info,
+            &manifest,
+            &core,
+            &Default::default(),
+            &Default::default(),
+        )
+        .unwrap();
 
         assert_eq!(
             wallet_info.metadata.last_applied_chain_lock.as_ref(),

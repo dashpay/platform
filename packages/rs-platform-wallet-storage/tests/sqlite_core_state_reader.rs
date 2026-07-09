@@ -129,7 +129,7 @@ fn rt2_nonzero_balance_survives_reopen() {
             &manifest_for(&wallet),
             &core,
             &utxo_accounts,
-            &[],
+            &Default::default(),
         )
         .expect("BIP44 reconstruction must not error");
         let bal = WalletInfoInterface::balance(&info);
@@ -303,7 +303,7 @@ fn f2_no_bip44_wallet_nonzero_balance_survives_reopen() {
             &manifest_for(&wallet),
             &core,
             &utxo_accounts,
-            &[],
+            &Default::default(),
         )
         .expect("CoinJoin-only reconstruction must not error");
         let bal = WalletInfoInterface::balance(&info);
@@ -598,7 +598,7 @@ fn rehydration_routes_via_real_sql_resolver() {
         &manifest_for(&wallet),
         &core,
         &utxo_accounts,
-        &[],
+        &Default::default(),
     )
     .expect("apply must not error");
 
@@ -628,4 +628,152 @@ fn rehydration_routes_via_real_sql_resolver() {
         "per-account CoinJoin balance exact, not zero"
     );
     assert_eq!(managed.balance.total(), 12_000, "wallet total is the sum");
+}
+
+/// End-to-end regression (dashpay/platform#3968) for the address-reuse guard,
+/// exercising the REAL SQL resolver. Persists a `Default` wallet with a *used*
+/// address (via a `core_address_pool` snapshot with `used = true`) owned by
+/// CoinJoin[0] — which is NOT the first funds account (Standard BIP44[0] is) —
+/// with no unspent UTXO anchoring it. Reopens the DB, unions the two
+/// used-address sources exactly as the persister does (so
+/// `core_pool::load_used_addresses` carries the owner), then drives
+/// `apply_persisted_core_state`. The used address must land `used` on the
+/// CoinJoin pool specifically — never collapsed onto BIP44 — or it stays
+/// "unused" on CoinJoin and could be re-issued as a fresh receive address.
+#[cfg(feature = "rehydration-apply")]
+#[test]
+fn rehydration_routes_used_addresses_to_owning_account() {
+    use key_wallet::account::{AccountType, StandardAccountType};
+    use key_wallet::managed_account::address_pool::AddressPoolType;
+    use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+    use platform_wallet::changeset::AccountAddressPoolEntry;
+    use platform_wallet_storage::sqlite::schema::core_pool::OwningAccount;
+    use platform_wallet_storage::sqlite::schema::{core_pool, core_state};
+    use std::collections::HashMap;
+
+    let (persister, _tmp, path) = fresh_persister();
+    let w = wid(0xC2);
+    ensure_wallet_meta(&persister, &w);
+
+    let wallet = Wallet::from_seed_bytes(
+        [0x9B; 64],
+        key_wallet::Network::Testnet,
+        WalletAccountCreationOptions::Default,
+    )
+    .unwrap();
+
+    // CoinJoin[0] external index-0 address, marked used in the snapshot.
+    let mut coinjoin_used = first_external_info(&wallet, |at| {
+        matches!(at, AccountType::CoinJoin { index: 0 })
+    });
+    coinjoin_used.used = true;
+    let bip44_info = first_external_info(&wallet, |at| {
+        matches!(
+            at,
+            AccountType::Standard {
+                index: 0,
+                standard_account_type: StandardAccountType::BIP44Account,
+            }
+        )
+    });
+    assert_ne!(
+        bip44_info.script_pubkey, coinjoin_used.script_pubkey,
+        "BIP44[0] and CoinJoin[0] must derive distinct scripts"
+    );
+
+    let pool_entry = |account_type, info: &key_wallet::AddressInfo| AccountAddressPoolEntry {
+        account_type,
+        pool_type: AddressPoolType::External,
+        addresses: vec![info.clone()],
+    };
+    persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                account_address_pools: vec![
+                    pool_entry(
+                        AccountType::Standard {
+                            index: 0,
+                            standard_account_type: StandardAccountType::BIP44Account,
+                        },
+                        &bip44_info,
+                    ),
+                    pool_entry(AccountType::CoinJoin { index: 0 }, &coinjoin_used),
+                ],
+                ..Default::default()
+            },
+        )
+        .expect("store must persist the pool snapshot");
+    drop(persister);
+
+    let p2 = reopen(&path);
+    let conn = p2.lock_conn_for_test();
+    let (core, utxo_accounts) =
+        core_state::load_state(&conn, &w, key_wallet::Network::Testnet).expect("load_state");
+
+    // Union the two used-address sources exactly as the persister does — the
+    // pool source carries the known owner (CoinJoin), authoritative on conflict.
+    let used: HashMap<key_wallet::Address, Option<OwningAccount>> = {
+        let mut map: HashMap<key_wallet::Address, Option<OwningAccount>> = HashMap::new();
+        for (addr, owner) in core_pool::load_used_addresses(&conn, &w, key_wallet::Network::Testnet)
+            .expect("core_pool used addresses")
+        {
+            map.entry(addr).or_insert(Some(owner));
+        }
+        for (addr, owner) in
+            core_state::load_used_addresses(&conn, &w, key_wallet::Network::Testnet)
+                .expect("core_utxos used addresses")
+        {
+            map.entry(addr).or_insert(owner);
+        }
+        map
+    };
+    drop(conn);
+
+    // The real pool resolver attributed the used address to CoinJoin[0].
+    assert_eq!(
+        used.get(&coinjoin_used.address),
+        Some(&Some(OwningAccount {
+            account_type: "coinjoin".to_string(),
+            account_index: 0,
+            user_identity_id: [0u8; 32],
+            friend_identity_id: [0u8; 32],
+        })),
+        "the used address must resolve to the CoinJoin owner from the pool"
+    );
+
+    let mut managed = ManagedWalletInfo::from_wallet(&wallet, 1);
+    platform_wallet_storage::sqlite::util::apply_persisted_core_state(
+        &mut managed,
+        &manifest_for(&wallet),
+        &core,
+        &utxo_accounts,
+        &used,
+    )
+    .expect("apply must not error");
+
+    // The used address is marked used on the CoinJoin pool specifically.
+    let coinjoin = managed.accounts.coinjoin_accounts.get(&0).unwrap();
+    let cj_external = coinjoin
+        .managed_account_type()
+        .address_pools()
+        .into_iter()
+        .find(|p| p.pool_type == AddressPoolType::External)
+        .expect("CoinJoin External pool");
+    assert!(
+        cj_external
+            .address_info(&coinjoin_used.address)
+            .expect("used address present in the CoinJoin pool")
+            .used,
+        "used CoinJoin address must be marked used on the CoinJoin pool, not BIP44"
+    );
+
+    // It must NOT have been (mis)routed onto the first (BIP44) account.
+    let bip44 = managed.accounts.standard_bip44_accounts.get(&0).unwrap();
+    for pool in bip44.managed_account_type().address_pools() {
+        assert!(
+            pool.address_info(&coinjoin_used.address).is_none(),
+            "the CoinJoin used address must not appear in any BIP44 pool"
+        );
+    }
 }

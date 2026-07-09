@@ -944,22 +944,56 @@ impl PlatformWalletPersistence for SqlitePersister {
             let unused_asset_locks = schema::asset_locks::load_unconsumed(&conn, &wallet_id)
                 .map_err(PersistenceError::from)?;
             // Used addresses drive the reuse guard: a used-then-emptied
-            // address must never be handed back as a fresh receive address.
-            // Union the verbatim `core_address_pool` used-set with the
-            // `core_utxos`-derived set (spent + unspent). The guard is
+            // address must never be handed back as a fresh receive address,
+            // and must come back used on ITS OWN account so it is never
+            // re-issued as a fresh receive address from that account. Union
+            // the verbatim `core_address_pool` used-set (known owner) with the
+            // `core_utxos`-derived set (spent + unspent; owner resolved per
+            // script, `None` when no pool row covers it). The guard is
             // monotonic, so a mixed store — historical UTXOs plus a later
             // partial pool snapshot that never enumerates them — must surface
-            // both; neither source may shadow the other. Deduped by script.
+            // both; neither source may shadow the other. Keyed by address; the
+            // pool source is authoritative on owner, so a `None` from the
+            // `core_utxos` source never overrides a resolved pool owner. Two
+            // resolved-but-disagreeing owners for one script means DB drift —
+            // keep the pool owner and warn rather than crash rehydration.
             let used_core_addresses = {
-                let mut seen = std::collections::HashSet::new();
-                let mut union = Vec::new();
+                let mut union: std::collections::HashMap<
+                    dashcore::Address,
+                    Option<schema::core_pool::OwningAccount>,
+                > = std::collections::HashMap::new();
                 let pool = schema::core_pool::load_used_addresses(&conn, &wallet_id, network)
                     .map_err(PersistenceError::from)?;
+                for (addr, owner) in pool {
+                    union.entry(addr).or_insert(Some(owner));
+                }
                 let utxo = schema::core_state::load_used_addresses(&conn, &wallet_id, network)
                     .map_err(PersistenceError::from)?;
-                for addr in pool.into_iter().chain(utxo) {
-                    if seen.insert(addr.script_pubkey().to_bytes()) {
-                        union.push(addr);
+                for (addr, owner) in utxo {
+                    match union.entry(addr) {
+                        std::collections::hash_map::Entry::Occupied(existing) => {
+                            if let (Some(pool_owner), Some(utxo_owner)) = (existing.get(), &owner) {
+                                if pool_owner != utxo_owner {
+                                    tracing::warn!(
+                                        wallet_id = %hex::encode(wallet_id),
+                                        pool_owner = %format!(
+                                            "{}[{}]",
+                                            pool_owner.account_type, pool_owner.account_index
+                                        ),
+                                        utxo_owner = %format!(
+                                            "{}[{}]",
+                                            utxo_owner.account_type, utxo_owner.account_index
+                                        ),
+                                        "rehydration: used address resolves to different owning \
+                                         accounts in core_address_pool vs core_utxos — keeping the \
+                                         pool owner (authoritative); likely store drift"
+                                    );
+                                }
+                            }
+                        }
+                        std::collections::hash_map::Entry::Vacant(slot) => {
+                            slot.insert(owner);
+                        }
                     }
                 }
                 union
