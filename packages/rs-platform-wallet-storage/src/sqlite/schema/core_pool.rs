@@ -11,7 +11,7 @@
 //! from the `account_address_pools` changeset snapshots; the UTXO writer reads
 //! it back to attribute an outpoint to its owning account.
 
-use rusqlite::{params, OptionalExtension, Transaction};
+use rusqlite::{params, Connection, OptionalExtension, Transaction};
 
 use platform_wallet::changeset::AccountAddressPoolEntry;
 use platform_wallet::wallet::platform_wallet::WalletId;
@@ -91,6 +91,72 @@ pub fn apply_pools(
     Ok(())
 }
 
+/// Identity of the funds account that owns an address, matched against a
+/// `core_address_pool` row. Carries the same discriminators the writer keys
+/// pool/registration rows on — enough to select one account among funding
+/// accounts that share a numeric `account_index` (Standard BIP44/BIP32 and
+/// CoinJoin can all sit at index 0; DashPay accounts all persist index 0 and
+/// are told apart by the identity pair).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OwningAccount {
+    /// `account_type` DB label (see [`accounts::account_type_db_label`]).
+    pub account_type: String,
+    /// Numeric account index within its type.
+    pub account_index: u32,
+    /// DashPay owner identity (all-zero for non-DashPay accounts).
+    pub user_identity_id: [u8; 32],
+    /// DashPay contact identity (all-zero for non-DashPay accounts).
+    pub friend_identity_id: [u8; 32],
+}
+
+/// Full owning-account identity for a UTXO, matched by its `script_pubkey`
+/// against a pool row. `None` when no pool row covers the script — the caller
+/// then falls back to the one-way historical-attribution default (R7): funds
+/// are never dropped, only conservatively bucketed.
+pub(crate) fn owning_account_for_script(
+    conn: &Connection,
+    wallet_id: &WalletId,
+    script: &[u8],
+) -> Result<Option<OwningAccount>, WalletStorageError> {
+    // A script can appear under several pool rows (distinct account_type /
+    // key_class / identity pair / pool_type share the same `script_pubkey`
+    // for reused keys); an explicit PK-ordered tie-break makes the pick
+    // deterministic instead of relying on SQLite's arbitrary `LIMIT 1` row.
+    let row = conn
+        .prepare_cached(
+            "SELECT account_type, account_index, user_identity_id, friend_identity_id \
+             FROM core_address_pool \
+             WHERE wallet_id = ?1 AND script = ?2 \
+             ORDER BY account_type, account_index, key_class, user_identity_id, \
+                      friend_identity_id, pool_type, address_index ASC \
+             LIMIT 1",
+        )?
+        .query_row(params![wallet_id.as_slice(), script], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, i64>(1)?,
+                row.get::<_, Vec<u8>>(2)?,
+                row.get::<_, Vec<u8>>(3)?,
+            ))
+        })
+        .optional()?;
+    let Some((account_type, index, user, friend)) = row else {
+        return Ok(None);
+    };
+    let account_index =
+        crate::sqlite::util::safe_cast::i64_to_u32("core_address_pool.account_index", index)?;
+    let user_identity_id = <[u8; 32]>::try_from(user.as_slice())
+        .map_err(|_| WalletStorageError::blob_decode("core_address_pool.user_identity_id"))?;
+    let friend_identity_id = <[u8; 32]>::try_from(friend.as_slice())
+        .map_err(|_| WalletStorageError::blob_decode("core_address_pool.friend_identity_id"))?;
+    Ok(Some(OwningAccount {
+        account_type,
+        account_index,
+        user_identity_id,
+        friend_identity_id,
+    }))
+}
+
 /// Owning account index for a UTXO, matched by its `script_pubkey` against a
 /// pool row. `None` when no pool row covers the script — the UTXO writer
 /// then falls back to account 0 (the one-way historical-attribution default,
@@ -100,22 +166,7 @@ pub fn account_index_for_script(
     wallet_id: &WalletId,
     script: &[u8],
 ) -> Result<Option<u32>, WalletStorageError> {
-    // A script can appear under several pool rows (distinct account_type /
-    // key_class / identity pair / pool_type share the same `script_pubkey`
-    // for reused keys); an explicit PK-ordered tie-break makes the pick
-    // deterministic instead of relying on SQLite's arbitrary `LIMIT 1` row.
-    let idx: Option<i64> = tx
-        .prepare_cached(
-            "SELECT account_index FROM core_address_pool \
-             WHERE wallet_id = ?1 AND script = ?2 \
-             ORDER BY account_type, account_index, key_class, user_identity_id, \
-                      friend_identity_id, pool_type, address_index ASC \
-             LIMIT 1",
-        )?
-        .query_row(params![wallet_id.as_slice(), script], |row| row.get(0))
-        .optional()?;
-    idx.map(|v| crate::sqlite::util::safe_cast::i64_to_u32("core_address_pool.account_index", v))
-        .transpose()
+    Ok(owning_account_for_script(tx, wallet_id, script)?.map(|o| o.account_index))
 }
 
 /// Used addresses for a wallet, read verbatim from `core_address_pool`

@@ -104,7 +104,9 @@ fn rt2_nonzero_balance_survives_reopen() {
 
     let p2 = reopen(&path);
     let conn = p2.lock_conn_for_test();
-    let core = core_state::load_state(&conn, &w, key_wallet::Network::Testnet).expect("load_state");
+    #[cfg_attr(not(feature = "rehydration-apply"), allow(unused_variables))]
+    let (core, utxo_accounts) =
+        core_state::load_state(&conn, &w, key_wallet::Network::Testnet).expect("load_state");
     drop(conn);
 
     // The persisted UTXO round-trips by outpoint + value.
@@ -126,6 +128,7 @@ fn rt2_nonzero_balance_survives_reopen() {
             &mut info,
             &manifest_for(&wallet),
             &core,
+            &utxo_accounts,
             &[],
         )
         .expect("BIP44 reconstruction must not error");
@@ -170,7 +173,8 @@ fn b2_spent_utxo_excluded() {
     drop(persister);
     let p2 = reopen(&path);
     let conn = p2.lock_conn_for_test();
-    let core = core_state::load_state(&conn, &w, key_wallet::Network::Testnet).unwrap();
+    let (core, _utxo_accounts) =
+        core_state::load_state(&conn, &w, key_wallet::Network::Testnet).unwrap();
     drop(conn);
     let ops: Vec<_> = core.new_utxos.iter().map(|u| u.outpoint).collect();
     assert!(ops.contains(&u_unspent.outpoint));
@@ -282,7 +286,9 @@ fn f2_no_bip44_wallet_nonzero_balance_survives_reopen() {
 
     let p2 = reopen(&path);
     let conn = p2.lock_conn_for_test();
-    let core = core_state::load_state(&conn, &w, key_wallet::Network::Testnet).unwrap();
+    #[cfg_attr(not(feature = "rehydration-apply"), allow(unused_variables))]
+    let (core, utxo_accounts) =
+        core_state::load_state(&conn, &w, key_wallet::Network::Testnet).unwrap();
     drop(conn);
     assert_eq!(core.new_utxos.len(), 1);
 
@@ -296,6 +302,7 @@ fn f2_no_bip44_wallet_nonzero_balance_survives_reopen() {
             &mut info,
             &manifest_for(&wallet),
             &core,
+            &utxo_accounts,
             &[],
         )
         .expect("CoinJoin-only reconstruction must not error");
@@ -318,7 +325,8 @@ fn b4_empty_core_state_is_ok() {
     drop(persister);
     let p2 = reopen(&path);
     let conn = p2.lock_conn_for_test();
-    let core = core_state::load_state(&conn, &w, key_wallet::Network::Testnet).unwrap();
+    let (core, _utxo_accounts) =
+        core_state::load_state(&conn, &w, key_wallet::Network::Testnet).unwrap();
     drop(conn);
     assert!(core.new_utxos.is_empty());
     assert!(core.records.is_empty());
@@ -365,8 +373,9 @@ fn b5_last_applied_chain_lock_round_trips() {
     let p2 = reopen(&path);
     {
         let conn = p2.lock_conn_for_test();
-        let loaded = core_state::load_state(&conn, &w, key_wallet::Network::Testnet)
-            .expect("load_state must succeed");
+        let (loaded, _utxo_accounts) =
+            core_state::load_state(&conn, &w, key_wallet::Network::Testnet)
+                .expect("load_state must succeed");
         assert_eq!(
             loaded.last_applied_chain_lock.as_ref(),
             Some(&cl),
@@ -438,7 +447,7 @@ fn chain_lock_does_not_regress_on_lower_height_update() {
 
     let p2 = reopen(&path);
     let conn = p2.lock_conn_for_test();
-    let loaded = core_state::load_state(&conn, &w, key_wallet::Network::Testnet)
+    let (loaded, _utxo_accounts) = core_state::load_state(&conn, &w, key_wallet::Network::Testnet)
         .expect("load_state must succeed");
     assert_eq!(
         loaded.last_applied_chain_lock.as_ref(),

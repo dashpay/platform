@@ -931,8 +931,9 @@ impl PlatformWalletPersistence for SqlitePersister {
 
             let account_manifest =
                 schema::accounts::load_state(&conn, &wallet_id).map_err(PersistenceError::from)?;
-            let core_state = schema::core_state::load_state(&conn, &wallet_id, network)
-                .map_err(PersistenceError::from)?;
+            let (core_state, utxo_accounts) =
+                schema::core_state::load_state(&conn, &wallet_id, network)
+                    .map_err(PersistenceError::from)?;
             // Pre-keyed rehydration: each `ManagedIdentity` leaves the loader
             // already carrying its own public keys + contact state (matching
             // the FFI persister), so signing works immediately post-load
@@ -1012,6 +1013,7 @@ impl PlatformWalletPersistence for SqlitePersister {
                 &mut wallet_info,
                 &account_manifest,
                 &core_state,
+                &utxo_accounts,
                 &used_core_addresses,
             )
             .map_err(|e| {

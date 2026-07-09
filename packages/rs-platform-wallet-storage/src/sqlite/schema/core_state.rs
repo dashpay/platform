@@ -14,6 +14,7 @@ use platform_wallet::wallet::platform_wallet::WalletId;
 use crate::sqlite::error::WalletStorageError;
 use crate::sqlite::schema::blob;
 use crate::sqlite::schema::blob::impl_persistable_blob;
+use crate::sqlite::schema::core_pool::{owning_account_for_script, OwningAccount};
 
 // PUBLIC material only: core-chain state reaching `record_blob` /
 // `islock_blob` (transaction records + InstantLocks are public chain data).
@@ -283,8 +284,17 @@ fn upsert_sync_state(
 }
 
 /// Bulk-reconstruct the keyless [`CoreChangeSet`] projection for one wallet
-/// from the `core_*` tables. PUBLIC material only; mints no `Wallet`. `network`
-/// (from `wallets`) turns a persisted `script` back into an `Address`.
+/// from the `core_*` tables, plus the per-outpoint owning-account side channel.
+/// PUBLIC material only; mints no `Wallet`. `network` (from `wallets`) turns a
+/// persisted `script` back into an `Address`.
+///
+/// [`CoreChangeSet::new_utxos`] cannot carry each UTXO's owning account (it is a
+/// bare `Vec<Utxo>`), so the returned map surfaces, per unspent outpoint, the
+/// funds account that owns it — resolved by matching the UTXO's script against
+/// `core_address_pool`. [`apply_persisted_core_state`](crate::sqlite::util::apply_persisted_core_state)
+/// consumes it to route each UTXO to its true account. An outpoint whose script
+/// matches no pool row is absent from the map and falls back to the first funds
+/// account (the one-way historical-attribution default; re-warms on next sync).
 ///
 /// # Reconstructed (safety-critical-correct)
 ///
@@ -295,19 +305,22 @@ fn upsert_sync_state(
 ///
 /// # Deferred to the first post-load `sync` (safe re-warm)
 ///
-/// - **Per-account UTXO attribution**: `core_utxos.account_index` is persisted
-///   (resolved against `core_address_pool` at write time), but this reader does
-///   not select it yet, so restored UTXOs are bucketed under a single account
-///   and re-attributed on the next scan. Wiring the read-back is a deliberate
-///   follow-up. The wallet *total* balance is unaffected.
 /// - **`is_coinbase` / `is_instantlocked` / `is_trusted` / `used` flags**: not
 ///   carried by `core_utxos`; defaulted and refreshed on the next scan.
 pub fn load_state(
     conn: &Connection,
     wallet_id: &WalletId,
     network: dashcore::Network,
-) -> Result<CoreChangeSet, WalletStorageError> {
+) -> Result<
+    (
+        CoreChangeSet,
+        std::collections::HashMap<dashcore::OutPoint, OwningAccount>,
+    ),
+    WalletStorageError,
+> {
     let mut cs = CoreChangeSet::default();
+    let mut utxo_accounts: std::collections::HashMap<dashcore::OutPoint, OwningAccount> =
+        std::collections::HashMap::new();
 
     // Unspent UTXOs → new_utxos (the balance source).
     // Pre-read `length()` gates on `outpoint` and `script` before materializing
@@ -336,6 +349,9 @@ pub fn load_state(
                 Some(h) => crate::sqlite::util::safe_cast::i64_to_u32("core_utxos.height", h)?,
             };
             let script = dashcore::ScriptBuf::from_bytes(script_bytes);
+            if let Some(owner) = owning_account_for_script(conn, wallet_id, script.as_bytes())? {
+                utxo_accounts.insert(outpoint, owner);
+            }
             let address = dashcore::Address::from_script(&script, network)
                 .map_err(|_| WalletStorageError::blob_decode("core_utxos.script not an address"))?;
             let confirmed = height.map(|h| h > 0).unwrap_or(false);
@@ -426,7 +442,7 @@ pub fn load_state(
         }
     }
 
-    Ok(cs)
+    Ok((cs, utxo_accounts))
 }
 
 /// Every address that has ever held a `core_utxos` row for this wallet —
