@@ -35,6 +35,10 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOf
+import org.dashfoundation.dashsdk.persistence.entities.AssetLockEntity
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.di.LocalAppState
 import org.dashfoundation.example.navigation.CreateIdentity
@@ -46,6 +50,8 @@ import org.dashfoundation.example.ui.components.EntityRow
 import org.dashfoundation.example.ui.components.SectionHeader
 import org.dashfoundation.example.ui.funding.PendingAssetLocksList
 import org.dashfoundation.example.ui.wallet.toHexString
+import org.dashfoundation.example.util.hexToBytes
+import org.dashfoundation.example.util.toHex
 
 /**
  * Identities tab root — port of `IdentitiesContentView.swift`: a
@@ -61,6 +67,7 @@ fun IdentitiesHomeScreen(navController: NavHostController) {
     val appState = LocalAppState.current
     val network by appState.currentNetwork.collectAsStateWithLifecycle()
     val coordinator = container.registrationCoordinator
+    val manager by container.walletManagerStore.activeManager.collectAsStateWithLifecycle()
 
     val identitiesFlow = remember(network) {
         container.database.identityDao().observeByNetwork(network.ffiValue)
@@ -70,6 +77,31 @@ fun IdentitiesHomeScreen(navController: NavHostController) {
     val addressFundControllers by container.addressFundCoordinator.controllers
         .collectAsStateWithLifecycle()
     var menuExpanded by remember { mutableStateOf(false) }
+
+    // DB-backed resumable orphan asset locks (ADDR-03), merged into the
+    // "Pending Platform Top Ups" surface below alongside the in-flight
+    // controllers. The Identities tab is network-scoped (not wallet-scoped),
+    // so we observe resumable address-topup locks across EVERY loaded wallet
+    // and tag each with its owning wallet id for the Resume navigation.
+    // ← the DB-backed orphan half of `PendingPlatformFundFromAssetLocksList.swift`.
+    val loadedWallets by (manager?.wallets
+        ?: MutableStateFlow(emptyMap())).collectAsStateWithLifecycle()
+    val walletIdHexes = loadedWallets.keys.sorted()
+    val resumableLocks by remember(walletIdHexes) {
+        if (walletIdHexes.isEmpty()) {
+            flowOf(emptyList<Pair<String, AssetLockEntity>>())
+        } else {
+            val flows = walletIdHexes.map { hex ->
+                val walletId = hex.hexToBytes()
+                container.database.assetLockDao().observeResumableAddressTopUps(walletId)
+            }
+            combine(flows) { arrays ->
+                walletIdHexes.zip(arrays.toList()).flatMap { (hex, locks) ->
+                    locks.map { hex to it }
+                }
+            }
+        }
+    }.collectAsStateWithLifecycle(initialValue = emptyList())
 
     Scaffold(
         topBar = {
@@ -136,8 +168,23 @@ fun IdentitiesHomeScreen(navController: NavHostController) {
             }
 
             val activeFundings = container.addressFundCoordinator.activeControllers()
-            if (activeFundings.isNotEmpty()) {
-                item { PendingAssetLocksList(activeFundings, navController) }
+            if (activeFundings.isNotEmpty() || resumableLocks.isNotEmpty()) {
+                item {
+                    PendingAssetLocksList(
+                        controllers = activeFundings,
+                        navController = navController,
+                        resumableLocks = resumableLocks,
+                        // Per-wallet double-consume guard: an in-flight funding on
+                        // a wallet might be driving one of that wallet's orphan
+                        // outpoints, so suppress Resume on every orphan of a wallet
+                        // that has any InFlight controller. ← Swift hasActiveFunding.
+                        hasActiveFundingFor = { walletIdHex ->
+                            activeFundings.any {
+                                it.walletId.toHex() == walletIdHex && it.phase.value.isActive
+                            }
+                        },
+                    )
+                }
             }
 
             if (identities.isEmpty() && active.isEmpty()) {

@@ -144,8 +144,19 @@ import kotlinx.serialization.Serializable
 
 // ── Asset-lock funding graph (← FundFromAssetLockPlatformAddressView) ──
 
-/** Fund a Platform address from an asset lock (← `FundFromAssetLockPlatformAddressView.swift`). */
-@Serializable data class FundFromAssetLock(val walletIdHex: String)
+/**
+ * Fund a Platform address from an asset lock (← `FundFromAssetLockPlatformAddressView.swift`).
+ *
+ * [resumeOutPointHex] carries the `<txid display hex>:<vout>` of an already-
+ * tracked orphan lock when the screen is opened in RESUME mode (ADDR-03,
+ * ← the Swift view's `resumeFromLock` parameter). Empty means fresh-fund
+ * mode — nav args don't support a nullable `String`, so `""` stands in for
+ * "no lock to resume".
+ */
+@Serializable data class FundFromAssetLock(
+    val walletIdHex: String,
+    val resumeOutPointHex: String = "",
+)
 
 /**
  * Wallet-signed transfer of Platform-address (DIP-17) credits

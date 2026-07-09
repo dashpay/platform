@@ -57,6 +57,20 @@ interface AssetLockDao {
     @Query("SELECT * FROM asset_locks WHERE walletId = :walletId AND statusRaw < 2")
     suspend fun getUnresolvedByWallet(walletId: ByteArray): List<AssetLockEntity>
 
+    /**
+     * Resumable Platform-address top-up locks — `fundingTypeRaw == 4`
+     * (AssetLockAddressTopUp) and `statusRaw ∈ [1, 3]` (Broadcast through
+     * ChainLocked, excluding Built and Consumed). Backs the "Pending
+     * Platform Top Ups" orphan surface (← the SwiftData `@Query` behind
+     * `PendingPlatformFundFromAssetLocksList.swift`, whose Swift filter is
+     * `fundingTypeRaw == 4 && isVisibleAsResumable`).
+     */
+    @Query(
+        "SELECT * FROM asset_locks WHERE walletId = :walletId " +
+            "AND fundingTypeRaw = 4 AND statusRaw >= 1 AND statusRaw <= 3"
+    )
+    fun observeResumableAddressTopUps(walletId: ByteArray): Flow<List<AssetLockEntity>>
+
     @Query("SELECT * FROM asset_locks WHERE outPointHex = :outPointHex")
     suspend fun getByOutPointHex(outPointHex: String): AssetLockEntity?
 

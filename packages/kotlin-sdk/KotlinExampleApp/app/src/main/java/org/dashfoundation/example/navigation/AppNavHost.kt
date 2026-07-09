@@ -236,7 +236,12 @@ fun AppNavHost(
         // ── Asset-lock funding graph ───────────────────────────────────
 
         composable<FundFromAssetLock> { entry ->
-            FundFromAssetLockScreen(entry.toRoute<FundFromAssetLock>().walletIdHex, navController)
+            val route = entry.toRoute<FundFromAssetLock>()
+            FundFromAssetLockScreen(
+                walletIdHex = route.walletIdHex,
+                navController = navController,
+                resumeOutPointHex = route.resumeOutPointHex.takeIf { it.isNotEmpty() },
+            )
         }
 
         composable<TransferPlatformAddress> { entry ->
