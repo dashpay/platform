@@ -1,13 +1,15 @@
 import CryptoKit
 import Foundation
 
-/// **Dev/QA tool only.** App-level client for the testnet DASH faucet at
-/// `faucet.thepasta.org`. This is a plain `URLSession` HTTP client plus a
-/// pure-Swift `cap.js` proof-of-work solver — it deliberately does **not**
-/// touch the wallet / Platform FFI, the `platform-wallet` crate, or any
-/// SDK business logic. It exists purely so QA can top up a fresh/drained
-/// testnet wallet with one tap instead of round-tripping through the web
-/// faucet (issue #3897).
+/// **Dev/QA tool only.** Client for the testnet DASH faucet at
+/// `faucet.thepasta.org`, shared by SwiftExampleApp and dashwallet-ios
+/// (promoted here from the example app so the apps don't carry drifting
+/// copies). This is a plain `URLSession` HTTP client plus a pure-Swift
+/// `cap.js` proof-of-work solver — it deliberately does **not** touch the
+/// wallet / Platform FFI, the `platform-wallet` crate, or any SDK business
+/// logic. It exists purely so QA can top up a fresh/drained testnet wallet
+/// with one tap instead of round-tripping through the web faucet
+/// (issue #3897).
 ///
 /// The faucet enforces a server-side captcha (`cap.js`). The "soft"
 /// challenge is a small proof-of-work (≈6.5M SHA-256 ops) that we solve
@@ -125,7 +127,7 @@ enum CapSolver {
 
 /// Result of a faucet funding attempt. The view turns `.failed` /
 /// `.rateLimited` into the clipboard + web-faucet fallback.
-enum TestnetFaucetOutcome: Sendable {
+public enum TestnetFaucetOutcome: Sendable {
     /// Funds were sent. `txid` is the Core transaction id; `amount` is the
     /// tDASH amount reported by `/api/status` (`coreFaucetAmount`).
     case sent(txid: String, amount: Double)
@@ -138,21 +140,21 @@ enum TestnetFaucetOutcome: Sendable {
 // MARK: - HTTP client
 
 /// Thin async client for the testnet faucet. Stateless; create one per use.
-struct TestnetFaucet {
+public struct TestnetFaucet {
     /// Faucet web host. Used both for the JSON API and as the web fallback URL.
-    static let webURL = URL(string: "https://faucet.thepasta.org/")!
+    public static let webURL = URL(string: "https://faucet.thepasta.org/")!
 
     private let host = URL(string: "https://faucet.thepasta.org")!
     private let session: URLSession
 
-    init(session: URLSession = .shared) {
+    public init(session: URLSession = .shared) {
         self.session = session
     }
 
     /// Request 1 tDASH to `address`. Solves the soft captcha on-device and
     /// posts to `/api/core-faucet`. Safe to call from the main actor — the
     /// proof-of-work runs on a detached background-priority task.
-    func requestCoreDash(address: String) async -> TestnetFaucetOutcome {
+    public func requestCoreDash(address: String) async -> TestnetFaucetOutcome {
         let trimmed = address.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             return .failed(reason: "No address available")
