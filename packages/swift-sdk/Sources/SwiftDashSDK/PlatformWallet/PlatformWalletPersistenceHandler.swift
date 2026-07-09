@@ -3857,7 +3857,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// A wallet is "restorable" when it has at least one
     /// `PersistentAccount` row with non-empty
     /// `accountExtendedPubKeyBytes`. The Rust side reconstructs the
-    /// watch-only `Wallet` via `Wallet::new_watch_only(network,
+    /// external-signable `Wallet` via `Wallet::new_external_signable(network,
     /// wallet_id, accounts)`; accounts come directly from the spec
     /// array, wallet id from the top-level struct.
     ///

@@ -162,13 +162,13 @@ reconstructed from these per-area readers:
 | `contacts` | `schema::contacts::load_changeset` |
 | `identity_keys` | `schema::identity_keys::load_state` |
 
-The payload carries **no** `Wallet` and no key material. On this
-storage-only build the **manager-side rebuild is not yet wired**:
-`PlatformWalletManager::load_from_persistor` returns a typed error rather
-than reconstructing wallets. The keyless rebuild (watch-only via
-`Wallet::new_watch_only` from the manifest, then on-demand signing-key
-derivation through the `sign_with_mnemonic_resolver` path) lands in #3692.
-`load()` itself already reconstructs the full keyless payload.
+The persisted payload stores **no** `Wallet` and no key material. `load()`
+reconstructs the full keyless payload, rebuilding each wallet
+external-signable (`Wallet::new_external_signable` from the manifest) with
+on-demand signing-key derivation through the `sign_with_mnemonic_resolver`
+path. `PlatformWalletManager::load_from_persistor` then rehydrates the
+manager's wallet maps from that payload, reconstructing and registering
+every persisted wallet.
 
 Loading is **fail-hard**: any row that fails to decode, or a stored
 `wallet_id` that is not exactly 32 bytes, aborts the whole call with a typed
