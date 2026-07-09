@@ -21,6 +21,15 @@ interface PublicKeyDao {
     @Query("SELECT * FROM public_keys WHERE identityId = :identityId ORDER BY keyId")
     fun observeByIdentityId(identityId: String): Flow<List<PublicKeyEntity>>
 
+    /**
+     * One-shot list of an identity's keys (base58 id). Used by the
+     * wallet-deletion keystore sweep to enumerate the `publicKeyData`
+     * hexes whose Keystore private halves must be purged BEFORE the
+     * `public_keys` rows are cascade-deleted.
+     */
+    @Query("SELECT * FROM public_keys WHERE identityId = :identityId ORDER BY keyId")
+    suspend fun getByIdentityId(identityId: String): List<PublicKeyEntity>
+
     /** Persister upsert / removal key. */
     @Query("SELECT * FROM public_keys WHERE identityId = :identityId AND keyId = :keyId")
     suspend fun getByIdentityAndKeyId(identityId: String, keyId: Int): PublicKeyEntity?

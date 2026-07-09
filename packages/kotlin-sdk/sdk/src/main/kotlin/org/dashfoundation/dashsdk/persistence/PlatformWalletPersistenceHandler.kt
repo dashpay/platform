@@ -1915,6 +1915,90 @@ class PlatformWalletPersistenceHandler(
         return if (db.coreAddressDao().getByAddress(address) != null) address else null
     }
 
+    // ── Wallet deletion (port of PlatformWalletPersistenceHandler.swift
+    //    `deleteWalletData` / `identityIdsForWallet`) ───────────────────
+
+    /**
+     * The identity ids owned by [walletId] (empty if the wallet row is
+     * absent) — port of Swift `identityIdsForWallet(walletId:)`.
+     *
+     * [PlatformWalletManager.removeWallet] reads these BEFORE the Room
+     * wipe so it can purge each identity's Keystore private keys while the
+     * `public_keys` rows still exist to enumerate the pubkey hexes.
+     */
+    suspend fun identityIdsForWallet(walletId: ByteArray): List<ByteArray> =
+        runBlockingResult {
+            database.identityDao().observeByWallet(walletId).first().map { it.identityId }
+        }
+
+    /**
+     * Wipe a wallet's Room footprint — port of Swift `deleteWalletData`.
+     *
+     * SQLite cascades cleanly in one pass (unlike SwiftData, which fatals
+     * nullifying a non-optional inverse mid-save and forces the Swift
+     * multi-phase delete), so the wallet-owned CASCADE children — accounts
+     * → core/platform addresses, and every identity's public keys / DPNS
+     * names / DashPay profile / contact requests / contact profiles /
+     * payments / ignored senders — drop when their parent row is deleted.
+     * The rows this delete must handle explicitly are:
+     *  - identities (SET_NULL from wallet, Swift `.nullify`) + their
+     *    SET_NULL `token_balances`;
+     *  - the walletId-keyed tables with no wallet FK: txos, pending
+     *    inputs, asset locks, platform addresses + sync state, and the
+     *    four shielded (Orchard) tables.
+     *
+     * The platform-addresses network sync-state row is shared across a
+     * network's wallets (keyed by [syncStateScopeId]); it is dropped only
+     * when no sibling wallet remains on this network — mirroring Swift's
+     * sibling check. Idempotent: deleting an already-removed wallet is a
+     * no-op.
+     */
+    suspend fun deleteWalletData(walletId: ByteArray) = runBlockingCatching {
+        database.withTransaction {
+            val walletRow = database.walletDao().getByWalletId(walletId)
+            val walletNetwork = walletRow?.networkRaw
+
+            // Identities: SET_NULL from wallet, so delete them (and their
+            // SET_NULL token balances) explicitly. The identity delete
+            // cascades every other identity child (public keys, DPNS
+            // names, DashPay rows).
+            val identities = database.identityDao().observeByWallet(walletId).first()
+            for (identity in identities) {
+                database.tokenDao().deleteBalancesByIdentity(identity.identityId)
+                database.identityDao().deleteByIdentityId(identity.identityId)
+            }
+
+            // walletId-keyed tables without a wallet FK — the wallet-row
+            // delete below does not reach them.
+            database.txoDao().deleteByWallet(walletId)
+            database.documentDao().deletePendingInputsByWallet(walletId)
+            database.assetLockDao().deleteByWallet(walletId)
+            database.platformAddressDao().deleteByWallet(walletId)
+            database.shieldedDao().deleteNotesByWallet(walletId)
+            database.shieldedDao().deleteOutgoingNotesByWallet(walletId)
+            database.shieldedDao().deleteActivityByWallet(walletId)
+            database.shieldedDao().deleteSyncStatesByWallet(walletId)
+
+            // The wallet row itself — cascades accounts → core / platform
+            // addresses.
+            database.walletDao().deleteByWalletId(walletId)
+
+            // Orphan-transaction sweep (Swift's post-delete pass): drop
+            // transactions no TXO / pending-input references anymore.
+            database.transactionDao().deleteOrphanTransactions()
+
+            // Network sync-state is shared by every wallet on this
+            // network; only drop it once the last one is gone.
+            if (walletNetwork != null) {
+                val siblings = database.walletDao().getByNetwork(walletNetwork)
+                    .count { !it.walletId.contentEquals(walletId) }
+                if (siblings == 0) {
+                    database.platformAddressDao().deleteSyncState(syncStateScopeId(walletNetwork))
+                }
+            }
+        }
+    }
+
     // ── Error / threading guards ──────────────────────────────────────
 
     /**

@@ -17,8 +17,11 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -151,6 +154,8 @@ fun WalletDetailScreen(
     var showKeyHealthSheet by remember { mutableStateOf(false) }
     var revealedMnemonic by remember { mutableStateOf<String?>(null) }
     var isAuthorizingSeed by remember { mutableStateOf(false) }
+    var showDeleteConfirmation by remember { mutableStateOf(false) }
+    var isDeleting by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
 
     Scaffold(
@@ -386,6 +391,35 @@ fun WalletDetailScreen(
                         .testTag("walletInfo.verifyIdentityKeysButton"),
                 ) { Text("Verify Identity Keys") }
             }
+
+            // Danger zone (← WalletInfoView's destructive "Delete Wallet"
+            // section, kept last so the destructive action stays at the
+            // bottom). Fully wipes this wallet's Rust / Room / Keystore
+            // footprint (CORE-17).
+            FormSection(title = "Danger Zone") {
+                Button(
+                    onClick = { showDeleteConfirmation = true },
+                    enabled = !isDeleting,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error,
+                        contentColor = MaterialTheme.colorScheme.onError,
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("walletDetail.deleteWalletButton"),
+                ) {
+                    if (isDeleting) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.padding(end = 8.dp),
+                            color = MaterialTheme.colorScheme.onError,
+                        )
+                    } else {
+                        Icon(Icons.Default.Delete, contentDescription = null)
+                        Spacer(Modifier.width(8.dp))
+                    }
+                    Text("Delete Wallet")
+                }
+            }
         }
     }
 
@@ -407,6 +441,57 @@ fun WalletDetailScreen(
         SeedPhraseRevealSheet(
             mnemonic = phrase,
             onDismiss = { revealedMnemonic = null },
+        )
+    }
+
+    // Delete-wallet confirmation (← WalletInfoView's destructive alert).
+    // On confirm: the manager's removeWallet handles the full wipe (Rust
+    // unregister → Keystore key sweep → Room cascade → mnemonic delete),
+    // then we pop back to the Wallets list.
+    if (showDeleteConfirmation) {
+        AlertDialog(
+            onDismissRequest = { if (!isDeleting) showDeleteConfirmation = false },
+            title = { Text("Delete Wallet") },
+            text = {
+                Text(
+                    "This permanently removes the wallet, its mnemonic, and all " +
+                        "its identities/addresses from this device. This cannot be " +
+                        "undone unless you have backed up your recovery phrase.",
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = !isDeleting,
+                    onClick = {
+                        val mgr = manager
+                        if (mgr == null) {
+                            error = "Wallet manager is not available."
+                            showDeleteConfirmation = false
+                            return@TextButton
+                        }
+                        scope.launch {
+                            isDeleting = true
+                            val result = runCatching { mgr.removeWallet(walletId) }
+                            isDeleting = false
+                            showDeleteConfirmation = false
+                            result.fold(
+                                onSuccess = { navController.popBackStack() },
+                                onFailure = { error = "Failed to delete wallet: ${it.message}" },
+                            )
+                        }
+                    },
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error,
+                    ),
+                    modifier = Modifier.testTag("walletDetail.deleteWalletConfirm"),
+                ) { Text("Delete") }
+            },
+            dismissButton = {
+                TextButton(
+                    enabled = !isDeleting,
+                    onClick = { showDeleteConfirmation = false },
+                ) { Text("Cancel") }
+            },
         )
     }
 

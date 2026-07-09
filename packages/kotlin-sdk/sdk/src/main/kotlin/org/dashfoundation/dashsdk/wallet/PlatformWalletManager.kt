@@ -27,6 +27,7 @@ import org.dashfoundation.dashsdk.ffi.WalletManagerNative
 import org.dashfoundation.dashsdk.persistence.DashDatabase
 import org.dashfoundation.dashsdk.persistence.PlatformWalletPersistenceHandler
 import org.dashfoundation.dashsdk.persistence.entities.DashpayPaymentEntity
+import org.dashfoundation.dashsdk.persistence.toBase58String
 import org.dashfoundation.dashsdk.persistence.toHex
 import org.json.JSONArray
 import org.dashfoundation.dashsdk.security.BiometricGate
@@ -474,6 +475,71 @@ class PlatformWalletManager(
         }
         _wallets.update { it + (walletId.toHex() to managed) }
         managed
+    }
+
+    // ── Wallet deletion ───────────────────────────────────────────────
+
+    /**
+     * Fully wipe a wallet's Rust, Room, and Keystore footprint — port of
+     * Swift `PlatformWalletManager.deleteWallet(walletId:)` (drives the
+     * WalletDetailScreen "Delete Wallet" action / test CORE-17).
+     *
+     * Ordering mirrors Swift and is chosen for retry-safety:
+     *  1. Resolve the wallet's identity ids and purge each identity key's
+     *     Keystore private half FIRST, while the `public_keys` rows still
+     *     exist to enumerate the pubkey hexes. If a later step throws and
+     *     the caller retries, the Room rows are still present so the
+     *     enumeration can run again; doing the Room wipe first would strand
+     *     the pubkey hexes and orphan the Keystore secrets. Every Keystore
+     *     delete is idempotent (no-op on "not found").
+     *  2. `platform_wallet_manager_remove_wallet` unregisters the wallet in
+     *     the Rust manager (same FFI the create-rollback path calls).
+     *  3. Close + drop the [ManagedPlatformWallet] from [_wallets], and
+     *     clear any DashPay unlock-status banner so a re-created wallet with
+     *     the same deterministic id can't inherit a stale banner.
+     *  4. Run the Room cascade via [PlatformWalletPersistenceHandler.deleteWalletData]
+     *     (the native remove does NOT fire a Room-cascading persistence
+     *     callback — Swift likewise calls `deleteWalletData` explicitly).
+     *  5. Delete the Keystore mnemonic last, so a mid-flight retry could
+     *     still re-derive any missed key before the phrase is gone.
+     *
+     * Deleting an already-removed wallet succeeds (each step is a no-op).
+     *
+     * @param walletId the 32-byte network-scoped wallet id.
+     */
+    suspend fun removeWallet(walletId: ByteArray) = withContext(Dispatchers.IO) {
+        require(walletId.size == 32) {
+            "walletId must be 32 bytes, got ${walletId.size}"
+        }
+
+        // 1. Keystore identity-key sweep BEFORE the Room wipe. Android
+        //    stores identity private keys keyed by pubkey hex (not per
+        //    identity id / wallet id), so enumerate each identity's keys
+        //    from Room and drop their Keystore secrets.
+        val identityIds = persistenceHandler.identityIdsForWallet(walletId)
+        for (identityId in identityIds) {
+            val keys = database.publicKeyDao().getByIdentityId(identityId.toBase58String())
+            for (key in keys) {
+                runCatching { walletStorage.deletePrivateKey(key.publicKeyData.toHex()) }
+            }
+        }
+
+        // 2. Unregister in the Rust manager (same FFI as the create
+        //    rollback path — see createWallet).
+        mapNativeErrors { WalletManagerNative.removeWallet(managerHandle, walletId) }
+
+        // 3. Drop the wrapper + banner state.
+        val key = walletId.toHex()
+        _wallets.value[key]?.let { runCatching { it.close() } }
+        _wallets.update { it - key }
+        _dashPayUnlockStatus.update { it - key }
+
+        // 4. Room cascade (explicit, matching Swift — the native remove
+        //    fires no wallet-level persistence callback).
+        persistenceHandler.deleteWalletData(walletId)
+
+        // 5. Keystore mnemonic last (retry can still re-derive until now).
+        runCatching { walletStorage.deleteMnemonic(walletId) }
     }
 
     // ── Watch-only restore ────────────────────────────────────────────

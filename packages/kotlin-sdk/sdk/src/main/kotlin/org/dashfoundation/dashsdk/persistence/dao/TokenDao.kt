@@ -145,6 +145,15 @@ interface TokenDao {
     @Query("DELETE FROM token_balances WHERE tokenId = :tokenId AND identityId = :identityId")
     suspend fun deleteBalance(tokenId: String, identityId: ByteArray)
 
+    /**
+     * Wallet teardown: drop every balance owned by an identity. The
+     * `identity` FK is SET_NULL (Swift `.nullify`), so deleting the
+     * identity row does NOT cascade its balances — `deleteWalletData`
+     * clears them explicitly, mirroring the Swift wipe's balance pass.
+     */
+    @Query("DELETE FROM token_balances WHERE identityId = :identityId")
+    suspend fun deleteBalancesByIdentity(identityId: ByteArray)
+
     @Query("DELETE FROM token_balances")
     suspend fun deleteAllBalances()
 

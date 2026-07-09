@@ -39,6 +39,24 @@ interface TransactionDao {
     @Query("DELETE FROM transactions WHERE txid = :txid")
     suspend fun deleteByTxid(txid: ByteArray)
 
+    /**
+     * Orphan sweep run after a wallet wipe (Swift `deleteWalletData`'s
+     * post-delete pass): drop transactions no longer referenced by any
+     * TXO (as creating `txid` or spending `spendingTxid`) or pending
+     * input. Transactions are not wallet-scoped — the same on-chain tx can
+     * land in several wallets — so this deletes only rows nothing points at
+     * anymore, never a tx a surviving wallet still references.
+     */
+    @Query(
+        "DELETE FROM transactions WHERE txid NOT IN " +
+            "(SELECT txid FROM txos WHERE txid IS NOT NULL) " +
+            "AND txid NOT IN (SELECT spendingTxid FROM txos WHERE spendingTxid IS NOT NULL) " +
+            "AND txid NOT IN " +
+            "(SELECT spendingTransactionTxid FROM pending_inputs " +
+            "WHERE spendingTransactionTxid IS NOT NULL)"
+    )
+    suspend fun deleteOrphanTransactions()
+
     @Query("DELETE FROM transactions")
     suspend fun deleteAll()
 
