@@ -91,8 +91,11 @@ fun WalletKeyHealthSheet(
                         securityLevel = row.securityLevel,
                         pubkeyHex = pubkeyHex,
                         publicKeyData = row.publicKeyData,
+                        // Decryptability, not mere existence — a blob from the
+                        // pre-RSA scheme is present but unusable and needs the
+                        // same repair as a missing one.
                         hasPrivateKey = runCatching {
-                            container.walletStorage.hasPrivateKey(pubkeyHex)
+                            container.walletStorage.isPrivateKeyDecryptable(pubkeyHex)
                         }.getOrDefault(false),
                     )
                 }

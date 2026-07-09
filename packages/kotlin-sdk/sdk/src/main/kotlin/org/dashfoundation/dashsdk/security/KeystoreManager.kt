@@ -84,6 +84,17 @@ class KeystoreManager {
         return cipher.doFinal(blob.ciphertext)
     }
 
+    /**
+     * Whether [blob] is structurally a [KEYS_ALIAS] RSA blob the current
+     * scheme can decrypt: no iv (RSA blobs never carry one) and exactly one
+     * RSA block of ciphertext. Blobs written by the pre-RSA AES-GCM scheme
+     * carry a GCM nonce in `iv` and became undecryptable when the AES key
+     * was dropped for the RSA pair — they need a re-derive. Never decrypts,
+     * so it never prompts for authentication.
+     */
+    fun isKeysBlobDecryptable(blob: EncryptedBlob): Boolean =
+        blob.iv.isEmpty() && blob.ciphertext.size == RSA_KEY_SIZE / 8
+
     /** IV + ciphertext pair, serialized as `iv.size || iv || ciphertext`. */
     data class EncryptedBlob(val iv: ByteArray, val ciphertext: ByteArray) {
         fun encode(): ByteArray =

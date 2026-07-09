@@ -119,6 +119,19 @@ class WalletStorage(
     suspend fun hasPrivateKey(pubkeyHex: String): Boolean =
         store.data.first().contains(privateKeyKey(pubkeyHex))
 
+    /**
+     * Whether the blob stored for [pubkeyHex] is decryptable under the
+     * current [KeystoreManager.KEYS_ALIAS] RSA scheme. Blobs written by the
+     * pre-RSA AES-GCM scheme survive in the DataStore but lost their key
+     * when the RSA pair replaced it, so signing with them can only fail —
+     * key-health treats them as missing and offers a re-derive. Structural
+     * check only: never decrypts, never prompts.
+     */
+    suspend fun isPrivateKeyDecryptable(pubkeyHex: String): Boolean {
+        val encoded = store.data.first()[privateKeyKey(pubkeyHex)] ?: return false
+        return keystore.isKeysBlobDecryptable(decode(encoded))
+    }
+
     /** All entry names (masked listing for the Keystore Explorer screen). */
     suspend fun listEntryNames(): List<String> =
         store.data.first().asMap().keys.map { it.name }.sorted()
