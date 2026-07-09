@@ -651,8 +651,11 @@ public class WalletManager {
     /// Import a wallet from serialized bytes
     /// - Parameters:
     ///   - walletBytes: The serialized wallet data
+    ///   - birthHeight: Block height to start scanning from. Defaults to 0
+    ///     (genesis), a safe full rescan; pass the wallet's known birth
+    ///     height to skip pre-birth blocks.
     /// - Returns: The wallet ID of the imported wallet
-    public func importWallet(from walletBytes: Data) throws -> Data {
+    public func importWallet(from walletBytes: Data, birthHeight: UInt32 = 0) throws -> Data {
         guard !walletBytes.isEmpty else {
             throw KeyWalletError.invalidInput("Wallet bytes cannot be empty")
         }
@@ -665,6 +668,7 @@ public class WalletManager {
                 handle,
                 bytes.bindMemory(to: UInt8.self).baseAddress,
                 size_t(walletBytes.count),
+                birthHeight,
                 &walletId,
                 &error
             )

@@ -53,14 +53,14 @@ members = [
 # TODO(pin): tracks dashpay/rust-dashcore#851 (draft) — key-wallet
 # out-of-order UTXO spend fix (#649). Bump to the merged `dev` SHA once
 # that PR lands.
-dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "48a07d3fcd2f8d37e109f969eb5da0a8bbbb9aff" }
-dash-network-seeds = { git = "https://github.com/dashpay/rust-dashcore", rev = "48a07d3fcd2f8d37e109f969eb5da0a8bbbb9aff" }
-dash-spv = { git = "https://github.com/dashpay/rust-dashcore", rev = "48a07d3fcd2f8d37e109f969eb5da0a8bbbb9aff" }
-key-wallet = { git = "https://github.com/dashpay/rust-dashcore", rev = "48a07d3fcd2f8d37e109f969eb5da0a8bbbb9aff" }
-key-wallet-ffi = { git = "https://github.com/dashpay/rust-dashcore", rev = "48a07d3fcd2f8d37e109f969eb5da0a8bbbb9aff" }
-key-wallet-manager = { git = "https://github.com/dashpay/rust-dashcore", rev = "48a07d3fcd2f8d37e109f969eb5da0a8bbbb9aff" }
-dash-network = { git = "https://github.com/dashpay/rust-dashcore", rev = "48a07d3fcd2f8d37e109f969eb5da0a8bbbb9aff" }
-dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", rev = "48a07d3fcd2f8d37e109f969eb5da0a8bbbb9aff" }
+dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "b3fb82445a3a0ac1a9c1ff6f8c18c7201d08c1e5" }
+dash-network-seeds = { git = "https://github.com/dashpay/rust-dashcore", rev = "b3fb82445a3a0ac1a9c1ff6f8c18c7201d08c1e5" }
+dash-spv = { git = "https://github.com/dashpay/rust-dashcore", rev = "b3fb82445a3a0ac1a9c1ff6f8c18c7201d08c1e5" }
+key-wallet = { git = "https://github.com/dashpay/rust-dashcore", rev = "b3fb82445a3a0ac1a9c1ff6f8c18c7201d08c1e5" }
+key-wallet-ffi = { git = "https://github.com/dashpay/rust-dashcore", rev = "b3fb82445a3a0ac1a9c1ff6f8c18c7201d08c1e5" }
+key-wallet-manager = { git = "https://github.com/dashpay/rust-dashcore", rev = "b3fb82445a3a0ac1a9c1ff6f8c18c7201d08c1e5" }
+dash-network = { git = "https://github.com/dashpay/rust-dashcore", rev = "b3fb82445a3a0ac1a9c1ff6f8c18c7201d08c1e5" }
+dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", rev = "b3fb82445a3a0ac1a9c1ff6f8c18c7201d08c1e5" }
 
 tokio-metrics = "0.5"
 
