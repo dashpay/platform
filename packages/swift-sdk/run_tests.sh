@@ -25,7 +25,10 @@ cd "$SCRIPT_DIR" || exit 1
 # restored on exit so the persistent runner is left unchanged.
 if [ -n "${CI:-}${GITHUB_ACTIONS:-}" ]; then
   CI_KEYCHAIN="$HOME/Library/Keychains/dash-ci-tests.keychain-db"
-  PREV_DEFAULT_KEYCHAIN="$(security default-keychain -d user | sed -E 's/^[[:space:]]*"?//;s/"?[[:space:]]*$//')"
+  # `security default-keychain -d user` exits non-zero on a runner with no
+  # user default keychain; tolerate it (restore below already skips an empty
+  # value) so `set -euo pipefail` doesn't abort the run before any build.
+  PREV_DEFAULT_KEYCHAIN="$(security default-keychain -d user 2>/dev/null | sed -E 's/^[[:space:]]*"?//;s/"?[[:space:]]*$//' || true)"
   restore_default_keychain() {
     if [ -n "${PREV_DEFAULT_KEYCHAIN:-}" ] && [ -e "$PREV_DEFAULT_KEYCHAIN" ]; then
       security default-keychain -s "$PREV_DEFAULT_KEYCHAIN" || true
