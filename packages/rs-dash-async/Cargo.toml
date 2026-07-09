@@ -7,12 +7,6 @@ authors = ["Dash Core Team"]
 license = "MIT"
 description = "Async-sync bridging utilities for Dash Platform"
 
-[features]
-# Exposes cross-crate test seams (e.g. `ThreadRegistry::park_orphan_for_test`)
-# so downstream crates can drive registry regression tests without shipping
-# the seam in their production builds.
-test-util = []
-
 [dependencies]
 thiserror = "2.0"
 tracing = "0.1.41"

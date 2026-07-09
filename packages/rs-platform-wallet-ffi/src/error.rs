@@ -145,6 +145,16 @@ pub enum PlatformWalletFFIResultCode {
     /// observing the transaction reconciles the outcome. The host must NOT
     /// auto-retry. Shielded sibling: [`Self::ErrorShieldedSpendUnconfirmed`].
     ErrorTransactionBroadcastUnconfirmed = 20,
+    /// `platform_wallet_manager_destroy` could not join every background
+    /// coordinator thread cleanly, even after a retry: a loop panicked,
+    /// exceeded its join budget, or stayed detached. The manager handle is
+    /// still freed, but a worker may outlive `destroy` and fire a host
+    /// callback through the about-to-be-freed context, so the host should
+    /// treat this as a real teardown fault (log / surface) rather than a
+    /// silent success.
+    // TODO(swift-kotlin-mirror): add the matching `= 21` variant to the
+    // Swift/Kotlin result-code mirror enums to keep them numerically aligned.
+    ErrorShutdownIncomplete = 21,
 
     NotFound = 98, // Used exclusively for all the Option that are retuned as errors
     ErrorUnknown = 99,

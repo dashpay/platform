@@ -629,6 +629,20 @@ impl<K: RegistryKey> ThreadRegistry<K> {
             // as an orphan (rather than dropping it) keeps the join UAF-safe
             // — `shutdown`'s orphan reap still accounts for it.
             if self.closing.load(Ordering::Acquire) || self.lock_clearing().contains_key(&key) {
+                // The caller already spawned a live, self-cancelled loop but
+                // the registry is mid-teardown / mid-clear, so its slot is
+                // barred. Parking keeps the join UAF-safe, but the worker is
+                // now an uncancellable-by-the-registry live thread the caller
+                // should have gated out — loud so the race is auditable, not
+                // silent.
+                tracing::error!(
+                    ?key,
+                    closing = self.closing.load(Ordering::Acquire),
+                    clearing = self.lock_clearing().contains_key(&key),
+                    "register_thread parked a live worker as an orphan because the \
+                     registry was closing or clearing; the caller should have gated \
+                     its start on is_closing()/is_clearing() before spawning"
+                );
                 self.lock_orphans()
                     .push((key, WorkerHandle::OsThread(handle)));
                 return;
@@ -724,6 +738,17 @@ impl<K: RegistryKey> ThreadRegistry<K> {
     /// `start_thread`/`start_task` would be refused.
     pub fn is_clearing(&self, key: K) -> bool {
         self.lock_clearing().contains_key(&key)
+    }
+
+    /// Whether [`shutdown`](Self::shutdown) has latched the registry closed.
+    ///
+    /// The latch is one-way: once teardown begins it never reopens. A
+    /// consumer that spawns and cancels its workers outside the registry
+    /// (handing over only a join handle via [`register_thread`]) must gate
+    /// its own `start` on this so it does not spawn a fresh, uncancelled
+    /// loop that teardown has already stopped waiting for.
+    pub fn is_closing(&self) -> bool {
+        self.closing.load(Ordering::Acquire)
     }
 
     /// Await this worker's drain hook, cancel it, then join within its
@@ -926,7 +951,23 @@ impl<K: RegistryKey> ThreadRegistry<K> {
         // Account for parked orphans last. The terminal status is folded
         // into the report so a panicked/errored reaped orphan that finished
         // within the grace (`detached == 0`) still flips `all_clean()`.
-        let (orphan_status, detached) = self.reap_orphans_impl(self.reap_backstop).await;
+        let (mut orphan_status, mut detached) = self.reap_orphans_impl(self.reap_backstop).await;
+
+        // Late parkers: a `register_thread` that raced this teardown sees the
+        // `closing` latch and parks its handle into orphans AFTER the reap
+        // above snapshotted the list. Re-drain until the orphan list is stable
+        // so such a straggler cannot slip through and let `all_clean()`
+        // false-pass. Bounded: `closing` is one-way so no new worker can start,
+        // and each pass either drains a finite backlog or re-parks genuine
+        // survivors (`detached > 0`) — which we fold in and stop, leaving them
+        // for an idempotent retry rather than spinning on a wedged thread.
+        while detached == 0 && !self.lock_orphans().is_empty() {
+            let (late_status, late_detached) = self.reap_orphans_impl(self.reap_backstop).await;
+            if orphan_status.is_clean() && !late_status.is_clean() {
+                orphan_status = late_status;
+            }
+            detached += late_detached;
+        }
         ShutdownReport {
             per_worker,
             detached,
@@ -1014,7 +1055,19 @@ impl<K: RegistryKey> ThreadRegistry<K> {
                 Some(tid)
             }
             Some(task) => {
-                if !task.is_finished() {
+                if task.is_finished() {
+                    // Already finished: classify (non-blocking for a task) so a
+                    // panicked prior generation is logged rather than dropped
+                    // silently on the floor.
+                    let status = task.classify();
+                    if !status.is_clean() {
+                        tracing::error!(
+                            ?key,
+                            ?status,
+                            "prior-generation task ended non-cleanly at restart"
+                        );
+                    }
+                } else {
                     self.lock_orphans().push((key, task));
                 }
                 None
@@ -1065,8 +1118,18 @@ impl<K: RegistryKey> ThreadRegistry<K> {
                     Some(_) => None,
                 }
             };
-            if let Some(WorkerHandle::OsThread(h)) = taken {
-                let _ = h.join();
+            if let Some(handle) = taken {
+                // Join through `classify` rather than discarding the result: a
+                // prior generation that panicked must not vanish silently at
+                // restart. `classify` performs the actual join.
+                let status = handle.classify();
+                if !status.is_clean() {
+                    tracing::error!(
+                        ?key,
+                        ?status,
+                        "prior-generation worker ended non-cleanly during restart reap"
+                    );
+                }
                 return;
             }
             std::thread::sleep(Duration::from_millis(5));
@@ -1116,13 +1179,10 @@ impl<K: RegistryKey> ThreadRegistry<K> {
     }
 
     /// Test-only seam: park a raw thread handle as an orphan under `key`.
-    /// Used by cross-crate regression tests (e.g. the wallet's F2 gate)
-    /// that must inject a wedged prior-generation thread without driving
-    /// the full restart-reap path. Feature-gated behind `test-util` so it
-    /// never ships in a production build of a downstream consumer.
-    #[cfg(any(test, feature = "test-util"))]
-    #[doc(hidden)]
-    pub fn park_orphan_for_test(&self, key: K, handle: std::thread::JoinHandle<()>) {
+    /// Injects a wedged prior-generation thread into the reap path without
+    /// driving the full restart-reap dance. In-crate tests only.
+    #[cfg(test)]
+    fn park_orphan_for_test(&self, key: K, handle: std::thread::JoinHandle<()>) {
         self.lock_orphans()
             .push((key, WorkerHandle::OsThread(handle)));
     }
@@ -2336,13 +2396,16 @@ mod tests {
         assert_eq!(reg.quiesce("k").await, WorkerStatus::Ok);
     }
 
-    /// PR #3954 thread #5 — `with_reap_backstop` MUST emit a one-shot
-    /// `tracing::warn!` when compiled under `panic = "abort"` so an operator
-    /// can audit the orphan-liveness-gate risk documented on `EpilogueGuard`
-    /// and `AtomicFlagGuard`. The check is build-cfg-pinned: this test only
-    /// exists under abort builds and serves as a compile-gate canary — if
-    /// the cfg block in `with_reap_backstop` is ever removed, this test
-    /// disappears with it and CI loses the signal.
+    /// `with_reap_backstop` MUST emit a one-shot `tracing::warn!` when
+    /// compiled under `panic = "abort"` so an operator can audit the
+    /// orphan-liveness-gate risk documented on `EpilogueGuard` and
+    /// `AtomicFlagGuard`.
+    ///
+    /// Aspirational / manual-only: the standard `cargo test` profile is
+    /// `panic = "unwind"`, so this test is cfg-compiled OUT of every normal CI
+    /// run. It exercises the warn path only under a deliberate
+    /// `RUSTFLAGS="-C panic=abort"` build (mirroring the iOS release profile);
+    /// treat it as a local audit tool, not a signal CI enforces on its own.
     ///
     /// Functional assertion is on the process-wide `Once` latch, which is
     /// the most reliable artifact we can probe without subscribing to
@@ -2515,5 +2578,80 @@ mod tests {
             other => panic!("expected Panicked, got {other:?}"),
         }
         assert!(!report.all_clean());
+    }
+
+    /// `is_closing` reflects the one-way teardown latch: `false` on a fresh
+    /// registry, `true` once `shutdown` has begun. Consumers gate their own
+    /// out-of-registry `start` on it so they never spawn a loop teardown has
+    /// stopped waiting for.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn is_closing_tracks_shutdown_latch() {
+        let reg = ThreadRegistry::<&str>::new();
+        assert!(!reg.is_closing(), "fresh registry is not closing");
+        assert!(reg.shutdown().await.all_clean());
+        assert!(
+            reg.is_closing(),
+            "shutdown latched the registry closed (one-way)"
+        );
+    }
+
+    /// A late registration that stays WEDGED past the reap grace is folded
+    /// into the report as `detached` — `all_clean` cannot false-pass on a
+    /// straggler that outlives teardown.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn register_thread_after_shutdown_wedged_orphan_flips_all_clean() {
+        let reg = ThreadRegistry::<&str>::with_reap_backstop(Duration::from_millis(50));
+        assert!(reg.shutdown().await.all_clean());
+
+        let (tx, rx) = mpsc::channel::<()>();
+        reg.register_thread("late", WorkerConfig::default(), spawn_gated(rx));
+        assert_eq!(orphan_len(&reg), 1, "late registration parked as orphan");
+
+        let report = reg.shutdown().await;
+        assert!(
+            !report.all_clean(),
+            "a live straggler flips all_clean: {report:?}"
+        );
+        assert!(
+            report.detached >= 1,
+            "wedged orphan counted as detached: {report:?}"
+        );
+
+        drop(tx);
+        assert_eq!(
+            reg.reap_orphans(Duration::from_secs(2)).await,
+            WorkerStatus::Ok
+        );
+        assert!(!reg.any_alive());
+    }
+
+    /// A prior generation that panicked is JOINED (and classified), not left
+    /// dangling, when `register_thread` restarts the key: the restarting
+    /// caller neither hangs nor inherits the panic, and the reap removes the
+    /// prior from the orphan list.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn register_thread_restart_reaps_panicked_prior() {
+        let reg = ThreadRegistry::<&str>::with_reap_backstop(Duration::from_millis(200));
+        let (tx1, rx1) = mpsc::channel::<()>();
+        let gen1 = std::thread::spawn(move || {
+            let _ = rx1.recv();
+            panic!("gen1 boom");
+        });
+        reg.register_thread("k", WorkerConfig::default(), gen1);
+
+        // Let gen1 run to its panic so the restart reap joins a *finished*,
+        // panicked prior — the path that previously discarded the join result.
+        drop(tx1);
+
+        let (tx2, rx2) = mpsc::channel::<()>();
+        reg.register_thread("k", WorkerConfig::default(), spawn_gated(rx2));
+        assert_eq!(
+            orphan_len(&reg),
+            0,
+            "panicked prior joined + removed by the restart reap"
+        );
+
+        drop(tx2);
+        assert!(reg.shutdown().await.all_clean());
     }
 }

@@ -219,20 +219,35 @@ impl ShieldedSyncManager {
     /// the underlying `dash-sdk` shielded-sync future is `!Send` (the
     /// GRPC client state isn't `Send + Sync`). Same trade-off as
     /// [`PlatformAddressSyncManager::start`](super::platform_address_sync::PlatformAddressSyncManager::start).
+    ///
+    /// **Blocks briefly on restart**: handing the loop thread to the shared
+    /// registry synchronously reaps a still-draining prior-generation thread,
+    /// spinning up to the registry reap backstop (default 1 s) before
+    /// returning. Call it from the FFI host thread, not an async task.
     pub fn start(self: Arc<Self>) {
-        // Refuse to (re)start while a clear is latched on the registry: a
-        // fresh pass could `persister.store(...)` notes into the store
-        // `clear_shielded` is about to wipe. The registry gates its own
-        // `start_thread`/`register_thread` on this latch, but the loop's
-        // cancellation lives in `cancel_guard`, so the gate must also be
-        // observed here — before `install` spawns a thread that would run
-        // a pass regardless of where its handle later lands.
-        if self.registry.is_clearing(WalletWorker::ShieldedSync) {
+        // Refuse to (re)start while a clear is latched (a fresh pass could
+        // `persister.store(...)` notes into the store `clear_shielded` is
+        // about to wipe) or once teardown has latched `closing` (the registry
+        // does not own this loop's cancellation, so it would run uncancelled).
+        // The registry gates its own `register_thread` on both latches, but
+        // this loop's cancellation lives in `cancel_guard`, so the gate must
+        // also be observed here — before `install` spawns a thread.
+        if self.registry.is_closing() || self.registry.is_clearing(WalletWorker::ShieldedSync) {
             return;
         }
         let Some((cancel, my_generation)) = self.cancel_guard.install() else {
             return;
         };
+        // Re-check AFTER install (check-lock-check): `clear_shielded` /
+        // `shutdown` may have latched between the gate above and `install`.
+        // Without this a fresh pass could re-persist notes right after the
+        // wipe. Cancel the just-installed token and release the slot rather
+        // than spawning.
+        if self.registry.is_closing() || self.registry.is_clearing(WalletWorker::ShieldedSync) {
+            cancel.cancel();
+            self.cancel_guard.clear_if_current(my_generation);
+            return;
+        }
 
         let handle = tokio::runtime::Handle::current();
         let registry = Arc::clone(&self.registry);

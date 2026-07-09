@@ -399,10 +399,32 @@ where
     ///
     /// The first pass runs immediately; subsequent passes fire every
     /// [`interval`](Self::interval).
+    ///
+    /// **Blocks briefly on restart**: handing the loop thread to the shared
+    /// registry synchronously reaps a still-draining prior-generation thread,
+    /// spinning up to the registry reap backstop (default 1 s) before
+    /// returning. Call it from the FFI host thread, not an async task.
     pub fn start(self: Arc<Self>) {
+        // Refuse to (re)start once the registry has latched closed for
+        // teardown: `register_thread` cannot install past `closing`, and the
+        // registry does not own this loop's cancellation, so a loop spawned
+        // here would run uncancelled while shutdown waits on it. See
+        // `ShieldedSyncManager::start` for the clearing-latch analogue.
+        if self.registry.is_closing() {
+            return;
+        }
         let Some((cancel, my_generation)) = self.cancel_guard.install() else {
             return;
         };
+        // Re-check after install (check-lock-check): a shutdown may have
+        // latched `closing` between the gate above and here. Cancel the
+        // just-installed token and release the slot rather than spawning a
+        // loop teardown has stopped waiting for.
+        if self.registry.is_closing() {
+            cancel.cancel();
+            self.cancel_guard.clear_if_current(my_generation);
+            return;
+        }
 
         let handle = tokio::runtime::Handle::current();
         let registry = Arc::clone(&self.registry);

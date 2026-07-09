@@ -365,13 +365,32 @@ pub unsafe extern "C" fn platform_wallet_manager_destroy(
         let report = runtime().block_on(manager.shutdown());
         if !report.all_clean() {
             // A coordinator thread panicked, exceeded its join budget, or
-            // stayed detached. The host context is freed after we return
-            // regardless, so this is best-effort observability, not a gate.
+            // stayed detached — possibly a loop that raced this teardown and
+            // installed its cancellation after our first quiesce. Retry once:
+            // `shutdown()` re-quiesces (cancelling any now-installed loop) and
+            // re-joins, which clears that race. The host frees its callback
+            // context after we return, so a still-live worker is a real UAF
+            // hazard, not just noise.
             tracing::warn!(
                 ?report,
                 "platform wallet manager shutdown did not join every coordinator \
-                 thread cleanly; a loop panicked, timed out, or stayed detached"
+                 thread cleanly on the first pass; retrying"
             );
+            let retry = runtime().block_on(manager.shutdown());
+            if !retry.all_clean() {
+                tracing::error!(
+                    ?retry,
+                    "platform wallet manager shutdown still could not join every \
+                     coordinator thread after a retry; a worker may outlive destroy"
+                );
+                return PlatformWalletFFIResult::err(
+                    PlatformWalletFFIResultCode::ErrorShutdownIncomplete,
+                    format!(
+                        "shutdown could not cleanly join all coordinator threads after \
+                         a retry: {retry:?}"
+                    ),
+                );
+            }
         }
     }
     PlatformWalletFFIResult::ok()

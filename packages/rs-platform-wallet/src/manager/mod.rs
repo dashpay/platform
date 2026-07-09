@@ -12,7 +12,9 @@ mod wallet_lifecycle;
 
 use std::sync::Arc;
 
-use dash_async::{ShutdownReport, ShutdownWeight, ThreadRegistry, WorkerConfig};
+use dash_async::{
+    ShutdownReport, ShutdownWeight, ThreadRegistry, WorkerConfig, DEFAULT_JOIN_BUDGET,
+};
 use tokio::sync::{Notify, RwLock};
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
@@ -63,18 +65,16 @@ pub enum WalletWorker {
 /// [`ThreadRegistry::shutdown`] drains them concurrently.
 pub(crate) const COORDINATOR_WEIGHT: ShutdownWeight = ShutdownWeight(0);
 
-/// Per-coordinator managed-join budget. A wedged loop pass surfaces as
+/// [`WorkerConfig`] each coordinator hands its loop thread to the registry
+/// with — one shared tier, no drain hook, and the registry's default managed-
+/// join budget ([`DEFAULT_JOIN_BUDGET`]), so a wedged loop pass surfaces as
 /// [`WorkerStatus::Timeout`](dash_async::WorkerStatus::Timeout) instead of
 /// hanging shutdown forever.
-pub(crate) const SHUTDOWN_JOIN_TIMEOUT_SECS: u64 = 30;
-
-/// [`WorkerConfig`] each coordinator hands its loop thread to the registry
-/// with — one shared tier, no drain hook, one join budget.
 pub(crate) fn coordinator_worker_config() -> WorkerConfig {
     WorkerConfig {
         weight: COORDINATOR_WEIGHT,
         drain: None,
-        join_budget: std::time::Duration::from_secs(SHUTDOWN_JOIN_TIMEOUT_SECS),
+        join_budget: DEFAULT_JOIN_BUDGET,
     }
 }
 
