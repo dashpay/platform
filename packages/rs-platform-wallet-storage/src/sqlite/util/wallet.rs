@@ -71,7 +71,7 @@ pub(crate) fn build_wallet(
 ///
 /// - **Wallet balance** (`wallet_info.balance`, the no-silent-zero
 ///   guarantee): every persisted UTXO is restored and the per-account
-///   + wallet totals are recomputed via `update_balance()`. A UTXO
+///   and wallet totals are recomputed via `update_balance()`. A UTXO
 ///   carrying a block height is marked confirmed so it lands in the
 ///   `confirmed` bucket; the wallet total is exact regardless.
 /// - **UTXO set**: every unspent persisted outpoint is restored into a
