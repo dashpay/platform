@@ -484,6 +484,57 @@ pub unsafe extern "C" fn platform_wallet_manager_spv_stop(
     PlatformWalletFFIResult::ok()
 }
 
+/// Arm an organic compact-filter rescan for one wallet by rewinding its
+/// SPV filter-scan checkpoint (`synced_height`) to `from_height`.
+///
+/// This does not itself scan; it rewinds the checkpoint on the *shared*
+/// wallet state the running `DashSpvClient` reads. On the filter-sync
+/// loop's next tick, `dash-spv`'s `FiltersManager` observes this wallet
+/// in `wallets_behind(committed_height)`, calls `reset_for_rescan()`,
+/// rewinds its committed height to this wallet's `synced_height`, and
+/// re-downloads / re-matches compact filters from there — matching any
+/// scripts (e.g. newly watched addresses) that weren't in the watch set
+/// when those blocks were first scanned.
+///
+/// `from_height` at or above the wallet's current checkpoint is written
+/// verbatim but arms no rescan (the loop only rescans wallets strictly
+/// behind the committed height), so a forward/equal set is a harmless
+/// no-op for rescan purposes.
+///
+/// Requires SPV running for an immediate effect; otherwise the rewound
+/// checkpoint takes effect when SPV next starts and its filter loop
+/// first ticks. The rewound checkpoint is in-memory only (not persisted
+/// by this call); if the process dies mid-rescan the wallet is simply
+/// still behind and the next start re-arms the backfill.
+///
+/// # Safety
+/// - `wallet_id` must point to 32 readable bytes.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_manager_spv_rescan_filters(
+    handle: Handle,
+    wallet_id: *const u8,
+    from_height: u32,
+) -> PlatformWalletFFIResult {
+    check_ptr!(wallet_id);
+    let wid: [u8; 32] = std::ptr::read(wallet_id as *const [u8; 32]);
+
+    let option = PLATFORM_WALLET_MANAGER_STORAGE
+        .with_item(handle, |manager| manager.spv_rescan_filters_blocking(&wid, from_height));
+    let found = unwrap_option_or_return!(option);
+    if !found {
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::NotFound,
+            "Wallet not found".to_string(),
+        );
+    }
+    tracing::info!(
+        wallet_id = %hex::encode(wid),
+        from_height,
+        "platform_wallet_manager_spv_rescan_filters: armed filter rescan"
+    );
+    PlatformWalletFFIResult::ok()
+}
+
 /// Clear all persisted SPV storage (headers, filters, state).
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_manager_spv_clear_storage(

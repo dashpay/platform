@@ -458,6 +458,62 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         })
     }
 
+    /// Rewind a single wallet's SPV filter-scan checkpoint
+    /// (`synced_height`) to `from_height`, arming an organic filter
+    /// rescan.
+    ///
+    /// This is the write half of the same mechanism `reconcile_dashpay_rescan`
+    /// uses for historical-contact backfill. It mutates the *shared*
+    /// `wallet_manager` (`Arc<RwLock<..>>`) that the running `DashSpvClient`
+    /// holds a clone of — so the change is observed by the live filter-sync
+    /// loop: on its next tick `FiltersManager` sees this wallet in
+    /// `wallets_behind(committed_height)`, calls `reset_for_rescan()`, rewinds
+    /// its committed height to this wallet's `synced_height`, and re-downloads /
+    /// re-matches compact filters from there.
+    ///
+    /// Unlike the `WalletInterface::update_wallet_synced_height` trait method
+    /// (which is forward-only and silently ignores a lower value), this writes
+    /// `core_wallet.update_synced_height` directly, which is an unconditional
+    /// set — so a **rewind** actually takes effect. A `from_height` at or above
+    /// the current checkpoint is written verbatim but arms no rescan: the
+    /// filter loop only rescans wallets strictly *behind* the committed height,
+    /// so a forward/equal set is a harmless no-op for the rescan purpose.
+    ///
+    /// `synced_height` may regress here: that is safe because it is the
+    /// filter-scan checkpoint, decoupled from the monotonic
+    /// `last_processed_height`, and every persisted sync cursor is
+    /// monotonic-max guarded (see `reconcile_dashpay_rescan`'s note), so a
+    /// transient rewind cannot corrupt state or persist a lower cursor.
+    ///
+    /// The rewound checkpoint lives in the in-memory `WalletManager`; it is not
+    /// itself persisted by this call, and that is fine for the feature: a
+    /// rescan completes in-session, and if the process dies mid-rescan the
+    /// wallet is simply still behind, so the next `start` re-arms the same
+    /// backfill from the persisted high-water. Requires SPV running for an
+    /// immediate effect; otherwise it takes effect when SPV next starts and its
+    /// filter loop first ticks.
+    ///
+    /// Returns `false` when no wallet matches `wallet_id`.
+    pub fn spv_rescan_filters_blocking(
+        &self,
+        wallet_id: &WalletId,
+        from_height: u32,
+    ) -> bool {
+        use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
+
+        let mut wm = self.wallet_manager.blocking_write();
+        let Some(info) = wm.get_wallet_info_mut(wallet_id) else {
+            return false;
+        };
+        info.core_wallet.update_synced_height(from_height);
+        tracing::info!(
+            wallet_id = %hex::encode(wallet_id),
+            from_height,
+            "SPV rescan: rewound wallet synced_height to arm a filter rescan"
+        );
+        true
+    }
+
     /// Snapshot of identity-wallet scan state for a single wallet.
     /// See [`IdentityWalletStateSnapshot`] for the field doc and the
     /// upstream renaming history (the legacy `last_scanned_index`

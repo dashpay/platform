@@ -290,4 +290,40 @@ extension PlatformWalletManager {
     public func clearSpvStorage() throws {
         try platform_wallet_manager_spv_clear_storage(handle).check()
     }
+
+    /// Arm an organic compact-filter rescan for one wallet by rewinding
+    /// its SPV filter-scan checkpoint (`synced_height`) to `fromHeight`.
+    ///
+    /// This does not scan directly. It lowers the wallet's synced height
+    /// on the shared wallet state the running filter sync reads; on that
+    /// sync's next tick the filter manager detects the wallet is behind,
+    /// resets its committed height to the rewound value, and re-downloads
+    /// and re-matches compact filters from there — picking up scripts
+    /// (e.g. addresses added after those blocks were first scanned) that
+    /// were not in the watch set the first time.
+    ///
+    /// Requires SPV running for an immediate effect; otherwise the
+    /// rewound checkpoint takes effect when SPV next starts and its
+    /// filter loop first ticks. A `fromHeight` at or above the wallet's
+    /// current checkpoint is stored but arms no rescan (the sync only
+    /// rescans wallets that are strictly behind). Throws `.notFound`
+    /// (via `.check()`) when no loaded wallet matches `walletId`.
+    ///
+    /// - Parameters:
+    ///   - walletId: the 32-byte wallet identifier.
+    ///   - fromHeight: the core block height to rewind the filter scan to.
+    public func spvRescanFilters(walletId: Data, fromHeight: UInt32) throws {
+        guard walletId.count == 32 else {
+            throw PlatformWalletError.invalidParameter(
+                "walletId must be exactly 32 bytes"
+            )
+        }
+        try walletId.withUnsafeBytes { widRaw in
+            guard let widPtr = widRaw.baseAddress?.assumingMemoryBound(to: UInt8.self)
+            else {
+                throw PlatformWalletError.invalidParameter("walletId baseAddress is nil")
+            }
+            try platform_wallet_manager_spv_rescan_filters(handle, widPtr, fromHeight).check()
+        }
+    }
 }
