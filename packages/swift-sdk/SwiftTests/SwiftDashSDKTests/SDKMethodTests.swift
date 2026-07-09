@@ -41,7 +41,6 @@ final class SDKMethodTests: XCTestCase {
     // Test if we can call identityTransferCredits without crashing
     do {
       print("Attempting to call identityTransferCredits...")
-      let fromId = "test1"
       let toId = "test2"
       let amount: UInt64 = 1
       let key = Data(repeating: 0, count: 32)
@@ -74,7 +73,7 @@ final class SDKMethodTests: XCTestCase {
         dash_sdk_signer_destroy(OpaquePointer(signer))
       }
 
-      nonisolated(unsafe) let signerPtr = OpaquePointer(signer)
+      let signerPtr = OpaquePointer(signer)
       _ = try await sdk.transferCredits(
         from: identity,
         toIdentityId: toId,

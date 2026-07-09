@@ -16,6 +16,7 @@ struct TokenMintActionView: View {
     let identity: PersistentIdentity
 
     @EnvironmentObject var walletManager: PlatformWalletManager
+    @EnvironmentObject var appState: AppState
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
 
@@ -266,10 +267,20 @@ struct TokenMintActionView: View {
         let contractId = token.contractId
         let note = publicNote.trimmingCharacters(in: .whitespacesAndNewlines)
         let publicNoteOrNil: String? = note.isEmpty ? nil : note
+        // Grab the token relationship key while still on the main actor so
+        // the post-mint persist doesn't read a SwiftData model from inside
+        // the Task. (`contractId` above is already `token.contractId`.)
+        let tokenRelationshipKey = token.id
 
         Task {
             do {
-                try await wallet.tokenMint(
+                // The mint's broadcast result already carries the
+                // proof-verified post-mint balance of the recipient —
+                // persist it straight into the local row the UI observes so
+                // a mint-to-self shows up (and Transfer / Burn unlock)
+                // immediately, without waiting for the next periodic sync
+                // and with no extra round-trip.
+                let balances = try await wallet.tokenMint(
                     identityId: identityId,
                     contractId: contractId,
                     tokenPosition: position,
@@ -278,6 +289,12 @@ struct TokenMintActionView: View {
                     publicNote: publicNoteOrNil,
                     groupAction: groupAction,
                     signer: signer
+                )
+                await self.persistBalancesAfterMint(
+                    balances: balances,
+                    contractId: contractId,
+                    tokenPosition: position,
+                    tokenRelationshipKey: tokenRelationshipKey
                 )
                 await MainActor.run {
                     guard self.submitGeneration == gen else { return }
@@ -291,6 +308,37 @@ struct TokenMintActionView: View {
                     self.isSubmitting = false
                 }
             }
+        }
+    }
+
+    /// Persist the proof-verified post-mint balance the mint returned into
+    /// the local `PersistentTokenBalance` row. Keyed by the recipient the
+    /// FFI reports, so a mint-to-self updates the holder's row (and the
+    /// Transfer / Burn forms, which gate on the local balance, immediately
+    /// see it). A group-action proposal / history-tracking token returns an
+    /// empty map and nothing is written. Best-effort — any failure is
+    /// logged and swallowed; the periodic sync is the backstop.
+    ///
+    /// `@MainActor`-isolated: writes the main-context `modelContext` via the
+    /// SDK's `@MainActor` persist helper. No network round-trip.
+    @MainActor
+    private func persistBalancesAfterMint(
+        balances: [Data: UInt64],
+        contractId: Data,
+        tokenPosition: UInt16,
+        tokenRelationshipKey: Data
+    ) async {
+        guard let sdk = appState.sdk else { return }
+        do {
+            try sdk.persistProvenTokenBalances(
+                contractId: contractId,
+                tokenPosition: tokenPosition,
+                tokenRelationshipKey: tokenRelationshipKey,
+                balances: balances,
+                in: modelContext
+            )
+        } catch {
+            print("⚠️ Post-mint balance persist failed: \(error)")
         }
     }
 }
