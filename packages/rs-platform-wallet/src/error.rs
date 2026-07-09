@@ -476,6 +476,19 @@ pub fn promote_address_nonce_error(error: &dash_sdk::Error) -> Option<PlatformWa
     })
 }
 
+/// Map an SDK error from an address-funded transition (transfer / withdrawal) to
+/// a [`PlatformWalletError`], promoting a nonce rejection to the typed
+/// [`PlatformWalletError::AddressNonceMismatch`] and otherwise preserving the
+/// original error under [`PlatformWalletError::Sdk`].
+///
+/// This is the shared owned-error analogue of [`promote_address_nonce_error`]
+/// for the `.map_err(...)?` sites that fall back to `Sdk` — the transfer and
+/// withdrawal call sites — so a nonce mismatch reaches the caller as a typed,
+/// retryable variant instead of a flattened `Sdk` string.
+pub fn promote_address_nonce_error_or_sdk(error: dash_sdk::Error) -> PlatformWalletError {
+    promote_address_nonce_error(&error).unwrap_or(PlatformWalletError::Sdk(error))
+}
+
 #[cfg(test)]
 mod address_nonce_tests {
     use super::*;
@@ -566,6 +579,55 @@ mod address_nonce_tests {
         assert!(
             promote_address_nonce_error(&dash_sdk::Error::Generic("boom".to_string())).is_none()
         );
+    }
+
+    #[test]
+    fn promote_or_sdk_promotes_a_matching_nonce_error() {
+        // The transfer / withdrawal call sites route their SDK error through
+        // this helper; a nonce rejection must surface as the typed variant.
+        for err in [protocol_shape(3, 4), broadcast_shape(3, 4)] {
+            match promote_address_nonce_error_or_sdk(err) {
+                PlatformWalletError::AddressNonceMismatch {
+                    address,
+                    provided_nonce,
+                    expected_nonce,
+                } => {
+                    assert_eq!(address, PlatformAddress::P2pkh(ADDR_BYTES));
+                    assert_eq!(provided_nonce, 3);
+                    assert_eq!(expected_nonce, 4);
+                }
+                other => panic!("expected AddressNonceMismatch, got {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn promote_or_sdk_falls_back_to_sdk_for_unrelated_errors() {
+        // A non-nonce error must be preserved verbatim under `Sdk`, not
+        // flattened — this is the fallback the transfer / withdrawal sites keep.
+        match promote_address_nonce_error_or_sdk(dash_sdk::Error::Generic("boom".to_string())) {
+            PlatformWalletError::Sdk(dash_sdk::Error::Generic(msg)) => assert_eq!(msg, "boom"),
+            other => panic!("expected Sdk(Generic), got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn promote_or_sdk_promotes_through_the_retry_envelope() {
+        // A nonce rejection wrapped in the dapi-client's retry envelope must
+        // still promote (the helper recurses via `as_address_invalid_nonce`).
+        let wrapped =
+            dash_sdk::Error::NoAvailableAddressesToRetry(Box::new(protocol_shape(11, 12)));
+        match promote_address_nonce_error_or_sdk(wrapped) {
+            PlatformWalletError::AddressNonceMismatch {
+                provided_nonce,
+                expected_nonce,
+                ..
+            } => {
+                assert_eq!(provided_nonce, 11);
+                assert_eq!(expected_nonce, 12);
+            }
+            other => panic!("expected AddressNonceMismatch, got {other:?}"),
+        }
     }
 
     #[test]

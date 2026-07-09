@@ -2287,6 +2287,15 @@ pub(super) async fn redrive_pending_spends<S: ShieldedStore>(
 ///   non-empty consensus `data` — the wait-stream error envelope for a
 ///   transition Platform executed and rejected on its merits.
 ///
+/// A consensus verdict can also arrive wrapped in
+/// [`dash_sdk::Error::NoAvailableAddressesToRetry`] when the dapi-client
+/// exhausted every address mid-retry, so this recurses through it — keeping
+/// the predicate in lockstep with [`crate::error::as_address_invalid_nonce`],
+/// which unwraps the same envelope. Without it a nonce rejection carried in a
+/// retry envelope would fall through to the ambiguous
+/// [`PlatformWalletError::ShieldedSpendUnconfirmed`] bucket instead of being
+/// promoted to [`PlatformWalletError::AddressNonceMismatch`].
+///
 /// Only these prove the transition was evaluated and REJECTED. Everything
 /// else — transport errors, timeouts, `AlreadyExists` (which proves the
 /// opposite: the transition is already in the mempool or on chain),
@@ -2296,6 +2305,7 @@ fn carries_consensus_rejection(err: &dash_sdk::Error) -> bool {
     match err {
         dash_sdk::Error::Protocol(dpp::ProtocolError::ConsensusError(_)) => true,
         dash_sdk::Error::StateTransitionBroadcastError(e) => e.cause.is_some(),
+        dash_sdk::Error::NoAvailableAddressesToRetry(inner) => carries_consensus_rejection(inner),
         _ => false,
     }
 }
@@ -2812,6 +2822,57 @@ mod classify_spend_wait_failure_tests {
         assert!(!broadcast_definitely_failed(
             &dash_sdk::Error::AlreadyExists("state transition already in mempool".to_string())
         ));
+    }
+
+    /// A consensus verdict wrapped in the dapi-client's `NoAvailableAddressesToRetry`
+    /// retry envelope must still count as a rejection — `carries_consensus_rejection`
+    /// recurses through the envelope, in lockstep with `as_address_invalid_nonce`.
+    #[test]
+    fn wrapped_consensus_rejection_is_a_rejection() {
+        let wrapped =
+            dash_sdk::Error::NoAvailableAddressesToRetry(Box::new(consensus_metadata_rejection()));
+        assert!(carries_consensus_rejection(&wrapped));
+    }
+
+    /// A transport error wrapped in the retry envelope carries no consensus
+    /// verdict, so it remains ambiguous — the recursion must not misread it.
+    #[test]
+    fn wrapped_transport_error_is_not_a_rejection() {
+        use dash_sdk::dapi_grpc::tonic::Code;
+        let wrapped = dash_sdk::Error::NoAvailableAddressesToRetry(Box::new(grpc_err(
+            Code::DeadlineExceeded,
+        )));
+        assert!(!carries_consensus_rejection(&wrapped));
+    }
+
+    /// A nonce rejection wrapped in the retry envelope must reach
+    /// `promote_address_nonce_error` and surface as the typed
+    /// `AddressNonceMismatch`, not fall through to `ShieldedSpendUnconfirmed`.
+    #[test]
+    fn wrapped_nonce_rejection_promotes_to_typed_mismatch() {
+        use dpp::address_funds::PlatformAddress;
+        use dpp::consensus::state::address_funds::AddressInvalidNonceError;
+        use dpp::consensus::state::state_error::StateError;
+
+        let address = PlatformAddress::P2pkh([9u8; 20]);
+        let cause = ConsensusError::StateError(StateError::AddressInvalidNonceError(
+            AddressInvalidNonceError::new(address, 7, 8),
+        ));
+        let inner = dash_sdk::Error::Protocol(dpp::ProtocolError::ConsensusError(Box::new(cause)));
+        let wrapped = dash_sdk::Error::NoAvailableAddressesToRetry(Box::new(inner));
+
+        match classify_spend_wait_failure("withdraw", &wrapped) {
+            PlatformWalletError::AddressNonceMismatch {
+                address: got,
+                provided_nonce,
+                expected_nonce,
+            } => {
+                assert_eq!(got, address);
+                assert_eq!(provided_nonce, 7);
+                assert_eq!(expected_nonce, 8);
+            }
+            other => panic!("expected AddressNonceMismatch, got {other:?}"),
+        }
     }
 }
 
