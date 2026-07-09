@@ -424,18 +424,51 @@ object TokenActionResolver {
         token: TokenEntity,
         identity: IdentityEntity,
     ): TokenActionPermission {
-        val isDesignated =
-            token.newTokensDestinationIdentity?.contentEquals(identity.identityId) == true
         val hasPerpetual = token.perpetualDistribution != null
         val hasPreProgrammed = token.preProgrammedDistribution != null
-
         if (!hasPerpetual && !hasPreProgrammed) {
             return TokenActionPermission.Denied("Token has no distribution schedule")
         }
-        if (!token.mintingAllowChoosingDestination && !isDesignated) {
+
+        if (token.newTokensDestinationIdentity?.contentEquals(identity.identityId) == true) {
+            return TokenActionPermission.Allowed
+        }
+        // Pre-programmed releases name their recipients in the contract;
+        // maturity and already-claimed are enforced on-chain at submit time.
+        if (hasPreProgrammed && isPreProgrammedRecipient(token, identity)) {
+            return TokenActionPermission.Allowed
+        }
+
+        if (!hasPerpetual) {
+            return TokenActionPermission.Denied("Not a recipient of any pre-programmed release")
+        }
+        if (!token.mintingAllowChoosingDestination) {
             return TokenActionPermission.Denied("Not the designated distribution recipient")
         }
-        if (isDesignated) return TokenActionPermission.Allowed
         return TokenActionPermission.Denied("Distribution eligibility not yet evaluated")
+    }
+
+    /**
+     * True when [identity] is named as a recipient in ANY release of the
+     * token's pre-programmed distribution JSON
+     * (`{"distributions":{"<timestampMs>":{"<recipientBase58>":amount,…},…}}`,
+     * optionally V0-wrapped).
+     */
+    private fun isPreProgrammedRecipient(
+        token: TokenEntity,
+        identity: IdentityEntity,
+    ): Boolean {
+        val json = token.preProgrammedDistribution ?: return false
+        val recipient = Base58.encode(identity.identityId)
+        return try {
+            val root = LenientJson.parseToJsonElement(json).jsonObject
+            val body = (root["V0"] as? JsonObject) ?: root
+            val distributions = body["distributions"] as? JsonObject ?: return false
+            distributions.values.any { release ->
+                (release as? JsonObject)?.containsKey(recipient) == true
+            }
+        } catch (_: Exception) {
+            false
+        }
     }
 }
