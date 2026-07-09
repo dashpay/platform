@@ -27,6 +27,7 @@ final class SDKMethodTests: XCTestCase {
     print("✅ SDK methods inspection complete")
   }
 
+  @MainActor
   func testDirectMethodCall() async throws {
     print("=== Testing Direct Method Call ===")
 
