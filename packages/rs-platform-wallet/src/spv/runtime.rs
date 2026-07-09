@@ -260,15 +260,21 @@ impl SpvRuntime {
     /// Returns an empty vec when the client isn't running or no peers are
     /// connected.
     pub async fn connected_peers(&self) -> Vec<SpvPeerInfo> {
+        // Resolve the client before copying the snapshot: a concurrent
+        // `stop()` removes the client under the write lock and clears the
+        // tracker afterwards, so snapshotting first could return peers
+        // that no longer exist.
+        let client_guard = self.client.read().await;
+        let Some(client) = client_guard.as_ref() else {
+            return Vec::new();
+        };
+
         let addresses = self.peer_tracker.snapshot();
         if addresses.is_empty() {
             return Vec::new();
         }
 
-        let client_guard = self.client.read().await;
-        let engine = client_guard
-            .as_ref()
-            .and_then(|client| client.masternode_list_engine().ok());
+        let engine = client.masternode_list_engine().ok();
         drop(client_guard);
 
         match engine {
