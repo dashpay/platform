@@ -2287,14 +2287,9 @@ pub(super) async fn redrive_pending_spends<S: ShieldedStore>(
 ///   non-empty consensus `data` — the wait-stream error envelope for a
 ///   transition Platform executed and rejected on its merits.
 ///
-/// A consensus verdict can also arrive wrapped in
-/// [`dash_sdk::Error::NoAvailableAddressesToRetry`] when the dapi-client
-/// exhausted every address mid-retry, so this recurses through it — keeping
-/// the predicate in lockstep with [`crate::error::as_address_invalid_nonce`],
-/// which unwraps the same envelope. Without it a nonce rejection carried in a
-/// retry envelope would fall through to the ambiguous
-/// [`PlatformWalletError::ShieldedSpendUnconfirmed`] bucket instead of being
-/// promoted to [`PlatformWalletError::AddressNonceMismatch`].
+/// Recurses through a `NoAvailableAddressesToRetry` envelope (in lockstep with
+/// [`crate::error::as_address_invalid_nonce`]) so a wrapped nonce rejection is
+/// promoted rather than bucketed as `ShieldedSpendUnconfirmed`.
 ///
 /// Only these prove the transition was evaluated and REJECTED. Everything
 /// else — transport errors, timeouts, `AlreadyExists` (which proves the

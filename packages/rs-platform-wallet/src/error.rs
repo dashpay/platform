@@ -104,15 +104,11 @@ pub enum PlatformWalletError {
     #[error("SDK error: {0}")]
     Sdk(#[from] dash_sdk::Error),
 
-    /// Platform rejected an address-funds transition because a spent
-    /// address's provided nonce did not equal Platform's expected next value
-    /// (DPP consensus code 40603, `AddressInvalidNonceError`): the optimistic
-    /// `fetched + 1` nonce raced a lagging DAPI replica's stale read.
-    ///
-    /// The rejection is by design — the address-nonce path is optimistic and
-    /// the caller owns the retry. This variant delivers Platform's
-    /// `expected_nonce` verbatim so the caller can rebuild the transition with
-    /// it (no re-fetch needed) instead of parsing a flattened string.
+    /// Platform rejected an address-funds transition because a spent address's
+    /// provided nonce did not equal its expected next value (DPP consensus code
+    /// 40603, `AddressInvalidNonceError`) — an optimistic `fetched + 1` nonce
+    /// racing a lagging replica read. Carries Platform's `expected_nonce`
+    /// verbatim so the caller can rebuild and retry without re-fetching.
     #[error(
         "Address nonce mismatch for {address}: submitted nonce {provided_nonce}, \
          Platform expected {expected_nonce}; retry the operation with the \
@@ -420,24 +416,15 @@ pub fn as_asset_lock_proof_cl_height_too_low(
     }
 }
 
-/// Extract the `AddressInvalidNonceError` (DPP consensus code 40603) from an
-/// SDK error if Platform rejected an address-funds transition because a spent
-/// address's provided nonce did not equal its expected next value.
+/// Extract the `AddressInvalidNonceError` (DPP consensus code 40603) when
+/// Platform rejected an address-funds transition on a stale nonce, exposing
+/// `address()`, `provided_nonce()`, and `expected_nonce()` so the caller can
+/// retry with the expected value; `None` otherwise.
 ///
-/// Returns `Some(&error)` for both `dash_sdk::Error` shapes that carry a
-/// consensus verdict — `StateTransitionBroadcastError` (wait-stream rejection)
-/// and `Protocol(ProtocolError::ConsensusError)` (CheckTx rejection) —
-/// exposing `address()`, `provided_nonce()`, and `expected_nonce()`. Returns
-/// `None` for everything else.
-///
-/// The address-nonce path is optimistic by design: the client submits
-/// `fetched + 1` and Platform rejects a stale/replayed value under a lagging
-/// replica read. This extractor lets a caller recover `expected_nonce` and
-/// retry per that contract. Recurses through
-/// [`dash_sdk::Error::NoAvailableAddressesToRetry`] so it stays in lockstep
-/// with its sibling `broadcast_definitely_failed`; re-audit if a future
-/// `dash_sdk::Error` variant starts carrying consensus errors through yet
-/// another shape.
+/// Matches the three `dash_sdk::Error` shapes that can carry a consensus
+/// verdict — `StateTransitionBroadcastError` (wait-stream), `Protocol(
+/// ConsensusError)` (CheckTx), and a `NoAvailableAddressesToRetry` envelope it
+/// recurses into — staying in lockstep with `broadcast_definitely_failed`.
 pub fn as_address_invalid_nonce(error: &dash_sdk::Error) -> Option<&AddressInvalidNonceError> {
     use dpp::consensus::state::state_error::StateError;
     use dpp::consensus::ConsensusError;
@@ -447,9 +434,7 @@ pub fn as_address_invalid_nonce(error: &dash_sdk::Error) -> Option<&AddressInval
             broadcast_err.cause.as_ref()
         }
         dash_sdk::Error::Protocol(dpp::ProtocolError::ConsensusError(ce)) => Some(ce.as_ref()),
-        // A consensus rejection can arrive wrapped when the dapi-client
-        // exhausted every address mid-retry; recurse so this predicate stays
-        // in lockstep with `broadcast_definitely_failed`.
+        // Unwrap the dapi-client's exhausted-retry envelope.
         dash_sdk::Error::NoAvailableAddressesToRetry(inner) => {
             return as_address_invalid_nonce(inner)
         }
@@ -476,15 +461,11 @@ pub fn promote_address_nonce_error(error: &dash_sdk::Error) -> Option<PlatformWa
     })
 }
 
-/// Map an SDK error from an address-funded transition (transfer / withdrawal) to
-/// a [`PlatformWalletError`], promoting a nonce rejection to the typed
-/// [`PlatformWalletError::AddressNonceMismatch`] and otherwise preserving the
-/// original error under [`PlatformWalletError::Sdk`].
-///
-/// This is the shared owned-error analogue of [`promote_address_nonce_error`]
-/// for the `.map_err(...)?` sites that fall back to `Sdk` — the transfer and
-/// withdrawal call sites — so a nonce mismatch reaches the caller as a typed,
-/// retryable variant instead of a flattened `Sdk` string.
+/// Map an address-funded transition's SDK error to a [`PlatformWalletError`],
+/// promoting a nonce rejection to the typed
+/// [`PlatformWalletError::AddressNonceMismatch`] and otherwise preserving it
+/// under [`PlatformWalletError::Sdk`]. Owned-error `.map_err(...)?` analogue of
+/// [`promote_address_nonce_error`] for the transfer / withdrawal call sites.
 pub fn promote_address_nonce_error_or_sdk(error: dash_sdk::Error) -> PlatformWalletError {
     promote_address_nonce_error(&error).unwrap_or(PlatformWalletError::Sdk(error))
 }
