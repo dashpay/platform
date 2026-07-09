@@ -37,7 +37,12 @@ const READ_ONLY_PREPARE_ALLOWED: &[(&str, &str)] = &[
         "wallets.rs",
         "SELECT network, birth_height FROM wallets WHERE wallet_id",
     ),
-    ("asset_locks.rs", "SELECT outpoint, account_index"),
+    // asset_locks readers (load_active / load_unconsumed / list_active) —
+    // pre-read length() gates on outpoint and lifecycle_blob.
+    (
+        "asset_locks.rs",
+        "SELECT length(outpoint), outpoint, account_index, length(lifecycle_blob), lifecycle_blob, status",
+    ),
     ("platform_addrs.rs", "SELECT account_index, address_index"),
     // Grouped bulk readers driving `load()` — fixed scans over the whole
     // table, not per-wallet fan-out.
@@ -83,7 +88,7 @@ const READ_ONLY_PREPARE_ALLOWED: &[(&str, &str)] = &[
     ),
     (
         "core_state.rs",
-        "SELECT txid, length(islock_blob), islock_blob",
+        "SELECT length(txid), txid, length(islock_blob), islock_blob",
     ),
     (
         "core_state.rs",
