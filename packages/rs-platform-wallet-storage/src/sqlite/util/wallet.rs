@@ -100,11 +100,11 @@ pub(crate) fn build_wallet(
 /// # Deferred to the first post-load `sync` (safe re-warm)
 ///
 /// - **Per-account UTXO attribution**: `core_utxos.account_index` is
-///   written as `0` at persist time, so per-account bucketing is not
-///   recoverable from disk; UTXOs are restored against the wallet's
-///   first funds-bearing account and re-attributed on the next scan.
-///   The *wallet total* is unaffected (it is a sum across all funds
-///   accounts).
+///   persisted (resolved against the `core_address_pool` table at write
+///   time), but this reader does not consult it yet, so UTXOs are restored
+///   against the wallet's first funds-bearing account and re-attributed on
+///   the next scan. Wiring the read-back is a deliberate follow-up. The
+///   *wallet total* is unaffected (it is a sum across all funds accounts).
 /// - **Deep-index address visibility**: each chain's pool scan stops
 ///   after [`MAX_REHYDRATION_DERIVATION_INDEX`] or after `gap_limit`
 ///   consecutive non-matching indices past the deepest resolved index.
@@ -170,16 +170,18 @@ pub fn apply_persisted_core_state(
     // the next sync (no regression vs. the prior loader); populating them at
     // load needs an upstream key_wallet change.
 
-    // Restore the UTXO set. Persisted attribution is lost at write time
-    // (account_index is always 0), so route every restored UTXO to the
-    // wallet's first funds-bearing account *of any topology* (BIP44,
-    // BIP32, CoinJoin, DashPay) — the wallet total is a sum across all
-    // funds accounts and stays exact. A wallet with persisted UTXOs but
-    // no funds account at all cannot be represented: fail closed rather
-    // than silently reconstruct a zero balance.
-    // TODO(#3986): route each restored UTXO to its true owning account via the
-    // persisted per-account attribution once PR #3986's core_address_pool table
-    // lands, instead of collapsing every UTXO onto account 0 here.
+    // Restore the UTXO set. `core_utxos.account_index` is persisted (resolved
+    // against the `core_address_pool` table at write time) but this reader does
+    // not read it back yet, so route every restored UTXO to the wallet's first
+    // funds-bearing account *of any topology* (BIP44, BIP32, CoinJoin, DashPay)
+    // — the wallet total is a sum across all funds accounts and stays exact. A
+    // wallet with persisted UTXOs but no funds account at all cannot be
+    // represented: fail closed rather than silently reconstruct a zero balance.
+    // TODO: route each restored UTXO to its true owning account by reading back
+    // the persisted `core_utxos.account_index` (populated from core_address_pool,
+    // added V003) instead of collapsing every UTXO onto the first funds account.
+    // Present-state restore only; per-account attribution is a deliberate
+    // follow-up.
     let spent_outpoints: std::collections::HashSet<dashcore::OutPoint> =
         core.spent_utxos.iter().map(|u| u.outpoint).collect();
     let unspent: Vec<&key_wallet::Utxo> = core

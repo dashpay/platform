@@ -295,9 +295,13 @@ fn upsert_sync_state(
 ///
 /// # Deferred to the first post-load `sync` (safe re-warm)
 ///
-/// - **Per-account UTXO attribution / `is_coinbase` / `is_instantlocked` /
-///   `is_trusted` / `used` flags**: not carried by `core_utxos`; defaulted and
-///   refreshed on the next scan. The wallet *total* balance is unaffected.
+/// - **Per-account UTXO attribution**: `core_utxos.account_index` is persisted
+///   (resolved against `core_address_pool` at write time), but this reader does
+///   not select it yet, so restored UTXOs are bucketed under a single account
+///   and re-attributed on the next scan. Wiring the read-back is a deliberate
+///   follow-up. The wallet *total* balance is unaffected.
+/// - **`is_coinbase` / `is_instantlocked` / `is_trusted` / `used` flags**: not
+///   carried by `core_utxos`; defaulted and refreshed on the next scan.
 pub fn load_state(
     conn: &Connection,
     wallet_id: &WalletId,

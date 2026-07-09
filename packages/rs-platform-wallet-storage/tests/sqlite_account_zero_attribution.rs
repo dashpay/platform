@@ -1,16 +1,17 @@
 #![allow(clippy::field_reassign_with_default)]
 
-//! Genesis-rescan regression for the hardcoded `account_index = 0` design
+//! Genesis-rescan regression for the account-attribution fallback default
 //! (PR #3828).
 //!
 //! Before: a UTXO landing on a freshly-derived gap-limit-edge address could
 //! race address-derivation persistence and be mis-attributed or dropped, so
-//! the bridge smuggled a full pool snapshot in-band to resolve it. Now UTXO
-//! attribution is hardcoded to the default account (index 0) at the storage
-//! writer — no in-band snapshot, no address→account lookup table. This test
-//! pins that a UTXO on a real gap-limit-edge address persists directly with
-//! `account_index == 0`, contributes the exact balance, and never aborts
-//! the flush.
+//! the bridge smuggled a full pool snapshot in-band to resolve it. Now the
+//! storage writer resolves each UTXO's owning account by matching its script
+//! against the `core_address_pool` lookup table, falling back to account
+//! index 0 when no pool row covers the script — no in-band snapshot. A fresh
+//! gap-limit-edge address has no pool row yet, so this test pins that such a
+//! UTXO persists directly under the `account_index == 0` fallback, contributes
+//! the exact balance, and never aborts the flush.
 
 mod common;
 
@@ -78,9 +79,9 @@ fn utxo_at(addr: &dashcore::Address, vout: u32, value: u64) -> key_wallet::Utxo 
     }
 }
 
-/// A UTXO on a freshly-derived gap-limit-edge address persists directly with
-/// the hardcoded `account_index == 0`: no snapshot, no lookup, no flush
-/// abort, and the unspent balance is exact.
+/// A UTXO on a freshly-derived gap-limit-edge address (no `core_address_pool`
+/// row) persists directly under the `account_index == 0` fallback: no snapshot,
+/// no flush abort, and the unspent balance is exact.
 #[test]
 fn utxo_on_fresh_gap_limit_address_persists_under_account_zero() {
     let (persister, _tmp, _path) = fresh_persister();
