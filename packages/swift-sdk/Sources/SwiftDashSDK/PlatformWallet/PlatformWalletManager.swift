@@ -70,6 +70,11 @@ public class PlatformWalletManager: ObservableObject {
 
     @Published public private(set) var spvIsRunning: Bool = false
 
+    /// The peers the SPV client is currently connected to, each
+    /// classified against the masternode list. Empty while SPV isn't
+    /// running. Updated by the polling task started in [`configure`].
+    @Published public private(set) var spvPeers: [PlatformSpvPeerInfo] = []
+
     /// Block time of the SPV header storage's current tip (if any).
     /// `nil` while SPV isn't running or hasn't stored a header yet.
     /// Useful as a "is core producing blocks?" indicator — when this
@@ -1147,6 +1152,9 @@ public class PlatformWalletManager: ObservableObject {
                 }
                 if let running = try? self.isSpvRunning(), running != self.spvIsRunning {
                     self.spvIsRunning = running
+                }
+                if let peers = try? self.connectedSpvPeers(), peers != self.spvPeers {
+                    self.spvPeers = peers
                 }
                 if let isSyncing = try? self.isPlatformAddressSyncing(),
                    isSyncing != self.platformAddressSyncIsSyncing {

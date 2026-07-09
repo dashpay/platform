@@ -91,6 +91,30 @@ public struct PlatformSpvSyncProgress: Sendable, Equatable {
     }
 }
 
+/// Node type of a connected SPV peer, classified against the masternode
+/// list. Mirrors Rust's `SpvPeerNodeType` / the `SPV_PEER_NODE_TYPE_*`
+/// FFI constants.
+public enum PlatformSpvPeerNodeType: UInt32, Sendable {
+    /// The masternode list hasn't synced yet, so the peer can't be
+    /// classified.
+    case unknown = 0
+    /// Not present in the masternode list.
+    case normal = 1
+    /// A regular masternode.
+    case masternode = 2
+    /// A high-performance (evo) masternode.
+    case evonode = 3
+}
+
+/// One connected SPV peer.
+public struct PlatformSpvPeerInfo: Sendable, Equatable, Identifiable {
+    /// `ip:port` the client dialed.
+    public let address: String
+    public let nodeType: PlatformSpvPeerNodeType
+
+    public var id: String { address }
+}
+
 /// Config for starting the SPV sync.
 ///
 /// Masternode sync (and the IS/CL P2P subscriptions that come with it)
@@ -166,6 +190,30 @@ extension PlatformWalletManager {
         )
         try platform_wallet_manager_sync_progress(handle, &ffi).check()
         return PlatformSpvSyncProgress(ffi)
+    }
+
+    /// Poll the peers the SPV client is currently connected to, each
+    /// classified against the masternode list. Returns an empty array
+    /// when the client isn't running or no peers are connected.
+    ///
+    /// Distinct from the `@Published var spvPeers` mirror on the
+    /// manager: this is a one-shot FFI query, the published property
+    /// is the cached value the 1 Hz progress poll feeds.
+    public func connectedSpvPeers() throws -> [PlatformSpvPeerInfo] {
+        var entries: UnsafePointer<FFISpvPeerInfo>? = nil
+        var count: UInt = 0
+        try platform_wallet_manager_spv_connected_peers(handle, &entries, &count).check()
+        guard let entries, count > 0 else { return [] }
+        defer {
+            platform_wallet_manager_spv_connected_peers_free(
+                UnsafeMutablePointer(mutating: entries), count)
+        }
+        return UnsafeBufferPointer(start: entries, count: Int(count)).map { entry in
+            PlatformSpvPeerInfo(
+                address: entry.address.map { String(cString: $0) } ?? "",
+                nodeType: PlatformSpvPeerNodeType(rawValue: entry.node_type) ?? .unknown
+            )
+        }
     }
 
     /// Whether the SPV client is currently running.
