@@ -114,15 +114,15 @@ fn rt2_nonzero_balance_survives_reopen() {
     assert_eq!(core.last_processed_height, Some(200));
     assert_eq!(core.synced_height, Some(200));
 
-    // End-to-end: apply onto a freshly minted skeleton (the manager's
-    // rehydration path) and assert the wallet balance is the persisted
-    // amount — NOT a silent zero. The manager-apply leg drives #3692's
-    // `apply_persisted_core_state`, gated behind `rehydration-apply`; the
-    // storage `load_state` assertions above run standalone regardless.
+    // End-to-end: apply the loaded state onto a freshly minted skeleton and
+    // assert the wallet balance is the persisted amount — NOT a silent zero.
+    // The apply leg drives `apply_persisted_core_state`, gated behind
+    // `rehydration-apply`; the storage `load_state` assertions above run
+    // standalone regardless.
     #[cfg(feature = "rehydration-apply")]
     {
         let mut info = ManagedWalletInfo::from_wallet(&wallet, 1);
-        platform_wallet::manager::rehydrate::apply_persisted_core_state(
+        platform_wallet_storage::sqlite::util::apply_persisted_core_state(
             &mut info,
             &manifest_for(&wallet),
             &core,
@@ -286,13 +286,13 @@ fn f2_no_bip44_wallet_nonzero_balance_survives_reopen() {
     drop(conn);
     assert_eq!(core.new_utxos.len(), 1);
 
-    // Manager-apply leg (#3692 `apply_persisted_core_state`) gated behind
+    // Apply leg (`apply_persisted_core_state`) gated behind
     // `rehydration-apply`; the storage `load_state` assertions above run
     // standalone regardless.
     #[cfg(feature = "rehydration-apply")]
     {
         let mut info = ManagedWalletInfo::from_wallet(&wallet, 1);
-        platform_wallet::manager::rehydrate::apply_persisted_core_state(
+        platform_wallet_storage::sqlite::util::apply_persisted_core_state(
             &mut info,
             &manifest_for(&wallet),
             &core,
