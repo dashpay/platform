@@ -589,6 +589,24 @@ enum TokenActionResolver {
             return .denied(reason: "Token has no distribution schedule")
         }
 
+        // Pre-programmed distributions pin their payouts to explicit
+        // recipient identities at each scheduled timestamp rather than
+        // to `newTokensDestinationIdentity` / `mintingAllowChoosingDestination`
+        // (both of which are minting-side concepts). Check recipient
+        // membership BEFORE the designated-recipient guards below, so a
+        // listed pre-programmed recipient isn't denied for not being the
+        // pinned mint destination. If this identity appears as a
+        // recipient in any scheduled event, let the Claim row open.
+        // We deliberately do NOT evaluate maturity or already-claimed
+        // status here — those are enforced on-chain by Drive when the
+        // claim state transition is submitted. Mirrors the Android fix
+        // in `TokenActionResolver.resolveClaim`.
+        let identityBase58 = identity.identityIdBase58
+        if let schedule = token.preProgrammedDistribution?.distributionSchedule,
+           schedule.contains(where: { $0.recipient == identityBase58 }) {
+            return .allowed
+        }
+
         // The contract doesn't let identities choose where new
         // mints go AND this identity isn't the pinned recipient,
         // so they'd never receive anything to claim.
@@ -601,8 +619,9 @@ enum TokenActionResolver {
         }
 
         // Allowed-to-choose-destination but not yet computed who's
-        // next-in-line for a perpetual slot. Surface the limitation
-        // rather than blocking outright.
+        // next-in-line for a perpetual slot, and not a listed
+        // pre-programmed recipient. Surface the limitation rather than
+        // blocking outright.
         // TODO: query the next-in-line distribution slot for this identity.
         return .denied(reason: "Distribution eligibility not yet evaluated")
     }
