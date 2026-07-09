@@ -538,8 +538,10 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     ///
     /// # Returns
     ///
-    /// The `Txid` of the broadcast transaction and the newly created
-    /// [`PaymentEntry`] recording the outgoing payment.
+    /// The `Txid` of the broadcast transaction, the newly created
+    /// [`PaymentEntry`] recording the outgoing payment, and the exact
+    /// network fee in duffs (inputs − outputs) of the broadcast
+    /// transaction.
     pub async fn send_payment<S, C>(
         &self,
         from_identity_id: &Identifier,

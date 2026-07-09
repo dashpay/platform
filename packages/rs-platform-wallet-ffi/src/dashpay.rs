@@ -533,6 +533,8 @@ pub unsafe extern "C" fn platform_wallet_fetch_sent_contact_requests(
 /// - `core_signer_handle` must be a valid, non-destroyed
 ///   `*mut MnemonicResolverHandle`. Ownership is retained by the caller —
 ///   this function does NOT destroy it.
+/// - `out_fee_duffs` may be NULL to ignore the fee; when non-null it must
+///   point to valid writable `u64` storage, written only on success.
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
 pub unsafe extern "C" fn platform_wallet_send_dashpay_payment(
