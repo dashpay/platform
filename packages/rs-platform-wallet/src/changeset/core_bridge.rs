@@ -68,6 +68,51 @@ where
         };
         tracing::debug!("wallet-event adapter task started");
 
+        // Durable-watermark guard (dashpay/platform#4069).
+        //
+        // The upstream `WalletManager` publishes `WalletEvent`s onto a
+        // *bounded* `tokio::broadcast` ring (capacity
+        // `DEFAULT_WALLET_EVENT_CAPACITY`, 1000) via fire-and-forget
+        // `let _ = event_sender.send(..)`. During a historical SPV
+        // catch-up the manager processes blocks far faster than this
+        // single-threaded adapter can drain them through the (slow,
+        // JNI + Room) persister, so the ring overflows and `recv()`
+        // returns `RecvError::Lagged(n)` — the `n` dropped events are
+        // gone for good. Those dropped events are exactly the
+        // `TransactionDetected` / `BlockProcessed` records that carry
+        // the new UTXOs and the spent-outpoint markers. Meanwhile the
+        // separate `SyncHeightAdvanced` event (a bare height watermark,
+        // the ONLY event whose height reaches the host persister's
+        // `syncedHeight` — see `WalletChangeSetFFI::from_changeset`)
+        // keeps flowing and eventually lands, advancing the persisted
+        // watermark past blocks whose rows never made it to disk.
+        //
+        // Symptoms (all one root cause): rows dropped entirely while the
+        // watermark advances (fresh scan persists nothing yet reports
+        // "scanned"); spent-markers lost so consumed outputs rehydrate
+        // as spendable (inflated balance); and — because the wallet's
+        // own `synced_height` is what gates a rescan — the wallet
+        // believes it is fully scanned and never re-matches, so the
+        // corruption is unrecoverable without deleting + recreating the
+        // wallet.
+        //
+        // Fix: once persistence has faulted this session (a broadcast
+        // lag OR a `store()` rejection), never advance the persisted
+        // sync watermark again. We strip `synced_height` from every
+        // subsequent changeset, freezing the durable watermark at the
+        // last height whose rows were fully committed. On the next
+        // process launch the wallet restores that (lower) watermark and
+        // the SPV scan resumes from it, re-emitting the dropped
+        // `BlockProcessed` records; the persister's upserts are
+        // idempotent on the outpoint key, so re-applying them restores
+        // the missing rows AND re-marks the lost spends — turning the
+        // integrator's current manual "clear + recreate the wallet"
+        // recovery into automatic self-healing across a restart. This is
+        // deliberately conservative (freeze for the rest of the session
+        // after the first fault); the worst case is one extra rescan on
+        // the next launch, never lost or inflated funds.
+        let mut persistence_faulted = false;
+
         loop {
             tokio::select! {
                 recv = receiver.recv() => {
@@ -78,11 +123,18 @@ where
                             // state (today only `TransactionInstantLocked`,
                             // which checks finality before recording the IS
                             // lock), grab a brief read lock on the manager.
-                            let core = build_core_changeset(&wallet_manager, &event).await;
+                            let mut core = build_core_changeset(&wallet_manager, &event).await;
+                            // Hold the durable watermark at the last
+                            // fully-persisted height once persistence has
+                            // faulted (see the guard doc above). Records/UTXOs
+                            // in this changeset are still persisted — only the
+                            // height advance is suppressed.
+                            freeze_synced_height_if_faulted(&mut core, persistence_faulted);
                             if core.is_empty_no_records() {
                                 // SyncHeightAdvanced for an unknown wallet,
-                                // empty BlockProcessed, etc. — nothing to
-                                // persist. Skip the round-trip.
+                                // empty BlockProcessed, a watermark-only event
+                                // stripped by the fault guard above, etc. —
+                                // nothing to persist. Skip the round-trip.
                                 continue;
                             }
                             let cs = PlatformWalletChangeSet {
@@ -90,10 +142,15 @@ where
                                 ..PlatformWalletChangeSet::default()
                             };
                             if let Err(e) = persister.store(wallet_id, cs) {
-                                tracing::warn!(
+                                // A rejected changeset means these rows are not
+                                // on disk. Fault the watermark so it can't
+                                // outrun them; the next scan re-emits and the
+                                // idempotent upserts recover the state.
+                                persistence_faulted = true;
+                                tracing::error!(
                                     wallet_id = %hex::encode(wallet_id),
                                     error = %e,
-                                    "Persister rejected core changeset; state will be re-emitted on next sync round"
+                                    "Persister rejected core changeset; freezing sync watermark so the next scan re-persists the missing rows (dashpay/platform#4069)"
                                 );
                             }
                         }
@@ -103,9 +160,15 @@ where
                             break;
                         }
                         Err(RecvError::Lagged(n)) => {
-                            tracing::warn!(
+                            // The `n` dropped events carried record/UTXO/spend
+                            // rows we will never see again this session. Fault
+                            // the watermark so it stays at the last
+                            // fully-persisted height and the next scan
+                            // re-emits the lost blocks (dashpay/platform#4069).
+                            persistence_faulted = true;
+                            tracing::error!(
                                 missed = n,
-                                "wallet-event adapter lagged on broadcast channel; some events were dropped"
+                                "wallet-event adapter lagged on broadcast channel; {n} persistence events dropped — freezing sync watermark so the next scan re-persists them (dashpay/platform#4069)"
                             );
                         }
                     }
@@ -115,6 +178,23 @@ where
         }
         tracing::debug!("wallet-event adapter task exiting");
     })
+}
+
+/// Durable-watermark guard for dashpay/platform#4069.
+///
+/// When the persister has faulted this session (a broadcast lag dropped
+/// record-bearing events, or a `store()` was rejected), the persisted
+/// `synced_height` watermark must not advance past the last height whose
+/// rows were fully committed — otherwise the wallet believes it is
+/// scanned and never re-matches the blocks whose rows were lost. This
+/// strips ONLY `synced_height`; every other field (records, UTXO
+/// deltas, `last_processed_height`, chain-lock) is left intact so
+/// in-flight rows still persist. Factored out as a pure function so the
+/// invariant is unit-testable without the async broadcast plumbing.
+fn freeze_synced_height_if_faulted(core: &mut CoreChangeSet, persistence_faulted: bool) {
+    if persistence_faulted {
+        core.synced_height = None;
+    }
 }
 
 /// Project an upstream [`WalletEvent`] into a [`CoreChangeSet`] suitable
@@ -355,5 +435,49 @@ impl CoreChangeSet {
             && self.synced_height.is_none()
             && self.last_applied_chain_lock.is_none()
             && self.addresses_derived.is_empty()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::freeze_synced_height_if_faulted;
+    use crate::changeset::changeset::CoreChangeSet;
+
+    /// dashpay/platform#4069: while persistence is healthy the sync
+    /// watermark flows through untouched.
+    #[test]
+    fn healthy_persistence_keeps_synced_height() {
+        let mut core = CoreChangeSet {
+            synced_height: Some(100),
+            last_processed_height: Some(300),
+            ..CoreChangeSet::default()
+        };
+        freeze_synced_height_if_faulted(&mut core, false);
+        assert_eq!(core.synced_height, Some(100));
+        assert_eq!(core.last_processed_height, Some(300));
+    }
+
+    /// dashpay/platform#4069: once persistence has faulted, the durable
+    /// watermark is frozen (`synced_height` stripped) so it can't outrun
+    /// the rows — but ONLY `synced_height` is dropped; every other field
+    /// (here `last_processed_height`, standing in for records/UTXO
+    /// deltas) still persists.
+    #[test]
+    fn faulted_persistence_freezes_only_synced_height() {
+        let mut core = CoreChangeSet {
+            synced_height: Some(200),
+            last_processed_height: Some(300),
+            ..CoreChangeSet::default()
+        };
+        freeze_synced_height_if_faulted(&mut core, true);
+        assert_eq!(
+            core.synced_height, None,
+            "watermark must be frozen after a persistence fault"
+        );
+        assert_eq!(
+            core.last_processed_height,
+            Some(300),
+            "non-watermark fields must still persist while faulted"
+        );
     }
 }
