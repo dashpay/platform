@@ -177,6 +177,35 @@ sealed class DashSdkError(
             )
 
         /**
+         * A state transition could not be signed because the signer has no
+         * usable private key for the requested public key — the stored blob
+         * is missing (never derived, wiped, or written under a different
+         * Keystore alias/policy) rather than the operation itself failing.
+         *
+         * Signing failures originate as free text in
+         * `KeystoreSigner.completeSign` (the "[MESSAGE_MARKER] <pubkeyHex>"
+         * string), travel through Rust, and come back under the catch-all
+         * platform-wallet codes; [fromPlatformWalletNative] recognizes the
+         * marker on the Kotlin boundary and surfaces this typed error so
+         * hosts can route users to key repair (e.g.
+         * `PlatformWalletManager.repairIdentityKey`) instead of treating it
+         * as an opaque [Generic] failure. Not retryable as-is — the key must
+         * be (re-)derived first.
+         */
+        class SigningKeyUnavailable(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause) {
+            companion object {
+                /**
+                 * Stable prefix of the `KeystoreSigner` "missing key"
+                 * completion error. `KeystoreSigner` builds its message from
+                 * this constant, so the emitter and the matcher cannot
+                 * drift.
+                 */
+                const val MESSAGE_MARKER = "no private key stored for"
+            }
+        }
+
+        /**
          * Any other `PlatformWalletFFIResultCode` without a dedicated type.
          * Carries the platform-wallet [nativeCode] (already de-offset) and
          * the Rust-supplied message.
@@ -219,11 +248,23 @@ sealed class DashSdkError(
         }
 
         /**
+         * `PlatformWalletFFIResultCode::NotFound` (98) — the code the FFI's
+         * blanket `Option → result` conversion emits for every "requested
+         * <thing> not found" miss (e.g. an identity id that is not managed
+         * by the wallet).
+         */
+        const val PLATFORM_WALLET_NOT_FOUND_CODE = 98
+
+        /**
          * Map a de-offset `PlatformWalletFFIResultCode` value into the
          * [PlatformWallet] subtree — mirror of Swift's
          * `PlatformWalletError(result:)` construction. Retry-semantics-bearing
          * codes get dedicated types; the rest fall through to
-         * [PlatformWallet.Generic].
+         * [PlatformWallet.Generic] — except the `KeystoreSigner` "missing
+         * key" completion error, which travels as free text through Rust and
+         * is recognized by its [PlatformWallet.SigningKeyUnavailable]
+         * message marker here (only on the catch-all codes, so the dedicated
+         * retry-semantics types are never overridden).
          */
         private fun fromPlatformWalletNative(
             code: Int,
@@ -232,7 +273,12 @@ sealed class DashSdkError(
         ): DashSdkError = when (code) {
             // PlatformWalletFFIResultCode variants (platform-wallet-ffi/src/error.rs)
             1 -> PlatformWallet.InvalidHandle(message, cause) // ErrorInvalidHandle
-            6 -> PlatformWallet.WalletOperation(message, cause) // ErrorWalletOperation
+            6 -> // ErrorWalletOperation
+                if (isSigningKeyUnavailable(message)) {
+                    PlatformWallet.SigningKeyUnavailable(message, cause)
+                } else {
+                    PlatformWallet.WalletOperation(message, cause)
+                }
             7, // ErrorIdentityNotFound
             8, // ErrorContactNotFound
             98, // NotFound (Option returned as an error)
@@ -245,8 +291,16 @@ sealed class DashSdkError(
             23 -> PlatformWallet.AssetLockNotTracked(message, cause) // ErrorAssetLockNotTracked
             24 -> PlatformWallet.AssetLockAlreadyConsumed(message, cause) // ErrorAssetLockAlreadyConsumed
             25 -> PlatformWallet.AssetLockFundingMismatch(message, cause) // ErrorAssetLockFundingMismatch
-            else -> PlatformWallet.Generic(code, message, cause)
+            else ->
+                if (isSigningKeyUnavailable(message)) {
+                    PlatformWallet.SigningKeyUnavailable(message, cause)
+                } else {
+                    PlatformWallet.Generic(code, message, cause)
+                }
         }
+
+        private fun isSigningKeyUnavailable(message: String): Boolean =
+            message.contains(PlatformWallet.SigningKeyUnavailable.MESSAGE_MARKER)
     }
 }
 

@@ -8,6 +8,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import java.util.concurrent.ConcurrentHashMap
 import org.dashfoundation.dashsdk.Network
+import org.dashfoundation.dashsdk.errors.DashSdkError
 import org.dashfoundation.dashsdk.ffi.NativeSignerBridge
 import org.dashfoundation.dashsdk.ffi.SignerNative
 import org.dashfoundation.dashsdk.persistence.dao.PlatformAddressDao
@@ -100,10 +101,15 @@ class KeystoreSigner(
             val storageKey = storageKeyFor(pubkeyBytes)
             key = retrieveKeyWithAuth(storageKey)
             if (key == null) {
+                // Built from the shared marker so the error survives the
+                // Rust round-trip and comes back typed as
+                // DashSdkError.PlatformWallet.SigningKeyUnavailable (the
+                // fromPlatformWalletNative message match) instead of Generic.
                 SignerNative.completeSign(
                     completionToken,
                     null,
-                    "no private key stored for ${storageKey.take(16)}…",
+                    "${DashSdkError.PlatformWallet.SigningKeyUnavailable.MESSAGE_MARKER} " +
+                        "${storageKey.take(16)}…",
                 )
                 return
             }
@@ -208,7 +214,9 @@ class KeystoreSigner(
 
     /**
      * Decrypt the key; on an expired auth window, run the biometric gate
-     * once and retry — mirroring KeychainSigner's LAContext flow.
+     * once and retry — mirroring KeychainSigner's LAContext flow. Under
+     * [KeySecurityPolicy.DEVICE_BOUND] storage the decrypt never
+     * auth-gates, so the gate is never consulted.
      */
     private suspend fun retrieveKeyWithAuth(storageKey: String): ByteArray? =
         try {

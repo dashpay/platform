@@ -117,6 +117,63 @@ class DashSdkErrorTest {
     }
 
     @Test
+    fun signingKeyUnavailableIsRecognizedByItsMessageMarker() {
+        val offset = DashSdkError.PLATFORM_WALLET_CODE_OFFSET
+        val marker = DashSdkError.PlatformWallet.SigningKeyUnavailable.MESSAGE_MARKER
+        // The KeystoreSigner completion error travels as free text through
+        // Rust and returns under the catch-all codes (ErrorUnknown = 99 via
+        // the blanket PlatformWalletError conversion, sometimes wrapped as
+        // ErrorWalletOperation = 6) — both must surface typed (#4052).
+        for (code in intArrayOf(6, 99)) {
+            val mapped = DashSdkError.fromNative(
+                DashSDKException(offset + code, "Signing failed: $marker deadbeef00112233…"),
+            )
+            assertTrue(
+                "code $code with marker → SigningKeyUnavailable",
+                mapped is DashSdkError.PlatformWallet.SigningKeyUnavailable,
+            )
+            assertFalse(mapped.isRetryable)
+        }
+        // Without the marker the catch-all mappings are untouched.
+        val walletOp = DashSdkError.fromNative(DashSDKException(offset + 6, "op failed"))
+        assertTrue(walletOp is DashSdkError.PlatformWallet.WalletOperation)
+        val generic = DashSdkError.fromNative(DashSDKException(offset + 99, "boom"))
+        assertTrue(generic is DashSdkError.PlatformWallet.Generic)
+    }
+
+    @Test
+    fun signingKeyMarkerNeverOverridesRetrySemanticsCodes() {
+        val offset = DashSdkError.PLATFORM_WALLET_CODE_OFFSET
+        val marker = DashSdkError.PlatformWallet.SigningKeyUnavailable.MESSAGE_MARKER
+        // A dedicated retry-semantics code keeps its type even if the Rust
+        // message happens to embed the marker text.
+        val mapped = DashSdkError.fromNative(
+            DashSDKException(offset + 19, "anchor missing; $marker something"),
+        )
+        assertTrue(mapped is DashSdkError.PlatformWallet.ShieldedNoRecordedAnchor)
+    }
+
+    @Test
+    fun platformWalletNotFoundCodeMapsToGeneric() {
+        // PlatformWalletFFIResultCode::NotFound (98) — the code the Option →
+        // result conversion emits for "requested <thing> not found". Stays
+        // Generic in the hierarchy; Dashpay's managed-identity reads
+        // translate it to null before it ever escapes (#4051).
+        val mapped = DashSdkError.fromNative(
+            DashSDKException(
+                DashSdkError.PLATFORM_WALLET_CODE_OFFSET +
+                    DashSdkError.PLATFORM_WALLET_NOT_FOUND_CODE,
+                "requested platform_wallet::identity::ManagedIdentity not found",
+            ),
+        )
+        assertTrue(mapped is DashSdkError.PlatformWallet.Generic)
+        assertEquals(
+            DashSdkError.PLATFORM_WALLET_NOT_FOUND_CODE,
+            (mapped as DashSdkError.PlatformWallet.Generic).nativeCode,
+        )
+    }
+
+    @Test
     fun mapNativeErrorsConvertsAtTheBoundary() {
         try {
             mapNativeErrors { throw DashSDKException(7, "identity not found") }
