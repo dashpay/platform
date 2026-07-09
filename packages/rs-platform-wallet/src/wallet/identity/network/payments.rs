@@ -667,12 +667,46 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             // `impl<S: Signer> TransactionSigner for S`) rather than the
             // resident `wallet`, so funding-input signatures are produced
             // from Keychain-derived keys without a resident seed.
-            let (tx, fee) = builder
+            let (tx, _size_based_fee) = builder
                 .build_signed(signer, |addr| {
                     managed_account.address_derivation_path(&addr)
                 })
                 .await
                 .map_err(|e| PlatformWalletError::TransactionBuild(e.to_string()))?;
+
+            // Exact network fee: Σ(selected input values) − Σ(output
+            // values). The builder's returned fee is size-based
+            // (`fee_rate × encoded_size`) and under-reports whenever it
+            // drops a dust change remainder (≤ 546 duffs) to miners
+            // instead of emitting the change output — the dust is part
+            // of what the sender actually pays. Input values are read
+            // from the account UTXO map (the build reserves selected
+            // UTXOs but does not remove them; removal happens on spend
+            // detection).
+            let account_utxos = &info
+                .core_wallet
+                .accounts
+                .standard_bip44_accounts
+                .get(&0)
+                .ok_or_else(|| {
+                    PlatformWalletError::TransactionBuild(
+                        "BIP-44 managed account 0 not found".to_string(),
+                    )
+                })?
+                .utxos;
+            let input_total = tx.input.iter().try_fold(0u64, |acc, txin| {
+                account_utxos
+                    .get(&txin.previous_output)
+                    .map(|utxo| acc.saturating_add(utxo.txout.value))
+                    .ok_or_else(|| {
+                        PlatformWalletError::TransactionBuild(format!(
+                            "selected input {} missing from the account UTXO set",
+                            txin.previous_output
+                        ))
+                    })
+            })?;
+            let output_total: u64 = tx.output.iter().map(|o| o.value).sum();
+            let fee = input_total.saturating_sub(output_total);
 
             (payment_address, tx, fee)
         };
