@@ -186,6 +186,8 @@ class PlatformWalletPersistenceHandlerTest {
             hasFee = true,
             label = "",
             firstSeen = 1_699_999_000,
+            inputOutpoints = ByteArray(0),
+            inputOutpointCount = 0,
         )
         handler.onWalletChangesetUtxoAdded(
             walletId = walletId,
@@ -632,6 +634,7 @@ class PlatformWalletPersistenceHandlerTest {
         handler.onWalletChangesetTransaction(
             walletId, fundingTxid, ByteArray(10) { 4 }, 2, 100, ByteArray(32) { 7 },
             1_700_000_000, 0, "Standard", 0, 100_000, 0, false, "", 1_699_999_000,
+            ByteArray(0), 0, // funding tx: no inputs of ours
         )
         handler.onWalletChangesetUtxoAdded(
             walletId, fundingTxid, 0, 60_000, "yUtxoAddr", ByteArray(25) { 6 },
@@ -651,6 +654,7 @@ class PlatformWalletPersistenceHandlerTest {
         handler.onWalletChangesetTransaction(
             walletId, spendingTxid, ByteArray(10) { 5 }, 1, 0, ByteArray(32),
             0, 1, "Standard", 0, -40_000, 0, false, "", 1_700_000_100,
+            makeOutpoint(fundingTxid, 1), 1, // spends fundingTxid:1
         )
         handler.onWalletChangesetUtxoSpent(walletId, fundingTxid, 1, spendingTxid)
         handler.onChangesetEnd(walletId, success = true)
@@ -666,6 +670,7 @@ class PlatformWalletPersistenceHandlerTest {
         handler.onWalletChangesetTransaction(
             walletId, spendingTxid, ByteArray(10) { 5 }, 2, 101, ByteArray(32) { 8 },
             1_700_000_200, 1, "Standard", 0, -40_000, 0, false, "", 1_700_000_100,
+            makeOutpoint(fundingTxid, 1), 1, // spends fundingTxid:1
         )
         handler.onChangesetEnd(walletId, success = true)
         assertTrue(db.txoDao().getByOutpoint(makeOutpoint(fundingTxid, 1))!!.isSpent)
@@ -683,6 +688,70 @@ class PlatformWalletPersistenceHandlerTest {
         assertEquals(100, restored.height)
         assertTrue(restored.isConfirmed)
         assertFalse(restored.isInstantLocked)
+    }
+
+    @Test
+    fun spendBeforeFundingReconcilesViaPendingInputAndExcludesFromRestore() = runTest {
+        // CORE-06, out-of-order arrival: an in-block spending tx is persisted
+        // BEFORE its funding TXO is known (Rust's utxos_spent slice is empty
+        // because the previous output wasn't classified yet). The spend must
+        // not be lost — `inputOutpoints` stages a pending-input row that the
+        // funding TXO's later upsert drains, so the consumed output is excluded
+        // from the restore set instead of being handed back to Rust as
+        // spendable. 1:1 mirror of Swift resolveInputOutpoint + upsertUtxo drain.
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+        val xpub = ByteArray(78) { 30 }
+        handler.onPersistAccountRegistration(
+            walletId, 0, 0, 0, 0, 0, ByteArray(0), ByteArray(0), xpub,
+        )
+        val account = db.accountDao().observeByWallet(walletId).first().single()
+        db.coreAddressDao().upsert(
+            CoreAddressEntity(
+                address = "yFundAddr",
+                poolTypeTag = 0,
+                addressIndex = 0,
+                derivationPath = "m/44'/1'/0'/0/0",
+                accountId = account.id,
+            ),
+        )
+
+        val fundingTxid = ByteArray(32) { 41 }
+        val spendingTxid = ByteArray(32) { 42 }
+
+        // Changeset 1: the in-block spending tx arrives first. Its funding TXO
+        // is unknown, so a pending-input row is staged (no utxos_spent fires).
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransaction(
+            walletId, spendingTxid, ByteArray(10) { 5 }, 2, 101, ByteArray(32) { 8 },
+            1_700_000_200, 1, "Standard", 0, -50_000, 0, false, "", 1_700_000_100,
+            makeOutpoint(fundingTxid, 0), 1, // spends fundingTxid:0 (TXO unknown)
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        val staged = db.documentDao().getPendingInputsByOutpoint(makeOutpoint(fundingTxid, 0))
+        assertEquals(1, staged.size)
+        assertTrue(spendingTxid.contentEquals(staged.single().spendingTxid))
+        // Funding TXO absent → nothing to restore yet.
+        assertEquals(0, handler.onLoadWalletList().single().utxos.size)
+
+        // Changeset 2: the funding TXO finally lands. The drain links the spend
+        // (in-block → isSpent) and clears the pending row.
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetUtxoAdded(
+            walletId, fundingTxid, 0, 50_000, "yFundAddr", ByteArray(25) { 6 },
+            100, false, true, false, false,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        val txo = db.txoDao().getByOutpoint(makeOutpoint(fundingTxid, 0))
+        assertNotNull(txo)
+        assertTrue(txo!!.isSpent)
+        assertTrue(spendingTxid.contentEquals(txo.spendingTxid!!))
+        assertTrue(
+            db.documentDao().getPendingInputsByOutpoint(makeOutpoint(fundingTxid, 0)).isEmpty(),
+        )
+        // The consumed output must NOT be handed back to Rust as spendable.
+        assertEquals(0, handler.onLoadWalletList().single().utxos.size)
     }
 
     @Test
@@ -1217,6 +1286,7 @@ class PlatformWalletPersistenceHandlerTest {
         handler.onWalletChangesetTransaction(
             walletId, fundingTxid, fundingTxData, 2, 200, ByteArray(32) { 60 },
             1_700_000_000, 0, "Standard", 0, 90_000, 0, false, "", 1_699_999_000,
+            ByteArray(0), 0, // funding tx: no inputs of ours
         )
         handler.onPersistAssetLockUpsert(
             walletId = walletId,
