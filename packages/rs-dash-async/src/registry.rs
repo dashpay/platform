@@ -370,10 +370,10 @@ impl<K: RegistryKey> ThreadRegistry<K> {
     ///
     /// Under `panic = "abort"` builds (e.g. iOS release profiles) this
     /// constructor emits a single startup-time `tracing::warn!` so
-    /// operators can audit the risk that an `EpilogueGuard` /
-    /// `AtomicFlagGuard` panic during teardown aborts the process before
-    /// `Drop` can release the orphan-liveness gate. The warn is fired at
-    /// most once per process via [`std::sync::Once`].
+    /// operators can audit the risk that an `EpilogueGuard` panic during
+    /// teardown aborts the process before `Drop` can release the
+    /// orphan-liveness gate. The warn is fired at most once per process via
+    /// [`std::sync::Once`].
     pub fn with_reap_backstop(backstop: Duration) -> Arc<Self> {
         // Stable Rust has no runtime API to query the active panic strategy,
         // so the gate is compile-time. iOS release builds intentionally pick
@@ -381,11 +381,11 @@ impl<K: RegistryKey> ThreadRegistry<K> {
         #[cfg(panic = "abort")]
         PANIC_ABORT_WARNED.call_once(|| {
             tracing::warn!(
-                "dash-async registry built with panic=abort: an EpilogueGuard or \
-                 AtomicFlagGuard panic during teardown aborts the process instead \
-                 of unwinding, so the orphan-liveness gate may stay held — see \
-                 registry.rs / atomic.rs doc caveats. iOS release builds choose \
-                 abort intentionally; non-iOS targets should prefer panic=unwind."
+                "dash-async registry built with panic=abort: an EpilogueGuard \
+                 panic during teardown aborts the process instead of unwinding, \
+                 so the orphan-liveness gate may stay held — see the EpilogueGuard \
+                 doc caveat. iOS release builds choose abort intentionally; non-iOS \
+                 targets should prefer panic=unwind."
             );
         });
         Arc::new(Self {
@@ -744,7 +744,8 @@ impl<K: RegistryKey> ThreadRegistry<K> {
     ///
     /// The latch is one-way: once teardown begins it never reopens. A
     /// consumer that spawns and cancels its workers outside the registry
-    /// (handing over only a join handle via [`register_thread`]) must gate
+    /// (handing over only a join handle via
+    /// [`register_thread`](Self::register_thread)) must gate
     /// its own `start` on this so it does not spawn a fresh, uncancelled
     /// loop that teardown has already stopped waiting for.
     pub fn is_closing(&self) -> bool {
@@ -1235,8 +1236,8 @@ impl<K: RegistryKey> Drop for Repark<'_, K> {
 /// unwinds on panic still clears its running flag — `is_running()` then
 /// reflects reality and `start()` can relaunch a crashed loop.
 ///
-/// Panic-strategy caveat (same as `AtomicFlagGuard`): the clear-on-panic
-/// half relies on `Drop` running while the stack unwinds, so it holds under
+/// Panic-strategy caveat: the clear-on-panic half relies on `Drop` running
+/// while the stack unwinds, so it holds under
 /// `panic = "unwind"`. Under `panic = "abort"` a worker panic aborts the
 /// process and there is no "after" to gate. When the binary is built with
 /// `panic = "abort"`, [`ThreadRegistry::with_reap_backstop`] emits a
@@ -2398,8 +2399,7 @@ mod tests {
 
     /// `with_reap_backstop` MUST emit a one-shot `tracing::warn!` when
     /// compiled under `panic = "abort"` so an operator can audit the
-    /// orphan-liveness-gate risk documented on `EpilogueGuard` and
-    /// `AtomicFlagGuard`.
+    /// orphan-liveness-gate risk documented on `EpilogueGuard`.
     ///
     /// Aspirational / manual-only: the standard `cargo test` profile is
     /// `panic = "unwind"`, so this test is cfg-compiled OUT of every normal CI
