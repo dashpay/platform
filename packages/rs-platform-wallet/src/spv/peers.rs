@@ -8,7 +8,7 @@
 //! address into Evonode / Masternode / Normal for display.
 
 use std::collections::HashMap;
-use std::net::{IpAddr, SocketAddr};
+use std::net::SocketAddr;
 use std::sync::Mutex;
 
 use dash_spv::network::NetworkEvent;
@@ -77,10 +77,12 @@ impl EventHandler for PeerTracker {
 
 /// Classify peer addresses against a masternode list.
 ///
-/// A peer is matched by full `ip:port` first, then by bare IP — the list
-/// advertises the P2P endpoint we dialed, but an IP match alone is already
-/// conclusive since masternodes don't share hosts with unrelated peers.
-/// `None` (masternode list not yet synced) classifies every peer
+/// A peer is matched by exact `ip:port` only — the list advertises the
+/// P2P endpoint we dial, so a listed masternode we're connected to
+/// matches exactly. A bare-IP fallback would misclassify setups where
+/// one host runs both a masternode and an unrelated peer on another
+/// port (localhost regtest/devnet stacks in particular). `None`
+/// (masternode list not yet synced) classifies every peer
 /// [`SpvPeerNodeType::Unknown`].
 pub(crate) fn classify_peers(
     addresses: &[SocketAddr],
@@ -97,7 +99,6 @@ pub(crate) fn classify_peers(
     };
 
     let mut by_socket: HashMap<SocketAddr, SpvPeerNodeType> = HashMap::new();
-    let mut by_ip: HashMap<IpAddr, SpvPeerNodeType> = HashMap::new();
     for qualified in list.masternodes.values() {
         let entry = &qualified.masternode_list_entry;
         let Some(service) = entry.service_address.primary_service_address() else {
@@ -108,7 +109,6 @@ pub(crate) fn classify_peers(
             EntryMasternodeType::HighPerformance { .. } => SpvPeerNodeType::Evonode,
         };
         by_socket.insert(service, node_type);
-        by_ip.insert(service.ip(), node_type);
     }
 
     addresses
@@ -117,7 +117,6 @@ pub(crate) fn classify_peers(
             address,
             node_type: by_socket
                 .get(&address)
-                .or_else(|| by_ip.get(&address.ip()))
                 .copied()
                 .unwrap_or(SpvPeerNodeType::Normal),
         })
@@ -199,14 +198,18 @@ mod tests {
         assert_eq!(infos[2].node_type, SpvPeerNodeType::Normal);
     }
 
+    /// A shared host (localhost regtest/devnet stacks) can run a
+    /// masternode and an unrelated peer on different ports; only the
+    /// exact `ip:port` may classify as the masternode.
     #[test]
-    fn ip_match_with_different_port_still_classifies() {
-        let listed = socket([10, 0, 0, 1], 9999);
-        let dialed = socket([10, 0, 0, 1], 19999);
+    fn same_ip_different_port_classifies_normal() {
+        let listed = socket([127, 0, 0, 1], 19999);
+        let unrelated = socket([127, 0, 0, 1], 20001);
         let list = masternode_list(vec![(listed, EntryMasternodeType::Regular)]);
 
-        let infos = classify_peers(&[dialed], Some(&list));
+        let infos = classify_peers(&[listed, unrelated], Some(&list));
         assert_eq!(infos[0].node_type, SpvPeerNodeType::Masternode);
+        assert_eq!(infos[1].node_type, SpvPeerNodeType::Normal);
     }
 
     #[test]
