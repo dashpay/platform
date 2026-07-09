@@ -12,6 +12,18 @@ pub enum PlatformWalletError {
     #[error("Wallet creation failed: {0}")]
     WalletCreation(String),
 
+    /// The persister failed to load the client start state during
+    /// rehydration. Carries the typed [`PersistenceError`] so callers keep
+    /// its retry classification (`is_transient()` /
+    /// [`PersistenceErrorKind`]) instead of a flattened string — a
+    /// transient backend hiccup (e.g. `SQLITE_BUSY`) stays distinguishable
+    /// from a permanent failure and can be retried.
+    ///
+    /// [`PersistenceError`]: crate::changeset::PersistenceError
+    /// [`PersistenceErrorKind`]: crate::changeset::PersistenceErrorKind
+    #[error("failed to load persisted client state: {0}")]
+    PersisterLoad(#[from] crate::changeset::PersistenceError),
+
     #[error("Wallet not found: {0}")]
     WalletNotFound(String),
 
