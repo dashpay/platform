@@ -1003,6 +1003,107 @@ class PlatformWalletPersistenceHandlerTest {
         assertEquals("privkey.deadbeef", row!!.privateKeyKeychainIdentifier)
     }
 
+    // ── Pending identity keys (dashpay/platform#4053: no silent skip) ──
+
+    /** Deriver that always throws — the derive/storage-failure path. */
+    private class ThrowingDeriver : PrivateKeyDeriver {
+        override fun deriveAndStore(
+            walletId: ByteArray,
+            publicKeyData: ByteArray,
+            identityIndex: Int,
+            keyIndex: Int,
+        ): String = throw IllegalStateException("keystore unavailable")
+
+        override fun deleteStored(pubkeyHexes: Collection<String>) = Unit
+
+        override fun hasStored(pubkeyHex: String): Boolean = false
+    }
+
+    private fun upsertIdentityKey(pubkey: ByteArray, identityId: ByteArray) {
+        handler.onChangesetBegin(walletId)
+        handler.onPersistIdentityKeyUpsert(
+            walletId, identityId, 0, 0, 0, 0, false, false, 0,
+            pubkey, ByteArray(20), true, walletId,
+            true, 3, 5, 0, ByteArray(32), null,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+    }
+
+    @Test
+    fun derivationFailureIsRecordedAsAPendingIdentityKey() = runTest {
+        handler = PlatformWalletPersistenceHandler(db, Dispatchers.Unconfined, ThrowingDeriver())
+
+        val identityId = ByteArray(32) { 15 }
+        seedIdentity(identityId)
+        val pubkey = ByteArray(33) { 10 }
+        upsertIdentityKey(pubkey, identityId)
+
+        // The key row persists watch-only (no identifier) — same as before…
+        val row = db.publicKeyDao().getByIdentityAndKeyId(identityId.toBase58String(), 0)
+        assertNotNull(row)
+        assertNull(row!!.privateKeyKeychainIdentifier)
+
+        // …but the failure is now queryable instead of silent.
+        val pending = handler.pendingIdentityKeys.value
+        val entry = pending[pubkey.toHex()]
+        assertNotNull("expected a pending entry for the failed key", entry)
+        assertEquals(walletId.toHex(), entry!!.walletIdHex)
+        assertEquals(identityId.toBase58String(), entry.identityIdBase58)
+        assertEquals(0, entry.keyId)
+        assertEquals(3, entry.identityIndex)
+        assertEquals(5, entry.keyIndex)
+        assertEquals("keystore unavailable", entry.reason)
+    }
+
+    @Test
+    fun deriverReturningNullIsAlsoRecordedAsPending() = runTest {
+        handler = PlatformWalletPersistenceHandler(
+            db, Dispatchers.Unconfined, FakeDeriver(id = null),
+        )
+
+        val identityId = ByteArray(32) { 16 }
+        seedIdentity(identityId)
+        val pubkey = ByteArray(33) { 11 }
+        upsertIdentityKey(pubkey, identityId)
+
+        val entry = handler.pendingIdentityKeys.value[pubkey.toHex()]
+        assertNotNull(entry)
+        assertEquals("deriver returned no storage identifier", entry!!.reason)
+    }
+
+    @Test
+    fun laterSuccessfulDeriveClearsThePendingEntry() = runTest {
+        // First round fails…
+        var boom = true
+        val flaky = object : PrivateKeyDeriver {
+            override fun deriveAndStore(
+                walletId: ByteArray,
+                publicKeyData: ByteArray,
+                identityIndex: Int,
+                keyIndex: Int,
+            ): String =
+                if (boom) throw IllegalStateException("transient") else "privkey.cafebabe"
+
+            override fun deleteStored(pubkeyHexes: Collection<String>) = Unit
+
+            override fun hasStored(pubkeyHex: String): Boolean = false
+        }
+        handler = PlatformWalletPersistenceHandler(db, Dispatchers.Unconfined, flaky)
+
+        val identityId = ByteArray(32) { 17 }
+        seedIdentity(identityId)
+        val pubkey = ByteArray(33) { 12 }
+        upsertIdentityKey(pubkey, identityId)
+        assertNotNull(handler.pendingIdentityKeys.value[pubkey.toHex()])
+
+        // …a re-persist (e.g. the next sync round) succeeds and clears it.
+        boom = false
+        upsertIdentityKey(pubkey, identityId)
+        assertNull(handler.pendingIdentityKeys.value[pubkey.toHex()])
+        val row = db.publicKeyDao().getByIdentityAndKeyId(identityId.toBase58String(), 0)
+        assertEquals("privkey.cafebabe", row!!.privateKeyKeychainIdentifier)
+    }
+
     // ── Shielded load round-trip ──────────────────────────────────────
 
     @Test

@@ -346,6 +346,17 @@ class PlatformWalletManager(
         network = network,
     )
 
+    /**
+     * Identity keys whose private half could not be derived/stored during
+     * persistence (keyed by public-key hex) — the queryable "keys pending"
+     * state of dashpay/platform#4053. Such keys were persisted watch-only
+     * and cannot sign; repair via [repairIdentityKey]. Empty in the healthy
+     * case.
+     */
+    val pendingIdentityKeys:
+        kotlinx.coroutines.flow.StateFlow<Map<String, PlatformWalletPersistenceHandler.PendingIdentityKey>>
+        get() = persistenceHandler.pendingIdentityKeys
+
     /** `MnemonicResolverHandle` for FFI calls that derive from a stored mnemonic. */
     val mnemonicResolverHandle: Long get() = mnemonicResolver.nativeHandle
 

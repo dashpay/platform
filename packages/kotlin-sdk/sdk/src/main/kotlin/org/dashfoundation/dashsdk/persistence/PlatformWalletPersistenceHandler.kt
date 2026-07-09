@@ -5,6 +5,9 @@ import androidx.room.withTransaction
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.ExecutorCoroutineDispatcher
 import kotlinx.coroutines.asCoroutineDispatcher
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
@@ -284,6 +287,44 @@ class PlatformWalletPersistenceHandler(
      */
     suspend fun <T> withCallbackExclusion(block: suspend () -> T): T =
         callbackExclusion.withLock { block() }
+
+    /**
+     * An identity key whose private-half derivation/storage failed — the
+     * key was persisted **watch-only** and cannot sign until re-derived
+     * (e.g. via `PlatformWalletManager.repairIdentityKey`).
+     */
+    data class PendingIdentityKey(
+        /** Hex of the wallet the key belongs to. */
+        val walletIdHex: String,
+        /** Base58 of the owning identity id. */
+        val identityIdBase58: String,
+        /** On-identity key id. */
+        val keyId: Int,
+        /** Lowercase hex of the compressed public key (the storage key). */
+        val publicKeyHex: String,
+        /** Derivation breadcrumb: identity index. */
+        val identityIndex: Int,
+        /** Derivation breadcrumb: key index. */
+        val keyIndex: Int,
+        /** Human-readable failure reason (exception message or contract miss). */
+        val reason: String,
+        /** Epoch millis of the (latest) failure. */
+        val failedAtMs: Long,
+    )
+
+    private val _pendingIdentityKeys =
+        MutableStateFlow<Map<String, PendingIdentityKey>>(emptyMap())
+
+    /**
+     * Queryable "keys pending" state: identity keys whose private half
+     * could not be derived/stored by [onPersistIdentityKeyUpsert] (keyed by
+     * public-key hex). Such keys are persisted watch-only — signing with
+     * them fails — so hosts should watch this flow and surface a repair
+     * path. An entry clears automatically when a later persist round (or an
+     * explicit re-derive that replays the upsert) stores the key.
+     */
+    val pendingIdentityKeys: StateFlow<Map<String, PendingIdentityKey>> =
+        _pendingIdentityKeys.asStateFlow()
 
     /**
      * Stage a write. If a round is open for [walletId] the op is buffered
@@ -1023,17 +1064,50 @@ class PlatformWalletPersistenceHandler(
             runCatching { deriver.hasStored(pubkeyHex) }.getOrDefault(true)
         val derivedKeychainId: String? =
             if (derivationIndicesIsSome && deriver != null && !readOnly && walletStillPersisted) {
-                runCatching {
+                val keyOwnerWalletId = if (walletIdIsSome) keyWalletId else walletId
+                val outcome = runCatching {
                     deriver.deriveAndStore(
-                        walletId = if (walletIdIsSome) keyWalletId else walletId,
+                        walletId = keyOwnerWalletId,
                         publicKeyData = publicKeyData,
                         identityIndex = identityIndex,
                         keyIndex = keyIndex,
                     )
-                }.getOrElse { t ->
-                    Log.w(TAG, "identity private-key derive/store failed; key stays watch-only", t)
-                    null
                 }
+                val id = outcome.getOrNull()
+                if (id != null) {
+                    // Stored — clear any earlier failure for this pubkey.
+                    clearPendingIdentityKey(publicKeyData.toHex())
+                } else {
+                    // NOT silent (dashpay/platform#4053): the key is being
+                    // persisted watch-only, so every signature with it will
+                    // fail until it is re-derived. Log loudly and record a
+                    // queryable pending entry (see [pendingIdentityKeys]).
+                    val reason = outcome.exceptionOrNull()?.let { t ->
+                        t.message ?: t.javaClass.simpleName
+                    } ?: "deriver returned no storage identifier"
+                    Log.e(
+                        TAG,
+                        "identity private-key derive/store FAILED — key " +
+                            "${publicKeyData.toHex()} (identity ${identityId.toBase58String()}, " +
+                            "keyId $keyId, slot $identityIndex/$keyIndex) is persisted " +
+                            "WATCH-ONLY and cannot sign until re-derived " +
+                            "(see PlatformWalletPersistenceHandler.pendingIdentityKeys): $reason",
+                        outcome.exceptionOrNull(),
+                    )
+                    recordPendingIdentityKey(
+                        PendingIdentityKey(
+                            walletIdHex = keyOwnerWalletId.toHex(),
+                            identityIdBase58 = identityId.toBase58String(),
+                            keyId = keyId,
+                            publicKeyHex = publicKeyData.toHex(),
+                            identityIndex = identityIndex,
+                            keyIndex = keyIndex,
+                            reason = reason,
+                            failedAtMs = System.currentTimeMillis(),
+                        ),
+                    )
+                }
+                id
             } else {
                 null
             }
@@ -2415,6 +2489,18 @@ class PlatformWalletPersistenceHandler(
                     database.platformAddressDao().deleteSyncState(syncStateScopeId(walletNetwork))
                 }
             }
+        }
+    }
+
+    // ── Pending identity-key bookkeeping (#4053) ──────────────────────
+
+    private fun recordPendingIdentityKey(entry: PendingIdentityKey) {
+        _pendingIdentityKeys.value = _pendingIdentityKeys.value + (entry.publicKeyHex to entry)
+    }
+
+    private fun clearPendingIdentityKey(publicKeyHex: String) {
+        if (publicKeyHex in _pendingIdentityKeys.value) {
+            _pendingIdentityKeys.value = _pendingIdentityKeys.value - publicKeyHex
         }
     }
 
