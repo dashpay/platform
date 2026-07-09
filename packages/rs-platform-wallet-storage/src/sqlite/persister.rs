@@ -971,20 +971,25 @@ impl PlatformWalletPersistence for SqlitePersister {
             // this directly — the old skeleton + core_state replay fallback is
             // gone.
             let wallet = if account_manifest.is_empty() {
-                // Placeholder empty wallet: the manager re-checks the empty
-                // manifest and skips this wallet as MissingManifest one layer
-                // up (see rt_corrupt_row_skipped_and_other_loads). It exists so
-                // one unregistered wallet doesn't abort load() for all others via `?`.
+                // No core (spending) accounts for this wallet. An empty manifest
+                // is NOT necessarily an orphaned row: a platform-only wallet — a
+                // Platform identity plus contacts, with no core accounts —
+                // legitimately has one. Register it as an external-signable
+                // placeholder (empty AccountCollection) that still carries its
+                // platform-side state (identities, contacts); the manager
+                // registers it like any other wallet. The genuinely-orphaned
+                // case (a crash between the wallet-row write and the first
+                // account write) also lands here and is harmless — it rehydrates
+                // as an empty wallet.
                 //
-                // TODO(product decision needed, task #14): a crash between wallet-row
-                // creation and first-account-registration leaves this row with a
-                // permanently empty manifest. It is not corrupted or lost — every
-                // future load correctly skips it as MissingManifest — but there is no
-                // recovery path today: no re-registration flow, no eviction, no
-                // surfacing to the user. Open question: does this need one (e.g. a
-                // TTL-based cleanup, a re-registration entry point, or a surfaced
-                // "orphaned wallet" diagnostic), or is silent-skip-forever acceptable?
-                // Awaiting product decision; not addressed in this change.
+                // TODO(product decision needed, task #14): the orphaned variant
+                // leaves a permanently empty manifest. It is not corrupted or
+                // lost, but there is no recovery path today: no re-registration
+                // flow, no eviction, no surfacing to the user. Open question:
+                // does this need one (a TTL-based cleanup, a re-registration
+                // entry point, or a surfaced "orphaned wallet" diagnostic), or is
+                // register-empty-forever acceptable? Awaiting product decision;
+                // not addressed here.
                 key_wallet::wallet::Wallet::new_external_signable(
                     network,
                     wallet_id,
