@@ -370,17 +370,21 @@ pub fn load_state(
     }
 
     {
-        // Same pre-read length gate as `record_blob` above.
+        // Same pre-read length gate as `record_blob` above. `txid` is a raw
+        // 32-byte hash, so its width is gated fixed before materializing —
+        // an oversize column raises `BlobTooLarge` ahead of the `Vec` alloc
+        // rather than materializing then failing in `Txid::from_slice`.
         let mut stmt = conn.prepare(
-            "SELECT txid, length(islock_blob), islock_blob \
+            "SELECT length(txid), txid, length(islock_blob), islock_blob \
              FROM core_instant_locks WHERE wallet_id = ?1",
         )?;
         let mut rows = stmt.query(params![wallet_id.as_slice()])?;
         while let Some(row) = rows.next()? {
             use dashcore::hashes::Hash;
-            let txid_bytes: Vec<u8> = row.get(0)?;
-            blob::check_size(row.get::<_, i64>(1)?)?;
-            let blob_bytes: Vec<u8> = row.get(2)?;
+            blob::check_fixed_width(row.get::<_, i64>(0)?, 32, "core_instant_locks.txid")?;
+            let txid_bytes: Vec<u8> = row.get(1)?;
+            blob::check_size(row.get::<_, i64>(2)?)?;
+            let blob_bytes: Vec<u8> = row.get(3)?;
             let txid = dashcore::Txid::from_slice(&txid_bytes)
                 .map_err(|_| WalletStorageError::blob_decode("core_instant_locks.txid"))?;
             let islock: dashcore::ephemerealdata::instant_lock::InstantLock =
@@ -564,6 +568,38 @@ mod tests {
             block_hash: BlockHash::from_byte_array([0x11u8; 32]),
             signature: [0x22u8; 96].into(),
         }
+    }
+
+    /// A tampered `core_instant_locks.txid` that overflows the blob cap must
+    /// raise `BlobTooLarge` from the fixed-width gate BEFORE the oversize `Vec`
+    /// is materialized — not `BlobDecode` after `Txid::from_slice` on a
+    /// multi-megabyte allocation.
+    #[test]
+    fn load_state_rejects_oversize_instant_lock_txid() {
+        let mut conn = rusqlite::Connection::open_in_memory().unwrap();
+        crate::sqlite::migrations::run(&mut conn).unwrap();
+        let w = [0xABu8; 32];
+        conn.execute(
+            "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
+            params![&w[..]],
+        )
+        .unwrap();
+
+        // Plant a txid one byte past the 16 MiB cap; islock_blob content is
+        // irrelevant — the txid gate fires before it is read.
+        let oversize_txid = vec![0u8; crate::SIZE_LIMIT_BYTES + 1];
+        conn.execute(
+            "INSERT INTO core_instant_locks (wallet_id, txid, islock_blob) VALUES (?1, ?2, ?3)",
+            params![&w[..], oversize_txid.as_slice(), &[0u8; 4][..]],
+        )
+        .unwrap();
+
+        let err = load_state(&conn, &w, dashcore::Network::Testnet)
+            .expect_err("load_state must reject an oversize instant-lock txid");
+        assert!(
+            matches!(err, WalletStorageError::BlobTooLarge { .. }),
+            "expected BlobTooLarge from the pre-materialization gate, got {err:?}"
+        );
     }
 
     #[test]

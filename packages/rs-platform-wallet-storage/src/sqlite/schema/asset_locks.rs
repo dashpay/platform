@@ -158,17 +158,18 @@ pub fn load_state(
     wallet_id: &WalletId,
 ) -> Result<AssetLocksByAccount, WalletStorageError> {
     let mut stmt = conn.prepare(
-        "SELECT outpoint, account_index, length(lifecycle_blob), lifecycle_blob, status \
+        "SELECT length(outpoint), outpoint, account_index, length(lifecycle_blob), lifecycle_blob, status \
          FROM asset_locks WHERE wallet_id = ?1",
     )?;
     let mut rows = stmt.query(params![wallet_id.as_slice()])?;
     let mut out: AssetLocksByAccount = BTreeMap::new();
     while let Some(row) = rows.next()? {
-        let op_bytes: Vec<u8> = row.get(0)?;
-        let account_index: i64 = row.get(1)?;
-        blob::check_size(row.get::<_, i64>(2)?)?;
-        let blob_bytes: Vec<u8> = row.get(3)?;
-        let status: String = row.get(4)?;
+        blob::check_size(row.get::<_, i64>(0)?)?;
+        let op_bytes: Vec<u8> = row.get(1)?;
+        let account_index: i64 = row.get(2)?;
+        blob::check_size(row.get::<_, i64>(3)?)?;
+        let blob_bytes: Vec<u8> = row.get(4)?;
+        let status: String = row.get(5)?;
         let (acct, outpoint, tracked) = decode_row(&op_bytes, account_index, &blob_bytes, &status)?;
         out.entry(acct).or_default().insert(outpoint, tracked);
     }
@@ -186,17 +187,18 @@ pub fn load_unconsumed(
     wallet_id: &WalletId,
 ) -> Result<AssetLocksByAccount, WalletStorageError> {
     let mut stmt = conn.prepare(
-        "SELECT outpoint, account_index, length(lifecycle_blob), lifecycle_blob, status \
+        "SELECT length(outpoint), outpoint, account_index, length(lifecycle_blob), lifecycle_blob, status \
          FROM asset_locks WHERE wallet_id = ?1 AND status NOT IN ('consumed')",
     )?;
     let mut rows = stmt.query(params![wallet_id.as_slice()])?;
     let mut out: AssetLocksByAccount = BTreeMap::new();
     while let Some(row) = rows.next()? {
-        let op_bytes: Vec<u8> = row.get(0)?;
-        let account_index: i64 = row.get(1)?;
-        blob::check_size(row.get::<_, i64>(2)?)?;
-        let blob_bytes: Vec<u8> = row.get(3)?;
-        let status: String = row.get(4)?;
+        blob::check_size(row.get::<_, i64>(0)?)?;
+        let op_bytes: Vec<u8> = row.get(1)?;
+        let account_index: i64 = row.get(2)?;
+        blob::check_size(row.get::<_, i64>(3)?)?;
+        let blob_bytes: Vec<u8> = row.get(4)?;
+        let status: String = row.get(5)?;
         let (acct, outpoint, tracked) = decode_row(&op_bytes, account_index, &blob_bytes, &status)?;
         out.entry(acct).or_default().insert(outpoint, tracked);
     }
@@ -213,17 +215,18 @@ pub fn list_active(
     wallet_id: &WalletId,
 ) -> Result<AssetLocksByAccount, WalletStorageError> {
     let mut stmt = conn.prepare(
-        "SELECT outpoint, account_index, length(lifecycle_blob), lifecycle_blob, status \
+        "SELECT length(outpoint), outpoint, account_index, length(lifecycle_blob), lifecycle_blob, status \
          FROM asset_locks WHERE wallet_id = ?1",
     )?;
     let mut rows = stmt.query(params![wallet_id.as_slice()])?;
     let mut out: AssetLocksByAccount = BTreeMap::new();
     while let Some(row) = rows.next()? {
-        let op_bytes: Vec<u8> = row.get(0)?;
-        let account_index: i64 = row.get(1)?;
-        blob::check_size(row.get::<_, i64>(2)?)?;
-        let blob_bytes: Vec<u8> = row.get(3)?;
-        let status: String = row.get(4)?;
+        blob::check_size(row.get::<_, i64>(0)?)?;
+        let op_bytes: Vec<u8> = row.get(1)?;
+        let account_index: i64 = row.get(2)?;
+        blob::check_size(row.get::<_, i64>(3)?)?;
+        let blob_bytes: Vec<u8> = row.get(4)?;
+        let status: String = row.get(5)?;
         let (acct, outpoint, tracked) = decode_row(&op_bytes, account_index, &blob_bytes, &status)?;
         out.entry(acct).or_default().insert(outpoint, tracked);
     }
