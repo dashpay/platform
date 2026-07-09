@@ -65,7 +65,8 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// anything funded before init is invisible — **but** when SPV is
     /// not running yet or header state is unavailable (e.g. wallet
     /// created before the SPV client is started), it falls back to
-    /// `0`, i.e. a full historical scan from genesis. `Some(0)`
+    /// the latest network checkpoint height, keeping the scan near
+    /// the chain head instead of rescanning from genesis. `Some(0)`
     /// always requests a full historical scan from genesis (use
     /// sparingly — expensive on long-lived chains, but required when
     /// an address may have received funds before the wallet was first
@@ -95,7 +96,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// See [`Self::create_wallet_from_mnemonic`] for the
     /// `birth_height_override` semantics. `None` scans from the
     /// current SPV tip forward when SPV is running, otherwise from
-    /// genesis; `Some(h)` is for callers that need to see funding
+    /// the latest network checkpoint; `Some(h)` is for callers that need to see funding
     /// deposited before the wallet was registered (e.g. a long-lived
     /// bank address pre-funded with testnet duffs).
     pub async fn create_wallet_from_seed_bytes(

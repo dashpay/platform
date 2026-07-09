@@ -367,7 +367,20 @@ struct CreateWalletView: View {
                     // avoiding a full-chain scan. Left empty it falls back to
                     // genesis (0) so a wallet of unknown age still sees all its
                     // history. A freshly generated wallet passes nil (tip).
-                    let importBirth = UInt32(importBirthHeight.trimmingCharacters(in: .whitespaces)) ?? 0
+                    let trimmedImportBirthHeight = importBirthHeight.trimmingCharacters(in: .whitespaces)
+                    let importBirth = UInt32(trimmedImportBirthHeight) ?? 0
+                    // Birth height is chain-local: a single value can't be
+                    // correct for more than one network, so reject a non-empty
+                    // height when importing to multiple networks. Left blank the
+                    // safe genesis (0) fallback still applies to each network.
+                    if showImportOption, !trimmedImportBirthHeight.isEmpty, selectedNetworks.count > 1 {
+                        struct MultiNetworkBirthHeightUnsupported: LocalizedError {
+                            var errorDescription: String? {
+                                "Birth height is network-specific. Select one network or leave birth height empty when importing to multiple networks."
+                            }
+                        }
+                        throw MultiNetworkBirthHeightUnsupported()
+                    }
                     for net in selectedNetworks {
                         do {
                             let mgr = try walletManagerStore.backgroundManager(for: net)
