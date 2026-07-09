@@ -316,9 +316,7 @@ pub enum WalletStorageError {
     /// address pools 1:1 (`probes.len() != pools.len()`) — a structural
     /// invariant break, not user-reachable. Fail-closed rather than apply a
     /// probe's discovered depth to the wrong pool by position.
-    #[error(
-        "rehydration pool count mismatch: expected {expected} probe pool(s), found {found}"
-    )]
+    #[error("rehydration pool count mismatch: expected {expected} probe pool(s), found {found}")]
     RehydrationPoolMismatch { expected: usize, found: usize },
 
     /// Rehydration's discovery probes mirror the real account's pools by

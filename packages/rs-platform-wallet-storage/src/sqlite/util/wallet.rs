@@ -1144,7 +1144,6 @@ mod tests {
     /// (idx 30), and asserts the empty-snapshot baseline does NOT mark them.
     #[test]
     fn rehydration_used_state_survives_spent_utxo() {
-        use platform_wallet::changeset::CoreChangeSet;
         use dashcore::blockdata::transaction::txout::TxOut;
         use dashcore::{OutPoint, Txid};
         use key_wallet::bip32::DerivationPath;
@@ -1153,6 +1152,7 @@ mod tests {
         use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
         use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
         use key_wallet::{Address, Utxo};
+        use platform_wallet::changeset::CoreChangeSet;
 
         let wallet = Wallet::from_seed_bytes(
             [42u8; 64],
@@ -1575,7 +1575,10 @@ mod tests {
             .expect_err("must fail closed when no funds account can hold the UTXOs");
         match err {
             WalletStorageError::MissingAccount { wallet_id: id } => {
-                assert_eq!(id, wallet_info.wallet_id, "wallet_id must match the rehydrated wallet");
+                assert_eq!(
+                    id, wallet_info.wallet_id,
+                    "wallet_id must match the rehydrated wallet"
+                );
             }
             other => panic!("expected MissingAccount, got {other:?}"),
         }
