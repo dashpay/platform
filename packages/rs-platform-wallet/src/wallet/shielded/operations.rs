@@ -2287,9 +2287,8 @@ pub(super) async fn redrive_pending_spends<S: ShieldedStore>(
 ///   non-empty consensus `data` — the wait-stream error envelope for a
 ///   transition Platform executed and rejected on its merits.
 ///
-/// Recurses through a `NoAvailableAddressesToRetry` envelope (in lockstep with
-/// [`crate::error::as_address_invalid_nonce`]) so a wrapped nonce rejection is
-/// promoted rather than bucketed as `ShieldedSpendUnconfirmed`.
+/// Recurses through a `NoAvailableAddressesToRetry` envelope, mirroring
+/// [`crate::error::as_address_invalid_nonce`].
 ///
 /// Only these prove the transition was evaluated and REJECTED. Everything
 /// else — transport errors, timeouts, `AlreadyExists` (which proves the
