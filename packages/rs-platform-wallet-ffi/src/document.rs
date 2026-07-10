@@ -155,6 +155,179 @@ fn confirmed_document_to_json(document: &Document) -> Result<String, PlatformWal
     })
 }
 
+/// Create + broadcast an ENCRYPTED wallet-contract document (the wire-
+/// compatible `txMetadata` shape) on `contract_id`'s `document_type_name`,
+/// owned by `owner_identity_id`, signed via the external `signer_handle`.
+///
+/// Goes through `IdentityWallet::create_encrypted_document_with_signer`: the
+/// SDK selects the identity's ENCRYPTION key id (the `keyIndex` field), derives
+/// the AES key from the wallet HD tree, seals the opaque `payload` into the
+/// legacy `version ‖ IV ‖ AES-256-CBC` blob, and writes
+/// `{keyIndex, encryptionKeyIndex, encryptedMetadata}` — decryptable by the
+/// legacy `org.dashj.platform` stack and vice versa.
+///
+/// The caller supplies `encryption_key_index` (the app's per-document index —
+/// batching stays app-side), `version` (`1` = protobuf, as the wallet writes),
+/// and the already-serialized opaque `payload` (a protobuf `TxMetadataBatch`;
+/// the SDK does not parse it). `payload` may be null only when
+/// `payload_len == 0`.
+///
+/// On success the confirmed document's 32-byte id is written to
+/// `out_document_id` and its canonical query-side JSON to `*out_document_json`
+/// (release with `platform_wallet_string_free`; left null on any error).
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn platform_wallet_create_encrypted_document_with_signer(
+    wallet_handle: Handle,
+    owner_identity_id: *const u8,
+    contract_id: *const u8,
+    document_type_name: *const c_char,
+    encryption_key_index: u32,
+    version: u8,
+    payload: *const u8,
+    payload_len: usize,
+    signer_handle: *mut SignerHandle,
+    out_document_id: *mut u8,
+    out_document_json: *mut *mut c_char,
+) -> PlatformWalletFFIResult {
+    check_ptr!(signer_handle);
+    check_ptr!(document_type_name);
+    check_ptr!(out_document_id);
+    check_ptr!(out_document_json);
+
+    *out_document_json = ptr::null_mut();
+
+    let owner_id = unwrap_result_or_return!(read_identifier(owner_identity_id));
+    let contract_id_value = unwrap_result_or_return!(read_identifier(contract_id));
+    let document_type_str =
+        unwrap_result_or_return!(CStr::from_ptr(document_type_name).to_str()).to_string();
+
+    // Copy the payload into an owned Vec (it is moved into the async block; a
+    // borrow of `payload` can't outlive this call). Null is allowed only for a
+    // zero-length payload.
+    let payload_vec: Vec<u8> = if payload_len == 0 {
+        Vec::new()
+    } else {
+        check_ptr!(payload);
+        slice::from_raw_parts(payload, payload_len).to_vec()
+    };
+
+    let signer_addr = signer_handle as usize;
+    let owner_id_for_async = owner_id;
+    let contract_id_for_async = contract_id_value;
+
+    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
+        let identity_wallet = wallet.identity().clone();
+        let result: Result<(Identifier, String), PlatformWalletError> = block_on_worker(async move {
+            let signer: &VTableSigner = &*(signer_addr as *const VTableSigner);
+            let confirmed: Document = identity_wallet
+                .create_encrypted_document_with_signer(
+                    &owner_id_for_async,
+                    &contract_id_for_async,
+                    &document_type_str,
+                    encryption_key_index,
+                    version,
+                    &payload_vec,
+                    signer,
+                )
+                .await?;
+            let json_string = confirmed_document_to_json(&confirmed)?;
+            Ok::<_, PlatformWalletError>((confirmed.id(), json_string))
+        });
+        result
+    });
+    let result = unwrap_option_or_return!(option);
+    let (document_id, document_json) = unwrap_result_or_return!(result);
+
+    let json_cstring = unwrap_result_or_return!(CString::new(document_json));
+
+    let bytes = document_id.to_buffer();
+    let dst = slice::from_raw_parts_mut(out_document_id, 32);
+    dst.copy_from_slice(&bytes);
+    *out_document_json = json_cstring.into_raw();
+    PlatformWalletFFIResult::ok()
+}
+
+/// Fetch + DECRYPT every encrypted wallet-contract document owned by
+/// `owner_identity_id` on `contract_id`'s `document_type_name` updated at or
+/// after `since_ms` (epoch-millis).
+///
+/// Goes through `IdentityWallet::fetch_encrypted_documents` — the wire-
+/// compatible read counterpart of the legacy `getTxMetaData(since, key)`. Each
+/// document's `encryptedMetadata` blob is decrypted with the identity's derived
+/// key; documents that can't be derived/decrypted are skipped (never abort the
+/// fetch).
+///
+/// On success `*out_documents_json` receives an owned NUL-terminated JSON array
+/// (release with `platform_wallet_string_free`; left null on any error). Each
+/// element is
+/// `{ "id": base58, "ownerId": base58, "keyIndex": u32, "encryptionKeyIndex":
+/// u32, "version": u8, "updatedAt": u64|null, "payload": base64 }`, where
+/// `payload` is the decrypted, opaque plaintext the caller parses (a protobuf
+/// `TxMetadataBatch` for `version == 1`).
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_fetch_encrypted_documents(
+    wallet_handle: Handle,
+    owner_identity_id: *const u8,
+    contract_id: *const u8,
+    document_type_name: *const c_char,
+    since_ms: u64,
+    out_documents_json: *mut *mut c_char,
+) -> PlatformWalletFFIResult {
+    use base64::Engine;
+
+    check_ptr!(document_type_name);
+    check_ptr!(out_documents_json);
+
+    *out_documents_json = ptr::null_mut();
+
+    let owner_id = unwrap_result_or_return!(read_identifier(owner_identity_id));
+    let contract_id_value = unwrap_result_or_return!(read_identifier(contract_id));
+    let document_type_str =
+        unwrap_result_or_return!(CStr::from_ptr(document_type_name).to_str()).to_string();
+
+    let owner_id_for_async = owner_id;
+    let contract_id_for_async = contract_id_value;
+
+    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
+        let identity_wallet = wallet.identity().clone();
+        let result: Result<Vec<platform_wallet::DecryptedEncryptedDocument>, PlatformWalletError> =
+            block_on_worker(async move {
+                identity_wallet
+                    .fetch_encrypted_documents(
+                        &owner_id_for_async,
+                        &contract_id_for_async,
+                        &document_type_str,
+                        since_ms,
+                    )
+                    .await
+            });
+        result
+    });
+    let result = unwrap_option_or_return!(option);
+    let docs = unwrap_result_or_return!(result);
+
+    let json_array: Vec<serde_json::Value> = docs
+        .iter()
+        .map(|d| {
+            serde_json::json!({
+                "id": bs58::encode(d.document_id.to_buffer()).into_string(),
+                "ownerId": bs58::encode(d.owner_id.to_buffer()).into_string(),
+                "keyIndex": d.key_index,
+                "encryptionKeyIndex": d.encryption_key_index,
+                "version": d.version,
+                "updatedAt": d.updated_at_ms,
+                "payload": base64::engine::general_purpose::STANDARD.encode(&d.payload),
+            })
+        })
+        .collect();
+    let json_string =
+        unwrap_result_or_return!(serde_json::to_string(&serde_json::Value::Array(json_array)));
+    let json_cstring = unwrap_result_or_return!(CString::new(json_string));
+    *out_documents_json = json_cstring.into_raw();
+    PlatformWalletFFIResult::ok()
+}
+
 /// Replace + broadcast `document_id`'s properties on `contract_id`'s
 /// `document_type_name`, owned by `owner_identity_id`, signed via the
 /// external `signer_handle` with key `signing_key_id`.
