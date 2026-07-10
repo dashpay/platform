@@ -45,6 +45,7 @@
 //! entry points stay available for pull-to-refresh.
 
 use std::collections::BTreeMap;
+use std::num::NonZeroUsize;
 use std::sync::{
     atomic::{AtomicBool, AtomicU64, Ordering},
     Arc,
@@ -53,10 +54,9 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use tokio::sync::RwLock;
 
-use dash_async::ThreadRegistry;
+use dash_async::{ThreadRegistry, WorkerConfig};
 
 use crate::error::PlatformWalletError;
-use crate::manager::loop_cancel::LoopCancelGuard;
 use crate::manager::{coordinator_worker_config, WalletWorker};
 use crate::wallet::platform_wallet::WalletId;
 use crate::wallet::PlatformWallet;
@@ -69,6 +69,17 @@ use crate::wallet::PlatformWallet;
 /// their own refresh window, so the tighter cadence does not multiply DAPI
 /// traffic by 4. Tunable at runtime via [`DashPaySyncManager::set_interval`].
 pub const DEFAULT_SYNC_INTERVAL_SECS: u64 = 15;
+
+/// Stack size for the DashPay sync loop's OS thread.
+///
+/// DashPay sync verifies GroveDB *document-query* proofs (contactRequest /
+/// profile fetches), whose recursive `verify_layer_proof_v1` descent
+/// overflows the platform default thread stack (SIGBUS on the stack guard,
+/// observed on-device 2026-06-12). The sibling sync loops survive on the
+/// default only because their proofs are shallower. Matches the FFI worker
+/// convention (`runtime.rs` WORKER_STACK_BYTES) since `Handle::block_on`
+/// polls the future on the registry's worker thread.
+const DASHPAY_SYNC_STACK_BYTES: usize = 8 * 1024 * 1024;
 
 /// Outcome of syncing a single wallet's DashPay state in a pass.
 #[derive(Debug)]
@@ -119,12 +130,10 @@ impl DashPaySyncSummary {
 /// token registry, so DashPay-only identities are never skipped.
 pub struct DashPaySyncManager {
     wallets: Arc<RwLock<BTreeMap<WalletId, Arc<PlatformWallet>>>>,
-    /// Generation-guarded cancel-token slot for the background loop —
-    /// see [`LoopCancelGuard`] for the stale-loop shutdown invariant.
-    cancel_guard: LoopCancelGuard,
-    /// Shared registry that owns this loop's OS-thread join handle for a
-    /// panic-aware shutdown join. Join-only — cancellation stays with
-    /// [`cancel_guard`](Self::cancel_guard).
+    /// Shared registry that owns this loop's lifecycle: it spawns the
+    /// OS thread (with the deep-stack config below), owns its cancellation
+    /// token, and joins it at shutdown. A generation-guarded slot handles a
+    /// `stop()` + quick `start()` without a stale loop clobbering the new one.
     registry: Arc<ThreadRegistry<WalletWorker>>,
     interval_secs: AtomicU64,
     is_syncing: AtomicBool,
@@ -146,7 +155,6 @@ impl DashPaySyncManager {
     ) -> Self {
         Self {
             wallets,
-            cancel_guard: LoopCancelGuard::new(),
             registry,
             interval_secs: AtomicU64::new(DEFAULT_SYNC_INTERVAL_SECS),
             is_syncing: AtomicBool::new(false),
@@ -170,7 +178,7 @@ impl DashPaySyncManager {
 
     /// Whether the background loop is currently running.
     pub fn is_running(&self) -> bool {
-        self.cancel_guard.is_running()
+        self.registry.is_running(WalletWorker::DashPaySync)
     }
 
     /// Whether a sync pass is in flight right now.
@@ -202,64 +210,40 @@ impl DashPaySyncManager {
     /// The first pass runs immediately; subsequent passes fire every
     /// [`interval`](Self::interval).
     ///
-    /// **Blocks briefly on restart**: handing the loop thread to the shared
-    /// registry synchronously reaps a still-draining prior-generation thread,
-    /// spinning up to the registry reap backstop (default 1 s) before
-    /// returning. Call it from the FFI host thread, not an async task.
+    /// **Blocks briefly on restart**: the shared registry synchronously
+    /// reaps a still-draining prior-generation thread, spinning up to the
+    /// registry reap backstop (default 1 s) before returning. Call it from
+    /// the FFI host thread, not an async task.
     pub fn start(self: Arc<Self>) {
-        // Refuse to (re)start once the registry has latched closed for
-        // teardown (see `IdentitySyncManager::start`).
-        if self.registry.is_closing() {
-            return;
-        }
-        let Some((cancel, my_generation)) = self.cancel_guard.install() else {
-            return;
-        };
-        // Check-lock-check: bail if a shutdown latched `closing` between the
-        // gate above and install.
-        if self.registry.is_closing() {
-            cancel.cancel();
-            self.cancel_guard.clear_if_current(my_generation);
-            return;
-        }
-
         let handle = tokio::runtime::Handle::current();
         let registry = Arc::clone(&self.registry);
         let this = self;
-        let join = std::thread::Builder::new()
-            .name("dashpay-sync".into())
-            // DashPay sync verifies GroveDB *document-query* proofs
-            // (contactRequest / profile fetches), whose recursive
-            // `verify_layer_proof_v1` descent overflows the platform
-            // default thread stack (SIGBUS on the stack guard, observed
-            // on-device 2026-06-12). The sibling sync threads survive on
-            // the default only because their proofs are shallower; match
-            // the FFI worker convention (`runtime.rs` WORKER_STACK_BYTES)
-            // since `Handle::block_on` polls the future on THIS thread.
-            .stack_size(8 * 1024 * 1024)
-            .spawn(move || {
-                handle.block_on(async move {
-                    loop {
-                        if cancel.is_cancelled() {
-                            break;
-                        }
-
-                        this.sync_now().await;
-
-                        let interval = this.interval();
-                        tokio::select! {
-                            _ = tokio::time::sleep(interval) => {}
-                            _ = cancel.cancelled() => break,
-                        }
+        // Deep stack for the GroveDB proof descent — see
+        // [`DASHPAY_SYNC_STACK_BYTES`]. The registry spawns the OS thread
+        // with this size and owns the whole lifecycle (see
+        // `IdentitySyncManager::start`): teardown latch, cancellation token,
+        // thread spawn, and prior-generation reap under one slot lock.
+        let cfg = WorkerConfig {
+            stack_size: NonZeroUsize::new(DASHPAY_SYNC_STACK_BYTES),
+            ..coordinator_worker_config()
+        };
+        registry.start_thread(WalletWorker::DashPaySync, cfg, move |cancel| {
+            handle.block_on(async move {
+                loop {
+                    if cancel.is_cancelled() {
+                        break;
                     }
 
-                    this.cancel_guard.clear_if_current(my_generation);
-                });
-            })
-            .expect("failed to spawn dashpay-sync thread");
+                    this.sync_now().await;
 
-        // Join-only handoff to the shared registry (see `IdentitySyncManager::start`).
-        registry.register_thread(WalletWorker::DashPaySync, coordinator_worker_config(), join);
+                    let interval = this.interval();
+                    tokio::select! {
+                        _ = tokio::time::sleep(interval) => {}
+                        _ = cancel.cancelled() => break,
+                    }
+                }
+            });
+        });
     }
 
     /// Stop the background sync loop. No-op if not running.
@@ -271,9 +255,7 @@ impl DashPaySyncManager {
     /// by manager shutdown so the host can free the persister context —
     /// use [`quiesce`](Self::quiesce).
     pub fn stop(&self) {
-        if let Some(token) = self.cancel_guard.take() {
-            token.cancel();
-        }
+        self.registry.cancel(WalletWorker::DashPaySync);
     }
 
     /// Cancel the background loop **and wait for any in-flight sync pass
@@ -700,73 +682,51 @@ mod tests {
         assert!(!mgr.is_syncing());
     }
 
-    /// Regression: a stale, draining loop's cleanup must **not** clobber a
-    /// newer loop's cancel token.
+    /// Regression: a `stop()` + quick `start()` must leave the NEW loop
+    /// running and cancellable — a stale prior generation's exit epilogue
+    /// must not clobber the new generation's cancellation token.
     ///
-    /// The failure this pins is a use-after-free across the FFI persister.
-    /// `stop()` is cancel-only — it takes + cancels loop A's token but loop
-    /// A keeps draining its in-flight pass. A quick `start()` then installs
-    /// loop B's token. When loop A *finally* exits, the old code ran an
-    /// unconditional `*guard = None`, nulling **loop B's live token** —
-    /// after which `is_running()` lies (`false` while B runs) and a
-    /// shutdown `stop()`/`quiesce()` silently no-ops while loop B keeps
+    /// The failure this pins is a use-after-free across the FFI persister:
+    /// if the old loop's exit nulled the new loop's token, `is_running()`
+    /// would lie (`false` while the new loop runs) and a shutdown
+    /// `stop()`/`quiesce()` would silently no-op while the new loop kept
     /// fanning out `persister.store(...)` through a freed context.
     ///
-    /// We drive the token lifecycle directly (the guard's `install` /
-    /// `clear_if_current`) rather than spawning the real loop: the
-    /// loop runs on an OS thread under `Handle::block_on`, so its exit
-    /// timing can't be pinned deterministically. The pure-guard variant
-    /// lives with [`LoopCancelGuard`]; this one pins the manager-level
-    /// wiring (`stop()` / `is_running()` route through the guard).
-    #[tokio::test]
-    async fn stale_loop_cleanup_does_not_clobber_newer_loop_token() {
+    /// `stop()` / `is_running()` now route through the shared
+    /// `ThreadRegistry`, whose generation-guarded slot enforces this: a
+    /// restart reaps the prior generation under the start slot lock and the
+    /// prior's epilogue is gen-gated. The registry's own
+    /// `generation_match_epilogue_preserves_new_token` test pins the
+    /// primitive; this one pins the manager wiring through real
+    /// `start()`/`stop()` on live OS-thread loops.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn stop_then_quick_start_keeps_new_loop_cancellable() {
         let manager = make_manager();
         let mgr = manager.dashpay_sync_arc();
 
-        // Loop A starts: installs token_A at generation G_A.
-        let (token_a, gen_a) = mgr
-            .cancel_guard
-            .install()
-            .expect("first install starts a loop");
+        // Loop A starts (empty wallet set → each pass is a no-op, no I/O).
+        Arc::clone(&mgr).start();
         assert!(mgr.is_running());
 
-        // Shutdown of loop A: stop() cancels + takes token_A immediately
-        // (cancel-only), but loop A is still "draining" — its cleanup has
-        // not run yet.
+        // stop() cancels loop A; the running flag clears immediately.
         mgr.stop();
-        assert!(token_a.is_cancelled());
-        assert!(
-            !mgr.is_running(),
-            "stop() clears the stored token immediately"
-        );
+        assert!(!mgr.is_running(), "stop() clears the running flag at once");
 
-        // Loop B starts BEFORE loop A's cleanup runs: installs token_B at a
-        // newer generation G_B.
-        let (token_b, _gen_b) = mgr
-            .cancel_guard
-            .install()
-            .expect("second install starts a new loop");
-        assert!(mgr.is_running());
+        // Loop B starts before loop A has necessarily drained. The registry
+        // reaps the prior generation under the start slot lock and installs a
+        // fresh generation, so A's later epilogue cannot clear B's token.
+        Arc::clone(&mgr).start();
+        assert!(mgr.is_running(), "loop B must be running after the restart");
 
-        // Loop A FINALLY drains and runs its cleanup with its own (now
-        // stale) generation. The guard must make this a no-op; the old
-        // unconditional clear would null loop B's token here.
-        mgr.cancel_guard.clear_if_current(gen_a);
-
-        // Loop B's token must still be installed and uncancelled.
-        assert!(
-            mgr.is_running(),
-            "stale loop A cleanup must not clobber loop B's live token"
-        );
-        assert!(!token_b.is_cancelled());
-
-        // …and a real shutdown can still cancel loop B.
+        // A real shutdown still cancels loop B and joins it cleanly — proof
+        // B stayed cancellable after A's stale exit.
         mgr.stop();
-        assert!(
-            token_b.is_cancelled(),
-            "loop B must remain cancellable after the stale cleanup"
-        );
         assert!(!mgr.is_running());
+        let report = manager.shutdown().await;
+        assert!(
+            report.all_clean(),
+            "clean shutdown after restart: {report:?}"
+        );
     }
 
     /// `set_interval` clamps to >=1s and round-trips through `interval`.

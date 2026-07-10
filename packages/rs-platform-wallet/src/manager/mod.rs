@@ -4,7 +4,6 @@ pub mod accessors;
 pub mod dashpay_sync;
 pub mod identity_sync;
 mod load;
-mod loop_cancel;
 pub mod platform_address_sync;
 #[cfg(feature = "shielded")]
 pub mod shielded_sync;
@@ -38,13 +37,11 @@ use crate::wallet::PlatformWallet;
 /// Registry key identifying each background worker the manager joins at
 /// shutdown.
 ///
-/// The four periodic sync coordinators run their `!Send` loops on detached
-/// OS threads. The shared [`ThreadRegistry`] owns their join handles so
-/// [`shutdown`](PlatformWalletManager::shutdown) can join them — and
-/// surface a panicked loop — before the host drops the tokio runtime.
-/// Cancellation is NOT the registry's concern: each coordinator keeps its
-/// own `LoopCancelGuard`, which the registry sits alongside purely for the
-/// join / status handoff.
+/// The four periodic sync coordinators run their `!Send` loops on OS
+/// threads the shared [`ThreadRegistry`] spawns and owns end to end: it
+/// installs each loop's cancellation token, and
+/// [`shutdown`](PlatformWalletManager::shutdown) cancels and joins them —
+/// surfacing a panicked loop — before the host drops the tokio runtime.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum WalletWorker {
     /// Platform-address (BLAST / DIP-17) balance sync coordinator.
@@ -65,16 +62,19 @@ pub enum WalletWorker {
 /// [`ThreadRegistry::shutdown`] drains them concurrently.
 pub(crate) const COORDINATOR_WEIGHT: ShutdownWeight = ShutdownWeight(0);
 
-/// [`WorkerConfig`] each coordinator hands its loop thread to the registry
-/// with — one shared tier, no drain hook, and the registry's default managed-
-/// join budget ([`DEFAULT_JOIN_BUDGET`]), so a wedged loop pass surfaces as
+/// Base [`WorkerConfig`] each coordinator starts its loop thread with — one
+/// shared tier, no drain hook, the registry's default managed-join budget
+/// ([`DEFAULT_JOIN_BUDGET`]) so a wedged loop pass surfaces as
 /// [`WorkerStatus::Timeout`](dash_async::WorkerStatus::Timeout) instead of
-/// hanging shutdown forever.
+/// hanging shutdown forever, and the platform default OS-thread stack. A
+/// coordinator that needs a deeper stack (e.g. DashPay's GroveDB proof
+/// descent) overrides `stack_size` on top of this.
 pub(crate) fn coordinator_worker_config() -> WorkerConfig {
     WorkerConfig {
         weight: COORDINATOR_WEIGHT,
         drain: None,
         join_budget: DEFAULT_JOIN_BUDGET,
+        stack_size: None,
     }
 }
 
@@ -145,11 +145,11 @@ pub struct PlatformWalletManager<P: PlatformWalletPersistence + 'static> {
     /// is torn down.
     pub(super) event_adapter_cancel: CancellationToken,
     pub(super) event_adapter_join: tokio::sync::Mutex<Option<JoinHandle<()>>>,
-    /// Shared join/status registry for the periodic coordinator threads.
-    /// Each coordinator hands its OS-thread `JoinHandle` here at `start`;
-    /// [`shutdown`](Self::shutdown) joins them and reports per-worker
-    /// terminal status. Cancellation stays with each coordinator's
-    /// `LoopCancelGuard` — the registry only joins.
+    /// Shared lifecycle registry for the periodic coordinator threads.
+    /// Each coordinator spawns its loop through `registry.start_thread` at
+    /// `start`, handing the registry ownership of the OS thread and its
+    /// cancellation token; [`shutdown`](Self::shutdown) cancels, joins, and
+    /// reports per-worker terminal status.
     pub(super) registry: Arc<ThreadRegistry<WalletWorker>>,
 }
 

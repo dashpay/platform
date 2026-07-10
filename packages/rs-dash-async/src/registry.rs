@@ -177,6 +177,12 @@ pub struct WorkerConfig {
     pub drain: Option<DrainHook>,
     /// Managed-join timeout for this worker.
     pub join_budget: Duration,
+    /// OS-thread stack size ([`start_thread`](ThreadRegistry::start_thread)
+    /// only; ignored by [`start_task`](ThreadRegistry::start_task)). `None`
+    /// uses the platform default. Raise it for a loop whose body recurses
+    /// deeply — e.g. GroveDB proof verification, which overflows the default
+    /// stack and faults with SIGBUS on the guard page.
+    pub stack_size: Option<NonZeroUsize>,
 }
 
 impl Default for WorkerConfig {
@@ -185,6 +191,7 @@ impl Default for WorkerConfig {
             weight: ShutdownWeight::default(),
             drain: None,
             join_budget: DEFAULT_JOIN_BUDGET,
+            stack_size: None,
         }
     }
 }
@@ -197,6 +204,7 @@ impl std::fmt::Debug for WorkerConfig {
             .field("weight", &self.weight)
             .field("drain", &self.drain.is_some())
             .field("join_budget", &self.join_budget)
+            .field("stack_size", &self.stack_size)
             .finish()
     }
 }
@@ -462,6 +470,9 @@ impl<K: RegistryKey> ThreadRegistry<K> {
             let prev_weight = slot.weight;
             let prev_join_budget = slot.join_budget;
             let prev_drain = slot.drain.take();
+            // `stack_size` is spawn-time only (not persisted on the slot):
+            // read it out before `prepare` consumes `cfg`.
+            let stack_size = cfg.stack_size;
             // Rotate the slot atomically: take prior handle, install fresh
             // cancellation token, bump generation, and write this start's
             // teardown config — all under THIS slot lock so a prior thread's
@@ -479,7 +490,7 @@ impl<K: RegistryKey> ThreadRegistry<K> {
             // clears this generation's running flag via the guard's Drop
             // (under `panic = "unwind"`), and the panic keeps unwinding so
             // the join handle still classifies as `Panicked`.
-            match self.spawn_os_thread(key, move || {
+            match self.spawn_os_thread(key, stack_size, move || {
                 let _epilogue = EpilogueGuard { reg, key, my_gen };
                 body(body_token);
             }) {
@@ -1019,7 +1030,12 @@ impl<K: RegistryKey> ThreadRegistry<K> {
     /// Spawn the named OS worker thread, surfacing a spawn failure as
     /// `io::Result` instead of panicking so the caller can roll back. The
     /// `#[cfg(test)]` seam forces a synthetic failure to exercise that path.
-    fn spawn_os_thread<C>(&self, key: K, closure: C) -> std::io::Result<std::thread::JoinHandle<()>>
+    fn spawn_os_thread<C>(
+        &self,
+        key: K,
+        stack_size: Option<NonZeroUsize>,
+        closure: C,
+    ) -> std::io::Result<std::thread::JoinHandle<()>>
     where
         C: FnOnce() + Send + 'static,
     {
@@ -1027,9 +1043,11 @@ impl<K: RegistryKey> ThreadRegistry<K> {
         if self.force_spawn_failure.load(Ordering::Acquire) {
             return Err(std::io::Error::other("forced spawn failure (test seam)"));
         }
-        std::thread::Builder::new()
-            .name(format!("tr-worker-{key:?}"))
-            .spawn(closure)
+        let mut builder = std::thread::Builder::new().name(format!("tr-worker-{key:?}"));
+        if let Some(stack_size) = stack_size {
+            builder = builder.stack_size(stack_size.get());
+        }
+        builder.spawn(closure)
     }
 
     /// Park a restarted key's prior handle into orphans. **Must be called
@@ -1444,6 +1462,22 @@ mod tests {
             "gen-2 token must survive gen-1's epilogue"
         );
         assert_eq!(reg.quiesce("beta").await, WorkerStatus::Ok);
+    }
+
+    /// A worker started with an explicit `WorkerConfig::stack_size` spawns,
+    /// runs its body, and joins cleanly — the custom-stack spawn path is
+    /// wired through `spawn_os_thread`. (A deliberate stack-overflow test is
+    /// avoided: an overflow aborts the whole process, not just the test.)
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn start_thread_honors_custom_stack_size() {
+        let reg = ThreadRegistry::<&str>::new();
+        let cfg = WorkerConfig {
+            stack_size: Some(NonZeroUsize::new(8 * 1024 * 1024).expect("8 MiB is non-zero")),
+            ..WorkerConfig::default()
+        };
+        start_clean(&reg, "big-stack", cfg);
+        assert!(reg.is_running("big-stack"));
+        assert_eq!(reg.quiesce("big-stack").await, WorkerStatus::Ok);
     }
 
     /// A naturally-finished prior thread is joined cleanly on restart, with
@@ -2004,6 +2038,7 @@ mod tests {
         assert_eq!(cfg.weight, ShutdownWeight(0));
         assert!(cfg.drain.is_none());
         assert_eq!(cfg.join_budget, DEFAULT_JOIN_BUDGET);
+        assert!(cfg.stack_size.is_none());
     }
 
     /// `hold_clearing(key)` refuses both `start_thread` and `start_task`
@@ -2217,6 +2252,7 @@ mod tests {
             weight: ShutdownWeight(7),
             join_budget: Duration::from_secs(11),
             drain: Some(hook),
+            ..WorkerConfig::default()
         };
         reg.start_thread("k", cfg1, wedged_body(release_rx));
         reg.cancel("k");
@@ -2228,6 +2264,7 @@ mod tests {
             weight: ShutdownWeight(99),
             join_budget: Duration::from_secs(99),
             drain: None,
+            ..WorkerConfig::default()
         };
         reg.start_thread("k", cfg2, |_cancel| {});
         reg.force_spawn_failure.store(false, Ordering::Release);
