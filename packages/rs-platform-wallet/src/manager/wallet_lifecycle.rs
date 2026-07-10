@@ -8,9 +8,11 @@ use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::Wallet;
 use key_wallet::Network;
 
+#[cfg(any(feature = "bls", feature = "eddsa"))]
+use crate::changeset::ProviderKeyExtendedPubKey;
 use crate::changeset::{
     AccountAddressPoolEntry, AccountRegistrationEntry, PlatformWalletChangeSet,
-    PlatformWalletPersistence, WalletMetadataEntry,
+    PlatformWalletPersistence, ProviderKeyAccountEntry, WalletMetadataEntry,
 };
 use crate::error::PlatformWalletError;
 use crate::wallet::core::WalletBalance;
@@ -181,6 +183,64 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             .iter()
             .map(|a| (a.account_type, a.account_xpub))
             .collect();
+        // Provider key-material accounts (BLS operator keys / EdDSA
+        // platform-node keys) live in dedicated `Option` fields on the
+        // `AccountCollection` that `all_accounts()` deliberately
+        // excludes, so snapshot them separately. They carry a
+        // non-secp256k1 extended public key; the persister bincode-
+        // encodes it and the restore path rebuilds them watch-only.
+        #[allow(unused_mut)]
+        let mut provider_key_account_registrations: Vec<ProviderKeyAccountEntry> = Vec::new();
+        #[cfg(feature = "bls")]
+        if let Some(bls) = wallet
+            .accounts
+            .bls_account_of_type(key_wallet::account::AccountType::ProviderOperatorKeys)
+        {
+            provider_key_account_registrations.push(ProviderKeyAccountEntry {
+                account_type: key_wallet::account::AccountType::ProviderOperatorKeys,
+                extended_public_key: ProviderKeyExtendedPubKey::Bls(bls.bls_public_key.clone()),
+                // The BLS operator pool extends on demand from the
+                // account xpub (non-hardened `ckd_pub`, no seed), so it
+                // needs no pre-derived batch.
+                derived_platform_node_keys: Vec::new(),
+            });
+        }
+        #[cfg(feature = "eddsa")]
+        if let Some(eddsa) = wallet
+            .accounts
+            .eddsa_account_of_type(key_wallet::account::AccountType::ProviderPlatformKeys)
+        {
+            // Pre-derive a fixed batch of platform-node public keys while
+            // the wallet is still seed-bearing (`downgrade_to_external_signable`
+            // hasn't run yet). Ed25519/SLIP-10 is hardened-only, so this
+            // pool can never be extended later from the watch-only restore —
+            // capturing the public parts now lets the Node Keys screen list
+            // them from persistence with no keychain prompt. A derivation
+            // failure here is non-fatal: fall back to an empty batch (the UI
+            // then uses its resolver-based "Load Keys" path) rather than
+            // aborting the whole wallet registration.
+            let derived_platform_node_keys =
+                crate::wallet::provider_key_at_index::derive_platform_node_public_keys(
+                    &wallet,
+                    wallet.network,
+                    crate::wallet::provider_key_at_index::PLATFORM_NODE_KEY_PREDERIVE_COUNT,
+                )
+                .unwrap_or_else(|e| {
+                    tracing::warn!(
+                        error = %e,
+                        "failed to pre-derive platform-node keys at registration; \
+                         the Node Keys screen will fall back to the resolver path"
+                    );
+                    Vec::new()
+                });
+            provider_key_account_registrations.push(ProviderKeyAccountEntry {
+                account_type: key_wallet::account::AccountType::ProviderPlatformKeys,
+                extended_public_key: ProviderKeyExtendedPubKey::EdDSA(
+                    eddsa.ed25519_public_key.clone(),
+                ),
+                derived_platform_node_keys,
+            });
+        }
         // Snapshot core (BIP44/CoinJoin/identity/provider/DashPay)
         // address pools. PlatformPayment accounts live in a separate
         // collection on `ManagedWalletInfo` and are handled below.
@@ -301,6 +361,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                     account_xpub: *account_xpub,
                 })
                 .collect(),
+            provider_key_account_registrations,
             ..Default::default()
         };
 

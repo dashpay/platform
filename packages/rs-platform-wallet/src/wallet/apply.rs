@@ -107,6 +107,7 @@ impl PlatformWalletInfo {
             // a replay hook here.
             wallet_metadata: _,
             account_registrations: _,
+            provider_key_account_registrations: _,
             account_address_pools: _,
             // The deferred contact-crypto queue is persistence-only here too:
             // the in-memory queue is mutated directly at the enqueue (sweep)

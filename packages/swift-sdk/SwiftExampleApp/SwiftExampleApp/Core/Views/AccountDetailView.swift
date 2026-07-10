@@ -1,6 +1,7 @@
 import SwiftUI
 import SwiftDashSDK
 import SwiftData
+import UIKit
 
 // MARK: - Account Detail View
 struct AccountDetailView: View {
@@ -15,6 +16,27 @@ struct AccountDetailView: View {
     @State private var privateKeyToShow: (hex: String, wif: String)?
     @State private var showingPINPrompt = false
     @State private var pinInput = ""
+
+    // MARK: Provider derived-keys state
+    /// The #0..#19 keys derived from a provider account's extended
+    /// public key. Empty until loaded — eagerly for operator/BLS on
+    /// appear, straight from the persisted batch for platform-node/Ed25519
+    /// wallets registered after pre-derivation shipped, and lazily behind
+    /// a button for older platform-node wallets (see `derivedKeysCard`).
+    @State private var derivedKeys: [ManagedPlatformWallet.ProviderDerivedKey] = []
+    @State private var derivedKeysLoaded = false
+    @State private var isLoadingDerivedKeys = false
+    @State private var derivedKeysError: String?
+    /// Per-index revealed private-key hex, populated only after the user
+    /// confirms a reveal for that row.
+    @State private var revealedPrivateKeys: [UInt32: String] = [:]
+    /// Which row's reveal confirmation dialog is open (`nil` = none).
+    @State private var revealConfirmIndex: UInt32?
+    /// Which row is mid-reveal, to disable buttons and show progress.
+    @State private var revealingIndex: UInt32?
+    /// Copy-key of the derived-keys row just copied, for a transient
+    /// "Copied" confirmation.
+    @State private var derivedCopiedKey: String?
 
     /// Distinct on-chain transactions this account participates in:
     /// the union of every TXO's creating tx and spending tx. Lives
@@ -55,35 +77,46 @@ struct AccountDetailView: View {
                 VStack(alignment: .leading, spacing: 20) {
                     accountOverviewCard()
 
-                    if shouldShowBalance {
-                        balanceCard()
-                    }
-
-                    poolSummaryCard()
-
-                    if account.accountType == 14 {
-                        // PlatformPayment accounts keep their address
-                        // list in `platformAddresses`, with no
-                        // external/internal pool split.
-                        let sorted = account.platformAddresses.sorted {
-                            $0.addressIndex < $1.addressIndex
-                        }
-                        if sorted.isEmpty {
-                            emptyAddressesCard()
-                        } else {
-                            platformAddressListCard(addresses: sorted)
-                        }
+                    if isProviderKeyAccount {
+                        // Provider operator (BLS) / platform-node (EdDSA)
+                        // key accounts hold key material, not on-chain
+                        // addresses or a balance — surface the extended
+                        // public key instead of an empty address pool.
+                        extendedPublicKeyCard()
+                        // ...and the per-index keys derived from it (the
+                        // actual operator / platform-node keys).
+                        derivedKeysCard()
                     } else {
-                        ForEach(addressSections(), id: \.0) { name, addresses in
-                            addressListCard(
-                                name: name,
-                                systemImage: poolIcon(for: name),
-                                addresses: addresses
-                            )
+                        if shouldShowBalance {
+                            balanceCard()
                         }
 
-                        if account.coreAddresses.isEmpty {
-                            emptyAddressesCard()
+                        poolSummaryCard()
+
+                        if account.accountType == 14 {
+                            // PlatformPayment accounts keep their address
+                            // list in `platformAddresses`, with no
+                            // external/internal pool split.
+                            let sorted = account.platformAddresses.sorted {
+                                $0.addressIndex < $1.addressIndex
+                            }
+                            if sorted.isEmpty {
+                                emptyAddressesCard()
+                            } else {
+                                platformAddressListCard(addresses: sorted)
+                            }
+                        } else {
+                            ForEach(addressSections(), id: \.0) { name, addresses in
+                                addressListCard(
+                                    name: name,
+                                    systemImage: poolIcon(for: name),
+                                    addresses: addresses
+                                )
+                            }
+
+                            if account.coreAddresses.isEmpty {
+                                emptyAddressesCard()
+                            }
                         }
                     }
                 }
@@ -516,6 +549,346 @@ struct AccountDetailView: View {
         .cornerRadius(12)
     }
 
+    /// Extended-public-key card for provider key-material accounts
+    /// (`ProviderOperatorKeys` = BLS, `ProviderPlatformKeys` = EdDSA).
+    /// These accounts derive masternode / platform-node keys and hold
+    /// no on-chain addresses or balance, so the detail view surfaces
+    /// the persisted extended public key hex instead of an address
+    /// pool. The bytes are the bincode-encoded extended BLS / Ed25519
+    /// public key the persister stored on `accountExtendedPubKeyBytes`.
+    private func extendedPublicKeyCard() -> some View {
+        let hex = account.accountExtendedPubKeyBytes?
+            .map { String(format: "%02x", $0) }
+            .joined() ?? ""
+        return VStack(alignment: .leading, spacing: 12) {
+            Label("Extended Public Key", systemImage: "key.horizontal.fill")
+                .font(.headline)
+                .foregroundColor(.primary)
+
+            Divider()
+
+            if hex.isEmpty {
+                Text("No extended public key has been persisted for this account yet. It lands here after the wallet is (re)created via `PlatformWalletManager`.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            } else {
+                Text(account.accountType == 10
+                     ? "Derives BLS operator keys for masternode operation. No on-chain addresses or balance."
+                     : "Derives Ed25519 platform node keys. No on-chain addresses or balance.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                Text(hex)
+                    .font(.system(.caption2, design: .monospaced))
+                    .foregroundColor(.primary)
+                    .textSelection(.enabled)
+            }
+        }
+        .padding()
+        .background(Color(.systemBackground))
+        .cornerRadius(12)
+        .shadow(color: Color.black.opacity(0.05), radius: 5, x: 0, y: 2)
+    }
+
+    // MARK: - Provider derived keys
+
+    /// The per-index keys a provider account actually derives from its
+    /// extended public key: BLS operator keys (tag 10) or Ed25519
+    /// platform-node keys (tag 11). Shows #0..#19, each with its public
+    /// key (and, for platform nodes, the 20-byte node id that a ProRegTx
+    /// carries) plus a confirm-gated private-key reveal.
+    ///
+    /// Loading policy follows the curve asymmetry: operator (BLS) public
+    /// keys derive from the account xpub with no mnemonic, so they load
+    /// eagerly on appear. Platform-node (Ed25519, SLIP-10 hardened-only)
+    /// keys need the seed even for their public key — but the batch is
+    /// pre-derived at registration and persisted, so they render straight
+    /// from the account row with no keychain prompt. Only wallets created
+    /// before pre-derivation shipped fall back to the lazy "Load Keys"
+    /// button.
+    private func derivedKeysCard() -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label("Derived Keys", systemImage: "key.fill")
+                .font(.headline)
+                .foregroundColor(.primary)
+
+            Divider()
+
+            if derivedKeysLoaded {
+                ForEach(Array(derivedKeys.enumerated()), id: \.element.index) { idx, key in
+                    derivedKeyRow(key)
+                    if idx < derivedKeys.count - 1 {
+                        Divider()
+                    }
+                }
+            } else if account.accountType == 11 {
+                // Ed25519 platform-node keys — gated behind an explicit
+                // unlock so no resolver / keychain read fires on nav.
+                Button {
+                    loadDerivedKeys()
+                } label: {
+                    HStack {
+                        if isLoadingDerivedKeys {
+                            ProgressView()
+                        } else {
+                            Image(systemName: "lock.open")
+                        }
+                        Text(isLoadingDerivedKeys ? "Loading…" : "Load Keys")
+                    }
+                }
+                .disabled(isLoadingDerivedKeys)
+
+                Text("Platform-node keys derive on the Ed25519 curve (hardened-only), so listing them needs the wallet mnemonic. Tap to unlock.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            } else {
+                // Operator (BLS) — loads on appear; brief placeholder.
+                ProgressView()
+                    .frame(maxWidth: .infinity, alignment: .center)
+            }
+
+            if let derivedKeysError {
+                Text(derivedKeysError)
+                    .font(.caption)
+                    .foregroundColor(.red)
+            }
+        }
+        .padding()
+        .background(Color(.systemBackground))
+        .cornerRadius(12)
+        .shadow(color: Color.black.opacity(0.05), radius: 5, x: 0, y: 2)
+        .onAppear {
+            guard !derivedKeysLoaded, !isLoadingDerivedKeys else { return }
+            // Platform-node (tag 11) keys pre-derived at registration are
+            // persisted on the account row — render them straight from
+            // persistence with no resolver / keychain read. Falls through
+            // to the "Load Keys" button only for wallets created before
+            // the batch was persisted.
+            if account.accountType == 11, !persistedPlatformNodeKeys.isEmpty {
+                derivedKeys = persistedPlatformNodeKeys
+                derivedKeysLoaded = true
+                return
+            }
+            // Operator (tag 10) public keys need no resolver — load them
+            // eagerly. A tag-11 account with no persisted batch waits for
+            // the button.
+            if account.accountType == 10 {
+                loadDerivedKeys()
+            }
+        }
+    }
+
+    /// The persisted, pre-derived platform-node keys mapped into the
+    /// `ProviderDerivedKey` display shape (public key + node id as hex).
+    /// Empty for non-platform-node accounts and for wallets created
+    /// before the batch was persisted (those use the resolver-based
+    /// "Load Keys" fallback). Private keys stay `nil` here — a reveal
+    /// re-derives per index through `providerKeyAtIndex`.
+    private var persistedPlatformNodeKeys: [ManagedPlatformWallet.ProviderDerivedKey] {
+        account.derivedPlatformNodeKeys
+            .sorted { $0.index < $1.index }
+            .map { key in
+                ManagedPlatformWallet.ProviderDerivedKey(
+                    index: key.index,
+                    publicKeyHex: hexString(key.publicKey),
+                    nodeIdHex: hexString(key.nodeId),
+                    privateKeyHex: nil
+                )
+            }
+    }
+
+    /// Lowercase hex of raw bytes — matches the Rust FFI's hex encoding
+    /// so persisted rows render identically to resolver-derived ones.
+    private func hexString(_ data: Data) -> String {
+        data.map { String(format: "%02x", $0) }.joined()
+    }
+
+    /// One derived-key row: index header, public key, optional node id,
+    /// and a confirm-gated private-key reveal. All value rows are
+    /// monospaced, middle-truncated, and tap-to-copy.
+    @ViewBuilder
+    private func derivedKeyRow(_ key: ManagedPlatformWallet.ProviderDerivedKey) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Key #\(key.index)")
+                .font(.subheadline)
+                .fontWeight(.semibold)
+
+            derivedValueRow(
+                label: account.accountType == 10 ? "BLS Public Key" : "Ed25519 Public Key",
+                value: key.publicKeyHex,
+                copyKey: "\(key.index)-pub"
+            )
+
+            if let nodeId = key.nodeIdHex {
+                derivedValueRow(
+                    label: "Platform Node ID",
+                    value: nodeId,
+                    copyKey: "\(key.index)-node"
+                )
+            }
+
+            if let priv = revealedPrivateKeys[key.index] {
+                derivedValueRow(
+                    label: "Private Key",
+                    value: priv,
+                    copyKey: "\(key.index)-priv"
+                )
+            } else {
+                Button {
+                    revealConfirmIndex = key.index
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "key.fill")
+                        Text(revealingIndex == key.index ? "Revealing…" : "View Private Key")
+                    }
+                    .font(.caption)
+                }
+                .disabled(revealingIndex != nil)
+            }
+        }
+        .confirmationDialog(
+            "Reveal Private Key?",
+            isPresented: revealDialogBinding(for: key.index),
+            titleVisibility: .visible
+        ) {
+            Button("Reveal Private Key", role: .destructive) {
+                revealPrivateKey(index: key.index)
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("The private key grants full control of this key. Only reveal it somewhere private.")
+        }
+    }
+
+    /// One monospaced, middle-truncated value row with tap-to-copy and a
+    /// transient "Copied" confirmation keyed by `copyKey`.
+    @ViewBuilder
+    private func derivedValueRow(label: String, value: String, copyKey: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack {
+                Text(label)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                Spacer()
+                if derivedCopiedKey == copyKey {
+                    Label("Copied", systemImage: "checkmark")
+                        .font(.caption2)
+                        .foregroundColor(.green)
+                } else {
+                    Image(systemName: "doc.on.doc")
+                        .font(.caption2)
+                        .foregroundColor(.accentColor)
+                }
+            }
+            Text(value)
+                .font(.system(.caption2, design: .monospaced))
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .foregroundColor(.primary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .contentShape(Rectangle())
+        .onTapGesture { copyDerived(value, copyKey: copyKey) }
+    }
+
+    private func revealDialogBinding(for index: UInt32) -> Binding<Bool> {
+        Binding(
+            get: { revealConfirmIndex == index },
+            set: { open in
+                if !open, revealConfirmIndex == index { revealConfirmIndex = nil }
+            }
+        )
+    }
+
+    /// Derive the #0..#19 public keys for this provider account. All
+    /// derivation happens on the Rust side (one FFI call per index); for
+    /// platform-node accounts the mnemonic is pulled on demand via the
+    /// resolver and never enters Swift. Only reached for operator (BLS)
+    /// accounts and legacy platform-node wallets with no persisted batch.
+    private func loadDerivedKeys() {
+        guard let managed = walletManager.wallet(for: wallet.walletId) else {
+            derivedKeysError = "The owning wallet is not loaded."
+            return
+        }
+        guard let kind = ManagedPlatformWallet.ProviderKeyKind(
+            rawValue: UInt8(account.accountType)
+        ) else {
+            derivedKeysError = "Unsupported provider account type."
+            return
+        }
+        isLoadingDerivedKeys = true
+        derivedKeysError = nil
+        Task {
+            do {
+                var keys: [ManagedPlatformWallet.ProviderDerivedKey] = []
+                // Matches `PLATFORM_NODE_KEY_PREDERIVE_COUNT` on the Rust
+                // side so the resolver fallback lists the same window the
+                // persisted batch would have shown.
+                for index in UInt32(0)..<20 {
+                    keys.append(
+                        try managed.providerKeyAtIndex(
+                            kind: kind,
+                            index: index,
+                            includePrivate: false
+                        )
+                    )
+                }
+                let loaded = keys
+                await MainActor.run {
+                    derivedKeys = loaded
+                    derivedKeysLoaded = true
+                    isLoadingDerivedKeys = false
+                }
+            } catch {
+                await MainActor.run {
+                    derivedKeysError = error.localizedDescription
+                    isLoadingDerivedKeys = false
+                }
+            }
+        }
+    }
+
+    /// Reveal the private key for one derived-key row. Re-derives at that
+    /// index with `includePrivate: true`; Rust returns the raw scalar
+    /// hex (BLS / Ed25519 keys have no WIF).
+    private func revealPrivateKey(index: UInt32) {
+        guard let managed = walletManager.wallet(for: wallet.walletId) else {
+            derivedKeysError = "The owning wallet is not loaded."
+            return
+        }
+        guard let kind = ManagedPlatformWallet.ProviderKeyKind(
+            rawValue: UInt8(account.accountType)
+        ) else { return }
+        revealingIndex = index
+        derivedKeysError = nil
+        Task {
+            do {
+                let key = try managed.providerKeyAtIndex(
+                    kind: kind,
+                    index: index,
+                    includePrivate: true
+                )
+                let hex = key.privateKeyHex
+                await MainActor.run {
+                    if let hex { revealedPrivateKeys[index] = hex }
+                    revealingIndex = nil
+                }
+            } catch {
+                await MainActor.run {
+                    derivedKeysError = error.localizedDescription
+                    revealingIndex = nil
+                }
+            }
+        }
+    }
+
+    private func copyDerived(_ value: String, copyKey: String) {
+        UIPasteboard.general.string = value
+        derivedCopiedKey = copyKey
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+            if derivedCopiedKey == copyKey { derivedCopiedKey = nil }
+        }
+    }
+
     private func poolIcon(for name: String) -> String {
         switch name {
         case "External": return "arrow.down.circle"
@@ -531,6 +904,12 @@ struct AccountDetailView: View {
         case 0, 1, 14: return true
         default: return false
         }
+    }
+
+    /// Provider operator (BLS, tag 10) / platform-node (EdDSA, tag 11)
+    /// key-material accounts. They hold key material, not addresses.
+    private var isProviderKeyAccount: Bool {
+        account.accountType == 10 || account.accountType == 11
     }
 
     private func formatBalance(_ amount: UInt64) -> String {
