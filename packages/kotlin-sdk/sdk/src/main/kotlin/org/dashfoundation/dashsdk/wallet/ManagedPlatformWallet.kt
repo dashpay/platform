@@ -173,6 +173,143 @@ class ManagedPlatformWallet internal constructor(
     }
 
     /**
+     * A built, signed Core transaction whose funding UTXOs are reserved,
+     * awaiting a deferred [broadcastSigned] or [releaseReservation] — the
+     * split-out result of [buildSignedPayment] for BIP70/BIP270 (CTX/DashSpend)
+     * flows that must sign now, POST the raw bytes to a merchant server, and
+     * broadcast only on the server's ack.
+     *
+     * @property txidHex the transaction id (lowercase hex) the broadcast will
+     *   return — computed from the signed bytes Rust-side so it matches exactly.
+     * @property rawTxBytes the consensus-serialized signed transaction, to hand
+     *   to the merchant server.
+     * @property feeDuffs the fee the build charged, in duffs.
+     * @property reservationToken the opaque token for [broadcastSigned] /
+     *   [releaseReservation]. Valid only for this wallet instance and only until
+     *   consumed by one of those calls.
+     */
+    class SignedCoreTransaction internal constructor(
+        val txidHex: String,
+        val rawTxBytes: ByteArray,
+        val feeDuffs: Long,
+        val reservationToken: Long,
+    ) {
+        override fun equals(other: Any?): Boolean =
+            other is SignedCoreTransaction &&
+                txidHex == other.txidHex &&
+                rawTxBytes.contentEquals(other.rawTxBytes) &&
+                feeDuffs == other.feeDuffs &&
+                reservationToken == other.reservationToken
+
+        override fun hashCode(): Int {
+            var result = txidHex.hashCode()
+            result = 31 * result + rawTxBytes.contentHashCode()
+            result = 31 * result + feeDuffs.hashCode()
+            result = 31 * result + reservationToken.hashCode()
+            return result
+        }
+
+        override fun toString(): String =
+            "SignedCoreTransaction(txidHex=$txidHex, feeDuffs=$feeDuffs, " +
+                "reservationToken=$reservationToken, rawTxBytes=${rawTxBytes.size} bytes)"
+    }
+
+    /**
+     * Build and sign a Core payment to [recipients] WITHOUT broadcasting,
+     * reserving the funding UTXOs and returning a [SignedCoreTransaction] whose
+     * [SignedCoreTransaction.reservationToken] later drives [broadcastSigned]
+     * (server acked) or [releaseReservation] (abandoned / server nacked).
+     *
+     * The BIP70/BIP270 counterpart to [sendToAddresses]: those protocols sign,
+     * POST the raw bytes to a merchant server, and broadcast only on ack, which
+     * a single build-sign-broadcast call cannot express. The `new → addOutput* →
+     * setFunding → buildSigned` build runs under the same per-wallet
+     * [coreSendMutex] as [sendToAddresses] (closing the setFunding/buildSigned
+     * selection race); [buildSigned] reserves the selected UTXOs, so once this
+     * returns the reservation holds the inputs and [broadcastSigned] /
+     * [releaseReservation] operate on the token later WITHOUT the mutex.
+     *
+     * Process-death note: the reservation is in-memory. An app crash between
+     * this call and [broadcastSigned] drops the reservation on restart (the
+     * UTXOs become spendable again) — the same property dashj has.
+     *
+     * @param network the wallet network — see [sendToAddresses].
+     * @param coreSignerHandle the manager's `MnemonicResolverHandle` — see
+     *   [sendToAddresses]. No private key crosses the boundary.
+     */
+    suspend fun buildSignedPayment(
+        recipients: List<Pair<String, Long>>,
+        network: org.dashfoundation.dashsdk.Network,
+        coreSignerHandle: Long,
+        accountType: AccountType = AccountType.BIP44,
+        accountIndex: Int = 0,
+    ): SignedCoreTransaction = withContext(Dispatchers.IO) {
+        require(accountIndex >= 0) { "accountIndex must be non-negative, got $accountIndex" }
+        require(recipients.isNotEmpty()) { "recipients must not be empty" }
+        require(recipients.all { it.second > 0 }) {
+            "every recipient amount must be positive"
+        }
+        val builderAccountType = when (accountType) {
+            AccountType.BIP44 -> CoreTransactionBuilder.AccountType.BIP44
+            AccountType.BIP32 -> CoreTransactionBuilder.AccountType.BIP32
+        }
+        coreSendMutex.withLock {
+            mapNativeErrors {
+                coreWallet().use { core ->
+                    val builder = CoreTransactionBuilder(network)
+                    // `buildSigned` consumes the builder; `use` still safely
+                    // destroys it on the pre-build failure paths.
+                    val signedTx = builder.use {
+                        for ((address, amount) in recipients) {
+                            it.addOutput(address, amount)
+                        }
+                        it.setFunding(this@ManagedPlatformWallet, builderAccountType, accountIndex)
+                        it.buildSigned(
+                            this@ManagedPlatformWallet,
+                            builderAccountType,
+                            accountIndex,
+                            coreSignerHandle,
+                        )
+                    }
+                    // Register the signed tx (holding its reservation) before the
+                    // native transaction is freed; `use` frees it afterward.
+                    signedTx.use { tx -> core.registerSignedPayment(tx) }
+                }
+            }
+        }
+    }
+
+    /**
+     * Broadcast the deferred payment behind [token] (from [buildSignedPayment])
+     * and return its broadcast txid — the "merchant server acked" arm. Consumes
+     * the token: a second [broadcastSigned] with the same token, or one for a
+     * re-created wallet, throws
+     * [org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.StaleReservationToken]
+     * rather than double-broadcasting. Operates on the token WITHOUT the
+     * [coreSendMutex] (the inputs are already reserved).
+     */
+    suspend fun broadcastSigned(token: Long): String = withContext(Dispatchers.IO) {
+        mapNativeErrors {
+            coreWallet().use { core -> core.broadcastSignedPayment(token) }
+        }
+    }
+
+    /**
+     * Release the funding reservation behind [token] (from [buildSignedPayment])
+     * — the "payment abandoned / merchant server nacked" arm — returning the
+     * reserved UTXOs to spendable. Idempotent: releasing an unknown /
+     * already-broadcast / already-released token is a silent no-op, so it is
+     * always safe to call defensively.
+     */
+    suspend fun releaseReservation(token: Long) {
+        withContext(Dispatchers.IO) {
+            mapNativeErrors {
+                WalletManagerNative.coreWalletReleaseSignedPayment(token)
+            }
+        }
+    }
+
+    /**
      * The wallet's Platform-payment addresses that currently hold credits,
      * each as a [FundingInput] whose `credits` is the full cached balance —
      * the funding-input candidates for an identity top-up. Port of the

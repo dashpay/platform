@@ -103,6 +103,16 @@ class DashSdkErrorTest {
         )
         // The message must warn against retrying (distinct from the anchor case).
         assertTrue(broadcastUnconfirmed.message!!.contains("do NOT retry"))
+
+        // Deferred build/broadcast: a stale/consumed/wrong-wallet reservation
+        // token → typed StaleReservationToken, not retryable.
+        val staleToken = DashSdkError.fromNative(DashSDKException(offset + 22, "stale token 7"))
+        assertTrue(staleToken is DashSdkError.PlatformWallet.StaleReservationToken)
+        assertFalse(
+            "StaleReservationToken must NOT be retryable (rebuild the payment)",
+            staleToken.isRetryable,
+        )
+        assertEquals("stale token 7", staleToken.message)
     }
 
     @Test

@@ -1232,6 +1232,181 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_c
     })
 }
 
+// ── Deferred build → broadcast/release core-send (BIP70/BIP270) ───────
+//
+// ADDITIVE surface over the immediate `coreWalletBroadcastTransaction` path:
+// a signed transaction built by [coreTxBuilderBuildSigned] can be registered
+// (reserving its UTXOs), its raw bytes handed to a merchant server, and only
+// then broadcast on ack — or its reservation released on nack/abandonment.
+// Backed by the process-global registry in `platform_wallet_ffi`
+// (`core_wallet_signed_payment_*`). See `SignedPaymentRegistry`.
+
+/// `core_wallet_transaction_get_bytes` — the consensus-serialized bytes of a
+/// built transaction from [coreTxBuilderBuildSigned], copied into a fresh
+/// Java `byte[]`. The underlying FFI hands back a borrowed pointer valid only
+/// while `tx` lives, so we copy it here before returning.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_coreTransactionGetBytes(
+    mut env: JNIEnv,
+    _class: JClass,
+    tx: jlong,
+) -> jbyteArray {
+    guard(&mut env, ptr::null_mut(), |env| {
+        if tx == 0 {
+            throw_sdk_exception(env, 1, "transaction handle is 0");
+            return ptr::null_mut();
+        }
+        let mut out_ptr: *const u8 = ptr::null();
+        let mut out_len: usize = 0;
+        let result = unsafe {
+            platform_wallet_ffi::core_wallet_transaction_get_bytes(
+                tx as *const platform_wallet_ffi::FFICoreTransaction,
+                &mut out_ptr as *mut *const u8,
+                &mut out_len as *mut usize,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return ptr::null_mut();
+        }
+        // Copy immediately: the pointer borrows the transaction's own buffer.
+        let bytes: &[u8] = if out_ptr.is_null() || out_len == 0 {
+            &[]
+        } else {
+            unsafe { std::slice::from_raw_parts(out_ptr, out_len) }
+        };
+        env.byte_array_from_slice(bytes)
+            .map(|a| a.into_raw())
+            .unwrap_or(ptr::null_mut())
+    })
+}
+
+/// `core_wallet_signed_payment_register` — register a built+signed transaction
+/// (from [coreTxBuilderBuildSigned]) for deferred submission, holding its UTXO
+/// reservation. `accountType`/`accountIndex` are the funding account (0 BIP44,
+/// 1 BIP32, 2 CoinJoin). The passed `tx` is NOT consumed — free it separately
+/// with [coreTransactionFree].
+///
+/// Returns a big-endian BLOB the Kotlin side decodes into a
+/// `SignedCoreTransaction`: `u64 token, u64 feeDuffs, u32 txidLen, txid utf8`.
+/// The raw tx bytes are fetched separately via [coreTransactionGetBytes].
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_coreWalletRegisterSignedPayment(
+    mut env: JNIEnv,
+    _class: JClass,
+    core_handle: jlong,
+    tx: jlong,
+    account_type: jni::sys::jint,
+    account_index: jni::sys::jint,
+) -> jbyteArray {
+    guard(&mut env, ptr::null_mut(), |env| {
+        if tx == 0 {
+            throw_sdk_exception(env, 1, "transaction handle is 0");
+            return ptr::null_mut();
+        }
+        let Some(account_type) = core_account_type(account_type) else {
+            throw_sdk_exception(env, 1, "accountType out of range (expected 0..=2)");
+            return ptr::null_mut();
+        };
+        if account_index < 0 {
+            throw_sdk_exception(env, 1, "accountIndex must be non-negative");
+            return ptr::null_mut();
+        }
+
+        let mut token: u64 = 0;
+        let mut fee: u64 = 0;
+        let mut out_txid: *mut c_char = ptr::null_mut();
+        let result = unsafe {
+            platform_wallet_ffi::core_wallet_signed_payment_register(
+                core_handle as Handle,
+                tx as *const platform_wallet_ffi::FFICoreTransaction,
+                account_type,
+                account_index as u32,
+                &mut token as *mut u64,
+                &mut fee as *mut u64,
+                &mut out_txid as *mut *mut c_char,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return ptr::null_mut();
+        }
+        if out_txid.is_null() {
+            throw_sdk_exception(env, 1, "register returned a NULL txid");
+            return ptr::null_mut();
+        }
+        // Copy the txid out, then free the Rust-owned C string.
+        let txid = unsafe { CStr::from_ptr(out_txid) }
+            .to_string_lossy()
+            .into_owned();
+        unsafe { platform_wallet_ffi::core_wallet_free_address(out_txid) };
+
+        // Assemble the big-endian BLOB (matches the Kotlin ByteBuffer decoder).
+        let txid_bytes = txid.into_bytes();
+        let mut blob = Vec::with_capacity(8 + 8 + 4 + txid_bytes.len());
+        blob.extend_from_slice(&token.to_be_bytes());
+        blob.extend_from_slice(&fee.to_be_bytes());
+        blob.extend_from_slice(&(txid_bytes.len() as u32).to_be_bytes());
+        blob.extend_from_slice(&txid_bytes);
+        env.byte_array_from_slice(&blob)
+            .map(|a| a.into_raw())
+            .unwrap_or(ptr::null_mut())
+    })
+}
+
+/// `core_wallet_signed_payment_broadcast` — broadcast the payment behind
+/// `token`, releasing/keeping its reservation per the broadcast outcome and
+/// consuming the token. A repeated/stale token throws (native
+/// `ErrorStaleReservationToken`, code 22) rather than double-broadcasting.
+/// `coreHandle` must resolve to the wallet the token was minted against.
+/// Returns the txid as a lowercase hex string.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_coreWalletBroadcastSignedPayment(
+    mut env: JNIEnv,
+    _class: JClass,
+    core_handle: jlong,
+    token: jlong,
+) -> jstring {
+    guard(&mut env, ptr::null_mut(), |env| {
+        let mut out_txid: *mut c_char = ptr::null_mut();
+        let result = unsafe {
+            platform_wallet_ffi::core_wallet_signed_payment_broadcast(
+                core_handle as Handle,
+                token as u64,
+                &mut out_txid as *mut *mut c_char,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return ptr::null_mut();
+        }
+        if out_txid.is_null() {
+            throw_sdk_exception(env, 1, "broadcast returned a NULL txid");
+            return ptr::null_mut();
+        }
+        let txid = unsafe { CStr::from_ptr(out_txid) }
+            .to_string_lossy()
+            .into_owned();
+        unsafe { platform_wallet_ffi::core_wallet_free_address(out_txid) };
+        env.new_string(txid)
+            .map(|s| s.into_raw())
+            .unwrap_or(ptr::null_mut())
+    })
+}
+
+/// `core_wallet_signed_payment_release` — release the funding reservation
+/// behind `token` and drop it. Idempotent: releasing an unknown / already-
+/// consumed token is a silent no-op (never throws the stale-token error).
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_coreWalletReleaseSignedPayment(
+    mut env: JNIEnv,
+    _class: JClass,
+    token: jlong,
+) {
+    guard(&mut env, (), |env| {
+        let result =
+            unsafe { platform_wallet_ffi::core_wallet_signed_payment_release(token as u64) };
+        let _ = take_pwffi_error(env, result);
+    })
+}
+
 /// Enumerate this wallet's Platform-payment addresses with their cached
 /// credit balances, returning a flat `byte[]` BLOB for the top-up
 /// funding-input builder (`TopUpIdentityScreen`).
