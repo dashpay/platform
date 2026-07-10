@@ -3961,4 +3961,84 @@ extension ManagedPlatformWallet {
             return (identityId, ManagedIdentity(handle: outManagedHandle))
         }.value
     }
+
+    /// Top up an EXISTING identity from an already-tracked asset lock, consuming
+    /// it as an IdentityTopUp. Sister to `resumeIdentityWithAssetLock` (which
+    /// registers a NEW identity from the lock): used to reclaim an unclaimed
+    /// DashPay invitation voucher into one of the inviter's own identities. The
+    /// value comes back as Platform credits (the on-chain DASH is an OP_RETURN
+    /// burn, so there is nothing to spend back on L1). A top-up creates no
+    /// identity keys, so no `KeychainSigner` is needed — only the Core-side
+    /// asset-lock signature, produced by the wallet's own `MnemonicResolver`,
+    /// which re-derives the voucher key at the invitation funding path.
+    ///
+    /// - Returns: the identity's new credit balance reported by the FFI.
+    public func topUpIdentityWithExistingAssetLock(
+        outPointTxid: Data,
+        outPointVout: UInt32,
+        identityId: Data
+    ) async throws -> UInt64 {
+        guard outPointTxid.count == 32 else {
+            throw PlatformWalletError.invalidParameter(
+                "outPointTxid must be exactly 32 bytes (was \(outPointTxid.count))"
+            )
+        }
+        guard identityId.count == 32 else {
+            throw PlatformWalletError.invalidParameter(
+                "identityId must be exactly 32 bytes (was \(identityId.count))"
+            )
+        }
+        let handle = self.handle
+        // Same `MnemonicResolver` lifetime + vtable rationale as
+        // `resumeIdentityWithAssetLock`: the voucher key is re-derived per-call
+        // from the wallet's mnemonic, signed, and dropped; no priv key lives in
+        // Rust memory across operations.
+        let coreSigner = MnemonicResolver()
+        return try await Task.detached(priority: .userInitiated) { () -> UInt64 in
+            var txidTuple: (
+                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8
+            ) = (
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+            )
+            var idTuple: (
+                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8
+            ) = (
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+            )
+            outPointTxid.withUnsafeBytes { src in
+                Swift.withUnsafeMutableBytes(of: &txidTuple) { dst in
+                    dst.copyMemory(from: src)
+                }
+            }
+            identityId.withUnsafeBytes { src in
+                Swift.withUnsafeMutableBytes(of: &idTuple) { dst in
+                    dst.copyMemory(from: src)
+                }
+            }
+            var outPoint = OutPointFFI(txid: txidTuple, vout: outPointVout)
+            var newBalance: UInt64 = 0
+            // Keep the FFI call inline under `withExtendedLifetime` — the same
+            // dangling-resolver hazard `resumeIdentityWithAssetLock` documents.
+            let result = withExtendedLifetime(coreSigner) {
+                () -> PlatformWalletFFIResult in
+                platform_wallet_topup_identity_with_existing_asset_lock_signer(
+                    handle,
+                    &outPoint,
+                    &idTuple,
+                    coreSigner.handle,
+                    &newBalance
+                )
+            }
+            try result.check()
+            return newBalance
+        }.value
+    }
 }

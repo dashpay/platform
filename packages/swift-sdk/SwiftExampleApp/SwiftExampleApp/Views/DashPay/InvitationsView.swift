@@ -3,16 +3,21 @@ import SwiftData
 import SwiftUI
 
 /// "Sent invitations" list (DIP-13): every invitation this wallet created,
-/// newest first. Read-only in commit 1 (reclaim is a follow-up commit). Rows are
-/// `PersistentInvitation` records upserted by the `on_persist_invitations_fn`
-/// bridge whenever `create_invitation` flushes its changeset.
+/// newest first. Rows are `PersistentInvitation` records upserted by the
+/// `on_persist_invitations_fn` bridge whenever `create_invitation` flushes its
+/// changeset. A still-unclaimed (`Created`) row can be reclaimed — recovering the
+/// voucher's value as identity credits — via a swipe action.
 struct InvitationsView: View {
     let walletId: Data
+    let network: Network
 
     @Query private var invitations: [PersistentInvitation]
 
-    init(walletId: Data) {
+    @State private var reclaimTarget: PersistentInvitation?
+
+    init(walletId: Data, network: Network) {
         self.walletId = walletId
+        self.network = network
         _invitations = Query(
             filter: PersistentInvitation.predicate(walletId: walletId),
             sort: [SortDescriptor(\PersistentInvitation.createdAtSecs, order: .reverse)]
@@ -30,12 +35,30 @@ struct InvitationsView: View {
             } else {
                 ForEach(invitations) { invitation in
                     row(invitation)
+                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                            if invitation.statusRaw == 0 {
+                                Button {
+                                    reclaimTarget = invitation
+                                } label: {
+                                    Label("Reclaim", systemImage: "arrow.uturn.backward.circle")
+                                }
+                                .tint(.orange)
+                                .accessibilityIdentifier("dashpay.invitations.reclaim")
+                            }
+                        }
                 }
             }
         }
         .navigationTitle("Sent Invitations")
         .navigationBarTitleDisplayMode(.inline)
         .accessibilityIdentifier("dashpay.invitations.list")
+        .sheet(item: $reclaimTarget) { invitation in
+            ReclaimInvitationSheet(
+                invitation: invitation,
+                walletId: walletId,
+                network: network
+            )
+        }
     }
 
     @ViewBuilder

@@ -213,7 +213,7 @@ struct DashPayTabView: View {
                     ToolbarItem(placement: .navigationBarLeading) {
                         if let walletId = claimWalletId {
                             NavigationLink {
-                                InvitationsView(walletId: walletId)
+                                InvitationsView(walletId: walletId, network: network)
                             } label: {
                                 Image(systemName: "paperplane")
                             }
