@@ -23,6 +23,7 @@
 mod contract;
 mod discovery;
 mod document;
+mod encrypted_document;
 mod dpns;
 mod identity_handle;
 mod loading;
@@ -64,6 +65,7 @@ pub use seed_binding::SeedBindingVerification;
 mod tokens;
 
 pub use contact_info::ContactInfoPublishOutcome;
+pub use encrypted_document::DecryptedEncryptedDocument;
 pub use contact_requests::{
     AutoAcceptProofSource, ContactCryptoProvider, ContactInfoOpened, ContactInfoSealed,
 };
