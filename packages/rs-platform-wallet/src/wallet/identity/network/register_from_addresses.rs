@@ -108,10 +108,12 @@ impl IdentityWallet {
             )
             .await
             .map_err(|e| {
-                PlatformWalletError::InvalidIdentityData(format!(
-                    "Failed to register identity from addresses: {}",
-                    e
-                ))
+                crate::error::promote_address_nonce_error(&e).unwrap_or_else(|| {
+                    PlatformWalletError::InvalidIdentityData(format!(
+                        "Failed to register identity from addresses: {}",
+                        e
+                    ))
+                })
             })?;
 
         // The SDK return path for `put_with_address_funding_fetching_nonces`
