@@ -24,6 +24,8 @@
 //! manager's lifetime; on shutdown, fire the [`CancellationToken`] to
 //! make the task exit cleanly.
 
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use dashcore::blockdata::transaction::{txout::TxOut, OutPoint};
@@ -32,6 +34,7 @@ use key_wallet::managed_account::transaction_record::{OutputRole, TransactionRec
 use key_wallet::transaction_checking::TransactionContext;
 use key_wallet::Utxo;
 use key_wallet_manager::{WalletEvent, WalletId, WalletManager};
+use tokio::sync::broadcast;
 use tokio::sync::broadcast::error::RecvError;
 use tokio::sync::RwLock;
 use tokio::task::JoinHandle;
@@ -41,13 +44,62 @@ use crate::changeset::changeset::{CoreChangeSet, PlatformWalletChangeSet};
 use crate::changeset::traits::PlatformWalletPersistence;
 use crate::wallet::platform_wallet::PlatformWalletInfo;
 
+/// Session fault state for the durable-watermark guard
+/// (dashpay/platform#4069).
+///
+/// Faults are scoped as narrowly as the triggering signal allows:
+///
+/// - A **`store()` rejection** carries a `wallet_id`, so only THAT
+///   wallet's watermark freezes. A sibling wallet whose rows are still
+///   landing atomically keeps advancing — freezing it too would force a
+///   redundant rescan of a wallet that never lost a row (the CodeRabbit /
+///   reviewer suggestion made concrete).
+/// - A broadcast **`Lagged`** has no `wallet_id` — the dropped events
+///   could have belonged to any wallet — so it freezes EVERY wallet,
+///   including wallets first seen in a later event. That is modelled as a
+///   single `global` latch rather than a per-wallet entry so future
+///   wallet ids are covered without the adapter having to enumerate them.
+#[derive(Default)]
+struct AdapterFaultState {
+    /// Set by a broadcast `Lagged`: freezes every wallet's watermark.
+    global: bool,
+    /// Set by a `store()` rejection: freezes only the named wallet.
+    per_wallet: HashMap<WalletId, bool>,
+}
+
+impl AdapterFaultState {
+    /// Whether `wallet_id`'s durable watermark must be held frozen.
+    fn is_faulted(&self, wallet_id: &WalletId) -> bool {
+        self.global || self.per_wallet.get(wallet_id).copied().unwrap_or(false)
+    }
+
+    /// Fault a single wallet after its `store()` was rejected, and raise
+    /// the host-visible hard-fault signal.
+    fn fault_wallet(&mut self, wallet_id: WalletId, hard_signal: &AtomicBool) {
+        self.per_wallet.insert(wallet_id, true);
+        hard_signal.store(true, Ordering::Relaxed);
+    }
+
+    /// Fault every wallet after a dropped-event broadcast lag, and raise
+    /// the host-visible hard-fault signal.
+    fn fault_all(&mut self, hard_signal: &AtomicBool) {
+        self.global = true;
+        hard_signal.store(true, Ordering::Relaxed);
+    }
+}
+
 /// Spawn the wallet-event subscriber task.
 ///
-/// Subscribes to `wallet_manager.subscribe_events()` from inside the
-/// spawned task (so the call-site doesn't need to be on a tokio
-/// runtime), then loops dispatching events to the persister via
-/// [`PlatformWalletPersistence::store`]. Exits when `cancel` fires
-/// or the upstream broadcast channel closes.
+/// The `receiver` MUST be subscribed by the caller *before the manager is
+/// published to producers* (see [`run_wallet_event_adapter`] for why) and
+/// then handed to this function. This function only moves it into the
+/// spawned task; it does not subscribe. Exits when `cancel` fires or the
+/// upstream broadcast channel closes.
+///
+/// `sync_fault` is the host-visible hard-fault latch: the task sets it
+/// (and never clears it) the first time it freezes a durable watermark, so
+/// an integrator can surface "verification failed / rescan pending" rather
+/// than silently re-freezing on the next launch.
 ///
 /// Generic over `P` so the spawned task gets static-dispatch on
 /// every `persister.store(...)` call. Pass the manager's own
@@ -56,134 +108,175 @@ use crate::wallet::platform_wallet::PlatformWalletInfo;
 pub fn spawn_wallet_event_adapter<P>(
     wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
     persister: Arc<P>,
+    receiver: broadcast::Receiver<WalletEvent>,
+    sync_fault: Arc<AtomicBool>,
     cancel: CancellationToken,
 ) -> JoinHandle<()>
 where
     P: PlatformWalletPersistence + 'static,
 {
-    tokio::spawn(async move {
-        let mut receiver = {
-            let guard = wallet_manager.read().await;
-            guard.subscribe_events()
-        };
-        tracing::debug!("wallet-event adapter task started");
+    tokio::spawn(run_wallet_event_adapter(
+        wallet_manager,
+        persister,
+        receiver,
+        sync_fault,
+        cancel,
+    ))
+}
 
-        // Durable-watermark guard (dashpay/platform#4069).
-        //
-        // The upstream `WalletManager` publishes `WalletEvent`s onto a
-        // *bounded* `tokio::broadcast` ring (capacity
-        // `DEFAULT_WALLET_EVENT_CAPACITY`, 1000) via fire-and-forget
-        // `let _ = event_sender.send(..)`. During a historical SPV
-        // catch-up the manager processes blocks far faster than this
-        // single-threaded adapter can drain them through the (slow,
-        // JNI + Room) persister, so the ring overflows and `recv()`
-        // returns `RecvError::Lagged(n)` — the `n` dropped events are
-        // gone for good. Those dropped events are exactly the
-        // `TransactionDetected` / `BlockProcessed` records that carry
-        // the new UTXOs and the spent-outpoint markers. Meanwhile the
-        // separate `SyncHeightAdvanced` event (a bare height watermark,
-        // the ONLY event whose height reaches the host persister's
-        // `syncedHeight` — see `WalletChangeSetFFI::from_changeset`)
-        // keeps flowing and eventually lands, advancing the persisted
-        // watermark past blocks whose rows never made it to disk.
-        //
-        // Symptoms (all one root cause): rows dropped entirely while the
-        // watermark advances (fresh scan persists nothing yet reports
-        // "scanned"); spent-markers lost so consumed outputs rehydrate
-        // as spendable (inflated balance); and — because the wallet's
-        // own `synced_height` is what gates a rescan — the wallet
-        // believes it is fully scanned and never re-matches, so the
-        // corruption is unrecoverable without deleting + recreating the
-        // wallet.
-        //
-        // Fix: once persistence has faulted this session (a broadcast
-        // lag OR a `store()` rejection), never advance the persisted
-        // sync watermark again. We strip `synced_height` from every
-        // subsequent changeset, freezing the durable watermark at the
-        // last height whose rows were fully committed. On the next
-        // process launch the wallet restores that (lower) watermark and
-        // the SPV scan resumes from it, re-emitting the dropped
-        // `BlockProcessed` records; the persister's upserts are
-        // idempotent on the outpoint key, so re-applying them restores
-        // the missing rows AND re-marks the lost spends — turning the
-        // integrator's current manual "clear + recreate the wallet"
-        // recovery into automatic self-healing across a restart. This is
-        // deliberately conservative (freeze for the rest of the session
-        // after the first fault); the worst case is one extra rescan on
-        // the next launch, never lost or inflated funds.
-        let mut persistence_faulted = false;
+/// Drain `receiver`, project each [`WalletEvent`] into a
+/// [`CoreChangeSet`], and forward to the persister. Split out of
+/// [`spawn_wallet_event_adapter`] so the loop — not just the
+/// [`freeze_synced_height_if_faulted`] helper — is directly testable
+/// (drive a real `broadcast::Sender`, inject a probe persister).
+///
+/// # Subscribe-before-publish
+///
+/// The caller subscribes and passes the `receiver` in, rather than the
+/// task subscribing itself. A `tokio::broadcast::Receiver` only sees
+/// messages sent *after* its `subscribe()` returns; a message sent before
+/// the receiver exists is simply invisible to it — NOT reported as
+/// `Lagged`. If subscription happened inside the spawned task (as it used
+/// to), every event emitted between the manager being handed to producers
+/// and the task's first poll would be silently lost with no fault signal.
+/// Subscribing synchronously before the manager is published closes that
+/// window.
+///
+/// # Durable-watermark guard (dashpay/platform#4069)
+///
+/// The upstream `WalletManager` publishes `WalletEvent`s onto a *bounded*
+/// `tokio::broadcast` ring (capacity `DEFAULT_WALLET_EVENT_CAPACITY`,
+/// 1000) via fire-and-forget `let _ = event_sender.send(..)`. During a
+/// historical SPV catch-up the manager processes blocks far faster than
+/// this single-threaded adapter can drain them through the (slow, JNI +
+/// Room) persister, so the ring overflows and `recv()` returns
+/// `RecvError::Lagged(n)` — the `n` dropped events are gone for good.
+/// Those dropped events are exactly the `TransactionDetected` /
+/// `BlockProcessed` records that carry the new UTXOs and the
+/// spent-outpoint markers. Meanwhile the separate `SyncHeightAdvanced`
+/// event (a bare height watermark, the ONLY event whose height reaches the
+/// host persister's `syncedHeight` — see
+/// `WalletChangeSetFFI::from_changeset`) keeps flowing and eventually
+/// lands, advancing the persisted watermark past blocks whose rows never
+/// made it to disk.
+///
+/// Symptoms (all one root cause): rows dropped entirely while the
+/// watermark advances (fresh scan persists nothing yet reports "scanned");
+/// spent-markers lost so consumed outputs rehydrate as spendable (inflated
+/// balance); and — because the wallet's own `synced_height` is what gates
+/// a rescan — the wallet believes it is fully scanned and never
+/// re-matches, so the corruption is unrecoverable without deleting +
+/// recreating the wallet.
+///
+/// Fix: once a wallet has faulted this session (a broadcast lag OR a
+/// `store()` rejection), never advance ITS persisted sync watermark again
+/// (see [`AdapterFaultState`] for the per-wallet vs. global scoping). We
+/// strip `synced_height` from every subsequent changeset, freezing the
+/// durable watermark at the last height whose rows were fully committed.
+///
+/// This is a **fail-closed mitigation, not lossless recovery.** On the
+/// next process launch the wallet restores that (lower) watermark and the
+/// SPV scan resumes from it, re-emitting the dropped `BlockProcessed`
+/// records; the persister's upserts are idempotent on the outpoint key, so
+/// re-applying them restores the missing rows and re-marks the lost
+/// spends. But the capacity-1000 producer is still fire-and-forget: if the
+/// replayed catch-up again outruns this consumer, the ring lags again and
+/// the watermark re-freezes. A single restart therefore resumes from the
+/// last durable watermark — it does NOT *guarantee* a one-restart
+/// self-heal under repeated overload; repeated overload keeps freezing
+/// until the throughput mismatch is resolved (or the host acts on the
+/// hard-fault signal below). The guarantee it DOES make is the safety one:
+/// the durable watermark never outruns the rows it implies, so funds are
+/// never silently lost or inflated — the worst case is a repeated rescan.
+///
+/// When any wallet faults, the task also raises `sync_fault` (an
+/// `AtomicBool` the host can poll via
+/// `PlatformWalletManager::sync_fault_detected`) and logs at error level,
+/// so integrators can show a hard "verification failed / rescan pending"
+/// state instead of the failure being visible only in logs.
+async fn run_wallet_event_adapter<P>(
+    wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+    persister: Arc<P>,
+    mut receiver: broadcast::Receiver<WalletEvent>,
+    sync_fault: Arc<AtomicBool>,
+    cancel: CancellationToken,
+) where
+    P: PlatformWalletPersistence + 'static,
+{
+    tracing::debug!("wallet-event adapter task started");
+    let mut fault = AdapterFaultState::default();
 
-        loop {
-            tokio::select! {
-                recv = receiver.recv() => {
-                    match recv {
-                        Ok(event) => {
-                            let wallet_id = event.wallet_id();
-                            // For events that need to consult per-wallet
-                            // state (today only `TransactionInstantLocked`,
-                            // which checks finality before recording the IS
-                            // lock), grab a brief read lock on the manager.
-                            let mut core = build_core_changeset(&wallet_manager, &event).await;
-                            // Hold the durable watermark at the last
-                            // fully-persisted height once persistence has
-                            // faulted (see the guard doc above). Records/UTXOs
-                            // in this changeset are still persisted — only the
-                            // height advance is suppressed.
-                            freeze_synced_height_if_faulted(&mut core, persistence_faulted);
-                            if core.is_empty_no_records() {
-                                // SyncHeightAdvanced for an unknown wallet,
-                                // empty BlockProcessed, a watermark-only event
-                                // stripped by the fault guard above, etc. —
-                                // nothing to persist. Skip the round-trip.
-                                continue;
-                            }
-                            let cs = PlatformWalletChangeSet {
-                                core: Some(core),
-                                ..PlatformWalletChangeSet::default()
-                            };
-                            if let Err(e) = persister.store(wallet_id, cs) {
-                                // A rejected changeset means these rows are not
-                                // on disk. Fault the watermark so it can't
-                                // outrun them; the next scan re-emits and the
-                                // idempotent upserts recover the state.
-                                persistence_faulted = true;
-                                tracing::error!(
-                                    wallet_id = %hex::encode(wallet_id),
-                                    error = %e,
-                                    "Persister rejected core changeset; freezing sync watermark so the next scan re-persists the missing rows (dashpay/platform#4069)"
-                                );
-                            }
+    loop {
+        tokio::select! {
+            recv = receiver.recv() => {
+                match recv {
+                    Ok(event) => {
+                        let wallet_id = event.wallet_id();
+                        // For events that need to consult per-wallet
+                        // state (today only `TransactionInstantLocked`,
+                        // which checks finality before recording the IS
+                        // lock), grab a brief read lock on the manager.
+                        let mut core = build_core_changeset(&wallet_manager, &event).await;
+                        // Hold this wallet's durable watermark at the last
+                        // fully-persisted height once it has faulted (see
+                        // the guard doc above). Records/UTXOs in this
+                        // changeset are still persisted — only the height
+                        // advance is suppressed.
+                        freeze_synced_height_if_faulted(&mut core, fault.is_faulted(&wallet_id));
+                        if core.is_empty_no_records() {
+                            // SyncHeightAdvanced for an unknown wallet,
+                            // empty BlockProcessed, a watermark-only event
+                            // stripped by the fault guard above, etc. —
+                            // nothing to persist. Skip the round-trip.
+                            continue;
                         }
-                        Err(RecvError::Closed) if cancel.is_cancelled() => break,
-                        Err(RecvError::Closed) => {
-                            tracing::error!("WalletEvent broadcast closed unexpectedly");
-                            break;
-                        }
-                        Err(RecvError::Lagged(n)) => {
-                            // The `n` dropped events carried record/UTXO/spend
-                            // rows we will never see again this session. Fault
-                            // the watermark so it stays at the last
-                            // fully-persisted height and the next scan
-                            // re-emits the lost blocks (dashpay/platform#4069).
-                            persistence_faulted = true;
+                        let cs = PlatformWalletChangeSet {
+                            core: Some(core),
+                            ..PlatformWalletChangeSet::default()
+                        };
+                        if let Err(e) = persister.store(wallet_id, cs) {
+                            // A rejected changeset means these rows are not
+                            // on disk. Fault THIS wallet's watermark so it
+                            // can't outrun them; the next scan re-emits and
+                            // the idempotent upserts recover the state.
+                            fault.fault_wallet(wallet_id, &sync_fault);
                             tracing::error!(
-                                missed = n,
-                                "wallet-event adapter lagged on broadcast channel; {n} persistence events dropped — freezing sync watermark so the next scan re-persists them (dashpay/platform#4069)"
+                                wallet_id = %hex::encode(wallet_id),
+                                error = %e,
+                                "Persister rejected core changeset; freezing this wallet's sync watermark so the next scan re-persists the missing rows (dashpay/platform#4069)"
                             );
                         }
                     }
+                    Err(RecvError::Closed) if cancel.is_cancelled() => break,
+                    Err(RecvError::Closed) => {
+                        tracing::error!("WalletEvent broadcast closed unexpectedly");
+                        break;
+                    }
+                    Err(RecvError::Lagged(n)) => {
+                        // The `n` dropped events carried record/UTXO/spend
+                        // rows we will never see again this session, and we
+                        // don't know which wallet(s) they belonged to.
+                        // Fault EVERY wallet so no watermark outruns its
+                        // rows; the next scan re-emits the lost blocks
+                        // (dashpay/platform#4069).
+                        fault.fault_all(&sync_fault);
+                        tracing::error!(
+                            missed = n,
+                            "wallet-event adapter lagged on broadcast channel; {n} persistence events dropped — freezing every wallet's sync watermark so the next scan re-persists them (dashpay/platform#4069)"
+                        );
+                    }
                 }
-                _ = cancel.cancelled() => break,
             }
+            _ = cancel.cancelled() => break,
         }
-        tracing::debug!("wallet-event adapter task exiting");
-    })
+    }
+    tracing::debug!("wallet-event adapter task exiting");
 }
 
 /// Durable-watermark guard for dashpay/platform#4069.
 ///
-/// When the persister has faulted this session (a broadcast lag dropped
-/// record-bearing events, or a `store()` was rejected), the persisted
+/// When a wallet has faulted this session (a broadcast lag dropped
+/// record-bearing events, or a `store()` was rejected), its persisted
 /// `synced_height` watermark must not advance past the last height whose
 /// rows were fully committed — otherwise the wallet believes it is
 /// scanned and never re-matches the blocks whose rows were lost. This
@@ -479,5 +572,333 @@ mod tests {
             Some(300),
             "non-watermark fields must still persist while faulted"
         );
+    }
+
+    /// dashpay/platform#4069 (per-wallet fault scoping): a `store()`
+    /// rejection freezes ONLY the named wallet; a broadcast `Lagged`
+    /// (no wallet id) freezes every wallet, including one first seen later.
+    #[test]
+    fn fault_state_scopes_store_rejection_per_wallet_and_lag_globally() {
+        let a = [0xAAu8; 32];
+        let b = [0xBBu8; 32];
+        let signal = std::sync::atomic::AtomicBool::new(false);
+
+        let mut fault = AdapterFaultState::default();
+        assert!(!fault.is_faulted(&a) && !fault.is_faulted(&b));
+
+        // store() rejection for A: A frozen, B untouched.
+        fault.fault_wallet(a, &signal);
+        assert!(fault.is_faulted(&a), "rejected wallet must freeze");
+        assert!(!fault.is_faulted(&b), "sibling wallet must keep advancing");
+        assert!(
+            signal.load(std::sync::atomic::Ordering::Relaxed),
+            "hard-fault signal must be raised on a store rejection"
+        );
+
+        // A broadcast lag freezes everything, including a never-before-seen
+        // wallet id.
+        let mut fault2 = AdapterFaultState::default();
+        let c = [0xCCu8; 32];
+        fault2.fault_all(&signal);
+        assert!(fault2.is_faulted(&c), "lag must freeze every wallet, even future ids");
+    }
+
+    // ── Adapter-loop integration tests (dashpay/platform#4069) ──
+    //
+    // These drive `run_wallet_event_adapter` with a real `broadcast`
+    // channel and a probe persister so the LOOP — not just the
+    // `freeze_synced_height_if_faulted` helper — is exercised: actual
+    // `RecvError::Lagged`, a rejected `store()`, the per-wallet freeze,
+    // and subscribe-before-publish timing.
+
+    use super::{run_wallet_event_adapter, AdapterFaultState};
+    use crate::changeset::changeset::PlatformWalletChangeSet;
+    use crate::changeset::client_start_state::ClientStartState;
+    use crate::changeset::traits::{PersistenceError, PlatformWalletPersistence};
+    use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
+    use key_wallet::WalletCoreBalance;
+    use key_wallet_manager::{WalletEvent, WalletManager};
+    use std::collections::{BTreeMap, HashSet};
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::{Arc, Mutex};
+    use tokio::sync::broadcast;
+    use tokio::sync::mpsc::{unbounded_channel, UnboundedSender};
+    use tokio::sync::RwLock;
+    use tokio_util::sync::CancellationToken;
+
+    /// One observed `store()` call, projected to just the fields the
+    /// watermark-freeze invariant cares about.
+    #[derive(Debug)]
+    struct StoreObserved {
+        wallet_id: WalletId,
+        synced_height: Option<u32>,
+        last_processed_height: Option<u32>,
+        n_records: usize,
+        rejected: bool,
+    }
+
+    /// Test persister: records every `store()` (over an unbounded tokio
+    /// channel so the async test can await progress without blocking the
+    /// current-thread runtime) and can be told to reject the NEXT store for
+    /// a given wallet exactly once.
+    struct ProbePersister {
+        obs: UnboundedSender<StoreObserved>,
+        fail_once: Mutex<HashSet<WalletId>>,
+    }
+
+    impl ProbePersister {
+        fn new(obs: UnboundedSender<StoreObserved>) -> Self {
+            Self {
+                obs,
+                fail_once: Mutex::new(HashSet::new()),
+            }
+        }
+        fn fail_next(&self, wallet_id: WalletId) {
+            self.fail_once.lock().unwrap().insert(wallet_id);
+        }
+    }
+
+    impl PlatformWalletPersistence for ProbePersister {
+        fn store(
+            &self,
+            wallet_id: WalletId,
+            changeset: PlatformWalletChangeSet,
+        ) -> Result<(), PersistenceError> {
+            let core = changeset.core.as_ref();
+            let rejected = self.fail_once.lock().unwrap().remove(&wallet_id);
+            let _ = self.obs.send(StoreObserved {
+                wallet_id,
+                synced_height: core.and_then(|c| c.synced_height),
+                last_processed_height: core.and_then(|c| c.last_processed_height),
+                n_records: core.map(|c| c.records.len()).unwrap_or(0),
+                rejected,
+            });
+            if rejected {
+                Err(PersistenceError::backend("probe: forced store rejection"))
+            } else {
+                Ok(())
+            }
+        }
+
+        fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+
+        fn load(&self) -> Result<ClientStartState, PersistenceError> {
+            Ok(ClientStartState::default())
+        }
+    }
+
+    fn test_manager() -> Arc<RwLock<WalletManager<PlatformWalletInfo>>> {
+        Arc::new(RwLock::new(WalletManager::<PlatformWalletInfo>::new(
+            dashcore::Network::Testnet,
+        )))
+    }
+
+    /// A bare watermark event — the ONLY event whose height reaches the
+    /// persisted `syncedHeight`, and therefore the one the guard strips.
+    fn sync_height_event(wallet_id: WalletId, height: u32) -> WalletEvent {
+        WalletEvent::SyncHeightAdvanced { wallet_id, height }
+    }
+
+    /// A record-bearing (non-watermark) event: carries
+    /// `last_processed_height` but no `synced_height`, so it survives the
+    /// freeze untouched. Used both as a sentinel to prove loop progress and
+    /// to prove records still persist after the guard activates.
+    fn block_processed_event(wallet_id: WalletId, height: u32) -> WalletEvent {
+        WalletEvent::BlockProcessed {
+            wallet_id,
+            height,
+            chain_lock: None,
+            inserted: vec![],
+            updated: vec![],
+            matured: vec![],
+            balance: WalletCoreBalance::default(),
+            account_balances: BTreeMap::new(),
+            addresses_derived: vec![],
+        }
+    }
+
+    /// (b) A real `RecvError::Lagged` flips the fault latch, and a
+    /// subsequent watermark-only event is stripped (never delivered as a
+    /// store), while a record-bearing event still persists.
+    #[tokio::test]
+    async fn lagged_broadcast_freezes_and_strips_subsequent_watermark() {
+        let wallet_id = [7u8; 32];
+        // Capacity 2, send 4 before the adapter drains → the receiver's
+        // first recv() observes Lagged(2). Ring retains heights 3,4.
+        let (tx, rx) = broadcast::channel::<WalletEvent>(2);
+        for h in 1..=4u32 {
+            tx.send(sync_height_event(wallet_id, h)).unwrap();
+        }
+
+        let (obs_tx, mut obs_rx) = unbounded_channel();
+        let persister = Arc::new(ProbePersister::new(obs_tx));
+        let sync_fault = Arc::new(AtomicBool::new(false));
+        let cancel = CancellationToken::new();
+        let handle = tokio::spawn(run_wallet_event_adapter(
+            test_manager(),
+            Arc::clone(&persister),
+            rx,
+            Arc::clone(&sync_fault),
+            cancel.clone(),
+        ));
+
+        // Post-lag watermark: must be stripped (never stored).
+        tx.send(sync_height_event(wallet_id, 100)).unwrap();
+        // Record-bearing sentinel: proves the loop advanced past every
+        // watermark AND that records still persist after the freeze.
+        tx.send(block_processed_event(wallet_id, 50)).unwrap();
+
+        let observed = obs_rx.recv().await.expect("sentinel store must arrive");
+        assert_eq!(observed.wallet_id, wallet_id);
+        assert_eq!(
+            observed.synced_height, None,
+            "watermark must be stripped after a broadcast lag"
+        );
+        assert_eq!(
+            observed.last_processed_height,
+            Some(50),
+            "record-bearing field must persist after the freeze"
+        );
+        assert!(
+            obs_rx.try_recv().is_err(),
+            "no watermark-only store should have been delivered after the lag"
+        );
+        assert!(
+            sync_fault.load(Ordering::Relaxed),
+            "hard sync-fault signal must be raised on a lag"
+        );
+
+        cancel.cancel();
+        drop(tx);
+        handle.await.unwrap();
+    }
+
+    /// (c) A rejected `store()` faults the wallet, and the very next
+    /// watermark-only event is stripped and dropped (not delivered).
+    #[tokio::test]
+    async fn rejected_store_freezes_wallet_and_strips_watermark() {
+        let wallet_id = [9u8; 32];
+        let (tx, rx) = broadcast::channel::<WalletEvent>(16);
+        let (obs_tx, mut obs_rx) = unbounded_channel();
+        let persister = Arc::new(ProbePersister::new(obs_tx));
+        persister.fail_next(wallet_id); // first store() for this wallet is rejected
+        let sync_fault = Arc::new(AtomicBool::new(false));
+        let cancel = CancellationToken::new();
+        let handle = tokio::spawn(run_wallet_event_adapter(
+            test_manager(),
+            Arc::clone(&persister),
+            rx,
+            Arc::clone(&sync_fault),
+            cancel.clone(),
+        ));
+
+        // 1) Record-bearing event whose store() is rejected → faults wallet.
+        tx.send(block_processed_event(wallet_id, 10)).unwrap();
+        let first = obs_rx.recv().await.expect("rejected store still calls store()");
+        assert!(first.rejected, "first store must be the forced rejection");
+        assert_eq!(first.last_processed_height, Some(10));
+
+        // 2) Watermark-only event → stripped, never delivered.
+        tx.send(sync_height_event(wallet_id, 200)).unwrap();
+        // 3) Sentinel proving the loop moved past the watermark.
+        tx.send(block_processed_event(wallet_id, 20)).unwrap();
+
+        let sentinel = obs_rx.recv().await.expect("sentinel store must arrive");
+        assert_eq!(
+            sentinel.last_processed_height,
+            Some(20),
+            "the sentinel (not the stripped watermark) is the next delivered store"
+        );
+        assert_eq!(sentinel.synced_height, None);
+        assert!(
+            obs_rx.try_recv().is_err(),
+            "the watermark-only changeset must not have been delivered after the fault"
+        );
+        assert!(sync_fault.load(Ordering::Relaxed));
+
+        cancel.cancel();
+        drop(tx);
+        handle.await.unwrap();
+    }
+
+    /// (d) Record-bearing changesets keep persisting after the guard is
+    /// active — only the watermark is held back.
+    #[tokio::test]
+    async fn record_bearing_changesets_persist_after_guard_activates() {
+        let wallet_id = [4u8; 32];
+        let (tx, rx) = broadcast::channel::<WalletEvent>(16);
+        let (obs_tx, mut obs_rx) = unbounded_channel();
+        let persister = Arc::new(ProbePersister::new(obs_tx));
+        persister.fail_next(wallet_id); // activate the guard via a rejection
+        let sync_fault = Arc::new(AtomicBool::new(false));
+        let cancel = CancellationToken::new();
+        let handle = tokio::spawn(run_wallet_event_adapter(
+            test_manager(),
+            Arc::clone(&persister),
+            rx,
+            Arc::clone(&sync_fault),
+            cancel.clone(),
+        ));
+
+        // Trip the guard.
+        tx.send(block_processed_event(wallet_id, 10)).unwrap();
+        let _ = obs_rx.recv().await.expect("first (rejected) store");
+
+        // A later record-bearing event must STILL be persisted.
+        tx.send(block_processed_event(wallet_id, 30)).unwrap();
+        let later = obs_rx.recv().await.expect("post-guard record-bearing store must arrive");
+        assert_eq!(
+            later.last_processed_height,
+            Some(30),
+            "record-bearing changesets must still persist while the watermark is frozen"
+        );
+        assert_eq!(later.synced_height, None, "watermark stays frozen");
+        assert!(!later.rejected, "second store must succeed");
+
+        cancel.cancel();
+        drop(tx);
+        handle.await.unwrap();
+    }
+
+    /// (e) Subscribe-before-publish: an event emitted BEFORE the adapter
+    /// task is spawned (i.e. before it polls) is still delivered, because
+    /// the receiver was subscribed up-front and handed to the task. This is
+    /// the exact invariant the manager now relies on.
+    #[tokio::test]
+    async fn events_emitted_before_task_poll_are_received() {
+        let wallet_id = [3u8; 32];
+        let (tx, rx) = broadcast::channel::<WalletEvent>(16);
+        // Emit BEFORE the task is spawned / polls.
+        tx.send(block_processed_event(wallet_id, 77)).unwrap();
+
+        let (obs_tx, mut obs_rx) = unbounded_channel();
+        let persister = Arc::new(ProbePersister::new(obs_tx));
+        let sync_fault = Arc::new(AtomicBool::new(false));
+        let cancel = CancellationToken::new();
+        let handle = tokio::spawn(run_wallet_event_adapter(
+            test_manager(),
+            Arc::clone(&persister),
+            rx,
+            Arc::clone(&sync_fault),
+            cancel.clone(),
+        ));
+
+        let observed = obs_rx
+            .recv()
+            .await
+            .expect("a pre-spawn event must still be delivered");
+        assert_eq!(observed.wallet_id, wallet_id);
+        assert_eq!(observed.last_processed_height, Some(77));
+        assert_eq!(observed.n_records, 0);
+        assert!(
+            !sync_fault.load(Ordering::Relaxed),
+            "no fault expected on the happy path"
+        );
+
+        cancel.cancel();
+        drop(tx);
+        handle.await.unwrap();
     }
 }
