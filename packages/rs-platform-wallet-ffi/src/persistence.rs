@@ -43,6 +43,7 @@ use crate::identity_persistence::{
     free_identity_entry_ffi, free_identity_key_entry_ffi, IdentityEntryFFI, IdentityKeyEntryFFI,
     IdentityKeyRemovalFFI,
 };
+use crate::invitation_persistence::{build_invitation_entries, InvitationEntryFFI};
 use crate::platform_address_types::AddressBalanceEntryFFI;
 use crate::token_persistence::{TokenBalanceRemovalFFI, TokenBalanceUpsertFFI};
 use crate::wallet_registration_persistence::AccountAddressPoolFFI;
@@ -551,6 +552,20 @@ pub struct PersistenceCallbacks {
             removed_count: usize,
         ) -> i32,
     >,
+    /// Forwards `InvitationChangeSet` (DIP-13 sent-invitation records) to the
+    /// host. Appended at the END so the struct layout stays stable. Same
+    /// upserts + `[u8;36]` removal shape as `on_persist_asset_locks_fn`; the
+    /// entries are all-POD so there is no owned-buffer lifetime to manage.
+    pub on_persist_invitations_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            wallet_id: *const u8,
+            upserts_ptr: *const InvitationEntryFFI,
+            upserts_count: usize,
+            removed_ptr: *const [u8; 36],
+            removed_count: usize,
+        ) -> i32,
+    >,
 }
 
 // SAFETY: The context pointer is managed by the FFI caller who must ensure
@@ -569,6 +584,7 @@ impl Default for PersistenceCallbacks {
             on_persist_address_balances_fn: None,
             on_persist_wallet_changeset_fn: None,
             on_persist_asset_locks_fn: None,
+            on_persist_invitations_fn: None,
             on_persist_sync_state_fn: None,
             on_persist_account_registrations_fn: None,
             on_load_wallet_list_fn: None,
@@ -1020,6 +1036,47 @@ impl PlatformWalletPersistence for FFIPersister {
                     if result != 0 {
                         eprintln!(
                             "Asset lock persistence callback returned error code {}",
+                            result
+                        );
+                        round_success = false;
+                    }
+                }
+            }
+        }
+
+        // Send invitation changeset — DIP-13 sent-invitation records, one
+        // upsert row per funded voucher (keyed by outpoint) plus outpoint
+        // tombstones. All-POD entries, so no owned-buffer storage to pin.
+        // Maps onto Swift's `PersistentInvitation` rows.
+        if let Some(ref inv_cs) = changeset.invitations {
+            if let Some(cb) = self.callbacks.on_persist_invitations_fn {
+                let upsert_refs: Vec<&platform_wallet::changeset::InvitationEntry> =
+                    inv_cs.invitations.values().collect();
+                let upserts = build_invitation_entries(&upsert_refs);
+                let removed: Vec<[u8; 36]> = inv_cs.removed.iter().map(outpoint_to_bytes).collect();
+                if !upserts.is_empty() || !removed.is_empty() {
+                    let result = unsafe {
+                        cb(
+                            self.callbacks.context,
+                            wallet_id.as_ptr(),
+                            if upserts.is_empty() {
+                                std::ptr::null()
+                            } else {
+                                upserts.as_ptr()
+                            },
+                            upserts.len(),
+                            if removed.is_empty() {
+                                std::ptr::null()
+                            } else {
+                                removed.as_ptr()
+                            },
+                            removed.len(),
+                        )
+                    };
+                    drop(upserts);
+                    if result != 0 {
+                        eprintln!(
+                            "Invitation persistence callback returned error code {}",
                             result
                         );
                         round_success = false;

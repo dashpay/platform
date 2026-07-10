@@ -48,6 +48,7 @@ pub mod identity_transfer;
 pub mod identity_update;
 pub mod identity_withdrawal;
 pub mod invitation;
+pub mod invitation_persistence;
 pub mod logging;
 pub mod managed_identity;
 pub mod manager;
@@ -81,6 +82,7 @@ pub mod xpub_render;
 // Re-exports
 pub use asset_lock::*;
 pub use asset_lock_persistence::*;
+pub use invitation_persistence::*;
 pub use contact::*;
 pub use contact_persistence::*;
 pub use contact_request::*;
