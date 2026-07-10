@@ -82,7 +82,6 @@ pub mod xpub_render;
 // Re-exports
 pub use asset_lock::*;
 pub use asset_lock_persistence::*;
-pub use invitation_persistence::*;
 pub use contact::*;
 pub use contact_persistence::*;
 pub use contact_request::*;
@@ -119,6 +118,7 @@ pub use identity_transfer::*;
 pub use identity_update::*;
 pub use identity_withdrawal::*;
 pub use invitation::*;
+pub use invitation_persistence::*;
 pub use logging::*;
 pub use managed_identity::*;
 pub use manager::*;
