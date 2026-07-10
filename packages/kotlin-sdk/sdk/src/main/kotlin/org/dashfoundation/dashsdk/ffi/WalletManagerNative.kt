@@ -263,6 +263,50 @@ internal object WalletManagerNative {
     external fun coreTransactionFree(tx: Long)
 
     /**
+     * `core_wallet_transaction_get_bytes` — the consensus-serialized bytes of a
+     * transaction from [coreTxBuilderBuildSigned], copied into a fresh
+     * `ByteArray`. The transaction handle must still be live (not yet freed by
+     * [coreTransactionFree]).
+     */
+    external fun coreTransactionGetBytes(tx: Long): ByteArray
+
+    /**
+     * `core_wallet_signed_payment_register` — register a built+signed
+     * transaction (from [coreTxBuilderBuildSigned]) for deferred
+     * (BIP70/BIP270) submission, holding its UTXO reservation. Does NOT consume
+     * the transaction — free it separately with [coreTransactionFree].
+     * [accountType]/[accountIndex] identify the funding account (0 BIP44,
+     * 1 BIP32, 2 CoinJoin).
+     *
+     * Returns a big-endian BLOB decoded into a `SignedCoreTransaction`:
+     * `u64 token, u64 feeDuffs, u32 txidLen, txid utf8`. The raw tx bytes come
+     * from [coreTransactionGetBytes].
+     */
+    external fun coreWalletRegisterSignedPayment(
+        coreHandle: Long,
+        tx: Long,
+        accountType: Int,
+        accountIndex: Int,
+    ): ByteArray
+
+    /**
+     * `core_wallet_signed_payment_broadcast` — broadcast the payment behind
+     * [token], reconciling its reservation on failure and consuming the token.
+     * A repeated/stale/wrong-wallet token throws
+     * `ErrorStaleReservationToken` (never a double-broadcast). [coreHandle] must
+     * resolve to the wallet the token was minted against. Returns the txid as a
+     * lowercase hex string.
+     */
+    external fun coreWalletBroadcastSignedPayment(coreHandle: Long, token: Long): String
+
+    /**
+     * `core_wallet_signed_payment_release` — release the funding reservation
+     * behind [token] and drop it. Idempotent: releasing an unknown /
+     * already-consumed token is a silent no-op.
+     */
+    external fun coreWalletReleaseSignedPayment(token: Long)
+
+    /**
      * Enumerate the wallet's Platform-payment addresses with cached credit
      * balances, as a big-endian blob: `u32 rowCount` then per row
      * `u8 addressType (0 P2PKH / 1 P2SH), u8[20] hash, u64 balance`. Backs

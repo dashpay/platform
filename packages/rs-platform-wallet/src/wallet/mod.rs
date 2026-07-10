@@ -11,9 +11,13 @@ pub mod provider_key_at_index;
 pub(crate) mod reservations;
 #[cfg(feature = "shielded")]
 pub mod shielded;
+pub mod signed_payment_registry;
 pub mod tokens;
 
 pub use self::core::CoreWallet;
+pub use signed_payment_registry::{
+    ReservationToken, SignedPaymentError, SignedPaymentRegistry,
+};
 pub use apply::ApplyError;
 pub use core_address_key::CoreAddressPrivateKey;
 pub use identity::IdentityWallet;
