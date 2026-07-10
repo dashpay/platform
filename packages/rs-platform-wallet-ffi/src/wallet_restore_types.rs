@@ -117,30 +117,6 @@ impl StandardAccountTypeTagFFI {
     }
 }
 
-/// Flat account spec carried in `WalletRestoreEntryFFI.accounts`.
-///
-/// Field relevance per `type_tag`:
-///   * `Standard`                            — `standard_tag`, `index`
-///   * `CoinJoin`                            — `index`
-///   * `IdentityRegistration`                — (none)
-///   * `IdentityTopUp`                       — `registration_index`
-///   * `IdentityTopUpNotBoundToIdentity`     — (none)
-///   * `IdentityInvitation`                  — (none)
-///   * `AssetLockAddressTopUp`               — (none)
-///   * `AssetLockShieldedAddressTopUp`       — (none)
-///   * `ProviderVotingKeys`                  — (none)
-///   * `ProviderOwnerKeys`                   — (none)
-///   * `ProviderOperatorKeys`                — (none); `account_xpub_bytes`
-///     carries a bincode-encoded extended **BLS** public key, not a
-///     secp256k1 `ExtendedPubKey`
-///   * `ProviderPlatformKeys`                — (none); `account_xpub_bytes`
-///     carries a bincode-encoded extended **Ed25519** public key, not a
-///     secp256k1 `ExtendedPubKey`
-///   * `DashpayReceivingFunds`               — `index`, `user_identity_id`, `friend_identity_id`
-///   * `DashpayExternalAccount`              — `index`, `user_identity_id`, `friend_identity_id`
-///   * `PlatformPayment`                     — `index` (as `account`), `key_class`
-///   * `IdentityAuthenticationEcdsa`         — `index` (as `identity_index`)
-///   * `IdentityAuthenticationBls`           — `index` (as `identity_index`)
 /// One pre-derived platform-node (Ed25519) key carried on
 /// [`AccountSpecFFI::derived_platform_node_keys`] for the
 /// `ProviderPlatformKeys` account (`type_tag == 11`).
@@ -165,6 +141,30 @@ pub struct ProviderPlatformNodeKeyFFI {
     pub node_id: [u8; 20],
 }
 
+/// Flat account spec carried in `WalletRestoreEntryFFI.accounts`.
+///
+/// Field relevance per `type_tag`:
+///   * `Standard`                            — `standard_tag`, `index`
+///   * `CoinJoin`                            — `index`
+///   * `IdentityRegistration`                — (none)
+///   * `IdentityTopUp`                       — `registration_index`
+///   * `IdentityTopUpNotBoundToIdentity`     — (none)
+///   * `IdentityInvitation`                  — (none)
+///   * `AssetLockAddressTopUp`               — (none)
+///   * `AssetLockShieldedAddressTopUp`       — (none)
+///   * `ProviderVotingKeys`                  — (none)
+///   * `ProviderOwnerKeys`                   — (none)
+///   * `ProviderOperatorKeys`                — (none); `account_xpub_bytes`
+///     carries a bincode-encoded extended **BLS** public key, not a
+///     secp256k1 `ExtendedPubKey`
+///   * `ProviderPlatformKeys`                — (none); `account_xpub_bytes`
+///     carries a bincode-encoded extended **Ed25519** public key, not a
+///     secp256k1 `ExtendedPubKey`
+///   * `DashpayReceivingFunds`               — `index`, `user_identity_id`, `friend_identity_id`
+///   * `DashpayExternalAccount`              — `index`, `user_identity_id`, `friend_identity_id`
+///   * `PlatformPayment`                     — `index` (as `account`), `key_class`
+///   * `IdentityAuthenticationEcdsa`         — `index` (as `identity_index`)
+///   * `IdentityAuthenticationBls`           — `index` (as `identity_index`)
 #[repr(C)]
 pub struct AccountSpecFFI {
     /// Raw byte projection of [`AccountTypeTagFFI`]. Validated via

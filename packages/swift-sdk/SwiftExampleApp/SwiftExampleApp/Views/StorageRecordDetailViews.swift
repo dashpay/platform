@@ -1695,11 +1695,22 @@ struct CoreAddressDetailView: View {
         }
         isRevealing = true
         revealError = nil
-        defer { isRevealing = false }
-        do {
-            privateKey = try wallet.coreAddressPrivateKey(address: record.address)
-        } catch {
-            revealError = error.localizedDescription
+        // Off the main thread: the synchronous FFI's resolver reads the
+        // iOS Keychain, which can stall. Mirrors
+        // `AccountDetailView.revealPrivateKey(index:)`.
+        Task {
+            do {
+                let key = try wallet.coreAddressPrivateKey(address: record.address)
+                await MainActor.run {
+                    privateKey = key
+                    isRevealing = false
+                }
+            } catch {
+                await MainActor.run {
+                    revealError = error.localizedDescription
+                    isRevealing = false
+                }
+            }
         }
     }
 
