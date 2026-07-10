@@ -77,7 +77,12 @@ struct ReclaimInvitationSheet: View {
             }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
+                    // Gated while a reclaim is in flight: dismissing mid-flight
+                    // would leave the fire-and-forget Task to mutate the row and
+                    // save after the sheet is gone, and a re-open could launch an
+                    // overlapping reclaim. Mirrors the Reclaim submit gate.
                     Button("Cancel") { dismiss() }
+                        .disabled(isReclaiming)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     if isReclaiming {
