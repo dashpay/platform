@@ -3,7 +3,9 @@ use key_wallet::account::account_type::StandardAccountType;
 
 use super::SignedCoreTransaction;
 use crate::broadcaster::TransactionBroadcaster;
-use crate::wallet::reservations::broadcast_releasing_on_rejection;
+use crate::wallet::reservations::{
+    broadcast_releasing_on_rejection, release_reservation_after_rejected_broadcast,
+};
 use crate::{CoreWallet, PlatformWalletError};
 
 impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
@@ -85,6 +87,36 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
         )
         .await
         .map_err(Into::into)
+    }
+
+    /// Release the funding account's UTXO reservation for `transaction` without
+    /// broadcasting — the "payment abandoned / merchant server nacked" arm of
+    /// the deferred build → broadcast/release lifecycle
+    /// ([`SignedPaymentRegistry`](crate::SignedPaymentRegistry)).
+    ///
+    /// `build_signed` reserves the selected inputs and leaves the reservation
+    /// held; when the caller decides never to broadcast, this returns those
+    /// inputs to spendable so a later build can reselect them. Idempotent at the
+    /// account layer (releasing an already-released reservation is a no-op), and
+    /// best-effort: a missing wallet/account is logged, not surfaced, since
+    /// there is nothing actionable to reconcile.
+    ///
+    /// `account_type`/`account_index` identify the funding account handed to
+    /// `set_funding` when the transaction was built.
+    pub async fn release_transaction_reservation(
+        &self,
+        account_type: StandardAccountType,
+        account_index: u32,
+        transaction: &Transaction,
+    ) {
+        release_reservation_after_rejected_broadcast(
+            &self.wallet_manager,
+            &self.wallet_id,
+            account_type,
+            account_index,
+            transaction,
+        )
+        .await
     }
 }
 
