@@ -2940,6 +2940,11 @@ fn build_account_spec(
             friend_identity_id,
             account_xpub_bytes: ptr::null(),
             account_xpub_bytes_len: 0,
+            // Load-callback contract (see AccountSpecFFI): hosts leave the
+            // pre-derived platform-node keys null/0 on restore — the Rust
+            // load path never consumes them (write-callback display data).
+            derived_platform_node_keys: ptr::null(),
+            derived_platform_node_keys_count: 0,
         },
         xpub,
     })
