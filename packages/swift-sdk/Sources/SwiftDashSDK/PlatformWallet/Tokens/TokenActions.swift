@@ -203,6 +203,15 @@ extension ManagedPlatformWallet {
     ///
     /// Same signing-key resolution and lifetime contract as
     /// `tokenTransfer` / `tokenBurn`.
+    ///
+    /// - Returns: The proof-verified post-mint balance the broadcast
+    ///   already carried, keyed by raw 32-byte identity id — for a
+    ///   standard mint this is the single `{ recipient: newBalance }`
+    ///   pair. A group-action proposal (or a history-tracking token)
+    ///   carries no balance in the proof result (nothing is minted until
+    ///   the group signs), so an empty map is returned. The caller
+    ///   persists these directly — no follow-up balance query is needed.
+    @discardableResult
     public func tokenMint(
         identityId: Identifier,
         contractId: Identifier,
@@ -213,7 +222,7 @@ extension ManagedPlatformWallet {
         groupAction: GroupActionMode = .none,
         signingKeyId: UInt32 = 0,
         signer: KeychainSigner
-    ) async throws {
+    ) async throws -> [Data: UInt64] {
         let handle = self.handle
         let signerHandle = signer.handle
         let identityBytes = identityId.toFFIByteArray()
@@ -221,28 +230,31 @@ extension ManagedPlatformWallet {
         let recipientBytes: [UInt8]? = recipient.map { $0.toFFIByteArray() }
         let groupTuple = groupAction.toFFITuple()
 
-        try await Task.detached(priority: .userInitiated) {
+        return try await Task.detached(priority: .userInitiated) {
             _ = signer
-            try identityBytes.withUnsafeBufferPointer { idBp in
+            return try identityBytes.withUnsafeBufferPointer { idBp in
                 try contractBytes.withUnsafeBufferPointer { contractBp in
                     try ManagedPlatformWallet.tokenWithOptionalRecipient(recipientBytes) { recipientPtr in
                         try ManagedPlatformWallet.tokenWithOptionalCString(publicNote) { notePtr in
                             try ManagedPlatformWallet.tokenWithOptionalActionId(groupTuple.actionId) { actionIdPtr in
-                                try platform_wallet_token_mint(
-                                    handle,
-                                    idBp.baseAddress!,
-                                    contractBp.baseAddress!,
-                                    tokenPosition,
-                                    recipientPtr,
-                                    amount,
-                                    notePtr,
-                                    groupTuple.kind,
-                                    groupTuple.position,
-                                    actionIdPtr,
-                                    groupTuple.actionIsProposer,
-                                    signingKeyId,
-                                    signerHandle
-                                ).check()
+                                try ManagedPlatformWallet.tokenReadingBalancesJSON { outJSON in
+                                    platform_wallet_token_mint(
+                                        handle,
+                                        idBp.baseAddress!,
+                                        contractBp.baseAddress!,
+                                        tokenPosition,
+                                        recipientPtr,
+                                        amount,
+                                        notePtr,
+                                        groupTuple.kind,
+                                        groupTuple.position,
+                                        actionIdPtr,
+                                        groupTuple.actionIsProposer,
+                                        signingKeyId,
+                                        signerHandle,
+                                        outJSON
+                                    )
+                                }
                             }
                         }
                     }

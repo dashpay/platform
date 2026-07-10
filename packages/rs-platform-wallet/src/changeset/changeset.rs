@@ -1033,6 +1033,87 @@ pub struct AccountRegistrationEntry {
     pub account_xpub: ExtendedPubKey,
 }
 
+/// Non-secp256k1 extended public key carried by a
+/// [`ProviderKeyAccountEntry`].
+///
+/// The BLS operator-key account and the EdDSA platform-node-key account
+/// each hold an extended public key over their own curve, not a
+/// secp256k1 [`ExtendedPubKey`], so they can't ride the
+/// [`AccountRegistrationEntry`] path. Variants are gated on the
+/// `bls` / `eddsa` features that make the underlying account types
+/// exist upstream; with both off the enum is uninhabited (no provider
+/// key account can be produced).
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum ProviderKeyExtendedPubKey {
+    /// Extended BLS public key of a `ProviderOperatorKeys` account.
+    #[cfg(feature = "bls")]
+    Bls(key_wallet::derivation_bls_bip32::ExtendedBLSPubKey),
+    /// Extended Ed25519 public key of a `ProviderPlatformKeys` account.
+    #[cfg(feature = "eddsa")]
+    EdDSA(key_wallet::derivation_slip10::ExtendedEd25519PubKey),
+}
+
+/// One pre-derived platform-node (Ed25519) public key captured at
+/// registration, in the forms the host displays without needing the
+/// seed again.
+///
+/// Ed25519/SLIP-10 is hardened-only — there is no public-key
+/// derivation, so the wallet can never extend its platform-node pool
+/// on demand the way the BLS operator pool does (non-hardened
+/// `ckd_pub` off the account xpub). Pre-generating a fixed batch while
+/// the seed is in hand at registration is therefore the only way to
+/// list these keys later from an external-signable / watch-only
+/// wallet without re-prompting for the mnemonic. Only the public parts
+/// are carried — the private scalar stays resolver-gated per index.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct ProviderPlatformNodePubKey {
+    /// Hardened key index within the platform-node pool (`#0..`).
+    pub index: u32,
+    /// Raw 32-byte Ed25519 public key at this index.
+    pub public_key: [u8; 32],
+    /// The 20-byte platform node id — `hash160` of the Ed25519 public
+    /// key, exactly what a ProRegTx `platform_node_id` field carries.
+    /// Precomputed on the Rust side so the host renders it without a
+    /// RIPEMD-160 implementation of its own.
+    pub node_id: [u8; 20],
+}
+
+/// One entry per provider **key-material** account captured at
+/// registration — the BLS operator-key account
+/// ([`AccountType::ProviderOperatorKeys`]) and the EdDSA
+/// platform-node-key account ([`AccountType::ProviderPlatformKeys`]).
+///
+/// Upstream stores these in dedicated `Option` fields on the
+/// `AccountCollection`, which `all_accounts()` deliberately excludes,
+/// so they never enter the [`Self::account_xpub`](AccountRegistrationEntry)
+/// snapshot the ECDSA accounts ride. Carried on
+/// [`PlatformWalletChangeSet`] as
+/// `Vec<ProviderKeyAccountEntry>`; the FFI layer bincode-encodes the
+/// [`extended_public_key`](Self::extended_public_key) into the same
+/// `AccountSpecFFI.account_xpub_bytes` slot the ECDSA accounts use (the
+/// `type_tag` disambiguates the decode) and the restore side rebuilds a
+/// watch-only `BLSAccount` / `EdDSAAccount` from it. Append-only merge,
+/// same as [`AccountRegistrationEntry`].
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct ProviderKeyAccountEntry {
+    /// `ProviderOperatorKeys` (BLS) or `ProviderPlatformKeys` (EdDSA).
+    pub account_type: AccountType,
+    /// The account's extended public key.
+    pub extended_public_key: ProviderKeyExtendedPubKey,
+    /// Pre-derived platform-node (Ed25519) public keys, captured at
+    /// registration while the seed was in hand. Only populated for the
+    /// `ProviderPlatformKeys` (EdDSA) entry — always empty for the BLS
+    /// operator entry, whose pool the wallet can re-derive on demand
+    /// from the account xpub (non-hardened `ckd_pub`, no seed). The FFI
+    /// layer surfaces these to the host as a flat display array so the
+    /// Node Keys screen can list them from persistence with no keychain
+    /// prompt. See [`ProviderPlatformNodePubKey`].
+    pub derived_platform_node_keys: Vec<ProviderPlatformNodePubKey>,
+}
+
 /// Address-pool snapshot for one `(account_type, pool_type)` pair.
 ///
 /// Routed through the changeset rather than a dedicated trait method
@@ -1252,6 +1333,12 @@ pub struct PlatformWalletChangeSet {
     /// the merge policy (plain `Vec::extend`, dedup is the apply-side
     /// caller's job).
     pub account_registrations: Vec<AccountRegistrationEntry>,
+    /// Provider key-material accounts (BLS operator keys / EdDSA
+    /// platform-node keys) emitted at registration. These live outside
+    /// the ECDSA `all_accounts()` set upstream, so they ride their own
+    /// vec rather than [`Self::account_registrations`]. See
+    /// [`ProviderKeyAccountEntry`] for the merge policy (append-only).
+    pub provider_key_account_registrations: Vec<ProviderKeyAccountEntry>,
     /// Address-pool snapshots emitted at wallet create (initial
     /// gap-limit population) and on any pool extension / "used" flip.
     /// See [`AccountAddressPoolEntry`] for the merge policy.
@@ -1366,6 +1453,8 @@ impl Merge for PlatformWalletChangeSet {
         // duplicate keys within one merged round are a no-op).
         self.account_registrations
             .extend(other.account_registrations);
+        self.provider_key_account_registrations
+            .extend(other.provider_key_account_registrations);
         self.account_address_pools
             .extend(other.account_address_pools);
         // Deferred contact-crypto queue: append-only add/clear deltas; the
@@ -1396,6 +1485,7 @@ impl Merge for PlatformWalletChangeSet {
                 .is_none_or(|m| m.is_empty())
             && self.wallet_metadata.is_none()
             && self.account_registrations.is_empty()
+            && self.provider_key_account_registrations.is_empty()
             && self.account_address_pools.is_empty()
             && self.pending_contact_crypto_added.is_empty()
             && self.pending_contact_crypto_cleared.is_empty();
