@@ -61,19 +61,19 @@ describe('FeeStrategyStep', () => {
       });
     }
 
-    it('emits {type: "deductFromInput", index} in toObject() output', () => {
+    it('emits {$type: "deductFromInput", index} in toObject() output', () => {
       const transition = makeTransition([wasm.FeeStrategyStep.deductFromInput(0)]);
       const obj = transition.toObject();
 
       expect(obj.feeStrategy).to.be.an('array').with.lengthOf(1);
-      expect(obj.feeStrategy[0]).to.deep.equal({ type: 'deductFromInput', index: 0 });
+      expect(obj.feeStrategy[0]).to.deep.equal({ $type: 'deductFromInput', index: 0 });
     });
 
-    it('emits {type: "reduceOutput", index} in toObject() output', () => {
+    it('emits {$type: "reduceOutput", index} in toObject() output', () => {
       const transition = makeTransition([wasm.FeeStrategyStep.reduceOutput(3)]);
       const obj = transition.toObject();
 
-      expect(obj.feeStrategy).to.deep.equal([{ type: 'reduceOutput', index: 3 }]);
+      expect(obj.feeStrategy).to.deep.equal([{ $type: 'reduceOutput', index: 3 }]);
     });
 
     it('emits {type, index} in toJSON() output (matches Object form for this enum)', () => {
@@ -84,8 +84,8 @@ describe('FeeStrategyStep', () => {
       const json = transition.toJSON();
 
       expect(json.feeStrategy).to.deep.equal([
-        { type: 'deductFromInput', index: 1 },
-        { type: 'reduceOutput', index: 2 },
+        { $type: 'deductFromInput', index: 1 },
+        { $type: 'reduceOutput', index: 2 },
       ]);
     });
 

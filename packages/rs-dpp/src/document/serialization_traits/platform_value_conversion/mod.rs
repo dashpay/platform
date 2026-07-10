@@ -2,8 +2,7 @@ mod v0;
 
 pub use v0::*;
 
-use crate::document::{Document, DocumentV0};
-use crate::version::PlatformVersion;
+use crate::document::Document;
 use crate::ProtocolError;
 use platform_value::Value;
 use std::collections::BTreeMap;
@@ -22,40 +21,6 @@ impl DocumentPlatformValueMethodsV0<'_> for Document {
             Document::V0(v0) => v0.into_map_value(),
         }
     }
-
-    /// Convert the document to a value consuming the document.
-    fn into_value(self) -> Result<Value, ProtocolError> {
-        match self {
-            Document::V0(v0) => v0.into_value(),
-        }
-    }
-
-    /// Convert the document to an object.
-    fn to_object(&self) -> Result<Value, ProtocolError> {
-        match self {
-            Document::V0(v0) => v0.to_object(),
-        }
-    }
-
-    /// Create a document from a platform value.
-    fn from_platform_value(
-        document_value: Value,
-        platform_version: &PlatformVersion,
-    ) -> Result<Self, ProtocolError> {
-        match platform_version
-            .dpp
-            .document_versions
-            .document_structure_version
-        {
-            0 => Ok(Document::V0(DocumentV0::from_platform_value(
-                document_value,
-                platform_version,
-            )?)),
-            version => Err(ProtocolError::UnknownVersionError(format!(
-                "version {version} not known for document for call from_platform_value"
-            ))),
-        }
-    }
 }
 
 #[cfg(test)]
@@ -63,13 +28,19 @@ mod tests {
     use super::*;
     use crate::data_contract::accessors::v0::DataContractV0Getters;
     use crate::data_contract::document_type::random_document::CreateRandomDocument;
-    use crate::document::DocumentV0Getters;
+    use crate::document::{DocumentV0, DocumentV0Getters};
+    use crate::serialization::ValueConvertible;
     use crate::tests::json_document::json_document_to_contract;
     use platform_value::Identifier;
     use platform_version::version::PlatformVersion;
 
+    // After Phase D step 8 slice A, the Value-shape round-trip lives on
+    // canonical `ValueConvertible` (`to_object` / `into_object` /
+    // `from_object`). The `to_map_value` / `into_map_value` helpers on
+    // this trait are tested below — they're the only methods that stay.
+
     // ================================================================
-    //  Round-trip: Document -> Value -> Document
+    //  Round-trip: Document -> Value -> Document via canonical traits
     // ================================================================
 
     #[test]
@@ -91,10 +62,8 @@ mod tests {
                 .random_document(Some(seed), platform_version)
                 .expect("expected random document");
 
-            let value = Document::into_value(document.clone()).expect("into_value should succeed");
-
-            let recovered = Document::from_platform_value(value, platform_version)
-                .expect("from_platform_value should succeed");
+            let value = document.clone().into_object().expect("into_object");
+            let recovered = Document::from_object(value).expect("from_object");
 
             assert_eq!(document.id(), recovered.id(), "id mismatch for seed {seed}");
             assert_eq!(
@@ -145,32 +114,6 @@ mod tests {
     }
 
     // ================================================================
-    //  to_object returns a Value
-    // ================================================================
-
-    #[test]
-    fn to_object_returns_map_value() {
-        let platform_version = PlatformVersion::latest();
-        let contract = json_document_to_contract(
-            "../rs-drive/tests/supporting_files/contract/dashpay/dashpay-contract.json",
-            false,
-            platform_version,
-        )
-        .expect("expected to load dashpay contract");
-
-        let document_type = contract
-            .document_type_for_name("profile")
-            .expect("expected profile document type");
-
-        let document = document_type
-            .random_document(Some(7), platform_version)
-            .expect("expected random document");
-
-        let obj = document.to_object().expect("to_object should succeed");
-        assert!(obj.is_map(), "to_object should return a Map value");
-    }
-
-    // ================================================================
     //  into_map_value consumes document
     // ================================================================
 
@@ -197,27 +140,21 @@ mod tests {
             .into_map_value()
             .expect("into_map_value should succeed");
 
-        // The map should contain the id
         let id_val = map.get("$id").expect("should have $id");
         match id_val {
             Value::Identifier(bytes) => {
-                assert_eq!(
-                    Identifier::new(*bytes),
-                    original_id,
-                    "id in map should match original"
-                );
+                assert_eq!(Identifier::new(*bytes), original_id);
             }
             _ => panic!("$id should be an Identifier value"),
         }
     }
 
     // ================================================================
-    //  from_platform_value with minimal document
+    //  from_object via canonical traits with minimal document
     // ================================================================
 
     #[test]
-    fn from_platform_value_with_minimal_data() {
-        let platform_version = PlatformVersion::latest();
+    fn from_object_with_minimal_data() {
         let id = Identifier::new([1u8; 32]);
         let owner_id = Identifier::new([2u8; 32]);
 
@@ -238,9 +175,9 @@ mod tests {
             creator_id: None,
         };
 
-        let value = DocumentV0::into_value(doc_v0).expect("into_value should succeed");
-        let recovered = Document::from_platform_value(value, platform_version)
-            .expect("from_platform_value should succeed");
+        let document: Document = doc_v0.into();
+        let value = document.clone().into_object().expect("into_object");
+        let recovered = Document::from_object(value).expect("from_object");
 
         assert_eq!(recovered.id(), id);
         assert_eq!(recovered.owner_id(), owner_id);

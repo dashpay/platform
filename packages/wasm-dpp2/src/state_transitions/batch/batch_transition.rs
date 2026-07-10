@@ -1,7 +1,6 @@
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::impl_wasm_type_info;
-use crate::serialization;
 use crate::state_transitions::StateTransitionWasm;
 use crate::state_transitions::batch::batched_transition::BatchedTransitionWasm;
 use crate::utils::{IntoWasm, try_to_u32, try_to_u64};
@@ -215,16 +214,6 @@ impl BatchTransitionWasm {
         self.0.serialize_to_bytes().map_err(Into::into)
     }
 
-    #[wasm_bindgen(js_name = "toObject")]
-    pub fn to_object(&self) -> WasmDppResult<BatchTransitionObjectJs> {
-        serialization::to_object(&self.0).map(Into::into)
-    }
-
-    #[wasm_bindgen(js_name = "toJSON")]
-    pub fn to_json(&self) -> WasmDppResult<BatchTransitionJSONJs> {
-        serialization::to_json(&self.0).map(Into::into)
-    }
-
     #[wasm_bindgen(js_name = "toHex")]
     pub fn to_hex(&self) -> WasmDppResult<String> {
         Ok(encode(self.to_bytes()?.as_slice(), Hex))
@@ -240,16 +229,6 @@ impl BatchTransitionWasm {
         let rs_batch = BatchTransition::deserialize_from_bytes(bytes.as_slice())?;
 
         Ok(BatchTransitionWasm::from(rs_batch))
-    }
-
-    #[wasm_bindgen(js_name = "fromObject")]
-    pub fn from_object(object: BatchTransitionObjectJs) -> WasmDppResult<BatchTransitionWasm> {
-        serialization::from_object(object.into()).map(BatchTransitionWasm)
-    }
-
-    #[wasm_bindgen(js_name = "fromJSON")]
-    pub fn from_json(object: BatchTransitionJSONJs) -> WasmDppResult<BatchTransitionWasm> {
-        serialization::from_json(object.into()).map(BatchTransitionWasm)
     }
 
     #[wasm_bindgen(js_name = "fromBase64")]
@@ -269,4 +248,11 @@ impl BatchTransitionWasm {
     }
 }
 
+crate::impl_wasm_conversions_inner!(
+    BatchTransitionWasm,
+    BatchTransition,
+    BatchTransition,
+    BatchTransitionObjectJs,
+    BatchTransitionJSONJs
+);
 impl_wasm_type_info!(BatchTransitionWasm, BatchTransition);

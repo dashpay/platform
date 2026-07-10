@@ -1,6 +1,6 @@
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::impl_try_from_js_value;
-use crate::impl_wasm_conversions_serde;
+use crate::impl_wasm_conversions_inner;
 use crate::impl_wasm_type_info;
 use crate::utils::{
     IntoWasm, try_from_options_with, try_to_array, try_to_bytes, try_to_fixed_bytes,
@@ -159,8 +159,9 @@ impl SerializedOrchardActionWasm {
 
 impl_try_from_js_value!(SerializedOrchardActionWasm, "SerializedOrchardAction");
 impl_wasm_type_info!(SerializedOrchardActionWasm, SerializedOrchardAction);
-impl_wasm_conversions_serde!(
+impl_wasm_conversions_inner!(
     SerializedOrchardActionWasm,
+    SerializedAction,
     SerializedOrchardAction,
     SerializedOrchardActionObjectJs,
     SerializedOrchardActionJSONJs

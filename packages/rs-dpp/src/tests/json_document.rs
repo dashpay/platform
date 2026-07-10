@@ -72,7 +72,20 @@ pub fn json_document_to_contract(
 ) -> Result<DataContract, ProtocolError> {
     let value = json_document_to_json_value(path)?;
 
-    DataContract::from_json(value, full_validation, platform_version)
+    if full_validation {
+        DataContract::from_json(value, true, platform_version)
+    } else {
+        // Non-validating path: deserialize the platform-version-agnostic
+        // serialization format (which handles both V0/V1 wire shapes via
+        // `$formatVersion`), then dispatch on the caller-provided
+        // `platform_version` to pick the DataContract variant. We avoid
+        // `serde_json::from_value::<DataContract>` here because that path
+        // ignores the caller pv and uses the process-global current/latest.
+        let format: crate::data_contract::serialized_version::DataContractInSerializationFormat =
+            serde_json::from_value(value)
+                .map_err(|e| ProtocolError::DecodingError(e.to_string()))?;
+        DataContract::try_from_platform_versioned(format, false, &mut vec![], platform_version)
+    }
 }
 
 #[cfg(all(

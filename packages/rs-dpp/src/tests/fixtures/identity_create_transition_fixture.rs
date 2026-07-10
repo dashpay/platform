@@ -20,7 +20,7 @@ pub fn identity_create_transition_fixture(one_time_private_key: Option<PrivateKe
         "publicKeys": [
             {
                 "id": 0u32,
-                "type": KeyType::ECDSA_SECP256K1 as u8,
+                "$type": KeyType::ECDSA_SECP256K1 as u8,
                 "data": BinaryData::new(decode("AuryIuMtRrl/VviQuyLD1l4nmxi9ogPzC9LT7tdpo0di", Encoding::Base64).unwrap()),
                 "purpose": Purpose::AUTHENTICATION as u8,
                 "securityLevel": SecurityLevel::MASTER as u8,

@@ -195,3 +195,90 @@ pub struct SerializedAction {
     /// signature from one transition cannot be reused in another.
     pub spend_auth_sig: [u8; 64],
 }
+
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+impl crate::serialization::JsonConvertible for SerializedAction {}
+
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+impl crate::serialization::ValueConvertible for SerializedAction {}
+
+#[cfg(all(
+    test,
+    feature = "json-conversion",
+    feature = "value-conversion",
+    feature = "serde-conversion"
+))]
+mod json_convertible_tests {
+    use super::*;
+    use serde_json::json;
+
+    fn fixture() -> SerializedAction {
+        SerializedAction {
+            nullifier: [0x11; 32],
+            rk: [0x22; 32],
+            cmx: [0x33; 32],
+            // Encrypted note is variable-length (216 bytes per the field doc); a
+            // shorter payload still exercises the `serde_bytes_var` path.
+            encrypted_note: vec![0x44, 0x55, 0x66, 0x77],
+            cv_net: [0x88; 32],
+            spend_auth_sig: [0x99; 64],
+        }
+    }
+
+    // `SerializedAction` is a struct with `serde(rename_all = "camelCase")`.
+    // `#[json_safe_fields]` auto-injects `#[serde(with = ...)]` on the byte
+    // fields: `[u8; N]` → `serde_bytes` (const-generic), `Vec<u8>` →
+    // `serde_bytes_var`. The wire shape is base64 strings in JSON HR and
+    // raw bytes in non-HR.
+
+    #[test]
+    fn json_round_trip_with_full_wire_shape() {
+        use crate::serialization::JsonConvertible;
+        use base64::{engine::general_purpose::STANDARD, Engine};
+        let original = fixture();
+        let json = original.to_json().expect("to_json");
+        // Each byte field is base64-encoded in HR.
+        assert_eq!(
+            json,
+            json!({
+                "nullifier": STANDARD.encode([0x11; 32]),
+                "rk": STANDARD.encode([0x22; 32]),
+                "cmx": STANDARD.encode([0x33; 32]),
+                "encryptedNote": STANDARD.encode([0x44, 0x55, 0x66, 0x77]),
+                "cvNet": STANDARD.encode([0x88; 32]),
+                "spendAuthSig": STANDARD.encode([0x99; 64]),
+            })
+        );
+        let recovered = SerializedAction::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn value_round_trip_with_full_wire_shape() {
+        use crate::serialization::ValueConvertible;
+        use platform_value::Value;
+        let original = fixture();
+        let value = original.to_object().expect("to_object");
+        // `[u8; 32]` → `Value::Bytes32`, `[u8; 64]` and `Vec<u8>` (via
+        // `serde_bytes_var`) → `Value::Bytes(Vec<u8>)`.
+        assert_eq!(
+            value,
+            Value::Map(vec![
+                (Value::Text("nullifier".into()), Value::Bytes32([0x11; 32])),
+                (Value::Text("rk".into()), Value::Bytes32([0x22; 32])),
+                (Value::Text("cmx".into()), Value::Bytes32([0x33; 32])),
+                (
+                    Value::Text("encryptedNote".into()),
+                    Value::Bytes(vec![0x44, 0x55, 0x66, 0x77]),
+                ),
+                (Value::Text("cvNet".into()), Value::Bytes32([0x88; 32])),
+                (
+                    Value::Text("spendAuthSig".into()),
+                    Value::Bytes(vec![0x99; 64]),
+                ),
+            ])
+        );
+        let recovered = SerializedAction::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
+    }
+}

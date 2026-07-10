@@ -296,13 +296,18 @@ describe('IdentityPublicKey', () => {
 
       const json = pubKey.toJSON();
 
+      // Canonical JSON wire shape: binary fields render as base64
+      // strings (matching `IdentityWasm.toJSON`'s embedded keys and
+      // every other rs-dpp type's canonical JSON output). The
+      // validating-JSON byte-array shape was dropped along with the
+      // legacy `to_json_object` trait method.
       expect(json.id).to.equal(keyId);
       expect(json.purpose).to.equal(0); // AUTHENTICATION
       expect(json.securityLevel).to.equal(1); // CRITICAL
       expect(json.contractBounds).to.be.null();
       expect(json.type).to.equal(0); // ECDSA_SECP256K1
       expect(json.readOnly).to.equal(false);
-      expect(Array.from(json.data)).to.deep.equal(Array.from(binaryData));
+      expect(json.data).to.equal('A2o5QxLkDoHZKP3iveeIAHDk+pwdHZsWjacH6kaK+itI');
     });
   });
 

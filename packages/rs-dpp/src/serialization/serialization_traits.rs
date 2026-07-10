@@ -138,6 +138,40 @@ pub trait PlatformLimitDeserializableFromVersionedStructure {
         Self: Sized;
 }
 
+/// Convert to/from `platform_value::Value` using **non-human-readable** serde
+/// (`Identifier` = `Value::Identifier(bytes)`, binary = `Value::Bytes(bytes)`,
+/// raw byte fields preserved without stringification).
+///
+/// # ⚠️ HR / non-HR divergence (Critical-1)
+///
+/// `ValueConvertible` calls `platform_value::to_value`, which uses a serializer
+/// that reports `is_human_readable() == false`. The mirror trait
+/// [`JsonConvertible`] uses `serde_json::to_value`, which reports `true`.
+/// Types whose `Serialize` impl branches on `is_human_readable()` produce
+/// **structurally different output** between the two paths:
+///
+/// | Type | `to_json()` (HR) | `to_object()` (non-HR) |
+/// |---|---|---|
+/// | [`platform_value::Identifier`] | `"5bV6jUfh..."` (bs58 string) | `Value::Identifier([u8; 32])` |
+/// | [`platform_value::BinaryData`] | `"sg=="` (base64 string) | `Value::Bytes(Vec<u8>)` |
+/// | `Bytes20` / `Bytes32` / `Bytes36` | base64 string | `Value::Bytes32([u8; N])` etc. |
+/// | `CoreScript` | `"dqkU..."` (base64 string) | `Value::Bytes(Vec<u8>)` |
+///
+/// **Do not assume** `self.to_object()?.try_into_json()` ≡ `self.to_json()`.
+/// They render the same field as a string in one and a byte array in the
+/// other. Round-trip tests should exercise each path independently.
+///
+/// # ⚠️ `ContentDeserializer` caveat
+///
+/// Manual `Deserialize` impls that branch on `deserializer.is_human_readable()`
+/// must also handle `serde::__private::de::ContentDeserializer`, used
+/// internally by `#[serde(tag = "...")]` enums. ContentDeserializer **always
+/// reports `is_human_readable: true`** regardless of the original source, so
+/// a non-HR `platform_value::Value` flowing into a tagged enum gets shape-
+/// inferred as if it were HR. Recipe: write a dual-shape visitor accepting
+/// both shapes in the HR branch via `deserialize_any`. See
+/// [`platform_value::Bytes32::deserialize`] for the canonical example, and
+/// `rs-dpp/src/serialization/serde_bytes.rs` for `[u8; N]` / `Vec<u8>`.
 #[cfg(feature = "value-conversion")]
 pub trait ValueConvertible: Serialize + DeserializeOwned {
     fn to_object(&self) -> Result<Value, ProtocolError>
@@ -169,10 +203,43 @@ pub trait ValueConvertible: Serialize + DeserializeOwned {
     }
 }
 
-/// Convert to/from JSON using human-readable serde (Identifier=base58, Bytes=base64).
+/// Convert to/from JSON using **human-readable** serde (`Identifier` = base58,
+/// binary = base64).
 ///
 /// This trait produces clean `serde_json::Value` with native number types.
-/// Any JS-boundary concerns (large number stringification) are handled by the WASM layer.
+/// Any JS-boundary concerns (large number stringification) are handled by the
+/// WASM layer.
+///
+/// # ⚠️ HR / non-HR divergence (Critical-1)
+///
+/// `JsonConvertible` calls `serde_json::to_value`, which uses a serializer
+/// that reports `is_human_readable() == true`. The mirror trait
+/// [`ValueConvertible`] uses `platform_value::to_value`, which reports
+/// `false`. Types whose `Serialize` impl branches on `is_human_readable()`
+/// produce **structurally different output** between the two paths:
+///
+/// | Type | `to_json()` (HR) | `to_object()` (non-HR) |
+/// |---|---|---|
+/// | [`platform_value::Identifier`] | `"5bV6jUfh..."` (bs58 string) | `Value::Identifier([u8; 32])` |
+/// | [`platform_value::BinaryData`] | `"sg=="` (base64 string) | `Value::Bytes(Vec<u8>)` |
+/// | `Bytes20` / `Bytes32` / `Bytes36` | base64 string | `Value::Bytes32([u8; N])` etc. |
+/// | `CoreScript` | `"dqkU..."` (base64 string) | `Value::Bytes(Vec<u8>)` |
+///
+/// **Do not assume** `self.to_object()?.try_into_json()` ≡ `self.to_json()`.
+/// They render the same field as a string in one and a byte array in the
+/// other. Round-trip tests should exercise each path independently.
+///
+/// # ⚠️ `ContentDeserializer` caveat
+///
+/// Manual `Deserialize` impls that branch on `deserializer.is_human_readable()`
+/// must also handle `serde::__private::de::ContentDeserializer`, used
+/// internally by `#[serde(tag = "...")]` enums. ContentDeserializer **always
+/// reports `is_human_readable: true`** regardless of the original source — so
+/// a non-HR `platform_value::Value` flowing into a tagged enum gets shape-
+/// inferred as if it were HR. Recipe: write a dual-shape visitor accepting
+/// both shapes in the HR branch via `deserialize_any`. See
+/// [`platform_value::Bytes32::deserialize`] for the canonical example, and
+/// `rs-dpp/src/serialization/serde_bytes.rs` for `[u8; N]` / `Vec<u8>`.
 #[cfg(feature = "json-conversion")]
 pub trait JsonConvertible: Serialize + DeserializeOwned {
     fn to_json(&self) -> Result<JsonValue, ProtocolError> {

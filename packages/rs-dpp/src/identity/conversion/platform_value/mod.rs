@@ -1,13 +1,8 @@
-mod v0;
-
 use crate::identity::{Identity, IdentityV0};
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use platform_value::Value;
 use platform_version::TryFromPlatformVersioned;
-pub use v0::IdentityPlatformValueConversionMethodsV0;
-
-impl IdentityPlatformValueConversionMethodsV0 for Identity {}
 
 impl TryFromPlatformVersioned<Value> for Identity {
     type Error = ProtocolError;
@@ -166,14 +161,13 @@ mod tests {
         assert!(matches!(result, Err(ProtocolError::ValueError(_))));
     }
 
-    // to_cleaned_object on the Identity enum wrapper uses the default body
-    // (`self.to_object()`), inherited through `IdentityPlatformValueConversionMethodsV0`.
-    // to_object itself comes from the `ValueConvertible` derive on Identity, which
-    // produces the tagged `$formatVersion: "0"` form.
+    // After Phase D step 5, `IdentityPlatformValueConversionMethodsV0` has
+    // been deleted; the canonical `ValueConvertible::to_object` produces the
+    // tagged `$formatVersion: "0"` form for the Identity enum wrapper.
     #[test]
-    fn identity_wrapper_to_cleaned_object_includes_format_version_tag() {
+    fn identity_wrapper_to_object_includes_format_version_tag() {
         let identity: Identity = sample_identity_v0().into();
-        let value = identity.to_cleaned_object().expect("to_cleaned_object");
+        let value = identity.to_object().expect("to_object");
         let map = value.to_map_ref().expect("map");
         assert!(
             map.iter()

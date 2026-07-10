@@ -3030,11 +3030,13 @@ extension ManagedPlatformWallet {
     /// JSON once Platform confirms the transition.
     ///
     /// The returned JSON is DPP's canonical representation of the
-    /// confirmed document (system fields `$id`/`$ownerId`/timestamps/
-    /// `$revision` with identifiers as base58 strings, only populated
-    /// fields present) — what a DOC-01 query would return. Callers
-    /// persist this verbatim so the local cache matches the on-chain
-    /// document rather than the user's raw form input.
+    /// confirmed document — the same bytes a DOC-01 list query
+    /// (`dash_sdk_document_search`) returns: `$formatVersion` present,
+    /// `$id`/`$ownerId` as base58 strings, binary properties as base64,
+    /// and unset system fields as `null`. Callers persist this verbatim
+    /// so the local cache matches the on-chain document rather than the
+    /// user's raw form input. (A single-document `documentGet` fetch
+    /// uses a different, per-field shape.)
     ///
     /// Routes through `IdentityWallet::create_document_with_signer`
     /// (via `platform_wallet_create_document_with_signer`), the
