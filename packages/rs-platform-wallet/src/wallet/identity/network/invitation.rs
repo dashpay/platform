@@ -44,6 +44,17 @@ use super::*;
 /// small starting balance; tune if onboarding needs more.
 pub const MAX_INVITATION_DUFFS: u64 = 1_000_000;
 
+/// Floor on the amount an invitation can lock (0.003 DASH). A voucher funds a
+/// Platform identity operation, and creating an identity — which is what the
+/// invitee's claim does, and what a register-target reclaim does — requires the
+/// asset lock to carry at least the identity-registration minimum (~0.00228 DASH
+/// in credits on the current network; the state transition is rejected with
+/// `IdentityAssetLockTransactionOutPointNotEnoughBalanceError` below it). A
+/// voucher under this floor produces an invitation that can be neither claimed
+/// nor reclaimed, so reject it at creation. Set above the bare floor to leave the
+/// new identity a small usable starting balance; tune if the floor changes.
+pub const MIN_INVITATION_DUFFS: u64 = 300_000;
+
 /// Default TTL (24h) for an invitation's advisory expiry. The FFI sets
 /// `expiry_unix = now + MAX_INVITATION_TTL_SECS`. The expiry is **advisory** — a
 /// leaked-link finder holds the voucher key and ignores it — so it bounds only
@@ -171,10 +182,12 @@ impl IdentityWallet {
         AS: ::key_wallet::signer::Signer + Send + Sync,
         CP: ContactCryptoProvider + Send + Sync,
     {
-        if amount_duffs == 0 {
-            return Err(PlatformWalletError::InvalidIdentityData(
-                "invitation amount must be greater than zero".to_string(),
-            ));
+        if amount_duffs < MIN_INVITATION_DUFFS {
+            return Err(PlatformWalletError::InvalidIdentityData(format!(
+                "invitation amount {amount_duffs} is below the minimum {MIN_INVITATION_DUFFS} \
+                 duffs; a smaller voucher cannot fund identity registration, so the invitation \
+                 could be neither claimed nor reclaimed"
+            )));
         }
         if amount_duffs > MAX_INVITATION_DUFFS {
             return Err(PlatformWalletError::InvalidIdentityData(format!(
