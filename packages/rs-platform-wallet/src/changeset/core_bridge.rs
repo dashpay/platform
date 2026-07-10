@@ -600,7 +600,10 @@ mod tests {
         let mut fault2 = AdapterFaultState::default();
         let c = [0xCCu8; 32];
         fault2.fault_all(&signal);
-        assert!(fault2.is_faulted(&c), "lag must freeze every wallet, even future ids");
+        assert!(
+            fault2.is_faulted(&c),
+            "lag must freeze every wallet, even future ids"
+        );
     }
 
     // ── Adapter-loop integration tests (dashpay/platform#4069) ──
@@ -796,7 +799,10 @@ mod tests {
 
         // 1) Record-bearing event whose store() is rejected → faults wallet.
         tx.send(block_processed_event(wallet_id, 10)).unwrap();
-        let first = obs_rx.recv().await.expect("rejected store still calls store()");
+        let first = obs_rx
+            .recv()
+            .await
+            .expect("rejected store still calls store()");
         assert!(first.rejected, "first store must be the forced rejection");
         assert_eq!(first.last_processed_height, Some(10));
 
@@ -848,7 +854,10 @@ mod tests {
 
         // A later record-bearing event must STILL be persisted.
         tx.send(block_processed_event(wallet_id, 30)).unwrap();
-        let later = obs_rx.recv().await.expect("post-guard record-bearing store must arrive");
+        let later = obs_rx
+            .recv()
+            .await
+            .expect("post-guard record-bearing store must arrive");
         assert_eq!(
             later.last_processed_height,
             Some(30),

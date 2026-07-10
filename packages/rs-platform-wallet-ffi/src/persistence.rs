@@ -5313,7 +5313,8 @@ mod tests {
             .store([1u8; 32], PlatformWalletChangeSet::default())
             .expect_err("a nonzero begin must fail the round");
         assert!(
-            err.to_string().contains("changeset-begin callback returned error code 7"),
+            err.to_string()
+                .contains("changeset-begin callback returned error code 7"),
             "unexpected error: {err}"
         );
         // The round must be closed again: a follow-up store() with a
@@ -5341,7 +5342,9 @@ mod tests {
     fn round_guard_state_machine_rejects_nesting_and_unmatched_end() {
         let mut state = RoundGuardState::default();
         // Fresh: begin opens the round.
-        state.begin_round().expect("first begin must open the round");
+        state
+            .begin_round()
+            .expect("first begin must open the round");
         // Nested begin is rejected (error, not panic).
         let nested = state
             .begin_round()
@@ -5361,7 +5364,11 @@ mod tests {
             "unexpected unmatched-end error: {unmatched}"
         );
         // Fully cycled back to a usable state.
-        state.begin_round().expect("state must be reusable after a clean cycle");
-        state.end_round().expect("end must close the reopened round");
+        state
+            .begin_round()
+            .expect("state must be reusable after a clean cycle");
+        state
+            .end_round()
+            .expect("end must close the reopened round");
     }
 }
