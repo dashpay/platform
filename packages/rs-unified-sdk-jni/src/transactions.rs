@@ -750,6 +750,169 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_do
     })
 }
 
+// ── Encrypted document create / fetch (wallet txMetadata contract) ─────
+
+/// Create + broadcast an ENCRYPTED wallet-contract document (the wire-
+/// compatible `txMetadata` shape) — the JNI bridge over
+/// `platform_wallet_create_encrypted_document_with_signer`.
+///
+/// The SDK derives the identity encryption key, seals `payload` into the
+/// legacy `version ‖ IV ‖ AES-256-CBC` blob, and writes
+/// `{keyIndex, encryptionKeyIndex, encryptedMetadata}`. `encryptionKeyIndex` is
+/// the app's per-document index; `version` is the payload version byte
+/// (`1` = protobuf); `payload` is the already-serialized opaque plaintext (a
+/// protobuf `TxMetadataBatch`) — the SDK does not parse it. Returns the
+/// confirmed document's canonical JSON (its 32-byte id is the base58 `$id`
+/// field); null after throwing on error.
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_documentCreateEncrypted(
+    mut env: JNIEnv,
+    _class: JClass,
+    wallet_handle: jlong,
+    owner_id: JByteArray,
+    contract_id: JByteArray,
+    document_type: JString,
+    encryption_key_index: jint,
+    version: jint,
+    payload: JByteArray,
+    signer_handle: jlong,
+) -> jstring {
+    guard(&mut env, ptr::null_mut(), |env| {
+        let Some(owner) = read_id32(env, &owner_id, "ownerId") else {
+            return ptr::null_mut();
+        };
+        let Some(contract) = read_id32(env, &contract_id, "contractId") else {
+            return ptr::null_mut();
+        };
+        let Some(doc_type) = read_cstring(env, &document_type, "documentType") else {
+            return ptr::null_mut();
+        };
+        if encryption_key_index < 0 {
+            throw_sdk_exception(env, 1, "encryptionKeyIndex must be non-negative");
+            return ptr::null_mut();
+        }
+        if !(0..=255).contains(&version) {
+            throw_sdk_exception(env, 1, "version must be in 0..=255");
+            return ptr::null_mut();
+        }
+        let payload_bytes = match env.convert_byte_array(&payload) {
+            Ok(b) => b,
+            Err(_) => {
+                let _ = env.exception_clear();
+                throw_sdk_exception(env, 1, "payload byte[] was null/invalid");
+                return ptr::null_mut();
+            }
+        };
+
+        let mut out_id = [0u8; 32];
+        let mut out_json: *mut c_char = ptr::null_mut();
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_create_encrypted_document_with_signer(
+                wallet_handle as Handle,
+                owner.as_ptr(),
+                contract.as_ptr(),
+                doc_type.as_ptr(),
+                encryption_key_index as u32,
+                version as u8,
+                payload_bytes.as_ptr(),
+                payload_bytes.len(),
+                signer_handle as *mut SignerHandle,
+                out_id.as_mut_ptr(),
+                &mut out_json as *mut *mut c_char,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return ptr::null_mut();
+        }
+        if out_json.is_null() {
+            throw_sdk_exception(
+                env,
+                99,
+                "encrypted document create returned success but no canonical JSON",
+            );
+            return ptr::null_mut();
+        }
+        let json = unsafe { CStr::from_ptr(out_json) }
+            .to_string_lossy()
+            .into_owned();
+        unsafe { platform_wallet_ffi::platform_wallet_string_free(out_json) };
+
+        env.new_string(json)
+            .map(|s| s.into_raw())
+            .unwrap_or(ptr::null_mut())
+    })
+}
+
+/// Fetch + DECRYPT every encrypted wallet-contract document owned by `ownerId`
+/// on `contractId`'s `documentType` updated at or after `sinceMs` — the JNI
+/// bridge over `platform_wallet_fetch_encrypted_documents` (the wire-compatible
+/// read counterpart of the legacy `getTxMetaData(since, key)`).
+///
+/// Returns a JSON array; each element is
+/// `{ "id", "ownerId" (base58), "keyIndex", "encryptionKeyIndex", "version",
+/// "updatedAt" (u64|null), "payload" (base64 of the decrypted opaque plaintext)}`.
+/// The caller parses each `payload` itself (a protobuf `TxMetadataBatch` for
+/// `version == 1`). Documents that can't be decrypted are skipped Rust-side.
+/// Null after throwing on error.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_documentFetchEncrypted(
+    mut env: JNIEnv,
+    _class: JClass,
+    wallet_handle: jlong,
+    owner_id: JByteArray,
+    contract_id: JByteArray,
+    document_type: JString,
+    since_ms: jlong,
+) -> jstring {
+    guard(&mut env, ptr::null_mut(), |env| {
+        let Some(owner) = read_id32(env, &owner_id, "ownerId") else {
+            return ptr::null_mut();
+        };
+        let Some(contract) = read_id32(env, &contract_id, "contractId") else {
+            return ptr::null_mut();
+        };
+        let Some(doc_type) = read_cstring(env, &document_type, "documentType") else {
+            return ptr::null_mut();
+        };
+        if since_ms < 0 {
+            throw_sdk_exception(env, 1, "sinceMs must be non-negative");
+            return ptr::null_mut();
+        }
+
+        let mut out_json: *mut c_char = ptr::null_mut();
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_fetch_encrypted_documents(
+                wallet_handle as Handle,
+                owner.as_ptr(),
+                contract.as_ptr(),
+                doc_type.as_ptr(),
+                since_ms as u64,
+                &mut out_json as *mut *mut c_char,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return ptr::null_mut();
+        }
+        if out_json.is_null() {
+            throw_sdk_exception(
+                env,
+                99,
+                "encrypted document fetch returned success but no JSON",
+            );
+            return ptr::null_mut();
+        }
+        let json = unsafe { CStr::from_ptr(out_json) }
+            .to_string_lossy()
+            .into_owned();
+        unsafe { platform_wallet_ffi::platform_wallet_string_free(out_json) };
+
+        env.new_string(json)
+            .map(|s| s.into_raw())
+            .unwrap_or(ptr::null_mut())
+    })
+}
+
 // ── Contested-resource vote ───────────────────────────────────────────
 
 /// Cast a masternode contested-resource vote and wait for the response —

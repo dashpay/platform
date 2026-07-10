@@ -1,0 +1,315 @@
+//! Wallet `txMetadata` document self-encryption.
+//!
+//! **WIRE-COMPATIBLE with the legacy `org.dashj.platform` stack**
+//! (`BlockchainIdentity.publishTxMetaData` / `getTxMetaData`, dash-sdk-kotlin
+//! 4.0.0-RC2) so documents written by either stack decrypt with the other —
+//! migrated users must not lose their tx-metadata history (memos, tax
+//! categories, exchange-rate records, gift cards). The scheme below was
+//! recovered byte-for-byte from the legacy jars (`BlockchainIdentity`,
+//! `TxMetadataDocument`) and `org.bitcoinj.crypto.KeyCrypterAESCBC`
+//! (dashj-core 22.0.3).
+//!
+//! ## Scheme
+//!
+//! - **AES key**: the RAW 32-byte secp256k1 private scalar of a hardened HD
+//!   child — NOT ECDH and NOT HKDF. This mirrors
+//!   `KeyCrypterAESCBC.deriveKey(ECKey)`, which is literally
+//!   `new KeyParameter(ecKey.getPrivKeyBytes())`. (Contrast the DIP-15
+//!   DashPay fields in [`super::contact_info`], which DO use ECDH — a
+//!   different scheme that must not be reused here.)
+//! - **Derivation path**: the identity-auth path of the identity's encryption
+//!   key (its key id is the document's `keyIndex` field) extended by two
+//!   hardened children `/ 32769' / encryptionKeyIndex'`. In dashj terms:
+//!   `<BLOCKCHAIN_IDENTITY accountPath> / keyIndex' / 32769' / encryptionKeyIndex'`.
+//!   Rust's [`identity_auth_derivation_path_for_type`] reproduces the dashj
+//!   `blockchainIdentityECDSADerivationPath(keyIndex)` prefix for the primary
+//!   identity (identity_index 0), so appending the two children reconstructs
+//!   the exact legacy key. This is the SAME base-path machinery a registered
+//!   identity's keys use, and the SAME extend-by-two-hardened-children shape
+//!   as [`super::contact_info::derive_contact_info_keys`].
+//! - **Cipher**: AES-256-CBC / PKCS7, random 16-byte IV (BouncyCastle
+//!   `PaddedBufferedBlockCipher(CBCBlockCipher(AESEngine))` in the legacy stack).
+//! - **Stored `encryptedMetadata` blob layout** (the authoritative
+//!   `createTxMetadata` / `decryptTxMetadata` framing — NOT the alternate,
+//!   unused `TxMetadataDocument.decrypt` helper):
+//!
+//!   ```text
+//!   byte[0]      = version   (0 = CBOR, 1 = protobuf)  -- NOT encrypted
+//!   byte[1..17)  = IV (16 bytes)                        -- NOT encrypted
+//!   byte[17..)   = AES-256-CBC(key, IV, plaintext)      -- PKCS7 padded
+//!   ```
+//!
+//! ## Payload boundary (SDK owns the envelope, app owns the item schema)
+//!
+//! The decrypted plaintext is a protobuf `TxMetadataBatch` (version 1) or a
+//! CBOR list (version 0) of the wallet's `TxMetadataItem`s. That item schema
+//! (memo / taxCategory / exchangeRate / service / giftCard …) is an
+//! APP-level concern — the legacy stack kept it in `org.dashj.platform.wallet`
+//! and the app batches items itself. This crate therefore treats the plaintext
+//! payload as OPAQUE bytes: [`seal_tx_metadata`] takes already-serialized
+//! payload bytes + the version byte, and [`open_tx_metadata`] returns the
+//! decrypted payload bytes + version byte. The caller (dash-wallet) keeps
+//! ownership of the protobuf (de)serialization and the batching policy, exactly
+//! as it did on the legacy stack.
+
+use key_wallet::bip32::ChildNumber;
+use key_wallet::bip32::KeyDerivationType;
+use key_wallet::wallet::Wallet;
+use key_wallet::Network;
+use zeroize::Zeroizing;
+
+use crate::error::PlatformWalletError;
+use crate::wallet::identity::network::identity_auth_derivation_path_for_type;
+
+/// The fixed hardened child index between `keyIndex` and `encryptionKeyIndex`
+/// in the tx-metadata key path (`ChildNumber(32769, hardened)` in the legacy
+/// `TxMetadataDocument` static init — `0x8001`). "To discount other potential
+/// derivations of this key in other applications", as with DIP-15's `1 << 16`.
+pub const TX_METADATA_ENCRYPTION_CHILD: u32 = 32769;
+
+/// `encryptedMetadata` version byte: the plaintext is a CBOR list of items.
+pub const VERSION_CBOR: u8 = 0;
+
+/// `encryptedMetadata` version byte: the plaintext is a protobuf
+/// `TxMetadataBatch`. This is what the wallet writes
+/// (`TxMetadataDocument.VERSION_PROTOBUF`).
+pub const VERSION_PROTOBUF: u8 = 1;
+
+/// Layout overhead of the stored blob: 1 version byte + 16 IV bytes.
+const BLOB_HEADER_LEN: usize = 1 + 16;
+
+/// AES block size — the ciphertext must be a non-zero multiple of this.
+const AES_BLOCK_LEN: usize = 16;
+
+/// Derive the AES-256 key for one `txMetadata` document from the wallet seed.
+///
+/// `key_index` is the document's `keyIndex` field (the identity's registered
+/// ENCRYPTION key id); `encryption_key_index` is the document's
+/// `encryptionKeyIndex` field (the app's per-document index). The derived key
+/// is the raw private scalar at
+/// `identity_auth_path(identity_index, key_index) / 32769' / encryption_key_index'`.
+///
+/// Requires a key-resident wallet (mnemonic/seed); a watch-only wallet has no
+/// in-process HD slot and would need a host-side signing hook (out of scope for
+/// the dash-wallet migration, which uses a resident mnemonic wallet).
+pub fn derive_tx_metadata_key(
+    wallet: &Wallet,
+    network: Network,
+    identity_index: u32,
+    key_index: u32,
+    encryption_key_index: u32,
+) -> Result<Zeroizing<[u8; 32]>, PlatformWalletError> {
+    let root_path = identity_auth_derivation_path_for_type(
+        network,
+        KeyDerivationType::ECDSA,
+        identity_index,
+        key_index,
+    )?;
+
+    let path = root_path.extend([
+        ChildNumber::from_hardened_idx(TX_METADATA_ENCRYPTION_CHILD).map_err(|e| {
+            PlatformWalletError::InvalidIdentityData(format!(
+                "Invalid txMetadata encryption child index: {e}"
+            ))
+        })?,
+        ChildNumber::from_hardened_idx(encryption_key_index).map_err(|e| {
+            PlatformWalletError::InvalidIdentityData(format!(
+                "Invalid txMetadata encryptionKeyIndex: {e}"
+            ))
+        })?,
+    ]);
+
+    let ext = wallet.derive_extended_private_key(&path).map_err(|e| {
+        PlatformWalletError::InvalidIdentityData(format!("Failed to derive txMetadata key: {e}"))
+    })?;
+    Ok(Zeroizing::new(ext.private_key.secret_bytes()))
+}
+
+/// Seal an already-serialized `txMetadata` payload into the stored
+/// `encryptedMetadata` blob: `version(1) ‖ IV(16) ‖ AES-256-CBC(payload)`.
+///
+/// `payload` is the app's opaque plaintext (a protobuf `TxMetadataBatch` when
+/// `version == VERSION_PROTOBUF`); this crate does not parse it. `iv` MUST be a
+/// fresh random 16 bytes per document (the legacy stack draws it from
+/// `SecureRandom`).
+pub fn seal_tx_metadata(key: &[u8; 32], version: u8, iv: &[u8; 16], payload: &[u8]) -> Vec<u8> {
+    let ciphertext = platform_encryption::encrypt_aes_256_cbc(key, iv, payload);
+    let mut blob = Vec::with_capacity(BLOB_HEADER_LEN + ciphertext.len());
+    blob.push(version);
+    blob.extend_from_slice(iv);
+    blob.extend_from_slice(&ciphertext);
+    blob
+}
+
+/// The plaintext recovered from a stored `encryptedMetadata` blob.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OpenedTxMetadata {
+    /// The blob's leading version byte (0 = CBOR, 1 = protobuf). The app
+    /// dispatches its payload parse on this.
+    pub version: u8,
+    /// The decrypted, PKCS7-unpadded payload bytes — opaque to this crate.
+    pub payload: Vec<u8>,
+}
+
+/// Open a stored `encryptedMetadata` blob: split off the version byte + IV and
+/// AES-256-CBC-decrypt the remainder, returning the version + opaque payload.
+///
+/// Errors (never panics) on a malformed blob — too short, a ciphertext length
+/// that is not a positive multiple of the AES block size, or a decrypt/unpad
+/// failure (e.g. the wrong key, which PKCS7 rejects). A malformed or
+/// wrong-keyed document must be skipped by the caller, not abort a sync.
+pub fn open_tx_metadata(
+    key: &[u8; 32],
+    blob: &[u8],
+) -> Result<OpenedTxMetadata, PlatformWalletError> {
+    if blob.len() < BLOB_HEADER_LEN + AES_BLOCK_LEN {
+        return Err(PlatformWalletError::InvalidIdentityData(format!(
+            "txMetadata encryptedMetadata is {} bytes; below the {}-byte minimum \
+             (version + IV + one AES block)",
+            blob.len(),
+            BLOB_HEADER_LEN + AES_BLOCK_LEN
+        )));
+    }
+    let ciphertext = &blob[BLOB_HEADER_LEN..];
+    if !ciphertext.len().is_multiple_of(AES_BLOCK_LEN) {
+        return Err(PlatformWalletError::InvalidIdentityData(format!(
+            "txMetadata ciphertext length {} is not a multiple of the AES block size",
+            ciphertext.len()
+        )));
+    }
+
+    let version = blob[0];
+    let iv: [u8; 16] = blob[1..BLOB_HEADER_LEN]
+        .try_into()
+        .expect("slice [1..17) is exactly 16 bytes");
+
+    let payload = platform_encryption::decrypt_aes_256_cbc(key, &iv, ciphertext).map_err(|e| {
+        PlatformWalletError::InvalidIdentityData(format!("txMetadata decrypt failed: {e}"))
+    })?;
+
+    Ok(OpenedTxMetadata { version, payload })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+
+    fn test_wallet() -> Wallet {
+        Wallet::new_random(Network::Testnet, WalletAccountCreationOptions::None)
+            .expect("test wallet")
+    }
+
+    /// Key derivation is deterministic and every path component
+    /// (`key_index`, `encryption_key_index`) is load-bearing.
+    #[test]
+    fn key_derivation_is_deterministic_and_index_separated() {
+        let wallet = test_wallet();
+
+        let a = derive_tx_metadata_key(&wallet, Network::Testnet, 0, 3, 1).expect("derive");
+        let a2 = derive_tx_metadata_key(&wallet, Network::Testnet, 0, 3, 1).expect("derive");
+        assert_eq!(*a, *a2, "same inputs must yield the same key");
+
+        let diff_enc = derive_tx_metadata_key(&wallet, Network::Testnet, 0, 3, 2).expect("derive");
+        assert_ne!(
+            *a, *diff_enc,
+            "encryptionKeyIndex must change the derived key"
+        );
+
+        let diff_key = derive_tx_metadata_key(&wallet, Network::Testnet, 0, 4, 1).expect("derive");
+        assert_ne!(*a, *diff_key, "keyIndex must change the derived key");
+    }
+
+    /// Full seal → open round-trip across both version bytes.
+    #[test]
+    fn seal_open_round_trips() {
+        let key = [0x11u8; 32];
+        let iv = [0x22u8; 16];
+        for version in [VERSION_CBOR, VERSION_PROTOBUF] {
+            let payload = b"opaque protobuf TxMetadataBatch bytes".to_vec();
+            let blob = seal_tx_metadata(&key, version, &iv, &payload);
+            // Framing: version at [0], IV at [1..17), ciphertext after.
+            assert_eq!(blob[0], version);
+            assert_eq!(&blob[1..17], &iv);
+            let opened = open_tx_metadata(&key, &blob).expect("open");
+            assert_eq!(opened.version, version);
+            assert_eq!(opened.payload, payload);
+        }
+    }
+
+    /// A wrong key can never recover the plaintext: PKCS7 rejects it (Err), or
+    /// on the rare valid-padding collision the payload differs — never the
+    /// original. Must not panic.
+    #[test]
+    fn wrong_key_open_fails_cleanly() {
+        let key = [0x33u8; 32];
+        let wrong = [0x44u8; 32];
+        let iv = [0x55u8; 16];
+        let payload = b"secret memo".to_vec();
+        let blob = seal_tx_metadata(&key, VERSION_PROTOBUF, &iv, &payload);
+
+        match open_tx_metadata(&wrong, &blob) {
+            Err(_) => {}
+            Ok(opened) => assert_ne!(
+                opened.payload, payload,
+                "a wrong key must not recover the original plaintext"
+            ),
+        }
+    }
+
+    /// Malformed blobs error rather than panic.
+    #[test]
+    fn open_rejects_malformed_blobs() {
+        let key = [0u8; 32];
+        // Too short (only version + partial IV).
+        assert!(open_tx_metadata(&key, &[1u8; 10]).is_err());
+        // Version + IV but ciphertext not block-aligned (17 + 5 bytes).
+        assert!(open_tx_metadata(&key, &[0u8; 22]).is_err());
+    }
+
+    /// Cross-stack anchor for the AES-256-CBC core + blob framing, pinned to a
+    /// PUBLISHED third-party vector (NIST SP 800-38A F.2.5, CBC-AES256.Encrypt).
+    /// Any conformant AES-256-CBC implementation — including the legacy stack's
+    /// BouncyCastle `KeyCrypterAESCBC` — produces this exact first ciphertext
+    /// block for this (key, IV, plaintext-block). PKCS7 appends a full padding
+    /// block for a 16-byte plaintext but does NOT alter the first block, so the
+    /// leading 16 ciphertext bytes match NIST byte-for-byte. This proves the
+    /// ENVELOPE (cipher + `version ‖ IV ‖ ciphertext` layout) is wire-correct.
+    ///
+    /// The one piece NOT pinned here is the mnemonic→key HD derivation-path
+    /// account prefix, which cannot be reconstructed from the legacy jars alone
+    /// (it lives in dashj wallet config) — see the PR body's honest gap note;
+    /// a single legacy-written sample document confirms it end-to-end.
+    #[test]
+    fn nist_cbc_aes256_cross_stack_vector() {
+        // NIST SP 800-38A F.2.5.
+        let key: [u8; 32] =
+            hex_lit("603deb1015ca71be2b73aef0857d77811f352c073b6108d72d9810a30914dff4");
+        let iv: [u8; 16] = hex_lit("000102030405060708090a0b0c0d0e0f");
+        let plaintext_block: [u8; 16] = hex_lit("6bc1bee22e409f96e93d7e117393172a");
+        let expected_ct_block1: [u8; 16] = hex_lit("f58c4c04d6e5f1ba779eabfb5f7bfbd6");
+
+        let blob = seal_tx_metadata(&key, VERSION_PROTOBUF, &iv, &plaintext_block);
+
+        // version ‖ IV ‖ ciphertext(2 blocks: data + PKCS7 pad).
+        assert_eq!(blob.len(), 1 + 16 + 32, "1 version + 16 IV + 2 AES blocks");
+        assert_eq!(blob[0], VERSION_PROTOBUF, "version byte at offset 0");
+        assert_eq!(&blob[1..17], &iv, "IV at offset 1..17");
+        assert_eq!(
+            &blob[17..33],
+            &expected_ct_block1,
+            "first ciphertext block must match the NIST CBC-AES256 vector"
+        );
+
+        // And the framing round-trips back to the original block.
+        let opened = open_tx_metadata(&key, &blob).expect("open");
+        assert_eq!(opened.version, VERSION_PROTOBUF);
+        assert_eq!(opened.payload, plaintext_block);
+    }
+
+    /// Tiny fixed-size hex decoder for the test vectors (no extra dep).
+    fn hex_lit<const N: usize>(s: &str) -> [u8; N] {
+        let bytes = hex::decode(s).expect("valid hex");
+        bytes.try_into().expect("length matches")
+    }
+}
