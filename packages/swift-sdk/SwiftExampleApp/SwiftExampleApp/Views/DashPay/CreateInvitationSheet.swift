@@ -24,14 +24,21 @@ struct CreateInvitationSheet: View {
     /// Rust-enforced cap (`MAX_INVITATION_DUFFS`, 0.01 DASH). Mirrored here so the
     /// UI rejects an over-cap amount before the FFI does.
     private static let maxInvitationDuffs: UInt64 = 1_000_000
+    /// Rust-enforced floor (`MIN_INVITATION_DUFFS`, 0.003 DASH). A smaller voucher
+    /// can't fund identity registration (which needs ~0.00228 DASH) plus the
+    /// asset-lock overhead, so it could be neither claimed nor reclaimed. Rust is
+    /// the source of truth and rejects a sub-min amount at create; this mirror
+    /// just rejects it in the UI first.
+    private static let minInvitationDuffs: UInt64 = 300_000
     /// BIP44 standard account that supplies the asset-lock's funding UTXOs. The
     /// example app funds identity operations from account 0; the `IdentityInvitation`
     /// funding type derives the voucher credit key internally (not this account).
     private static let fundingAccount: UInt32 = 0
 
-    /// Amount to lock in the voucher, as a DASH string (decimal). Default 0.0005
-    /// DASH — enough for identity registration plus a small starting balance.
-    @State private var amountDashText: String = "0.0005"
+    /// Amount to lock in the voucher, as a DASH string (decimal). Default 0.005
+    /// DASH — comfortably above the ~0.00228 DASH identity-registration floor,
+    /// leaving the invitee a usable starting balance.
+    @State private var amountDashText: String = "0.005"
     /// Opt into the contact-bootstrap: the link carries the inviter so the invitee
     /// can send a contact request back. Requires a registered username.
     @State private var sendRequestBack = true
@@ -52,13 +59,15 @@ struct CreateInvitationSheet: View {
     }
 
     /// Parse the DASH text field into duffs, or `nil` if it isn't a valid,
-    /// in-range positive amount.
+    /// in-range positive amount (within `[minInvitationDuffs, maxInvitationDuffs]`).
     private var amountDuffs: UInt64? {
         guard let dash = Double(amountDashText.replacingOccurrences(of: ",", with: ".")),
               dash > 0
         else { return nil }
         let duffs = (dash * Double(Self.duffsPerDash)).rounded()
-        guard duffs >= 1, duffs <= Double(Self.maxInvitationDuffs) else { return nil }
+        guard duffs >= Double(Self.minInvitationDuffs),
+              duffs <= Double(Self.maxInvitationDuffs)
+        else { return nil }
         return UInt64(duffs)
     }
 
@@ -93,13 +102,13 @@ struct CreateInvitationSheet: View {
     private var inputSection: some View {
         Section("Amount") {
             HStack {
-                TextField("0.0005", text: $amountDashText)
+                TextField("0.005", text: $amountDashText)
                     .keyboardType(.decimalPad)
                     .accessibilityIdentifier("dashpay.invite.create.amount")
                 Text("DASH")
                     .foregroundColor(.secondary)
             }
-            Text("Funds a one-time voucher your friend uses to register their identity. Max 0.01 DASH.")
+            Text("Funds a one-time voucher your friend uses to register their identity. Between 0.003 and 0.01 DASH.")
                 .font(.caption)
                 .foregroundColor(.secondary)
         }
@@ -137,7 +146,7 @@ struct CreateInvitationSheet: View {
             .accessibilityIdentifier("dashpay.invite.create.submit")
         } footer: {
             if amountDuffs == nil {
-                Text("Enter an amount between 0.00000001 and 0.01 DASH.")
+                Text("Minimum 0.003 DASH — a smaller voucher can't fund identity registration. Maximum 0.01 DASH.")
                     .foregroundColor(.orange)
             }
         }
