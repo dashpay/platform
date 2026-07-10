@@ -210,6 +210,17 @@ struct DashPayTabView: View {
                             .accessibilityIdentifier("dashpay.openIgnored")
                         }
                     }
+                    ToolbarItem(placement: .navigationBarLeading) {
+                        if let walletId = claimWalletId {
+                            NavigationLink {
+                                InvitationsView(walletId: walletId)
+                            } label: {
+                                Image(systemName: "paperplane")
+                            }
+                            .accessibilityLabel("Sent invitations")
+                            .accessibilityIdentifier("dashpay.openSentInvitations")
+                        }
+                    }
                 }
                 .sheet(isPresented: $showAddViaQR) {
                     if let identity = activeIdentity {
