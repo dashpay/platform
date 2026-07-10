@@ -40,6 +40,13 @@ pub struct InvitationEntryFFI {
     pub status: u8,
 }
 
+// Pin the ABI size so a future field reorder/add that changes the layout is a
+// compile error rather than a silent desync against the Swift-imported struct
+// (matches the layout-assert convention used for every other `*EntryFFI`).
+// `[u8;36]`@0, u32@36, u64@40, u32@48, u32@52, u8@56, u8@57 → data ends @58,
+// struct align 8 → size 64.
+const _: [u8; 64] = [0u8; std::mem::size_of::<InvitationEntryFFI>()];
+
 /// Build the flat FFI entries from the changeset entries.
 ///
 /// All-POD, so — unlike `build_asset_lock_entries` — there is no parallel
