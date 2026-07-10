@@ -23,7 +23,7 @@ use dpp::identity::signer::Signer;
 use dpp::identity::v0::IdentityV0;
 use dpp::identity::{Identity, IdentityPublicKey, KeyID, Purpose, SecurityLevel};
 use dpp::prelude::{AssetLockProof, Identifier};
-use key_wallet::bip32::ChildNumber;
+use key_wallet::bip32::{ChildNumber, DerivationPath};
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 
 use crate::changeset::{InvitationChangeSet, InvitationEntry, InvitationStatus};
@@ -122,6 +122,24 @@ fn preflight_keys_map(
     Ok(())
 }
 
+/// Extract the u32 funding index from an invitation funding path's tail.
+///
+/// The invitation funding address is drawn from the account's address pool, so
+/// the path's tail is a NORMAL (non-hardened) 32-bit index; the gate must accept
+/// it — a hardened-only requirement would drop every real invitation record,
+/// since real funding tails are never hardened. A hardened tail maps to the same
+/// index field and is accepted too. Returns `None` for a 256-bit index variant
+/// (never a u32 funding index, and never produced for an address-pool-derived
+/// path) or for an empty path; the caller then skips the local invitation record
+/// rather than failing the create — the link is already valid, and reclaim
+/// resumes by outpoint, so this index is display metadata, not the key source.
+fn funding_index_from_path(path: &DerivationPath) -> Option<u32> {
+    match path.as_ref().last().copied() {
+        Some(ChildNumber::Hardened { index }) | Some(ChildNumber::Normal { index }) => Some(index),
+        _ => None,
+    }
+}
+
 impl IdentityWallet {
     /// Create a DashPay invitation: fund a one-time asset-lock voucher at the
     /// DIP-13 invitation path and return a shareable `dashpay://invite` link.
@@ -213,16 +231,11 @@ impl IdentityWallet {
         let uri = uri_result?;
 
         // Persist an inviter-side invitation record for the "Sent invitations"
-        // list + (future) reclaim. No secret is stored — `funding_index`
-        // re-derives the voucher key, so it MUST be the real hardened index.
-        // If the derivation path ever has an unexpected (non-hardened) tail,
-        // skip the record with a warning rather than persist a wrong index that
-        // would re-derive the wrong key on reclaim. Best-effort either way: the
-        // link is already valid, so neither branch fails the create.
-        if let Some(ChildNumber::Hardened {
-            index: funding_index,
-        }) = path.as_ref().last().copied()
-        {
+        // list + (future) reclaim. No secret is stored — only the funding index,
+        // which is display metadata (reclaim resumes by outpoint, not by this
+        // index). Best-effort: the link is already valid, so skipping the record
+        // never fails the create.
+        if let Some(funding_index) = funding_index_from_path(&path) {
             let mut inv_cs = InvitationChangeSet::default();
             inv_cs.invitations.insert(
                 out_point,
@@ -247,8 +260,8 @@ impl IdentityWallet {
             }
         } else {
             tracing::warn!(
-                "invitation funding path has an unexpected non-hardened tail; \
-                 skipping the local invitation record to avoid persisting a wrong funding index"
+                "invitation funding path has no u32 index tail; \
+                 skipping the local invitation record"
             );
         }
 
@@ -381,5 +394,53 @@ impl IdentityWallet {
         }
 
         Ok(identity)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A real DIP-13 invitation funding path ends in a NORMAL (non-hardened)
+    /// address-pool index. This is the record that a hardened-only gate silently
+    /// dropped, leaving the "Sent invitations" list empty despite a valid link.
+    #[test]
+    fn funding_index_extracted_from_non_hardened_tail() {
+        let path = DerivationPath::from(vec![
+            ChildNumber::Hardened { index: 9 },
+            ChildNumber::Normal { index: 1 }, // coin type — non-hardened in practice
+            ChildNumber::Hardened { index: 5 },
+            ChildNumber::Hardened { index: 3 },
+            ChildNumber::Normal { index: 42 }, // funding index — non-hardened
+        ]);
+        assert_eq!(funding_index_from_path(&path), Some(42));
+    }
+
+    /// A hardened tail carries the index in the same field, so it is accepted too.
+    #[test]
+    fn funding_index_extracted_from_hardened_tail() {
+        let path = DerivationPath::from(vec![
+            ChildNumber::Hardened { index: 9 },
+            ChildNumber::Hardened { index: 3 },
+            ChildNumber::Hardened { index: 7 },
+        ]);
+        assert_eq!(funding_index_from_path(&path), Some(7));
+    }
+
+    /// A 256-bit index cannot be a u32 funding index — skip rather than truncate.
+    #[test]
+    fn funding_index_none_for_256bit_tail() {
+        let path = DerivationPath::from(vec![
+            ChildNumber::Normal { index: 3 },
+            ChildNumber::Normal256 { index: [0u8; 32] },
+        ]);
+        assert_eq!(funding_index_from_path(&path), None);
+    }
+
+    /// An empty path has no tail to read an index from.
+    #[test]
+    fn funding_index_none_for_empty_path() {
+        let path = DerivationPath::from(Vec::<ChildNumber>::new());
+        assert_eq!(funding_index_from_path(&path), None);
     }
 }
