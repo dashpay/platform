@@ -99,6 +99,14 @@ pub struct PlatformWalletManager<P: PlatformWalletPersistence + 'static> {
     /// is torn down.
     pub(super) event_adapter_cancel: CancellationToken,
     pub(super) event_adapter_join: tokio::sync::Mutex<Option<JoinHandle<()>>>,
+    /// Host-visible hard sync-fault latch (dashpay/platform#4069). Set
+    /// (and never cleared) by the wallet-event adapter the first time it
+    /// freezes a durable watermark after a persistence `store()` rejection
+    /// or a dropped-event broadcast lag. Poll via
+    /// [`Self::sync_fault_detected`] to surface a "verification failed /
+    /// rescan pending" state rather than re-freezing silently on the next
+    /// launch.
+    pub(super) sync_fault: Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
@@ -112,9 +120,22 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         persister: Arc<P>,
         app_handler: Arc<dyn PlatformEventHandler>,
     ) -> Self {
-        let wallet_manager = Arc::new(RwLock::new(WalletManager::new(sdk.network)));
+        // Subscribe to the wallet-event broadcast BEFORE the manager is
+        // wrapped in the shared `Arc<RwLock>` and handed to any producer,
+        // so no event emitted during startup is lost without a `Lagged`
+        // marker (a `broadcast::Receiver` only sees messages sent after its
+        // `subscribe()` — see `run_wallet_event_adapter`'s
+        // subscribe-before-publish note). The receiver is created here,
+        // synchronously, and moved into the adapter task below.
+        let wallet_manager_inner = WalletManager::new(sdk.network);
+        let event_receiver = wallet_manager_inner.subscribe_events();
+        let wallet_manager = Arc::new(RwLock::new(wallet_manager_inner));
         let wallets = Arc::new(RwLock::new(std::collections::BTreeMap::new()));
         let lock_notify = Arc::new(Notify::new());
+
+        // Host-visible hard sync-fault latch (dashpay/platform#4069). The
+        // adapter raises it the first time it freezes a durable watermark.
+        let sync_fault = Arc::new(std::sync::atomic::AtomicBool::new(false));
 
         // Spawn the wallet-event adapter that translates upstream
         // `WalletEvent`s into `CoreChangeSet`s and forwards them to
@@ -123,6 +144,8 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         let event_adapter_join = spawn_wallet_event_adapter(
             Arc::clone(&wallet_manager),
             Arc::clone(&persister),
+            event_receiver,
+            Arc::clone(&sync_fault),
             event_adapter_cancel.clone(),
         );
 
@@ -192,7 +215,26 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             persister,
             event_adapter_cancel,
             event_adapter_join: tokio::sync::Mutex::new(Some(event_adapter_join)),
+            sync_fault,
         }
+    }
+
+    /// Whether the wallet-event adapter has frozen a durable sync
+    /// watermark this session (dashpay/platform#4069).
+    ///
+    /// Returns `true` once — and stays `true` for the manager's lifetime
+    /// — after the adapter drops record-bearing events (a broadcast lag)
+    /// or a persistence `store()` is rejected, meaning the persisted
+    /// `syncedHeight` is deliberately held behind the chain tip and a
+    /// rescan is pending on the next launch. Integrators poll this to
+    /// surface a hard "verification failed / rescan pending" state instead
+    /// of the fault being visible only in error logs. It is intentionally
+    /// a coarse, latch-once, all-or-nothing signal (the per-wallet vs.
+    /// global scoping lives inside the adapter); a host that needs
+    /// per-wallet granularity should re-derive it from the persisted
+    /// watermark vs. chain tip.
+    pub fn sync_fault_detected(&self) -> bool {
+        self.sync_fault.load(std::sync::atomic::Ordering::Relaxed)
     }
 
     /// Configure network-scoped shielded support. Opens the

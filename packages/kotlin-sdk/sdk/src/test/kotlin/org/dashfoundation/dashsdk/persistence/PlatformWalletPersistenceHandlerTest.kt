@@ -150,6 +150,57 @@ class PlatformWalletPersistenceHandlerTest {
         assertEquals(123_456, db.walletDao().getByWalletId(walletId)!!.syncedHeight)
     }
 
+    /**
+     * dashpay/platform#4069 (Kotlin half of signature C): the
+     * `syncedHeight` watermark is written by [onWalletChangesetHeader]
+     * into the SAME buffered transaction as the TXO/tx rows of its
+     * changeset. A round that rolls back (`success = false`) must
+     * therefore NOT advance the persisted watermark — otherwise the
+     * durable watermark could outrun the rows it implies, exactly the
+     * "empty-and-scanned after restart" corruption in #4069. Pins the
+     * rollback path for the core header specifically (the sibling
+     * `changesetRollbackDiscardsBufferedWrites` only covers the
+     * platform sync-state write).
+     */
+    @Test
+    fun walletChangesetHeaderDoesNotAdvanceSyncedHeightOnRollback() = runTest {
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+        // Establish a committed baseline watermark.
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetHeader(
+            walletId = walletId,
+            hasSyncedHeight = true,
+            syncedHeight = 1_000,
+            hasBalance = false,
+            confirmedDelta = 0,
+            unconfirmedDelta = 0,
+            immatureDelta = 0,
+            lockedDelta = 0,
+            lastAppliedChainLockBytes = ByteArray(0),
+        )
+        handler.onChangesetEnd(walletId, success = true)
+        assertEquals(1_000, db.walletDao().getByWalletId(walletId)!!.syncedHeight)
+
+        // A later round tries to advance the watermark but rolls back.
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetHeader(
+            walletId = walletId,
+            hasSyncedHeight = true,
+            syncedHeight = 2_000,
+            hasBalance = false,
+            confirmedDelta = 0,
+            unconfirmedDelta = 0,
+            immatureDelta = 0,
+            lockedDelta = 0,
+            lastAppliedChainLockBytes = ByteArray(0),
+        )
+        handler.onChangesetEnd(walletId, success = false)
+
+        // Watermark stays at the last committed value — never the
+        // rolled-back 2_000.
+        assertEquals(1_000, db.walletDao().getByWalletId(walletId)!!.syncedHeight)
+    }
+
     @Test
     fun walletChangesetAddsAccountUtxoAndTransaction() = runTest {
         handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
