@@ -59,6 +59,11 @@ impl FFICoreTransaction {
             unsafe { std::slice::from_raw_parts(self.tx_bytes, self.tx_len) }
         }
     }
+
+    /// The fee (duffs) `build_signed` computed for this transaction.
+    pub(crate) fn fee(&self) -> u64 {
+        self.fee
+    }
 }
 
 #[derive(Clone, Copy)]
