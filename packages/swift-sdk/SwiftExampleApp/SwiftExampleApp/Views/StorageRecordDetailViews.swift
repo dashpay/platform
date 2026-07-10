@@ -1715,7 +1715,16 @@ struct CoreAddressDetailView: View {
     }
 
     private func copy(_ value: String, label: String) {
-        UIPasteboard.general.string = value
+        // This copies a raw private key / WIF to the system-wide
+        // pasteboard, which other apps and clipboard managers can read and
+        // Universal Clipboard syncs across devices. Set a short expiry so
+        // the secret doesn't linger there indefinitely. Fine for this demo
+        // app; a production wallet should avoid clipboard export of secrets
+        // (or gate it far more tightly).
+        UIPasteboard.general.setItems(
+            [["public.utf8-plain-text": value]],
+            options: [.expirationDate: Date().addingTimeInterval(60)]
+        )
         copiedLabel = label
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
             if copiedLabel == label { copiedLabel = nil }

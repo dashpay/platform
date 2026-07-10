@@ -34,7 +34,7 @@ use std::os::raw::c_char;
 
 use key_wallet::bip32::ExtendedPrivKey;
 use platform_wallet::CoreAddressPrivateKey;
-use zeroize::Zeroize;
+use zeroize::{Zeroize, Zeroizing};
 
 use crate::error::*;
 use crate::handle::*;
@@ -167,23 +167,51 @@ pub unsafe extern "C" fn platform_wallet_address_private_key(
     let result = unwrap_option_or_return!(option);
     let secret = unwrap_result_or_return!(result);
 
-    // Move the sensitive fields out. `private_key` (Zeroizing) is wiped
-    // when it drops at the end of this function; the hex + WIF byte
-    // buffers move directly into the returned CStrings (no residual
-    // plaintext copy left on the heap) and are zeroized by `_free`.
+    // Move the sensitive fields out and marshal them through
+    // `secret_string_into_raw`, which scrubs every transient plaintext
+    // copy (see its docs — a naive `CString::new` over the
+    // zero-spare-capacity hex / WIF buffers would realloc and free the
+    // original un-zeroized). `private_key` (Zeroizing) is wiped when it
+    // drops at the end of this function; the returned buffers are
+    // zeroized by `_free`.
     let CoreAddressPrivateKey {
         private_key, wif, ..
     } = secret;
-    let hex_c = unwrap_result_or_return!(CString::new(hex::encode(&private_key[..])));
-    let wif_c = unwrap_result_or_return!(CString::new(wif));
+    let hex_c = unwrap_result_or_return!(secret_string_into_raw(Zeroizing::new(hex::encode(
+        &private_key[..]
+    ))));
+    let wif_c = unwrap_result_or_return!(secret_string_into_raw(Zeroizing::new(wif)));
 
     unsafe {
         *out = AddressPrivateKeyFFI {
-            private_key_hex: hex_c.into_raw(),
-            private_key_wif: wif_c.into_raw(),
+            private_key_hex: hex_c,
+            private_key_wif: wif_c,
         };
     }
     PlatformWalletFFIResult::ok()
+}
+
+/// Move a secret string onto the heap as a NUL-terminated C-string
+/// without leaving an un-zeroized plaintext copy behind.
+///
+/// `CString::new` must append a NUL terminator; handed a
+/// zero-spare-capacity buffer — which both `hex::encode` and
+/// `PrivateKey::to_wif` produce (`len == capacity`) — its internal
+/// `reserve_exact(1)` reallocates and frees the original allocation
+/// **without** zeroizing it, stranding the plaintext secret in reclaimed
+/// heap. We copy into a buffer pre-sized with room for the NUL so
+/// `CString::new` cannot realloc, and wipe the `Zeroizing` source on
+/// drop. The only surviving plaintext is then the returned buffer, which
+/// the matching `_free` zeroizes.
+pub(crate) fn secret_string_into_raw(
+    secret: Zeroizing<String>,
+) -> Result<*mut c_char, std::ffi::NulError> {
+    let mut buf = Vec::with_capacity(secret.len() + 1);
+    buf.extend_from_slice(secret.as_bytes());
+    // `secret` wiped here on drop; `buf` (len N, capacity ≥ N+1) moves
+    // into the CString with no realloc, so no plaintext copy is stranded.
+    drop(secret);
+    Ok(CString::new(buf)?.into_raw())
 }
 
 /// Release an [`AddressPrivateKeyFFI`] populated by

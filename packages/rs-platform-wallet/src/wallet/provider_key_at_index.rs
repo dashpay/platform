@@ -455,3 +455,102 @@ impl PlatformWallet {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dashcore::hashes::{hash160, Hash};
+    use key_wallet::mnemonic::{Language, Mnemonic};
+    use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+    use key_wallet::wallet::Wallet;
+    use key_wallet::Network;
+
+    // Canonical all-`abandon` BIP-39 test vector — deterministic, so the
+    // derived key material below is a stable golden vector.
+    const TEST_MNEMONIC: &str = "abandon abandon abandon abandon abandon abandon \
+         abandon abandon abandon abandon abandon about";
+
+    fn seed_bearing_wallet(network: Network) -> Wallet {
+        let mnemonic =
+            Mnemonic::from_phrase(TEST_MNEMONIC, Language::English).expect("valid test mnemonic");
+        Wallet::from_mnemonic(mnemonic, network, WalletAccountCreationOptions::Default)
+            .expect("wallet construction")
+    }
+
+    /// The two load-bearing invariants for platform-node keys, pinned so an
+    /// upstream SLIP-10 / DIP-9 derivation regression can't silently hand
+    /// out wrong key material: `node_id == hash160(pubkey)` at every index,
+    /// and a stable golden pubkey/node-id for index 0 on testnet.
+    #[test]
+    fn platform_node_keys_are_consistent_and_pinned() {
+        let wallet = seed_bearing_wallet(Network::Testnet);
+        let keys = derive_platform_node_public_keys(&wallet, Network::Testnet, 20)
+            .expect("platform-node derivation");
+
+        assert_eq!(keys.len(), 20, "requested 20 keys");
+        for (i, k) in keys.iter().enumerate() {
+            assert_eq!(k.index, i as u32, "index ordering");
+            let expected_node_id: [u8; 20] = hash160::Hash::hash(&k.public_key).to_byte_array();
+            assert_eq!(
+                k.node_id, expected_node_id,
+                "node_id must be hash160(ed25519 pubkey) at index {i}"
+            );
+        }
+
+        // All indices produce distinct keys (hardened SLIP-10 children).
+        let mut pubs: Vec<[u8; 32]> = keys.iter().map(|k| k.public_key).collect();
+        pubs.sort();
+        pubs.dedup();
+        assert_eq!(pubs.len(), 20, "all 20 platform-node keys must be distinct");
+
+        // Golden vector — regenerating the same mnemonic must reproduce
+        // these exact bytes. A break here means the derivation path or an
+        // upstream crate changed.
+        assert_eq!(
+            hex::encode(keys[0].public_key),
+            "fb91ae39aba2a1b8f68016833bfcfcec8516d634237f5842a21b03c225e2b092",
+            "platform-node index-0 pubkey golden vector"
+        );
+        assert_eq!(
+            hex::encode(keys[0].node_id),
+            "bb241cb734e78cfc8c537226322b1492d0458678",
+            "platform-node index-0 node-id golden vector"
+        );
+    }
+
+    /// Re-deriving the same (mnemonic, network) is byte-stable — the watch
+    /// -only restore path re-persists nothing, so display must be reproducible.
+    #[test]
+    fn platform_node_keys_are_stable_across_calls() {
+        let wallet = seed_bearing_wallet(Network::Mainnet);
+        let a = derive_platform_node_public_keys(&wallet, Network::Mainnet, 5).unwrap();
+        let b = derive_platform_node_public_keys(&wallet, Network::Mainnet, 5).unwrap();
+        assert_eq!(
+            a.iter().map(|k| k.public_key).collect::<Vec<_>>(),
+            b.iter().map(|k| k.public_key).collect::<Vec<_>>(),
+            "platform-node derivation must be deterministic"
+        );
+    }
+
+    /// Mainnet and testnet derive different platform-node key material from
+    /// the same mnemonic (network-scoped DIP-9 coin type).
+    #[test]
+    fn platform_node_keys_differ_across_networks() {
+        let mainnet = derive_platform_node_public_keys(
+            &seed_bearing_wallet(Network::Mainnet),
+            Network::Mainnet,
+            1,
+        )
+        .unwrap();
+        let testnet = derive_platform_node_public_keys(
+            &seed_bearing_wallet(Network::Testnet),
+            Network::Testnet,
+            1,
+        )
+        .unwrap();
+        assert_ne!(
+            mainnet[0].public_key, testnet[0].public_key,
+            "same mnemonic must yield different platform-node keys per network"
+        );
+    }
+}

@@ -36,7 +36,7 @@ use std::os::raw::c_char;
 
 use key_wallet::bip32::ExtendedPrivKey;
 use platform_wallet::{ProviderDerivedKey, ProviderKeyKind};
-use zeroize::Zeroize;
+use zeroize::{Zeroize, Zeroizing};
 
 use crate::error::*;
 use crate::handle::*;
@@ -237,8 +237,14 @@ pub unsafe extern "C" fn platform_wallet_provider_key_at_index(
         Some(id) => unwrap_result_or_return!(CString::new(hex::encode(id))).into_raw(),
         None => std::ptr::null_mut(),
     };
+    // Secret: marshal through `secret_string_into_raw` so no un-zeroized
+    // plaintext copy is stranded during CString NUL-termination (see its
+    // docs). `public_key_hex` / `node_id_hex` above are public material,
+    // so a plain `CString::new` is fine for them.
     let private_key_hex = match private_key {
-        Some(pk) => unwrap_result_or_return!(CString::new(hex::encode(&pk[..]))).into_raw(),
+        Some(pk) => unwrap_result_or_return!(crate::address_private_key::secret_string_into_raw(
+            Zeroizing::new(hex::encode(&pk[..]))
+        )),
         None => std::ptr::null_mut(),
     };
 
