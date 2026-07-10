@@ -251,4 +251,94 @@ class DocumentTransactions internal constructor(
             )
         }
     }
+
+    /**
+     * Create + broadcast an ENCRYPTED wallet-contract document (the wire-
+     * compatible `txMetadata` shape) on [contractId]'s [documentType], owned by
+     * [ownerId] — signed via [signerHandle]. Implements the create half of the
+     * legacy `BlockchainIdentity.publishTxMetaData` retirement
+     * (dashpay/platform#4086): the SDK derives the identity encryption key,
+     * seals [payload] into the legacy `version ‖ IV ‖ AES-256-CBC` blob, and
+     * writes `{keyIndex, encryptionKeyIndex, encryptedMetadata}`.
+     *
+     * Batching stays app-side: the caller serializes its items into [payload]
+     * (a protobuf `TxMetadataBatch`) and supplies its own per-document
+     * [encryptionKeyIndex] (dash-wallet's `1 + countAllRequests()` counter).
+     * The identity encryption key id (the `keyIndex` field) is chosen SDK-side
+     * to match the legacy stack, so the key never crosses the FFI boundary.
+     *
+     * @param encryptionKeyIndex per-document index; non-negative.
+     * @param version payload version byte (`1` = protobuf, as the wallet writes).
+     * @param payload already-serialized opaque plaintext; the SDK does not
+     *   parse it.
+     * @return the confirmed document's canonical JSON (its 32-byte id is the
+     *   base58 `$id` field).
+     */
+    suspend fun createEncryptedDocument(
+        walletHandle: Long,
+        ownerId: ByteArray,
+        contractId: ByteArray,
+        documentType: String,
+        encryptionKeyIndex: Int,
+        version: Int,
+        payload: ByteArray,
+        signerHandle: Long,
+    ): String = withContext(Dispatchers.IO) {
+        require(ownerId.size == 32) { "ownerId must be 32 bytes" }
+        require(contractId.size == 32) { "contractId must be 32 bytes" }
+        require(encryptionKeyIndex >= 0) {
+            "encryptionKeyIndex must be non-negative, got $encryptionKeyIndex"
+        }
+        require(version in 0..255) { "version must be in 0..255, got $version" }
+        mapNativeErrors {
+            TransactionsNative.documentCreateEncrypted(
+                walletHandle,
+                ownerId,
+                contractId,
+                documentType,
+                encryptionKeyIndex,
+                version,
+                payload,
+                signerHandle,
+            )
+        }
+    }
+
+    /**
+     * Fetch + DECRYPT every encrypted wallet-contract document owned by
+     * [ownerId] on [contractId]'s [documentType] updated at or after [sinceMs]
+     * (epoch-millis). Implements the read half of the legacy
+     * `BlockchainIdentity.getTxMetaData(since, key)` retirement
+     * (dashpay/platform#4087): the SDK fetches the owner-scoped, since-timestamp
+     * documents and decrypts each with the identity's derived key. Documents
+     * that fail to decrypt are skipped Rust-side (a bad document never aborts
+     * the fetch).
+     *
+     * @return a JSON array; each element is `{ "id", "ownerId" (base58),
+     *   "keyIndex", "encryptionKeyIndex", "version", "updatedAt" (number|null),
+     *   "payload" (base64 of the decrypted opaque plaintext) }`. The caller
+     *   parses each `payload` itself (a protobuf `TxMetadataBatch` for
+     *   `version == 1`) and reconciles memo / taxCategory / exchangeRate /
+     *   service / giftCard fields into its local store.
+     */
+    suspend fun fetchEncryptedDocuments(
+        walletHandle: Long,
+        ownerId: ByteArray,
+        contractId: ByteArray,
+        documentType: String,
+        sinceMs: Long,
+    ): String = withContext(Dispatchers.IO) {
+        require(ownerId.size == 32) { "ownerId must be 32 bytes" }
+        require(contractId.size == 32) { "contractId must be 32 bytes" }
+        require(sinceMs >= 0) { "sinceMs must be non-negative, got $sinceMs" }
+        mapNativeErrors {
+            TransactionsNative.documentFetchEncrypted(
+                walletHandle,
+                ownerId,
+                contractId,
+                documentType,
+                sinceMs,
+            )
+        }
+    }
 }

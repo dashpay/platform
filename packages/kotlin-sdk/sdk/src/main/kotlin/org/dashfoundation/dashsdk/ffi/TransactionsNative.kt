@@ -165,6 +165,55 @@ internal object TransactionsNative {
     ): String
 
     /**
+     * Create + broadcast an ENCRYPTED wallet-contract document (the wire-
+     * compatible `txMetadata` shape) on [contractId]'s [documentType], owned by
+     * [ownerId], signed via [signerHandle]. Bridges
+     * `platform_wallet_create_encrypted_document_with_signer`.
+     *
+     * The Rust side selects the identity's ENCRYPTION key id (the `keyIndex`
+     * field), derives the AES key from the wallet HD tree, and seals [payload]
+     * into the legacy `version ‖ IV ‖ AES-256-CBC` blob — decryptable by the
+     * legacy `org.dashj.platform` stack and vice versa.
+     *
+     * @param encryptionKeyIndex the app's per-document index (dash-wallet's
+     *   monotonic `1 + countAllRequests()` counter); non-negative.
+     * @param version payload version byte (`1` = protobuf, as the wallet writes).
+     * @param payload the already-serialized opaque plaintext (a protobuf
+     *   `TxMetadataBatch`); the SDK does not parse it.
+     * @return the confirmed document's canonical JSON (its 32-byte id is the
+     *   base58 `$id` field).
+     */
+    external fun documentCreateEncrypted(
+        walletHandle: Long,
+        ownerId: ByteArray,
+        contractId: ByteArray,
+        documentType: String,
+        encryptionKeyIndex: Int,
+        version: Int,
+        payload: ByteArray,
+        signerHandle: Long,
+    ): String
+
+    /**
+     * Fetch + DECRYPT every encrypted wallet-contract document owned by
+     * [ownerId] on [contractId]'s [documentType] updated at or after [sinceMs]
+     * (epoch-millis). Bridges `platform_wallet_fetch_encrypted_documents` — the
+     * wire-compatible read counterpart of the legacy `getTxMetaData(since, key)`.
+     *
+     * @return a JSON array; each element is `{ "id", "ownerId" (base58),
+     *   "keyIndex", "encryptionKeyIndex", "version", "updatedAt" (number|null),
+     *   "payload" (base64 of the decrypted opaque plaintext) }`. Documents that
+     *   fail to decrypt are skipped Rust-side.
+     */
+    external fun documentFetchEncrypted(
+        walletHandle: Long,
+        ownerId: ByteArray,
+        contractId: ByteArray,
+        documentType: String,
+        sinceMs: Long,
+    ): String
+
+    /**
      * Cast a masternode contested-resource vote and wait for the response.
      * Bridges `dash_sdk_contested_resource_cast_vote` (Swift
      * `SDK.castContestedResourceVote`).
