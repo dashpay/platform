@@ -600,6 +600,50 @@ mod tests {
         (manager, signer, persistence)
     }
 
+    /// Regression: a build must persist the funding account's address-pool
+    /// snapshot with the newly-used index. The asset-lock funding accounts fund
+    /// OP_RETURN-payload credit outputs that never appear as on-chain UTXOs, so
+    /// SPV can't rediscover the used index — the persisted pool is the only
+    /// thing that carries `funding_index` across a restart. Before the fix the
+    /// pool was never emitted, so `funding_index` reset to 0 each launch and (for
+    /// `IdentityInvitation`) the EXPORTED one-time voucher key was reused across
+    /// invitations. The pool snapshot is emitted right after the tx is built,
+    /// before broadcast, so a rejected broadcast still exercises it.
+    #[tokio::test]
+    async fn asset_lock_build_persists_funding_account_used_index() {
+        use key_wallet::account::AccountType;
+
+        let (manager, signer, persistence) =
+            funded_asset_lock_manager(Arc::new(AlwaysRejectedBroadcaster)).await;
+
+        let _ = manager
+            .create_funded_asset_lock_proof(
+                1_000_000,
+                0,
+                AssetLockFundingType::IdentityInvitation,
+                0,
+                &signer,
+            )
+            .await;
+
+        let stored = persistence
+            .stored
+            .lock()
+            .expect("capturing persistence mutex");
+        let persisted_invitation_used = stored.iter().any(|cs| {
+            cs.account_address_pools.iter().any(|entry| {
+                matches!(entry.account_type, AccountType::IdentityInvitation)
+                    && entry.addresses.iter().any(|a| a.used)
+            })
+        });
+        assert!(
+            persisted_invitation_used,
+            "a build must persist the IdentityInvitation account's pool with the used \
+             funding index; without it funding_index resets on restart and the exported \
+             voucher key is reused across invitations"
+        );
+    }
+
     /// A definitively rejected asset-lock broadcast must untrack the `Built`
     /// row (in-memory and via the changeset's `removed` set) and release the
     /// funding reservation, so nothing can resume the dead transaction and a
