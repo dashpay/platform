@@ -392,17 +392,17 @@ impl MnemonicResolverCoreSigner {
         let subfeature3 = ChildNumber::from_hardened_idx(3)
             .map_err(|e| MnemonicResolverSignerError::DerivationFailed(e.to_string()))?;
         let comps: &[ChildNumber] = path.as_ref();
-        // Every component of an invitation-funding path is hardened. Enforcing
-        // that on `coin_type` and `funding_index` (not just the fixed
-        // purpose/feature/sub-feature) keeps this raw-scalar export boundary
-        // exactly as strict as its documented scope: a non-hardened tail is
-        // never a real voucher path, so refuse to export a key for it.
+        // Bind the fixed purpose / feature / sub-feature only. `coin_type`
+        // (comps[1]) and `funding_index` (comps[4]) are deliberately left
+        // unconstrained: the whole `9'/*/5'/3'/*` subtree is invitation-vouchers
+        // only (the user's own keys live at sub-features `5'/0'`, `5'/1'`, `5'/2'`,
+        // all excluded by `comps[3] == 3'`), so this gate cannot exfiltrate a
+        // user key regardless of their hardening. Constraining them additionally
+        // rejects real voucher paths whose coin_type is non-hardened.
         if comps.len() != 5
             || comps[0] != purpose9
-            || !matches!(comps[1], ChildNumber::Hardened { .. })
             || comps[2] != feature5
             || comps[3] != subfeature3
-            || !matches!(comps[4], ChildNumber::Hardened { .. })
         {
             return Err(MnemonicResolverSignerError::DerivationFailed(
                 "export_invitation_private_key: path is not an invitation-funding path".to_string(),
@@ -761,10 +761,12 @@ mod tests {
         unsafe { dash_sdk_mnemonic_resolver_destroy(resolver) };
     }
 
-    /// The invitation export gate is stricter than the auto-accept one: it must
-    /// bind the full, fully-hardened `9'/coin'/5'/3'/idx'` shape, because feature
-    /// `5'` is shared with the user's own identity-auth / registration-funding /
-    /// top-up keys — a looser gate would be a key-exfiltration hole.
+    /// The invitation export gate binds the fixed `9'/*/5'/3'/*` shape (purpose,
+    /// feature, sub-feature), because feature `5'` is shared with the user's own
+    /// identity-auth / registration-funding / top-up keys — a gate that checked
+    /// only the feature could be repurposed to exfiltrate those keys. coin_type
+    /// and funding_index are intentionally unconstrained (the whole sub-feature-3'
+    /// subtree is vouchers-only, and real voucher paths use a non-hardened coin).
     #[test]
     fn export_invitation_private_key_gates_to_the_invitation_path() {
         let resolver = make_resolver(english_resolve);
@@ -788,8 +790,6 @@ mod tests {
             "m/8'/1'/5'/3'/0'",       // wrong purpose (comps[0] != 9')
             "m/9'/1'/5'/3'",          // too short (len != 5)
             "m/9'/1'/5'/3'/0'/0'",    // too long (len != 5)
-            "m/9'/1'/5'/3'/0",        // non-hardened funding_index (comps[4])
-            "m/9'/1/5'/3'/0'",        // non-hardened coin_type (comps[1])
         ] {
             let path = DerivationPath::from_str(bad).expect("valid path string");
             assert!(
