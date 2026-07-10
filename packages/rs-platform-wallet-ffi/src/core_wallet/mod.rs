@@ -4,10 +4,12 @@
 
 mod addresses;
 mod broadcast;
+mod signed_payment;
 mod transaction_builder;
 mod wallet;
 
 pub use addresses::*;
 pub use broadcast::*;
+pub use signed_payment::*;
 pub use transaction_builder::*;
 pub use wallet::*;

@@ -55,6 +55,45 @@ class ManagedCoreWallet internal constructor(handle: Long) : AutoCloseable {
         )
     }
 
+    /**
+     * Register a built+signed [tx] for deferred (BIP70/BIP270) submission,
+     * holding its UTXO reservation, and return the resulting
+     * [ManagedPlatformWallet.SignedCoreTransaction]. Does NOT consume [tx] — the
+     * caller still closes it. Reads the raw bytes off [tx] and decodes the
+     * register BLOB (`token, feeDuffs, txid`).
+     */
+    internal fun registerSignedPayment(
+        tx: CoreTransaction,
+    ): ManagedPlatformWallet.SignedCoreTransaction {
+        val rawTxBytes = WalletManagerNative.coreTransactionGetBytes(tx.handle)
+        val blob = WalletManagerNative.coreWalletRegisterSignedPayment(
+            handle,
+            tx.handle,
+            tx.accountType.ffiValue,
+            tx.accountIndex,
+        )
+        val buffer = java.nio.ByteBuffer.wrap(blob) // big-endian by default
+        val token = buffer.long
+        val feeDuffs = buffer.long
+        val txidLen = buffer.int
+        val txidBytes = ByteArray(txidLen)
+        buffer.get(txidBytes)
+        return ManagedPlatformWallet.SignedCoreTransaction(
+            txidHex = String(txidBytes, Charsets.UTF_8),
+            rawTxBytes = rawTxBytes,
+            feeDuffs = feeDuffs,
+            reservationToken = token,
+        )
+    }
+
+    /**
+     * Broadcast the deferred payment behind [token] and return its txid. A
+     * stale / already-broadcast / wrong-wallet token surfaces as
+     * [org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.StaleReservationToken].
+     */
+    internal fun broadcastSignedPayment(token: Long): String =
+        WalletManagerNative.coreWalletBroadcastSignedPayment(handle, token)
+
     override fun close() {
         cleanable.clean()
     }
