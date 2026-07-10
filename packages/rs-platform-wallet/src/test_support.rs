@@ -9,12 +9,14 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use dashcore::hashes::Hash;
 use dashcore::secp256k1::{ecdsa, Message, PublicKey, Secp256k1};
+use dashcore::BlockHash;
 use dashcore::{Network, Transaction, Txid};
 use key_wallet::account::account_type::StandardAccountType;
 use key_wallet::signer::{Signer, SignerMethod};
 use key_wallet::test_utils::TestWalletContext;
-use key_wallet::transaction_checking::TransactionContext;
+use key_wallet::transaction_checking::{BlockInfo, TransactionContext};
 use key_wallet::{DerivationPath, Wallet};
 use key_wallet_manager::WalletManager;
 use tokio::sync::RwLock;
@@ -155,8 +157,19 @@ pub(crate) async fn funded_wallet_manager(
     };
 
     let funding_tx = Transaction::dummy(&receive_address, 0..1, &[10_000_000]);
+    // Chain-locked funding, not `Mempool`: asset-lock builders only
+    // select final (confirmed / InstantSend-locked) inputs since
+    // rust-dashcore#836, so a mempool-funded fixture leaves the
+    // asset-lock tests with no eligible UTXO.
     let result = ctx
-        .check_transaction(&funding_tx, TransactionContext::Mempool)
+        .check_transaction(
+            &funding_tx,
+            TransactionContext::InChainLockedBlock(BlockInfo::new(
+                1,
+                BlockHash::all_zeros(),
+                1_700_000_000,
+            )),
+        )
         .await;
     assert!(
         result.is_relevant,

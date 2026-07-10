@@ -847,7 +847,7 @@ struct TransitionDetailView: View {
       from: dppIdentity,
       toIdentityId: normalizedToIdentityId,
       amount: amount,
-      signer: OpaquePointer(signer.handle)
+      signer: signer.handle
     )
     _ = signer  // keepalive
 
@@ -901,7 +901,7 @@ struct TransitionDetailView: View {
       amount: amount,
       toAddress: toAddress,
       coreFeePerByte: coreFeePerByte,
-      signer: OpaquePointer(signer.handle)
+      signer: signer.handle
     )
     _ = signer  // keepalive
 
@@ -998,7 +998,7 @@ struct TransitionDetailView: View {
       documentType: documentType,
       ownerIdentity: dppIdentity,
       properties: properties,
-      signer: OpaquePointer(signer.handle)
+      signer: signer.handle
     )
     _ = signer  // keepalive
 
@@ -1042,7 +1042,7 @@ struct TransitionDetailView: View {
       documentType: documentType,
       documentId: documentId,
       ownerIdentity: dppIdentity,
-      signer: OpaquePointer(signer.handle)
+      signer: signer.handle
     )
     _ = signer  // keepalive across the await — see KeychainSigner lifetime contract
 
@@ -1098,7 +1098,7 @@ struct TransitionDetailView: View {
       documentId: documentId,
       fromIdentity: fromIdentity,
       toIdentityId: recipientId,
-      signer: OpaquePointer(signer.handle)
+      signer: signer.handle
     )
     _ = signer  // keepalive
 
@@ -1153,7 +1153,7 @@ struct TransitionDetailView: View {
       documentId: documentId,
       newPrice: newPrice,
       ownerIdentity: ownerDPPIdentity,
-      signer: OpaquePointer(signer.handle)
+      signer: signer.handle
     )
     _ = signer  // keepalive
 
@@ -1211,7 +1211,7 @@ struct TransitionDetailView: View {
       documentId: documentId,
       purchaserIdentity: fromIdentity,
       price: price,
-      signer: OpaquePointer(signer.handle)
+      signer: signer.handle
     )
     _ = signer  // keepalive
 
@@ -1304,7 +1304,7 @@ struct TransitionDetailView: View {
       documentId: documentId,
       ownerIdentity: dppIdentity,
       properties: properties,
-      signer: OpaquePointer(signer.handle)
+      signer: signer.handle
     )
     _ = signer  // keepalive
 
@@ -1401,7 +1401,7 @@ struct TransitionDetailView: View {
       amount: amount,
       ownerIdentity: dppIdentity,
       keyId: mintingKey.id,
-      signer: OpaquePointer(signer.handle),
+      signer: signer.handle,
       note: note
     )
     _ = signer  // keepalive
@@ -1489,7 +1489,7 @@ struct TransitionDetailView: View {
       amount: amount,
       ownerIdentity: dppIdentity,
       keyId: burningKey.id,
-      signer: OpaquePointer(signer.handle),
+      signer: signer.handle,
       note: note
     )
     _ = signer  // keepalive
@@ -1542,7 +1542,7 @@ struct TransitionDetailView: View {
       targetIdentityId: targetIdentityId,
       ownerIdentity: dppIdentity,
       keyId: freezingKey.id,
-      signer: OpaquePointer(signer.handle),
+      signer: signer.handle,
       note: note
     )
     _ = signer  // keepalive
@@ -1590,7 +1590,7 @@ struct TransitionDetailView: View {
       targetIdentityId: targetIdentityId,
       ownerIdentity: dppIdentity,
       keyId: unfreezingKey.id,
-      signer: OpaquePointer(signer.handle),
+      signer: signer.handle,
       note: formInputs["note"]
     )
     _ = signer  // keepalive
@@ -1638,7 +1638,7 @@ struct TransitionDetailView: View {
       frozenIdentityId: frozenIdentityId,
       ownerIdentity: dppIdentity,
       keyId: destroyKey.id,
-      signer: OpaquePointer(signer.handle),
+      signer: signer.handle,
       note: formInputs["note"]
     )
     _ = signer  // keepalive
@@ -1688,7 +1688,7 @@ struct TransitionDetailView: View {
       distributionType: distributionType,
       ownerIdentity: dppIdentity,
       keyId: claimingKey.id,
-      signer: OpaquePointer(signer.handle),
+      signer: signer.handle,
       note: note
     )
     _ = signer  // keepalive
@@ -1760,7 +1760,7 @@ struct TransitionDetailView: View {
       amount: amount,
       ownerIdentity: dppIdentity,
       keyId: transferKey.id,
-      signer: OpaquePointer(signer.handle),
+      signer: signer.handle,
       note: note
     )
     _ = signer  // keepalive
@@ -1814,7 +1814,7 @@ struct TransitionDetailView: View {
       priceData: priceData,
       ownerIdentity: dppIdentity,
       keyId: pricingKey.id,
-      signer: OpaquePointer(signer.handle),
+      signer: signer.handle,
       note: note
     )
     _ = signer  // keepalive

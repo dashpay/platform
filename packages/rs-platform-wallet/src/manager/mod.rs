@@ -1,8 +1,10 @@
 //! Multi-wallet manager with SPV coordination.
 
 pub mod accessors;
+pub mod dashpay_sync;
 pub mod identity_sync;
 mod load;
+mod loop_cancel;
 pub mod platform_address_sync;
 #[cfg(feature = "shielded")]
 pub mod shielded_sync;
@@ -18,6 +20,7 @@ use key_wallet_manager::WalletManager;
 
 use crate::changeset::{spawn_wallet_event_adapter, PlatformWalletPersistence};
 use crate::events::{PlatformEventHandler, PlatformEventManager};
+use crate::manager::dashpay_sync::DashPaySyncManager;
 use crate::manager::identity_sync::IdentitySyncManager;
 use crate::manager::platform_address_sync::PlatformAddressSyncManager;
 #[cfg(feature = "shielded")]
@@ -25,6 +28,7 @@ use crate::manager::shielded_sync::ShieldedSyncManager;
 use crate::spv::SpvRuntime;
 use crate::wallet::asset_lock::LockNotifyHandler;
 use crate::wallet::core::BalanceUpdateHandler;
+use crate::wallet::identity::network::DashPayPaymentHandler;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 use crate::wallet::PlatformWallet;
 
@@ -52,6 +56,14 @@ pub struct PlatformWalletManager<P: PlatformWalletPersistence + 'static> {
     /// wallet. Not auto-started — call `start` after wallets are
     /// registered. See [`IdentitySyncManager`].
     pub(super) identity_sync_manager: Arc<IdentitySyncManager<P>>,
+    /// Periodic DashPay sync coordinator. Drives `dashpay_sync()`
+    /// (contact requests + profiles) on **every** registered wallet
+    /// each sweep — wallet-driven, not token-registry-driven, so
+    /// DashPay-only identities are never skipped. Shares the same
+    /// `wallets` map as [`PlatformAddressSyncManager`]. Not
+    /// auto-started — call `start` after wallets are registered. See
+    /// [`DashPaySyncManager`].
+    pub(super) dashpay_sync_manager: Arc<DashPaySyncManager>,
     /// Periodic shielded (Orchard) note sync coordinator (spends are
     /// detected during the note scan, no separate nullifier pass).
     /// Iterates every wallet that has been bound via
@@ -122,10 +134,20 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // with SPV's write lock.
         let lock_handler = Arc::new(LockNotifyHandler::new(Arc::clone(&lock_notify)));
         let balance_handler = Arc::new(BalanceUpdateHandler::new(Arc::clone(&wallets)));
+        // DashPayPaymentHandler records incoming DashPay payments and
+        // confirms sent ones off the wallet-event fan-out, keeping that
+        // domain logic out of the generic core-changeset bridge. It holds
+        // the wallet-manager (for the in-memory payment state it mutates)
+        // and the persister (to write the resulting payment rows).
+        let dashpay_payment_handler = Arc::new(DashPayPaymentHandler::new(
+            Arc::clone(&wallet_manager),
+            Arc::clone(&persister) as Arc<dyn PlatformWalletPersistence>,
+        ));
         let event_manager = Arc::new(PlatformEventManager::new(vec![
             app_handler,
             lock_handler,
             balance_handler,
+            dashpay_payment_handler,
         ]));
 
         let spv = Arc::new(SpvRuntime::new(
@@ -140,6 +162,9 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             Arc::clone(&sdk),
             Arc::clone(&persister),
         ));
+        // DashPay sync shares the `wallets` map (not the token
+        // registry) so DashPay-only identities sync on every sweep.
+        let dashpay_sync = Arc::new(DashPaySyncManager::new(Arc::clone(&wallets)));
         #[cfg(feature = "shielded")]
         let shielded_coordinator: Arc<
             RwLock<Option<Arc<crate::wallet::shielded::NetworkShieldedCoordinator>>>,
@@ -157,6 +182,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             spv_manager: spv,
             platform_address_sync_manager: platform_address_sync,
             identity_sync_manager: identity_sync,
+            dashpay_sync_manager: dashpay_sync,
             #[cfg(feature = "shielded")]
             shielded_sync_manager: shielded_sync,
             #[cfg(feature = "shielded")]
@@ -329,9 +355,10 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     ///
     /// **Quiesces** the periodic coordinators
     /// (`PlatformAddressSyncManager`, `IdentitySyncManager`,
-    /// `ShieldedSyncManager`) — cancelling each loop *and draining any
-    /// in-flight pass to completion*, including its persister /
-    /// host-callback fan-out — then drains the wallet-event adapter task.
+    /// `DashPaySyncManager`, `ShieldedSyncManager`) — cancelling each
+    /// loop *and draining any in-flight pass to completion*, including
+    /// its persister / host-callback fan-out — then drains the
+    /// wallet-event adapter task.
     /// Idempotent. Call before dropping the manager when a clean
     /// shutdown is required (e.g. on app termination); a dirty drop
     /// simply leaks the tasks until the runtime exits.
@@ -347,6 +374,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     pub async fn shutdown(&self) {
         self.platform_address_sync_manager.quiesce().await;
         self.identity_sync_manager.quiesce().await;
+        self.dashpay_sync_manager.quiesce().await;
         #[cfg(feature = "shielded")]
         self.shielded_sync_manager.quiesce().await;
 

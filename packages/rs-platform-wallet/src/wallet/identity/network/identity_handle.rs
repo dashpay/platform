@@ -315,6 +315,13 @@ pub struct IdentityWallet<B: TransactionBroadcaster + ?Sized = SpvBroadcaster> {
     /// `SpvBroadcaster`-pinned, while this one picks the broadcaster
     /// used by `send_payment` (static dispatch per call).
     pub(crate) broadcaster: Arc<B>,
+    /// Concrete helper over the SDK's DashPay write operations
+    /// (contact-request broadcast, document put), wrapping `sdk`. It
+    /// erases the SDK's generic write signatures (`send_contact_request`
+    /// is generic over seven type params; the document put rides the
+    /// signer-generic `PutDocument` trait) behind two by-value methods
+    /// so the call sites stay simple.
+    pub(crate) sdk_writer: Arc<super::sdk_writer::SdkWriter>,
 }
 
 // Manual `Debug`: the derive would require `B: Debug`, which is not part
@@ -337,6 +344,7 @@ impl<B: TransactionBroadcaster + ?Sized> Clone for IdentityWallet<B> {
             asset_locks: Arc::clone(&self.asset_locks),
             persister: self.persister.clone(),
             broadcaster: Arc::clone(&self.broadcaster),
+            sdk_writer: Arc::clone(&self.sdk_writer),
         }
     }
 }
@@ -452,60 +460,6 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     /// The wallet ID for this identity wallet's underlying key material.
     pub fn wallet_id(&self) -> &WalletId {
         &self.wallet_id
-    }
-
-    /// Derive the ECDH private key for the given identity's encryption
-    /// key (DashPay ECDH).
-    ///
-    /// Uses the DIP-9 identity-authentication derivation path and
-    /// returns the raw `secp256k1::SecretKey` needed for ECDH with a
-    /// contact.
-    ///
-    /// The encryption key must be `ECDSA_SECP256K1` or `ECDSA_HASH160`;
-    /// other key types are not supported for ECDH derivation.
-    pub(super) fn derive_encryption_private_key(
-        wallet: &Wallet,
-        network: key_wallet::Network,
-        identity_index: u32,
-        encryption_key: &IdentityPublicKey,
-    ) -> Result<dashcore::secp256k1::SecretKey, PlatformWalletError> {
-        // Validate that the encryption key type is compatible with ECDH
-        // derivation.
-        match encryption_key.key_type() {
-            KeyType::ECDSA_SECP256K1 | KeyType::ECDSA_HASH160 => {}
-            other => {
-                return Err(PlatformWalletError::InvalidIdentityData(format!(
-                    "Unsupported key type {:?} for ECDH derivation; \
-                     expected ECDSA_SECP256K1 or ECDSA_HASH160",
-                    other
-                )));
-            }
-        }
-
-        let path = Self::identity_auth_derivation_path(
-            network,
-            KeyDerivationType::ECDSA,
-            identity_index,
-            encryption_key.id(),
-        )?;
-
-        let ext_priv = wallet.derive_extended_private_key(&path).map_err(|e| {
-            PlatformWalletError::InvalidIdentityData(format!(
-                "Failed to derive encryption private key: {}",
-                e
-            ))
-        })?;
-
-        // Wrap intermediate private key bytes in `Zeroizing` so they
-        // are wiped on drop.
-        let secret_bytes = Zeroizing::new(ext_priv.private_key.secret_bytes());
-
-        dashcore::secp256k1::SecretKey::from_slice(&*secret_bytes).map_err(|e| {
-            PlatformWalletError::InvalidIdentityData(format!(
-                "Invalid derived encryption private key: {}",
-                e
-            ))
-        })
     }
 }
 

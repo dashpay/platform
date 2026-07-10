@@ -17,6 +17,12 @@ import SwiftDashSDK
 final class AppUIState: ObservableObject {
     /// Whether the detailed sync banner should be shown on the Wallets tab.
     @Published var showWalletsSyncDetails: Bool = true
+
+    /// Root tab selection. Lives here (not as ContentView @State) so views
+    /// deep inside other tabs' navigation stacks can deep-link — e.g.
+    /// IdentityDetailView's "Contacts" row jumps to the DashPay tab with
+    /// that identity pre-selected.
+    @Published var selectedTab: RootTab = .sync
 }
 
 @main
@@ -208,6 +214,7 @@ struct SwiftExampleAppApp: App {
             do {
                 try walletManager.stopPlatformAddressSync()
                 try walletManager.stopShieldedSync()
+                try walletManager.stopDashPaySync()
             } catch {
                 SDKLogger.error(
                     "Failed to stop sync coordinators: \(error.localizedDescription)"
@@ -244,8 +251,50 @@ struct SwiftExampleAppApp: App {
                 network: platformState.currentNetwork,
                 resolver: shieldedResolver
             )
+
+            // Engine-bind every OTHER loaded wallet into the shared
+            // network-scoped shielded coordinator. `firstWallet` above
+            // already drives the UI mirror AND its own engine
+            // registration via `bind(...)`; this loop registers the
+            // remaining wallets so a single shielded sync pass
+            // trial-decrypts against the union of every wallet's viewing
+            // keys (SH-14/15/16 cross-wallet flows). Each bind is
+            // best-effort + independent — one wallet's missing mnemonic
+            // must not block the others. Reading each mnemonic is a
+            // device-unlock-only keychain read (no biometric prompt), so
+            // eager binding at startup is safe. The iteration seam is a
+            // pure free function (`engineBindOtherWallets`) so its
+            // "visit every non-mirror wallet" contract can be
+            // unit-tested without a configured manager.
+            //
+            // Runs BEFORE the shielded/DashPay start calls below:
+            // engine-binding must not depend on those fallible calls — a
+            // throw there (e.g. `startShieldedSync` failing) must not
+            // leave the non-mirror wallets unbound for the rest of the
+            // session.
+            engineBindOtherWallets(
+                allWalletIds: walletManager.wallets.keys,
+                mirrorWalletId: wallet.walletId
+            ) { otherWalletId in
+                shieldedService.bindEngine(
+                    walletManager: walletManager,
+                    walletId: otherWalletId,
+                    network: platformState.currentNetwork,
+                    resolver: shieldedResolver
+                )
+            }
+
             if try !walletManager.isShieldedSyncRunning() {
                 try walletManager.startShieldedSync()
+            }
+
+            // DashPay contact-request + profile sweep (background
+            // loop). Wallet-driven — every registered wallet is swept
+            // each pass — so manager scope is the right place to start
+            // it, same as the address / shielded loops above.
+            // Idempotent: starting while running is a no-op.
+            if try !walletManager.isDashPaySyncRunning() {
+                try walletManager.startDashPaySync()
             }
         } catch {
             SDKLogger.error(

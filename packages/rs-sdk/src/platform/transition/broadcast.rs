@@ -5,7 +5,7 @@ use crate::sync::retry;
 use crate::{Error, Sdk};
 use dapi_grpc::platform::v0::wait_for_state_transition_result_response::wait_for_state_transition_result_response_v0;
 use dapi_grpc::platform::v0::{
-    wait_for_state_transition_result_response, BroadcastStateTransitionRequest,
+    wait_for_state_transition_result_response, BroadcastStateTransitionRequest, ResponseMetadata,
     WaitForStateTransitionResultResponse,
 };
 use dash_context_provider::ContextProviderError;
@@ -24,11 +24,30 @@ pub trait BroadcastStateTransition {
         sdk: &Sdk,
         settings: Option<PutSettings>,
     ) -> Result<T, Error>;
+    /// Like [`wait_for_response`](Self::wait_for_response), but also
+    /// returns the quorum-authenticated response metadata.
+    /// `metadata.height` is the committed block the proof attests —
+    /// callers that persist proof-attested absolute balances need it as
+    /// the balance's height pin
+    /// (`dash_sdk::platform::address_sync::AddressFunds::as_of_height`).
+    async fn wait_for_response_with_metadata<T: TryFrom<StateTransitionProofResult> + Send>(
+        &self,
+        sdk: &Sdk,
+        settings: Option<PutSettings>,
+    ) -> Result<(T, ResponseMetadata), Error>;
     async fn broadcast_and_wait<T: TryFrom<StateTransitionProofResult> + Send>(
         &self,
         sdk: &Sdk,
         settings: Option<PutSettings>,
     ) -> Result<T, Error>;
+    /// Like [`broadcast_and_wait`](Self::broadcast_and_wait), but also
+    /// returns the quorum-authenticated response metadata (see
+    /// [`wait_for_response_with_metadata`](Self::wait_for_response_with_metadata)).
+    async fn broadcast_and_wait_with_metadata<T: TryFrom<StateTransitionProofResult> + Send>(
+        &self,
+        sdk: &Sdk,
+        settings: Option<PutSettings>,
+    ) -> Result<(T, ResponseMetadata), Error>;
 }
 
 #[async_trait::async_trait]
@@ -94,6 +113,16 @@ impl BroadcastStateTransition for StateTransition {
         sdk: &Sdk,
         settings: Option<PutSettings>,
     ) -> Result<T, Error> {
+        self.wait_for_response_with_metadata::<T>(sdk, settings)
+            .await
+            .map(|(result, _metadata)| result)
+    }
+
+    async fn wait_for_response_with_metadata<T: TryFrom<StateTransitionProofResult> + Send>(
+        &self,
+        sdk: &Sdk,
+        settings: Option<PutSettings>,
+    ) -> Result<(T, ResponseMetadata), Error> {
         trace!(
             transaction_id = %self
                 .transaction_id()
@@ -202,6 +231,7 @@ impl BroadcastStateTransition for StateTransition {
 
             let variant_name = result.to_string();
             let conversion_result = T::try_from(result)
+                .map(|converted| (converted, metadata))
                 .map_err(|_| {
                     Error::InvalidProvedResponse(format!(
                         "invalid proved response: cannot convert from {} to {}",
@@ -254,11 +284,23 @@ impl BroadcastStateTransition for StateTransition {
         sdk: &Sdk,
         settings: Option<PutSettings>,
     ) -> Result<T, Error> {
+        self.broadcast_and_wait_with_metadata::<T>(sdk, settings)
+            .await
+            .map(|(result, _metadata)| result)
+    }
+
+    async fn broadcast_and_wait_with_metadata<T: TryFrom<StateTransitionProofResult> + Send>(
+        &self,
+        sdk: &Sdk,
+        settings: Option<PutSettings>,
+    ) -> Result<(T, ResponseMetadata), Error> {
         trace!(state_transition = %self.name(), "broadcast_and_wait: start");
         trace!("broadcast_and_wait: step 1 - broadcasting");
         self.broadcast(sdk, settings).await?;
         trace!("broadcast_and_wait: step 2 - waiting for response");
-        let result = self.wait_for_response::<T>(sdk, settings).await;
+        let result = self
+            .wait_for_response_with_metadata::<T>(sdk, settings)
+            .await;
         match &result {
             Ok(_) => trace!("broadcast_and_wait: complete success"),
             Err(e) => warn!(error = ?e, "broadcast_and_wait: failed"),

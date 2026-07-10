@@ -233,7 +233,7 @@ unsafe fn dash_sdk_identity_create_from_addresses_inner(
     // Execute the creation
     let result: Result<DashSDKIdentityCreateFromAddressesResult, FFIError> =
         wrapper.runtime.block_on(async {
-            let (created_identity, address_infos) = identity
+            let (created_identity, address_infos, _proof_height) = identity
                 .put_with_address_funding(
                     &wrapper.sdk,
                     input_map,

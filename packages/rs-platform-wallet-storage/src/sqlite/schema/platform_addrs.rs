@@ -24,13 +24,15 @@ pub fn apply(
     if !cs.addresses.is_empty() {
         let mut stmt = tx.prepare_cached(
             "INSERT INTO platform_addresses \
-                (wallet_id, account_index, address_index, address, balance, nonce) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6) \
+                (wallet_id, account_index, address_index, address, balance, nonce, \
+                 as_of_height) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7) \
              ON CONFLICT(wallet_id, address) DO UPDATE SET \
                 account_index = excluded.account_index, \
                 address_index = excluded.address_index, \
                 balance = excluded.balance, \
-                nonce = excluded.nonce",
+                nonce = excluded.nonce, \
+                as_of_height = excluded.as_of_height",
         )?;
         for entry in &cs.addresses {
             // The row is keyed by the outer `wallet_id`; an entry that
@@ -51,6 +53,7 @@ pub fn apply(
                 entry.address.as_bytes(),
                 safe_cast::u64_to_i64("platform_addresses.balance", entry.funds.balance)?,
                 i64::from(entry.funds.nonce),
+                safe_cast::u64_to_i64("platform_addresses.as_of_height", entry.funds.as_of_height)?,
             ])?;
         }
     }
@@ -114,7 +117,7 @@ pub fn list_per_wallet(
     wallet_id: &WalletId,
 ) -> Result<Vec<PlatformAddressRow>, WalletStorageError> {
     let mut stmt = conn.prepare(
-        "SELECT account_index, address_index, address, balance, nonce \
+        "SELECT account_index, address_index, address, balance, nonce, as_of_height \
          FROM platform_addresses WHERE wallet_id = ?1 \
          ORDER BY account_index, address_index, address",
     )?;
@@ -125,17 +128,19 @@ pub fn list_per_wallet(
             row.get::<_, Vec<u8>>(2)?,
             row.get::<_, i64>(3)?,
             row.get::<_, i64>(4)?,
+            row.get::<_, i64>(5)?,
         ))
     })?;
     let mut out = Vec::new();
     for r in rows {
-        let (account_index, address_index, address_bytes, balance, nonce) = r?;
+        let (account_index, address_index, address_bytes, balance, nonce, as_of_height) = r?;
         out.push(decode_address_row(
             account_index,
             address_index,
             &address_bytes,
             balance,
             nonce,
+            as_of_height,
         )?);
     }
     Ok(out)
@@ -323,7 +328,8 @@ fn all_address_rows(
     conn: &Connection,
 ) -> Result<BTreeMap<WalletId, Vec<PlatformAddressRow>>, WalletStorageError> {
     let mut stmt = conn.prepare(
-        "SELECT wallet_id, account_index, address_index, address, balance, nonce \
+        "SELECT wallet_id, account_index, address_index, address, balance, nonce, \
+                as_of_height \
          FROM platform_addresses ORDER BY wallet_id, account_index, address_index, address",
     )?;
     let rows = stmt.query_map([], |row| {
@@ -334,11 +340,13 @@ fn all_address_rows(
             row.get::<_, Vec<u8>>(3)?,
             row.get::<_, i64>(4)?,
             row.get::<_, i64>(5)?,
+            row.get::<_, i64>(6)?,
         ))
     })?;
     let mut out: BTreeMap<WalletId, Vec<PlatformAddressRow>> = BTreeMap::new();
     for r in rows {
-        let (wid_bytes, account_index, address_index, address_bytes, balance, nonce) = r?;
+        let (wid_bytes, account_index, address_index, address_bytes, balance, nonce, as_of_height) =
+            r?;
         let wallet_id = wallet_id_from_bytes(&wid_bytes)?;
         out.entry(wallet_id).or_default().push(decode_address_row(
             account_index,
@@ -346,6 +354,7 @@ fn all_address_rows(
             &address_bytes,
             balance,
             nonce,
+            as_of_height,
         )?);
     }
     Ok(out)
@@ -358,6 +367,7 @@ fn decode_address_row(
     address_bytes: &[u8],
     balance: i64,
     nonce: i64,
+    as_of_height: i64,
 ) -> Result<PlatformAddressRow, WalletStorageError> {
     if address_bytes.len() != 20 {
         return Err(WalletStorageError::blob_decode(
@@ -367,6 +377,7 @@ fn decode_address_row(
     let mut hash160 = [0u8; 20];
     hash160.copy_from_slice(address_bytes);
     let balance = safe_cast::i64_to_u64("platform_addresses.balance", balance)?;
+    let as_of_height = safe_cast::i64_to_u64("platform_addresses.as_of_height", as_of_height)?;
     let nonce = u32::try_from(nonce).map_err(|_| WalletStorageError::IntegerOverflow {
         field: "platform_addresses.nonce",
         value: nonce as u64,
@@ -388,7 +399,11 @@ fn decode_address_row(
         account_index,
         address_index,
         address: PlatformP2PKHAddress::new(hash160),
-        funds: AddressFunds { balance, nonce },
+        funds: AddressFunds {
+            balance,
+            nonce,
+            as_of_height,
+        },
     })
 }
 

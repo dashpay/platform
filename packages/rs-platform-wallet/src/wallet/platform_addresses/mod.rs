@@ -1,11 +1,10 @@
 //! DIP-17 platform payment address wallet and provider.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
 pub use dpp::prelude::AddressNonce;
-use key_wallet::PlatformP2PKHAddress;
 
 #[cfg(doc)]
 use crate::PlatformWalletError;
@@ -41,27 +40,6 @@ where
     iter.into_iter()
         .try_fold(0u64, |acc, c| acc.checked_add(c))
         .ok_or(crate::PlatformWalletError::InputSumOverflow)
-}
-
-/// Collect the P2PKH members of an address iterator into the set shape
-/// [`PlatformAddressWallet::reconcile_address_infos`] takes for its
-/// `credited_outputs` parameter — the addresses a transition credits via
-/// an on-chain `AddBalanceToAddress` DELTA (transfer outputs, asset-lock
-/// top-up recipients, identity-registration change, identity→address
-/// credit-transfer recipients), as opposed to inputs, which are recorded
-/// as absolute `SetBalanceToAddress` ops. Non-P2PKH addresses are skipped:
-/// wallet-owned platform-payment addresses are always P2PKH, so a non-P2PKH
-/// output can never be an owned address the seam would reconcile.
-pub(crate) fn credited_outputs_set<'a>(
-    addresses: impl IntoIterator<Item = &'a PlatformAddress>,
-) -> BTreeSet<PlatformP2PKHAddress> {
-    addresses
-        .into_iter()
-        .filter_map(|addr| match addr {
-            PlatformAddress::P2pkh(hash) => Some(PlatformP2PKHAddress::new(*hash)),
-            _ => None,
-        })
-        .collect()
 }
 
 pub use provider::{

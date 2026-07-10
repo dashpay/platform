@@ -55,6 +55,29 @@ pub struct AddressFunds {
     pub nonce: AddressNonce,
     /// Credits balance held by the address.
     pub balance: Credits,
+    /// Platform block height this balance is current **as of** — the
+    /// height pin.
+    ///
+    /// The pin means: `balance` includes the effect of every block up to
+    /// and including `as_of_height`. It is the reconciliation rule between
+    /// the two sources of truth for an address balance:
+    ///
+    /// - **Direct truth** — a proof-attested absolute (state-transition
+    ///   result, trunk/branch scan element). It arrives pinned at its
+    ///   proof's block height.
+    /// - **Aggregate truth** — the recent/compacted balance-change delta
+    ///   stream. A delta recorded at block `B` may only be applied when
+    ///   `B > as_of_height` (otherwise it is already included in the
+    ///   absolute); applying it advances the pin to `B`.
+    ///
+    /// Freshness between two absolutes is decided by comparing pins — a
+    /// later pin is authoritative *even when it revises the balance
+    /// downward* (nonces only advance on outgoing ops, so they cannot
+    /// order receive-only state).
+    ///
+    /// `0` means "unknown provenance" (legacy rows persisted before the
+    /// pin existed): every delta applies, matching pre-pin behavior.
+    pub as_of_height: u64,
 }
 /// Configuration for address synchronization.
 #[derive(Debug, Clone)]
@@ -165,7 +188,8 @@ pub struct AddressSyncResult<Tag, Address> {
     /// whether the height has been compacted away.
     ///
     /// Store this value and return it from
-    /// [`AddressProvider::last_known_recent_block_height`] on the next call.
+    /// [`AddressProvider::last_known_recent_block_height`](super::provider::AddressProvider::last_known_recent_block_height)
+    /// on the next call.
     /// A value of `0` means no recent block has been observed yet.
     pub last_known_recent_block: u64,
 

@@ -36,7 +36,9 @@ public class WalletStorage {
     /// this single service so the keychain explorer + future
     /// cross-item queries see one namespace. Legacy services are
     /// scrubbed on launch by `cleanupLegacyItems`.
-    public static let keychainService = "org.dashfoundation.wallet"
+    public static let keychainService =
+        ProcessInfo.processInfo.environment["DASH_KEYCHAIN_SERVICE"]
+        ?? "org.dashfoundation.wallet"
 
     /// Per-instance alias that lets the rest of this file stay
     /// short; the static constant is the one external callers

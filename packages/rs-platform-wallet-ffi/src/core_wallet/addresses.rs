@@ -1,9 +1,11 @@
 //! FFI bindings for CoreWallet address derivation.
 
+use super::transaction_builder::CoreAccountTypeFFI;
 use crate::error::*;
 use crate::handle::*;
 use crate::runtime::runtime;
 use crate::{check_ptr, unwrap_option_or_return, unwrap_result_or_return};
+use key_wallet::wallet::managed_wallet_info::transaction_building::AccountTypePreference;
 use std::ffi::CString;
 use std::os::raw::c_char;
 
@@ -48,6 +50,30 @@ pub unsafe extern "C" fn core_wallet_next_change_address(
     let addr = unwrap_result_or_return!(result);
     let c_str = unwrap_result_or_return!(CString::new(addr.to_string()));
     *out_address = c_str.into_raw();
+    PlatformWalletFFIResult::ok()
+}
+
+/// Widen the gap limit for an account, generating the addresses the wider
+/// limit now requires.
+///
+/// # Safety
+/// `handle` must be a valid core-wallet handle.
+#[no_mangle]
+pub unsafe extern "C" fn core_wallet_set_gap_limit(
+    handle: Handle,
+    account_type: CoreAccountTypeFFI,
+    account_index: u32,
+    gap_limit: u32,
+) -> PlatformWalletFFIResult {
+    let source: AccountTypePreference = account_type.into();
+
+    let option = CORE_WALLET_STORAGE.with_item(handle, |wallet| {
+        runtime().block_on(wallet.set_gap_limit(source, account_index, gap_limit))
+    });
+
+    let result = unwrap_option_or_return!(option);
+    unwrap_result_or_return!(result);
+
     PlatformWalletFFIResult::ok()
 }
 

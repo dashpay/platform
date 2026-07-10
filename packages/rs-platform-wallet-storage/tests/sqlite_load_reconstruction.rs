@@ -35,6 +35,7 @@ fn entry(
         funds: AddressFunds {
             balance: address_index as u64 * 100,
             nonce: address_index,
+            as_of_height: address_index as u64 * 1_000,
         },
     }
 }
@@ -149,7 +150,8 @@ fn load_state_reconstructs_per_account_from_registration_and_addresses() {
         account.found().get(&addr0),
         Some(&AddressFunds {
             balance: 0,
-            nonce: 0
+            nonce: 0,
+            as_of_height: 0,
         }),
         "address 0 funds must match the seeded entry"
     );
@@ -157,7 +159,8 @@ fn load_state_reconstructs_per_account_from_registration_and_addresses() {
         account.found().get(&addr1),
         Some(&AddressFunds {
             balance: 100,
-            nonce: 1
+            nonce: 1,
+            as_of_height: 1_000,
         }),
         "address 1 funds must match the seeded entry"
     );
@@ -348,6 +351,8 @@ fn identity_entry(id: u8, idx: Option<u32>) -> IdentityEntry {
         wallet_id: None,
         dashpay_profile: None,
         dashpay_payments: Default::default(),
+        contact_profiles: Default::default(),
+        ignored_senders: Default::default(),
     }
 }
 
@@ -531,7 +536,7 @@ fn contacts_round_trip(
 
 /// A fully-populated [`EstablishedContact`] so the round-trip exercises
 /// every metadata column (`alias`, `note`, `is_hidden`,
-/// `accepted_accounts`) plus both request blobs.
+/// `accepted_accounts`, `payment_channel_broken`) plus both request blobs.
 fn established_contact(owner: u8, contact: u8) -> EstablishedContact {
     EstablishedContact {
         contact_identity_id: Identifier::from([contact; 32]),
@@ -541,6 +546,17 @@ fn established_contact(owner: u8, contact: u8) -> EstablishedContact {
         note: Some("met at conf".to_string()),
         is_hidden: true,
         accepted_accounts: vec![1, 7, 42],
+        // Non-default so the round-trip test pins the new
+        // `payment_channel_broken` column through write + read.
+        payment_channel_broken: true,
+        // This backend has no column for the system-derived account label,
+        // so the read path always reconstructs it as `None`; keep the
+        // fixture `None` to match through the round-trip.
+        contact_account_label: None,
+        // This backend has no column for the rotation self-heal marker, so
+        // the read path always reconstructs it as `None`; keep the fixture
+        // `None` to match through the round-trip.
+        external_account_reference: None,
     }
 }
 
@@ -1388,4 +1404,244 @@ fn tc_p4_010_empty_db_default_state() {
     assert!(state.is_empty());
     assert!(logs_contain("wallets_seen=0"));
     assert!(logs_contain("wallets_pending_rehydration=0"));
+}
+
+/// A pending tombstone must never destroy an ESTABLISHED pair-row. The
+/// contacts table is one row per `(owner, contact)` pair, so an unfiltered
+/// `removed_incoming` / `removed_sent` DELETE aimed at a pending entry
+/// would take the established row — both request blobs plus the user's
+/// alias/note/hidden/accepted-accounts — with it (the ignore-an-
+/// established-contact shape). The writer's state filter must scope the
+/// DELETE to the pending state the tombstone describes. Was red against
+/// the unfiltered DELETE.
+#[test]
+fn pending_tombstones_do_not_destroy_established_rows() {
+    let (persister, _tmp, path) = fresh_persister();
+    let w = wid(0xA7);
+    ensure_wallet_meta(&persister, &w);
+
+    let owner = Identifier::from([0x51; 32]);
+    let contact = Identifier::from([0x52; 32]);
+    let est_key = SentContactRequestKey {
+        owner_id: owner,
+        recipient_id: contact,
+    };
+
+    // Flush 1: the pair is established, with full user metadata.
+    let mut established = std::collections::BTreeMap::new();
+    established.insert(est_key, established_contact(0x51, 0x52));
+    persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                contacts: Some(ContactChangeSet {
+                    established,
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+    // Flush 2: pending tombstones for the SAME pair (both directions —
+    // e.g. an `ignore_sender` emitted against an established contact by a
+    // pre-guard caller). Neither may touch the established row.
+    let mut cs = ContactChangeSet::default();
+    cs.removed_incoming.insert(ReceivedContactRequestKey {
+        owner_id: owner,
+        sender_id: contact,
+    });
+    cs.removed_sent.insert(SentContactRequestKey {
+        owner_id: owner,
+        recipient_id: contact,
+    });
+    persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                contacts: Some(cs),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    drop(persister);
+
+    let p2 = reopen(&path);
+    let conn = p2.lock_conn_for_test();
+    let state = platform_wallet_storage::sqlite::schema::contacts::load_state_for_test(&conn, &w)
+        .expect("contacts load_state");
+    let survived = state
+        .established
+        .get(&est_key)
+        .expect("established row must survive pending tombstones");
+    assert_eq!(survived.alias, Some("best friend".to_string()));
+    assert_eq!(survived.note, Some("met at conf".to_string()));
+    assert_eq!(survived.accepted_accounts, vec![1, 7, 42]);
+
+    // Control: the same tombstones DO delete genuinely-pending rows.
+    let (persister, _tmp2, path2) = fresh_persister();
+    let w2 = wid(0xA8);
+    ensure_wallet_meta(&persister, &w2);
+    let mut incoming = std::collections::BTreeMap::new();
+    incoming.insert(
+        ReceivedContactRequestKey {
+            owner_id: owner,
+            sender_id: contact,
+        },
+        contact_request_entry(0x52, 0x51),
+    );
+    persister
+        .store(
+            w2,
+            PlatformWalletChangeSet {
+                contacts: Some(ContactChangeSet {
+                    incoming_requests: incoming,
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    let mut cs = ContactChangeSet::default();
+    cs.removed_incoming.insert(ReceivedContactRequestKey {
+        owner_id: owner,
+        sender_id: contact,
+    });
+    persister
+        .store(
+            w2,
+            PlatformWalletChangeSet {
+                contacts: Some(cs),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    drop(persister);
+    let p3 = reopen(&path2);
+    let conn = p3.lock_conn_for_test();
+    let state = platform_wallet_storage::sqlite::schema::contacts::load_state_for_test(&conn, &w2)
+        .expect("contacts load_state");
+    assert!(
+        state.incoming_requests.is_empty(),
+        "a received-state row is still deleted by its tombstone"
+    );
+}
+
+/// Un-ignore must be durable across a restart: the `ignored_senders`
+/// TABLE (maintained transactionally by both ignore and un-ignore) is the
+/// authoritative restore source — NOT the `entry_blob`'s snapshot copy,
+/// which goes stale on un-ignore (nothing re-flushes the identity entry)
+/// and is UNION-merged across buffered snapshots. Blob-based restore
+/// resurrected the ignore, stickily. Was red against the blob-based
+/// loader.
+#[test]
+fn tc_p4_020_unignore_survives_restart_table_is_authoritative() {
+    use platform_wallet_storage::sqlite::schema::identities;
+    use std::collections::BTreeMap;
+    use std::collections::BTreeSet;
+
+    let (persister, _tmp, path) = fresh_persister();
+    let w = wid(0xC1);
+    ensure_wallet_meta(&persister, &w);
+
+    let owner = Identifier::from([0x61; 32]);
+    let sender = Identifier::from([0x62; 32]);
+
+    // Flush 1: the identity entry snapshot carries the sender as ignored
+    // (as a live sweep would have persisted it), and the contacts
+    // changeset records the ignore in the table.
+    let mut entry = identity_entry(0x61, Some(0));
+    entry.ignored_senders = BTreeSet::from([sender]);
+    let mut identities = BTreeMap::new();
+    identities.insert(entry.id, entry);
+    persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                identities: Some(IdentityChangeSet {
+                    identities,
+                    removed: Default::default(),
+                }),
+                contacts: Some(ContactChangeSet {
+                    ignored: BTreeSet::from([(owner, sender)]),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+    // Flush 2: the user un-ignores. Production persists ONLY the contact
+    // changeset (no fresh identity snapshot) — the blob still lists the
+    // sender as ignored.
+    persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                contacts: Some(ContactChangeSet {
+                    unignored: BTreeSet::from([(owner, sender)]),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    drop(persister);
+
+    // Restart: the restored identity must NOT have the sender ignored —
+    // the table row was deleted; the stale blob copy must not resurrect it.
+    let p2 = reopen(&path);
+    let conn = p2.lock_conn_for_test();
+    let state = identities::load_state(&conn, &w).expect("load_state");
+    drop(conn);
+    let managed = state
+        .wallet_identities
+        .get(&w)
+        .and_then(|bucket| bucket.get(&0))
+        .expect("restored identity");
+    assert!(
+        !managed.is_sender_ignored(&sender),
+        "un-ignore must survive a restart — the stale entry_blob snapshot \
+         must not resurrect the ignore"
+    );
+
+    // Control (same loader, opposite direction): with the table row still
+    // present, the restore DOES ignore the sender — even when the blob
+    // snapshot never recorded it (blob older than the ignore).
+    let (persister, _tmp2, path2) = fresh_persister();
+    let w2 = wid(0xC2);
+    ensure_wallet_meta(&persister, &w2);
+    let entry = identity_entry(0x61, Some(0)); // blob: no ignored senders
+    let mut identities = BTreeMap::new();
+    identities.insert(entry.id, entry);
+    persister
+        .store(
+            w2,
+            PlatformWalletChangeSet {
+                identities: Some(IdentityChangeSet {
+                    identities,
+                    removed: Default::default(),
+                }),
+                contacts: Some(ContactChangeSet {
+                    ignored: BTreeSet::from([(owner, sender)]),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    drop(persister);
+    let p3 = reopen(&path2);
+    let conn = p3.lock_conn_for_test();
+    let state = identities::load_state(&conn, &w2).expect("load_state");
+    drop(conn);
+    let managed = state
+        .wallet_identities
+        .get(&w2)
+        .and_then(|bucket| bucket.get(&0))
+        .expect("restored identity");
+    assert!(
+        managed.is_sender_ignored(&sender),
+        "an ignore recorded in the table restores even when the blob snapshot predates it"
+    );
 }

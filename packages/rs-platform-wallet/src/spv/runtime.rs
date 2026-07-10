@@ -9,7 +9,7 @@ use dashcore::sml::llmq_type::LLMQType;
 use dashcore::{QuorumHash, Transaction};
 
 use dash_spv::network::PeerNetworkManager;
-use dash_spv::storage::DiskStorageManager;
+use dash_spv::storage::{DiskStorageManager, StorageManager};
 use dash_spv::sync::SyncProgress;
 use dash_spv::{ClientConfig, DashSpvClient, EventHandler, Hash};
 
@@ -18,6 +18,7 @@ use key_wallet_manager::WalletManager;
 use crate::broadcaster::BroadcastError;
 use crate::error::PlatformWalletError;
 use crate::events::PlatformEventManager;
+use crate::spv::peers::{classify_peers, PeerTracker, SpvPeerInfo};
 use crate::wallet::platform_wallet::PlatformWalletInfo;
 
 type SpvClient =
@@ -31,7 +32,9 @@ pub struct SpvRuntime {
     event_manager: Arc<PlatformEventManager>,
     wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
     client: RwLock<Option<SpvClient>>,
+    last_config: RwLock<Option<ClientConfig>>,
     task: Mutex<Option<JoinHandle<()>>>,
+    peer_tracker: Arc<PeerTracker>,
 }
 /// Classify a dash-spv broadcast failure per the
 /// [`TransactionBroadcaster::broadcast`] contract.
@@ -69,7 +72,9 @@ impl SpvRuntime {
             event_manager,
             wallet_manager,
             client: RwLock::new(None),
+            last_config: RwLock::new(None),
             task: Mutex::new(None),
+            peer_tracker: Arc::new(PeerTracker::default()),
         }
     }
 
@@ -89,13 +94,16 @@ impl SpvRuntime {
             .await
             .map_err(|e| PlatformWalletError::SpvError(e.to_string()))?;
 
-        // PlatformEventManager implements `EventHandler`; pass it as the
-        // sole entry in the SPV client's handler vec. Additional dyn
-        // handlers can be added here if other components need to observe
-        // raw SPV events directly (today everything routes through the
-        // platform event manager's own handler list).
-        let event_handlers: Vec<Arc<dyn EventHandler>> =
-            vec![Arc::clone(&self.event_manager) as Arc<dyn EventHandler>];
+        // PlatformEventManager implements `EventHandler`; the peer tracker
+        // rides alongside it so `connected_peers` can answer from the latest
+        // `PeersUpdated` snapshot without a dash-spv query API.
+        let event_handlers: Vec<Arc<dyn EventHandler>> = vec![
+            Arc::clone(&self.event_manager) as Arc<dyn EventHandler>,
+            Arc::clone(&self.peer_tracker) as Arc<dyn EventHandler>,
+        ];
+
+        let retained_config = config.clone();
+
         let spv_client = DashSpvClient::new(
             config,
             network_manager,
@@ -108,6 +116,7 @@ impl SpvRuntime {
 
         let mut client = self.client.write().await;
         *client = Some(spv_client);
+        *self.last_config.write().await = Some(retained_config);
 
         Ok(())
     }
@@ -185,6 +194,7 @@ impl SpvRuntime {
 
         let mut client = self.client.write().await;
         let _ = client.take();
+        self.peer_tracker.clear();
 
         result
     }
@@ -203,6 +213,7 @@ impl SpvRuntime {
                 .map_err(|e| PlatformWalletError::SpvError(e.to_string())),
             None => Ok(()),
         };
+        self.peer_tracker.clear();
 
         let handle = self.task.lock().expect("spv task mutex poisoned").take();
         if let Some(handle) = handle {
@@ -248,6 +259,39 @@ impl SpvRuntime {
         *self.task.lock().expect("spv task mutex poisoned") = Some(handle);
     }
 
+    /// The peers the SPV client is currently connected to, each classified
+    /// against the masternode list (Evonode / Masternode / Normal, or
+    /// Unknown while the masternode list hasn't synced yet).
+    ///
+    /// Returns an empty vec when the client isn't running or no peers are
+    /// connected.
+    pub async fn connected_peers(&self) -> Vec<SpvPeerInfo> {
+        // Resolve the client before copying the snapshot: a concurrent
+        // `stop()` removes the client under the write lock and clears the
+        // tracker afterwards, so snapshotting first could return peers
+        // that no longer exist.
+        let client_guard = self.client.read().await;
+        let Some(client) = client_guard.as_ref() else {
+            return Vec::new();
+        };
+
+        let addresses = self.peer_tracker.snapshot();
+        if addresses.is_empty() {
+            return Vec::new();
+        }
+
+        let engine = client.masternode_list_engine().ok();
+        drop(client_guard);
+
+        match engine {
+            Some(engine) => {
+                let engine_guard = engine.read().await;
+                classify_peers(&addresses, engine_guard.latest_masternode_list())
+            }
+            None => classify_peers(&addresses, None),
+        }
+    }
+
     /// Get the current sync progress.
     ///
     /// Returns `None` if the SPV client is not running.
@@ -283,17 +327,37 @@ impl SpvRuntime {
 
     /// Clear all persisted SPV storage (headers, filters, state).
     ///
-    /// The SPV client must be running to perform this operation.
+    /// If the SPVClient is running it will be stopped and the
+    /// storage will be cleaned. If it is not running a tmp
+    /// Storage Manager built from the cached config will be used.
     pub async fn clear_storage(&self) -> Result<(), PlatformWalletError> {
-        let client_guard = self.client.read().await;
-        let client = client_guard.as_ref().ok_or(PlatformWalletError::SpvError(
-            "SPV Client not started".to_string(),
-        ))?;
+        // Fast path: a live client holds the storage lock; clear through it.
+        {
+            let client_guard = self.client.read().await;
+            if let Some(client) = client_guard.as_ref() {
+                return client
+                    .clear_storage()
+                    .await
+                    .map_err(|e| PlatformWalletError::SpvError(e.to_string()));
+            }
+        }
 
-        client
-            .clear_storage()
+        let config = self.last_config.read().await.clone().ok_or_else(|| {
+            PlatformWalletError::SpvError(
+                "SPV storage location unknown; start the client at least once before clearing"
+                    .to_string(),
+            )
+        })?;
+
+        let mut storage = DiskStorageManager::new(&config)
             .await
-            .map_err(|e| PlatformWalletError::SpvError(e.to_string()))
+            .map_err(|e| PlatformWalletError::SpvError(e.to_string()))?;
+        StorageManager::clear(&mut storage)
+            .await
+            .map_err(|e| PlatformWalletError::SpvError(e.to_string()))?;
+        StorageManager::shutdown(&mut storage).await;
+
+        Ok(())
     }
 
     /// Update the running SPV client's configuration.

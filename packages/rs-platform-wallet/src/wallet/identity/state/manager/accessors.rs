@@ -65,6 +65,22 @@ impl IdentityManager {
         out
     }
 
+    /// Iterate every managed identity (both buckets) as `&ManagedIdentity`.
+    ///
+    /// Unlike [`Self::all_identities`] (`&Identity` only) and
+    /// [`Self::identity_ids`] (ids only), this exposes the full per-identity
+    /// state — including the in-memory-only `pending_contact_crypto` queue — so
+    /// a caller can snapshot/aggregate it across identities without a second
+    /// lookup. Order is unspecified. Mirrors the identity set of
+    /// [`Self::all_identities`] exactly.
+    pub fn managed_identities(&self) -> impl Iterator<Item = &ManagedIdentity> {
+        self.out_of_wallet_identities.values().chain(
+            self.wallet_identities
+                .values()
+                .flat_map(|inner| inner.values()),
+        )
+    }
+
     /// Backwards-compatible name used by FFI / external callers — same
     /// as [`Self::managed_identity`].
     pub fn managed_identity(&self, identity_id: &Identifier) -> Option<&ManagedIdentity> {

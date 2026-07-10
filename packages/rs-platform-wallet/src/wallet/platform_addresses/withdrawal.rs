@@ -10,6 +10,7 @@ use dpp::withdrawal::Pooling;
 use key_wallet::PlatformP2PKHAddress;
 
 use super::InputSelection;
+use crate::error::promote_address_nonce_error_or_sdk;
 use crate::wallet::PlatformAddressWallet;
 use crate::{PlatformAddressChangeSet, PlatformWalletError};
 use dash_sdk::platform::transition::address_credit_withdrawal::WithdrawAddressFunds;
@@ -113,7 +114,9 @@ impl PlatformAddressWallet {
         // path diverge on a non-latest-pinned SDK.
         let version = platform_version.unwrap_or_else(|| self.sdk.version());
 
-        let address_infos = match input_selection {
+        // `proof_height` is the broadcast proof's committed block — the
+        // height pin for the reconciled absolutes below.
+        let (address_infos, proof_height) = match input_selection {
             InputSelection::Explicit(inputs) => {
                 if inputs.is_empty() {
                     return Err(PlatformWalletError::AddressOperation(
@@ -131,7 +134,8 @@ impl PlatformAddressWallet {
                         address_signer,
                         None,
                     )
-                    .await?
+                    .await
+                    .map_err(promote_address_nonce_error_or_sdk)?
             }
             InputSelection::ExplicitWithNonces(inputs) => {
                 if inputs.is_empty() {
@@ -150,7 +154,8 @@ impl PlatformAddressWallet {
                         address_signer,
                         None,
                     )
-                    .await?
+                    .await
+                    .map_err(promote_address_nonce_error_or_sdk)?
             }
             InputSelection::Auto => {
                 // The AUTO path owns its own fee strategy: it picks the
@@ -181,29 +186,24 @@ impl PlatformAddressWallet {
                         address_signer,
                         None,
                     )
-                    .await?
+                    .await
+                    .map_err(promote_address_nonce_error_or_sdk)?
             }
         };
 
         // Apply + persist the proof-attested post-withdrawal balances via
-        // the shared seam. Input addresses resolve through the provider's
-        // persisted index bijection (with live-pool fallback), so a
-        // restored address that is no longer in a live derived pool keeps
-        // its real derivation index instead of corrupting index 0.
+        // the shared seam, pinned at `proof_height`. Input addresses
+        // resolve through the provider's persisted index bijection (with
+        // live-pool fallback), so a restored address that is no longer in
+        // a live derived pool keeps its real derivation index instead of
+        // corrupting index 0.
         //
-        // `credited_outputs` is empty (ADDR-09 watermark gate stays off):
-        // every owned address a withdrawal touches is an INPUT, recorded
-        // on-chain as `SetBalanceToAddress` (an absolute `SetCredits` op in
-        // the recent tree); re-applying an absolute op on the next
-        // incremental pass is idempotent, so there is no delta to
-        // double-count. The only op that *would* be a delta
-        // (`AddBalanceToAddress`) is the change output, and every
-        // `withdraw_address_funds` call above passes `None` for it — the
-        // account is drained in full with no change. If a future change
-        // output is ever wired up here, pass it via
-        // `super::credited_outputs_set` so the seam's gate covers it.
+        // Withdrawal inputs are recorded on-chain as `SetBalanceToAddress`
+        // (absolute `SetCredits` ops), which were already replay-safe; the
+        // pin additionally protects a future change output (an
+        // `AddBalanceToAddress` delta) without any caller-side bookkeeping.
         Ok(self
-            .reconcile_address_infos(&address_infos, &BTreeSet::new(), "address withdrawal")
+            .reconcile_address_infos(&address_infos, proof_height, "address withdrawal")
             .await)
     }
 

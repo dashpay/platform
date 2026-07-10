@@ -66,7 +66,7 @@ pub unsafe extern "C" fn managed_identity_get_sent_contact_request(
     let id = unwrap_result_or_return!(unsafe { read_identifier(recipient_id) });
 
     let option = MANAGED_IDENTITY_STORAGE.with_item(identity_handle, |identity| {
-        identity.sent_contact_requests.get(&id).cloned()
+        identity.dashpay().sent_contact_requests().get(&id).cloned()
     });
     let option = unwrap_option_or_return!(option);
     let request = unwrap_option_or_return!(option);
@@ -87,7 +87,11 @@ pub unsafe extern "C" fn managed_identity_get_incoming_contact_request(
     let id = unwrap_result_or_return!(unsafe { read_identifier(sender_id) });
 
     let option = MANAGED_IDENTITY_STORAGE.with_item(identity_handle, |identity| {
-        identity.incoming_contact_requests.get(&id).cloned()
+        identity
+            .dashpay()
+            .incoming_contact_requests()
+            .get(&id)
+            .cloned()
     });
     let inner = unwrap_option_or_return!(option);
     let request = unwrap_option_or_return!(inner);
@@ -174,6 +178,14 @@ pub unsafe extern "C" fn contact_request_get_encrypted_public_key(
 ) -> PlatformWalletFFIResult {
     check_ptr!(out_bytes);
     check_ptr!(out_len);
+    // Sentinel first: the handle lookup below is fallible, and
+    // `platform_wallet_bytes_free` reconstructs a `Vec` from any non-null
+    // pointer / non-zero length pair — a cleanup-on-error caller must never
+    // see stack garbage here.
+    unsafe {
+        *out_bytes = std::ptr::null_mut();
+        *out_len = 0;
+    }
 
     let option = CONTACT_REQUEST_STORAGE.with_item(request_handle, |request| {
         request.encrypted_public_key.clone()

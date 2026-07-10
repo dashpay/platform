@@ -15,6 +15,10 @@ struct CoreContentView: View {
     @State private var showProofDetail = false
     @State private var masternodesEnabled: Bool = true
     @State private var platformSyncExpanded: Bool = false
+    /// Last completed DashPay sync pass, polled from the FFI on appear
+    /// and refreshed whenever an in-flight pass finishes (the
+    /// `dashPaySyncIsSyncing` falling edge) or Sync Now completes.
+    @State private var dashPayLastSync: Date?
     // Progress values come from PlatformWalletManager (polled from FFI each second)
 
     /// All persisted platform addresses across every wallet. Summed
@@ -406,7 +410,79 @@ var body: some View {
                 Text("Platform Sync Status")
             }
 
-            // Section 3: ZK Shielded Sync Status
+            // Section 3: DashPay Sync Status — the recurring
+            // contact-request/profile/payment-reconcile loop
+            // (`DashPaySyncManager`). State mirrors the sibling
+            // sections: spinner while a pass is in flight, relative
+            // last-sync stamp after, manual Sync Now.
+            Section {
+                VStack(spacing: 8) {
+                    HStack {
+                        if walletManager.dashPaySyncIsSyncing {
+                            ProgressView()
+                                .scaleEffect(0.7)
+                            Text("Syncing...")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                        } else if let lastSync = dashPayLastSync {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundColor(.green)
+                                .font(.caption)
+                            Text("Last sync: \(lastSync, style: .relative)")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        } else {
+                            Image(systemName: "circle.dashed")
+                                .foregroundColor(.secondary)
+                                .font(.caption)
+                            Text("Not synced yet")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                        }
+                        Spacer()
+                        if (try? walletManager.isDashPaySyncRunning()) == true {
+                            Text("Recurring")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        } else {
+                            Text("Stopped")
+                                .font(.caption)
+                                .foregroundColor(.orange)
+                        }
+                    }
+
+                    HStack {
+                        Spacer()
+                        Button {
+                            Task {
+                                _ = try? await walletManager.dashPaySyncNow()
+                                refreshDashPayLastSync()
+                            }
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "arrow.clockwise")
+                                Text("Sync Now")
+                            }
+                            .font(.caption)
+                            .fontWeight(.medium)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.blue)
+                        .controlSize(.mini)
+                        .disabled(walletManager.dashPaySyncIsSyncing)
+                        .accessibilityIdentifier("sync.dashpay.syncNow")
+                    }
+                }
+                .padding(.vertical, 4)
+                .onAppear { refreshDashPayLastSync() }
+                .onChange(of: walletManager.dashPaySyncIsSyncing) { _, syncing in
+                    if !syncing { refreshDashPayLastSync() }
+                }
+            } header: {
+                Text("DashPay Sync Status")
+            }
+
+            // Section 4: ZK Shielded Sync Status
             Section {
                 VStack(spacing: 8) {
                     // Sync state
@@ -660,6 +736,13 @@ var body: some View {
     }
 
     // MARK: - Sync Methods
+
+    /// Pull the last completed DashPay pass timestamp from the FFI.
+    /// `0` means "no pass has ever completed" — render as nil.
+    private func refreshDashPayLastSync() {
+        let unix = (try? walletManager.dashPayLastSyncUnixSeconds()) ?? 0
+        dashPayLastSync = unix > 0 ? Date(timeIntervalSince1970: TimeInterval(unix)) : nil
+    }
 
     private func toggleSync() {
         if isSpvRunning {

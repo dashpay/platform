@@ -202,7 +202,9 @@ impl PlatformAddressWallet {
         // cache, and IS-lock rejection triggers an IS→CL upgrade on
         // the same outpoint.
         let proof_out_point = out_point_from_proof(&proof);
-        let address_infos = match submit_with_cl_height_retry(settings, |s| {
+        // `proof_height` is the broadcast proof's committed block — the
+        // height pin for the reconciled absolutes below.
+        let (address_infos, proof_height) = match submit_with_cl_height_retry(settings, |s| {
             addresses.top_up_with_signers(
                 &self.sdk,
                 proof.clone(),
@@ -296,17 +298,13 @@ impl PlatformAddressWallet {
         // persistence hiccup shouldn't mask that.
         //
         // ADDR-09: every recipient of an asset-lock top-up is credited via
-        // an on-chain `AddBalanceToAddress` DELTA, so the whole recipient
-        // set goes into the seam's `credited_outputs` gate. Committing
-        // their proof-attested ABSOLUTE balances while the incremental
-        // watermark stayed stale would let the next incremental BLAST pass
-        // re-apply the delta on top → `X + X = 2X`, the ADDR-09
-        // double-count. The seam invalidates the watermark inside its own
-        // critical section (see `reconcile_address_infos` and
-        // `PlatformPaymentAddressProvider::invalidate_sync_watermark`),
-        // forcing the next pass to full-scan-reconcile — the automated
-        // equivalent of the manual Sync-tab "Clear" + "Sync Now".
-        let credited_outputs = super::credited_outputs_set(addresses.keys());
+        // an on-chain `AddBalanceToAddress` DELTA at exactly this proof's
+        // block height. The committed absolutes carry `proof_height` as
+        // their height pin (`AddressFunds::as_of_height`), so the sync's
+        // apply loops drop that delta (and any older one) instead of
+        // re-applying it on top → no `X + X = 2X` double-count, on
+        // incremental AND full-scan passes alike.
+        //
         // Use the persistence-reporting variant: marking the lock
         // `Consumed` below is irreversible, so it MUST be gated on the
         // reconciled balances actually reaching disk. `persisted` is
@@ -317,7 +315,7 @@ impl PlatformAddressWallet {
         let (cs, persisted) = self
             .reconcile_address_infos_with_persistence(
                 &address_infos,
-                &credited_outputs,
+                proof_height,
                 "fund from asset lock",
             )
             .await;

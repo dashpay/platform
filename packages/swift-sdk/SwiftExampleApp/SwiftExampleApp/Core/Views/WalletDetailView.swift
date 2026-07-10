@@ -838,10 +838,14 @@ struct WalletInfoView: View {
 
         do {
             let mgr = try walletManagerStore.backgroundManager(for: network)
+            // Enabling an existing wallet on another network: the mnemonic is
+            // pre-existing and may already have on-chain history there — scan
+            // from genesis (birthHeight 0) so prior funds/payments are seen.
             let created = try mgr.createWallet(
                 mnemonic: mnemonic,
                 network: network,
-                name: wallet.name ?? wallet.label
+                name: wallet.name ?? wallet.label,
+                birthHeight: 0
             )
             // Persist the mnemonic AND the per-wallet metadata under the
             // newly-enabled network's scoped walletId so that wallet is
@@ -978,6 +982,7 @@ struct BalanceCardView: View {
 
     @Query private var addressBalances: [PersistentPlatformAddress]
     @Query private var syncStates: [PersistentPlatformAddressesSyncState]
+    @Query private var shieldedNotes: [PersistentShieldedNote]
 
     init(
         wallet: PersistentWallet,
@@ -999,6 +1004,19 @@ struct BalanceCardView: View {
         _syncStates = Query(
             filter: #Predicate<PersistentPlatformAddressesSyncState> { $0.networkRaw == walletNetworkRaw }
         )
+        _shieldedNotes = Query(
+            filter: PersistentShieldedNote.unspentPredicate(walletId: walletId)
+        )
+    }
+
+    /// Per-wallet shielded balance: sum of this wallet's unspent
+    /// `PersistentShieldedNote` values. Reads SwiftData (Rust pushes
+    /// note rows via the shielded persister) rather than the single-mirror
+    /// `shieldedService.shieldedBalance`, so the card is correct for a
+    /// non-`firstWallet` wallet whose engine binding is live but whose UI
+    /// mirror is pointed elsewhere.
+    private var shieldedBalance: UInt64 {
+        shieldedNotes.reduce(0) { $0 + $1.value }
     }
 
     /// Confirmed core-chain balance summed from Rust's in-memory
@@ -1084,7 +1102,7 @@ struct BalanceCardView: View {
 
     var body: some View {
         let totalCore = confirmedBalance + unconfirmedBalance
-        let allZero = totalCore == 0 && platformBalance == 0 && shieldedService.shieldedBalance == 0
+        let allZero = totalCore == 0 && platformBalance == 0 && shieldedBalance == 0
 
         VStack(spacing: 12) {
             if allZero {
@@ -1140,7 +1158,7 @@ struct BalanceCardView: View {
                 // → pool (Type 15, `shieldedShield`).
                 WalletBalanceRow(
                     label: "Shielded Balance",
-                    amount: shieldedService.shieldedBalance,
+                    amount: shieldedBalance,
                     color: .purple,
                     unit: .credits,
                     showSyncIndicator: shieldedService.isSyncing,

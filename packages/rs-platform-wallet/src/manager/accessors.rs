@@ -11,6 +11,7 @@ use key_wallet::utxo::Utxo;
 use key_wallet::WalletCoreBalance;
 
 use crate::changeset::PlatformWalletPersistence;
+use crate::manager::dashpay_sync::DashPaySyncManager;
 use crate::manager::identity_sync::IdentitySyncManager;
 use crate::manager::platform_address_sync::PlatformAddressSyncManager;
 #[cfg(feature = "shielded")]
@@ -283,6 +284,18 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// `&Arc<Self>`.
     pub fn identity_sync_arc(&self) -> Arc<IdentitySyncManager<P>> {
         Arc::clone(&self.identity_sync_manager)
+    }
+
+    /// Access the recurring DashPay (contact-request + profile) sync
+    /// coordinator.
+    pub fn dashpay_sync(&self) -> &DashPaySyncManager {
+        &self.dashpay_sync_manager
+    }
+
+    /// Clone the `Arc<DashPaySyncManager>` so callers (e.g. FFI) can
+    /// invoke [`DashPaySyncManager::start`] which takes `&Arc<Self>`.
+    pub fn dashpay_sync_arc(&self) -> Arc<DashPaySyncManager> {
+        Arc::clone(&self.dashpay_sync_manager)
     }
 
     /// Access the shielded sync coordinator.
