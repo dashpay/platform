@@ -426,6 +426,34 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             wallets.insert(wallet_id, Arc::clone(&platform_wallet));
         }
 
+        // Re-seed the lock-free balance atomic from the wallet's inner
+        // balance now that the wallet is in `self.wallets`.
+        //
+        // A wallet added while SPV is already synced (e.g. importing an
+        // existing mnemonic with `birth_height = 0`) has its historical
+        // funds backfilled by the SPV rescan that `insert_wallet` above
+        // triggers. That rescan can complete — emitting the
+        // `BlockProcessed` event that carries the post-backfill balance —
+        // *before* this wallet lands in `self.wallets`, so
+        // `BalanceUpdateHandler` drops those events (the wallet isn't in
+        // the map yet) and the atomic stays at zero even though the inner
+        // `ManagedWalletInfo` balance is correct. Mirror the inner balance
+        // into the atomic here (as `manager::load` does for restored
+        // wallets); any later block events are applied normally now that
+        // the wallet is mapped.
+        {
+            let wm = self.wallet_manager.read().await;
+            if let Some(info) = wm.get_wallet_info(&wallet_id) {
+                let b = &info.core_wallet.balance;
+                platform_wallet.balance().set(
+                    b.confirmed(),
+                    b.unconfirmed(),
+                    b.immature(),
+                    b.locked(),
+                );
+            }
+        }
+
         // Best-effort identity discovery. For a recovery flow (existing
         // mnemonic re-typed by the user) this hydrates every identity
         // the wallet had on Platform without the caller having to fire
