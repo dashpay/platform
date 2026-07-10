@@ -11,6 +11,7 @@ use key_wallet::account::{Account, AccountType, StandardAccountType};
 use key_wallet::bip32::DerivationPath;
 use key_wallet::bip32::ExtendedPubKey;
 use key_wallet::managed_account::address_pool::{AddressPool, AddressPoolType, PublicKeyType};
+use key_wallet::managed_account::managed_account_ref::ManagedAccountRefMut;
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::Wallet;
@@ -2967,7 +2968,6 @@ fn build_wallet_start_state(
     // restored wallet can hold a UTXO whose address the signer can't
     // map back to a derivation path, breaking core-to-core spends.
     {
-        use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
         let pool_entries: &[AccountAddressPoolFFI] =
             if entry.core_address_pools.is_null() || entry.core_address_pools_count == 0 {
                 &[]
@@ -3004,43 +3004,104 @@ fn build_wallet_start_state(
                     continue;
                 }
             };
-            let funds = match account_type {
+            // Route the persisted pool back to its managed account. Wrapped in
+            // `ManagedAccountRefMut` because funds accounts and the asset-lock
+            // key-accounts are distinct types that share `ManagedAccountTrait`.
+            //
+            // The asset-lock funding accounts (registration / top-up /
+            // invitation / …) MUST be restored here: their credit outputs are
+            // OP_RETURN-payload outputs that never appear as on-chain UTXOs, so
+            // SPV can never rediscover their used indices — the persisted pool
+            // is the ONLY thing that carries the next-unused index across a
+            // restart. Dropping them (the old `_ => None`) reset the pool to
+            // index 0 every launch; for `IdentityInvitation` that reused the
+            // EXPORTED one-time voucher key across invitations (a bearer-key
+            // reuse: one leaked link could then claim every same-key invite).
+            let funds: Option<ManagedAccountRefMut> = match account_type {
                 AccountType::Standard {
                     index,
                     standard_account_type: StandardAccountType::BIP44Account,
-                } => wallet_info.accounts.standard_bip44_accounts.get_mut(&index),
+                } => wallet_info
+                    .accounts
+                    .standard_bip44_accounts
+                    .get_mut(&index)
+                    .map(ManagedAccountRefMut::Funds),
                 AccountType::Standard {
                     index,
                     standard_account_type: StandardAccountType::BIP32Account,
-                } => wallet_info.accounts.standard_bip32_accounts.get_mut(&index),
-                AccountType::CoinJoin { index } => {
-                    wallet_info.accounts.coinjoin_accounts.get_mut(&index)
-                }
+                } => wallet_info
+                    .accounts
+                    .standard_bip32_accounts
+                    .get_mut(&index)
+                    .map(ManagedAccountRefMut::Funds),
+                AccountType::CoinJoin { index } => wallet_info
+                    .accounts
+                    .coinjoin_accounts
+                    .get_mut(&index)
+                    .map(ManagedAccountRefMut::Funds),
                 AccountType::DashpayReceivingFunds {
                     index,
                     user_identity_id,
                     friend_identity_id,
-                } => wallet_info.accounts.dashpay_receival_accounts.get_mut(
-                    &key_wallet::account::account_collection::DashpayAccountKey {
-                        index,
-                        user_identity_id,
-                        friend_identity_id,
-                    },
-                ),
+                } => wallet_info
+                    .accounts
+                    .dashpay_receival_accounts
+                    .get_mut(
+                        &key_wallet::account::account_collection::DashpayAccountKey {
+                            index,
+                            user_identity_id,
+                            friend_identity_id,
+                        },
+                    )
+                    .map(ManagedAccountRefMut::Funds),
                 AccountType::DashpayExternalAccount {
                     index,
                     user_identity_id,
                     friend_identity_id,
-                } => wallet_info.accounts.dashpay_external_accounts.get_mut(
-                    &key_wallet::account::account_collection::DashpayAccountKey {
-                        index,
-                        user_identity_id,
-                        friend_identity_id,
-                    },
-                ),
+                } => wallet_info
+                    .accounts
+                    .dashpay_external_accounts
+                    .get_mut(
+                        &key_wallet::account::account_collection::DashpayAccountKey {
+                            index,
+                            user_identity_id,
+                            friend_identity_id,
+                        },
+                    )
+                    .map(ManagedAccountRefMut::Funds),
+                AccountType::IdentityRegistration => wallet_info
+                    .accounts
+                    .identity_registration
+                    .as_mut()
+                    .map(ManagedAccountRefMut::Keys),
+                AccountType::IdentityTopUp { registration_index } => wallet_info
+                    .accounts
+                    .identity_topup
+                    .get_mut(&registration_index)
+                    .map(ManagedAccountRefMut::Keys),
+                AccountType::IdentityTopUpNotBoundToIdentity => wallet_info
+                    .accounts
+                    .identity_topup_not_bound
+                    .as_mut()
+                    .map(ManagedAccountRefMut::Keys),
+                AccountType::IdentityInvitation => wallet_info
+                    .accounts
+                    .identity_invitation
+                    .as_mut()
+                    .map(ManagedAccountRefMut::Keys),
+                AccountType::AssetLockAddressTopUp => wallet_info
+                    .accounts
+                    .asset_lock_address_topup
+                    .as_mut()
+                    .map(ManagedAccountRefMut::Keys),
+                AccountType::AssetLockShieldedAddressTopUp => wallet_info
+                    .accounts
+                    .asset_lock_shielded_address_topup
+                    .as_mut()
+                    .map(ManagedAccountRefMut::Keys),
                 _ => None,
             };
-            let Some(funds_account) = funds else {
+            let Some(mut funds_account) = funds else {
                 pools_dropped += 1;
                 tracing::warn!(
                     wallet_id = %hex::encode(entry.wallet_id),

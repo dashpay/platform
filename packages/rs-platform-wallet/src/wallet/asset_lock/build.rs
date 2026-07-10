@@ -265,6 +265,83 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             })
     }
 
+    /// Persist the asset-lock funding accounts' address-pool snapshots so a
+    /// consumed `funding_index` survives an app restart.
+    ///
+    /// The `IdentityRegistration` / `IdentityTopUp` / `IdentityInvitation` /
+    /// asset-lock-top-up accounts fund credit outputs that live only in an
+    /// asset-lock special-tx payload; the on-chain output is an `OP_RETURN`
+    /// burn, so these addresses never appear as UTXOs and SPV can never
+    /// rediscover their used indices. Without persisting the pool, the
+    /// in-memory `mark_used` is lost on restart and `next_unused` resets to 0 —
+    /// which for `IdentityInvitation` reuses the EXPORTED one-time voucher key
+    /// across invitations (a bearer-key reuse: one leaked link could then claim
+    /// every same-key invite). The pool round-trips through the existing
+    /// `account_address_pools` persist path and is rebuilt by
+    /// `restore_address_pool` on load. Funds accounts are skipped — they already
+    /// persist their pools via the normal address-sync path. Best-effort.
+    async fn persist_asset_lock_account_pools(&self) {
+        use crate::changeset::{AccountAddressPoolEntry, PlatformWalletChangeSet};
+        use key_wallet::account::AccountType;
+
+        let entries: Vec<AccountAddressPoolEntry> = {
+            let wm = self.wallet_manager.read().await;
+            let Some(wallet_info) = wm.get_wallet_info(&self.wallet_id) else {
+                return;
+            };
+            wallet_info
+                .core_wallet
+                .all_managed_accounts()
+                .iter()
+                .filter(|managed| {
+                    matches!(
+                        managed.managed_account_type().to_account_type(),
+                        AccountType::IdentityRegistration
+                            | AccountType::IdentityTopUp { .. }
+                            | AccountType::IdentityTopUpNotBoundToIdentity
+                            | AccountType::IdentityInvitation
+                            | AccountType::AssetLockAddressTopUp
+                            | AccountType::AssetLockShieldedAddressTopUp
+                    )
+                })
+                .flat_map(|managed| {
+                    let account_type = managed.managed_account_type().to_account_type();
+                    managed
+                        .managed_account_type()
+                        .address_pools()
+                        .into_iter()
+                        .filter_map(move |pool| {
+                            let addresses: Vec<key_wallet::AddressInfo> =
+                                pool.addresses.values().cloned().collect();
+                            if addresses.is_empty() {
+                                return None;
+                            }
+                            Some(AccountAddressPoolEntry {
+                                account_type,
+                                pool_type: pool.pool_type,
+                                addresses,
+                            })
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .collect()
+        };
+
+        if entries.is_empty() {
+            return;
+        }
+        if let Err(e) = self.persister.store(PlatformWalletChangeSet {
+            account_address_pools: entries,
+            ..Default::default()
+        }) {
+            tracing::error!(
+                error = %e,
+                "failed to persist asset-lock account pool snapshot; \
+                 funding index may reset on restart"
+            );
+        }
+    }
+
     /// Build, broadcast, and wait for an asset lock proof.
     ///
     /// This is the **unified** entry point for obtaining a funded asset lock
@@ -323,6 +400,14 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
 
         let txid = tx.txid();
         let out_point = OutPoint::new(txid, 0);
+
+        // Persist the funding account's address pool now that the build marked
+        // its index used. These asset-lock accounts fund OP_RETURN-payload
+        // credit outputs that never appear as on-chain UTXOs, so SPV can never
+        // rediscover the used index — the persisted pool is the only thing that
+        // carries `funding_index` across a restart. Best-effort, like the
+        // tracking changeset below.
+        self.persist_asset_lock_account_pools().await;
 
         // 2. Track as Built and queue the changeset onto the persister
         //    so a crash after broadcast leaves a row we can recover from.
