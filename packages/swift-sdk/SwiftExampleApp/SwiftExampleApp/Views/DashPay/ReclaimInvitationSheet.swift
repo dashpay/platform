@@ -207,7 +207,7 @@ struct ReclaimInvitationSheet: View {
                 try? modelContext.save()
                 dismiss()
             } catch {
-                if isAlreadyConsumed(error) {
+                if Self.isAlreadyConsumed(error) {
                     // Someone already claimed this voucher (or a prior reclaim
                     // consumed it). The consume is deterministically rejected —
                     // no funds are lost. Reflect the terminal state and show a
@@ -248,13 +248,24 @@ struct ReclaimInvitationSheet: View {
     }
 
     /// Whether an error is the deterministic "asset lock outpoint already
-    /// consumed" rejection (consensus code 10504), whose Display is
-    /// "Asset lock transaction … already completely used".
-    private func isAlreadyConsumed(_ error: Error) -> Bool {
-        let text = error.localizedDescription.lowercased()
-        return text.contains("already completely used")
-            || text.contains("alreadyconsumed")
-            || text.contains("already consumed")
+    /// consumed" rejection (consensus code 10504). The SDK surfaces a consensus
+    /// error as `"SDK error: Protocol error: <consensus Display verbatim>"`, so
+    /// the canonical Display of
+    /// `IdentityAssetLockTransactionOutPointAlreadyConsumedError` —
+    /// "Asset lock transaction … already completely used" — appears verbatim.
+    /// Matched on that exact phrase ONLY: broader phrases like "already consumed"
+    /// never occur in the real Display and would only widen false-positive risk
+    /// (misclassifying an unrelated failure as a benign "already claimed", which
+    /// would wrongly flip the row to Claimed). A typed FFI result code is the
+    /// robust long-term fix.
+    static func isAlreadyConsumed(_ error: Error) -> Bool {
+        isAlreadyConsumed(message: error.localizedDescription)
+    }
+
+    /// Pure classifier over the surfaced error message — the testable seam for
+    /// the false-positive-safety unit test.
+    static func isAlreadyConsumed(message: String) -> Bool {
+        message.lowercased().contains("already completely used")
     }
 
     private func formatDash(_ duffs: Int64) -> String {
