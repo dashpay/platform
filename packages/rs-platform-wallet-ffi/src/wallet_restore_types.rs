@@ -130,13 +130,41 @@ impl StandardAccountTypeTagFFI {
 ///   * `AssetLockShieldedAddressTopUp`       — (none)
 ///   * `ProviderVotingKeys`                  — (none)
 ///   * `ProviderOwnerKeys`                   — (none)
-///   * `ProviderOperatorKeys`                — (none)
-///   * `ProviderPlatformKeys`                — (none)
+///   * `ProviderOperatorKeys`                — (none); `account_xpub_bytes`
+///     carries a bincode-encoded extended **BLS** public key, not a
+///     secp256k1 `ExtendedPubKey`
+///   * `ProviderPlatformKeys`                — (none); `account_xpub_bytes`
+///     carries a bincode-encoded extended **Ed25519** public key, not a
+///     secp256k1 `ExtendedPubKey`
 ///   * `DashpayReceivingFunds`               — `index`, `user_identity_id`, `friend_identity_id`
 ///   * `DashpayExternalAccount`              — `index`, `user_identity_id`, `friend_identity_id`
 ///   * `PlatformPayment`                     — `index` (as `account`), `key_class`
 ///   * `IdentityAuthenticationEcdsa`         — `index` (as `identity_index`)
 ///   * `IdentityAuthenticationBls`           — `index` (as `identity_index`)
+/// One pre-derived platform-node (Ed25519) key carried on
+/// [`AccountSpecFFI::derived_platform_node_keys`] for the
+/// `ProviderPlatformKeys` account (`type_tag == 11`).
+///
+/// Ed25519/SLIP-10 is hardened-only, so the wallet can never extend
+/// its platform-node pool without the seed — the batch is pre-derived
+/// at registration (while the seed is in hand) and surfaced here so
+/// the host can persist + display it with no keychain prompt. Plain
+/// POD (no pointers): the `hash160` node id is precomputed on the Rust
+/// side so the host needs no RIPEMD-160 of its own. The private scalar
+/// is never carried — a per-index reveal still routes through
+/// `platform_wallet_provider_key_at_index` with the resolver.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct ProviderPlatformNodeKeyFFI {
+    /// Hardened key index within the platform-node pool (`#0..`).
+    pub index: u32,
+    /// Raw 32-byte Ed25519 public key at this index.
+    pub public_key: [u8; 32],
+    /// 20-byte platform node id — `hash160` of the Ed25519 public key
+    /// (the ProRegTx `platform_node_id`).
+    pub node_id: [u8; 20],
+}
+
 #[repr(C)]
 pub struct AccountSpecFFI {
     /// Raw byte projection of [`AccountTypeTagFFI`]. Validated via
@@ -152,10 +180,29 @@ pub struct AccountSpecFFI {
     pub key_class: u32,
     pub user_identity_id: [u8; 32],
     pub friend_identity_id: [u8; 32],
-    /// Bincode-encoded [`key_wallet::bip32::ExtendedPubKey`]. Valid for
+    /// Bincode-encoded [`key_wallet::bip32::ExtendedPubKey`] for ECDSA
+    /// accounts. For the two provider key-material accounts the bytes
+    /// are instead a bincode-encoded extended BLS
+    /// (`ProviderOperatorKeys`) or Ed25519 (`ProviderPlatformKeys`)
+    /// public key — the `type_tag` selects the decode. Valid for
     /// callback duration only; Swift owns the allocation.
     pub account_xpub_bytes: *const u8,
     pub account_xpub_bytes_len: usize,
+    /// Pre-derived platform-node (Ed25519) public keys — only populated
+    /// on the **write** callback for the `ProviderPlatformKeys` account
+    /// (`type_tag == 11`); `null` / `0` for every other account type.
+    ///
+    /// On the write callback (`on_persist_account_registrations_fn`)
+    /// this is Rust-owned and valid for the callback window only — the
+    /// host copies the rows into its account row so the Node Keys
+    /// screen can list them from persistence without re-deriving. On
+    /// the **load** callback the host leaves this `null` / `0`: the
+    /// Rust load path does not consume it (it is display data the host
+    /// is the sole source of truth for), and the persisted account row
+    /// is never rewritten after registration, so the batch survives the
+    /// SwiftData → restore → re-persist cycle untouched.
+    pub derived_platform_node_keys: *const ProviderPlatformNodeKeyFFI,
+    pub derived_platform_node_keys_count: usize,
 }
 
 /// Per-identity public-key row carried on
