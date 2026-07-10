@@ -280,14 +280,22 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// `account_address_pools` persist path and is rebuilt by
     /// `restore_address_pool` on load. Funds accounts are skipped — they already
     /// persist their pools via the normal address-sync path. Best-effort.
-    async fn persist_asset_lock_account_pools(&self) {
+    ///
+    /// The snapshot re-acquires a read lock after the build's write lock is
+    /// released, so callers must serialize asset-lock builds per wallet (the app
+    /// creates invitations one-at-a-time from the UI); two concurrent builds on
+    /// one wallet could otherwise persist a stale snapshot that drops the higher
+    /// burned index — self-healing on the next build, but a residual to respect.
+    async fn persist_asset_lock_account_pools(
+        &self,
+    ) -> Result<(), crate::changeset::PersistenceError> {
         use crate::changeset::{AccountAddressPoolEntry, PlatformWalletChangeSet};
         use key_wallet::account::AccountType;
 
         let entries: Vec<AccountAddressPoolEntry> = {
             let wm = self.wallet_manager.read().await;
             let Some(wallet_info) = wm.get_wallet_info(&self.wallet_id) else {
-                return;
+                return Ok(());
             };
             wallet_info
                 .core_wallet
@@ -328,18 +336,12 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         };
 
         if entries.is_empty() {
-            return;
+            return Ok(());
         }
-        if let Err(e) = self.persister.store(PlatformWalletChangeSet {
+        self.persister.store(PlatformWalletChangeSet {
             account_address_pools: entries,
             ..Default::default()
-        }) {
-            tracing::error!(
-                error = %e,
-                "failed to persist asset-lock account pool snapshot; \
-                 funding index may reset on restart"
-            );
-        }
+        })
     }
 
     /// Build, broadcast, and wait for an asset lock proof.
@@ -405,9 +407,21 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         // its index used. These asset-lock accounts fund OP_RETURN-payload
         // credit outputs that never appear as on-chain UTXOs, so SPV can never
         // rediscover the used index — the persisted pool is the only thing that
-        // carries `funding_index` across a restart. Best-effort, like the
-        // tracking changeset below.
-        self.persist_asset_lock_account_pools().await;
+        // carries `funding_index` across a restart. For an INVITATION this write
+        // is a security gate: the voucher key is exported into a bearer link, so
+        // a failed persist would let the next restart reuse this index/key.
+        // Aborting BEFORE broadcast is harmless (no tx on the wire); the other
+        // asset-lock accounts keep their keys on-device, so they stay best-effort.
+        if let Err(e) = self.persist_asset_lock_account_pools().await {
+            tracing::error!(error = %e, "failed to persist asset-lock funding index");
+            if funding_type == AssetLockFundingType::IdentityInvitation {
+                return Err(PlatformWalletError::AssetLockTransaction(format!(
+                    "aborted before broadcast: could not durably record the invitation \
+                     funding index (broadcasting anyway would risk voucher-key reuse on \
+                     restart): {e}"
+                )));
+            }
+        }
 
         // 2. Track as Built and queue the changeset onto the persister
         //    so a crash after broadcast leaves a row we can recover from.

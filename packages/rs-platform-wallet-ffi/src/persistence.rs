@@ -3106,7 +3106,7 @@ fn build_wallet_start_state(
                 tracing::warn!(
                     wallet_id = %hex::encode(entry.wallet_id),
                     ?account_type,
-                    "load: skipping persisted address pool with no matching funds account"
+                    "load: skipping persisted address pool with no matching managed account"
                 );
                 continue;
             };
