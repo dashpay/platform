@@ -3486,7 +3486,10 @@ mod tests {
     ) {
         use dashcore::hashes::Hash;
         use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
-        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet registered");
+        let wallet = manager
+            .get_wallet(&wallet_id)
+            .await
+            .expect("wallet registered");
         let iw = wallet.identity();
         let mut wm = iw.wallet_manager.write().await;
         let info = wm.get_wallet_info_mut(&wallet_id).expect("wallet info");
@@ -3607,7 +3610,8 @@ mod tests {
     async fn send_payment_reports_exact_fee_folding_dropped_dust_change() {
         use crate::wallet::identity::network::contact_requests::SeedCryptoProvider;
 
-        let (manager, wallet_id, owner_id, contact_id) = register_sender_and_external_account().await;
+        let (manager, wallet_id, owner_id, contact_id) =
+            register_sender_and_external_account().await;
 
         // One UTXO of V = A + 526. The size-based fee for 1 input + 1 output
         // is ~192 duffs and the coin selector reserves 226 (it sizes with a
@@ -3647,7 +3651,10 @@ mod tests {
         // change output was emitted: any change output would make Σout larger
         // and the fee strictly smaller. So this equality alone proves the
         // dust-drop.
-        assert_eq!(entry.amount_duffs, amount, "recorded payment amount is the send amount");
+        assert_eq!(
+            entry.amount_duffs, amount,
+            "recorded payment amount is the send amount"
+        );
     }
 
     /// The control case: when the change clears the dust threshold the
@@ -3659,7 +3666,8 @@ mod tests {
     async fn send_payment_reports_size_fee_when_change_is_emitted() {
         use crate::wallet::identity::network::contact_requests::SeedCryptoProvider;
 
-        let (manager, wallet_id, owner_id, contact_id) = register_sender_and_external_account().await;
+        let (manager, wallet_id, owner_id, contact_id) =
+            register_sender_and_external_account().await;
 
         // One UTXO of V = A + 1226. Change = V − A − size_fee = 1226 − 226 =
         // 1000 > 546, so the builder emits a 1000-duff change output. Σout =
