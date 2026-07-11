@@ -8,15 +8,77 @@ use std::slice;
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::prelude::Identifier;
 use dpp::serialization::ValueConvertible;
-use platform_wallet::PlatformWalletError;
-use rs_sdk_ffi::{SignerHandle, VTableSigner};
+use key_wallet::bip32::ExtendedPrivKey;
+use platform_wallet::{PlatformWalletError, TxMetadataKeySource};
+use rs_sdk_ffi::{MnemonicResolverHandle, SignerHandle, VTableSigner};
 
 use crate::check_ptr;
 use crate::error::*;
 use crate::handle::*;
+use crate::identity_keys_from_mnemonic::resolve_master_from_resolver;
 use crate::runtime::block_on_worker;
 use crate::types::read_identifier;
 use crate::{unwrap_option_or_return, unwrap_result_or_return};
+
+/// Select the txMetadata key-derivation source for `wallet` by capability —
+/// the same two-phase convention as `identity_key_preview` /
+/// `identity_discovery`:
+///
+/// - a wallet with resident private keys (mnemonic / seed / xprv) derives
+///   in-process; the resolver is never touched (returns `Ok(None)`);
+/// - an external-signable / watch-only wallet (the Android/iOS apps — no
+///   in-process private keys, so the resident derive fails with `External
+///   signable wallet has no private key`) requires the host mnemonic
+///   resolver: the wallet's mnemonic is resolved on demand (keyed by the
+///   wallet's own id) and returned as a master xprv (`Ok(Some(master))`).
+///   The CALLER must wipe it (`master.private_key.non_secure_erase()`) once
+///   the derive is done. When the resolver handle is null for this shape,
+///   errors with a hint naming the requirement.
+///
+/// The wallet-manager read guard is scoped to the capability check only and
+/// is NEVER held across the host resolver callback (which synchronously
+/// re-enters Kotlin/Swift and can stall on Keychain/Keystore access).
+///
+/// # Safety
+/// `mnemonic_resolver_handle`, when non-null, must come from
+/// [`rs_sdk_ffi::dash_sdk_mnemonic_resolver_create`] and remain valid for the
+/// duration of the call.
+unsafe fn tx_metadata_key_master_for_wallet(
+    wallet: &platform_wallet::PlatformWallet,
+    mnemonic_resolver_handle: *mut MnemonicResolverHandle,
+) -> Result<Option<ExtendedPrivKey>, PlatformWalletFFIResult> {
+    // Phase 1 — short capability-check guard, dropped before any resolver
+    // interaction.
+    let wallet_has_resident_keys = {
+        let wm = wallet.wallet_manager().blocking_read();
+        match wm.get_wallet(&wallet.wallet_id()) {
+            Some(kw) => !kw.is_external_signable() && !kw.is_watch_only(),
+            None => {
+                return Err(PlatformWalletFFIResult::err(
+                    PlatformWalletFFIResultCode::ErrorInvalidHandle,
+                    "Wallet not found in wallet manager",
+                ));
+            }
+        }
+    };
+    if wallet_has_resident_keys {
+        return Ok(None);
+    }
+    if mnemonic_resolver_handle.is_null() {
+        return Err(PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorWalletOperation,
+            "this wallet has no resident private keys (external-signable / watch-only); \
+             a mnemonic resolver handle is required to derive its txMetadata encryption keys",
+        ));
+    }
+    let wallet_id = wallet.wallet_id();
+    // SAFETY: handle is non-null (checked) and the caller's safety contract
+    // guarantees it came from `dash_sdk_mnemonic_resolver_create`.
+    let master = unsafe {
+        resolve_master_from_resolver(mnemonic_resolver_handle, &wallet_id, wallet.network())?
+    };
+    Ok(Some(master))
+}
 
 /// Create + broadcast a new document on `contract_id`'s
 /// `document_type_name`, owned by `owner_identity_id`, signed via the
@@ -166,6 +228,12 @@ fn confirmed_document_to_json(document: &Document) -> Result<String, PlatformWal
 /// `{keyIndex, encryptionKeyIndex, encryptedMetadata}` — decryptable by the
 /// legacy `org.dashj.platform` stack and vice versa.
 ///
+/// The AES key source is selected by the wallet's capability: a key-resident
+/// wallet derives in-process; an external-signable / watch-only wallet (the
+/// Android/iOS apps) derives through `mnemonic_resolver_handle` — required
+/// non-null for that shape, ignored otherwise (see
+/// `tx_metadata_key_master_for_wallet`).
+///
 /// The caller supplies `encryption_key_index` (the app's per-document index —
 /// batching stays app-side), `version` (`1` = protobuf, as the wallet writes),
 /// and the already-serialized opaque `payload` (a protobuf `TxMetadataBatch`;
@@ -179,6 +247,7 @@ fn confirmed_document_to_json(document: &Document) -> Result<String, PlatformWal
 #[allow(clippy::too_many_arguments)]
 pub unsafe extern "C" fn platform_wallet_create_encrypted_document_with_signer(
     wallet_handle: Handle,
+    mnemonic_resolver_handle: *mut MnemonicResolverHandle,
     owner_identity_id: *const u8,
     contract_id: *const u8,
     document_type_name: *const c_char,
@@ -218,23 +287,43 @@ pub unsafe extern "C" fn platform_wallet_create_encrypted_document_with_signer(
 
     let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
         let identity_wallet = wallet.identity().clone();
-        let result: Result<(Identifier, String), PlatformWalletError> = block_on_worker(async move {
-            let signer: &VTableSigner = &*(signer_addr as *const VTableSigner);
-            let confirmed: Document = identity_wallet
-                .create_encrypted_document_with_signer(
-                    &owner_id_for_async,
-                    &contract_id_for_async,
-                    &document_type_str,
-                    encryption_key_index,
-                    version,
-                    &payload_vec,
-                    signer,
-                )
-                .await?;
-            let json_string = confirmed_document_to_json(&confirmed)?;
-            Ok::<_, PlatformWalletError>((confirmed.id(), json_string))
-        });
-        result
+
+        // Key-source selection by wallet capability (may synchronously call
+        // back into the host mnemonic resolver for external-signable
+        // wallets — see `tx_metadata_key_master_for_wallet`).
+        let master_opt =
+            unsafe { tx_metadata_key_master_for_wallet(wallet, mnemonic_resolver_handle) }?;
+
+        let result: Result<(Identifier, String), PlatformWalletError> =
+            block_on_worker(async move {
+                let key_source = match master_opt.as_ref() {
+                    Some(master) => TxMetadataKeySource::Master(master),
+                    None => TxMetadataKeySource::ResidentWallet,
+                };
+                let signer: &VTableSigner = &*(signer_addr as *const VTableSigner);
+                let created = identity_wallet
+                    .create_encrypted_document_with_signer(
+                        &owner_id_for_async,
+                        &contract_id_for_async,
+                        &document_type_str,
+                        encryption_key_index,
+                        version,
+                        &payload_vec,
+                        key_source,
+                        signer,
+                    )
+                    .await;
+                // Wipe the resolved master's scalar (external-signable path)
+                // before the result crosses back — `ExtendedPrivKey` has no
+                // `Drop`/`Zeroize` (same hygiene as `identity_key_preview`).
+                if let Some(mut master) = master_opt {
+                    master.private_key.non_secure_erase();
+                }
+                let confirmed: Document = created?;
+                let json_string = confirmed_document_to_json(&confirmed)?;
+                Ok::<_, PlatformWalletError>((confirmed.id(), json_string))
+            });
+        result.map_err(PlatformWalletFFIResult::from)
     });
     let result = unwrap_option_or_return!(option);
     let (document_id, document_json) = unwrap_result_or_return!(result);
@@ -258,6 +347,12 @@ pub unsafe extern "C" fn platform_wallet_create_encrypted_document_with_signer(
 /// key; documents that can't be derived/decrypted are skipped (never abort the
 /// fetch).
 ///
+/// The AES key source is selected by the wallet's capability: a key-resident
+/// wallet derives in-process; an external-signable / watch-only wallet (the
+/// Android/iOS apps) derives through `mnemonic_resolver_handle` — required
+/// non-null for that shape, ignored otherwise (see
+/// `tx_metadata_key_master_for_wallet`).
+///
 /// On success `*out_documents_json` receives an owned NUL-terminated JSON array
 /// (release with `platform_wallet_string_free`; left null on any error). Each
 /// element is
@@ -268,6 +363,7 @@ pub unsafe extern "C" fn platform_wallet_create_encrypted_document_with_signer(
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_fetch_encrypted_documents(
     wallet_handle: Handle,
+    mnemonic_resolver_handle: *mut MnemonicResolverHandle,
     owner_identity_id: *const u8,
     contract_id: *const u8,
     document_type_name: *const c_char,
@@ -291,18 +387,37 @@ pub unsafe extern "C" fn platform_wallet_fetch_encrypted_documents(
 
     let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
         let identity_wallet = wallet.identity().clone();
+
+        // Key-source selection by wallet capability (may synchronously call
+        // back into the host mnemonic resolver for external-signable
+        // wallets — see `tx_metadata_key_master_for_wallet`).
+        let master_opt =
+            unsafe { tx_metadata_key_master_for_wallet(wallet, mnemonic_resolver_handle) }?;
+
         let result: Result<Vec<platform_wallet::DecryptedEncryptedDocument>, PlatformWalletError> =
             block_on_worker(async move {
-                identity_wallet
+                let key_source = match master_opt.as_ref() {
+                    Some(master) => TxMetadataKeySource::Master(master),
+                    None => TxMetadataKeySource::ResidentWallet,
+                };
+                let fetched = identity_wallet
                     .fetch_encrypted_documents(
                         &owner_id_for_async,
                         &contract_id_for_async,
                         &document_type_str,
                         since_ms,
+                        key_source,
                     )
-                    .await
+                    .await;
+                // Wipe the resolved master's scalar (external-signable path)
+                // before the result crosses back — `ExtendedPrivKey` has no
+                // `Drop`/`Zeroize` (same hygiene as `identity_key_preview`).
+                if let Some(mut master) = master_opt {
+                    master.private_key.non_secure_erase();
+                }
+                fetched
             });
-        result
+        result.map_err(PlatformWalletFFIResult::from)
     });
     let result = unwrap_option_or_return!(option);
     let docs = unwrap_result_or_return!(result);
