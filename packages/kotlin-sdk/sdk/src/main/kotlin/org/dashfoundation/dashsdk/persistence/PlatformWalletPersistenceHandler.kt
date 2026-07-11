@@ -2504,6 +2504,22 @@ class PlatformWalletPersistenceHandler(
         }
     }
 
+    /**
+     * Drop [publicKeyHex] from [pendingIdentityKeys] after a successful
+     * out-of-band repair.
+     *
+     * [onPersistIdentityKeyUpsert] is the only *persist-callback* path that
+     * clears a pending entry, but [org.dashfoundation.dashsdk.wallet.PlatformWalletManager.repairIdentityKey]
+     * re-derives and stores the private key directly through the deriver,
+     * bypassing that callback — so it must call this on success or a repaired
+     * key would linger in [pendingIdentityKeys] until an unrelated re-persist
+     * happens to fire for the same key. Idempotent: clearing an absent key is a
+     * no-op.
+     */
+    internal fun markIdentityKeyRepaired(publicKeyHex: String) {
+        clearPendingIdentityKey(publicKeyHex)
+    }
+
     // ── Error / threading guards ──────────────────────────────────────
 
     /**

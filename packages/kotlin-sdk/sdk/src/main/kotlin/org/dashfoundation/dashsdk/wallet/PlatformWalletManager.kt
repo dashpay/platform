@@ -376,6 +376,12 @@ class PlatformWalletManager(
      * "one allowed exception"); Kotlin only encrypts the returned scalar.
      * Returns the recorded storage identifier (e.g. `privkey.<pubkeyHex>`),
      * or throws on a derivation / storage failure.
+     *
+     * On success the key is dropped from [pendingIdentityKeys] via the
+     * persistence handler: the repair stores the private key directly through
+     * the deriver, bypassing `onPersistIdentityKeyUpsert` (the only persist
+     * path that clears pending), so it must clear the entry itself or the
+     * repaired key would keep showing as pending.
      */
     suspend fun repairIdentityKey(
         walletId: ByteArray,
@@ -388,12 +394,16 @@ class PlatformWalletManager(
         // deriveAndStore is a synchronous JNI call keyed on the manager's
         // resolver handle — the gate keeps teardown from freeing it
         // mid-derive (callers run on their own Compose scopes).
-        identityKeyDeriver.deriveAndStore(
+        val storageIdentifier = identityKeyDeriver.deriveAndStore(
             walletId = walletId,
             publicKeyData = publicKeyData,
             identityIndex = identityIndex,
             keyIndex = keyIndex,
         )
+        if (storageIdentifier != null) {
+            persistenceHandler.markIdentityKeyRepaired(publicKeyData.toHex())
+        }
+        storageIdentifier
     }
 
     /**

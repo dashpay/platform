@@ -1104,6 +1104,28 @@ class PlatformWalletPersistenceHandlerTest {
         assertEquals("privkey.cafebabe", row!!.privateKeyKeychainIdentifier)
     }
 
+    @Test
+    fun markIdentityKeyRepairedClearsThePendingEntry() = runTest {
+        // A derive failure records the key as pending…
+        handler = PlatformWalletPersistenceHandler(db, Dispatchers.Unconfined, ThrowingDeriver())
+        val identityId = ByteArray(32) { 18 }
+        seedIdentity(identityId)
+        val pubkey = ByteArray(33) { 13 }
+        upsertIdentityKey(pubkey, identityId)
+        assertNotNull(handler.pendingIdentityKeys.value[pubkey.toHex()])
+
+        // …and a successful out-of-band repair (PlatformWalletManager.repairIdentityKey
+        // stores directly through the deriver, never re-firing onPersistIdentityKeyUpsert)
+        // clears it via this hook.
+        handler.markIdentityKeyRepaired(pubkey.toHex())
+        assertNull(handler.pendingIdentityKeys.value[pubkey.toHex()])
+
+        // Idempotent: a second clear (or one for an unknown key) is a no-op.
+        handler.markIdentityKeyRepaired(pubkey.toHex())
+        handler.markIdentityKeyRepaired(ByteArray(33) { 99 }.toHex())
+        assertTrue(handler.pendingIdentityKeys.value.isEmpty())
+    }
+
     // ── Shielded load round-trip ──────────────────────────────────────
 
     @Test

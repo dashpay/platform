@@ -16,11 +16,13 @@ package org.dashfoundation.dashsdk.security
  *
  * ## Semantics
  *
- * - [AUTH_GATED] — the default; behavior is exactly the historical one.
- *   Identity keys are wrapped under [KeystoreManager.KEYS_ALIAS]: encrypt
- *   (store) never prompts, decrypt (sign) requires user authentication
- *   within [KeystoreManager.AUTH_VALIDITY_SECONDS] of a biometric /
- *   device-credential auth, re-promptable through a [BiometricGate].
+ * - [AUTH_GATED] — the default; behavior matches the historical one. New
+ *   identity keys are wrapped under [KeystoreManager.KEYS_ALIAS_AUTH_GATED]
+ *   (the legacy [KeystoreManager.KEYS_ALIAS] is kept read-only so pre-RSA
+ *   blobs migrate rather than strand): encrypt (store) never prompts, decrypt
+ *   (sign) requires user authentication within
+ *   [KeystoreManager.AUTH_VALIDITY_SECONDS] of a biometric / device-credential
+ *   auth, re-promptable through a [BiometricGate].
  * - [DEVICE_BOUND] — identity keys are wrapped under the separate
  *   [KeystoreManager.KEYS_ALIAS_DEVICE_BOUND] alias: the same
  *   StrongBox-preferring, non-exportable RSA wrapping pair, but with **no**
