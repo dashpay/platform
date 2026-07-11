@@ -30,10 +30,80 @@ use dpp::prelude::{DataContract, Identifier};
 
 use crate::error::PlatformWalletError;
 use crate::wallet::identity::crypto::tx_metadata::{
-    derive_tx_metadata_key, open_tx_metadata, seal_tx_metadata,
+    derive_tx_metadata_key, derive_tx_metadata_key_from_master, open_tx_metadata,
+    seal_tx_metadata,
 };
 
 use super::*;
+
+/// Where one encrypted-document call derives the per-document txMetadata AES
+/// key from. Selected by the CALLER (the FFI layer) from the wallet's shape —
+/// the same capability convention as the identity discovery / key-preview
+/// paths (`identity_key_preview.rs`):
+///
+/// - a wallet with resident private keys (mnemonic / seed / xprv — test
+///   fixtures, desktop wallets) derives in-process
+///   ([`TxMetadataKeySource::ResidentWallet`], the historical path);
+/// - an external-signable / watch-only wallet (the Android/iOS apps: the seed
+///   lives host-side, keys derive on demand through the registered mnemonic
+///   resolver) holds NO in-process private keys — the in-wallet derive fails
+///   with `External signable wallet has no private key` (the exact on-device
+///   failure that zeroed the decrypt-proof). For that shape the FFI resolves
+///   the wallet's mnemonic via the host `MnemonicResolverHandle`, builds the
+///   master xprv, passes [`TxMetadataKeySource::Master`], and wipes the
+///   master after the call — atomic derive + use + zeroize.
+///
+/// Both sources derive the IDENTICAL path
+/// ([`crate::wallet::identity::crypto::tx_metadata::tx_metadata_derivation_path`]),
+/// pinned equal by unit test.
+#[derive(Clone, Copy)]
+pub enum TxMetadataKeySource<'a> {
+    /// Derive from the in-process resident wallet's private keys.
+    ResidentWallet,
+    /// Derive from this caller-resolved master extended private key
+    /// (external-signable / watch-only wallet). The caller owns the master's
+    /// lifecycle and MUST wipe it (`private_key.non_secure_erase()`) once the
+    /// call returns.
+    Master(&'a key_wallet::bip32::ExtendedPrivKey),
+}
+
+impl TxMetadataKeySource<'_> {
+    /// Compact breadcrumb label.
+    fn label(&self) -> &'static str {
+        match self {
+            TxMetadataKeySource::ResidentWallet => "resident-wallet",
+            TxMetadataKeySource::Master(_) => "resolver-master",
+        }
+    }
+
+    /// Derive the AES key for one document from this source. `wallet` is the
+    /// in-process wallet (only consulted by the resident variant).
+    fn derive(
+        &self,
+        wallet: &key_wallet::wallet::Wallet,
+        network: key_wallet::Network,
+        identity_index: u32,
+        key_index: u32,
+        encryption_key_index: u32,
+    ) -> Result<zeroize::Zeroizing<[u8; 32]>, PlatformWalletError> {
+        match self {
+            TxMetadataKeySource::ResidentWallet => derive_tx_metadata_key(
+                wallet,
+                network,
+                identity_index,
+                key_index,
+                encryption_key_index,
+            ),
+            TxMetadataKeySource::Master(master) => derive_tx_metadata_key_from_master(
+                master,
+                network,
+                identity_index,
+                key_index,
+                encryption_key_index,
+            ),
+        }
+    }
+}
 
 /// Wallet-contract document field names (wire-compatible with the legacy
 /// `TxMetadataDocument` schema — `wallet-utils-contract` `tx_metadata`).
@@ -163,7 +233,10 @@ impl IdentityWallet {
     ///   `TxMetadataBatch`) — the SDK does not parse it.
     ///
     /// The `keyIndex` field (the identity encryption key id) is selected
-    /// SDK-side to match the legacy stack. Returns the confirmed `Document`.
+    /// SDK-side to match the legacy stack. `key_source` selects where the AES
+    /// key derives from (see [`TxMetadataKeySource`] — resident wallet vs the
+    /// resolver-supplied master for external-signable wallets). Returns the
+    /// confirmed `Document`.
     #[allow(clippy::too_many_arguments)]
     pub async fn create_encrypted_document_with_signer<S>(
         &self,
@@ -173,6 +246,7 @@ impl IdentityWallet {
         encryption_key_index: u32,
         version: u8,
         payload: &[u8],
+        key_source: TxMetadataKeySource<'_>,
         signer: &S,
     ) -> Result<Document, PlatformWalletError>
     where
@@ -185,13 +259,21 @@ impl IdentityWallet {
         let key_index = Self::select_encryption_key_id(&identity)?;
 
         // Derive the AES key and seal the payload into the wire blob.
-        let aes_key = derive_tx_metadata_key(
-            &wallet,
-            self.sdk.network,
-            identity_index,
-            key_index,
-            encryption_key_index,
-        )?;
+        let aes_key = key_source
+            .derive(
+                &wallet,
+                self.sdk.network,
+                identity_index,
+                key_index,
+                encryption_key_index,
+            )
+            .inspect_err(|e| {
+                breadcrumb(&format!(
+                    "create_encrypted_document: txMetadata key derivation failed \
+                     key_source={} owner={owner_identity_id} error={e}",
+                    key_source.label()
+                ));
+            })?;
         let mut iv = [0u8; 16];
         thread_rng().fill_bytes(&mut iv);
         let blob = seal_tx_metadata(&aes_key, version, &iv, payload);
@@ -233,6 +315,7 @@ impl IdentityWallet {
         contract_id: &Identifier,
         document_type_name: &str,
         since_ms: u64,
+        key_source: TxMetadataKeySource<'_>,
     ) -> Result<Vec<DecryptedEncryptedDocument>, PlatformWalletError> {
         use dash_sdk::platform::{ContextProvider, Fetch};
 
@@ -241,7 +324,9 @@ impl IdentityWallet {
         // investigation — every stage must be provably visible in `adb logcat`.
         breadcrumb(&format!(
             "fetch_encrypted_documents: entry owner={owner_identity_id} \
-             contract={contract_id} type={document_type_name} since_ms={since_ms}"
+             contract={contract_id} type={document_type_name} since_ms={since_ms} \
+             key_source={}",
+            key_source.label()
         ));
 
         // Fetch the contract and register it so `fetch_many`'s proof
@@ -335,7 +420,7 @@ impl IdentityWallet {
                 continue;
             };
 
-            let aes_key = match derive_tx_metadata_key(
+            let aes_key = match key_source.derive(
                 &wallet,
                 self.sdk.network,
                 identity_index,
@@ -346,7 +431,8 @@ impl IdentityWallet {
                 Err(e) => {
                     breadcrumb(&format!(
                         "fetch_encrypted_documents: txMetadata key derivation failed doc={doc_id} \
-                         owner={owner_identity_id} error={e}; skipping"
+                         owner={owner_identity_id} key_source={} error={e}; skipping",
+                        key_source.label()
                     ));
                     continue;
                 }
