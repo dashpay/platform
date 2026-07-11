@@ -2,6 +2,8 @@
 
 use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
+#[cfg(feature = "json-conversion")]
+use crate::serialization::JsonConvertible;
 #[cfg(feature = "value-conversion")]
 use crate::serialization::ValueConvertible;
 use bincode::{Decode, Encode};
@@ -55,6 +57,99 @@ pub type TimestampMillis = u64;
 pub enum IdentityPublicKey {
     #[serde(rename = "0")]
     V0(IdentityPublicKeyV0),
+}
+
+#[cfg(feature = "json-conversion")]
+impl JsonConvertible for IdentityPublicKey {}
+
+#[cfg(all(
+    test,
+    feature = "json-conversion",
+    feature = "value-conversion",
+    feature = "serde-conversion"
+))]
+mod json_convertible_tests {
+    use super::*;
+    use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
+    use platform_value::{platform_value, BinaryData, Value};
+    use serde_json::json;
+
+    fn fixture() -> IdentityPublicKey {
+        IdentityPublicKey::V0(IdentityPublicKeyV0 {
+            id: 9,
+            key_type: KeyType::ECDSA_HASH160,
+            purpose: Purpose::TRANSFER,
+            security_level: SecurityLevel::CRITICAL,
+            contract_bounds: None,
+            read_only: true,
+            data: BinaryData::new(vec![0x55; 20]),
+            disabled_at: Some(1_700_000_000_000),
+        })
+    }
+
+    #[test]
+    fn json_round_trip_with_full_wire_shape() {
+        use crate::serialization::JsonConvertible;
+        let original = fixture();
+        let json = original.to_json().expect("to_json");
+        // Internally-tagged enum (`tag = "$formatVersion"`); inner V0 has
+        // `rename_all = "camelCase"`, plus the explicit `serde(rename = "type")`
+        // on `key_type`. Sized-int fields with JSON loss:
+        // - `id`: KeyID = u32 (erased to JSON Number)
+        // - `key_type`/`purpose`/`security_level`: `#[repr(u8)]` enums with
+        //   `Serialize_repr` -> raw u8 discriminants
+        // - `disabled_at`: Option<u64>
+        // `BinaryData` is base64-encoded in JSON (HR).
+        // KeyType::ECDSA_HASH160 = 2, Purpose::TRANSFER = 3,
+        // SecurityLevel::CRITICAL = 1.
+        assert_eq!(
+            json,
+            json!({
+                "$formatVersion": "0",
+                "id": 9,
+                "purpose": 3,
+                "securityLevel": 1,
+                "contractBounds": serde_json::Value::Null,
+                "type": 2,
+                "readOnly": true,
+                "data": "VVVVVVVVVVVVVVVVVVVVVVVVVVU=",
+                "disabledAt": 1_700_000_000_000u64,
+            })
+        );
+        let recovered = IdentityPublicKey::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn value_round_trip_with_full_wire_shape() {
+        use crate::serialization::ValueConvertible;
+        let original = fixture();
+        let value = original.to_object().expect("to_object");
+        // Explicit suffixes lock the typed-int variants:
+        // - `9u32` -> `Value::U32` for the KeyID
+        // - `4u8` / `1u8` -> `Value::U8` for the repr(u8) enums
+        // - `1_700_000_000_000u64` -> `Value::U64` for the timestamp
+        // `BinaryData` becomes a sized-bytes variant in non-HR — for a 20-byte
+        // payload it is detected as `Value::Bytes20([u8; 20])`, not the generic
+        // `Value::Bytes(Vec<u8>)`. (`platform_value` collapses fixed sizes
+        // 20/32/36 to typed variants for round-trip stability.)
+        assert_eq!(
+            value,
+            platform_value!({
+                "$formatVersion": "0",
+                "id": 9u32,
+                "purpose": 3u8,
+                "securityLevel": 1u8,
+                "contractBounds": Value::Null,
+                "type": 2u8,
+                "readOnly": true,
+                "data": Value::Bytes20([0x55; 20]),
+                "disabledAt": 1_700_000_000_000u64,
+            })
+        );
+        let recovered = IdentityPublicKey::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
+    }
 }
 
 impl IdentityPublicKey {

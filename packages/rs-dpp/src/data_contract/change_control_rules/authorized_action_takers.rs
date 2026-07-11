@@ -2,6 +2,10 @@ use crate::data_contract::group::accessors::v0::GroupV0Getters;
 use crate::data_contract::group::{Group, GroupMemberPower};
 use crate::data_contract::GroupContractPosition;
 use crate::group::action_taker::{ActionGoal, ActionTaker};
+#[cfg(feature = "json-conversion")]
+use crate::serialization::JsonConvertible;
+#[cfg(feature = "value-conversion")]
+use crate::serialization::ValueConvertible;
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
 use platform_value::Identifier;
@@ -9,9 +13,16 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fmt;
 
-#[derive(
-    Serialize, Deserialize, Decode, Encode, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Default,
-)]
+#[derive(Decode, Encode, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Default)]
+// Custom `Serialize` / `Deserialize` below — `derive(Serialize, Deserialize)`
+// can't produce the desired flat wire shape because the `Identity` variant
+// wraps `Identifier` (serializes as a base58 string, not a map) and `Group`
+// wraps a bare `u16`, so internal tagging doesn't apply. The custom impl
+// emits a flat `{"$type": ..., "identity"/"position": ...}` shape with
+// synthesized field names (same pattern as `ResourceVoteChoice`). Bincode
+// `Encode` / `Decode` derives are untouched (consensus binary format is
+// unaffected).
+#[cfg_attr(feature = "value-conversion", derive(ValueConvertible))]
 pub enum AuthorizedActionTakers {
     #[default]
     NoOne,
@@ -20,6 +31,122 @@ pub enum AuthorizedActionTakers {
     MainGroup,
     Group(GroupContractPosition),
 }
+
+impl Serialize for AuthorizedActionTakers {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap;
+        match self {
+            AuthorizedActionTakers::NoOne => {
+                let mut m = serializer.serialize_map(Some(1))?;
+                m.serialize_entry("$type", "noOne")?;
+                m.end()
+            }
+            AuthorizedActionTakers::ContractOwner => {
+                let mut m = serializer.serialize_map(Some(1))?;
+                m.serialize_entry("$type", "contractOwner")?;
+                m.end()
+            }
+            AuthorizedActionTakers::Identity(id) => {
+                let mut m = serializer.serialize_map(Some(2))?;
+                m.serialize_entry("$type", "identity")?;
+                m.serialize_entry("identity", id)?;
+                m.end()
+            }
+            AuthorizedActionTakers::MainGroup => {
+                let mut m = serializer.serialize_map(Some(1))?;
+                m.serialize_entry("$type", "mainGroup")?;
+                m.end()
+            }
+            AuthorizedActionTakers::Group(position) => {
+                let mut m = serializer.serialize_map(Some(2))?;
+                m.serialize_entry("$type", "group")?;
+                m.serialize_entry("position", position)?;
+                m.end()
+            }
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for AuthorizedActionTakers {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        use serde::de::{self, MapAccess, Visitor};
+
+        struct V;
+
+        impl<'de> Visitor<'de> for V {
+            type Value = AuthorizedActionTakers;
+
+            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                // Mention the old shape: contract JSON authored before
+                // 4.0.0-beta.4 used bare strings / externally-tagged maps, and
+                // this message is the only hint users get on ingest failure.
+                f.write_str(
+                    "AuthorizedActionTakers as a map with a `type` discriminator, \
+                     e.g. {\"type\": \"contractOwner\"} or {\"type\": \"identity\", \"identity\": \"<base58>\"} \
+                     (the pre-4.0.0-beta.4 shapes \"ContractOwner\" / {\"Identity\": \"<base58>\"} are no longer accepted)",
+                )
+            }
+
+            fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error> {
+                let mut variant: Option<String> = None;
+                let mut identity: Option<Identifier> = None;
+                let mut position: Option<GroupContractPosition> = None;
+
+                while let Some(key) = map.next_key::<String>()? {
+                    match key.as_str() {
+                        "$type" => {
+                            if variant.is_some() {
+                                return Err(de::Error::duplicate_field("$type"));
+                            }
+                            variant = Some(map.next_value()?);
+                        }
+                        "identity" => {
+                            if identity.is_some() {
+                                return Err(de::Error::duplicate_field("identity"));
+                            }
+                            identity = Some(map.next_value()?);
+                        }
+                        "position" => {
+                            if position.is_some() {
+                                return Err(de::Error::duplicate_field("position"));
+                            }
+                            position = Some(map.next_value()?);
+                        }
+                        _ => {
+                            let _: serde::de::IgnoredAny = map.next_value()?;
+                        }
+                    }
+                }
+
+                let variant = variant.ok_or_else(|| de::Error::missing_field("$type"))?;
+                match variant.as_str() {
+                    "noOne" => Ok(AuthorizedActionTakers::NoOne),
+                    "contractOwner" => Ok(AuthorizedActionTakers::ContractOwner),
+                    "identity" => {
+                        let id = identity.ok_or_else(|| de::Error::missing_field("identity"))?;
+                        Ok(AuthorizedActionTakers::Identity(id))
+                    }
+                    "mainGroup" => Ok(AuthorizedActionTakers::MainGroup),
+                    "group" => {
+                        let position =
+                            position.ok_or_else(|| de::Error::missing_field("position"))?;
+                        Ok(AuthorizedActionTakers::Group(position))
+                    }
+                    other => Err(de::Error::unknown_variant(
+                        other,
+                        &["noOne", "contractOwner", "identity", "mainGroup", "group"],
+                    )),
+                }
+            }
+        }
+
+        deserializer.deserialize_map(V)
+    }
+}
+
+// Manual impl because AuthorizedActionTakers is a flat enum (not versioned V0/V1).
+#[cfg(feature = "json-conversion")]
+impl JsonConvertible for AuthorizedActionTakers {}
 
 impl fmt::Display for AuthorizedActionTakers {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -684,5 +811,89 @@ mod tests {
             &taker,
             ActionGoal::ActionParticipation,
         ));
+    }
+}
+
+#[cfg(all(
+    test,
+    feature = "json-conversion",
+    feature = "value-conversion",
+    feature = "serde-conversion"
+))]
+mod json_convertible_tests {
+    use super::*;
+    use platform_value::platform_value;
+    use serde_json::json;
+
+    fn id() -> Identifier {
+        Identifier::from([0x42u8; 32])
+    }
+
+    /// Per-variant wire-shape coverage — the custom Serialize/Deserialize pair
+    /// must stay in sync when variants are added (the maintenance trap of
+    /// custom-impl enums).
+    #[test]
+    fn json_round_trip_with_full_wire_shape_all_variants() {
+        use crate::serialization::JsonConvertible;
+        let cases = vec![
+            (AuthorizedActionTakers::NoOne, json!({"$type": "noOne"})),
+            (
+                AuthorizedActionTakers::ContractOwner,
+                json!({"$type": "contractOwner"}),
+            ),
+            (
+                AuthorizedActionTakers::Identity(id()),
+                json!({"$type": "identity", "identity": "5TeWSsjg2gbxCyWVniXeCmwM7UtHTCK7svzJr5xYJzHf"}),
+            ),
+            (
+                AuthorizedActionTakers::MainGroup,
+                json!({"$type": "mainGroup"}),
+            ),
+            // `position` is u16 (GroupContractPosition); JSON erases the size —
+            // the value-path test locks the typed variant.
+            (
+                AuthorizedActionTakers::Group(42),
+                json!({"$type": "group", "position": 42}),
+            ),
+        ];
+        for (original, expected) in cases {
+            let json_v = original.to_json().expect("to_json");
+            assert_eq!(json_v, expected, "json wire shape for {original}");
+            let recovered = AuthorizedActionTakers::from_json(json_v).expect("from_json");
+            assert_eq!(original, recovered);
+        }
+    }
+
+    #[test]
+    fn value_round_trip_with_full_wire_shape_all_variants() {
+        use crate::serialization::ValueConvertible;
+        let cases = vec![
+            (
+                AuthorizedActionTakers::NoOne,
+                platform_value!({"$type": "noOne"}),
+            ),
+            (
+                AuthorizedActionTakers::ContractOwner,
+                platform_value!({"$type": "contractOwner"}),
+            ),
+            (
+                AuthorizedActionTakers::Identity(id()),
+                platform_value!({"$type": "identity", "identity": id()}),
+            ),
+            (
+                AuthorizedActionTakers::MainGroup,
+                platform_value!({"$type": "mainGroup"}),
+            ),
+            (
+                AuthorizedActionTakers::Group(42),
+                platform_value!({"$type": "group", "position": 42u16}),
+            ),
+        ];
+        for (original, expected) in cases {
+            let value = original.to_object().expect("to_object");
+            assert_eq!(value, expected, "value wire shape for {original}");
+            let recovered = AuthorizedActionTakers::from_object(value).expect("from_object");
+            assert_eq!(original, recovered);
+        }
     }
 }

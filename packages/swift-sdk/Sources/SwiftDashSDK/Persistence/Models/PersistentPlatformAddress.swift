@@ -59,9 +59,12 @@ public final class PersistentPlatformAddress {
     /// Platform block height where this address first appeared in a
     /// balance changeset. Zero until the address is seen on-chain.
     public var firstSeenHeight: UInt32
-    /// Platform block height of the most recent balance changeset
-    /// touching this address.
-    public var lastSeenHeight: UInt32
+    /// Platform block height this row's `balance` is current **as of**
+    /// — the balance height pin (`AddressFunds::as_of_height` in Rust).
+    /// Round-tripped verbatim through the persistence callbacks so the
+    /// sync's delta-replay gate survives restarts. Zero means "unknown
+    /// provenance" (rows persisted before the pin existed).
+    public var lastSeenHeight: UInt64
     /// 32-byte wallet ID that owns this address. Denormalized from
     /// `account.wallet.walletId` so per-wallet `@Query` filters don't
     /// have to traverse two optional relationships.

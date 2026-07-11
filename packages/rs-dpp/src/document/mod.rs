@@ -47,17 +47,20 @@ use std::fmt::Formatter;
 
 #[derive(Clone, Debug, PartialEq, From)]
 #[cfg_attr(
-    any(feature = "serde-conversion", feature = "serde-conversion"),
+    feature = "serde-conversion",
     derive(serde::Serialize, serde::Deserialize),
     serde(tag = "$formatVersion")
 )]
 pub enum Document {
-    #[cfg_attr(
-        any(feature = "serde-conversion", feature = "serde-conversion"),
-        serde(rename = "0")
-    )]
+    #[cfg_attr(feature = "serde-conversion", serde(rename = "0"))]
     V0(DocumentV0),
 }
+
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+impl crate::serialization::JsonConvertible for Document {}
+
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+impl crate::serialization::ValueConvertible for Document {}
 
 impl fmt::Display for Document {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
@@ -720,5 +723,102 @@ mod tests {
             .get_raw_for_document_type("$id", document_type, None, platform_version)
             .expect("should succeed");
         assert_eq!(raw, Some(document.id().to_vec()));
+    }
+}
+
+#[cfg(all(
+    test,
+    feature = "json-conversion",
+    feature = "value-conversion",
+    feature = "serde-conversion"
+))]
+mod json_convertible_tests {
+    use super::*;
+
+    use platform_value::{platform_value, Identifier};
+    use serde_json::json;
+    use std::collections::BTreeMap;
+
+    fn fixture() -> Document {
+        Document::V0(DocumentV0 {
+            id: Identifier::new([0xa1; 32]),
+            owner_id: Identifier::new([0xb2; 32]),
+            properties: BTreeMap::new(),
+            revision: Some(2),
+            created_at: Some(1_700_000_000_000),
+            updated_at: Some(1_700_000_001_000),
+            transferred_at: None,
+            created_at_block_height: Some(100),
+            updated_at_block_height: Some(101),
+            transferred_at_block_height: None,
+            created_at_core_block_height: Some(50),
+            updated_at_core_block_height: Some(51),
+            transferred_at_core_block_height: None,
+            creator_id: Some(Identifier::new([0xc3; 32])),
+        })
+    }
+
+    #[test]
+    fn json_round_trip_with_full_wire_shape() {
+        use crate::serialization::JsonConvertible;
+        let original = fixture();
+        let json = original.to_json().expect("to_json");
+        // Sized-int fields whose JSON wire encoding loses size info:
+        // `$revision`/`$createdAt`/`$updatedAt`/`$createdAtBlockHeight`/
+        // `$updatedAtBlockHeight` (u64), `$createdAtCoreBlockHeight`/
+        // `$updatedAtCoreBlockHeight` (u32). The value-path locks variants
+        // via explicit suffixes. `properties` is flattened into the document
+        // root; for an empty `BTreeMap`, no extra keys appear.
+        assert_eq!(
+            json,
+            json!({
+                "$formatVersion": "0",
+                "$id": Identifier::new([0xa1; 32]),
+                "$ownerId": Identifier::new([0xb2; 32]),
+                "$revision": 2,
+                "$createdAt": 1_700_000_000_000u64,
+                "$updatedAt": 1_700_000_001_000u64,
+                "$transferredAt": serde_json::Value::Null,
+                "$createdAtBlockHeight": 100,
+                "$updatedAtBlockHeight": 101,
+                "$transferredAtBlockHeight": serde_json::Value::Null,
+                "$createdAtCoreBlockHeight": 50,
+                "$updatedAtCoreBlockHeight": 51,
+                "$transferredAtCoreBlockHeight": serde_json::Value::Null,
+                "$creatorId": Identifier::new([0xc3; 32]),
+            })
+        );
+        let recovered = Document::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn value_round_trip_with_full_wire_shape() {
+        use crate::serialization::ValueConvertible;
+        let original = fixture();
+        let value = original.to_object().expect("to_object");
+        // Explicit suffixes lock in sized variants: revision / *At /
+        // *AtBlockHeight are u64; *AtCoreBlockHeight are u32.
+        assert_eq!(
+            value,
+            platform_value!({
+                "$formatVersion": "0",
+                "$id": Identifier::new([0xa1; 32]),
+                "$ownerId": Identifier::new([0xb2; 32]),
+                "$revision": 2u64,
+                "$createdAt": 1_700_000_000_000u64,
+                "$updatedAt": 1_700_000_001_000u64,
+                "$transferredAt": platform_value::Value::Null,
+                "$createdAtBlockHeight": 100u64,
+                "$updatedAtBlockHeight": 101u64,
+                "$transferredAtBlockHeight": platform_value::Value::Null,
+                "$createdAtCoreBlockHeight": 50u32,
+                "$updatedAtCoreBlockHeight": 51u32,
+                "$transferredAtCoreBlockHeight": platform_value::Value::Null,
+                "$creatorId": Identifier::new([0xc3; 32]),
+            })
+        );
+        let recovered = Document::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
     }
 }

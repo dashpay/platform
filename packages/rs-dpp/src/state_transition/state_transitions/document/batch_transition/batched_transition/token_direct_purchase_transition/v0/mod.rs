@@ -12,6 +12,9 @@ use std::fmt;
 pub use super::super::document_base_transition::IDENTIFIER_FIELDS;
 
 #[derive(Debug, Clone, Default, Encode, Decode, PartialEq)]
+// Auto-injects `json_safe_u64` on `token_count: TokenAmount` and
+// `total_agreed_price: Credits` (both u64).
+#[cfg_attr(feature = "json-conversion", crate::serialization::json_safe_fields)]
 #[cfg_attr(
     feature = "serde-conversion",
     derive(Serialize, Deserialize),

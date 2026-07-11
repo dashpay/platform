@@ -59,15 +59,14 @@ mod tests {
     use dpp::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
     use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
     use dpp::document::document_methods::DocumentMethodsV0;
-    use dpp::document::serialization_traits::{
-        DocumentPlatformConversionMethodsV0, DocumentPlatformValueMethodsV0,
-    };
+    use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
     use dpp::document::specialized_document_factory::SpecializedDocumentFactory;
     use dpp::document::{Document, DocumentV0Getters, DocumentV0Setters};
     use dpp::fee::default_costs::KnownCostItem::StorageDiskUsageCreditPerByte;
     use dpp::fee::default_costs::{CachedEpochIndexFeeVersions, EpochCosts};
     use dpp::fee::fee_result::FeeResult;
     use dpp::platform_value;
+    use dpp::serialization::ValueConvertible;
     use dpp::tests::json_document::json_document_to_document;
     use dpp::version::fee::FeeVersion;
     use once_cell::sync::Lazy;
@@ -75,6 +74,25 @@ mod tests {
 
     static EPOCH_CHANGE_FEE_VERSION_TEST: Lazy<CachedEpochIndexFeeVersions> =
         Lazy::new(|| BTreeMap::from([(0, FeeVersion::first())]));
+
+    /// Build a `Document` from a legacy un-tagged `platform_value!` map by
+    /// inserting `$formatVersion: "0"` and routing through canonical
+    /// `ValueConvertible::from_object`. Replaces the deleted
+    /// `Document::from_platform_value` ingest path.
+    fn document_from_legacy_value(mut value: Value) -> Document {
+        if let Value::Map(ref mut entries) = value {
+            let has_tag = entries
+                .iter()
+                .any(|(k, _)| matches!(k, Value::Text(s) if s == "$formatVersion"));
+            if !has_tag {
+                entries.push((
+                    Value::Text("$formatVersion".to_string()),
+                    Value::Text("0".to_string()),
+                ));
+            }
+        }
+        Document::from_object(value).expect("expected to make document from legacy value")
+    }
 
     #[test]
     fn test_create_and_update_document_same_transaction() {
@@ -637,8 +655,7 @@ mod tests {
            "$updatedAt": 1647535750329_u64,
         });
 
-        let document = Document::from_platform_value(document_values, platform_version)
-            .expect("expected to make document");
+        let document = document_from_legacy_value(document_values);
 
         let document_type = contract
             .document_type_for_name("indexedDocument")
@@ -682,8 +699,7 @@ mod tests {
            "$updatedAt":1647535754556_u64,
         });
 
-        let document = Document::from_platform_value(document_values, platform_version)
-            .expect("expected to make document");
+        let document = document_from_legacy_value(document_values);
 
         drive
             .update_document_for_contract(
@@ -960,8 +976,7 @@ mod tests {
 
         let value = platform_value::to_value(&person_0_original).expect("person into value");
 
-        let document =
-            Document::from_platform_value(value, platform_version).expect("value to document");
+        let document = document_from_legacy_value(value);
 
         let document_serialized = DocumentPlatformConversionMethodsV0::serialize(
             &document,
@@ -1696,8 +1711,7 @@ mod tests {
 
         let value = platform_value::to_value(person).expect("person into value");
 
-        let document =
-            Document::from_platform_value(value, platform_version).expect("value to document");
+        let document = document_from_legacy_value(value);
 
         let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpochOwned(
             0,

@@ -145,6 +145,7 @@ pub unsafe extern "C" fn platform_address_wallet_addresses_with_balances(
                 nonce: 0,
                 account_index: 0,
                 address_index: 0,
+                as_of_height: 0,
             })
             .collect::<Vec<_>>()
     });

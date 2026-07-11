@@ -85,11 +85,12 @@ final class DataTransformersTests: XCTestCase {
     }
 
     func testParseAddressBech32m() {
-        // Valid testnet bech32m address
-        let address = "tdashevo1qz4242424242424242424242424242424g4dj6u7"
+        // A real DIP-0018 testnet platform address (tdash1...).
+        let address = "tdash1kzdl4c3apkekqevkqrzctgagv2v2ng5hysegt5x4"
         let data = AddressTransformer.parseAddress(address)
-        // Should return data if Bech32m decoder works, nil otherwise
-        XCTAssertTrue(data == nil || data?.count == 21)
+        XCTAssertEqual(data?.count, 21, "a valid tdash1 address must decode to the 21-byte payload")
+        // The pre-DIP-0018 HRP is rejected.
+        XCTAssertNil(AddressTransformer.parseAddress("tdashevo1qz4242424242424242424242424242424g4dj6u7"))
     }
 
     func testParseAddressInvalid() {

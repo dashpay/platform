@@ -396,7 +396,12 @@ struct CoSignProposalView: View {
     ) async throws {
         switch proposal.params {
         case .mint(let amount, let recipient, let note):
-            try await wallet.tokenMint(
+            // A co-signature that CLOSES the group mint returns the
+            // recipient's proof-verified post-mint balance (empty while the
+            // action is still awaiting signatures). Persist it so the
+            // closing co-signer's local row updates immediately instead of
+            // waiting for the next periodic sync.
+            let balances = try await wallet.tokenMint(
                 identityId: identityId,
                 contractId: contractId,
                 tokenPosition: tokenPosition,
@@ -405,6 +410,11 @@ struct CoSignProposalView: View {
                 publicNote: note,
                 groupAction: mode,
                 signer: signer
+            )
+            await persistCoSignedBalances(
+                balances: balances,
+                contractId: contractId,
+                tokenPosition: tokenPosition
             )
         case .burn(let amount, _, let note):
             // The burn proposal carries `burnFrom` (the account being
@@ -428,7 +438,7 @@ struct CoSignProposalView: View {
                 groupAction: mode,
                 signer: signer
             )
-            await persistCoSignedBurnBalances(
+            await persistCoSignedBalances(
                 balances: balances,
                 contractId: contractId,
                 tokenPosition: tokenPosition
@@ -500,14 +510,14 @@ struct CoSignProposalView: View {
         }
     }
 
-    /// Persist the proof-verified post-burn balance a co-signed group
-    /// burn returned into the local `PersistentTokenBalance` row (keyed by
-    /// this view's `token`). Empty when the action is still awaiting
-    /// signatures → no-op. Best-effort: a persist failure is logged and
-    /// swallowed; the periodic sync is the backstop. Mirrors
+    /// Persist the proof-verified post-action balance a co-signed group
+    /// mint / burn returned into the local `PersistentTokenBalance` row
+    /// (keyed by this view's `token`). Empty when the action is still
+    /// awaiting signatures → no-op. Best-effort: a persist failure is
+    /// logged and swallowed; the periodic sync is the backstop. Mirrors
     /// `TokenBurnActionView.persistBalanceAfterBurn`.
     @MainActor
-    private func persistCoSignedBurnBalances(
+    private func persistCoSignedBalances(
         balances: [Data: UInt64],
         contractId: Data,
         tokenPosition: UInt16
@@ -522,7 +532,7 @@ struct CoSignProposalView: View {
                 in: modelContext
             )
         } catch {
-            print("⚠️ Co-signed burn balance persist failed: \(error)")
+            print("⚠️ Co-signed balance persist failed: \(error)")
         }
     }
 

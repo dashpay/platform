@@ -87,7 +87,7 @@ impl IdentityWallet {
         identity_signer: &IS,
         input_address_signer: &AS,
         settings: Option<PutSettings>,
-    ) -> Result<(Identity, dash_sdk::query_types::AddressInfos), PlatformWalletError> {
+    ) -> Result<(Identity, dash_sdk::query_types::AddressInfos, u64), PlatformWalletError> {
         if inputs.is_empty() {
             return Err(PlatformWalletError::InvalidIdentityData(
                 "At least one input address is required".to_string(),
@@ -97,7 +97,7 @@ impl IdentityWallet {
         // Route through the auto-fetching SDK variant so the caller
         // doesn't need to maintain its own nonce cache — Platform is
         // always the source of truth at submit time.
-        let (mut registered_identity, address_infos) = identity
+        let (mut registered_identity, address_infos, proof_height) = identity
             .put_with_address_funding_fetching_nonces(
                 &self.sdk,
                 inputs,
@@ -108,10 +108,12 @@ impl IdentityWallet {
             )
             .await
             .map_err(|e| {
-                PlatformWalletError::InvalidIdentityData(format!(
-                    "Failed to register identity from addresses: {}",
-                    e
-                ))
+                crate::error::promote_address_nonce_error(&e).unwrap_or_else(|| {
+                    PlatformWalletError::InvalidIdentityData(format!(
+                        "Failed to register identity from addresses: {}",
+                        e
+                    ))
+                })
             })?;
 
         // The SDK return path for `put_with_address_funding_fetching_nonces`
@@ -175,8 +177,8 @@ impl IdentityWallet {
 
         // The spent platform-address balances are reconciled by the
         // composite `PlatformWallet::register_from_addresses`, which routes
-        // the returned `AddressInfos` through the platform-address wallet's
-        // shared reconciliation seam.
-        Ok((identity, address_infos))
+        // the returned `AddressInfos` (pinned at `proof_height`) through
+        // the platform-address wallet's shared reconciliation seam.
+        Ok((identity, address_infos, proof_height))
     }
 }

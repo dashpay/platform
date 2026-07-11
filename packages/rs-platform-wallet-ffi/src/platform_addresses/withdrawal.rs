@@ -35,6 +35,10 @@ pub unsafe extern "C" fn platform_address_wallet_withdraw(
     out_changeset: *mut PlatformAddressChangeSetFFI,
 ) -> PlatformWalletFFIResult {
     check_ptr!(out_changeset);
+    // Sentinel first: input parsing, the wallet lookup, and the async
+    // withdraw below are all fallible. See
+    // `PlatformAddressChangeSetFFI::empty` for the double-free rationale.
+    *out_changeset = PlatformAddressChangeSetFFI::empty();
     check_ptr!(output_script);
     check_ptr!(signer_address_handle);
 
@@ -125,6 +129,13 @@ pub unsafe extern "C" fn platform_address_wallet_withdraw_to_address(
     out_changeset: *mut PlatformAddressChangeSetFFI,
 ) -> PlatformWalletFFIResult {
     check_ptr!(out_changeset);
+    // Sentinel first — address parsing, the `ErrorInvalidNetwork` path, and
+    // the async withdraw are all reachable from a caller-controlled address
+    // string, so publish the empty changeset before them (and before the
+    // `core_address` / signer null checks below) to keep every early return
+    // FFI-safe. See `PlatformAddressChangeSetFFI::empty` for the double-free
+    // rationale.
+    *out_changeset = PlatformAddressChangeSetFFI::empty();
     check_ptr!(core_address);
     check_ptr!(signer_address_handle);
 

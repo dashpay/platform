@@ -61,7 +61,7 @@ use dapi_grpc::platform::v0::{
     GetRecentAddressBalanceChangesRequest, GetRecentCompactedAddressBalanceChangesRequest, Proof,
 };
 use dpp::address_funds::PlatformAddress;
-use dpp::balances::credits::{BlockAwareCreditOperation, CreditOperation, Credits};
+use dpp::balances::credits::{BlockAwareCreditOperation, CreditOperation};
 use dpp::prelude::AddressNonce;
 use dpp::version::PlatformVersion;
 use drive::drive::{Drive, RootTree};
@@ -162,7 +162,11 @@ impl<P: AddressProvider> TrunkBranchSyncOps for AddressOps<P> {
         for (tag, address) in pending {
             let key_bytes = address.to_bytes();
             if let Some(element) = trunk_result.elements.get(&key_bytes) {
-                let funds = AddressFunds::try_from(element)?;
+                // Pin the scan absolute at the snapshot height: the trunk
+                // proof attests this balance as of `checkpoint_height`, so
+                // any delta recorded at or below it is already included.
+                let mut funds = AddressFunds::try_from(element)?;
+                funds.as_of_height = context.result.checkpoint_height;
                 context.result.found.insert((tag, address), funds);
                 context
                     .provider
@@ -212,7 +216,10 @@ impl<P: AddressProvider> TrunkBranchSyncOps for AddressOps<P> {
             };
 
             if let Some(element) = branch_result.elements.get(&target_key) {
-                let funds = AddressFunds::try_from(element)?;
+                // Branch queries are checkpointed to the trunk query's
+                // height, so branch absolutes carry the same pin.
+                let mut funds = AddressFunds::try_from(element)?;
+                funds.as_of_height = context.result.checkpoint_height;
                 context.result.found.insert((tag, address), funds);
                 context
                     .provider
@@ -661,10 +668,14 @@ async fn incremental_catch_up<P: AddressProvider>(
                     Err(e) => return Err(e),
                 };
 
-            let entries = match changes {
+            let mut entries = match changes {
                 Some(c) => c.into_inner(),
                 None => break,
             };
+            // Apply in ascending range order so per-address pins advance
+            // monotonically — an out-of-order apply could gate off a
+            // genuinely newer delta.
+            entries.sort_by_key(|e| e.end_block_height);
 
             result.new_sync_timestamp = metadata.time_ms / 1000;
             result.metrics.compacted_queries += 1;
@@ -687,7 +698,9 @@ async fn incremental_catch_up<P: AddressProvider>(
                         .changes
                         .iter()
                         .map(|(a, op)| (a, BalanceOp::Compacted(op))),
-                    current_height,
+                    // The pin gate needs the height this change is recorded
+                    // AS OF — the range end, not the pagination cursor.
+                    entry.end_block_height,
                     provider,
                     result,
                     &mut pending_unknown,
@@ -714,8 +727,13 @@ async fn incremental_catch_up<P: AddressProvider>(
     let mut highest_recent_block: u64 = 0;
 
     if let Some(changes) = recent_changes {
-        let entries = changes.into_inner();
+        let mut entries = changes.into_inner();
         result.metrics.recent_entries_returned += entries.len();
+
+        // Apply in ascending block order so per-address pins advance
+        // monotonically — an out-of-order apply could gate off a genuinely
+        // newer delta.
+        entries.sort_by_key(|e| e.block_height);
 
         for entry in &entries {
             // Track the highest block height in recent entries
@@ -729,7 +747,9 @@ async fn incremental_catch_up<P: AddressProvider>(
                     .changes
                     .iter()
                     .map(|(a, op)| (a, BalanceOp::Recent(op))),
-                current_height,
+                // The pin gate needs the block this change is recorded AT,
+                // not the pagination cursor.
+                entry.block_height,
                 provider,
                 result,
                 &mut pending_unknown,
@@ -783,29 +803,68 @@ pub(crate) enum OwnedBalanceOp {
     Compacted(BlockAwareCreditOperation),
 }
 
-/// A buffered miss: raw GroveDB key, owned change, and the catch-up cursor
-/// height at the original block (feeds the compacted height filter on replay;
-/// ignored by `Recent`).
+/// A buffered miss: raw GroveDB key, owned change, and the height the change
+/// is recorded as of (recent: the entry's block height; compacted: the range
+/// end). Feeds the height-pin gate on replay exactly as on the forward pass.
 type PendingMiss = (Vec<u8>, OwnedBalanceOp, u64);
 
-/// Resolve the post-change balance from the current balance and the catch-up
-/// cursor height. Compacted sums only operations at or after `current_height`;
-/// recent applies a flat set/add.
-fn apply_op(op: BalanceOp<'_>, current_balance: Credits, current_height: u64) -> Credits {
+/// Resolve the post-change funds from the current funds and the height the
+/// change is recorded as of (`op_height` — recent: the entry's block height;
+/// compacted: the range end).
+///
+/// This is where the height pin (`AddressFunds::as_of_height`) gates delta
+/// replay: the pinned balance already includes every block up to and
+/// including the pin, so a change at or below it is already inside the
+/// absolute — re-applying it is the ADDR-09 double-count (a fresh trunk/ST
+/// absolute plus the same block's `AddToCredits` replayed on top). Returns
+/// `current` unchanged when the change is fully gated off; applying advances
+/// the pin so later passes gate correctly too.
+fn apply_op(op: BalanceOp<'_>, current: AddressFunds, op_height: u64) -> AddressFunds {
     match op {
-        BalanceOp::Recent(op) => match op {
-            CreditOperation::SetCredits(credits) => *credits,
-            CreditOperation::AddToCredits(credits) => current_balance.saturating_add(*credits),
-        },
+        BalanceOp::Recent(op) => {
+            if op_height <= current.as_of_height {
+                return current;
+            }
+            let balance = match op {
+                CreditOperation::SetCredits(credits) => *credits,
+                CreditOperation::AddToCredits(credits) => current.balance.saturating_add(*credits),
+            };
+            AddressFunds {
+                nonce: current.nonce,
+                balance,
+                as_of_height: op_height,
+            }
+        }
         BalanceOp::Compacted(op) => match op {
-            BlockAwareCreditOperation::SetCredits(credits) => *credits,
+            BlockAwareCreditOperation::SetCredits(credits) => {
+                // Absolute as of the end of this compacted range —
+                // authoritative only if it postdates the pin.
+                if op_height <= current.as_of_height {
+                    return current;
+                }
+                AddressFunds {
+                    nonce: current.nonce,
+                    balance: *credits,
+                    as_of_height: op_height,
+                }
+            }
             BlockAwareCreditOperation::AddToCreditsOperations(operations) => {
+                // Each operation carries its own block height, so a pin that
+                // falls inside the compacted range drops exactly the ops the
+                // pinned absolute already includes and applies the rest.
                 let total_to_add: u64 = operations
                     .iter()
-                    .filter(|(height, _)| **height >= current_height)
+                    .filter(|(height, _)| **height > current.as_of_height)
                     .map(|(_, credits)| *credits)
                     .fold(0u64, |acc, c| acc.saturating_add(c));
-                current_balance.saturating_add(total_to_add)
+                AddressFunds {
+                    nonce: current.nonce,
+                    balance: current.balance.saturating_add(total_to_add),
+                    // The entry aggregates every change for this address
+                    // through its range end, so the balance is now current
+                    // through there.
+                    as_of_height: current.as_of_height.max(op_height),
+                }
             }
         },
     }
@@ -835,30 +894,34 @@ fn apply_change<P: AddressProvider>(
     tag: P::Tag,
     address: P::Address,
     op: BalanceOp<'_>,
-    current_height: u64,
+    op_height: u64,
 ) -> Option<AddressFunds> {
     let result_key = (tag, address);
-    let current_balance = result
-        .found
-        .get(&result_key)
-        .map(|f| f.balance)
-        .unwrap_or(0);
-
-    let new_balance = apply_op(op, current_balance, current_height);
-    if new_balance == current_balance {
-        return None;
-    }
-
     // INTENTIONAL — accepted risk: incremental RPCs carry no nonce, so a
     // catch-up-discovered address synthesizes nonce=0. It is published and
     // persisted but NON-AUTHORITATIVE — every spend re-fetches the on-chain
     // nonce. Callers MUST NOT treat this as the authoritative nonce.
     // (Option<u32> rework deliberately skipped.)
-    let nonce = result.found.get(&result_key).map(|f| f.nonce).unwrap_or(0);
-    let funds = AddressFunds {
-        nonce,
-        balance: new_balance,
-    };
+    //
+    // `as_of_height: 0` = "unknown provenance" for an address with no
+    // recorded funds: every change applies, and the first one pins it.
+    let current = result
+        .found
+        .get(&result_key)
+        .copied()
+        .unwrap_or(AddressFunds {
+            nonce: 0,
+            balance: 0,
+            as_of_height: 0,
+        });
+
+    let funds = apply_op(op, current, op_height);
+    // Commit on ANY funds change — a balance-neutral change that advances
+    // the pin still persists, hardening future replay gating.
+    if funds == current {
+        return None;
+    }
+
     // Keep `found` and `absent` disjoint: a post-checkpoint funding can land
     // on an address the branch scan proved absent, so clear any stale
     // `absent` entry before recording it as found.
@@ -876,7 +939,7 @@ fn apply_change<P: AddressProvider>(
 async fn apply_block_changes<'a, P, I>(
     address_lookup: &HashMap<Vec<u8>, (P::Tag, P::Address)>,
     changes: I,
-    current_height: u64,
+    op_height: u64,
     provider: &mut P,
     result: &mut AddressSyncResult<P::Tag, P::Address>,
     pending_unknown: &mut Vec<PendingMiss>,
@@ -889,7 +952,7 @@ async fn apply_block_changes<'a, P, I>(
     for (platform_addr, change) in changes {
         let addr_bytes = platform_addr.to_bytes();
         if let Some(&(tag, address)) = address_lookup.get(&addr_bytes) {
-            if let Some(funds) = apply_change::<P>(result, tag, address, change, current_height) {
+            if let Some(funds) = apply_change::<P>(result, tag, address, change, op_height) {
                 local_applied.push((tag, address, funds));
             }
         } else {
@@ -897,7 +960,7 @@ async fn apply_block_changes<'a, P, I>(
                 BalanceOp::Recent(op) => OwnedBalanceOp::Recent(*op),
                 BalanceOp::Compacted(op) => OwnedBalanceOp::Compacted(op.clone()),
             };
-            pending_unknown.push((addr_bytes, owned, current_height));
+            pending_unknown.push((addr_bytes, owned, op_height));
             // NOTE: this buffer is intentionally unbounded — premature
             // optimization here would couple the catch-up loop to ad-hoc
             // memory heuristics. We log a one-shot warning above a generous
@@ -1237,6 +1300,10 @@ impl TryFrom<&Element> for AddressFunds {
     /// Convert a GroveDB element into address funds (nonce and balance).
     ///
     /// The address funds tree stores the nonce as the item value and the balance as the sum item.
+    ///
+    /// The element itself carries no block height, so the produced funds
+    /// have `as_of_height == 0`; the caller must pin them at the proof
+    /// height of the query that returned the element.
     fn try_from(element: &Element) -> Result<Self, Self::Error> {
         if let Element::ItemWithSumItem(nonce_bytes, balance, _) = element {
             let nonce_bytes: [u8; 4] = nonce_bytes.as_slice().try_into().map_err(|_| {
@@ -1248,7 +1315,11 @@ impl TryFrom<&Element> for AddressFunds {
             let balance: u64 = (*balance).try_into().map_err(|_| {
                 Error::InvalidProvedResponse("address funds balance must fit into u64".to_string())
             })?;
-            return Ok(AddressFunds { nonce, balance });
+            return Ok(AddressFunds {
+                nonce,
+                balance,
+                as_of_height: 0,
+            });
         }
 
         Err(Error::InvalidProvedResponse(
@@ -1718,6 +1789,7 @@ mod tests {
             AddressFunds {
                 nonce: 0,
                 balance: 500,
+                as_of_height: 0,
             },
         );
         result.found.insert(
@@ -1725,6 +1797,7 @@ mod tests {
             AddressFunds {
                 nonce: 1,
                 balance: 0,
+                as_of_height: 0,
             },
         );
         result.found.insert(
@@ -1732,6 +1805,7 @@ mod tests {
             AddressFunds {
                 nonce: 2,
                 balance: 1500,
+                as_of_height: 0,
             },
         );
 
@@ -1829,7 +1903,9 @@ mod tests {
         apply_block_changes(
             &lookup,
             changes.iter().map(|(a, c)| (*a, *c)),
-            0,
+            // A real block height — heights are never 0 in production, and
+            // the pin gate drops changes at or below the current pin.
+            100,
             &mut provider,
             &mut result,
             &mut pending_unknown,
@@ -1915,7 +1991,9 @@ mod tests {
         apply_block_changes(
             &lookup,
             changes.iter().map(|(a, c)| (*a, *c)),
-            0,
+            // A real block height — heights are never 0 in production, and
+            // the pin gate drops changes at or below the current pin.
+            100,
             &mut NoopProvider,
             &mut result,
             &mut pending_unknown,
@@ -1991,13 +2069,14 @@ mod tests {
             AddressFunds {
                 nonce: 0,
                 balance: 1_000,
+                as_of_height: 0,
             },
         );
 
         let mut provider = GrowingProvider { late };
 
         let known_op = BlockAwareCreditOperation::AddToCreditsOperations(
-            std::iter::once((0u64, 500u64)).collect(),
+            std::iter::once((50u64, 500u64)).collect(),
         );
         let late_op = BlockAwareCreditOperation::SetCredits(7_000);
         let changes = [
@@ -2009,7 +2088,9 @@ mod tests {
         apply_block_changes(
             &lookup,
             changes.iter().map(|(a, c)| (*a, *c)),
-            0,
+            // A real block height — heights are never 0 in production, and
+            // the pin gate drops changes at or below the current pin.
+            100,
             &mut provider,
             &mut result,
             &mut pending_unknown,
@@ -2112,7 +2193,9 @@ mod tests {
             apply_block_changes(
                 &lookup,
                 changes.iter().map(|(a, c)| (*a, *c)),
-                0,
+                // A real block height — heights are never 0 in production, and
+                // the pin gate drops changes at or below the current pin.
+                100,
                 &mut provider,
                 &mut result,
                 &mut pending_unknown,
@@ -2260,8 +2343,8 @@ mod tests {
         let op_a = BlockAwareCreditOperation::SetCredits(1_111);
         let op_b = BlockAwareCreditOperation::SetCredits(2_222);
         let pending_unknown: Vec<PendingMiss> = vec![
-            (a.to_bytes(), OwnedBalanceOp::Compacted(op_a), 0),
-            (b.to_bytes(), OwnedBalanceOp::Compacted(op_b), 0),
+            (a.to_bytes(), OwnedBalanceOp::Compacted(op_a), 100),
+            (b.to_bytes(), OwnedBalanceOp::Compacted(op_b), 100),
         ];
 
         refresh_and_replay_unknown(&lookup, pending_unknown, &mut provider, &mut result).await;
@@ -2373,7 +2456,7 @@ mod tests {
                 (
                     addrs[i].to_bytes(),
                     OwnedBalanceOp::Compacted(BlockAwareCreditOperation::SetCredits(*credits)),
-                    0,
+                    100,
                 )
             })
             .collect();
@@ -2499,14 +2582,14 @@ mod tests {
                     OwnedBalanceOp::Compacted(BlockAwareCreditOperation::SetCredits(
                         1_000 + i as u64,
                     )),
-                    0,
+                    100,
                 )
             })
             .collect();
         pending_unknown.push((
             foreign.to_bytes(),
             OwnedBalanceOp::Compacted(BlockAwareCreditOperation::SetCredits(9_999)),
-            0,
+            100,
         ));
 
         let lookup: HashMap<Vec<u8>, (u32, PlatformAddress)> = HashMap::new();
@@ -2566,12 +2649,12 @@ mod tests {
             (
                 owned.to_bytes(),
                 OwnedBalanceOp::Compacted(BlockAwareCreditOperation::SetCredits(5_000)),
-                0,
+                100,
             ),
             (
                 p2pkh(0x12).to_bytes(),
                 OwnedBalanceOp::Compacted(BlockAwareCreditOperation::SetCredits(6_000)),
-                0,
+                100,
             ),
         ];
 
@@ -2657,6 +2740,7 @@ mod tests {
             AddressFunds {
                 nonce: 0,
                 balance: 1_000,
+                as_of_height: 0,
             },
         );
 
@@ -2678,7 +2762,9 @@ mod tests {
         apply_block_changes(
             &lookup,
             changes.iter().map(|(a, c)| (*a, *c)),
-            0,
+            // A real block height — heights are never 0 in production, and
+            // the pin gate drops changes at or below the current pin.
+            100,
             &mut provider,
             &mut result,
             &mut pending_unknown,
@@ -2765,19 +2851,21 @@ mod tests {
         lookup.insert(addr.to_bytes(), (1u32, addr));
 
         let mut result: AddressSyncResult<u32, PlatformAddress> = AddressSyncResult::new();
+        // The base balance is pinned at height 99: the scan absolute that
+        // produced it already includes every block through 99.
         result.found.insert(
             (1u32, addr),
             AddressFunds {
                 nonce: 0,
                 balance: 10_000,
+                as_of_height: 99,
             },
         );
 
-        // Cursor at height 100: ops at 98 and 99 are below (already
-        // accounted for by the tree scan, must be filtered out as a
-        // double-count guard); ops at 100 and 101 are at/above (must
-        // apply). Below sum = 700, at/above sum = 30.
-        let current_height = 100u64;
+        // Pin at height 99: ops at 98 and 99 are at/below the pin (already
+        // inside the pinned absolute, must be dropped as a double-count
+        // guard); ops at 100 and 101 postdate it (must apply). Dropped
+        // sum = 700, applied sum = 30.
         let op = BlockAwareCreditOperation::AddToCreditsOperations(
             [
                 (98u64, 300u64),
@@ -2794,23 +2882,135 @@ mod tests {
         apply_block_changes(
             &lookup,
             changes.iter().map(|(a, c)| (*a, *c)),
-            current_height,
+            // The compacted range's end height — becomes the new pin.
+            101,
             &mut NoopProvider,
             &mut result,
             &mut pending_unknown,
         )
         .await;
 
-        // 10_000 base + only the at/above deltas (10 + 20) = 10_030. The
-        // below-cursor 300 + 400 must NOT be counted.
+        // 10_000 base + only the post-pin deltas (10 + 20) = 10_030. The
+        // at/below-pin 300 + 400 must NOT be counted, and the pin advances
+        // to the range end so later replays gate correctly too.
         assert_eq!(
-            result.found.get(&(1u32, addr)).map(|f| f.balance),
-            Some(10_030),
-            "only deltas at heights >= current_height may apply (anti-double-count)"
+            result.found.get(&(1u32, addr)).copied(),
+            Some(AddressFunds {
+                nonce: 0,
+                balance: 10_030,
+                as_of_height: 101,
+            }),
+            "only deltas at heights above the pin may apply (anti-double-count)"
         );
         assert!(
             pending_unknown.is_empty(),
             "no unknowns for a known address"
+        );
+    }
+
+    /// The exact ADDR-09 double-count shape, on the pure seam: a fresh
+    /// proof-attested absolute (e.g. an asset-lock top-up reconcile) is
+    /// pinned at its proof height, and the recent replay then delivers the
+    /// same block's `AddToCredits` delta. The pin gate must drop it — the
+    /// delta is already inside the absolute — instead of producing
+    /// `X + X = 2X`. A genuinely newer delta still applies and advances
+    /// the pin.
+    #[tokio::test]
+    async fn apply_block_changes_drops_recent_delta_already_inside_pinned_absolute() {
+        use async_trait::async_trait;
+
+        struct NoopProvider;
+
+        #[async_trait]
+        impl AddressProvider for NoopProvider {
+            type Tag = u32;
+            type Address = PlatformAddress;
+
+            fn gap_limit(&self) -> AddressIndex {
+                0
+            }
+
+            fn pending_addresses(&self) -> impl Iterator<Item = (Self::Tag, Self::Address)> + '_ {
+                std::iter::empty()
+            }
+
+            async fn on_address_found(
+                &mut self,
+                _tag: Self::Tag,
+                _address: &Self::Address,
+                _funds: AddressFunds,
+            ) {
+            }
+
+            async fn on_address_absent(&mut self, _tag: Self::Tag, _address: &Self::Address) {}
+
+            fn current_balances(
+                &self,
+            ) -> impl Iterator<Item = (Self::Tag, Self::Address, AddressFunds)> + '_ {
+                std::iter::empty()
+            }
+        }
+
+        let addr = p2pkh(0x42);
+        let mut lookup: HashMap<Vec<u8>, (u32, PlatformAddress)> = HashMap::new();
+        lookup.insert(addr.to_bytes(), (1u32, addr));
+
+        // The reconcile seam committed the proof-attested absolute X,
+        // pinned at the funding proof's block height.
+        let mut result: AddressSyncResult<u32, PlatformAddress> = AddressSyncResult::new();
+        result.found.insert(
+            (1u32, addr),
+            AddressFunds {
+                nonce: 0,
+                balance: 9_985_071_720,
+                as_of_height: 379_731,
+            },
+        );
+
+        // The recent tree replays the funding credit recorded at the SAME
+        // block — the ADDR-09 double-count if applied.
+        let same_block = CreditOperation::AddToCredits(9_985_071_720);
+        let changes = [(&addr, BalanceOp::Recent(&same_block))];
+        let mut pending_unknown: Vec<PendingMiss> = Vec::new();
+        apply_block_changes(
+            &lookup,
+            changes.iter().map(|(a, c)| (*a, *c)),
+            379_731,
+            &mut NoopProvider,
+            &mut result,
+            &mut pending_unknown,
+        )
+        .await;
+        assert_eq!(
+            result.found.get(&(1u32, addr)).copied(),
+            Some(AddressFunds {
+                nonce: 0,
+                balance: 9_985_071_720,
+                as_of_height: 379_731,
+            }),
+            "a delta at the pin height is already inside the absolute (ADDR-09)"
+        );
+
+        // A genuinely newer delta still applies and advances the pin.
+        let newer = CreditOperation::AddToCredits(1_000);
+        let changes = [(&addr, BalanceOp::Recent(&newer))];
+        apply_block_changes(
+            &lookup,
+            changes.iter().map(|(a, c)| (*a, *c)),
+            379_740,
+            &mut NoopProvider,
+            &mut result,
+            &mut pending_unknown,
+        )
+        .await;
+        assert_eq!(
+            result.found.get(&(1u32, addr)).copied(),
+            Some(AddressFunds {
+                nonce: 0,
+                balance: 9_985_072_720,
+                as_of_height: 379_740,
+            }),
+            "a post-pin delta applies once and advances the pin"
         );
     }
 
@@ -2865,6 +3065,7 @@ mod tests {
                     AddressFunds {
                         nonce: 0,
                         balance: 5_000,
+                        as_of_height: 0,
                     },
                 ))
             }
@@ -2903,14 +3104,16 @@ mod tests {
         let mut pending_unknown: Vec<PendingMiss> = Vec::new();
 
         let op = BlockAwareCreditOperation::AddToCreditsOperations(
-            std::iter::once((0u64, 1_500u64)).collect(),
+            std::iter::once((50u64, 1_500u64)).collect(),
         );
         let changes = [(&seeded, BalanceOp::Compacted(&op))];
 
         apply_block_changes(
             &key_to_tag,
             changes.iter().map(|(a, c)| (*a, *c)),
-            0,
+            // A real block height — heights are never 0 in production, and
+            // the pin gate drops changes at or below the current pin.
+            100,
             &mut provider,
             &mut result,
             &mut pending_unknown,
@@ -2976,6 +3179,7 @@ mod tests {
                     AddressFunds {
                         nonce: 0,
                         balance: 5_000,
+                        as_of_height: 0,
                     },
                 ))
             }
@@ -3058,6 +3262,7 @@ mod tests {
                     AddressFunds {
                         nonce: 0,
                         balance: 5_000,
+                        as_of_height: 0,
                     },
                 ))
             }
@@ -3099,14 +3304,16 @@ mod tests {
         // A later AddToCredits delta resolves via key_to_tag to (10, addr) and
         // accumulates on the seeded base: 5000 + 1500 = 6500 under ONE key.
         let op = BlockAwareCreditOperation::AddToCreditsOperations(
-            std::iter::once((0u64, 1_500u64)).collect(),
+            std::iter::once((50u64, 1_500u64)).collect(),
         );
         let changes = [(&addr, BalanceOp::Compacted(&op))];
         let mut pending_unknown: Vec<PendingMiss> = Vec::new();
         apply_block_changes(
             &key_to_tag,
             changes.iter().map(|(a, c)| (*a, *c)),
-            0,
+            // A real block height — heights are never 0 in production, and
+            // the pin gate drops changes at or below the current pin.
+            100,
             &mut provider,
             &mut result,
             &mut pending_unknown,

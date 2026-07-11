@@ -183,7 +183,7 @@ async fn test_spv_sync_and_balance() {
     let platform_wallet = manager
         .create_wallet_from_seed_bytes(
             network,
-            seed_bytes,
+            &seed_bytes,
             WalletAccountCreationOptions::Default,
             None,
         )

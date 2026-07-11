@@ -104,6 +104,162 @@ impl StateTransitionFieldTypes for IdentityCreateFromShieldedPoolTransition {
     }
 }
 
+#[cfg(all(
+    test,
+    feature = "json-conversion",
+    feature = "value-conversion",
+    feature = "serde-conversion"
+))]
+pub(crate) mod json_convertible_tests {
+    use super::*;
+    use crate::address_funds::PlatformAddress;
+    use crate::identity::{KeyType, Purpose, SecurityLevel};
+    use crate::shielded::SerializedAction;
+    use crate::state_transition::identity_create_from_shielded_pool_transition::v0::IdentityCreateFromShieldedPoolTransitionV0;
+    use crate::state_transition::public_key_in_creation::v0::IdentityPublicKeyInCreationV0;
+    use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
+    use platform_value::{platform_value, BinaryData, Bytes32};
+    use serde_json::json;
+
+    fn fixture_action() -> SerializedAction {
+        SerializedAction {
+            nullifier: [0x11; 32],
+            rk: [0x22; 32],
+            cmx: [0x33; 32],
+            encrypted_note: vec![0x44; 216],
+            cv_net: [0x55; 32],
+            spend_auth_sig: [0x66; 64],
+        }
+    }
+
+    fn fixture_public_key() -> IdentityPublicKeyInCreation {
+        IdentityPublicKeyInCreation::V0(IdentityPublicKeyInCreationV0 {
+            id: 7,
+            key_type: KeyType::ECDSA_SECP256K1,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::HIGH,
+            contract_bounds: None,
+            read_only: true,
+            data: BinaryData::new(vec![0x88; 33]),
+            signature: BinaryData::new(vec![0x99; 65]),
+        })
+    }
+
+    pub(crate) fn fixture() -> IdentityCreateFromShieldedPoolTransition {
+        let actions = vec![fixture_action()];
+        // identity_id is derived from the nullifiers, so the wire literal below is
+        // deterministic for this fixture.
+        let identity_id = derive_identity_id_from_actions(&actions);
+        IdentityCreateFromShieldedPoolTransition::V0(IdentityCreateFromShieldedPoolTransitionV0 {
+            public_keys: vec![fixture_public_key()],
+            denomination: 10_000_000_000,
+            actions,
+            anchor: [0x77; 32],
+            proof: vec![0x88; 192],
+            binding_signature: [0x99; 64],
+            send_to_address_on_creation_failure: PlatformAddress::P2pkh([0xa1; 20]),
+            identity_id,
+        })
+    }
+
+    #[test]
+    fn json_round_trip_with_full_wire_shape() {
+        use crate::serialization::JsonConvertible;
+        let original = fixture();
+        let json = original.to_json().expect("to_json");
+        // Sized-int fields whose JSON wire encoding loses size info:
+        // `denomination` (u64), `publicKeys[].id` (u32 KeyID),
+        // `publicKeys[].type`/`purpose`/`securityLevel` (u8 repr enums).
+        // PlatformAddress → hex string in HR / 21 bytes non-HR; `identityId`
+        // → base58 string (Identifier). The value-path assertion locks all
+        // sized variants via explicit suffixes.
+        assert_eq!(
+            json,
+            json!({
+                "$formatVersion": "0",
+                "publicKeys": [{
+                    "$formatVersion": "0",
+                    "id": 7,
+                    "type": 0,
+                    "purpose": 0,
+                    "securityLevel": 2,
+                    "contractBounds": serde_json::Value::Null,
+                    "readOnly": true,
+                    "data": "iIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiI",
+                    "signature": "mZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZk=",
+                }],
+                "denomination": 10_000_000_000u64,
+                "actions": [{
+                    "nullifier": "ERERERERERERERERERERERERERERERERERERERERERE=",
+                    "rk": "IiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiI=",
+                    "cmx": "MzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzM=",
+                    "encryptedNote": "RERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERE",
+                    "cvNet": "VVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVU=",
+                    "spendAuthSig": "ZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZg==",
+                }],
+                "anchor": "d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3c=",
+                "proof": "iIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiI",
+                "bindingSignature": "mZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmQ==",
+                "sendToAddressOnCreationFailure": "00a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+                "identityId": "71Rhgo8fHdyu6FtYEGTHVfGQBB13vE8ehHZ2PWo3F8JS",
+            })
+        );
+        let recovered =
+            IdentityCreateFromShieldedPoolTransition::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn value_round_trip_with_full_wire_shape() {
+        use crate::serialization::ValueConvertible;
+        let original = fixture();
+        let identity_id = match &original {
+            IdentityCreateFromShieldedPoolTransition::V0(v0) => v0.identity_id,
+        };
+        let value = original.to_object().expect("to_object");
+        // Explicit suffixes lock in sized variants: `denomination` u64,
+        // `publicKeys[].id` u32, `type`/`purpose`/`securityLevel` u8.
+        // PlatformAddress non-HR → 21-byte `Value::Bytes` (P2pkh type byte
+        // 0x00); `identityId` → `Value::Identifier`.
+        let mut address_bytes = vec![0x00];
+        address_bytes.extend(vec![0xa1; 20]);
+        assert_eq!(
+            value,
+            platform_value!({
+                "$formatVersion": "0",
+                "publicKeys": [{
+                    "$formatVersion": "0",
+                    "id": 7u32,
+                    "type": 0u8,
+                    "purpose": 0u8,
+                    "securityLevel": 2u8,
+                    "contractBounds": platform_value::Value::Null,
+                    "readOnly": true,
+                    "data": BinaryData::new(vec![0x88; 33]),
+                    "signature": BinaryData::new(vec![0x99; 65]),
+                }],
+                "denomination": 10_000_000_000u64,
+                "actions": [{
+                    "nullifier": Bytes32::new([0x11; 32]),
+                    "rk": Bytes32::new([0x22; 32]),
+                    "cmx": Bytes32::new([0x33; 32]),
+                    "encryptedNote": platform_value::Value::Bytes(vec![0x44; 216]),
+                    "cvNet": Bytes32::new([0x55; 32]),
+                    "spendAuthSig": platform_value::Value::Bytes(vec![0x66; 64]),
+                }],
+                "anchor": Bytes32::new([0x77; 32]),
+                "proof": platform_value::Value::Bytes(vec![0x88; 192]),
+                "bindingSignature": platform_value::Value::Bytes(vec![0x99; 64]),
+                "sendToAddressOnCreationFailure": platform_value::Value::Bytes(address_bytes),
+                "identityId": identity_id,
+            })
+        );
+        let recovered =
+            IdentityCreateFromShieldedPoolTransition::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

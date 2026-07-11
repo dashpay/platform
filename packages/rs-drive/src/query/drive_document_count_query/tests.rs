@@ -1829,7 +1829,6 @@ fn test_count_tree_aggregation_with_empty_child_subtrees() {
 /// picker → tree-type selection (`ProvableCountTree`) → fast-path read.
 #[test]
 fn test_countable_allowing_offset_variant_end_to_end() {
-    use dpp::data_contract::conversion::json::DataContractJsonConversionMethodsV0;
     use dpp::data_contract::document_type::IndexCountability;
 
     let drive = setup_drive_with_initial_state_structure(None);
@@ -1867,9 +1866,13 @@ fn test_countable_allowing_offset_variant_end_to_end() {
         }
     });
 
-    let data_contract =
-        dpp::data_contract::DataContract::from_json(contract_json, false, platform_version)
-            .expect("expected to load contract with string-form countable");
+    // Use canonical Deserialize (no schema validation — see
+    // `data_contract/conversion/serde/mod.rs` for the no-validation-by-default
+    // policy). The earlier `from_json(_, false, _)` legacy method was deleted
+    // when the `_versioned` family collapsed into canonical + `_validated`.
+    let _ = platform_version;
+    let data_contract: dpp::data_contract::DataContract = serde_json::from_value(contract_json)
+        .expect("expected to load contract with string-form countable");
 
     let document_type = data_contract
         .document_type_for_name("person")

@@ -301,11 +301,17 @@ impl IdentityWallet {
                             managed.wallet_id = Some(wallet_id);
                             for (key_id, pub_key) in public_keys {
                                 let key_index = key_id;
-                                managed.add_key(
-                                    pub_key,
-                                    Some((wallet_id, identity_index, key_index)),
-                                    &self.persister,
-                                );
+                                managed
+                                    .add_key(
+                                        pub_key,
+                                        Some((wallet_id, identity_index, key_index)),
+                                        &self.persister,
+                                    )
+                                    .map_err(|e| {
+                                        PlatformWalletError::Persistence(format!(
+                                            "identity key not persisted after registration: {e}"
+                                        ))
+                                    })?;
                             }
                         }
                     }

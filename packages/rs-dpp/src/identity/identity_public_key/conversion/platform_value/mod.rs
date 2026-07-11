@@ -1,56 +1,19 @@
-mod v0;
-use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
-use crate::identity::IdentityPublicKey;
-use crate::version::PlatformVersion;
-use crate::ProtocolError;
-use platform_value::Value;
-pub use v0::*;
-
-impl IdentityPublicKeyPlatformValueConversionMethodsV0 for IdentityPublicKey {
-    fn to_object(&self) -> Result<Value, ProtocolError> {
-        match self {
-            IdentityPublicKey::V0(key) => key.to_object(),
-        }
-    }
-
-    fn to_cleaned_object(&self) -> Result<Value, ProtocolError> {
-        match self {
-            IdentityPublicKey::V0(key) => key.to_cleaned_object(),
-        }
-    }
-
-    fn into_object(self) -> Result<Value, ProtocolError> {
-        match self {
-            IdentityPublicKey::V0(key) => key.into_object(),
-        }
-    }
-
-    fn from_object(
-        value: Value,
-        platform_version: &PlatformVersion,
-    ) -> Result<Self, ProtocolError> {
-        match platform_version
-            .dpp
-            .identity_versions
-            .identity_key_structure_version
-        {
-            0 => IdentityPublicKeyV0::from_object(value, platform_version).map(Into::into),
-            version => Err(ProtocolError::UnknownVersionMismatch {
-                method: "IdentityPublicKey::from_object".to_string(),
-                known_versions: vec![0],
-                received: version,
-            }),
-        }
-    }
-}
+// `IdentityPublicKey` value-side conversion now goes exclusively through
+// the canonical `ValueConvertible` trait (derived on the outer enum). The
+// legacy `IdentityPublicKeyPlatformValueConversionMethodsV0` trait has
+// been deleted: it carried `to_object` / `into_object` that were
+// byte-identical to canonical, plus a `from_object(value, &platform_version)`
+// version-dispatch method that produced identical output to canonical for
+// the only currently-defined V0 (canonical dispatches on the value's own
+// `$formatVersion` tag, which all V0 values carry).
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
-    use crate::identity::{KeyType, Purpose, SecurityLevel};
-    use platform_value::BinaryData;
-    use platform_version::version::LATEST_PLATFORM_VERSION;
+    use crate::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel};
+    use crate::serialization::ValueConvertible;
+    use crate::ProtocolError;
+    use platform_value::{BinaryData, Value};
 
     fn wrapper(disabled_at: Option<u64>) -> IdentityPublicKey {
         IdentityPublicKey::V0(IdentityPublicKeyV0 {
@@ -66,20 +29,33 @@ mod tests {
     }
 
     #[test]
-    fn to_object_delegates_to_v0() {
+    fn to_object_includes_format_version_tag() {
+        // The outer `IdentityPublicKey` is a tagged enum
+        // (`#[serde(tag = "$formatVersion")]`); canonical `to_object`
+        // emits `$formatVersion: "0"` next to the V0 fields.
         let key = wrapper(Some(5));
         let value = key.to_object().expect("to_object");
-        // Should match what V0 produces directly.
-        let IdentityPublicKey::V0(inner) = &key;
-        assert_eq!(value, inner.to_object().unwrap());
+        let map = value.to_map().expect("map");
+        assert!(
+            map.iter().any(
+                |(k, v): &(Value, Value)| k.as_text() == Some("$formatVersion")
+                    && v.as_text() == Some("0")
+            ),
+            "outer enum must surface the $formatVersion tag"
+        );
     }
 
     #[test]
-    fn to_cleaned_object_removes_disabled_at_when_none() {
+    fn to_object_strips_disabled_at_when_none() {
+        // The `skip_serializing_if` attribute on
+        // `IdentityPublicKeyV0::disabled_at` strips the field for
+        // non-disabled keys directly via the canonical `to_object` path.
         let key = wrapper(None);
-        let cleaned = key.to_cleaned_object().expect("to_cleaned_object");
-        let map = cleaned.to_map().expect("map");
-        assert!(!map.iter().any(|(k, _)| k.as_text() == Some("disabledAt")));
+        let value = key.to_object().expect("to_object");
+        let map = value.to_map().expect("map");
+        assert!(!map
+            .iter()
+            .any(|(k, _): &(Value, Value)| k.as_text() == Some("disabledAt")));
     }
 
     #[test]
@@ -94,13 +70,15 @@ mod tests {
     fn from_object_roundtrip_via_wrapper() {
         let key = wrapper(None);
         let value = key.to_object().unwrap();
-        let back = IdentityPublicKey::from_object(value, LATEST_PLATFORM_VERSION).unwrap();
+        // Canonical `ValueConvertible::from_object` dispatches on the
+        // value's `$formatVersion` tag.
+        let back = IdentityPublicKey::from_object(value).unwrap();
         assert_eq!(back, key);
     }
 
     #[test]
     fn from_object_fails_on_non_map() {
-        let result = IdentityPublicKey::from_object(Value::Null, LATEST_PLATFORM_VERSION);
+        let result = IdentityPublicKey::from_object(Value::Null);
         assert!(matches!(result, Err(ProtocolError::ValueError(_))));
     }
 }

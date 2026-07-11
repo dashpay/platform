@@ -429,6 +429,43 @@ struct DashpayProfileStorageListView: View {
     }
 }
 
+// MARK: - PersistentDashpayContactProfile
+
+/// Storage-explorer list of every cached contact profile (a counterparty's
+/// DashPay profile). One row per (owner, contact). Newest update first.
+struct DashpayContactProfileStorageListView: View {
+    let network: Network
+    @Query(sort: \PersistentDashpayContactProfile.lastUpdated, order: .reverse)
+    private var records: [PersistentDashpayContactProfile]
+
+    private var filtered: [PersistentDashpayContactProfile] {
+        records.filter { $0.networkRaw == network.rawValue }
+    }
+
+    var body: some View {
+        let visible = filtered
+        List(visible) { record in
+            NavigationLink(destination: DashpayContactProfileStorageDetailView(record: record)) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(record.displayName ?? "(no display name)")
+                        .font(.body).lineLimit(1)
+                    Text(record.contactIdentityId.toHexString())
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+            }
+        }
+        .navigationTitle("Contact Profiles (\(visible.count))")
+        .overlay {
+            if visible.isEmpty {
+                ContentUnavailableView("No Records", systemImage: "person.crop.circle")
+            }
+        }
+    }
+}
+
 // MARK: - PersistentDashpayContactRequest
 
 /// Storage-explorer list of every DashPay contact-request row.
@@ -514,6 +551,93 @@ struct DashpayContactRequestStorageListView: View {
         let head = data.prefix(4).map { String(format: "%02x", $0) }.joined()
         let tail = data.suffix(4).map { String(format: "%02x", $0) }.joined()
         return "\(head)…\(tail)"
+    }
+}
+
+// MARK: - PersistentDashpayPayment
+
+struct DashpayPaymentStorageListView: View {
+    let network: Network
+    @Query(sort: \PersistentDashpayPayment.createdAt, order: .reverse)
+    private var records: [PersistentDashpayPayment]
+
+    private var scoped: [PersistentDashpayPayment] {
+        records.filter { $0.networkRaw == network.rawValue }
+    }
+
+    var body: some View {
+        let visible = scoped
+        List(visible) { record in
+            NavigationLink(destination: DashpayPaymentStorageDetailView(record: record)) {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Text(record.direction == .sent ? "Sent" : "Received")
+                            .font(.body)
+                        Spacer()
+                        Text(String(format: "%.8f DASH", Double(record.amountDuffs) / 100_000_000))
+                            .font(.system(.caption, design: .monospaced))
+                    }
+                    Text(record.txid)
+                        .font(.system(.caption2, design: .monospaced))
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+            }
+        }
+        .navigationTitle("DashPay Payments (\(visible.count))")
+        .overlay {
+            if visible.isEmpty {
+                ContentUnavailableView(
+                    "No Records",
+                    systemImage: "arrow.left.arrow.right.circle"
+                )
+            }
+        }
+    }
+}
+
+// MARK: - PersistentDashpayIgnoredSender
+
+struct DashpayIgnoredSenderStorageListView: View {
+    let network: Network
+    @Query(sort: \PersistentDashpayIgnoredSender.ignoredAt, order: .reverse)
+    private var records: [PersistentDashpayIgnoredSender]
+
+    private var scoped: [PersistentDashpayIgnoredSender] {
+        records.filter { $0.networkRaw == network.rawValue }
+    }
+
+    var body: some View {
+        let visible = scoped
+        List(visible) { record in
+            NavigationLink(destination: DashpayIgnoredSenderStorageDetailView(record: record)) {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Text("ignored sender")
+                            .font(.body)
+                        Spacer()
+                        Text(record.ignoredAt, style: .date)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    Text(record.ignoredSenderId.toHexString())
+                        .font(.system(.caption2, design: .monospaced))
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+            }
+        }
+        .navigationTitle("Ignored Senders (\(visible.count))")
+        .overlay {
+            if visible.isEmpty {
+                ContentUnavailableView(
+                    "No Records",
+                    systemImage: "person.crop.circle.badge.xmark"
+                )
+            }
+        }
     }
 }
 

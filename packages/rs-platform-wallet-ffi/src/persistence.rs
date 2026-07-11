@@ -7,9 +7,11 @@
 
 use bincode::config;
 use key_wallet::account::account_collection::AccountCollection;
-use key_wallet::account::{Account, AccountType, StandardAccountType};
+use key_wallet::account::{Account, AccountType, BLSAccount, EdDSAAccount, StandardAccountType};
 use key_wallet::bip32::DerivationPath;
 use key_wallet::bip32::ExtendedPubKey;
+use key_wallet::derivation_bls_bip32::ExtendedBLSPubKey;
+use key_wallet::derivation_slip10::ExtendedEd25519PubKey;
 use key_wallet::managed_account::address_pool::{AddressPool, AddressPoolType, PublicKeyType};
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
@@ -22,6 +24,7 @@ use crate::types::{FFINetwork, Network};
 use platform_wallet::changeset::{
     AccountAddressPoolEntry, AccountRegistrationEntry, ClientStartState, ClientWalletStartState,
     Merge, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
+    ProviderKeyAccountEntry, ProviderKeyExtendedPubKey,
 };
 use platform_wallet::wallet::platform_wallet::WalletId;
 use platform_wallet::wallet::{PerAccountPlatformAddressState, PerWalletPlatformAddressState};
@@ -34,7 +37,7 @@ use crate::asset_lock_persistence::{
     build_asset_lock_entries, outpoint_to_bytes, AssetLockEntryFFI,
 };
 use crate::contact_persistence::{
-    free_contact_requests_ffi, ContactRequestFFI, ContactRequestRemovalFFI,
+    free_contact_requests_ffi, ContactIgnoredSenderFFI, ContactRequestFFI, ContactRequestRemovalFFI,
 };
 use crate::core_address_types::{AddressPoolTypeTagFFI, CoreAddressEntryFFI};
 use crate::core_wallet_types::{free_wallet_changeset_ffi, WalletChangeSetFFI};
@@ -46,8 +49,9 @@ use crate::platform_address_types::AddressBalanceEntryFFI;
 use crate::token_persistence::{TokenBalanceRemovalFFI, TokenBalanceUpsertFFI};
 use crate::wallet_registration_persistence::AccountAddressPoolFFI;
 use crate::wallet_restore_types::{
-    AccountSpecFFI, AccountTypeTagFFI, IdentityKeyRestoreFFI, IdentityRestoreEntryFFI,
-    LoadWalletListFreeFn, StandardAccountTypeTagFFI, UnresolvedAssetLockTxRecordFFI,
+    AccountSpecFFI, AccountTypeTagFFI, ContactProfileRestoreEntryFFI, IdentityKeyRestoreFFI,
+    IdentityRestoreEntryFFI, LoadWalletListFreeFn, PaymentRestoreEntryFFI,
+    ProviderPlatformNodeKeyFFI, StandardAccountTypeTagFFI, UnresolvedAssetLockTxRecordFFI,
     UtxoRestoreEntryFFI, WalletRestoreEntryFFI,
 };
 use dpp::address_funds::PlatformAddress;
@@ -84,6 +88,13 @@ pub struct PersistenceCallbacks {
     /// accumulated writes (success → flush / save) or roll them
     /// back (failure → discard), making each Rust `store()` a
     /// single atomic transaction from the client's point of view.
+    ///
+    /// Returns 0 on success. A **non-zero** return means the commit
+    /// itself failed (e.g. the atomic `save()` threw and the staged
+    /// writes were rolled back); `store()` then returns `Err` so the
+    /// caller does not advance state against data that never reached
+    /// durable storage. (Unlike `on_changeset_begin_fn`, this return
+    /// is honored, not advisory.)
     pub on_changeset_end_fn: Option<
         unsafe extern "C" fn(context: *mut c_void, wallet_id: *const u8, success: bool) -> i32,
     >,
@@ -272,8 +283,10 @@ pub struct PersistenceCallbacks {
         ) -> i32,
     >,
     /// Called with a flat `ContactChangeSet` projection — sent /
-    /// incoming / established contact requests in `upserts`, plus
-    /// parallel sent / incoming tombstone arrays.
+    /// incoming / established contact requests in `upserts`, parallel
+    /// sent / incoming removal tombstone arrays, plus an `ignored`
+    /// per-sender ignore-delta array keyed `(owner, sender)` (each row's
+    /// `is_ignored` bit says persist vs delete — ignore vs un-ignore).
     ///
     /// `ContactChangeSet` is a top-level (not per-identity)
     /// changeset, but the callback is still wallet-scoped via
@@ -299,6 +312,8 @@ pub struct PersistenceCallbacks {
             removed_sent_count: usize,
             removed_incoming_ptr: *const ContactRequestRemovalFFI,
             removed_incoming_count: usize,
+            ignored_ptr: *const ContactIgnoredSenderFFI,
+            ignored_count: usize,
         ) -> i32,
     >,
     // ── Shielded (Orchard) persistence ─────────────────────────────────
@@ -664,11 +679,15 @@ impl PlatformWalletPersistence for FFIPersister {
         // window — `AccountSpecFFI.account_xpub_bytes` borrows into
         // it. Same lifetime discipline the prior dedicated callback
         // used.
-        if !changeset.account_registrations.is_empty() {
+        if !changeset.account_registrations.is_empty()
+            || !changeset.provider_key_account_registrations.is_empty()
+        {
             if let Some(cb) = self.callbacks.on_persist_account_registrations_fn {
-                let entries = &changeset.account_registrations;
-                match build_account_specs_for_callback(entries) {
-                    Ok((specs, _xpub_bytes_storage)) => {
+                match build_account_specs_for_callback(
+                    &changeset.account_registrations,
+                    &changeset.provider_key_account_registrations,
+                ) {
+                    Ok((specs, _xpub_bytes_storage, _derived_keys_storage)) => {
                         let result = unsafe {
                             cb(
                                 self.callbacks.context,
@@ -677,11 +696,12 @@ impl PlatformWalletPersistence for FFIPersister {
                                 specs.len(),
                             )
                         };
-                        // Force the spec / byte buffers to live
-                        // until after the callback even though
-                        // their drop happens on scope exit anyway.
+                        // Force the spec / byte buffers / derived-key
+                        // buffers to live until after the callback even
+                        // though their drop happens on scope exit anyway.
                         drop(specs);
                         drop(_xpub_bytes_storage);
+                        drop(_derived_keys_storage);
                         if result != 0 {
                             eprintln!(
                                 "Account registrations persistence callback returned error code {}",
@@ -747,6 +767,7 @@ impl PlatformWalletPersistence for FFIPersister {
                         nonce: entry.funds.nonce,
                         account_index: entry.account_index,
                         address_index: entry.address_index,
+                        as_of_height: entry.funds.as_of_height,
                     })
                     .collect();
                 if !entries.is_empty() {
@@ -1055,15 +1076,35 @@ impl PlatformWalletPersistence for FFIPersister {
                     ));
                 }
                 for (key, established) in &contacts_cs.established {
-                    upserts.push(ContactRequestFFI::from_outgoing(
+                    // Replicate the relationship's broken-channel flag
+                    // and owner-private metadata (alias/note/hidden —
+                    // contactInfo, M3) onto BOTH the outgoing and
+                    // incoming row — they are properties of the
+                    // established pair, not of one direction, so the
+                    // Swift handler persists them on each
+                    // `(owner, contact, is_outgoing)` row.
+                    upserts.push(ContactRequestFFI::from_established_outgoing(
                         key.owner_id.to_buffer(),
                         key.recipient_id.to_buffer(),
                         &established.outgoing_request,
+                        established.payment_channel_broken,
+                        established.alias.as_deref(),
+                        established.note.as_deref(),
+                        established.is_hidden,
+                        &established.accepted_accounts,
                     ));
-                    upserts.push(ContactRequestFFI::from_incoming(
+                    upserts.push(ContactRequestFFI::from_established_incoming(
                         key.owner_id.to_buffer(),
                         key.recipient_id.to_buffer(),
                         &established.incoming_request,
+                        established.payment_channel_broken,
+                        established.alias.as_deref(),
+                        established.note.as_deref(),
+                        established.is_hidden,
+                        // Direction-specific: the contact's account label
+                        // rides only the incoming row.
+                        established.contact_account_label.as_deref(),
+                        &established.accepted_accounts,
                     ));
                 }
                 let removed_sent: Vec<ContactRequestRemovalFFI> = contacts_cs
@@ -1082,7 +1123,26 @@ impl PlatformWalletPersistence for FFIPersister {
                         contact_id: key.sender_id.to_buffer(),
                     })
                     .collect();
-                if !upserts.is_empty() || !removed_sent.is_empty() || !removed_incoming.is_empty() {
+                // Per-sender ignore deltas, keyed `(owner, sender)`. The
+                // `ignored` set projects to rows with `is_ignored == true`
+                // (persist the ignored-sender row); the `unignored` set to
+                // rows with `is_ignored == false` (delete it). Both ride a
+                // single array so the host applies a mixed delta in one
+                // callback.
+                let ignored: Vec<ContactIgnoredSenderFFI> =
+                    contacts_cs
+                        .ignored
+                        .iter()
+                        .map(|(owner, sender)| ContactIgnoredSenderFFI::new(owner, sender, true))
+                        .chain(contacts_cs.unignored.iter().map(|(owner, sender)| {
+                            ContactIgnoredSenderFFI::new(owner, sender, false)
+                        }))
+                        .collect();
+                if !upserts.is_empty()
+                    || !removed_sent.is_empty()
+                    || !removed_incoming.is_empty()
+                    || !ignored.is_empty()
+                {
                     let result = unsafe {
                         cb(
                             self.callbacks.context,
@@ -1105,6 +1165,12 @@ impl PlatformWalletPersistence for FFIPersister {
                                 removed_incoming.as_ptr()
                             },
                             removed_incoming.len(),
+                            if ignored.is_empty() {
+                                std::ptr::null()
+                            } else {
+                                ignored.as_ptr()
+                            },
+                            ignored.len(),
                         )
                     };
                     // Release every heap-allocated payload before the
@@ -1449,6 +1515,16 @@ impl PlatformWalletPersistence for FFIPersister {
             let result = unsafe { cb(self.callbacks.context, wallet_id.as_ptr(), round_success) };
             if result != 0 {
                 eprintln!("Changeset-end callback returned error code {}", result);
+                // The end callback is where the client COMMITS the round (e.g.
+                // the SwiftData atomic `save()`). A non-zero return means the
+                // commit failed and the staged writes were rolled back — the
+                // round never reached durable storage. Treat it as a
+                // persistence failure so `store()` returns `Err` and the caller
+                // does NOT advance / clear its in-memory state (pending queues,
+                // cleared drain entries, ignored-sender deltas) against data
+                // that was dropped. Otherwise the failure is silent and the
+                // dropped writes resurface or are lost with no signal.
+                round_success = false;
             }
         }
 
@@ -1458,7 +1534,9 @@ impl PlatformWalletPersistence for FFIPersister {
             ));
         }
 
-        // Merge into pending changesets.
+        // Merge into pending changesets. No secret rides the changeset any
+        // more — the client derives identity keys on demand from the Keychain
+        // seed at the breadcrumb path, so nothing here needs scrubbing.
         let mut pending = self.pending.write();
         pending
             .entry(wallet_id)
@@ -2220,6 +2298,10 @@ fn build_account_spec_ffi(account_type: &AccountType, xpub_bytes: &[u8]) -> Acco
         friend_identity_id: [0u8; 32],
         account_xpub_bytes: xpub_bytes.as_ptr(),
         account_xpub_bytes_len: xpub_bytes.len(),
+        // Set by `build_account_specs_for_callback` for the
+        // `ProviderPlatformKeys` entry; null/0 for every other account.
+        derived_platform_node_keys: std::ptr::null(),
+        derived_platform_node_keys_count: 0,
     };
     // The producer side casts each `AccountTypeTagFFI` /
     // `StandardAccountTypeTagFFI` variant to `u8` because both fields
@@ -2313,28 +2395,94 @@ fn build_account_spec_ffi(account_type: &AccountType, xpub_bytes: &[u8]) -> Acco
 }
 
 /// Build the `Vec<AccountSpecFFI>` array for
-/// `on_persist_account_registrations_fn` plus the parallel
-/// `Vec<Vec<u8>>` of bincoded xpub byte buffers each spec borrows
-/// from. The two Vecs share lifetime — caller drops both after the
-/// callback returns.
+/// `on_persist_account_registrations_fn` plus the parallel storage each
+/// spec borrows into:
+/// 1. `Vec<Vec<u8>>` — bincoded xpub byte buffers
+///    (`account_xpub_bytes`).
+/// 2. `Vec<Vec<ProviderPlatformNodeKeyFFI>>` — one inner Vec per
+///    provider entry holding its pre-derived platform-node keys
+///    (`derived_platform_node_keys`); empty for the BLS operator entry
+///    and for every ECDSA account.
+///
+/// All three share lifetime — the caller must keep them alive until
+/// after the callback returns.
+#[allow(clippy::type_complexity)]
 fn build_account_specs_for_callback(
     entries: &[AccountRegistrationEntry],
-) -> Result<(Vec<AccountSpecFFI>, Vec<Vec<u8>>), String> {
-    // Pre-encode every xpub once so the spec slot can borrow the
-    // pointer + length without a self-referential lifetime trick.
-    let xpub_buffers: Vec<Vec<u8>> = entries
+    provider_entries: &[ProviderKeyAccountEntry],
+) -> Result<
+    (
+        Vec<AccountSpecFFI>,
+        Vec<Vec<u8>>,
+        Vec<Vec<ProviderPlatformNodeKeyFFI>>,
+    ),
+    String,
+> {
+    // Pre-encode every extended public key once so each spec slot can
+    // borrow the pointer + length without a self-referential lifetime
+    // trick. ECDSA accounts encode their secp256k1 `ExtendedPubKey`;
+    // provider key accounts (BLS operator / EdDSA platform node)
+    // encode their own-curve extended public key into the same slot —
+    // the `type_tag` disambiguates the decode on the restore side.
+    let mut xpub_buffers: Vec<Vec<u8>> = Vec::with_capacity(entries.len() + provider_entries.len());
+    for entry in entries {
+        let bytes = bincode::encode_to_vec(entry.account_xpub, config::standard())
+            .map_err(|e| format!("failed to encode account xpub: {}", e))?;
+        xpub_buffers.push(bytes);
+    }
+    for entry in provider_entries {
+        let bytes = match &entry.extended_public_key {
+            ProviderKeyExtendedPubKey::Bls(key) => bincode::encode_to_vec(key, config::standard())
+                .map_err(|e| format!("failed to encode provider BLS xpub: {}", e))?,
+            ProviderKeyExtendedPubKey::EdDSA(key) => {
+                bincode::encode_to_vec(key, config::standard())
+                    .map_err(|e| format!("failed to encode provider EdDSA xpub: {}", e))?
+            }
+        };
+        xpub_buffers.push(bytes);
+    }
+
+    // Pre-derived platform-node key storage, index-aligned to
+    // `provider_entries`. Built to completion BEFORE any spec borrows a
+    // pointer into it so the inner Vecs never move under a live pointer.
+    let derived_storage: Vec<Vec<ProviderPlatformNodeKeyFFI>> = provider_entries
         .iter()
         .map(|entry| {
-            bincode::encode_to_vec(entry.account_xpub, config::standard())
-                .map_err(|e| format!("failed to encode account xpub: {}", e))
+            entry
+                .derived_platform_node_keys
+                .iter()
+                .map(|k| ProviderPlatformNodeKeyFFI {
+                    index: k.index,
+                    public_key: k.public_key,
+                    node_id: k.node_id,
+                })
+                .collect()
         })
-        .collect::<Result<_, _>>()?;
-    let specs: Vec<AccountSpecFFI> = entries
-        .iter()
-        .zip(xpub_buffers.iter())
-        .map(|(entry, bytes)| build_account_spec_ffi(&entry.account_type, bytes))
         .collect();
-    Ok((specs, xpub_buffers))
+
+    let mut specs: Vec<AccountSpecFFI> = Vec::with_capacity(xpub_buffers.len());
+    let mut idx = 0;
+    for entry in entries {
+        specs.push(build_account_spec_ffi(
+            &entry.account_type,
+            &xpub_buffers[idx],
+        ));
+        idx += 1;
+    }
+    for (p_idx, entry) in provider_entries.iter().enumerate() {
+        let mut spec = build_account_spec_ffi(&entry.account_type, &xpub_buffers[idx]);
+        // Point at the pre-built (stable) derived-key storage for this
+        // provider entry. Empty for the BLS operator account, so its
+        // spec keeps the null/0 default from `build_account_spec_ffi`.
+        let rows = &derived_storage[p_idx];
+        if !rows.is_empty() {
+            spec.derived_platform_node_keys = rows.as_ptr();
+            spec.derived_platform_node_keys_count = rows.len();
+        }
+        specs.push(spec);
+        idx += 1;
+    }
+    Ok((specs, xpub_buffers, derived_storage))
 }
 
 /// Build the `Vec<AccountAddressPoolFFI>` array for
@@ -2422,6 +2570,22 @@ fn build_address_pools_for_callback(
 /// Build a single `CoreAddressEntryFFI` from an `AddressInfo`,
 /// pushing the owned (address, path) c-strings into `owned_strings`
 /// so they outlive the callback window.
+///
+/// Recover the network an `Address` renders for. `Address` no longer exposes its network
+/// directly (the prefix is shared across testnet/devnet and legacy-regtest), but for the
+/// bech32m platform-payment addresses rendered here the prefix is decisive, so probing
+/// yields the correct HRP (mainnet `ds`, testnet/devnet `tb`, regtest `dsrt`).
+fn address_display_network(address: &dashcore::Address) -> dashcore::Network {
+    let unchecked = address.as_unchecked();
+    if unchecked.is_valid_for_network(dashcore::Network::Mainnet) {
+        dashcore::Network::Mainnet
+    } else if unchecked.is_valid_for_network(dashcore::Network::Testnet) {
+        dashcore::Network::Testnet
+    } else {
+        dashcore::Network::Regtest
+    }
+}
+
 fn build_core_address_entry_ffi(
     info: &AddressInfo,
     pool_type_tag: u8,
@@ -2433,15 +2597,7 @@ fn build_core_address_entry_ffi(
     // PlatformAddress conversion fails (only P2PKH / P2SH supported)
     // fall back to base58check so the address still surfaces.
     let rendered_address = if is_platform_payment {
-        let network = if info
-            .address
-            .as_unchecked()
-            .is_valid_for_network(Network::Mainnet)
-        {
-            Network::Mainnet
-        } else {
-            Network::Testnet
-        };
+        let network = address_display_network(&info.address);
         let converted: Result<PlatformAddress, _> = PlatformAddress::try_from(info.address.clone());
         converted
             .map(|p| p.to_bech32m_string(network))
@@ -2654,15 +2810,7 @@ fn build_address_pools_from_derived(
             // bech32m; everything else base58check (matching
             // `build_core_address_entry_ffi`'s logic).
             let rendered_address = if is_platform_payment {
-                let network = if d
-                    .address
-                    .as_unchecked()
-                    .is_valid_for_network(Network::Mainnet)
-                {
-                    Network::Mainnet
-                } else {
-                    Network::Testnet
-                };
+                let network = address_display_network(&d.address);
                 let converted: Result<PlatformAddress, _> =
                     PlatformAddress::try_from(d.address.clone());
                 converted
@@ -2807,6 +2955,68 @@ fn build_wallet_start_state(
         };
         let xpub_bytes =
             unsafe { slice_from_raw(spec.account_xpub_bytes, spec.account_xpub_bytes_len) };
+
+        // Provider key-material accounts (BLS operator keys / EdDSA
+        // platform node keys) live in dedicated `Option` fields on the
+        // collection and carry a non-secp256k1 extended public key in
+        // the same `account_xpub_bytes` slot. Rebuild them watch-only
+        // via the type-specific `new` + insert methods rather than the
+        // ECDSA `Account::from_xpub` / `insert` path (which would fail
+        // to decode the bytes and reject the provider `AccountType`).
+        match account_type {
+            AccountType::ProviderOperatorKeys => {
+                let (bls_pubkey, _): (ExtendedBLSPubKey, usize) =
+                    bincode::decode_from_slice(xpub_bytes, config::standard()).map_err(|e| {
+                        PersistenceError::backend(format!(
+                            "failed to decode provider BLS xpub: {}",
+                            e
+                        ))
+                    })?;
+                let bls_account = BLSAccount::new(
+                    Some(entry.wallet_id.to_vec()),
+                    account_type,
+                    bls_pubkey,
+                    network,
+                )
+                .map_err(|e| {
+                    PersistenceError::backend(format!("BLSAccount::new failed: {:?}", e))
+                })?;
+                accounts.insert_bls_account(bls_account).map_err(|e| {
+                    PersistenceError::backend(format!(
+                        "AccountCollection::insert_bls_account failed: {}",
+                        e
+                    ))
+                })?;
+                continue;
+            }
+            AccountType::ProviderPlatformKeys => {
+                let (ed_pubkey, _): (ExtendedEd25519PubKey, usize) =
+                    bincode::decode_from_slice(xpub_bytes, config::standard()).map_err(|e| {
+                        PersistenceError::backend(format!(
+                            "failed to decode provider EdDSA xpub: {}",
+                            e
+                        ))
+                    })?;
+                let eddsa_account = EdDSAAccount::new(
+                    Some(entry.wallet_id.to_vec()),
+                    account_type,
+                    ed_pubkey,
+                    network,
+                )
+                .map_err(|e| {
+                    PersistenceError::backend(format!("EdDSAAccount::new failed: {:?}", e))
+                })?;
+                accounts.insert_eddsa_account(eddsa_account).map_err(|e| {
+                    PersistenceError::backend(format!(
+                        "AccountCollection::insert_eddsa_account failed: {}",
+                        e
+                    ))
+                })?;
+                continue;
+            }
+            _ => {}
+        }
+
         let (account_xpub, _): (ExtendedPubKey, usize) =
             bincode::decode_from_slice(xpub_bytes, config::standard()).map_err(|e| {
                 PersistenceError::backend(format!("failed to decode account xpub: {}", e))
@@ -3067,6 +3277,9 @@ fn build_wallet_start_state(
             friend_identity_id: u.friend_identity_id,
             account_xpub_bytes: std::ptr::null(),
             account_xpub_bytes_len: 0,
+            // Irrelevant to `account_type_from_spec` routing.
+            derived_platform_node_keys: std::ptr::null(),
+            derived_platform_node_keys_count: 0,
         };
         // Skip-and-continue is correct ONLY for the legacy
         // `IdentityAuthentication{Ecdsa,Bls}` tag bytes (15 / 16)
@@ -3340,6 +3553,10 @@ fn build_wallet_start_state(
             dash_sdk::platform::address_sync::AddressFunds {
                 nonce: persisted.nonce,
                 balance: persisted.balance,
+                // Height pin round-trip: rows persisted before the pin
+                // existed load as 0 ("unknown provenance") and yield to
+                // the first pinned absolute — the self-healing path.
+                as_of_height: persisted.as_of_height,
             },
         );
     }
@@ -3421,9 +3638,8 @@ fn build_wallet_start_state(
 /// side), so the restored `Identity.public_keys` map is populated at
 /// load time. An identity with no persisted keys (e.g. an in-flight
 /// registration whose key-persist round hasn't completed) loads with
-/// an empty map and gets refreshed on the next sync round — same
-/// degraded-but-usable behaviour as before this change for that
-/// narrow case.
+/// an empty map and gets refreshed on the next sync round —
+/// degraded-but-usable for that narrow case.
 /// Rebuild the `unused_asset_locks` map carried on
 /// [`ClientWalletStartState`] from the `tracked_asset_locks` slice the
 /// Swift load callback hands back. Mirrors the encoding used by
@@ -3626,10 +3842,384 @@ fn build_wallet_identity_bucket(
         managed.wallet_id = Some(entry.wallet_id);
         managed.dpns_names = dpns_names;
         managed.contested_dpns_names = contested_dpns_names;
+        unsafe { restore_dashpay_contacts(spec, &identifier, &mut managed) };
+        unsafe { restore_dashpay_payments(spec, &mut managed) };
+        unsafe { restore_dashpay_ignored(spec, &mut managed) };
+        unsafe { restore_contact_profiles(spec, &mut managed) };
         bucket.insert(spec.identity_index, managed);
     }
 
     Ok(bucket)
+}
+
+/// Rebuild the per-identity DashPay payment history (`dashpay_payments`)
+/// from the persisted SwiftData rows at load (H1).
+///
+/// Without this the in-memory map starts empty and only *Received*
+/// entries are re-derived from UTXOs by the reconcile sweep, so *Sent*
+/// entries (with their user memos) vanish from the authoritative model
+/// on every relaunch. Direct map inserts, NO persister round — the rows
+/// ARE the persisted state.
+///
+/// # Safety
+///
+/// `spec.payments` must be either null or point at `spec.payments_count`
+/// valid `PaymentRestoreEntryFFI` rows whose `txid`/`memo` c-strings
+/// Swift owns for the duration of the load callback.
+unsafe fn restore_dashpay_payments(spec: &IdentityRestoreEntryFFI, managed: &mut ManagedIdentity) {
+    if spec.payments.is_null() || spec.payments_count == 0 {
+        return;
+    }
+    let rows = slice::from_raw_parts(spec.payments, spec.payments_count);
+    apply_payment_rows(rows, managed);
+}
+
+/// Rebuild the per-identity ignored-sender set (`ignored_senders`) from
+/// the persisted rows at load.
+///
+/// Without this the ignore set starts empty on every relaunch, so a
+/// previously-ignored sender's still-on-platform immutable
+/// `contactRequest` documents re-ingest on the next sync sweep and the
+/// ignored sender resurfaces. Direct set inserts, NO persister round —
+/// the rows ARE the persisted state. Much simpler than the contact-row
+/// restore: each row is a bare 32-byte sender id (the host only persists
+/// senders that are currently ignored, so un-ignored ones simply don't
+/// appear here).
+///
+/// # Safety
+///
+/// `spec.ignored_senders` must be either null or point at
+/// `spec.ignored_senders_count` valid `[u8; 32]` id arrays.
+unsafe fn restore_dashpay_ignored(spec: &IdentityRestoreEntryFFI, managed: &mut ManagedIdentity) {
+    if spec.ignored_senders.is_null() || spec.ignored_senders_count == 0 {
+        return;
+    }
+    let rows = slice::from_raw_parts(spec.ignored_senders, spec.ignored_senders_count);
+    apply_ignored_rows(rows, managed);
+}
+
+/// Fold a slice of 32-byte sender ids into the managed identity's ignored set.
+/// Split out from [`restore_dashpay_ignored`] so the decode is
+/// unit-testable without a full `IdentityRestoreEntryFFI`.
+fn apply_ignored_rows(rows: &[[u8; 32]], managed: &mut ManagedIdentity) {
+    for row in rows {
+        managed.apply_ignored_sender(Identifier::from(*row));
+    }
+}
+
+/// Fold a slice of [`PaymentRestoreEntryFFI`] rows into
+/// the managed identity's payments map. Split out from [`restore_dashpay_payments`]
+/// so the discriminant mapping + c-string decode is unit-testable
+/// without a full `IdentityRestoreEntryFFI`.
+///
+/// # Safety
+/// Each row's `txid`/`memo` pointers must be null or point at valid
+/// NUL-terminated c-strings for the call's duration.
+unsafe fn apply_payment_rows(rows: &[PaymentRestoreEntryFFI], managed: &mut ManagedIdentity) {
+    use platform_wallet::wallet::identity::{PaymentDirection, PaymentEntry, PaymentStatus};
+
+    for row in rows {
+        if row.txid.is_null() {
+            continue;
+        }
+        let txid = match std::ffi::CStr::from_ptr(row.txid).to_str() {
+            Ok(s) => s.to_string(),
+            Err(_) => continue,
+        };
+        let direction = match row.direction_raw {
+            0 => PaymentDirection::Sent,
+            1 => PaymentDirection::Received,
+            other => {
+                tracing::warn!(
+                    direction = other,
+                    "skipping payment row with unknown direction"
+                );
+                continue;
+            }
+        };
+        let status = match row.status_raw {
+            0 => PaymentStatus::Pending,
+            1 => PaymentStatus::Confirmed,
+            2 => PaymentStatus::Failed,
+            other => {
+                tracing::warn!(status = other, "skipping payment row with unknown status");
+                continue;
+            }
+        };
+        let memo = if row.memo.is_null() {
+            None
+        } else {
+            CStr::from_ptr(row.memo).to_str().ok().map(str::to_string)
+        };
+        managed.dashpay_payments_mut().insert(
+            txid,
+            PaymentEntry {
+                counterparty_id: Identifier::from(row.counterparty_id),
+                amount_duffs: row.amount_duffs,
+                memo,
+                direction,
+                status,
+            },
+        );
+    }
+}
+
+/// Rebuild the per-identity cached **contact** profiles
+/// (`contact_profiles`) from the persisted SwiftData rows at load.
+///
+/// Without this the contact-profile cache starts empty on every
+/// relaunch, so the requests/contacts UI shows raw identity ids until
+/// the next profile sweep re-fetches every contact — a visible
+/// cold-start flicker plus write amplification. Direct map inserts, NO
+/// persister round — the rows ARE the persisted state. Only **present**
+/// profiles are persisted, so every restored entry rebuilds as
+/// `ContactProfileEntry { profile: Some(..), checked_at_ms }`; the
+/// confirmed-absent negative cache rebuilds on the next sweep.
+///
+/// # Safety
+///
+/// `spec.contact_profiles` must be either null or point at
+/// `spec.contact_profiles_count` valid [`ContactProfileRestoreEntryFFI`]
+/// rows whose four c-strings Swift owns for the duration of the load
+/// callback.
+unsafe fn restore_contact_profiles(spec: &IdentityRestoreEntryFFI, managed: &mut ManagedIdentity) {
+    if spec.contact_profiles.is_null() || spec.contact_profiles_count == 0 {
+        return;
+    }
+    let rows = slice::from_raw_parts(spec.contact_profiles, spec.contact_profiles_count);
+    apply_contact_profile_rows(rows, managed);
+}
+
+/// Maximum cached `avatarUrl` length — mirrors the
+/// `MAX_AVATAR_URL_LEN` gate `platform-wallet`'s profile fetch applies
+/// before caching (DIP-15's 2048-char cap).
+const MAX_AVATAR_URL_LEN: usize = 2048;
+
+/// Defensive re-validation of a cached `avatarUrl` at restore. The
+/// fetch path already dropped non-`https://` / over-length URLs before
+/// caching ([`platform_wallet`]'s `is_valid_avatar_url`), but the URL is
+/// attacker-controlled public data and the UI will load it, so we
+/// re-apply the same `https://`-only, length-capped rule on the way back
+/// in. A URL that fails is dropped to `None` (the rest of the profile is
+/// still restored) rather than discarding the whole row.
+fn is_valid_avatar_url(url: &str) -> bool {
+    !url.is_empty() && url.len() <= MAX_AVATAR_URL_LEN && url.starts_with("https://")
+}
+
+/// Fold a slice of [`ContactProfileRestoreEntryFFI`] rows into
+/// the managed identity's contact-profile cache. Split out from
+/// [`restore_contact_profiles`] so the c-string decode + avatar-url
+/// re-validation is unit-testable without a full
+/// [`IdentityRestoreEntryFFI`].
+///
+/// # Safety
+/// Each row's four string pointers must be null or point at valid
+/// NUL-terminated c-strings for the call's duration.
+unsafe fn apply_contact_profile_rows(
+    rows: &[ContactProfileRestoreEntryFFI],
+    managed: &mut ManagedIdentity,
+) {
+    use platform_wallet::{ContactProfileEntry, DashPayProfile};
+
+    let opt_string = |ptr: *const std::os::raw::c_char| -> Option<String> {
+        if ptr.is_null() {
+            None
+        } else {
+            CStr::from_ptr(ptr).to_str().ok().map(str::to_string)
+        }
+    };
+
+    for row in rows {
+        let avatar_hash = if row.avatar_hash_present {
+            Some(row.avatar_hash)
+        } else {
+            None
+        };
+        let avatar_fingerprint = if row.avatar_fingerprint_present {
+            Some(row.avatar_fingerprint)
+        } else {
+            None
+        };
+        // Re-validate the public, attacker-controlled avatar URL; drop
+        // just the URL field (keep the rest of the profile) if it no
+        // longer passes the `https://` / length rule.
+        let avatar_url = opt_string(row.avatar_url).filter(|u| is_valid_avatar_url(u));
+
+        managed.dashpay_contact_profiles_mut().insert(
+            Identifier::from(row.contact_id),
+            ContactProfileEntry {
+                profile: Some(DashPayProfile {
+                    display_name: opt_string(row.display_name),
+                    bio: opt_string(row.bio),
+                    avatar_url,
+                    avatar_hash,
+                    avatar_fingerprint,
+                    public_message: opt_string(row.public_message),
+                }),
+                checked_at_ms: row.checked_at_ms,
+            },
+        );
+    }
+}
+
+/// Rebuild the per-identity DashPay contact state from the SwiftData
+/// contact rows the load callback hands back: pending sent / incoming
+/// requests, and established contacts (a pair of rows per contact —
+/// one per direction) with their owner-private metadata
+/// (alias / note / hidden — contactInfo, M3) and broken-channel flag.
+///
+/// Direct map inserts, NO persister rounds — this runs inside `load()`
+/// and the rows ARE the persisted state. Without this restore,
+/// contacts only re-derive from chain on the first sync sweep, which
+/// (a) leaves the Contacts UI empty on offline launches and (b) wipes
+/// contactInfo metadata during the DIP-15 deferred-publish window:
+/// the re-establish round emitted `alias = None` over the SwiftData
+/// rows (the M3 part-3 relaunch-durability gap).
+///
+/// # Safety
+///
+/// `spec.contacts` must be either null or point at
+/// `spec.contacts_count` valid `ContactRequestFFI` rows whose byte
+/// buffers and strings Swift owns for the duration of the load
+/// callback.
+unsafe fn restore_dashpay_contacts(
+    spec: &IdentityRestoreEntryFFI,
+    owner_id: &Identifier,
+    managed: &mut ManagedIdentity,
+) {
+    if spec.contacts.is_null() || spec.contacts_count == 0 {
+        return;
+    }
+    let rows = slice::from_raw_parts(spec.contacts, spec.contacts_count);
+    apply_contact_rows(rows, owner_id, managed);
+}
+
+/// Pair the per-direction [`ContactRequestFFI`] rows back into the
+/// `ManagedIdentity`'s `sent` / `incoming` / `established` contact maps.
+/// Extracted from [`restore_dashpay_contacts`] so the FFI→Rust decode is
+/// unit-testable against rows built by the persist constructors (the other
+/// restore families have the same `apply_*_rows` seam). The persist side is
+/// tested field-by-field; this is the read-back half — where a dropped
+/// optional or a swapped key index would otherwise be invisible.
+///
+/// # Safety
+/// Each row's `*_ptr`/`*_len` byte buffers and C strings must be valid for
+/// the call (Swift owns them during load; tests own them via the persist
+/// constructors).
+unsafe fn apply_contact_rows(
+    rows: &[ContactRequestFFI],
+    owner_id: &Identifier,
+    managed: &mut ManagedIdentity,
+) {
+    use platform_wallet::{ContactRequest, EstablishedContact};
+
+    /// Per-contact accumulator while pairing the direction rows.
+    #[derive(Default)]
+    struct PairAccumulator {
+        outgoing: Option<ContactRequest>,
+        incoming: Option<ContactRequest>,
+        payment_channel_broken: bool,
+        alias: Option<String>,
+        note: Option<String>,
+        is_hidden: bool,
+        contact_account_label: Option<String>,
+        accepted_accounts: Vec<u32>,
+    }
+
+    let opt_string = |ptr: *const std::os::raw::c_char| -> Option<String> {
+        if ptr.is_null() {
+            None
+        } else {
+            Some(std::ffi::CStr::from_ptr(ptr).to_string_lossy().into_owned())
+        }
+    };
+    let opt_bytes = |ptr: *const u8, len: usize| -> Option<Vec<u8>> {
+        if ptr.is_null() || len == 0 {
+            None
+        } else {
+            Some(slice::from_raw_parts(ptr, len).to_vec())
+        }
+    };
+    let u32s = |ptr: *const u32, len: usize| -> Vec<u32> {
+        if ptr.is_null() || len == 0 {
+            Vec::new()
+        } else {
+            slice::from_raw_parts(ptr, len).to_vec()
+        }
+    };
+
+    let mut by_contact: BTreeMap<[u8; 32], PairAccumulator> = BTreeMap::new();
+    for row in rows {
+        let contact_id = Identifier::from(row.contact_id);
+        let (sender_id, recipient_id) = if row.is_outgoing {
+            (*owner_id, contact_id)
+        } else {
+            (contact_id, *owner_id)
+        };
+        let mut request = ContactRequest::new(
+            sender_id,
+            recipient_id,
+            row.sender_key_index,
+            row.recipient_key_index,
+            row.account_reference,
+            opt_bytes(row.encrypted_public_key, row.encrypted_public_key_len).unwrap_or_default(),
+            row.core_height_created_at,
+            row.created_at,
+        );
+        request.encrypted_account_label =
+            opt_bytes(row.encrypted_account_label, row.encrypted_account_label_len);
+        request.auto_accept_proof = opt_bytes(row.auto_accept_proof, row.auto_accept_proof_len);
+
+        let acc = by_contact.entry(row.contact_id).or_default();
+        if row.is_outgoing {
+            acc.outgoing = Some(request);
+        } else {
+            acc.incoming = Some(request);
+            // The contact's account label is direction-specific — it rides
+            // ONLY the incoming row, so take it from that row (never the
+            // outgoing one, which may carry a label we sent).
+            acc.contact_account_label = opt_string(row.contact_account_label);
+        }
+        // Relationship-level properties are replicated onto both rows
+        // by the persist projection; OR / first-non-null is the safe
+        // re-fold.
+        acc.payment_channel_broken |= row.payment_channel_broken;
+        acc.is_hidden |= row.is_hidden;
+        if acc.alias.is_none() {
+            acc.alias = opt_string(row.alias);
+        }
+        if acc.note.is_none() {
+            acc.note = opt_string(row.note);
+        }
+        // Relationship-level, replicated onto both rows — take the first
+        // non-empty projection.
+        if acc.accepted_accounts.is_empty() {
+            acc.accepted_accounts = u32s(row.accepted_accounts, row.accepted_accounts_len);
+        }
+    }
+
+    for (contact_id_bytes, acc) in by_contact {
+        let contact_id = Identifier::from(contact_id_bytes);
+        match (acc.outgoing, acc.incoming) {
+            (Some(outgoing), Some(incoming)) => {
+                let mut contact = EstablishedContact::new(contact_id, outgoing, incoming);
+                contact.alias = acc.alias;
+                contact.note = acc.note;
+                contact.is_hidden = acc.is_hidden;
+                contact.payment_channel_broken = acc.payment_channel_broken;
+                contact.contact_account_label = acc.contact_account_label;
+                contact.accepted_accounts = acc.accepted_accounts;
+                managed.apply_established_contact(contact);
+            }
+            (Some(outgoing), None) => {
+                managed.apply_sent_contact_request(outgoing);
+            }
+            (None, Some(incoming)) => {
+                managed.apply_incoming_contact_request(incoming);
+            }
+            (None, None) => unreachable!("accumulator entries always hold at least one row"),
+        }
+    }
 }
 
 /// Translate the `keys` array hanging off an `IdentityRestoreEntryFFI`
@@ -4209,6 +4799,68 @@ mod tests {
         ManagedWalletInfo::from_wallet(&wallet, 0)
     }
 
+    /// `account_xpub` must survive the persist→restore byte round-trip — it is
+    /// the key the seed-binding self-check (`PlatformWallet::verify_seed_binds`)
+    /// later compares the resolver-derived xpub against, so a corrupted restore
+    /// would silently make a correct seed fail to bind. This drives the exact
+    /// production chain: the store side bincode-encodes the account xpub
+    /// (`build_account_specs_for_callback`), and the restore side decodes it from
+    /// `AccountSpecFFI.account_xpub_bytes` and rebuilds the account via
+    /// `Account::from_xpub` (`build_wallet_start_state`). Pins that both ends use
+    /// the same bincode config and that `Account::from_xpub` preserves the xpub.
+    /// (Asserted here at the FFI persister layer, where the bytes round-trip
+    /// actually happens — `load_from_persistor` itself only sees decoded structs.)
+    #[test]
+    fn account_xpub_survives_persist_restore_round_trip() {
+        let mnemonic = Mnemonic::from_phrase(
+            "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+            Language::English,
+        )
+        .expect("static BIP-39 vector must parse");
+        let seed = mnemonic.to_seed("");
+        let wallet = Wallet::from_seed_bytes(
+            seed,
+            Network::Testnet,
+            key_wallet::wallet::initialization::WalletAccountCreationOptions::Default,
+        )
+        .expect("seeded wallet");
+        let wallet_id = wallet.wallet_id;
+        let source = wallet
+            .get_bip44_account(0)
+            .expect("a Default-created wallet has BIP44 account 0");
+        let account_type = source.account_type;
+        let expected_xpub = source.account_xpub;
+
+        // Store side: encode the xpub exactly as the callback producer does.
+        let xpub_bytes =
+            bincode::encode_to_vec(expected_xpub, config::standard()).expect("encode account xpub");
+        // The C struct the host hands back on restore.
+        let spec = build_account_spec_ffi(&account_type, &xpub_bytes);
+
+        // Restore side: reconstruct the account type + decode the xpub exactly as
+        // `build_wallet_start_state` does, then rebuild via `Account::from_xpub`.
+        let restored_type =
+            account_type_from_spec(&spec).expect("account type tag round-trips through the spec");
+        let raw = unsafe { slice_from_raw(spec.account_xpub_bytes, spec.account_xpub_bytes_len) };
+        let (decoded_xpub, _): (ExtendedPubKey, usize) =
+            bincode::decode_from_slice(raw, config::standard()).expect("decode account xpub");
+        assert_eq!(
+            decoded_xpub, expected_xpub,
+            "the bincode round-trip must preserve the account xpub byte-for-byte"
+        );
+        let restored = Account::from_xpub(
+            Some(wallet_id),
+            restored_type,
+            decoded_xpub,
+            Network::Testnet,
+        )
+        .expect("Account::from_xpub on the restored xpub must succeed");
+        assert_eq!(
+            restored.account_xpub, expected_xpub,
+            "the restored account's xpub must equal the original — the key verify_seed_binds binds against"
+        );
+    }
+
     /// Helper: a minimum valid consensus-encodable transaction —
     /// version 1, one synthetic input, one zero-value output. The
     /// restoration helper only cares that the bytes round-trip
@@ -4230,5 +4882,346 @@ mod tests {
             }],
             special_transaction_payload: None,
         }
+    }
+
+    /// **H1 — DashPay payment history is restored at load.**
+    /// The fold must rebuild `dashpay_payments` (Sent AND Received, with
+    /// memos) from the persisted rows, mapping the direction/status
+    /// discriminants and decoding the c-strings. Without this restore step
+    /// there is no payment restore at all, so the in-memory map starts empty
+    /// and Sent entries vanish on relaunch.
+    #[test]
+    fn restore_payments_fold_rebuilds_sent_and_received() {
+        use platform_wallet::wallet::identity::{PaymentDirection, PaymentStatus};
+
+        let owner = IdentityV0 {
+            id: Identifier::from([0xAA; 32]),
+            public_keys: std::collections::BTreeMap::new(),
+            balance: 0,
+            revision: 0,
+        };
+        let mut managed = ManagedIdentity::new(Identity::V0(owner), 0);
+
+        // Keep the CStrings alive for the duration of the call.
+        let sent_txid = std::ffi::CString::new("aa".repeat(32)).unwrap();
+        let sent_memo = std::ffi::CString::new("lunch").unwrap();
+        let recv_txid = std::ffi::CString::new("bb".repeat(32)).unwrap();
+
+        let rows = [
+            PaymentRestoreEntryFFI {
+                txid: sent_txid.as_ptr(),
+                counterparty_id: [0xBB; 32],
+                amount_duffs: 1_000_000,
+                direction_raw: 0, // Sent
+                status_raw: 0,    // Pending
+                memo: sent_memo.as_ptr(),
+            },
+            PaymentRestoreEntryFFI {
+                txid: recv_txid.as_ptr(),
+                counterparty_id: [0xCC; 32],
+                amount_duffs: 500_000,
+                direction_raw: 1, // Received
+                status_raw: 1,    // Confirmed
+                memo: std::ptr::null(),
+            },
+        ];
+
+        unsafe { apply_payment_rows(&rows, &mut managed) };
+
+        assert_eq!(managed.dashpay().payments.len(), 2);
+        let sent = managed
+            .dashpay()
+            .payments
+            .get(&"aa".repeat(32))
+            .expect("sent entry restored");
+        assert_eq!(sent.direction, PaymentDirection::Sent);
+        assert_eq!(sent.status, PaymentStatus::Pending);
+        assert_eq!(sent.amount_duffs, 1_000_000);
+        assert_eq!(sent.memo.as_deref(), Some("lunch"));
+        assert_eq!(sent.counterparty_id, Identifier::from([0xBB; 32]));
+
+        let recv = managed
+            .dashpay()
+            .payments
+            .get(&"bb".repeat(32))
+            .expect("received entry restored");
+        assert_eq!(recv.direction, PaymentDirection::Received);
+        assert_eq!(recv.status, PaymentStatus::Confirmed);
+        assert!(recv.memo.is_none());
+
+        // An unknown discriminant is skipped, not panicked.
+        let bad_txid = std::ffi::CString::new("cc".repeat(32)).unwrap();
+        let bad = [PaymentRestoreEntryFFI {
+            txid: bad_txid.as_ptr(),
+            counterparty_id: [0xDD; 32],
+            amount_duffs: 1,
+            direction_raw: 9,
+            status_raw: 0,
+            memo: std::ptr::null(),
+        }];
+        unsafe { apply_payment_rows(&bad, &mut managed) };
+        assert_eq!(
+            managed.dashpay().payments.len(),
+            2,
+            "a row with an unknown direction must be skipped, not inserted"
+        );
+    }
+
+    /// **Cached contact profiles are restored at load.**
+    /// The fold must rebuild `contact_profiles` (keyed by the contact's
+    /// identity id) from the persisted rows, decoding the c-strings and
+    /// the `_present`-gated avatar hash / fingerprint, and re-validating
+    /// the public avatar URL. Without this restore step there is no
+    /// contact-profile restore at all, so the cache starts empty on
+    /// relaunch and the requests/contacts UI shows raw ids until the next
+    /// sweep re-fetches every contact.
+    #[test]
+    fn restore_contact_profiles_fold_rebuilds_cache() {
+        use crate::wallet_restore_types::ContactProfileRestoreEntryFFI;
+
+        let owner = IdentityV0 {
+            id: Identifier::from([0xAA; 32]),
+            public_keys: std::collections::BTreeMap::new(),
+            balance: 0,
+            revision: 0,
+        };
+        let mut managed = ManagedIdentity::new(Identity::V0(owner), 0);
+
+        // Keep the CStrings alive for the duration of the call.
+        let display_name = std::ffi::CString::new("Alice").unwrap();
+        let public_message = std::ffi::CString::new("gm").unwrap();
+        let good_url = std::ffi::CString::new("https://example.com/a.png").unwrap();
+        // A non-https URL: must be dropped to None, but the rest of the
+        // profile (display name) must still be restored.
+        let bad_url = std::ffi::CString::new("http://evil.example/track.gif").unwrap();
+        let other_name = std::ffi::CString::new("Bob").unwrap();
+
+        let rows = [
+            ContactProfileRestoreEntryFFI {
+                contact_id: [0xBB; 32],
+                display_name: display_name.as_ptr(),
+                bio: std::ptr::null(),
+                avatar_url: good_url.as_ptr(),
+                avatar_hash: [0x11; 32],
+                avatar_hash_present: true,
+                avatar_fingerprint: [0x22; 8],
+                avatar_fingerprint_present: true,
+                public_message: public_message.as_ptr(),
+                checked_at_ms: 1_700_000_000_000,
+            },
+            ContactProfileRestoreEntryFFI {
+                contact_id: [0xCC; 32],
+                display_name: other_name.as_ptr(),
+                bio: std::ptr::null(),
+                avatar_url: bad_url.as_ptr(),
+                avatar_hash: [0u8; 32],
+                avatar_hash_present: false,
+                avatar_fingerprint: [0u8; 8],
+                avatar_fingerprint_present: false,
+                public_message: std::ptr::null(),
+                checked_at_ms: 1_700_000_000_001,
+            },
+        ];
+
+        unsafe { apply_contact_profile_rows(&rows, &mut managed) };
+
+        assert_eq!(managed.dashpay().contact_profiles.len(), 2);
+
+        let alice = managed
+            .dashpay()
+            .contact_profiles
+            .get(&Identifier::from([0xBB; 32]))
+            .expect("alice contact profile restored");
+        assert_eq!(alice.checked_at_ms, 1_700_000_000_000);
+        let alice_profile = alice.profile.as_ref().expect("present profile");
+        assert_eq!(alice_profile.display_name.as_deref(), Some("Alice"));
+        assert_eq!(alice_profile.public_message.as_deref(), Some("gm"));
+        assert_eq!(
+            alice_profile.avatar_url.as_deref(),
+            Some("https://example.com/a.png")
+        );
+        assert_eq!(alice_profile.avatar_hash, Some([0x11; 32]));
+        assert_eq!(alice_profile.avatar_fingerprint, Some([0x22; 8]));
+        assert!(alice_profile.bio.is_none());
+
+        let bob = managed
+            .dashpay()
+            .contact_profiles
+            .get(&Identifier::from([0xCC; 32]))
+            .expect("bob contact profile restored");
+        let bob_profile = bob.profile.as_ref().expect("present profile");
+        assert_eq!(bob_profile.display_name.as_deref(), Some("Bob"));
+        // The non-https avatar URL is dropped on the way back in; the
+        // rest of the profile survives.
+        assert!(
+            bob_profile.avatar_url.is_none(),
+            "a non-https avatar URL must be dropped at restore"
+        );
+        assert!(bob_profile.avatar_hash.is_none());
+        assert!(bob_profile.avatar_fingerprint.is_none());
+    }
+
+    /// Regression: ignored senders must be restored at load so a
+    /// previously-ignored sender does NOT resurface on relaunch.
+    ///
+    /// A fresh `ManagedIdentity` ignores nothing — that empty set is
+    /// exactly the post-relaunch state in which the still-on-platform
+    /// immutable `contactRequest`s re-ingest on the next sweep. Before
+    /// `restore_dashpay_ignored`/`apply_ignored_rows` existed, the load
+    /// path rebuilt contacts + payments but left this set empty; this test
+    /// pins that the ignored senders are now rehydrated, and that the
+    /// suppression is per-sender (a bumped-`accountReference` request from
+    /// the same sender is STILL suppressed).
+    #[test]
+    fn restore_ignored_rows_rebuilds_ignore_set() {
+        let owner = IdentityV0 {
+            id: Identifier::from([0xAA; 32]),
+            public_keys: std::collections::BTreeMap::new(),
+            balance: 0,
+            revision: 0,
+        };
+        let mut managed = ManagedIdentity::new(Identity::V0(owner), 0);
+
+        // Post-relaunch precondition: nothing is ignored yet.
+        assert!(!managed.is_sender_ignored(&Identifier::from([0xBB; 32])));
+
+        let rows: [[u8; 32]; 2] = [[0xBB; 32], [0xDD; 32]];
+
+        apply_ignored_rows(&rows, &mut managed);
+
+        assert_eq!(managed.dashpay().ignored_senders().len(), 2);
+        assert!(managed.is_sender_ignored(&Identifier::from([0xBB; 32])));
+        assert!(managed.is_sender_ignored(&Identifier::from([0xDD; 32])));
+        // Per-sender suppression: the ignored sender is suppressed
+        // regardless of accountReference (no per-ref discrimination).
+        assert!(!managed.is_sender_ignored(&Identifier::from([0xEE; 32])));
+    }
+
+    /// Persist→restore round-trip for the contact maps. The persist
+    /// projection (`from_outgoing`/`from_incoming`/`from_established_*`) is
+    /// tested field-by-field, but the FFI→Rust read-back (`apply_contact_rows`)
+    /// was untested — so a dropped optional or a swapped key index on restore
+    /// would be invisible (the exact bug class that shipped on the parse side).
+    /// This builds rows via the SAME persist constructors the live path uses,
+    /// decodes them, and asserts field-by-field — including the
+    /// direction-specific `contact_account_label` (incoming-row only) and
+    /// distinct sender ≠ recipient key indices (a swap is otherwise invisible,
+    /// both `u32`).
+    #[test]
+    fn apply_contact_rows_round_trips_all_fields() {
+        use platform_wallet::ContactRequest;
+
+        let owner = Identifier::from([0x11; 32]);
+        let sent_c = Identifier::from([0xA1; 32]);
+        let in_c = Identifier::from([0xA2; 32]);
+        let estab_c = Identifier::from([0xA3; 32]);
+
+        let sent_req = ContactRequest::new(owner, sent_c, 3, 4, 11, vec![1u8; 96], 100, 1000);
+        let in_req = ContactRequest::new(in_c, owner, 5, 6, 22, vec![2u8; 96], 101, 1001);
+        let mut estab_out = ContactRequest::new(owner, estab_c, 7, 8, 33, vec![3u8; 96], 102, 1002);
+        estab_out.auto_accept_proof = Some(vec![9u8; 40]);
+        let mut estab_in = ContactRequest::new(estab_c, owner, 9, 10, 44, vec![4u8; 96], 103, 1003);
+        estab_in.encrypted_account_label = Some(vec![0x2au8; 48]);
+        estab_in.auto_accept_proof = Some(vec![8u8; 38]);
+
+        let mut rows = vec![
+            ContactRequestFFI::from_outgoing(owner.to_buffer(), sent_c.to_buffer(), &sent_req),
+            ContactRequestFFI::from_incoming(owner.to_buffer(), in_c.to_buffer(), &in_req),
+            ContactRequestFFI::from_established_outgoing(
+                owner.to_buffer(),
+                estab_c.to_buffer(),
+                &estab_out,
+                true,
+                Some("ally"),
+                Some("a note"),
+                true,
+                &[7, 42],
+            ),
+            ContactRequestFFI::from_established_incoming(
+                owner.to_buffer(),
+                estab_c.to_buffer(),
+                &estab_in,
+                true,
+                Some("ally"),
+                Some("a note"),
+                true,
+                Some("Main wallet"),
+                &[7, 42],
+            ),
+        ];
+
+        let identity_v0 = IdentityV0 {
+            id: owner,
+            public_keys: std::collections::BTreeMap::new(),
+            balance: 0,
+            revision: 0,
+        };
+        let mut managed = ManagedIdentity::new(Identity::V0(identity_v0), 0);
+
+        unsafe { apply_contact_rows(&rows, &owner, &mut managed) };
+
+        let s = managed
+            .dashpay()
+            .sent_contact_requests()
+            .get(&sent_c)
+            .expect("pending sent request restored");
+        assert_eq!(
+            (
+                s.sender_key_index,
+                s.recipient_key_index,
+                s.account_reference
+            ),
+            (3, 4, 11)
+        );
+        let i = managed
+            .dashpay()
+            .incoming_contact_requests()
+            .get(&in_c)
+            .expect("pending incoming request restored");
+        assert_eq!(
+            (
+                i.sender_key_index,
+                i.recipient_key_index,
+                i.account_reference
+            ),
+            (5, 6, 22)
+        );
+
+        let e = managed
+            .dashpay()
+            .established_contacts()
+            .get(&estab_c)
+            .expect("established contact restored");
+        assert_eq!(e.outgoing_request.auto_accept_proof, Some(vec![9u8; 40]));
+        assert_eq!(
+            e.incoming_request.encrypted_account_label,
+            Some(vec![0x2au8; 48]),
+            "the incoming encrypted label must survive read-back (the shipped-bug class)"
+        );
+        assert_eq!(e.incoming_request.auto_accept_proof, Some(vec![8u8; 38]));
+        assert_eq!(e.alias.as_deref(), Some("ally"));
+        assert_eq!(e.note.as_deref(), Some("a note"));
+        assert!(e.is_hidden);
+        assert!(e.payment_channel_broken);
+        assert_eq!(
+            e.contact_account_label.as_deref(),
+            Some("Main wallet"),
+            "contact_account_label must restore from the incoming row only"
+        );
+        assert_eq!(
+            e.accepted_accounts,
+            vec![7, 42],
+            "accepted_accounts must round-trip through the FFI rows (matching the SQLite backend)"
+        );
+        // Key indices restored without a swap (incoming sender=9, recipient=10).
+        assert_eq!(
+            (
+                e.incoming_request.sender_key_index,
+                e.incoming_request.recipient_key_index
+            ),
+            (9, 10)
+        );
+
+        unsafe { free_contact_requests_ffi(rows.as_mut_ptr(), rows.len()) };
     }
 }

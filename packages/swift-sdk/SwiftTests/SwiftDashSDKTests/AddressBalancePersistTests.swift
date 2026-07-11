@@ -73,11 +73,11 @@ final class AddressBalancePersistTests: XCTestCase {
     private func loadedRow(
         _ handler: PlatformWalletPersistenceHandler,
         hashByte: UInt8
-    ) -> (balance: UInt64, nonce: UInt32, accountIndex: UInt32, addressIndex: UInt32)? {
+    ) -> (balance: UInt64, nonce: UInt32, accountIndex: UInt32, addressIndex: UInt32, asOfHeight: UInt64)? {
         let rows = handler.loadCachedBalances(walletId: walletId)
-        for (_, hash, balance, nonce, accountIndex, addressIndex) in rows
+        for (_, hash, balance, nonce, accountIndex, addressIndex, asOfHeight) in rows
         where hash.allSatisfy({ $0 == hashByte }) && hash.count == 20 {
-            return (balance, nonce, accountIndex, addressIndex)
+            return (balance, nonce, accountIndex, addressIndex, asOfHeight)
         }
         return nil
     }
@@ -111,8 +111,8 @@ final class AddressBalancePersistTests: XCTestCase {
 
         // Reconcile removal for `removed`: fully consumed, zero funds,
         // and — the hazard — carrying `funded`'s index 5, not its own 2.
-        let removal: [(UInt8, Data, UInt64, UInt32, UInt32, UInt32)] = [
-            (0, removedHash, 0, 0, accountIndex, conflictingIndex)
+        let removal: [(UInt8, Data, UInt64, UInt32, UInt32, UInt32, UInt64)] = [
+            (0, removedHash, 0, 0, accountIndex, conflictingIndex, 379_790)
         ]
         handler.persistAddressBalances(walletId: walletId, entries: removal)
 
@@ -156,9 +156,10 @@ final class AddressBalancePersistTests: XCTestCase {
             nonce: 0
         )
 
-        // BLAST reports a fresh balance; the entry echoes the true index.
-        let update: [(UInt8, Data, UInt64, UInt32, UInt32, UInt32)] = [
-            (0, fundedHash, 1_000, 7, accountIndex, fundedIndex)
+        // BLAST reports a fresh balance pinned at the pass's proof
+        // height; the entry echoes the true index.
+        let update: [(UInt8, Data, UInt64, UInt32, UInt32, UInt32, UInt64)] = [
+            (0, fundedHash, 1_000, 7, accountIndex, fundedIndex, 379_784)
         ]
         handler.persistAddressBalances(walletId: walletId, entries: update)
 
@@ -166,6 +167,10 @@ final class AddressBalancePersistTests: XCTestCase {
         XCTAssertEqual(funded.balance, 1_000)
         XCTAssertEqual(funded.nonce, 7)
         XCTAssertEqual(funded.addressIndex, fundedIndex)
+        XCTAssertEqual(
+            funded.asOfHeight, 379_784,
+            "the balance height pin must round-trip through lastSeenHeight"
+        )
     }
 
     /// A balance update for an address that was never address-emitted
@@ -173,8 +178,8 @@ final class AddressBalancePersistTests: XCTestCase {
     func testBalanceUpdateForUnknownAddressIsSkipped() throws {
         let (handler, _) = try makeHandler()
 
-        let update: [(UInt8, Data, UInt64, UInt32, UInt32, UInt32)] = [
-            (0, removedHash, 42, 1, accountIndex, conflictingIndex)
+        let update: [(UInt8, Data, UInt64, UInt32, UInt32, UInt32, UInt64)] = [
+            (0, removedHash, 42, 1, accountIndex, conflictingIndex, 100)
         ]
         handler.persistAddressBalances(walletId: walletId, entries: update)
 

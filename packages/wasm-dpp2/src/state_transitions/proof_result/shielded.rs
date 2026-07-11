@@ -3,7 +3,7 @@
 //! These types were extracted from `proof_result` to keep shielded-specific
 //! code in its own module.
 
-use super::helpers::js_obj;
+use super::helpers::{js_obj, read_map_property};
 use crate::IdentityWasm;
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::impl_wasm_conversions_serde;
@@ -11,34 +11,8 @@ use crate::impl_wasm_type_info;
 use crate::serialization::conversions::normalize_js_value_for_json;
 use js_sys::{BigInt, Map};
 use serde::{Deserialize, Serialize};
-use wasm_bindgen::JsCast;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::*;
-
-fn read_map_property(value: &JsValue, name: &str) -> WasmDppResult<Map> {
-    let raw = js_sys::Reflect::get(value, &name.into())
-        .map_err(|_| WasmDppError::generic(format!("Missing property: {}", name)))?;
-    // `to_json` normalizes the `Map` to a plain object so it survives `JSON.stringify`. A value
-    // that round-tripped through `JSON.parse(JSON.stringify(...))` therefore arrives here as a
-    // plain object, not a `Map`. Accept both: use a real `Map` directly, otherwise rebuild one
-    // from the plain object's entries so `.size`/`.get()`/iteration behave as a `Map`.
-    if raw.is_instance_of::<Map>() {
-        Ok(raw.unchecked_into())
-    } else if raw.is_object() {
-        let entries = js_sys::Object::entries(raw.unchecked_ref());
-        let map = Map::new();
-        for entry in entries.iter() {
-            let pair: js_sys::Array = entry.unchecked_into();
-            map.set(&pair.get(0), &pair.get(1));
-        }
-        Ok(map)
-    } else {
-        Err(WasmDppError::generic(format!(
-            "Property {} must be a Map or plain object",
-            name
-        )))
-    }
-}
 
 // --- VerifiedShieldedPoolState ---
 
@@ -178,29 +152,43 @@ impl VerifiedAssetLockConsumedWithAddressInfosWasm {
         // A credit value may arrive as a BigInt (`toObject`), a base-10 string (`toJSON`
         // normalizes BigInt to a string so it survives `JSON.stringify`), or a plain number
         // (a hand-built object). Accept all three so `fromJSON(JSON.parse(JSON.stringify(...)))`
-        // round-trips instead of dropping the value to `None`.
-        let read_opt_u64 = |name: &str| -> Option<u64> {
-            js_sys::Reflect::get(&value, &name.into())
-                .ok()
-                .and_then(|v| {
-                    if v.is_undefined() || v.is_null() {
-                        None
-                    } else if let Ok(b) = u64::try_from(v.clone()) {
-                        Some(b)
-                    } else if let Some(s) = v.as_string() {
-                        s.parse::<u64>().ok()
-                    } else {
-                        v.as_f64().and_then(|n| {
-                            (n >= 0.0 && n.fract() == 0.0 && n <= u64::MAX as f64)
-                                .then_some(n as u64)
-                        })
-                    }
-                })
+        // round-trips. Absent / null / undefined means "no surplus" (`None`); a PRESENT value
+        // that cannot be cleanly read as u64 is an error — silently mapping it to `None`
+        // would conflate "absent" with "garbage".
+        let read_opt_u64 = |name: &str| -> WasmDppResult<Option<u64>> {
+            let v = js_sys::Reflect::get(&value, &name.into()).unwrap_or(JsValue::UNDEFINED);
+            if v.is_undefined() || v.is_null() {
+                return Ok(None);
+            }
+            if let Ok(b) = u64::try_from(v.clone()) {
+                return Ok(Some(b));
+            }
+            if let Some(s) = v.as_string() {
+                return s.parse::<u64>().map(Some).map_err(|e| {
+                    WasmDppError::invalid_argument(format!(
+                        "{} is not a valid u64 string: {}",
+                        name, e
+                    ))
+                });
+            }
+            if let Some(n) = v.as_f64() {
+                if n >= 0.0 && n.fract() == 0.0 && n <= u64::MAX as f64 {
+                    return Ok(Some(n as u64));
+                }
+                return Err(WasmDppError::invalid_argument(format!(
+                    "{} must be a non-negative integer within u64 range, got {}",
+                    name, n
+                )));
+            }
+            Err(WasmDppError::invalid_argument(format!(
+                "{} must be a BigInt, base-10 string, or integer number",
+                name
+            )))
         };
         Ok(VerifiedAssetLockConsumedWithAddressInfosWasm {
             status,
-            initial_credit_value: read_opt_u64("initialCreditValue"),
-            remaining_credit_value: read_opt_u64("remainingCreditValue"),
+            initial_credit_value: read_opt_u64("initialCreditValue")?,
+            remaining_credit_value: read_opt_u64("remainingCreditValue")?,
             address_infos: read_map_property(&value, "addressInfos")?,
         })
     }

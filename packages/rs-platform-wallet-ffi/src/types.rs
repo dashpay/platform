@@ -107,13 +107,26 @@ pub struct IdentifierArray {
 }
 
 impl IdentifierArray {
+    /// FFI-safe empty sentinel: a null pointer with a zero count.
+    ///
+    /// The `out_array: *mut IdentifierArray` entry points publish this
+    /// before any fallible work (e.g. a handle-storage lookup) so an error
+    /// return never leaves the out-param holding uninitialized stack bytes —
+    /// `platform_wallet_identifier_array_free` reconstructs a `Vec` from any
+    /// non-null pointer / non-zero count pair, so a cleanup-on-error caller
+    /// would otherwise free garbage. The `(null, 0)` sentinel is skipped by
+    /// that free path.
+    pub fn empty() -> Self {
+        Self {
+            items: std::ptr::null_mut(),
+            count: 0,
+        }
+    }
+
     pub fn new(identifiers: Vec<dpp::prelude::Identifier>) -> Self {
         let count = identifiers.len();
         if count == 0 {
-            return Self {
-                items: std::ptr::null_mut(),
-                count: 0,
-            };
+            return Self::empty();
         }
 
         let mut items: Vec<[u8; 32]> = identifiers.into_iter().map(|id| id.to_buffer()).collect();

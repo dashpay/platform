@@ -217,7 +217,10 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
                 balance: out.credits,
                 nonce: 0,
                 account_index: 0,
-                address_index: 0
+                address_index: 0,
+                // Request path: names an output amount, carries no
+                // persisted balance — the height pin is meaningless here.
+                as_of_height: 0
             )
         }
 

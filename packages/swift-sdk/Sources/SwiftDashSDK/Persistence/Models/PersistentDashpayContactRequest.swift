@@ -94,6 +94,53 @@ public final class PersistentDashpayContactRequest {
     /// request document was created.
     public var createdAtMillis: UInt64
 
+    /// Whether the established relationship this row belongs to has a
+    /// **permanently broken** payment channel. Mirrors
+    /// `ContactRequestFFI::payment_channel_broken`: only meaningful
+    /// for rows projected from the `established` map — both
+    /// directions of an established pair carry the same flag (it's a
+    /// property of the relationship, not of one direction). Always
+    /// `false` for pending rows. The UI reads it to disable "Send
+    /// Dash" and surface "payment channel broken — ask the contact to
+    /// send a new request".
+    ///
+    /// Defaulted so existing rows ride SwiftData's lightweight
+    /// migration (additive column, non-destructive).
+    public var paymentChannelBroken: Bool = false
+
+    /// Owner-private alias for the contact — `contactInfo`-backed,
+    /// synced across devices via Platform. Mirrors
+    /// `ContactRequestFFI::alias`; established rows only, replicated
+    /// onto both directions like `paymentChannelBroken`. Optional so
+    /// existing rows ride the lightweight migration.
+    public var contactAlias: String?
+
+    /// Owner-private note — same conventions as `contactAlias`.
+    public var contactNote: String?
+
+    /// `contactInfo.displayHidden` — whether the owner hid this
+    /// contact from the list. Defaulted for lightweight migration.
+    public var contactHidden: Bool = false
+
+    /// The contact's decrypted DIP-15 `encryptedAccountLabel` — the label
+    /// the contact chose for the account they shared (a payment-routing
+    /// hint, e.g. "Main wallet"). **System-derived and read-only**, unlike
+    /// the owner-private `contactAlias`/`contactNote`: it is decrypted in
+    /// Rust from the contact's incoming request, so it is populated only on
+    /// the incoming-direction row (the outgoing row carries a label *we*
+    /// sent, which is not surfaced). Optional so existing rows ride the
+    /// lightweight migration.
+    public var contactAccountLabel: String?
+
+    /// `EstablishedContact::accepted_accounts` — the DIP-15
+    /// rotated-account acceptances for this relationship. Mirrors
+    /// `ContactRequestFFI::accepted_accounts`: a property of the
+    /// relationship (not one direction), so it is replicated onto
+    /// both directions like `paymentChannelBroken`; always empty for
+    /// pending rows. Defaulted to an empty array so existing rows
+    /// ride SwiftData's lightweight migration.
+    public var contactAcceptedAccounts: [UInt32] = []
+
     // MARK: - Relationships
 
     /// Owning identity — the wallet-managed identity this row's
@@ -120,7 +167,8 @@ public final class PersistentDashpayContactRequest {
         encryptedAccountLabel: Data? = nil,
         autoAcceptProof: Data? = nil,
         coreHeightCreatedAt: UInt32,
-        createdAtMillis: UInt64
+        createdAtMillis: UInt64,
+        paymentChannelBroken: Bool = false
     ) {
         self.owner = owner
         self.networkRaw = owner.networkRaw
@@ -135,6 +183,7 @@ public final class PersistentDashpayContactRequest {
         self.autoAcceptProof = autoAcceptProof
         self.coreHeightCreatedAt = coreHeightCreatedAt
         self.createdAtMillis = createdAtMillis
+        self.paymentChannelBroken = paymentChannelBroken
         self.createdAt = Date()
         self.lastUpdated = Date()
     }

@@ -28,12 +28,21 @@ let package = Package(
             linkerSettings: [.linkedFramework("SystemConfiguration")]
         ),
 
-        // Tests
+        // Unit tests (offline, hermetic)
         .testTarget(
             name: "SwiftDashSDKTests",
             dependencies: ["SwiftDashSDK"],
             path: "SwiftTests/SwiftDashSDKTests"
-        )
+        ),
+
+        // Integration tests against a local dashmate devnet.
+        // Gated by env var `RUN_INTEGRATION_TESTS=1`
+        .testTarget(
+            name: "SwiftDashSDKIntegrationTests",
+            dependencies: ["SwiftDashSDK"],
+            path: "SwiftTests/SwiftDashSDKIntegrationTests",
+            swiftSettings: [.unsafeFlags(["-warnings-as-errors"])]
+        ),
     ],
     swiftLanguageModes: [.v6]
 )

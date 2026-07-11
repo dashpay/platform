@@ -21,6 +21,7 @@ pub mod manager;
 pub mod spv;
 #[cfg(test)]
 pub(crate) mod test_support;
+mod util;
 pub mod wallet;
 
 pub use error::PlatformWalletError;
@@ -36,6 +37,10 @@ pub use key_wallet_manager::DerivedAddress;
 // reimplementing the layout rules.
 pub use address_paths::{
     derivation_path_for_derived_address, derivation_path_string_for_derived_address,
+};
+pub use manager::dashpay_sync::{
+    DashPaySyncManager, DashPaySyncSummary, WalletDashPaySyncOutcome,
+    DEFAULT_SYNC_INTERVAL_SECS as DASHPAY_SYNC_DEFAULT_INTERVAL_SECS,
 };
 pub use manager::identity_sync::{
     IdentitySyncManager, IdentityTokenSyncInfo, IdentityTokenSyncState,
@@ -56,17 +61,21 @@ pub use wallet::core::WalletBalance;
 // DashPay types + crypto helpers re-exported through the identity
 // domain (they live under `identity::types::dashpay::*` and
 // `identity::crypto::*` internally).
+pub use wallet::core_address_key::CoreAddressPrivateKey;
 pub use wallet::identity::network::{
-    derive_identity_auth_keypair, IDENTITY_GAP_LIMIT, MASTER_KEY_INDEX,
+    derive_identity_auth_keypair, AutoAcceptProofSource, ContactCryptoProvider, ContactInfoOpened,
+    ContactInfoPublishOutcome, ContactInfoSealed, IDENTITY_GAP_LIMIT, MASTER_KEY_INDEX,
 };
 pub use wallet::identity::{
     calculate_account_reference, derive_auto_accept_private_key, derive_contact_payment_address,
-    derive_contact_payment_addresses, derive_contact_xpub, BlockTime, ContactRequest,
-    ContactXpubData, DashPayProfile, DpnsNameInfo, EstablishedContact, IdentityLocation,
+    derive_contact_payment_addresses, derive_contact_xpub, pubkey_binds_expected_key_data,
+    unmask_account_reference, BlockTime, ContactProfileEntry, ContactRequest, ContactXpubData,
+    DashPayProfile, DashPayState, DpnsNameInfo, EstablishedContact, IdentityLocation,
     IdentityManager, IdentityStatus, KeyStorage, ManagedIdentity, PrivateKeyData, ProfileUpdate,
     RegistrationIndex, DEFAULT_CONTACT_GAP_LIMIT,
 };
 pub use wallet::platform_wallet::PlatformWalletInfo;
+pub use wallet::provider_key_at_index::{ProviderDerivedKey, ProviderKeyKind};
 pub use wallet::PlatformAddressTag;
 pub use wallet::PlatformWallet;
 

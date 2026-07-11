@@ -50,7 +50,9 @@ use crate::changeset::merge::Merge;
 use crate::wallet::identity::state::managed_identity::{
     BlockTime, DpnsNameInfo, IdentityStatus, ManagedIdentity,
 };
-use crate::wallet::identity::{ContactRequest, DashPayProfile, EstablishedContact, PaymentEntry};
+use crate::wallet::identity::{
+    ContactProfileEntry, ContactRequest, DashPayProfile, EstablishedContact, PaymentEntry,
+};
 
 // ---------------------------------------------------------------------------
 // Core wallet changeset — projection of upstream `WalletEvent` data
@@ -306,6 +308,18 @@ pub struct IdentityEntry {
     /// map via `from_managed`, so merge can use plain extend semantics
     /// without losing history.
     pub dashpay_payments: BTreeMap<String, PaymentEntry>,
+    /// Cached contact profiles keyed by the contact's identity id. Like
+    /// `dashpay_payments`, every snapshot carries the full map via
+    /// `from_managed`, so merge uses last-write-wins per contact id.
+    pub contact_profiles: BTreeMap<Identifier, ContactProfileEntry>,
+    /// Senders this identity has chosen to **ignore** (per-sender mute, =
+    /// block, reversible — local-only). Every snapshot carries the full set
+    /// via `from_managed`, so merge takes the **union** (a member appearing
+    /// in either side stays ignored; un-ignore is carried by an explicit
+    /// removal on [`ContactChangeSet::unignored`], not by a shrinking
+    /// snapshot here — same insert-XOR-tombstone discipline the contact
+    /// request fields use).
+    pub ignored_senders: BTreeSet<Identifier>,
 }
 
 impl IdentityEntry {
@@ -327,8 +341,10 @@ impl IdentityEntry {
             contested_dpns_names: managed.contested_dpns_names.clone(),
             status: managed.status,
             wallet_id: managed.wallet_id,
-            dashpay_profile: managed.dashpay_profile.clone(),
-            dashpay_payments: managed.dashpay_payments.clone(),
+            dashpay_profile: managed.dashpay().profile.clone(),
+            dashpay_payments: managed.dashpay().payments.clone(),
+            contact_profiles: managed.dashpay().contact_profiles.clone(),
+            ignored_senders: managed.dashpay().ignored_senders().clone(),
         }
     }
 }
@@ -349,19 +365,37 @@ pub struct IdentityKeyDerivationIndices {
     pub key_index: u32,
 }
 
+/// A derivation breadcrumb as the raw `(wallet_id, identity_index,
+/// key_index)` triple passed to `ManagedIdentity::add_key` / `add_keys`.
+/// `Some` lets the client re-derive the private key from the wallet seed;
+/// `None` marks a watch-only key.
+pub type KeyDerivationBreadcrumb = ([u8; 32], u32, u32);
+
+/// One public key paired with its derivation breadcrumb — the unit
+/// `ManagedIdentity::add_keys` consumes and `discovery::breadcrumb_decisions`
+/// produces.
+///
+/// Discovery derives a candidate scalar, validates it against the on-chain
+/// key, and emits a breadcrumb (the DIP-9 coordinates) only when it matches.
+/// The scalar itself is never carried out — the client derives the key on
+/// demand from the Keychain seed at the breadcrumb path. `breadcrumb` is
+/// `None` for a watch-only key.
+pub struct KeyWithBreadcrumb {
+    /// The DPP public-key record.
+    pub key: dpp::identity::IdentityPublicKey,
+    /// Derivation coordinates for re-derivable keys; `None` for watch-only.
+    pub breadcrumb: Option<KeyDerivationBreadcrumb>,
+}
+
 /// A single identity-key entry in an [`IdentityKeysChangeSet`].
 ///
-/// Platform-wallet only carries the DPP public-key record and a
-/// breadcrumb pointing at the wallet derivation that produced it;
-/// private-key bytes live exclusively on the client side (iOS
-/// Keychain, Android Keystore, etc.), populated by the client
-/// deriving locally from the owning wallet's mnemonic. When
-/// `wallet_id` + `derivation_indices` are both set, the client
-/// should re-derive the 32-byte scalar at
-/// `m/9'/coin'/5'/0'/ECDSA'/identity_index'/key_index'` and
-/// persist it. When either is `None` the key is watch-only from
-/// this wallet's point of view.
-#[derive(Debug, Clone, PartialEq)]
+/// Carries the DPP public-key record and a breadcrumb pointing at the wallet
+/// derivation that produced it. No private material crosses here: the client
+/// derives the key on demand from the Keychain seed at the breadcrumb path
+/// (`m/9'/coin'/5'/0'/ECDSA'/identity_index'/key_index'`). When
+/// `derivation_indices` is `None` the key is watch-only from this wallet's
+/// point of view.
+#[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct IdentityKeyEntry {
     /// Owning identity.
@@ -495,6 +529,21 @@ impl Merge for IdentityChangeSet {
                             .dashpay_payments
                             .insert(tx_id.clone(), payment.clone());
                     }
+                    // Merge contact profiles (last-write-wins per contact id),
+                    // same policy as `dashpay_payments`.
+                    for (contact_id, profile) in &entry.contact_profiles {
+                        existing
+                            .contact_profiles
+                            .insert(*contact_id, profile.clone());
+                    }
+                    // Ignored senders: UNION. A sender ignored in either
+                    // snapshot stays ignored; un-ignore is carried by an
+                    // explicit `ContactChangeSet::unignored` removal, so a
+                    // snapshot that no longer lists a sender must NOT silently
+                    // un-ignore them at merge time.
+                    existing
+                        .ignored_senders
+                        .extend(entry.ignored_senders.iter().copied());
                 })
                 .or_insert(entry);
         }
@@ -568,21 +617,20 @@ pub struct ReceivedContactRequestKey {
 /// pair, so `apply_changeset` can reconstruct the contact without
 /// access to any prior runtime state.
 ///
-/// # Merge ordering hazard
+/// # Merge reconciliation
 ///
-/// `ContactChangeSet::merge` is a pure `extend` over every field — it
-/// does NOT cancel an insert against a same-key tombstone in the
-/// opposing field. Callers must NOT merge a `removed_sent` for key K
-/// followed by a `sent_requests` insert for key K and expect the
-/// insert to win: apply runs inserts before removes, so the final
-/// state is "removed", losing the intended re-send. The same applies
-/// to `incoming_requests` vs `removed_incoming`.
-///
-/// In practice this is latent — every current emitter produces either
-/// an insert XOR a tombstone for a given key in a single mutation,
-/// not both. If a future caller needs the merged-cancellation
-/// semantics, the merge impl should resolve `sent_requests ∩
-/// removed_sent` by last-seen rather than carrying both.
+/// Every apply layer (in-memory, SQLite, FFI projection) runs all
+/// inserts before all removes, so a merged changeset that carried the
+/// same key in both an insert map and its opposing tombstone set would
+/// always resolve to "removed". `ContactChangeSet::merge` therefore
+/// reconciles each insert-vs-tombstone pair last-write-wins per key:
+/// the newer delta's action for a key cancels the older opposing action
+/// (a `sent_requests` insert clears a prior `removed_sent`, an un-ignore
+/// clears a prior ignore, and vice versa), keeping the two sets
+/// disjoint. This covers `sent_requests` vs `removed_sent`,
+/// `incoming_requests` vs `removed_incoming`, and `ignored` vs
+/// `unignored`. `established` has no opposing tombstone set and rides
+/// plain last-write-wins.
 #[derive(Debug, Clone, Default, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ContactChangeSet {
@@ -600,15 +648,58 @@ pub struct ContactChangeSet {
     /// [`SentContactRequestKey`] since from the owner's perspective the
     /// contact is the "recipient" of the relationship.
     pub established: BTreeMap<SentContactRequestKey, EstablishedContact>,
+    /// Ignored senders (per-sender mute, = block, reversible — local-only),
+    /// keyed by `(owner, sender)`. Suppresses ALL of the sender's incoming
+    /// requests (including rotated, bumped-`accountReference` ones) from the
+    /// main pending list, and the suppression survives a recurring re-sync.
+    /// Reconciled last-write-wins against [`Self::unignored`] on merge.
+    pub ignored: BTreeSet<(Identifier, Identifier)>,
+    /// Senders **un-ignored** in this delta, keyed by `(owner, sender)`. The
+    /// removal tombstone for [`Self::ignored`] — the persister deletes the
+    /// ignored-sender row so the sender's requests resurface on the next
+    /// sweep. Kept as a separate set (rather than a shrinking `ignored`
+    /// snapshot) so the changeset's insert-XOR-tombstone discipline holds.
+    pub unignored: BTreeSet<(Identifier, Identifier)>,
 }
 
 impl Merge for ContactChangeSet {
     fn merge(&mut self, other: Self) {
+        // Insert-vs-tombstone pairs are reconciled last-write-wins per key:
+        // `other` is the newer delta, so a key it inserts cancels an older
+        // same-key tombstone and vice versa. Without this the two sets could
+        // both carry the same key and apply (which runs inserts before
+        // removes at every layer) would always resolve to "removed" — losing
+        // a re-send / re-ignore that happened after a remove / un-ignore.
+        // The three pairs share this idiom; `established` has no opposing
+        // tombstone set and rides plain last-write-wins.
+        for key in other.removed_sent.iter() {
+            self.sent_requests.remove(key);
+        }
+        for key in other.sent_requests.keys() {
+            self.removed_sent.remove(key);
+        }
         self.sent_requests.extend(other.sent_requests);
         self.removed_sent.extend(other.removed_sent);
+
+        for key in other.removed_incoming.iter() {
+            self.incoming_requests.remove(key);
+        }
+        for key in other.incoming_requests.keys() {
+            self.removed_incoming.remove(key);
+        }
         self.incoming_requests.extend(other.incoming_requests);
         self.removed_incoming.extend(other.removed_incoming);
+
         self.established.extend(other.established);
+
+        for key in other.unignored.iter() {
+            self.ignored.remove(key);
+        }
+        for key in other.ignored.iter() {
+            self.unignored.remove(key);
+        }
+        self.ignored.extend(other.ignored);
+        self.unignored.extend(other.unignored);
     }
 
     fn is_empty(&self) -> bool {
@@ -617,6 +708,8 @@ impl Merge for ContactChangeSet {
             && self.incoming_requests.is_empty()
             && self.removed_incoming.is_empty()
             && self.established.is_empty()
+            && self.ignored.is_empty()
+            && self.unignored.is_empty()
     }
 }
 
@@ -868,6 +961,87 @@ pub struct AccountRegistrationEntry {
     pub account_xpub: ExtendedPubKey,
 }
 
+/// Non-secp256k1 extended public key carried by a
+/// [`ProviderKeyAccountEntry`].
+///
+/// The BLS operator-key account and the EdDSA platform-node-key account
+/// each hold an extended public key over their own curve, not a
+/// secp256k1 [`ExtendedPubKey`], so they can't ride the
+/// [`AccountRegistrationEntry`] path. Variants are gated on the
+/// `bls` / `eddsa` features that make the underlying account types
+/// exist upstream; with both off the enum is uninhabited (no provider
+/// key account can be produced).
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum ProviderKeyExtendedPubKey {
+    /// Extended BLS public key of a `ProviderOperatorKeys` account.
+    #[cfg(feature = "bls")]
+    Bls(key_wallet::derivation_bls_bip32::ExtendedBLSPubKey),
+    /// Extended Ed25519 public key of a `ProviderPlatformKeys` account.
+    #[cfg(feature = "eddsa")]
+    EdDSA(key_wallet::derivation_slip10::ExtendedEd25519PubKey),
+}
+
+/// One pre-derived platform-node (Ed25519) public key captured at
+/// registration, in the forms the host displays without needing the
+/// seed again.
+///
+/// Ed25519/SLIP-10 is hardened-only — there is no public-key
+/// derivation, so the wallet can never extend its platform-node pool
+/// on demand the way the BLS operator pool does (non-hardened
+/// `ckd_pub` off the account xpub). Pre-generating a fixed batch while
+/// the seed is in hand at registration is therefore the only way to
+/// list these keys later from an external-signable / watch-only
+/// wallet without re-prompting for the mnemonic. Only the public parts
+/// are carried — the private scalar stays resolver-gated per index.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct ProviderPlatformNodePubKey {
+    /// Hardened key index within the platform-node pool (`#0..`).
+    pub index: u32,
+    /// Raw 32-byte Ed25519 public key at this index.
+    pub public_key: [u8; 32],
+    /// The 20-byte platform node id — `hash160` of the Ed25519 public
+    /// key, exactly what a ProRegTx `platform_node_id` field carries.
+    /// Precomputed on the Rust side so the host renders it without a
+    /// RIPEMD-160 implementation of its own.
+    pub node_id: [u8; 20],
+}
+
+/// One entry per provider **key-material** account captured at
+/// registration — the BLS operator-key account
+/// ([`AccountType::ProviderOperatorKeys`]) and the EdDSA
+/// platform-node-key account ([`AccountType::ProviderPlatformKeys`]).
+///
+/// Upstream stores these in dedicated `Option` fields on the
+/// `AccountCollection`, which `all_accounts()` deliberately excludes,
+/// so they never enter the [`Self::account_xpub`](AccountRegistrationEntry)
+/// snapshot the ECDSA accounts ride. Carried on
+/// [`PlatformWalletChangeSet`] as
+/// `Vec<ProviderKeyAccountEntry>`; the FFI layer bincode-encodes the
+/// [`extended_public_key`](Self::extended_public_key) into the same
+/// `AccountSpecFFI.account_xpub_bytes` slot the ECDSA accounts use (the
+/// `type_tag` disambiguates the decode) and the restore side rebuilds a
+/// watch-only `BLSAccount` / `EdDSAAccount` from it. Append-only merge,
+/// same as [`AccountRegistrationEntry`].
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct ProviderKeyAccountEntry {
+    /// `ProviderOperatorKeys` (BLS) or `ProviderPlatformKeys` (EdDSA).
+    pub account_type: AccountType,
+    /// The account's extended public key.
+    pub extended_public_key: ProviderKeyExtendedPubKey,
+    /// Pre-derived platform-node (Ed25519) public keys, captured at
+    /// registration while the seed was in hand. Only populated for the
+    /// `ProviderPlatformKeys` (EdDSA) entry — always empty for the BLS
+    /// operator entry, whose pool the wallet can re-derive on demand
+    /// from the account xpub (non-hardened `ckd_pub`, no seed). The FFI
+    /// layer surfaces these to the host as a flat display array so the
+    /// Node Keys screen can list them from persistence with no keychain
+    /// prompt. See [`ProviderPlatformNodePubKey`].
+    pub derived_platform_node_keys: Vec<ProviderPlatformNodePubKey>,
+}
+
 /// Address-pool snapshot for one `(account_type, pool_type)` pair.
 ///
 /// Routed through the changeset rather than a dedicated trait method
@@ -902,6 +1076,128 @@ pub struct AccountAddressPoolEntry {
     pub pool_type: AddressPoolType,
     /// Snapshot of every `AddressInfo` entry in the pool at emit time.
     pub addresses: Vec<AddressInfo>,
+}
+
+// ---------------------------------------------------------------------------
+// Deferred contact-crypto queue (seedless background-sync deferral)
+// ---------------------------------------------------------------------------
+
+/// A DashPay contact-crypto operation that the background sync sweep could not
+/// perform because key material wasn't available at the time (watch-only
+/// wallet / Keychain signer not unlocked).
+///
+/// The sweep runs with no signer; rather than churn (receiving account) or
+/// irreversibly break the channel (external account), it **enqueues** the op
+/// here and the entry is drained when a signer becomes available (Keychain
+/// unlock, or any signer-present DashPay action). The queue carries **only
+/// ciphertext + public key indices** — never a secret — so it is safe to
+/// persist, which it must be: a restore-from-Keychain is exactly when a
+/// discovered contact would otherwise be stranded.
+///
+/// One op per `(owner, contact, kind)` — see [`PendingContactCryptoKey`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum PendingContactCryptoOp {
+    /// Derive our own DashPay receiving xpub (the friendship key) and register
+    /// the receiving account. No secret payload — the path is built from the
+    /// `(owner, contact)` identity ids. First-time only; a no-op once the
+    /// account is persisted.
+    RegisterReceiving,
+    /// Decrypt the contact's encrypted xpub via ECDH and register the external
+    /// (sending) account. Carries the on-chain ciphertext + the already-
+    /// validated key indices — all public.
+    RegisterExternal {
+        /// The contact's DIP-15 `encryptedPublicKey` blob (ciphertext).
+        encrypted_public_key: Vec<u8>,
+        /// Our decryption key index (validated upstream).
+        our_decryption_key_index: u32,
+        /// The contact's encryption key index (validated upstream).
+        contact_encryption_key_index: u32,
+    },
+    /// Re-fetch + decrypt this identity's contactInfo documents. Idempotent;
+    /// carries no payload (the drain re-fetches the owned docs).
+    ContactInfoDecrypt,
+    /// Verify a DIP-15 `autoAcceptProof` on an inbound contact request and, if
+    /// valid + unexpired, auto-accept it (send the reciprocal). No payload — the
+    /// `contact_id` is the request sender; the drain re-loads the request (and
+    /// its proof) from the incoming-requests map. Verify + accept both need a
+    /// signer, so this can only run in the signer-present drain, never the sweep.
+    AutoAccept,
+}
+
+/// The kind discriminant of a [`PendingContactCryptoOp`] — the part of the
+/// dedup identity that ignores the (secret-free) payload.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum PendingContactCryptoKind {
+    RegisterReceiving,
+    RegisterExternal,
+    ContactInfoDecrypt,
+    AutoAccept,
+}
+
+impl PendingContactCryptoOp {
+    /// The kind discriminant, for dedup keying.
+    pub fn kind(&self) -> PendingContactCryptoKind {
+        match self {
+            Self::RegisterReceiving => PendingContactCryptoKind::RegisterReceiving,
+            Self::RegisterExternal { .. } => PendingContactCryptoKind::RegisterExternal,
+            Self::ContactInfoDecrypt => PendingContactCryptoKind::ContactInfoDecrypt,
+            Self::AutoAccept => PendingContactCryptoKind::AutoAccept,
+        }
+    }
+}
+
+/// One deferred contact-crypto op. The queue holds at most one entry per
+/// [`key`](Self::key); re-enqueuing the same `(owner, contact, kind)` is a
+/// no-op (the latest payload wins).
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct PendingContactCrypto {
+    /// The wallet-owned identity the op is for.
+    pub owner_identity_id: Identifier,
+    /// The contact identity the op concerns.
+    pub contact_id: Identifier,
+    /// What to do once a signer is available.
+    pub op: PendingContactCryptoOp,
+    /// Unix-millis enqueue time — observability / ordering only, NOT part of
+    /// the dedup identity.
+    pub enqueued_at_ms: u64,
+}
+
+impl PendingContactCrypto {
+    /// The dedup identity: `(owner, contact, kind)`.
+    pub fn key(&self) -> PendingContactCryptoKey {
+        PendingContactCryptoKey {
+            owner_identity_id: self.owner_identity_id,
+            contact_id: self.contact_id,
+            kind: self.op.kind(),
+        }
+    }
+}
+
+/// Dedup / removal identity for a [`PendingContactCrypto`] entry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct PendingContactCryptoKey {
+    pub owner_identity_id: Identifier,
+    pub contact_id: Identifier,
+    pub kind: PendingContactCryptoKind,
+}
+
+/// Insert `entry` into a deferred-crypto queue, replacing any existing entry
+/// with the same [`PendingContactCryptoKey`] (latest payload wins) so the
+/// queue holds at most one op per `(owner, contact, kind)`. Used by both the
+/// in-memory enqueue and the persisted-queue apply path.
+pub fn upsert_pending_contact_crypto(
+    queue: &mut Vec<PendingContactCrypto>,
+    entry: PendingContactCrypto,
+) {
+    if let Some(slot) = queue.iter_mut().find(|e| e.key() == entry.key()) {
+        *slot = entry;
+    } else {
+        queue.push(entry);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -963,10 +1259,25 @@ pub struct PlatformWalletChangeSet {
     /// the merge policy (plain `Vec::extend`, dedup is the apply-side
     /// caller's job).
     pub account_registrations: Vec<AccountRegistrationEntry>,
+    /// Provider key-material accounts (BLS operator keys / EdDSA
+    /// platform-node keys) emitted at registration. These live outside
+    /// the ECDSA `all_accounts()` set upstream, so they ride their own
+    /// vec rather than [`Self::account_registrations`]. See
+    /// [`ProviderKeyAccountEntry`] for the merge policy (append-only).
+    pub provider_key_account_registrations: Vec<ProviderKeyAccountEntry>,
     /// Address-pool snapshots emitted at wallet create (initial
     /// gap-limit population) and on any pool extension / "used" flip.
     /// See [`AccountAddressPoolEntry`] for the merge policy.
     pub account_address_pools: Vec<AccountAddressPoolEntry>,
+    /// Deferred contact-crypto ops enqueued by the seedless background sweep
+    /// (key material unavailable). Append-only delta; apply inserts into the
+    /// persisted queue, deduped by [`PendingContactCryptoKey`]. Secret-free.
+    /// See [`PendingContactCrypto`].
+    pub pending_contact_crypto_added: Vec<PendingContactCrypto>,
+    /// Keys of deferred ops to remove (drained successfully, or permanently
+    /// failed). Append-only delta; apply removes matching `(owner, contact,
+    /// kind)` from the persisted queue.
+    pub pending_contact_crypto_cleared: Vec<PendingContactCryptoKey>,
     /// Shielded sub-wallet deltas: per-subwallet decrypted notes,
     /// spent marks, sync watermarks, nullifier checkpoints. The
     /// commitment tree itself is **not** in here — it lives on
@@ -1067,8 +1378,16 @@ impl Merge for PlatformWalletChangeSet {
         // duplicate keys within one merged round are a no-op).
         self.account_registrations
             .extend(other.account_registrations);
+        self.provider_key_account_registrations
+            .extend(other.provider_key_account_registrations);
         self.account_address_pools
             .extend(other.account_address_pools);
+        // Deferred contact-crypto queue: append-only add/clear deltas; the
+        // apply side dedups adds and removes cleared keys.
+        self.pending_contact_crypto_added
+            .extend(other.pending_contact_crypto_added);
+        self.pending_contact_crypto_cleared
+            .extend(other.pending_contact_crypto_cleared);
         #[cfg(feature = "shielded")]
         {
             self.shielded.merge(other.shielded);
@@ -1090,7 +1409,10 @@ impl Merge for PlatformWalletChangeSet {
                 .is_none_or(|m| m.is_empty())
             && self.wallet_metadata.is_none()
             && self.account_registrations.is_empty()
-            && self.account_address_pools.is_empty();
+            && self.provider_key_account_registrations.is_empty()
+            && self.account_address_pools.is_empty()
+            && self.pending_contact_crypto_added.is_empty()
+            && self.pending_contact_crypto_cleared.is_empty();
         #[cfg(feature = "shielded")]
         {
             core_empty && self.shielded.as_ref().is_none_or(|s| s.is_empty())
@@ -1112,13 +1434,165 @@ mod tests {
         assert!(cs.is_empty());
     }
 
+    /// The deferred contact-crypto queue rides the changeset as add/clear
+    /// deltas: a pending enqueue OR a pending clear must mark the changeset
+    /// non-empty (so the persist round isn't skipped and the queue survives a
+    /// restart), merge extends both delta vecs, and the dedup key ignores the
+    /// (secret-free) payload + timestamp but distinguishes the op kind.
+    #[test]
+    fn pending_contact_crypto_queue_deltas_merge_and_dedup_key() {
+        let owner = Identifier::from([0x11; 32]);
+        let contact = Identifier::from([0x22; 32]);
+
+        let receiving = PendingContactCrypto {
+            owner_identity_id: owner,
+            contact_id: contact,
+            op: PendingContactCryptoOp::RegisterReceiving,
+            enqueued_at_ms: 0,
+        };
+        let external = PendingContactCrypto {
+            owner_identity_id: owner,
+            contact_id: contact,
+            op: PendingContactCryptoOp::RegisterExternal {
+                encrypted_public_key: vec![1, 2, 3],
+                our_decryption_key_index: 4,
+                contact_encryption_key_index: 5,
+            },
+            enqueued_at_ms: 7,
+        };
+
+        // A pending enqueue marks the changeset non-empty.
+        let mut cs = PlatformWalletChangeSet {
+            pending_contact_crypto_added: vec![receiving.clone()],
+            ..Default::default()
+        };
+        assert!(
+            !cs.is_empty(),
+            "a pending enqueue must mark the changeset non-empty"
+        );
+
+        // A clear-only changeset is also non-empty (the removal must persist).
+        let clear_only = PlatformWalletChangeSet {
+            pending_contact_crypto_cleared: vec![external.key()],
+            ..Default::default()
+        };
+        assert!(
+            !clear_only.is_empty(),
+            "a pending clear must mark the changeset non-empty"
+        );
+
+        // merge extends both delta vecs.
+        cs.merge(PlatformWalletChangeSet {
+            pending_contact_crypto_added: vec![external.clone()],
+            pending_contact_crypto_cleared: vec![receiving.key()],
+            ..Default::default()
+        });
+        assert_eq!(cs.pending_contact_crypto_added.len(), 2);
+        assert_eq!(cs.pending_contact_crypto_cleared.len(), 1);
+
+        // Dedup key ignores the payload + timestamp but distinguishes kind.
+        let external_other_payload = PendingContactCrypto {
+            owner_identity_id: owner,
+            contact_id: contact,
+            op: PendingContactCryptoOp::RegisterExternal {
+                encrypted_public_key: vec![9, 9],
+                our_decryption_key_index: 4,
+                contact_encryption_key_index: 5,
+            },
+            enqueued_at_ms: 999,
+        };
+        assert_eq!(
+            external.key(),
+            external_other_payload.key(),
+            "same (owner, contact, kind) → same dedup key regardless of payload/timestamp"
+        );
+        assert_ne!(
+            receiving.key(),
+            external.key(),
+            "different op kind → different dedup key"
+        );
+    }
+
+    /// `upsert_pending_contact_crypto` keeps at most one entry per
+    /// `(owner, contact, kind)`: a duplicate kind replaces in place (latest
+    /// payload + timestamp win, no growth), while a different kind is a new
+    /// entry.
+    #[test]
+    fn upsert_pending_contact_crypto_dedups_by_key_latest_wins() {
+        let owner = Identifier::from([1u8; 32]);
+        let contact = Identifier::from([2u8; 32]);
+        let mut q: Vec<PendingContactCrypto> = Vec::new();
+
+        let recv = PendingContactCrypto {
+            owner_identity_id: owner,
+            contact_id: contact,
+            op: PendingContactCryptoOp::RegisterReceiving,
+            enqueued_at_ms: 1,
+        };
+        upsert_pending_contact_crypto(&mut q, recv.clone());
+        upsert_pending_contact_crypto(&mut q, recv);
+        assert_eq!(
+            q.len(),
+            1,
+            "re-enqueuing the same kind must not grow the queue"
+        );
+
+        // A different kind is a separate entry.
+        upsert_pending_contact_crypto(
+            &mut q,
+            PendingContactCrypto {
+                owner_identity_id: owner,
+                contact_id: contact,
+                op: PendingContactCryptoOp::RegisterExternal {
+                    encrypted_public_key: vec![1],
+                    our_decryption_key_index: 0,
+                    contact_encryption_key_index: 0,
+                },
+                enqueued_at_ms: 2,
+            },
+        );
+        assert_eq!(q.len(), 2);
+
+        // Same key, newer payload → replaced in place (latest wins, no growth).
+        upsert_pending_contact_crypto(
+            &mut q,
+            PendingContactCrypto {
+                owner_identity_id: owner,
+                contact_id: contact,
+                op: PendingContactCryptoOp::RegisterExternal {
+                    encrypted_public_key: vec![9, 9],
+                    our_decryption_key_index: 0,
+                    contact_encryption_key_index: 0,
+                },
+                enqueued_at_ms: 3,
+            },
+        );
+        assert_eq!(q.len(), 2, "replacing must not grow the queue");
+        let stored = q
+            .iter()
+            .find(|e| e.op.kind() == PendingContactCryptoKind::RegisterExternal)
+            .expect("external entry present");
+        assert_eq!(stored.enqueued_at_ms, 3, "latest timestamp wins");
+        match &stored.op {
+            PendingContactCryptoOp::RegisterExternal {
+                encrypted_public_key,
+                ..
+            } => assert_eq!(encrypted_public_key, &vec![9, 9], "latest payload wins"),
+            _ => panic!("expected RegisterExternal"),
+        }
+    }
+
     #[test]
     fn test_platform_address_changeset_merge() {
         let wallet_id: WalletId = [9u8; 32];
         let addr1 = PlatformP2PKHAddress::new([1u8; 20]);
         let addr2 = PlatformP2PKHAddress::new([2u8; 20]);
 
-        let funds = |balance, nonce| AddressFunds { balance, nonce };
+        let funds = |balance, nonce| AddressFunds {
+            balance,
+            nonce,
+            as_of_height: 0,
+        };
         let entry = |address_index, address, funds| PlatformAddressBalanceEntry {
             wallet_id,
             account_index: 0,
@@ -1168,6 +1642,210 @@ mod tests {
         assert_eq!(a.balances.get(&(identity_b, token_x)), Some(&50));
         assert!(a.removed_balances.contains(&(identity_a, token_y)));
         assert!(a.removed_balances.contains(&(identity_b, token_y)));
+    }
+
+    fn ignore_key() -> (Identifier, Identifier) {
+        (Identifier::from([0xAA; 32]), Identifier::from([0xBB; 32]))
+    }
+
+    /// ignore → un-ignore for the same key resolves to exactly "un-ignored":
+    /// the newer un-ignore cancels the older ignore, so the key lands in
+    /// `unignored` only and never in `ignored`. Without cancellation the key
+    /// would sit in both sets and apply (inserts before removes) would drop
+    /// the block.
+    #[test]
+    fn contact_merge_ignore_then_unignore_last_write_wins() {
+        let key = ignore_key();
+
+        let mut base = ContactChangeSet {
+            ignored: BTreeSet::from([key]),
+            ..Default::default()
+        };
+        let newer = ContactChangeSet {
+            unignored: BTreeSet::from([key]),
+            ..Default::default()
+        };
+
+        base.merge(newer);
+
+        assert!(
+            !base.ignored.contains(&key),
+            "the newer un-ignore must clear the older ignore"
+        );
+        assert!(base.unignored.contains(&key), "the key ends up un-ignored");
+        assert_eq!(base.ignored.len(), 0);
+        assert_eq!(base.unignored.len(), 1);
+    }
+
+    /// un-ignore → re-ignore for the same key resolves to exactly "ignored":
+    /// the newer ignore cancels the older un-ignore (the F4 case — a
+    /// transient-flush re-merge of an un-ignore followed by a re-ignore must
+    /// keep the sender blocked).
+    #[test]
+    fn contact_merge_unignore_then_ignore_last_write_wins() {
+        let key = ignore_key();
+
+        let mut base = ContactChangeSet {
+            unignored: BTreeSet::from([key]),
+            ..Default::default()
+        };
+        let newer = ContactChangeSet {
+            ignored: BTreeSet::from([key]),
+            ..Default::default()
+        };
+
+        base.merge(newer);
+
+        assert!(
+            base.ignored.contains(&key),
+            "the newer re-ignore must win over the older un-ignore"
+        );
+        assert!(
+            !base.unignored.contains(&key),
+            "the newer re-ignore must clear the older un-ignore"
+        );
+        assert_eq!(base.ignored.len(), 1);
+        assert_eq!(base.unignored.len(), 0);
+    }
+
+    /// Cancellation is per key: an un-ignore of one sender must not disturb a
+    /// separate sender's ignore carried in the same merge.
+    #[test]
+    fn contact_merge_ignore_cancellation_is_per_key() {
+        let blocked = (Identifier::from([1u8; 32]), Identifier::from([2u8; 32]));
+        let unblocked = (Identifier::from([1u8; 32]), Identifier::from([3u8; 32]));
+
+        let mut base = ContactChangeSet {
+            ignored: BTreeSet::from([blocked, unblocked]),
+            ..Default::default()
+        };
+        let newer = ContactChangeSet {
+            unignored: BTreeSet::from([unblocked]),
+            ..Default::default()
+        };
+
+        base.merge(newer);
+
+        assert!(
+            base.ignored.contains(&blocked),
+            "untouched sender stays ignored"
+        );
+        assert!(!base.ignored.contains(&unblocked));
+        assert!(base.unignored.contains(&unblocked));
+    }
+
+    fn sent_key() -> SentContactRequestKey {
+        SentContactRequestKey {
+            owner_id: Identifier::from([1u8; 32]),
+            recipient_id: Identifier::from([2u8; 32]),
+        }
+    }
+
+    fn sent_entry() -> ContactRequestEntry {
+        ContactRequestEntry {
+            request: ContactRequest::new(
+                Identifier::from([1u8; 32]),
+                Identifier::from([2u8; 32]),
+                0,
+                0,
+                0,
+                vec![0u8; 96],
+                100_000,
+                0,
+            ),
+        }
+    }
+
+    /// remove-sent → re-send for the same key resolves to exactly "sent": the
+    /// newer insert cancels the older tombstone, so the re-send survives apply
+    /// (which runs inserts before removes).
+    #[test]
+    fn contact_merge_remove_sent_then_resend_last_write_wins() {
+        let key = sent_key();
+
+        let mut base = ContactChangeSet {
+            removed_sent: BTreeSet::from([key]),
+            ..Default::default()
+        };
+        let mut newer = ContactChangeSet::default();
+        newer.sent_requests.insert(key, sent_entry());
+
+        base.merge(newer);
+
+        assert!(
+            base.sent_requests.contains_key(&key),
+            "the newer re-send must win over the older tombstone"
+        );
+        assert!(
+            !base.removed_sent.contains(&key),
+            "the newer re-send must clear the older tombstone"
+        );
+    }
+
+    /// send → remove-sent for the same key resolves to exactly "removed": the
+    /// newer tombstone cancels the older insert.
+    #[test]
+    fn contact_merge_send_then_remove_sent_last_write_wins() {
+        let key = sent_key();
+
+        let mut base = ContactChangeSet::default();
+        base.sent_requests.insert(key, sent_entry());
+        let newer = ContactChangeSet {
+            removed_sent: BTreeSet::from([key]),
+            ..Default::default()
+        };
+
+        base.merge(newer);
+
+        assert!(
+            !base.sent_requests.contains_key(&key),
+            "the newer tombstone must clear the older insert"
+        );
+        assert!(base.removed_sent.contains(&key));
+    }
+
+    /// Same last-write-wins reconciliation for the incoming pair
+    /// (`incoming_requests` vs `removed_incoming`).
+    #[test]
+    fn contact_merge_incoming_insert_vs_tombstone_last_write_wins() {
+        let key = ReceivedContactRequestKey {
+            owner_id: Identifier::from([2u8; 32]),
+            sender_id: Identifier::from([1u8; 32]),
+        };
+        let entry = ContactRequestEntry {
+            request: ContactRequest::new(
+                Identifier::from([1u8; 32]),
+                Identifier::from([2u8; 32]),
+                0,
+                0,
+                0,
+                vec![0u8; 96],
+                100_000,
+                0,
+            ),
+        };
+
+        // tombstone then re-insert → insert wins.
+        let mut base = ContactChangeSet {
+            removed_incoming: BTreeSet::from([key]),
+            ..Default::default()
+        };
+        let mut newer = ContactChangeSet::default();
+        newer.incoming_requests.insert(key, entry.clone());
+        base.merge(newer);
+        assert!(base.incoming_requests.contains_key(&key));
+        assert!(!base.removed_incoming.contains(&key));
+
+        // insert then tombstone → tombstone wins.
+        let mut base = ContactChangeSet::default();
+        base.incoming_requests.insert(key, entry);
+        let newer = ContactChangeSet {
+            removed_incoming: BTreeSet::from([key]),
+            ..Default::default()
+        };
+        base.merge(newer);
+        assert!(!base.incoming_requests.contains_key(&key));
+        assert!(base.removed_incoming.contains(&key));
     }
 
     #[test]
