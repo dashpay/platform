@@ -58,6 +58,15 @@ pub fn take_pwffi_error(env: &mut JNIEnv, mut result: PlatformWalletFFIResult) -
             .to_string_lossy()
             .into_owned()
     };
+    // Diagnostic breadcrumb (warn-level so it provably reaches logcat): the
+    // raw platform-wallet code, the offset code Kotlin will see, and the full
+    // message — visible even when the Kotlin caller contains the exception.
+    log::warn!(
+        "take_pwffi_error: platform-wallet code {} (thrown as DashSDKException code {}): {}",
+        result.code as i32,
+        result.code as i32 + PWFFI_CODE_OFFSET,
+        message
+    );
     throw_sdk_exception(env, result.code as i32 + PWFFI_CODE_OFFSET, &message);
     // SAFETY: `result` is a fresh PlatformWalletFFIResult; free its message.
     unsafe { platform_wallet_ffi_result_free(&mut result) };
@@ -75,6 +84,10 @@ pub const SDK_EXCEPTION_CLASS: &str = "org/dashfoundation/dashsdk/ffi/DashSDKExc
 /// `RuntimeException` if the class or constructor lookup fails (e.g. the
 /// library is loaded outside the Kotlin SDK).
 pub fn throw_sdk_exception(env: &mut JNIEnv, code: i32, message: &str) {
+    // Diagnostic breadcrumb (warn-level so it provably reaches logcat): every
+    // native→Kotlin error conversion is visible even when the Kotlin caller
+    // contains the exception into a status line.
+    log::warn!("throw_sdk_exception: code={code} message={message}");
     // If an exception is already pending we must not call further JNI
     // functions that would themselves throw.
     if env.exception_check().unwrap_or(false) {

@@ -220,13 +220,36 @@ impl IdentityWallet {
     ) -> Result<Vec<DecryptedEncryptedDocument>, PlatformWalletError> {
         use dash_sdk::platform::{ContextProvider, Fetch};
 
+        // On-device diagnostic breadcrumbs are warn!-level throughout this fn:
+        // INFO-level platform-wallet tracing is filtered from logcat on device,
+        // and this call sits under an active `sdkFetched=0` investigation —
+        // every stage must be provably visible in `adb logcat`.
+        tracing::warn!(
+            owner = %owner_identity_id,
+            contract = %contract_id,
+            document_type = document_type_name,
+            since_ms,
+            "fetch_encrypted_documents: entry"
+        );
+
         // Fetch the contract and register it so `fetch_many`'s proof
         // verification can resolve it through the context provider (the mobile
         // provider never fetches contracts itself).
         let contract = DataContract::fetch(&self.sdk, *contract_id)
             .await
-            .map_err(PlatformWalletError::Sdk)?
+            .map_err(|e| {
+                tracing::warn!(
+                    contract = %contract_id,
+                    error = %e,
+                    "fetch_encrypted_documents: contract fetch failed"
+                );
+                PlatformWalletError::Sdk(e)
+            })?
             .ok_or_else(|| {
+                tracing::warn!(
+                    contract = %contract_id,
+                    "fetch_encrypted_documents: contract not found on Platform"
+                );
                 PlatformWalletError::InvalidIdentityData(format!(
                     "Data contract {contract_id} not found on Platform; cannot fetch documents"
                 ))
@@ -236,8 +259,16 @@ impl IdentityWallet {
         }
         let contract = Arc::new(contract);
 
-        let (_identity, identity_index, wallet) =
-            self.resolve_encryption_context(owner_identity_id).await?;
+        let (_identity, identity_index, wallet) = self
+            .resolve_encryption_context(owner_identity_id)
+            .await
+            .inspect_err(|e| {
+                tracing::warn!(
+                    owner = %owner_identity_id,
+                    error = %e,
+                    "fetch_encrypted_documents: encryption-context resolution failed"
+                );
+            })?;
 
         // The wire query, split out so its exact shape is integration-testable
         // against testnet without a resident wallet/identity (see
@@ -249,7 +280,14 @@ impl IdentityWallet {
             document_type_name,
             since_ms,
         )
-        .await?;
+        .await
+        .inspect_err(|e| {
+            tracing::warn!(
+                owner = %owner_identity_id,
+                error = %e,
+                "fetch_encrypted_documents: document query failed"
+            );
+        })?;
 
         let mut out = Vec::new();
         for (doc_id, maybe_doc) in raw_docs.iter() {
@@ -305,6 +343,12 @@ impl IdentityWallet {
                 payload: opened.payload,
             });
         }
+        tracing::warn!(
+            owner = %owner_identity_id,
+            raw = raw_docs.len(),
+            decrypted = out.len(),
+            "fetch_encrypted_documents: returning decrypted documents"
+        );
         Ok(out)
     }
 }
@@ -335,9 +379,17 @@ pub async fn query_owned_encrypted_documents(
     use dash_sdk::dapi_grpc::platform::v0::get_documents_request::get_documents_request_v0::Start;
     use dash_sdk::drive::query::{OrderClause, WhereClause, WhereOperator};
     use dash_sdk::platform::FetchMany;
+    use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::platform_value::platform_value;
 
     const PAGE: u32 = 100;
+    tracing::warn!(
+        owner = %owner_identity_id,
+        contract = %contract.id(),
+        document_type = document_type_name,
+        since_ms,
+        "query_owned_encrypted_documents: entry"
+    );
     let mut raw_docs: Vec<(Identifier, Option<Document>)> = Vec::new();
     let mut start: Option<Start> = None;
     loop {
@@ -367,9 +419,15 @@ pub async fn query_owned_encrypted_documents(
             start: start.clone(),
         };
 
-        let page = Document::fetch_many(sdk, query)
-            .await
-            .map_err(PlatformWalletError::Sdk)?;
+        let page = Document::fetch_many(sdk, query).await.map_err(|e| {
+            tracing::warn!(
+                owner = %owner_identity_id,
+                document_type = document_type_name,
+                error = %e,
+                "query_owned_encrypted_documents: fetch_many failed"
+            );
+            PlatformWalletError::Sdk(e)
+        })?;
         let page_len = page.len();
         let last_id = page.keys().last().copied();
         raw_docs.extend(page);
@@ -387,7 +445,9 @@ pub async fn query_owned_encrypted_documents(
     // ZERO decrypt-skip warnings, which can only mean the query itself returned
     // nothing. Log the raw count (BEFORE decrypt) so an `adb logcat` run pins
     // the empty result to the query vs the decrypt stage without guessing.
-    tracing::info!(
+    // warn!-level, not info!: platform-wallet INFO tracing never showed up in
+    // logcat during the on-device run, so this breadcrumb must be at WARN.
+    tracing::warn!(
         owner = %owner_identity_id,
         document_type = document_type_name,
         since_ms,
