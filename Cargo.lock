@@ -5206,6 +5206,7 @@ dependencies = [
  "image",
  "key-wallet",
  "key-wallet-manager",
+ "log",
  "platform-encryption",
  "rand 0.8.6",
  "rayon",

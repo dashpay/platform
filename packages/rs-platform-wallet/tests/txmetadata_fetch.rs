@@ -63,6 +63,18 @@ async fn fetch_returns_both_legacy_txmetadata_documents() {
         .await
         .expect("fetch contract")
         .expect("wallet-utils contract present on testnet");
+    // Production parity (`IdentityWallet::fetch_encrypted_documents`):
+    // register the fetched contract with the trusted context provider before
+    // the query, exactly as the on-device path does. With this line the repro
+    // is config-identical to the device call: `SdkBuilder::new_testnet()` +
+    // `TrustedHttpContextProvider::new(Testnet, None, 100)`, proofs on
+    // (builder default), platform version auto (0), since_ms = 0.
+    {
+        use dash_sdk::platform::ContextProvider;
+        if let Some(provider) = sdk.context_provider() {
+            provider.register_data_contract(Arc::new(contract.clone()));
+        }
+    }
     let contract = Arc::new(contract);
 
     // The exact production query (since_ms = 0 => fetch everything, as the
