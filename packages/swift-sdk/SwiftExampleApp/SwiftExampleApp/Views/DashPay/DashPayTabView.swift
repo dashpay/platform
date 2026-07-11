@@ -211,9 +211,14 @@ struct DashPayTabView: View {
                         }
                     }
                     ToolbarItem(placement: .navigationBarLeading) {
-                        if let walletId = claimWalletId {
+                        if let identity = activeIdentity,
+                           let walletId = identity.wallet?.walletId {
                             NavigationLink {
-                                InvitationsView(walletId: walletId, network: network)
+                                InvitationsView(
+                                    walletId: walletId,
+                                    network: network,
+                                    identity: identity
+                                )
                             } label: {
                                 Image(systemName: "paperplane")
                             }

@@ -20,9 +20,6 @@ struct DashPayProfileView: View {
     @State private var qrURI: String?
     @State private var qrError: String?
 
-    /// Presents the "Invite a friend" (DIP-13 invitation create) sheet.
-    @State private var showCreateInvitation = false
-
     private var displayName: String {
         if let name = profile?.displayName?
             .trimmingCharacters(in: .whitespacesAndNewlines),
@@ -115,18 +112,6 @@ struct DashPayProfileView: View {
                 }
                 .task { await generateAutoAcceptQR() }
 
-                Section("Invite a friend (DIP-13)") {
-                    Button {
-                        showCreateInvitation = true
-                    } label: {
-                        Label("Create invitation", systemImage: "person.badge.plus")
-                    }
-                    .accessibilityIdentifier("dashpay.profile.createInvitation")
-                    Text("Fund a one-time link so someone with no Dash can register their identity and add you.")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-
                 if let url = profile?.avatarUrl?
                     .trimmingCharacters(in: .whitespacesAndNewlines),
                    !url.isEmpty {
@@ -154,10 +139,6 @@ struct DashPayProfileView: View {
                     }
                     .accessibilityIdentifier("dashpay.profile.edit")
                 }
-            }
-            .sheet(isPresented: $showCreateInvitation) {
-                CreateInvitationSheet(identity: identity)
-                    .environmentObject(walletManager)
             }
         }
     }

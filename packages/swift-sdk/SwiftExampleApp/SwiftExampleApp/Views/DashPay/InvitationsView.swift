@@ -10,14 +10,17 @@ import SwiftUI
 struct InvitationsView: View {
     let walletId: Data
     let network: Network
+    let identity: PersistentIdentity
 
     @Query private var invitations: [PersistentInvitation]
 
     @State private var reclaimTarget: PersistentInvitation?
+    @State private var showCreateInvitation = false
 
-    init(walletId: Data, network: Network) {
+    init(walletId: Data, network: Network, identity: PersistentIdentity) {
         self.walletId = walletId
         self.network = network
+        self.identity = identity
         _invitations = Query(
             filter: PersistentInvitation.predicate(walletId: walletId),
             sort: [SortDescriptor(\PersistentInvitation.createdAtSecs, order: .reverse)]
@@ -30,7 +33,7 @@ struct InvitationsView: View {
                 ContentUnavailableView(
                     "No invitations yet",
                     systemImage: "gift",
-                    description: Text("Invitations you create appear here.")
+                    description: Text("Tap + to invite a friend.")
                 )
             } else {
                 ForEach(invitations) { invitation in
@@ -52,12 +55,26 @@ struct InvitationsView: View {
         .navigationTitle("Sent Invitations")
         .navigationBarTitleDisplayMode(.inline)
         .accessibilityIdentifier("dashpay.invitations.list")
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button {
+                    showCreateInvitation = true
+                } label: {
+                    Image(systemName: "plus.circle")
+                }
+                .accessibilityLabel("Create invitation")
+                .accessibilityIdentifier("dashpay.invitations.create")
+            }
+        }
         .sheet(item: $reclaimTarget) { invitation in
             ReclaimInvitationSheet(
                 invitation: invitation,
                 walletId: walletId,
                 network: network
             )
+        }
+        .sheet(isPresented: $showCreateInvitation) {
+            CreateInvitationSheet(identity: identity)
         }
     }
 
