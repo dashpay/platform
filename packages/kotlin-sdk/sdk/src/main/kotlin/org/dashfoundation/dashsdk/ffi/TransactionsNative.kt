@@ -175,6 +175,11 @@ internal object TransactionsNative {
      * into the legacy `version ‖ IV ‖ AES-256-CBC` blob — decryptable by the
      * legacy `org.dashj.platform` stack and vice versa.
      *
+     * @param mnemonicResolverHandle the host mnemonic-resolver handle
+     *   ([org.dashfoundation.dashsdk.wallet.PlatformWalletManager.mnemonicResolverHandle]);
+     *   required (non-zero) for external-signable wallets — the app's shape —
+     *   whose txMetadata AES key derives on demand through the resolver.
+     *   Ignored for wallets with resident private keys.
      * @param encryptionKeyIndex the app's per-document index (dash-wallet's
      *   monotonic `1 + countAllRequests()` counter); non-negative.
      * @param version payload version byte (`1` = protobuf, as the wallet writes).
@@ -185,6 +190,7 @@ internal object TransactionsNative {
      */
     external fun documentCreateEncrypted(
         walletHandle: Long,
+        mnemonicResolverHandle: Long,
         ownerId: ByteArray,
         contractId: ByteArray,
         documentType: String,
@@ -200,6 +206,11 @@ internal object TransactionsNative {
      * (epoch-millis). Bridges `platform_wallet_fetch_encrypted_documents` — the
      * wire-compatible read counterpart of the legacy `getTxMetaData(since, key)`.
      *
+     * @param mnemonicResolverHandle the host mnemonic-resolver handle
+     *   ([org.dashfoundation.dashsdk.wallet.PlatformWalletManager.mnemonicResolverHandle]);
+     *   required (non-zero) for external-signable wallets — the app's shape —
+     *   whose txMetadata AES key derives on demand through the resolver.
+     *   Ignored for wallets with resident private keys.
      * @return a JSON array; each element is `{ "id", "ownerId" (base58),
      *   "keyIndex", "encryptionKeyIndex", "version", "updatedAt" (number|null),
      *   "payload" (base64 of the decrypted opaque plaintext) }`. Documents that
@@ -207,6 +218,7 @@ internal object TransactionsNative {
      */
     external fun documentFetchEncrypted(
         walletHandle: Long,
+        mnemonicResolverHandle: Long,
         ownerId: ByteArray,
         contractId: ByteArray,
         documentType: String,
