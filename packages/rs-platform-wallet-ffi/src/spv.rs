@@ -559,7 +559,9 @@ pub unsafe extern "C" fn platform_wallet_manager_create_sdk_with_spv_context(
     // `dash_sdk_create_extended` only borrows the wrapper and clones the inner
     // provider `Arc`; it never takes ownership. Reclaim the box so the wrapper
     // (and its `Arc<SpvRuntime>`) isn't leaked on every SDK creation.
-    drop(Box::from_raw(context_provider as *mut rs_sdk_ffi::ContextProviderWrapper));
+    drop(Box::from_raw(
+        context_provider as *mut rs_sdk_ffi::ContextProviderWrapper,
+    ));
 
     result
 }
