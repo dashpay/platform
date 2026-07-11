@@ -41,6 +41,22 @@ const FIELD_KEY_INDEX: &str = "keyIndex";
 const FIELD_ENCRYPTION_KEY_INDEX: &str = "encryptionKeyIndex";
 const FIELD_ENCRYPTED_METADATA: &str = "encryptedMetadata";
 
+/// Emit an on-device diagnostic breadcrumb through BOTH logging facades.
+///
+/// On Android the two facades diverge: the JNI layer's `JNI_OnLoad` installs
+/// `android_logger` as the global `log` logger (logcat tag `DashSDK`, Info+),
+/// so `log::warn!` provably reaches logcat, while the only `tracing`
+/// subscriber the Kotlin SDK installs (`dash_sdk_enable_logging`, a
+/// `tracing_subscriber::fmt` layer) writes to STDOUT, which Android discards.
+/// Proven live in the 2026-07 forensic tap: the JNI `log::warn!` lines
+/// appeared under tag `DashSDK`; the `tracing::warn!` lines from this file
+/// never did. Emitting through both keeps host tests / desktop file logging
+/// on `tracing` while making the on-device trail visible in logcat.
+fn breadcrumb(line: &str) {
+    tracing::warn!("{line}");
+    log::warn!("{line}");
+}
+
 /// One decrypted encrypted-document, returned to the caller (serialized to
 /// JSON at the FFI boundary). The `payload` is the opaque, decrypted plaintext
 /// the app parses itself (a protobuf `TxMetadataBatch` for `version == 1`).
@@ -220,17 +236,13 @@ impl IdentityWallet {
     ) -> Result<Vec<DecryptedEncryptedDocument>, PlatformWalletError> {
         use dash_sdk::platform::{ContextProvider, Fetch};
 
-        // On-device diagnostic breadcrumbs are warn!-level throughout this fn:
-        // INFO-level platform-wallet tracing is filtered from logcat on device,
-        // and this call sits under an active `sdkFetched=0` investigation —
-        // every stage must be provably visible in `adb logcat`.
-        tracing::warn!(
-            owner = %owner_identity_id,
-            contract = %contract_id,
-            document_type = document_type_name,
-            since_ms,
-            "fetch_encrypted_documents: entry"
-        );
+        // On-device diagnostic breadcrumbs, dual-emitted at warn level (see
+        // [`breadcrumb`]): this call sits under an active `sdkFetched=0`
+        // investigation — every stage must be provably visible in `adb logcat`.
+        breadcrumb(&format!(
+            "fetch_encrypted_documents: entry owner={owner_identity_id} \
+             contract={contract_id} type={document_type_name} since_ms={since_ms}"
+        ));
 
         // Fetch the contract and register it so `fetch_many`'s proof
         // verification can resolve it through the context provider (the mobile
@@ -238,18 +250,15 @@ impl IdentityWallet {
         let contract = DataContract::fetch(&self.sdk, *contract_id)
             .await
             .map_err(|e| {
-                tracing::warn!(
-                    contract = %contract_id,
-                    error = %e,
-                    "fetch_encrypted_documents: contract fetch failed"
-                );
+                breadcrumb(&format!(
+                    "fetch_encrypted_documents: contract fetch failed contract={contract_id} error={e}"
+                ));
                 PlatformWalletError::Sdk(e)
             })?
             .ok_or_else(|| {
-                tracing::warn!(
-                    contract = %contract_id,
-                    "fetch_encrypted_documents: contract not found on Platform"
-                );
+                breadcrumb(&format!(
+                    "fetch_encrypted_documents: contract not found on Platform contract={contract_id}"
+                ));
                 PlatformWalletError::InvalidIdentityData(format!(
                     "Data contract {contract_id} not found on Platform; cannot fetch documents"
                 ))
@@ -263,11 +272,10 @@ impl IdentityWallet {
             .resolve_encryption_context(owner_identity_id)
             .await
             .inspect_err(|e| {
-                tracing::warn!(
-                    owner = %owner_identity_id,
-                    error = %e,
-                    "fetch_encrypted_documents: encryption-context resolution failed"
-                );
+                breadcrumb(&format!(
+                    "fetch_encrypted_documents: encryption-context resolution failed \
+                     owner={owner_identity_id} error={e}"
+                ));
             })?;
 
         // The wire query, split out so its exact shape is integration-testable
@@ -282,16 +290,25 @@ impl IdentityWallet {
         )
         .await
         .inspect_err(|e| {
-            tracing::warn!(
-                owner = %owner_identity_id,
-                error = %e,
-                "fetch_encrypted_documents: document query failed"
-            );
+            breadcrumb(&format!(
+                "fetch_encrypted_documents: document query failed owner={owner_identity_id} error={e}"
+            ));
         })?;
 
         let mut out = Vec::new();
         for (doc_id, maybe_doc) in raw_docs.iter() {
-            let Some(doc) = maybe_doc else { continue };
+            let Some(doc) = maybe_doc else {
+                // A raw entry the SDK could not materialize (e.g. a proved
+                // fetch returning an id without a document). Previously a
+                // SILENT skip — under proofs this is exactly the shape that
+                // turns "2 documents exist" into an empty result with no
+                // error, so it must leave a trail.
+                breadcrumb(&format!(
+                    "fetch_encrypted_documents: raw entry NOT materialized doc={doc_id} \
+                     owner={owner_identity_id}; skipping"
+                ));
+                continue;
+            };
             let props = doc.properties();
             let (Some(key_index), Some(encryption_key_index)) = (
                 props
@@ -301,14 +318,20 @@ impl IdentityWallet {
                     .get(FIELD_ENCRYPTION_KEY_INDEX)
                     .and_then(|v: &Value| v.to_integer::<u32>().ok()),
             ) else {
-                tracing::warn!(owner = %owner_identity_id, doc = %doc_id, "encrypted document missing key indices; skipping");
+                breadcrumb(&format!(
+                    "fetch_encrypted_documents: document missing key indices doc={doc_id} \
+                     owner={owner_identity_id}; skipping"
+                ));
                 continue;
             };
             let Some(blob) = props
                 .get(FIELD_ENCRYPTED_METADATA)
                 .and_then(|v: &Value| v.to_binary_bytes().ok())
             else {
-                tracing::warn!(owner = %owner_identity_id, doc = %doc_id, "encrypted document missing encryptedMetadata; skipping");
+                breadcrumb(&format!(
+                    "fetch_encrypted_documents: document missing encryptedMetadata doc={doc_id} \
+                     owner={owner_identity_id}; skipping"
+                ));
                 continue;
             };
 
@@ -321,14 +344,20 @@ impl IdentityWallet {
             ) {
                 Ok(k) => k,
                 Err(e) => {
-                    tracing::warn!(owner = %owner_identity_id, doc = %doc_id, error = %e, "txMetadata key derivation failed; skipping");
+                    breadcrumb(&format!(
+                        "fetch_encrypted_documents: txMetadata key derivation failed doc={doc_id} \
+                         owner={owner_identity_id} error={e}; skipping"
+                    ));
                     continue;
                 }
             };
             let opened = match open_tx_metadata(&aes_key, &blob) {
                 Ok(o) => o,
                 Err(e) => {
-                    tracing::warn!(owner = %owner_identity_id, doc = %doc_id, error = %e, "txMetadata decrypt failed; skipping");
+                    breadcrumb(&format!(
+                        "fetch_encrypted_documents: txMetadata decrypt failed doc={doc_id} \
+                         owner={owner_identity_id} error={e}; skipping"
+                    ));
                     continue;
                 }
             };
@@ -343,12 +372,12 @@ impl IdentityWallet {
                 payload: opened.payload,
             });
         }
-        tracing::warn!(
-            owner = %owner_identity_id,
-            raw = raw_docs.len(),
-            decrypted = out.len(),
-            "fetch_encrypted_documents: returning decrypted documents"
-        );
+        breadcrumb(&format!(
+            "fetch_encrypted_documents: returning decrypted documents owner={owner_identity_id} \
+             raw={} decrypted={}",
+            raw_docs.len(),
+            out.len()
+        ));
         Ok(out)
     }
 }
@@ -383,13 +412,11 @@ pub async fn query_owned_encrypted_documents(
     use dpp::platform_value::platform_value;
 
     const PAGE: u32 = 100;
-    tracing::warn!(
-        owner = %owner_identity_id,
-        contract = %contract.id(),
-        document_type = document_type_name,
-        since_ms,
-        "query_owned_encrypted_documents: entry"
-    );
+    breadcrumb(&format!(
+        "query_owned_encrypted_documents: entry owner={owner_identity_id} contract={} \
+         type={document_type_name} since_ms={since_ms}",
+        contract.id()
+    ));
     let mut raw_docs: Vec<(Identifier, Option<Document>)> = Vec::new();
     let mut start: Option<Start> = None;
     loop {
@@ -420,12 +447,10 @@ pub async fn query_owned_encrypted_documents(
         };
 
         let page = Document::fetch_many(sdk, query).await.map_err(|e| {
-            tracing::warn!(
-                owner = %owner_identity_id,
-                document_type = document_type_name,
-                error = %e,
-                "query_owned_encrypted_documents: fetch_many failed"
-            );
+            breadcrumb(&format!(
+                "query_owned_encrypted_documents: fetch_many failed owner={owner_identity_id} \
+                 type={document_type_name} error={e}"
+            ));
             PlatformWalletError::Sdk(e)
         })?;
         let page_len = page.len();
@@ -443,17 +468,15 @@ pub async fn query_owned_encrypted_documents(
 
     // On-device diagnostic breadcrumb: the probe reported `sdkFetched=0` with
     // ZERO decrypt-skip warnings, which can only mean the query itself returned
-    // nothing. Log the raw count (BEFORE decrypt) so an `adb logcat` run pins
-    // the empty result to the query vs the decrypt stage without guessing.
-    // warn!-level, not info!: platform-wallet INFO tracing never showed up in
-    // logcat during the on-device run, so this breadcrumb must be at WARN.
-    tracing::warn!(
-        owner = %owner_identity_id,
-        document_type = document_type_name,
-        since_ms,
-        raw_count = raw_docs.len(),
-        materialized = raw_docs.iter().filter(|(_, d)| d.is_some()).count(),
-        "fetched raw encrypted documents"
-    );
+    // nothing OR nothing materialized. Log the raw count (BEFORE decrypt) so an
+    // `adb logcat` run pins the empty result to the query vs the
+    // materialization vs the decrypt stage without guessing.
+    breadcrumb(&format!(
+        "query_owned_encrypted_documents: fetched raw encrypted documents \
+         owner={owner_identity_id} type={document_type_name} since_ms={since_ms} \
+         raw_count={} materialized={}",
+        raw_docs.len(),
+        raw_docs.iter().filter(|(_, d)| d.is_some()).count()
+    ));
     Ok(raw_docs)
 }
