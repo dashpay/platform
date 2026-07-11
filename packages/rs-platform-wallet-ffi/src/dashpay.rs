@@ -543,6 +543,7 @@ pub unsafe extern "C" fn platform_wallet_send_dashpay_payment(
     memo: *const c_char,
     core_signer_handle: *mut MnemonicResolverHandle,
     out_txid: *mut [u8; 32],
+    out_fee_duffs: *mut u64,
 ) -> PlatformWalletFFIResult {
     check_ptr!(core_signer_handle);
     check_ptr!(out_txid);
@@ -592,7 +593,13 @@ pub unsafe extern "C" fn platform_wallet_send_dashpay_payment(
         })
     });
     let result = unwrap_option_or_return!(option);
-    let (txid, _entry) = unwrap_result_or_return!(result);
+    let (txid, _entry, fee_duffs) = unwrap_result_or_return!(result);
+    // Exact network fee of the broadcast transaction (inputs − outputs),
+    // straight from the builder — nullable so callers that don't care
+    // can pass NULL.
+    if !out_fee_duffs.is_null() {
+        unsafe { *out_fee_duffs = fee_duffs };
+    }
     use dashcore::hashes::Hash;
     let bytes = txid.to_raw_hash().to_byte_array();
     unsafe {
