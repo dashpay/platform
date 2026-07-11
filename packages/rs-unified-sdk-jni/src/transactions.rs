@@ -1057,18 +1057,18 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_do
     since_ms: jlong,
 ) -> jstring {
     guard(&mut env, ptr::null_mut(), |env| {
-        // Diagnostic breadcrumbs are warn-level: this entry point sits under an
-        // active on-device `sdkFetched=0` investigation and every stage —
-        // including "the JVM call reached native code at all" — must be
-        // provably visible in `adb logcat` (tag `DashSDK`). Error paths log via
-        // `take_pwffi_error` / `throw_sdk_exception` (both warn before
-        // throwing).
-        log::warn!(
-            "documentFetchEncrypted: entry wallet_handle={:#x} (nonzero={}) \
-             mnemonic_resolver_handle={:#x} (nonzero={}) since_ms={}",
-            wallet_handle,
+        // Informational stage breadcrumbs are DEBUG; only genuine failure paths
+        // are WARN. The `sdkFetched=0` root cause is fixed (external-signable
+        // txMetadata derive, dashpay/platform#4091), so these no longer need to
+        // be loud. Android visibility: `JNI_OnLoad` installs `android_logger` at
+        // `LevelFilter::Info`, so DEBUG lines stay OUT of on-device logcat while
+        // WARN error lines remain visible. NEVER log a raw handle value: only
+        // whether each handle is nonzero — `mnemonic_resolver_handle` is a live
+        // `*mut MnemonicResolverHandle`, so `{:#x}` would leak a heap pointer.
+        log::debug!(
+            "documentFetchEncrypted: entry wallet_handle_nonzero={} \
+             mnemonic_resolver_handle_nonzero={} since_ms={}",
             wallet_handle != 0,
-            mnemonic_resolver_handle,
             mnemonic_resolver_handle != 0,
             since_ms
         );
@@ -1089,7 +1089,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_do
             throw_sdk_exception(env, 1, "sinceMs must be non-negative");
             return ptr::null_mut();
         }
-        log::warn!(
+        log::debug!(
             "documentFetchEncrypted: args owner={} contract={} document_type={:?} — \
              calling platform_wallet_fetch_encrypted_documents",
             hex32(&owner),
@@ -1125,7 +1125,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_do
             .to_string_lossy()
             .into_owned();
         unsafe { platform_wallet_ffi::platform_wallet_string_free(out_json) };
-        log::warn!(
+        log::debug!(
             "documentFetchEncrypted: success, returning {} chars of JSON to Kotlin",
             json.len()
         );
