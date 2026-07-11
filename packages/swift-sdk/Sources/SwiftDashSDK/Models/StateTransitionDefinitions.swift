@@ -49,15 +49,48 @@ public struct TransitionDefinitions {
         "identityTopUp": TransitionDefinition(
             key: "identityTopUp",
             label: "Identity Top Up",
-            description: "Add credits to an existing identity",
+            description: "Add credits to an existing identity from a new Core asset lock",
             inputs: [
                 TransitionInput(
-                    name: "assetLockProof",
-                    type: "textarea",
-                    label: "Asset Lock Proof",
+                    name: "amount",
+                    type: "number",
+                    label: "Amount (duffs)",
                     required: true,
-                    placeholder: "Enter asset lock proof (hex encoded)",
-                    help: "The asset lock proof that provides additional credits"
+                    placeholder: "100000",
+                    help: "Core-side funding amount in duffs (minimum 50000). A new asset lock is built from the wallet's balance."
+                ),
+                TransitionInput(
+                    name: "accountIndex",
+                    type: "number",
+                    label: "Funding Account Index",
+                    required: false,
+                    placeholder: "0",
+                    help: "BIP44 standard account supplying the funding UTXOs",
+                    defaultValue: "0"
+                )
+            ]
+        ),
+
+        "identityTopUpResume": TransitionDefinition(
+            key: "identityTopUpResume",
+            label: "Identity Top Up (Resume Stuck Lock)",
+            description: "Recover a stuck top-up by consuming an already-tracked Core asset lock",
+            inputs: [
+                TransitionInput(
+                    name: "outPointTxid",
+                    type: "text",
+                    label: "Asset Lock Txid (hex)",
+                    required: true,
+                    placeholder: "64-hex-char transaction id",
+                    help: "Txid of the tracked asset lock to consume, in display-order hex"
+                ),
+                TransitionInput(
+                    name: "outPointVout",
+                    type: "number",
+                    label: "Asset Lock Output Index",
+                    required: false,
+                    placeholder: "0",
+                    defaultValue: "0"
                 )
             ]
         ),

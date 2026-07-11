@@ -3742,4 +3742,159 @@ extension ManagedPlatformWallet {
             return (identityId, ManagedIdentity(handle: outManagedHandle))
         }.value
     }
+
+    /// Top up an existing identity by building and broadcasting a **new
+    /// Core asset lock** from the wallet's own balance — the top-up twin of
+    /// [`registerIdentityWithFunding(amountDuffs:accountIndex:identityIndex:identityPubkeys:signer:)`].
+    ///
+    /// Simpler than registration: an `IdentityTopUp` creates no identity
+    /// keys, so there is no per-identity-key `KeychainSigner` and no pubkey
+    /// array — the transition is signed entirely by the asset lock's
+    /// Core-side key via a `MnemonicResolver`. `accountIndex` selects which
+    /// BIP44 *standard* account supplies the funding UTXOs (same constraint
+    /// as registration).
+    ///
+    /// `amountDuffs` must meet the Rust-side minimum top-up asset-lock
+    /// balance; a smaller amount is rejected before any lock is broadcast
+    /// (callers should also gate on the minimum in the UI so a sub-floor
+    /// amount never reaches here). Returns the identity's post-transition
+    /// credit balance; the local `ManagedIdentity` balance is updated inside
+    /// the FFI call.
+    public func topUpIdentityWithFunding(
+        identityId: Data,
+        amountDuffs: UInt64,
+        accountIndex: UInt32
+    ) async throws -> UInt64 {
+        guard identityId.count == 32 else {
+            throw PlatformWalletError.invalidParameter(
+                "identityId must be 32 bytes, got \(identityId.count)"
+            )
+        }
+        let handle = self.handle
+        // Core-side asset-lock signer. Same `MnemonicResolver` lifetime +
+        // vtable rationale as `registerIdentityWithFunding`: the
+        // credit-output private key is fetched per-call from Keychain,
+        // signed, and zeroed — no private key ever lives in Rust memory
+        // across operations.
+        let coreSigner = MnemonicResolver()
+        return try await Task.detached(priority: .userInitiated) { () -> UInt64 in
+            var idTuple: (
+                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8
+            ) = (
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+            )
+            withUnsafeMutableBytes(of: &idTuple) { raw in
+                for (i, byte) in identityId.prefix(32).enumerated() {
+                    raw[i] = byte
+                }
+            }
+
+            var newBalance: UInt64 = 0
+            // `withExtendedLifetime` pins `coreSigner` across the
+            // synchronous FFI call (Rust uses `block_on_worker`). Keep the
+            // call inline — an unawaited Task inside would let the resolver
+            // drop mid-flight and dangle its trampoline ctx pointer.
+            let result = withExtendedLifetime(coreSigner) {
+                withUnsafePointer(to: &idTuple) { idPtr in
+                    platform_wallet_top_up_identity_with_funding_signer(
+                        handle,
+                        idPtr,
+                        amountDuffs,
+                        accountIndex,
+                        coreSigner.handle,
+                        &newBalance
+                    )
+                }
+            }
+            try result.check()
+            return newBalance
+        }.value
+    }
+
+    /// Recover a stuck top-up by consuming an already-tracked Core asset
+    /// lock — the top-up twin of
+    /// [`resumeIdentityWithAssetLock(outPointTxid:outPointVout:identityIndex:identityPubkeys:signer:)`].
+    ///
+    /// Use case is crash recovery: a prior `topUpIdentityWithFunding`
+    /// confirmed its lock on Core but the `IdentityTopUp` never reached
+    /// Platform (app killed / network drop). This picks up that lock by
+    /// outpoint and completes the top-up against `identityId`.
+    ///
+    /// `outPointTxid` is the 32-byte raw txid (little-endian wire order,
+    /// same shape as `OutPointFFI.txid`; the caller decodes from
+    /// display-order hex first). Returns the post-transition credit balance.
+    ///
+    /// If the lock was already consumed on Platform (double-resume), the FFI
+    /// surfaces an opaque consensus rejection — the caller should classify
+    /// and message it ("asset lock already consumed") rather than showing
+    /// the raw error.
+    public func resumeTopUpWithAssetLock(
+        identityId: Data,
+        outPointTxid: Data,
+        outPointVout: UInt32
+    ) async throws -> UInt64 {
+        guard identityId.count == 32 else {
+            throw PlatformWalletError.invalidParameter(
+                "identityId must be 32 bytes, got \(identityId.count)"
+            )
+        }
+        guard outPointTxid.count == 32 else {
+            throw PlatformWalletError.invalidParameter(
+                "outPointTxid must be exactly 32 bytes (was \(outPointTxid.count))"
+            )
+        }
+        let handle = self.handle
+        // Same `MnemonicResolver` rationale as `topUpIdentityWithFunding`.
+        let coreSigner = MnemonicResolver()
+        return try await Task.detached(priority: .userInitiated) { () -> UInt64 in
+            var idTuple: (
+                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8
+            ) = (
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+            )
+            withUnsafeMutableBytes(of: &idTuple) { raw in
+                for (i, byte) in identityId.prefix(32).enumerated() {
+                    raw[i] = byte
+                }
+            }
+            var txidTuple: (
+                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8
+            ) = (
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+            )
+            outPointTxid.withUnsafeBytes { src in
+                Swift.withUnsafeMutableBytes(of: &txidTuple) { dst in
+                    dst.copyMemory(from: src)
+                }
+            }
+            var outPoint = OutPointFFI(txid: txidTuple, vout: outPointVout)
+
+            var newBalance: UInt64 = 0
+            let result = withExtendedLifetime(coreSigner) {
+                withUnsafePointer(to: &idTuple) { idPtr in
+                    platform_wallet_topup_identity_with_existing_asset_lock_signer(
+                        handle,
+                        &outPoint,
+                        idPtr,
+                        coreSigner.handle,
+                        &newBalance
+                    )
+                }
+            }
+            try result.check()
+            return newBalance
+        }.value
+    }
 }
