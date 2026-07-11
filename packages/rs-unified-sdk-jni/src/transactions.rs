@@ -866,19 +866,42 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_do
     since_ms: jlong,
 ) -> jstring {
     guard(&mut env, ptr::null_mut(), |env| {
+        // Diagnostic breadcrumbs are warn-level: this entry point sits under an
+        // active on-device `sdkFetched=0` investigation and every stage —
+        // including "the JVM call reached native code at all" — must be
+        // provably visible in `adb logcat` (tag `DashSDK`). Error paths log via
+        // `take_pwffi_error` / `throw_sdk_exception` (both warn before
+        // throwing).
+        log::warn!(
+            "documentFetchEncrypted: entry wallet_handle={:#x} (nonzero={}) since_ms={}",
+            wallet_handle,
+            wallet_handle != 0,
+            since_ms
+        );
         let Some(owner) = read_id32(env, &owner_id, "ownerId") else {
+            log::warn!("documentFetchEncrypted: ownerId byte[] invalid; throwing");
             return ptr::null_mut();
         };
         let Some(contract) = read_id32(env, &contract_id, "contractId") else {
+            log::warn!("documentFetchEncrypted: contractId byte[] invalid; throwing");
             return ptr::null_mut();
         };
         let Some(doc_type) = read_cstring(env, &document_type, "documentType") else {
+            log::warn!("documentFetchEncrypted: documentType string invalid; throwing");
             return ptr::null_mut();
         };
         if since_ms < 0 {
+            log::warn!("documentFetchEncrypted: sinceMs {since_ms} negative; throwing");
             throw_sdk_exception(env, 1, "sinceMs must be non-negative");
             return ptr::null_mut();
         }
+        log::warn!(
+            "documentFetchEncrypted: args owner={} contract={} document_type={:?} — \
+             calling platform_wallet_fetch_encrypted_documents",
+            hex32(&owner),
+            hex32(&contract),
+            doc_type
+        );
 
         let mut out_json: *mut c_char = ptr::null_mut();
         let result = unsafe {
@@ -895,6 +918,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_do
             return ptr::null_mut();
         }
         if out_json.is_null() {
+            log::warn!("documentFetchEncrypted: success code but null JSON; throwing");
             throw_sdk_exception(
                 env,
                 99,
@@ -906,11 +930,20 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_do
             .to_string_lossy()
             .into_owned();
         unsafe { platform_wallet_ffi::platform_wallet_string_free(out_json) };
+        log::warn!(
+            "documentFetchEncrypted: success, returning {} chars of JSON to Kotlin",
+            json.len()
+        );
 
         env.new_string(json)
             .map(|s| s.into_raw())
             .unwrap_or(ptr::null_mut())
     })
+}
+
+/// Lowercase-hex render of a 32-byte id for diagnostic log lines.
+fn hex32(bytes: &[u8; 32]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
 // ── Contested-resource vote ───────────────────────────────────────────
