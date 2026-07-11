@@ -199,13 +199,28 @@ pub fn seal_tx_metadata(key: &[u8; 32], version: u8, iv: &[u8; 16], payload: &[u
 }
 
 /// The plaintext recovered from a stored `encryptedMetadata` blob.
-#[derive(Debug, Clone, PartialEq, Eq)]
+///
+/// `Debug` is hand-written (NOT derived) so a stray `{:?}` / `dbg!()` / tracing
+/// statement can never leak the decrypted financial plaintext into a log — the
+/// same redaction as [`super::super::network::encrypted_document::DecryptedEncryptedDocument`].
+/// The payload is redacted to its length.
+#[derive(Clone, PartialEq, Eq)]
 pub struct OpenedTxMetadata {
     /// The blob's leading version byte (0 = CBOR, 1 = protobuf). The app
     /// dispatches its payload parse on this.
     pub version: u8,
     /// The decrypted, PKCS7-unpadded payload bytes — opaque to this crate.
     pub payload: Vec<u8>,
+}
+
+impl std::fmt::Debug for OpenedTxMetadata {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("OpenedTxMetadata")
+            .field("version", &self.version)
+            // Redacted: never render the decrypted plaintext.
+            .field("payload", &format_args!("<{} bytes redacted>", self.payload.len()))
+            .finish()
+    }
 }
 
 /// Open a stored `encryptedMetadata` blob: split off the version byte + IV and
@@ -604,6 +619,106 @@ mod tests {
         assert_eq!(
             opened.payload, expected_plaintext,
             "Rust must decrypt a dashj-produced txMetadata blob to the original plaintext"
+        );
+    }
+
+    /// **The nonzero-`identity_index` wire-compat anchor** (dashpay/platform#4091,
+    /// blocking review finding). The primary [`legacy_dashj_wire_compat_vector`]
+    /// pins `identity_index = 0`, but `KeyDerivationType::ECDSA` is also `0` and
+    /// sits at the path position immediately before `identity_index`
+    /// (`base / key_type' / identity_index' / key_index' / …`, see
+    /// [`identity_auth_derivation_path_for_type`]), so at index 0 those two
+    /// adjacent `0'` components are indistinguishable — that vector would pass
+    /// even if `identity_index` were dropped, swapped, or misplaced. This vector
+    /// uses `identity_index = 1` so the derived path
+    /// `m/9'/1'/5'/0'/0'/1'/2'/32769'/1'` differs from the index-0 path in
+    /// exactly the `identity_index` component, and the resulting legacy key
+    /// (`8cda…5196`) is provably distinct from the index-0 key (`4a2e…84d7`) —
+    /// empirically proving the component is wired to the correct path slot.
+    ///
+    /// ## How the vector was generated (reproducible)
+    ///
+    /// Same real legacy stack (dash-sdk-kotlin 4.0.0-RC2 semantics + dashj-core
+    /// 22.0.3, run under a JVM) as [`legacy_dashj_wire_compat_vector`], via the
+    /// checked-in generator `LegacyKeyN.java` (see this crate's
+    /// `tests/legacy_wire_compat/README.md`):
+    ///
+    /// ```text
+    /// javac -cp <dashj-core-22.0.3.jar:bcprov:guava:slf4j> LegacyKeyN.java
+    /// java  -cp .:<same cp> LegacyKeyN 1 2 1
+    ///   fullPath=m/9'/1'/5'/0'/0'/1'/2'/32769'/1'
+    ///   AES_KEY=8cdadb6b8bcf8defd416f2f032255173df89478c971bb96ae9f3511aae355196
+    ///   BLOB=01496ce7…2cba627383   (random per run — the IV differs; key is fixed)
+    /// ```
+    ///
+    /// `identity_index = 1` (the wallet's second Platform identity), `key_index`
+    /// (keyId) `2` (ENCRYPTION/MEDIUM), `encryptionKeyIndex` `1`. The BIP-39 test
+    /// mnemonic `abandon abandon … about`, empty passphrase, Testnet. The key is
+    /// deterministic; the blob's IV is fresh `SecureRandom` per generation, so
+    /// the exact blob bytes below are one captured run (any IV opens fine).
+    #[test]
+    fn legacy_dashj_wire_compat_vector_nonzero_identity_index() {
+        use key_wallet::mnemonic::{Language, Mnemonic};
+
+        const PHRASE: &str = "abandon abandon abandon abandon abandon abandon abandon \
+             abandon abandon abandon abandon about";
+
+        let wallet = Wallet::from_mnemonic(
+            Mnemonic::from_phrase(PHRASE, Language::English).expect("valid test mnemonic"),
+            Network::Testnet,
+            WalletAccountCreationOptions::None,
+        )
+        .expect("wallet from mnemonic");
+
+        // identity_index 1 (a NON-primary identity), key_index 2, encryptionKeyIndex 1.
+        let key = derive_tx_metadata_key(&wallet, Network::Testnet, 1, 2, 1).expect("derive");
+
+        // The AES key dashj derived at m/9'/1'/5'/0'/0'/1'/2'/32769'/1'.
+        let legacy_key: [u8; 32] =
+            hex_lit("8cdadb6b8bcf8defd416f2f032255173df89478c971bb96ae9f3511aae355196");
+        // Distinct from the identity_index=0 key — the whole point of this vector.
+        let index0_key: [u8; 32] =
+            hex_lit("4a2eaec1ad959105738996b49e0327f96a80b765249d2c9af8cf6aa689aa84d7");
+        assert_ne!(
+            legacy_key, index0_key,
+            "identity_index=1 must derive a different key than identity_index=0"
+        );
+        assert_eq!(
+            *key, legacy_key,
+            "nonzero-identity_index tx-metadata HD key must match the legacy dashj stack \
+             byte-for-byte (proves identity_index is wired to the correct path slot)"
+        );
+
+        // The resolver-master path (on-device external-signable shape) must hit
+        // the same dashj key at the nonzero identity_index too.
+        let master = ExtendedPrivKey::new_master(
+            Network::Testnet,
+            &Mnemonic::from_phrase(PHRASE, Language::English)
+                .expect("valid test mnemonic")
+                .to_seed(""),
+        )
+        .expect("master from seed");
+        let key_via_master =
+            derive_tx_metadata_key_from_master(&master, Network::Testnet, 1, 2, 1)
+                .expect("master derive");
+        assert_eq!(
+            *key_via_master, legacy_key,
+            "resolver-master derivation must match the legacy dashj stack at identity_index=1"
+        );
+
+        // The full stored blob dashj produced at this slot — Rust must open it.
+        let legacy_blob = hex::decode(
+            "01496ce7b7aa8baa910eb278dc38aee86522e841414d7b273da86df2106b0548e\
+             ee7b6957bb1789512cd00bf90663690cae4202bd1f9ae5f84859b8d2cba627383",
+        )
+        .expect("valid hex");
+        let expected_plaintext = b"legacy-txmetadata-wire-compat-vector".to_vec();
+
+        let opened = open_tx_metadata(&key, &legacy_blob).expect("open legacy blob");
+        assert_eq!(opened.version, VERSION_PROTOBUF, "version byte");
+        assert_eq!(
+            opened.payload, expected_plaintext,
+            "Rust must decrypt a dashj-produced nonzero-identity_index blob to the plaintext"
         );
     }
 }

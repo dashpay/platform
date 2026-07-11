@@ -23,8 +23,7 @@ use std::sync::Arc;
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-use dpp::identity::signer::Signer;
-use dpp::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel};
+use dpp::identity::{KeyType, Purpose, SecurityLevel};
 use dpp::platform_value::Value;
 use dpp::prelude::{DataContract, Identifier};
 
@@ -111,18 +110,33 @@ const FIELD_KEY_INDEX: &str = "keyIndex";
 const FIELD_ENCRYPTION_KEY_INDEX: &str = "encryptionKeyIndex";
 const FIELD_ENCRYPTED_METADATA: &str = "encryptedMetadata";
 
-/// Emit an on-device diagnostic breadcrumb through BOTH logging facades.
+/// Emit an INFORMATIONAL stage breadcrumb through both logging facades at
+/// **DEBUG** level.
 ///
 /// On Android the two facades diverge: the JNI layer's `JNI_OnLoad` installs
-/// `android_logger` as the global `log` logger (logcat tag `DashSDK`, Info+),
-/// so `log::warn!` provably reaches logcat, while the only `tracing`
-/// subscriber the Kotlin SDK installs (`dash_sdk_enable_logging`, a
-/// `tracing_subscriber::fmt` layer) writes to STDOUT, which Android discards.
-/// Proven live in the 2026-07 forensic tap: the JNI `log::warn!` lines
-/// appeared under tag `DashSDK`; the `tracing::warn!` lines from this file
-/// never did. Emitting through both keeps host tests / desktop file logging
-/// on `tracing` while making the on-device trail visible in logcat.
+/// `android_logger` as the global `log` logger (logcat tag `DashSDK`) but at
+/// `LevelFilter::Info`, while the only `tracing` subscriber the Kotlin SDK
+/// installs (`dash_sdk_enable_logging`, a `tracing_subscriber::fmt` layer)
+/// writes to STDOUT, which Android discards. Consequence: a DEBUG line reaches
+/// NEITHER on-device sink, while host tests / desktop file logging still capture
+/// it through `tracing`.
+///
+/// These per-poll stage lines carry identity / contract / document ids, so now
+/// that the `sdkFetched=0` root cause is fixed (external-signable txMetadata
+/// derive, dashpay/platform#4091) they are deliberately DEBUG — they must NOT
+/// persist identity-correlated data to logcat on every successful fetch. Genuine
+/// failures use [`breadcrumb_error`] (WARN) so they stay visible on-device.
 fn breadcrumb(line: &str) {
+    tracing::debug!("{line}");
+    log::debug!("{line}");
+}
+
+/// Emit a FAILURE breadcrumb through both logging facades at **WARN** level, so
+/// a genuine error or skip stays visible in Android logcat (`android_logger`
+/// Info+). Use ONLY for actual failure / skip paths — never per-poll
+/// informational stages, which belong on [`breadcrumb`] (DEBUG) to keep
+/// identity-correlated data out of the device log.
+fn breadcrumb_error(line: &str) {
     tracing::warn!("{line}");
     log::warn!("{line}");
 }
@@ -130,7 +144,13 @@ fn breadcrumb(line: &str) {
 /// One decrypted encrypted-document, returned to the caller (serialized to
 /// JSON at the FFI boundary). The `payload` is the opaque, decrypted plaintext
 /// the app parses itself (a protobuf `TxMetadataBatch` for `version == 1`).
-#[derive(Debug, Clone)]
+///
+/// `Debug` is hand-written (NOT derived) so a stray `{:?}` / `dbg!()` / tracing
+/// statement can never leak the decrypted financial payload (memos, tax
+/// categories, exchange-rate records, gift cards) into a log — mirroring the
+/// deliberate omission of `Debug` on secret-bearing sibling types like
+/// `DerivedIdentityAuthKey`. The plaintext is redacted to its length.
+#[derive(Clone)]
 pub struct DecryptedEncryptedDocument {
     /// Canonical 32-byte document id.
     pub document_id: Identifier,
@@ -148,6 +168,21 @@ pub struct DecryptedEncryptedDocument {
     pub updated_at_ms: Option<u64>,
     /// The decrypted, opaque payload bytes.
     pub payload: Vec<u8>,
+}
+
+impl std::fmt::Debug for DecryptedEncryptedDocument {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DecryptedEncryptedDocument")
+            .field("document_id", &self.document_id)
+            .field("owner_id", &self.owner_id)
+            .field("key_index", &self.key_index)
+            .field("encryption_key_index", &self.encryption_key_index)
+            .field("version", &self.version)
+            .field("updated_at_ms", &self.updated_at_ms)
+            // Redacted: never render the decrypted financial plaintext.
+            .field("payload", &format_args!("<{} bytes redacted>", self.payload.len()))
+            .finish()
+    }
 }
 
 impl IdentityWallet {
@@ -215,50 +250,79 @@ impl IdentityWallet {
         Ok((identity, identity_index, wallet))
     }
 
-    /// Create + broadcast an ENCRYPTED `txMetadata`-style document on
-    /// `contract_id`'s `document_type_name`, owned by `owner_identity_id`.
+    /// Synchronous (`blocking_read`) counterpart of
+    /// [`Self::resolve_encryption_context`], resolving
+    /// `(identity, identity_index, wallet)` without crossing an `.await`. MUST
+    /// be called from a sync context — never inside an async task (`blocking_read`
+    /// panics there). Used by [`Self::prepare_encrypted_txmetadata_properties`]
+    /// so the master xprv can be wiped BEFORE any network round-trip.
+    fn resolve_encryption_context_blocking(
+        &self,
+        owner_identity_id: &Identifier,
+    ) -> Result<(dpp::identity::Identity, u32, key_wallet::wallet::Wallet), PlatformWalletError> {
+        let wm = self.wallet_manager.blocking_read();
+        let info = wm
+            .get_wallet_info(&self.wallet_id)
+            .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
+        let managed = info
+            .identity_manager
+            .managed_identity(owner_identity_id)
+            .ok_or(PlatformWalletError::IdentityNotFound(*owner_identity_id))?;
+        let identity_index = managed.identity_index.ok_or_else(|| {
+            PlatformWalletError::InvalidIdentityData(format!(
+                "Identity {owner_identity_id} is watch-only (no resident HD slot); \
+                 cannot derive its txMetadata encryption key in-process"
+            ))
+        })?;
+        let identity = managed.identity.clone();
+        let wallet = wm
+            .get_wallet(&self.wallet_id)
+            .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?
+            .clone();
+        Ok((identity, identity_index, wallet))
+    }
+
+    /// Synchronously derive the identity encryption key and seal `payload` into
+    /// the wire-compatible `version ‖ IV ‖ AES-256-CBC` blob, returning the
+    /// `{keyIndex, encryptionKeyIndex, encryptedMetadata}` properties JSON ready
+    /// for [`Self::create_document_with_signer`] — the exact document shape the
+    /// legacy `publishTxMetaData` wrote, so the legacy stack decrypts it.
     ///
-    /// The SDK derives the identity encryption key, seals `payload` into the
-    /// wire-compatible `version ‖ IV ‖ AES-256-CBC` blob, and writes the
-    /// `{keyIndex, encryptionKeyIndex, encryptedMetadata}` document — the exact
-    /// shape the legacy `publishTxMetaData` wrote, so the legacy stack decrypts
-    /// it and vice versa.
+    /// **Crosses no `.await`** (resolves via `blocking_read`, derives, seals) so
+    /// the FFI caller can WIPE the resolved master xprv before the network
+    /// broadcast: the master never lives across an await
+    /// (dashpay/platform#4091). Call from a sync context only. The subsequent
+    /// generic [`Self::create_document_with_signer`] then broadcasts the returned
+    /// properties with no key material in scope.
     ///
     /// The caller supplies:
-    /// - `encryption_key_index`: the per-document index (dash-wallet's
-    ///   monotonic `1 + countAllRequests()` counter). Batching stays app-side.
+    /// - `encryption_key_index`: the per-document index (dash-wallet's monotonic
+    ///   `1 + countAllRequests()` counter). Batching stays app-side.
     /// - `version`: the payload version byte (`1` = protobuf, as the wallet
     ///   writes).
     /// - `payload`: the already-serialized opaque plaintext (a protobuf
     ///   `TxMetadataBatch`) — the SDK does not parse it.
     ///
-    /// The `keyIndex` field (the identity encryption key id) is selected
-    /// SDK-side to match the legacy stack. `key_source` selects where the AES
-    /// key derives from (see [`TxMetadataKeySource`] — resident wallet vs the
-    /// resolver-supplied master for external-signable wallets). Returns the
-    /// confirmed `Document`.
-    #[allow(clippy::too_many_arguments)]
-    pub async fn create_encrypted_document_with_signer<S>(
+    /// The `keyIndex` field (the identity encryption key id) is selected SDK-side
+    /// to match the legacy stack; `key_source` selects where the AES key derives
+    /// from (see [`TxMetadataKeySource`]).
+    pub fn prepare_encrypted_txmetadata_properties(
         &self,
         owner_identity_id: &Identifier,
-        contract_id: &Identifier,
-        document_type_name: &str,
         encryption_key_index: u32,
         version: u8,
         payload: &[u8],
         key_source: TxMetadataKeySource<'_>,
-        signer: &S,
-    ) -> Result<Document, PlatformWalletError>
-    where
-        S: Signer<IdentityPublicKey> + Send + Sync,
-    {
+    ) -> Result<String, PlatformWalletError> {
         use dashcore::secp256k1::rand::{thread_rng, RngCore};
 
         let (identity, identity_index, wallet) =
-            self.resolve_encryption_context(owner_identity_id).await?;
+            self.resolve_encryption_context_blocking(owner_identity_id)?;
         let key_index = Self::select_encryption_key_id(&identity)?;
 
-        // Derive the AES key and seal the payload into the wire blob.
+        // Derive the AES key and seal the payload into the wire blob — the only
+        // step that touches `key_source`'s master, done here synchronously so the
+        // caller can wipe it before broadcasting.
         let aes_key = key_source
             .derive(
                 &wallet,
@@ -268,8 +332,8 @@ impl IdentityWallet {
                 encryption_key_index,
             )
             .inspect_err(|e| {
-                breadcrumb(&format!(
-                    "create_encrypted_document: txMetadata key derivation failed \
+                breadcrumb_error(&format!(
+                    "prepare_encrypted_txmetadata: key derivation failed \
                      key_source={} owner={owner_identity_id} error={e}",
                     key_source.label()
                 ));
@@ -278,25 +342,14 @@ impl IdentityWallet {
         thread_rng().fill_bytes(&mut iv);
         let blob = seal_tx_metadata(&aes_key, version, &iv, payload);
 
-        // Reuse the generic create path: it fetches the contract, sanitizes the
-        // hex `encryptedMetadata` into `Bytes` against the schema, auto-selects
-        // the AUTHENTICATION signing key, and broadcasts on the 8 MB worker
-        // stack. Byte-array fields are accepted as hex strings there.
-        let properties_json = serde_json::json!({
+        // Byte-array fields are accepted as hex strings by the generic create
+        // path, which sanitizes them into `Bytes` against the schema.
+        Ok(serde_json::json!({
             FIELD_KEY_INDEX: key_index,
             FIELD_ENCRYPTION_KEY_INDEX: encryption_key_index,
             FIELD_ENCRYPTED_METADATA: hex::encode(&blob),
         })
-        .to_string();
-
-        self.create_document_with_signer(
-            owner_identity_id,
-            contract_id,
-            document_type_name,
-            &properties_json,
-            signer,
-        )
-        .await
+        .to_string())
     }
 
     /// Fetch every encrypted `txMetadata`-style document owned by
@@ -335,13 +388,13 @@ impl IdentityWallet {
         let contract = DataContract::fetch(&self.sdk, *contract_id)
             .await
             .map_err(|e| {
-                breadcrumb(&format!(
+                breadcrumb_error(&format!(
                     "fetch_encrypted_documents: contract fetch failed contract={contract_id} error={e}"
                 ));
                 PlatformWalletError::Sdk(e)
             })?
             .ok_or_else(|| {
-                breadcrumb(&format!(
+                breadcrumb_error(&format!(
                     "fetch_encrypted_documents: contract not found on Platform contract={contract_id}"
                 ));
                 PlatformWalletError::InvalidIdentityData(format!(
@@ -357,7 +410,7 @@ impl IdentityWallet {
             .resolve_encryption_context(owner_identity_id)
             .await
             .inspect_err(|e| {
-                breadcrumb(&format!(
+                breadcrumb_error(&format!(
                     "fetch_encrypted_documents: encryption-context resolution failed \
                      owner={owner_identity_id} error={e}"
                 ));
@@ -375,7 +428,7 @@ impl IdentityWallet {
         )
         .await
         .inspect_err(|e| {
-            breadcrumb(&format!(
+            breadcrumb_error(&format!(
                 "fetch_encrypted_documents: document query failed owner={owner_identity_id} error={e}"
             ));
         })?;
@@ -388,7 +441,7 @@ impl IdentityWallet {
                 // SILENT skip — under proofs this is exactly the shape that
                 // turns "2 documents exist" into an empty result with no
                 // error, so it must leave a trail.
-                breadcrumb(&format!(
+                breadcrumb_error(&format!(
                     "fetch_encrypted_documents: raw entry NOT materialized doc={doc_id} \
                      owner={owner_identity_id}; skipping"
                 ));
@@ -403,7 +456,7 @@ impl IdentityWallet {
                     .get(FIELD_ENCRYPTION_KEY_INDEX)
                     .and_then(|v: &Value| v.to_integer::<u32>().ok()),
             ) else {
-                breadcrumb(&format!(
+                breadcrumb_error(&format!(
                     "fetch_encrypted_documents: document missing key indices doc={doc_id} \
                      owner={owner_identity_id}; skipping"
                 ));
@@ -413,7 +466,7 @@ impl IdentityWallet {
                 .get(FIELD_ENCRYPTED_METADATA)
                 .and_then(|v: &Value| v.to_binary_bytes().ok())
             else {
-                breadcrumb(&format!(
+                breadcrumb_error(&format!(
                     "fetch_encrypted_documents: document missing encryptedMetadata doc={doc_id} \
                      owner={owner_identity_id}; skipping"
                 ));
@@ -429,7 +482,7 @@ impl IdentityWallet {
             ) {
                 Ok(k) => k,
                 Err(e) => {
-                    breadcrumb(&format!(
+                    breadcrumb_error(&format!(
                         "fetch_encrypted_documents: txMetadata key derivation failed doc={doc_id} \
                          owner={owner_identity_id} key_source={} error={e}; skipping",
                         key_source.label()
@@ -440,7 +493,7 @@ impl IdentityWallet {
             let opened = match open_tx_metadata(&aes_key, &blob) {
                 Ok(o) => o,
                 Err(e) => {
-                    breadcrumb(&format!(
+                    breadcrumb_error(&format!(
                         "fetch_encrypted_documents: txMetadata decrypt failed doc={doc_id} \
                          owner={owner_identity_id} error={e}; skipping"
                     ));
@@ -533,7 +586,7 @@ pub async fn query_owned_encrypted_documents(
         };
 
         let page = Document::fetch_many(sdk, query).await.map_err(|e| {
-            breadcrumb(&format!(
+            breadcrumb_error(&format!(
                 "query_owned_encrypted_documents: fetch_many failed owner={owner_identity_id} \
                  type={document_type_name} error={e}"
             ));
