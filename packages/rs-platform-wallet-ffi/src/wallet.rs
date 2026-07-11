@@ -390,6 +390,17 @@ pub unsafe extern "C" fn platform_wallet_manager_masternode_withdraw(
 /// Destroy a PlatformWallet handle.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_destroy(handle: Handle) -> PlatformWalletFFIResult {
+    // Sweep any outstanding deferred-payment tokens bound to this wallet first,
+    // so the registry stops pinning its `WalletManager` (accounts, keys, sync
+    // state) alive for the rest of the process via the `CoreWallet` clone each
+    // token captured. Hooked here rather than into `core_wallet_destroy`: the
+    // deferred flow builds/registers on one short-lived core handle and
+    // broadcasts on another, so sweeping on core-handle destroy would drop
+    // tokens between register and broadcast.
+    PLATFORM_WALLET_STORAGE.with_item(handle, |wallet| {
+        crate::core_wallet::signed_payment::SIGNED_PAYMENT_REGISTRY
+            .remove_entries_for_wallet(wallet.core());
+    });
     PLATFORM_WALLET_STORAGE.remove(handle);
     PlatformWalletFFIResult::ok()
 }
