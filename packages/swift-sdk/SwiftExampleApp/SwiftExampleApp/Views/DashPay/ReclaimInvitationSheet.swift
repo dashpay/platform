@@ -263,13 +263,14 @@ struct ReclaimInvitationSheet: View {
     /// (misclassifying an unrelated failure as a benign "already claimed", which
     /// would wrongly flip the row to Claimed). A typed FFI result code is the
     /// robust long-term fix.
-    static func isAlreadyConsumed(_ error: Error) -> Bool {
+    nonisolated static func isAlreadyConsumed(_ error: Error) -> Bool {
         isAlreadyConsumed(message: error.localizedDescription)
     }
 
     /// Pure classifier over the surfaced error message — the testable seam for
-    /// the false-positive-safety unit test.
-    static func isAlreadyConsumed(message: String) -> Bool {
+    /// the false-positive-safety unit test. `nonisolated` so the test (and any
+    /// caller) can invoke it off the main actor; it touches no view state.
+    nonisolated static func isAlreadyConsumed(message: String) -> Bool {
         message.lowercased().contains("already completely used")
     }
 
