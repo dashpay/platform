@@ -4,7 +4,7 @@
 
 mod addresses;
 mod broadcast;
-mod signed_payment;
+pub(crate) mod signed_payment;
 mod transaction_builder;
 mod wallet;
 

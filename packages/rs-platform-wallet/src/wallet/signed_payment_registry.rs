@@ -21,10 +21,24 @@
 //! * [`release`](SignedPaymentRegistry::release) is idempotent: releasing an
 //!   unknown / already-consumed token is a silent no-op.
 //! * A token is bound to the exact wallet instance it was minted against
-//!   (`Arc::ptr_eq` on the shared `WalletManager`). Broadcasting it through a
-//!   re-created wallet — whose in-memory `ReservationSet` no longer holds the
-//!   inputs — is a [`SignedPaymentError::WalletMismatch`] rather than a spend
-//!   against stale state.
+//!   (`Arc::ptr_eq` on the shared `WalletManager` **and** an equal `wallet_id`,
+//!   so two wallets sharing one multi-wallet `PlatformWalletManager` are still
+//!   told apart). Broadcasting it through a re-created wallet — whose in-memory
+//!   `ReservationSet` no longer holds the inputs — is a
+//!   [`SignedPaymentError::WalletMismatch`] rather than a spend against stale
+//!   state.
+//! * A token has a bounded lifetime ([`RESERVATION_MAX_AGE_BLOCKS`]). Once the
+//!   wallet has synced far enough past the height at which `build_signed`
+//!   stamped the reservation that key-wallet's own `ReservationSet` TTL could
+//!   have swept and re-selected the funding UTXO for an unrelated build,
+//!   broadcasting or releasing the token would act on state that may no longer
+//!   be its own — so both are refused with
+//!   [`SignedPaymentError::StaleReservationToken`] and the caller must rebuild.
+//!   This guard is the primary defence: key-wallet exposes no per-outpoint
+//!   ownership/generation check to make [`release`](SignedPaymentRegistry::release)
+//!   itself generation-aware without modifying the pinned crate, so an
+//!   unconditional release-by-outpoint after a sweep is prevented by never
+//!   reaching it once the token is stale.
 //!
 //! ## Process-death semantics
 //!
@@ -37,7 +51,7 @@
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
 
 use dashcore::{Transaction, Txid};
 use key_wallet::account::account_type::StandardAccountType;
@@ -52,6 +66,35 @@ use crate::PlatformWalletError;
 /// [`SignedPaymentRegistry::release`]. Values are unique for the process
 /// lifetime and never reused, so a stale token can always be recognised.
 pub type ReservationToken = u64;
+
+/// Maximum age, in synced blocks, of a registered token before its broadcast or
+/// release is refused.
+///
+/// Kept strictly below key-wallet's `RESERVATION_TTL_BLOCKS` (24, ~1h at the
+/// mainnet block target): a `build_signed` reservation is stamped at the wallet's
+/// synced height and swept by a later `reserve`/`reserved` call once it is
+/// `RESERVATION_TTL_BLOCKS` old, silently returning the outpoint to the
+/// selectable pool where an unrelated build can re-select and re-reserve it.
+/// `ReservationSet::release` removes an outpoint unconditionally, with no
+/// ownership/generation check, so acting on a token whose reservation was
+/// already swept could free (or broadcast against) a newer, unrelated
+/// reservation. Refusing at this lower bound guarantees the guard always trips
+/// **before** the underlying reservation could have been swept, leaving a margin
+/// for the wallet's synced height to lag a few blocks behind the true tip.
+const RESERVATION_MAX_AGE_BLOCKS: u32 = 20;
+
+/// Whether a token registered at `registered_height` is too old to act on at
+/// `current_height` (see [`RESERVATION_MAX_AGE_BLOCKS`]). Unknown heights (the
+/// wallet was gone at register or is gone now) disable the guard — the
+/// wallet-mismatch / account-lookup paths already reject those cases.
+fn reservation_expired(registered_height: Option<u32>, current_height: Option<u32>) -> bool {
+    match (registered_height, current_height) {
+        (Some(registered), Some(current)) => {
+            current.saturating_sub(registered) >= RESERVATION_MAX_AGE_BLOCKS
+        }
+        _ => false,
+    }
+}
 
 /// Failure of a deferred broadcast/release token operation.
 #[derive(Debug, thiserror::Error)]
@@ -68,6 +111,14 @@ pub enum SignedPaymentError {
     /// against state this wallet never reserved.
     #[error("reservation token {0} was minted against a different wallet instance")]
     WalletMismatch(ReservationToken),
+
+    /// The token has outlived [`RESERVATION_MAX_AGE_BLOCKS`], so its underlying
+    /// UTXO reservation may already have been swept by key-wallet's TTL and
+    /// re-selected by an unrelated build. Acting on it (broadcast or release)
+    /// could touch a newer reservation, so it is refused and the caller must
+    /// rebuild the payment.
+    #[error("reservation token {0} has outlived its reservation lifetime; rebuild the payment")]
+    StaleReservationToken(ReservationToken),
 
     /// The underlying broadcast failed. Carries the still-typed wallet error so
     /// the FFI boundary can preserve the retry semantics (e.g. the ambiguous
@@ -92,6 +143,13 @@ struct RegisteredPayment<B: TransactionBroadcaster + ?Sized> {
     /// TTL backstop), mirroring `CoreAccountTypeFFI::as_standard_account_type`.
     account_type: Option<StandardAccountType>,
     account_index: u32,
+    /// Wallet synced height captured at registration — a proxy for the height at
+    /// which `build_signed` stamped the funding reservation. Compared against the
+    /// wallet's current synced height to refuse a broadcast/release once the
+    /// reservation could plausibly have been swept (see
+    /// [`RESERVATION_MAX_AGE_BLOCKS`]). `None` when the wallet was not resolvable
+    /// at registration, which disables the age guard for this entry.
+    registered_height: Option<u32>,
 }
 
 /// Registry of signed-but-unsent payments keyed by [`ReservationToken`].
@@ -121,32 +179,46 @@ impl<B: TransactionBroadcaster + ?Sized> SignedPaymentRegistry<B> {
         }
     }
 
+    /// Lock the entries map, recovering from a poisoned mutex rather than
+    /// panicking. The registry is a single process-global, so a panic elsewhere
+    /// while the lock was held would otherwise permanently disable deferred
+    /// payments for every wallet; the guarded `HashMap` has no invariant a
+    /// partial write could break, so recovery is safe (mirrors key-wallet's
+    /// sibling `ReservationSet::lock`).
+    fn lock(&self) -> MutexGuard<'_, HashMap<ReservationToken, RegisteredPayment<B>>> {
+        self.entries
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
     /// Take ownership of a built, signed `tx` (whose funding UTXOs `build_signed`
     /// already reserved) and return an opaque token for a later
     /// [`broadcast`](Self::broadcast) or [`release`](Self::release).
     ///
     /// `core` is the wallet the payment was built against; it is captured so the
     /// later operation acts on the exact reservation state that holds the inputs.
-    pub fn register(
+    /// The wallet's current synced height is captured too, to bound the token's
+    /// lifetime against key-wallet's reservation TTL (see
+    /// [`RESERVATION_MAX_AGE_BLOCKS`]).
+    pub async fn register(
         &self,
         core: CoreWallet<B>,
         tx: Transaction,
         account_type: Option<StandardAccountType>,
         account_index: u32,
     ) -> ReservationToken {
+        let registered_height = core.synced_height().await;
         let token = self.next_token.fetch_add(1, Ordering::SeqCst);
-        self.entries
-            .lock()
-            .expect("signed-payment registry mutex poisoned")
-            .insert(
-                token,
-                RegisteredPayment {
-                    core,
-                    tx,
-                    account_type,
-                    account_index,
-                },
-            );
+        self.lock().insert(
+            token,
+            RegisteredPayment {
+                core,
+                tx,
+                account_type,
+                account_index,
+                registered_height,
+            },
+        );
         token
     }
 
@@ -171,19 +243,26 @@ impl<B: TransactionBroadcaster + ?Sized> SignedPaymentRegistry<B> {
         // Remove under the lock and drop the guard *before* awaiting — a
         // std::Mutex guard must never be held across an await point, and the
         // atomic take is what makes a double-broadcast impossible.
-        let entry = {
-            let mut entries = self
-                .entries
-                .lock()
-                .expect("signed-payment registry mutex poisoned");
-            entries.remove(&token)
-        }
-        .ok_or(SignedPaymentError::StaleToken(token))?;
+        let entry = { self.lock().remove(&token) }.ok_or(SignedPaymentError::StaleToken(token))?;
 
-        if !Arc::ptr_eq(&entry.core.wallet_manager, &current.wallet_manager) {
-            // The token belongs to another wallet instance; it has been removed,
-            // so it can never be replayed here.
+        // Bound the token to the exact wallet instance: the same shared
+        // `WalletManager` (`Arc::ptr_eq`) *and* the same `wallet_id`, so two
+        // wallets sharing one multi-wallet `PlatformWalletManager` are told
+        // apart (`ptr_eq` alone matches any pair within that manager). The
+        // entry is already removed, so a mismatched token can never be replayed.
+        if !Arc::ptr_eq(&entry.core.wallet_manager, &current.wallet_manager)
+            || entry.core.wallet_id() != current.wallet_id()
+        {
             return Err(SignedPaymentError::WalletMismatch(token));
+        }
+
+        // Refuse a token whose reservation could already have been swept and
+        // re-selected by an unrelated build. The entry is already removed, so we
+        // simply drop it — deliberately WITHOUT releasing, since a release by
+        // outpoint here could free a newer build's reservation. The stale
+        // reservation is reclaimed by key-wallet's own TTL sweep.
+        if reservation_expired(entry.registered_height, current.synced_height().await) {
+            return Err(SignedPaymentError::StaleReservationToken(token));
         }
 
         let txid = match entry.account_type {
@@ -210,17 +289,19 @@ impl<B: TransactionBroadcaster + ?Sized> SignedPaymentRegistry<B> {
     /// the one whose `ReservationSet` actually holds the inputs — so no wallet
     /// handle need be threaded in.
     pub async fn release(&self, token: ReservationToken) {
-        let entry = {
-            let mut entries = self
-                .entries
-                .lock()
-                .expect("signed-payment registry mutex poisoned");
-            entries.remove(&token)
-        };
+        let entry = { self.lock().remove(&token) };
         let Some(entry) = entry else {
             // Unknown / already consumed — idempotent no-op.
             return;
         };
+        // If the token has outlived its reservation lifetime, the funding
+        // outpoint may already have been swept and re-selected by an unrelated
+        // build; releasing it by outpoint could free that newer reservation.
+        // Drop the token without touching the `ReservationSet` — the original
+        // reservation is reclaimed by key-wallet's own TTL sweep.
+        if reservation_expired(entry.registered_height, entry.core.synced_height().await) {
+            return;
+        }
         if let Some(account_type) = entry.account_type {
             entry
                 .core
@@ -229,13 +310,36 @@ impl<B: TransactionBroadcaster + ?Sized> SignedPaymentRegistry<B> {
         }
     }
 
+    /// Drop every outstanding token bound to `wallet` (same shared
+    /// `WalletManager` and `wallet_id`), returning how many were removed.
+    ///
+    /// Called from the FFI when a `PlatformWallet` is destroyed so the registry
+    /// stops pinning that wallet's `WalletManager` (accounts, keys, sync state)
+    /// alive for the rest of the process via its captured `CoreWallet` clone.
+    /// The reservations are intentionally not released: the wallet — and its
+    /// accounts' `ReservationSet`s — are being torn down with it, so there is
+    /// nothing to reconcile, and any surviving token would be a
+    /// [`WalletMismatch`](SignedPaymentError::WalletMismatch) against a
+    /// re-created instance regardless.
+    ///
+    /// This is hooked into `PlatformWallet` teardown rather than the transient
+    /// `CoreWallet` handle destroy: the deferred flow builds/registers on one
+    /// short-lived core handle and broadcasts on another, so sweeping on core
+    /// handle destroy would drop tokens between register and broadcast.
+    pub fn remove_entries_for_wallet(&self, wallet: &CoreWallet<B>) -> usize {
+        let mut entries = self.lock();
+        let before = entries.len();
+        entries.retain(|_, entry| {
+            !(Arc::ptr_eq(&entry.core.wallet_manager, &wallet.wallet_manager)
+                && entry.core.wallet_id() == wallet.wallet_id())
+        });
+        before - entries.len()
+    }
+
     /// Number of outstanding (registered but not yet broadcast/released) tokens.
     #[cfg(test)]
     pub(crate) fn outstanding(&self) -> usize {
-        self.entries
-            .lock()
-            .expect("signed-payment registry mutex poisoned")
-            .len()
+        self.lock().len()
     }
 }
 
@@ -253,7 +357,7 @@ mod tests {
     use key_wallet::wallet::managed_wallet_info::transaction_builder::TransactionBuilder;
     use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 
-    use super::{SignedPaymentError, SignedPaymentRegistry};
+    use super::{SignedPaymentError, SignedPaymentRegistry, RESERVATION_MAX_AGE_BLOCKS};
     use crate::broadcaster::{BroadcastError, TransactionBroadcaster};
     use crate::test_support::{funded_wallet_manager, AlwaysMaybeSentBroadcaster, WalletSigner};
     use crate::wallet::core::CoreWallet;
@@ -373,7 +477,9 @@ mod tests {
             builder = builder.add_output(addr, *amount);
         }
         let (tx, _fee) = builder
-            .build_signed(signer, |addr| managed_account.address_derivation_path(&addr))
+            .build_signed(signer, |addr| {
+                managed_account.address_derivation_path(&addr)
+            })
             .await
             .map_err(|e| PlatformWalletError::TransactionBuild(e.to_string()))?;
         Ok(tx)
@@ -388,18 +494,21 @@ mod tests {
             funded_core_wallet(StandardAccountType::BIP44Account, Arc::clone(&broadcaster)).await;
         let registry = SignedPaymentRegistry::new();
 
-        let tx = build_signed_tx(&core, StandardAccountType::BIP44Account, 0, &outputs, &signer)
-            .await
-            .expect("build should succeed");
+        let tx = build_signed_tx(
+            &core,
+            StandardAccountType::BIP44Account,
+            0,
+            &outputs,
+            &signer,
+        )
+        .await
+        .expect("build should succeed");
         let expected_bytes = dashcore::consensus::serialize(&tx);
         let expected_txid = tx.txid();
 
-        let token = registry.register(
-            core.clone(),
-            tx,
-            Some(StandardAccountType::BIP44Account),
-            0,
-        );
+        let token = registry
+            .register(core.clone(), tx, Some(StandardAccountType::BIP44Account), 0)
+            .await;
         assert_eq!(registry.outstanding(), 1);
 
         // Broadcast through a *clone* of the same wallet instance — the
@@ -433,7 +542,9 @@ mod tests {
             let tx = build_signed_tx(&core, account_type, 0, &outputs, &signer)
                 .await
                 .expect("build should succeed");
-            let token = registry.register(core.clone(), tx, Some(account_type), 0);
+            let token = registry
+                .register(core.clone(), tx, Some(account_type), 0)
+                .await;
 
             // With the reservation held, an immediate rebuild finds no
             // spendable UTXO and fails.
@@ -464,10 +575,18 @@ mod tests {
             funded_core_wallet(StandardAccountType::BIP44Account, Arc::clone(&broadcaster)).await;
         let registry = SignedPaymentRegistry::new();
 
-        let tx = build_signed_tx(&core, StandardAccountType::BIP44Account, 0, &outputs, &signer)
-            .await
-            .expect("build should succeed");
-        let token = registry.register(core.clone(), tx, Some(StandardAccountType::BIP44Account), 0);
+        let tx = build_signed_tx(
+            &core,
+            StandardAccountType::BIP44Account,
+            0,
+            &outputs,
+            &signer,
+        )
+        .await
+        .expect("build should succeed");
+        let token = registry
+            .register(core.clone(), tx, Some(StandardAccountType::BIP44Account), 0)
+            .await;
 
         registry
             .broadcast(token, &core)
@@ -493,10 +612,18 @@ mod tests {
             funded_core_wallet(StandardAccountType::BIP44Account, broadcaster).await;
         let registry = SignedPaymentRegistry::new();
 
-        let tx = build_signed_tx(&core, StandardAccountType::BIP44Account, 0, &outputs, &signer)
-            .await
-            .expect("build should succeed");
-        let token = registry.register(core.clone(), tx, Some(StandardAccountType::BIP44Account), 0);
+        let tx = build_signed_tx(
+            &core,
+            StandardAccountType::BIP44Account,
+            0,
+            &outputs,
+            &signer,
+        )
+        .await
+        .expect("build should succeed");
+        let token = registry
+            .register(core.clone(), tx, Some(StandardAccountType::BIP44Account), 0)
+            .await;
 
         registry.release(token).await;
         // Second release: no panic, no error, still consumed.
@@ -513,10 +640,18 @@ mod tests {
             funded_core_wallet(StandardAccountType::BIP44Account, Arc::clone(&broadcaster)).await;
         let registry = SignedPaymentRegistry::new();
 
-        let tx = build_signed_tx(&core, StandardAccountType::BIP44Account, 0, &outputs, &signer)
-            .await
-            .expect("build should succeed");
-        let token = registry.register(core.clone(), tx, Some(StandardAccountType::BIP44Account), 0);
+        let tx = build_signed_tx(
+            &core,
+            StandardAccountType::BIP44Account,
+            0,
+            &outputs,
+            &signer,
+        )
+        .await
+        .expect("build should succeed");
+        let token = registry
+            .register(core.clone(), tx, Some(StandardAccountType::BIP44Account), 0)
+            .await;
 
         registry.release(token).await;
         let sent = registry.broadcast(token, &core).await;
@@ -524,7 +659,11 @@ mod tests {
             matches!(sent, Err(SignedPaymentError::StaleToken(_))),
             "broadcast of a released token must be StaleToken, got {sent:?}"
         );
-        assert_eq!(broadcaster.count.load(Ordering::SeqCst), 0, "nothing was sent");
+        assert_eq!(
+            broadcaster.count.load(Ordering::SeqCst),
+            0,
+            "nothing was sent"
+        );
     }
 
     /// An unknown token is a `StaleToken` error.
@@ -546,24 +685,34 @@ mod tests {
     #[tokio::test]
     async fn broadcast_rejects_a_different_wallet_instance() {
         let broadcaster_a = Arc::new(CountingBroadcaster::new());
-        let (core_a, signer_a, outputs_a) =
-            funded_core_wallet(StandardAccountType::BIP44Account, Arc::clone(&broadcaster_a)).await;
+        let (core_a, signer_a, outputs_a) = funded_core_wallet(
+            StandardAccountType::BIP44Account,
+            Arc::clone(&broadcaster_a),
+        )
+        .await;
         // A separate wallet-manager instance stands in for a re-created wallet.
         let broadcaster_b = Arc::new(CountingBroadcaster::new());
         let (core_b, _signer_b, _outputs_b) =
             funded_core_wallet(StandardAccountType::BIP44Account, broadcaster_b).await;
         let registry = SignedPaymentRegistry::new();
 
-        let tx =
-            build_signed_tx(&core_a, StandardAccountType::BIP44Account, 0, &outputs_a, &signer_a)
-                .await
-                .expect("build should succeed");
-        let token = registry.register(
-            core_a.clone(),
-            tx,
-            Some(StandardAccountType::BIP44Account),
+        let tx = build_signed_tx(
+            &core_a,
+            StandardAccountType::BIP44Account,
             0,
-        );
+            &outputs_a,
+            &signer_a,
+        )
+        .await
+        .expect("build should succeed");
+        let token = registry
+            .register(
+                core_a.clone(),
+                tx,
+                Some(StandardAccountType::BIP44Account),
+                0,
+            )
+            .await;
 
         let sent = registry.broadcast(token, &core_b).await;
         assert!(
@@ -588,10 +737,18 @@ mod tests {
             funded_core_wallet(StandardAccountType::BIP44Account, broadcaster).await;
         let registry = SignedPaymentRegistry::new();
 
-        let tx = build_signed_tx(&core, StandardAccountType::BIP44Account, 0, &outputs, &signer)
-            .await
-            .expect("build should succeed");
-        let token = registry.register(core.clone(), tx, Some(StandardAccountType::BIP44Account), 0);
+        let tx = build_signed_tx(
+            &core,
+            StandardAccountType::BIP44Account,
+            0,
+            &outputs,
+            &signer,
+        )
+        .await
+        .expect("build should succeed");
+        let token = registry
+            .register(core.clone(), tx, Some(StandardAccountType::BIP44Account), 0)
+            .await;
 
         let sent = registry.broadcast(token, &core).await;
         assert!(
@@ -606,8 +763,14 @@ mod tests {
         assert_eq!(registry.outstanding(), 0, "token consumed even on failure");
 
         // Reservation kept: an immediate rebuild fails at input selection.
-        let rebuilt = build_signed_tx(&core, StandardAccountType::BIP44Account, 0, &outputs, &signer)
-            .await;
+        let rebuilt = build_signed_tx(
+            &core,
+            StandardAccountType::BIP44Account,
+            0,
+            &outputs,
+            &signer,
+        )
+        .await;
         assert!(
             matches!(rebuilt, Err(PlatformWalletError::TransactionBuild(_))),
             "rebuild must fail with the reservation kept, got {rebuilt:?}"
@@ -624,10 +787,18 @@ mod tests {
             funded_core_wallet(StandardAccountType::BIP44Account, Arc::clone(&broadcaster)).await;
         let registry = Arc::new(SignedPaymentRegistry::new());
 
-        let tx = build_signed_tx(&core, StandardAccountType::BIP44Account, 0, &outputs, &signer)
-            .await
-            .expect("build should succeed");
-        let token = registry.register(core.clone(), tx, Some(StandardAccountType::BIP44Account), 0);
+        let tx = build_signed_tx(
+            &core,
+            StandardAccountType::BIP44Account,
+            0,
+            &outputs,
+            &signer,
+        )
+        .await
+        .expect("build should succeed");
+        let token = registry
+            .register(core.clone(), tx, Some(StandardAccountType::BIP44Account), 0)
+            .await;
 
         let mut handles = Vec::new();
         for _ in 0..8 {
@@ -663,9 +834,15 @@ mod tests {
             funded_core_wallet(StandardAccountType::BIP44Account, broadcaster).await;
         // One built tx is enough; we register clones of it many times to probe
         // the token allocator, not the reservation logic.
-        let tx = build_signed_tx(&core, StandardAccountType::BIP44Account, 0, &outputs, &signer)
-            .await
-            .expect("build should succeed");
+        let tx = build_signed_tx(
+            &core,
+            StandardAccountType::BIP44Account,
+            0,
+            &outputs,
+            &signer,
+        )
+        .await
+        .expect("build should succeed");
         let registry = Arc::new(SignedPaymentRegistry::new());
 
         let mut handles = Vec::new();
@@ -674,7 +851,9 @@ mod tests {
             let core = core.clone();
             let tx = tx.clone();
             handles.push(tokio::spawn(async move {
-                registry.register(core, tx, Some(StandardAccountType::BIP44Account), 0)
+                registry
+                    .register(core, tx, Some(StandardAccountType::BIP44Account), 0)
+                    .await
             }));
         }
         let mut tokens = Vec::new();
@@ -684,5 +863,227 @@ mod tests {
         let unique: std::collections::HashSet<_> = tokens.iter().copied().collect();
         assert_eq!(unique.len(), tokens.len(), "all tokens must be distinct");
         assert_eq!(registry.outstanding(), 16);
+    }
+
+    /// Force the wallet's synced height forward, simulating chain progress
+    /// between build/register and a later broadcast/release — the window in
+    /// which key-wallet's `ReservationSet` TTL can sweep the funding reservation.
+    async fn advance_synced_height<B: TransactionBroadcaster>(core: &CoreWallet<B>, height: u32) {
+        let mut wm = core.wallet_manager.write().await;
+        let (_, info) = wm
+            .get_wallet_and_info_mut(&core.wallet_id())
+            .expect("wallet present in manager");
+        info.core_wallet.update_synced_height(height);
+    }
+
+    /// Once the wallet has synced past `RESERVATION_MAX_AGE_BLOCKS` beyond the
+    /// registration height, the reservation could have been swept and
+    /// re-selected — so a broadcast must be refused with `StaleReservationToken`
+    /// (never a send) and must NOT release the reservation by outpoint (which
+    /// could free a newer, unrelated build's reservation).
+    #[tokio::test]
+    async fn expired_token_broadcast_is_stale_and_keeps_reservation() {
+        let broadcaster = Arc::new(CountingBroadcaster::new());
+        let (core, signer, outputs) =
+            funded_core_wallet(StandardAccountType::BIP44Account, Arc::clone(&broadcaster)).await;
+        let registry = SignedPaymentRegistry::new();
+
+        let registered_height = core.synced_height().await.expect("synced height");
+        let tx = build_signed_tx(
+            &core,
+            StandardAccountType::BIP44Account,
+            0,
+            &outputs,
+            &signer,
+        )
+        .await
+        .expect("build should succeed");
+        let token = registry
+            .register(core.clone(), tx, Some(StandardAccountType::BIP44Account), 0)
+            .await;
+
+        // Advance past the age bound but stay below key-wallet's 24-block TTL, so
+        // the reservation is provably still held (only our guard has tripped).
+        advance_synced_height(&core, registered_height + RESERVATION_MAX_AGE_BLOCKS + 2).await;
+
+        let sent = registry.broadcast(token, &core).await;
+        assert!(
+            matches!(sent, Err(SignedPaymentError::StaleReservationToken(t)) if t == token),
+            "an expired token must broadcast as StaleReservationToken, got {sent:?}"
+        );
+        assert_eq!(
+            broadcaster.count.load(Ordering::SeqCst),
+            0,
+            "an expired token must never hit the network"
+        );
+        assert_eq!(registry.outstanding(), 0, "the expired token is dropped");
+
+        // The reservation was NOT released: an immediate rebuild still can't
+        // reselect the input (it is reclaimed only by key-wallet's own TTL).
+        let rebuilt = build_signed_tx(
+            &core,
+            StandardAccountType::BIP44Account,
+            0,
+            &outputs,
+            &signer,
+        )
+        .await;
+        assert!(
+            matches!(rebuilt, Err(PlatformWalletError::TransactionBuild(_))),
+            "expired broadcast must not release the reservation, got {rebuilt:?}"
+        );
+    }
+
+    /// Releasing an expired token must likewise NOT touch the `ReservationSet`:
+    /// its outpoint may already belong to a newer build. The token is dropped
+    /// and the original reservation is left to key-wallet's TTL sweep.
+    #[tokio::test]
+    async fn expired_token_release_keeps_reservation() {
+        let broadcaster = Arc::new(RecordingBroadcaster::new());
+        let (core, signer, outputs) =
+            funded_core_wallet(StandardAccountType::BIP44Account, broadcaster).await;
+        let registry = SignedPaymentRegistry::new();
+
+        let registered_height = core.synced_height().await.expect("synced height");
+        let tx = build_signed_tx(
+            &core,
+            StandardAccountType::BIP44Account,
+            0,
+            &outputs,
+            &signer,
+        )
+        .await
+        .expect("build should succeed");
+        let token = registry
+            .register(core.clone(), tx, Some(StandardAccountType::BIP44Account), 0)
+            .await;
+
+        advance_synced_height(&core, registered_height + RESERVATION_MAX_AGE_BLOCKS + 2).await;
+
+        registry.release(token).await;
+        assert_eq!(registry.outstanding(), 0, "the expired token is dropped");
+
+        // Reservation intentionally kept (not released by outpoint): rebuild
+        // still fails until the TTL backstop reclaims it.
+        let rebuilt = build_signed_tx(
+            &core,
+            StandardAccountType::BIP44Account,
+            0,
+            &outputs,
+            &signer,
+        )
+        .await;
+        assert!(
+            matches!(rebuilt, Err(PlatformWalletError::TransactionBuild(_))),
+            "expired release must not free the reservation by outpoint, got {rebuilt:?}"
+        );
+    }
+
+    /// Two wallets sharing one multi-wallet `PlatformWalletManager` have the same
+    /// `wallet_manager` `Arc` (so `Arc::ptr_eq` alone can't tell them apart); the
+    /// `wallet_id` comparison must reject a token broadcast through the sibling.
+    #[tokio::test]
+    async fn broadcast_rejects_same_manager_different_wallet_id() {
+        let broadcaster = Arc::new(CountingBroadcaster::new());
+        let (core, signer, outputs) =
+            funded_core_wallet(StandardAccountType::BIP44Account, Arc::clone(&broadcaster)).await;
+        let registry = SignedPaymentRegistry::new();
+
+        let tx = build_signed_tx(
+            &core,
+            StandardAccountType::BIP44Account,
+            0,
+            &outputs,
+            &signer,
+        )
+        .await
+        .expect("build should succeed");
+        let token = registry
+            .register(core.clone(), tx, Some(StandardAccountType::BIP44Account), 0)
+            .await;
+
+        // A sibling handle over the SAME manager Arc but a different wallet_id —
+        // `Arc::ptr_eq` on `wallet_manager` is true, so only the wallet_id check
+        // distinguishes it.
+        let mut sibling = core.clone();
+        sibling.wallet_id[0] ^= 0xFF;
+        assert!(Arc::ptr_eq(&core.wallet_manager, &sibling.wallet_manager));
+
+        let sent = registry.broadcast(token, &sibling).await;
+        assert!(
+            matches!(sent, Err(SignedPaymentError::WalletMismatch(t)) if t == token),
+            "a sibling wallet in the same manager must be WalletMismatch, got {sent:?}"
+        );
+        assert_eq!(
+            broadcaster.count.load(Ordering::SeqCst),
+            0,
+            "nothing was sent for the mismatched wallet"
+        );
+        assert_eq!(registry.outstanding(), 0, "the stale token is dropped");
+    }
+
+    /// Destroying a wallet sweeps only its own tokens from the registry, so its
+    /// captured `CoreWallet` clone stops pinning the `WalletManager` alive —
+    /// other wallets' tokens are untouched.
+    #[tokio::test]
+    async fn remove_entries_for_wallet_drops_only_that_wallets_tokens() {
+        let (core_a, signer_a, outputs_a) = funded_core_wallet(
+            StandardAccountType::BIP44Account,
+            Arc::new(CountingBroadcaster::new()),
+        )
+        .await;
+        let (core_b, signer_b, outputs_b) = funded_core_wallet(
+            StandardAccountType::BIP44Account,
+            Arc::new(CountingBroadcaster::new()),
+        )
+        .await;
+        let registry = SignedPaymentRegistry::new();
+
+        let tx_a = build_signed_tx(
+            &core_a,
+            StandardAccountType::BIP44Account,
+            0,
+            &outputs_a,
+            &signer_a,
+        )
+        .await
+        .expect("build A should succeed");
+        let token_a = registry
+            .register(
+                core_a.clone(),
+                tx_a,
+                Some(StandardAccountType::BIP44Account),
+                0,
+            )
+            .await;
+        let tx_b = build_signed_tx(
+            &core_b,
+            StandardAccountType::BIP44Account,
+            0,
+            &outputs_b,
+            &signer_b,
+        )
+        .await
+        .expect("build B should succeed");
+        let _token_b = registry
+            .register(
+                core_b.clone(),
+                tx_b,
+                Some(StandardAccountType::BIP44Account),
+                0,
+            )
+            .await;
+        assert_eq!(registry.outstanding(), 2);
+
+        let removed = registry.remove_entries_for_wallet(&core_a);
+        assert_eq!(removed, 1, "exactly wallet A's one token is swept");
+        assert_eq!(registry.outstanding(), 1, "wallet B's token survives");
+
+        // Wallet A's token is gone: broadcasting it is a plain StaleToken.
+        let sent = registry.broadcast(token_a, &core_a).await;
+        assert!(
+            matches!(sent, Err(SignedPaymentError::StaleToken(t)) if t == token_a),
+            "a swept token must be StaleToken, got {sent:?}"
+        );
     }
 }
