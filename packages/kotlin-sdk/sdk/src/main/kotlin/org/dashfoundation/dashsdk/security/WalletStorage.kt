@@ -1,6 +1,7 @@
 package org.dashfoundation.dashsdk.security
 
 import android.content.Context
+import android.security.keystore.UserNotAuthenticatedException
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
@@ -10,6 +11,7 @@ import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import java.security.GeneralSecurityException
 import java.util.Base64
 
 private val Context.secretsStore: DataStore<Preferences> by preferencesDataStore(
@@ -211,33 +213,74 @@ class WalletStorage(
      * under [KeySecurityPolicy.DEVICE_BOUND] it never auth-gates.
      * Callers must zero the returned array after use.
      *
-     * Upgrade path: a blob written by the pre-RSA scheme (AES-GCM under the
-     * legacy [KeystoreManager.KEYS_ALIAS], never deleted) is decrypted with
-     * that retained key and then transparently re-encrypted under the current
-     * RSA alias and rewritten, so it is recovered — not stranded — and future
-     * reads use the new scheme. A fresh install has no legacy blobs and always
-     * takes the RSA path.
+     * Upgrade path — two legacy on-disk schemes are recovered and migrated
+     * forward transparently (so old identity keys are never stranded), then
+     * future reads use the current aliased RSA scheme:
+     *  1. **Pre-RSA AES-GCM** blob (non-empty IV) under the legacy
+     *     [KeystoreManager.KEYS_ALIAS] AES key — decrypted with that retained
+     *     key ([KeystoreManager.decryptLegacyKeysBlob]).
+     *  2. **Pre-alias-split RSA** blob (empty IV) encrypted under the former RSA
+     *     keypair still at [KeystoreManager.KEYS_ALIAS] — the current policy
+     *     alias cannot open it, so we fall back to that keypair
+     *     ([KeystoreManager.decryptLegacyRsaKeysBlob]) (dashpay/platform#4060).
+     * Both are re-encrypted under [KeystoreManager.keysAlias] and rewritten. A
+     * fresh install has no legacy blobs and always takes the current-alias path.
      */
     suspend fun retrievePrivateKey(pubkeyHex: String): ByteArray? {
         val encoded = store.data.first()[privateKeyKey(pubkeyHex)] ?: return null
         val blob = decode(encoded)
         if (keystore.isLegacyKeysBlob(blob)) {
-            // Legacy AES-GCM blob: recover with the retained legacy key (may
-            // throw UserNotAuthenticatedException — the legacy key was
-            // auth-gated — which the signer handles exactly as the RSA path),
-            // or null if that key is already gone (unrecoverable).
+            // Scheme 1 — legacy AES-GCM blob: recover with the retained legacy
+            // AES key (may throw UserNotAuthenticatedException — the legacy key
+            // was auth-gated — which the signer handles exactly as the RSA
+            // path), or null if that key is already gone (unrecoverable).
             val plain = keystore.decryptLegacyKeysBlob(blob) ?: return null
-            // Opportunistically migrate to the RSA scheme. A rewrite failure
-            // must not lose the value we just recovered, so it stays best-effort
-            // and the read still returns the plaintext (migration retries next
-            // read).
-            runCatching {
-                val migrated = keystore.encrypt(plain, alias = keystore.keysAlias)
-                store.edit { it[privateKeyKey(pubkeyHex)] = encode(migrated) }
-            }
+            migrateToPolicyAlias(pubkeyHex, plain)
             return plain
         }
-        return keystore.decrypt(blob, alias = keystore.keysAlias)
+        // Empty-IV RSA blob: encrypted under EITHER the current policy alias
+        // (steady state) or the former RSA keypair still at KEYS_ALIAS (scheme 2
+        // blobs written before the alias split, dashpay/platform#4060).
+        //
+        // Upgrade fast path: when the policy alias has no keypair yet it cannot
+        // have encrypted this blob, so if the former RSA key is present the blob
+        // is unambiguously a scheme-2 blob — recover with it directly instead of
+        // provisioning a throwaway policy keypair only to fail. (In steady state
+        // the policy alias HAS a key, so this short-circuits without the second
+        // Keystore probe.)
+        if (!keystore.hasIdentityKeysKey(keystore.keysAlias) && keystore.hasLegacyRsaKeysKey()) {
+            val recovered = keystore.decryptLegacyRsaKeysBlob(blob) ?: return null
+            migrateToPolicyAlias(pubkeyHex, recovered)
+            return recovered
+        }
+        // Otherwise try the current policy alias first; on a wrong-key crypto
+        // failure (a scheme-2 blob lingering while newer keys already live at
+        // the policy alias) fall back to the former RSA keypair and migrate.
+        // UserNotAuthenticatedException is NOT a wrong-key signal — it must
+        // propagate so KeystoreSigner can prompt and retry.
+        return try {
+            keystore.decrypt(blob, alias = keystore.keysAlias)
+        } catch (e: UserNotAuthenticatedException) {
+            throw e
+        } catch (e: GeneralSecurityException) {
+            val recovered = keystore.decryptLegacyRsaKeysBlob(blob) ?: throw e
+            migrateToPolicyAlias(pubkeyHex, recovered)
+            recovered
+        }
+    }
+
+    /**
+     * Best-effort re-encrypt [plain] under the current policy alias
+     * ([KeystoreManager.keysAlias], a never-auth-gated public-key encrypt) and
+     * rewrite the stored blob, migrating a recovered legacy value forward. A
+     * rewrite failure must not lose the value the caller just recovered, so this
+     * stays best-effort (migration retries on the next read).
+     */
+    private suspend fun migrateToPolicyAlias(pubkeyHex: String, plain: ByteArray) {
+        runCatching {
+            val migrated = keystore.encrypt(plain, alias = keystore.keysAlias)
+            store.edit { it[privateKeyKey(pubkeyHex)] = encode(migrated) }
+        }
     }
 
     suspend fun deletePrivateKey(pubkeyHex: String) {
@@ -282,19 +325,29 @@ class WalletStorage(
         store.data.first().contains(privateKeyKey(pubkeyHex))
 
     /**
-     * Whether the blob stored for [pubkeyHex] can be recovered: either it is a
-     * current-scheme RSA blob, or it is a legacy pre-RSA AES-GCM blob whose
-     * retained legacy key still exists (so [retrievePrivateKey] can decrypt and
-     * migrate it). Only a legacy blob whose key was already deleted by an older
-     * build is unrecoverable — key-health treats that as missing and offers a
-     * re-derive. Structural + Keystore-presence check only: never decrypts,
-     * never prompts.
+     * Whether the blob stored for [pubkeyHex] can actually be recovered — a
+     * structural + Keystore-presence check (never decrypts, never prompts) that
+     * reflects real decryptability, not blob shape alone:
+     *  - **Legacy AES-GCM** blob (non-empty IV): recoverable iff the retained
+     *    legacy AES key still exists ([KeystoreManager.hasLegacyKeysKey]).
+     *  - **Empty-IV RSA** blob: recoverable iff SOME present RSA private key can
+     *    open it — the current policy alias's key
+     *    ([KeystoreManager.hasIdentityKeysKey]) or the retained former
+     *    KEYS_ALIAS keypair used as the migration fallback
+     *    ([KeystoreManager.hasLegacyRsaKeysKey], dashpay/platform#4060). A
+     *    correctly-shaped RSA blob whose keys were all deleted by an older build
+     *    is stranded, so shape is NOT sufficient.
+     * An unrecoverable blob is treated by key-health as missing and offers a
+     * re-derive.
      */
     suspend fun isPrivateKeyDecryptable(pubkeyHex: String): Boolean {
         val encoded = store.data.first()[privateKeyKey(pubkeyHex)] ?: return false
         val blob = decode(encoded)
-        return keystore.isKeysBlobDecryptable(blob) ||
-            (keystore.isLegacyKeysBlob(blob) && keystore.hasLegacyKeysKey())
+        if (keystore.isLegacyKeysBlob(blob)) {
+            return keystore.hasLegacyKeysKey()
+        }
+        return keystore.isKeysBlobDecryptable(blob) &&
+            (keystore.hasIdentityKeysKey(keystore.keysAlias) || keystore.hasLegacyRsaKeysKey())
     }
 
     /** All entry names (masked listing for the Keystore Explorer screen). */

@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -2494,14 +2495,20 @@ class PlatformWalletPersistenceHandler(
 
     // ── Pending identity-key bookkeeping (#4053) ──────────────────────
 
+    // Both mutators use `MutableStateFlow.update` (atomic compare-and-set)
+    // rather than a plain read-modify-write on `.value`: the persistence
+    // callback records a pending key on the Rust caller thread while
+    // `markIdentityKeyRepaired` can clear one from an arbitrary host thread
+    // (via PlatformWalletManager.repairIdentityKey). A non-atomic
+    // read-then-write could interleave and drop one of the two mutations —
+    // losing a record leaves a watch-only key with no queryable pending state,
+    // losing a clear leaves a repaired key stale.
     private fun recordPendingIdentityKey(entry: PendingIdentityKey) {
-        _pendingIdentityKeys.value = _pendingIdentityKeys.value + (entry.publicKeyHex to entry)
+        _pendingIdentityKeys.update { it + (entry.publicKeyHex to entry) }
     }
 
     private fun clearPendingIdentityKey(publicKeyHex: String) {
-        if (publicKeyHex in _pendingIdentityKeys.value) {
-            _pendingIdentityKeys.value = _pendingIdentityKeys.value - publicKeyHex
-        }
+        _pendingIdentityKeys.update { if (publicKeyHex in it) it - publicKeyHex else it }
     }
 
     /**

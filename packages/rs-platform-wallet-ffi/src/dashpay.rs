@@ -79,7 +79,23 @@ pub unsafe extern "C" fn platform_wallet_get_managed_identity(
         let info = wm.get_wallet_info(&wallet.wallet_id())?;
         info.identity_manager.managed_identity(&id).cloned()
     });
-    let inner = unwrap_option_or_return!(option);
+    // Two distinct "None" outcomes must NOT collapse into one `NotFound`
+    // (dashpay/platform#4060): the OUTER `with_item` miss means `wallet_handle`
+    // is absent from `PLATFORM_WALLET_STORAGE` — a closed/stale wallet, i.e. a
+    // real wallet failure — whereas the INNER miss means the (valid) wallet
+    // simply does not manage `id`. The Kotlin `Dashpay` layer translates only
+    // the inner "not managed" miss into a zero handle
+    // (`translateManagedIdentityNotFoundToZero`); if the invalid-handle case
+    // also arrived as `NotFound`, a stale `Dashpay` instance would silently
+    // read as "unmanaged" instead of surfacing the wallet failure. Emit
+    // `ErrorInvalidHandle` for the outer miss so it stays untranslated, and
+    // keep the inner miss as `NotFound`.
+    let Some(inner) = option else {
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidHandle,
+            format!("platform wallet handle {wallet_handle} not found"),
+        );
+    };
     let managed = unwrap_option_or_return!(inner);
     unsafe { *out_managed_identity_handle = MANAGED_IDENTITY_STORAGE.insert(managed) };
     PlatformWalletFFIResult::ok()

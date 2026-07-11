@@ -443,23 +443,26 @@ class Dashpay internal constructor(private val walletHandle: Long,
     }
 
     /**
-     * Open the managed-identity handle for [identityId], run [block],
-     * and destroy the handle before returning (the [contacts] /
-     * [acceptIncomingRequest] discipline). Returns null when the
-     * identity isn't managed by this wallet.
-     */
-    /**
      * Snapshot the managed identity for [identityId], or 0 when the wallet
      * does not manage it. The native side reports an unmanaged identity as
      * a platform-wallet NotFound error rather than a zero handle, so the
      * "not managed" outcome is translated here — every local-read caller
      * treats it as an absence (null / empty / false), never an exception.
+     * An invalid/stale wallet handle is a distinct native error
+     * (ErrorInvalidHandle) that is NOT translated, so it propagates instead
+     * of masquerading as an unmanaged identity (dashpay/platform#4060).
      */
     private fun managedIdentityHandleOrZero(identityId: ByteArray): Long =
         translateManagedIdentityNotFoundToZero {
             TokensNative.getManagedIdentity(walletHandle, identityId)
         }
 
+    /**
+     * Open the managed-identity handle for [identityId], run [block],
+     * and destroy the handle before returning (the [contacts] /
+     * [acceptIncomingRequest] discipline). Returns null when the
+     * identity isn't managed by this wallet.
+     */
     private inline fun <T> withManagedIdentity(
         identityId: ByteArray,
         block: (Long) -> T,

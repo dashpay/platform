@@ -62,7 +62,12 @@ import javax.crypto.spec.PSource
  *   Defaults to [KeySecurityPolicy.AUTH_GATED], which preserves the
  *   historical behavior exactly.
  */
-class KeystoreManager(
+// `open` purely so unit tests can substitute a fake that simulates Keystore
+// crypto: AndroidKeyStore has no Robolectric provider, so the real encrypt/
+// decrypt cannot run on the JVM (see KeySecurityPolicyTest). The seam lets
+// WalletStorage's upgrade-recovery ROUTING be exercised across the full blob
+// matrix without a device. Production always uses this concrete implementation.
+open class KeystoreManager(
     val keySecurityPolicy: KeySecurityPolicy = KeySecurityPolicy.AUTH_GATED,
 ) {
 
@@ -72,7 +77,7 @@ class KeystoreManager(
      * [KEYS_ALIAS_DEVICE_BOUND] (non-gated decrypt). [WalletStorage] passes
      * this to [encrypt]/[decrypt] for identity-key material.
      */
-    val keysAlias: String
+    open val keysAlias: String
         get() = when (keySecurityPolicy) {
             KeySecurityPolicy.AUTH_GATED -> KEYS_ALIAS_AUTH_GATED
             KeySecurityPolicy.DEVICE_BOUND -> KEYS_ALIAS_DEVICE_BOUND
@@ -86,7 +91,7 @@ class KeystoreManager(
      * require authentication, so identity-key writes never prompt. (The legacy
      * [KEYS_ALIAS] is never an encrypt target — new keys use the RSA aliases.)
      */
-    fun encrypt(plaintext: ByteArray, alias: String = MASTER_ALIAS): EncryptedBlob {
+    open fun encrypt(plaintext: ByteArray, alias: String = MASTER_ALIAS): EncryptedBlob {
         if (isIdentityKeysAlias(alias)) {
             val cipher = Cipher.getInstance(RSA_TRANSFORMATION)
             cipher.init(Cipher.ENCRYPT_MODE, keysPublicKey(alias), oaepSpec())
@@ -108,7 +113,7 @@ class KeystoreManager(
      * detects them ([isLegacyKeysBlob]) and routes them through
      * [decryptLegacyKeysBlob].
      */
-    fun decrypt(blob: EncryptedBlob, alias: String = MASTER_ALIAS): ByteArray {
+    open fun decrypt(blob: EncryptedBlob, alias: String = MASTER_ALIAS): ByteArray {
         if (isIdentityKeysAlias(alias)) {
             val cipher = Cipher.getInstance(RSA_TRANSFORMATION)
             cipher.init(Cipher.DECRYPT_MODE, keysPrivateKey(alias), oaepSpec())
@@ -130,7 +135,7 @@ class KeystoreManager(
      * in `iv` (see [isLegacyKeysBlob]) and are handled by the migration
      * fallback instead. Never decrypts, so it never prompts for authentication.
      */
-    fun isKeysBlobDecryptable(blob: EncryptedBlob): Boolean =
+    open fun isKeysBlobDecryptable(blob: EncryptedBlob): Boolean =
         blob.iv.isEmpty() && blob.ciphertext.size == RSA_KEY_SIZE / 8
 
     /**
@@ -140,17 +145,43 @@ class KeystoreManager(
      * never does. Structural check only — never decrypts, never prompts.
      * Decrypt these via [decryptLegacyKeysBlob].
      */
-    fun isLegacyKeysBlob(blob: EncryptedBlob): Boolean = blob.iv.isNotEmpty()
+    open fun isLegacyKeysBlob(blob: EncryptedBlob): Boolean = blob.iv.isNotEmpty()
 
     /**
      * Whether the legacy AES key at [KEYS_ALIAS] still exists, so a legacy
-     * identity-key blob is recoverable via [decryptLegacyKeysBlob] (and can be
-     * migrated to the RSA scheme). A Keystore presence check only — no decrypt,
-     * no prompt. False once an older build already deleted the key, in which
-     * case any surviving legacy blob is unrecoverable and needs a re-derive.
+     * AES-GCM identity-key blob is recoverable via [decryptLegacyKeysBlob] (and
+     * can be migrated to the RSA scheme). A Keystore presence check only — no
+     * decrypt, no prompt. False once an older build already deleted the key, in
+     * which case any surviving legacy AES blob is unrecoverable and needs a
+     * re-derive. Note [KEYS_ALIAS] is single-typed: it holds EITHER this AES key
+     * OR the former RSA keypair ([hasLegacyRsaKeysKey]) OR nothing — never both.
      */
-    fun hasLegacyKeysKey(): Boolean =
+    open fun hasLegacyKeysKey(): Boolean =
         (androidKeyStore().getKey(KEYS_ALIAS, null) as? SecretKey) != null
+
+    /**
+     * Whether [KEYS_ALIAS] currently holds the **former RSA identity-keys
+     * keypair** from the pre-alias-split scheme (dashpay/platform#4060) — the
+     * intermediate scheme that wrapped identity keys as empty-IV RSA/OAEP blobs
+     * under [KEYS_ALIAS] before the AUTH_GATED/DEVICE_BOUND alias split moved new
+     * keys to dedicated aliases. Only this key can open those blobs, so
+     * [WalletStorage.retrievePrivateKey] uses it as the recovery fallback and
+     * migrates the value to the current policy alias. Keystore presence check
+     * only — never decrypts, never prompts.
+     */
+    open fun hasLegacyRsaKeysKey(): Boolean =
+        (androidKeyStore().getKey(KEYS_ALIAS, null) as? PrivateKey) != null
+
+    /**
+     * Whether the current identity-keys [alias] (one of the RSA policy aliases)
+     * already holds an RSA private key — a NON-generating presence check, unlike
+     * [decrypt]/[keysPrivateKey] which provision the keypair on first use. Lets
+     * [WalletStorage.isPrivateKeyDecryptable] report an empty-IV RSA blob's
+     * recoverability, and [WalletStorage.retrievePrivateKey] route the upgrade
+     * fast path, without ever creating a key. Never decrypts, never prompts.
+     */
+    open fun hasIdentityKeysKey(alias: String): Boolean =
+        (androidKeyStore().getKey(alias, null) as? PrivateKey) != null
 
     /**
      * Decrypt a legacy pre-RSA identity-key [blob] with the retained AES-GCM key
@@ -161,10 +192,30 @@ class KeystoreManager(
      * window is closed, exactly as the RSA auth-gated decrypt does; the caller
      * ([KeystoreSigner]) prompts and retries.
      */
-    fun decryptLegacyKeysBlob(blob: EncryptedBlob): ByteArray? {
+    open fun decryptLegacyKeysBlob(blob: EncryptedBlob): ByteArray? {
         val legacyKey = androidKeyStore().getKey(KEYS_ALIAS, null) as? SecretKey ?: return null
         val cipher = Cipher.getInstance(AES_TRANSFORMATION)
         cipher.init(Cipher.DECRYPT_MODE, legacyKey, GCMParameterSpec(GCM_TAG_BITS, blob.iv))
+        return cipher.doFinal(blob.ciphertext)
+    }
+
+    /**
+     * Decrypt an empty-IV RSA identity-key [blob] with the retained **former RSA
+     * keypair** at [KEYS_ALIAS] (the pre-alias-split scheme,
+     * dashpay/platform#4060), or return `null` if [KEYS_ALIAS] no longer holds an
+     * RSA private key. Deliberately fetches the existing key WITHOUT generating a
+     * fresh one. Like the current-scheme RSA decrypt this key was auth-gated, so
+     * it throws `UserNotAuthenticatedException` when the auth window is closed —
+     * the caller ([KeystoreSigner]) prompts and retries. A blob that this key
+     * cannot open (e.g. it actually belongs to the current policy alias) surfaces
+     * as a JCE `BadPaddingException`, which [WalletStorage.retrievePrivateKey]
+     * treats as "not this key".
+     */
+    open fun decryptLegacyRsaKeysBlob(blob: EncryptedBlob): ByteArray? {
+        val legacyRsaPrivate =
+            androidKeyStore().getKey(KEYS_ALIAS, null) as? PrivateKey ?: return null
+        val cipher = Cipher.getInstance(RSA_TRANSFORMATION)
+        cipher.init(Cipher.DECRYPT_MODE, legacyRsaPrivate, oaepSpec())
         return cipher.doFinal(blob.ciphertext)
     }
 
@@ -334,13 +385,22 @@ class KeystoreManager(
         const val MASTER_ALIAS = "org.dashfoundation.wallet.master"
 
         /**
-         * **Legacy** identity-keys alias from the pre-RSA scheme, where
-         * identity private keys were wrapped under an **auth-gated AES-256-GCM**
-         * key here. Retained (never deleted, never regenerated) purely so
-         * existing installs' AES-GCM blobs stay decryptable across the upgrade
-         * to the RSA scheme: [WalletStorage.retrievePrivateKey] falls back to
-         * this key for a legacy blob and migrates it to [KEYS_ALIAS_AUTH_GATED].
-         * New identity keys are NEVER written here — see [keysAlias].
+         * **Legacy** identity-keys alias. Across the SDK's history this single
+         * alias has held, in turn, two now-superseded wrapping keys, so on an
+         * upgraded install it may currently contain EITHER:
+         *  - the original **auth-gated AES-256-GCM** key (the pre-RSA scheme —
+         *    blobs carry a GCM nonce; recovered via [decryptLegacyKeysBlob],
+         *    gated by [hasLegacyKeysKey]), OR
+         *  - the **former RSA-2048 OAEP keypair** (the intermediate
+         *    pre-alias-split scheme — empty-IV blobs; recovered via
+         *    [decryptLegacyRsaKeysBlob], gated by [hasLegacyRsaKeysKey],
+         *    dashpay/platform#4060).
+         * It is single-typed (one key at a time) and retained (never deleted,
+         * never regenerated) purely so existing installs' blobs stay decryptable
+         * across the upgrade to the aliased RSA scheme:
+         * [WalletStorage.retrievePrivateKey] falls back to whichever key is
+         * present and migrates the recovered value to [keysAlias]. New identity
+         * keys are NEVER written here — see [keysAlias].
          */
         const val KEYS_ALIAS = "org.dashfoundation.wallet.keys"
 
