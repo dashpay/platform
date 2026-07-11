@@ -212,26 +212,29 @@ The `identityTopUp` **catalog key** stays — it now routes to the new managed `
 ### 2.5 Minimum top-up amount floor (funds-safety — requires a decision)
 
 `amount_duffs == 0` is guarded in the export, but that is **not** the real floor. Platform enforces a
-consensus-side minimum for `IdentityTopUp`:
-`required_asset_lock_duff_balance_for_processing_start_for_identity_top_up = 50_000` duffs
-(`dpp_state_transition_versions/v3.rs:21`, checked in
-`identity_topup_transition/state_transition_estimated_fee_validation.rs:35`). An amount **between dust
-(~a few hundred duffs) and ~50_000 + fees** does the dangerous thing: it **builds and broadcasts a
-real asset lock (spending Core UTXOs), which Core accepts, then Platform rejects** — leaving the user's
-DASH committed in a tracked asset lock that can never complete this top-up. This is the same footgun
-class as the DIP-15 invitations sub-floor defect (`MIN_INVITATION_DUFFS`).
+consensus-side minimum for `IdentityTopUp` via `IdentityTopUpTransition::calculate_min_required_fee`.
+Under the **active fee version (v1)** — `calculate_min_required_fee_on_identity_top_up_transition: 1`
+in `dpp_state_transition_versions/v3.rs:31`, used by `STATE_TRANSITION_VERSIONS_V3` (protocol v11+) —
+that minimum is `identity_topup_base_cost` (500_000 credits = **500 duffs**) **plus**
+`required_asset_lock_duff_balance_for_processing_start_for_identity_top_up` (**50_000 duffs**) =
+**50_500 duffs** (`identity_topup_transition/state_transition_estimated_fee_validation.rs:39-50`;
+`CREDITS_PER_DUFF = 1000`). Enforced on-chain by `tx_out_credit_value < required_balance` in
+`rs-drive-abci/.../identity_top_up/transform_into_action/v0/mod.rs:59`. An amount **between dust and
+50_500 duffs** does the dangerous thing: it **builds and broadcasts a real asset lock (spending Core
+UTXOs), which Core accepts, then Platform rejects** — leaving the user's DASH committed in a tracked
+asset lock that can never complete this top-up. This is the same footgun class as the DIP-15
+invitations sub-floor defect (`MIN_INVITATION_DUFFS`). (The bare 50_000 value is only the fee-v0
+minimum; the v0→v1 fee-calc bump adds the base cost.)
 
 **Decided: UI gate + export guard (defense in depth).**
 - **Export guard:** in `platform_wallet_top_up_identity_with_funding_signer`, replace the
   `amount_duffs == 0` check with `amount_duffs < MIN_TOP_UP_DUFFS → ErrorInvalidParameter`. Define
-  `const MIN_TOP_UP_DUFFS: u64 = 50_000;` in the FFI with a comment pointing at the consensus source
-  (`required_asset_lock_duff_balance_for_processing_start_for_identity_top_up`). This guards **all**
-  callers of the export, including Android. (The `FromExistingAssetLock` export has no amount param and
-  is unaffected.)
+  `const MIN_TOP_UP_DUFFS: u64 = 50_500;` in the FFI (the active v1 fee minimum — base cost + asset-lock
+  floor; see above). This guards **all** callers of the export, including Android. (The
+  `FromExistingAssetLock` export has no amount param and is unaffected.)
 - **UI gate:** in the example app, disable submit + show a "minimum …" hint until the entered amount
   ≥ the floor (mirroring `CreateIdentityView.currentMinFundingDuffs`), so no sub-floor lock is ever
-  broadcast. UI default should carry fee headroom above the bare 50_000 (exact default an
-  implementation detail; the hard floor is the consensus 50_000).
+  broadcast. The hard floor is the consensus 50_500 duffs.
 
 ### 2.6 Crash-recovery / stuck-lock resume for top-up (funds-safety — requires a decision)
 
@@ -291,7 +294,7 @@ Orchestrator IdentityWallet::top_up_identity_with_funding(
 
 - **Insufficient Core UTXO balance** in the chosen account → orchestrator errors; surfaced via
   `PlatformWalletFFIResult` → Swift throw → UI error panel. (Same as registration.)
-- **Sub-floor amount (dust < amount < ~50_000 duffs + fees)** → the asset lock is **accepted Core-side
+- **Sub-floor amount (dust < amount < 50_500 duffs)** → the asset lock is **accepted Core-side
   and broadcast**, then **rejected Platform-side**, leaving funds committed in a stuck tracked lock.
   This is the funds-safety gap addressed by the §2.5 floor — NOT a clean Core-side failure. (Contrary
   to registration's UI, which *does* gate on a computed `currentMinFundingDuffs` floor in

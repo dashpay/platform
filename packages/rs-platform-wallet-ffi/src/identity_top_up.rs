@@ -144,14 +144,20 @@ pub unsafe extern "C" fn platform_wallet_top_up_from_addresses_with_signer(
 
 /// Minimum asset-lock funding for a Core-funded identity top-up, in duffs.
 ///
-/// Platform will not start processing an `IdentityTopUp` whose asset lock
-/// funds less than
+/// Platform rejects an `IdentityTopUp` whose asset-lock output value (in
+/// credits) is below `IdentityTopUpTransition::calculate_min_required_fee`.
+/// Under the active fee version (v1) that minimum is
+/// `identity_topup_base_cost` (500_000 credits = 500 duffs) **plus**
 /// `required_asset_lock_duff_balance_for_processing_start_for_identity_top_up`
-/// (currently 50_000 duffs). Below that, a lock built and broadcast here is
-/// accepted by Core (spending real UTXOs) but rejected by Platform, stranding
-/// the funds in a lock that can never complete the top-up. Reject sub-floor
-/// amounts up front so no such lock is ever broadcast.
-const MIN_TOP_UP_DUFFS: u64 = 50_000;
+/// (50_000 duffs) — i.e. 50_500 duffs. Below that, a lock built and broadcast
+/// here is accepted by Core (spending real UTXOs) but rejected by Platform,
+/// stranding the funds in a lock that can never complete the top-up. Reject
+/// sub-floor amounts up front so no such lock is ever broadcast.
+///
+/// (The bare 50_000 asset-lock floor alone was the fee-v0 minimum; the active
+/// v1 calc — `STATE_TRANSITION_VERSIONS_V3`, protocol v11+ — adds the base
+/// cost, so this constant must include it.)
+const MIN_TOP_UP_DUFFS: u64 = 50_500;
 
 /// Top up an existing identity's credit balance by building and
 /// broadcasting a **new Core asset lock** (the same funding mechanism as
@@ -201,6 +207,9 @@ pub unsafe extern "C" fn platform_wallet_top_up_identity_with_funding_signer(
     check_ptr!(identity_id);
     check_ptr!(core_signer_handle);
     check_ptr!(out_new_balance);
+    // FFI-safe sentinel before any fallible work, matching the sibling
+    // `platform_wallet_topup_identity_with_existing_asset_lock_signer`.
+    *out_new_balance = 0;
     if amount_duffs < MIN_TOP_UP_DUFFS {
         return PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorInvalidParameter,

@@ -27,6 +27,11 @@ struct TransitionDetailView: View {
   @State private var showResult = false
   @State private var resultText = ""
   @State private var isError = false
+  /// Gates the resume-from-tracked-lock confirmation. A tracked asset lock
+  /// isn't bound to an identity — resume directs it at whatever identity is
+  /// selected, and a stray lock landing on the wrong (self-owned) identity
+  /// is not undoable — so this flow requires an explicit confirm.
+  @State private var showResumeConfirm = false
 
   // Dynamic form inputs
   @State private var formInputs: [String: String] = [:]
@@ -200,6 +205,23 @@ struct TransitionDetailView: View {
     .foregroundColor(.white)
     .cornerRadius(10)
     .disabled(!enabled)
+    .confirmationDialog(
+      "Resume top-up?",
+      isPresented: $showResumeConfirm,
+      titleVisibility: .visible
+    ) {
+      Button("Top Up") {
+        Task { await performTransition() }
+      }
+      Button("Cancel", role: .cancel) {}
+    } message: {
+      let txid = (formInputs["outPointTxid"] ?? "").trimmingCharacters(in: .whitespaces)
+      let vout = (formInputs["outPointVout"] ?? "0").trimmingCharacters(in: .whitespaces)
+      Text(
+        "Consume asset lock \(txid.isEmpty ? "?" : txid):\(vout) into identity "
+          + "\(selectedIdentityId)? This credits the selected identity and cannot be undone."
+      )
+    }
   }
 
   private var resultView: some View {
@@ -456,6 +478,13 @@ struct TransitionDetailView: View {
   // MARK: - Transition Execution
 
   private func executeTransition() {
+    // Resume directs a tracked asset lock at whatever identity is selected;
+    // a stray lock landing on the wrong (self-owned) identity is not
+    // undoable, so require explicit confirmation before firing.
+    if transitionKey == "identityTopUpResume" {
+      showResumeConfirm = true
+      return
+    }
     Task {
       await performTransition()
     }
@@ -613,10 +642,11 @@ struct TransitionDetailView: View {
 
   /// Minimum Core-side funding for a managed top-up, in duffs. Mirrors the
   /// Rust `MIN_TOP_UP_DUFFS` guard so the UI blocks a sub-floor amount
-  /// *before* any asset lock is broadcast — a lock below Platform's
-  /// processing-start minimum is accepted by Core but rejected by Platform,
+  /// *before* any asset lock is broadcast — a lock below Platform's minimum
+  /// required fee (active v1 calc: 500-duff base cost + 50_000-duff asset-lock
+  /// floor = 50_500 duffs) is accepted by Core but rejected by Platform,
   /// stranding the funds in a lock that can't complete the top-up.
-  private static let minTopUpDuffs: UInt64 = 50_000
+  private static let minTopUpDuffs: UInt64 = 50_500
 
   /// Top up the selected identity by building a new Core asset lock from
   /// the owning wallet's balance (managed path — the credit-output key

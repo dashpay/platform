@@ -57,7 +57,7 @@ public struct TransitionDefinitions {
                     label: "Amount (duffs)",
                     required: true,
                     placeholder: "100000",
-                    help: "Core-side funding amount in duffs (minimum 50000). A new asset lock is built from the wallet's balance."
+                    help: "Core-side funding amount in duffs (minimum 50500). A new asset lock is built from the wallet's balance."
                 ),
                 TransitionInput(
                     name: "accountIndex",
