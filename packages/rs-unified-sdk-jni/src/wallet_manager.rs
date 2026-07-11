@@ -1241,45 +1241,6 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_c
 // Backed by the process-global registry in `platform_wallet_ffi`
 // (`core_wallet_signed_payment_*`). See `SignedPaymentRegistry`.
 
-/// `core_wallet_transaction_get_bytes` — the consensus-serialized bytes of a
-/// built transaction from [coreTxBuilderBuildSigned], copied into a fresh
-/// Java `byte[]`. The underlying FFI hands back a borrowed pointer valid only
-/// while `tx` lives, so we copy it here before returning.
-#[no_mangle]
-pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_coreTransactionGetBytes(
-    mut env: JNIEnv,
-    _class: JClass,
-    tx: jlong,
-) -> jbyteArray {
-    guard(&mut env, ptr::null_mut(), |env| {
-        if tx == 0 {
-            throw_sdk_exception(env, 1, "transaction handle is 0");
-            return ptr::null_mut();
-        }
-        let mut out_ptr: *const u8 = ptr::null();
-        let mut out_len: usize = 0;
-        let result = unsafe {
-            platform_wallet_ffi::core_wallet_transaction_get_bytes(
-                tx as *const platform_wallet_ffi::FFICoreTransaction,
-                &mut out_ptr as *mut *const u8,
-                &mut out_len as *mut usize,
-            )
-        };
-        if take_pwffi_error(env, result) {
-            return ptr::null_mut();
-        }
-        // Copy immediately: the pointer borrows the transaction's own buffer.
-        let bytes: &[u8] = if out_ptr.is_null() || out_len == 0 {
-            &[]
-        } else {
-            unsafe { std::slice::from_raw_parts(out_ptr, out_len) }
-        };
-        env.byte_array_from_slice(bytes)
-            .map(|a| a.into_raw())
-            .unwrap_or(ptr::null_mut())
-    })
-}
-
 /// `core_wallet_signed_payment_register` — register a built+signed transaction
 /// (from [coreTxBuilderBuildSigned]) for deferred submission, holding its UTXO
 /// reservation. `accountType`/`accountIndex` are the funding account (0 BIP44,
@@ -1287,8 +1248,9 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_c
 /// with [coreTransactionFree].
 ///
 /// Returns a big-endian BLOB the Kotlin side decodes into a
-/// `SignedCoreTransaction`: `u64 token, u64 feeDuffs, u32 txidLen, txid utf8`.
-/// The raw tx bytes are fetched separately via [coreTransactionGetBytes].
+/// `SignedCoreTransaction`:
+/// `u64 token, u64 feeDuffs, u32 txidLen, txid utf8, u32 txBytesLen, txBytes`.
+/// The raw tx bytes come back in this same call (no second native round trip).
 #[no_mangle]
 pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_coreWalletRegisterSignedPayment(
     mut env: JNIEnv,
@@ -1315,6 +1277,8 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_c
         let mut token: u64 = 0;
         let mut fee: u64 = 0;
         let mut out_txid: *mut c_char = ptr::null_mut();
+        let mut out_bytes_ptr: *const u8 = ptr::null();
+        let mut out_bytes_len: usize = 0;
         let result = unsafe {
             platform_wallet_ffi::core_wallet_signed_payment_register(
                 core_handle as Handle,
@@ -1324,6 +1288,8 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_c
                 &mut token as *mut u64,
                 &mut fee as *mut u64,
                 &mut out_txid as *mut *mut c_char,
+                &mut out_bytes_ptr as *mut *const u8,
+                &mut out_bytes_len as *mut usize,
             )
         };
         if take_pwffi_error(env, result) {
@@ -1339,16 +1305,33 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_c
             .into_owned();
         unsafe { platform_wallet_ffi::core_wallet_free_address(out_txid) };
 
+        // Copy the raw tx bytes immediately: the pointer borrows the still-live
+        // transaction's own buffer.
+        let tx_bytes: &[u8] = if out_bytes_ptr.is_null() || out_bytes_len == 0 {
+            &[]
+        } else {
+            unsafe { std::slice::from_raw_parts(out_bytes_ptr, out_bytes_len) }
+        };
+
         // Assemble the big-endian BLOB (matches the Kotlin ByteBuffer decoder).
         let txid_bytes = txid.into_bytes();
-        let mut blob = Vec::with_capacity(8 + 8 + 4 + txid_bytes.len());
+        let mut blob = Vec::with_capacity(8 + 8 + 4 + txid_bytes.len() + 4 + tx_bytes.len());
         blob.extend_from_slice(&token.to_be_bytes());
         blob.extend_from_slice(&fee.to_be_bytes());
         blob.extend_from_slice(&(txid_bytes.len() as u32).to_be_bytes());
         blob.extend_from_slice(&txid_bytes);
-        env.byte_array_from_slice(&blob)
-            .map(|a| a.into_raw())
-            .unwrap_or(ptr::null_mut())
+        blob.extend_from_slice(&(tx_bytes.len() as u32).to_be_bytes());
+        blob.extend_from_slice(tx_bytes);
+        match env.byte_array_from_slice(&blob) {
+            Ok(array) => array.into_raw(),
+            Err(_) => {
+                // The registration already committed and is holding the funding
+                // reservation; release the token so it isn't orphaned to the
+                // 24-block TTL backstop when Kotlin never receives it.
+                let _ = unsafe { platform_wallet_ffi::core_wallet_signed_payment_release(token) };
+                ptr::null_mut()
+            }
+        }
     })
 }
 
