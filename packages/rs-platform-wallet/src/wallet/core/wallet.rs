@@ -10,6 +10,7 @@ use tokio::sync::RwLock;
 use key_wallet::managed_account::address_pool::KeySource;
 use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
 use key_wallet::wallet::managed_wallet_info::transaction_building::AccountTypePreference;
+use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 use key_wallet_manager::WalletManager;
 
 use crate::broadcaster::TransactionBroadcaster;
@@ -285,6 +286,21 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
     /// Get the network from the SDK.
     pub fn network(&self) -> key_wallet::Network {
         self.sdk.network
+    }
+
+    /// Current synced block height for this wallet, or `None` if the wallet is no
+    /// longer present in the manager.
+    ///
+    /// Used by the deferred-payment
+    /// [`SignedPaymentRegistry`](crate::SignedPaymentRegistry) to bound a token's
+    /// lifetime against key-wallet's UTXO reservation TTL: a `build_signed`
+    /// reservation is stamped at this height, so the elapsed span since
+    /// registration tells the registry whether the reservation could have been
+    /// swept and re-selected out from under the token.
+    pub(crate) async fn synced_height(&self) -> Option<u32> {
+        let wm = self.wallet_manager.read().await;
+        wm.get_wallet_and_info(&self.wallet_id)
+            .map(|(_, info)| info.core_wallet.synced_height())
     }
 }
 
