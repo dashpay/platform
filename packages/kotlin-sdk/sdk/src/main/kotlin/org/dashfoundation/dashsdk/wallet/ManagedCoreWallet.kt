@@ -59,13 +59,12 @@ class ManagedCoreWallet internal constructor(handle: Long) : AutoCloseable {
      * Register a built+signed [tx] for deferred (BIP70/BIP270) submission,
      * holding its UTXO reservation, and return the resulting
      * [ManagedPlatformWallet.SignedCoreTransaction]. Does NOT consume [tx] — the
-     * caller still closes it. Reads the raw bytes off [tx] and decodes the
-     * register BLOB (`token, feeDuffs, txid`).
+     * caller still closes it. Decodes the single register BLOB
+     * (`token, feeDuffs, txid, rawTxBytes`) — one native round trip.
      */
     internal fun registerSignedPayment(
         tx: CoreTransaction,
     ): ManagedPlatformWallet.SignedCoreTransaction {
-        val rawTxBytes = WalletManagerNative.coreTransactionGetBytes(tx.handle)
         val blob = WalletManagerNative.coreWalletRegisterSignedPayment(
             handle,
             tx.handle,
@@ -78,6 +77,9 @@ class ManagedCoreWallet internal constructor(handle: Long) : AutoCloseable {
         val txidLen = buffer.int
         val txidBytes = ByteArray(txidLen)
         buffer.get(txidBytes)
+        val txBytesLen = buffer.int
+        val rawTxBytes = ByteArray(txBytesLen)
+        buffer.get(rawTxBytes)
         return ManagedPlatformWallet.SignedCoreTransaction(
             txidHex = String(txidBytes, Charsets.UTF_8),
             rawTxBytes = rawTxBytes,

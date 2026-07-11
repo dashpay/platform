@@ -30,36 +30,8 @@ use std::os::raw::c_char;
 /// [`ReservationToken`]. In-memory only: an app crash between build and
 /// broadcast drops the registry entry and the underlying UTXO reservation
 /// together, so nothing leaks across a restart.
-static SIGNED_PAYMENT_REGISTRY: Lazy<SignedPaymentRegistry<SpvBroadcaster>> =
+pub(crate) static SIGNED_PAYMENT_REGISTRY: Lazy<SignedPaymentRegistry<SpvBroadcaster>> =
     Lazy::new(SignedPaymentRegistry::new);
-
-/// Borrow the consensus-serialized bytes of a transaction built by
-/// `core_wallet_tx_builder_build_signed`, for the caller to copy into
-/// `SignedCoreTransaction.rawTxBytes`.
-///
-/// The written pointer borrows the `FFICoreTransaction`'s own buffer — it is
-/// valid only until the transaction is freed with
-/// `core_wallet_transaction_free`, so the caller must copy the bytes out
-/// immediately and must not retain the pointer.
-///
-/// # Safety
-/// `tx` must be a valid, non-freed `FFICoreTransaction` pointer;
-/// `out_ptr`/`out_len` must be writable.
-#[no_mangle]
-pub unsafe extern "C" fn core_wallet_transaction_get_bytes(
-    tx: *const FFICoreTransaction,
-    out_ptr: *mut *const u8,
-    out_len: *mut usize,
-) -> PlatformWalletFFIResult {
-    check_ptr!(tx);
-    check_ptr!(out_ptr);
-    check_ptr!(out_len);
-
-    let bytes = (*tx).bytes();
-    *out_ptr = bytes.as_ptr();
-    *out_len = bytes.len();
-    PlatformWalletFFIResult::ok()
-}
 
 /// Register a built, signed transaction for deferred submission and return a
 /// reservation token.
@@ -73,13 +45,20 @@ pub unsafe extern "C" fn core_wallet_transaction_get_bytes(
 ///
 /// `account_type`/`account_index` identify the funding account handed to
 /// `set_funding`, so the reservation can be released on rejection/abandonment.
-/// Writes `out_token`, `out_fee` (the build's fee in duffs), and `out_txid` (a
+/// Writes `out_token`, `out_fee` (the build's fee in duffs), `out_txid` (a
 /// heap-allocated lowercase-hex C string the caller frees with
-/// `core_wallet_free_address`).
+/// `core_wallet_free_address`), and `out_bytes_ptr`/`out_bytes_len` (the
+/// consensus-serialized transaction bytes, returned in the same call so the
+/// caller needs no second native round trip).
+///
+/// The `out_bytes_ptr` buffer borrows the `FFICoreTransaction`'s own storage —
+/// it is valid only until `tx` is freed with `core_wallet_transaction_free`, so
+/// the caller must copy the bytes out immediately and must not retain the
+/// pointer.
 ///
 /// # Safety
 /// `tx` must be a valid, non-freed `FFICoreTransaction`; `core_handle` a valid
-/// core-wallet handle; the three out-pointers must be writable.
+/// core-wallet handle; all out-pointers must be writable.
 #[no_mangle]
 pub unsafe extern "C" fn core_wallet_signed_payment_register(
     core_handle: Handle,
@@ -89,15 +68,20 @@ pub unsafe extern "C" fn core_wallet_signed_payment_register(
     out_token: *mut u64,
     out_fee: *mut u64,
     out_txid: *mut *mut c_char,
+    out_bytes_ptr: *mut *const u8,
+    out_bytes_len: *mut usize,
 ) -> PlatformWalletFFIResult {
     check_ptr!(tx);
     check_ptr!(out_token);
     check_ptr!(out_fee);
     check_ptr!(out_txid);
+    check_ptr!(out_bytes_ptr);
+    check_ptr!(out_bytes_len);
 
     let core = unwrap_option_or_return!(CORE_WALLET_STORAGE.with_item(core_handle, |w| w.clone()));
 
-    let transaction: dashcore::Transaction = match dashcore::consensus::deserialize((*tx).bytes()) {
+    let bytes = (*tx).bytes();
+    let transaction: dashcore::Transaction = match dashcore::consensus::deserialize(bytes) {
         Ok(t) => t,
         Err(e) => {
             return PlatformWalletFFIResult::err(
@@ -109,14 +93,10 @@ pub unsafe extern "C" fn core_wallet_signed_payment_register(
     let txid = transaction.txid();
     let fee = (*tx).fee();
 
-    let token = SIGNED_PAYMENT_REGISTRY.register(
-        core,
-        transaction,
-        account_type.as_standard_account_type(),
-        account_index,
-    );
-
-    // txid hex never contains a NUL, but handle the impossible case anyway.
+    // Do all fallible/pure marshalling BEFORE the registry insert — that insert
+    // mints a token and holds the funding reservation, so a later failure would
+    // orphan the reservation with no token to release it. txid hex never
+    // contains a NUL, but handle the impossible case anyway.
     let c_txid = match CString::new(txid.to_string()) {
         Ok(s) => s,
         Err(_) => {
@@ -127,9 +107,20 @@ pub unsafe extern "C" fn core_wallet_signed_payment_register(
         }
     };
 
+    let token = runtime().block_on(SIGNED_PAYMENT_REGISTRY.register(
+        core,
+        transaction,
+        account_type.as_standard_account_type(),
+        account_index,
+    ));
+
     *out_token = token;
     *out_fee = fee;
     *out_txid = c_txid.into_raw();
+    // Borrowed view into the still-live `tx` buffer; the caller copies it out
+    // before freeing `tx` (mirrors the retired `core_wallet_transaction_get_bytes`).
+    *out_bytes_ptr = bytes.as_ptr();
+    *out_bytes_len = bytes.len();
     PlatformWalletFFIResult::ok()
 }
 
@@ -156,7 +147,8 @@ pub unsafe extern "C" fn core_wallet_signed_payment_broadcast(
 
     let core = unwrap_option_or_return!(CORE_WALLET_STORAGE.with_item(core_handle, |w| w.clone()));
 
-    let result = runtime().block_on(SIGNED_PAYMENT_REGISTRY.broadcast(token as ReservationToken, &core));
+    let result =
+        runtime().block_on(SIGNED_PAYMENT_REGISTRY.broadcast(token as ReservationToken, &core));
 
     match result {
         Ok(txid) => {
@@ -172,12 +164,14 @@ pub unsafe extern "C" fn core_wallet_signed_payment_broadcast(
             *out_txid = c_txid.into_raw();
             PlatformWalletFFIResult::ok()
         }
-        Err(e @ (SignedPaymentError::StaleToken(_) | SignedPaymentError::WalletMismatch(_))) => {
-            PlatformWalletFFIResult::err(
-                PlatformWalletFFIResultCode::ErrorStaleReservationToken,
-                e.to_string(),
-            )
-        }
+        Err(
+            e @ (SignedPaymentError::StaleToken(_)
+            | SignedPaymentError::WalletMismatch(_)
+            | SignedPaymentError::StaleReservationToken(_)),
+        ) => PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorStaleReservationToken,
+            e.to_string(),
+        ),
         // Preserve the typed underlying wallet error (keeps the ambiguous
         // "may already be on the network" retry semantics intact).
         Err(SignedPaymentError::Broadcast(e)) => PlatformWalletFFIResult::from(e),
