@@ -958,6 +958,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_do
     mut env: JNIEnv,
     _class: JClass,
     wallet_handle: jlong,
+    mnemonic_resolver_handle: jlong,
     owner_id: JByteArray,
     contract_id: JByteArray,
     document_type: JString,
@@ -998,6 +999,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_do
         let result = unsafe {
             platform_wallet_ffi::platform_wallet_create_encrypted_document_with_signer(
                 wallet_handle as Handle,
+                mnemonic_resolver_handle as *mut rs_sdk_ffi::MnemonicResolverHandle,
                 owner.as_ptr(),
                 contract.as_ptr(),
                 doc_type.as_ptr(),
@@ -1048,6 +1050,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_do
     mut env: JNIEnv,
     _class: JClass,
     wallet_handle: jlong,
+    mnemonic_resolver_handle: jlong,
     owner_id: JByteArray,
     contract_id: JByteArray,
     document_type: JString,
@@ -1061,9 +1064,12 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_do
         // `take_pwffi_error` / `throw_sdk_exception` (both warn before
         // throwing).
         log::warn!(
-            "documentFetchEncrypted: entry wallet_handle={:#x} (nonzero={}) since_ms={}",
+            "documentFetchEncrypted: entry wallet_handle={:#x} (nonzero={}) \
+             mnemonic_resolver_handle={:#x} (nonzero={}) since_ms={}",
             wallet_handle,
             wallet_handle != 0,
+            mnemonic_resolver_handle,
+            mnemonic_resolver_handle != 0,
             since_ms
         );
         let Some(owner) = read_id32(env, &owner_id, "ownerId") else {
@@ -1095,6 +1101,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_do
         let result = unsafe {
             platform_wallet_ffi::platform_wallet_fetch_encrypted_documents(
                 wallet_handle as Handle,
+                mnemonic_resolver_handle as *mut rs_sdk_ffi::MnemonicResolverHandle,
                 owner.as_ptr(),
                 contract.as_ptr(),
                 doc_type.as_ptr(),

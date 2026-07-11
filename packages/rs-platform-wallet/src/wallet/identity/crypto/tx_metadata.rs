@@ -53,7 +53,7 @@
 //! as it did on the legacy stack.
 
 use key_wallet::bip32::ChildNumber;
-use key_wallet::bip32::KeyDerivationType;
+use key_wallet::bip32::{DerivationPath, ExtendedPrivKey, KeyDerivationType};
 use key_wallet::wallet::Wallet;
 use key_wallet::Network;
 use zeroize::Zeroizing;
@@ -81,24 +81,17 @@ const BLOB_HEADER_LEN: usize = 1 + 16;
 /// AES block size — the ciphertext must be a non-zero multiple of this.
 const AES_BLOCK_LEN: usize = 16;
 
-/// Derive the AES-256 key for one `txMetadata` document from the wallet seed.
-///
-/// `key_index` is the document's `keyIndex` field (the identity's registered
-/// ENCRYPTION key id); `encryption_key_index` is the document's
-/// `encryptionKeyIndex` field (the app's per-document index). The derived key
-/// is the raw private scalar at
-/// `identity_auth_path(identity_index, key_index) / 32769' / encryption_key_index'`.
-///
-/// Requires a key-resident wallet (mnemonic/seed); a watch-only wallet has no
-/// in-process HD slot and would need a host-side signing hook (out of scope for
-/// the dash-wallet migration, which uses a resident mnemonic wallet).
-pub fn derive_tx_metadata_key(
-    wallet: &Wallet,
+/// Build the full tx-metadata key derivation path
+/// `identity_auth_path(identity_index, key_index) / 32769' / encryption_key_index'`
+/// — the single path both key sources ([`derive_tx_metadata_key`] and
+/// [`derive_tx_metadata_key_from_master`]) derive at, so the resident-wallet
+/// and resolver-master paths can never drift apart.
+pub fn tx_metadata_derivation_path(
     network: Network,
     identity_index: u32,
     key_index: u32,
     encryption_key_index: u32,
-) -> Result<Zeroizing<[u8; 32]>, PlatformWalletError> {
+) -> Result<DerivationPath, PlatformWalletError> {
     let root_path = identity_auth_derivation_path_for_type(
         network,
         KeyDerivationType::ECDSA,
@@ -106,7 +99,7 @@ pub fn derive_tx_metadata_key(
         key_index,
     )?;
 
-    let path = root_path.extend([
+    Ok(root_path.extend([
         ChildNumber::from_hardened_idx(TX_METADATA_ENCRYPTION_CHILD).map_err(|e| {
             PlatformWalletError::InvalidIdentityData(format!(
                 "Invalid txMetadata encryption child index: {e}"
@@ -117,12 +110,76 @@ pub fn derive_tx_metadata_key(
                 "Invalid txMetadata encryptionKeyIndex: {e}"
             ))
         })?,
-    ]);
+    ]))
+}
+
+/// Derive the AES-256 key for one `txMetadata` document from the wallet seed.
+///
+/// `key_index` is the document's `keyIndex` field (the identity's registered
+/// ENCRYPTION key id); `encryption_key_index` is the document's
+/// `encryptionKeyIndex` field (the app's per-document index). The derived key
+/// is the raw private scalar at
+/// `identity_auth_path(identity_index, key_index) / 32769' / encryption_key_index'`.
+///
+/// Requires a key-resident wallet (mnemonic / seed / xprv). An
+/// external-signable or watch-only wallet has no in-process private keys and
+/// fails here with `External signable wallet has no private key` — the caller
+/// must resolve the wallet's mnemonic host-side (the platform mnemonic
+/// resolver) and use [`derive_tx_metadata_key_from_master`] instead. This is
+/// exactly the shape the Android/iOS apps run: their SDK wallets are
+/// external-signable and every key derives on demand through the resolver.
+pub fn derive_tx_metadata_key(
+    wallet: &Wallet,
+    network: Network,
+    identity_index: u32,
+    key_index: u32,
+    encryption_key_index: u32,
+) -> Result<Zeroizing<[u8; 32]>, PlatformWalletError> {
+    let path =
+        tx_metadata_derivation_path(network, identity_index, key_index, encryption_key_index)?;
 
     let ext = wallet.derive_extended_private_key(&path).map_err(|e| {
         PlatformWalletError::InvalidIdentityData(format!("Failed to derive txMetadata key: {e}"))
     })?;
     Ok(Zeroizing::new(ext.private_key.secret_bytes()))
+}
+
+/// Derive the AES-256 key for one `txMetadata` document from a caller-supplied
+/// master extended private key — the external-signable-wallet counterpart of
+/// [`derive_tx_metadata_key`], deriving the identical path from the identical
+/// seed material (see the cross-path agreement test).
+///
+/// This is the tx-metadata leg of the codebase's resolver convention (mirrors
+/// `derive_ecdsa_identity_auth_keypair_from_master` and the discovery /
+/// key-preview paths): when the in-process wallet is external-signable /
+/// watch-only, the FFI layer resolves the wallet's mnemonic on demand via the
+/// host `MnemonicResolverHandle`, builds the master xprv, calls this, and
+/// wipes the master (`master.private_key.non_secure_erase()`) before
+/// returning — atomic derive + use + zeroize. The returned scalar is
+/// [`Zeroizing`], so the key itself is scrubbed on drop as well.
+pub fn derive_tx_metadata_key_from_master(
+    master: &ExtendedPrivKey,
+    network: Network,
+    identity_index: u32,
+    key_index: u32,
+    encryption_key_index: u32,
+) -> Result<Zeroizing<[u8; 32]>, PlatformWalletError> {
+    use dashcore::secp256k1::Secp256k1;
+
+    let path =
+        tx_metadata_derivation_path(network, identity_index, key_index, encryption_key_index)?;
+
+    let secp = Secp256k1::new();
+    // `ExtendedPrivKey` has no `Drop`/`Zeroize`; its inner
+    // `secp256k1::SecretKey` memzeroes on drop, and the scalar copy we
+    // return is wrapped in `Zeroizing` (same hygiene note as
+    // `derive_ecdsa_identity_auth_keypair_from_master`).
+    let derived = master.derive_priv(&secp, &path).map_err(|e| {
+        PlatformWalletError::InvalidIdentityData(format!(
+            "Failed to derive txMetadata key from master: {e}"
+        ))
+    })?;
+    Ok(Zeroizing::new(derived.private_key.secret_bytes()))
 }
 
 /// Seal an already-serialized `txMetadata` payload into the stored
@@ -267,6 +324,135 @@ mod tests {
         assert!(open_tx_metadata(&key, &[0u8; 22]).is_err());
     }
 
+    /// The two key sources — resident wallet vs a resolver-supplied master
+    /// xprv from the SAME mnemonic — must derive the IDENTICAL key at every
+    /// `(identity_index, key_index, encryption_key_index)` slot. This pins
+    /// the external-signable-wallet fix (the Android/iOS shape derives via
+    /// the mnemonic resolver → master; test fixtures derive in-wallet):
+    /// if the two paths ever drift, decrypt breaks silently on-device.
+    #[test]
+    fn master_derivation_matches_resident_wallet_derivation() {
+        use key_wallet::mnemonic::{Language, Mnemonic};
+
+        let mnemonic = Mnemonic::from_phrase(
+            "abandon abandon abandon abandon abandon abandon abandon \
+             abandon abandon abandon abandon about",
+            Language::English,
+        )
+        .expect("valid test mnemonic");
+        let seed = mnemonic.to_seed("");
+        let wallet = Wallet::from_mnemonic(
+            mnemonic,
+            Network::Testnet,
+            WalletAccountCreationOptions::None,
+        )
+        .expect("wallet from mnemonic");
+        // The exact master the FFI's `resolve_master_from_resolver` builds
+        // from the host-resolved mnemonic (`to_seed("") → new_master`).
+        let master =
+            ExtendedPrivKey::new_master(Network::Testnet, &seed).expect("master from seed");
+
+        for (identity_index, key_index, encryption_key_index) in
+            [(0, 2, 1), (0, 2, 7), (0, 3, 1), (1, 2, 1)]
+        {
+            let resident = derive_tx_metadata_key(
+                &wallet,
+                Network::Testnet,
+                identity_index,
+                key_index,
+                encryption_key_index,
+            )
+            .expect("resident derive");
+            let from_master = derive_tx_metadata_key_from_master(
+                &master,
+                Network::Testnet,
+                identity_index,
+                key_index,
+                encryption_key_index,
+            )
+            .expect("master derive");
+            assert_eq!(
+                *resident, *from_master,
+                "resident-wallet and resolver-master key derivations must agree at \
+                 ({identity_index},{key_index},{encryption_key_index})"
+            );
+        }
+    }
+
+    /// The external-signable wallet shape (the Android/iOS apps: NO resident
+    /// private keys — every key derives host-side through the mnemonic
+    /// resolver): the in-wallet derive must fail (this exact failure zeroed
+    /// the on-device decrypt-proof), and the resolver-master path — fed by a
+    /// stub "resolver" supplying the test mnemonic — must decrypt a blob the
+    /// resident stack sealed. Round-trips seal(resident) → open(master) and
+    /// seal(master) → open(resident), proving an external-signable device
+    /// wallet reads and writes documents interchangeably with a key-resident
+    /// wallet on the same mnemonic.
+    #[test]
+    fn external_signable_wallet_derives_via_resolver_master() {
+        use key_wallet::account::AccountCollection;
+        use key_wallet::mnemonic::{Language, Mnemonic};
+
+        let mnemonic = Mnemonic::from_phrase(
+            "abandon abandon abandon abandon abandon abandon abandon \
+             abandon abandon abandon abandon about",
+            Language::English,
+        )
+        .expect("valid test mnemonic");
+        let seed = mnemonic.to_seed("");
+
+        // The device shape: an external-signable wallet with no in-process
+        // private keys.
+        let external_wallet = Wallet::new_external_signable(
+            Network::Testnet,
+            [0x42u8; 32],
+            AccountCollection::new(),
+        );
+        let err = derive_tx_metadata_key(&external_wallet, Network::Testnet, 0, 2, 1)
+            .expect_err("an external-signable wallet has no in-process key to derive from");
+        assert!(
+            err.to_string().contains("no private key"),
+            "must fail with the no-private-key shape the device hit, got: {err}"
+        );
+
+        // The resolver stub: the host returns the wallet's mnemonic; the FFI
+        // builds the master exactly like this and derives from it.
+        let master =
+            ExtendedPrivKey::new_master(Network::Testnet, &seed).expect("master from seed");
+        let master_key = derive_tx_metadata_key_from_master(&master, Network::Testnet, 0, 2, 1)
+            .expect("master derive");
+
+        // A resident wallet on the same mnemonic (the legacy stack / a test
+        // fixture) seals; the external-signable wallet (via the resolver
+        // master) opens — and vice versa.
+        let resident_wallet = Wallet::from_mnemonic(
+            Mnemonic::from_phrase(
+                "abandon abandon abandon abandon abandon abandon abandon \
+                 abandon abandon abandon abandon about",
+                Language::English,
+            )
+            .expect("valid test mnemonic"),
+            Network::Testnet,
+            WalletAccountCreationOptions::None,
+        )
+        .expect("wallet from mnemonic");
+        let resident_key = derive_tx_metadata_key(&resident_wallet, Network::Testnet, 0, 2, 1)
+            .expect("resident derive");
+
+        let payload = b"external-signable round-trip".to_vec();
+        let iv = [0x66u8; 16];
+
+        let sealed_by_resident = seal_tx_metadata(&resident_key, VERSION_PROTOBUF, &iv, &payload);
+        let opened_by_master =
+            open_tx_metadata(&master_key, &sealed_by_resident).expect("master key opens");
+        assert_eq!(opened_by_master.payload, payload);
+
+        let sealed_by_master = seal_tx_metadata(&master_key, VERSION_PROTOBUF, &iv, &payload);
+        let opened_by_resident =
+            open_tx_metadata(&resident_key, &sealed_by_master).expect("resident key opens");
+        assert_eq!(opened_by_resident.payload, payload);
+    }
+
     /// Secondary cross-stack check of the AES-256-CBC core + blob framing,
     /// pinned to a PUBLISHED third-party vector (NIST SP 800-38A F.2.5,
     /// CBC-AES256.Encrypt). Any conformant AES-256-CBC implementation —
@@ -378,6 +564,28 @@ mod tests {
         assert_eq!(
             *key, legacy_key,
             "tx-metadata HD key derivation must match the legacy dashj stack byte-for-byte"
+        );
+
+        // The resolver-master path (the on-device external-signable shape)
+        // must hit the same dashj key — pins the fix's derivation to the
+        // legacy vector, not just to the resident path.
+        let master = ExtendedPrivKey::new_master(
+            Network::Testnet,
+            &key_wallet::mnemonic::Mnemonic::from_phrase(
+                "abandon abandon abandon abandon abandon abandon abandon \
+                 abandon abandon abandon abandon about",
+                key_wallet::mnemonic::Language::English,
+            )
+            .expect("valid test mnemonic")
+            .to_seed(""),
+        )
+        .expect("master from seed");
+        let key_via_master =
+            derive_tx_metadata_key_from_master(&master, Network::Testnet, 0, 2, 1)
+                .expect("master derive");
+        assert_eq!(
+            *key_via_master, legacy_key,
+            "resolver-master tx-metadata derivation must match the legacy dashj stack too"
         );
 
         // The full stored blob dashj produced (KeyCrypterAESCBC over the
