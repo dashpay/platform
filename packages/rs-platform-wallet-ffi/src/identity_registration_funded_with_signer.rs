@@ -17,6 +17,7 @@
 
 use dashcore::hashes::Hash;
 use dpp::identity::accessors::IdentityGettersV0;
+use dpp::prelude::Identifier;
 use platform_wallet::AssetLockFunding;
 use rs_sdk_ffi::{SignerHandle, VTableSigner};
 
@@ -240,4 +241,168 @@ pub unsafe extern "C" fn platform_wallet_resume_identity_with_existing_asset_loc
     let handle = MANAGED_IDENTITY_STORAGE.insert(managed);
     *out_identity_handle = handle;
     PlatformWalletFFIResult::ok()
+}
+
+/// Top up an EXISTING identity from an already-tracked Core asset lock.
+///
+/// The crash-recovery counterpart to
+/// [`crate::platform_wallet_top_up_identity_with_funding_signer`] (which
+/// builds a *new* lock from wallet balance): this consumes a lock that
+/// already confirmed on Core but whose `IdentityTopUp` never reached
+/// Platform (app killed / network drop between broadcast and submit),
+/// completing the top-up against `identity_id` from the stored outpoint.
+/// Sister to
+/// [`platform_wallet_resume_identity_with_existing_asset_lock_signer`],
+/// which resumes the lock as a NEW-identity registration instead.
+///
+/// The `FromExistingAssetLock` resume + IS→CL fallback logic lives in
+/// `top_up_identity_with_funding`; this FFI is a thin marshaler. No
+/// per-identity-key signer is needed (a top-up creates no keys); only the
+/// Core-side asset-lock signature, produced by the wallet's own resolver.
+///
+/// # Safety
+/// - `out_point` must be a valid, non-null `*const OutPointFFI`; the caller
+///   retains ownership.
+/// - `identity_id` must point to 32 readable bytes.
+/// - `core_signer_handle` must be a valid, non-destroyed
+///   `*mut MnemonicResolverHandle`; the caller retains ownership.
+/// - `out_new_balance` must be a valid `*mut u64`.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_topup_identity_with_existing_asset_lock_signer(
+    wallet_handle: Handle,
+    out_point: *const OutPointFFI,
+    identity_id: *const [u8; 32],
+    core_signer_handle: *mut MnemonicResolverHandle,
+    out_new_balance: *mut u64,
+) -> PlatformWalletFFIResult {
+    check_ptr!(out_point);
+    check_ptr!(identity_id);
+    check_ptr!(core_signer_handle);
+    check_ptr!(out_new_balance);
+    // FFI-safe sentinel before any fallible work.
+    *out_new_balance = 0;
+
+    let out_point_ffi = *out_point;
+    let reclaim_outpoint = dashcore::OutPoint {
+        txid: dashcore::Txid::from_byte_array(out_point_ffi.txid),
+        vout: out_point_ffi.vout,
+    };
+    let identity_id = Identifier::from(*identity_id);
+
+    let core_signer_addr = core_signer_handle as usize;
+
+    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
+        let identity_wallet = wallet.identity().clone();
+        let wallet_id = wallet.wallet_id();
+        let network = wallet.sdk().network;
+        block_on_worker(async move {
+            // SAFETY: see the fn-level safety doc — the handle is pinned alive
+            // for the duration of this FFI call.
+            let asset_lock_signer = unsafe {
+                MnemonicResolverCoreSigner::new(
+                    core_signer_addr as *mut MnemonicResolverHandle,
+                    wallet_id,
+                    network,
+                )
+            };
+            identity_wallet
+                .top_up_identity_with_funding(
+                    &identity_id,
+                    AssetLockFunding::FromExistingAssetLock {
+                        out_point: reclaim_outpoint,
+                    },
+                    &asset_lock_signer,
+                    None,
+                )
+                .await
+        })
+    });
+    let result = unwrap_option_or_return!(option);
+    let new_balance = unwrap_result_or_return!(result);
+    *out_new_balance = new_balance;
+    PlatformWalletFFIResult::ok()
+}
+
+#[cfg(test)]
+mod topup_existing_lock_guard_tests {
+    use super::*;
+    use crate::error::PlatformWalletFFIResultCode;
+
+    /// Non-null but never-dereferenced core-signer pointer: the null guards
+    /// under test return before the handle is used.
+    fn dangling_core_signer() -> *mut MnemonicResolverHandle {
+        std::ptr::NonNull::<MnemonicResolverHandle>::dangling().as_ptr()
+    }
+
+    fn zero_out_point() -> OutPointFFI {
+        OutPointFFI {
+            txid: [0u8; 32],
+            vout: 0,
+        }
+    }
+
+    #[test]
+    fn rejects_null_out_point() {
+        let id = [0u8; 32];
+        let mut balance = 0u64;
+        let res = unsafe {
+            platform_wallet_topup_identity_with_existing_asset_lock_signer(
+                0,
+                std::ptr::null(),
+                &id,
+                dangling_core_signer(),
+                &mut balance,
+            )
+        };
+        assert_eq!(res.code, PlatformWalletFFIResultCode::ErrorNullPointer);
+    }
+
+    #[test]
+    fn rejects_null_identity_id() {
+        let op = zero_out_point();
+        let mut balance = 0u64;
+        let res = unsafe {
+            platform_wallet_topup_identity_with_existing_asset_lock_signer(
+                0,
+                &op,
+                std::ptr::null(),
+                dangling_core_signer(),
+                &mut balance,
+            )
+        };
+        assert_eq!(res.code, PlatformWalletFFIResultCode::ErrorNullPointer);
+    }
+
+    #[test]
+    fn rejects_null_core_signer() {
+        let op = zero_out_point();
+        let id = [0u8; 32];
+        let mut balance = 0u64;
+        let res = unsafe {
+            platform_wallet_topup_identity_with_existing_asset_lock_signer(
+                0,
+                &op,
+                &id,
+                std::ptr::null_mut(),
+                &mut balance,
+            )
+        };
+        assert_eq!(res.code, PlatformWalletFFIResultCode::ErrorNullPointer);
+    }
+
+    #[test]
+    fn rejects_null_out_balance() {
+        let op = zero_out_point();
+        let id = [0u8; 32];
+        let res = unsafe {
+            platform_wallet_topup_identity_with_existing_asset_lock_signer(
+                0,
+                &op,
+                &id,
+                dangling_core_signer(),
+                std::ptr::null_mut(),
+            )
+        };
+        assert_eq!(res.code, PlatformWalletFFIResultCode::ErrorNullPointer);
+    }
 }
