@@ -65,7 +65,7 @@ pub use wallet::core_address_key::CoreAddressPrivateKey;
 pub use wallet::identity::network::{
     derive_identity_auth_keypair, AutoAcceptProofSource, ContactCryptoProvider, ContactInfoOpened,
     ContactInfoPublishOutcome, ContactInfoSealed, DecryptedEncryptedDocument,
-    SeedBindingVerification, IDENTITY_GAP_LIMIT,
+    query_owned_encrypted_documents, SeedBindingVerification, IDENTITY_GAP_LIMIT,
     MASTER_KEY_INDEX,
 };
 pub use wallet::identity::{

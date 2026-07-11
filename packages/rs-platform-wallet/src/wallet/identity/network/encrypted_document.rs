@@ -218,10 +218,7 @@ impl IdentityWallet {
         document_type_name: &str,
         since_ms: u64,
     ) -> Result<Vec<DecryptedEncryptedDocument>, PlatformWalletError> {
-        use dash_sdk::dapi_grpc::platform::v0::get_documents_request::get_documents_request_v0::Start;
-        use dash_sdk::drive::query::{OrderClause, WhereClause, WhereOperator};
-        use dash_sdk::platform::{ContextProvider, Fetch, FetchMany};
-        use dpp::platform_value::platform_value;
+        use dash_sdk::platform::{ContextProvider, Fetch};
 
         // Fetch the contract and register it so `fetch_many`'s proof
         // verification can resolve it through the context provider (the mobile
@@ -242,55 +239,17 @@ impl IdentityWallet {
         let (_identity, identity_index, wallet) =
             self.resolve_encryption_context(owner_identity_id).await?;
 
-        // Paginated owner-scoped, since-timestamp scan. The `$updatedAt >=`
-        // where-clause + `$updatedAt asc` order-by bind to the contract's
-        // `($ownerId, $updatedAt)` index (the same query shape the legacy
-        // `TxMetadata.get(userId, since)` builder used).
-        const PAGE: u32 = 100;
-        let mut raw_docs: Vec<(Identifier, Option<Document>)> = Vec::new();
-        let mut start: Option<Start> = None;
-        loop {
-            let query = dash_sdk::platform::DocumentQuery {
-                select: dash_sdk::drive::query::SelectProjection::documents(),
-                data_contract: Arc::clone(&contract),
-                document_type_name: document_type_name.to_string(),
-                where_clauses: vec![
-                    WhereClause {
-                        field: "$ownerId".to_string(),
-                        operator: WhereOperator::Equal,
-                        value: platform_value!(owner_identity_id),
-                    },
-                    WhereClause {
-                        field: "$updatedAt".to_string(),
-                        operator: WhereOperator::GreaterThanOrEquals,
-                        value: platform_value!(since_ms),
-                    },
-                ],
-                group_by: vec![],
-                having: vec![],
-                order_by_clauses: vec![OrderClause {
-                    field: "$updatedAt".to_string(),
-                    ascending: true,
-                }],
-                limit: PAGE,
-                start: start.clone(),
-            };
-
-            let page = Document::fetch_many(&self.sdk, query)
-                .await
-                .map_err(PlatformWalletError::Sdk)?;
-            let page_len = page.len();
-            let last_id = page.keys().last().copied();
-            raw_docs.extend(page);
-
-            if page_len < PAGE as usize {
-                break;
-            }
-            match last_id {
-                Some(id) => start = Some(Start::StartAfter(id.to_buffer().to_vec())),
-                None => break,
-            }
-        }
+        // The wire query, split out so its exact shape is integration-testable
+        // against testnet without a resident wallet/identity (see
+        // `tests/txmetadata_fetch.rs`).
+        let raw_docs = query_owned_encrypted_documents(
+            &self.sdk,
+            Arc::clone(&contract),
+            owner_identity_id,
+            document_type_name,
+            since_ms,
+        )
+        .await?;
 
         let mut out = Vec::new();
         for (doc_id, maybe_doc) in raw_docs.iter() {
@@ -348,4 +307,93 @@ impl IdentityWallet {
         }
         Ok(out)
     }
+}
+
+/// Run the paginated owner-scoped, since-timestamp document scan that
+/// [`IdentityWallet::fetch_encrypted_documents`] fetches from — split out
+/// (taking only the `Sdk` + the already-fetched `contract`) so the exact wire
+/// query is integration-testable against testnet without a resident
+/// wallet/identity: the decrypt half needs the wallet mnemonic, this half does
+/// not. Covered by `tests/txmetadata_fetch.rs`.
+///
+/// Query shape (verified byte-for-byte against the legacy `TxMetadata.get`
+/// builder and confirmed to return the real testnet documents): `$ownerId ==`
+/// owner + `$updatedAt >= since_ms`, ordered `$updatedAt asc`. The order-by is
+/// load-bearing, not cosmetic — drive answers a bare secondary-index equality
+/// or an un-ordered range with a proof of ABSENCE (the same trap the
+/// `contactInfo` sweep documents), and it also gives the deterministic order
+/// pagination relies on. Returns the raw, still-encrypted documents; a
+/// `None` entry is a proof of a document the SDK could not materialize and is
+/// preserved so the caller's count/telemetry never silently under-reports.
+pub async fn query_owned_encrypted_documents(
+    sdk: &dash_sdk::Sdk,
+    contract: Arc<DataContract>,
+    owner_identity_id: &Identifier,
+    document_type_name: &str,
+    since_ms: u64,
+) -> Result<Vec<(Identifier, Option<Document>)>, PlatformWalletError> {
+    use dash_sdk::dapi_grpc::platform::v0::get_documents_request::get_documents_request_v0::Start;
+    use dash_sdk::drive::query::{OrderClause, WhereClause, WhereOperator};
+    use dash_sdk::platform::FetchMany;
+    use dpp::platform_value::platform_value;
+
+    const PAGE: u32 = 100;
+    let mut raw_docs: Vec<(Identifier, Option<Document>)> = Vec::new();
+    let mut start: Option<Start> = None;
+    loop {
+        let query = dash_sdk::platform::DocumentQuery {
+            select: dash_sdk::drive::query::SelectProjection::documents(),
+            data_contract: Arc::clone(&contract),
+            document_type_name: document_type_name.to_string(),
+            where_clauses: vec![
+                WhereClause {
+                    field: "$ownerId".to_string(),
+                    operator: WhereOperator::Equal,
+                    value: platform_value!(owner_identity_id),
+                },
+                WhereClause {
+                    field: "$updatedAt".to_string(),
+                    operator: WhereOperator::GreaterThanOrEquals,
+                    value: platform_value!(since_ms),
+                },
+            ],
+            group_by: vec![],
+            having: vec![],
+            order_by_clauses: vec![OrderClause {
+                field: "$updatedAt".to_string(),
+                ascending: true,
+            }],
+            limit: PAGE,
+            start: start.clone(),
+        };
+
+        let page = Document::fetch_many(sdk, query)
+            .await
+            .map_err(PlatformWalletError::Sdk)?;
+        let page_len = page.len();
+        let last_id = page.keys().last().copied();
+        raw_docs.extend(page);
+
+        if page_len < PAGE as usize {
+            break;
+        }
+        match last_id {
+            Some(id) => start = Some(Start::StartAfter(id.to_buffer().to_vec())),
+            None => break,
+        }
+    }
+
+    // On-device diagnostic breadcrumb: the probe reported `sdkFetched=0` with
+    // ZERO decrypt-skip warnings, which can only mean the query itself returned
+    // nothing. Log the raw count (BEFORE decrypt) so an `adb logcat` run pins
+    // the empty result to the query vs the decrypt stage without guessing.
+    tracing::info!(
+        owner = %owner_identity_id,
+        document_type = document_type_name,
+        since_ms,
+        raw_count = raw_docs.len(),
+        materialized = raw_docs.iter().filter(|(_, d)| d.is_some()).count(),
+        "fetched raw encrypted documents"
+    );
+    Ok(raw_docs)
 }
