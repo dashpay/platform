@@ -35,6 +35,8 @@ service Platform {
       returns (GetDataContractHistoryResponse);
   rpc getDataContracts(GetDataContractsRequest)
       returns (GetDataContractsResponse);
+  rpc getDocumentHistory(GetDocumentHistoryRequest)
+      returns (GetDocumentHistoryResponse);
   rpc getDocuments(GetDocumentsRequest) returns (GetDocumentsResponse);
   rpc getIdentityByPublicKeyHash(GetIdentityByPublicKeyHashRequest)
       returns (GetIdentityByPublicKeyHashResponse);
@@ -126,16 +128,10 @@ service Platform {
       returns (GetMostRecentShieldedAnchorResponse);
   rpc getShieldedPoolState(GetShieldedPoolStateRequest)
       returns (GetShieldedPoolStateResponse);
+  rpc getShieldedNotesCount(GetShieldedNotesCountRequest)
+      returns (GetShieldedNotesCountResponse);
   rpc getShieldedNullifiers(GetShieldedNullifiersRequest)
       returns (GetShieldedNullifiersResponse);
-  rpc getNullifiersTrunkState(GetNullifiersTrunkStateRequest)
-      returns (GetNullifiersTrunkStateResponse);
-  rpc getNullifiersBranchState(GetNullifiersBranchStateRequest)
-      returns (GetNullifiersBranchStateResponse);
-  rpc getRecentNullifierChanges(GetRecentNullifierChangesRequest)
-      returns (GetRecentNullifierChangesResponse);
-  rpc getRecentCompactedNullifierChanges(GetRecentCompactedNullifierChangesRequest)
-      returns (GetRecentCompactedNullifierChangesResponse);
 }
 
 // Proof message includes cryptographic proofs for validating responses
@@ -577,6 +573,221 @@ message GetDataContractHistoryResponse {
 }
 
 message GetDocumentsRequest {
+  // Comparison operator for a single `WhereClause`. Wire values
+  // mirror `drive::query::WhereOperator` 1:1; the server maps the
+  // enum discriminant directly without re-parsing operator strings.
+  //
+  // `BETWEEN*` operators expect the right-hand operand to be a
+  // 2-element `DocumentFieldValue.list` carrying `[lower, upper]`;
+  // `IN` expects a `list` of candidate values; all other operators
+  // expect a scalar `DocumentFieldValue` matching the indexed
+  // field's type.
+  enum WhereOperator {
+    EQUAL = 0;
+    GREATER_THAN = 1;
+    GREATER_THAN_OR_EQUALS = 2;
+    LESS_THAN = 3;
+    LESS_THAN_OR_EQUALS = 4;
+    BETWEEN = 5;
+    BETWEEN_EXCLUDE_BOUNDS = 6;
+    BETWEEN_EXCLUDE_LEFT = 7;
+    BETWEEN_EXCLUDE_RIGHT = 8;
+    IN = 9;
+    STARTS_WITH = 10;
+  }
+
+  // Tagged scalar (or list) operand for a `WhereClause`. The
+  // variant the caller picks names the wire-level primitive type
+  // only — the **document type's schema** is the source of truth
+  // for the indexed field's actual type, and the server coerces
+  // each variant through the schema-driven
+  // `document_type.serialize_value_for_key(field, value, …)` path
+  // (the same path the CBOR-shaped v0 request flows through). That
+  // means:
+  //
+  // - Identifier-typed fields accept either a `bytes_value` (raw
+  //   32 bytes) **or** a `text` (base58-encoded). The schema
+  //   decides; callers don't need a dedicated identifier variant.
+  // - Fixed-width byte fields (e.g. `Bytes20`/`Bytes36`) accept
+  //   `bytes_value` of the appropriate length; the schema
+  //   validates the size.
+  // - Numeric fields accept the closest-fit signed (`int64_value`)
+  //   or unsigned (`uint64_value`) variant; the schema coerces to
+  //   the indexed type (`u8` … `u64`/`i8` … `i64`/`u128`/`i128`).
+  // - String / bool fields accept `text` / `bool_value`.
+  //
+  // The `null_value` variant is the typed-wire equivalent of a CBOR
+  // `null` operand on the v0 path. Callers should NOT use it for
+  // "no clause" — empty where-clauses are still expressed by
+  // leaving `GetDocumentsRequestV1.where_clauses` empty. It exists
+  // for clauses that legitimately compare against `null` (e.g.
+  // queries on schema-nullable index entries from the v0 wire that
+  // round-trip through the v1 surface).
+  message DocumentFieldValue {
+    // Recursive list — operand for `IN` (candidate values) and
+    // `BETWEEN*` (exactly 2 values `[lower, upper]`). Nested
+    // `list` is structurally allowed but every supported document
+    // index value-type is currently scalar, so callers should not
+    // need to nest.
+    message ValueList { repeated DocumentFieldValue values = 1; }
+
+    oneof variant {
+      bool bool_value = 1;
+      sint64 int64_value = 2 [jstype = JS_STRING];
+      uint64 uint64_value = 3 [jstype = JS_STRING];
+      double double_value = 4;
+      string text = 5;
+      bytes bytes_value = 6;
+      ValueList list = 7;
+      // `bool` payload is a placeholder — only the discriminant
+      // matters. Picking the variant means "this operand is null";
+      // the bool value itself is ignored on the server.
+      bool null_value = 8;
+    }
+  }
+
+  // Single `field <op> value` clause. The server reassembles a
+  // `Vec<WhereClause>` from the request's `where_clauses` field,
+  // runs the same `WhereClause::group_clauses` validator (rejects
+  // duplicate / conflicting same-field clauses) and the same
+  // `> AND <` → `between*` canonicalizer the CBOR-shaped path uses,
+  // then hands the structured clauses to the executor. Wire
+  // semantics are identical to v0's CBOR `[field, op, value]`
+  // triples — only the envelope differs.
+  message WhereClause {
+    string field = 1;
+    WhereOperator operator = 2;
+    DocumentFieldValue value = 3;
+  }
+
+  // Per-group aggregate operand for the left side of a
+  // `HavingClause`. Only the per-group aggregates live here:
+  // `MIN` / `MAX` / `TOP` / `BOTTOM` are **cross-group** ranking
+  // primitives and appear on the right side via `HavingRanking`.
+  //
+  // **Field semantics by function**:
+  // - `COUNT`: empty `field` means `COUNT(*)` (group cardinality);
+  //   non-empty `field` means `COUNT(field)` (count of non-null
+  //   values of `field` in the group).
+  // - `SUM` / `AVG`: `field` is required.
+  message HavingAggregate {
+    enum Function {
+      COUNT = 0;
+      SUM = 1;
+      AVG = 2;
+    }
+    Function function = 1;
+    // Required for every function except `COUNT`; for `COUNT` an
+    // empty `field` means `COUNT(*)`.
+    string field = 2;
+  }
+
+  // Cross-group ranking primitive on the right side of a
+  // `HavingClause`. The ranking is computed over the set of
+  // group-aggregate results (one per `GROUP BY` row), so
+  // `HAVING COUNT(*) EQ MAX` selects groups whose count equals
+  // the maximum count across all groups, and
+  // `HAVING COUNT(*) IN TOP(5)` selects groups whose count is
+  // among the five largest. Concise way to express top-N /
+  // bottom-N selection without window functions or
+  // `ORDER BY` + `LIMIT`.
+  //
+  // **Operator compatibility**:
+  // - Scalar operators (`=`, `!=`, `<`, `<=`, `>`, `>=`) work
+  //   with `MIN` / `MAX`. `TOP` / `BOTTOM` with scalar operators
+  //   only make sense when `n=1` (the single largest / smallest);
+  //   evaluation rejects other combinations as ambiguous.
+  // - `IN` works with `TOP(n)` / `BOTTOM(n)` for set membership.
+  // - `BETWEEN*` doesn't compose meaningfully with rankings and
+  //   is rejected at evaluation time.
+  message HavingRanking {
+    enum Kind {
+      MIN = 0;
+      MAX = 1;
+      TOP = 2;
+      BOTTOM = 3;
+    }
+    Kind kind = 1;
+    // N-th rank for `TOP` / `BOTTOM` (1-indexed: `n=1` is the
+    // single largest / smallest). Required for those two kinds;
+    // must be unset for `MIN` / `MAX`. The wire allows setting
+    // it on `MIN` / `MAX` for forward compatibility, but
+    // evaluation rejects it as a malformed ranking.
+    optional uint64 n = 2 [jstype = JS_STRING];
+  }
+
+  // Single `HAVING <aggregate> <op> <right>` clause. Multiple
+  // entries in `GetDocumentsRequestV1.having` combine with
+  // implicit AND — same semantics as multiple `where_clauses`
+  // entries. `HAVING COUNT(*) > 5 AND SUM(amount) > 100` is two
+  // `HavingClause` rows, not a tree.
+  //
+  // The operator set mirrors `WhereOperator` minus `STARTS_WITH`
+  // (prefix matching has no natural meaning against a scalar
+  // aggregate result, even a string-typed one). `BETWEEN*` and
+  // `IN` operand semantics match `WhereOperator`: `BETWEEN*`
+  // expects a 2-element `DocumentFieldValue.list` carrying
+  // `[lower, upper]`, and `IN` expects a `list` of candidate
+  // values (or a ranking set via `right.ranking`).
+  //
+  // The `right` oneof carries either a concrete
+  // `DocumentFieldValue` (literal comparison target) or a
+  // `HavingRanking` (cross-group reference). Exactly one is set;
+  // the wire rejects an unset `right`.
+  message HavingClause {
+    enum Operator {
+      EQUAL = 0;
+      NOT_EQUAL = 1;
+      GREATER_THAN = 2;
+      GREATER_THAN_OR_EQUALS = 3;
+      LESS_THAN = 4;
+      LESS_THAN_OR_EQUALS = 5;
+      BETWEEN = 6;
+      BETWEEN_EXCLUDE_BOUNDS = 7;
+      BETWEEN_EXCLUDE_LEFT = 8;
+      BETWEEN_EXCLUDE_RIGHT = 9;
+      IN = 10;
+    }
+    HavingAggregate aggregate = 1;
+    Operator operator = 2;
+    oneof right {
+      DocumentFieldValue value = 3;
+      HavingRanking ranking = 4;
+    }
+  }
+
+  // Single `ORDER BY field <direction>` clause. Multi-field
+  // ordering is expressed by repeating this message at the
+  // request level (`repeated OrderClause order_by = 4`), matching
+  // SQL's `ORDER BY a ASC, b DESC` shape.
+  // Single ORDER BY entry. Multi-entry ordering is expressed by
+  // repeating this message at the request level.
+  //
+  // The `target` oneof carries either a plain field name
+  // (`ORDER BY field`) or an aggregate function applied to a
+  // field (`ORDER BY COUNT(*)`, `ORDER BY SUM(amount)`) — the
+  // latter sorts per-group result rows produced by `GROUP BY`,
+  // useful with `LIMIT` for top-N / bottom-N selection at the
+  // routing layer (overlapping `HavingRanking::Top` / `Bottom`
+  // but more general because the ranking field can be any
+  // aggregate, not just count).
+  //
+  // **Aggregate target currently rejected** with
+  // `Unsupported("ORDER BY on aggregate is not yet implemented")`.
+  // The wire surface is shipped now so callers can encode the
+  // shape ahead of server support landing.
+  message OrderClause {
+    oneof target {
+      // Plain field name. Today's evaluated form.
+      string field = 1;
+      // Aggregate function applied to a field, sorted by the
+      // per-group result. `function = DOCUMENTS` is invalid
+      // here — DOCUMENTS isn't an aggregate.
+      HavingAggregate aggregate = 3;
+    }
+    bool ascending = 2;
+  }
+
   message GetDocumentsRequestV0 {
     bytes data_contract_id =
         1; // The ID of the data contract containing the documents
@@ -592,7 +803,281 @@ message GetDocumentsRequest {
     }
     bool prove = 8; // Flag to request a proof as the response
   }
-  oneof version { GetDocumentsRequestV0 v0 = 1; }
+
+  // SQL-shaped successor to v0 that unifies `getDocuments` and
+  // `getDocumentsCount` under a single request type with a typed
+  // `select` projection and optional `group_by` / `having` clauses.
+  //
+  // Mode is determined by `select` × `group_by` × `having`:
+  //
+  // * `select = DOCUMENTS, group_by = []`: return matched documents
+  //   (identical semantics to v0).
+  // * `select = COUNT, group_by = []`: return a single aggregate
+  //   count. With an `In` clause the server fans out per-In via
+  //   `query_aggregate_count` and sums (O(|In| × log n), see
+  //   `RangeNoProof`'s compound-summed path); with a range clause
+  //   it uses `AggregateCountOnRange`.
+  // * `select = COUNT, group_by = [<field>]`: return per-group
+  //   `CountEntry` rows. Only supported when the grouping field
+  //   matches an `In`-constrained or range-constrained where clause;
+  //   other shapes return `Unsupported` (see supported-shape table
+  //   below).
+  //
+  // `having` is wire-reserved for a future server capability. Any
+  // non-empty `having` list currently returns
+  // `Unsupported("HAVING clause is not yet implemented")`
+  // regardless of `select` / `group_by`. The wire shape is
+  // `repeated WhereClause` so when execution lands the surface is
+  // already typed end-to-end and callers don't need to re-encode.
+  //
+  // **Supported shapes** (everything else rejects with a typed
+  // `QuerySyntaxError::Unsupported` so callers can detect un-wired
+  // capabilities without parsing prose). Bullets are kept
+  // single-line so the generated Rust doc comments don't trip
+  // rustdoc's `list_item_without_indent` lint on continuation
+  // lines.
+  //
+  // `select=DOCUMENTS, group_by=[]`: any where shape v0 supports.
+  //
+  // `select=COUNT, group_by=[]`:
+  // - empty where → `documentsCountable: true` doctype.
+  // - `==` only → `countable: true` index covering the fields.
+  // - one `In` → `countable: true` index covering the fields (per-In aggregate fan-out).
+  // - one range → `rangeCountable: true` index.
+  // - one `In` + one range → `rangeCountable: true` compound index (per-In aggregate fan-out on no-proof; rejected on prove because the aggregate proof primitive can't fork).
+  //
+  // `select=COUNT, group_by=[g]`:
+  // - g is the In clause's field → `countable: true` index, grouped by g (PerInValue on no-proof, CountTree element proof per In branch on prove).
+  // - g is the range clause's field → `rangeCountable: true` index, grouped by g (RangeDistinct on no-proof, distinct range proof on prove).
+  //
+  // `select=COUNT, group_by=[a, b]`:
+  // - a is the In field AND b is the range field, in that order → existing compound distinct shape; entries carry both `in_key` (= a's value) and `key` (= b's value).
+  //
+  // **Rejected shapes** (return `Unsupported`):
+  // - any non-empty `having` (always — pending future server capability).
+  // - `select=DOCUMENTS` with non-empty `group_by`.
+  // - `select=COUNT` with `group_by` on a field that is not constrained by an `In` or range where clause.
+  // - `select=COUNT` with `group_by.len() > 2`.
+  // - `select=COUNT` with 2-field `group_by` that does not match the `(in_field, range_field)` shape above.
+  //
+  // **Absent-from-tree branches on `In`-grouped queries**: when
+  // `select=COUNT, group_by=[in_field]` and an `In` value has no
+  // matching documents, the underlying merk index has nothing to
+  // emit (zero-count branches aren't materialized as CountTree
+  // elements), so the wire `CountEntries.entries` list contains
+  // only the In values that exist.
+  //
+  // The SDK's proof decoder surfaces this by **omission**, not by
+  // a sentinel `count` value: the current point-lookup path query
+  // doesn't set `absence_proofs_for_non_existing_searched_keys:
+  // true`, so grovedb's `verify_query` silently drops absent-Key
+  // branches from the verified elements stream. The drive-side
+  // verifier (`verify_point_lookup_count_proof`) therefore emits
+  // one `SplitCountEntry` per **present** In branch and the SDK
+  // wraps those into `CountEntry`. Callers that need to detect
+  // "queried but absent" diff their request's In array against
+  // the returned entries by `key` (each entry's `key` is the
+  // serialized In value, recoverable via
+  // `document_type.serialize_value_for_key(in_field, v, …)`).
+  // `SplitCountEntry::count`'s `Option<u64>` and the `None`
+  // variant exist for a future absence-proof variant; today the
+  // wire `CountEntry.count` is plain `uint64`.
+  //
+  // For range-grouped queries the walker only emits keys that
+  // exist in the index, which IS SQL-conformant; no equivalent
+  // reconstruction step because the range itself is unbounded and
+  // the caller has no explicit "expected keys" list to compare
+  // against.
+  message GetDocumentsRequestV1 {
+    // Projection over the matched row set. `(function, field)`
+    // pair — analogous to `HavingAggregate`'s shape but with an
+    // additional `DOCUMENTS` variant for the row-fetch path.
+    //
+    // Determines what the response carries:
+    // - `DOCUMENTS`: `ResultData.documents` (matched rows;
+    //   `field` must be empty).
+    // - `COUNT`: `ResultData.counts` carrying row counts. Empty
+    //   `field` is `COUNT(*)` (group cardinality); non-empty is
+    //   `COUNT(field)` (non-null `field` values).
+    // - `SUM` / `AVG`: `ResultData` carrying numeric
+    //   aggregate(s); `field` is required and must be a
+    //   numeric-typed schema field.
+    //
+    // Single-aggregate vs per-group response shape comes from
+    // `group_by` (empty → single, non-empty → per-group entries) —
+    // same rule as today's `COUNT` routing.
+    //
+    // **Server capability today**: `DOCUMENTS`, `COUNT(*)` (empty
+    // `field`), `SUM(<field>)`, and `AVG(<field>)` are evaluated
+    // end-to-end (no-proof and proof paths route through the drive
+    // count / sum / average dispatchers). `COUNT(<field>)` (non-null
+    // value counting on a specific field), `MIN(<field>)`, and
+    // `MAX(<field>)` are wire-stable but rejected at routing time
+    // with `Unsupported("SELECT … is not yet implemented")` so the
+    // surface is shipped first and execution lands later without
+    // another version bump. MIN/MAX in particular wait on a grovedb
+    // primitive — there's no min/max aggregate on count or sum
+    // trees today, and the order-by-then-LIMIT-1 emulation has the
+    // wrong proof shape for the cryptographic verifier.
+    message Select {
+      enum Function {
+        DOCUMENTS = 0;
+        COUNT = 1;
+        SUM = 2;
+        AVG = 3;
+        // Per-group MIN / MAX — `SELECT MIN(field) GROUP BY
+        // category` returns the smallest `field` value in each
+        // category. Semantically distinct from
+        // `HavingRanking::Min` / `Max` (which are cross-group
+        // meta-aggregates over group results). MIN/MAX here
+        // operate over the row values within each group, the
+        // same way `SUM` and `AVG` do.
+        MIN = 4;
+        MAX = 5;
+      }
+      Function function = 1;
+      // Field the projection function is applied to. See the
+      // message-level docstring for the per-function requirement
+      // (empty for `DOCUMENTS`, optional for `COUNT`, required
+      // for `SUM` / `AVG` / `MIN` / `MAX`).
+      string field = 2;
+    }
+
+    bytes data_contract_id = 1; // The data contract owning the documents
+    string document_type = 2;   // Document type within the contract
+    // Structured where clauses. Empty list = no `WHERE` filter
+    // (return all matching rows under the document type / contract).
+    // See top-level `WhereClause` for shape semantics.
+    repeated WhereClause where_clauses = 3;
+    // Structured order_by clauses. Empty list = no explicit
+    // ordering (server applies the index's natural order). Multiple
+    // entries express SQL's `ORDER BY a ASC, b DESC, …` shape; the
+    // first entry's direction also governs split-mode entry
+    // ordering on `select=COUNT` paths.
+    repeated OrderClause order_by = 4;
+    // Maximum number of rows to return.
+    //
+    // **Wire semantics on the `optional uint32` field**: `None`
+    // (unset) requests the server's default; `Some(N)` with `N > 0`
+    // requests an explicit cap of `N`. `Some(0)` is **rejected with
+    // `InvalidLimit` across every SELECT mode** — zero-cap is
+    // structurally meaningless and the legacy v0 `uint32`-with-0-as-
+    // sentinel mapping doesn't extend to `optional uint32` (the
+    // whole point of switching is that `None` carries "unset"
+    // explicitly). Callers must send `None` for "use server default."
+    //
+    // Per-mode behavior of `Some(N > 0)`:
+    //   - `select=DOCUMENTS`: matched-document cap (same as v0).
+    //   - `select=COUNT, group_by=[]`: **rejected with `InvalidLimit`
+    //     when set**. Aggregate count is a single row by construction
+    //     — a limit would either be redundant (≥ 1) or silently
+    //     mislead callers if the dispatcher's per-In fan-out honored
+    //     it and returned a partial sum disguised as a total. Omit
+    //     `limit` for aggregate count.
+    //   - `select=COUNT, group_by=[in_field]`: **rejected with
+    //     `InvalidLimit` when set**. The In array is already capped
+    //     at 100 entries by `WhereClause::in_values()`, so the
+    //     result is bounded by construction; a separate `limit`
+    //     would either be redundant or silently truncate the proof
+    //     to fewer In branches than the caller asked for (the
+    //     PointLookupProof shape can't represent a partial-In
+    //     selection in its `SizedQuery`). Narrow the In array
+    //     directly to reduce the result set.
+    //   - `select=COUNT, group_by=[range_field]`: entries cap on
+    //     the distinct-range walk.
+    //   - `select=COUNT, group_by=[in_field, range_field]`: global
+    //     cap over the emitted `(in_key, key)` lex stream — NOT
+    //     per-In-branch. The compound walk pushes one
+    //     `SizedQuery::limit` over the combined tuple stream, so a
+    //     request with `|In| = 3` and `limit = 5` returns at most
+    //     5 entries total across all In branches (ordered by
+    //     `(in_key, key)`, direction from the first `order_by`
+    //     clause).
+    //   Both range-grouped variants share the same validate-don't-
+    //   clamp policy on prove paths — `limit > max_query_limit`
+    //   returns `InvalidLimit` rather than silent clamping (see
+    //   `RangeDistinctProof`'s contract; unset falls back to the
+    //   SDK-shared `DEFAULT_QUERY_LIMIT` compile-time constant so
+    //   proof bytes are deterministic across operators).
+    optional uint32 limit = 5;
+
+    // Pagination cursor. Valid only for `select=DOCUMENTS`. The
+    // count surface (`select=COUNT`) rejects cursors entirely:
+    // aggregate counts have no concept of "start," and per-group
+    // entry paginators would need a new merk walk that doesn't
+    // exist yet — callers paginate counts by narrowing the
+    // where-clause range itself instead.
+    oneof start {
+      bytes start_after = 6;
+      bytes start_at = 7;
+    }
+
+    bool prove = 8; // Request a grovedb proof instead of raw rows
+
+    // SQL `SELECT` projection list. Multiple entries express
+    // `SELECT f1(a), f2(b), …` — one row per group carrying a
+    // parallel list of aggregate values in the response.
+    //
+    // Empty list defaults to a single `documents()` projection
+    // for v0-style document fetch — callers that don't opt into
+    // the SQL-shaped surface get plain row semantics.
+    //
+    // **Currently rejected when `selects.len() > 1`** with
+    // `Unsupported("multi-projection SELECT is not yet
+    // implemented")`. The single-projection cases `DOCUMENTS`,
+    // `COUNT(*)`, `SUM(<field>)`, and `AVG(<field>)` are evaluated
+    // end-to-end today and route through the drive count / sum /
+    // average dispatchers (see the `GetDocumentsResponseV1`
+    // docstring for the wire-shape table). `COUNT(<field>)`,
+    // `MIN(<field>)`, and `MAX(<field>)` remain rejected at the
+    // per-function gate — see the `Select` message-level docstring
+    // for the rationale (no grovedb min/max primitive; COUNT(field)
+    // needs a non-null counter walk that doesn't exist yet). When
+    // multi-projection lands the response shape gains a parallel
+    // `repeated AggregateValue values` field, so caller code
+    // structured around `repeated Select` doesn't need to be
+    // rewritten when it does.
+    repeated Select selects = 9;
+
+    // SQL `GROUP BY` field names, in left-to-right order. Empty =
+    // no explicit grouping (aggregate for `select=COUNT`). See the
+    // message-level docstring for the supported-shape table.
+    repeated string group_by = 10;
+
+    // SQL `HAVING` clauses — aggregate filters that apply to the
+    // grouped rows produced by `select=COUNT, group_by=[…]`. The
+    // wire shape is `HavingClause`, not `WhereClause`, because
+    // HAVING evaluates against per-group aggregates
+    // (`COUNT`/`SUM`/`AVG`/`MIN`/`MAX`/`TOP`/`BOTTOM`) rather than
+    // row field values. Multiple entries combine with implicit
+    // AND. See `HavingClause` / `HavingAggregate` for the
+    // operator and aggregate-function catalogs.
+    //
+    // **Always rejected when non-empty** today with
+    // `Unsupported("HAVING clause is not yet implemented")`. The
+    // wire shape is shipped now so the future server capability
+    // can land without another version bump — and so callers can
+    // construct full `HAVING COUNT(*) > 5 AND SUM(amount) > 100`
+    // requests in their builders even before the server evaluates
+    // them.
+    repeated HavingClause having = 11;
+
+    // Row-based pagination offset, on top of the cursor-based
+    // `start_after` / `start_at` pagination. `OFFSET N` skips the
+    // first `N` matching rows before applying `limit`. Currently
+    // **always rejected when non-`None`** with
+    // `Unsupported("OFFSET pagination is not yet implemented")`
+    // — the wire surface is shipped now so callers can encode it
+    // ahead of server support landing without another version
+    // bump. Cursor pagination via `start_after` / `start_at`
+    // remains the supported way to page through results.
+    optional uint32 offset = 12;
+  }
+
+  oneof version {
+    GetDocumentsRequestV0 v0 = 1;
+    GetDocumentsRequestV1 v1 = 2;
+  }
 }
 
 message GetDocumentsResponse {
@@ -608,7 +1093,250 @@ message GetDocumentsResponse {
     }
     ResponseMetadata metadata = 3; // Metadata about the blockchain state
   }
-  oneof version { GetDocumentsResponseV0 v0 = 1; }
+
+  // v1 response. Two-variant outer `oneof` mirrors every other
+  // `Get*Response`: a non-proof result at position 1, the proof at
+  // position 2. The non-proof result is itself a `oneof` because
+  // a single v1 request can produce either matched documents (for
+  // `select=DOCUMENTS`) or count results (for `select=COUNT`) —
+  // wrapping them in an inner `ResultData` keeps the outer shape
+  // canonical without flattening to a three-variant oneof.
+  //
+  // Wire shape by `request.select` × `group_by` × `prove`:
+  //   - `select=DOCUMENTS` (no prove)            → `result.data.documents`.
+  //   - `select=COUNT, group_by=[]` (no prove)   → `result.data.counts.aggregate_count`.
+  //   - `select=COUNT, group_by=[…]` (no prove)  → `result.data.counts.entries`.
+  //   - `select=SUM, group_by=[]` (no prove)     → `result.data.sums.aggregate_sum`.
+  //   - `select=SUM, group_by=[…]` (no prove)    → `result.data.sums.entries`.
+  //   - `select=AVG, group_by=[]` (no prove)     → `result.data.averages.aggregate_average`.
+  //   - `select=AVG, group_by=[…]` (no prove)    → `result.data.averages.entries`.
+  //   - any select (prove)                        → `result.proof`.
+  //
+  // **SUM / AVG status**: all four shapes above are wired
+  // end-to-end on the drive dispatcher (no-proof and proof paths
+  // both terminate at grovedb's aggregate-sum / sum-tree-walk
+  // primitives, not at a `NotYetImplemented` stub). The four
+  // resolved-mode tables (`compute_aggregate_mode_and_check_limit_v0`,
+  // `detect_count_mode`, `detect_sum_mode`, AVG mirror) decide which
+  // executor to run from the (mode × range × group_by × prove)
+  // tuple; the executors compose count and sum walks for AVG so
+  // there's no separate average primitive on the grovedb side.
+  // Routing details live in
+  // `packages/rs-drive/src/query/drive_document_{sum,average}_query/`.
+  //
+  // `CountResults` / `CountEntry` / `CountEntries` are nested in
+  // `GetDocumentsResponseV1` rather than re-exported from a
+  // top-level message — the v0 `getDocumentsCount` endpoint that
+  // previously owned them has been removed in this version (it
+  // shipped briefly in #3623 and never had stable callers); v1 is
+  // the single home for the count wire types.
+  message GetDocumentsResponseV1 {
+    // Documents result variant — matches the v0 `Documents`
+    // message field-for-field (kept distinct so v1 doesn't reach
+    // into v0's namespace once v0 is eventually retired).
+    message Documents {
+      repeated bytes documents = 1;
+    }
+
+    // A single per-key entry. Carries `in_key` for compound
+    // queries (`In` on a prefix property of a `range_countable`
+    // index plus a range clause on the terminator) where each
+    // entry is keyed by both the In-fork's prefix value (`in_key`)
+    // and the terminator value (`key`). Cross-fork aggregation is
+    // intentionally NOT done server-side — callers get the
+    // unmerged per-`(in_key, key)` view and can reduce client-side
+    // if they want a flat histogram.
+    message CountEntry {
+      optional bytes in_key = 1;
+      bytes key = 2;
+      // `jstype = JS_STRING` so JS/Web clients receive a string
+      // and don't round counts > 2^53−1 to the nearest
+      // representable Number.
+      uint64 count = 3 [jstype = JS_STRING];
+    }
+
+    message CountEntries {
+      repeated CountEntry entries = 1;
+    }
+
+    // Non-proof count result. Shape is mode-dependent and made
+    // explicit on the wire via the inner `variant` oneof:
+    //   * `aggregate_count`: `select=COUNT, group_by=[]` —
+    //     single u64 with no per-key breakdown.
+    //   * `entries`: `select=COUNT, group_by=[…]` — one
+    //     CountEntry per distinct group, in serialized-key order
+    //     (subject to the first `order_by` clause's direction and
+    //     `limit`).
+    message CountResults {
+      oneof variant {
+        uint64 aggregate_count = 1 [jstype = JS_STRING];
+        CountEntries entries = 2;
+      }
+    }
+
+    // Sum-side analog of `CountEntry` — one per matched key for
+    // `select=SUM, group_by=[...]` queries. `in_key` carries the
+    // outer prefix value for compound `(In, range)` shapes; `key`
+    // carries the terminator value. `sum` is signed because grovedb's
+    // SumTree values are `i64` and sums can in principle be negative
+    // (deliberate i64-overflow signaling — see the sum-tree book
+    // chapter's "Signed `i64` overflow" note). For tip-jar-style
+    // non-negative sums this stays >= 0 in practice.
+    message SumEntry {
+      optional bytes in_key = 1;
+      bytes key = 2;
+      // `jstype = JS_STRING` so JS/Web clients receive a string
+      // and don't round large sums to the nearest Number.
+      sint64 sum = 3 [jstype = JS_STRING];
+    }
+
+    message SumEntries {
+      repeated SumEntry entries = 1;
+    }
+
+    // Non-proof sum result. Same shape as `CountResults` for the
+    // sum surface — the variants mirror count's:
+    //   * `aggregate_sum`: `select=SUM, group_by=[]` — single signed
+    //     sum with no per-key breakdown.
+    //   * `entries`: `select=SUM, group_by=[…]` — one SumEntry per
+    //     distinct group.
+    message SumResults {
+      oneof variant {
+        sint64 aggregate_sum = 1 [jstype = JS_STRING];
+        SumEntries entries = 2;
+      }
+    }
+
+    // Average-side analog of `SumEntry` — one per matched key for
+    // `select=AVG, group_by=[…]` queries. Each entry carries BOTH
+    // the count and the sum for its group; the client divides
+    // `sum / count` to compute the actual average.
+    //
+    // Why no `average` field on the wire? Returning the (count, sum)
+    // pair preserves full precision and lets the client pick the
+    // representation it wants (integer-truncated division, floating-
+    // point, decimal). Returning a single pre-computed `average`
+    // would force the server to choose, and any choice loses
+    // information for callers that wanted a different one.
+    //
+    // This shape is produced by grovedb's `AggregateCountAndSumOnRange`
+    // primitive (one root-hash-committed traversal returning both
+    // metrics) which lands as part of grovedb PR 670 alongside the
+    // PCPS (`ProvableCountProvableSumTree`) tree element.
+    message AverageEntry {
+      optional bytes in_key = 1;
+      bytes key = 2;
+      // `jstype = JS_STRING` on both fields so JS/Web clients receive
+      // strings and don't lose precision on counts/sums exceeding
+      // `Number.MAX_SAFE_INTEGER`.
+      uint64 count = 3 [jstype = JS_STRING];
+      sint64 sum = 4 [jstype = JS_STRING];
+    }
+
+    message AverageEntries {
+      repeated AverageEntry entries = 1;
+    }
+
+    // Aggregate average across all matched documents (no group_by).
+    // Same `(count, sum)` shape as a single entry — the client
+    // computes `avg = sum / count` itself.
+    message AverageAggregate {
+      uint64 count = 1 [jstype = JS_STRING];
+      sint64 sum = 2 [jstype = JS_STRING];
+    }
+
+    // Non-proof average result. Same outer shape as
+    // `CountResults` / `SumResults`; the variants mirror them:
+    //   * `aggregate_average`: `select=AVG, group_by=[]` — single
+    //     `(count, sum)` pair with no per-key breakdown.
+    //   * `entries`: `select=AVG, group_by=[…]` — one AverageEntry
+    //     per distinct group, each carrying its own `(count, sum)`.
+    message AverageResults {
+      oneof variant {
+        AverageAggregate aggregate_average = 1;
+        AverageEntries entries = 2;
+      }
+    }
+
+    // Non-proof result wrapper. The outer `oneof result` switches
+    // between this and `proof`; this inner oneof switches between
+    // the four non-proof shapes the v1 surface can return.
+    message ResultData {
+      oneof variant {
+        Documents documents = 1;
+        CountResults counts = 2;
+        // Sum-aggregate result. Routed when the request's
+        // `select.function == SUM` and the dispatcher's
+        // [`DriveDocumentSumQuery`] (in rs-drive) returns a
+        // non-proof variant. The schema field name (`sums`) parallels
+        // `counts` above; field numbers stay 1/2/3/4 per the proto-
+        // wire-stability rule (additions only, never renumbers).
+        SumResults sums = 3;
+        // Average-aggregate result. Routed when the request's
+        // `select.function == AVG`. The dispatcher returns the
+        // `(count, sum)` pair grovedb's `AggregateCountAndSumOnRange`
+        // primitive produces in one root-hash-committed traversal;
+        // the client divides to obtain the actual average. See
+        // `book/src/drive/average-index-examples.md` for the design
+        // and the grades-contract worked example.
+        AverageResults averages = 4;
+      }
+    }
+
+    oneof result {
+      ResultData data = 1;
+      Proof proof = 2;
+    }
+    ResponseMetadata metadata = 3;
+  }
+
+  oneof version {
+    GetDocumentsResponseV0 v0 = 1;
+    GetDocumentsResponseV1 v1 = 2;
+  }
+}
+
+message GetDocumentHistoryRequest {
+  message GetDocumentHistoryRequestV0 {
+    bytes data_contract_id = 1; // The ID of the data contract
+    string document_type_name = 2; // The document type name
+    bytes document_id = 3; // The document ID
+    google.protobuf.UInt32Value limit =
+        4; // The maximum number of history entries to return
+    google.protobuf.UInt32Value offset =
+        5; // The offset for pagination through the document history
+    uint64 start_at_ms = 6 [
+      jstype = JS_STRING
+    ];              // Only return results after this time in milliseconds
+    bool prove = 7; // Flag to request a proof as the response
+  }
+  oneof version { GetDocumentHistoryRequestV0 v0 = 1; }
+}
+
+message GetDocumentHistoryResponse {
+  message GetDocumentHistoryResponseV0 {
+    // Represents a single entry in a document's history
+    message DocumentHistoryEntry {
+      uint64 date = 1 [ jstype = JS_STRING ]; // The date of the history entry
+      bytes value = 2; // The value of the document at this point in history
+    }
+
+    // Collection of document history entries
+    message DocumentHistory {
+      repeated DocumentHistoryEntry document_entries =
+          1; // List of history entries
+    }
+
+    oneof result {
+      DocumentHistory document_history =
+          1; // The actual history of the document
+      Proof proof =
+          2; // Cryptographic proof of the document history, if requested
+    }
+
+    ResponseMetadata metadata = 3; // Metadata about the blockchain state
+  }
+  oneof version { GetDocumentHistoryResponseV0 v0 = 1; }
 }
 
 message GetIdentityByPublicKeyHashRequest {
@@ -2168,6 +2896,7 @@ message GetShieldedEncryptedNotesResponse {
       bytes nullifier = 1;      // 32-byte nullifier (needed for Rho derivation in trial decryption)
       bytes cmx = 2;            // 32-byte extracted note commitment
       bytes encrypted_note = 3; // encrypted note payload (epk + enc_ciphertext + out_ciphertext)
+      bytes cv_net = 4;         // 32-byte value commitment (stored unencrypted, for OVK recovery of outgoing notes)
     }
     message EncryptedNotes {
       repeated EncryptedNote entries = 1;
@@ -2238,6 +2967,31 @@ message GetShieldedPoolStateResponse {
   oneof version { GetShieldedPoolStateResponseV0 v0 = 1; }
 }
 
+// Count of leaves in the shielded notes commitment tree.
+// Used by wallets at the start of a shielded sync to seed a
+// determinate progress-bar denominator. The count IS bound by the
+// Merk value hash: it is the first field (`total_count`) of the
+// serialized `CommitmentTree` element whose bytes are hashed into the
+// app/root hash, so it is provable via a PathQuery proof of that
+// element (set `prove = true`).
+message GetShieldedNotesCountRequest {
+  message GetShieldedNotesCountRequestV0 {
+    bool prove = 1;
+  }
+  oneof version { GetShieldedNotesCountRequestV0 v0 = 1; }
+}
+
+message GetShieldedNotesCountResponse {
+  message GetShieldedNotesCountResponseV0 {
+    oneof result {
+      uint64 total_notes_count = 1 [jstype = JS_STRING];
+      Proof proof = 2;
+    }
+    ResponseMetadata metadata = 3;
+  }
+  oneof version { GetShieldedNotesCountResponseV0 v0 = 1; }
+}
+
 message GetShieldedNullifiersRequest {
   message GetShieldedNullifiersRequestV0 {
     repeated bytes nullifiers = 1;
@@ -2262,99 +3016,4 @@ message GetShieldedNullifiersResponse {
     ResponseMetadata metadata = 3;
   }
   oneof version { GetShieldedNullifiersResponseV0 v0 = 1; }
-}
-
-message GetNullifiersTrunkStateRequest {
-  message GetNullifiersTrunkStateRequestV0 {
-    uint32 pool_type = 1;           // ShieldedPoolType enum value (0=credit, 1=main token, 2=individual token)
-    bytes pool_identifier = 2;      // 32-byte Identifier, required for pool_type=2
-  }
-  oneof version { GetNullifiersTrunkStateRequestV0 v0 = 1; }
-}
-
-message GetNullifiersTrunkStateResponse {
-  message GetNullifiersTrunkStateResponseV0 {
-    Proof proof = 2;
-    ResponseMetadata metadata = 3;
-  }
-  oneof version { GetNullifiersTrunkStateResponseV0 v0 = 1; }
-}
-
-message GetNullifiersBranchStateRequest {
-  message GetNullifiersBranchStateRequestV0 {
-    uint32 pool_type = 1;
-    bytes pool_identifier = 2;
-    bytes key = 3;
-    uint32 depth = 4;
-    uint64 checkpoint_height = 5;
-  }
-  oneof version { GetNullifiersBranchStateRequestV0 v0 = 1; }
-}
-
-message GetNullifiersBranchStateResponse {
-  message GetNullifiersBranchStateResponseV0 {
-    bytes merk_proof = 2;
-  }
-  oneof version { GetNullifiersBranchStateResponseV0 v0 = 1; }
-}
-
-// --- Recent Nullifier Changes ---
-
-message BlockNullifierChanges {
-  uint64 block_height = 1 [ jstype = JS_STRING ];
-  repeated bytes nullifiers = 2;  // Each is 32 bytes
-}
-
-message NullifierUpdateEntries {
-  repeated BlockNullifierChanges block_changes = 1;
-}
-
-message GetRecentNullifierChangesRequest {
-  message GetRecentNullifierChangesRequestV0 {
-    uint64 start_height = 1 [ jstype = JS_STRING ];
-    bool prove = 2;
-  }
-  oneof version { GetRecentNullifierChangesRequestV0 v0 = 1; }
-}
-
-message GetRecentNullifierChangesResponse {
-  message GetRecentNullifierChangesResponseV0 {
-    oneof result {
-      NullifierUpdateEntries nullifier_update_entries = 1;
-      Proof proof = 2;
-    }
-    ResponseMetadata metadata = 3;
-  }
-  oneof version { GetRecentNullifierChangesResponseV0 v0 = 1; }
-}
-
-// --- Compacted Nullifier Changes ---
-
-message CompactedBlockNullifierChanges {
-  uint64 start_block_height = 1 [ jstype = JS_STRING ];
-  uint64 end_block_height = 2 [ jstype = JS_STRING ];
-  repeated bytes nullifiers = 3;  // Each is 32 bytes
-}
-
-message CompactedNullifierUpdateEntries {
-  repeated CompactedBlockNullifierChanges compacted_block_changes = 1;
-}
-
-message GetRecentCompactedNullifierChangesRequest {
-  message GetRecentCompactedNullifierChangesRequestV0 {
-    uint64 start_block_height = 1 [ jstype = JS_STRING ];
-    bool prove = 2;
-  }
-  oneof version { GetRecentCompactedNullifierChangesRequestV0 v0 = 1; }
-}
-
-message GetRecentCompactedNullifierChangesResponse {
-  message GetRecentCompactedNullifierChangesResponseV0 {
-    oneof result {
-      CompactedNullifierUpdateEntries compacted_nullifier_update_entries = 1;
-      Proof proof = 2;
-    }
-    ResponseMetadata metadata = 3;
-  }
-  oneof version { GetRecentCompactedNullifierChangesResponseV0 v0 = 1; }
 }

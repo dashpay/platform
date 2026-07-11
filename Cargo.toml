@@ -18,7 +18,6 @@ members = [
     "packages/dashpay-contract",
     "packages/withdrawals-contract",
     "packages/masternode-reward-shares-contract",
-    "packages/feature-flags-contract",
     "packages/dpns-contract",
     "packages/data-contracts",
     "packages/rs-drive-proof-verifier",
@@ -27,6 +26,7 @@ members = [
     "packages/wasm-dpp",
     "packages/wasm-dpp2",
     "packages/rs-dapi-client",
+    "packages/rs-dash-async",
     "packages/rs-sdk",
     "packages/strategy-tests",
     "packages/simple-signer",
@@ -42,18 +42,42 @@ members = [
     "packages/rs-dash-event-bus",
     "packages/rs-platform-wallet",
     "packages/rs-platform-wallet-ffi",
+    "packages/rs-platform-wallet-storage",
     "packages/rs-platform-encryption",
-    "packages/wasm-sdk", "packages/rs-unified-sdk-ffi",
+    "packages/wasm-sdk",
+    "packages/rs-unified-sdk-ffi",
+    "packages/rs-scripts",
 ]
 
 [workspace.dependencies]
-dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "3f6500200042a1388d34832214c4e9dc3ee72df8" }
-dash-spv = { git = "https://github.com/dashpay/rust-dashcore", rev = "3f6500200042a1388d34832214c4e9dc3ee72df8" }
-dash-spv-ffi = { git = "https://github.com/dashpay/rust-dashcore", rev = "3f6500200042a1388d34832214c4e9dc3ee72df8" }
-key-wallet = { git = "https://github.com/dashpay/rust-dashcore", rev = "3f6500200042a1388d34832214c4e9dc3ee72df8" }
-key-wallet-ffi = { git = "https://github.com/dashpay/rust-dashcore", rev = "3f6500200042a1388d34832214c4e9dc3ee72df8" }
-key-wallet-manager = { git = "https://github.com/dashpay/rust-dashcore", rev = "3f6500200042a1388d34832214c4e9dc3ee72df8" }
-dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", rev = "3f6500200042a1388d34832214c4e9dc3ee72df8" }
+dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "1860089eddea27f66e5b3e637d18a73ae138478c" }
+dash-network-seeds = { git = "https://github.com/dashpay/rust-dashcore", rev = "1860089eddea27f66e5b3e637d18a73ae138478c" }
+dash-spv = { git = "https://github.com/dashpay/rust-dashcore", rev = "1860089eddea27f66e5b3e637d18a73ae138478c" }
+key-wallet = { git = "https://github.com/dashpay/rust-dashcore", rev = "1860089eddea27f66e5b3e637d18a73ae138478c" }
+key-wallet-ffi = { git = "https://github.com/dashpay/rust-dashcore", rev = "1860089eddea27f66e5b3e637d18a73ae138478c" }
+key-wallet-manager = { git = "https://github.com/dashpay/rust-dashcore", rev = "1860089eddea27f66e5b3e637d18a73ae138478c" }
+dash-network = { git = "https://github.com/dashpay/rust-dashcore", rev = "1860089eddea27f66e5b3e637d18a73ae138478c" }
+dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", rev = "1860089eddea27f66e5b3e637d18a73ae138478c" }
+
+tokio-metrics = "0.5"
+
+# Size-tuned profile for the iOS `rs-unified-sdk-ffi` staticlib, which
+# otherwise ships huge. Inherits `release` and is ONLY used by the iOS
+# build (`build_ios.sh --profile release`)
+[profile.release-ios]
+inherits = "release"
+panic = "abort"
+strip = "symbols"
+lto = "fat"
+codegen-units = 1
+opt-level = 3
+
+# Debug counterpart for smaller iOS dev builds. Inherits the standard `dev`
+# profile (and is ONLY used by the iOS build (`build_ios.sh --profile dev`)
+[profile.dev-ios]
+inherits = "dev"
+panic = "abort"
+lto = "thin"
 
 # Optimize heavy crypto crates even in dev/test builds so that
 # Halo 2 proof generation and verification run at near-release speed.
@@ -86,5 +110,5 @@ opt-level = 3
 
 [workspace.package]
 
-version = "3.1.0-dev.1"
+version = "4.0.0"
 rust-version = "1.92"

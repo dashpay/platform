@@ -269,6 +269,7 @@ impl WasmSdk {
         let dpns_contract = self.get_dpns_contract().await?;
 
         let query = DocumentQuery {
+            select: dash_sdk::drive::query::SelectProjection::documents(),
             data_contract: dpns_contract,
             document_type_name: DPNS_DOCUMENT_TYPE.to_string(),
             where_clauses: vec![WhereClause {
@@ -276,6 +277,8 @@ impl WasmSdk {
                 operator: WhereOperator::Equal,
                 value: Value::Identifier(identity_id.to_buffer()),
             }],
+            group_by: vec![],
+            having: vec![],
             order_by_clauses: vec![],
             limit: resolve_dpns_usernames_limit(limit),
             start: None,

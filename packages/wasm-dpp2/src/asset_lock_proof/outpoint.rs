@@ -1,6 +1,6 @@
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::impl_wasm_type_info;
-use crate::utils::IntoWasm;
+use crate::utils::{IntoWasm, try_vec_to_fixed_bytes};
 use dpp::dashcore::{OutPoint, Txid};
 use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
 use dpp::platform_value::string_encoding::{decode, encode};
@@ -117,14 +117,7 @@ impl OutPointWasm {
 
     #[wasm_bindgen(js_name = "fromBytes")]
     pub fn from_bytes(buffer: Vec<u8>) -> WasmDppResult<OutPointWasm> {
-        if buffer.len() != 36 {
-            return Err(WasmDppError::invalid_argument(format!(
-                "OutPoint must be exactly 36 bytes, got {}",
-                buffer.len()
-            )));
-        }
-
-        let out_buffer: [u8; 36] = buffer.try_into().expect("length already validated");
+        let out_buffer: [u8; 36] = try_vec_to_fixed_bytes(buffer, "outPoint")?;
 
         Ok(OutPointWasm(OutPoint::from(out_buffer)))
     }

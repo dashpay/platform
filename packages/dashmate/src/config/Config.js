@@ -46,6 +46,80 @@ export default class Config {
   }
 
   /**
+   * Check whether a path is reachable per the config JSON schema (regardless
+   * of whether a value is currently set there).
+   *
+   * Use this when checking the legality of a `set` to a path that doesn't yet
+   * have a value — notably under map-shaped properties whose schema uses
+   * `additionalProperties: <schema>` (e.g. `…build.buildArgs.<KEY>`), where
+   * `config.has(...)` will return `false` even though `config.set(...)` is
+   * semantically legal.
+   *
+   * `configJsonSchema` IS the per-config schema — the top-level
+   * `properties: { description, group, docker, core, platform, … }` describes
+   * one config entry. Walks it descending through:
+   * - `properties[segment]` (typed field),
+   * - `additionalProperties` (variable-key map, only when the value is a
+   *   schema object — `additionalProperties: false` blocks the descent),
+   * - `$ref` references into `#/definitions/...`.
+   *
+   * @param {string} path - dot-separated option path (e.g.
+   *   `'platform.drive.abci.docker.build.buildArgs.SDK_TEST_DATA'`).
+   * @return {boolean} true when the path is allowed by the schema.
+   */
+  static isSchemaPathAllowed(path) {
+    if (typeof path !== 'string' || path.length === 0) return false;
+
+    // Reject empty segments (leading/trailing/double dots, e.g. `a..b` or
+    // `…buildArgs.`) — an empty key must not slip through a map's
+    // `additionalProperties` descent.
+    const pathSegments = path.split('.');
+    if (pathSegments.some((segment) => segment.length === 0)) return false;
+
+    const resolveRef = (node) => {
+      if (!node || typeof node !== 'object') return node;
+      if (typeof node.$ref !== 'string') return node;
+      const ref = node.$ref;
+      if (!ref.startsWith('#/')) return null;
+      const segments = ref.slice(2).split('/');
+      let resolved = configJsonSchema;
+      for (const seg of segments) {
+        if (!resolved || typeof resolved !== 'object') return null;
+        resolved = resolved[seg];
+      }
+      return resolveRef(resolved);
+    };
+
+    let node = resolveRef(configJsonSchema);
+    if (!node) return false;
+
+    for (const segment of pathSegments) {
+      node = resolveRef(node);
+      if (!node || typeof node !== 'object') return false;
+
+      // Typed property.
+      if (node.properties && Object.prototype.hasOwnProperty.call(node.properties, segment)) {
+        node = node.properties[segment];
+        continue;
+      }
+
+      // Map with a schema for extra keys — descend into the value schema.
+      if (
+        node.additionalProperties
+        && typeof node.additionalProperties === 'object'
+      ) {
+        node = node.additionalProperties;
+        continue;
+      }
+
+      // No match and no permissive additionalProperties — path not allowed.
+      return false;
+    }
+
+    return true;
+  }
+
+  /**
    * Get config option
    *
    * @param {string} path

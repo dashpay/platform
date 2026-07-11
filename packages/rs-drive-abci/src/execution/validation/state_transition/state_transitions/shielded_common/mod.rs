@@ -14,9 +14,9 @@ use drive::fees::op::LowLevelDriveOperation;
 use drive::grovedb::TransactionArg;
 use drive::state_transition_action::StateTransitionAction;
 use grovedb_commitment_tree::{
-    redpallas, Action, Anchor, Authorized, BatchValidator, Bundle, DashMemo,
-    ExtractedNoteCommitment, Flags, NoteBytesData, Nullifier, Proof, TransmittedNoteCiphertext,
-    ValueCommitment, VerifyingKey,
+    redpallas, Action, ActionFromPartsError, Anchor, Authorized, BatchValidator, Bundle, DashMemo,
+    ExtractedNoteCommitment, Flags, NoteBytesData, Nullifier, Proof, ProofSizeEnforcement,
+    TransmittedNoteCiphertext, ValueCommitment, VerifyingKey,
 };
 use std::sync::OnceLock;
 
@@ -47,7 +47,15 @@ pub fn warmup_shielded_verifying_key() {
 const EPK_SIZE: usize = 32;
 const ENC_CIPHERTEXT_SIZE: usize = 104;
 const OUT_CIPHERTEXT_SIZE: usize = 80;
-const ENCRYPTED_NOTE_SIZE: usize = EPK_SIZE + ENC_CIPHERTEXT_SIZE + OUT_CIPHERTEXT_SIZE; // 216
+
+// Import the canonical constant from DPP (single source of truth).
+use dpp::state_transition::state_transitions::shielded::common_validation::ENCRYPTED_NOTE_SIZE;
+
+// Compile-time check: component sizes must sum to the canonical constant.
+const _: () = assert!(
+    EPK_SIZE + ENC_CIPHERTEXT_SIZE + OUT_CIPHERTEXT_SIZE == ENCRYPTED_NOTE_SIZE,
+    "component sizes diverged from ENCRYPTED_NOTE_SIZE"
+);
 
 /// Reconstructs an orchard `Bundle<Authorized, i64, DashMemo>` from the serialized fields
 /// of a shielded state transition and verifies the Halo 2 ZK proof along with
@@ -62,10 +70,13 @@ const ENCRYPTED_NOTE_SIZE: usize = EPK_SIZE + ENC_CIPHERTEXT_SIZE + OUT_CIPHERTE
 /// Orchard bundle commitment together with `extra_sighash_data` (transparent fields).
 /// The same computation must be used when signing the bundle on the client side.
 ///
-/// `extra_sighash_data` binds transparent fields to the Orchard signatures:
+/// `extra_sighash_data` binds transparent fields to the Orchard signatures (built by the
+/// shared `dpp::shielded::*_extra_sighash_data` helpers so the signer and verifier agree):
 /// - Shield: empty (no transparent outputs)
 /// - Shielded transfer: empty (no transparent fields)
-/// - Unshield: `output_address.to_bytes() || amount.to_le_bytes()`
+/// - Unshield: `output_address || unshielding_amount (u64 LE)`
+/// - Shielded withdrawal: `output_script || unshielding_amount (u64 LE) || core_fee_per_byte
+///   (u32 LE) || pooling (u8)` — every Core-facing field the withdrawal document commits to.
 ///
 /// Returns `Ok(())` if all verification passes, or an `InvalidShieldedProofError`
 /// if reconstruction or any verification step fails.
@@ -119,6 +130,18 @@ pub fn reconstruct_and_verify_bundle(
                 InvalidShieldedProofError::new("invalid value commitment bytes".to_string())
             })?;
 
+        // `Action::from_parts` rejects malformed actions instead of silently
+        // dropping them. In orchard 0.14 it returns `Result<_, ActionFromPartsError>`
+        // (was `Option` in 0.13) and now enforces TWO invariants:
+        //   - `IdentityRk`: the randomizer key `rk` must be non-identity (the
+        //     hardening that already existed in 0.13).
+        //   - `InvalidEpk`: the ephemeral public key `epk` must encode a
+        //     non-identity point (a NEW invariant in 0.14 — the circuit
+        //     soundness fix). Rejecting this is REQUIRED to preserve soundness;
+        //     we must not weaken it back to acceptance.
+        // We keep the original "identity randomizer key" message for the
+        // `IdentityRk` case (byte-for-byte compatible with the 0.13 error path)
+        // and surface the new `InvalidEpk` rejection with its own message.
         let action = Action::from_parts(
             nullifier,
             rk,
@@ -130,7 +153,19 @@ pub fn reconstruct_and_verify_bundle(
             ),
             cv_net,
             redpallas::Signature::from(a.spend_auth_sig),
-        );
+        )
+        .map_err(|e| match e {
+            ActionFromPartsError::IdentityRk => {
+                InvalidShieldedProofError::new("action has identity randomizer key".to_string())
+            }
+            ActionFromPartsError::InvalidEpk => InvalidShieldedProofError::new(
+                "action has invalid ephemeral public key (identity or undecodable epk)".to_string(),
+            ),
+            // `ActionFromPartsError` is `#[non_exhaustive]`. Any future
+            // rejection variant added upstream MUST also be rejected here —
+            // defaulting to acceptance would weaken consensus soundness.
+            other => InvalidShieldedProofError::new(format!("malformed orchard action: {other}")),
+        })?;
         orchard_actions.push(action);
     }
 
@@ -151,13 +186,22 @@ pub fn reconstruct_and_verify_bundle(
     let actions_nonempty = nonempty::NonEmpty::from_vec(orchard_actions)
         .ok_or_else(|| InvalidShieldedProofError::new("bundle has no actions".to_string()))?;
 
-    let bundle = Bundle::from_parts(
+    // Reconstruct the `Bundle<Authorized>` (`try_from_parts` is orchard 0.14's only
+    // public constructor for it). `ProofSizeEnforcement::Strict` rejects a proof
+    // whose byte-length is not canonical for the action count — anti-malleability.
+    // Spend-auth signatures were attached per-action in `Action::from_parts` above,
+    // so action↔signature pairing is preserved with no separate list to reorder.
+    let bundle = Bundle::try_from_parts(
         actions_nonempty,
         orchard_flags,
         value_balance,
         orchard_anchor,
         authorized,
-    );
+        ProofSizeEnforcement::Strict,
+    )
+    .map_err(|e| {
+        InvalidShieldedProofError::new(format!("failed to reconstruct authorized bundle: {e}"))
+    })?;
 
     // Compute the platform sighash: SHA-256(domain || bundle_commitment || extra_data).
     // The bundle commitment is the Orchard BundleCommitment (BLAKE2b-256 per ZIP-244),
@@ -410,6 +454,236 @@ mod tests {
             assert!(
                 err.message().contains("invalid bundle flags byte"),
                 "expected invalid bundle flags error, got: {}",
+                err.message()
+            );
+        }
+
+        // ----------------------------------------------------------------
+        // `Action::from_parts` rejection paths (orchard 0.14 `map_err` arms)
+        //
+        // These pin the two consensus-critical rejections that are surfaced
+        // ONLY inside the `Action::from_parts(...).map_err(...)` arms of
+        // `reconstruct_and_verify_bundle`:
+        //   - `ActionFromPartsError::IdentityRk`   ("identity randomizer key")
+        //   - `ActionFromPartsError::InvalidEpk`   ("invalid ephemeral public key")
+        //
+        // The earlier error-path tests above never reach those arms: they fail
+        // at the encrypted-note-size check, the empty-actions check, the
+        // `rk`-DECODE step ([2u8;32] is not a valid VK encoding, rejected
+        // *before* `from_parts`), or the flags check. A future refactor that
+        // mistakenly mapped `InvalidEpk` to acceptance would slip past CI
+        // without these tests. The `InvalidEpk` rejection is the orchard 0.14
+        // circuit-soundness fix and MUST stay a rejection.
+        // ----------------------------------------------------------------
+
+        use grovedb_commitment_tree::{
+            redpallas, Anchor, Builder, BundleType, DashMemo, Flags as OrchardFlags,
+            FullViewingKey, NoteValue, Scope, SpendingKey,
+        };
+
+        /// Builds a `SerializedAction` whose `nullifier`, `rk`, `cmx`, `cv_net`,
+        /// and `encrypted_note` (including a real, non-identity `epk`) are all
+        /// genuine, canonically-encoded Orchard values — so an action built from
+        /// it decodes cleanly through nullifier → rk → cmx → cv_net and actually
+        /// REACHES `Action::from_parts`. The bytes are read off a real
+        /// (unauthorized) output-only Orchard bundle; this needs NO proving key
+        /// (we never call `create_proof`), so it is cheap.
+        ///
+        /// Tests then mutate exactly one field to exercise a single `from_parts`
+        /// rejection arm. The function asserts each base field decodes, so if a
+        /// future orchard encoding change broke the precondition the test would
+        /// fail LOUDLY here rather than silently passing for the wrong reason.
+        fn valid_base_serialized_action() -> dpp::shielded::SerializedAction {
+            let sk = SpendingKey::from_bytes([0u8; 32]).expect("valid spending key");
+            let fvk = FullViewingKey::from(&sk);
+            let recipient = fvk.address_at(0u32, Scope::External);
+
+            let mut builder = Builder::<DashMemo>::new(
+                BundleType::Transactional {
+                    flags: OrchardFlags::SPENDS_DISABLED,
+                    bundle_required: false,
+                },
+                Anchor::empty_tree(),
+            );
+            builder
+                .add_output(None, recipient, NoteValue::from_raw(5_000), [0u8; 36])
+                .expect("add_output");
+
+            let mut rng = rand::rngs::OsRng;
+            let (unauthorized, _) = builder
+                .build::<i64>(&mut rng)
+                .expect("build unauthorized bundle")
+                .expect("bundle is non-empty");
+
+            // Read genuine, canonically-encoded fields off the first action.
+            let action = unauthorized.actions().first();
+            let enc = action.encrypted_note();
+            let mut encrypted_note = Vec::with_capacity(ENCRYPTED_NOTE_SIZE);
+            encrypted_note.extend_from_slice(&enc.epk_bytes);
+            encrypted_note.extend_from_slice(enc.enc_ciphertext.as_ref());
+            encrypted_note.extend_from_slice(&enc.out_ciphertext);
+
+            let base = dpp::shielded::SerializedAction {
+                nullifier: action.nullifier().to_bytes(),
+                rk: <[u8; 32]>::from(action.rk()),
+                cmx: action.cmx().to_bytes(),
+                encrypted_note,
+                cv_net: action.cv_net().to_bytes(),
+                spend_auth_sig: [6u8; 64],
+            };
+
+            // Precondition guards: confirm the base reaches `from_parts` by
+            // checking that every field the verifier decodes BEFORE `from_parts`
+            // is valid, and that the base epk is itself a valid non-identity
+            // point (so flipping it to the identity is what the InvalidEpk test
+            // isolates).
+            assert_eq!(base.encrypted_note.len(), ENCRYPTED_NOTE_SIZE);
+            assert!(
+                Option::<Nullifier>::from(Nullifier::from_bytes(&base.nullifier)).is_some(),
+                "base nullifier must decode"
+            );
+            assert!(
+                redpallas::VerificationKey::<redpallas::SpendAuth>::try_from(base.rk).is_ok(),
+                "base rk must decode as a (non-identity) verification key"
+            );
+            assert!(
+                Option::<ExtractedNoteCommitment>::from(ExtractedNoteCommitment::from_bytes(
+                    &base.cmx
+                ))
+                .is_some(),
+                "base cmx must decode"
+            );
+            assert!(
+                Option::<ValueCommitment>::from(ValueCommitment::from_bytes(&base.cv_net))
+                    .is_some(),
+                "base cv_net must decode"
+            );
+            base
+        }
+
+        /// `Action::from_parts` -> `ActionFromPartsError::IdentityRk`.
+        ///
+        /// `rk = [0u8; 32]` is the canonical encoding of the RedPallas identity
+        /// verification key: it DECODES successfully (so it passes the verifier's
+        /// pre-`from_parts` rk-decode step, unlike the [2u8;32] decode-failure
+        /// case in `test_invalid_rk_returns_error`), and `from_parts` then
+        /// rejects it because the randomizer key is the identity. Pins the
+        /// `IdentityRk => "identity randomizer key"` arm.
+        #[test]
+        fn test_identity_rk_returns_error() {
+            let mut action = valid_base_serialized_action();
+            // Sanity: the identity VK encoding must DECODE (else we'd be
+            // re-testing the decode-failure path, not the from_parts arm).
+            assert!(
+                redpallas::VerificationKey::<redpallas::SpendAuth>::try_from([0u8; 32]).is_ok(),
+                "identity rk [0;32] must decode so it reaches Action::from_parts"
+            );
+            action.rk = [0u8; 32]; // RedPallas identity verification key
+
+            let result = reconstruct_and_verify_bundle(
+                &[action],
+                FLAGS_SPENDS_AND_OUTPUTS,
+                0,
+                &[42u8; 32],
+                &[0u8; 100],
+                &[0u8; 64],
+                &[],
+            );
+
+            assert!(result.is_err());
+            let err = result.unwrap_err();
+            assert!(
+                err.message().contains("identity randomizer key"),
+                "expected 'identity randomizer key' error from the IdentityRk arm, got: {}",
+                err.message()
+            );
+        }
+
+        /// `Action::from_parts` -> `ActionFromPartsError::InvalidEpk`.
+        ///
+        /// This is the orchard 0.14 circuit-soundness reject. The action is valid
+        /// everywhere the verifier checks before `from_parts` — including a
+        /// genuine, non-identity `rk` derived exactly like orchard's own
+        /// `non_identity_rk()` test helper (the scalar `1` as a RedPallas
+        /// `SigningKey`, then its `VerificationKey`) — so it passes the rk-decode
+        /// step AND the `IdentityRk` check, reaching the epk invariant. Its `epk`
+        /// is then set to `[0u8; 32]`, the canonical Pallas identity encoding,
+        /// which is NOT a valid `KA^{Orchard}` public key, so `from_parts`
+        /// rejects with `InvalidEpk`. Pins the
+        /// `InvalidEpk => "invalid ephemeral public key"` arm.
+        #[test]
+        fn test_identity_epk_returns_invalid_epk_error() {
+            let mut action = valid_base_serialized_action();
+
+            // Non-identity rk: scalar 1 (little-endian) -> SigningKey -> VK -> bytes.
+            let mut scalar_one = [0u8; 32];
+            scalar_one[0] = 1;
+            let signing_key = redpallas::SigningKey::<redpallas::SpendAuth>::try_from(scalar_one)
+                .expect("scalar 1 is a valid RedPallas signing key");
+            let vk = redpallas::VerificationKey::<redpallas::SpendAuth>::from(&signing_key);
+            let non_identity_rk = <[u8; 32]>::from(vk);
+            // Guard: this rk must NOT be the identity (else we'd trip IdentityRk
+            // instead of reaching the epk check).
+            assert_ne!(
+                non_identity_rk, [0u8; 32],
+                "scalar-1 verification key must be non-identity"
+            );
+            action.rk = non_identity_rk;
+
+            // Set the ephemeral public key (first 32 bytes of encrypted_note) to
+            // the canonical Pallas identity encoding — an invalid epk.
+            action.encrypted_note[..EPK_SIZE].copy_from_slice(&[0u8; EPK_SIZE]);
+
+            let result = reconstruct_and_verify_bundle(
+                &[action],
+                FLAGS_SPENDS_AND_OUTPUTS,
+                0,
+                &[42u8; 32],
+                &[0u8; 100],
+                &[0u8; 64],
+                &[],
+            );
+
+            assert!(result.is_err());
+            let err = result.unwrap_err();
+            assert!(
+                err.message().contains("invalid ephemeral public key"),
+                "expected 'invalid ephemeral public key' error from the InvalidEpk arm, got: {}",
+                err.message()
+            );
+        }
+
+        /// `Bundle::try_from_parts(.., ProofSizeEnforcement::Strict)` ->
+        /// `BundleError::NonCanonicalProofSize`.
+        ///
+        /// Pins the proof-size policy. The base action is valid, so reconstruction
+        /// clears `Action::from_parts` and reaches `try_from_parts`; the proof
+        /// byte-length (100) is not canonical for a single-action bundle, so
+        /// `Strict` rejects it. This is what distinguishes `Strict` from
+        /// `Unenforced`: under `Unenforced` the bundle would build and this test
+        /// would fail. The positive round-trip tests use canonical proofs and pass
+        /// under either setting, so without this test a refactor could silently flip
+        /// the policy. A 32-byte zero anchor (field element 0) is used so anchor
+        /// decoding succeeds and we reach the proof-size check.
+        #[test]
+        fn test_noncanonical_proof_size_rejected_under_strict() {
+            let action = valid_base_serialized_action();
+            let result = reconstruct_and_verify_bundle(
+                &[action],
+                FLAGS_SPENDS_AND_OUTPUTS,
+                0,
+                &[0u8; 32],
+                &[0u8; 100], // non-canonical proof length for a 1-action bundle
+                &[0u8; 64],
+                &[],
+            );
+
+            assert!(result.is_err());
+            let err = result.unwrap_err();
+            assert!(
+                err.message()
+                    .contains("failed to reconstruct authorized bundle"),
+                "expected NonCanonicalProofSize rejection from try_from_parts(Strict), got: {}",
                 err.message()
             );
         }
@@ -730,5 +1004,98 @@ mod tests {
             assert!(Flags::from_byte(FLAGS_SPENDS_AND_OUTPUTS).is_some());
             assert!(FLAGS_OUTPUTS_ONLY != FLAGS_SPENDS_AND_OUTPUTS);
         }
+    }
+
+    /// Benchmark: how shielded verification scales with the number of actions.
+    ///
+    /// Run with:
+    ///   `cargo test -p drive-abci --lib bench_shielded_proof_verification_scaling -- \
+    ///       --ignored --nocapture`
+    ///
+    /// Halo 2 proof verification is one per-bundle check whose cost grows with the action
+    /// count (one circuit instance per action); RedPallas spend-auth signatures are
+    /// per-action; the binding signature is per-bundle. So the full consensus verification
+    /// cost is roughly `proof_verify(n) + n × spend_auth + binding`. This informs whether the
+    /// flat `shielded_proof_verification_fee` should gain a per-action component.
+    #[test]
+    #[ignore = "benchmark; run manually with --ignored --nocapture"]
+    fn bench_shielded_proof_verification_scaling() {
+        use grovedb_commitment_tree::{
+            Builder, BundleType, FullViewingKey, NoteValue, ProvingKey, Scope, SpendingKey,
+        };
+        use rand::rngs::OsRng;
+        use std::time::Instant;
+
+        let pk = ProvingKey::build();
+        let vk = get_verifying_key();
+
+        // Build & prove an n-action (outputs-only) bundle.
+        let build = |n: usize| {
+            let mut rng = OsRng;
+            let sk = SpendingKey::from_bytes([7u8; 32]).unwrap();
+            let fvk = FullViewingKey::from(&sk);
+            let recipient = fvk.address_at(0u32, Scope::External);
+            let anchor: Anchor = Anchor::empty_tree();
+            let mut builder = Builder::<DashMemo>::new(
+                BundleType::Transactional {
+                    flags: Flags::SPENDS_DISABLED,
+                    bundle_required: false,
+                },
+                anchor,
+            );
+            for _ in 0..n {
+                builder
+                    .add_output(None, recipient, NoteValue::from_raw(5000), [0u8; 36])
+                    .unwrap();
+            }
+            let (unauth, _) = builder.build::<i64>(&mut rng).unwrap().unwrap();
+            let sighash: [u8; 32] = unauth.commitment().into();
+            let proven = unauth.create_proof(&pk, &mut rng).unwrap();
+            (proven.apply_signatures(rng, sighash, &[]).unwrap(), sighash)
+        };
+
+        let k = 30u32;
+        eprintln!("\n=== Halo 2 proof verification vs action count ===");
+        for n in [1usize, 2, 4, 8, 16] {
+            let (bundle, _) = build(n);
+            let instances: Vec<_> = bundle
+                .actions()
+                .iter()
+                .map(|a| a.to_instance(*bundle.flags(), *bundle.anchor()))
+                .collect();
+            let _ = bundle.authorization().proof().verify(vk, &instances); // warm
+            let start = Instant::now();
+            for _ in 0..k {
+                let _ = bundle.authorization().proof().verify(vk, &instances);
+            }
+            eprintln!(
+                "  actions={:2}  proof_verify = {:>7} us",
+                n,
+                start.elapsed().as_micros() / k as u128
+            );
+        }
+
+        // Per-action spend-auth sig and per-bundle binding sig (≈ constant each).
+        let (bundle, sighash) = build(1);
+        let action = &bundle.actions()[0];
+        let (rk, sig) = (action.rk(), action.authorization());
+        let start = Instant::now();
+        for _ in 0..k {
+            let _ = rk.verify(&sighash, sig);
+        }
+        eprintln!(
+            "  spend_auth_sig (per action) = {} us",
+            start.elapsed().as_micros() / k as u128
+        );
+        let bvk = bundle.binding_validating_key();
+        let bsig = bundle.authorization().binding_signature();
+        let start = Instant::now();
+        for _ in 0..k {
+            let _ = bvk.verify(&sighash, bsig);
+        }
+        eprintln!(
+            "  binding_sig (per bundle) = {} us",
+            start.elapsed().as_micros() / k as u128
+        );
     }
 }

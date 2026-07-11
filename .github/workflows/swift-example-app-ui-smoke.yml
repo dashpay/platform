@@ -1,0 +1,190 @@
+name: Swift Example App UI Smoke
+
+'on':
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  wallet-flow:
+    name: Wallet flow XCUITest
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          clean: true
+
+      - name: Reset checked-out worktree
+        run: |
+          git reset --hard HEAD
+
+      - name: Show Xcode and Swift versions
+        run: |
+          xcodebuild -version
+          swift --version
+
+      - name: Set up Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-registry-
+
+      - name: Add iOS simulator Rust target
+        run: |
+          rustup target add aarch64-apple-ios-sim
+
+      - name: Install cbindgen
+        run: |
+          brew install cbindgen || true
+
+      - name: Restore cached Protobuf
+        id: cache-protoc
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.local/protoc-32.0/bin
+            ~/.local/protoc-32.0/include
+          key: protoc/32.0/${{ runner.os }}/universal
+          restore-keys: |
+            protoc/32.0/${{ runner.os }}/
+
+      - name: Install Protobuf if cache miss
+        if: steps.cache-protoc.outputs.cache-hit != 'true'
+        run: |
+          set -euxo pipefail
+          VERSION=32.0
+          OS=osx-universal_binary
+          PROTOC_DIR="$HOME/.local/protoc-${VERSION}"
+          mkdir -p "$PROTOC_DIR"
+          curl -fsSL -o /tmp/protoc.zip \
+            "https://github.com/protocolbuffers/protobuf/releases/download/v${VERSION}/protoc-${VERSION}-${OS}.zip"
+          unzip -o /tmp/protoc.zip -d "$PROTOC_DIR"
+
+      - name: Verify protoc and export env
+        run: |
+          set -euxo pipefail
+          echo "$HOME/.local/protoc-32.0/bin" >> "$GITHUB_PATH"
+          echo "PROTOC=$HOME/.local/protoc-32.0/bin/protoc" >> "$GITHUB_ENV"
+          "$HOME/.local/protoc-32.0/bin/protoc" --version
+
+      - name: Clean Xcode derived data and Swift package caches
+        run: |
+          rm -rf ~/Library/Developer/Xcode/DerivedData/* || true
+          rm -rf packages/swift-sdk/.build || true
+          rm -rf packages/swift-sdk/SwiftExampleApp/.build || true
+
+      - name: Build simulator DashSDKFFI.xcframework
+        run: |
+          bash packages/swift-sdk/build_ios.sh --target sim --profile dev
+
+      - name: Create disposable iOS simulator
+        id: simulator
+        env:
+          SIM_NAME: SwiftExampleApp-UI-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          ruby <<'RUBY'
+          require "json"
+          require "open3"
+          require "rubygems"
+
+          def simctl_json(*args)
+            stdout, stderr, status = Open3.capture3("xcrun", "simctl", "list", *args, "--json")
+            abort stderr unless status.success?
+            JSON.parse(stdout)
+          end
+
+          device_types = simctl_json("devicetypes").fetch("devicetypes")
+          runtimes = simctl_json("runtimes").fetch("runtimes")
+
+          runtime = runtimes
+            .select { |item| item["platform"] == "iOS" && item["isAvailable"] }
+            .max_by { |item| Gem::Version.new(item.fetch("version", "0")) }
+          abort "No available iOS simulator runtime found" unless runtime
+
+          preferred_names = ["iPhone 16", "iPhone 16e"]
+          supported_ids = runtime.fetch("supportedDeviceTypes", []).map { |item| item["identifier"] }
+          candidates = device_types.select do |item|
+            supported_ids.empty? || supported_ids.include?(item["identifier"])
+          end
+          device = preferred_names
+            .map { |name| candidates.find { |item| item["name"] == name } }
+            .compact
+            .first
+          device ||= candidates.find { |item| item["name"].start_with?("iPhone") && !item["name"].include?("SE") }
+          device ||= candidates.find { |item| item["name"].start_with?("iPhone") }
+          abort "No compatible iPhone simulator device type found for runtime #{runtime.fetch("name")}" unless device
+
+          name = ENV.fetch("SIM_NAME")
+          stdout, stderr, status = Open3.capture3(
+            "xcrun",
+            "simctl",
+            "create",
+            name,
+            device.fetch("identifier"),
+            runtime.fetch("identifier")
+          )
+          abort stderr unless status.success?
+
+          udid = stdout.strip
+          File.open(ENV.fetch("GITHUB_OUTPUT"), "a") do |file|
+            file.puts "udid=#{udid}"
+            file.puts "name=#{name}"
+            file.puts "device=#{device.fetch("name")}"
+            file.puts "runtime=#{runtime.fetch("name")}"
+          end
+
+          puts "Created #{name} (#{udid}) using #{device.fetch("name")} on #{runtime.fetch("name")}"
+          RUBY
+
+      - name: Boot disposable simulator
+        env:
+          SIM_UDID: ${{ steps.simulator.outputs.udid }}
+        run: |
+          set -euo pipefail
+          xcrun simctl boot "$SIM_UDID"
+          xcrun simctl bootstatus "$SIM_UDID" -b
+
+      - name: Run wallet flow XCUITest
+        working-directory: packages/swift-sdk
+        env:
+          SIM_UDID: ${{ steps.simulator.outputs.udid }}
+          RESULT_BUNDLE_PATH: ${{ runner.temp }}/SwiftExampleAppUITests.xcresult
+        run: |
+          set -euo pipefail
+          xcodebuild test \
+            -project SwiftExampleApp/SwiftExampleApp.xcodeproj \
+            -scheme SwiftExampleApp \
+            -destination "platform=iOS Simulator,id=$SIM_UDID" \
+            -only-testing:SwiftExampleAppUITests/SwiftExampleAppUITests/testCreateGeneratedWalletFlow \
+            -parallel-testing-enabled NO \
+            -maximum-concurrent-test-simulator-destinations 1 \
+            -resultBundlePath "$RESULT_BUNDLE_PATH"
+
+      - name: Upload XCUITest result bundle
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: SwiftExampleAppUITests-xcresult
+          path: ${{ runner.temp }}/SwiftExampleAppUITests.xcresult
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Delete disposable simulator
+        if: always() && steps.simulator.outputs.udid != ''
+        env:
+          SIM_UDID: ${{ steps.simulator.outputs.udid }}
+        run: |
+          xcrun simctl shutdown "$SIM_UDID" || true
+          xcrun simctl delete "$SIM_UDID" || true

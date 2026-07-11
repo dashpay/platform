@@ -35,25 +35,27 @@ public enum KeyManagerError: LocalizedError, Sendable {
 /// Centralized key management for Dash Platform identities.
 ///
 /// This class provides a unified interface for:
-/// - Finding keys by purpose (transfer, authentication, etc.)
-/// - Retrieving private keys from secure storage
-/// - Creating signers for SDK operations
-/// - Validating keys
+/// - Finding public keys by purpose (transfer, authentication, etc.)
+/// - Validating that private material exists for a given key
+/// - Inspecting / retrieving private keys for diagnostic UIs
 ///
-/// Example usage:
+/// **Signing happens via `KeychainSigner`, not here.** All callers
+/// that need to sign a state transition should construct a
+/// `KeychainSigner(modelContainer:)` and pass `signer.handle` to the
+/// SDK call — the trampoline pulls private bytes out of Keychain
+/// only at sign time and zeroes them immediately. This module's
+/// `findSigningKey` helper picks the public key to use as `keyId:`
+/// without extracting bytes up-front.
+///
+/// Example:
 /// ```swift
-/// let keyManager = KeyManager(keychainManager: KeychainManager.shared)
-///
-/// // Get transfer key for an identity
-/// if let transferKey = try keyManager.getTransferKey(for: identity) {
-///     // Create signer for transfer operation
-///     let signer = try keyManager.createSigner(
-///         for: identity,
-///         keyIndex: transferKey.id
-///     )
-///     defer { keyManager.destroySigner(signer) }
-///     // Use signer...
-/// }
+/// let key = keyManager.findSigningKey(
+///     for: identity,
+///     purpose: .transfer
+/// )!
+/// let signer = KeychainSigner(modelContainer: container)
+/// try await sdk.someOp(..., keyId: key.id, signer: signer.handle)
+/// _ = signer  // keepalive — see KeychainSigner lifetime contract
 /// ```
 public final class KeyManager: Sendable {
 
@@ -200,47 +202,119 @@ public final class KeyManager: Sendable {
     return keychainManager.hasPrivateKey(identityId: identity.id, keyIndex: Int32(keyIndex))
   }
 
-  /// Find a key with available private key that meets requirements
-  /// - Parameters:
-  ///   - identity: The identity to find a key for
-  ///   - purpose: Optional key purpose requirement
-  ///   - minimumSecurityLevel: Optional minimum security level requirement
-  ///   - preferCritical: Whether to prefer critical keys (default: true)
-  /// - Returns: A key with available private key meeting the requirements, nil otherwise
-  /// - Note: This method must be called from a MainActor context
+  /// Pick a public key on `identity` that has signable private
+  /// material on the device, WITHOUT extracting the private-key
+  /// bytes. Companion to `findKeyWithPrivateKey` for callers that
+  /// only need the `keyId` (because the actual signing happens via
+  /// `KeychainSigner`'s callback, not via raw bytes pulled out
+  /// here). Same candidate ranking + same dual-scheme keychain
+  /// presence check, just discarding the bytes once they're
+  /// confirmed to exist.
+  ///
+  /// Returns `nil` when no candidate has private material the
+  /// signer trampoline could later resolve. Surface that as a
+  /// "no suitable key found" error at the call site so the user
+  /// gets the same shape of feedback the legacy bytes-out path
+  /// produced.
+  ///
+  /// TODO(KeychainSigner v2): once every signer call site has
+  /// migrated off the bytes-out path, replace the second
+  /// `retrieveIdentityPrivateKey` call with a non-extracting
+  /// existence check so the bytes never enter Swift memory at
+  /// all during selection.
   @MainActor
-  public func findKeyWithPrivateKey(
+  public func findSigningKey(
     for identity: DPPIdentity,
     purpose: KeyPurpose? = nil,
     minimumSecurityLevel: SecurityLevel? = nil,
     preferCritical: Bool = true
-  ) -> (key: IdentityPublicKey, privateKey: Data)? {
-    // First find suitable keys
-    guard let suitableKey = findKey(
+  ) -> IdentityPublicKey? {
+    let candidates = rankKeys(
       for: identity,
       purpose: purpose,
       minimumSecurityLevel: minimumSecurityLevel,
       preferCritical: preferCritical
-    ) else {
-      return nil
+    )
+    for candidate in candidates {
+      if (try? getPrivateKey(for: identity, keyIndex: candidate.id)) != nil {
+        return candidate
+      }
+      let publicKeyHex = candidate.data.toHexString()
+      if keychainManager.retrieveIdentityPrivateKey(publicKeyHex: publicKeyHex) != nil {
+        return candidate
+      }
     }
+    return nil
+  }
 
-    // Check if private key is available
-    guard let privateKeyData = try? getPrivateKey(for: identity, keyIndex: suitableKey.id) else {
-      return nil
+  /// Return every key on `identity` matching the same filters as
+  /// `findKey`, ordered the way `findKey` would prefer one — critical
+  /// keys first when `preferCritical`, then everything else, with
+  /// disabled keys filtered out. Used by `findKeyWithPrivateKey` so
+  /// it can iterate through candidates instead of bailing on the
+  /// first one whose private material isn't on the device.
+  private func rankKeys(
+    for identity: DPPIdentity,
+    purpose: KeyPurpose?,
+    minimumSecurityLevel: SecurityLevel?,
+    preferCritical: Bool
+  ) -> [IdentityPublicKey] {
+    let active = identity.publicKeys.values.filter { !$0.isDisabled }
+    let byPurpose = purpose != nil
+      ? active.filter { $0.purpose == purpose }
+      : Array(active)
+    let bySecurity: [IdentityPublicKey]
+    if let min = minimumSecurityLevel {
+      // SecurityLevel raw values: 0=MASTER, 1=CRITICAL, 2=HIGH,
+      // 3=MEDIUM. Lower == stricter, so "minimum X or higher" maps
+      // to `rawValue <= X`.
+      bySecurity = byPurpose.filter { $0.securityLevel.rawValue <= min.rawValue }
+    } else {
+      bySecurity = byPurpose
     }
+    if preferCritical {
+      let critical = bySecurity.filter { $0.securityLevel == .critical }
+      let rest = bySecurity.filter { $0.securityLevel != .critical }
+      return critical + rest
+    }
+    return bySecurity
+  }
 
-    return (suitableKey, privateKeyData)
+  /// Public ranking entry point. Returns the same purpose/security-ordered
+  /// candidate list `findSigningKey` walks, but WITHOUT any private-material
+  /// availability check — pure key-selection *policy*. Callers that want to
+  /// delegate the availability decision to a specific signer (rather than to
+  /// `KeychainManager.shared`) rank candidates here and then ask that signer
+  /// directly. This is a read-only filter over `identity.publicKeys`; it does
+  /// not touch the Keychain, so it stays out of the `@MainActor` Keychain path.
+  public func rankSigningCandidates(
+    for identity: DPPIdentity,
+    purpose: KeyPurpose? = nil,
+    minimumSecurityLevel: SecurityLevel? = nil,
+    preferCritical: Bool = true
+  ) -> [IdentityPublicKey] {
+    rankKeys(
+      for: identity,
+      purpose: purpose,
+      minimumSecurityLevel: minimumSecurityLevel,
+      preferCritical: preferCritical
+    )
   }
 
   // MARK: - Signer Creation
 
   /// Create a signer from private key data
-  /// - Parameter privateKeyData: The private key data (32 bytes)
+  /// - Parameters:
+  ///   - privateKeyData: The private key data (32 bytes)
+  ///   - network: The network to associate with the key (affects WIF / address
+  ///     derivation only; does not affect signing). Defaults to testnet.
   /// - Returns: An OpaquePointer to the signer handle
   /// - Throws: `KeyManagerError.signerCreationFailed` if signer creation fails
   /// - Note: The returned signer must be destroyed with `destroySigner(_:)` when done
-  public func createSigner(from privateKeyData: Data) throws -> OpaquePointer {
+  public func createSigner(
+    from privateKeyData: Data,
+    network: Network = .testnet
+  ) throws -> OpaquePointer {
     // Validate private key length
     guard privateKeyData.count == 32 else {
       throw KeyManagerError.invalidKeyFormat("Private key must be 32 bytes, got \(privateKeyData.count)")
@@ -249,7 +323,8 @@ public final class KeyManager: Sendable {
     let signerResult = privateKeyData.withUnsafeBytes { keyBytes in
       dash_sdk_signer_create_from_private_key(
         keyBytes.bindMemory(to: UInt8.self).baseAddress!,
-        UInt(privateKeyData.count)
+        UInt(privateKeyData.count),
+        network.ffiValue
       )
     }
 
@@ -270,90 +345,10 @@ public final class KeyManager: Sendable {
   /// Create a signer for a specific key in an identity
   /// - Parameters:
   ///   - identity: The identity
-  ///   - keyIndex: The key index to create a signer for
-  /// - Returns: An OpaquePointer to the signer handle
-  /// - Throws: `KeyManagerError.privateKeyNotFound` if private key is not available
-  /// - Throws: `KeyManagerError.signerCreationFailed` if signer creation fails
-  /// - Note: The returned signer must be destroyed with `destroySigner(_:)` when done
-  /// - Note: This method must be called from a MainActor context
-  @MainActor
-  public func createSigner(for identity: DPPIdentity, keyIndex: KeyID) throws -> OpaquePointer {
-    let privateKeyData = try getPrivateKey(for: identity, keyIndex: keyIndex)
-    return try createSigner(from: privateKeyData)
-  }
-
-  /// Create a transfer signer for an identity (convenience method)
-  /// - Parameter identity: The identity to create a transfer signer for
-  /// - Returns: A tuple containing the transfer key and signer handle
-  /// - Throws: `KeyManagerError.noSuitableKey` if no transfer key with private key is found
-  /// - Throws: `KeyManagerError.signerCreationFailed` if signer creation fails
-  /// - Note: The returned signer must be destroyed with `destroySigner(_:)` when done
-  /// - Note: This method must be called from a MainActor context
-  @MainActor
-  public func createTransferSigner(for identity: DPPIdentity) throws -> (key: IdentityPublicKey, signer: OpaquePointer) {
-    guard let transferKey = getTransferKey(for: identity) else {
-      throw KeyManagerError.noSuitableKey("No transfer key found for identity")
-    }
-
-    let signer = try createSigner(for: identity, keyIndex: transferKey.id)
-    return (transferKey, signer)
-  }
-
-  /// Create an authentication signer for an identity (convenience method)
-  /// - Parameter identity: The identity to create an authentication signer for
-  /// - Returns: A tuple containing the authentication key and signer handle
-  /// - Throws: `KeyManagerError.noSuitableKey` if no authentication key with private key is found
-  /// - Throws: `KeyManagerError.signerCreationFailed` if signer creation fails
-  /// - Note: The returned signer must be destroyed with `destroySigner(_:)` when done
-  /// - Note: This method must be called from a MainActor context
-  @MainActor
-  public func createAuthenticationSigner(for identity: DPPIdentity) throws -> (key: IdentityPublicKey, signer: OpaquePointer) {
-    guard let authKey = getAuthenticationKey(for: identity) else {
-      throw KeyManagerError.noSuitableKey("No authentication key found for identity")
-    }
-
-    let signer = try createSigner(for: identity, keyIndex: authKey.id)
-    return (authKey, signer)
-  }
-
-  /// Create a signer for a key that meets specific requirements
-  /// - Parameters:
-  ///   - identity: The identity to create a signer for
-  ///   - purpose: Optional key purpose requirement
-  ///   - minimumSecurityLevel: Optional minimum security level requirement
-  ///   - preferCritical: Whether to prefer critical keys (default: true)
-  /// - Returns: A tuple containing the selected key and signer handle
-  /// - Throws: `KeyManagerError.noSuitableKey` if no suitable key with private key is found
-  /// - Throws: `KeyManagerError.signerCreationFailed` if signer creation fails
-  /// - Note: The returned signer must be destroyed with `destroySigner(_:)` when done
-  /// - Note: This method must be called from a MainActor context
-  @MainActor
-  public func createSignerForKey(
-    for identity: DPPIdentity,
-    purpose: KeyPurpose? = nil,
-    minimumSecurityLevel: SecurityLevel? = nil,
-    preferCritical: Bool = true
-  ) throws -> (key: IdentityPublicKey, signer: OpaquePointer) {
-    guard let (key, privateKey) = findKeyWithPrivateKey(
-      for: identity,
-      purpose: purpose,
-      minimumSecurityLevel: minimumSecurityLevel,
-      preferCritical: preferCritical
-    ) else {
-      let purposeDesc = purpose != nil ? " with purpose \(purpose!.name)" : ""
-      let securityDesc = minimumSecurityLevel != nil ? " with security level \(minimumSecurityLevel!.name) or higher" : ""
-      throw KeyManagerError.noSuitableKey("No suitable key\(purposeDesc)\(securityDesc) with available private key found")
-    }
-
-    let signer = try createSigner(from: privateKey)
-    return (key, signer)
-  }
-
   /// Destroy a signer handle
   /// - Parameter signer: The signer handle to destroy
   public func destroySigner(_ signer: OpaquePointer) {
-    let signerPtr = UnsafeMutablePointer<SignerHandle>(signer)
-    dash_sdk_signer_destroy(signerPtr)
+    dash_sdk_signer_destroy(signer)
   }
 
   // MARK: - Key Validation
@@ -362,12 +357,12 @@ public final class KeyManager: Sendable {
   /// - Parameters:
   ///   - privateKeyData: The private key data
   ///   - publicKey: The public key to validate against
-  ///   - isTestnet: Whether this is for testnet (default: true)
+  ///   - network: Which network the keys belong to (default: testnet)
   /// - Returns: True if the private key matches the public key
   public func validatePrivateKey(
     _ privateKeyData: Data,
     matches publicKey: IdentityPublicKey,
-    isTestnet: Bool = true
+    network: Network = .testnet
   ) -> Bool {
     let privateKeyHex = privateKeyData.toHexString()
     let publicKeyHex = publicKey.data.toHexString()
@@ -376,7 +371,7 @@ public final class KeyManager: Sendable {
       privateKeyHex: privateKeyHex,
       publicKeyHex: publicKeyHex,
       keyType: publicKey.keyType,
-      isTestnet: isTestnet
+      network: network
     )
   }
 
@@ -388,72 +383,3 @@ public final class KeyManager: Sendable {
   }
 }
 
-// MARK: - Convenience Extensions
-
-extension KeyManager {
-  /// Find a key suitable for document operations (requires AUTHENTICATION purpose)
-  /// - Parameters:
-  ///   - identity: The identity to find a key for
-  ///   - minimumSecurityLevel: The minimum security level required (default: .high)
-  /// - Returns: A key suitable for document operations if found, nil otherwise
-  public func findDocumentSigningKey(
-    for identity: DPPIdentity,
-    minimumSecurityLevel: SecurityLevel = .high
-  ) -> IdentityPublicKey? {
-    return findKey(
-      for: identity,
-      purpose: .authentication,
-      minimumSecurityLevel: minimumSecurityLevel,
-      preferCritical: true
-    )
-  }
-
-  /// Find a key suitable for contract operations (requires CRITICAL + AUTHENTICATION)
-  /// - Parameter identity: The identity to find a key for
-  /// - Returns: A key suitable for contract operations if found, nil otherwise
-  public func findContractSigningKey(for identity: DPPIdentity) -> IdentityPublicKey? {
-    return findKey(
-      for: identity,
-      purpose: .authentication,
-      minimumSecurityLevel: .critical,
-      preferCritical: true
-    )
-  }
-
-  /// Create a signer for document operations
-  /// - Parameters:
-  ///   - identity: The identity to create a signer for
-  ///   - minimumSecurityLevel: The minimum security level required (default: .high)
-  /// - Returns: A tuple containing the selected key and signer handle
-  /// - Throws: `KeyManagerError.noSuitableKey` if no suitable key with private key is found
-  /// - Note: The returned signer must be destroyed with `destroySigner(_:)` when done
-  /// - Note: This method must be called from a MainActor context
-  @MainActor
-  public func createDocumentSigner(
-    for identity: DPPIdentity,
-    minimumSecurityLevel: SecurityLevel = .high
-  ) throws -> (key: IdentityPublicKey, signer: OpaquePointer) {
-    return try createSignerForKey(
-      for: identity,
-      purpose: .authentication,
-      minimumSecurityLevel: minimumSecurityLevel,
-      preferCritical: true
-    )
-  }
-
-  /// Create a signer for contract operations (requires CRITICAL + AUTHENTICATION)
-  /// - Parameter identity: The identity to create a signer for
-  /// - Returns: A tuple containing the selected key and signer handle
-  /// - Throws: `KeyManagerError.noSuitableKey` if no suitable key with private key is found
-  /// - Note: The returned signer must be destroyed with `destroySigner(_:)` when done
-  /// - Note: This method must be called from a MainActor context
-  @MainActor
-  public func createContractSigner(for identity: DPPIdentity) throws -> (key: IdentityPublicKey, signer: OpaquePointer) {
-    return try createSignerForKey(
-      for: identity,
-      purpose: .authentication,
-      minimumSecurityLevel: .critical,
-      preferCritical: true
-    )
-  }
-}

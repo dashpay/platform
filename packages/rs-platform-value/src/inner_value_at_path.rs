@@ -486,5 +486,360 @@ mod tests {
             assert_eq!(field_name, "array");
             assert_eq!(index, None);
         }
+
+        #[test]
+        fn test_underscore_field_name() {
+            let result = is_array_path("my_field[5]").unwrap();
+            assert!(result.is_some());
+            let (field_name, index) = result.unwrap();
+            assert_eq!(field_name, "my_field");
+            assert_eq!(index, Some(5));
+        }
+
+        #[test]
+        fn test_zero_index() {
+            let result = is_array_path("field[0]").unwrap();
+            assert!(result.is_some());
+            let (field_name, index) = result.unwrap();
+            assert_eq!(field_name, "field");
+            assert_eq!(index, Some(0));
+        }
+
+        #[test]
+        fn test_only_brackets_no_field() {
+            // "[]" has empty field name before bracket
+            let result = is_array_path("[]").unwrap();
+            assert!(result.is_none());
+        }
+
+        #[test]
+        fn test_dot_in_field_name() {
+            // dot is not alphanumeric or underscore, so returns None
+            let result = is_array_path("a.b[0]").unwrap();
+            assert!(result.is_none());
+        }
+
+        #[test]
+        fn test_nested_brackets_returns_none() {
+            // rfind('[') finds the last '[' at position 4, field name becomes "a[1]"
+            // which contains non-alphanumeric/underscore chars, so returns None
+            let result = is_array_path("a[1][2]").unwrap();
+            assert!(result.is_none());
+        }
+
+        #[test]
+        fn test_large_index() {
+            let result = is_array_path("items[999999]").unwrap();
+            assert!(result.is_some());
+            let (field_name, index) = result.unwrap();
+            assert_eq!(field_name, "items");
+            assert_eq!(index, Some(999999));
+        }
+    }
+
+    // ---------------------------------------------------------------
+    // remove_value_at_path
+    // ---------------------------------------------------------------
+
+    mod remove_value_at_path {
+        use super::*;
+
+        #[test]
+        fn remove_top_level_key() {
+            let mut doc = platform_value!({
+                "a": 1,
+                "b": 2
+            });
+            let removed = doc.remove_value_at_path("a").unwrap();
+            assert_eq!(removed, platform_value!(1));
+            assert!(doc.get_optional_value_at_path("a").unwrap().is_none());
+        }
+
+        #[test]
+        fn remove_nested_key() {
+            let mut doc = platform_value!({
+                "root": {
+                    "child": {
+                        "leaf": "value"
+                    }
+                }
+            });
+            let removed = doc.remove_value_at_path("root.child.leaf").unwrap();
+            assert_eq!(removed, platform_value!("value"));
+        }
+
+        #[test]
+        fn remove_missing_intermediate_key_errors() {
+            let mut doc = platform_value!({
+                "a": 1
+            });
+            let result = doc.remove_value_at_path("nonexistent.child");
+            assert!(result.is_err());
+        }
+
+        #[test]
+        fn remove_missing_leaf_key_errors() {
+            let mut doc = platform_value!({
+                "a": { "b": 1 }
+            });
+            let result = doc.remove_value_at_path("a.nonexistent");
+            assert!(result.is_err());
+        }
+    }
+
+    // ---------------------------------------------------------------
+    // remove_optional_value_at_path
+    // ---------------------------------------------------------------
+
+    mod remove_optional_value_at_path {
+        use super::*;
+
+        #[test]
+        fn remove_existing_key_returns_some() {
+            let mut doc = platform_value!({
+                "x": { "y": 42 }
+            });
+            let result = doc.remove_optional_value_at_path("x.y").unwrap();
+            assert_eq!(result, Some(platform_value!(42)));
+        }
+
+        #[test]
+        fn remove_missing_intermediate_returns_none() {
+            let mut doc = platform_value!({
+                "a": 1
+            });
+            let result = doc
+                .remove_optional_value_at_path("nonexistent.child")
+                .unwrap();
+            assert_eq!(result, None);
+        }
+
+        #[test]
+        fn remove_missing_leaf_returns_none() {
+            let mut doc = platform_value!({
+                "a": { "b": 1 }
+            });
+            let result = doc.remove_optional_value_at_path("a.nonexistent").unwrap();
+            assert_eq!(result, None);
+        }
+    }
+
+    // ---------------------------------------------------------------
+    // set_value_at_full_path
+    // ---------------------------------------------------------------
+
+    mod set_value_at_full_path {
+        use super::*;
+
+        #[test]
+        fn set_creates_nested_structures() {
+            let mut doc = platform_value!({});
+            doc.set_value_at_full_path("a.b.c", platform_value!("deep"))
+                .unwrap();
+            assert_eq!(
+                doc.get_value_at_path("a.b.c").unwrap(),
+                &platform_value!("deep")
+            );
+        }
+
+        #[test]
+        fn set_overwrites_existing_key() {
+            let mut doc = platform_value!({
+                "a": { "b": 1 }
+            });
+            doc.set_value_at_full_path("a.b", platform_value!(99))
+                .unwrap();
+            assert_eq!(doc.get_value_at_path("a.b").unwrap(), &platform_value!(99));
+        }
+
+        #[test]
+        fn set_with_array_index() {
+            let mut doc = platform_value!({
+                "root": {}
+            });
+            doc.set_value_at_full_path("root.items[0].name", platform_value!("first"))
+                .unwrap();
+            assert_eq!(
+                doc.get_value_at_path("root.items[0].name").unwrap(),
+                &platform_value!("first")
+            );
+        }
+
+        #[test]
+        fn set_single_key() {
+            let mut doc = platform_value!({});
+            doc.set_value_at_full_path("key", platform_value!(1))
+                .unwrap();
+            assert_eq!(doc.get_value_at_path("key").unwrap(), &platform_value!(1));
+        }
+    }
+
+    // ---------------------------------------------------------------
+    // get_value_at_path
+    // ---------------------------------------------------------------
+
+    mod get_value_at_path {
+        use super::*;
+
+        #[test]
+        fn get_nested_value() {
+            let doc = platform_value!({
+                "a": { "b": { "c": 42 } }
+            });
+            assert_eq!(
+                doc.get_value_at_path("a.b.c").unwrap(),
+                &platform_value!(42)
+            );
+        }
+
+        #[test]
+        fn get_missing_key_errors() {
+            let doc = platform_value!({
+                "a": 1
+            });
+            assert!(doc.get_value_at_path("nonexistent").is_err());
+        }
+
+        #[test]
+        fn get_array_element() {
+            let doc = platform_value!({
+                "arr": [10, 20, 30]
+            });
+            assert_eq!(
+                doc.get_value_at_path("arr[1]").unwrap(),
+                &platform_value!(20)
+            );
+        }
+
+        #[test]
+        fn get_array_out_of_bounds_errors() {
+            let doc = platform_value!({
+                "arr": [10]
+            });
+            assert!(doc.get_value_at_path("arr[5]").is_err());
+        }
+    }
+
+    // ---------------------------------------------------------------
+    // get_optional_value_at_path
+    // ---------------------------------------------------------------
+
+    mod get_optional_value_at_path {
+        use super::*;
+
+        #[test]
+        fn get_existing_returns_some() {
+            let doc = platform_value!({
+                "a": { "b": 1 }
+            });
+            let result = doc.get_optional_value_at_path("a.b").unwrap();
+            assert_eq!(result, Some(&platform_value!(1)));
+        }
+
+        #[test]
+        fn get_missing_returns_none() {
+            let doc = platform_value!({
+                "a": 1
+            });
+            let result = doc.get_optional_value_at_path("missing").unwrap();
+            assert_eq!(result, None);
+        }
+
+        #[test]
+        fn get_missing_nested_returns_none() {
+            let doc = platform_value!({
+                "a": { "b": 1 }
+            });
+            let result = doc.get_optional_value_at_path("a.nonexistent").unwrap();
+            assert_eq!(result, None);
+        }
+
+        #[test]
+        fn get_array_element_returns_some() {
+            let doc = platform_value!({
+                "arr": [10, 20]
+            });
+            let result = doc.get_optional_value_at_path("arr[0]").unwrap();
+            assert_eq!(result, Some(&platform_value!(10)));
+        }
+
+        #[test]
+        fn get_array_out_of_bounds_returns_none() {
+            let doc = platform_value!({
+                "arr": [10]
+            });
+            let result = doc.get_optional_value_at_path("arr[99]").unwrap();
+            assert_eq!(result, None);
+        }
+    }
+
+    // ---------------------------------------------------------------
+    // set_value_at_path (set key within existing path)
+    // ---------------------------------------------------------------
+
+    mod set_value_at_path {
+        use super::*;
+
+        #[test]
+        fn set_key_at_existing_path() {
+            let mut doc = platform_value!({
+                "root": {
+                    "inner": {}
+                }
+            });
+            doc.set_value_at_path("root.inner", "new_key", platform_value!("new_value"))
+                .unwrap();
+            assert_eq!(
+                doc.get_value_at_path("root.inner.new_key").unwrap(),
+                &platform_value!("new_value")
+            );
+        }
+
+        #[test]
+        fn set_key_at_nonexistent_path_errors() {
+            let mut doc = platform_value!({
+                "a": 1
+            });
+            let result = doc.set_value_at_path("nonexistent", "key", platform_value!(1));
+            assert!(result.is_err());
+        }
+    }
+
+    // ---------------------------------------------------------------
+    // remove_values_matching_path with arrays
+    // ---------------------------------------------------------------
+
+    mod remove_values_matching_path {
+        use super::*;
+
+        #[test]
+        fn remove_top_level_key() {
+            let mut doc = platform_value!({
+                "a": 1,
+                "b": 2
+            });
+            let removed = doc.remove_values_matching_path("a").unwrap();
+            assert_eq!(removed, vec![platform_value!(1)]);
+        }
+
+        #[test]
+        fn remove_nested_key() {
+            let mut doc = platform_value!({
+                "root": {
+                    "child": 42
+                }
+            });
+            let removed = doc.remove_values_matching_path("root.child").unwrap();
+            assert_eq!(removed, vec![platform_value!(42)]);
+        }
+
+        #[test]
+        fn remove_from_null_value_returns_empty() {
+            let mut doc = platform_value!({
+                "a": null
+            });
+            let removed = doc.remove_values_matching_path("a.child").unwrap();
+            assert!(removed.is_empty());
+        }
     }
 }

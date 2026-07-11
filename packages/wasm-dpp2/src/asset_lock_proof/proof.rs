@@ -11,28 +11,30 @@ use crate::identifier::IdentifierWasm;
 use crate::impl_try_from_js_value;
 use crate::impl_try_from_options;
 use crate::impl_wasm_type_info;
-use crate::utils::{IntoWasm, get_class_type, try_from_options};
+use crate::utils::{IntoWasm, get_class_type};
 use dpp::prelude::AssetLockProof;
-use js_sys::Reflect;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(typescript_custom_section)]
 const TS_TYPES: &str = r#"
 /**
  * AssetLockProof serialized as a plain object.
- * Type 0 = Instant, Type 1 = Chain.
+ *
+ * Internally-tagged discriminated union — `$type` discriminates the variant and
+ * the variant's fields sit alongside it. Mirrors the rs-dpp serde shape (which
+ * uses `#[serde(tag = "$type")]` on the enum) and the convention used by
+ * `AddressWitness` / `AddressFundsFeeStrategyStep`.
  */
 export type AssetLockProofObject =
-    | ({ type: 0 } & InstantAssetLockProofObject)
-    | ({ type: 1 } & ChainAssetLockProofObject);
+    | ({ $type: "instant" } & InstantAssetLockProofObject)
+    | ({ $type: "chain" } & ChainAssetLockProofObject);
 
 /**
  * AssetLockProof serialized as JSON.
- * Type 0 = Instant, Type 1 = Chain.
  */
 export type AssetLockProofJSON =
-    | ({ type: 0 } & InstantAssetLockProofJSON)
-    | ({ type: 1 } & ChainAssetLockProofJSON);
+    | ({ $type: "instant" } & InstantAssetLockProofJSON)
+    | ({ $type: "chain" } & ChainAssetLockProofJSON);
 "#;
 
 #[wasm_bindgen]
@@ -69,7 +71,8 @@ impl From<AssetLockProofJSONJs> for ChainAssetLockProofJSONJs {
 }
 
 #[wasm_bindgen(js_name = "AssetLockProof")]
-#[derive(Clone)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
 pub struct AssetLockProofWasm(AssetLockProof);
 
 impl From<AssetLockProofWasm> for AssetLockProof {
@@ -162,19 +165,14 @@ impl AssetLockProofWasm {
         Ok(ChainAssetLockProofWasm::constructor(core_chain_locked_height, out_point)?.into())
     }
 
+    /// Returns the lock type as a lowercase wire-shape string ("instant" or
+    /// "chain") — matching the `$type` discriminator emitted by `toObject()` /
+    /// `toJSON()`.
     #[wasm_bindgen(getter = "lockType")]
-    pub fn lock_type(&self) -> AssetLockProofTypeWasm {
+    pub fn lock_type(&self) -> String {
         match self.0 {
-            AssetLockProof::Chain(_) => AssetLockProofTypeWasm::Chain,
-            AssetLockProof::Instant(_) => AssetLockProofTypeWasm::Instant,
-        }
-    }
-
-    #[wasm_bindgen(getter = "lockTypeName")]
-    pub fn lock_type_name(&self) -> String {
-        match self.0 {
-            AssetLockProof::Chain(_) => AssetLockProofTypeWasm::Chain.into(),
             AssetLockProof::Instant(_) => AssetLockProofTypeWasm::Instant.into(),
+            AssetLockProof::Chain(_) => AssetLockProofTypeWasm::Chain.into(),
         }
     }
 
@@ -198,86 +196,6 @@ impl AssetLockProofWasm {
         let identifier = self.0.create_identifier()?;
 
         Ok(identifier.into())
-    }
-
-    #[wasm_bindgen(js_name = "toObject")]
-    pub fn to_object(&self) -> WasmDppResult<AssetLockProofObjectJs> {
-        let inner_object: JsValue = match &self.0 {
-            AssetLockProof::Chain(chain) => ChainAssetLockProofWasm::from(chain.clone())
-                .to_object()?
-                .into(),
-            AssetLockProof::Instant(instant) => InstantAssetLockProofWasm::from(instant.clone())
-                .to_object()?
-                .into(),
-        };
-
-        // Add type field: 0 = Instant, 1 = Chain
-        let proof_type: u8 = match &self.0 {
-            AssetLockProof::Instant(_) => 0,
-            AssetLockProof::Chain(_) => 1,
-        };
-        Reflect::set(
-            &inner_object,
-            &JsValue::from_str("type"),
-            &JsValue::from(proof_type),
-        )
-        .map_err(|e| WasmDppError::serialization(format!("{:?}", e)))?;
-
-        Ok(inner_object.into())
-    }
-
-    #[wasm_bindgen(js_name = "fromObject")]
-    pub fn from_object(object: AssetLockProofObjectJs) -> WasmDppResult<AssetLockProofWasm> {
-        let proof_type: AssetLockProofTypeWasm = try_from_options(&object, "type")?;
-
-        match proof_type {
-            AssetLockProofTypeWasm::Instant => {
-                InstantAssetLockProofWasm::from_object(object.into()).map(AssetLockProofWasm::from)
-            }
-            AssetLockProofTypeWasm::Chain => {
-                ChainAssetLockProofWasm::from_object(object.into()).map(AssetLockProofWasm::from)
-            }
-        }
-    }
-
-    #[wasm_bindgen(js_name = "toJSON")]
-    pub fn to_json(&self) -> WasmDppResult<AssetLockProofJSONJs> {
-        let inner_json: JsValue = match &self.0 {
-            AssetLockProof::Chain(chain) => ChainAssetLockProofWasm::from(chain.clone())
-                .to_json()?
-                .into(),
-            AssetLockProof::Instant(instant) => InstantAssetLockProofWasm::from(instant.clone())
-                .to_json()?
-                .into(),
-        };
-
-        // Add type field: 0 = Instant, 1 = Chain
-        let proof_type: u8 = match &self.0 {
-            AssetLockProof::Instant(_) => 0,
-            AssetLockProof::Chain(_) => 1,
-        };
-        Reflect::set(
-            &inner_json,
-            &JsValue::from_str("type"),
-            &JsValue::from(proof_type),
-        )
-        .map_err(|e| WasmDppError::serialization(format!("{:?}", e)))?;
-
-        Ok(inner_json.into())
-    }
-
-    #[wasm_bindgen(js_name = "fromJSON")]
-    pub fn from_json(object: AssetLockProofJSONJs) -> WasmDppResult<AssetLockProofWasm> {
-        let proof_type: AssetLockProofTypeWasm = try_from_options(&object, "type")?;
-
-        match proof_type {
-            AssetLockProofTypeWasm::Instant => {
-                InstantAssetLockProofWasm::from_json(object.into()).map(AssetLockProofWasm::from)
-            }
-            AssetLockProofTypeWasm::Chain => {
-                ChainAssetLockProofWasm::from_json(object.into()).map(AssetLockProofWasm::from)
-            }
-        }
     }
 
     #[wasm_bindgen(js_name = "toHex")]
@@ -317,3 +235,10 @@ impl AssetLockProofWasm {
 impl_try_from_js_value!(AssetLockProofWasm, "AssetLockProof");
 impl_try_from_options!(AssetLockProofWasm);
 impl_wasm_type_info!(AssetLockProofWasm, AssetLockProof);
+crate::impl_wasm_conversions_inner!(
+    AssetLockProofWasm,
+    AssetLockProof,
+    AssetLockProof,
+    AssetLockProofObjectJs,
+    AssetLockProofJSONJs
+);

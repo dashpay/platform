@@ -36,12 +36,9 @@ CF_EXTERN_C_BEGIN
 @class BalanceAndNonce;
 @class BlockAddressBalanceChanges;
 @class BlockHeightCreditEntry;
-@class BlockNullifierChanges;
 @class CompactedAddressBalanceChange;
 @class CompactedAddressBalanceUpdateEntries;
 @class CompactedBlockAddressBalanceChanges;
-@class CompactedBlockNullifierChanges;
-@class CompactedNullifierUpdateEntries;
 @class GPBBytesValue;
 @class GPBUInt32Value;
 @class GetAddressInfoRequest_GetAddressInfoRequestV0;
@@ -90,9 +87,35 @@ CF_EXTERN_C_BEGIN
 @class GetDataContractsResponse_DataContractEntry;
 @class GetDataContractsResponse_DataContracts;
 @class GetDataContractsResponse_GetDataContractsResponseV0;
+@class GetDocumentHistoryRequest_GetDocumentHistoryRequestV0;
+@class GetDocumentHistoryResponse_GetDocumentHistoryResponseV0;
+@class GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_DocumentHistory;
+@class GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_DocumentHistoryEntry;
+@class GetDocumentsRequest_DocumentFieldValue;
+@class GetDocumentsRequest_DocumentFieldValue_ValueList;
 @class GetDocumentsRequest_GetDocumentsRequestV0;
+@class GetDocumentsRequest_GetDocumentsRequestV1;
+@class GetDocumentsRequest_GetDocumentsRequestV1_Select;
+@class GetDocumentsRequest_HavingAggregate;
+@class GetDocumentsRequest_HavingClause;
+@class GetDocumentsRequest_HavingRanking;
+@class GetDocumentsRequest_OrderClause;
+@class GetDocumentsRequest_WhereClause;
 @class GetDocumentsResponse_GetDocumentsResponseV0;
 @class GetDocumentsResponse_GetDocumentsResponseV0_Documents;
+@class GetDocumentsResponse_GetDocumentsResponseV1;
+@class GetDocumentsResponse_GetDocumentsResponseV1_AverageAggregate;
+@class GetDocumentsResponse_GetDocumentsResponseV1_AverageEntries;
+@class GetDocumentsResponse_GetDocumentsResponseV1_AverageEntry;
+@class GetDocumentsResponse_GetDocumentsResponseV1_AverageResults;
+@class GetDocumentsResponse_GetDocumentsResponseV1_CountEntries;
+@class GetDocumentsResponse_GetDocumentsResponseV1_CountEntry;
+@class GetDocumentsResponse_GetDocumentsResponseV1_CountResults;
+@class GetDocumentsResponse_GetDocumentsResponseV1_Documents;
+@class GetDocumentsResponse_GetDocumentsResponseV1_ResultData;
+@class GetDocumentsResponse_GetDocumentsResponseV1_SumEntries;
+@class GetDocumentsResponse_GetDocumentsResponseV1_SumEntry;
+@class GetDocumentsResponse_GetDocumentsResponseV1_SumResults;
 @class GetEpochsInfoRequest_GetEpochsInfoRequestV0;
 @class GetEpochsInfoResponse_GetEpochsInfoResponseV0;
 @class GetEpochsInfoResponse_GetEpochsInfoResponseV0_EpochInfo;
@@ -190,10 +213,8 @@ CF_EXTERN_C_BEGIN
 @class GetIdentityTokenInfosResponse_GetIdentityTokenInfosResponseV0_TokenIdentityInfoEntry;
 @class GetIdentityTokenInfosResponse_GetIdentityTokenInfosResponseV0_TokenInfoEntry;
 @class GetIdentityTokenInfosResponse_GetIdentityTokenInfosResponseV0_TokenInfos;
-@class GetNullifiersBranchStateRequest_GetNullifiersBranchStateRequestV0;
-@class GetNullifiersBranchStateResponse_GetNullifiersBranchStateResponseV0;
-@class GetNullifiersTrunkStateRequest_GetNullifiersTrunkStateRequestV0;
-@class GetNullifiersTrunkStateResponse_GetNullifiersTrunkStateResponseV0;
+@class GetMostRecentShieldedAnchorRequest_GetMostRecentShieldedAnchorRequestV0;
+@class GetMostRecentShieldedAnchorResponse_GetMostRecentShieldedAnchorResponseV0;
 @class GetPathElementsRequest_GetPathElementsRequestV0;
 @class GetPathElementsResponse_GetPathElementsResponseV0;
 @class GetPathElementsResponse_GetPathElementsResponseV0_Elements;
@@ -211,10 +232,6 @@ CF_EXTERN_C_BEGIN
 @class GetRecentAddressBalanceChangesResponse_GetRecentAddressBalanceChangesResponseV0;
 @class GetRecentCompactedAddressBalanceChangesRequest_GetRecentCompactedAddressBalanceChangesRequestV0;
 @class GetRecentCompactedAddressBalanceChangesResponse_GetRecentCompactedAddressBalanceChangesResponseV0;
-@class GetRecentCompactedNullifierChangesRequest_GetRecentCompactedNullifierChangesRequestV0;
-@class GetRecentCompactedNullifierChangesResponse_GetRecentCompactedNullifierChangesResponseV0;
-@class GetRecentNullifierChangesRequest_GetRecentNullifierChangesRequestV0;
-@class GetRecentNullifierChangesResponse_GetRecentNullifierChangesResponseV0;
 @class GetShieldedAnchorsRequest_GetShieldedAnchorsRequestV0;
 @class GetShieldedAnchorsResponse_GetShieldedAnchorsResponseV0;
 @class GetShieldedAnchorsResponse_GetShieldedAnchorsResponseV0_Anchors;
@@ -222,6 +239,8 @@ CF_EXTERN_C_BEGIN
 @class GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0;
 @class GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0_EncryptedNote;
 @class GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0_EncryptedNotes;
+@class GetShieldedNotesCountRequest_GetShieldedNotesCountRequestV0;
+@class GetShieldedNotesCountResponse_GetShieldedNotesCountResponseV0;
 @class GetShieldedNullifiersRequest_GetShieldedNullifiersRequestV0;
 @class GetShieldedNullifiersResponse_GetShieldedNullifiersResponseV0;
 @class GetShieldedNullifiersResponse_GetShieldedNullifiersResponseV0_NullifierStatus;
@@ -275,7 +294,6 @@ CF_EXTERN_C_BEGIN
 @class GetVotePollsByEndDateResponse_GetVotePollsByEndDateResponseV0_SerializedVotePollsByTimestamp;
 @class GetVotePollsByEndDateResponse_GetVotePollsByEndDateResponseV0_SerializedVotePollsByTimestamps;
 @class KeyRequestType;
-@class NullifierUpdateEntries;
 @class Proof;
 @class ResponseMetadata;
 @class SearchKey;
@@ -334,6 +352,157 @@ GPBEnumDescriptor *SecurityLevelMap_KeyKindRequestType_EnumDescriptor(void);
  * the time this source was generated.
  **/
 BOOL SecurityLevelMap_KeyKindRequestType_IsValidValue(int32_t value);
+
+#pragma mark - Enum GetDocumentsRequest_WhereOperator
+
+/**
+ * Comparison operator for a single `WhereClause`. Wire values
+ * mirror `drive::query::WhereOperator` 1:1; the server maps the
+ * enum discriminant directly without re-parsing operator strings.
+ *
+ * `BETWEEN*` operators expect the right-hand operand to be a
+ * 2-element `DocumentFieldValue.list` carrying `[lower, upper]`;
+ * `IN` expects a `list` of candidate values; all other operators
+ * expect a scalar `DocumentFieldValue` matching the indexed
+ * field's type.
+ **/
+typedef GPB_ENUM(GetDocumentsRequest_WhereOperator) {
+  /**
+   * Value used if any message's field encounters a value that is not defined
+   * by this enum. The message will also have C functions to get/set the rawValue
+   * of the field.
+   **/
+  GetDocumentsRequest_WhereOperator_GPBUnrecognizedEnumeratorValue = kGPBUnrecognizedEnumeratorValue,
+  GetDocumentsRequest_WhereOperator_Equal = 0,
+  GetDocumentsRequest_WhereOperator_GreaterThan = 1,
+  GetDocumentsRequest_WhereOperator_GreaterThanOrEquals = 2,
+  GetDocumentsRequest_WhereOperator_LessThan = 3,
+  GetDocumentsRequest_WhereOperator_LessThanOrEquals = 4,
+  GetDocumentsRequest_WhereOperator_Between = 5,
+  GetDocumentsRequest_WhereOperator_BetweenExcludeBounds = 6,
+  GetDocumentsRequest_WhereOperator_BetweenExcludeLeft = 7,
+  GetDocumentsRequest_WhereOperator_BetweenExcludeRight = 8,
+  GetDocumentsRequest_WhereOperator_In = 9,
+  GetDocumentsRequest_WhereOperator_StartsWith = 10,
+};
+
+GPBEnumDescriptor *GetDocumentsRequest_WhereOperator_EnumDescriptor(void);
+
+/**
+ * Checks to see if the given value is defined by the enum or was not known at
+ * the time this source was generated.
+ **/
+BOOL GetDocumentsRequest_WhereOperator_IsValidValue(int32_t value);
+
+#pragma mark - Enum GetDocumentsRequest_HavingAggregate_Function
+
+typedef GPB_ENUM(GetDocumentsRequest_HavingAggregate_Function) {
+  /**
+   * Value used if any message's field encounters a value that is not defined
+   * by this enum. The message will also have C functions to get/set the rawValue
+   * of the field.
+   **/
+  GetDocumentsRequest_HavingAggregate_Function_GPBUnrecognizedEnumeratorValue = kGPBUnrecognizedEnumeratorValue,
+  GetDocumentsRequest_HavingAggregate_Function_Count = 0,
+  GetDocumentsRequest_HavingAggregate_Function_Sum = 1,
+  GetDocumentsRequest_HavingAggregate_Function_Avg = 2,
+};
+
+GPBEnumDescriptor *GetDocumentsRequest_HavingAggregate_Function_EnumDescriptor(void);
+
+/**
+ * Checks to see if the given value is defined by the enum or was not known at
+ * the time this source was generated.
+ **/
+BOOL GetDocumentsRequest_HavingAggregate_Function_IsValidValue(int32_t value);
+
+#pragma mark - Enum GetDocumentsRequest_HavingRanking_Kind
+
+typedef GPB_ENUM(GetDocumentsRequest_HavingRanking_Kind) {
+  /**
+   * Value used if any message's field encounters a value that is not defined
+   * by this enum. The message will also have C functions to get/set the rawValue
+   * of the field.
+   **/
+  GetDocumentsRequest_HavingRanking_Kind_GPBUnrecognizedEnumeratorValue = kGPBUnrecognizedEnumeratorValue,
+  GetDocumentsRequest_HavingRanking_Kind_Min = 0,
+  GetDocumentsRequest_HavingRanking_Kind_Max = 1,
+  GetDocumentsRequest_HavingRanking_Kind_Top = 2,
+  GetDocumentsRequest_HavingRanking_Kind_Bottom = 3,
+};
+
+GPBEnumDescriptor *GetDocumentsRequest_HavingRanking_Kind_EnumDescriptor(void);
+
+/**
+ * Checks to see if the given value is defined by the enum or was not known at
+ * the time this source was generated.
+ **/
+BOOL GetDocumentsRequest_HavingRanking_Kind_IsValidValue(int32_t value);
+
+#pragma mark - Enum GetDocumentsRequest_HavingClause_Operator
+
+typedef GPB_ENUM(GetDocumentsRequest_HavingClause_Operator) {
+  /**
+   * Value used if any message's field encounters a value that is not defined
+   * by this enum. The message will also have C functions to get/set the rawValue
+   * of the field.
+   **/
+  GetDocumentsRequest_HavingClause_Operator_GPBUnrecognizedEnumeratorValue = kGPBUnrecognizedEnumeratorValue,
+  GetDocumentsRequest_HavingClause_Operator_Equal = 0,
+  GetDocumentsRequest_HavingClause_Operator_NotEqual = 1,
+  GetDocumentsRequest_HavingClause_Operator_GreaterThan = 2,
+  GetDocumentsRequest_HavingClause_Operator_GreaterThanOrEquals = 3,
+  GetDocumentsRequest_HavingClause_Operator_LessThan = 4,
+  GetDocumentsRequest_HavingClause_Operator_LessThanOrEquals = 5,
+  GetDocumentsRequest_HavingClause_Operator_Between = 6,
+  GetDocumentsRequest_HavingClause_Operator_BetweenExcludeBounds = 7,
+  GetDocumentsRequest_HavingClause_Operator_BetweenExcludeLeft = 8,
+  GetDocumentsRequest_HavingClause_Operator_BetweenExcludeRight = 9,
+  GetDocumentsRequest_HavingClause_Operator_In = 10,
+};
+
+GPBEnumDescriptor *GetDocumentsRequest_HavingClause_Operator_EnumDescriptor(void);
+
+/**
+ * Checks to see if the given value is defined by the enum or was not known at
+ * the time this source was generated.
+ **/
+BOOL GetDocumentsRequest_HavingClause_Operator_IsValidValue(int32_t value);
+
+#pragma mark - Enum GetDocumentsRequest_GetDocumentsRequestV1_Select_Function
+
+typedef GPB_ENUM(GetDocumentsRequest_GetDocumentsRequestV1_Select_Function) {
+  /**
+   * Value used if any message's field encounters a value that is not defined
+   * by this enum. The message will also have C functions to get/set the rawValue
+   * of the field.
+   **/
+  GetDocumentsRequest_GetDocumentsRequestV1_Select_Function_GPBUnrecognizedEnumeratorValue = kGPBUnrecognizedEnumeratorValue,
+  GetDocumentsRequest_GetDocumentsRequestV1_Select_Function_Documents = 0,
+  GetDocumentsRequest_GetDocumentsRequestV1_Select_Function_Count = 1,
+  GetDocumentsRequest_GetDocumentsRequestV1_Select_Function_Sum = 2,
+  GetDocumentsRequest_GetDocumentsRequestV1_Select_Function_Avg = 3,
+
+  /**
+   * Per-group MIN / MAX — `SELECT MIN(field) GROUP BY
+   * category` returns the smallest `field` value in each
+   * category. Semantically distinct from
+   * `HavingRanking::Min` / `Max` (which are cross-group
+   * meta-aggregates over group results). MIN/MAX here
+   * operate over the row values within each group, the
+   * same way `SUM` and `AVG` do.
+   **/
+  GetDocumentsRequest_GetDocumentsRequestV1_Select_Function_Min = 4,
+  GetDocumentsRequest_GetDocumentsRequestV1_Select_Function_Max = 5,
+};
+
+GPBEnumDescriptor *GetDocumentsRequest_GetDocumentsRequestV1_Select_Function_EnumDescriptor(void);
+
+/**
+ * Checks to see if the given value is defined by the enum or was not known at
+ * the time this source was generated.
+ **/
+BOOL GetDocumentsRequest_GetDocumentsRequestV1_Select_Function_IsValidValue(int32_t value);
 
 #pragma mark - Enum GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0_ResultType
 
@@ -2250,11 +2419,13 @@ GPB_FINAL @interface GetDataContractHistoryResponse_GetDataContractHistoryRespon
 
 typedef GPB_ENUM(GetDocumentsRequest_FieldNumber) {
   GetDocumentsRequest_FieldNumber_V0 = 1,
+  GetDocumentsRequest_FieldNumber_V1 = 2,
 };
 
 typedef GPB_ENUM(GetDocumentsRequest_Version_OneOfCase) {
   GetDocumentsRequest_Version_OneOfCase_GPBUnsetOneOfCase = 0,
   GetDocumentsRequest_Version_OneOfCase_V0 = 1,
+  GetDocumentsRequest_Version_OneOfCase_V1 = 2,
 };
 
 GPB_FINAL @interface GetDocumentsRequest : GPBMessage
@@ -2263,12 +2434,388 @@ GPB_FINAL @interface GetDocumentsRequest : GPBMessage
 
 @property(nonatomic, readwrite, strong, null_resettable) GetDocumentsRequest_GetDocumentsRequestV0 *v0;
 
+@property(nonatomic, readwrite, strong, null_resettable) GetDocumentsRequest_GetDocumentsRequestV1 *v1;
+
 @end
 
 /**
  * Clears whatever value was set for the oneof 'version'.
  **/
 void GetDocumentsRequest_ClearVersionOneOfCase(GetDocumentsRequest *message);
+
+#pragma mark - GetDocumentsRequest_DocumentFieldValue
+
+typedef GPB_ENUM(GetDocumentsRequest_DocumentFieldValue_FieldNumber) {
+  GetDocumentsRequest_DocumentFieldValue_FieldNumber_BoolValue = 1,
+  GetDocumentsRequest_DocumentFieldValue_FieldNumber_Int64Value = 2,
+  GetDocumentsRequest_DocumentFieldValue_FieldNumber_Uint64Value = 3,
+  GetDocumentsRequest_DocumentFieldValue_FieldNumber_DoubleValue = 4,
+  GetDocumentsRequest_DocumentFieldValue_FieldNumber_Text = 5,
+  GetDocumentsRequest_DocumentFieldValue_FieldNumber_BytesValue = 6,
+  GetDocumentsRequest_DocumentFieldValue_FieldNumber_List = 7,
+  GetDocumentsRequest_DocumentFieldValue_FieldNumber_NullValue = 8,
+};
+
+typedef GPB_ENUM(GetDocumentsRequest_DocumentFieldValue_Variant_OneOfCase) {
+  GetDocumentsRequest_DocumentFieldValue_Variant_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetDocumentsRequest_DocumentFieldValue_Variant_OneOfCase_BoolValue = 1,
+  GetDocumentsRequest_DocumentFieldValue_Variant_OneOfCase_Int64Value = 2,
+  GetDocumentsRequest_DocumentFieldValue_Variant_OneOfCase_Uint64Value = 3,
+  GetDocumentsRequest_DocumentFieldValue_Variant_OneOfCase_DoubleValue = 4,
+  GetDocumentsRequest_DocumentFieldValue_Variant_OneOfCase_Text = 5,
+  GetDocumentsRequest_DocumentFieldValue_Variant_OneOfCase_BytesValue = 6,
+  GetDocumentsRequest_DocumentFieldValue_Variant_OneOfCase_List = 7,
+  GetDocumentsRequest_DocumentFieldValue_Variant_OneOfCase_NullValue = 8,
+};
+
+/**
+ * Tagged scalar (or list) operand for a `WhereClause`. The
+ * variant the caller picks names the wire-level primitive type
+ * only — the **document type's schema** is the source of truth
+ * for the indexed field's actual type, and the server coerces
+ * each variant through the schema-driven
+ * `document_type.serialize_value_for_key(field, value, …)` path
+ * (the same path the CBOR-shaped v0 request flows through). That
+ * means:
+ *
+ * - Identifier-typed fields accept either a `bytes_value` (raw
+ *   32 bytes) **or** a `text` (base58-encoded). The schema
+ *   decides; callers don't need a dedicated identifier variant.
+ * - Fixed-width byte fields (e.g. `Bytes20`/`Bytes36`) accept
+ *   `bytes_value` of the appropriate length; the schema
+ *   validates the size.
+ * - Numeric fields accept the closest-fit signed (`int64_value`)
+ *   or unsigned (`uint64_value`) variant; the schema coerces to
+ *   the indexed type (`u8` … `u64`/`i8` … `i64`/`u128`/`i128`).
+ * - String / bool fields accept `text` / `bool_value`.
+ *
+ * The `null_value` variant is the typed-wire equivalent of a CBOR
+ * `null` operand on the v0 path. Callers should NOT use it for
+ * "no clause" — empty where-clauses are still expressed by
+ * leaving `GetDocumentsRequestV1.where_clauses` empty. It exists
+ * for clauses that legitimately compare against `null` (e.g.
+ * queries on schema-nullable index entries from the v0 wire that
+ * round-trip through the v1 surface).
+ **/
+GPB_FINAL @interface GetDocumentsRequest_DocumentFieldValue : GPBMessage
+
+@property(nonatomic, readonly) GetDocumentsRequest_DocumentFieldValue_Variant_OneOfCase variantOneOfCase;
+
+@property(nonatomic, readwrite) BOOL boolValue;
+
+@property(nonatomic, readwrite) int64_t int64Value;
+
+@property(nonatomic, readwrite) uint64_t uint64Value;
+
+@property(nonatomic, readwrite) double doubleValue;
+
+@property(nonatomic, readwrite, copy, null_resettable) NSString *text;
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *bytesValue;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetDocumentsRequest_DocumentFieldValue_ValueList *list;
+
+/**
+ * `bool` payload is a placeholder — only the discriminant
+ * matters. Picking the variant means "this operand is null";
+ * the bool value itself is ignored on the server.
+ **/
+@property(nonatomic, readwrite) BOOL nullValue;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'variant'.
+ **/
+void GetDocumentsRequest_DocumentFieldValue_ClearVariantOneOfCase(GetDocumentsRequest_DocumentFieldValue *message);
+
+#pragma mark - GetDocumentsRequest_DocumentFieldValue_ValueList
+
+typedef GPB_ENUM(GetDocumentsRequest_DocumentFieldValue_ValueList_FieldNumber) {
+  GetDocumentsRequest_DocumentFieldValue_ValueList_FieldNumber_ValuesArray = 1,
+};
+
+/**
+ * Recursive list — operand for `IN` (candidate values) and
+ * `BETWEEN*` (exactly 2 values `[lower, upper]`). Nested
+ * `list` is structurally allowed but every supported document
+ * index value-type is currently scalar, so callers should not
+ * need to nest.
+ **/
+GPB_FINAL @interface GetDocumentsRequest_DocumentFieldValue_ValueList : GPBMessage
+
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetDocumentsRequest_DocumentFieldValue*> *valuesArray;
+/** The number of items in @c valuesArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger valuesArray_Count;
+
+@end
+
+#pragma mark - GetDocumentsRequest_WhereClause
+
+typedef GPB_ENUM(GetDocumentsRequest_WhereClause_FieldNumber) {
+  GetDocumentsRequest_WhereClause_FieldNumber_Field = 1,
+  GetDocumentsRequest_WhereClause_FieldNumber_Operator_p = 2,
+  GetDocumentsRequest_WhereClause_FieldNumber_Value = 3,
+};
+
+/**
+ * Single `field <op> value` clause. The server reassembles a
+ * `Vec<WhereClause>` from the request's `where_clauses` field,
+ * runs the same `WhereClause::group_clauses` validator (rejects
+ * duplicate / conflicting same-field clauses) and the same
+ * `> AND <` → `between*` canonicalizer the CBOR-shaped path uses,
+ * then hands the structured clauses to the executor. Wire
+ * semantics are identical to v0's CBOR `[field, op, value]`
+ * triples — only the envelope differs.
+ **/
+GPB_FINAL @interface GetDocumentsRequest_WhereClause : GPBMessage
+
+@property(nonatomic, readwrite, copy, null_resettable) NSString *field;
+
+@property(nonatomic, readwrite) GetDocumentsRequest_WhereOperator operator_p;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetDocumentsRequest_DocumentFieldValue *value;
+/** Test to see if @c value has been set. */
+@property(nonatomic, readwrite) BOOL hasValue;
+
+@end
+
+/**
+ * Fetches the raw value of a @c GetDocumentsRequest_WhereClause's @c operator_p property, even
+ * if the value was not defined by the enum at the time the code was generated.
+ **/
+int32_t GetDocumentsRequest_WhereClause_Operator_p_RawValue(GetDocumentsRequest_WhereClause *message);
+/**
+ * Sets the raw value of an @c GetDocumentsRequest_WhereClause's @c operator_p property, allowing
+ * it to be set to a value that was not defined by the enum at the time the code
+ * was generated.
+ **/
+void SetGetDocumentsRequest_WhereClause_Operator_p_RawValue(GetDocumentsRequest_WhereClause *message, int32_t value);
+
+#pragma mark - GetDocumentsRequest_HavingAggregate
+
+typedef GPB_ENUM(GetDocumentsRequest_HavingAggregate_FieldNumber) {
+  GetDocumentsRequest_HavingAggregate_FieldNumber_Function = 1,
+  GetDocumentsRequest_HavingAggregate_FieldNumber_Field = 2,
+};
+
+/**
+ * Per-group aggregate operand for the left side of a
+ * `HavingClause`. Only the per-group aggregates live here:
+ * `MIN` / `MAX` / `TOP` / `BOTTOM` are **cross-group** ranking
+ * primitives and appear on the right side via `HavingRanking`.
+ *
+ * **Field semantics by function**:
+ * - `COUNT`: empty `field` means `COUNT(*)` (group cardinality);
+ *   non-empty `field` means `COUNT(field)` (count of non-null
+ *   values of `field` in the group).
+ * - `SUM` / `AVG`: `field` is required.
+ **/
+GPB_FINAL @interface GetDocumentsRequest_HavingAggregate : GPBMessage
+
+@property(nonatomic, readwrite) GetDocumentsRequest_HavingAggregate_Function function;
+
+/**
+ * Required for every function except `COUNT`; for `COUNT` an
+ * empty `field` means `COUNT(*)`.
+ **/
+@property(nonatomic, readwrite, copy, null_resettable) NSString *field;
+
+@end
+
+/**
+ * Fetches the raw value of a @c GetDocumentsRequest_HavingAggregate's @c function property, even
+ * if the value was not defined by the enum at the time the code was generated.
+ **/
+int32_t GetDocumentsRequest_HavingAggregate_Function_RawValue(GetDocumentsRequest_HavingAggregate *message);
+/**
+ * Sets the raw value of an @c GetDocumentsRequest_HavingAggregate's @c function property, allowing
+ * it to be set to a value that was not defined by the enum at the time the code
+ * was generated.
+ **/
+void SetGetDocumentsRequest_HavingAggregate_Function_RawValue(GetDocumentsRequest_HavingAggregate *message, int32_t value);
+
+#pragma mark - GetDocumentsRequest_HavingRanking
+
+typedef GPB_ENUM(GetDocumentsRequest_HavingRanking_FieldNumber) {
+  GetDocumentsRequest_HavingRanking_FieldNumber_Kind = 1,
+  GetDocumentsRequest_HavingRanking_FieldNumber_N = 2,
+};
+
+/**
+ * Cross-group ranking primitive on the right side of a
+ * `HavingClause`. The ranking is computed over the set of
+ * group-aggregate results (one per `GROUP BY` row), so
+ * `HAVING COUNT(*) EQ MAX` selects groups whose count equals
+ * the maximum count across all groups, and
+ * `HAVING COUNT(*) IN TOP(5)` selects groups whose count is
+ * among the five largest. Concise way to express top-N /
+ * bottom-N selection without window functions or
+ * `ORDER BY` + `LIMIT`.
+ *
+ * **Operator compatibility**:
+ * - Scalar operators (`=`, `!=`, `<`, `<=`, `>`, `>=`) work
+ *   with `MIN` / `MAX`. `TOP` / `BOTTOM` with scalar operators
+ *   only make sense when `n=1` (the single largest / smallest);
+ *   evaluation rejects other combinations as ambiguous.
+ * - `IN` works with `TOP(n)` / `BOTTOM(n)` for set membership.
+ * - `BETWEEN*` doesn't compose meaningfully with rankings and
+ *   is rejected at evaluation time.
+ **/
+GPB_FINAL @interface GetDocumentsRequest_HavingRanking : GPBMessage
+
+@property(nonatomic, readwrite) GetDocumentsRequest_HavingRanking_Kind kind;
+
+/**
+ * N-th rank for `TOP` / `BOTTOM` (1-indexed: `n=1` is the
+ * single largest / smallest). Required for those two kinds;
+ * must be unset for `MIN` / `MAX`. The wire allows setting
+ * it on `MIN` / `MAX` for forward compatibility, but
+ * evaluation rejects it as a malformed ranking.
+ **/
+@property(nonatomic, readwrite) uint64_t n;
+
+@property(nonatomic, readwrite) BOOL hasN;
+@end
+
+/**
+ * Fetches the raw value of a @c GetDocumentsRequest_HavingRanking's @c kind property, even
+ * if the value was not defined by the enum at the time the code was generated.
+ **/
+int32_t GetDocumentsRequest_HavingRanking_Kind_RawValue(GetDocumentsRequest_HavingRanking *message);
+/**
+ * Sets the raw value of an @c GetDocumentsRequest_HavingRanking's @c kind property, allowing
+ * it to be set to a value that was not defined by the enum at the time the code
+ * was generated.
+ **/
+void SetGetDocumentsRequest_HavingRanking_Kind_RawValue(GetDocumentsRequest_HavingRanking *message, int32_t value);
+
+#pragma mark - GetDocumentsRequest_HavingClause
+
+typedef GPB_ENUM(GetDocumentsRequest_HavingClause_FieldNumber) {
+  GetDocumentsRequest_HavingClause_FieldNumber_Aggregate = 1,
+  GetDocumentsRequest_HavingClause_FieldNumber_Operator_p = 2,
+  GetDocumentsRequest_HavingClause_FieldNumber_Value = 3,
+  GetDocumentsRequest_HavingClause_FieldNumber_Ranking = 4,
+};
+
+typedef GPB_ENUM(GetDocumentsRequest_HavingClause_Right_OneOfCase) {
+  GetDocumentsRequest_HavingClause_Right_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetDocumentsRequest_HavingClause_Right_OneOfCase_Value = 3,
+  GetDocumentsRequest_HavingClause_Right_OneOfCase_Ranking = 4,
+};
+
+/**
+ * Single `HAVING <aggregate> <op> <right>` clause. Multiple
+ * entries in `GetDocumentsRequestV1.having` combine with
+ * implicit AND — same semantics as multiple `where_clauses`
+ * entries. `HAVING COUNT(*) > 5 AND SUM(amount) > 100` is two
+ * `HavingClause` rows, not a tree.
+ *
+ * The operator set mirrors `WhereOperator` minus `STARTS_WITH`
+ * (prefix matching has no natural meaning against a scalar
+ * aggregate result, even a string-typed one). `BETWEEN*` and
+ * `IN` operand semantics match `WhereOperator`: `BETWEEN*`
+ * expects a 2-element `DocumentFieldValue.list` carrying
+ * `[lower, upper]`, and `IN` expects a `list` of candidate
+ * values (or a ranking set via `right.ranking`).
+ *
+ * The `right` oneof carries either a concrete
+ * `DocumentFieldValue` (literal comparison target) or a
+ * `HavingRanking` (cross-group reference). Exactly one is set;
+ * the wire rejects an unset `right`.
+ **/
+GPB_FINAL @interface GetDocumentsRequest_HavingClause : GPBMessage
+
+@property(nonatomic, readwrite, strong, null_resettable) GetDocumentsRequest_HavingAggregate *aggregate;
+/** Test to see if @c aggregate has been set. */
+@property(nonatomic, readwrite) BOOL hasAggregate;
+
+@property(nonatomic, readwrite) GetDocumentsRequest_HavingClause_Operator operator_p;
+
+@property(nonatomic, readonly) GetDocumentsRequest_HavingClause_Right_OneOfCase rightOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetDocumentsRequest_DocumentFieldValue *value;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetDocumentsRequest_HavingRanking *ranking;
+
+@end
+
+/**
+ * Fetches the raw value of a @c GetDocumentsRequest_HavingClause's @c operator_p property, even
+ * if the value was not defined by the enum at the time the code was generated.
+ **/
+int32_t GetDocumentsRequest_HavingClause_Operator_p_RawValue(GetDocumentsRequest_HavingClause *message);
+/**
+ * Sets the raw value of an @c GetDocumentsRequest_HavingClause's @c operator_p property, allowing
+ * it to be set to a value that was not defined by the enum at the time the code
+ * was generated.
+ **/
+void SetGetDocumentsRequest_HavingClause_Operator_p_RawValue(GetDocumentsRequest_HavingClause *message, int32_t value);
+
+/**
+ * Clears whatever value was set for the oneof 'right'.
+ **/
+void GetDocumentsRequest_HavingClause_ClearRightOneOfCase(GetDocumentsRequest_HavingClause *message);
+
+#pragma mark - GetDocumentsRequest_OrderClause
+
+typedef GPB_ENUM(GetDocumentsRequest_OrderClause_FieldNumber) {
+  GetDocumentsRequest_OrderClause_FieldNumber_Field = 1,
+  GetDocumentsRequest_OrderClause_FieldNumber_Ascending = 2,
+  GetDocumentsRequest_OrderClause_FieldNumber_Aggregate = 3,
+};
+
+typedef GPB_ENUM(GetDocumentsRequest_OrderClause_Target_OneOfCase) {
+  GetDocumentsRequest_OrderClause_Target_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetDocumentsRequest_OrderClause_Target_OneOfCase_Field = 1,
+  GetDocumentsRequest_OrderClause_Target_OneOfCase_Aggregate = 3,
+};
+
+/**
+ * Single `ORDER BY field <direction>` clause. Multi-field
+ * ordering is expressed by repeating this message at the
+ * request level (`repeated OrderClause order_by = 4`), matching
+ * SQL's `ORDER BY a ASC, b DESC` shape.
+ * Single ORDER BY entry. Multi-entry ordering is expressed by
+ * repeating this message at the request level.
+ *
+ * The `target` oneof carries either a plain field name
+ * (`ORDER BY field`) or an aggregate function applied to a
+ * field (`ORDER BY COUNT(*)`, `ORDER BY SUM(amount)`) — the
+ * latter sorts per-group result rows produced by `GROUP BY`,
+ * useful with `LIMIT` for top-N / bottom-N selection at the
+ * routing layer (overlapping `HavingRanking::Top` / `Bottom`
+ * but more general because the ranking field can be any
+ * aggregate, not just count).
+ *
+ * **Aggregate target currently rejected** with
+ * `Unsupported("ORDER BY on aggregate is not yet implemented")`.
+ * The wire surface is shipped now so callers can encode the
+ * shape ahead of server support landing.
+ **/
+GPB_FINAL @interface GetDocumentsRequest_OrderClause : GPBMessage
+
+@property(nonatomic, readonly) GetDocumentsRequest_OrderClause_Target_OneOfCase targetOneOfCase;
+
+/** Plain field name. Today's evaluated form. */
+@property(nonatomic, readwrite, copy, null_resettable) NSString *field;
+
+/**
+ * Aggregate function applied to a field, sorted by the
+ * per-group result. `function = DOCUMENTS` is invalid
+ * here — DOCUMENTS isn't an aggregate.
+ **/
+@property(nonatomic, readwrite, strong, null_resettable) GetDocumentsRequest_HavingAggregate *aggregate;
+
+@property(nonatomic, readwrite) BOOL ascending;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'target'.
+ **/
+void GetDocumentsRequest_OrderClause_ClearTargetOneOfCase(GetDocumentsRequest_OrderClause *message);
 
 #pragma mark - GetDocumentsRequest_GetDocumentsRequestV0
 
@@ -2325,15 +2872,366 @@ GPB_FINAL @interface GetDocumentsRequest_GetDocumentsRequestV0 : GPBMessage
  **/
 void GetDocumentsRequest_GetDocumentsRequestV0_ClearStartOneOfCase(GetDocumentsRequest_GetDocumentsRequestV0 *message);
 
+#pragma mark - GetDocumentsRequest_GetDocumentsRequestV1
+
+typedef GPB_ENUM(GetDocumentsRequest_GetDocumentsRequestV1_FieldNumber) {
+  GetDocumentsRequest_GetDocumentsRequestV1_FieldNumber_DataContractId = 1,
+  GetDocumentsRequest_GetDocumentsRequestV1_FieldNumber_DocumentType = 2,
+  GetDocumentsRequest_GetDocumentsRequestV1_FieldNumber_WhereClausesArray = 3,
+  GetDocumentsRequest_GetDocumentsRequestV1_FieldNumber_OrderByArray = 4,
+  GetDocumentsRequest_GetDocumentsRequestV1_FieldNumber_Limit = 5,
+  GetDocumentsRequest_GetDocumentsRequestV1_FieldNumber_StartAfter = 6,
+  GetDocumentsRequest_GetDocumentsRequestV1_FieldNumber_StartAt = 7,
+  GetDocumentsRequest_GetDocumentsRequestV1_FieldNumber_Prove = 8,
+  GetDocumentsRequest_GetDocumentsRequestV1_FieldNumber_SelectsArray = 9,
+  GetDocumentsRequest_GetDocumentsRequestV1_FieldNumber_GroupByArray = 10,
+  GetDocumentsRequest_GetDocumentsRequestV1_FieldNumber_HavingArray = 11,
+  GetDocumentsRequest_GetDocumentsRequestV1_FieldNumber_Offset = 12,
+};
+
+typedef GPB_ENUM(GetDocumentsRequest_GetDocumentsRequestV1_Start_OneOfCase) {
+  GetDocumentsRequest_GetDocumentsRequestV1_Start_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetDocumentsRequest_GetDocumentsRequestV1_Start_OneOfCase_StartAfter = 6,
+  GetDocumentsRequest_GetDocumentsRequestV1_Start_OneOfCase_StartAt = 7,
+};
+
+/**
+ * SQL-shaped successor to v0 that unifies `getDocuments` and
+ * `getDocumentsCount` under a single request type with a typed
+ * `select` projection and optional `group_by` / `having` clauses.
+ *
+ * Mode is determined by `select` × `group_by` × `having`:
+ *
+ * * `select = DOCUMENTS, group_by = []`: return matched documents
+ *   (identical semantics to v0).
+ * * `select = COUNT, group_by = []`: return a single aggregate
+ *   count. With an `In` clause the server fans out per-In via
+ *   `query_aggregate_count` and sums (O(|In| × log n), see
+ *   `RangeNoProof`'s compound-summed path); with a range clause
+ *   it uses `AggregateCountOnRange`.
+ * * `select = COUNT, group_by = [<field>]`: return per-group
+ *   `CountEntry` rows. Only supported when the grouping field
+ *   matches an `In`-constrained or range-constrained where clause;
+ *   other shapes return `Unsupported` (see supported-shape table
+ *   below).
+ *
+ * `having` is wire-reserved for a future server capability. Any
+ * non-empty `having` list currently returns
+ * `Unsupported("HAVING clause is not yet implemented")`
+ * regardless of `select` / `group_by`. The wire shape is
+ * `repeated WhereClause` so when execution lands the surface is
+ * already typed end-to-end and callers don't need to re-encode.
+ *
+ * **Supported shapes** (everything else rejects with a typed
+ * `QuerySyntaxError::Unsupported` so callers can detect un-wired
+ * capabilities without parsing prose). Bullets are kept
+ * single-line so the generated Rust doc comments don't trip
+ * rustdoc's `list_item_without_indent` lint on continuation
+ * lines.
+ *
+ * `select=DOCUMENTS, group_by=[]`: any where shape v0 supports.
+ *
+ * `select=COUNT, group_by=[]`:
+ * - empty where → `documentsCountable: true` doctype.
+ * - `==` only → `countable: true` index covering the fields.
+ * - one `In` → `countable: true` index covering the fields (per-In aggregate fan-out).
+ * - one range → `rangeCountable: true` index.
+ * - one `In` + one range → `rangeCountable: true` compound index (per-In aggregate fan-out on no-proof; rejected on prove because the aggregate proof primitive can't fork).
+ *
+ * `select=COUNT, group_by=[g]`:
+ * - g is the In clause's field → `countable: true` index, grouped by g (PerInValue on no-proof, CountTree element proof per In branch on prove).
+ * - g is the range clause's field → `rangeCountable: true` index, grouped by g (RangeDistinct on no-proof, distinct range proof on prove).
+ *
+ * `select=COUNT, group_by=[a, b]`:
+ * - a is the In field AND b is the range field, in that order → existing compound distinct shape; entries carry both `in_key` (= a's value) and `key` (= b's value).
+ *
+ * **Rejected shapes** (return `Unsupported`):
+ * - any non-empty `having` (always — pending future server capability).
+ * - `select=DOCUMENTS` with non-empty `group_by`.
+ * - `select=COUNT` with `group_by` on a field that is not constrained by an `In` or range where clause.
+ * - `select=COUNT` with `group_by.len() > 2`.
+ * - `select=COUNT` with 2-field `group_by` that does not match the `(in_field, range_field)` shape above.
+ *
+ * **Absent-from-tree branches on `In`-grouped queries**: when
+ * `select=COUNT, group_by=[in_field]` and an `In` value has no
+ * matching documents, the underlying merk index has nothing to
+ * emit (zero-count branches aren't materialized as CountTree
+ * elements), so the wire `CountEntries.entries` list contains
+ * only the In values that exist.
+ *
+ * The SDK's proof decoder surfaces this by **omission**, not by
+ * a sentinel `count` value: the current point-lookup path query
+ * doesn't set `absence_proofs_for_non_existing_searched_keys:
+ * true`, so grovedb's `verify_query` silently drops absent-Key
+ * branches from the verified elements stream. The drive-side
+ * verifier (`verify_point_lookup_count_proof`) therefore emits
+ * one `SplitCountEntry` per **present** In branch and the SDK
+ * wraps those into `CountEntry`. Callers that need to detect
+ * "queried but absent" diff their request's In array against
+ * the returned entries by `key` (each entry's `key` is the
+ * serialized In value, recoverable via
+ * `document_type.serialize_value_for_key(in_field, v, …)`).
+ * `SplitCountEntry::count`'s `Option<u64>` and the `None`
+ * variant exist for a future absence-proof variant; today the
+ * wire `CountEntry.count` is plain `uint64`.
+ *
+ * For range-grouped queries the walker only emits keys that
+ * exist in the index, which IS SQL-conformant; no equivalent
+ * reconstruction step because the range itself is unbounded and
+ * the caller has no explicit "expected keys" list to compare
+ * against.
+ **/
+GPB_FINAL @interface GetDocumentsRequest_GetDocumentsRequestV1 : GPBMessage
+
+/** The data contract owning the documents */
+@property(nonatomic, readwrite, copy, null_resettable) NSData *dataContractId;
+
+/** Document type within the contract */
+@property(nonatomic, readwrite, copy, null_resettable) NSString *documentType;
+
+/**
+ * Structured where clauses. Empty list = no `WHERE` filter
+ * (return all matching rows under the document type / contract).
+ * See top-level `WhereClause` for shape semantics.
+ **/
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetDocumentsRequest_WhereClause*> *whereClausesArray;
+/** The number of items in @c whereClausesArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger whereClausesArray_Count;
+
+/**
+ * Structured order_by clauses. Empty list = no explicit
+ * ordering (server applies the index's natural order). Multiple
+ * entries express SQL's `ORDER BY a ASC, b DESC, …` shape; the
+ * first entry's direction also governs split-mode entry
+ * ordering on `select=COUNT` paths.
+ **/
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetDocumentsRequest_OrderClause*> *orderByArray;
+/** The number of items in @c orderByArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger orderByArray_Count;
+
+/**
+ * Maximum number of rows to return.
+ *
+ * **Wire semantics on the `optional uint32` field**: `None`
+ * (unset) requests the server's default; `Some(N)` with `N > 0`
+ * requests an explicit cap of `N`. `Some(0)` is **rejected with
+ * `InvalidLimit` across every SELECT mode** — zero-cap is
+ * structurally meaningless and the legacy v0 `uint32`-with-0-as-
+ * sentinel mapping doesn't extend to `optional uint32` (the
+ * whole point of switching is that `None` carries "unset"
+ * explicitly). Callers must send `None` for "use server default."
+ *
+ * Per-mode behavior of `Some(N > 0)`:
+ *   - `select=DOCUMENTS`: matched-document cap (same as v0).
+ *   - `select=COUNT, group_by=[]`: **rejected with `InvalidLimit`
+ *     when set**. Aggregate count is a single row by construction
+ *     — a limit would either be redundant (≥ 1) or silently
+ *     mislead callers if the dispatcher's per-In fan-out honored
+ *     it and returned a partial sum disguised as a total. Omit
+ *     `limit` for aggregate count.
+ *   - `select=COUNT, group_by=[in_field]`: **rejected with
+ *     `InvalidLimit` when set**. The In array is already capped
+ *     at 100 entries by `WhereClause::in_values()`, so the
+ *     result is bounded by construction; a separate `limit`
+ *     would either be redundant or silently truncate the proof
+ *     to fewer In branches than the caller asked for (the
+ *     PointLookupProof shape can't represent a partial-In
+ *     selection in its `SizedQuery`). Narrow the In array
+ *     directly to reduce the result set.
+ *   - `select=COUNT, group_by=[range_field]`: entries cap on
+ *     the distinct-range walk.
+ *   - `select=COUNT, group_by=[in_field, range_field]`: global
+ *     cap over the emitted `(in_key, key)` lex stream — NOT
+ *     per-In-branch. The compound walk pushes one
+ *     `SizedQuery::limit` over the combined tuple stream, so a
+ *     request with `|In| = 3` and `limit = 5` returns at most
+ *     5 entries total across all In branches (ordered by
+ *     `(in_key, key)`, direction from the first `order_by`
+ *     clause).
+ *   Both range-grouped variants share the same validate-don't-
+ *   clamp policy on prove paths — `limit > max_query_limit`
+ *   returns `InvalidLimit` rather than silent clamping (see
+ *   `RangeDistinctProof`'s contract; unset falls back to the
+ *   SDK-shared `DEFAULT_QUERY_LIMIT` compile-time constant so
+ *   proof bytes are deterministic across operators).
+ **/
+@property(nonatomic, readwrite) uint32_t limit;
+
+@property(nonatomic, readwrite) BOOL hasLimit;
+/**
+ * Pagination cursor. Valid only for `select=DOCUMENTS`. The
+ * count surface (`select=COUNT`) rejects cursors entirely:
+ * aggregate counts have no concept of "start," and per-group
+ * entry paginators would need a new merk walk that doesn't
+ * exist yet — callers paginate counts by narrowing the
+ * where-clause range itself instead.
+ **/
+@property(nonatomic, readonly) GetDocumentsRequest_GetDocumentsRequestV1_Start_OneOfCase startOneOfCase;
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *startAfter;
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *startAt;
+
+/** Request a grovedb proof instead of raw rows */
+@property(nonatomic, readwrite) BOOL prove;
+
+/**
+ * SQL `SELECT` projection list. Multiple entries express
+ * `SELECT f1(a), f2(b), …` — one row per group carrying a
+ * parallel list of aggregate values in the response.
+ *
+ * Empty list defaults to a single `documents()` projection
+ * for v0-style document fetch — callers that don't opt into
+ * the SQL-shaped surface get plain row semantics.
+ *
+ * **Currently rejected when `selects.len() > 1`** with
+ * `Unsupported("multi-projection SELECT is not yet
+ * implemented")`. The single-projection cases `DOCUMENTS`,
+ * `COUNT(*)`, `SUM(<field>)`, and `AVG(<field>)` are evaluated
+ * end-to-end today and route through the drive count / sum /
+ * average dispatchers (see the `GetDocumentsResponseV1`
+ * docstring for the wire-shape table). `COUNT(<field>)`,
+ * `MIN(<field>)`, and `MAX(<field>)` remain rejected at the
+ * per-function gate — see the `Select` message-level docstring
+ * for the rationale (no grovedb min/max primitive; COUNT(field)
+ * needs a non-null counter walk that doesn't exist yet). When
+ * multi-projection lands the response shape gains a parallel
+ * `repeated AggregateValue values` field, so caller code
+ * structured around `repeated Select` doesn't need to be
+ * rewritten when it does.
+ **/
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetDocumentsRequest_GetDocumentsRequestV1_Select*> *selectsArray;
+/** The number of items in @c selectsArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger selectsArray_Count;
+
+/**
+ * SQL `GROUP BY` field names, in left-to-right order. Empty =
+ * no explicit grouping (aggregate for `select=COUNT`). See the
+ * message-level docstring for the supported-shape table.
+ **/
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<NSString*> *groupByArray;
+/** The number of items in @c groupByArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger groupByArray_Count;
+
+/**
+ * SQL `HAVING` clauses — aggregate filters that apply to the
+ * grouped rows produced by `select=COUNT, group_by=[…]`. The
+ * wire shape is `HavingClause`, not `WhereClause`, because
+ * HAVING evaluates against per-group aggregates
+ * (`COUNT`/`SUM`/`AVG`/`MIN`/`MAX`/`TOP`/`BOTTOM`) rather than
+ * row field values. Multiple entries combine with implicit
+ * AND. See `HavingClause` / `HavingAggregate` for the
+ * operator and aggregate-function catalogs.
+ *
+ * **Always rejected when non-empty** today with
+ * `Unsupported("HAVING clause is not yet implemented")`. The
+ * wire shape is shipped now so the future server capability
+ * can land without another version bump — and so callers can
+ * construct full `HAVING COUNT(*) > 5 AND SUM(amount) > 100`
+ * requests in their builders even before the server evaluates
+ * them.
+ **/
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetDocumentsRequest_HavingClause*> *havingArray;
+/** The number of items in @c havingArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger havingArray_Count;
+
+/**
+ * Row-based pagination offset, on top of the cursor-based
+ * `start_after` / `start_at` pagination. `OFFSET N` skips the
+ * first `N` matching rows before applying `limit`. Currently
+ * **always rejected when non-`None`** with
+ * `Unsupported("OFFSET pagination is not yet implemented")`
+ * — the wire surface is shipped now so callers can encode it
+ * ahead of server support landing without another version
+ * bump. Cursor pagination via `start_after` / `start_at`
+ * remains the supported way to page through results.
+ **/
+@property(nonatomic, readwrite) uint32_t offset;
+
+@property(nonatomic, readwrite) BOOL hasOffset;
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'start'.
+ **/
+void GetDocumentsRequest_GetDocumentsRequestV1_ClearStartOneOfCase(GetDocumentsRequest_GetDocumentsRequestV1 *message);
+
+#pragma mark - GetDocumentsRequest_GetDocumentsRequestV1_Select
+
+typedef GPB_ENUM(GetDocumentsRequest_GetDocumentsRequestV1_Select_FieldNumber) {
+  GetDocumentsRequest_GetDocumentsRequestV1_Select_FieldNumber_Function = 1,
+  GetDocumentsRequest_GetDocumentsRequestV1_Select_FieldNumber_Field = 2,
+};
+
+/**
+ * Projection over the matched row set. `(function, field)`
+ * pair — analogous to `HavingAggregate`'s shape but with an
+ * additional `DOCUMENTS` variant for the row-fetch path.
+ *
+ * Determines what the response carries:
+ * - `DOCUMENTS`: `ResultData.documents` (matched rows;
+ *   `field` must be empty).
+ * - `COUNT`: `ResultData.counts` carrying row counts. Empty
+ *   `field` is `COUNT(*)` (group cardinality); non-empty is
+ *   `COUNT(field)` (non-null `field` values).
+ * - `SUM` / `AVG`: `ResultData` carrying numeric
+ *   aggregate(s); `field` is required and must be a
+ *   numeric-typed schema field.
+ *
+ * Single-aggregate vs per-group response shape comes from
+ * `group_by` (empty → single, non-empty → per-group entries) —
+ * same rule as today's `COUNT` routing.
+ *
+ * **Server capability today**: `DOCUMENTS`, `COUNT(*)` (empty
+ * `field`), `SUM(<field>)`, and `AVG(<field>)` are evaluated
+ * end-to-end (no-proof and proof paths route through the drive
+ * count / sum / average dispatchers). `COUNT(<field>)` (non-null
+ * value counting on a specific field), `MIN(<field>)`, and
+ * `MAX(<field>)` are wire-stable but rejected at routing time
+ * with `Unsupported("SELECT … is not yet implemented")` so the
+ * surface is shipped first and execution lands later without
+ * another version bump. MIN/MAX in particular wait on a grovedb
+ * primitive — there's no min/max aggregate on count or sum
+ * trees today, and the order-by-then-LIMIT-1 emulation has the
+ * wrong proof shape for the cryptographic verifier.
+ **/
+GPB_FINAL @interface GetDocumentsRequest_GetDocumentsRequestV1_Select : GPBMessage
+
+@property(nonatomic, readwrite) GetDocumentsRequest_GetDocumentsRequestV1_Select_Function function;
+
+/**
+ * Field the projection function is applied to. See the
+ * message-level docstring for the per-function requirement
+ * (empty for `DOCUMENTS`, optional for `COUNT`, required
+ * for `SUM` / `AVG` / `MIN` / `MAX`).
+ **/
+@property(nonatomic, readwrite, copy, null_resettable) NSString *field;
+
+@end
+
+/**
+ * Fetches the raw value of a @c GetDocumentsRequest_GetDocumentsRequestV1_Select's @c function property, even
+ * if the value was not defined by the enum at the time the code was generated.
+ **/
+int32_t GetDocumentsRequest_GetDocumentsRequestV1_Select_Function_RawValue(GetDocumentsRequest_GetDocumentsRequestV1_Select *message);
+/**
+ * Sets the raw value of an @c GetDocumentsRequest_GetDocumentsRequestV1_Select's @c function property, allowing
+ * it to be set to a value that was not defined by the enum at the time the code
+ * was generated.
+ **/
+void SetGetDocumentsRequest_GetDocumentsRequestV1_Select_Function_RawValue(GetDocumentsRequest_GetDocumentsRequestV1_Select *message, int32_t value);
+
 #pragma mark - GetDocumentsResponse
 
 typedef GPB_ENUM(GetDocumentsResponse_FieldNumber) {
   GetDocumentsResponse_FieldNumber_V0 = 1,
+  GetDocumentsResponse_FieldNumber_V1 = 2,
 };
 
 typedef GPB_ENUM(GetDocumentsResponse_Version_OneOfCase) {
   GetDocumentsResponse_Version_OneOfCase_GPBUnsetOneOfCase = 0,
   GetDocumentsResponse_Version_OneOfCase_V0 = 1,
+  GetDocumentsResponse_Version_OneOfCase_V1 = 2,
 };
 
 GPB_FINAL @interface GetDocumentsResponse : GPBMessage
@@ -2341,6 +3239,8 @@ GPB_FINAL @interface GetDocumentsResponse : GPBMessage
 @property(nonatomic, readonly) GetDocumentsResponse_Version_OneOfCase versionOneOfCase;
 
 @property(nonatomic, readwrite, strong, null_resettable) GetDocumentsResponse_GetDocumentsResponseV0 *v0;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetDocumentsResponse_GetDocumentsResponseV1 *v1;
 
 @end
 
@@ -2400,6 +3300,604 @@ GPB_FINAL @interface GetDocumentsResponse_GetDocumentsResponseV0_Documents : GPB
 @property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<NSData*> *documentsArray;
 /** The number of items in @c documentsArray without causing the array to be created. */
 @property(nonatomic, readonly) NSUInteger documentsArray_Count;
+
+@end
+
+#pragma mark - GetDocumentsResponse_GetDocumentsResponseV1
+
+typedef GPB_ENUM(GetDocumentsResponse_GetDocumentsResponseV1_FieldNumber) {
+  GetDocumentsResponse_GetDocumentsResponseV1_FieldNumber_Data_p = 1,
+  GetDocumentsResponse_GetDocumentsResponseV1_FieldNumber_Proof = 2,
+  GetDocumentsResponse_GetDocumentsResponseV1_FieldNumber_Metadata = 3,
+};
+
+typedef GPB_ENUM(GetDocumentsResponse_GetDocumentsResponseV1_Result_OneOfCase) {
+  GetDocumentsResponse_GetDocumentsResponseV1_Result_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetDocumentsResponse_GetDocumentsResponseV1_Result_OneOfCase_Data_p = 1,
+  GetDocumentsResponse_GetDocumentsResponseV1_Result_OneOfCase_Proof = 2,
+};
+
+/**
+ * v1 response. Two-variant outer `oneof` mirrors every other
+ * `Get*Response`: a non-proof result at position 1, the proof at
+ * position 2. The non-proof result is itself a `oneof` because
+ * a single v1 request can produce either matched documents (for
+ * `select=DOCUMENTS`) or count results (for `select=COUNT`) —
+ * wrapping them in an inner `ResultData` keeps the outer shape
+ * canonical without flattening to a three-variant oneof.
+ *
+ * Wire shape by `request.select` × `group_by` × `prove`:
+ *   - `select=DOCUMENTS` (no prove)            → `result.data.documents`.
+ *   - `select=COUNT, group_by=[]` (no prove)   → `result.data.counts.aggregate_count`.
+ *   - `select=COUNT, group_by=[…]` (no prove)  → `result.data.counts.entries`.
+ *   - `select=SUM, group_by=[]` (no prove)     → `result.data.sums.aggregate_sum`.
+ *   - `select=SUM, group_by=[…]` (no prove)    → `result.data.sums.entries`.
+ *   - `select=AVG, group_by=[]` (no prove)     → `result.data.averages.aggregate_average`.
+ *   - `select=AVG, group_by=[…]` (no prove)    → `result.data.averages.entries`.
+ *   - any select (prove)                        → `result.proof`.
+ *
+ * **SUM / AVG status**: all four shapes above are wired
+ * end-to-end on the drive dispatcher (no-proof and proof paths
+ * both terminate at grovedb's aggregate-sum / sum-tree-walk
+ * primitives, not at a `NotYetImplemented` stub). The four
+ * resolved-mode tables (`compute_aggregate_mode_and_check_limit_v0`,
+ * `detect_count_mode`, `detect_sum_mode`, AVG mirror) decide which
+ * executor to run from the (mode × range × group_by × prove)
+ * tuple; the executors compose count and sum walks for AVG so
+ * there's no separate average primitive on the grovedb side.
+ * Routing details live in
+ * `packages/rs-drive/src/query/drive_document_{sum,average}_query/`.
+ *
+ * `CountResults` / `CountEntry` / `CountEntries` are nested in
+ * `GetDocumentsResponseV1` rather than re-exported from a
+ * top-level message — the v0 `getDocumentsCount` endpoint that
+ * previously owned them has been removed in this version (it
+ * shipped briefly in #3623 and never had stable callers); v1 is
+ * the single home for the count wire types.
+ **/
+GPB_FINAL @interface GetDocumentsResponse_GetDocumentsResponseV1 : GPBMessage
+
+@property(nonatomic, readonly) GetDocumentsResponse_GetDocumentsResponseV1_Result_OneOfCase resultOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetDocumentsResponse_GetDocumentsResponseV1_ResultData *data_p;
+
+@property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
+
+@property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
+/** Test to see if @c metadata has been set. */
+@property(nonatomic, readwrite) BOOL hasMetadata;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'result'.
+ **/
+void GetDocumentsResponse_GetDocumentsResponseV1_ClearResultOneOfCase(GetDocumentsResponse_GetDocumentsResponseV1 *message);
+
+#pragma mark - GetDocumentsResponse_GetDocumentsResponseV1_Documents
+
+typedef GPB_ENUM(GetDocumentsResponse_GetDocumentsResponseV1_Documents_FieldNumber) {
+  GetDocumentsResponse_GetDocumentsResponseV1_Documents_FieldNumber_DocumentsArray = 1,
+};
+
+/**
+ * Documents result variant — matches the v0 `Documents`
+ * message field-for-field (kept distinct so v1 doesn't reach
+ * into v0's namespace once v0 is eventually retired).
+ **/
+GPB_FINAL @interface GetDocumentsResponse_GetDocumentsResponseV1_Documents : GPBMessage
+
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<NSData*> *documentsArray;
+/** The number of items in @c documentsArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger documentsArray_Count;
+
+@end
+
+#pragma mark - GetDocumentsResponse_GetDocumentsResponseV1_CountEntry
+
+typedef GPB_ENUM(GetDocumentsResponse_GetDocumentsResponseV1_CountEntry_FieldNumber) {
+  GetDocumentsResponse_GetDocumentsResponseV1_CountEntry_FieldNumber_InKey = 1,
+  GetDocumentsResponse_GetDocumentsResponseV1_CountEntry_FieldNumber_Key = 2,
+  GetDocumentsResponse_GetDocumentsResponseV1_CountEntry_FieldNumber_Count = 3,
+};
+
+/**
+ * A single per-key entry. Carries `in_key` for compound
+ * queries (`In` on a prefix property of a `range_countable`
+ * index plus a range clause on the terminator) where each
+ * entry is keyed by both the In-fork's prefix value (`in_key`)
+ * and the terminator value (`key`). Cross-fork aggregation is
+ * intentionally NOT done server-side — callers get the
+ * unmerged per-`(in_key, key)` view and can reduce client-side
+ * if they want a flat histogram.
+ **/
+GPB_FINAL @interface GetDocumentsResponse_GetDocumentsResponseV1_CountEntry : GPBMessage
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *inKey;
+/** Test to see if @c inKey has been set. */
+@property(nonatomic, readwrite) BOOL hasInKey;
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *key;
+
+/**
+ * `jstype = JS_STRING` so JS/Web clients receive a string
+ * and don't round counts > 2^53−1 to the nearest
+ * representable Number.
+ **/
+@property(nonatomic, readwrite) uint64_t count;
+
+@end
+
+#pragma mark - GetDocumentsResponse_GetDocumentsResponseV1_CountEntries
+
+typedef GPB_ENUM(GetDocumentsResponse_GetDocumentsResponseV1_CountEntries_FieldNumber) {
+  GetDocumentsResponse_GetDocumentsResponseV1_CountEntries_FieldNumber_EntriesArray = 1,
+};
+
+GPB_FINAL @interface GetDocumentsResponse_GetDocumentsResponseV1_CountEntries : GPBMessage
+
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetDocumentsResponse_GetDocumentsResponseV1_CountEntry*> *entriesArray;
+/** The number of items in @c entriesArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger entriesArray_Count;
+
+@end
+
+#pragma mark - GetDocumentsResponse_GetDocumentsResponseV1_CountResults
+
+typedef GPB_ENUM(GetDocumentsResponse_GetDocumentsResponseV1_CountResults_FieldNumber) {
+  GetDocumentsResponse_GetDocumentsResponseV1_CountResults_FieldNumber_AggregateCount = 1,
+  GetDocumentsResponse_GetDocumentsResponseV1_CountResults_FieldNumber_Entries = 2,
+};
+
+typedef GPB_ENUM(GetDocumentsResponse_GetDocumentsResponseV1_CountResults_Variant_OneOfCase) {
+  GetDocumentsResponse_GetDocumentsResponseV1_CountResults_Variant_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetDocumentsResponse_GetDocumentsResponseV1_CountResults_Variant_OneOfCase_AggregateCount = 1,
+  GetDocumentsResponse_GetDocumentsResponseV1_CountResults_Variant_OneOfCase_Entries = 2,
+};
+
+/**
+ * Non-proof count result. Shape is mode-dependent and made
+ * explicit on the wire via the inner `variant` oneof:
+ *   * `aggregate_count`: `select=COUNT, group_by=[]` —
+ *     single u64 with no per-key breakdown.
+ *   * `entries`: `select=COUNT, group_by=[…]` — one
+ *     CountEntry per distinct group, in serialized-key order
+ *     (subject to the first `order_by` clause's direction and
+ *     `limit`).
+ **/
+GPB_FINAL @interface GetDocumentsResponse_GetDocumentsResponseV1_CountResults : GPBMessage
+
+@property(nonatomic, readonly) GetDocumentsResponse_GetDocumentsResponseV1_CountResults_Variant_OneOfCase variantOneOfCase;
+
+@property(nonatomic, readwrite) uint64_t aggregateCount;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetDocumentsResponse_GetDocumentsResponseV1_CountEntries *entries;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'variant'.
+ **/
+void GetDocumentsResponse_GetDocumentsResponseV1_CountResults_ClearVariantOneOfCase(GetDocumentsResponse_GetDocumentsResponseV1_CountResults *message);
+
+#pragma mark - GetDocumentsResponse_GetDocumentsResponseV1_SumEntry
+
+typedef GPB_ENUM(GetDocumentsResponse_GetDocumentsResponseV1_SumEntry_FieldNumber) {
+  GetDocumentsResponse_GetDocumentsResponseV1_SumEntry_FieldNumber_InKey = 1,
+  GetDocumentsResponse_GetDocumentsResponseV1_SumEntry_FieldNumber_Key = 2,
+  GetDocumentsResponse_GetDocumentsResponseV1_SumEntry_FieldNumber_Sum = 3,
+};
+
+/**
+ * Sum-side analog of `CountEntry` — one per matched key for
+ * `select=SUM, group_by=[...]` queries. `in_key` carries the
+ * outer prefix value for compound `(In, range)` shapes; `key`
+ * carries the terminator value. `sum` is signed because grovedb's
+ * SumTree values are `i64` and sums can in principle be negative
+ * (deliberate i64-overflow signaling — see the sum-tree book
+ * chapter's "Signed `i64` overflow" note). For tip-jar-style
+ * non-negative sums this stays >= 0 in practice.
+ **/
+GPB_FINAL @interface GetDocumentsResponse_GetDocumentsResponseV1_SumEntry : GPBMessage
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *inKey;
+/** Test to see if @c inKey has been set. */
+@property(nonatomic, readwrite) BOOL hasInKey;
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *key;
+
+/**
+ * `jstype = JS_STRING` so JS/Web clients receive a string
+ * and don't round large sums to the nearest Number.
+ **/
+@property(nonatomic, readwrite) int64_t sum;
+
+@end
+
+#pragma mark - GetDocumentsResponse_GetDocumentsResponseV1_SumEntries
+
+typedef GPB_ENUM(GetDocumentsResponse_GetDocumentsResponseV1_SumEntries_FieldNumber) {
+  GetDocumentsResponse_GetDocumentsResponseV1_SumEntries_FieldNumber_EntriesArray = 1,
+};
+
+GPB_FINAL @interface GetDocumentsResponse_GetDocumentsResponseV1_SumEntries : GPBMessage
+
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetDocumentsResponse_GetDocumentsResponseV1_SumEntry*> *entriesArray;
+/** The number of items in @c entriesArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger entriesArray_Count;
+
+@end
+
+#pragma mark - GetDocumentsResponse_GetDocumentsResponseV1_SumResults
+
+typedef GPB_ENUM(GetDocumentsResponse_GetDocumentsResponseV1_SumResults_FieldNumber) {
+  GetDocumentsResponse_GetDocumentsResponseV1_SumResults_FieldNumber_AggregateSum = 1,
+  GetDocumentsResponse_GetDocumentsResponseV1_SumResults_FieldNumber_Entries = 2,
+};
+
+typedef GPB_ENUM(GetDocumentsResponse_GetDocumentsResponseV1_SumResults_Variant_OneOfCase) {
+  GetDocumentsResponse_GetDocumentsResponseV1_SumResults_Variant_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetDocumentsResponse_GetDocumentsResponseV1_SumResults_Variant_OneOfCase_AggregateSum = 1,
+  GetDocumentsResponse_GetDocumentsResponseV1_SumResults_Variant_OneOfCase_Entries = 2,
+};
+
+/**
+ * Non-proof sum result. Same shape as `CountResults` for the
+ * sum surface — the variants mirror count's:
+ *   * `aggregate_sum`: `select=SUM, group_by=[]` — single signed
+ *     sum with no per-key breakdown.
+ *   * `entries`: `select=SUM, group_by=[…]` — one SumEntry per
+ *     distinct group.
+ **/
+GPB_FINAL @interface GetDocumentsResponse_GetDocumentsResponseV1_SumResults : GPBMessage
+
+@property(nonatomic, readonly) GetDocumentsResponse_GetDocumentsResponseV1_SumResults_Variant_OneOfCase variantOneOfCase;
+
+@property(nonatomic, readwrite) int64_t aggregateSum;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetDocumentsResponse_GetDocumentsResponseV1_SumEntries *entries;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'variant'.
+ **/
+void GetDocumentsResponse_GetDocumentsResponseV1_SumResults_ClearVariantOneOfCase(GetDocumentsResponse_GetDocumentsResponseV1_SumResults *message);
+
+#pragma mark - GetDocumentsResponse_GetDocumentsResponseV1_AverageEntry
+
+typedef GPB_ENUM(GetDocumentsResponse_GetDocumentsResponseV1_AverageEntry_FieldNumber) {
+  GetDocumentsResponse_GetDocumentsResponseV1_AverageEntry_FieldNumber_InKey = 1,
+  GetDocumentsResponse_GetDocumentsResponseV1_AverageEntry_FieldNumber_Key = 2,
+  GetDocumentsResponse_GetDocumentsResponseV1_AverageEntry_FieldNumber_Count = 3,
+  GetDocumentsResponse_GetDocumentsResponseV1_AverageEntry_FieldNumber_Sum = 4,
+};
+
+/**
+ * Average-side analog of `SumEntry` — one per matched key for
+ * `select=AVG, group_by=[…]` queries. Each entry carries BOTH
+ * the count and the sum for its group; the client divides
+ * `sum / count` to compute the actual average.
+ *
+ * Why no `average` field on the wire? Returning the (count, sum)
+ * pair preserves full precision and lets the client pick the
+ * representation it wants (integer-truncated division, floating-
+ * point, decimal). Returning a single pre-computed `average`
+ * would force the server to choose, and any choice loses
+ * information for callers that wanted a different one.
+ *
+ * This shape is produced by grovedb's `AggregateCountAndSumOnRange`
+ * primitive (one root-hash-committed traversal returning both
+ * metrics) which lands as part of grovedb PR 670 alongside the
+ * PCPS (`ProvableCountProvableSumTree`) tree element.
+ **/
+GPB_FINAL @interface GetDocumentsResponse_GetDocumentsResponseV1_AverageEntry : GPBMessage
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *inKey;
+/** Test to see if @c inKey has been set. */
+@property(nonatomic, readwrite) BOOL hasInKey;
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *key;
+
+/**
+ * `jstype = JS_STRING` on both fields so JS/Web clients receive
+ * strings and don't lose precision on counts/sums exceeding
+ * `Number.MAX_SAFE_INTEGER`.
+ **/
+@property(nonatomic, readwrite) uint64_t count;
+
+@property(nonatomic, readwrite) int64_t sum;
+
+@end
+
+#pragma mark - GetDocumentsResponse_GetDocumentsResponseV1_AverageEntries
+
+typedef GPB_ENUM(GetDocumentsResponse_GetDocumentsResponseV1_AverageEntries_FieldNumber) {
+  GetDocumentsResponse_GetDocumentsResponseV1_AverageEntries_FieldNumber_EntriesArray = 1,
+};
+
+GPB_FINAL @interface GetDocumentsResponse_GetDocumentsResponseV1_AverageEntries : GPBMessage
+
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetDocumentsResponse_GetDocumentsResponseV1_AverageEntry*> *entriesArray;
+/** The number of items in @c entriesArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger entriesArray_Count;
+
+@end
+
+#pragma mark - GetDocumentsResponse_GetDocumentsResponseV1_AverageAggregate
+
+typedef GPB_ENUM(GetDocumentsResponse_GetDocumentsResponseV1_AverageAggregate_FieldNumber) {
+  GetDocumentsResponse_GetDocumentsResponseV1_AverageAggregate_FieldNumber_Count = 1,
+  GetDocumentsResponse_GetDocumentsResponseV1_AverageAggregate_FieldNumber_Sum = 2,
+};
+
+/**
+ * Aggregate average across all matched documents (no group_by).
+ * Same `(count, sum)` shape as a single entry — the client
+ * computes `avg = sum / count` itself.
+ **/
+GPB_FINAL @interface GetDocumentsResponse_GetDocumentsResponseV1_AverageAggregate : GPBMessage
+
+@property(nonatomic, readwrite) uint64_t count;
+
+@property(nonatomic, readwrite) int64_t sum;
+
+@end
+
+#pragma mark - GetDocumentsResponse_GetDocumentsResponseV1_AverageResults
+
+typedef GPB_ENUM(GetDocumentsResponse_GetDocumentsResponseV1_AverageResults_FieldNumber) {
+  GetDocumentsResponse_GetDocumentsResponseV1_AverageResults_FieldNumber_AggregateAverage = 1,
+  GetDocumentsResponse_GetDocumentsResponseV1_AverageResults_FieldNumber_Entries = 2,
+};
+
+typedef GPB_ENUM(GetDocumentsResponse_GetDocumentsResponseV1_AverageResults_Variant_OneOfCase) {
+  GetDocumentsResponse_GetDocumentsResponseV1_AverageResults_Variant_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetDocumentsResponse_GetDocumentsResponseV1_AverageResults_Variant_OneOfCase_AggregateAverage = 1,
+  GetDocumentsResponse_GetDocumentsResponseV1_AverageResults_Variant_OneOfCase_Entries = 2,
+};
+
+/**
+ * Non-proof average result. Same outer shape as
+ * `CountResults` / `SumResults`; the variants mirror them:
+ *   * `aggregate_average`: `select=AVG, group_by=[]` — single
+ *     `(count, sum)` pair with no per-key breakdown.
+ *   * `entries`: `select=AVG, group_by=[…]` — one AverageEntry
+ *     per distinct group, each carrying its own `(count, sum)`.
+ **/
+GPB_FINAL @interface GetDocumentsResponse_GetDocumentsResponseV1_AverageResults : GPBMessage
+
+@property(nonatomic, readonly) GetDocumentsResponse_GetDocumentsResponseV1_AverageResults_Variant_OneOfCase variantOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetDocumentsResponse_GetDocumentsResponseV1_AverageAggregate *aggregateAverage;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetDocumentsResponse_GetDocumentsResponseV1_AverageEntries *entries;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'variant'.
+ **/
+void GetDocumentsResponse_GetDocumentsResponseV1_AverageResults_ClearVariantOneOfCase(GetDocumentsResponse_GetDocumentsResponseV1_AverageResults *message);
+
+#pragma mark - GetDocumentsResponse_GetDocumentsResponseV1_ResultData
+
+typedef GPB_ENUM(GetDocumentsResponse_GetDocumentsResponseV1_ResultData_FieldNumber) {
+  GetDocumentsResponse_GetDocumentsResponseV1_ResultData_FieldNumber_Documents = 1,
+  GetDocumentsResponse_GetDocumentsResponseV1_ResultData_FieldNumber_Counts = 2,
+  GetDocumentsResponse_GetDocumentsResponseV1_ResultData_FieldNumber_Sums = 3,
+  GetDocumentsResponse_GetDocumentsResponseV1_ResultData_FieldNumber_Averages = 4,
+};
+
+typedef GPB_ENUM(GetDocumentsResponse_GetDocumentsResponseV1_ResultData_Variant_OneOfCase) {
+  GetDocumentsResponse_GetDocumentsResponseV1_ResultData_Variant_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetDocumentsResponse_GetDocumentsResponseV1_ResultData_Variant_OneOfCase_Documents = 1,
+  GetDocumentsResponse_GetDocumentsResponseV1_ResultData_Variant_OneOfCase_Counts = 2,
+  GetDocumentsResponse_GetDocumentsResponseV1_ResultData_Variant_OneOfCase_Sums = 3,
+  GetDocumentsResponse_GetDocumentsResponseV1_ResultData_Variant_OneOfCase_Averages = 4,
+};
+
+/**
+ * Non-proof result wrapper. The outer `oneof result` switches
+ * between this and `proof`; this inner oneof switches between
+ * the four non-proof shapes the v1 surface can return.
+ **/
+GPB_FINAL @interface GetDocumentsResponse_GetDocumentsResponseV1_ResultData : GPBMessage
+
+@property(nonatomic, readonly) GetDocumentsResponse_GetDocumentsResponseV1_ResultData_Variant_OneOfCase variantOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetDocumentsResponse_GetDocumentsResponseV1_Documents *documents;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetDocumentsResponse_GetDocumentsResponseV1_CountResults *counts;
+
+/**
+ * Sum-aggregate result. Routed when the request's
+ * `select.function == SUM` and the dispatcher's
+ * [`DriveDocumentSumQuery`] (in rs-drive) returns a
+ * non-proof variant. The schema field name (`sums`) parallels
+ * `counts` above; field numbers stay 1/2/3/4 per the proto-
+ * wire-stability rule (additions only, never renumbers).
+ **/
+@property(nonatomic, readwrite, strong, null_resettable) GetDocumentsResponse_GetDocumentsResponseV1_SumResults *sums;
+
+/**
+ * Average-aggregate result. Routed when the request's
+ * `select.function == AVG`. The dispatcher returns the
+ * `(count, sum)` pair grovedb's `AggregateCountAndSumOnRange`
+ * primitive produces in one root-hash-committed traversal;
+ * the client divides to obtain the actual average. See
+ * `book/src/drive/average-index-examples.md` for the design
+ * and the grades-contract worked example.
+ **/
+@property(nonatomic, readwrite, strong, null_resettable) GetDocumentsResponse_GetDocumentsResponseV1_AverageResults *averages;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'variant'.
+ **/
+void GetDocumentsResponse_GetDocumentsResponseV1_ResultData_ClearVariantOneOfCase(GetDocumentsResponse_GetDocumentsResponseV1_ResultData *message);
+
+#pragma mark - GetDocumentHistoryRequest
+
+typedef GPB_ENUM(GetDocumentHistoryRequest_FieldNumber) {
+  GetDocumentHistoryRequest_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetDocumentHistoryRequest_Version_OneOfCase) {
+  GetDocumentHistoryRequest_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetDocumentHistoryRequest_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetDocumentHistoryRequest : GPBMessage
+
+@property(nonatomic, readonly) GetDocumentHistoryRequest_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetDocumentHistoryRequest_GetDocumentHistoryRequestV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetDocumentHistoryRequest_ClearVersionOneOfCase(GetDocumentHistoryRequest *message);
+
+#pragma mark - GetDocumentHistoryRequest_GetDocumentHistoryRequestV0
+
+typedef GPB_ENUM(GetDocumentHistoryRequest_GetDocumentHistoryRequestV0_FieldNumber) {
+  GetDocumentHistoryRequest_GetDocumentHistoryRequestV0_FieldNumber_DataContractId = 1,
+  GetDocumentHistoryRequest_GetDocumentHistoryRequestV0_FieldNumber_DocumentTypeName = 2,
+  GetDocumentHistoryRequest_GetDocumentHistoryRequestV0_FieldNumber_DocumentId = 3,
+  GetDocumentHistoryRequest_GetDocumentHistoryRequestV0_FieldNumber_Limit = 4,
+  GetDocumentHistoryRequest_GetDocumentHistoryRequestV0_FieldNumber_Offset = 5,
+  GetDocumentHistoryRequest_GetDocumentHistoryRequestV0_FieldNumber_StartAtMs = 6,
+  GetDocumentHistoryRequest_GetDocumentHistoryRequestV0_FieldNumber_Prove = 7,
+};
+
+GPB_FINAL @interface GetDocumentHistoryRequest_GetDocumentHistoryRequestV0 : GPBMessage
+
+/** The ID of the data contract */
+@property(nonatomic, readwrite, copy, null_resettable) NSData *dataContractId;
+
+/** The document type name */
+@property(nonatomic, readwrite, copy, null_resettable) NSString *documentTypeName;
+
+/** The document ID */
+@property(nonatomic, readwrite, copy, null_resettable) NSData *documentId;
+
+/** The maximum number of history entries to return */
+@property(nonatomic, readwrite, strong, null_resettable) GPBUInt32Value *limit;
+/** Test to see if @c limit has been set. */
+@property(nonatomic, readwrite) BOOL hasLimit;
+
+/** The offset for pagination through the document history */
+@property(nonatomic, readwrite, strong, null_resettable) GPBUInt32Value *offset;
+/** Test to see if @c offset has been set. */
+@property(nonatomic, readwrite) BOOL hasOffset;
+
+/** Only return results after this time in milliseconds */
+@property(nonatomic, readwrite) uint64_t startAtMs;
+
+/** Flag to request a proof as the response */
+@property(nonatomic, readwrite) BOOL prove;
+
+@end
+
+#pragma mark - GetDocumentHistoryResponse
+
+typedef GPB_ENUM(GetDocumentHistoryResponse_FieldNumber) {
+  GetDocumentHistoryResponse_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetDocumentHistoryResponse_Version_OneOfCase) {
+  GetDocumentHistoryResponse_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetDocumentHistoryResponse_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetDocumentHistoryResponse : GPBMessage
+
+@property(nonatomic, readonly) GetDocumentHistoryResponse_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetDocumentHistoryResponse_GetDocumentHistoryResponseV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetDocumentHistoryResponse_ClearVersionOneOfCase(GetDocumentHistoryResponse *message);
+
+#pragma mark - GetDocumentHistoryResponse_GetDocumentHistoryResponseV0
+
+typedef GPB_ENUM(GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_FieldNumber) {
+  GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_FieldNumber_DocumentHistory = 1,
+  GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_FieldNumber_Proof = 2,
+  GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_FieldNumber_Metadata = 3,
+};
+
+typedef GPB_ENUM(GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_Result_OneOfCase) {
+  GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_Result_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_Result_OneOfCase_DocumentHistory = 1,
+  GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_Result_OneOfCase_Proof = 2,
+};
+
+GPB_FINAL @interface GetDocumentHistoryResponse_GetDocumentHistoryResponseV0 : GPBMessage
+
+@property(nonatomic, readonly) GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_Result_OneOfCase resultOneOfCase;
+
+/** The actual history of the document */
+@property(nonatomic, readwrite, strong, null_resettable) GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_DocumentHistory *documentHistory;
+
+/** Cryptographic proof of the document history, if requested */
+@property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
+
+/** Metadata about the blockchain state */
+@property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
+/** Test to see if @c metadata has been set. */
+@property(nonatomic, readwrite) BOOL hasMetadata;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'result'.
+ **/
+void GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_ClearResultOneOfCase(GetDocumentHistoryResponse_GetDocumentHistoryResponseV0 *message);
+
+#pragma mark - GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_DocumentHistoryEntry
+
+typedef GPB_ENUM(GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_DocumentHistoryEntry_FieldNumber) {
+  GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_DocumentHistoryEntry_FieldNumber_Date = 1,
+  GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_DocumentHistoryEntry_FieldNumber_Value = 2,
+};
+
+/**
+ * Represents a single entry in a document's history
+ **/
+GPB_FINAL @interface GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_DocumentHistoryEntry : GPBMessage
+
+/** The date of the history entry */
+@property(nonatomic, readwrite) uint64_t date;
+
+/** The value of the document at this point in history */
+@property(nonatomic, readwrite, copy, null_resettable) NSData *value;
+
+@end
+
+#pragma mark - GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_DocumentHistory
+
+typedef GPB_ENUM(GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_DocumentHistory_FieldNumber) {
+  GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_DocumentHistory_FieldNumber_DocumentEntriesArray = 1,
+};
+
+/**
+ * Collection of document history entries
+ **/
+GPB_FINAL @interface GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_DocumentHistory : GPBMessage
+
+/** List of history entries */
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_DocumentHistoryEntry*> *documentEntriesArray;
+/** The number of items in @c documentEntriesArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger documentEntriesArray_Count;
 
 @end
 
@@ -8302,6 +9800,7 @@ void GetRecentAddressBalanceChangesRequest_ClearVersionOneOfCase(GetRecentAddres
 typedef GPB_ENUM(GetRecentAddressBalanceChangesRequest_GetRecentAddressBalanceChangesRequestV0_FieldNumber) {
   GetRecentAddressBalanceChangesRequest_GetRecentAddressBalanceChangesRequestV0_FieldNumber_StartHeight = 1,
   GetRecentAddressBalanceChangesRequest_GetRecentAddressBalanceChangesRequestV0_FieldNumber_Prove = 2,
+  GetRecentAddressBalanceChangesRequest_GetRecentAddressBalanceChangesRequestV0_FieldNumber_StartHeightExclusive = 3,
 };
 
 GPB_FINAL @interface GetRecentAddressBalanceChangesRequest_GetRecentAddressBalanceChangesRequestV0 : GPBMessage
@@ -8309,6 +9808,14 @@ GPB_FINAL @interface GetRecentAddressBalanceChangesRequest_GetRecentAddressBalan
 @property(nonatomic, readwrite) uint64_t startHeight;
 
 @property(nonatomic, readwrite) BOOL prove;
+
+/**
+ * When true, use exclusive start (RangeAfter) instead of inclusive start
+ * (RangeFrom). The start_height key becomes a boundary node in the proof
+ * rather than a result element, enabling compaction detection via
+ * key_exists_as_boundary.
+ **/
+@property(nonatomic, readwrite) BOOL startHeightExclusive;
 
 @end
 
@@ -8678,6 +10185,7 @@ typedef GPB_ENUM(GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResp
   GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0_EncryptedNote_FieldNumber_Nullifier = 1,
   GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0_EncryptedNote_FieldNumber_Cmx = 2,
   GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0_EncryptedNote_FieldNumber_EncryptedNote = 3,
+  GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0_EncryptedNote_FieldNumber_CvNet = 4,
 };
 
 GPB_FINAL @interface GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0_EncryptedNote : GPBMessage
@@ -8690,6 +10198,9 @@ GPB_FINAL @interface GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotes
 
 /** encrypted note payload (epk + enc_ciphertext + out_ciphertext) */
 @property(nonatomic, readwrite, copy, null_resettable) NSData *encryptedNote;
+
+/** 32-byte value commitment (stored unencrypted, for OVK recovery of outgoing notes) */
+@property(nonatomic, readwrite, copy, null_resettable) NSData *cvNet;
 
 @end
 
@@ -8814,6 +10325,99 @@ GPB_FINAL @interface GetShieldedAnchorsResponse_GetShieldedAnchorsResponseV0_Anc
 
 @end
 
+#pragma mark - GetMostRecentShieldedAnchorRequest
+
+typedef GPB_ENUM(GetMostRecentShieldedAnchorRequest_FieldNumber) {
+  GetMostRecentShieldedAnchorRequest_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetMostRecentShieldedAnchorRequest_Version_OneOfCase) {
+  GetMostRecentShieldedAnchorRequest_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetMostRecentShieldedAnchorRequest_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetMostRecentShieldedAnchorRequest : GPBMessage
+
+@property(nonatomic, readonly) GetMostRecentShieldedAnchorRequest_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetMostRecentShieldedAnchorRequest_GetMostRecentShieldedAnchorRequestV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetMostRecentShieldedAnchorRequest_ClearVersionOneOfCase(GetMostRecentShieldedAnchorRequest *message);
+
+#pragma mark - GetMostRecentShieldedAnchorRequest_GetMostRecentShieldedAnchorRequestV0
+
+typedef GPB_ENUM(GetMostRecentShieldedAnchorRequest_GetMostRecentShieldedAnchorRequestV0_FieldNumber) {
+  GetMostRecentShieldedAnchorRequest_GetMostRecentShieldedAnchorRequestV0_FieldNumber_Prove = 1,
+};
+
+GPB_FINAL @interface GetMostRecentShieldedAnchorRequest_GetMostRecentShieldedAnchorRequestV0 : GPBMessage
+
+@property(nonatomic, readwrite) BOOL prove;
+
+@end
+
+#pragma mark - GetMostRecentShieldedAnchorResponse
+
+typedef GPB_ENUM(GetMostRecentShieldedAnchorResponse_FieldNumber) {
+  GetMostRecentShieldedAnchorResponse_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetMostRecentShieldedAnchorResponse_Version_OneOfCase) {
+  GetMostRecentShieldedAnchorResponse_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetMostRecentShieldedAnchorResponse_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetMostRecentShieldedAnchorResponse : GPBMessage
+
+@property(nonatomic, readonly) GetMostRecentShieldedAnchorResponse_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetMostRecentShieldedAnchorResponse_GetMostRecentShieldedAnchorResponseV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetMostRecentShieldedAnchorResponse_ClearVersionOneOfCase(GetMostRecentShieldedAnchorResponse *message);
+
+#pragma mark - GetMostRecentShieldedAnchorResponse_GetMostRecentShieldedAnchorResponseV0
+
+typedef GPB_ENUM(GetMostRecentShieldedAnchorResponse_GetMostRecentShieldedAnchorResponseV0_FieldNumber) {
+  GetMostRecentShieldedAnchorResponse_GetMostRecentShieldedAnchorResponseV0_FieldNumber_Anchor = 1,
+  GetMostRecentShieldedAnchorResponse_GetMostRecentShieldedAnchorResponseV0_FieldNumber_Proof = 2,
+  GetMostRecentShieldedAnchorResponse_GetMostRecentShieldedAnchorResponseV0_FieldNumber_Metadata = 3,
+};
+
+typedef GPB_ENUM(GetMostRecentShieldedAnchorResponse_GetMostRecentShieldedAnchorResponseV0_Result_OneOfCase) {
+  GetMostRecentShieldedAnchorResponse_GetMostRecentShieldedAnchorResponseV0_Result_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetMostRecentShieldedAnchorResponse_GetMostRecentShieldedAnchorResponseV0_Result_OneOfCase_Anchor = 1,
+  GetMostRecentShieldedAnchorResponse_GetMostRecentShieldedAnchorResponseV0_Result_OneOfCase_Proof = 2,
+};
+
+GPB_FINAL @interface GetMostRecentShieldedAnchorResponse_GetMostRecentShieldedAnchorResponseV0 : GPBMessage
+
+@property(nonatomic, readonly) GetMostRecentShieldedAnchorResponse_GetMostRecentShieldedAnchorResponseV0_Result_OneOfCase resultOneOfCase;
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *anchor;
+
+@property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
+
+@property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
+/** Test to see if @c metadata has been set. */
+@property(nonatomic, readwrite) BOOL hasMetadata;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'result'.
+ **/
+void GetMostRecentShieldedAnchorResponse_GetMostRecentShieldedAnchorResponseV0_ClearResultOneOfCase(GetMostRecentShieldedAnchorResponse_GetMostRecentShieldedAnchorResponseV0 *message);
+
 #pragma mark - GetShieldedPoolStateRequest
 
 typedef GPB_ENUM(GetShieldedPoolStateRequest_FieldNumber) {
@@ -8906,6 +10510,108 @@ GPB_FINAL @interface GetShieldedPoolStateResponse_GetShieldedPoolStateResponseV0
  * Clears whatever value was set for the oneof 'result'.
  **/
 void GetShieldedPoolStateResponse_GetShieldedPoolStateResponseV0_ClearResultOneOfCase(GetShieldedPoolStateResponse_GetShieldedPoolStateResponseV0 *message);
+
+#pragma mark - GetShieldedNotesCountRequest
+
+typedef GPB_ENUM(GetShieldedNotesCountRequest_FieldNumber) {
+  GetShieldedNotesCountRequest_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetShieldedNotesCountRequest_Version_OneOfCase) {
+  GetShieldedNotesCountRequest_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetShieldedNotesCountRequest_Version_OneOfCase_V0 = 1,
+};
+
+/**
+ * Count of leaves in the shielded notes commitment tree.
+ * Used by wallets at the start of a shielded sync to seed a
+ * determinate progress-bar denominator. The count IS bound by the
+ * Merk value hash: it is the first field (`total_count`) of the
+ * serialized `CommitmentTree` element whose bytes are hashed into the
+ * app/root hash, so it is provable via a PathQuery proof of that
+ * element (set `prove = true`).
+ **/
+GPB_FINAL @interface GetShieldedNotesCountRequest : GPBMessage
+
+@property(nonatomic, readonly) GetShieldedNotesCountRequest_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetShieldedNotesCountRequest_GetShieldedNotesCountRequestV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetShieldedNotesCountRequest_ClearVersionOneOfCase(GetShieldedNotesCountRequest *message);
+
+#pragma mark - GetShieldedNotesCountRequest_GetShieldedNotesCountRequestV0
+
+typedef GPB_ENUM(GetShieldedNotesCountRequest_GetShieldedNotesCountRequestV0_FieldNumber) {
+  GetShieldedNotesCountRequest_GetShieldedNotesCountRequestV0_FieldNumber_Prove = 1,
+};
+
+GPB_FINAL @interface GetShieldedNotesCountRequest_GetShieldedNotesCountRequestV0 : GPBMessage
+
+@property(nonatomic, readwrite) BOOL prove;
+
+@end
+
+#pragma mark - GetShieldedNotesCountResponse
+
+typedef GPB_ENUM(GetShieldedNotesCountResponse_FieldNumber) {
+  GetShieldedNotesCountResponse_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetShieldedNotesCountResponse_Version_OneOfCase) {
+  GetShieldedNotesCountResponse_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetShieldedNotesCountResponse_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetShieldedNotesCountResponse : GPBMessage
+
+@property(nonatomic, readonly) GetShieldedNotesCountResponse_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetShieldedNotesCountResponse_GetShieldedNotesCountResponseV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetShieldedNotesCountResponse_ClearVersionOneOfCase(GetShieldedNotesCountResponse *message);
+
+#pragma mark - GetShieldedNotesCountResponse_GetShieldedNotesCountResponseV0
+
+typedef GPB_ENUM(GetShieldedNotesCountResponse_GetShieldedNotesCountResponseV0_FieldNumber) {
+  GetShieldedNotesCountResponse_GetShieldedNotesCountResponseV0_FieldNumber_TotalNotesCount = 1,
+  GetShieldedNotesCountResponse_GetShieldedNotesCountResponseV0_FieldNumber_Proof = 2,
+  GetShieldedNotesCountResponse_GetShieldedNotesCountResponseV0_FieldNumber_Metadata = 3,
+};
+
+typedef GPB_ENUM(GetShieldedNotesCountResponse_GetShieldedNotesCountResponseV0_Result_OneOfCase) {
+  GetShieldedNotesCountResponse_GetShieldedNotesCountResponseV0_Result_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetShieldedNotesCountResponse_GetShieldedNotesCountResponseV0_Result_OneOfCase_TotalNotesCount = 1,
+  GetShieldedNotesCountResponse_GetShieldedNotesCountResponseV0_Result_OneOfCase_Proof = 2,
+};
+
+GPB_FINAL @interface GetShieldedNotesCountResponse_GetShieldedNotesCountResponseV0 : GPBMessage
+
+@property(nonatomic, readonly) GetShieldedNotesCountResponse_GetShieldedNotesCountResponseV0_Result_OneOfCase resultOneOfCase;
+
+@property(nonatomic, readwrite) uint64_t totalNotesCount;
+
+@property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
+
+@property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
+/** Test to see if @c metadata has been set. */
+@property(nonatomic, readwrite) BOOL hasMetadata;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'result'.
+ **/
+void GetShieldedNotesCountResponse_GetShieldedNotesCountResponseV0_ClearResultOneOfCase(GetShieldedNotesCountResponse_GetShieldedNotesCountResponseV0 *message);
 
 #pragma mark - GetShieldedNullifiersRequest
 
@@ -9033,433 +10739,6 @@ GPB_FINAL @interface GetShieldedNullifiersResponse_GetShieldedNullifiersResponse
 @property(nonatomic, readonly) NSUInteger entriesArray_Count;
 
 @end
-
-#pragma mark - GetNullifiersTrunkStateRequest
-
-typedef GPB_ENUM(GetNullifiersTrunkStateRequest_FieldNumber) {
-  GetNullifiersTrunkStateRequest_FieldNumber_V0 = 1,
-};
-
-typedef GPB_ENUM(GetNullifiersTrunkStateRequest_Version_OneOfCase) {
-  GetNullifiersTrunkStateRequest_Version_OneOfCase_GPBUnsetOneOfCase = 0,
-  GetNullifiersTrunkStateRequest_Version_OneOfCase_V0 = 1,
-};
-
-GPB_FINAL @interface GetNullifiersTrunkStateRequest : GPBMessage
-
-@property(nonatomic, readonly) GetNullifiersTrunkStateRequest_Version_OneOfCase versionOneOfCase;
-
-@property(nonatomic, readwrite, strong, null_resettable) GetNullifiersTrunkStateRequest_GetNullifiersTrunkStateRequestV0 *v0;
-
-@end
-
-/**
- * Clears whatever value was set for the oneof 'version'.
- **/
-void GetNullifiersTrunkStateRequest_ClearVersionOneOfCase(GetNullifiersTrunkStateRequest *message);
-
-#pragma mark - GetNullifiersTrunkStateRequest_GetNullifiersTrunkStateRequestV0
-
-typedef GPB_ENUM(GetNullifiersTrunkStateRequest_GetNullifiersTrunkStateRequestV0_FieldNumber) {
-  GetNullifiersTrunkStateRequest_GetNullifiersTrunkStateRequestV0_FieldNumber_PoolType = 1,
-  GetNullifiersTrunkStateRequest_GetNullifiersTrunkStateRequestV0_FieldNumber_PoolIdentifier = 2,
-};
-
-GPB_FINAL @interface GetNullifiersTrunkStateRequest_GetNullifiersTrunkStateRequestV0 : GPBMessage
-
-/** ShieldedPoolType enum value (0=credit, 1=main token, 2=individual token) */
-@property(nonatomic, readwrite) uint32_t poolType;
-
-/** 32-byte Identifier, required for pool_type=2 */
-@property(nonatomic, readwrite, copy, null_resettable) NSData *poolIdentifier;
-
-@end
-
-#pragma mark - GetNullifiersTrunkStateResponse
-
-typedef GPB_ENUM(GetNullifiersTrunkStateResponse_FieldNumber) {
-  GetNullifiersTrunkStateResponse_FieldNumber_V0 = 1,
-};
-
-typedef GPB_ENUM(GetNullifiersTrunkStateResponse_Version_OneOfCase) {
-  GetNullifiersTrunkStateResponse_Version_OneOfCase_GPBUnsetOneOfCase = 0,
-  GetNullifiersTrunkStateResponse_Version_OneOfCase_V0 = 1,
-};
-
-GPB_FINAL @interface GetNullifiersTrunkStateResponse : GPBMessage
-
-@property(nonatomic, readonly) GetNullifiersTrunkStateResponse_Version_OneOfCase versionOneOfCase;
-
-@property(nonatomic, readwrite, strong, null_resettable) GetNullifiersTrunkStateResponse_GetNullifiersTrunkStateResponseV0 *v0;
-
-@end
-
-/**
- * Clears whatever value was set for the oneof 'version'.
- **/
-void GetNullifiersTrunkStateResponse_ClearVersionOneOfCase(GetNullifiersTrunkStateResponse *message);
-
-#pragma mark - GetNullifiersTrunkStateResponse_GetNullifiersTrunkStateResponseV0
-
-typedef GPB_ENUM(GetNullifiersTrunkStateResponse_GetNullifiersTrunkStateResponseV0_FieldNumber) {
-  GetNullifiersTrunkStateResponse_GetNullifiersTrunkStateResponseV0_FieldNumber_Proof = 2,
-  GetNullifiersTrunkStateResponse_GetNullifiersTrunkStateResponseV0_FieldNumber_Metadata = 3,
-};
-
-GPB_FINAL @interface GetNullifiersTrunkStateResponse_GetNullifiersTrunkStateResponseV0 : GPBMessage
-
-@property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
-/** Test to see if @c proof has been set. */
-@property(nonatomic, readwrite) BOOL hasProof;
-
-@property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
-/** Test to see if @c metadata has been set. */
-@property(nonatomic, readwrite) BOOL hasMetadata;
-
-@end
-
-#pragma mark - GetNullifiersBranchStateRequest
-
-typedef GPB_ENUM(GetNullifiersBranchStateRequest_FieldNumber) {
-  GetNullifiersBranchStateRequest_FieldNumber_V0 = 1,
-};
-
-typedef GPB_ENUM(GetNullifiersBranchStateRequest_Version_OneOfCase) {
-  GetNullifiersBranchStateRequest_Version_OneOfCase_GPBUnsetOneOfCase = 0,
-  GetNullifiersBranchStateRequest_Version_OneOfCase_V0 = 1,
-};
-
-GPB_FINAL @interface GetNullifiersBranchStateRequest : GPBMessage
-
-@property(nonatomic, readonly) GetNullifiersBranchStateRequest_Version_OneOfCase versionOneOfCase;
-
-@property(nonatomic, readwrite, strong, null_resettable) GetNullifiersBranchStateRequest_GetNullifiersBranchStateRequestV0 *v0;
-
-@end
-
-/**
- * Clears whatever value was set for the oneof 'version'.
- **/
-void GetNullifiersBranchStateRequest_ClearVersionOneOfCase(GetNullifiersBranchStateRequest *message);
-
-#pragma mark - GetNullifiersBranchStateRequest_GetNullifiersBranchStateRequestV0
-
-typedef GPB_ENUM(GetNullifiersBranchStateRequest_GetNullifiersBranchStateRequestV0_FieldNumber) {
-  GetNullifiersBranchStateRequest_GetNullifiersBranchStateRequestV0_FieldNumber_PoolType = 1,
-  GetNullifiersBranchStateRequest_GetNullifiersBranchStateRequestV0_FieldNumber_PoolIdentifier = 2,
-  GetNullifiersBranchStateRequest_GetNullifiersBranchStateRequestV0_FieldNumber_Key = 3,
-  GetNullifiersBranchStateRequest_GetNullifiersBranchStateRequestV0_FieldNumber_Depth = 4,
-  GetNullifiersBranchStateRequest_GetNullifiersBranchStateRequestV0_FieldNumber_CheckpointHeight = 5,
-};
-
-GPB_FINAL @interface GetNullifiersBranchStateRequest_GetNullifiersBranchStateRequestV0 : GPBMessage
-
-@property(nonatomic, readwrite) uint32_t poolType;
-
-@property(nonatomic, readwrite, copy, null_resettable) NSData *poolIdentifier;
-
-@property(nonatomic, readwrite, copy, null_resettable) NSData *key;
-
-@property(nonatomic, readwrite) uint32_t depth;
-
-@property(nonatomic, readwrite) uint64_t checkpointHeight;
-
-@end
-
-#pragma mark - GetNullifiersBranchStateResponse
-
-typedef GPB_ENUM(GetNullifiersBranchStateResponse_FieldNumber) {
-  GetNullifiersBranchStateResponse_FieldNumber_V0 = 1,
-};
-
-typedef GPB_ENUM(GetNullifiersBranchStateResponse_Version_OneOfCase) {
-  GetNullifiersBranchStateResponse_Version_OneOfCase_GPBUnsetOneOfCase = 0,
-  GetNullifiersBranchStateResponse_Version_OneOfCase_V0 = 1,
-};
-
-GPB_FINAL @interface GetNullifiersBranchStateResponse : GPBMessage
-
-@property(nonatomic, readonly) GetNullifiersBranchStateResponse_Version_OneOfCase versionOneOfCase;
-
-@property(nonatomic, readwrite, strong, null_resettable) GetNullifiersBranchStateResponse_GetNullifiersBranchStateResponseV0 *v0;
-
-@end
-
-/**
- * Clears whatever value was set for the oneof 'version'.
- **/
-void GetNullifiersBranchStateResponse_ClearVersionOneOfCase(GetNullifiersBranchStateResponse *message);
-
-#pragma mark - GetNullifiersBranchStateResponse_GetNullifiersBranchStateResponseV0
-
-typedef GPB_ENUM(GetNullifiersBranchStateResponse_GetNullifiersBranchStateResponseV0_FieldNumber) {
-  GetNullifiersBranchStateResponse_GetNullifiersBranchStateResponseV0_FieldNumber_MerkProof = 2,
-};
-
-GPB_FINAL @interface GetNullifiersBranchStateResponse_GetNullifiersBranchStateResponseV0 : GPBMessage
-
-@property(nonatomic, readwrite, copy, null_resettable) NSData *merkProof;
-
-@end
-
-#pragma mark - BlockNullifierChanges
-
-typedef GPB_ENUM(BlockNullifierChanges_FieldNumber) {
-  BlockNullifierChanges_FieldNumber_BlockHeight = 1,
-  BlockNullifierChanges_FieldNumber_NullifiersArray = 2,
-};
-
-GPB_FINAL @interface BlockNullifierChanges : GPBMessage
-
-@property(nonatomic, readwrite) uint64_t blockHeight;
-
-/** Each is 32 bytes */
-@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<NSData*> *nullifiersArray;
-/** The number of items in @c nullifiersArray without causing the array to be created. */
-@property(nonatomic, readonly) NSUInteger nullifiersArray_Count;
-
-@end
-
-#pragma mark - NullifierUpdateEntries
-
-typedef GPB_ENUM(NullifierUpdateEntries_FieldNumber) {
-  NullifierUpdateEntries_FieldNumber_BlockChangesArray = 1,
-};
-
-GPB_FINAL @interface NullifierUpdateEntries : GPBMessage
-
-@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<BlockNullifierChanges*> *blockChangesArray;
-/** The number of items in @c blockChangesArray without causing the array to be created. */
-@property(nonatomic, readonly) NSUInteger blockChangesArray_Count;
-
-@end
-
-#pragma mark - GetRecentNullifierChangesRequest
-
-typedef GPB_ENUM(GetRecentNullifierChangesRequest_FieldNumber) {
-  GetRecentNullifierChangesRequest_FieldNumber_V0 = 1,
-};
-
-typedef GPB_ENUM(GetRecentNullifierChangesRequest_Version_OneOfCase) {
-  GetRecentNullifierChangesRequest_Version_OneOfCase_GPBUnsetOneOfCase = 0,
-  GetRecentNullifierChangesRequest_Version_OneOfCase_V0 = 1,
-};
-
-GPB_FINAL @interface GetRecentNullifierChangesRequest : GPBMessage
-
-@property(nonatomic, readonly) GetRecentNullifierChangesRequest_Version_OneOfCase versionOneOfCase;
-
-@property(nonatomic, readwrite, strong, null_resettable) GetRecentNullifierChangesRequest_GetRecentNullifierChangesRequestV0 *v0;
-
-@end
-
-/**
- * Clears whatever value was set for the oneof 'version'.
- **/
-void GetRecentNullifierChangesRequest_ClearVersionOneOfCase(GetRecentNullifierChangesRequest *message);
-
-#pragma mark - GetRecentNullifierChangesRequest_GetRecentNullifierChangesRequestV0
-
-typedef GPB_ENUM(GetRecentNullifierChangesRequest_GetRecentNullifierChangesRequestV0_FieldNumber) {
-  GetRecentNullifierChangesRequest_GetRecentNullifierChangesRequestV0_FieldNumber_StartHeight = 1,
-  GetRecentNullifierChangesRequest_GetRecentNullifierChangesRequestV0_FieldNumber_Prove = 2,
-};
-
-GPB_FINAL @interface GetRecentNullifierChangesRequest_GetRecentNullifierChangesRequestV0 : GPBMessage
-
-@property(nonatomic, readwrite) uint64_t startHeight;
-
-@property(nonatomic, readwrite) BOOL prove;
-
-@end
-
-#pragma mark - GetRecentNullifierChangesResponse
-
-typedef GPB_ENUM(GetRecentNullifierChangesResponse_FieldNumber) {
-  GetRecentNullifierChangesResponse_FieldNumber_V0 = 1,
-};
-
-typedef GPB_ENUM(GetRecentNullifierChangesResponse_Version_OneOfCase) {
-  GetRecentNullifierChangesResponse_Version_OneOfCase_GPBUnsetOneOfCase = 0,
-  GetRecentNullifierChangesResponse_Version_OneOfCase_V0 = 1,
-};
-
-GPB_FINAL @interface GetRecentNullifierChangesResponse : GPBMessage
-
-@property(nonatomic, readonly) GetRecentNullifierChangesResponse_Version_OneOfCase versionOneOfCase;
-
-@property(nonatomic, readwrite, strong, null_resettable) GetRecentNullifierChangesResponse_GetRecentNullifierChangesResponseV0 *v0;
-
-@end
-
-/**
- * Clears whatever value was set for the oneof 'version'.
- **/
-void GetRecentNullifierChangesResponse_ClearVersionOneOfCase(GetRecentNullifierChangesResponse *message);
-
-#pragma mark - GetRecentNullifierChangesResponse_GetRecentNullifierChangesResponseV0
-
-typedef GPB_ENUM(GetRecentNullifierChangesResponse_GetRecentNullifierChangesResponseV0_FieldNumber) {
-  GetRecentNullifierChangesResponse_GetRecentNullifierChangesResponseV0_FieldNumber_NullifierUpdateEntries = 1,
-  GetRecentNullifierChangesResponse_GetRecentNullifierChangesResponseV0_FieldNumber_Proof = 2,
-  GetRecentNullifierChangesResponse_GetRecentNullifierChangesResponseV0_FieldNumber_Metadata = 3,
-};
-
-typedef GPB_ENUM(GetRecentNullifierChangesResponse_GetRecentNullifierChangesResponseV0_Result_OneOfCase) {
-  GetRecentNullifierChangesResponse_GetRecentNullifierChangesResponseV0_Result_OneOfCase_GPBUnsetOneOfCase = 0,
-  GetRecentNullifierChangesResponse_GetRecentNullifierChangesResponseV0_Result_OneOfCase_NullifierUpdateEntries = 1,
-  GetRecentNullifierChangesResponse_GetRecentNullifierChangesResponseV0_Result_OneOfCase_Proof = 2,
-};
-
-GPB_FINAL @interface GetRecentNullifierChangesResponse_GetRecentNullifierChangesResponseV0 : GPBMessage
-
-@property(nonatomic, readonly) GetRecentNullifierChangesResponse_GetRecentNullifierChangesResponseV0_Result_OneOfCase resultOneOfCase;
-
-@property(nonatomic, readwrite, strong, null_resettable) NullifierUpdateEntries *nullifierUpdateEntries;
-
-@property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
-
-@property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
-/** Test to see if @c metadata has been set. */
-@property(nonatomic, readwrite) BOOL hasMetadata;
-
-@end
-
-/**
- * Clears whatever value was set for the oneof 'result'.
- **/
-void GetRecentNullifierChangesResponse_GetRecentNullifierChangesResponseV0_ClearResultOneOfCase(GetRecentNullifierChangesResponse_GetRecentNullifierChangesResponseV0 *message);
-
-#pragma mark - CompactedBlockNullifierChanges
-
-typedef GPB_ENUM(CompactedBlockNullifierChanges_FieldNumber) {
-  CompactedBlockNullifierChanges_FieldNumber_StartBlockHeight = 1,
-  CompactedBlockNullifierChanges_FieldNumber_EndBlockHeight = 2,
-  CompactedBlockNullifierChanges_FieldNumber_NullifiersArray = 3,
-};
-
-GPB_FINAL @interface CompactedBlockNullifierChanges : GPBMessage
-
-@property(nonatomic, readwrite) uint64_t startBlockHeight;
-
-@property(nonatomic, readwrite) uint64_t endBlockHeight;
-
-/** Each is 32 bytes */
-@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<NSData*> *nullifiersArray;
-/** The number of items in @c nullifiersArray without causing the array to be created. */
-@property(nonatomic, readonly) NSUInteger nullifiersArray_Count;
-
-@end
-
-#pragma mark - CompactedNullifierUpdateEntries
-
-typedef GPB_ENUM(CompactedNullifierUpdateEntries_FieldNumber) {
-  CompactedNullifierUpdateEntries_FieldNumber_CompactedBlockChangesArray = 1,
-};
-
-GPB_FINAL @interface CompactedNullifierUpdateEntries : GPBMessage
-
-@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<CompactedBlockNullifierChanges*> *compactedBlockChangesArray;
-/** The number of items in @c compactedBlockChangesArray without causing the array to be created. */
-@property(nonatomic, readonly) NSUInteger compactedBlockChangesArray_Count;
-
-@end
-
-#pragma mark - GetRecentCompactedNullifierChangesRequest
-
-typedef GPB_ENUM(GetRecentCompactedNullifierChangesRequest_FieldNumber) {
-  GetRecentCompactedNullifierChangesRequest_FieldNumber_V0 = 1,
-};
-
-typedef GPB_ENUM(GetRecentCompactedNullifierChangesRequest_Version_OneOfCase) {
-  GetRecentCompactedNullifierChangesRequest_Version_OneOfCase_GPBUnsetOneOfCase = 0,
-  GetRecentCompactedNullifierChangesRequest_Version_OneOfCase_V0 = 1,
-};
-
-GPB_FINAL @interface GetRecentCompactedNullifierChangesRequest : GPBMessage
-
-@property(nonatomic, readonly) GetRecentCompactedNullifierChangesRequest_Version_OneOfCase versionOneOfCase;
-
-@property(nonatomic, readwrite, strong, null_resettable) GetRecentCompactedNullifierChangesRequest_GetRecentCompactedNullifierChangesRequestV0 *v0;
-
-@end
-
-/**
- * Clears whatever value was set for the oneof 'version'.
- **/
-void GetRecentCompactedNullifierChangesRequest_ClearVersionOneOfCase(GetRecentCompactedNullifierChangesRequest *message);
-
-#pragma mark - GetRecentCompactedNullifierChangesRequest_GetRecentCompactedNullifierChangesRequestV0
-
-typedef GPB_ENUM(GetRecentCompactedNullifierChangesRequest_GetRecentCompactedNullifierChangesRequestV0_FieldNumber) {
-  GetRecentCompactedNullifierChangesRequest_GetRecentCompactedNullifierChangesRequestV0_FieldNumber_StartBlockHeight = 1,
-  GetRecentCompactedNullifierChangesRequest_GetRecentCompactedNullifierChangesRequestV0_FieldNumber_Prove = 2,
-};
-
-GPB_FINAL @interface GetRecentCompactedNullifierChangesRequest_GetRecentCompactedNullifierChangesRequestV0 : GPBMessage
-
-@property(nonatomic, readwrite) uint64_t startBlockHeight;
-
-@property(nonatomic, readwrite) BOOL prove;
-
-@end
-
-#pragma mark - GetRecentCompactedNullifierChangesResponse
-
-typedef GPB_ENUM(GetRecentCompactedNullifierChangesResponse_FieldNumber) {
-  GetRecentCompactedNullifierChangesResponse_FieldNumber_V0 = 1,
-};
-
-typedef GPB_ENUM(GetRecentCompactedNullifierChangesResponse_Version_OneOfCase) {
-  GetRecentCompactedNullifierChangesResponse_Version_OneOfCase_GPBUnsetOneOfCase = 0,
-  GetRecentCompactedNullifierChangesResponse_Version_OneOfCase_V0 = 1,
-};
-
-GPB_FINAL @interface GetRecentCompactedNullifierChangesResponse : GPBMessage
-
-@property(nonatomic, readonly) GetRecentCompactedNullifierChangesResponse_Version_OneOfCase versionOneOfCase;
-
-@property(nonatomic, readwrite, strong, null_resettable) GetRecentCompactedNullifierChangesResponse_GetRecentCompactedNullifierChangesResponseV0 *v0;
-
-@end
-
-/**
- * Clears whatever value was set for the oneof 'version'.
- **/
-void GetRecentCompactedNullifierChangesResponse_ClearVersionOneOfCase(GetRecentCompactedNullifierChangesResponse *message);
-
-#pragma mark - GetRecentCompactedNullifierChangesResponse_GetRecentCompactedNullifierChangesResponseV0
-
-typedef GPB_ENUM(GetRecentCompactedNullifierChangesResponse_GetRecentCompactedNullifierChangesResponseV0_FieldNumber) {
-  GetRecentCompactedNullifierChangesResponse_GetRecentCompactedNullifierChangesResponseV0_FieldNumber_CompactedNullifierUpdateEntries = 1,
-  GetRecentCompactedNullifierChangesResponse_GetRecentCompactedNullifierChangesResponseV0_FieldNumber_Proof = 2,
-  GetRecentCompactedNullifierChangesResponse_GetRecentCompactedNullifierChangesResponseV0_FieldNumber_Metadata = 3,
-};
-
-typedef GPB_ENUM(GetRecentCompactedNullifierChangesResponse_GetRecentCompactedNullifierChangesResponseV0_Result_OneOfCase) {
-  GetRecentCompactedNullifierChangesResponse_GetRecentCompactedNullifierChangesResponseV0_Result_OneOfCase_GPBUnsetOneOfCase = 0,
-  GetRecentCompactedNullifierChangesResponse_GetRecentCompactedNullifierChangesResponseV0_Result_OneOfCase_CompactedNullifierUpdateEntries = 1,
-  GetRecentCompactedNullifierChangesResponse_GetRecentCompactedNullifierChangesResponseV0_Result_OneOfCase_Proof = 2,
-};
-
-GPB_FINAL @interface GetRecentCompactedNullifierChangesResponse_GetRecentCompactedNullifierChangesResponseV0 : GPBMessage
-
-@property(nonatomic, readonly) GetRecentCompactedNullifierChangesResponse_GetRecentCompactedNullifierChangesResponseV0_Result_OneOfCase resultOneOfCase;
-
-@property(nonatomic, readwrite, strong, null_resettable) CompactedNullifierUpdateEntries *compactedNullifierUpdateEntries;
-
-@property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
-
-@property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
-/** Test to see if @c metadata has been set. */
-@property(nonatomic, readwrite) BOOL hasMetadata;
-
-@end
-
-/**
- * Clears whatever value was set for the oneof 'result'.
- **/
-void GetRecentCompactedNullifierChangesResponse_GetRecentCompactedNullifierChangesResponseV0_ClearResultOneOfCase(GetRecentCompactedNullifierChangesResponse_GetRecentCompactedNullifierChangesResponseV0 *message);
 
 NS_ASSUME_NONNULL_END
 

@@ -281,7 +281,7 @@ Here is a simplified view of every Rust workspace member, grouped by role:
 | **gRPC definitions** | `dapi-grpc` |
 | **WASM bindings** | `wasm-dpp`, `wasm-dpp2`, `wasm-sdk`, `wasm-drive-verify` |
 | **iOS/FFI** | `rs-sdk-ffi` |
-| **System contracts** | `dpns-contract`, `dashpay-contract`, `withdrawals-contract`, `masternode-reward-shares-contract`, `feature-flags-contract`, `wallet-utils-contract`, `token-history-contract`, `keyword-search-contract`, `data-contracts` |
+| **System contracts** | `dpns-contract`, `dashpay-contract`, `withdrawals-contract`, `masternode-reward-shares-contract`, `wallet-utils-contract`, `token-history-contract`, `keyword-search-contract`, `data-contracts` |
 | **Tooling** | `dashmate` (JS), `strategy-tests`, `simple-signer`, `check-features`, `json-schema-compatibility-validator` |
 | **Other** | `dash-platform-macros`, `rs-dash-event-bus`, `rs-platform-wallet`, `dash-platform-balance-checker`, `rs-dapi` |
 

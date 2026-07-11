@@ -24,7 +24,7 @@ use platform_version::version::PlatformVersion;
 
 impl ShieldTransitionMethodsV0 for ShieldTransition {
     #[cfg(feature = "state-transition-signing")]
-    fn try_from_bundle_with_signer<S: Signer<PlatformAddress>>(
+    async fn try_from_bundle_with_signer<S: Signer<PlatformAddress>>(
         inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
         actions: Vec<SerializedAction>,
         amount: u64,
@@ -42,18 +42,21 @@ impl ShieldTransitionMethodsV0 for ShieldTransition {
             .shield_state_transition
             .default_current_version
         {
-            0 => ShieldTransitionV0::try_from_bundle_with_signer(
-                inputs,
-                actions,
-                amount,
-                anchor,
-                proof,
-                binding_signature,
-                fee_strategy,
-                signer,
-                user_fee_increase,
-                platform_version,
-            ),
+            0 => {
+                ShieldTransitionV0::try_from_bundle_with_signer(
+                    inputs,
+                    actions,
+                    amount,
+                    anchor,
+                    proof,
+                    binding_signature,
+                    fee_strategy,
+                    signer,
+                    user_fee_increase,
+                    platform_version,
+                )
+                .await
+            }
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "ShieldTransition::try_from_bundle_with_signer".to_string(),
                 known_versions: vec![0],

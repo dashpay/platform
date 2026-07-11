@@ -302,26 +302,24 @@ describe('StateTransitionProofResult types', () => {
 
   describe('VerifiedMasternodeVote', () => {
     it('should construct from object with Abstain vote', () => {
-      // Vote: tag = "type", content = "data", rename_all = "camelCase"
-      // ResourceVote: tag = "$formatVersion", V0 renamed to "0"
-      // VotePoll: tag = "type", content = "data", rename_all = "camelCase"
-      // ResourceVoteChoice: tag = "type", content = "data", rename_all = "camelCase"
+      // Vote:               internal tag `$type` ($-prefix because the level
+      //                     also carries the inner `$formatVersion`)
+      // ResourceVote:       single V0 variant flattens its body, contributing
+      //                     `$formatVersion: "0"` at top level
+      // VotePoll:           internal tag `type` (plain — no `$`-fields here)
+      // ResourceVoteChoice: custom serde, flat `{type, identity?}`
       const data = {
         vote: {
-          type: 'resourceVote',
-          data: {
-            $formatVersion: '0',
-            votePoll: {
-              type: 'contestedDocumentResourceVotePoll',
-              data: {
-                contractId: identifier,
-                documentTypeName: 'domain',
-                indexName: 'parentNameAndLabel',
-                indexValues: ['dash', 'test'],
-              },
-            },
-            resourceVoteChoice: { type: 'abstain' },
+          $type: 'resourceVote',
+          $formatVersion: '0',
+          votePoll: {
+            $type: 'contestedDocumentResourceVotePoll',
+            contractId: identifier,
+            documentTypeName: 'domain',
+            indexName: 'parentNameAndLabel',
+            indexValues: ['dash', 'test'],
           },
+          resourceVoteChoice: { $type: 'abstain' },
         },
       };
       const result = wasm.VerifiedMasternodeVote.fromObject(data);
@@ -337,20 +335,16 @@ describe('StateTransitionProofResult types', () => {
     it('should construct from object with Abstain vote', () => {
       const data = {
         vote: {
-          type: 'resourceVote',
-          data: {
-            $formatVersion: '0',
-            votePoll: {
-              type: 'contestedDocumentResourceVotePoll',
-              data: {
-                contractId: identifier,
-                documentTypeName: 'domain',
-                indexName: 'parentNameAndLabel',
-                indexValues: ['dash', 'test'],
-              },
-            },
-            resourceVoteChoice: { type: 'abstain' },
+          $type: 'resourceVote',
+          $formatVersion: '0',
+          votePoll: {
+            $type: 'contestedDocumentResourceVotePoll',
+            contractId: identifier,
+            documentTypeName: 'domain',
+            indexName: 'parentNameAndLabel',
+            indexValues: ['dash', 'test'],
           },
+          resourceVoteChoice: { $type: 'abstain' },
         },
       };
       const result = wasm.VerifiedNextDistribution.fromObject(data);
@@ -391,6 +385,24 @@ describe('StateTransitionProofResult types', () => {
 
       expect(result.balances.size).to.equal(0);
     });
+
+    // Regression: toJSON() must produce a value where JSON.stringify preserves
+    // Map entries. js_sys::Map embedded in a JsValue serialises to {} via
+    // JSON.stringify, so toJSON() has to normalise the Map to a plain object.
+    it('toJSON() should preserve Map entries through JSON.stringify', () => {
+      const id1 = new wasm.Identifier(identifier);
+      const balancesMap = new Map();
+      balancesMap.set(id1.toBase58(), 999000n);
+
+      const result = wasm.VerifiedTokenIdentitiesBalances.fromObject({ balances: balancesMap });
+      const json = result.toJSON();
+
+      const stringified = JSON.stringify(json);
+      const parsed = JSON.parse(stringified);
+      expect(parsed.balances).to.have.property(id1.toBase58());
+      // BigInt is normalised to a string for JSON compatibility.
+      expect(parsed.balances[id1.toBase58()]).to.equal('999000');
+    });
   });
 
   describe('VerifiedDocuments', () => {
@@ -419,6 +431,18 @@ describe('StateTransitionProofResult types', () => {
 
       expect(result.documents.size).to.equal(0);
     });
+
+    it('toJSON() should preserve Map entries through JSON.stringify', () => {
+      const id1 = new wasm.Identifier(identifier);
+      const docsMap = new Map();
+      docsMap.set(id1.toBase58(), null);
+
+      const result = wasm.VerifiedDocuments.fromObject({ documents: docsMap });
+      const parsed = JSON.parse(JSON.stringify(result.toJSON()));
+
+      expect(parsed.documents).to.have.property(id1.toBase58());
+      expect(parsed.documents[id1.toBase58()]).to.equal(null);
+    });
   });
 
   describe('VerifiedAddressInfos', () => {
@@ -445,6 +469,17 @@ describe('StateTransitionProofResult types', () => {
       const result = wasm.VerifiedAddressInfos.fromObject(data);
 
       expect(result.addressInfos.size).to.equal(0);
+    });
+
+    it('toJSON() should preserve Map entries through JSON.stringify', () => {
+      const infosMap = new Map();
+      infosMap.set('abcdef0123456789', null);
+
+      const result = wasm.VerifiedAddressInfos.fromObject({ addressInfos: infosMap });
+      const parsed = JSON.parse(JSON.stringify(result.toJSON()));
+
+      expect(parsed.addressInfos).to.have.property('abcdef0123456789');
+      expect(parsed.addressInfos.abcdef0123456789).to.equal(null);
     });
   });
 
@@ -476,6 +511,27 @@ describe('StateTransitionProofResult types', () => {
       expect(obj).to.have.property('identity');
       expect(obj).to.have.property('addressInfos');
     });
+
+    it('toJSON() should preserve Map entries through JSON.stringify', () => {
+      const identityData = {
+        $formatVersion: '0',
+        id: identifier,
+        publicKeys: [],
+        balance: 0,
+        revision: 0,
+      };
+      const infosMap = new Map();
+      infosMap.set('deadbeef', null);
+
+      const result = wasm.VerifiedIdentityFullWithAddressInfos.fromObject({
+        identity: identityData,
+        addressInfos: infosMap,
+      });
+      const parsed = JSON.parse(JSON.stringify(result.toJSON()));
+
+      expect(parsed.addressInfos).to.have.property('deadbeef');
+      expect(parsed.addressInfos.deadbeef).to.equal(null);
+    });
   });
 
   describe('VerifiedIdentityWithAddressInfos', () => {
@@ -502,6 +558,28 @@ describe('StateTransitionProofResult types', () => {
       const obj = result.toObject();
       expect(obj).to.have.property('partialIdentity');
       expect(obj).to.have.property('addressInfos');
+    });
+
+    it('toJSON() should preserve Map entries through JSON.stringify', () => {
+      const idBytes = new wasm.Identifier(identifier).toBytes();
+      const piData = {
+        id: idBytes,
+        loadedPublicKeys: {},
+        balance: null,
+        revision: null,
+        notFoundPublicKeys: [],
+      };
+      const infosMap = new Map();
+      infosMap.set('cafebabe', null);
+
+      const result = wasm.VerifiedIdentityWithAddressInfos.fromObject({
+        partialIdentity: piData,
+        addressInfos: infosMap,
+      });
+      const parsed = JSON.parse(JSON.stringify(result.toJSON()));
+
+      expect(parsed.addressInfos).to.have.property('cafebabe');
+      expect(parsed.addressInfos.cafebabe).to.equal(null);
     });
   });
 });

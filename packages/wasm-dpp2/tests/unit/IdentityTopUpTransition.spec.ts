@@ -162,7 +162,9 @@ describe('IdentityTopUpTransition', () => {
 
       expect(json.$formatVersion).to.equal('0');
       expect(json.identityId).to.equal(testIdentityId);
+      // AssetLockProof emits internally-tagged shape: { type, ...inner fields }
       expect(json.assetLockProof).to.be.an('object');
+      expect(json.assetLockProof.$type).to.equal('instant');
       expect(json.assetLockProof).to.have.property('instantLock');
       expect(json.assetLockProof).to.have.property('transaction');
       expect(json.assetLockProof.outputIndex).to.equal(0);

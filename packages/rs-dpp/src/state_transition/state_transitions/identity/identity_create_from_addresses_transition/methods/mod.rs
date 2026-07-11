@@ -33,7 +33,10 @@ use crate::ProtocolError;
 
 impl IdentityCreateFromAddressesTransitionMethodsV0 for IdentityCreateFromAddressesTransition {
     #[cfg(feature = "state-transition-signing")]
-    fn try_from_inputs_with_signer<S: Signer<IdentityPublicKey>, WS: Signer<PlatformAddress>>(
+    async fn try_from_inputs_with_signer<
+        S: Signer<IdentityPublicKey>,
+        WS: Signer<PlatformAddress>,
+    >(
         identity: &Identity,
         inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
         output: Option<(PlatformAddress, Credits)>,
@@ -57,7 +60,8 @@ impl IdentityCreateFromAddressesTransitionMethodsV0 for IdentityCreateFromAddres
                 address_signer,
                 user_fee_increase,
                 platform_version,
-            )?),
+            )
+            .await?),
             v => Err(ProtocolError::UnknownVersionError(format!(
                 "Unknown IdentityCreateFromAddressesTransition version for try_from_inputs_with_signer {v}"
             ))),

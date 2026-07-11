@@ -175,7 +175,26 @@ impl Debug for TenderdashStatus {
     }
 }
 
+/// Hard cap on the length of attacker-influenceable CBOR payloads accepted
+/// before decoding Tenderdash error data.
+///
+/// 64 KiB is comfortably above any legitimate payload. The cap bounds memory
+/// only — `ciborium`'s own recursion limit (256) bounds nesting depth and
+/// returns `RecursionLimitExceeded` rather than recursing into the stack.
+const MAX_CBOR_INPUT_SIZE: usize = 65_536;
+
+// `ciborium` caps recursion at depth 256 and returns
+// `Error::RecursionLimitExceeded` (a normal `Err`, not a panic) for deeper
+// input, so a hostile peer cannot exhaust the stack here.
+fn decode_cbor_value(bytes: &[u8]) -> Option<ciborium::Value> {
+    ciborium::de::from_reader::<ciborium::Value, _>(bytes).ok()
+}
+
 /// Decode a potentially unpadded base64 string used by Tenderdash error payloads.
+///
+/// This is a pure decoder: callers decide whether and at what level to log a
+/// failure (some treat decode failure as the expected fall-through path, others
+/// want to surface the decoder error).
 pub(crate) fn base64_decode(input: &str) -> Option<Vec<u8>> {
     static BASE64: engine::GeneralPurpose = {
         let b64_config = engine::GeneralPurposeConfig::new()
@@ -185,15 +204,13 @@ pub(crate) fn base64_decode(input: &str) -> Option<Vec<u8>> {
 
         engine::GeneralPurpose::new(&base64::alphabet::STANDARD, b64_config)
     };
-    BASE64
-        .decode(input)
-        .inspect_err(|e| {
-            tracing::debug!("Failed to decode base64: {}", e);
-        })
-        .ok()
+    BASE64.decode(input).ok()
 }
 
 /// Walk a nested CBOR map by following the provided key path.
+//
+// MIRROR: keep in sync with `extract_drive_error_message` in
+// packages/rs-sdk/src/error.rs.
 fn walk_cbor_for_key<'a>(data: &'a ciborium::Value, keys: &[&str]) -> Option<&'a ciborium::Value> {
     if keys.is_empty() {
         tracing::trace!(?data, "found value, returning");
@@ -225,15 +242,27 @@ fn walk_cbor_for_key<'a>(data: &'a ciborium::Value, keys: &[&str]) -> Option<&'a
 pub(super) fn decode_consensus_error(info_base64: String) -> Option<Vec<u8>> {
     use ciborium::value::Value;
 
+    let len = base64::decoded_len_estimate(info_base64.len());
+    if len > MAX_CBOR_INPUT_SIZE {
+        tracing::debug!(
+            len,
+            max = MAX_CBOR_INPUT_SIZE,
+            "consensus error info exceeds CBOR size cap; refusing to decode"
+        );
+        return None;
+    }
+
     tracing::trace!(?info_base64, "decode_consensus_error: received info");
-    let decoded_bytes = base64_decode(&info_base64)?;
+    let decoded_bytes = base64_decode(&info_base64).or_else(|| {
+        tracing::debug!("Failed to base64-decode consensus error info");
+        None
+    })?;
+
     tracing::trace!(hex = %hex::encode(&decoded_bytes), len = decoded_bytes.len(), "decode_consensus_error: base64 decoded bytes");
-    // CBOR-decode decoded_bytes
-    let raw_value: Value = ciborium::de::from_reader(decoded_bytes.as_slice())
-        .inspect_err(|e| {
-            tracing::debug!("Failed to decode drive error info from CBOR: {}", e);
-        })
-        .ok()?;
+    let raw_value: Value = decode_cbor_value(&decoded_bytes).or_else(|| {
+        tracing::debug!("Failed to decode drive error info from CBOR");
+        None
+    })?;
 
     tracing::trace!("Drive error info CBOR value: {:?}", raw_value);
 
@@ -273,6 +302,33 @@ pub(super) fn decode_consensus_error(info_base64: String) -> Option<Vec<u8>> {
     Some(serialized_error)
 }
 
+/// Best-effort decode of a Tenderdash `data` field: base64 → CBOR map →
+/// `message` text. Returns `None` whenever any step fails (input is plain
+/// text, base64 of non-CBOR, or CBOR without a `message` key) so the caller
+/// can fall back to the raw string. The base64 step accepts any base64-
+/// shaped input; non-CBOR bytes are filtered out by the CBOR step.
+fn decode_data_message(data: &str) -> Option<String> {
+    if data.len() > MAX_CBOR_INPUT_SIZE {
+        tracing::debug!(
+            len = data.len(),
+            max = MAX_CBOR_INPUT_SIZE,
+            "data field exceeds CBOR size cap; refusing to decode"
+        );
+        return None;
+    }
+    // Failure of either step is the expected fall-through for plain-text data
+    // fields, so we deliberately do not log here — `base64_decode` is a pure
+    // decoder and CBOR failure on plain text is normal.
+    let decoded_bytes = base64_decode(data)?;
+
+    let raw_value = decode_cbor_value(&decoded_bytes)?;
+
+    walk_cbor_for_key(&raw_value, &["message"])
+        .and_then(|v| v.as_text())
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
+}
+
 impl From<serde_json::Value> for TenderdashStatus {
     // Convert from a JSON error object returned by Tenderdash RPC, typically in the `error` field of a JSON-RPC response.
     fn from(value: serde_json::Value) -> Self {
@@ -295,11 +351,10 @@ impl From<serde_json::Value> for TenderdashStatus {
                 object
                     .get("data")
                     .and_then(|d| d.as_str())
-                    .filter(|s| s.is_ascii())
+                    .map(|s| decode_data_message(s).unwrap_or_else(|| s.to_string()))
             } else {
-                raw_message
-            }
-            .map(|s| s.to_string());
+                raw_message.map(|s| s.to_string())
+            };
 
             // info contains additional error details, possibly including consensus error
             let consensus_error = object
@@ -677,5 +732,206 @@ mod tests {
         let tonic_status = status.to_status();
         // "tx already exists in cache" maps to AlreadyExists, which maps to already_exists
         assert_eq!(tonic_status.code(), tonic::Code::AlreadyExists);
+    }
+
+    // -- decode_data_message tests --
+
+    #[test]
+    fn decode_data_message_plain_text_returns_none() {
+        // Plain text that is not base64 CBOR → returns None so the caller
+        // can fall back to using the raw string.
+        assert!(super::decode_data_message("just plain text").is_none());
+    }
+
+    #[test]
+    fn decode_data_message_base64_cbor_with_message() {
+        // CBOR: {"message": "hello world"}
+        let cbor_bytes = {
+            let mut buf = Vec::new();
+            ciborium::ser::into_writer(
+                &ciborium::Value::Map(vec![(
+                    ciborium::Value::Text("message".to_string()),
+                    ciborium::Value::Text("hello world".to_string()),
+                )]),
+                &mut buf,
+            )
+            .unwrap();
+            buf
+        };
+        let b64 = base64::prelude::BASE64_STANDARD.encode(&cbor_bytes);
+        assert_eq!(
+            super::decode_data_message(&b64),
+            Some("hello world".to_string())
+        );
+    }
+
+    #[test]
+    fn decode_data_message_empty_cbor_message_returns_none() {
+        // CBOR: {"message": ""} → returns None so the caller falls back to the
+        // raw `data` string instead of suppressing it with an empty message.
+        let cbor_bytes = {
+            let mut buf = Vec::new();
+            ciborium::ser::into_writer(
+                &ciborium::Value::Map(vec![(
+                    ciborium::Value::Text("message".to_string()),
+                    ciborium::Value::Text(String::new()),
+                )]),
+                &mut buf,
+            )
+            .unwrap();
+            buf
+        };
+        let b64 = base64::prelude::BASE64_STANDARD.encode(&cbor_bytes);
+        assert!(super::decode_data_message(&b64).is_none());
+    }
+
+    #[test]
+    fn decode_data_message_base64_cbor_without_message_key() {
+        // CBOR: {"data": {"serializedError": [1, 2, 3]}} — no "message" key
+        let cbor_bytes = {
+            let mut buf = Vec::new();
+            ciborium::ser::into_writer(
+                &ciborium::Value::Map(vec![(
+                    ciborium::Value::Text("data".to_string()),
+                    ciborium::Value::Map(vec![(
+                        ciborium::Value::Text("serializedError".to_string()),
+                        ciborium::Value::Array(vec![
+                            ciborium::Value::Integer(1.into()),
+                            ciborium::Value::Integer(2.into()),
+                            ciborium::Value::Integer(3.into()),
+                        ]),
+                    )]),
+                )]),
+                &mut buf,
+            )
+            .unwrap();
+            buf
+        };
+        let b64 = base64::prelude::BASE64_STANDARD.encode(&cbor_bytes);
+        assert!(super::decode_data_message(&b64).is_none());
+    }
+
+    // Pathological CBOR: 60_000 nested single-pair-map openers (`0xA1`).
+    // `ciborium` rejects this at its depth-256 recursion limit with a normal
+    // `Err`, so the decode returns `None` without exhausting the stack.
+    #[test]
+    fn decode_cbor_value_rejects_deep_nesting_without_stack_exhaustion() {
+        let payload = vec![0xA1u8; 60_000];
+        assert!(super::decode_cbor_value(&payload).is_none());
+    }
+
+    // -- Real-world DET log fixture tests --
+
+    #[test]
+    fn from_json_value_decodes_cbor_data_field_non_unique_key() {
+        setup_tracing();
+        // Real fixture from DET logs: code 13 Internal, data is base64 CBOR
+        // containing {"message": "storage: identity: a unique key ... non unique set [...]"}
+        let data_b64 = concat!(
+            "oWdtZXNzYWdleMVzdG9yYWdlOiBpZGVudGl0eTogYSB1bmlxdWUga2V5IHdpdGggdGhh",
+            "dCBoYXNoIGFscmVhZHkgZXhpc3RzOiB0aGUga2V5IGFscmVhZHkgZXhpc3RzIGluIHRo",
+            "ZSBub24gdW5pcXVlIHNldCBbMTM1LCAyMDIsIDE3MiwgNTMsIDE3NiwgNDUsIDE5MSwg",
+            "MjcsIDUwLCAxMiwgNTAsIDIxNSwgNjUsIDEyNCwgMTQ3LCAzLCAyMDgsIDYsIDIyNiwg",
+            "MTUxXQ==",
+        );
+
+        let value = serde_json::json!({
+            "code": 13,
+            "message": "Internal error",
+            "data": data_b64,
+            "info": ""
+        });
+
+        let status = TenderdashStatus::from(value);
+        assert_eq!(status.code, 13);
+        assert!(
+            status
+                .message
+                .as_deref()
+                .expect("message should be decoded")
+                .starts_with("storage: identity: a unique key with that hash already exists"),
+            "expected decoded message, got: {:?}",
+            status.message
+        );
+        assert!(
+            status
+                .message
+                .as_deref()
+                .unwrap()
+                .contains("non unique set"),
+        );
+        assert!(status.consensus_error.is_none());
+    }
+
+    #[test]
+    fn from_json_value_decodes_cbor_data_field_unique_key() {
+        setup_tracing();
+        // Real fixture from DET logs: code 13 Internal, "unique set" variant
+        let data_b64 = concat!(
+            "oWdtZXNzYWdleMdzdG9yYWdlOiBpZGVudGl0eTogYSB1bmlxdWUga2V5IHdpdGggdGhh",
+            "dCBoYXNoIGFscmVhZHkgZXhpc3RzOiB0aGUga2V5IGFscmVhZHkgZXhpc3RzIGluIHRo",
+            "ZSB1bmlxdWUgc2V0IFsyMzIsIDQ4LCAxMTksIDEzNywgMTYxLCAxNDMsIDE1LCAxNzks",
+            "IDIzNSwgOTgsIDEwMSwgMjUxLCAyNTEsIDExMCwgMTMyLCAzNSwgMTE5LCA4NCwgMTQ3",
+            "LCAxMjRd",
+        );
+
+        let value = serde_json::json!({
+            "code": 13,
+            "message": "Internal error",
+            "data": data_b64,
+            "info": ""
+        });
+
+        let status = TenderdashStatus::from(value);
+        assert_eq!(status.code, 13);
+        assert!(
+            status
+                .message
+                .as_deref()
+                .expect("message should be decoded")
+                .starts_with("storage: identity: a unique key with that hash already exists"),
+            "expected decoded message, got: {:?}",
+            status.message
+        );
+        // Use the more specific phrasing so a swapped fixture wouldn't pass —
+        // "unique set" alone also matches "non unique set" from the paired test.
+        assert!(
+            status
+                .message
+                .as_deref()
+                .unwrap()
+                .contains("in the unique set"),
+        );
+        assert!(status.consensus_error.is_none());
+    }
+
+    #[test]
+    fn from_json_value_preserves_plain_text_data() {
+        // When data is plain text (not base64 CBOR), preserve it as-is
+        let value = serde_json::json!({
+            "code": 13,
+            "message": "Internal error",
+            "data": "plain text error detail"
+        });
+
+        let status = TenderdashStatus::from(value);
+        assert_eq!(status.message.as_deref(), Some("plain text error detail"));
+    }
+
+    #[test]
+    fn from_json_value_preserves_base64_non_cbor_data() {
+        // data field that is valid base64 but decodes to non-CBOR bytes.
+        // decode_data_message should return None → fall back to raw string.
+        let raw_bytes = b"this is not CBOR at all";
+        let b64 = base64::prelude::BASE64_STANDARD.encode(raw_bytes);
+
+        let value = serde_json::json!({
+            "code": 13,
+            "message": "Internal error",
+            "data": b64
+        });
+
+        let status = TenderdashStatus::from(value);
+        assert_eq!(status.message.as_deref(), Some(b64.as_str()));
     }
 }

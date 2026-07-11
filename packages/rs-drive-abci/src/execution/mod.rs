@@ -1,5 +1,5 @@
 /// Check tx module
-mod check_tx;
+pub(crate) mod check_tx;
 /// Engine module
 pub mod engine;
 /// platform execution events

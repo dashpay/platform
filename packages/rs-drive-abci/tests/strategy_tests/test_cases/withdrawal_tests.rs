@@ -44,8 +44,8 @@ mod tests {
         chain_lock: ChainLock,
     }
 
-    #[test]
-    fn run_chain_withdraw_from_identities() {
+    #[tokio::test]
+    async fn run_chain_withdraw_from_identities() {
         // TEST_PLATFORM_V3 is like v4, but without the single quorum can sign withdrawals restriction
         let platform_version = PlatformVersion::get(TEST_PLATFORM_V3.protocol_version)
             .expect("expected to get platform version");
@@ -184,7 +184,8 @@ mod tests {
                 1,
                 &mut None,
                 &mut None,
-            );
+            )
+            .await;
 
             for tx_results_per_block in outcome.state_transition_results_per_block.values() {
                 for (state_transition, result) in tx_results_per_block {
@@ -332,7 +333,8 @@ mod tests {
                 continue_strategy_only_withdrawal.clone(),
                 config.clone(),
                 StrategyRandomness::SeedEntropy(2),
-            );
+            )
+            .await;
 
             for tx_results_per_block in outcome.state_transition_results_per_block.values() {
                 assert_eq!(tx_results_per_block.len(), 1);
@@ -422,7 +424,8 @@ mod tests {
                 continue_strategy_no_operations.clone(),
                 config.clone(),
                 StrategyRandomness::SeedEntropy(3),
-            );
+            )
+            .await;
 
             // Withdrawal documents with pooled status should exist.
             let withdrawal_documents_broadcasted = outcome
@@ -522,7 +525,8 @@ mod tests {
                 continue_strategy_no_operations.clone(),
                 config.clone(),
                 StrategyRandomness::SeedEntropy(4),
-            );
+            )
+            .await;
 
             let withdrawal_documents_completed = outcome
                 .abci_app
@@ -633,7 +637,8 @@ mod tests {
                 continue_strategy_no_operations.clone(),
                 config.clone(),
                 StrategyRandomness::SeedEntropy(5),
-            );
+            )
+            .await;
 
             let withdrawal_documents_pooled = outcome
                 .abci_app
@@ -718,7 +723,8 @@ mod tests {
             continue_strategy_no_operations.clone(),
             config.clone(),
             StrategyRandomness::SeedEntropy(6),
-        );
+        )
+        .await;
 
         // We should have unlocked the amounts by now
         let locked_amount = outcome
@@ -738,8 +744,8 @@ mod tests {
         assert_eq!(locked_amount, 0);
     }
 
-    #[test]
-    fn run_chain_withdrawal_expired() {
+    #[tokio::test]
+    async fn run_chain_withdrawal_expired() {
         // TEST_PLATFORM_V3 is like v4, but without the single quorum can sign withdrawals restriction
         let platform_version = PlatformVersion::get(TEST_PLATFORM_V3.protocol_version)
             .expect("expected to get platform version");
@@ -876,7 +882,8 @@ mod tests {
                 1,
                 &mut None,
                 &mut None,
-            );
+            )
+            .await;
 
             for tx_results_per_block in outcome.state_transition_results_per_block.values() {
                 for (state_transition, result) in tx_results_per_block {
@@ -1024,7 +1031,8 @@ mod tests {
                 continue_strategy_only_withdrawal.clone(),
                 config.clone(),
                 StrategyRandomness::SeedEntropy(2),
-            );
+            )
+            .await;
 
             for tx_results_per_block in outcome.state_transition_results_per_block.values() {
                 assert_eq!(tx_results_per_block.len(), 1);
@@ -1114,7 +1122,8 @@ mod tests {
                 continue_strategy_no_operations.clone(),
                 config.clone(),
                 StrategyRandomness::SeedEntropy(2),
-            );
+            )
+            .await;
 
             // Withdrawal documents with pooled status should exist.
             let withdrawal_documents_broadcasted = outcome
@@ -1200,7 +1209,8 @@ mod tests {
                 continue_strategy_no_operations.clone(),
                 config.clone(),
                 StrategyRandomness::SeedEntropy(5),
-            );
+            )
+            .await;
 
             let withdrawal_documents_pooled = outcome
                 .abci_app
@@ -1298,7 +1308,8 @@ mod tests {
                 continue_strategy_no_operations.clone(),
                 config.clone(),
                 StrategyRandomness::SeedEntropy(2),
-            );
+            )
+            .await;
 
             let withdrawal_documents_pooled = outcome
                 .abci_app
@@ -1399,7 +1410,8 @@ mod tests {
             continue_strategy_no_operations.clone(),
             config.clone(),
             StrategyRandomness::SeedEntropy(2),
-        );
+        )
+        .await;
 
         let withdrawal_documents_pooled = outcome
             .abci_app
@@ -1455,8 +1467,8 @@ mod tests {
         assert!(withdrawal_documents_expired.is_empty());
     }
 
-    #[test]
-    fn run_chain_withdraw_from_identities_too_many_withdrawals_within_a_day_hitting_limit() {
+    #[tokio::test]
+    async fn run_chain_withdraw_from_identities_too_many_withdrawals_within_a_day_hitting_limit() {
         // TEST_PLATFORM_V3 is like v4, but without the single quorum can sign withdrawals restriction
         let platform_version = PlatformVersion::get(TEST_PLATFORM_V3.protocol_version)
             .expect("expected to get platform version");
@@ -1595,7 +1607,8 @@ mod tests {
                 1,
                 &mut None,
                 &mut None,
-            );
+            )
+            .await;
 
             for tx_results_per_block in outcome.state_transition_results_per_block.values() {
                 for (state_transition, result) in tx_results_per_block {
@@ -1653,7 +1666,7 @@ mod tests {
 
             assert_eq!(
                 total_credits_balance.total_identity_balances,
-                409997575280380
+                409997575173840
             ); // Around 4100 Dash.
 
             assert_eq!(
@@ -1773,7 +1786,8 @@ mod tests {
                 continue_strategy_only_withdrawal.clone(),
                 config.clone(),
                 StrategyRandomness::SeedEntropy(2),
-            );
+            )
+            .await;
 
             for tx_results_per_block in outcome.state_transition_results_per_block.values() {
                 assert_eq!(tx_results_per_block.len(), 4);
@@ -1944,7 +1958,8 @@ mod tests {
                     ..Default::default()
                 },
                 StrategyRandomness::SeedEntropy(9),
-            );
+            )
+            .await;
 
             // We should have unlocked the amounts by now
             let locked_amount = outcome
@@ -2078,7 +2093,8 @@ mod tests {
                 ..Default::default()
             },
             StrategyRandomness::SeedEntropy(9),
-        );
+        )
+        .await;
 
         // We should have unlocked the amounts by now
         let locked_amount = outcome
@@ -2178,8 +2194,8 @@ mod tests {
         assert_eq!(withdrawal_documents_broadcasted.len(), 80);
     }
 
-    #[test]
-    fn run_chain_withdraw_from_identities_many_small_withdrawals() {
+    #[tokio::test]
+    async fn run_chain_withdraw_from_identities_many_small_withdrawals() {
         // TEST_PLATFORM_V3 is like v4, but without the single quorum can sign withdrawals restriction
         let platform_version = PlatformVersion::get(TEST_PLATFORM_V3.protocol_version)
             .expect("expected to get platform version");
@@ -2318,7 +2334,8 @@ mod tests {
                 1,
                 &mut None,
                 &mut None,
-            );
+            )
+            .await;
 
             for tx_results_per_block in outcome.state_transition_results_per_block.values() {
                 for (state_transition, result) in tx_results_per_block {
@@ -2376,7 +2393,7 @@ mod tests {
 
             assert_eq!(
                 total_credits_balance.total_identity_balances,
-                409997575280380
+                409997575173840
             ); // Around 4100 Dash.
 
             assert_eq!(
@@ -2496,7 +2513,8 @@ mod tests {
                 continue_strategy_only_withdrawal.clone(),
                 config.clone(),
                 StrategyRandomness::SeedEntropy(2),
-            );
+            )
+            .await;
 
             for tx_results_per_block in outcome.state_transition_results_per_block.values() {
                 assert_eq!(tx_results_per_block.len(), 20);
@@ -2644,7 +2662,8 @@ mod tests {
                 ..Default::default()
             },
             StrategyRandomness::SeedEntropy(9),
-        );
+        )
+        .await;
 
         // We should have unlocked the amounts by now
         let locked_amount = outcome

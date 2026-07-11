@@ -530,3 +530,451 @@ pub fn vote_contested_resource_identity_votes_tree_path_for_identity_vec(
         identity_id.to_vec(),
     ]
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const VOTES_BYTE: u8 = RootTree::Votes as u8;
+
+    // ---------------------------------------------------------------
+    // vote_root_path / vote_root_path_vec
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn test_vote_root_path_has_single_element() {
+        let path = vote_root_path();
+        assert_eq!(path.len(), 1);
+        assert_eq!(path[0], &[VOTES_BYTE]);
+    }
+
+    #[test]
+    fn test_vote_root_path_vec_matches_slice_form() {
+        let path_vec = vote_root_path_vec();
+        let path = vote_root_path();
+        assert_eq!(path_vec.len(), path.len());
+        assert_eq!(path_vec[0], path[0]);
+    }
+
+    // ---------------------------------------------------------------
+    // vote_decisions_tree_path / _vec
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn test_vote_decisions_tree_path_structure() {
+        let path = vote_decisions_tree_path();
+        assert_eq!(path.len(), 2);
+        assert_eq!(path[0], &[VOTES_BYTE]);
+        assert_eq!(path[1], &[VOTE_DECISIONS_TREE_KEY as u8]);
+    }
+
+    #[test]
+    fn test_vote_decisions_tree_path_vec_matches_slice_form() {
+        let path_vec = vote_decisions_tree_path_vec();
+        let path = vote_decisions_tree_path();
+        assert_eq!(path_vec.len(), path.len());
+        for (vec_elem, slice_elem) in path_vec.iter().zip(path.iter()) {
+            assert_eq!(vec_elem.as_slice(), *slice_elem);
+        }
+    }
+
+    // ---------------------------------------------------------------
+    // vote_contested_resource_tree_path / _vec
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn test_vote_contested_resource_tree_path_structure() {
+        let path = vote_contested_resource_tree_path();
+        assert_eq!(path.len(), 2);
+        assert_eq!(path[0], &[VOTES_BYTE]);
+        assert_eq!(path[1], &[CONTESTED_RESOURCE_TREE_KEY as u8]);
+    }
+
+    #[test]
+    fn test_vote_contested_resource_tree_path_vec_matches_slice_form() {
+        let path_vec = vote_contested_resource_tree_path_vec();
+        let path = vote_contested_resource_tree_path();
+        assert_eq!(path_vec.len(), path.len());
+        for (vec_elem, slice_elem) in path_vec.iter().zip(path.iter()) {
+            assert_eq!(vec_elem.as_slice(), *slice_elem);
+        }
+    }
+
+    // ---------------------------------------------------------------
+    // vote_end_date_queries_tree_path / _vec
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn test_vote_end_date_queries_tree_path_structure() {
+        let path = vote_end_date_queries_tree_path();
+        assert_eq!(path.len(), 2);
+        assert_eq!(path[0], &[VOTES_BYTE]);
+        assert_eq!(path[1], &[END_DATE_QUERIES_TREE_KEY as u8]);
+    }
+
+    #[test]
+    fn test_vote_end_date_queries_tree_path_vec_matches_slice_form() {
+        let path_vec = vote_end_date_queries_tree_path_vec();
+        let path = vote_end_date_queries_tree_path();
+        assert_eq!(path_vec.len(), path.len());
+        for (vec_elem, slice_elem) in path_vec.iter().zip(path.iter()) {
+            assert_eq!(vec_elem.as_slice(), *slice_elem);
+        }
+    }
+
+    // ---------------------------------------------------------------
+    // vote_contested_resource_active_polls_tree_path / _vec
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn test_vote_contested_resource_active_polls_tree_path_structure() {
+        let path = vote_contested_resource_active_polls_tree_path();
+        assert_eq!(path.len(), 3);
+        assert_eq!(path[0], &[VOTES_BYTE]);
+        assert_eq!(path[1], &[CONTESTED_RESOURCE_TREE_KEY as u8]);
+        assert_eq!(path[2], &[ACTIVE_POLLS_TREE_KEY as u8]);
+    }
+
+    #[test]
+    fn test_vote_contested_resource_active_polls_tree_path_vec_matches_slice_form() {
+        let path_vec = vote_contested_resource_active_polls_tree_path_vec();
+        let path = vote_contested_resource_active_polls_tree_path();
+        assert_eq!(path_vec.len(), path.len());
+        for (vec_elem, slice_elem) in path_vec.iter().zip(path.iter()) {
+            assert_eq!(vec_elem.as_slice(), *slice_elem);
+        }
+    }
+
+    // ---------------------------------------------------------------
+    // vote_contested_resource_active_polls_contract_tree_path / _vec
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn test_active_polls_contract_tree_path_includes_contract_id() {
+        let contract_id: [u8; 32] = [42u8; 32];
+        let path = vote_contested_resource_active_polls_contract_tree_path(&contract_id);
+        assert_eq!(path.len(), 4);
+        assert_eq!(path[0], &[VOTES_BYTE]);
+        assert_eq!(path[1], &[CONTESTED_RESOURCE_TREE_KEY as u8]);
+        assert_eq!(path[2], &[ACTIVE_POLLS_TREE_KEY as u8]);
+        assert_eq!(path[3], &contract_id);
+    }
+
+    #[test]
+    fn test_active_polls_contract_tree_path_vec_matches_slice_form() {
+        let contract_id: [u8; 32] = [7u8; 32];
+        let path_vec = vote_contested_resource_active_polls_contract_tree_path_vec(&contract_id);
+        let path = vote_contested_resource_active_polls_contract_tree_path(&contract_id);
+        assert_eq!(path_vec.len(), path.len());
+        for (vec_elem, slice_elem) in path_vec.iter().zip(path.iter()) {
+            assert_eq!(vec_elem.as_slice(), *slice_elem);
+        }
+    }
+
+    #[test]
+    fn test_active_polls_contract_tree_path_different_ids_differ() {
+        let id_a: [u8; 32] = [1u8; 32];
+        let id_b: [u8; 32] = [2u8; 32];
+        let path_a = vote_contested_resource_active_polls_contract_tree_path(&id_a);
+        let path_b = vote_contested_resource_active_polls_contract_tree_path(&id_b);
+        // First three path elements should be the same
+        assert_eq!(path_a[0], path_b[0]);
+        assert_eq!(path_a[1], path_b[1]);
+        assert_eq!(path_a[2], path_b[2]);
+        // Contract ID (4th element) should differ
+        assert_ne!(path_a[3], path_b[3]);
+    }
+
+    // ---------------------------------------------------------------
+    // vote_contested_resource_active_polls_contract_document_tree_path / _vec
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn test_active_polls_contract_document_tree_path_structure() {
+        let contract_id: [u8; 32] = [10u8; 32];
+        let doc_type_name = "domain";
+        let path = vote_contested_resource_active_polls_contract_document_tree_path(
+            &contract_id,
+            doc_type_name,
+        );
+        assert_eq!(path.len(), 5);
+        assert_eq!(path[0], &[VOTES_BYTE]);
+        assert_eq!(path[1], &[CONTESTED_RESOURCE_TREE_KEY as u8]);
+        assert_eq!(path[2], &[ACTIVE_POLLS_TREE_KEY as u8]);
+        assert_eq!(path[3], &contract_id);
+        assert_eq!(path[4], doc_type_name.as_bytes());
+    }
+
+    #[test]
+    fn test_active_polls_contract_document_tree_path_vec_matches_slice_form() {
+        let contract_id: [u8; 32] = [99u8; 32];
+        let doc_type_name = "preorder";
+        let path_vec = vote_contested_resource_active_polls_contract_document_tree_path_vec(
+            &contract_id,
+            doc_type_name,
+        );
+        let path = vote_contested_resource_active_polls_contract_document_tree_path(
+            &contract_id,
+            doc_type_name,
+        );
+        assert_eq!(path_vec.len(), path.len());
+        for (vec_elem, slice_elem) in path_vec.iter().zip(path.iter()) {
+            assert_eq!(vec_elem.as_slice(), *slice_elem);
+        }
+    }
+
+    #[test]
+    fn test_active_polls_contract_document_tree_path_different_doc_types() {
+        let contract_id: [u8; 32] = [5u8; 32];
+        let path_a =
+            vote_contested_resource_active_polls_contract_document_tree_path(&contract_id, "alpha");
+        let path_b =
+            vote_contested_resource_active_polls_contract_document_tree_path(&contract_id, "beta");
+        // Same prefix
+        assert_eq!(path_a[..4], path_b[..4]);
+        // Different document type name
+        assert_ne!(path_a[4], path_b[4]);
+    }
+
+    // ---------------------------------------------------------------
+    // vote_contested_resource_contract_documents_storage_path / _vec
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn test_contract_documents_storage_path_has_storage_key() {
+        let contract_id: [u8; 32] = [11u8; 32];
+        let doc_type_name = "note";
+        let path =
+            vote_contested_resource_contract_documents_storage_path(&contract_id, doc_type_name);
+        assert_eq!(path.len(), 6);
+        assert_eq!(path[5], &[CONTESTED_DOCUMENT_STORAGE_TREE_KEY]);
+    }
+
+    #[test]
+    fn test_contract_documents_storage_path_vec_matches_slice_form() {
+        let contract_id: [u8; 32] = [11u8; 32];
+        let doc_type_name = "note";
+        let path_vec = vote_contested_resource_contract_documents_storage_path_vec(
+            &contract_id,
+            doc_type_name,
+        );
+        let path =
+            vote_contested_resource_contract_documents_storage_path(&contract_id, doc_type_name);
+        assert_eq!(path_vec.len(), path.len());
+        for (vec_elem, slice_elem) in path_vec.iter().zip(path.iter()) {
+            assert_eq!(vec_elem.as_slice(), *slice_elem);
+        }
+    }
+
+    // ---------------------------------------------------------------
+    // vote_contested_resource_contract_documents_indexes_path / _vec
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn test_contract_documents_indexes_path_has_indexes_key() {
+        let contract_id: [u8; 32] = [22u8; 32];
+        let doc_type_name = "profile";
+        let path =
+            vote_contested_resource_contract_documents_indexes_path(&contract_id, doc_type_name);
+        assert_eq!(path.len(), 6);
+        assert_eq!(path[5], &[CONTESTED_DOCUMENT_INDEXES_TREE_KEY]);
+    }
+
+    #[test]
+    fn test_contract_documents_indexes_path_vec_matches_slice_form() {
+        let contract_id: [u8; 32] = [22u8; 32];
+        let doc_type_name = "profile";
+        let path_vec = vote_contested_resource_contract_documents_indexes_path_vec(
+            &contract_id,
+            doc_type_name,
+        );
+        let path =
+            vote_contested_resource_contract_documents_indexes_path(&contract_id, doc_type_name);
+        assert_eq!(path_vec.len(), path.len());
+        for (vec_elem, slice_elem) in path_vec.iter().zip(path.iter()) {
+            assert_eq!(vec_elem.as_slice(), *slice_elem);
+        }
+    }
+
+    #[test]
+    fn test_storage_and_indexes_paths_differ_only_in_last_element() {
+        let contract_id: [u8; 32] = [33u8; 32];
+        let doc_type_name = "record";
+        let storage_path =
+            vote_contested_resource_contract_documents_storage_path(&contract_id, doc_type_name);
+        let indexes_path =
+            vote_contested_resource_contract_documents_indexes_path(&contract_id, doc_type_name);
+        // The first five elements should be identical
+        assert_eq!(storage_path[..5], indexes_path[..5]);
+        // The 6th element (tree key) should differ
+        assert_ne!(storage_path[5], indexes_path[5]);
+        assert_eq!(storage_path[5], &[CONTESTED_DOCUMENT_STORAGE_TREE_KEY]);
+        assert_eq!(indexes_path[5], &[CONTESTED_DOCUMENT_INDEXES_TREE_KEY]);
+    }
+
+    // ---------------------------------------------------------------
+    // vote_contested_resource_end_date_queries_at_time_tree_path_vec
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn test_end_date_queries_at_time_tree_path_vec_structure() {
+        let time: TimestampMillis = 1_700_000_000_000;
+        let path = vote_contested_resource_end_date_queries_at_time_tree_path_vec(time);
+        assert_eq!(path.len(), 3);
+        assert_eq!(path[0], vec![VOTES_BYTE]);
+        assert_eq!(path[1], vec![END_DATE_QUERIES_TREE_KEY as u8]);
+        assert_eq!(path[2], encode_u64(time));
+    }
+
+    #[test]
+    fn test_end_date_queries_different_times_produce_different_paths() {
+        let path_a = vote_contested_resource_end_date_queries_at_time_tree_path_vec(1_000_000);
+        let path_b = vote_contested_resource_end_date_queries_at_time_tree_path_vec(2_000_000);
+        // First two elements should be identical
+        assert_eq!(path_a[0], path_b[0]);
+        assert_eq!(path_a[1], path_b[1]);
+        // Time-encoded element should differ
+        assert_ne!(path_a[2], path_b[2]);
+    }
+
+    #[test]
+    fn test_end_date_queries_at_time_zero() {
+        let path = vote_contested_resource_end_date_queries_at_time_tree_path_vec(0);
+        assert_eq!(path.len(), 3);
+        assert_eq!(path[2], encode_u64(0));
+    }
+
+    #[test]
+    fn test_end_date_queries_at_time_max() {
+        let path = vote_contested_resource_end_date_queries_at_time_tree_path_vec(u64::MAX);
+        assert_eq!(path.len(), 3);
+        assert_eq!(path[2], encode_u64(u64::MAX));
+    }
+
+    // ---------------------------------------------------------------
+    // vote_contested_resource_identity_votes_tree_path / _vec
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn test_identity_votes_tree_path_structure() {
+        let path = vote_contested_resource_identity_votes_tree_path();
+        assert_eq!(path.len(), 3);
+        assert_eq!(path[0], &[VOTES_BYTE]);
+        assert_eq!(path[1], &[CONTESTED_RESOURCE_TREE_KEY as u8]);
+        assert_eq!(path[2], &[IDENTITY_VOTES_TREE_KEY as u8]);
+    }
+
+    #[test]
+    fn test_identity_votes_tree_path_vec_matches_slice_form() {
+        let path_vec = vote_contested_resource_identity_votes_tree_path_vec();
+        let path = vote_contested_resource_identity_votes_tree_path();
+        assert_eq!(path_vec.len(), path.len());
+        for (vec_elem, slice_elem) in path_vec.iter().zip(path.iter()) {
+            assert_eq!(vec_elem.as_slice(), *slice_elem);
+        }
+    }
+
+    // ---------------------------------------------------------------
+    // vote_contested_resource_identity_votes_tree_path_for_identity / _vec
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn test_identity_votes_tree_path_for_identity_includes_id() {
+        let identity_id: [u8; 32] = [55u8; 32];
+        let path = vote_contested_resource_identity_votes_tree_path_for_identity(&identity_id);
+        assert_eq!(path.len(), 4);
+        assert_eq!(path[0], &[VOTES_BYTE]);
+        assert_eq!(path[1], &[CONTESTED_RESOURCE_TREE_KEY as u8]);
+        assert_eq!(path[2], &[IDENTITY_VOTES_TREE_KEY as u8]);
+        assert_eq!(path[3], &identity_id);
+    }
+
+    #[test]
+    fn test_identity_votes_tree_path_for_identity_vec_matches_slice_form() {
+        let identity_id: [u8; 32] = [88u8; 32];
+        let path_vec =
+            vote_contested_resource_identity_votes_tree_path_for_identity_vec(&identity_id);
+        let path = vote_contested_resource_identity_votes_tree_path_for_identity(&identity_id);
+        assert_eq!(path_vec.len(), path.len());
+        for (vec_elem, slice_elem) in path_vec.iter().zip(path.iter()) {
+            assert_eq!(vec_elem.as_slice(), *slice_elem);
+        }
+    }
+
+    #[test]
+    fn test_identity_votes_tree_path_for_identity_different_ids_differ() {
+        let id_a: [u8; 32] = [0u8; 32];
+        let id_b: [u8; 32] = [255u8; 32];
+        let path_a = vote_contested_resource_identity_votes_tree_path_for_identity(&id_a);
+        let path_b = vote_contested_resource_identity_votes_tree_path_for_identity(&id_b);
+        // Prefix should be the same
+        assert_eq!(path_a[..3], path_b[..3]);
+        // Identity ID should differ
+        assert_ne!(path_a[3], path_b[3]);
+    }
+
+    // ---------------------------------------------------------------
+    // Constant key values
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn test_resource_stored_info_key_is_all_zeroes() {
+        assert_eq!(RESOURCE_STORED_INFO_KEY_U8_32, [0u8; 32]);
+    }
+
+    #[test]
+    fn test_resource_abstain_vote_key_is_one() {
+        let mut expected = [0u8; 32];
+        expected[31] = 1;
+        assert_eq!(RESOURCE_ABSTAIN_VOTE_TREE_KEY_U8_32, expected);
+    }
+
+    #[test]
+    fn test_resource_lock_vote_key_is_two() {
+        let mut expected = [0u8; 32];
+        expected[31] = 2;
+        assert_eq!(RESOURCE_LOCK_VOTE_TREE_KEY_U8_32, expected);
+    }
+
+    #[test]
+    fn test_tree_key_constants_are_distinct() {
+        assert_ne!(VOTE_DECISIONS_TREE_KEY, CONTESTED_RESOURCE_TREE_KEY);
+        assert_ne!(VOTE_DECISIONS_TREE_KEY, END_DATE_QUERIES_TREE_KEY);
+        assert_ne!(CONTESTED_RESOURCE_TREE_KEY, END_DATE_QUERIES_TREE_KEY);
+        assert_ne!(ACTIVE_POLLS_TREE_KEY, IDENTITY_VOTES_TREE_KEY);
+    }
+
+    #[test]
+    fn test_document_tree_keys_are_distinct() {
+        assert_ne!(
+            CONTESTED_DOCUMENT_STORAGE_TREE_KEY,
+            CONTESTED_DOCUMENT_INDEXES_TREE_KEY
+        );
+    }
+
+    // ---------------------------------------------------------------
+    // Paths share a common prefix where expected
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn test_active_polls_and_identity_votes_share_contested_resource_prefix() {
+        let active = vote_contested_resource_active_polls_tree_path();
+        let identity = vote_contested_resource_identity_votes_tree_path();
+        // Both share votes root + contested resource key
+        assert_eq!(active[0], identity[0]);
+        assert_eq!(active[1], identity[1]);
+        // But diverge at third element
+        assert_ne!(active[2], identity[2]);
+    }
+
+    #[test]
+    fn test_active_polls_path_is_prefix_of_contract_path() {
+        let polls_path = vote_contested_resource_active_polls_tree_path();
+        let contract_id: [u8; 32] = [99u8; 32];
+        let contract_path = vote_contested_resource_active_polls_contract_tree_path(&contract_id);
+        // Contract path starts with the same elements as polls path
+        for (i, &elem) in polls_path.iter().enumerate() {
+            assert_eq!(contract_path[i], elem);
+        }
+    }
+}

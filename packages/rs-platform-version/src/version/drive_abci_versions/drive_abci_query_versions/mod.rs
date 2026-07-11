@@ -1,3 +1,4 @@
+pub mod v0;
 pub mod v1;
 
 use versioned_feature_core::{FeatureVersion, FeatureVersionBounds};
@@ -8,6 +9,15 @@ pub struct DriveAbciQueryVersions {
     pub response_metadata: FeatureVersion,
     pub proofs_query: FeatureVersion,
     pub document_query: FeatureVersionBounds,
+    pub document_history: FeatureVersionBounds,
+    /// Per-helper version slots for internal v1-document-query
+    /// routing helpers. Separate from `document_query` (which
+    /// versions the wire surface) because the helper output is
+    /// consensus-relevant on the query path — adjusting the
+    /// `(group_by × where)` routing table is a behavior change a
+    /// future protocol version may need to make without re-cutting
+    /// the wire shape.
+    pub document_query_helpers: DriveAbciDocumentQueryHelperVersions,
     pub prefunded_specialized_balances: DriveAbciQueryPrefundedSpecializedBalancesVersions,
     pub identity_based_queries: DriveAbciQueryIdentityVersions,
     pub token_queries: DriveAbciQueryTokenVersions,
@@ -18,6 +28,15 @@ pub struct DriveAbciQueryVersions {
     pub group_queries: DriveAbciQueryGroupVersions,
     pub address_funds_queries: DriveAbciQueryAddressFundsVersions,
     pub shielded_queries: DriveAbciQueryShieldedVersions,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DriveAbciDocumentQueryHelperVersions {
+    /// Version of the helper that picks the `(group_by × where)`
+    /// mode for `SELECT COUNT / SUM / AVG` and enforces the
+    /// per-mode `accepts_limit()` contract. See
+    /// `query::document_query::v1::compute_aggregate_mode_and_check_limit`.
+    pub compute_aggregate_mode_and_check_limit: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -99,14 +118,23 @@ pub struct DriveAbciQueryShieldedVersions {
     pub anchors: FeatureVersionBounds,
     pub most_recent_anchor: FeatureVersionBounds,
     pub pool_state: FeatureVersionBounds,
+    pub notes_count: FeatureVersionBounds,
     pub nullifiers: FeatureVersionBounds,
-    pub nullifiers_trunk_state: FeatureVersionBounds,
-    pub nullifiers_branch_state: FeatureVersionBounds,
-    pub recent_nullifier_changes: FeatureVersionBounds,
-    pub recent_compacted_nullifier_changes: FeatureVersionBounds,
-    /// Maximum number of encrypted notes returned per query.
-    /// Should match the BulkAppendTree buffer capacity (2^chunk_power).
-    pub max_encrypted_notes_per_query: u16,
+    /// Maximum number of MMR chunks a single `getShieldedEncryptedNotes`
+    /// query may span.
+    ///
+    /// The wire-level cap on notes returned per query is therefore
+    /// `max_query_chunks × (1 << SHIELDED_NOTES_CHUNK_POWER)` — today
+    /// `chunk_power = 11` so each chunk holds 2048 notes. `start_index`
+    /// must still be chunk-aligned (2048-note boundary); this cap only
+    /// controls how many adjacent chunks one proof may cover.
+    ///
+    /// Expressed in chunks (not raw notes) so the MMR-shape coupling
+    /// is explicit and the cap can be bumped independently of the
+    /// chunk size. v0 = 1 (legacy single-chunk-per-query behaviour);
+    /// v1 = 4 (8192-note responses, ~4× fewer round-trips on a cold
+    /// 1M-note sync).
+    pub max_query_chunks: u8,
 }
 
 #[derive(Clone, Debug, Default)]

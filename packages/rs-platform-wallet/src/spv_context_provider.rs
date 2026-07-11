@@ -1,52 +1,44 @@
 //! SPV-based Context Provider
 //!
-//! Pure Rust implementation that reads quorum data directly from a
-//! [`MasternodeListEngine`], with no FFI calls.
+//! Thin [`ContextProvider`] that resolves Platform proof quorum public keys
+//! from the SPV runtime owned by the [`PlatformWalletManager`].
 //!
 //! # Architecture
 //!
-//! The [`SpvContextProvider`] holds an `Arc<RwLock<MasternodeListEngine>>`
-//! (shared with the SPV client) and reads quorum public keys by looking up
-//! the masternode list closest to the requested core chain-locked height.
+//! [`SpvContextProvider`] holds a shared [`Arc<SpvRuntime>`] — a live reference
+//! to the same runtime the SPV client writes to during sync — and delegates
+//! every lookup to [`SpvRuntime::get_quorum_public_key`], which reads the
+//! in-memory masternode list engine. No quorum data is stored here.
 //!
-//! This design eliminates the need for FFI round-trips: the same in-memory
-//! masternode list engine that the SPV client populates during sync is read
-//! directly by the Platform SDK's proof verifier.
+//! The [`ContextProvider`] trait method is synchronous, but the runtime lookup
+//! is async. Proof verification runs inside the SDK's multi-threaded Tokio
+//! runtime (`rs-sdk-ffi`'s `BigStackRuntime::block_on`), so the bridge uses
+//! [`tokio::task::block_in_place`] (avoids the nested-runtime panic) plus the
+//! ambient [`Handle::try_current`](tokio::runtime::Handle::try_current) of that
+//! verify runtime. The provider is constructed at the FFI SDK-create call,
+//! which runs off any runtime, so the handle is resolved at call time (and a
+//! call from outside a runtime returns an error rather than panicking).
 //!
-//! # Usage
-//!
-//! ```ignore
-//! use std::sync::Arc;
-//! use tokio::sync::RwLock;
-//! use dash_spv::MasternodeListEngine;
-//! use dashcore::Network;
-//! use platform_wallet::spv_context_provider::SpvContextProvider;
-//!
-//! let engine: Arc<RwLock<MasternodeListEngine>> = /* from DashSpvClient */;
-//! let provider = SpvContextProvider::new(engine, Network::Testnet);
-//! ```
+//! [`PlatformWalletManager`]: crate::manager::PlatformWalletManager
+//! [`SpvRuntime::get_quorum_public_key`]: crate::spv::SpvRuntime::get_quorum_public_key
 
 use std::sync::Arc;
 
 use dash_context_provider::ContextProvider;
 use dash_context_provider::ContextProviderError;
-use dash_spv::LLMQType;
-use dash_spv::MasternodeListEngine;
-use dashcore::hashes::Hash;
 use dashcore::Network;
-use dashcore::QuorumHash;
 use dpp::data_contract::TokenConfiguration;
 use dpp::prelude::{CoreBlockHeight, DataContract, Identifier};
 use dpp::version::PlatformVersion;
-use tokio::sync::RwLock;
+
+use crate::spv::SpvRuntime;
 
 /// Context provider backed by an SPV client's synced masternode data.
 ///
-/// Reads quorum public keys directly from the [`MasternodeListEngine`]
-/// without any FFI calls. The engine is shared with the SPV client via
-/// `Arc<RwLock<...>>`, so all data stays in-process.
+/// Delegates quorum-key lookups to the shared [`SpvRuntime`]; the same runtime
+/// the SPV client populates during sync is read live for each proof.
 pub struct SpvContextProvider {
-    masternode_engine: Arc<RwLock<MasternodeListEngine>>,
+    spv: Arc<SpvRuntime>,
     network: Network,
 }
 
@@ -55,14 +47,11 @@ impl SpvContextProvider {
     ///
     /// # Arguments
     ///
-    /// * `masternode_engine` - Shared reference to the masternode list engine,
-    ///   typically obtained from [`DashSpvClient::masternode_list_engine()`].
+    /// * `spv` - Shared reference to the SPV runtime, obtained from
+    ///   [`PlatformWalletManager::spv_arc`](crate::manager::PlatformWalletManager::spv_arc).
     /// * `network` - The Dash network (mainnet, testnet, devnet, etc.).
-    pub fn new(masternode_engine: Arc<RwLock<MasternodeListEngine>>, network: Network) -> Self {
-        Self {
-            masternode_engine,
-            network,
-        }
+    pub fn new(spv: Arc<SpvRuntime>, network: Network) -> Self {
+        Self { spv, network }
     }
 }
 
@@ -73,66 +62,36 @@ impl ContextProvider for SpvContextProvider {
         quorum_hash: [u8; 32],
         core_chain_locked_height: u32,
     ) -> Result<[u8; 48], ContextProviderError> {
-        let quorum_type_u8 = u8::try_from(quorum_type).map_err(|_| {
-            ContextProviderError::InvalidQuorum(format!(
-                "Quorum type {} exceeds u8 range",
-                quorum_type
-            ))
-        })?;
-        let llmq_type: LLMQType = quorum_type_u8.into();
-        let quorum_hash = QuorumHash::from_byte_array(quorum_hash);
-
-        // Use try_read() instead of blocking_read() because this sync method
-        // may be called from within a Tokio async context (proof verification
-        // happens inside async tasks). blocking_read() would panic in that case.
-        let engine = self.masternode_engine.try_read().map_err(|_| {
+        // Bridge the sync trait method to the async runtime lookup. Proof
+        // verification always runs inside the SDK's multi-threaded runtime, so
+        // the ambient handle is present; a call from outside a runtime returns
+        // an error rather than panicking. The lookup is pure in-memory (two
+        // brief RwLock reads, no network I/O); on write contention with SPV
+        // sync it waits (fail-slow) rather than erroring.
+        let handle = tokio::runtime::Handle::try_current().map_err(|_| {
             ContextProviderError::Generic(
-                "Masternode engine lock is busy; retry quorum lookup".to_string(),
+                "SPV quorum lookup called outside a Tokio runtime".to_string(),
             )
         })?;
-        let (before, _after) = engine.masternode_lists_around_height(core_chain_locked_height);
-
-        let ml = before.ok_or_else(|| {
-            ContextProviderError::InvalidQuorum(format!(
-                "No masternode list found at or before height {}",
-                core_chain_locked_height
-            ))
-        })?;
-
-        let list_height = ml.known_height;
-
-        let quorums = ml.quorums.get(&llmq_type).ok_or_else(|| {
-            ContextProviderError::InvalidQuorum(format!(
-                "No quorums of type {} found at list height {} (requested {})",
-                quorum_type, list_height, core_chain_locked_height
-            ))
-        })?;
-
-        let quorum = quorums.get(&quorum_hash).ok_or_else(|| {
-            ContextProviderError::InvalidQuorum(format!(
-                "Quorum not found: type {} at list height {} (requested {}) \
-                 with hash {:x} (masternode list has {} quorums of this type)",
+        tokio::task::block_in_place(|| {
+            handle.block_on(self.spv.get_quorum_public_key(
                 quorum_type,
-                list_height,
-                core_chain_locked_height,
                 quorum_hash,
-                quorums.len()
+                core_chain_locked_height,
             ))
-        })?;
-
-        let pubkey_bytes: &[u8; 48] = quorum.quorum_entry.quorum_public_key.as_ref();
-        Ok(*pubkey_bytes)
+        })
+        .map_err(|e| ContextProviderError::InvalidQuorum(e.to_string()))
     }
 
     fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
+        // Match the values the trusted HTTP provider ships (the L1 locked
+        // height per network) so proof verification behaves identically
+        // whether quorum keys come from SPV or the trusted service. See
+        // `rs-sdk-trusted-context-provider`'s `get_platform_activation_height`.
         match self.network {
-            Network::Mainnet => Ok(1_888_888),
-            Network::Testnet => Ok(1_289_520),
-            Network::Devnet => Ok(1),
-            _ => Err(ContextProviderError::Generic(format!(
-                "Platform activation height unknown for network {:?}",
-                self.network
-            ))),
+            Network::Mainnet => Ok(2_132_092),
+            Network::Testnet => Ok(1_090_319),
+            Network::Devnet | Network::Regtest => Ok(1),
         }
     }
 

@@ -43,8 +43,9 @@ impl AddressSigner {
     }
 }
 
+#[async_trait::async_trait]
 impl Signer<PlatformAddress> for AddressSigner {
-    fn sign(&self, key: &PlatformAddress, data: &[u8]) -> Result<BinaryData, ProtocolError> {
+    async fn sign(&self, key: &PlatformAddress, data: &[u8]) -> Result<BinaryData, ProtocolError> {
         let hash = match key {
             PlatformAddress::P2pkh(hash) => hash,
             PlatformAddress::P2sh(hash) => hash,
@@ -64,7 +65,7 @@ impl Signer<PlatformAddress> for AddressSigner {
         Ok(BinaryData::new(signature.to_vec()))
     }
 
-    fn sign_create_witness(
+    async fn sign_create_witness(
         &self,
         key: &PlatformAddress,
         data: &[u8],
@@ -291,6 +292,10 @@ unsafe fn dash_sdk_address_transfer_funds_inner(
             .map_err(FFIError::from)?;
 
         // Convert to FFI type
+        let (address_infos, _proof_height) = address_infos;
+        // The `_proof_height` pin matters to callers that PERSIST these
+        // absolutes (the platform-wallet reconcile seam); this raw debug
+        // path only renders the proof entries, so it drops the height.
         let entries: Vec<DashSDKAddressInfoEntry> = address_infos
             .iter()
             .map(|(address, info_opt)| {

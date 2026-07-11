@@ -299,6 +299,75 @@ mod tests {
                 )
                 .expect("expected to get estimated costs to update an identity balance");
 
+            // v12 processing fee shifted from 4_278_840 → 4_378_100 when
+            // grovedb #674 landed the sum-aware `AllItemsWithSumItem` /
+            // `AllReferencesWithSumItem` variants + the four new
+            // `provable_*_weight` fields on `SomeSumTrees`. See the
+            // matching note on `should_add_to_balance_latest_version_estimated`
+            // in `drive/identity/balance/update.rs`.
+            assert_eq!(
+                fee_result,
+                FeeResult {
+                    processing_fee: 4378100,
+                    ..Default::default()
+                }
+            );
+
+            let app_hash_after = drive
+                .grove
+                .root_hash(None, &platform_version.drive.grove_version)
+                .unwrap()
+                .expect("should return app hash");
+
+            assert_eq!(app_hash_after, app_hash_before);
+
+            let (balance, _fee_cost) = drive
+                .fetch_identity_balance_with_costs(
+                    identity.id().to_buffer(),
+                    &block,
+                    true,
+                    None,
+                    platform_version,
+                )
+                .expect("expected to get balance");
+
+            assert!(balance.is_none()); //shouldn't have changed
+        }
+
+        #[test]
+        fn should_estimate_costs_without_state_in_v11() {
+            // v11 predates the sum-tree work (grovedb #674) so the estimation
+            // path emits the original `NoSumTrees` shape for token-balance
+            // updates and the processing fee stays pinned at the pre-v674
+            // value. The v12 successor (`should_estimate_costs_without_state`)
+            // asserts the new 4_378_100 fee — keeping both tests guards
+            // against silent fee drift on either version.
+            let platform_version =
+                PlatformVersion::get(11).expect("expected to get v11 platform version");
+            let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+
+            let identity = Identity::random_identity(5, Some(12345), platform_version)
+                .expect("expected a random identity");
+
+            let block = BlockInfo::default_with_epoch(Epoch::new(0).unwrap());
+
+            let app_hash_before = drive
+                .grove
+                .root_hash(None, &platform_version.drive.grove_version)
+                .unwrap()
+                .expect("should return app hash");
+
+            let fee_result = drive
+                .add_to_identity_balance(
+                    identity.id().to_buffer(),
+                    300,
+                    &block,
+                    false,
+                    None,
+                    platform_version,
+                )
+                .expect("expected to get estimated costs to update an identity balance");
+
             assert_eq!(
                 fee_result,
                 FeeResult {

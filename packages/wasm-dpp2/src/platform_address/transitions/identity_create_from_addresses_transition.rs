@@ -1,6 +1,6 @@
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identity::transitions::public_key_in_creation::IdentityPublicKeyInCreationWasm;
-use crate::impl_wasm_conversions_serde;
+use crate::impl_wasm_conversions_inner;
 use crate::impl_wasm_type_info;
 use crate::platform_address::{
     PlatformAddressInputWasm, PlatformAddressOutputWasm, fee_strategy_from_js_options,
@@ -41,10 +41,10 @@ export interface IdentityCreateFromAddressesTransitionObject {
 }
 
 export interface IdentityCreateFromAddressesTransitionJSON {
-    publicKeys: object[];
-    inputs: object[];
-    output?: object;
-    feeStrategy: object[];
+    publicKeys: IdentityPublicKeyInCreationJSON[];
+    inputs: PlatformAddressInputJSON[];
+    output?: PlatformAddressOutputJSON;
+    feeStrategy: FeeStrategyStepJSON[];
     userFeeIncrease: number;
 }
 "#;
@@ -91,7 +91,7 @@ impl IdentityCreateFromAddressesTransitionWasm {
             })?
             .unwrap_or(0);
 
-        let inputs_map = inputs.into_iter().map(|i| i.into_inner()).collect();
+        let inputs_map = crate::platform_address::inputs_to_btree_map(inputs)?;
         let output = output.map(|o| o.try_into_inner()).transpose()?;
         let fee_strategy = fee_strategy_from_steps_or_default(fee_strategy);
 
@@ -188,13 +188,14 @@ impl IdentityCreateFromAddressesTransitionWasm {
     }
 
     #[wasm_bindgen(setter = "inputs")]
-    pub fn set_inputs(&mut self, inputs: Vec<PlatformAddressInputWasm>) {
-        let inputs_map = inputs.into_iter().map(|i| i.into_inner()).collect();
+    pub fn set_inputs(&mut self, inputs: Vec<PlatformAddressInputWasm>) -> WasmDppResult<()> {
+        let inputs_map = crate::platform_address::inputs_to_btree_map(inputs)?;
         match &mut self.0 {
             IdentityCreateFromAddressesTransition::V0(v0) => {
                 v0.inputs = inputs_map;
             }
         }
+        Ok(())
     }
 
     #[wasm_bindgen(getter = "output")]
@@ -257,8 +258,9 @@ impl IdentityCreateFromAddressesTransitionWasm {
     }
 }
 
-impl_wasm_conversions_serde!(
+impl_wasm_conversions_inner!(
     IdentityCreateFromAddressesTransitionWasm,
+    IdentityCreateFromAddressesTransition,
     IdentityCreateFromAddressesTransition,
     IdentityCreateFromAddressesTransitionObjectJs,
     IdentityCreateFromAddressesTransitionJSONJs

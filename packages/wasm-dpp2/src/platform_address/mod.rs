@@ -11,6 +11,7 @@ pub use fee_strategy::{
 };
 pub use input_output::{
     PlatformAddressInputWasm, PlatformAddressOutputWasm, inputs_from_js_options,
-    outputs_from_js_options, outputs_to_btree_map, outputs_to_optional_btree_map,
+    inputs_to_btree_map, outputs_from_js_options, outputs_to_btree_map,
+    outputs_to_optional_btree_map,
 };
 pub use signer::PlatformAddressSignerWasm;

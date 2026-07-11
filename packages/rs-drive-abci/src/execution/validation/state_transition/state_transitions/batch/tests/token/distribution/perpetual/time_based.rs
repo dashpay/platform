@@ -19,8 +19,8 @@ mod perpetual_distribution_time {
     use dpp::data_contract::associated_token::token_perpetual_distribution::v0::TokenPerpetualDistributionV0;
     use crate::test::helpers::fast_forward_to_block::fast_forward_to_block;
     use super::*;
-    #[test]
-    fn test_token_perpetual_distribution_time_claim_linear_and_claim_again() {
+    #[tokio::test]
+    async fn test_token_perpetual_distribution_time_claim_linear_and_claim_again() {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
             .with_latest_protocol_version()
@@ -74,6 +74,7 @@ mod perpetual_distribution_time {
             platform_version,
             None,
         )
+        .await
         .expect("expect to create documents batch transition");
 
         let claim_serialized_transition = claim_transition
@@ -140,6 +141,7 @@ mod perpetual_distribution_time {
             platform_version,
             None,
         )
+        .await
         .expect("expect to create documents batch transition");
 
         let claim_serialized_transition = claim_transition
@@ -208,6 +210,7 @@ mod perpetual_distribution_time {
             platform_version,
             None,
         )
+        .await
         .expect("expect to create documents batch transition");
 
         let claim_serialized_transition = claim_transition
@@ -259,8 +262,8 @@ mod perpetual_distribution_time {
         assert_eq!(token_balance, Some(100300));
     }
 
-    #[test]
-    fn test_token_perpetual_distribution_not_claimant() {
+    #[tokio::test]
+    async fn test_token_perpetual_distribution_not_claimant() {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
             .with_latest_protocol_version()
@@ -319,6 +322,7 @@ mod perpetual_distribution_time {
             platform_version,
             None,
         )
+        .await
         .expect("expect to create documents batch transition");
 
         let claim_serialized_transition = claim_transition
@@ -383,8 +387,8 @@ mod perpetual_distribution_time {
         assert_eq!(token_balance_2, None);
     }
 
-    #[test]
-    fn test_token_perpetual_distribution_time_claim_linear_given_to_specific_identity() {
+    #[tokio::test]
+    async fn test_token_perpetual_distribution_time_claim_linear_given_to_specific_identity() {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
             .with_latest_protocol_version()
@@ -442,6 +446,7 @@ mod perpetual_distribution_time {
             platform_version,
             None,
         )
+        .await
         .expect("expect to create documents batch transition");
 
         let claim_serialized_transition = claim_transition
@@ -493,8 +498,8 @@ mod perpetual_distribution_time {
         assert_eq!(token_balance, Some(250));
     }
 
-    #[test]
-    fn test_token_perpetual_distribution_time_linear() {
+    #[tokio::test]
+    async fn test_token_perpetual_distribution_time_linear() {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
             .with_latest_protocol_version()
@@ -560,6 +565,7 @@ mod perpetual_distribution_time {
             platform_version,
             None,
         )
+        .await
         .expect("expect to create documents batch transition");
 
         let claim_serialized_transition = claim_transition
@@ -628,6 +634,7 @@ mod perpetual_distribution_time {
             platform_version,
             None,
         )
+        .await
         .expect("expect to create documents batch transition");
 
         let claim_serialized_transition = claim_transition
@@ -680,8 +687,8 @@ mod perpetual_distribution_time {
         assert_eq!(token_balance, Some(balance as u64));
     }
 
-    #[test]
-    fn test_token_perpetual_distribution_time_linear_every_hour() {
+    #[tokio::test]
+    async fn test_token_perpetual_distribution_time_linear_every_hour() {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
             .with_latest_protocol_version()
@@ -747,6 +754,7 @@ mod perpetual_distribution_time {
             platform_version,
             None,
         )
+        .await
         .expect("expect to create documents batch transition");
 
         let claim_serialized_transition = claim_transition
@@ -817,6 +825,7 @@ mod perpetual_distribution_time {
             platform_version,
             None,
         )
+        .await
         .expect("expect to create documents batch transition");
 
         let claim_serialized_transition = claim_transition
@@ -870,8 +879,8 @@ mod perpetual_distribution_time {
         assert_eq!(token_balance, Some(15));
     }
 
-    #[test]
-    fn test_token_perpetual_distribution_time_linear_verify_contract_start() {
+    #[tokio::test]
+    async fn test_token_perpetual_distribution_time_linear_verify_contract_start() {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
             .with_latest_protocol_version()
@@ -937,6 +946,7 @@ mod perpetual_distribution_time {
             platform_version,
             None,
         )
+        .await
         .expect("expect to create documents batch transition");
 
         let claim_serialized_transition = claim_transition
@@ -1005,6 +1015,7 @@ mod perpetual_distribution_time {
             platform_version,
             None,
         )
+        .await
         .expect("expect to create documents batch transition");
 
         let claim_serialized_transition = claim_transition
@@ -1058,8 +1069,8 @@ mod perpetual_distribution_time {
         assert_eq!(token_balance, Some(6));
     }
 
-    #[test]
-    fn test_token_perpetual_distribution_time_linear_high_values() {
+    #[tokio::test]
+    async fn test_token_perpetual_distribution_time_linear_high_values() {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
             .with_latest_protocol_version()
@@ -1125,6 +1136,7 @@ mod perpetual_distribution_time {
             platform_version,
             None,
         )
+        .await
         .expect("expect to create documents batch transition");
 
         let claim_serialized_transition = claim_transition
@@ -1189,6 +1201,7 @@ mod perpetual_distribution_time {
             platform_version,
             None,
         )
+        .await
         .expect("expect to create documents batch transition");
 
         let claim_serialized_transition = claim_transition
@@ -1239,8 +1252,8 @@ mod perpetual_distribution_time {
         assert_eq!(token_balance, Some(72057594046349056));
     }
 
-    #[test]
-    fn test_token_perpetual_distribution_time_linear_high_values_old_contract_should_handle_overflow(
+    #[tokio::test]
+    async fn test_token_perpetual_distribution_time_linear_high_values_old_contract_should_handle_overflow(
     ) {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
@@ -1308,6 +1321,7 @@ mod perpetual_distribution_time {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
             let claim_serialized_transition = claim_transition
@@ -1360,8 +1374,8 @@ mod perpetual_distribution_time {
         assert_eq!(token_balance, Some(9223372036854675807));
     }
 
-    #[test]
-    fn test_token_perpetual_distribution_stepwise_distribution() {
+    #[tokio::test]
+    async fn test_token_perpetual_distribution_stepwise_distribution() {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
             .with_latest_protocol_version()
@@ -1440,6 +1454,7 @@ mod perpetual_distribution_time {
             platform_version,
             None,
         )
+        .await
         .expect("expect to create documents batch transition");
 
         let claim_serialized_transition = claim_transition

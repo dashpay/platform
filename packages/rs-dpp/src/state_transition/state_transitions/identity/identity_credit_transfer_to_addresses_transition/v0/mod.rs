@@ -1,12 +1,8 @@
 mod identity_signed;
-#[cfg(feature = "json-conversion")]
-mod json_conversion;
 mod state_transition_like;
 mod state_transition_validation;
 mod types;
 pub(super) mod v0_methods;
-#[cfg(feature = "value-conversion")]
-mod value_conversion;
 mod version;
 
 use crate::address_funds::PlatformAddress;
@@ -48,9 +44,7 @@ pub struct IdentityCreditTransferToAddressesTransitionV0 {
     pub identity_id: Identifier,
     #[cfg_attr(
         feature = "json-conversion",
-        serde(
-            with = "crate::serialization::json::safe_integer_map::json_safe_generic_u64_value_map"
-        )
+        serde(with = "crate::address_funds::serde_helpers::address_output_map_required_amount")
     )]
     pub recipient_addresses: BTreeMap<PlatformAddress, Credits>,
     pub nonce: IdentityNonce,
@@ -103,5 +97,82 @@ mod test {
         };
 
         test_identity_credit_transfer_to_addresses_transition(transition);
+    }
+
+    fn make_transfer_to_addresses_v0() -> IdentityCreditTransferToAddressesTransitionV0 {
+        use crate::address_funds::PlatformAddress;
+        use std::collections::BTreeMap;
+        let mut recipient_addresses = BTreeMap::new();
+        recipient_addresses.insert(PlatformAddress::P2pkh([5u8; 20]), 1_000_000);
+        recipient_addresses.insert(PlatformAddress::P2pkh([6u8; 20]), 2_000_000);
+        IdentityCreditTransferToAddressesTransitionV0 {
+            identity_id: Identifier::random(),
+            recipient_addresses,
+            nonce: 7,
+            user_fee_increase: 3,
+            signature_public_key_id: 2,
+            signature: [0u8; 65].to_vec().into(),
+        }
+    }
+
+    #[test]
+    fn state_transition_like_basics() {
+        use crate::state_transition::{
+            StateTransitionHasUserFeeIncrease, StateTransitionLike, StateTransitionOwned,
+            StateTransitionType,
+        };
+        let mut t = make_transfer_to_addresses_v0();
+        assert_eq!(
+            t.state_transition_type(),
+            StateTransitionType::IdentityCreditTransferToAddresses
+        );
+        assert_eq!(t.state_transition_protocol_version(), 0);
+        assert_eq!(t.modified_data_ids(), vec![t.identity_id]);
+        assert_eq!(t.owner_id(), t.identity_id);
+        let ids = t.unique_identifiers();
+        assert_eq!(ids.len(), 1);
+        // unique_identifier contains nonce in hex
+        assert!(ids[0].contains("7"));
+        assert_eq!(t.user_fee_increase(), 3);
+        t.set_user_fee_increase(77);
+        assert_eq!(t.user_fee_increase(), 77);
+    }
+
+    #[test]
+    fn identity_signed_requirements() {
+        use crate::identity::{Purpose, SecurityLevel};
+        use crate::state_transition::StateTransitionIdentitySigned;
+        let mut t = make_transfer_to_addresses_v0();
+        assert_eq!(t.signature_public_key_id(), 2);
+        t.set_signature_public_key_id(42);
+        assert_eq!(t.signature_public_key_id(), 42);
+        assert_eq!(
+            t.security_level_requirement(Purpose::TRANSFER),
+            vec![SecurityLevel::CRITICAL]
+        );
+        assert_eq!(t.purpose_requirement(), vec![Purpose::TRANSFER]);
+    }
+
+    #[test]
+    fn single_signed_behaviour() {
+        use crate::state_transition::StateTransitionSingleSigned;
+        use platform_value::BinaryData;
+        let mut t = make_transfer_to_addresses_v0();
+        assert_eq!(t.signature().len(), 65);
+        t.set_signature(BinaryData::new(vec![1, 2, 3]));
+        assert_eq!(t.signature().as_slice(), &[1, 2, 3]);
+        t.set_signature_bytes(vec![4, 5]);
+        assert_eq!(t.signature().as_slice(), &[4, 5]);
+    }
+
+    #[test]
+    fn into_state_transition_wraps_correctly() {
+        use crate::state_transition::StateTransition;
+        let t = make_transfer_to_addresses_v0();
+        let st: StateTransition = t.into();
+        assert!(matches!(
+            st,
+            StateTransition::IdentityCreditTransferToAddresses(_)
+        ));
     }
 }

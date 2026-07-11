@@ -1,5 +1,13 @@
 const { PlatformClient } = require('./platform_pb_service');
-const { promisify } = require('util');
+
+// Inline promisify shim — avoids requiring Node's `util` module so this file
+// can be bundled for browsers without a polyfill. If the codegen template
+// is regenerated, restore this shim.
+function promisify(fn) {
+  return (...args) => new Promise((resolve, reject) => {
+    fn(...args, (err, result) => (err ? reject(err) : resolve(result)));
+  });
+}
 
 class PlatformPromiseClient {
   /**
@@ -82,6 +90,21 @@ class PlatformPromiseClient {
     )(
         getDataContractHistoryRequest,
         metadata,
+    );
+  }
+
+  /**
+   *
+   * @param {!GetDocumentHistoryRequest} getDocumentHistoryRequest
+   * @param {?Object<string, string>} metadata
+   * @returns {Promise<!GetDocumentHistoryResponse>}
+   */
+  getDocumentHistory(getDocumentHistoryRequest, metadata = {}) {
+    return promisify(
+      this.client.getDocumentHistory.bind(this.client),
+    )(
+      getDocumentHistoryRequest,
+      metadata,
     );
   }
 

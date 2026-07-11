@@ -61,8 +61,19 @@ mod tests {
         #[test]
         fn should_add_to_balance_latest_version_estimated() {
             let platform_version = PlatformVersion::latest();
+            // v12 processing fee shifted up from 4_278_840 to 4_378_100
+            // when grovedb #674 landed the sum-aware
+            // `AllItemsWithSumItem` / `AllReferencesWithSumItem`
+            // variants + the four new `provable_*_weight` fields on
+            // `EstimatedSumTrees::SomeSumTrees`. The address-funds
+            // estimation now uses `AllItemsWithSumItem` (v1 dispatch at
+            // v12+) and the contract-insertion loop now tallies the
+            // finer-grained tree types — both bumped the layer-level
+            // cost. v0/v1 grovedb formulas are byte-stable so
+            // `should_add_to_balance_first_version_estimated` keeps the
+            // 4_278_840 pin.
             let expected_fee_result = FeeResult {
-                processing_fee: 4278840,
+                processing_fee: 4378100,
                 removed_bytes_from_system: 0,
                 ..Default::default()
             };

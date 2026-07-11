@@ -7,25 +7,50 @@ use syn::{parse_macro_input, Data, DeriveInput, Fields, Ident, Item, Type};
 
 const DEFAULT_BASE_PATH: &str = "crate::serialization";
 
-/// Attribute macro that adds `#[serde(with = "...")]` to `u64`/`i64` fields
-/// and implements `JsonSafeFields` for the type (when used inside the `dpp` crate).
+/// Attribute macro that auto-injects `#[serde(with = "...")]` on fields whose
+/// natural serde shape would round-trip badly through JSON / WASM.
 ///
 /// Works on both **structs** and **enums** (with named fields in variants).
 ///
-/// Matches literal `u64`, `i64`, `Option<u64>`, `Option<i64>`, and known type aliases
-/// (e.g. `Credits`, `TokenAmount`, `TimestampMillis`, `BlockHeight`).
-/// The macro skips fields that already have `#[serde(with)]`.
+/// # What it injects
+///
+/// | Field type | Helper injected | Wire shape |
+/// |---|---|---|
+/// | `u64` / `Option<u64>` and known aliases (`Credits`, `TokenAmount`, `TimestampMillis`, `BlockHeight`, …) | `json_safe_u64` / `json_safe_option_u64` | number ≤ `MAX_SAFE_INTEGER`, otherwise string — avoids JS precision loss |
+/// | `i64` / `Option<i64>` and known aliases | `json_safe_i64` / `json_safe_option_i64` | same, signed |
+/// | `[u8; N]` (any `N`, via const generics) | `serde_bytes` | raw bytes in binary, base64 string in JSON |
+/// | `Vec<u8>` | `serde_bytes_var` | raw bytes in binary, base64 string in JSON |
+///
+/// The byte-field handling matches the broader codebase convention used by
+/// `Bytes20` / `Bytes32` / `Bytes36` / `BinaryData` in `rs-platform-value`.
+///
+/// Fields that already carry an explicit `#[serde(with = "…")]` (or
+/// `skip` / `flatten` / `cfg_attr` wrapping a `serde(with)`) are left
+/// untouched.
+///
+/// # Compile-time transitive guarantee
+///
+/// When applied inside the `dpp` crate, the macro also implements the marker
+/// trait `JsonSafeFields` for the type, and emits compile-time assertions that
+/// every nested non-primitive field type (anything not directly handled above)
+/// also implements `JsonSafeFields`. This propagates the safety check
+/// transitively — adding a new struct that contains a `Credits` without an
+/// `#[json_safe_fields]` annotation will fail to compile.
+///
+/// # Feature flags
 ///
 /// When serde derives are behind `cfg_attr(feature = "...")`, the `cfg_attr` is
-/// evaluated by the compiler BEFORE this macro runs. If the feature is off, serde
-/// derives aren't visible and `#[serde(with)]` is NOT generated — which is correct
-/// because `serde(with)` requires an active serde derive.
+/// evaluated by the compiler BEFORE this macro runs. If the feature is off,
+/// serde derives aren't visible and `#[serde(with)]` is NOT generated — which
+/// is correct because `serde(with)` requires an active serde derive.
 ///
 /// # Inside `dpp` crate (default)
 /// ```ignore
 /// #[json_safe_fields]
 /// pub struct MyStructV0 {
 ///     pub supply: u64,          // → auto-annotated with crate::serialization::json_safe_u64
+///     pub anchor: [u8; 32],     // → auto-annotated with crate::serialization::serde_bytes
+///     pub proof: Vec<u8>,       // → auto-annotated with crate::serialization::serde_bytes_var
 ///     pub name: String,         // → untouched
 /// }
 /// ```
@@ -290,12 +315,21 @@ fn annotate_fields(fields: &mut syn::FieldsNamed, base_path: &str) -> Vec<Type> 
 
 /// Determine if a type needs a serde `with` annotation and return the module name suffix.
 ///
-/// Matches literal `u64`, `i64`, `Option<u64>`, `Option<i64>`, and known type aliases
-/// that resolve to u64/i64 (e.g. `Credits`, `TokenAmount`, `TimestampMillis`).
+/// Matches:
+/// - `u64`, `i64`, `Option<u64>`, `Option<i64>`, and known u64/i64 type aliases
+///   (e.g. `Credits`, `TokenAmount`, `TimestampMillis`) → `json_safe_*` helpers
+/// - `[u8; N]` for any `N` → `serde_bytes` (const-generic; raw bytes in binary,
+///   base64 string in JSON)
+/// - `Vec<u8>` → `serde_bytes_var` (variable-length variant of the above)
+/// - `Option<SharedEncryptedNote>` / `Option<PrivateEncryptedNote>` (both
+///   `(u32, u32, Vec<u8>)` aliases) → `json::safe_integer::json_safe_option_encrypted_note`
+///   (3-tuple where the inner `Vec<u8>` is base64 in JSON HR)
 ///
 /// When adding a new `type X = u64` alias in rs-dpp, add it to the appropriate list below.
 fn serde_with_suffix_for_type(ty: &Type) -> Option<&'static str> {
     match ty {
+        // [u8; N] — any fixed-size byte array, length-agnostic via const generics.
+        Type::Array(arr) if is_u8_type(&arr.elem) => Some("serde_bytes"),
         Type::Path(type_path) => {
             let segments = &type_path.path.segments;
             // Get the last segment — handles both `u64` and `std::u64` / `crate::prelude::Credits`
@@ -308,6 +342,18 @@ fn serde_with_suffix_for_type(ty: &Type) -> Option<&'static str> {
             if is_i64_type(ident) {
                 return Some("json_safe_i64");
             }
+            // Vec<u8> → variable-length bytes helper (base64 in JSON, raw in binary).
+            if ident == "Vec" {
+                if let syn::PathArguments::AngleBracketed(args) = &last.arguments {
+                    if args.args.len() == 1 {
+                        if let syn::GenericArgument::Type(inner_ty) = &args.args[0] {
+                            if is_u8_type(inner_ty) {
+                                return Some("serde_bytes_var");
+                            }
+                        }
+                    }
+                }
+            }
             // Check for Option<u64/i64/alias> — handles both `Option<T>` and `std::option::Option<T>`
             if ident == "Option" {
                 if let syn::PathArguments::AngleBracketed(args) = &last.arguments {
@@ -319,6 +365,11 @@ fn serde_with_suffix_for_type(ty: &Type) -> Option<&'static str> {
                                 }
                                 if is_i64_type(&inner_last.ident) {
                                     return Some("json_safe_option_i64");
+                                }
+                                if is_encrypted_note_alias(&inner_last.ident) {
+                                    return Some(
+                                        "json::safe_integer::json_safe_option_encrypted_note",
+                                    );
                                 }
                             }
                         }
@@ -352,6 +403,16 @@ const U64_ALIASES: &[&str] = &[
 
 /// Known type aliases that resolve to i64.
 const I64_ALIASES: &[&str] = &["SignedCredits", "SignedTokenAmount"];
+
+/// Known type aliases that resolve to `(u32, u32, Vec<u8>)` (encrypted-note
+/// shape on token transitions). Routed to
+/// `json_safe_option_encrypted_note` so the inner `Vec<u8>` is base64 in
+/// JSON HR. Add new aliases of the same shape here.
+const ENCRYPTED_NOTE_ALIASES: &[&str] = &["SharedEncryptedNote", "PrivateEncryptedNote"];
+
+fn is_encrypted_note_alias(ident: &Ident) -> bool {
+    ENCRYPTED_NOTE_ALIASES.iter().any(|alias| ident == alias)
+}
 
 /// Check if the struct has serde derives (Serialize or Deserialize) in its attributes.
 ///
@@ -429,6 +490,17 @@ fn is_u64_type(ident: &Ident) -> bool {
 
 fn is_i64_type(ident: &Ident) -> bool {
     ident == "i64" || I64_ALIASES.iter().any(|alias| ident == alias)
+}
+
+/// True when the type resolves to `u8` — used to detect `[u8; N]` and `Vec<u8>`
+/// byte fields and auto-inject the matching `serde_bytes_*` helper.
+fn is_u8_type(ty: &Type) -> bool {
+    if let Type::Path(type_path) = ty {
+        if let Some(last) = type_path.path.segments.last() {
+            return last.ident == "u8" && last.arguments.is_empty();
+        }
+    }
+    false
 }
 
 /// Derive macro that generates `impl JsonConvertible for Type {}` with

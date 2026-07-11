@@ -1,4 +1,13 @@
-use dash_sdk::{mock::Mockable, platform::Query, Sdk};
+use dash_sdk::platform::fetch_current_no_parameters::FetchCurrent;
+use dash_sdk::platform::types::epoch::EpochQuery;
+use dash_sdk::platform::LimitQuery;
+use dash_sdk::{
+    mock::Mockable,
+    platform::{Query, QuerySettings},
+    Sdk,
+};
+use dpp::block::extended_epoch_info::v0::{ExtendedEpochInfoV0, ExtendedEpochInfoV0Getters};
+use dpp::block::extended_epoch_info::ExtendedEpochInfo;
 use dpp::data_contract::config::DataContractConfig;
 use dpp::{data_contract::DataContractFactory, prelude::Identifier};
 use hex::ToHex;
@@ -25,12 +34,12 @@ fn should_emit_test_logs_to_stdout() -> bool {
 /// Create a mock document type for testing of mock API
 pub fn mock_document_type() -> dpp::data_contract::document_type::DocumentType {
     use dpp::{
-        data_contract::document_type::DocumentType,
-        platform_value::platform_value,
-        version::{PlatformVersion, PlatformVersionCurrentVersion},
+        data_contract::document_type::DocumentType, platform_value::platform_value,
+        version::PlatformVersion,
     };
 
-    let platform_version = PlatformVersion::get_current().unwrap();
+    // `set_current()` is no longer called by the SDK builder; use `latest()` directly.
+    let platform_version = PlatformVersion::latest();
 
     let schema = platform_value!({
         "type": "object",
@@ -94,6 +103,52 @@ pub fn mock_data_contract(
         .data_contract_owned()
 }
 
+/// Ratchet a fresh auto-detect mock SDK from the protocol-version floor up to the
+/// network's latest version, exactly as production does on its first proven response.
+///
+/// An unpinned SDK boots at its per-network `min_protocol_version` (the upgrade-safe
+/// floor) and only learns the real network version after a *proven* fetch, when response
+/// metadata drives `maybe_update_protocol_version`. Mock tests that need the latest
+/// wire (e.g. Count / `group_by`, or V2 document types) must therefore perform one
+/// proven fetch before encoding their real request. This registers a cheap proven
+/// `ExtendedEpochInfo::fetch_current` expectation and consumes it, leaving the SDK
+/// ratcheted to `LATEST_VERSION`.
+pub(crate) async fn bootstrap_mock_sdk_to_latest(sdk: &mut Sdk) {
+    let query = LimitQuery {
+        query: EpochQuery {
+            start: None,
+            ascending: false,
+        },
+        limit: Some(1),
+        start_info: None,
+    };
+
+    let epoch = ExtendedEpochInfo::from(ExtendedEpochInfoV0 {
+        index: 0,
+        first_block_time: 0,
+        first_block_height: 0,
+        first_core_block_height: 0,
+        fee_multiplier_permille: 0,
+        protocol_version: dpp::version::LATEST_VERSION,
+    });
+
+    sdk.mock()
+        .expect_fetch::<ExtendedEpochInfo, _>(query, Some(epoch.clone()))
+        .await
+        .expect("register epoch bootstrap expectation");
+
+    let fetched = ExtendedEpochInfo::fetch_current(sdk)
+        .await
+        .expect("bootstrap fetch_current should ratchet the SDK to latest");
+
+    assert_eq!(fetched.index(), epoch.index());
+    assert_eq!(
+        sdk.version().protocol_version,
+        dpp::version::LATEST_VERSION,
+        "bootstrap must ratchet the auto-detect SDK to the network's latest protocol version"
+    );
+}
+
 /// Enable logging for tests
 pub fn setup_logs() {
     let make_writer = if should_emit_test_logs_to_stdout() {
@@ -127,7 +182,13 @@ pub(crate) async fn setup_sdk_for_test_case<T: TransportRequest + Mockable, Q: Q
     query: Q,
     name_prefix: &str,
 ) -> (String, Sdk) {
-    let key = rs_dapi_client::mock::Key::new(&query.query(true).expect("valid query"));
+    let request_settings = rs_dapi_client::RequestSettings::default();
+    let settings = QuerySettings {
+        request_settings: &request_settings,
+        protocol_version: dpp::version::PlatformVersion::latest(),
+        prove: true,
+    };
+    let key = rs_dapi_client::mock::Key::new(&query.query(&settings).expect("valid query"));
     let test_case_id = format!("{}_{}", name_prefix, key.encode_hex::<String>());
 
     // create new sdk to ensure that test cases don't interfere with each other

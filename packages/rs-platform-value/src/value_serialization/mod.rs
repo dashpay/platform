@@ -47,16 +47,18 @@ pub mod ser;
 /// # Errors
 ///
 /// This conversion can fail if `T`'s implementation of `Serialize` decides to
-/// fail, or if `T` contains a map with non-string keys.
+/// fail. Unlike `serde_json::to_value`, `platform_value::Value::Map` accepts
+/// non-string keys (any `Value` is a valid map key), so maps with vector or
+/// numeric keys serialize without error:
 ///
 /// ```
 /// use std::collections::BTreeMap;
 ///
-/// // The keys in this map are vectors, not strings.
 /// let mut map = BTreeMap::new();
-/// map.insert(vec![32, 64], "x86");
+/// map.insert(vec![32u8, 64], "x86");
 ///
-/// println!("{}", platform_value::to_value(map).unwrap_err());
+/// let v = platform_value::to_value(map).unwrap();
+/// assert!(v.is_map());
 /// ```
 pub fn to_value<T>(value: T) -> Result<Value, Error>
 where
@@ -106,6 +108,7 @@ where
 }
 
 #[cfg(test)]
+#[allow(clippy::needless_borrows_for_generic_args)]
 mod tests {
     use serde::{Deserialize, Serialize};
     use std::collections::HashMap;

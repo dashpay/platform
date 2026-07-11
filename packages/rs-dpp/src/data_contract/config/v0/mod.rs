@@ -119,10 +119,6 @@ impl Default for DataContractConfigV0 {
 }
 
 impl DataContractConfigV0 {
-    pub fn from_value(value: Value) -> Result<Self, ProtocolError> {
-        platform_value::from_value(value).map_err(ProtocolError::ValueError)
-    }
-
     pub fn default_with_version() -> DataContractConfig {
         Self::default().into()
     }
@@ -179,6 +175,12 @@ impl DataContractConfigV0 {
             .map(|int| int.try_into())
             .transpose()?;
 
+        // CONSENSUS-FROZEN BUG: this intentionally reads from
+        // `REQUIRES_IDENTITY_ENCRYPTION_BOUNDED_KEY` (not the matching
+        // DECRYPTION constant). The V0 parser shipped this way and its output
+        // is part of V0 protocol behavior, so it must not be changed even
+        // though it looks like a copy-paste typo. V1 reads from the correct
+        // DECRYPTION key — see v1/mod.rs. Do not "fix" this line.
         let requires_identity_decryption_bounded_key = contract
             .get_optional_integer::<u8>(config::property::REQUIRES_IDENTITY_ENCRYPTION_BOUNDED_KEY)?
             .map(|int| int.try_into())

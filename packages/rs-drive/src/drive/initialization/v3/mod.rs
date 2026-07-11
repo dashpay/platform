@@ -1,13 +1,9 @@
 //! Drive Initialization
 
-use crate::drive::shielded::nullifiers::queries::*;
-use crate::drive::shielded::paths::*;
 use crate::drive::{Drive, RootTree};
 use crate::error::Error;
-use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
-use crate::util::batch::GroveDbOpBatch;
 use dpp::version::PlatformVersion;
-use grovedb::{Element, TransactionArg, TreeType};
+use grovedb::{TransactionArg, TreeType};
 use grovedb_path::SubtreePath;
 
 impl Drive {
@@ -41,6 +37,19 @@ impl Drive {
             drive_version,
         )?;
 
+        // ShieldedBalances top-level sum tree — separate from AddressBalances so
+        // per-pool internal trees (notes, nullifiers, anchors, …) cannot
+        // contaminate the address-credit aggregate via sum propagation.
+        self.grove_insert_empty_tree(
+            SubtreePath::empty(),
+            &[RootTree::ShieldedBalances as u8],
+            TreeType::SumTree,
+            transaction,
+            None,
+            &mut vec![],
+            drive_version,
+        )?;
+
         // SavedBlockTransactions for address-based transaction sync
         self.grove_insert_empty_tree(
             SubtreePath::empty(),
@@ -59,91 +68,20 @@ impl Drive {
 
         self.initial_state_structure_lower_layers_add_operations_2(&mut batch, platform_version)?;
 
-        // Add shielded pool structures
-        self.initial_state_structure_shielded_pool_operations(&mut batch)?;
-
         self.grove_apply_batch(batch, false, transaction, drive_version)?;
 
-        Ok(())
-    }
-
-    /// Adds shielded pool batch operations for initialization.
-    pub(in crate::drive::initialization) fn initial_state_structure_shielded_pool_operations(
-        &self,
-        batch: &mut GroveDbOpBatch,
-    ) -> Result<(), Error> {
-        // 1. Shielded credit pool SumTree under AddressBalances
-        batch.add_insert(
-            vec![vec![RootTree::AddressBalances as u8]],
-            vec![SHIELDED_CREDIT_POOL_KEY_U8],
-            Element::empty_sum_tree(),
-        );
-
-        // 2. Notes tree (CommitmentTree = CountTree items + Sinsemilla Frontier)
-        batch.add_insert(
-            shielded_credit_pool_path_vec(),
-            vec![SHIELDED_NOTES_KEY],
-            Element::empty_commitment_tree(SHIELDED_NOTES_CHUNK_POWER)?,
-        );
-
-        // 3. Nullifiers tree (ProvableCountTree)
-        batch.add_insert(
-            shielded_credit_pool_path_vec(),
-            vec![SHIELDED_NULLIFIERS_KEY],
-            Element::empty_provable_count_tree(),
-        );
-
-        // 4. Total balance SumItem(0)
-        batch.add_insert(
-            shielded_credit_pool_path_vec(),
-            vec![SHIELDED_TOTAL_BALANCE_KEY],
-            Element::new_sum_item(0),
-        );
-
-        // 5. Anchors tree (NormalTree) inside pool: anchor_bytes → block_height_be
-        batch.add_insert(
-            shielded_credit_pool_path_vec(),
-            vec![SHIELDED_ANCHORS_IN_POOL_KEY],
-            Element::empty_tree(),
-        );
-
-        // 5b. Anchors-by-height tree (NormalTree): block_height_be → anchor_bytes
-        // Reverse index for pruning old anchors by height range.
-        batch.add_insert(
-            shielded_credit_pool_path_vec(),
-            vec![SHIELDED_ANCHORS_BY_HEIGHT_KEY],
-            Element::empty_tree(),
-        );
-
-        // 5c. Most recent anchor item (empty initially, set on first block with notes)
-        batch.add_insert(
-            shielded_credit_pool_path_vec(),
-            vec![SHIELDED_MOST_RECENT_ANCHOR_KEY],
-            Element::new_item(vec![0u8; 32]),
-        );
-
-        // 6. Per-block nullifiers CountSumTree under shielded credit pool.
-        // Each item is an ItemWithSumItem (serialized Vec<[u8;32]> + nullifier count as sum).
-        batch.add_insert(
-            shielded_credit_pool_path_vec(),
-            vec![SHIELDED_RECENT_NULLIFIERS_KEY_U8],
-            Element::empty_count_sum_tree(),
-        );
-
-        // 7. Compacted nullifiers NormalTree under shielded credit pool.
-        // Key: (start_block, end_block) as 16 bytes, Value: serialized Vec<[u8;32]>
-        batch.add_insert(
-            shielded_credit_pool_path_vec(),
-            vec![SHIELDED_COMPACTED_NULLIFIERS_KEY_U8],
-            Element::empty_tree(),
-        );
-
-        // 8. Nullifiers expiration time NormalTree under shielded credit pool.
-        batch.add_insert(
-            shielded_credit_pool_path_vec(),
-            vec![SHIELDED_NULLIFIERS_EXPIRATION_TIME_KEY_U8],
-            Element::empty_tree(),
-        );
+        // Add the shielded pool structures AFTER the batch apply so the
+        // top-level `[ShieldedBalances]` SumTree (inserted above) already
+        // exists. CONSENSUS-CRITICAL: this MUST go through the shared
+        // `insert_shielded_pool_structure` helper — the same sequential builder
+        // the upgrade path (`Platform::transition_to_version_12`) uses — so a
+        // fresh-genesis-v12 node and an in-place-upgraded v12 node build a
+        // byte-identical `[ShieldedBalances]` subtree. Building the pool here in
+        // the sorted `GroveDbOpBatch` instead would root the parent Merk at the
+        // batch's median key (`[160]`) rather than the intended NOTES-at-root
+        // (`[128]`) layout, diverging from the upgrade path and forking the
+        // network at the v11→v12 boundary.
+        self.insert_shielded_pool_structure(transaction, platform_version)?;
 
         Ok(())
     }

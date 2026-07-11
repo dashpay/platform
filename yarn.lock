@@ -1523,7 +1523,6 @@ __metadata:
     assert-browserify: "npm:^2.0.0"
     babel-loader: "npm:^9.1.3"
     browserify-zlib: "npm:^0.2.0"
-    bs58: "npm:^4.0.1"
     buffer: "npm:^6.0.3"
     cbor: "npm:^8.0.0"
     chai: "npm:^4.3.10"
@@ -1542,25 +1541,21 @@ __metadata:
     karma-mocha: "npm:^2.0.1"
     karma-mocha-reporter: "npm:^2.2.5"
     karma-webpack: "npm:^5.0.0"
-    lodash: "npm:^4.17.23"
     mocha: "npm:^11.1.0"
-    node-fetch: "npm:^2.6.7"
-    node-inspect-extracted: "npm:^1.0.8"
     nyc: "npm:^15.1.0"
     os-browserify: "npm:^0.3.0"
     path-browserify: "npm:^1.0.1"
     process: "npm:^0.11.10"
-    setimmediate: "npm:^1.0.5"
     sinon: "npm:^18.0.1"
     sinon-chai: "npm:^3.7.0"
     stream-browserify: "npm:^3.0.0"
     string_decoder: "npm:^1.3.0"
+    undici: "npm:^6.0.0"
     url: "npm:^0.11.3"
     util: "npm:^0.12.4"
     wasm-x11-hash: "npm:~0.0.2"
     webpack: "npm:^5.104.0"
     webpack-cli: "npm:^4.9.1"
-    winston: "npm:^3.2.1"
   languageName: unknown
   linkType: soft
 
@@ -1793,20 +1788,6 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@dashevo/feature-flags-contract@workspace:*, @dashevo/feature-flags-contract@workspace:packages/feature-flags-contract":
-  version: 0.0.0-use.local
-  resolution: "@dashevo/feature-flags-contract@workspace:packages/feature-flags-contract"
-  dependencies:
-    "@dashevo/wasm-dpp": "workspace:*"
-    chai: "npm:^4.3.10"
-    dirty-chai: "npm:^2.0.1"
-    eslint: "npm:^9.18.0"
-    mocha: "npm:^11.1.0"
-    sinon: "npm:^18.0.1"
-    sinon-chai: "npm:^3.7.0"
-  languageName: unknown
-  linkType: soft
-
 "@dashevo/grpc-common@workspace:*, @dashevo/grpc-common@workspace:packages/js-grpc-common":
   version: 0.0.0-use.local
   resolution: "@dashevo/grpc-common@workspace:packages/js-grpc-common"
@@ -1865,7 +1846,6 @@ __metadata:
     "@dashevo/dapi-client": "workspace:*"
     "@dashevo/dashcore-lib": "npm:~0.22.0"
     "@dashevo/dpns-contract": "workspace:*"
-    "@dashevo/feature-flags-contract": "workspace:*"
     "@dashevo/grpc-common": "workspace:*"
     "@dashevo/masternode-reward-shares-contract": "workspace:*"
     "@dashevo/wallet-lib": "workspace:*"
@@ -1940,6 +1920,11 @@ __metadata:
     typedoc: "npm:^0.28.17"
     typescript: "npm:^5.7.3"
     ultra-runner: "npm:^3.10.5"
+  dependenciesMeta:
+    ssh2@1.11.0:
+      built: false
+    ssh2@1.16.0:
+      built: false
   languageName: unknown
   linkType: soft
 
@@ -17874,6 +17859,13 @@ __metadata:
   version: 6.21.0
   resolution: "undici-types@npm:6.21.0"
   checksum: 10/ec8f41aa4359d50f9b59fa61fe3efce3477cc681908c8f84354d8567bb3701fafdddf36ef6bff307024d3feb42c837cf6f670314ba37fc8145e219560e473d14
+  languageName: node
+  linkType: hard
+
+"undici@npm:^6.0.0":
+  version: 6.25.0
+  resolution: "undici@npm:6.25.0"
+  checksum: 10/a475e45da3e1d1073283bb70531666f09a432eabff2b857bd7063d469a1ee1486192ff61dc0dadbb526673ce1120fee14d66a59b6b17d1e0bd3a4d5f0a52d0a6
   languageName: node
   linkType: hard
 

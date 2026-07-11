@@ -131,8 +131,9 @@ impl IdentitySignerWasm {
     }
 }
 
+#[async_trait::async_trait]
 impl Signer<IdentityPublicKey> for IdentitySignerWasm {
-    fn sign(
+    async fn sign(
         &self,
         identity_public_key: &IdentityPublicKey,
         data: &[u8],
@@ -150,12 +151,12 @@ impl Signer<IdentityPublicKey> for IdentitySignerWasm {
         Ok(signature.to_vec().into())
     }
 
-    fn sign_create_witness(
+    async fn sign_create_witness(
         &self,
         key: &IdentityPublicKey,
         data: &[u8],
     ) -> Result<AddressWitness, ProtocolError> {
-        let signature = self.sign(key, data)?;
+        let signature = self.sign(key, data).await?;
 
         match key.key_type() {
             KeyType::ECDSA_HASH160 | KeyType::ECDSA_SECP256K1 => {

@@ -11,18 +11,21 @@ use std::collections::HashMap;
 /// Operations on the Shielded Pool
 #[derive(Clone, Debug)]
 pub enum ShieldedPoolOperationType {
-    /// Insert a note into the CommitmentTree (appends cmx to frontier + stores cmx||rho||encrypted_note as item)
+    /// Insert a note into the CommitmentTree (appends cmx to frontier + stores
+    /// cmx||rho||cv_net||encrypted_note as item)
     InsertNote {
         /// The 32-byte nullifier (rho) of the spent note in this action, stored alongside
         /// the ciphertext so light clients can derive Rho for trial decryption
         nullifier: [u8; 32],
         /// The 32-byte note commitment (cmx)
         cmx: [u8; 32],
+        /// The 32-byte value commitment (cv_net), stored unencrypted so a wallet can
+        /// recover the value of an outgoing note via OVK decryption
+        cv_net: [u8; 32],
         /// The encrypted note payload (216 bytes)
         encrypted_note: Vec<u8>,
     },
-    /// Insert nullifiers into the permanent tree (double-spend prevention) and
-    /// per-block sync storage (catch-up RPCs).
+    /// Insert nullifiers into the permanent tree (double-spend prevention).
     InsertNullifiers {
         /// The 32-byte nullifiers to insert
         nullifiers: Vec<[u8; 32]>,
@@ -41,8 +44,8 @@ impl DriveLowLevelOperationConverter for ShieldedPoolOperationType {
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
-        block_info: &BlockInfo,
-        transaction: TransactionArg,
+        _block_info: &BlockInfo,
+        _transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         if let Some(ref mut estimated_costs) = estimated_costs_only_with_layer_info {
@@ -53,15 +56,12 @@ impl DriveLowLevelOperationConverter for ShieldedPoolOperationType {
             ShieldedPoolOperationType::InsertNote {
                 nullifier,
                 cmx,
+                cv_net,
                 encrypted_note,
-            } => Drive::insert_note_op(nullifier, cmx, encrypted_note, platform_version),
-            ShieldedPoolOperationType::InsertNullifiers { nullifiers } => drive.insert_nullifiers(
-                &nullifiers,
-                block_info.height,
-                block_info.time_ms,
-                transaction,
-                platform_version,
-            ),
+            } => Drive::insert_note_op(nullifier, cmx, cv_net, encrypted_note, platform_version),
+            ShieldedPoolOperationType::InsertNullifiers { nullifiers } => {
+                drive.insert_nullifiers(&nullifiers, platform_version)
+            }
             ShieldedPoolOperationType::UpdateTotalBalance { new_total_balance } => {
                 Drive::update_total_balance_op(new_total_balance, platform_version)
             }

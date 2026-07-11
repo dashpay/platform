@@ -202,7 +202,7 @@ mod tests {
         );
 
         let identity_top_up_transition: StateTransition =
-            IdentityTopUpTransition::try_from_identity(
+            IdentityTopUpTransition::try_from_identity_with_private_key(
                 &identity_already_in_system,
                 asset_lock_proof,
                 pk.as_slice(),
@@ -332,7 +332,7 @@ mod tests {
         );
 
         let identity_top_up_transition: StateTransition =
-            IdentityTopUpTransition::try_from_identity(
+            IdentityTopUpTransition::try_from_identity_with_private_key(
                 &identity_already_in_system,
                 asset_lock_proof,
                 pk.as_slice(),
@@ -449,7 +449,7 @@ mod tests {
         );
 
         let identity_top_up_transition: StateTransition =
-            IdentityTopUpTransition::try_from_identity(
+            IdentityTopUpTransition::try_from_identity_with_private_key(
                 &identity_not_in_system,
                 asset_lock_proof,
                 pk.as_slice(),

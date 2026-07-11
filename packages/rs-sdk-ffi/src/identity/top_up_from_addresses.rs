@@ -2,7 +2,6 @@
 
 use dash_sdk::dpp::address_funds::PlatformAddress;
 use dash_sdk::dpp::dashcore::secp256k1::SecretKey;
-use dash_sdk::dpp::dashcore::Network;
 use dash_sdk::dpp::dashcore::PrivateKey;
 use dash_sdk::dpp::fee::Credits;
 use dash_sdk::dpp::prelude::Identity;
@@ -162,8 +161,9 @@ unsafe fn dash_sdk_identity_top_up_from_addresses_inner(
             }
         };
 
-        // Create PrivateKey (network doesn't matter for signing)
-        let private_key = PrivateKey::new(secret_key, Network::Testnet);
+        // Create PrivateKey (network doesn't matter for signing — `PrivateKey`
+        // only carries it through to WIF encoding, which we never invoke here).
+        let private_key = PrivateKey::new(secret_key, wrapper.sdk.network);
 
         signer.add_key(&address, private_key);
         input_map.insert(address, input.amount);
@@ -175,7 +175,7 @@ unsafe fn dash_sdk_identity_top_up_from_addresses_inner(
     // Execute the top-up
     let result: Result<DashSDKIdentityTopUpFromAddressesResult, FFIError> =
         wrapper.runtime.block_on(async {
-            let (address_infos, identity_balance) = identity
+            let (address_infos, identity_balance, _proof_height) = identity
                 .top_up_from_addresses(&wrapper.sdk, input_map, &signer, settings)
                 .await
                 .map_err(FFIError::from)?;

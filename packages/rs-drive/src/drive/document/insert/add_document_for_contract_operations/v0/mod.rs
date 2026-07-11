@@ -1,4 +1,5 @@
 use crate::drive::document::paths::contract_documents_primary_key_path;
+use crate::drive::document::primary_key_tree_type::DocumentTypePrimaryKeyTreeType;
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
@@ -12,7 +13,7 @@ use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, TransactionArg, TreeType};
+use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
 
 impl Drive {
@@ -37,12 +38,16 @@ impl Drive {
             document_and_contract_info.document_type.name().as_str(),
         );
 
+        let primary_key_tree_type = document_and_contract_info
+            .document_type
+            .primary_key_tree_type(platform_version)?;
+
         // Apply means stateful query
         let query_type = if estimated_costs_only_with_layer_info.is_none() {
             StatefulDirectQuery
         } else {
             StatelessDirectQuery {
-                in_tree_type: TreeType::NormalTree,
+                in_tree_type: primary_key_tree_type,
                 query_target: QueryTargetValue(
                     document_and_contract_info
                         .document_type

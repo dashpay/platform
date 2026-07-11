@@ -1,6 +1,10 @@
 #[cfg(test)]
 mod batch_transition_tests {
+    use crate::address_funds::AddressWitness;
+    use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+    use crate::identity::signer::Signer;
     use crate::identity::SecurityLevel;
+    use crate::identity::{IdentityPublicKey, KeyType, Purpose};
     use crate::state_transition::batch_transition::batched_transition::document_base_transition::v0::DocumentBaseTransitionV0;
     use crate::state_transition::batch_transition::batched_transition::document_base_transition::DocumentBaseTransition;
     use crate::state_transition::batch_transition::batched_transition::document_create_transition::v0::DocumentCreateTransitionV0;
@@ -35,8 +39,13 @@ mod batch_transition_tests {
         BatchTransitionV0, BatchTransitionV1,
     };
     use crate::state_transition::StateTransitionLike;
+    use crate::state_transition::StateTransition;
+    use crate::ProtocolError;
     use crate::data_contract::associated_token::token_distribution_key::TokenDistributionType;
+    use async_trait::async_trait;
     use platform_value::{BinaryData, Identifier};
+    use platform_version::version::PlatformVersion;
+    use rand::SeedableRng;
     use std::collections::BTreeMap;
 
     // -----------------------------------------------------------------------
@@ -135,6 +144,79 @@ mod batch_transition_tests {
             signature_public_key_id: 0,
             signature: BinaryData::default(),
         }
+    }
+
+    #[derive(Debug)]
+    struct TestSigner;
+
+    #[async_trait]
+    impl Signer<IdentityPublicKey> for TestSigner {
+        async fn sign(
+            &self,
+            _key: &IdentityPublicKey,
+            _data: &[u8],
+        ) -> Result<BinaryData, ProtocolError> {
+            Ok(vec![1, 2, 3].into())
+        }
+
+        async fn sign_create_witness(
+            &self,
+            _key: &IdentityPublicKey,
+            _data: &[u8],
+        ) -> Result<AddressWitness, ProtocolError> {
+            Err(ProtocolError::Generic(
+                "test signer does not create address witnesses".to_string(),
+            ))
+        }
+
+        fn can_sign_with(&self, _key: &IdentityPublicKey) -> bool {
+            true
+        }
+    }
+
+    fn critical_authentication_key(platform_version: &PlatformVersion) -> IdentityPublicKey {
+        IdentityPublicKey::random_ecdsa_critical_level_authentication_key(
+            1,
+            Some(1),
+            platform_version,
+        )
+        .expect("expected critical authentication key")
+        .0
+    }
+
+    fn high_authentication_key(platform_version: &PlatformVersion) -> IdentityPublicKey {
+        IdentityPublicKey::random_ecdsa_high_level_authentication_key(2, Some(2), platform_version)
+            .expect("expected high authentication key")
+            .0
+    }
+
+    fn critical_transfer_key(platform_version: &PlatformVersion) -> IdentityPublicKey {
+        IdentityPublicKey::random_key_with_known_attributes(
+            3,
+            &mut rand::prelude::StdRng::seed_from_u64(3),
+            Purpose::TRANSFER,
+            SecurityLevel::CRITICAL,
+            KeyType::ECDSA_HASH160,
+            None,
+            platform_version,
+        )
+        .expect("expected critical transfer key")
+        .0
+    }
+
+    async fn sign_token_transfer_batch_with_key(
+        key: &IdentityPublicKey,
+        transitions: Vec<BatchedTransition>,
+    ) -> Result<StateTransition, ProtocolError> {
+        let mut state_transition: StateTransition = make_batch_v1(transitions).into();
+        state_transition
+            .sign_external(
+                key,
+                &TestSigner,
+                None::<crate::state_transition::GetDataContractSecurityLevelRequirementFn>,
+            )
+            .await?;
+        Ok(state_transition)
     }
 
     // -----------------------------------------------------------------------
@@ -552,6 +634,72 @@ mod batch_transition_tests {
         let purposes = batch.purpose_requirement();
         // With more than 1 transition, purpose_requirement returns AUTHENTICATION only
         assert_eq!(purposes, vec![Purpose::AUTHENTICATION]);
+    }
+
+    #[tokio::test]
+    async fn signing_single_token_transfer_accepts_critical_authentication_key() {
+        let platform_version = PlatformVersion::latest();
+        let key = critical_authentication_key(platform_version);
+
+        let signed = sign_token_transfer_batch_with_key(
+            &key,
+            vec![BatchedTransition::Token(make_token_transfer_transition(1))],
+        )
+        .await
+        .expect("single token transfer should accept critical authentication key");
+
+        assert_eq!(signed.signature_public_key_id(), Some(key.id()));
+    }
+
+    #[tokio::test]
+    async fn signing_single_token_transfer_accepts_critical_transfer_key() {
+        let platform_version = PlatformVersion::latest();
+        let key = critical_transfer_key(platform_version);
+
+        let signed = sign_token_transfer_batch_with_key(
+            &key,
+            vec![BatchedTransition::Token(make_token_transfer_transition(1))],
+        )
+        .await
+        .expect("single token transfer should accept critical transfer key");
+
+        assert_eq!(signed.signature_public_key_id(), Some(key.id()));
+    }
+
+    #[tokio::test]
+    async fn signing_single_token_transfer_rejects_high_authentication_key() {
+        let platform_version = PlatformVersion::latest();
+        let key = high_authentication_key(platform_version);
+
+        let err = sign_token_transfer_batch_with_key(
+            &key,
+            vec![BatchedTransition::Token(make_token_transfer_transition(1))],
+        )
+        .await
+        .expect_err("token transitions require critical security");
+
+        assert!(matches!(
+            err,
+            ProtocolError::InvalidSignaturePublicKeySecurityLevelError(_)
+        ));
+    }
+
+    #[tokio::test]
+    async fn signing_multi_transition_batch_rejects_transfer_key() {
+        let platform_version = PlatformVersion::latest();
+        let key = critical_transfer_key(platform_version);
+
+        let err = sign_token_transfer_batch_with_key(
+            &key,
+            vec![
+                BatchedTransition::Token(make_token_transfer_transition(1)),
+                BatchedTransition::Token(make_token_burn_transition(2, 100)),
+            ],
+        )
+        .await
+        .expect_err("transfer keys are only allowed for single transfer or claim batches");
+
+        assert!(matches!(err, ProtocolError::WrongPublicKeyPurposeError(_)));
     }
 
     #[test]
@@ -1009,7 +1157,7 @@ mod batch_transition_tests {
     fn document_batch_iterator_v0_yields_document_refs() {
         use crate::state_transition::batch_transition::accessors::DocumentBatchIterator;
 
-        let transitions = vec![make_delete_transition(1), make_delete_transition(2)];
+        let transitions = [make_delete_transition(1), make_delete_transition(2)];
         let mut iter = DocumentBatchIterator::V0(transitions.iter());
         let first = iter.next().unwrap();
         assert!(matches!(first, BatchedTransitionRef::Document(_)));
@@ -1024,7 +1172,7 @@ mod batch_transition_tests {
             DocumentBatchIterator, DocumentBatchV1Iterator,
         };
 
-        let transitions = vec![
+        let transitions = [
             BatchedTransition::Document(make_delete_transition(1)),
             BatchedTransition::Token(make_token_burn_transition(2, 100)),
         ];

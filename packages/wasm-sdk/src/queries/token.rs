@@ -457,21 +457,40 @@ impl WasmSdk {
         Ok(prices_map)
     }
 
+    /// Fetches the contract info for a token (the data contract that defines it
+    /// and the token's position within that contract).
+    ///
+    /// This query is keyed by **token ID**, not by data contract ID. A token ID
+    /// is derived from a data contract ID and the token's position via
+    /// `calculateTokenIdFromContract`. Passing a data contract ID here will not
+    /// match any record and resolves to `undefined`.
+    ///
+    /// # Arguments
+    /// * `token_id` - The token ID in base58 format
+    ///
+    /// # Returns
+    /// The token's contract info, or `undefined` if no token with that ID exists.
+    ///
+    /// # Example
+    /// ```javascript
+    /// const tokenId = WasmSdk.calculateTokenIdFromContract("Hqyu8WcRwXCTwbNxdga4CN5gsVEGc67wng4TFzceyLUv", 0);
+    /// const info = await sdk.getTokenContractInfo(tokenId);
+    /// ```
     #[wasm_bindgen(js_name = "getTokenContractInfo")]
     pub async fn get_token_contract_info(
         &self,
-        #[wasm_bindgen(js_name = "dataContractId")] data_contract_id: IdentifierLikeJs,
+        #[wasm_bindgen(js_name = "tokenId")] token_id: IdentifierLikeJs,
     ) -> Result<Option<TokenContractInfoWasm>, WasmSdkError> {
         use dash_sdk::dpp::tokens::contract_info::TokenContractInfo;
         use dash_sdk::platform::Fetch;
 
-        // Parse contract ID
-        let contract_id: Identifier = data_contract_id.try_into().map_err(|err| {
-            WasmSdkError::invalid_argument(format!("Invalid contract ID: {}", err))
-        })?;
+        // Parse token ID
+        let token_id: Identifier = token_id
+            .try_into()
+            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid token ID: {}", err)))?;
 
         // Fetch token contract info
-        let info_result = TokenContractInfo::fetch(self.as_ref(), contract_id).await?;
+        let info_result = TokenContractInfo::fetch(self.as_ref(), token_id).await?;
 
         Ok(info_result.map(TokenContractInfoWasm::from))
     }
@@ -797,26 +816,37 @@ impl WasmSdk {
         ))
     }
 
+    /// Fetches the contract info for a token, with cryptographic proof.
+    ///
+    /// This query is keyed by **token ID**, not by data contract ID. A token ID
+    /// is derived from a data contract ID and the token's position via
+    /// `calculateTokenIdFromContract`. Passing a data contract ID here will not
+    /// match any record and resolves to `undefined`.
+    ///
+    /// # Arguments
+    /// * `token_id` - The token ID in base58 format
+    ///
+    /// # Returns
+    /// The token's contract info (or `undefined`) along with proof metadata.
     #[wasm_bindgen(
         js_name = "getTokenContractInfoWithProofInfo",
         unchecked_return_type = "ProofMetadataResponseTyped<TokenContractInfo | undefined>"
     )]
     pub async fn get_token_contract_info_with_proof_info(
         &self,
-        #[wasm_bindgen(js_name = "dataContractId")] data_contract_id: IdentifierLikeJs,
+        #[wasm_bindgen(js_name = "tokenId")] token_id: IdentifierLikeJs,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         use dash_sdk::dpp::tokens::contract_info::TokenContractInfo;
         use dash_sdk::platform::Fetch;
 
-        // Parse contract ID
-        let contract_id: Identifier = data_contract_id.try_into().map_err(|err| {
-            WasmSdkError::invalid_argument(format!("Invalid contract ID: {}", err))
-        })?;
+        // Parse token ID
+        let token_id: Identifier = token_id
+            .try_into()
+            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid token ID: {}", err)))?;
 
         // Fetch token contract info with proof
         let (info_result, metadata, proof) =
-            TokenContractInfo::fetch_with_metadata_and_proof(self.as_ref(), contract_id, None)
-                .await?;
+            TokenContractInfo::fetch_with_metadata_and_proof(self.as_ref(), token_id, None).await?;
 
         let data = info_result
             .map(|info| JsValue::from(TokenContractInfoWasm::from(info)))

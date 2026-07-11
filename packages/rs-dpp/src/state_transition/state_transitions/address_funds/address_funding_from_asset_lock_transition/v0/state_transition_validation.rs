@@ -419,7 +419,7 @@ mod tests {
             .max_address_fee_strategies;
         transition.fee_strategy.clear();
         // Add more strategies than allowed. Use ReduceOutput since we have outputs.
-        for i in 0..=(max as u16) {
+        for i in 0..=max {
             transition
                 .fee_strategy
                 .push(AddressFundsFeeStrategyStep::ReduceOutput(i));

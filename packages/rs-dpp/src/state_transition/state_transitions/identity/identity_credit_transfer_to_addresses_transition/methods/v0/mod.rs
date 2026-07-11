@@ -19,7 +19,7 @@ use platform_version::version::{FeatureVersion, PlatformVersion};
 pub trait IdentityCreditTransferToAddressesTransitionMethodsV0 {
     #[cfg(feature = "state-transition-signing")]
     #[allow(clippy::too_many_arguments)]
-    fn try_from_identity<S: Signer<IdentityPublicKey>>(
+    async fn try_from_identity<S: Signer<IdentityPublicKey>>(
         identity: &Identity,
         to_recipient_addresses: BTreeMap<PlatformAddress, Credits>,
         user_fee_increase: UserFeeIncrease,

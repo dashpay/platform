@@ -192,6 +192,81 @@ describe('AddressCreditWithdrawalTransition', () => {
     });
   });
 
+  describe('toObject() / toJSON() / fromObject() / fromJSON()', () => {
+    it('toObject() emits inputs as typed array of {address, nonce, amount}', () => {
+      const transition = createTransition();
+      const obj = transition.toObject();
+
+      expect(obj.inputs).to.be.an('array').with.lengthOf(1);
+      expect(obj.inputs[0].address).to.be.instanceOf(Uint8Array);
+      expect(obj.inputs[0].address.length).to.equal(21);
+      expect(obj.inputs[0].nonce).to.equal(0);
+      expect(obj.inputs[0].amount).to.equal(BigInt(100000));
+    });
+
+    it('toObject() emits output as typed singular {address, amount}', () => {
+      const transition = createTransition();
+      const obj = transition.toObject();
+
+      expect(obj.output).to.be.an('object');
+      expect(obj.output.address).to.be.instanceOf(Uint8Array);
+      expect(obj.output.address.length).to.equal(21);
+      expect(obj.output.amount).to.equal(BigInt(90000));
+    });
+
+    it('toObject() omits output when not provided', () => {
+      const inputAddr = wasm.PlatformAddress.fromBytes(addr1Bytes);
+      const script = wasm.CoreScript.fromP2PKH([
+        1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+      ]);
+      const input = new wasm.PlatformAddressInput(inputAddr, 0, BigInt(100000));
+      const transition = new wasm.AddressCreditWithdrawalTransition({
+        inputs: [input],
+        outputScript: script,
+        pooling: 'never',
+        coreFeePerByte: 1,
+      });
+
+      const obj = transition.toObject();
+      expect(obj.output == null).to.be.true(); // null OR undefined
+    });
+
+    it('toObject() emits feeStrategy with {type, index} shape', () => {
+      const transition = createTransition();
+      const obj = transition.toObject();
+
+      expect(obj.feeStrategy).to.be.an('array');
+      expect(obj.feeStrategy[0].$type).to.be.oneOf(['deductFromInput', 'reduceOutput']);
+      expect(obj.feeStrategy[0].index).to.be.a('number');
+    });
+
+    it('toJSON() emits hex addresses, string outputScript, and pooling name', () => {
+      const transition = createTransition();
+      const json = transition.toJSON();
+
+      expect(json.inputs[0].address).to.be.a('string').with.lengthOf(42);
+      expect(json.output).to.be.an('object');
+      expect(json.output.address).to.be.a('string').with.lengthOf(42);
+      expect(json.output.amount).to.satisfy((v: unknown) => typeof v === 'number' || typeof v === 'string');
+      expect(json.outputScript).to.be.a('string');
+      expect(json.feeStrategy[0].$type).to.be.oneOf(['deductFromInput', 'reduceOutput']);
+    });
+
+    it('fromObject(toObject()) round-trips identically', () => {
+      const transition = createTransition();
+      const obj = transition.toObject();
+      const restored = wasm.AddressCreditWithdrawalTransition.fromObject(obj);
+      expect(restored.toObject()).to.deep.equal(obj);
+    });
+
+    it('fromJSON(toJSON()) round-trips identically', () => {
+      const transition = createTransition();
+      const json = transition.toJSON();
+      const restored = wasm.AddressCreditWithdrawalTransition.fromJSON(json);
+      expect(restored.toJSON()).to.deep.equal(json);
+    });
+  });
+
   describe('toStateTransition() / fromStateTransition()', () => {
     it('should convert to and from StateTransition', () => {
       const transition = createTransition();

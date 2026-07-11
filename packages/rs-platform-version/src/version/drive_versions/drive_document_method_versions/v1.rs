@@ -12,6 +12,11 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V1: DriveDocumentMethodVersions =
             query_contested_documents: 0,
             query_contested_documents_vote_state: 0,
             query_documents_with_flags: 0,
+            fetch_document_history_query: 0,
+            fetch_document_history: 0,
+            prove_document_history: 0,
+            detect_count_mode: 0,
+            detect_sum_mode: 0,
         },
         delete: DriveDocumentDeleteMethodVersions {
             add_estimation_costs_for_remove_document_to_primary_storage: 0,
@@ -67,4 +72,5 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V1: DriveDocumentMethodVersions =
             validate_document_purchase_transition_action_uniqueness: 0,
             validate_document_update_price_transition_action_uniqueness: 0,
         },
+        primary_key_tree_type: 0,
     };

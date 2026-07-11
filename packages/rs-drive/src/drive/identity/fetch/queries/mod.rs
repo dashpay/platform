@@ -410,3 +410,342 @@ impl Drive {
         .unwrap()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::drive::Drive;
+    use dpp::identity::Purpose;
+    use grovedb_version::version::GroveVersion;
+
+    mod identity_prove_request_type {
+        use super::*;
+
+        #[test]
+        fn should_convert_valid_values() {
+            assert!(matches!(
+                IdentityProveRequestType::try_from(0),
+                Ok(IdentityProveRequestType::FullIdentity)
+            ));
+            assert!(matches!(
+                IdentityProveRequestType::try_from(1),
+                Ok(IdentityProveRequestType::Balance)
+            ));
+            assert!(matches!(
+                IdentityProveRequestType::try_from(2),
+                Ok(IdentityProveRequestType::Keys)
+            ));
+            assert!(matches!(
+                IdentityProveRequestType::try_from(3),
+                Ok(IdentityProveRequestType::Revision)
+            ));
+        }
+
+        #[test]
+        fn should_error_on_invalid_value() {
+            let result = IdentityProveRequestType::try_from(4);
+            assert!(result.is_err());
+
+            let result = IdentityProveRequestType::try_from(255);
+            assert!(result.is_err());
+        }
+    }
+
+    mod query_construction {
+        use super::*;
+
+        #[test]
+        fn should_build_revision_for_identity_id_path_query() {
+            let identity_id = [1u8; 32];
+            let pq = Drive::revision_for_identity_id_path_query(identity_id);
+
+            assert!(!pq.path.is_empty());
+            assert!(pq.query.limit.is_none());
+            assert!(pq.query.offset.is_none());
+        }
+
+        #[test]
+        fn should_build_revision_and_balance_path_query() {
+            let identity_id = [2u8; 32];
+            let grove_version = GroveVersion::latest();
+            let pq = Drive::revision_and_balance_path_query(identity_id, grove_version)
+                .expect("should build merged query");
+
+            assert!(pq.query.limit.is_none());
+            assert!(pq.query.offset.is_none());
+        }
+
+        #[test]
+        fn should_build_identity_id_by_unique_public_key_hash_query() {
+            let public_key_hash = [3u8; 20];
+            let pq = Drive::identity_id_by_unique_public_key_hash_query(public_key_hash);
+
+            assert!(!pq.path.is_empty());
+            assert!(pq.query.limit.is_none());
+        }
+
+        #[test]
+        fn should_build_identity_id_by_non_unique_public_key_hash_query_without_after() {
+            let public_key_hash = [4u8; 20];
+            let pq = Drive::identity_id_by_non_unique_public_key_hash_query(public_key_hash, None);
+
+            assert!(!pq.path.is_empty());
+            assert!(pq.query.limit.is_none());
+        }
+
+        #[test]
+        fn should_build_identity_id_by_non_unique_public_key_hash_query_with_after() {
+            let public_key_hash = [4u8; 20];
+            let after_id = [5u8; 32];
+            let pq = Drive::identity_id_by_non_unique_public_key_hash_query(
+                public_key_hash,
+                Some(after_id),
+            );
+
+            assert!(!pq.path.is_empty());
+            assert!(pq.query.limit.is_none());
+        }
+
+        #[test]
+        fn should_build_identity_ids_by_unique_public_key_hash_query() {
+            let hashes = [[6u8; 20], [7u8; 20], [8u8; 20]];
+            let pq = Drive::identity_ids_by_unique_public_key_hash_query(&hashes);
+
+            assert!(!pq.path.is_empty());
+            assert!(pq.query.limit.is_none());
+        }
+
+        #[test]
+        fn should_build_identity_ids_by_unique_public_key_hash_query_empty() {
+            let hashes: [[u8; 20]; 0] = [];
+            let pq = Drive::identity_ids_by_unique_public_key_hash_query(&hashes);
+            assert!(!pq.path.is_empty());
+        }
+
+        #[test]
+        fn should_build_full_identity_query() {
+            let identity_id = [9u8; 32];
+            let grove_version = GroveVersion::latest();
+            let pq = Drive::full_identity_query(&identity_id, grove_version)
+                .expect("should build full identity query");
+
+            assert!(pq.query.limit.is_none());
+        }
+
+        #[test]
+        fn should_build_identity_all_keys_query() {
+            let identity_id = [10u8; 32];
+            let grove_version = GroveVersion::latest();
+            let pq = Drive::identity_all_keys_query(&identity_id, grove_version)
+                .expect("should build all keys query");
+
+            assert!(pq.query.limit.is_none());
+        }
+
+        #[test]
+        fn should_build_balances_for_identity_ids_query() {
+            let ids = [[11u8; 32], [12u8; 32]];
+            let pq = Drive::balances_for_identity_ids_query(&ids);
+
+            assert!(!pq.path.is_empty());
+            assert!(pq.query.limit.is_none());
+        }
+
+        #[test]
+        fn should_build_balances_for_range_query_ascending_no_start() {
+            let pq = Drive::balances_for_range_query(None, true, 10);
+            assert_eq!(pq.query.limit, Some(10));
+        }
+
+        #[test]
+        fn should_build_balances_for_range_query_ascending_with_start_included() {
+            let start = [13u8; 32];
+            let pq = Drive::balances_for_range_query(Some((start, true)), true, 5);
+            assert_eq!(pq.query.limit, Some(5));
+        }
+
+        #[test]
+        fn should_build_balances_for_range_query_ascending_with_start_excluded() {
+            let start = [14u8; 32];
+            let pq = Drive::balances_for_range_query(Some((start, false)), true, 5);
+            assert_eq!(pq.query.limit, Some(5));
+        }
+
+        #[test]
+        fn should_build_balances_for_range_query_descending_no_start() {
+            let pq = Drive::balances_for_range_query(None, false, 10);
+            assert_eq!(pq.query.limit, Some(10));
+        }
+
+        #[test]
+        fn should_build_balances_for_range_query_descending_with_start_included() {
+            let start = [15u8; 32];
+            let pq = Drive::balances_for_range_query(Some((start, true)), false, 5);
+            assert_eq!(pq.query.limit, Some(5));
+        }
+
+        #[test]
+        fn should_build_balances_for_range_query_descending_with_start_excluded() {
+            let start = [16u8; 32];
+            let pq = Drive::balances_for_range_query(Some((start, false)), false, 5);
+            assert_eq!(pq.query.limit, Some(5));
+        }
+
+        #[test]
+        fn should_build_full_identities_query() {
+            let ids = [[17u8; 32], [18u8; 32]];
+            let grove_version = GroveVersion::latest();
+            let pq = Drive::full_identities_query(&ids, grove_version)
+                .expect("should build full identities query");
+            assert!(pq.query.limit.is_none());
+        }
+
+        #[test]
+        fn should_build_full_identity_with_public_key_hash_query() {
+            let public_key_hash = [19u8; 20];
+            let identity_id = [20u8; 32];
+            let grove_version = GroveVersion::latest();
+            let pq = Drive::full_identity_with_public_key_hash_query(
+                public_key_hash,
+                identity_id,
+                grove_version,
+            )
+            .expect("should build query");
+            assert!(pq.query.limit.is_none());
+        }
+
+        #[test]
+        fn should_build_full_identity_with_non_unique_public_key_hash_query_no_after() {
+            let public_key_hash = [21u8; 20];
+            let identity_id = [22u8; 32];
+            let grove_version = GroveVersion::latest();
+            let pq = Drive::full_identity_with_non_unique_public_key_hash_query(
+                public_key_hash,
+                identity_id,
+                None,
+                grove_version,
+            )
+            .expect("should build query");
+            assert!(pq.query.limit.is_none());
+        }
+
+        #[test]
+        fn should_build_full_identity_with_non_unique_public_key_hash_query_with_after() {
+            let public_key_hash = [23u8; 20];
+            let identity_id = [24u8; 32];
+            let after = [25u8; 32];
+            let grove_version = GroveVersion::latest();
+            let pq = Drive::full_identity_with_non_unique_public_key_hash_query(
+                public_key_hash,
+                identity_id,
+                Some(after),
+                grove_version,
+            )
+            .expect("should build query");
+            assert!(pq.query.limit.is_none());
+        }
+
+        #[test]
+        fn should_build_full_identities_with_keys_hashes_query() {
+            let ids = [[26u8; 32], [27u8; 32]];
+            let hashes = [[28u8; 20], [29u8; 20]];
+            let grove_version = GroveVersion::latest();
+            let pq = Drive::full_identities_with_keys_hashes_query(&ids, &hashes, grove_version)
+                .expect("should build query");
+            assert!(pq.query.limit.is_none());
+        }
+
+        #[test]
+        fn should_build_identity_balance_query() {
+            let identity_id = [30u8; 32];
+            let pq = Drive::identity_balance_query(&identity_id);
+
+            assert!(!pq.path.is_empty());
+            assert!(pq.query.limit.is_none());
+        }
+
+        #[test]
+        fn should_build_identities_contract_keys_query() {
+            let ids = [[31u8; 32], [32u8; 32]];
+            let contract_id = [33u8; 32];
+            let purposes = vec![Purpose::ENCRYPTION];
+            let pq = Drive::identities_contract_keys_query(
+                &ids,
+                &contract_id,
+                &None,
+                &purposes,
+                Some(10),
+            );
+
+            assert!(!pq.path.is_empty());
+            assert_eq!(pq.query.limit, Some(10));
+        }
+
+        #[test]
+        fn should_build_identities_contract_keys_query_with_document_type() {
+            let ids = [[34u8; 32]];
+            let contract_id = [35u8; 32];
+            let doc_type_name = Some("profile".to_string());
+            let purposes = vec![Purpose::ENCRYPTION, Purpose::DECRYPTION];
+            let pq = Drive::identities_contract_keys_query(
+                &ids,
+                &contract_id,
+                &doc_type_name,
+                &purposes,
+                None,
+            );
+
+            assert!(!pq.path.is_empty());
+            assert!(pq.query.limit.is_none());
+        }
+
+        #[test]
+        fn should_build_identities_contract_document_type_keys_query() {
+            let ids = [[36u8; 32], [37u8; 32]];
+            let contract_id = [38u8; 32];
+            let purposes = vec![Purpose::ENCRYPTION];
+            let pq = Drive::identities_contract_document_type_keys_query(
+                &ids,
+                contract_id,
+                "profile",
+                purposes,
+            );
+
+            assert!(!pq.path.is_empty());
+            assert!(pq.query.limit.is_none());
+            // Note: currently the document type parameter does not affect the
+            // query path structure. This may be a bug or an intentional
+            // simplification in the current implementation.
+        }
+
+        #[test]
+        fn should_build_balance_for_identity_id_query() {
+            let identity_id = [39u8; 32];
+            let pq = Drive::balance_for_identity_id_query(identity_id);
+            assert!(!pq.path.is_empty());
+        }
+
+        #[test]
+        fn should_build_identity_nonce_query() {
+            let identity_id = [40u8; 32];
+            let pq = Drive::identity_nonce_query(identity_id);
+            assert!(!pq.path.is_empty());
+        }
+
+        #[test]
+        fn should_build_identity_contract_nonce_query() {
+            let identity_id = [41u8; 32];
+            let contract_id = [42u8; 32];
+            let pq = Drive::identity_contract_nonce_query(identity_id, contract_id);
+            assert!(!pq.path.is_empty());
+        }
+
+        #[test]
+        fn should_build_balance_and_revision_for_identity_id_query() {
+            let identity_id = [43u8; 32];
+            let grove_version = GroveVersion::latest();
+            let pq = Drive::balance_and_revision_for_identity_id_query(identity_id, grove_version);
+            assert!(pq.query.limit.is_none());
+        }
+    }
+}

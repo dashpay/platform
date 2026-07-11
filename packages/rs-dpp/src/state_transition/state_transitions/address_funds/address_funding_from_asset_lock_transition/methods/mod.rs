@@ -27,7 +27,7 @@ use platform_version::version::PlatformVersion;
 
 impl AddressFundingFromAssetLockTransitionMethodsV0 for AddressFundingFromAssetLockTransition {
     #[cfg(feature = "state-transition-signing")]
-    fn try_from_asset_lock_with_signer<S: Signer<PlatformAddress>>(
+    async fn try_from_asset_lock_with_signer_and_private_key<S: Signer<PlatformAddress>>(
         asset_lock_proof: AssetLockProof,
         asset_lock_proof_private_key: &[u8],
         inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
@@ -43,7 +43,7 @@ impl AddressFundingFromAssetLockTransitionMethodsV0 for AddressFundingFromAssetL
             .address_funding_from_asset_lock_transition
         {
             0 => Ok(
-                AddressFundingFromAssetLockTransitionV0::try_from_asset_lock_with_signer::<S>(
+                AddressFundingFromAssetLockTransitionV0::try_from_asset_lock_with_signer_and_private_key::<S>(
                     asset_lock_proof,
                     asset_lock_proof_private_key,
                     inputs,
@@ -52,10 +52,56 @@ impl AddressFundingFromAssetLockTransitionMethodsV0 for AddressFundingFromAssetL
                     signer,
                     user_fee_increase,
                     platform_version,
-                )?,
+                )
+                .await?,
             ),
             version => Err(ProtocolError::UnknownVersionMismatch {
-                method: "AddressFundingFromAssetLockTransition::try_from_asset_lock_with_signer"
+                method:
+                    "AddressFundingFromAssetLockTransition::try_from_asset_lock_with_signer_and_private_key"
+                        .to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
+        }
+    }
+
+    #[cfg(all(feature = "state-transition-signing", feature = "core_key_wallet"))]
+    async fn try_from_asset_lock_with_signers<S, AS>(
+        asset_lock_proof: AssetLockProof,
+        asset_lock_proof_path: &::key_wallet::bip32::DerivationPath,
+        inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
+        outputs: BTreeMap<PlatformAddress, Option<Credits>>,
+        fee_strategy: AddressFundsFeeStrategy,
+        signer: &S,
+        asset_lock_signer: &AS,
+        user_fee_increase: UserFeeIncrease,
+        platform_version: &PlatformVersion,
+    ) -> Result<StateTransition, ProtocolError>
+    where
+        S: Signer<PlatformAddress>,
+        AS: ::key_wallet::signer::Signer,
+    {
+        match platform_version
+            .dpp
+            .state_transition_conversion_versions
+            .address_funding_from_asset_lock_transition
+        {
+            0 => Ok(
+                AddressFundingFromAssetLockTransitionV0::try_from_asset_lock_with_signers::<S, AS>(
+                    asset_lock_proof,
+                    asset_lock_proof_path,
+                    inputs,
+                    outputs,
+                    fee_strategy,
+                    signer,
+                    asset_lock_signer,
+                    user_fee_increase,
+                    platform_version,
+                )
+                .await?,
+            ),
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "AddressFundingFromAssetLockTransition::try_from_asset_lock_with_signers"
                     .to_string(),
                 known_versions: vec![0],
                 received: version,

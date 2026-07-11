@@ -63,3 +63,152 @@ impl<C> Platform<C> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::query::tests::setup_platform;
+    use dapi_grpc::platform::v0::get_shielded_encrypted_notes_request::GetShieldedEncryptedNotesRequestV0;
+    use dapi_grpc::platform::v0::get_shielded_encrypted_notes_response::get_shielded_encrypted_notes_response_v0;
+    use dpp::dashcore::Network;
+
+    #[test]
+    fn test_query_shielded_encrypted_notes_with_none_version_returns_decoding_error() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetShieldedEncryptedNotesRequest { version: None };
+
+        let result = platform
+            .query_shielded_encrypted_notes(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(matches!(
+            result.errors.as_slice(),
+            [QueryError::DecodingError(msg)] if msg.contains("could not decode shielded encrypted notes query")
+        ));
+    }
+
+    #[test]
+    fn test_query_shielded_encrypted_notes_non_aligned_start_index_rejected() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        // Alignment is to the MMR chunk size (`1 << SHIELDED_NOTES_CHUNK_POWER`
+        // = 2048). Anything that isn't a multiple of that is rejected.
+        let request = GetShieldedEncryptedNotesRequest {
+            version: Some(RequestVersion::V0(GetShieldedEncryptedNotesRequestV0 {
+                start_index: 1,
+                count: 16,
+                prove: false,
+            })),
+        };
+
+        let result = platform
+            .query_shielded_encrypted_notes(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(matches!(
+            result.errors.as_slice(),
+            [QueryError::InvalidArgument(msg)]
+                if msg.contains("not chunk-aligned")
+        ));
+    }
+
+    #[test]
+    fn test_query_shielded_encrypted_notes_empty_state_returns_empty_entries() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        // start_index 0 is always chunk-aligned. Fresh state has no notes, so
+        // the non-proved branch should loop once, find None, and return empty.
+        let request = GetShieldedEncryptedNotesRequest {
+            version: Some(RequestVersion::V0(GetShieldedEncryptedNotesRequestV0 {
+                start_index: 0,
+                count: 8,
+                prove: false,
+            })),
+        };
+
+        let result = platform
+            .query_shielded_encrypted_notes(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(result.errors.is_empty(), "expected no errors");
+        let response = result.data.expect("expected response data");
+        let inner = match response.version {
+            Some(ResponseVersion::V0(v)) => v,
+            _ => panic!("expected v0 response"),
+        };
+        match inner.result {
+            Some(get_shielded_encrypted_notes_response_v0::Result::EncryptedNotes(notes)) => {
+                assert!(
+                    notes.entries.is_empty(),
+                    "expected no notes in fresh shielded pool"
+                );
+            }
+            other => panic!("expected EncryptedNotes result, got {:?}", other),
+        }
+        assert!(inner.metadata.is_some(), "expected metadata present");
+    }
+
+    #[test]
+    fn test_query_shielded_encrypted_notes_count_zero_uses_max() {
+        // When count == 0, the limit falls back to the per-query max
+        // (`max_query_chunks × MMR_CHUNK_SIZE`). This exercises the
+        // "count == 0 || count > max" branch of the limit derivation
+        // without needing notes to be stored.
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetShieldedEncryptedNotesRequest {
+            version: Some(RequestVersion::V0(GetShieldedEncryptedNotesRequestV0 {
+                start_index: 0,
+                count: 0,
+                prove: false,
+            })),
+        };
+
+        let result = platform
+            .query_shielded_encrypted_notes(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(
+            result.errors.is_empty(),
+            "count=0 should be accepted (treated as max); errors: {:?}",
+            result.errors
+        );
+        let response = result.data.expect("expected response data");
+        let inner = match response.version {
+            Some(ResponseVersion::V0(v)) => v,
+            _ => panic!("expected v0 response"),
+        };
+        // Fresh state still returns empty entries for the non-proof branch.
+        assert!(matches!(
+            inner.result,
+            Some(get_shielded_encrypted_notes_response_v0::Result::EncryptedNotes(_))
+        ));
+    }
+
+    #[test]
+    fn test_query_shielded_encrypted_notes_count_exceeds_max_clamped() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+        let max = version.drive_abci.query.shielded_queries.max_query_chunks as u32
+            * (1u32 << drive::drive::shielded::paths::SHIELDED_NOTES_CHUNK_POWER);
+
+        let request = GetShieldedEncryptedNotesRequest {
+            version: Some(RequestVersion::V0(GetShieldedEncryptedNotesRequestV0 {
+                start_index: 0,
+                count: max + 100,
+                prove: false,
+            })),
+        };
+
+        let result = platform
+            .query_shielded_encrypted_notes(request, &state, version)
+            .expect("expected query to succeed");
+
+        // Over-max count should be silently clamped to max, not errored out.
+        assert!(
+            result.errors.is_empty(),
+            "count > max should be clamped, not rejected; errors: {:?}",
+            result.errors
+        );
+    }
+}

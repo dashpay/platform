@@ -423,7 +423,7 @@ mod tests {
                 .expect("should have balance for existing identity");
             assert_eq!(*balance, identities[0].balance());
             assert!(
-                balances.get(&identities[1].id().to_buffer()).is_none(),
+                !balances.contains_key(&identities[1].id().to_buffer()),
                 "non-existent identity should not appear in results"
             );
         }
@@ -553,6 +553,250 @@ mod tests {
                 .expect("should fetch balances by range");
 
             assert_eq!(balances.len(), 2);
+        }
+
+        #[test]
+        fn should_fetch_balances_descending() {
+            let drive = setup_drive_with_initial_state_structure(None);
+            let platform_version = PlatformVersion::latest();
+
+            let identities: Vec<Identity> =
+                Identity::random_identities(5, 3, Some(42), platform_version)
+                    .expect("expected random identities");
+
+            for identity in &identities {
+                drive
+                    .add_new_identity(
+                        identity.clone(),
+                        false,
+                        &BlockInfo::default(),
+                        true,
+                        None,
+                        platform_version,
+                    )
+                    .expect("expected to add identity");
+            }
+
+            let balances: BTreeMap<[u8; 32], u64> = drive
+                .fetch_many_identity_balances_by_range::<BTreeMap<[u8; 32], u64>>(
+                    None,
+                    false,
+                    10,
+                    None,
+                    platform_version,
+                )
+                .expect("should fetch balances by range descending");
+
+            assert_eq!(balances.len(), 5);
+        }
+
+        #[test]
+        fn should_paginate_with_start_at_ascending() {
+            let drive = setup_drive_with_initial_state_structure(None);
+            let platform_version = PlatformVersion::latest();
+
+            let identities: Vec<Identity> =
+                Identity::random_identities(5, 3, Some(42), platform_version)
+                    .expect("expected random identities");
+
+            for identity in &identities {
+                drive
+                    .add_new_identity(
+                        identity.clone(),
+                        false,
+                        &BlockInfo::default(),
+                        true,
+                        None,
+                        platform_version,
+                    )
+                    .expect("expected to add identity");
+            }
+
+            // Get first 2 ascending
+            let first_page: BTreeMap<[u8; 32], u64> = drive
+                .fetch_many_identity_balances_by_range::<BTreeMap<[u8; 32], u64>>(
+                    None,
+                    true,
+                    2,
+                    None,
+                    platform_version,
+                )
+                .expect("should fetch first page");
+
+            assert_eq!(first_page.len(), 2);
+
+            // Get next page starting after the last key (exclusive)
+            let last_key = *first_page.keys().last().unwrap();
+            let second_page: BTreeMap<[u8; 32], u64> = drive
+                .fetch_many_identity_balances_by_range::<BTreeMap<[u8; 32], u64>>(
+                    Some((last_key, false)),
+                    true,
+                    2,
+                    None,
+                    platform_version,
+                )
+                .expect("should fetch second page");
+
+            assert_eq!(second_page.len(), 2);
+
+            // Pages should not overlap
+            for key in first_page.keys() {
+                assert!(!second_page.contains_key(key), "pages should not overlap");
+            }
+        }
+
+        #[test]
+        fn should_paginate_with_start_at_included() {
+            let drive = setup_drive_with_initial_state_structure(None);
+            let platform_version = PlatformVersion::latest();
+
+            let identities: Vec<Identity> =
+                Identity::random_identities(5, 3, Some(42), platform_version)
+                    .expect("expected random identities");
+
+            for identity in &identities {
+                drive
+                    .add_new_identity(
+                        identity.clone(),
+                        false,
+                        &BlockInfo::default(),
+                        true,
+                        None,
+                        platform_version,
+                    )
+                    .expect("expected to add identity");
+            }
+
+            // Get first 2
+            let first_page: BTreeMap<[u8; 32], u64> = drive
+                .fetch_many_identity_balances_by_range::<BTreeMap<[u8; 32], u64>>(
+                    None,
+                    true,
+                    2,
+                    None,
+                    platform_version,
+                )
+                .expect("should fetch first page");
+
+            let last_key = *first_page.keys().last().unwrap();
+
+            // Get page starting at last_key inclusive
+            let inclusive_page: BTreeMap<[u8; 32], u64> = drive
+                .fetch_many_identity_balances_by_range::<BTreeMap<[u8; 32], u64>>(
+                    Some((last_key, true)),
+                    true,
+                    2,
+                    None,
+                    platform_version,
+                )
+                .expect("should fetch inclusive page");
+
+            assert!(!inclusive_page.is_empty());
+            // The first key of the inclusive page should be the last_key
+            assert!(inclusive_page.contains_key(&last_key));
+        }
+
+        #[test]
+        fn should_return_empty_when_no_identities_exist() {
+            let drive = setup_drive_with_initial_state_structure(None);
+            let platform_version = PlatformVersion::latest();
+
+            let balances: BTreeMap<[u8; 32], u64> = drive
+                .fetch_many_identity_balances_by_range::<BTreeMap<[u8; 32], u64>>(
+                    None,
+                    true,
+                    10,
+                    None,
+                    platform_version,
+                )
+                .expect("should return empty");
+
+            assert!(balances.is_empty());
+        }
+
+        #[test]
+        fn should_paginate_descending_with_start_at() {
+            let drive = setup_drive_with_initial_state_structure(None);
+            let platform_version = PlatformVersion::latest();
+
+            let identities: Vec<Identity> =
+                Identity::random_identities(5, 3, Some(42), platform_version)
+                    .expect("expected random identities");
+
+            for identity in &identities {
+                drive
+                    .add_new_identity(
+                        identity.clone(),
+                        false,
+                        &BlockInfo::default(),
+                        true,
+                        None,
+                        platform_version,
+                    )
+                    .expect("expected to add identity");
+            }
+
+            // Get first 2 descending
+            let first_page: BTreeMap<[u8; 32], u64> = drive
+                .fetch_many_identity_balances_by_range::<BTreeMap<[u8; 32], u64>>(
+                    None,
+                    false,
+                    2,
+                    None,
+                    platform_version,
+                )
+                .expect("should fetch first page descending");
+
+            assert_eq!(first_page.len(), 2);
+
+            // Get next page descending, exclusive of the smallest key in the previous page
+            let smallest_key = *first_page.keys().next().unwrap();
+            let second_page: BTreeMap<[u8; 32], u64> = drive
+                .fetch_many_identity_balances_by_range::<BTreeMap<[u8; 32], u64>>(
+                    Some((smallest_key, false)),
+                    false,
+                    2,
+                    None,
+                    platform_version,
+                )
+                .expect("should fetch second page descending");
+
+            assert_eq!(second_page.len(), 2);
+
+            for key in first_page.keys() {
+                assert!(
+                    !second_page.contains_key(key),
+                    "descending pages should not overlap"
+                );
+            }
+        }
+    }
+
+    mod identity_revision_query {
+        use super::*;
+
+        #[test]
+        fn should_build_identity_revision_query() {
+            let drive = setup_drive_with_initial_state_structure(None);
+            let platform_version = PlatformVersion::latest();
+
+            let identity = Identity::random_identity(3, Some(42), platform_version)
+                .expect("expected a random identity");
+
+            drive
+                .add_new_identity(
+                    identity.clone(),
+                    false,
+                    &BlockInfo::default(),
+                    true,
+                    None,
+                    platform_version,
+                )
+                .expect("expected to add identity");
+
+            let query = crate::drive::Drive::identity_revision_query(&identity.id().to_buffer());
+            assert!(!query.path.is_empty());
+            assert!(query.query.limit.is_none());
         }
     }
 }

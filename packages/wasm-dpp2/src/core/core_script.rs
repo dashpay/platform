@@ -3,6 +3,7 @@ use crate::error::{WasmDppError, WasmDppResult};
 use crate::impl_try_from_js_value;
 use crate::impl_try_from_options;
 use crate::impl_wasm_type_info;
+use crate::utils::try_vec_to_fixed_bytes;
 use dpp::dashcore::address::Payload;
 use dpp::dashcore::{Address, opcodes};
 use dpp::identity::core_script::CoreScript;
@@ -37,14 +38,7 @@ impl CoreScriptWasm {
     pub fn from_p2pkh(
         #[wasm_bindgen(js_name = "keyHash")] key_hash: Vec<u8>,
     ) -> WasmDppResult<CoreScriptWasm> {
-        if key_hash.len() != 20 {
-            return Err(WasmDppError::invalid_argument(format!(
-                "P2PKH key hash must be exactly 20 bytes, got {}",
-                key_hash.len()
-            )));
-        }
-
-        let key_hash_bytes: [u8; 20] = key_hash.try_into().expect("length already validated");
+        let key_hash_bytes: [u8; 20] = try_vec_to_fixed_bytes(key_hash, "keyHash")?;
 
         Ok(CoreScriptWasm(CoreScript::new_p2pkh(key_hash_bytes)))
     }
@@ -53,14 +47,7 @@ impl CoreScriptWasm {
     pub fn from_p2sh(
         #[wasm_bindgen(js_name = "scriptHash")] script_hash: Vec<u8>,
     ) -> WasmDppResult<CoreScriptWasm> {
-        if script_hash.len() != 20 {
-            return Err(WasmDppError::invalid_argument(format!(
-                "P2SH script hash must be exactly 20 bytes, got {}",
-                script_hash.len()
-            )));
-        }
-
-        let script_hash_bytes: [u8; 20] = script_hash.try_into().expect("length already validated");
+        let script_hash_bytes: [u8; 20] = try_vec_to_fixed_bytes(script_hash, "scriptHash")?;
 
         let mut bytes = vec![
             opcodes::all::OP_HASH160.to_u8(),

@@ -181,8 +181,8 @@ mod tests {
             use super::*;
             use dapi_grpc::platform::v0::get_contested_resources_request::get_contested_resources_request_v0;
 
-            #[test]
-            fn test_not_proved_contests_request() {
+            #[tokio::test]
+            async fn test_not_proved_contests_request() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
                     .with_latest_protocol_version()
@@ -197,7 +197,8 @@ mod tests {
                     7,
                     "quantum",
                     platform_version,
-                );
+                )
+                .await;
 
                 verify_dpns_name_contest(
                     &mut platform,
@@ -215,7 +216,8 @@ mod tests {
                     8,
                     "cooldog",
                     platform_version,
-                );
+                )
+                .await;
 
                 verify_dpns_name_contest(
                     &mut platform,
@@ -283,8 +285,8 @@ mod tests {
                 assert_eq!(contested_resource_values.len(), 2);
             }
 
-            #[test]
-            fn test_proved_contests_request() {
+            #[tokio::test]
+            async fn test_proved_contests_request() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
                     .with_latest_protocol_version()
@@ -299,7 +301,8 @@ mod tests {
                     7,
                     "quantum",
                     platform_version,
-                );
+                )
+                .await;
 
                 let (_identity_3, _identity_4, dpns_contract) = create_dpns_identity_name_contest(
                     &mut platform,
@@ -307,7 +310,8 @@ mod tests {
                     8,
                     "cooldog",
                     platform_version,
-                );
+                )
+                .await;
 
                 let domain = dpns_contract
                     .document_type_for_name("domain")
@@ -378,8 +382,8 @@ mod tests {
                 assert_eq!(contests.len(), 2);
             }
 
-            #[test]
-            fn test_empty_string_start_index_value() {
+            #[tokio::test]
+            async fn test_empty_string_start_index_value() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
                     .with_latest_protocol_version()
@@ -388,13 +392,15 @@ mod tests {
 
                 let platform_state = platform.state.load();
 
-                let (_contender_1, _contender_2, dpns_contract) = create_dpns_identity_name_contest(
-                    &mut platform,
-                    &platform_state,
-                    7,
-                    "quantum",
-                    platform_version,
-                );
+                let (_contender_1, _contender_2, dpns_contract) =
+                    create_dpns_identity_name_contest(
+                        &mut platform,
+                        &platform_state,
+                        7,
+                        "quantum",
+                        platform_version,
+                    )
+                    .await;
 
                 let domain = dpns_contract
                     .document_type_for_name("domain")
@@ -512,8 +518,8 @@ mod tests {
                 }
             }
 
-            #[test]
-            fn test_no_start_index_value() {
+            #[tokio::test]
+            async fn test_no_start_index_value() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
                     .with_latest_protocol_version()
@@ -522,13 +528,15 @@ mod tests {
 
                 let platform_state = platform.state.load();
 
-                let (_contender_1, _contender_2, dpns_contract) = create_dpns_identity_name_contest(
-                    &mut platform,
-                    &platform_state,
-                    7,
-                    "quantum",
-                    platform_version,
-                );
+                let (_contender_1, _contender_2, dpns_contract) =
+                    create_dpns_identity_name_contest(
+                        &mut platform,
+                        &platform_state,
+                        7,
+                        "quantum",
+                        platform_version,
+                    )
+                    .await;
 
                 let domain = dpns_contract
                     .document_type_for_name("domain")
@@ -653,8 +661,8 @@ mod tests {
                 }
             }
 
-            #[test]
-            fn test_existing_end_index_value() {
+            #[tokio::test]
+            async fn test_existing_end_index_value() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
                     .with_latest_protocol_version()
@@ -663,13 +671,15 @@ mod tests {
 
                 let platform_state = platform.state.load();
 
-                let (_contender_1, _contender_2, dpns_contract) = create_dpns_identity_name_contest(
-                    &mut platform,
-                    &platform_state,
-                    7,
-                    "quantum",
-                    platform_version,
-                );
+                let (_contender_1, _contender_2, dpns_contract) =
+                    create_dpns_identity_name_contest(
+                        &mut platform,
+                        &platform_state,
+                        7,
+                        "quantum",
+                        platform_version,
+                    )
+                    .await;
 
                 let domain = dpns_contract
                     .document_type_for_name("domain")
@@ -798,8 +808,8 @@ mod tests {
                 }
             }
 
-            #[test]
-            fn test_non_existing_end_index_value() {
+            #[tokio::test]
+            async fn test_non_existing_end_index_value() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
                     .with_latest_protocol_version()
@@ -808,13 +818,15 @@ mod tests {
 
                 let platform_state = platform.state.load();
 
-                let (_contender_1, _contender_2, dpns_contract) = create_dpns_identity_name_contest(
-                    &mut platform,
-                    &platform_state,
-                    7,
-                    "quantum",
-                    platform_version,
-                );
+                let (_contender_1, _contender_2, dpns_contract) =
+                    create_dpns_identity_name_contest(
+                        &mut platform,
+                        &platform_state,
+                        7,
+                        "quantum",
+                        platform_version,
+                    )
+                    .await;
 
                 let domain = dpns_contract
                     .document_type_for_name("domain")
@@ -933,8 +945,8 @@ mod tests {
                 }
             }
 
-            #[test]
-            fn test_non_existing_end_index_value_many_values() {
+            #[tokio::test]
+            async fn test_non_existing_end_index_value_many_values() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
                     .with_latest_protocol_version()
@@ -943,13 +955,15 @@ mod tests {
 
                 let platform_state = platform.state.load();
 
-                let (_contender_1, _contender_2, dpns_contract) = create_dpns_identity_name_contest(
-                    &mut platform,
-                    &platform_state,
-                    7,
-                    "quantum",
-                    platform_version,
-                );
+                let (_contender_1, _contender_2, dpns_contract) =
+                    create_dpns_identity_name_contest(
+                        &mut platform,
+                        &platform_state,
+                        7,
+                        "quantum",
+                        platform_version,
+                    )
+                    .await;
 
                 let domain = dpns_contract
                     .document_type_for_name("domain")
@@ -1032,8 +1046,8 @@ mod tests {
                 }
             }
 
-            #[test]
-            fn test_limit() {
+            #[tokio::test]
+            async fn test_limit() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
                     .with_latest_protocol_version()
@@ -1049,7 +1063,8 @@ mod tests {
                         7,
                         "quantum",
                         platform_version,
-                    );
+                    )
+                    .await;
 
                 let (_contender_3, _contender_4, _dpns_contract) =
                     create_dpns_identity_name_contest(
@@ -1058,15 +1073,18 @@ mod tests {
                         8,
                         "coya",
                         platform_version,
-                    );
+                    )
+                    .await;
 
-                let (_contender_5, _contender_6, dpns_contract) = create_dpns_identity_name_contest(
-                    &mut platform,
-                    &platform_state,
-                    9,
-                    "tobe",
-                    platform_version,
-                );
+                let (_contender_5, _contender_6, dpns_contract) =
+                    create_dpns_identity_name_contest(
+                        &mut platform,
+                        &platform_state,
+                        9,
+                        "tobe",
+                        platform_version,
+                    )
+                    .await;
 
                 let domain = dpns_contract
                     .document_type_for_name("domain")
@@ -1184,8 +1202,8 @@ mod tests {
                 }
             }
 
-            #[test]
-            fn test_start_at() {
+            #[tokio::test]
+            async fn test_start_at() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
                     .with_latest_protocol_version()
@@ -1201,7 +1219,8 @@ mod tests {
                         7,
                         "quantum",
                         platform_version,
-                    );
+                    )
+                    .await;
 
                 let (_contender_3, _contender_4, _dpns_contract) =
                     create_dpns_identity_name_contest(
@@ -1210,15 +1229,18 @@ mod tests {
                         8,
                         "coya",
                         platform_version,
-                    );
+                    )
+                    .await;
 
-                let (_contender_5, _contender_6, dpns_contract) = create_dpns_identity_name_contest(
-                    &mut platform,
-                    &platform_state,
-                    9,
-                    "tobe",
-                    platform_version,
-                );
+                let (_contender_5, _contender_6, dpns_contract) =
+                    create_dpns_identity_name_contest(
+                        &mut platform,
+                        &platform_state,
+                        9,
+                        "tobe",
+                        platform_version,
+                    )
+                    .await;
 
                 let domain = dpns_contract
                     .document_type_for_name("domain")
@@ -1366,8 +1388,8 @@ mod tests {
                 get_contested_resource_vote_state_request, GetContestedResourceVoteStateRequest,
             };
 
-            #[test]
-            fn test_not_proved_vote_state_query_request_after_vote() {
+            #[tokio::test]
+            async fn test_not_proved_vote_state_query_request_after_vote() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
                     .with_latest_protocol_version()
@@ -1382,7 +1404,8 @@ mod tests {
                     7,
                     "quantum",
                     platform_version,
-                );
+                )
+                .await;
 
                 let (pro_tx_hash_1, _masternode_1, signer_1, voting_key_1) =
                     setup_masternode_voting_identity(&mut platform, 29, platform_version);
@@ -1401,7 +1424,8 @@ mod tests {
                     1,
                     None,
                     platform_version,
-                );
+                )
+                .await;
 
                 // Documents and Tally
                 {
@@ -1517,8 +1541,8 @@ mod tests {
                 }
             }
 
-            #[test]
-            fn test_proved_vote_state_query_request_after_vote() {
+            #[tokio::test]
+            async fn test_proved_vote_state_query_request_after_vote() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
                     .with_latest_protocol_version()
@@ -1533,7 +1557,8 @@ mod tests {
                     7,
                     "quantum",
                     platform_version,
-                );
+                )
+                .await;
 
                 let (pro_tx_hash_1, _masternode_1, signer_1, voting_key_1) =
                     setup_masternode_voting_identity(&mut platform, 29, platform_version);
@@ -1552,7 +1577,8 @@ mod tests {
                     1,
                     None,
                     platform_version,
-                );
+                )
+                .await;
 
                 {
                     let (contenders, abstaining, locking, finished_info) = get_proved_vote_states(
@@ -1665,8 +1691,8 @@ mod tests {
                 }
             }
 
-            #[test]
-            fn test_not_proved_vote_state_query_request_after_many_votes() {
+            #[tokio::test]
+            async fn test_not_proved_vote_state_query_request_after_many_votes() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
                     .with_latest_protocol_version()
@@ -1681,7 +1707,8 @@ mod tests {
                     7,
                     "quantum",
                     platform_version,
-                );
+                )
+                .await;
 
                 perform_votes_multi(
                     &mut platform,
@@ -1696,7 +1723,8 @@ mod tests {
                     10,
                     None,
                     platform_version,
-                );
+                )
+                .await;
 
                 // DocumentsAndVoteTally
                 {
@@ -1922,8 +1950,8 @@ mod tests {
                 }
             }
 
-            #[test]
-            fn test_proved_vote_state_query_request_after_many_votes() {
+            #[tokio::test]
+            async fn test_proved_vote_state_query_request_after_many_votes() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
                     .with_latest_protocol_version()
@@ -1938,7 +1966,8 @@ mod tests {
                     7,
                     "quantum",
                     platform_version,
-                );
+                )
+                .await;
 
                 perform_votes_multi(
                     &mut platform,
@@ -1953,7 +1982,8 @@ mod tests {
                     10,
                     None,
                     platform_version,
-                );
+                )
+                .await;
 
                 // DocumentsAndVoteTally
                 {
@@ -2234,8 +2264,8 @@ mod tests {
                 );
             }
 
-            #[test]
-            fn test_vote_state_query_request_with_no_index_values_should_return_error() {
+            #[tokio::test]
+            async fn test_vote_state_query_request_with_no_index_values_should_return_error() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
                     .with_latest_protocol_version()
@@ -2250,7 +2280,8 @@ mod tests {
                     7,
                     "quantum",
                     platform_version,
-                );
+                )
+                .await;
 
                 perform_votes_multi(
                     &mut platform,
@@ -2265,7 +2296,8 @@ mod tests {
                     10,
                     None,
                     platform_version,
-                );
+                )
+                .await;
 
                 // DocumentsAndVoteTally
                 {
@@ -2361,8 +2393,8 @@ mod tests {
                 }
             }
 
-            #[test]
-            fn test_vote_state_query_request_with_limit_too_high_should_return_error() {
+            #[tokio::test]
+            async fn test_vote_state_query_request_with_limit_too_high_should_return_error() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
                     .with_latest_protocol_version()
@@ -2377,7 +2409,8 @@ mod tests {
                     7,
                     "quantum",
                     platform_version,
-                );
+                )
+                .await;
 
                 perform_votes_multi(
                     &mut platform,
@@ -2392,7 +2425,8 @@ mod tests {
                     10,
                     None,
                     platform_version,
-                );
+                )
+                .await;
 
                 let config = bincode::config::standard()
                     .with_big_endian()
@@ -2503,8 +2537,8 @@ mod tests {
                 }
             }
 
-            #[test]
-            fn test_vote_state_query_request_with_limit_4_should_return_4_contenders() {
+            #[tokio::test]
+            async fn test_vote_state_query_request_with_limit_4_should_return_4_contenders() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
                     .with_latest_protocol_version()
@@ -2519,23 +2553,28 @@ mod tests {
                     7,
                     "quantum",
                     platform_version,
-                );
+                )
+                .await;
 
-                let (contender_3, _contender_4, _dpns_contract) = create_dpns_identity_name_contest(
-                    &mut platform,
-                    &platform_state,
-                    8,
-                    "quantum",
-                    platform_version,
-                );
+                let (contender_3, _contender_4, _dpns_contract) =
+                    create_dpns_identity_name_contest(
+                        &mut platform,
+                        &platform_state,
+                        8,
+                        "quantum",
+                        platform_version,
+                    )
+                    .await;
 
-                let (_contender_5, _contender_6, dpns_contract) = create_dpns_identity_name_contest(
-                    &mut platform,
-                    &platform_state,
-                    9,
-                    "quantum",
-                    platform_version,
-                );
+                let (_contender_5, _contender_6, dpns_contract) =
+                    create_dpns_identity_name_contest(
+                        &mut platform,
+                        &platform_state,
+                        9,
+                        "quantum",
+                        platform_version,
+                    )
+                    .await;
 
                 perform_votes_multi(
                     &mut platform,
@@ -2551,7 +2590,8 @@ mod tests {
                     10,
                     None,
                     platform_version,
-                );
+                )
+                .await;
 
                 // DocumentsAndVoteTally
                 {
@@ -2665,8 +2705,9 @@ mod tests {
                 }
             }
 
-            #[test]
-            fn test_proved_vote_state_query_request_with_limit_4_should_return_4_contenders() {
+            #[tokio::test]
+            async fn test_proved_vote_state_query_request_with_limit_4_should_return_4_contenders()
+            {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
                     .with_latest_protocol_version()
@@ -2681,23 +2722,28 @@ mod tests {
                     7,
                     "quantum",
                     platform_version,
-                );
+                )
+                .await;
 
-                let (contender_3, _contender_4, _dpns_contract) = create_dpns_identity_name_contest(
-                    &mut platform,
-                    &platform_state,
-                    8,
-                    "quantum",
-                    platform_version,
-                );
+                let (contender_3, _contender_4, _dpns_contract) =
+                    create_dpns_identity_name_contest(
+                        &mut platform,
+                        &platform_state,
+                        8,
+                        "quantum",
+                        platform_version,
+                    )
+                    .await;
 
-                let (_contender_5, _contender_6, dpns_contract) = create_dpns_identity_name_contest(
-                    &mut platform,
-                    &platform_state,
-                    9,
-                    "quantum",
-                    platform_version,
-                );
+                let (_contender_5, _contender_6, dpns_contract) =
+                    create_dpns_identity_name_contest(
+                        &mut platform,
+                        &platform_state,
+                        9,
+                        "quantum",
+                        platform_version,
+                    )
+                    .await;
 
                 perform_votes_multi(
                     &mut platform,
@@ -2713,7 +2759,8 @@ mod tests {
                     10,
                     None,
                     platform_version,
-                );
+                )
+                .await;
 
                 // DocumentsAndVoteTally
                 {
@@ -3028,8 +3075,8 @@ mod tests {
                 voters
             }
 
-            #[test]
-            fn test_non_proved_contestant_votes_query_request() {
+            #[tokio::test]
+            async fn test_non_proved_contestant_votes_query_request() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
                     .with_latest_protocol_version()
@@ -3044,7 +3091,8 @@ mod tests {
                     7,
                     "quantum",
                     platform_version,
-                );
+                )
+                .await;
 
                 let (contender_3, _, _) = create_dpns_identity_name_contest(
                     &mut platform,
@@ -3052,7 +3100,8 @@ mod tests {
                     9,
                     "quantum",
                     platform_version,
-                );
+                )
+                .await;
 
                 for i in 0..50 {
                     let (pro_tx_hash, _masternode, signer, voting_key) =
@@ -3072,7 +3121,8 @@ mod tests {
                         1,
                         None,
                         platform_version,
-                    );
+                    )
+                    .await;
                 }
 
                 for i in 0..5 {
@@ -3093,7 +3143,8 @@ mod tests {
                         1,
                         None,
                         platform_version,
-                    );
+                    )
+                    .await;
                 }
 
                 for i in 0..8 {
@@ -3114,7 +3165,8 @@ mod tests {
                         1,
                         None,
                         platform_version,
-                    );
+                    )
+                    .await;
                 }
                 let voters = get_contestant_votes(
                     &platform,
@@ -3196,7 +3248,8 @@ mod tests {
                         1,
                         None,
                         platform_version,
-                    );
+                    )
+                    .await;
                 }
 
                 let voters = get_contestant_votes(
@@ -3232,7 +3285,8 @@ mod tests {
                         1,
                         None,
                         platform_version,
-                    );
+                    )
+                    .await;
                 }
 
                 let voters = get_contestant_votes(
@@ -3272,8 +3326,8 @@ mod tests {
                 assert_eq!(voters_reversed_30, reversed_last_30_from_100_query);
             }
 
-            #[test]
-            fn test_proved_contestant_votes_query_request() {
+            #[tokio::test]
+            async fn test_proved_contestant_votes_query_request() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
                     .with_latest_protocol_version()
@@ -3288,7 +3342,8 @@ mod tests {
                     7,
                     "quantum",
                     platform_version,
-                );
+                )
+                .await;
 
                 let (contender_3, _, _) = create_dpns_identity_name_contest(
                     &mut platform,
@@ -3296,7 +3351,8 @@ mod tests {
                     9,
                     "quantum",
                     platform_version,
-                );
+                )
+                .await;
 
                 for i in 0..50 {
                     let (pro_tx_hash, _masternode, signer, voting_key) =
@@ -3316,7 +3372,8 @@ mod tests {
                         1,
                         None,
                         platform_version,
-                    );
+                    )
+                    .await;
                 }
 
                 for i in 0..5 {
@@ -3337,7 +3394,8 @@ mod tests {
                         1,
                         None,
                         platform_version,
-                    );
+                    )
+                    .await;
                 }
 
                 for i in 0..8 {
@@ -3358,7 +3416,8 @@ mod tests {
                         1,
                         None,
                         platform_version,
-                    );
+                    )
+                    .await;
                 }
 
                 let voters_1 = get_proved_contestant_votes(
@@ -3580,8 +3639,8 @@ mod tests {
                     .collect()
             }
 
-            #[test]
-            fn test_not_proved_identity_given_votes_query_request() {
+            #[tokio::test]
+            async fn test_not_proved_identity_given_votes_query_request() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
                     .with_latest_protocol_version()
@@ -3597,7 +3656,8 @@ mod tests {
                         7,
                         "quantum",
                         platform_version,
-                    );
+                    )
+                    .await;
 
                 let (_contender_1_cooldog, contender_2_cooldog, _dpns_contract) =
                     create_dpns_identity_name_contest(
@@ -3606,7 +3666,8 @@ mod tests {
                         8,
                         "cooldog",
                         platform_version,
-                    );
+                    )
+                    .await;
 
                 let (_contender_1_superman, _contender_2_superman, dpns_contract) =
                     create_dpns_identity_name_contest(
@@ -3615,7 +3676,8 @@ mod tests {
                         9,
                         "superman",
                         platform_version,
-                    );
+                    )
+                    .await;
 
                 let (pro_tx_hash, _masternode, signer, voting_key) =
                     setup_masternode_voting_identity(&mut platform, 10, platform_version);
@@ -3636,7 +3698,8 @@ mod tests {
                     1,
                     None,
                     platform_version,
-                );
+                )
+                .await;
 
                 let platform_state = platform.state.load();
 
@@ -3652,7 +3715,8 @@ mod tests {
                     2,
                     None,
                     platform_version,
-                );
+                )
+                .await;
 
                 let platform_state = platform.state.load();
 
@@ -3668,7 +3732,8 @@ mod tests {
                     3,
                     None,
                     platform_version,
-                );
+                )
+                .await;
 
                 let mut votes = get_identity_given_votes(
                     &platform,
@@ -3743,8 +3808,8 @@ mod tests {
                 );
             }
 
-            #[test]
-            fn test_proved_identity_given_votes_query_request() {
+            #[tokio::test]
+            async fn test_proved_identity_given_votes_query_request() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
                     .with_latest_protocol_version()
@@ -3760,7 +3825,8 @@ mod tests {
                         7,
                         "quantum",
                         platform_version,
-                    );
+                    )
+                    .await;
 
                 let (_contender_1_cooldog, contender_2_cooldog, _dpns_contract) =
                     create_dpns_identity_name_contest(
@@ -3769,7 +3835,8 @@ mod tests {
                         8,
                         "cooldog",
                         platform_version,
-                    );
+                    )
+                    .await;
 
                 let (_contender_1_superman, _contender_2_superman, dpns_contract) =
                     create_dpns_identity_name_contest(
@@ -3778,7 +3845,8 @@ mod tests {
                         9,
                         "superman",
                         platform_version,
-                    );
+                    )
+                    .await;
 
                 let (pro_tx_hash, _masternode, signer, voting_key) =
                     setup_masternode_voting_identity(&mut platform, 10, platform_version);
@@ -3799,7 +3867,8 @@ mod tests {
                     1,
                     None,
                     platform_version,
-                );
+                )
+                .await;
 
                 let platform_state = platform.state.load();
 
@@ -3815,7 +3884,8 @@ mod tests {
                     2,
                     None,
                     platform_version,
-                );
+                )
+                .await;
 
                 let platform_state = platform.state.load();
 
@@ -3831,7 +3901,8 @@ mod tests {
                     3,
                     None,
                     platform_version,
-                );
+                )
+                .await;
 
                 let mut votes = get_proved_identity_given_votes(
                     &platform,
@@ -3910,8 +3981,8 @@ mod tests {
             use super::*;
             use crate::config::PlatformConfig;
 
-            #[test]
-            fn test_not_proved_end_date_query_request() {
+            #[tokio::test]
+            async fn test_not_proved_end_date_query_request() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
                     .with_config(PlatformConfig::default_mainnet())
@@ -3927,7 +3998,8 @@ mod tests {
                     7,
                     "quantum",
                     platform_version,
-                );
+                )
+                .await;
 
                 let GetVotePollsByEndDateResponse { version } = platform
                     .query_vote_polls_by_end_date_query(
@@ -4013,8 +4085,8 @@ mod tests {
                 );
             }
 
-            #[test]
-            fn test_proved_end_date_query_request() {
+            #[tokio::test]
+            async fn test_proved_end_date_query_request() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
                     .with_config(PlatformConfig::default_mainnet())
@@ -4030,7 +4102,8 @@ mod tests {
                     7,
                     "quantum",
                     platform_version,
-                );
+                )
+                .await;
 
                 let GetVotePollsByEndDateResponse { version } = platform
                     .query_vote_polls_by_end_date_query(
@@ -4103,8 +4176,8 @@ mod tests {
                 );
             }
 
-            #[test]
-            fn test_not_proved_end_date_query_multiple_contests() {
+            #[tokio::test]
+            async fn test_not_proved_end_date_query_multiple_contests() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
                     .with_config(PlatformConfig::default_mainnet())
@@ -4121,7 +4194,8 @@ mod tests {
                     7,
                     "quantum",
                     platform_version,
-                );
+                )
+                .await;
 
                 platform_state.set_last_committed_block_info(Some(
                     ExtendedBlockInfoV0 {
@@ -4153,7 +4227,8 @@ mod tests {
                     8,
                     "quantum",
                     platform_version,
-                );
+                )
+                .await;
 
                 // we create a new contest
                 create_dpns_identity_name_contest(
@@ -4162,7 +4237,8 @@ mod tests {
                     9,
                     "coolio",
                     platform_version,
-                );
+                )
+                .await;
 
                 let GetVotePollsByEndDateResponse { version } = platform
                     .query_vote_polls_by_end_date_query(
@@ -4292,8 +4368,8 @@ mod tests {
                 );
             }
 
-            #[test]
-            fn test_proved_end_date_query_multiple_contests() {
+            #[tokio::test]
+            async fn test_proved_end_date_query_multiple_contests() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
                     .with_config(PlatformConfig::default_mainnet())
@@ -4310,7 +4386,8 @@ mod tests {
                     7,
                     "quantum",
                     platform_version,
-                );
+                )
+                .await;
 
                 platform_state.set_last_committed_block_info(Some(
                     ExtendedBlockInfoV0 {
@@ -4342,7 +4419,8 @@ mod tests {
                     8,
                     "quantum",
                     platform_version,
-                );
+                )
+                .await;
 
                 // we create a new contest
                 create_dpns_identity_name_contest(
@@ -4351,7 +4429,8 @@ mod tests {
                     9,
                     "coolio",
                     platform_version,
-                );
+                )
+                .await;
 
                 let GetVotePollsByEndDateResponse { version } = platform
                     .query_vote_polls_by_end_date_query(
@@ -4444,8 +4523,8 @@ mod tests {
                 );
             }
 
-            #[test]
-            fn test_not_proved_end_date_query_multiple_contests_with_start_at() {
+            #[tokio::test]
+            async fn test_not_proved_end_date_query_multiple_contests_with_start_at() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
                     .with_config(PlatformConfig::default_mainnet())
@@ -4462,7 +4541,8 @@ mod tests {
                     7,
                     "quantum",
                     platform_version,
-                );
+                )
+                .await;
 
                 platform_state.set_last_committed_block_info(Some(
                     ExtendedBlockInfoV0 {
@@ -4494,7 +4574,8 @@ mod tests {
                     8,
                     "quantum",
                     platform_version,
-                );
+                )
+                .await;
 
                 // we create a new contest
                 create_dpns_identity_name_contest(
@@ -4503,7 +4584,8 @@ mod tests {
                     9,
                     "coolio",
                     platform_version,
-                );
+                )
+                .await;
 
                 platform_state.set_last_committed_block_info(Some(
                     ExtendedBlockInfoV0 {
@@ -4535,7 +4617,8 @@ mod tests {
                     10,
                     "crazyman",
                     platform_version,
-                );
+                )
+                .await;
 
                 // ascending order
                 {
@@ -4702,8 +4785,8 @@ mod tests {
                 }
             }
 
-            #[test]
-            fn test_not_proved_end_date_query_multiple_contests_with_end_at() {
+            #[tokio::test]
+            async fn test_not_proved_end_date_query_multiple_contests_with_end_at() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
                     .with_config(PlatformConfig::default_mainnet())
@@ -4720,7 +4803,8 @@ mod tests {
                     7,
                     "quantum",
                     platform_version,
-                );
+                )
+                .await;
 
                 platform_state.set_last_committed_block_info(Some(
                     ExtendedBlockInfoV0 {
@@ -4752,7 +4836,8 @@ mod tests {
                     8,
                     "quantum",
                     platform_version,
-                );
+                )
+                .await;
 
                 // we create a new contest
                 create_dpns_identity_name_contest(
@@ -4761,7 +4846,8 @@ mod tests {
                     9,
                     "coolio",
                     platform_version,
-                );
+                )
+                .await;
 
                 platform_state.set_last_committed_block_info(Some(
                     ExtendedBlockInfoV0 {
@@ -4793,7 +4879,8 @@ mod tests {
                     10,
                     "crazyman",
                     platform_version,
-                );
+                )
+                .await;
 
                 let GetVotePollsByEndDateResponse { version } = platform
                     .query_vote_polls_by_end_date_query(
@@ -4862,8 +4949,9 @@ mod tests {
                 );
             }
 
-            #[test]
-            fn test_not_proved_end_date_query_multiple_contests_with_end_at_before_start_at() {
+            #[tokio::test]
+            async fn test_not_proved_end_date_query_multiple_contests_with_end_at_before_start_at()
+            {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
                     .with_latest_protocol_version()
@@ -4879,7 +4967,8 @@ mod tests {
                     7,
                     "quantum",
                     platform_version,
-                );
+                )
+                .await;
 
                 platform_state.set_last_committed_block_info(Some(
                     ExtendedBlockInfoV0 {
@@ -4911,7 +5000,8 @@ mod tests {
                     8,
                     "quantum",
                     platform_version,
-                );
+                )
+                .await;
 
                 // we create a new contest
                 create_dpns_identity_name_contest(
@@ -4920,7 +5010,8 @@ mod tests {
                     9,
                     "coolio",
                     platform_version,
-                );
+                )
+                .await;
 
                 platform_state.set_last_committed_block_info(Some(
                     ExtendedBlockInfoV0 {
@@ -4952,7 +5043,8 @@ mod tests {
                     10,
                     "crazyman",
                     platform_version,
-                );
+                )
+                .await;
 
                 platform
                     .query_vote_polls_by_end_date_query(
@@ -5017,8 +5109,9 @@ mod tests {
                     .expect_err("expected query to be invalid");
             }
 
-            #[test]
-            fn test_not_proved_end_date_query_multiple_contests_with_start_at_ascending_false() {
+            #[tokio::test]
+            async fn test_not_proved_end_date_query_multiple_contests_with_start_at_ascending_false(
+            ) {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
                     .with_config(PlatformConfig::default_mainnet())
@@ -5035,7 +5128,8 @@ mod tests {
                     7,
                     "quantum",
                     platform_version,
-                );
+                )
+                .await;
 
                 platform_state.set_last_committed_block_info(Some(
                     ExtendedBlockInfoV0 {
@@ -5067,7 +5161,8 @@ mod tests {
                     8,
                     "quantum",
                     platform_version,
-                );
+                )
+                .await;
 
                 // we create a new contest
                 create_dpns_identity_name_contest(
@@ -5076,7 +5171,8 @@ mod tests {
                     9,
                     "coolio",
                     platform_version,
-                );
+                )
+                .await;
 
                 platform_state.set_last_committed_block_info(Some(
                     ExtendedBlockInfoV0 {
@@ -5108,7 +5204,8 @@ mod tests {
                     10,
                     "crazyman",
                     platform_version,
-                );
+                )
+                .await;
 
                 let GetVotePollsByEndDateResponse { version } = platform
                     .query_vote_polls_by_end_date_query(
@@ -5190,8 +5287,8 @@ mod tests {
                 );
             }
 
-            #[test]
-            fn test_proved_end_date_query_multiple_contests_with_start_at() {
+            #[tokio::test]
+            async fn test_proved_end_date_query_multiple_contests_with_start_at() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
                     .with_config(PlatformConfig::default_mainnet())
@@ -5208,7 +5305,8 @@ mod tests {
                     7,
                     "quantum",
                     platform_version,
-                );
+                )
+                .await;
 
                 platform_state.set_last_committed_block_info(Some(
                     ExtendedBlockInfoV0 {
@@ -5240,7 +5338,8 @@ mod tests {
                     8,
                     "quantum",
                     platform_version,
-                );
+                )
+                .await;
 
                 // we create a new contest
                 create_dpns_identity_name_contest(
@@ -5249,7 +5348,8 @@ mod tests {
                     9,
                     "coolio",
                     platform_version,
-                );
+                )
+                .await;
 
                 // ascending order
                 {
@@ -5561,8 +5661,8 @@ mod tests {
                 .expect("expected balance to exist")
             }
 
-            #[test]
-            fn test_non_proved_prefunded_specialized_balance_request_after_many_votes() {
+            #[tokio::test]
+            async fn test_non_proved_prefunded_specialized_balance_request_after_many_votes() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
                     .with_latest_protocol_version()
@@ -5577,7 +5677,8 @@ mod tests {
                     7,
                     "quantum",
                     platform_version,
-                );
+                )
+                .await;
 
                 let start_balance = get_specialized_balance(
                     &platform,
@@ -5595,7 +5696,8 @@ mod tests {
                     9,
                     "quantum",
                     platform_version,
-                );
+                )
+                .await;
 
                 let start_balance_after_more_contenders = get_specialized_balance(
                     &platform,
@@ -5625,7 +5727,8 @@ mod tests {
                         1,
                         None,
                         platform_version,
-                    );
+                    )
+                    .await;
                 }
 
                 let balance_after_50_votes = get_specialized_balance(
@@ -5656,7 +5759,8 @@ mod tests {
                         1,
                         None,
                         platform_version,
-                    );
+                    )
+                    .await;
                 }
 
                 let balance_after_55_votes = get_specialized_balance(
@@ -5670,8 +5774,8 @@ mod tests {
                 assert_eq!(balance_after_55_votes, dash_to_credits!(0.7945));
             }
 
-            #[test]
-            fn test_proved_prefunded_specialized_balance_request_after_many_votes() {
+            #[tokio::test]
+            async fn test_proved_prefunded_specialized_balance_request_after_many_votes() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
                     .with_latest_protocol_version()
@@ -5686,7 +5790,8 @@ mod tests {
                     7,
                     "quantum",
                     platform_version,
-                );
+                )
+                .await;
 
                 let start_balance = get_proved_specialized_balance(
                     &platform,
@@ -5704,7 +5809,8 @@ mod tests {
                     9,
                     "quantum",
                     platform_version,
-                );
+                )
+                .await;
 
                 let start_balance_after_more_contenders = get_proved_specialized_balance(
                     &platform,
@@ -5734,7 +5840,8 @@ mod tests {
                         1,
                         None,
                         platform_version,
-                    );
+                    )
+                    .await;
                 }
 
                 let balance_after_50_votes = get_proved_specialized_balance(
@@ -5765,7 +5872,8 @@ mod tests {
                         1,
                         None,
                         platform_version,
-                    );
+                    )
+                    .await;
                 }
 
                 let balance_after_55_votes = get_proved_specialized_balance(
@@ -5795,8 +5903,8 @@ mod tests {
             use dpp::dashcore::Network;
             use platform_version::version::INITIAL_PROTOCOL_VERSION;
 
-            #[test]
-            fn test_document_distribution() {
+            #[tokio::test]
+            async fn test_document_distribution() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
                     .with_latest_protocol_version()
@@ -5811,7 +5919,8 @@ mod tests {
                     7,
                     "quantum",
                     platform_version,
-                );
+                )
+                .await;
 
                 perform_votes_multi(
                     &mut platform,
@@ -5826,7 +5935,8 @@ mod tests {
                     10,
                     None,
                     platform_version,
-                );
+                )
+                .await;
 
                 let platform_state = platform.state.load();
 
@@ -6011,8 +6121,8 @@ mod tests {
                 }
             }
 
-            #[test]
-            fn test_document_distribution_many_votes() {
+            #[tokio::test]
+            async fn test_document_distribution_many_votes() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
                     .with_latest_protocol_version()
@@ -6032,7 +6142,8 @@ mod tests {
                             7 + i,
                             name.as_str(),
                             platform_version,
-                        );
+                        )
+                        .await;
 
                     perform_votes_multi(
                         &mut platform,
@@ -6047,7 +6158,8 @@ mod tests {
                         i * 500 + 10,
                         None,
                         platform_version,
-                    );
+                    )
+                    .await;
 
                     let platform_state = platform.state.load();
 
@@ -6235,8 +6347,8 @@ mod tests {
                 }
             }
 
-            #[test]
-            fn test_document_distribution_many_votes_two_contests_same_time() {
+            #[tokio::test]
+            async fn test_document_distribution_many_votes_two_contests_same_time() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
                     .with_latest_protocol_version()
@@ -6256,7 +6368,8 @@ mod tests {
                             7 + i,
                             name.as_str(),
                             platform_version,
-                        );
+                        )
+                        .await;
 
                     perform_votes_multi(
                         &mut platform,
@@ -6271,7 +6384,8 @@ mod tests {
                         i * 500 + 50,
                         None,
                         platform_version,
-                    );
+                    )
+                    .await;
 
                     let name2 = format!("alpha{}", (b'A' + i as u8) as char);
                     let (contender_3, contender_4, dpns_contract) =
@@ -6281,7 +6395,8 @@ mod tests {
                             100007 + i,
                             name2.as_str(),
                             platform_version,
-                        );
+                        )
+                        .await;
 
                     perform_votes_multi(
                         &mut platform,
@@ -6296,7 +6411,8 @@ mod tests {
                         i * 750 + 500000,
                         None,
                         platform_version,
-                    );
+                    )
+                    .await;
 
                     let platform_state = platform.state.load();
 
@@ -6616,8 +6732,8 @@ mod tests {
                 }
             }
 
-            #[test]
-            fn test_document_distribution_many_votes_three_contests_same_time() {
+            #[tokio::test]
+            async fn test_document_distribution_many_votes_three_contests_same_time() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
                     .with_latest_protocol_version()
@@ -6637,7 +6753,8 @@ mod tests {
                             7 + i,
                             name.as_str(),
                             platform_version,
-                        );
+                        )
+                        .await;
 
                     perform_votes_multi(
                         &mut platform,
@@ -6652,7 +6769,8 @@ mod tests {
                         i * 500 + 50,
                         None,
                         platform_version,
-                    );
+                    )
+                    .await;
 
                     let name2 = format!("alpha{}", (b'A' + i as u8) as char);
                     let (contender_3, contender_4, dpns_contract) =
@@ -6662,7 +6780,8 @@ mod tests {
                             100007 + i,
                             name2.as_str(),
                             platform_version,
-                        );
+                        )
+                        .await;
 
                     perform_votes_multi(
                         &mut platform,
@@ -6677,7 +6796,8 @@ mod tests {
                         i * 750 + 500000,
                         None,
                         platform_version,
-                    );
+                    )
+                    .await;
 
                     let name3 = format!("beta{}", (b'A' + i as u8) as char);
                     let (contender_5, contender_6, dpns_contract) =
@@ -6687,7 +6807,8 @@ mod tests {
                             200007 + i,
                             name3.as_str(),
                             platform_version,
-                        );
+                        )
+                        .await;
 
                     perform_votes_multi(
                         &mut platform,
@@ -6702,7 +6823,8 @@ mod tests {
                         i * 500 + 600000,
                         None,
                         platform_version,
-                    );
+                    )
+                    .await;
 
                     let platform_state = platform.state.load();
 
@@ -7220,8 +7342,8 @@ mod tests {
                 }
             }
 
-            #[test]
-            fn test_document_distribution_abstain_very_high() {
+            #[tokio::test]
+            async fn test_document_distribution_abstain_very_high() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
                     .with_latest_protocol_version()
@@ -7236,7 +7358,8 @@ mod tests {
                     7,
                     "quantum",
                     platform_version,
-                );
+                )
+                .await;
 
                 perform_votes_multi(
                     &mut platform,
@@ -7251,7 +7374,8 @@ mod tests {
                     10,
                     None,
                     platform_version,
-                );
+                )
+                .await;
 
                 let platform_state = platform.state.load();
 
@@ -7436,8 +7560,8 @@ mod tests {
                 }
             }
 
-            #[test]
-            fn test_document_distribution_low_votes() {
+            #[tokio::test]
+            async fn test_document_distribution_low_votes() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
                     .with_latest_protocol_version()
@@ -7452,7 +7576,8 @@ mod tests {
                     7,
                     "quantum",
                     platform_version,
-                );
+                )
+                .await;
 
                 perform_votes_multi(
                     &mut platform,
@@ -7467,7 +7592,8 @@ mod tests {
                     10,
                     None,
                     platform_version,
-                );
+                )
+                .await;
 
                 let platform_state = platform.state.load();
 
@@ -7652,8 +7778,8 @@ mod tests {
                 }
             }
 
-            #[test]
-            fn test_document_distribution_single_vote() {
+            #[tokio::test]
+            async fn test_document_distribution_single_vote() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
                     .with_latest_protocol_version()
@@ -7668,7 +7794,8 @@ mod tests {
                     7,
                     "quantum",
                     platform_version,
-                );
+                )
+                .await;
 
                 perform_votes_multi(
                     &mut platform,
@@ -7678,7 +7805,8 @@ mod tests {
                     10,
                     None,
                     platform_version,
-                );
+                )
+                .await;
 
                 let platform_state = platform.state.load();
 
@@ -7863,8 +7991,8 @@ mod tests {
                 }
             }
 
-            #[test]
-            fn test_document_distribution_no_votes() {
+            #[tokio::test]
+            async fn test_document_distribution_no_votes() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
                     .with_latest_protocol_version()
@@ -7879,7 +8007,8 @@ mod tests {
                     7,
                     "quantum",
                     platform_version,
-                );
+                )
+                .await;
 
                 let platform_state = platform.state.load();
 
@@ -8064,8 +8193,8 @@ mod tests {
                 }
             }
 
-            #[test]
-            fn test_document_locking() {
+            #[tokio::test]
+            async fn test_document_locking() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
                     .with_latest_protocol_version()
@@ -8080,7 +8209,8 @@ mod tests {
                     7,
                     "quantum",
                     platform_version,
-                );
+                )
+                .await;
 
                 perform_votes_multi(
                     &mut platform,
@@ -8095,7 +8225,8 @@ mod tests {
                     10,
                     None,
                     platform_version,
-                );
+                )
+                .await;
 
                 let platform_state = platform.state.load();
 
@@ -8276,8 +8407,8 @@ mod tests {
                 }
             }
 
-            #[test]
-            fn test_new_vote_after_document_distribution() {
+            #[tokio::test]
+            async fn test_new_vote_after_document_distribution() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
                     .with_latest_protocol_version()
@@ -8292,7 +8423,8 @@ mod tests {
                     7,
                     "quantum",
                     platform_version,
-                );
+                )
+                .await;
 
                 perform_votes_multi(
                     &mut platform,
@@ -8307,7 +8439,8 @@ mod tests {
                     10,
                     None,
                     platform_version,
-                );
+                )
+                .await;
 
                 let platform_state = platform.state.load();
 
@@ -8416,7 +8549,8 @@ mod tests {
                     2,
                     Some("VotePoll ContestedDocumentResourceVotePoll(ContestedDocumentResourceVotePoll { contract_id: GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec, document_type_name: domain, index_name: parentNameAndLabel, index_values: [string dash, string quantum] }) not available for voting: Awarded(BjNejy4r9QAvLHpQ9Yq6yRMgNymeGZ46d48fJxJbMrfW)"),
                     platform_version,
-                );
+                )
+                .await;
 
                 {
                     let (contenders, abstaining, locking, finished_vote_info) = get_vote_states(
@@ -8468,8 +8602,8 @@ mod tests {
                 }
             }
 
-            #[test]
-            fn test_new_vote_after_lock() {
+            #[tokio::test]
+            async fn test_new_vote_after_lock() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
                     .with_latest_protocol_version()
@@ -8484,7 +8618,8 @@ mod tests {
                     7,
                     "quantum",
                     platform_version,
-                );
+                )
+                .await;
 
                 perform_votes_multi(
                     &mut platform,
@@ -8499,7 +8634,8 @@ mod tests {
                     10,
                     None,
                     platform_version,
-                );
+                )
+                .await;
 
                 let platform_state = platform.state.load();
 
@@ -8608,7 +8744,8 @@ mod tests {
                     2,
                     Some("VotePoll ContestedDocumentResourceVotePoll(ContestedDocumentResourceVotePoll { contract_id: GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec, document_type_name: domain, index_name: parentNameAndLabel, index_values: [string dash, string quantum] }) not available for voting: Locked"),
                     platform_version,
-                );
+                )
+                .await;
 
                 {
                     let (contenders, abstaining, locking, finished_vote_info) = get_vote_states(
@@ -8660,8 +8797,8 @@ mod tests {
                 }
             }
 
-            #[test]
-            fn test_queries_after_document_distribution() {
+            #[tokio::test]
+            async fn test_queries_after_document_distribution() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
                     .with_latest_protocol_version()
@@ -8676,7 +8813,8 @@ mod tests {
                     7,
                     "quantum",
                     platform_version,
-                );
+                )
+                .await;
 
                 perform_votes_multi(
                     &mut platform,
@@ -8691,7 +8829,8 @@ mod tests {
                     10,
                     None,
                     platform_version,
-                );
+                )
+                .await;
 
                 let platform_state = platform.state.load();
 
@@ -8962,8 +9101,8 @@ mod tests {
                 }
             }
 
-            #[test]
-            fn test_document_distribution_to_contract() {
+            #[tokio::test]
+            async fn test_document_distribution_to_contract() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
                     .with_latest_protocol_version()
@@ -8978,7 +9117,8 @@ mod tests {
                     600,
                     "cards",
                     platform_version,
-                );
+                )
+                .await;
 
                 perform_votes_multi(
                     &mut platform,
@@ -8993,7 +9133,8 @@ mod tests {
                     10,
                     None,
                     platform_version,
-                );
+                )
+                .await;
 
                 let platform_state = platform.state.load();
 
@@ -9178,8 +9319,8 @@ mod tests {
                 }
             }
 
-            #[test]
-            fn test_document_distribution_does_not_affect_other_contests() {
+            #[tokio::test]
+            async fn test_document_distribution_does_not_affect_other_contests() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
                     .with_latest_protocol_version()
@@ -9194,7 +9335,8 @@ mod tests {
                     7,
                     "quantum",
                     platform_version,
-                );
+                )
+                .await;
 
                 perform_votes_multi(
                     &mut platform,
@@ -9209,7 +9351,8 @@ mod tests {
                     10,
                     None,
                     platform_version,
-                );
+                )
+                .await;
 
                 let max_join_time = platform_version
                     .dpp
@@ -9256,7 +9399,8 @@ mod tests {
                     9,
                     "alpha",
                     platform_version,
-                );
+                )
+                .await;
 
                 let transaction = platform.drive.grove.start_transaction();
 
@@ -9509,8 +9653,8 @@ mod tests {
                 }
             }
 
-            #[test]
-            fn test_document_distribution_fix_for_testnet_no_votes_v1() {
+            #[tokio::test]
+            async fn test_document_distribution_fix_for_testnet_no_votes_v1() {
                 // There was an issue that we need to repair on testnet.
                 // Documents will have been deleted
                 // Let's verify that the fix works as intended
@@ -9532,7 +9676,8 @@ mod tests {
                     7,
                     "quantum",
                     platform_version,
-                );
+                )
+                .await;
 
                 perform_votes_multi(
                     &mut platform,
@@ -9547,7 +9692,8 @@ mod tests {
                     10,
                     None,
                     platform_version,
-                );
+                )
+                .await;
 
                 let platform_state = platform.state.load();
 
@@ -9588,7 +9734,8 @@ mod tests {
                     9,
                     "alpha",
                     platform_version,
-                );
+                )
+                .await;
 
                 let transaction = platform.drive.grove.start_transaction();
 
@@ -10100,7 +10247,8 @@ mod tests {
                         "alpha",
                         Some(2), // We need a nonce offset
                         platform_version,
-                    );
+                    )
+                    .await;
 
                 perform_votes_multi(
                     &mut platform,
@@ -10115,7 +10263,8 @@ mod tests {
                     658,
                     Some(1),
                     platform_version,
-                );
+                )
+                .await;
 
                 let platform_state = platform.state.load();
 
@@ -10266,8 +10415,8 @@ mod tests {
                 }
             }
 
-            #[test]
-            fn test_document_distribution_fix_for_testnet_with_votes_v1() {
+            #[tokio::test]
+            async fn test_document_distribution_fix_for_testnet_with_votes_v1() {
                 // There was an issue that we need to repair on testnet.
                 // Documents will have been deleted
                 // Let's verify that the fix works as intended
@@ -10289,7 +10438,8 @@ mod tests {
                     7,
                     "quantum",
                     platform_version,
-                );
+                )
+                .await;
 
                 perform_votes_multi(
                     &mut platform,
@@ -10304,7 +10454,8 @@ mod tests {
                     10,
                     None,
                     platform_version,
-                );
+                )
+                .await;
 
                 let platform_state = platform.state.load();
 
@@ -10347,7 +10498,8 @@ mod tests {
                     9,
                     "alpha",
                     platform_version,
-                );
+                )
+                .await;
 
                 perform_votes_multi(
                     &mut platform,
@@ -10362,7 +10514,8 @@ mod tests {
                     540500,
                     None,
                     platform_version,
-                );
+                )
+                .await;
 
                 let transaction = platform.drive.grove.start_transaction();
 
@@ -10787,7 +10940,8 @@ mod tests {
                         "alpha",
                         Some(2), // We need a nonce offset
                         platform_version,
-                    );
+                    )
+                    .await;
 
                 perform_votes_multi(
                     &mut platform,
@@ -10802,7 +10956,8 @@ mod tests {
                     658,
                     Some(1),
                     platform_version,
-                );
+                )
+                .await;
 
                 let platform_state = platform.state.load();
 
@@ -10958,8 +11113,8 @@ mod tests {
         mod changing_vote {
             use super::*;
             use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice::Abstain;
-            #[test]
-            fn test_masternode_vote_again_same_vote_should_return_error() {
+            #[tokio::test]
+            async fn test_masternode_vote_again_same_vote_should_return_error() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
                     .with_latest_protocol_version()
@@ -10974,7 +11129,8 @@ mod tests {
                     7,
                     "quantum",
                     platform_version,
-                );
+                )
+                .await;
 
                 let (pro_tx_hash, _masternode, signer, voting_key) =
                     setup_masternode_voting_identity(&mut platform, 10, platform_version);
@@ -10993,7 +11149,8 @@ mod tests {
                     1,
                     None,
                     platform_version,
-                );
+                )
+                .await;
 
                 perform_vote(
                     &mut platform,
@@ -11007,11 +11164,12 @@ mod tests {
                     2,
                     Some("Masternode vote is already present for masternode 4iroeiNBeBYZetCt21kW7FGyczE8WqoqzZ48YAHwyV7R voting for ContestedDocumentResourceVotePoll(ContestedDocumentResourceVotePoll { contract_id: GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec, document_type_name: domain, index_name: parentNameAndLabel, index_values: [string dash, string quantum] })"),
                     platform_version,
-                );
+                )
+                .await;
             }
 
-            #[test]
-            fn test_masternode_vote_again_different_choice() {
+            #[tokio::test]
+            async fn test_masternode_vote_again_different_choice() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
                     .with_latest_protocol_version()
@@ -11026,7 +11184,8 @@ mod tests {
                     7,
                     "quantum",
                     platform_version,
-                );
+                )
+                .await;
 
                 let (pro_tx_hash, _masternode, signer, voting_key) =
                     setup_masternode_voting_identity(&mut platform, 10, platform_version);
@@ -11045,7 +11204,8 @@ mod tests {
                     1,
                     None,
                     platform_version,
-                );
+                )
+                .await;
 
                 perform_vote(
                     &mut platform,
@@ -11059,7 +11219,8 @@ mod tests {
                     2,
                     None,
                     platform_version,
-                );
+                )
+                .await;
 
                 let (contenders, _abstaining, _locking, finished_vote_info) = get_vote_states(
                     &platform,
@@ -11092,8 +11253,8 @@ mod tests {
                 assert_eq!(second_contender.vote_tally(), Some(1));
             }
 
-            #[test]
-            fn test_masternode_vote_again_different_choice_too_many_times() {
+            #[tokio::test]
+            async fn test_masternode_vote_again_different_choice_too_many_times() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
                     .with_latest_protocol_version()
@@ -11108,7 +11269,8 @@ mod tests {
                     7,
                     "quantum",
                     platform_version,
-                );
+                )
+                .await;
 
                 let (pro_tx_hash, _masternode, signer, voting_key) =
                     setup_masternode_voting_identity(&mut platform, 10, platform_version);
@@ -11127,7 +11289,8 @@ mod tests {
                     1,
                     None,
                     platform_version,
-                );
+                )
+                .await;
 
                 perform_vote(
                     &mut platform,
@@ -11141,7 +11304,8 @@ mod tests {
                     2,
                     None,
                     platform_version,
-                );
+                )
+                .await;
 
                 perform_vote(
                     &mut platform,
@@ -11155,7 +11319,8 @@ mod tests {
                     3,
                     None,
                     platform_version,
-                );
+                )
+                .await;
 
                 perform_vote(
                     &mut platform,
@@ -11169,7 +11334,8 @@ mod tests {
                     4,
                     None,
                     platform_version,
-                );
+                )
+                .await;
 
                 perform_vote(
                     &mut platform,
@@ -11183,7 +11349,8 @@ mod tests {
                     5,
                     None,
                     platform_version,
-                );
+                )
+                .await;
 
                 perform_vote(
                     &mut platform,
@@ -11197,15 +11364,16 @@ mod tests {
                     6,
                     Some("Masternode with id: 4iroeiNBeBYZetCt21kW7FGyczE8WqoqzZ48YAHwyV7R already voted 5 times and is trying to vote again, they can only vote 5 times"),
                     platform_version,
-                );
+                )
+                .await;
             }
         }
         mod masternodes_being_removed {
             use super::*;
             use crate::execution::validation::state_transition::state_transitions::tests::take_down_masternode_identities;
 
-            #[test]
-            fn test_masternode_vote_removals() {
+            #[tokio::test]
+            async fn test_masternode_vote_removals() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
                     .with_latest_protocol_version()
@@ -11220,7 +11388,8 @@ mod tests {
                     7,
                     "quantum",
                     platform_version,
-                );
+                )
+                .await;
 
                 let masternodes_by_vote_choice = perform_votes_multi(
                     &mut platform,
@@ -11235,7 +11404,8 @@ mod tests {
                     10,
                     None,
                     platform_version,
-                );
+                )
+                .await;
 
                 let platform_state = platform.state.load();
 

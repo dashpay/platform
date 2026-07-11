@@ -59,6 +59,13 @@
 - [Batch Operations](drive/batch-operations.md)
 - [Cost Tracking](drive/cost-tracking.md)
 - [Finalize Tasks](drive/finalize-tasks.md)
+- [Indexes](drive/indexes.md)
+- [Document Count Trees](drive/document-count-trees.md)
+- [Count Index Examples](drive/count-index-examples.md)
+- [Count Index Group By Examples](drive/count-index-group-by-examples.md)
+- [Document Sum Trees](drive/document-sum-trees.md)
+- [Sum Index Examples](drive/sum-index-examples.md)
+- [Average Index Examples](drive/average-index-examples.md)
 
 # Testing
 
@@ -66,7 +73,21 @@
 - [Strategy Tests](testing/strategy-tests.md)
 - [Test Configuration](testing/test-configuration.md)
 
-# SDK
+# Evo SDK (JavaScript/TypeScript)
+
+- [Overview](evo-sdk/overview.md)
+- [Getting Started](evo-sdk/getting-started.md)
+- [Trusted Mode and Proofs](evo-sdk/trusted-mode.md)
+- [State Transitions](evo-sdk/state-transitions.md)
+- [Wallet Utilities](evo-sdk/wallet-utilities.md)
+- [Networks and Environments](evo-sdk/networks-and-environments.md)
+- [Tutorials]()
+  - [Car Sales Management](evo-sdk/tutorials/car-sales.md)
+  - [Creating a Basic Token](evo-sdk/tutorials/basic-token.md)
+  - [Card Game with Tokens](evo-sdk/tutorials/card-game.md)
+  - [React Integration](evo-sdk/tutorials/react-integration.md)
+
+# Rust SDK
 
 - [Builder Pattern](sdk/builder-pattern.md)
 - [Fetch Traits](sdk/fetch-traits.md)

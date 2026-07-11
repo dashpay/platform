@@ -32,6 +32,20 @@ export default {
         target: {
           type: ['string', 'null'],
         },
+        // Extra build args forwarded to `docker compose build` for this
+        // image. Each key/value pair becomes a `build.args` entry rendered
+        // into the per-config `dynamic-compose.yml` and picked up by compose
+        // at build time. Image-specific keys live here:
+        // - CARGO_BUILD_PROFILE: "dev" | "release" — Rust profile for
+        //   drive-abci / rs-dapi. Release is required for SDK_TEST_DATA
+        //   shielded seeding at N > a few thousand.
+        // - SDK_TEST_DATA: "true" — enable the SDK test-data cfg flag in
+        //   the binary at compile time.
+        buildArgs: {
+          type: 'object',
+          propertyNames: { type: 'string', pattern: '^[A-Za-z_][A-Za-z0-9_]*$' },
+          additionalProperties: { type: 'string' },
+        },
       },
       required: ['enabled', 'context', 'dockerFile', 'target'],
       additionalProperties: false,
@@ -487,6 +501,14 @@ export default {
           description: 'List of core indexes to enable. `platform.enable`, '
             + ' `core.masternode.enable`, and `core.insight.enabled` add indexes dynamically',
         },
+        compactFilters: {
+          type: 'boolean',
+          description: 'Build the BIP158 cfilter index and advertise '
+            + 'NODE_COMPACT_FILTERS to peers, so BIP157 SPV clients can sync '
+            + 'filter headers + filters from this node. Defaults to true on '
+            + 'every preset; flip to false to skip the cfilter index '
+            + '(~10% chain-size disk overhead on mainnet).',
+        },
       },
       required: ['docker', 'p2p', 'rpc', 'zmq', 'spork', 'masternode', 'miner', 'devnet', 'log',
         'indexes', 'insight'],
@@ -668,8 +690,22 @@ export default {
                 enabled: {
                   type: 'boolean',
                 },
+                responseHeaders: {
+                  type: 'object',
+                  description: 'Control emission of RateLimit-* response headers (RateLimit-Limit, '
+                    + 'RateLimit-Remaining, RateLimit-Reset). When enabled, rs-dapi-client reads '
+                    + 'the Reset header to ban the node for the server-advertised window instead '
+                    + 'of the exponential health-ban ladder. Disable only for privacy reasons.',
+                  properties: {
+                    enabled: {
+                      type: 'boolean',
+                    },
+                  },
+                  additionalProperties: false,
+                  required: ['enabled'],
+                },
               },
-              required: ['docker', 'enabled', 'unit', 'requestsPerUnit', 'blacklist', 'whitelist', 'metrics'],
+              required: ['docker', 'enabled', 'unit', 'requestsPerUnit', 'blacklist', 'whitelist', 'metrics', 'responseHeaders'],
               additionalProperties: false,
             },
             ssl: {

@@ -70,16 +70,12 @@ describe('WasmSdkBuilder', () => {
     });
 
     describe('network validation', () => {
-      it('should reject devnet', async () => {
-        try {
-          sdk.WasmSdkBuilder.withAddresses(
-            [TEST_ADDRESS_1],
-            'devnet',
-          );
-          expect.fail('Should have thrown error for devnet');
-        } catch (error) {
-          expect(error.message).to.include('mainnet, testnet or local');
-        }
+      it('should accept devnet', () => {
+        const builder = sdk.WasmSdkBuilder.withAddresses(
+          [TEST_ADDRESS_1],
+          'devnet',
+        );
+        expect(builder).to.be.an.instanceof(sdk.WasmSdkBuilder);
       });
 
       it('should reject invalid network name', async () => {
@@ -90,7 +86,7 @@ describe('WasmSdkBuilder', () => {
           );
           expect.fail('Should have thrown error for invalid network');
         } catch (error) {
-          expect(error.message).to.include('mainnet, testnet or local');
+          expect(error.message).to.include('mainnet, testnet, devnet, or local');
         }
       });
 
@@ -166,6 +162,9 @@ describe('WasmSdkBuilder', () => {
           [TEST_ADDRESS_1],
           'testnet',
         );
+        // `withVersion(1)` pins the SDK to platform version 1 exactly.
+        // Pinned versions are not clamped to the network floor — the caller
+        // takes responsibility for the version they specify.
         builder = builder.withVersion(1);
         expect(builder).to.be.an.instanceof(sdk.WasmSdkBuilder);
         const built = await builder.build();
@@ -189,6 +188,7 @@ describe('WasmSdkBuilder', () => {
         const built = await builder.build();
         expect(built).to.be.an.instanceof(sdk.WasmSdk);
         expect(built.version()).to.be.a('number');
+        // Pinned to version 1 — pinned versions are used as-is, not clamped.
         expect(built.version()).to.equal(1);
         built.free();
       });

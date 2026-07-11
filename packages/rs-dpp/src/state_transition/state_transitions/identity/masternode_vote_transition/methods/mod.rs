@@ -25,7 +25,7 @@ use crate::voting::votes::Vote;
 
 impl MasternodeVoteTransitionMethodsV0 for MasternodeVoteTransition {
     #[cfg(feature = "state-transition-signing")]
-    fn try_from_vote_with_signer<S: Signer<IdentityPublicKey>>(
+    async fn try_from_vote_with_signer<S: Signer<IdentityPublicKey>>(
         vote: Vote,
         signer: &S,
         pro_tx_hash: Identifier,
@@ -47,7 +47,8 @@ impl MasternodeVoteTransitionMethodsV0 for MasternodeVoteTransition {
                 pro_tx_hash,
                 masternode_voting_key,
                 nonce,
-            )?),
+            )
+            .await?),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "MasternodeVoteTransition::try_from_vote_with_signer".to_string(),
                 known_versions: vec![0],

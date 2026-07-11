@@ -367,4 +367,149 @@ mod tests {
             "expected validation errors for empty address list proof"
         );
     }
+
+    #[test]
+    fn test_addresses_infos_proof_single_existing_address() {
+        // Prove path with a single stored address returns a Proof variant.
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+        setup_two_address_balances(&platform, version);
+
+        let request = GetAddressesInfosRequestV0 {
+            addresses: vec![ADDR1.to_bytes()],
+            prove: true,
+        };
+
+        let result = platform
+            .query_addresses_infos_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(result.errors.is_empty(), "{:?}", result.errors);
+        let response = result.data.unwrap();
+        assert!(matches!(
+            response.result,
+            Some(get_addresses_infos_response_v0::Result::Proof(_))
+        ));
+        assert!(response.metadata.is_some());
+    }
+
+    #[test]
+    fn test_addresses_infos_proof_with_unknown_address() {
+        // Prove path with only unknown addresses still returns a Proof
+        // (an absence proof).
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+        setup_two_address_balances(&platform, version);
+
+        let unknown = PlatformAddress::P2pkh([42; 20]);
+        let request = GetAddressesInfosRequestV0 {
+            addresses: vec![unknown.to_bytes()],
+            prove: true,
+        };
+
+        let result = platform
+            .query_addresses_infos_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(result.errors.is_empty(), "{:?}", result.errors);
+        let response = result.data.unwrap();
+        assert!(matches!(
+            response.result,
+            Some(get_addresses_infos_response_v0::Result::Proof(_))
+        ));
+    }
+
+    #[test]
+    fn test_addresses_infos_first_invalid_short_circuits_list() {
+        // A list with one malformed address aborts the whole query with
+        // InvalidArgument.
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetAddressesInfosRequestV0 {
+            addresses: vec![ADDR1.to_bytes(), vec![0xFF, 0xFF]],
+            prove: false,
+        };
+
+        let result = platform
+            .query_addresses_infos_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(matches!(
+            result.errors.as_slice(),
+            [QueryError::InvalidArgument(msg)] if msg.contains("invalid key_of_type")
+        ));
+    }
+
+    #[test]
+    fn test_addresses_infos_p2sh_address_roundtrip() {
+        // Ensure P2SH addresses parse and round-trip correctly alongside P2PKH.
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+        setup_two_address_balances(&platform, version);
+
+        // ADDR2 is a P2SH address by setup.
+        let request = GetAddressesInfosRequestV0 {
+            addresses: vec![ADDR2.to_bytes()],
+            prove: false,
+        };
+
+        let result = platform
+            .query_addresses_infos_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(result.errors.is_empty(), "{:?}", result.errors);
+        let response = result.data.unwrap();
+        match response.result {
+            Some(get_addresses_infos_response_v0::Result::AddressInfoEntries(entries)) => {
+                assert_eq!(entries.address_info_entries.len(), 1);
+                let entry = &entries.address_info_entries[0];
+                assert_eq!(entry.address, ADDR2.to_bytes());
+                let ban = entry.balance_and_nonce.as_ref().expect("present");
+                assert_eq!(ban.balance, BALANCE2);
+                assert_eq!(ban.nonce, NONCE2);
+            }
+            other => panic!("expected AddressInfoEntries result, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_addresses_infos_empty_bytes_invalid() {
+        // Completely empty address bytes should also fail parsing.
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetAddressesInfosRequestV0 {
+            addresses: vec![vec![]],
+            prove: false,
+        };
+
+        let result = platform
+            .query_addresses_infos_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(matches!(
+            result.errors.as_slice(),
+            [QueryError::InvalidArgument(msg)] if msg.contains("invalid key_of_type")
+        ));
+    }
+
+    #[test]
+    fn test_addresses_infos_proof_with_mixed_known_unknown() {
+        // Prove path with mixed known + unknown addresses returns a proof
+        // (covers both slots).
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+        setup_two_address_balances(&platform, version);
+
+        let unknown = PlatformAddress::P2sh([55; 20]);
+        let request = GetAddressesInfosRequestV0 {
+            addresses: vec![ADDR1.to_bytes(), unknown.to_bytes()],
+            prove: true,
+        };
+
+        let result = platform
+            .query_addresses_infos_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(result.errors.is_empty(), "{:?}", result.errors);
+        assert!(matches!(
+            result.data.unwrap().result,
+            Some(get_addresses_infos_response_v0::Result::Proof(_))
+        ));
+    }
 }

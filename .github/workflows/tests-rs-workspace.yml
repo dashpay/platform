@@ -21,14 +21,27 @@ jobs:
         with:
           clean: false
 
-      - name: Clean target if too large
+      - name: Prune macOS runner disk before tests
         run: |
-          SIZE=$(du -sm target 2>/dev/null | cut -f1 || true)
+          for path in ../target-backup-before-*-clean-* target/llvm-cov-target; do
+            if [ -e "$path" ]; then
+              echo "Removing stale runner artifact: $path"
+              rm -rf "$path"
+            fi
+          done
+
+          TARGET_MAX_MB=120000
+          MIN_FREE_MB=60000
+          SIZE=$(du -sm target 2>/dev/null | awk '{print $1}' || echo 0)
+          FREE=$(df -m . | awk 'NR == 2 {print $4}')
           SIZE=${SIZE:-0}
+          FREE=${FREE:-0}
+
           echo "target/ size: ${SIZE}MB"
-          if [ "$SIZE" -gt 200000 ]; then
-            echo "target/ exceeds 200GB — cleaning"
-            cargo clean
+          echo "available disk: ${FREE}MB"
+          if [ "$SIZE" -gt "$TARGET_MAX_MB" ] || [ "$FREE" -lt "$MIN_FREE_MB" ]; then
+            echo "target/ exceeds ${TARGET_MAX_MB}MB or disk is below ${MIN_FREE_MB}MB free; removing target/"
+            rm -rf target
           fi
 
       - name: Install build dependencies
@@ -51,6 +64,13 @@ jobs:
 
       - name: Check formatting
         run: cargo fmt --check --all
+
+      # Fails the PR that introduces a new workspace dependent of the wallet
+      # crates, keeping the wallet-only fast path (tests-rs-wallet.yml) sound:
+      # such a PR always takes this full path, so the check must live here to
+      # fire at the moment the invariant breaks.
+      - name: Verify wallet reverse-dependency closure
+        run: python3 .github/scripts/check-wallet-closure.py
 
       - name: Clippy lints
         run: |
@@ -149,9 +169,11 @@ jobs:
             --package dpp \
             --package drive-abci \
             --package dash-sdk \
+            --package dash-async \
             --package platform-value \
             --package rs-dapi \
             --package platform-wallet \
+            --package platform-wallet-storage \
             --package rs-sdk-ffi \
             --package platform-wallet-ffi \
             --package rs-dapi-client \
@@ -204,12 +226,21 @@ jobs:
 
       - name: Upload coverage
         if: always()
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v6
         with:
           files: lcov.info
           flags: rust
           token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: false
+
+      - name: Remove cargo-llvm-cov build artifacts
+        if: always()
+        run: |
+          if [ -d target/llvm-cov-target ]; then
+            du -sh target/llvm-cov-target || true
+            rm -rf target/llvm-cov-target
+          fi
+          du -sh target 2>/dev/null || true
 
       - name: Run doctests
         if: ${{ inputs.doctests-changed }}
@@ -316,6 +347,7 @@ jobs:
             --package platform-value \
             --package rs-dapi \
             --package platform-wallet \
+            --package platform-wallet-storage \
             --package rs-sdk-ffi \
             --package platform-wallet-ffi \
             --package rs-dapi-client \
@@ -529,4 +561,3 @@ jobs:
             fi
           done
           echo "No immutable/append_only structure violations found"
-

@@ -80,12 +80,14 @@ pub fn create_test_identity(id_bytes: [u8; 32], balance: u64) -> Identity {
     Identity::V0(identity_v0)
 }
 
-/// Create a managed identity with a label
-pub fn create_managed_identity(id_bytes: [u8; 32], balance: u64, label: &str) -> ManagedIdentity {
+/// Create a managed identity. The `label` argument is retained for
+/// signature compatibility with the existing fixture call sites but is
+/// dropped — `ManagedIdentity` no longer carries a label field. Tests
+/// that need to assert on a user-facing label should look at
+/// `PersistentIdentity.alias` (Swift side) instead.
+pub fn create_managed_identity(id_bytes: [u8; 32], balance: u64, _label: &str) -> ManagedIdentity {
     let identity = create_test_identity(id_bytes, balance);
-    let mut managed = ManagedIdentity::new(identity);
-    managed.set_label(label.to_string());
-    managed
+    ManagedIdentity::new(identity, 0)
 }
 
 /// Create a contact request from sender to recipient
@@ -179,6 +181,13 @@ pub mod identities {
 pub mod scenarios {
     use super::*;
     use dpp::identity::accessors::IdentityGettersV0;
+    use platform_wallet::wallet::persister::NoPlatformPersistence;
+    use platform_wallet::WalletPersister;
+    use std::sync::Arc;
+
+    fn noop_persister() -> WalletPersister {
+        WalletPersister::new([0u8; 32], Arc::new(NoPlatformPersistence))
+    }
 
     /// Alice sends contact request to Bob
     pub fn alice_to_bob_contact_request() -> ContactRequest {
@@ -221,9 +230,15 @@ pub mod scenarios {
         let req2 = create_contact_request(alice_id, carol_id, 0, 1, 1, 1_700_000_050);
         let req3 = create_contact_request(alice_id, dave_id, 0, 1, 2, 1_700_000_100);
 
-        alice.add_sent_contact_request(req1.clone());
-        alice.add_sent_contact_request(req2.clone());
-        alice.add_sent_contact_request(req3.clone());
+        alice
+            .add_sent_contact_request(req1.clone(), &noop_persister())
+            .expect("test setup persists");
+        alice
+            .add_sent_contact_request(req2.clone(), &noop_persister())
+            .expect("test setup persists");
+        alice
+            .add_sent_contact_request(req3.clone(), &noop_persister())
+            .expect("test setup persists");
 
         (alice, vec![req1, req2, req3])
     }
@@ -241,9 +256,15 @@ pub mod scenarios {
         let req2 = create_contact_request(carol_id, alice_id, 1, 0, 0, 1_700_000_050);
         let req3 = create_contact_request(dave_id, alice_id, 1, 0, 0, 1_700_000_100);
 
-        alice.add_incoming_contact_request(req1.clone());
-        alice.add_incoming_contact_request(req2.clone());
-        alice.add_incoming_contact_request(req3.clone());
+        alice
+            .add_incoming_contact_request(req1.clone(), &noop_persister())
+            .expect("test setup persists");
+        alice
+            .add_incoming_contact_request(req2.clone(), &noop_persister())
+            .expect("test setup persists");
+        alice
+            .add_incoming_contact_request(req3.clone(), &noop_persister())
+            .expect("test setup persists");
 
         (alice, vec![req1, req2, req3])
     }
@@ -259,10 +280,8 @@ pub mod scenarios {
         let contact1 = create_established_contact(bob_id, alice_id, 1_700_000_000, 1_700_000_100);
         let contact2 = create_established_contact(carol_id, alice_id, 1_700_000_200, 1_700_000_300);
 
-        alice.established_contacts.insert(bob_id, contact1.clone());
-        alice
-            .established_contacts
-            .insert(carol_id, contact2.clone());
+        alice.apply_established_contact(contact1.clone());
+        alice.apply_established_contact(contact2.clone());
 
         (alice, vec![contact1, contact2])
     }
@@ -280,19 +299,25 @@ pub mod scenarios {
         // Established contact with Bob
         let bob_contact =
             create_established_contact(bob_id, alice_id, 1_700_000_000, 1_700_000_100);
-        alice.established_contacts.insert(bob_id, bob_contact);
+        alice.apply_established_contact(bob_contact);
 
         // Pending sent request to Carol (not reciprocated yet)
         let carol_request = create_contact_request(alice_id, carol_id, 0, 1, 0, 1_700_000_200);
-        alice.add_sent_contact_request(carol_request);
+        alice
+            .add_sent_contact_request(carol_request, &noop_persister())
+            .expect("test setup persists");
 
         // Pending incoming request from Dave (we haven't sent back yet)
         let dave_request = create_contact_request(dave_id, alice_id, 1, 0, 0, 1_700_000_300);
-        alice.add_incoming_contact_request(dave_request);
+        alice
+            .add_incoming_contact_request(dave_request, &noop_persister())
+            .expect("test setup persists");
 
         // Pending incoming request from Eve
         let eve_request = create_contact_request(eve_id, alice_id, 1, 0, 0, 1_700_000_400);
-        alice.add_incoming_contact_request(eve_request);
+        alice
+            .add_incoming_contact_request(eve_request, &noop_persister())
+            .expect("test setup persists");
 
         alice
     }
@@ -316,7 +341,6 @@ mod tests {
         let managed = create_managed_identity([2u8; 32], 500_000, "Test User");
         assert_eq!(managed.identity.id(), Identifier::from([2u8; 32]));
         assert_eq!(managed.identity.balance(), 500_000);
-        assert_eq!(managed.label, Some("Test User".to_string()));
     }
 
     #[test]
@@ -341,10 +365,9 @@ mod tests {
         let bob = identities::bob();
         let carol = identities::carol();
 
-        assert_eq!(alice.label, Some("Alice".to_string()));
-        assert_eq!(bob.label, Some("Bob".to_string()));
-        assert_eq!(carol.label, Some("Carol".to_string()));
-
+        // `ManagedIdentity.label` is gone — labels are a UI concern
+        // (Swift `PersistentIdentity.alias`). Just exercise the
+        // non-label fixture invariants.
         assert_eq!(alice.identity.balance(), 10_000_000);
         assert_eq!(bob.identity.balance(), 5_000_000);
         assert_eq!(carol.identity.balance(), 8_000_000);
@@ -354,13 +377,14 @@ mod tests {
     fn test_alice_with_pending_sent_requests() {
         let (alice, requests) = scenarios::alice_with_pending_sent_requests();
 
-        assert_eq!(alice.sent_contact_requests.len(), 3);
+        assert_eq!(alice.dashpay().sent_contact_requests().len(), 3);
         assert_eq!(requests.len(), 3);
 
         // Verify requests are in the managed identity
         for request in &requests {
             assert!(alice
-                .sent_contact_requests
+                .dashpay()
+                .sent_contact_requests()
                 .contains_key(&request.recipient_id));
         }
     }
@@ -369,8 +393,8 @@ mod tests {
     fn test_alice_with_mixed_contacts() {
         let alice = scenarios::alice_with_mixed_contacts();
 
-        assert_eq!(alice.established_contacts.len(), 1); // Bob
-        assert_eq!(alice.sent_contact_requests.len(), 1); // Carol
-        assert_eq!(alice.incoming_contact_requests.len(), 2); // Dave, Eve
+        assert_eq!(alice.dashpay().established_contacts().len(), 1); // Bob
+        assert_eq!(alice.dashpay().sent_contact_requests().len(), 1); // Carol
+        assert_eq!(alice.dashpay().incoming_contact_requests().len(), 2); // Dave, Eve
     }
 }

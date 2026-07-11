@@ -127,8 +127,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn run_chain_address_transitions() {
+    #[tokio::test]
+    async fn run_chain_address_transitions() {
         drive_abci::logging::init_for_tests(LogLevel::Debug);
 
         let strategy = NetworkStrategy {
@@ -208,7 +208,8 @@ mod tests {
             15,
             &mut None,
             &mut None,
-        );
+        )
+        .await;
 
         // Build expected address changes from state transitions
         // For each block, collect:
@@ -485,8 +486,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn run_chain_identity_to_addresses_transitions() {
+    #[tokio::test]
+    async fn run_chain_identity_to_addresses_transitions() {
         drive_abci::logging::init_for_tests(LogLevel::Debug);
 
         let strategy = NetworkStrategy {
@@ -561,7 +562,8 @@ mod tests {
             15,
             &mut None,
             &mut None,
-        );
+        )
+        .await;
 
         let executed = outcome
             .state_transition_results_per_block
@@ -598,8 +600,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn run_chain_identity_create_from_addresses_transitions() {
+    #[tokio::test]
+    async fn run_chain_identity_create_from_addresses_transitions() {
         let _platform_version = PlatformVersion::latest();
         drive_abci::logging::init_for_tests(LogLevel::Debug);
 
@@ -681,7 +683,8 @@ mod tests {
             15,
             &mut None,
             &mut None,
-        );
+        )
+        .await;
 
         let executed = outcome
             .state_transition_results_per_block
@@ -714,8 +717,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn run_chain_address_transitions_with_checkpoints() {
+    #[tokio::test]
+    async fn run_chain_address_transitions_with_checkpoints() {
         drive_abci::logging::init_for_tests(LogLevel::Debug);
 
         let strategy = NetworkStrategy {
@@ -798,7 +801,8 @@ mod tests {
             15,
             &mut None,
             &mut None,
-        );
+        )
+        .await;
 
         let executed = outcome
             .state_transition_results_per_block
@@ -895,8 +899,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn run_chain_address_transitions_with_checkpoints_stop_and_restart() {
+    #[tokio::test]
+    async fn run_chain_address_transitions_with_checkpoints_stop_and_restart() {
         drive_abci::logging::init_for_tests(LogLevel::Debug);
 
         let strategy = NetworkStrategy {
@@ -979,7 +983,8 @@ mod tests {
             15,
             &mut None,
             &mut None,
-        );
+        )
+        .await;
 
         let executed = outcome
             .state_transition_results_per_block
@@ -1092,8 +1097,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn run_chain_address_withdrawal_transitions() {
+    #[tokio::test]
+    async fn run_chain_address_withdrawal_transitions() {
         use dpp::dashcore::Txid;
 
         drive_abci::logging::init_for_tests(LogLevel::Debug);
@@ -1178,7 +1183,8 @@ mod tests {
             15,
             &mut None,
             &mut None,
-        );
+        )
+        .await;
 
         // Count successful AddressCreditWithdrawal state transitions
         let withdrawal_count = outcome
@@ -1380,8 +1386,8 @@ mod tests {
 
     /// Test for IdentityCreditTransferToAddresses with pre-configured identities
     /// that have transfer keys
-    #[test]
-    fn run_chain_identity_credit_transfer_to_addresses() {
+    #[tokio::test]
+    async fn run_chain_identity_credit_transfer_to_addresses() {
         drive_abci::logging::init_for_tests(LogLevel::Debug);
 
         // Create start identities with transfer keys
@@ -1470,7 +1476,8 @@ mod tests {
             89,
             &mut None,
             &mut None,
-        );
+        )
+        .await;
 
         // Count IdentityCreditTransferToAddresses transitions
         let mut transfer_to_addresses_count = 0u32;
@@ -1650,8 +1657,8 @@ mod tests {
     /// 4. IdentityCreateFromAddresses - Creates identity from address funds
     /// 5. IdentityTopUpFromAddresses - Tops up identity from address funds
     /// Note: IdentityCreditTransferToAddresses requires identities with transfer keys (special setup)
-    #[test]
-    fn run_chain_all_address_transitions() {
+    #[tokio::test]
+    async fn run_chain_all_address_transitions() {
         use dpp::dashcore::Txid;
 
         drive_abci::logging::init_for_tests(LogLevel::Debug);
@@ -1784,7 +1791,8 @@ mod tests {
             89,
             &mut None,
             &mut None,
-        );
+        )
+        .await;
 
         // Count each type of state transition
         let mut funding_count = 0u32;
@@ -2058,8 +2066,8 @@ mod tests {
     /// 1. Running the chain with quorum signing enabled
     /// 2. Using a test ContextProvider that knows the quorum public keys
     /// 3. Verifying proofs using the FromProof trait which includes signature verification
-    #[test]
-    fn run_chain_address_transitions_with_proof_signature_verification() {
+    #[tokio::test]
+    async fn run_chain_address_transitions_with_proof_signature_verification() {
         use dpp::dashcore::Network;
         use drive::grovedb::GroveTrunkQueryResult;
 
@@ -2151,7 +2159,8 @@ mod tests {
             15,
             &mut None,
             &mut None,
-        );
+        )
+        .await;
 
         let executed = outcome
             .state_transition_results_per_block
@@ -2278,8 +2287,8 @@ mod tests {
     /// Test for querying compacted address balance changes.
     /// This test runs enough blocks with checkpoints enabled to trigger compaction,
     /// then verifies the compacted data can be queried correctly.
-    #[test]
-    fn run_chain_query_compacted_address_balance_changes() {
+    #[tokio::test]
+    async fn run_chain_query_compacted_address_balance_changes() {
         drive_abci::logging::init_for_tests(LogLevel::Debug);
 
         let strategy = NetworkStrategy {
@@ -2367,7 +2376,8 @@ mod tests {
             15,
             &mut None,
             &mut None,
-        );
+        )
+        .await;
 
         // Verify we had some address activity
         let executed = outcome
@@ -2627,8 +2637,8 @@ mod tests {
     /// Test that verifies there is no overlap between compacted and non-compacted
     /// address balance changes. Compacted entries should cover older blocks that have
     /// been merged, while non-compacted entries should cover newer blocks.
-    #[test]
-    fn run_chain_verify_no_overlap_between_compacted_and_recent_changes() {
+    #[tokio::test]
+    async fn run_chain_verify_no_overlap_between_compacted_and_recent_changes() {
         drive_abci::logging::init_for_tests(LogLevel::Debug);
 
         let strategy = NetworkStrategy {
@@ -2715,7 +2725,8 @@ mod tests {
             15,
             &mut None,
             &mut None,
-        );
+        )
+        .await;
 
         // Verify we had address activity
         let executed = outcome
@@ -2936,9 +2947,9 @@ mod tests {
     /// - Block 128: Compaction #2 → expires at block 135 → still valid at 135!
     ///
     /// So at block 135, we should see 1 compacted entry (from block 128)
-    #[test]
     #[stack_size(4 * 1024 * 1024)]
-    fn run_chain_cleanup_expired_compacted_address_balances() {
+    #[test]
+    async fn run_chain_cleanup_expired_compacted_address_balances() {
         // drive_abci::logging::init_for_tests(LogLevel::Debug);
 
         let strategy = NetworkStrategy {
@@ -3032,7 +3043,8 @@ mod tests {
             15,
             &mut None,
             &mut None,
-        );
+        )
+        .await;
 
         // Verify we had address activity
         let executed = outcome
@@ -3234,9 +3246,9 @@ mod tests {
     /// 2. Runs 70+ blocks to trigger compaction (threshold is 64 blocks)
     /// 3. Verifies the compacted data has AddToCreditsOperations with preserved block heights
     /// 4. Simulates a client sync scenario where we filter by block height
-    #[test]
     #[stack_size(4 * 1024 * 1024)]
-    fn run_chain_verify_add_to_credits_operations_for_partial_sync() {
+    #[test]
+    async fn run_chain_verify_add_to_credits_operations_for_partial_sync() {
         // drive_abci::logging::init_for_tests(LogLevel::Debug);
 
         // Only use AddressFundingFromAssetLock - no transfers that spend from addresses
@@ -3304,7 +3316,8 @@ mod tests {
             15,
             &mut None,
             &mut None,
-        );
+        )
+        .await;
 
         // Verify we had some successful address fundings
         let successful_fundings = outcome
@@ -3521,9 +3534,9 @@ mod tests {
     /// Key insight: Each address can only be used ONCE per block (to avoid nonce conflicts).
     /// Funding operations create new addresses in "staged" state. After block commit,
     /// they become "committed" and available for transfers in subsequent blocks.
-    #[test]
     #[stack_size(4 * 1024 * 1024)]
-    fn run_chain_high_throughput_address_operations() {
+    #[test]
+    async fn run_chain_high_throughput_address_operations() {
         drive_abci::logging::init_for_tests(LogLevel::Silent);
 
         let strategy = NetworkStrategy {
@@ -3612,7 +3625,8 @@ mod tests {
             15,
             &mut None,
             &mut None,
-        );
+        )
+        .await;
 
         // Count executed operations by type
         let mut funding_ops = 0;
@@ -3726,9 +3740,9 @@ mod tests {
     /// Phase 3: Compaction triggers; catch-up through compacted + recent
     /// Phase 4: No-op query when already at tip
     /// Phase 5: Compaction with no address activity (empty blocks)
-    #[test]
     #[stack_size(8000000)]
-    fn run_chain_blast_sync_full_flow() {
+    #[test]
+    async fn run_chain_blast_sync_full_flow() {
         use crate::execution::{continue_chain_for_strategy, GENESIS_TIME_MS};
         use crate::strategy::{
             ChainExecutionOutcome, ChainExecutionParameters, StrategyRandomness,
@@ -3822,7 +3836,8 @@ mod tests {
             15,
             &mut None,
             &mut None,
-        );
+        )
+        .await;
 
         // Verify some address operations executed
         let phase1_funding_count = outcome
@@ -4002,7 +4017,8 @@ mod tests {
             phase2_strategy,
             config.clone(),
             StrategyRandomness::SeedEntropy(42),
-        );
+        )
+        .await;
 
         // Query recent (non-compacted) changes from phase1 tip
         let platform_ref2 = &phase2_outcome.abci_app.platform;
@@ -4161,7 +4177,8 @@ mod tests {
             phase3_strategy,
             config.clone(),
             StrategyRandomness::SeedEntropy(99),
-        );
+        )
+        .await;
 
         let platform_ref3 = &phase3_outcome.abci_app.platform;
         let platform_state3 = platform_ref3.state.load();
@@ -4405,7 +4422,8 @@ mod tests {
             empty_strategy,
             config.clone(),
             StrategyRandomness::SeedEntropy(200),
-        );
+        )
+        .await;
 
         let platform_ref5 = &phase5_outcome.abci_app.platform;
         let platform_state5 = platform_ref5.state.load();

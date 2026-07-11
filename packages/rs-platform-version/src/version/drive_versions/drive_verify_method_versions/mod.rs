@@ -6,6 +6,8 @@ pub mod v1;
 pub struct DriveVerifyMethodVersions {
     pub contract: DriveVerifyContractMethodVersions,
     pub document: DriveVerifyDocumentMethodVersions,
+    pub document_count: DriveVerifyDocumentCountMethodVersions,
+    pub document_sum: DriveVerifyDocumentSumMethodVersions,
     pub identity: DriveVerifyIdentityMethodVersions,
     pub group: DriveVerifyGroupMethodVersions,
     pub token: DriveVerifyTokenMethodVersions,
@@ -23,11 +25,8 @@ pub struct DriveVerifyShieldedMethodVersions {
     pub verify_shielded_anchors: FeatureVersion,
     pub verify_most_recent_shielded_anchor: FeatureVersion,
     pub verify_shielded_encrypted_notes: FeatureVersion,
+    pub verify_shielded_notes_count: FeatureVersion,
     pub verify_shielded_nullifiers: FeatureVersion,
-    pub verify_nullifiers_trunk_query: FeatureVersion,
-    pub verify_nullifiers_branch_query: FeatureVersion,
-    pub verify_recent_nullifier_changes: FeatureVersion,
-    pub verify_compacted_nullifier_changes: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -41,7 +40,35 @@ pub struct DriveVerifyContractMethodVersions {
 pub struct DriveVerifyDocumentMethodVersions {
     pub verify_proof: FeatureVersion,
     pub verify_proof_keep_serialized: FeatureVersion,
+    pub verify_document_history: FeatureVersion,
     pub verify_start_at_document_in_proof: FeatureVersion,
+}
+
+/// Versions for the `GetDocumentsCount` prove-path verifiers
+/// (grovedb-level — the tenderdash composition layer lives in
+/// rs-drive-proof-verifier). All three methods are implemented on
+/// `DriveDocumentCountQuery` and return `(RootHash, T)`.
+#[derive(Clone, Debug, Default)]
+pub struct DriveVerifyDocumentCountMethodVersions {
+    pub verify_aggregate_count_proof: FeatureVersion,
+    pub verify_carrier_aggregate_count_proof: FeatureVersion,
+    pub verify_distinct_count_proof: FeatureVersion,
+    pub verify_point_lookup_count_proof: FeatureVersion,
+    pub verify_primary_key_count_tree_proof: FeatureVersion,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DriveVerifyDocumentSumMethodVersions {
+    pub verify_aggregate_sum_proof: FeatureVersion,
+    pub verify_carrier_aggregate_sum_proof: FeatureVersion,
+    pub verify_carrier_aggregate_count_and_sum_proof: FeatureVersion,
+    pub verify_aggregate_count_and_sum_proof: FeatureVersion,
+    pub verify_primary_key_sum_tree_proof: FeatureVersion,
+    pub verify_primary_key_count_sum_tree_proof: FeatureVersion,
+    pub verify_point_lookup_sum_proof: FeatureVersion,
+    pub verify_distinct_sum_proof: FeatureVersion,
+    pub verify_distinct_count_and_sum_proof: FeatureVersion,
+    pub verify_point_lookup_count_and_sum_proof: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

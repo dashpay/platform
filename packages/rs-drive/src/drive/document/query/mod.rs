@@ -3,6 +3,7 @@
 //! Defines and implements in Drive functions relevant to querying.
 //!
 
+mod fetch_document_history_query;
 /// query of the vote state
 pub mod query_contested_documents_vote_state;
 mod query_documents;

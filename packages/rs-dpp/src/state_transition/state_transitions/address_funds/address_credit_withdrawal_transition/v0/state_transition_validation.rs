@@ -13,9 +13,7 @@ use crate::consensus::basic::state_transition::{
 };
 use crate::consensus::basic::BasicError;
 use crate::state_transition::address_credit_withdrawal_transition::v0::AddressCreditWithdrawalTransitionV0;
-use crate::state_transition::address_credit_withdrawal_transition::{
-    MIN_CORE_FEE_PER_BYTE, MIN_WITHDRAWAL_AMOUNT,
-};
+use crate::state_transition::address_credit_withdrawal_transition::MIN_CORE_FEE_PER_BYTE;
 use crate::state_transition::StateTransitionStructureValidation;
 use crate::util::is_non_zero_fibonacci_number::is_non_zero_fibonacci_number;
 use crate::validation::SimpleConsensusValidationResult;
@@ -227,13 +225,13 @@ impl StateTransitionStructureValidation for AddressCreditWithdrawalTransitionV0 
 
         // Validate withdrawal amount meets minimum and maximum
         let withdrawal_amount = input_sum - output_amount; // Safe: checked input_sum > output_amount above
-        if withdrawal_amount < MIN_WITHDRAWAL_AMOUNT
+        if withdrawal_amount < platform_version.system_limits.min_withdrawal_amount
             || withdrawal_amount > platform_version.system_limits.max_withdrawal_amount
         {
             return SimpleConsensusValidationResult::new_with_error(
                 BasicError::WithdrawalBelowMinAmountError(WithdrawalBelowMinAmountError::new(
                     withdrawal_amount,
-                    MIN_WITHDRAWAL_AMOUNT,
+                    platform_version.system_limits.min_withdrawal_amount,
                     platform_version.system_limits.max_withdrawal_amount,
                 ))
                 .into(),
@@ -258,8 +256,9 @@ mod tests {
     /// Uses an input large enough to cover the minimum withdrawal amount.
     fn valid_withdrawal_transition() -> AddressCreditWithdrawalTransitionV0 {
         let mut inputs = BTreeMap::new();
-        // Need at least MIN_WITHDRAWAL_AMOUNT (190_000) for a valid withdrawal
-        inputs.insert(PlatformAddress::P2pkh([1u8; 20]), (0, 1_000_000));
+        // Need at least the v12 min_withdrawal_amount (1_000_000) for a valid withdrawal;
+        // use 2_000_000 to sit comfortably above the floor rather than on its boundary.
+        inputs.insert(PlatformAddress::P2pkh([1u8; 20]), (0, 2_000_000));
 
         AddressCreditWithdrawalTransitionV0 {
             inputs,
@@ -610,16 +609,15 @@ mod tests {
     fn should_return_invalid_if_withdrawal_amount_below_minimum() {
         let platform_version = PlatformVersion::latest();
         let mut transition = valid_withdrawal_transition();
-        // Set input just barely above 0 withdrawal but below MIN_WITHDRAWAL_AMOUNT
-        // MIN_WITHDRAWAL_AMOUNT = 190_000, so if input=190_000, withdrawal would be too small
-        // to allow a meaningful withdrawal, we need input close to min_input_amount
+        // Set input below the v12 min_withdrawal_amount (1_000_000) so the resulting
+        // withdrawal is rejected as too small.
         transition.inputs.clear();
         transition
             .inputs
             .insert(PlatformAddress::P2pkh([1u8; 20]), (0, 100_000));
 
         let result = transition.validate_structure(platform_version);
-        // 100_000 withdrawal < MIN_WITHDRAWAL_AMOUNT (190_000), should fail
+        // 100_000 withdrawal < min_withdrawal_amount (1_000_000), should fail
         assert_matches!(
             result.errors.as_slice(),
             [ConsensusError::BasicError(

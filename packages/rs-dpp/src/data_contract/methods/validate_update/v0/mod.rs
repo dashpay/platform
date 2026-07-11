@@ -268,7 +268,7 @@ impl DataContract {
         }
 
         if self.keywords() != new_data_contract.keywords() {
-            // Validate there are no more than 50 keywords
+            // Validate there are no more than 50 contract keywords
             if new_data_contract.keywords().len() > 50 {
                 return Ok(SimpleConsensusValidationResult::new_with_error(
                     TooManyKeywordsError::new(self.id(), new_data_contract.keywords().len() as u8)
@@ -497,6 +497,7 @@ mod tests {
             {
                 DocumentTypeMutRef::V0(dt) => dt.documents_mutable = false,
                 DocumentTypeMutRef::V1(dt) => dt.documents_mutable = false,
+                DocumentTypeMutRef::V2(dt) => dt.documents_mutable = false,
             }
 
             let result = old_data_contract

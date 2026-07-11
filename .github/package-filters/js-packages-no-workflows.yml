@@ -34,12 +34,18 @@
   - packages/rs-platform-version/**
   - packages/rs-platform-versioning/**
   - packages/rs-dpp/**
-  # Exclude Rust test files — they don't affect WASM builds
-  - '!packages/rs-dpp/**/tests.rs'
-  - '!packages/rs-dpp/**/tests/**'
-  - '!packages/rs-dpp/**/test_helpers/**'
-  - '!packages/rs-dpp/**/test_utils.rs'
-  - '!packages/rs-dpp/**/test_utils/**'
+  # NOTE: do not add `!packages/rs-dpp/**/tests.rs` style negation
+  # patterns here. The dispatcher in `tests.yml` runs these filters
+  # via `dorny/paths-filter@v4` with the default
+  # `predicate-quantifier: some`, under which each pattern (including
+  # `!`-prefixed ones) is OR'd independently. A `!` pattern then
+  # "matches" every file that doesn't match the negated path — i.e.
+  # virtually every file in the repo — which trips this filter on
+  # Swift-only / Rust-only changes and cascades through every other
+  # filter that aliases `*wasm-dpp` (dapi, dapi-client, wallet-lib,
+  # dash, dashmate, platform-test-suite, …). Cheaper to over-trigger
+  # the WASM tests on rs-dpp test-only edits than to mis-trigger
+  # half the JS test matrix on every PR.
 
 '@dashevo/wasm-dpp2': &wasm-dpp2
   - packages/wasm-dpp2/**
@@ -96,13 +102,10 @@ dashmate:
   - packages/rs-platform-version/**
   - packages/rs-dash-platform-macros/**
   - packages/dapi-grpc/**
-  # Exclude Rust test files — they don't affect WASM builds
-  - '!packages/rs-drive-proof-verifier/**/tests.rs'
-  - '!packages/rs-drive-proof-verifier/**/tests/**'
-  - '!packages/rs-sdk/**/tests.rs'
-  - '!packages/rs-sdk/**/tests/**'
-  - '!packages/rs-dapi-client/**/tests.rs'
-  - '!packages/rs-dapi-client/**/tests/**'
+  # NOTE: do not add `!path` negation patterns here — see the long
+  # explanation on `@dashevo/wasm-dpp` above. Same `dorny/paths-filter@v4`
+  # + `predicate-quantifier: some` interaction trips this filter on
+  # unrelated changes and cascades into every consumer (`*wasm-sdk`).
 
 '@dashevo/evo-sdk': &evo-sdk
   - packages/js-evo-sdk/**

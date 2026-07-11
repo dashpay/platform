@@ -75,8 +75,4 @@ pub struct DriveShieldedMethodVersions {
     pub has_nullifier: FeatureVersion,
     pub read_total_balance: FeatureVersion,
     pub notes_count: FeatureVersion,
-    pub prove_nullifiers_trunk_query: FeatureVersion,
-    pub prove_nullifiers_branch_query: FeatureVersion,
-    pub nullifiers_query_min_depth: u8,
-    pub nullifiers_query_max_depth: u8,
 }

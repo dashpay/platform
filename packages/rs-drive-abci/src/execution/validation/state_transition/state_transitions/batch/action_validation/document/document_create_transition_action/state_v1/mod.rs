@@ -75,16 +75,18 @@ impl DocumentCreateTransitionActionStateValidationV1 for DocumentCreateTransitio
 
         // TODO: Use multi get https://github.com/facebook/rocksdb/wiki/MultiGet-Performance
         // We should check to see if a document already exists in the state
-        let (already_existing_document, fee_result) = fetch_document_with_id(
+        // `fetch_document_with_id` bills the query cost internally via
+        // execution_context on transform_into_action: 1+.
+        let already_existing_document = fetch_document_with_id(
             platform.drive,
             contract,
             document_type,
             self.base().id(),
+            &block_info.epoch,
+            execution_context,
             transaction,
             platform_version,
         )?;
-
-        execution_context.add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
 
         if already_existing_document.is_some() {
             return Ok(ConsensusValidationResult::new_with_error(

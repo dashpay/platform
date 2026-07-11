@@ -5,7 +5,7 @@ use super::MockResponse;
 use crate::{
     platform::{
         types::{evonode::EvoNode, identity::IdentityRequest},
-        DocumentQuery, Fetch, FetchMany, Query,
+        Fetch, FetchMany, Query,
     },
     sync::block_on,
     Error, Sdk,
@@ -42,7 +42,6 @@ use tokio::sync::{Mutex, OwnedMutexGuard};
 #[derive(Debug)]
 pub struct MockDashPlatformSdk {
     from_proof_expectations: BTreeMap<Key, Vec<u8>>,
-    platform_version: &'static PlatformVersion,
     dapi: Arc<Mutex<MockDapiClient>>,
     sdk: ArcSwapOption<Sdk>,
 }
@@ -66,10 +65,9 @@ impl MockDashPlatformSdk {
     /// ## Note
     ///
     /// You have to call [MockDashPlatformSdk::set_sdk()] to set sdk, otherwise Mock SDK will panic.
-    pub(crate) fn new(version: &'static PlatformVersion, dapi: Arc<Mutex<MockDapiClient>>) -> Self {
+    pub(crate) fn new(dapi: Arc<Mutex<MockDapiClient>>) -> Self {
         Self {
             from_proof_expectations: Default::default(),
-            platform_version: version,
             dapi,
             sdk: ArcSwapOption::new(None),
         }
@@ -79,8 +77,21 @@ impl MockDashPlatformSdk {
         self.sdk.store(Some(Arc::new(sdk)));
     }
 
+    /// Returns the current `PlatformVersion` from the outer [`Sdk`]'s
+    /// auto-detect-aware atomic. Both request-encode (`sdk.query_settings()`)
+    /// and proof-decode (`parse_proof_with_metadata`) read through this
+    /// single source, so a mock ratchet from response metadata is visible
+    /// to both paths.
+    ///
+    /// ## Panics
+    ///
+    /// Panics when sdk is not set during initialization.
     pub(crate) fn version<'v>(&self) -> &'v PlatformVersion {
-        self.platform_version
+        if let Some(sdk) = self.sdk.load().as_ref() {
+            sdk.version()
+        } else {
+            panic!("sdk must be set when creating mock ")
+        }
     }
 
     /// Load all expectations from files in a directory asynchronously.
@@ -133,7 +144,9 @@ impl MockDashPlatformSdk {
             let request_type = basename.split('_').nth(1).unwrap_or_default();
 
             match request_type {
-                "DocumentQuery" => load_expectation::<DocumentQuery>(&mut dapi, filename)?,
+                "GetDocumentsRequest" => {
+                    load_expectation::<proto::GetDocumentsRequest>(&mut dapi, filename)?
+                }
                 "GetEpochsInfoRequest" => {
                     load_expectation::<proto::GetEpochsInfoRequest>(&mut dapi, filename)?
                 }
@@ -145,6 +158,9 @@ impl MockDashPlatformSdk {
                 }
                 "GetDataContractHistoryRequest" => {
                     load_expectation::<proto::GetDataContractHistoryRequest>(&mut dapi, filename)?
+                }
+                "GetDocumentHistoryRequest" => {
+                    load_expectation::<proto::GetDocumentHistoryRequest>(&mut dapi, filename)?
                 }
                 "IdentityRequest" => load_expectation::<IdentityRequest>(&mut dapi, filename)?,
                 "GetIdentityRequest" => {
@@ -315,7 +331,7 @@ impl MockDashPlatformSdk {
     ///     assert_eq!(retrieved, expected);
     /// # });
     /// ```
-    pub async fn expect_fetch<O: Fetch + MockResponse, Q: Query<<O as Fetch>::Request>>(
+    pub async fn expect_fetch<O: Fetch + MockResponse, Q: Query<<O as Fetch>::Query>>(
         &mut self,
         query: Q,
         object: Option<O>,
@@ -323,8 +339,9 @@ impl MockDashPlatformSdk {
     where
         <<O as Fetch>::Request as TransportRequest>::Response: Default,
     {
-        let grpc_request = query.query(self.prove()).expect("query must be correct");
-        self.expect(grpc_request, object).await?;
+        let (rich, wire) =
+            self.encode_rich_to_wire::<Q, <O as Fetch>::Query, <O as Fetch>::Request>(query);
+        self.expect(&rich, wire, object).await?;
 
         Ok(self)
     }
@@ -335,11 +352,11 @@ impl MockDashPlatformSdk {
     pub async fn remove_fetch_expectation<O, Q>(&mut self, query: Q) -> bool
     where
         O: Fetch,
-        Q: Query<<O as Fetch>::Request>,
-        <O as Fetch>::Request: TransportRequest,
+        Q: Query<<O as Fetch>::Query>,
     {
-        let grpc_request = query.query(self.prove()).expect("query must be correct");
-        self.remove(grpc_request).await
+        let (rich, wire) =
+            self.encode_rich_to_wire::<Q, <O as Fetch>::Query, <O as Fetch>::Request>(query);
+        self.remove(&rich, wire).await
     }
 
     /// Expect a [FetchMany] request and return provided object.
@@ -375,7 +392,7 @@ impl MockDashPlatformSdk {
     pub async fn expect_fetch_many<
         K: Ord,
         O: FetchMany<K, R>,
-        Q: Query<<O as FetchMany<K, R>>::Request>,
+        Q: Query<<O as FetchMany<K, R>>::Query>,
         R,
     >(
         &mut self,
@@ -386,51 +403,84 @@ impl MockDashPlatformSdk {
         R: FromIterator<(K, Option<O>)>
             + MockResponse
             + FromProof<
-                <O as FetchMany<K, R>>::Request,
-                Request = <O as FetchMany<K, R>>::Request,
+                <O as FetchMany<K, R>>::Query,
+                Request = <O as FetchMany<K, R>>::Query,
                 Response = <<O as FetchMany<K, R>>::Request as TransportRequest>::Response,
             > + Sync
             + Send
             + Default,
         <<O as FetchMany<K, R>>::Request as TransportRequest>::Response: Default,
     {
-        let grpc_request = query.query(self.prove()).expect("query must be correct");
-        self.expect(grpc_request, objects).await?;
+        let (rich, wire) = self
+            .encode_rich_to_wire::<Q, <O as FetchMany<K, R>>::Query, <O as FetchMany<K, R>>::Request>(
+                query,
+            );
+        self.expect(&rich, wire, objects).await?;
 
         Ok(self)
     }
 
+    /// Encode a user-facing `query` first into its rich form (`R`) and
+    /// then into its wire form (`W`), both against the SDK's current
+    /// `QuerySettings`. Returns `(rich, wire)` for use as proof-mock /
+    /// DAPI-mock expectation keys.
+    ///
+    /// ## Panics
+    ///
+    /// INTENTIONAL(SEC-001): test-harness fail-fast — encoder errors
+    /// for V1-only `DocumentQuery` features against a V0
+    /// `PlatformVersion` crash the test setup loudly rather than
+    /// silently propagate. Panics also if `set_sdk` was not called.
+    fn encode_rich_to_wire<Q, R, W>(&self, query: Q) -> (R, W)
+    where
+        Q: Query<R>,
+        R: Query<W> + Mockable,
+        W: TransportRequest,
+    {
+        let sdk_guard = self.sdk.load();
+        let sdk = sdk_guard
+            .as_ref()
+            .expect("sdk must be set when creating mock");
+        let settings = sdk.query_settings();
+        let rich: R = query.query(&settings).expect("query must be correct");
+        let wire: W = rich.query(&settings).expect("wire encoding must succeed");
+        (rich, wire)
+    }
+
     /// Save expectations for a request.
-    async fn expect<I: TransportRequest, O: MockResponse>(
+    ///
+    /// `rich_request` is the user-facing query (what [`FromProof`] binds to) and seeds
+    /// the proof-mock cache key. `wire_request` is the proto that flows over the wire
+    /// and seeds the DAPI executor mock. For non-versioned operations both arguments
+    /// are the same value; for documents the rich form is [`DocumentQuery`] and the
+    /// wire is [`GetDocumentsRequest`].
+    async fn expect<R: Mockable + std::fmt::Debug, W: TransportRequest, O: MockResponse>(
         &mut self,
-        grpc_request: I,
+        rich_request: &R,
+        wire_request: W,
         returned_object: Option<O>,
     ) -> Result<(), Error>
     where
-        I::Response: Default,
+        W::Response: Default,
     {
-        let key = Key::new(&grpc_request);
+        let key = Key::new(rich_request);
 
-        // detect duplicates
         if self.from_proof_expectations.contains_key(&key) {
             return Err(MockError::MockExpectationConflict(format!(
                 "proof expectation key {} already defined for {} request: {:?}",
                 key,
-                std::any::type_name::<I>(),
-                grpc_request
+                std::any::type_name::<R>(),
+                rich_request
             ))
             .into());
         }
 
-        // This expectation will work for from_proof
         self.from_proof_expectations
             .insert(key, returned_object.mock_serialize(self));
 
-        // This expectation will work for execute
         let mut dapi_guard = self.dapi.lock().await;
-        // We don't really care about the response, as it will be mocked by from_proof, so we provide default()
         dapi_guard.expect(
-            &grpc_request,
+            &wire_request,
             &Ok(ExecutionResponse {
                 inner: Default::default(),
                 retries: 0,
@@ -442,12 +492,16 @@ impl MockDashPlatformSdk {
     }
 
     /// Remove expectations for a request.
-    async fn remove<I: TransportRequest>(&mut self, grpc_request: I) -> bool {
-        let key = Key::new(&grpc_request);
+    async fn remove<R: Mockable, W: TransportRequest>(
+        &mut self,
+        rich_request: &R,
+        wire_request: W,
+    ) -> bool {
+        let key = Key::new(rich_request);
         let removed_from_proof = self.from_proof_expectations.remove(&key).is_some();
 
         let mut dapi_guard = self.dapi.lock().await;
-        let removed_from_dapi = dapi_guard.remove(&grpc_request);
+        let removed_from_dapi = dapi_guard.remove(&wire_request);
 
         removed_from_proof || removed_from_dapi
     }
@@ -466,9 +520,15 @@ impl MockDashPlatformSdk {
         let key = Key::new(&request);
 
         let data = match self.from_proof_expectations.get(&key) {
+            // Report the latest protocol version so the proof path's ratchet
+            // (`maybe_update_protocol_version`) fires as it would against a real
+            // network; `default()` reports 0, which the ratchet ignores.
             Some(d) => (
                 Option::<O>::mock_deserialize(self, d),
-                ResponseMetadata::default(),
+                ResponseMetadata {
+                    protocol_version: dpp::version::LATEST_VERSION,
+                    ..Default::default()
+                },
                 Proof::default(),
             ),
             None => {

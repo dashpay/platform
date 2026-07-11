@@ -8,8 +8,12 @@
 # ignore VSCode project specific files
 .vscode
 
+# ignore Serena MCP project-local cache/config
+.serena
+
 # Env file
 .env
+.env.*.bak
 
 # NYC test runner
 .nyc_output
@@ -62,6 +66,7 @@ packages/rs-sdk-ffi/build/
 
 # Swift SDK build outputs
 packages/swift-sdk/build_output.txt
+packages/swift-sdk/build/
 
 # wasm-drive-verify build artifacts
 packages/wasm-drive-verify/target/
@@ -90,7 +95,11 @@ book/book/
 grpc-coverage-report.txt
 
 __pycache__/
+.claude/settings.local.json
 .claude/worktrees/
+.claude/scheduled_tasks.lock
+.mcp.json
+.codex/
 
 # Security audit reports (local-only, not committed)
 audits/

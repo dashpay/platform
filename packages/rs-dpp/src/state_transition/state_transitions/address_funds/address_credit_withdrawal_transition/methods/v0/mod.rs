@@ -24,7 +24,7 @@ use platform_version::version::PlatformVersion;
 pub trait AddressCreditWithdrawalTransitionMethodsV0 {
     #[cfg(feature = "state-transition-signing")]
     #[allow(clippy::too_many_arguments)]
-    fn try_from_inputs_with_signer<S: Signer<PlatformAddress>>(
+    async fn try_from_inputs_with_signer<S: Signer<PlatformAddress>>(
         inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
         output: Option<(PlatformAddress, Credits)>,
         fee_strategy: AddressFundsFeeStrategy,

@@ -28,7 +28,7 @@ pub trait TopUpIdentityFromAddresses<S: Signer<PlatformAddress>>: Waitable {
         inputs: BTreeMap<PlatformAddress, Credits>,
         signer: &S,
         settings: Option<PutSettings>,
-    ) -> Result<(AddressInfos, Credits), Error>;
+    ) -> Result<(AddressInfos, Credits, u64), Error>;
 
     /// Top up identity providing explicit address nonces.
     ///
@@ -39,7 +39,7 @@ pub trait TopUpIdentityFromAddresses<S: Signer<PlatformAddress>>: Waitable {
         inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
         signer: &S,
         settings: Option<PutSettings>,
-    ) -> Result<(AddressInfos, Credits), Error>;
+    ) -> Result<(AddressInfos, Credits, u64), Error>;
 }
 
 #[async_trait::async_trait]
@@ -50,7 +50,7 @@ impl<S: Signer<PlatformAddress>> TopUpIdentityFromAddresses<S> for Identity {
         inputs: BTreeMap<PlatformAddress, Credits>,
         signer: &S,
         settings: Option<PutSettings>,
-    ) -> Result<(AddressInfos, Credits), Error> {
+    ) -> Result<(AddressInfos, Credits, u64), Error> {
         let inputs_with_nonce = nonce_inc(fetch_inputs_with_nonce(sdk, &inputs).await?);
         self.top_up_from_addresses_with_nonce(sdk, inputs_with_nonce, signer, settings)
             .await
@@ -62,7 +62,7 @@ impl<S: Signer<PlatformAddress>> TopUpIdentityFromAddresses<S> for Identity {
         inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
         signer: &S,
         settings: Option<PutSettings>,
-    ) -> Result<(AddressInfos, Credits), Error> {
+    ) -> Result<(AddressInfos, Credits, u64), Error> {
         let user_fee_increase = settings
             .as_ref()
             .and_then(|settings| settings.user_fee_increase)
@@ -78,13 +78,16 @@ impl<S: Signer<PlatformAddress>> TopUpIdentityFromAddresses<S> for Identity {
             user_fee_increase,
             sdk.version(),
             None,
-        )?;
+        )
+        .await?;
         ensure_valid_state_transition_structure(&state_transition, sdk.version())?;
 
-        match state_transition
-            .broadcast_and_wait::<StateTransitionProofResult>(sdk, settings)
-            .await?
-        {
+        // `metadata.height` is the proof's committed block — the height
+        // pin for these absolutes (`AddressFunds::as_of_height`).
+        let (st_result, metadata) = state_transition
+            .broadcast_and_wait_with_metadata::<StateTransitionProofResult>(sdk, settings)
+            .await?;
+        match st_result {
             StateTransitionProofResult::VerifiedIdentityWithAddressInfos(
                 identity,
                 address_infos_map,
@@ -106,7 +109,7 @@ impl<S: Signer<PlatformAddress>> TopUpIdentityFromAddresses<S> for Identity {
                     )
                 })?;
 
-                Ok((address_infos, balance))
+                Ok((address_infos, balance, metadata.height))
             }
             other => Err(Error::InvalidProvedResponse(format!(
                 "identity proof was expected for {:?}, but received {:?}",

@@ -159,16 +159,18 @@ fn apply_user_fee_increase(&mut self, user_fee_increase: UserFeeIncrease) {
 ## ExecutionEvent Variants
 
 The `ExecutionEvent` enum (in `rs-drive-abci`) determines how fees are collected
-for each state transition. There are six variants:
+for each state transition. There are eight variants:
 
 | Variant | Fee Source | Used By |
 |---|---|---|
 | `Paid` | Identity credit balance | Most identity-based transitions |
 | `PaidFromAssetLock` | Asset lock transaction value | IdentityCreate, IdentityTopUp |
 | `PaidFromAssetLockWithoutIdentity` | Asset lock (fixed amount) | PartiallyUseAssetLock |
-| `PaidFromAddressInputs` | Platform address balances | All address-based transitions |
+| `PaidFromAssetLockToPool` | Asset lock value; fee routed to the fee pools | ShieldFromAssetLock |
+| `PaidFromAddressInputs` | Platform address balances | All address-based transitions; `Shield` (metered + a ZK compute fee via `additional_fixed_fee_cost`) |
 | `PaidFixedCost` | Fixed fee to pool | MasternodeVote |
 | `PaidFromShieldedPool` | Shielded pool value_balance | ShieldedTransfer, Unshield, ShieldedWithdrawal |
+| `PaidFromShieldedPoolToNewIdentity` | Shielded pool (the fixed `denomination`); the metered write + ZK compute fee is moved from the new identity's balance into the fee pools | IdentityCreateFromShieldedPool |
 
 Each variant carries the operations to execute and enough context for the fee
 validation and execution pipeline to deduct the correct amount from the correct

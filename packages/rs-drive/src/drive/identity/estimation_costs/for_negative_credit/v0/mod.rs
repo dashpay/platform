@@ -60,6 +60,8 @@ impl Drive {
                     subtrees_size: Some((1, NoSumTrees, None, 2)),
                     items_size: Some((1, 8, None, 1)),
                     references_size: None,
+                    items_with_sum_item_size: None,
+                    references_with_sum_item_size: None,
                 },
             },
         );

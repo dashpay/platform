@@ -1,5 +1,5 @@
 // TODO: Generate test vectors by running against a devnet:
-//   yarn reset && SDK_TEST_DATA=true yarn start
+//   yarn reset && yarn start   # `yarn setup` already enables SDK_TEST_DATA in local config
 //   ./packages/rs-sdk/scripts/generate_test_vectors.sh test_token_pre_programmed_distributions
 
 use crate::fetch::common::setup_logs;

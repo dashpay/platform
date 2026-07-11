@@ -87,18 +87,50 @@ impl<T> Default for HandleStorage<T> {
 }
 
 /// Storage for PlatformWalletInfo handles
-pub static WALLET_INFO_STORAGE: Lazy<
-    HandleStorage<platform_wallet::platform_wallet_info::PlatformWalletInfo>,
-> = Lazy::new(HandleStorage::new);
+pub static WALLET_INFO_STORAGE: Lazy<HandleStorage<platform_wallet::PlatformWalletInfo>> =
+    Lazy::new(HandleStorage::new);
 
 /// Storage for IdentityManager handles
-pub static IDENTITY_MANAGER_STORAGE: Lazy<
-    HandleStorage<platform_wallet::identity_manager::IdentityManager>,
-> = Lazy::new(HandleStorage::new);
+pub static IDENTITY_MANAGER_STORAGE: Lazy<HandleStorage<platform_wallet::IdentityManager>> =
+    Lazy::new(HandleStorage::new);
 
 /// Storage for ManagedIdentity handles
-pub static MANAGED_IDENTITY_STORAGE: Lazy<
-    HandleStorage<platform_wallet::managed_identity::ManagedIdentity>,
+pub static MANAGED_IDENTITY_STORAGE: Lazy<HandleStorage<platform_wallet::ManagedIdentity>> =
+    Lazy::new(HandleStorage::new);
+
+/// Storage for CoreWallet handles.
+///
+/// `CoreWallet` is generic over the broadcaster type; the FFI pins
+/// it to `SpvBroadcaster` — the only production broadcaster.
+pub static CORE_WALLET_STORAGE: Lazy<
+    HandleStorage<platform_wallet::CoreWallet<platform_wallet::broadcaster::SpvBroadcaster>>,
+> = Lazy::new(HandleStorage::new);
+
+/// Storage for AssetLockManager handles (pinned to `SpvBroadcaster`).
+pub static ASSET_LOCK_MANAGER_STORAGE: Lazy<
+    HandleStorage<
+        std::sync::Arc<
+            platform_wallet::AssetLockManager<platform_wallet::broadcaster::SpvBroadcaster>,
+        >,
+    >,
+> = Lazy::new(HandleStorage::new);
+
+/// Storage for PlatformAddressWallet handles
+pub static PLATFORM_ADDRESS_WALLET_STORAGE: Lazy<
+    HandleStorage<platform_wallet::wallet::platform_addresses::PlatformAddressWallet>,
+> = Lazy::new(HandleStorage::new);
+
+/// Storage for PlatformWalletManager handles.
+///
+/// The manager is generic over the persister type; the FFI binds it
+/// to the callback-based [`FFIPersister`](crate::persistence::FFIPersister).
+pub static PLATFORM_WALLET_MANAGER_STORAGE: Lazy<
+    HandleStorage<platform_wallet::PlatformWalletManager<crate::persistence::FFIPersister>>,
+> = Lazy::new(HandleStorage::new);
+
+/// Storage for PlatformWallet handles
+pub static PLATFORM_WALLET_STORAGE: Lazy<
+    HandleStorage<std::sync::Arc<platform_wallet::PlatformWallet>>,
 > = Lazy::new(HandleStorage::new);
 
 #[cfg(test)]

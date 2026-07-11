@@ -313,6 +313,7 @@ impl StateTransitionWasm {
             Unshield(_) => 17,
             ShieldFromAssetLock(_) => 18,
             ShieldedWithdrawal(_) => 19,
+            IdentityCreateFromShieldedPool(_) => 20,
         }
     }
 
@@ -401,7 +402,8 @@ impl StateTransitionWasm {
             | ShieldedTransfer(_)
             | Unshield(_)
             | ShieldFromAssetLock(_)
-            | ShieldedWithdrawal(_) => todo!("shielded transitions not yet implemented"),
+            | ShieldedWithdrawal(_)
+            | IdentityCreateFromShieldedPool(_) => None,
         }
     }
 
@@ -428,7 +430,8 @@ impl StateTransitionWasm {
             | ShieldedTransfer(_)
             | Unshield(_)
             | ShieldFromAssetLock(_)
-            | ShieldedWithdrawal(_) => todo!("shielded transitions not yet implemented"),
+            | ShieldedWithdrawal(_)
+            | IdentityCreateFromShieldedPool(_) => None,
         }
     }
 
@@ -570,8 +573,11 @@ impl StateTransitionWasm {
             | ShieldedTransfer(_)
             | Unshield(_)
             | ShieldFromAssetLock(_)
-            | ShieldedWithdrawal(_) => {
-                todo!("shielded transitions not yet implemented")
+            | ShieldedWithdrawal(_)
+            | IdentityCreateFromShieldedPool(_) => {
+                return Err(WasmDppError::invalid_argument(
+                    "Cannot set owner for shielded transition",
+                ));
             }
         };
 
@@ -645,8 +651,11 @@ impl StateTransitionWasm {
             | ShieldedTransfer(_)
             | Unshield(_)
             | ShieldFromAssetLock(_)
-            | ShieldedWithdrawal(_) => {
-                todo!("shielded transitions not yet implemented")
+            | ShieldedWithdrawal(_)
+            | IdentityCreateFromShieldedPool(_) => {
+                return Err(WasmDppError::invalid_argument(
+                    "Cannot set identity contract nonce for shielded transition",
+                ));
             }
         };
 
@@ -740,8 +749,11 @@ impl StateTransitionWasm {
             | ShieldedTransfer(_)
             | Unshield(_)
             | ShieldFromAssetLock(_)
-            | ShieldedWithdrawal(_) => {
-                todo!("shielded transitions not yet implemented")
+            | ShieldedWithdrawal(_)
+            | IdentityCreateFromShieldedPool(_) => {
+                return Err(WasmDppError::invalid_argument(
+                    "Cannot set identity nonce for shielded transition",
+                ));
             }
         };
 

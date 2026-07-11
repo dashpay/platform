@@ -69,7 +69,7 @@ runs:
     - name: Restore cached protoc (v32.0)
       if: runner.os == 'Linux'
       id: cache-protoc
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       with:
         path: |
           ${{ steps.resolved_home.outputs.home }}/.local/protoc-32.0/bin
@@ -94,7 +94,7 @@ runs:
 
     - name: Save cached protoc (v32.0)
       if: runner.os == 'Linux' && steps.cache-protoc.outputs.cache-hit != 'true'
-      uses: actions/cache/save@v4
+      uses: actions/cache/save@v5
       with:
         path: |
           ${{ steps.resolved_home.outputs.home }}/.local/protoc-32.0/bin
@@ -106,7 +106,7 @@ runs:
       run: echo "HOME=$HOME" >> $GITHUB_ENV
 
     - name: Cache cargo registry
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       if: inputs.cache == 'true'
       with:
         path: |

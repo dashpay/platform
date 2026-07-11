@@ -551,6 +551,7 @@ impl SpecializedDocumentFactoryV0 {
 }
 
 #[cfg(test)]
+#[allow(clippy::type_complexity)]
 mod tests {
     use super::*;
     use crate::document::DocumentV0Getters;
@@ -720,5 +721,466 @@ mod tests {
     fn is_ownership_the_same_with_empty_iter() {
         let ids: Vec<&Identifier> = vec![];
         assert!(SpecializedDocumentFactoryV0::is_ownership_the_same(ids));
+    }
+
+    // ----- Extended coverage -----
+
+    #[test]
+    fn new_with_invalid_protocol_version_still_constructs() {
+        // `new` does not validate version; errors surface only during creation.
+        let platform_version = PlatformVersion::latest();
+        let created = get_data_contract_fixture(None, 0, platform_version.protocol_version);
+        let factory = SpecializedDocumentFactoryV0::new(u32::MAX, created.data_contract_owned());
+        assert_eq!(factory.protocol_version, u32::MAX);
+    }
+
+    #[test]
+    fn create_document_bad_protocol_version_returns_error() {
+        let platform_version = PlatformVersion::latest();
+        let created = get_data_contract_fixture(None, 0, platform_version.protocol_version);
+        let data_contract = created.data_contract_owned();
+        let factory = SpecializedDocumentFactoryV0::new_with_entropy_generator(
+            u32::MAX,
+            data_contract.clone(),
+            Box::new(TestEntropyGenerator),
+        );
+
+        let result = factory.create_document(
+            &data_contract,
+            Identifier::from([1u8; 32]),
+            0,
+            0,
+            "noTimeDocument".to_string(),
+            Value::Null,
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn create_document_without_time_bad_protocol_version_returns_error() {
+        let platform_version = PlatformVersion::latest();
+        let created = get_data_contract_fixture(None, 0, platform_version.protocol_version);
+        let factory = SpecializedDocumentFactoryV0::new_with_entropy_generator(
+            u32::MAX,
+            created.data_contract_owned(),
+            Box::new(TestEntropyGenerator),
+        );
+
+        let result = factory.create_document_without_time_based_properties(
+            Identifier::from([1u8; 32]),
+            "noTimeDocument".to_string(),
+            Value::Null,
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn create_document_uses_entropy_generator_for_deterministic_id() {
+        // Two documents for the same type with the same owner+entropy should get identical IDs.
+        let (factory, _) = setup_factory();
+        let owner_id = Identifier::from([42u8; 32]);
+
+        let d1 = factory
+            .create_document_without_time_based_properties(
+                owner_id,
+                "noTimeDocument".to_string(),
+                platform_value!({ "name": "a" }),
+            )
+            .unwrap();
+        let d2 = factory
+            .create_document_without_time_based_properties(
+                owner_id,
+                "noTimeDocument".to_string(),
+                platform_value!({ "name": "b" }),
+            )
+            .unwrap();
+
+        // Identifier is derived from (contract_id, owner_id, type_name, entropy); all match → same.
+        assert_eq!(d1.id(), d2.id());
+    }
+
+    #[test]
+    fn create_document_uses_given_time_based_properties() {
+        let (factory, data_contract) = setup_factory();
+        let owner_id = Identifier::from([50u8; 32]);
+        let block_time = 12345u64;
+        let core_block_height = 67u32;
+
+        // indexedDocument requires createdAt/updatedAt to be set. Provide explicit values.
+        let data = platform_value!({
+            "firstName": "Alice",
+            "lastName": "Liddell",
+        });
+
+        let doc = factory
+            .create_document(
+                &data_contract,
+                owner_id,
+                block_time,
+                core_block_height,
+                "indexedDocument".to_string(),
+                data,
+            )
+            .unwrap();
+
+        assert_eq!(doc.owner_id(), owner_id);
+        // the doc should at least have a non-empty id
+        assert_ne!(doc.id().as_slice(), &[0u8; 32][..]);
+    }
+
+    // ----- State transition tests -----
+
+    #[cfg(feature = "state-transitions")]
+    mod state_transition_tests {
+        use super::*;
+        use crate::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
+        use crate::state_transition::state_transitions::document::batch_transition::batched_transition::document_transition_action_type::DocumentTransitionActionType;
+        use crate::state_transition::StateTransitionOwned;
+
+        fn build_document(
+            factory: &SpecializedDocumentFactoryV0,
+            owner: Identifier,
+            type_name: &str,
+        ) -> Document {
+            factory
+                .create_document_without_time_based_properties(
+                    owner,
+                    type_name.to_string(),
+                    platform_value!({ "name": "foo" }),
+                )
+                .expect("document should be created")
+        }
+
+        #[test]
+        fn create_state_transition_create_action_populates_owner_and_nonce() {
+            let (factory, data_contract) = setup_factory();
+            let owner_id = Identifier::from([1u8; 32]);
+            let doc = build_document(&factory, owner_id, "noTimeDocument");
+            let doc_type = data_contract
+                .document_type_for_name("noTimeDocument")
+                .unwrap();
+
+            let mut nonce_counter: BTreeMap<(Identifier, Identifier), u64> = BTreeMap::new();
+            let entries = vec![(
+                DocumentTransitionActionType::Create,
+                vec![(doc, doc_type, Bytes32::new([2u8; 32]), None)],
+            )];
+
+            let batch = factory
+                .create_state_transition(entries, &mut nonce_counter)
+                .expect("batch transition should be created");
+
+            assert_eq!(batch.owner_id(), owner_id);
+            assert_eq!(batch.transitions_len(), 1);
+            // nonce started at 0 and incremented to 1
+            let key = (owner_id, data_contract.id());
+            assert_eq!(*nonce_counter.get(&key).unwrap(), 1);
+        }
+
+        #[test]
+        fn create_state_transition_no_documents_returns_error() {
+            let (factory, _) = setup_factory();
+            let mut nonce_counter: BTreeMap<(Identifier, Identifier), u64> = BTreeMap::new();
+
+            // empty outer iter
+            let empty: Vec<(
+                DocumentTransitionActionType,
+                Vec<(Document, DocumentTypeRef, Bytes32, Option<TokenPaymentInfo>)>,
+            )> = vec![];
+            let result = factory.create_state_transition(empty, &mut nonce_counter);
+            assert!(
+                matches!(
+                    result,
+                    Err(ProtocolError::Document(e)) if matches!(*e, DocumentError::NoDocumentsSuppliedError)
+                ),
+                "expected NoDocumentsSuppliedError"
+            );
+        }
+
+        #[test]
+        fn create_state_transition_mismatched_owners_returns_error() {
+            let (factory, data_contract) = setup_factory();
+            let owner_a = Identifier::from([1u8; 32]);
+            let owner_b = Identifier::from([2u8; 32]);
+            let doc_a = build_document(&factory, owner_a, "noTimeDocument");
+            let doc_b = build_document(&factory, owner_b, "noTimeDocument");
+            let doc_type = data_contract
+                .document_type_for_name("noTimeDocument")
+                .unwrap();
+
+            let mut nonce_counter = BTreeMap::new();
+            let entries = vec![(
+                DocumentTransitionActionType::Create,
+                vec![
+                    (doc_a, doc_type, Bytes32::new([1u8; 32]), None),
+                    (doc_b, doc_type, Bytes32::new([2u8; 32]), None),
+                ],
+            )];
+
+            let result = factory.create_state_transition(entries, &mut nonce_counter);
+            assert!(
+                matches!(
+                    result,
+                    Err(ProtocolError::Document(e))
+                        if matches!(*e, DocumentError::MismatchOwnerIdsError { .. })
+                ),
+                "expected MismatchOwnerIdsError"
+            );
+        }
+
+        #[test]
+        fn create_state_transition_replace_on_mutable_document_increments_revision() {
+            let (factory, data_contract) = setup_factory();
+            let owner_id = Identifier::from([3u8; 32]);
+            let doc_type = data_contract
+                .document_type_for_name("noTimeDocument")
+                .unwrap();
+            let doc = build_document(&factory, owner_id, "noTimeDocument");
+            // noTimeDocument is mutable by default → revision is Some(1)
+            assert_eq!(doc.revision(), Some(INITIAL_REVISION));
+
+            let mut nonce_counter = BTreeMap::new();
+            let entries = vec![(
+                DocumentTransitionActionType::Replace,
+                vec![(doc, doc_type, Bytes32::default(), None)],
+            )];
+
+            let batch = factory
+                .create_state_transition(entries, &mut nonce_counter)
+                .expect("replace transition should be built");
+            assert_eq!(batch.transitions_len(), 1);
+            assert_eq!(batch.owner_id(), owner_id);
+            let key = (owner_id, data_contract.id());
+            assert_eq!(*nonce_counter.get(&key).unwrap(), 1);
+        }
+
+        #[test]
+        fn create_state_transition_replace_without_revision_returns_error() {
+            let (factory, data_contract) = setup_factory();
+            let owner_id = Identifier::from([4u8; 32]);
+            let doc_type = data_contract
+                .document_type_for_name("noTimeDocument")
+                .unwrap();
+            let mut doc = build_document(&factory, owner_id, "noTimeDocument");
+            // Remove revision to trigger RevisionAbsentError.
+            doc.set_revision(None);
+
+            let mut nonce_counter = BTreeMap::new();
+            let entries = vec![(
+                DocumentTransitionActionType::Replace,
+                vec![(doc, doc_type, Bytes32::default(), None)],
+            )];
+            let result = factory.create_state_transition(entries, &mut nonce_counter);
+            assert!(
+                matches!(
+                    result,
+                    Err(ProtocolError::Document(e))
+                        if matches!(*e, DocumentError::RevisionAbsentError { .. })
+                ),
+                "expected RevisionAbsentError"
+            );
+        }
+
+        #[test]
+        fn create_state_transition_create_with_wrong_initial_revision_returns_error() {
+            let (factory, data_contract) = setup_factory();
+            let owner_id = Identifier::from([5u8; 32]);
+            let doc_type = data_contract
+                .document_type_for_name("noTimeDocument")
+                .unwrap();
+            let mut doc = build_document(&factory, owner_id, "noTimeDocument");
+            // Invalid initial revision: must be INITIAL_REVISION (1).
+            doc.set_revision(Some(42));
+
+            let mut nonce_counter = BTreeMap::new();
+            let entries = vec![(
+                DocumentTransitionActionType::Create,
+                vec![(doc, doc_type, Bytes32::default(), None)],
+            )];
+            let result = factory.create_state_transition(entries, &mut nonce_counter);
+            assert!(
+                matches!(
+                    result,
+                    Err(ProtocolError::Document(e))
+                        if matches!(*e, DocumentError::InvalidInitialRevisionError { .. })
+                ),
+                "expected InvalidInitialRevisionError"
+            );
+        }
+
+        #[test]
+        fn create_state_transition_create_without_revision_on_mutable_returns_error() {
+            let (factory, data_contract) = setup_factory();
+            let owner_id = Identifier::from([6u8; 32]);
+            let doc_type = data_contract
+                .document_type_for_name("noTimeDocument")
+                .unwrap();
+            let mut doc = build_document(&factory, owner_id, "noTimeDocument");
+            // For mutable documents, revision is required.
+            doc.set_revision(None);
+
+            let mut nonce_counter = BTreeMap::new();
+            let entries = vec![(
+                DocumentTransitionActionType::Create,
+                vec![(doc, doc_type, Bytes32::default(), None)],
+            )];
+            let result = factory.create_state_transition(entries, &mut nonce_counter);
+            assert!(
+                matches!(
+                    result,
+                    Err(ProtocolError::Document(e))
+                        if matches!(*e, DocumentError::RevisionAbsentError { .. })
+                ),
+                "expected RevisionAbsentError"
+            );
+        }
+
+        #[test]
+        fn create_state_transition_delete_with_mutable_doc() {
+            let (factory, data_contract) = setup_factory();
+            let owner_id = Identifier::from([7u8; 32]);
+            let doc_type = data_contract
+                .document_type_for_name("noTimeDocument")
+                .unwrap();
+            let doc = build_document(&factory, owner_id, "noTimeDocument");
+
+            let mut nonce_counter = BTreeMap::new();
+            let entries = vec![(
+                DocumentTransitionActionType::Delete,
+                vec![(doc, doc_type, Bytes32::default(), None)],
+            )];
+            let batch = factory
+                .create_state_transition(entries, &mut nonce_counter)
+                .expect("delete transition should be built");
+            assert_eq!(batch.transitions_len(), 1);
+            let key = (owner_id, data_contract.id());
+            assert_eq!(*nonce_counter.get(&key).unwrap(), 1);
+        }
+
+        #[test]
+        fn create_state_transition_delete_without_revision_returns_error() {
+            let (factory, data_contract) = setup_factory();
+            let owner_id = Identifier::from([8u8; 32]);
+            let doc_type = data_contract
+                .document_type_for_name("noTimeDocument")
+                .unwrap();
+            let mut doc = build_document(&factory, owner_id, "noTimeDocument");
+            doc.set_revision(None);
+
+            let mut nonce_counter = BTreeMap::new();
+            let entries = vec![(
+                DocumentTransitionActionType::Delete,
+                vec![(doc, doc_type, Bytes32::default(), None)],
+            )];
+            let result = factory.create_state_transition(entries, &mut nonce_counter);
+            assert!(
+                matches!(
+                    result,
+                    Err(ProtocolError::Document(e))
+                        if matches!(*e, DocumentError::RevisionAbsentError { .. })
+                ),
+                "expected RevisionAbsentError for delete without revision"
+            );
+        }
+
+        #[test]
+        fn create_state_transition_nonces_increment_per_document() {
+            let (factory, data_contract) = setup_factory();
+            let owner_id = Identifier::from([9u8; 32]);
+            let doc_type = data_contract
+                .document_type_for_name("noTimeDocument")
+                .unwrap();
+            let d1 = build_document(&factory, owner_id, "noTimeDocument");
+            // produce a second doc with distinct id via different entropy/type path —
+            // the entropy comes from the factory, but owner is same; we reuse same doc type
+            // but set distinct revision-preserving id manually not needed, because nonce counter
+            // is keyed by (owner, contract).
+            let mut d2 = build_document(&factory, owner_id, "noTimeDocument");
+            // ensure distinct id so the two can legitimately coexist
+            d2.set_id(Identifier::from([0xEEu8; 32]));
+
+            let mut nonce_counter = BTreeMap::new();
+            // pre-seed a nonce so we can assert the post-value is base + 2
+            nonce_counter.insert((owner_id, data_contract.id()), 10);
+
+            let entries = vec![(
+                DocumentTransitionActionType::Create,
+                vec![
+                    (d1, doc_type, Bytes32::new([1u8; 32]), None),
+                    (d2, doc_type, Bytes32::new([2u8; 32]), None),
+                ],
+            )];
+            let _ = factory
+                .create_state_transition(entries, &mut nonce_counter)
+                .expect("transition should build");
+
+            assert_eq!(
+                *nonce_counter.get(&(owner_id, data_contract.id())).unwrap(),
+                12
+            );
+        }
+    }
+
+    #[cfg(feature = "extended-document")]
+    mod extended_document_tests {
+        use super::*;
+        use crate::document::serialization_traits::DocumentPlatformConversionMethodsV0;
+
+        #[test]
+        fn create_extended_from_document_buffer_roundtrips() {
+            let (factory, data_contract) = setup_factory();
+            let owner_id = Identifier::from([77u8; 32]);
+
+            let doc = factory
+                .create_document_without_time_based_properties(
+                    owner_id,
+                    "noTimeDocument".to_string(),
+                    platform_value!({ "name": "bob" }),
+                )
+                .expect("doc should be created");
+            let doc_type = data_contract
+                .document_type_for_name("noTimeDocument")
+                .unwrap();
+
+            let platform_version = PlatformVersion::latest();
+            let bytes = doc
+                .serialize(doc_type, &data_contract, platform_version)
+                .expect("serialize");
+
+            let extended = factory
+                .create_extended_from_document_buffer(
+                    bytes.as_slice(),
+                    "noTimeDocument",
+                    platform_version,
+                )
+                .expect("extended doc should deserialize");
+
+            assert_eq!(extended.data_contract_id(), data_contract.id());
+            assert_eq!(extended.document_type_name(), "noTimeDocument");
+        }
+
+        #[test]
+        fn create_extended_from_document_buffer_invalid_type_fails() {
+            let (factory, _) = setup_factory();
+            let platform_version = PlatformVersion::latest();
+            let result = factory.create_extended_from_document_buffer(
+                &[0u8; 8],
+                "doesNotExist",
+                platform_version,
+            );
+            assert!(result.is_err());
+        }
+
+        #[test]
+        fn create_extended_from_document_buffer_bad_bytes_fails() {
+            let (factory, _) = setup_factory();
+            let platform_version = PlatformVersion::latest();
+            let result = factory.create_extended_from_document_buffer(
+                &[0xFFu8; 4],
+                "noTimeDocument",
+                platform_version,
+            );
+            assert!(result.is_err());
+        }
     }
 }

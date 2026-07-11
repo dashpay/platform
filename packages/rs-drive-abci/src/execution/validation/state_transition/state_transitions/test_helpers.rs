@@ -175,22 +175,22 @@ impl TestAddressSigner {
     }
 
     /// Sign P2PKH and create witness
-    pub fn sign_p2pkh(
+    pub async fn sign_p2pkh(
         &self,
         address: PlatformAddress,
         data: &[u8],
     ) -> Result<AddressWitness, ProtocolError> {
-        self.sign_create_witness(&address, data)
+        Signer::sign_create_witness(self, &address, data).await
     }
 
     /// Sign P2SH and create witness
     #[allow(dead_code)]
-    pub fn sign_p2sh(
+    pub async fn sign_p2sh(
         &self,
         address: PlatformAddress,
         data: &[u8],
     ) -> Result<AddressWitness, ProtocolError> {
-        self.sign_create_witness(&address, data)
+        Signer::sign_create_witness(self, &address, data).await
     }
 
     /// Sign P2SH with ALL keys (not just threshold)
@@ -229,8 +229,9 @@ impl TestAddressSigner {
     }
 }
 
+#[async_trait::async_trait]
 impl Signer<PlatformAddress> for TestAddressSigner {
-    fn sign(&self, key: &PlatformAddress, data: &[u8]) -> Result<BinaryData, ProtocolError> {
+    async fn sign(&self, key: &PlatformAddress, data: &[u8]) -> Result<BinaryData, ProtocolError> {
         match key {
             PlatformAddress::P2pkh(hash) => {
                 let entry = self.p2pkh_keys.get(hash).ok_or_else(|| {
@@ -258,7 +259,7 @@ impl Signer<PlatformAddress> for TestAddressSigner {
         }
     }
 
-    fn sign_create_witness(
+    async fn sign_create_witness(
         &self,
         key: &PlatformAddress,
         data: &[u8],
@@ -461,7 +462,7 @@ pub fn process_transition(
 }
 
 /// Insert a fake anchor into the shielded anchors tree via GroveDB.
-/// Anchors are stored as anchor_bytes → block_height_be in [AddressBalances, "s", [6]].
+/// Anchors are stored as anchor_bytes → block_height_be in [AddressBalances, "s", [192]].
 pub fn insert_anchor_into_state(platform: &TempPlatform<MockCoreRPCLike>, anchor: &[u8; 32]) {
     let platform_version = PlatformVersion::latest();
     let grove_version = &platform_version.drive.grove_version;
@@ -590,6 +591,7 @@ pub fn insert_dummy_encrypted_notes(platform: &TempPlatform<MockCoreRPCLike>, co
                 &[SHIELDED_NOTES_KEY],
                 cmx,
                 dummy_rho,
+                [0u8; 32], // dummy cv_net (test helper; not OVK-recovered)
                 ciphertext,
                 Some(&transaction),
                 grove_version,

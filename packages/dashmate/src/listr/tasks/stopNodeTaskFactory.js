@@ -1,7 +1,9 @@
 /* eslint-disable no-console */
 import { Listr } from 'listr2';
-import { MIN_BLOCKS_BEFORE_DKG } from '../../constants.js';
 import waitForDKGWindowPass from '../../core/quorum/waitForDKGWindowPass.js';
+import isMasternodeSafeToStopDuringDkg, {
+  shouldInspectDkgStatusForSafeStop,
+} from '../../core/quorum/isMasternodeSafeToStopDuringDkg.js';
 
 /**
  * @param {DockerCompose} dockerCompose
@@ -55,11 +57,23 @@ export default function stopNodeTaskFactory(
           });
 
           const { result: dkgInfo } = await rpcClient.quorum('dkginfo');
-          const { next_dkg: nextDkg } = dkgInfo;
 
-          if (nextDkg <= MIN_BLOCKS_BEFORE_DKG) {
-            throw new Error('Your node is currently participating in DKG exchange session and '
-              + 'stopping it right now may result in PoSE ban. Try again later, or continue with --force or --safe flags');
+          let dkgStatus;
+          let currentHeight;
+          if (shouldInspectDkgStatusForSafeStop(dkgInfo)) {
+            [
+              { result: dkgStatus },
+              { result: currentHeight },
+            ] = await Promise.all([
+              rpcClient.quorum('dkgstatus'),
+              rpcClient.getBlockCount(),
+            ]);
+          }
+
+          if (!isMasternodeSafeToStopDuringDkg(dkgInfo, dkgStatus, currentHeight)) {
+            throw new Error('Your node is currently participating in a DKG exchange session '
+              + '(or one is about to start) and stopping it right now may result in a PoSe ban. '
+              + 'Try again later, or continue with --force or --safe flags');
           }
         },
       },

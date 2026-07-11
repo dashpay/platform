@@ -575,11 +575,9 @@ mod tests {
         let payload = craft_oversized_vec_payload(200_000);
         let result = StateTransition::deserialize_from_bytes_no_limit(&payload);
         assert!(result.is_err());
-        match result.unwrap_err() {
-            ProtocolError::MaxEncodedBytesReachedError { .. } => {
-                panic!("deserialize_from_bytes_no_limit should NOT enforce byte budget");
-            }
-            _ => {} // any other error is fine — the data is garbage
+        // any other error is fine — the data is garbage
+        if let ProtocolError::MaxEncodedBytesReachedError { .. } = result.unwrap_err() {
+            panic!("deserialize_from_bytes_no_limit should NOT enforce byte budget");
         }
     }
 

@@ -2252,8 +2252,8 @@ mod tests {
         ));
     }
 
-    #[test]
-    fn document_update_check_tx() {
+    #[tokio::test]
+    async fn document_update_check_tx() {
         let platform_config = PlatformConfig {
             testing_configs: PlatformTestConfig {
                 disable_instant_lock_signature_verification: true,
@@ -2318,7 +2318,7 @@ mod tests {
         .into();
 
         let identity_create_transition: StateTransition =
-            IdentityCreateTransition::try_from_identity_with_signer(
+            IdentityCreateTransition::try_from_identity_with_signer_and_private_key(
                 &identity,
                 asset_lock_proof,
                 pk.as_slice(),
@@ -2327,6 +2327,7 @@ mod tests {
                 0,
                 platform_version,
             )
+            .await
             .expect("expected an identity create transition");
 
         let identity_create_serialized_transition = identity_create_transition
@@ -2384,6 +2385,7 @@ mod tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_create_serialized_transition = documents_batch_create_transition
@@ -2402,6 +2404,7 @@ mod tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_update_serialized_transition = documents_batch_update_transition
@@ -2448,8 +2451,8 @@ mod tests {
         assert_eq!(validation_result.errors.as_slice(), &[]);
     }
 
-    #[test]
-    fn identity_top_up_check_tx() {
+    #[tokio::test]
+    async fn identity_top_up_check_tx() {
         let platform_config = PlatformConfig {
             testing_configs: PlatformTestConfig {
                 disable_instant_lock_signature_verification: true,
@@ -2513,7 +2516,7 @@ mod tests {
         .into();
 
         let identity_create_transition: StateTransition =
-            IdentityCreateTransition::try_from_identity_with_signer(
+            IdentityCreateTransition::try_from_identity_with_signer_and_private_key(
                 &identity,
                 asset_lock_proof,
                 pk.as_slice(),
@@ -2522,6 +2525,7 @@ mod tests {
                 0,
                 platform_version,
             )
+            .await
             .expect("expected an identity create transition");
 
         let identity_create_serialized_transition = identity_create_transition
@@ -2557,7 +2561,7 @@ mod tests {
         );
 
         let identity_top_up_transition: StateTransition =
-            IdentityTopUpTransition::try_from_identity(
+            IdentityTopUpTransition::try_from_identity_with_private_key(
                 &identity,
                 asset_lock_proof_top_up,
                 pk.as_slice(),
@@ -2597,8 +2601,8 @@ mod tests {
             .expect("expected to commit transaction");
     }
 
-    #[test]
-    fn identity_cant_double_top_up() {
+    #[tokio::test]
+    async fn identity_cant_double_top_up() {
         let platform_config = PlatformConfig {
             testing_configs: PlatformTestConfig {
                 disable_instant_lock_signature_verification: true,
@@ -2662,7 +2666,7 @@ mod tests {
         .into();
 
         let identity_create_transition: StateTransition =
-            IdentityCreateTransition::try_from_identity_with_signer(
+            IdentityCreateTransition::try_from_identity_with_signer_and_private_key(
                 &identity,
                 asset_lock_proof,
                 pk.as_slice(),
@@ -2671,6 +2675,7 @@ mod tests {
                 0,
                 platform_version,
             )
+            .await
             .expect("expected an identity create transition");
 
         let identity_create_serialized_transition = identity_create_transition
@@ -2706,7 +2711,7 @@ mod tests {
         );
 
         let identity_top_up_transition: StateTransition =
-            IdentityTopUpTransition::try_from_identity(
+            IdentityTopUpTransition::try_from_identity_with_private_key(
                 &identity,
                 asset_lock_proof_top_up,
                 pk.as_slice(),
@@ -2851,7 +2856,7 @@ mod tests {
         );
 
         let identity_top_up_transition: StateTransition =
-            IdentityTopUpTransition::try_from_identity(
+            IdentityTopUpTransition::try_from_identity_with_private_key(
                 &identity,
                 asset_lock_proof_top_up,
                 pk.as_slice(),
@@ -2882,8 +2887,8 @@ mod tests {
         ));
     }
 
-    #[test]
-    fn identity_cant_create_with_used_outpoint() {
+    #[tokio::test]
+    async fn identity_cant_create_with_used_outpoint() {
         let platform_config = PlatformConfig {
             testing_configs: PlatformTestConfig {
                 disable_instant_lock_signature_verification: true,
@@ -2947,7 +2952,7 @@ mod tests {
         .into();
 
         let identity_create_transition: StateTransition =
-            IdentityCreateTransition::try_from_identity_with_signer(
+            IdentityCreateTransition::try_from_identity_with_signer_and_private_key(
                 &identity,
                 asset_lock_proof,
                 pk.as_slice(),
@@ -2956,6 +2961,7 @@ mod tests {
                 0,
                 platform_version,
             )
+            .await
             .expect("expected an identity create transition");
 
         let identity_create_serialized_transition = identity_create_transition
@@ -2991,7 +2997,7 @@ mod tests {
         );
 
         let identity_top_up_transition: StateTransition =
-            IdentityTopUpTransition::try_from_identity(
+            IdentityTopUpTransition::try_from_identity_with_private_key(
                 &identity,
                 asset_lock_proof_top_up.clone(),
                 pk.as_slice(),
@@ -3062,7 +3068,7 @@ mod tests {
         .into();
 
         let identity_create_transition: StateTransition =
-            IdentityCreateTransition::try_from_identity_with_signer(
+            IdentityCreateTransition::try_from_identity_with_signer_and_private_key(
                 &identity,
                 asset_lock_proof_top_up,
                 pk.as_slice(),
@@ -3071,6 +3077,7 @@ mod tests {
                 0,
                 platform_version,
             )
+            .await
             .expect("expected an identity create transition");
 
         let identity_create_serialized_transition = identity_create_transition
@@ -3110,8 +3117,8 @@ mod tests {
         ));
     }
 
-    #[test]
-    fn identity_can_create_with_semi_used_outpoint() {
+    #[tokio::test]
+    async fn identity_can_create_with_semi_used_outpoint() {
         let platform_config = PlatformConfig {
             testing_configs: PlatformTestConfig {
                 disable_instant_lock_signature_verification: true,
@@ -3175,7 +3182,7 @@ mod tests {
         .into();
 
         let mut identity_create_transition: StateTransition =
-            IdentityCreateTransition::try_from_identity_with_signer(
+            IdentityCreateTransition::try_from_identity_with_signer_and_private_key(
                 &identity,
                 asset_lock_proof.clone(),
                 pk.as_slice(),
@@ -3184,6 +3191,7 @@ mod tests {
                 0,
                 platform_version,
             )
+            .await
             .expect("expected an identity create transition");
 
         let valid_identity_create_transition = identity_create_transition.clone();
@@ -3252,7 +3260,7 @@ mod tests {
         ));
 
         let valid_identity_create_transition: StateTransition =
-            IdentityCreateTransition::try_from_identity_with_signer(
+            IdentityCreateTransition::try_from_identity_with_signer_and_private_key(
                 &identity,
                 asset_lock_proof,
                 pk.as_slice(),
@@ -3261,6 +3269,7 @@ mod tests {
                 1,
                 platform_version,
             )
+            .await
             .expect("expected an identity create transition");
 
         let valid_identity_create_serialized_transition = valid_identity_create_transition
@@ -3293,7 +3302,7 @@ mod tests {
         );
 
         let identity_top_up_transition: StateTransition =
-            IdentityTopUpTransition::try_from_identity(
+            IdentityTopUpTransition::try_from_identity_with_private_key(
                 &identity,
                 asset_lock_proof_top_up.clone(),
                 pk.as_slice(),
@@ -3364,7 +3373,7 @@ mod tests {
         .into();
 
         let identity_create_transition: StateTransition =
-            IdentityCreateTransition::try_from_identity_with_signer(
+            IdentityCreateTransition::try_from_identity_with_signer_and_private_key(
                 &identity,
                 asset_lock_proof_top_up,
                 pk.as_slice(),
@@ -3373,6 +3382,7 @@ mod tests {
                 0,
                 platform_version,
             )
+            .await
             .expect("expected an identity create transition");
 
         let identity_create_serialized_transition = identity_create_transition
@@ -3412,8 +3422,8 @@ mod tests {
         ));
     }
 
-    #[test]
-    fn identity_update_with_non_master_key_check_tx() {
+    #[tokio::test]
+    async fn identity_update_with_non_master_key_check_tx() {
         let platform_config = PlatformConfig {
             testing_configs: PlatformTestConfig {
                 disable_instant_lock_signature_verification: true,
@@ -3479,6 +3489,7 @@ mod tests {
         update_transition.set_signature(
             signer
                 .sign(&key, data.as_slice())
+                .await
                 .expect("expected to sign"),
         );
 
@@ -3512,8 +3523,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn identity_update_with_encryption_key_check_tx() {
+    #[tokio::test]
+    async fn identity_update_with_encryption_key_check_tx() {
         let platform_config = PlatformConfig {
             testing_configs: PlatformTestConfig {
                 disable_instant_lock_signature_verification: true,
@@ -3578,6 +3589,7 @@ mod tests {
         update_transition.set_signature(
             signer
                 .sign(&key, data.as_slice())
+                .await
                 .expect("expected to sign"),
         );
 
@@ -3606,8 +3618,8 @@ mod tests {
         assert_eq!(validation_result.errors.len(), 0);
     }
 
-    #[test]
-    fn token_mint_confirmation_check_tx() {
+    #[tokio::test]
+    async fn token_mint_confirmation_check_tx() {
         let platform_config = PlatformConfig {
             testing_configs: PlatformTestConfig {
                 disable_instant_lock_signature_verification: true,
@@ -3679,6 +3691,7 @@ mod tests {
             platform_version,
             None,
         )
+        .await
         .expect("expect to create documents batch transition");
 
         let token_mint_serialized_transition = token_mint_transition
@@ -3743,6 +3756,7 @@ mod tests {
             platform_version,
             None,
         )
+        .await
         .expect("expected to create confirmation transition");
 
         let confirm_serialized = confirm_transition
@@ -3805,5 +3819,299 @@ mod tests {
                 StateError::InvalidIdentityNonceError(_)
             ))
         ));
+    }
+
+    /// CheckTx must NEVER mutate committed GroveDB state — the broad-sweep guard for the
+    /// 2026-06-10 devnet paloma chain halt (height 788).
+    ///
+    /// CheckTx fee estimation runs `validate_fees_of_event(..., transaction: None, ...)` (see
+    /// `check_tx_v0` above), so an eager GroveDB write anywhere on the CheckTx path (e.g. inside
+    /// a drive-op converter, as the pre-#3823 shielded `InsertNullifiers` arm did with
+    /// `store_nullifiers_for_block`) commits straight to disk on every node that validates the
+    /// gossiped transition. The on-disk root then diverges from the signed app hash and every
+    /// proposer panics with "drive and platform state app hash mismatch" — a chain halt that
+    /// restarts cannot heal because the write is durable. This test covers the identity-paid
+    /// (`ExecutionEvent::Paid`) estimation arm; the asset-lock arm is covered by
+    /// `check_tx_does_not_mutate_committed_state_identity_top_up` below, and the exact type-20
+    /// shape that halted paloma by `check_tx_fee_estimation_does_not_mutate_committed_state` in
+    /// `identity_create_from_shielded_pool/tests.rs`.
+    #[test]
+    fn check_tx_does_not_mutate_committed_state_data_contract_create() {
+        use crate::test::helpers::state_mutation_guard::assert_committed_root_hash_unchanged;
+
+        let platform_config = PlatformConfig {
+            testing_configs: PlatformTestConfig {
+                disable_instant_lock_signature_verification: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let platform = TestPlatformBuilder::new()
+            .with_config(platform_config)
+            .build_with_mock_rpc();
+
+        let platform_state = platform.state.load();
+        let protocol_version = platform_state.current_protocol_version_in_consensus();
+        let platform_version = PlatformVersion::get(protocol_version).unwrap();
+
+        let (key, private_key) = IdentityPublicKey::random_ecdsa_critical_level_authentication_key(
+            1,
+            Some(1),
+            platform_version,
+        )
+        .expect("expected to get key pair");
+
+        platform
+            .drive
+            .create_initial_state_structure(None, platform_version)
+            .expect("expected to create state structure");
+        let identity: Identity = IdentityV0 {
+            id: Identifier::new([
+                158, 113, 180, 126, 91, 83, 62, 44, 83, 54, 97, 88, 240, 215, 84, 139, 167, 156,
+                166, 203, 222, 4, 64, 31, 215, 199, 149, 151, 190, 246, 251, 44,
+            ]),
+            public_keys: BTreeMap::from([(1, key.clone())]),
+            balance: 25_000_000_000, // 0.25 Dash
+            revision: 0,
+        }
+        .into();
+
+        let dashpay = get_dashpay_contract_fixture(Some(identity.id()), 1, protocol_version);
+        let mut create_contract_state_transition: StateTransition = dashpay
+            .try_into_platform_versioned(platform_version)
+            .expect("expected a state transition");
+        create_contract_state_transition
+            .sign(&key, private_key.as_slice(), &NativeBlsModule)
+            .expect("expected to sign transition");
+        let serialized = create_contract_state_transition
+            .serialize_to_bytes()
+            .expect("serialized state transition");
+        platform
+            .drive
+            .add_new_identity(
+                identity,
+                false,
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to insert identity");
+
+        let platform_ref = PlatformRef {
+            drive: &platform.drive,
+            state: &platform_state,
+            config: &platform.config,
+            core_rpc: &platform.core_rpc,
+        };
+
+        let first_time_result = assert_committed_root_hash_unchanged(
+            &platform.drive,
+            platform_version,
+            "check_tx FirstTimeCheck (data contract create)",
+            || {
+                platform.check_tx(
+                    serialized.as_slice(),
+                    FirstTimeCheck,
+                    &platform_ref,
+                    platform_version,
+                )
+            },
+        )
+        .expect("expected to check tx");
+        // The fixture must stay a VALID transition: an early consensus rejection would skip the
+        // fee-estimation stage and the invariant would be checked against a no-op.
+        assert!(
+            first_time_result.is_valid(),
+            "fixture must remain valid so fee estimation actually runs: {:?}",
+            first_time_result.errors
+        );
+
+        let recheck_result = assert_committed_root_hash_unchanged(
+            &platform.drive,
+            platform_version,
+            "check_tx Recheck (data contract create)",
+            || {
+                platform.check_tx(
+                    serialized.as_slice(),
+                    Recheck,
+                    &platform_ref,
+                    platform_version,
+                )
+            },
+        )
+        .expect("expected to check tx");
+        assert!(recheck_result.is_valid());
+    }
+
+    /// CheckTx for an asset-lock-funded transition (identity top up) must not mutate committed
+    /// GroveDB state. Same invariant as
+    /// `check_tx_does_not_mutate_committed_state_data_contract_create` (see its docs for the
+    /// paloma height-788 halt), exercised through the `PaidFromAssetLock` fee-estimation arm and
+    /// the asset-lock Recheck path.
+    #[tokio::test]
+    async fn check_tx_does_not_mutate_committed_state_identity_top_up() {
+        use crate::test::helpers::state_mutation_guard::assert_committed_root_hash_unchanged;
+
+        let platform_config = PlatformConfig {
+            testing_configs: PlatformTestConfig {
+                disable_instant_lock_signature_verification: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let platform = TestPlatformBuilder::new()
+            .with_config(platform_config)
+            .build_with_mock_rpc();
+
+        let platform_state = platform.state.load();
+        let platform_version = platform_state.current_platform_version().unwrap();
+
+        let platform_ref = PlatformRef {
+            drive: &platform.drive,
+            state: &platform_state,
+            config: &platform.config,
+            core_rpc: &platform.core_rpc,
+        };
+
+        let mut signer = SimpleSigner::default();
+
+        let mut rng = StdRng::seed_from_u64(567);
+
+        let (master_key, master_private_key) =
+            IdentityPublicKey::random_ecdsa_master_authentication_key(0, Some(3), platform_version)
+                .expect("expected to get key pair");
+
+        signer.add_identity_public_key(master_key.clone(), master_private_key);
+
+        let (key, private_key) = IdentityPublicKey::random_ecdsa_critical_level_authentication_key(
+            1,
+            Some(19),
+            platform_version,
+        )
+        .expect("expected to get key pair");
+
+        signer.add_identity_public_key(key.clone(), private_key);
+
+        let (_, pk) = ECDSA_SECP256K1
+            .random_public_and_private_key_data(&mut rng, platform_version)
+            .unwrap();
+
+        let asset_lock_proof = instant_asset_lock_proof_fixture(
+            Some(PrivateKey::from_byte_array(&pk, Network::Testnet).unwrap()),
+            None,
+        );
+
+        let identifier = asset_lock_proof
+            .create_identifier()
+            .expect("expected an identifier");
+
+        let identity: Identity = IdentityV0 {
+            id: identifier,
+            public_keys: BTreeMap::from([(0, master_key.clone()), (1, key.clone())]),
+            balance: 1000000000,
+            revision: 0,
+        }
+        .into();
+
+        let identity_create_transition: StateTransition =
+            IdentityCreateTransition::try_from_identity_with_signer_and_private_key(
+                &identity,
+                asset_lock_proof,
+                pk.as_slice(),
+                &signer,
+                &NativeBlsModule,
+                0,
+                platform_version,
+            )
+            .await
+            .expect("expected an identity create transition");
+
+        let identity_create_serialized_transition = identity_create_transition
+            .serialize_to_bytes()
+            .expect("serialized state transition");
+
+        platform
+            .drive
+            .create_initial_state_structure(None, platform_version)
+            .expect("expected to create state structure");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let validation_result = platform
+            .execute_tx(identity_create_serialized_transition, &transaction)
+            .expect("expected to execute identity_create tx");
+        assert!(matches!(validation_result, SuccessfulPaidExecution(..)));
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
+
+        let (_, pk) = ECDSA_SECP256K1
+            .random_public_and_private_key_data(&mut rng, platform_version)
+            .unwrap();
+
+        let asset_lock_proof_top_up = instant_asset_lock_proof_fixture(
+            Some(PrivateKey::from_byte_array(&pk, Network::Testnet).unwrap()),
+            None,
+        );
+
+        let identity_top_up_transition: StateTransition =
+            IdentityTopUpTransition::try_from_identity_with_private_key(
+                &identity,
+                asset_lock_proof_top_up,
+                pk.as_slice(),
+                0,
+                platform_version,
+                None,
+            )
+            .expect("expected an identity create transition");
+
+        let identity_top_up_serialized_transition = identity_top_up_transition
+            .serialize_to_bytes()
+            .expect("serialized state transition");
+
+        let first_time_result = assert_committed_root_hash_unchanged(
+            &platform.drive,
+            platform_version,
+            "check_tx FirstTimeCheck (identity top up)",
+            || {
+                platform.check_tx(
+                    identity_top_up_serialized_transition.as_slice(),
+                    FirstTimeCheck,
+                    &platform_ref,
+                    platform_version,
+                )
+            },
+        )
+        .expect("expected to check tx");
+        // The fixture must stay a VALID transition: an early consensus rejection would skip the
+        // fee-estimation stage and the invariant would be checked against a no-op.
+        assert!(
+            first_time_result.is_valid(),
+            "fixture must remain valid so fee estimation actually runs: {:?}",
+            first_time_result.errors
+        );
+
+        let recheck_result = assert_committed_root_hash_unchanged(
+            &platform.drive,
+            platform_version,
+            "check_tx Recheck (identity top up)",
+            || {
+                platform.check_tx(
+                    identity_top_up_serialized_transition.as_slice(),
+                    Recheck,
+                    &platform_ref,
+                    platform_version,
+                )
+            },
+        )
+        .expect("expected to check tx");
+        assert!(recheck_result.is_valid());
     }
 }

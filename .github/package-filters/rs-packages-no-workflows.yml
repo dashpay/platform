@@ -8,6 +8,11 @@ token-history-contract: &token-history-contract
   - packages/token-history-contract/schema/**
   - packages/token-history-contract/Cargo.toml
 
+keyword-search-contract: &keyword-search-contract
+  - packages/keyword-search-contract/src/**
+  - packages/keyword-search-contract/schema/**
+  - packages/keyword-search-contract/Cargo.toml
+
 dashpay-contract: &dashpay-contract
   - packages/dashpay-contract/src/**
   - packages/dashpay-contract/schema/**
@@ -31,15 +36,20 @@ dpns-contract: &dpns-contract
 json-schema-compatibility-validator: &json-schema-compatibility-validator
   - packages/rs-json-schema-compatibility-validator/**
 
-dpp: &dpp
-  - packages/rs-dpp/**
-  - packages/rs-dpp-json-convertible-derive/**
+data-contracts: &data-contracts
+  - packages/data-contracts/**
   - *dashpay-contract
   - *masternode-reward-shares-contract
   - *dpns-contract
   - *withdrawals-contract
   - *wallet-utils-contract
   - *token-history-contract
+  - *keyword-search-contract
+
+dpp: &dpp
+  - packages/rs-dpp/**
+  - packages/rs-dpp-json-convertible-derive/**
+  - *data-contracts
   - *json-schema-compatibility-validator
   - packages/rs-platform-serialization/**
   - packages/rs-platform-serialization-derive/**
@@ -62,9 +72,33 @@ drive: &drive
   - packages/rs-drive/**
   - *dpp
 
+simple-signer: &simple-signer
+  - packages/simple-signer/**
+
+strategy-tests: &strategy-tests
+  - packages/strategy-tests/**
+  - *simple-signer
+  - *drive
+
 drive-abci:
   - packages/rs-drive-abci/**
   - *drive
+  - *simple-signer
+  - *strategy-tests
+
+dash-async: &dash_async
+  - packages/rs-dash-async/**
+
+dash-context-provider: &context_provider
+  - packages/rs-context-provider/**
+  - *dash_async
+  - *drive
+
+rs-sdk-trusted-context-provider: &sdk_trusted_context_provider
+  - packages/rs-sdk-trusted-context-provider/**
+  - *dash_async
+  - *context_provider
+  - *dpp
 
 dapi-grpc: &dapi_grpc
   - packages/rs-platform-version/**
@@ -77,25 +111,67 @@ dapi-grpc: &dapi_grpc
 rs-dapi:
   - packages/rs-dapi/**
   - *dapi_grpc
+  - *dpp
+  - packages/rs-dash-event-bus/**
 
 rs-dapi-client: &dapi_client
   - packages/rs-dapi-client/**
   - *dapi_grpc
 
+platform-encryption: &platform_encryption
+  - packages/rs-platform-encryption/**
+
 dash-sdk: &sdk
   - packages/rs-drive-proof-verifier/**
   - packages/rs-sdk/**
+  - *dash_async
+  - *context_provider
+  - *sdk_trusted_context_provider
+  - *platform_encryption
   - *dapi_client
   - *drive
 
-rs-sdk-ffi:
+rs-sdk-ffi: &sdk_ffi
   - packages/rs-sdk-ffi/**
-  - packages/rs-sdk/**
-  - packages/rs-drive-proof-verifier/**
-  - *dapi_client
-  - *drive
+  - *simple-signer
+  - *dash_async
+  - *sdk
 
 wasm-sdk:
   - packages/wasm-sdk/src/**
   - packages/wasm-sdk/Cargo.toml
   - *sdk
+
+platform-wallet: &platform_wallet
+  - packages/rs-platform-wallet/**
+  - *platform_encryption
+  - *sdk
+
+platform-wallet-storage:
+  - packages/rs-platform-wallet-storage/**
+  - *platform_wallet
+
+platform-wallet-ffi: &platform_wallet_ffi
+  - packages/rs-platform-wallet-ffi/**
+  - *platform_wallet
+  - *sdk_ffi
+
+rs-unified-sdk-ffi:
+  - packages/rs-unified-sdk-ffi/**
+  - *platform_wallet_ffi
+  - *sdk_ffi
+
+wasm-drive-verify:
+  - packages/wasm-drive-verify/**
+  - *drive
+
+check-features:
+  - packages/check-features/**
+
+dash-platform-balance-checker:
+  - packages/dash-platform-balance-checker/**
+  - *sdk
+
+rs-scripts:
+  - packages/rs-scripts/**
+  - *data-contracts

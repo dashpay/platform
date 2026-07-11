@@ -21,6 +21,12 @@ pub fn validate_asset_lock_transaction_structure(
         0 => Ok(v0::validate_asset_lock_transaction_structure_v0(
             transaction,
             output_index,
+            platform_version
+                .dpp
+                .state_transitions
+                .identities
+                .asset_locks
+                .max_asset_lock_transaction_inputs,
         )),
         version => Err(ProtocolError::UnknownVersionMismatch {
             method: "validate_asset_lock_transaction_structure".to_string(),

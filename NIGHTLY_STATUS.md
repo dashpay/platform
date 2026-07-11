@@ -2,9 +2,9 @@
 
 [![Nightly Tests](https://github.com/dashpay/platform/actions/workflows/tests.yml/badge.svg?event=schedule)](https://github.com/dashpay/platform/actions/workflows/tests.yml?query=event%3Aschedule)
 
-> **Note:** This page is manually maintained. For live results, check the [latest nightly run](https://github.com/dashpay/platform/actions/workflows/tests.yml?query=event%3Aschedule+branch%3Av3.1-dev) directly.
+> **Note:** This page is manually maintained. For live results, check the [latest nightly run](https://github.com/dashpay/platform/actions/workflows/tests.yml?query=event%3Aschedule+branch%3Av4.1-dev) directly.
 
-Nightly tests run every day at **23:00 UTC** on the `v3.1-dev` branch via the [Tests workflow](https://github.com/dashpay/platform/actions/workflows/tests.yml?query=event%3Aschedule). They exercise the full CI pipeline including Docker image builds, E2E tests, and the platform test suite.
+Nightly tests run every day at **23:00 UTC** on the `v4.1-dev` branch via the [Tests workflow](https://github.com/dashpay/platform/actions/workflows/tests.yml?query=event%3Aschedule). They exercise the full CI pipeline including Docker image builds, E2E tests, and the platform test suite.
 
 ## Nightly Jobs
 
@@ -37,11 +37,13 @@ These jobs only run on nightly if relevant files changed in the latest commit. T
 
 ### Test Suite: `bad-txns-inputs-missingorspent` (since ~Mar 16)
 
-Two withdrawal-related tests fail because Core rejects a transaction whose inputs are missing or already spent. The local network starts and processes blocks normally -- the failure is specific to the withdrawal test scenario.
+Seven tests fail because Core rejects faucet wallet funding transactions whose inputs are already in the mempool. The failures are in the Data Contract and Contacts test groups -- 1 `before all` hook failure cascades into 6 dependent Contacts tests.
 
-- **63 tests pass**, 2 fail
+- **65 tests pass**, 7 fail (1 Data Contract funding + 6 Contacts cascade)
 - Error: `InvalidRequestError: Transaction is rejected: bad-txns-inputs-missingorspent`
+- **Root cause:** The wallet-lib retry logic at `broadcastTransaction.js:181` checks for `'invalid transaction: bad-txns-inputs-missingorspent'` but DAPI returns `'Transaction is rejected: bad-txns-inputs-missingorspent'` -- the retry never matches, so UTXO conflicts are not retried.
 - **Not caused by** the `ssh2`/`nan` compilation warnings (those are non-fatal)
+- **Fix:** PR #3434 updates the check to use `.includes('bad-txns-inputs-missingorspent')`
 
 ### Functional tests: long-standing flakiness
 
@@ -50,7 +52,7 @@ The functional tests have been intermittently failing for months. This is a know
 ## Links
 
 - [All nightly runs](https://github.com/dashpay/platform/actions/workflows/tests.yml?query=event%3Aschedule)
-- [Latest nightly run](https://github.com/dashpay/platform/actions/workflows/tests.yml?query=event%3Aschedule+branch%3Av3.1-dev)
+- [Latest nightly run](https://github.com/dashpay/platform/actions/workflows/tests.yml?query=event%3Aschedule+branch%3Av4.1-dev)
 - [Long-running Rust nightly](https://github.com/dashpay/platform/actions/workflows/tests-rs-nightly-long-running.yml)
 - [Security audits (Rust)](https://github.com/dashpay/platform/actions/workflows/security-audit-rust.yml)
 - [Security audits (JS - npm)](https://github.com/dashpay/platform/actions/workflows/security-audit-js-npm.yml)

@@ -1,6 +1,130 @@
 import Foundation
 import DashSDKFFI
 
+/// Result of ``SDK/documentCount(dataContractId:documentType:whereJSON:orderByJSON:groupByJSON:limit:)``.
+///
+/// Mirrors the FFI's `{"counts": {"<hexKey>": <u64>}}` payload. Keys are the
+/// hex-encoded group keys; for an ungrouped (aggregate) count there is a
+/// single entry under the empty-string key, exposed via ``total``.
+public struct DocumentCountResult: Sendable {
+    /// Hex-encoded group key → count. The empty-string key holds the
+    /// aggregate total for an ungrouped count.
+    public let counts: [String: UInt64]
+
+    public init(counts: [String: UInt64]) {
+        self.counts = counts
+    }
+
+    /// The aggregate total for an ungrouped count: `counts[""]`. `nil` when
+    /// the request was grouped (no empty-string entry).
+    public var total: UInt64? {
+        counts[""]
+    }
+
+    /// `true` when the result carries per-group counts (any non-empty key).
+    public var isGrouped: Bool {
+        counts.keys.contains { !$0.isEmpty }
+    }
+}
+
+/// Result of ``SDK/documentSum(dataContractId:documentType:sumProperty:whereJSON:orderByJSON:groupByJSON:limit:)``.
+///
+/// Mirrors the FFI's `{"sums": {"<hexKey>": <i64>}}` payload. Keys are the
+/// hex-encoded group keys; for an ungrouped (aggregate) sum there is a single
+/// entry under the empty-string key, exposed via ``total``. Values are signed
+/// (`Int64`) to match grovedb's `SumValue = i64`.
+public struct DocumentSumResult: Sendable {
+    /// Hex-encoded group key → sum. The empty-string key holds the aggregate
+    /// total for an ungrouped sum.
+    public let sums: [String: Int64]
+
+    public init(sums: [String: Int64]) {
+        self.sums = sums
+    }
+
+    /// The aggregate total for an ungrouped sum: `sums[""]`. `nil` when the
+    /// request was grouped (no empty-string entry).
+    public var total: Int64? {
+        sums[""]
+    }
+
+    /// `true` when the result carries per-group sums (any non-empty key).
+    public var isGrouped: Bool {
+        sums.keys.contains { !$0.isEmpty }
+    }
+}
+
+/// One `(count, sum)` pair returned by the average aggregation FFI for a single
+/// key. Mirrors the FFI's `{"count": <u64>, "sum": <i64>}` object. The FFI
+/// returns the raw pair un-divided so callers pick their own precision; compute
+/// ``average`` (`sum / count`) at the point of display.
+public struct DocumentAverageEntry: Sendable {
+    /// Number of documents folded into this entry. Unsigned (`UInt64`).
+    public let count: UInt64
+    /// Sum of the numeric property over those documents. Signed (`Int64`) to
+    /// match grovedb's `SumValue = i64`.
+    public let sum: Int64
+
+    public init(count: UInt64, sum: Int64) {
+        self.count = count
+        self.sum = sum
+    }
+
+    /// `sum / count` as a `Double`, or `nil` when `count == 0` (no documents
+    /// matched, so the average is undefined).
+    public var average: Double? {
+        count > 0 ? Double(sum) / Double(count) : nil
+    }
+}
+
+/// Result of ``SDK/documentAverage(dataContractId:documentType:sumProperty:whereJSON:orderByJSON:groupByJSON:limit:)``.
+///
+/// Mirrors the FFI's `{"averages": {"<hexKey>": {"count": <u64>, "sum": <i64>}}}`
+/// payload. Keys are the hex-encoded group keys; for an ungrouped (aggregate)
+/// average there is a single entry under the empty-string key, exposed via
+/// ``total``.
+public struct DocumentAverageResult: Sendable {
+    /// Hex-encoded group key → `(count, sum)` pair. The empty-string key holds
+    /// the aggregate total for an ungrouped average.
+    public let averages: [String: DocumentAverageEntry]
+
+    public init(averages: [String: DocumentAverageEntry]) {
+        self.averages = averages
+    }
+
+    /// The aggregate `(count, sum)` for an ungrouped average: `averages[""]`.
+    /// `nil` when the request was grouped (no empty-string entry).
+    public var total: DocumentAverageEntry? {
+        averages[""]
+    }
+
+    /// `true` when the result carries per-group averages (any non-empty key).
+    public var isGrouped: Bool {
+        averages.keys.contains { !$0.isEmpty }
+    }
+}
+
+/// One element returned by ``SDK/systemPathElements(path:keys:)``.
+///
+/// Mirrors a single object in the FFI's JSON array payload
+/// (`[{"key":"<hex>","element":"<formatted>","type":"<grovedb-variant>"}]`).
+public struct PathElement: Sendable {
+    /// Hex-encoded GroveDB key.
+    public let key: String
+    /// The formatted element value (e.g. a hex item, `sum_item:<n>`, or
+    /// `tree`), exactly as rendered by the Rust side.
+    public let element: String
+    /// The GroveDB element variant (e.g. `tree`, `item`, `sum_item`,
+    /// `sum_tree`).
+    public let type: String
+
+    public init(key: String, element: String, type: String) {
+        self.key = key
+        self.element = element
+        self.type = type
+    }
+}
+
 // MARK: - Platform Query Extensions for SDK
 @MainActor
 extension SDK {
@@ -19,8 +143,11 @@ extension SDK {
         if let error = result.error {
             let errorMessage = error.pointee.message != nil ? String(cString: error.pointee.message!) : "Unknown error"
             print("❌ processJSONResult: FFI returned error: \(errorMessage)")
+            // Preserve the FFI error code so transport failures surface as
+            // .networkError / .timeout rather than a misleading .internalError.
+            let sdkError = SDKError.fromDashSDKError(error.pointee)
             dash_sdk_error_free(error)
-            throw SDKError.internalError(errorMessage)
+            throw sdkError
         }
 
         guard let dataPtr = result.data else {
@@ -51,9 +178,11 @@ extension SDK {
     /// Process DashSDKResult and extract JSON array
     private func processJSONArrayResult(_ result: DashSDKResult) throws -> [[String: Any]] {
         if let error = result.error {
-            let errorMessage = error.pointee.message != nil ? String(cString: error.pointee.message!) : "Unknown error"
+            // Preserve the FFI error code so transport failures surface as
+            // .networkError / .timeout rather than a misleading .internalError.
+            let sdkError = SDKError.fromDashSDKError(error.pointee)
             dash_sdk_error_free(error)
-            throw SDKError.internalError(errorMessage)
+            throw sdkError
         }
 
         guard let dataPtr = result.data else {
@@ -74,9 +203,11 @@ extension SDK {
     /// Process DashSDKResult and extract string
     private func processStringResult(_ result: DashSDKResult) throws -> String {
         if let error = result.error {
-            let errorMessage = error.pointee.message != nil ? String(cString: error.pointee.message!) : "Unknown error"
+            // Preserve the FFI error code so transport failures surface as
+            // .networkError / .timeout rather than a misleading .internalError.
+            let sdkError = SDKError.fromDashSDKError(error.pointee)
             dash_sdk_error_free(error)
-            throw SDKError.internalError(errorMessage)
+            throw sdkError
         }
 
         guard let dataPtr = result.data else {
@@ -368,7 +499,7 @@ extension SDK {
 
         defer {
             // Clean up contract handle when done
-            let contractPtr = contractHandle.assumingMemoryBound(to: DataContractHandle.self)
+            let contractPtr = OpaquePointer(contractHandle)
             dash_sdk_data_contract_destroy(contractPtr)
         }
 
@@ -383,7 +514,7 @@ extension SDK {
                     if let orderByClause = orderByClauseCString {
                         return orderByClause.withUnsafeBufferPointer { orderByPtr in
                             var searchParams = DashSDKDocumentSearchParams()
-                            searchParams.data_contract_handle = UnsafePointer(contractHandle.assumingMemoryBound(to: DataContractHandle.self))
+                            searchParams.data_contract_handle = OpaquePointer(contractHandle)
                             searchParams.document_type = documentTypePtr.baseAddress
                             searchParams.where_json = wherePtr.baseAddress
                             searchParams.order_by_json = orderByPtr.baseAddress
@@ -403,7 +534,7 @@ extension SDK {
                         }
                     } else {
                         var searchParams = DashSDKDocumentSearchParams()
-                        searchParams.data_contract_handle = UnsafePointer(contractHandle.assumingMemoryBound(to: DataContractHandle.self))
+                        searchParams.data_contract_handle = OpaquePointer(contractHandle)
                         searchParams.document_type = documentTypePtr.baseAddress
                         searchParams.where_json = wherePtr.baseAddress
                         searchParams.order_by_json = nil
@@ -424,7 +555,7 @@ extension SDK {
                 }
             } else {
                 var searchParams = DashSDKDocumentSearchParams()
-                searchParams.data_contract_handle = UnsafePointer(contractHandle.assumingMemoryBound(to: DataContractHandle.self))
+                searchParams.data_contract_handle = OpaquePointer(contractHandle)
                 searchParams.document_type = documentTypePtr.baseAddress
                 searchParams.where_json = nil
                 searchParams.order_by_json = nil
@@ -459,12 +590,12 @@ extension SDK {
 
         defer {
             // Clean up contract handle when done
-            let contractPtr = contractHandle.assumingMemoryBound(to: DataContractHandle.self)
+            let contractPtr = OpaquePointer(contractHandle)
             dash_sdk_data_contract_destroy(contractPtr)
         }
 
         // Now fetch the document
-        let documentResult = dash_sdk_document_fetch(handle, contractHandle.assumingMemoryBound(to: DataContractHandle.self), documentType, documentId)
+        let documentResult = dash_sdk_document_fetch(handle, OpaquePointer(contractHandle), documentType, documentId)
 
         if let error = documentResult.error {
             let errorMessage = error.pointee.message != nil ? String(cString: error.pointee.message!) : "Unknown error"
@@ -478,11 +609,11 @@ extension SDK {
 
         defer {
             // Clean up document handle
-            dash_sdk_document_destroy(handle, documentHandle.assumingMemoryBound(to: DocumentHandle.self))
+            dash_sdk_document_destroy(handle, OpaquePointer(documentHandle))
         }
 
         // Get document info to convert to JSON
-        let info = dash_sdk_document_get_info(documentHandle.assumingMemoryBound(to: DocumentHandle.self))
+        let info = dash_sdk_document_get_info(OpaquePointer(documentHandle))
         defer {
             if let info = info {
                 dash_sdk_document_info_free(info)
@@ -546,6 +677,334 @@ extension SDK {
         }
 
         return json
+    }
+
+    /// Count documents of a given type, optionally filtered by `where` and
+    /// grouped by `group_by`.
+    ///
+    /// Thin bridge over `dash_sdk_document_count`: it fetches the contract
+    /// handle (same precedent as `documentList`/`documentGet`), marshals the
+    /// document type + optional `where`/`order_by`/`group_by` JSON + the
+    /// `limit` sentinel in, calls the FFI, and marshals the
+    /// `{"counts": {"<hexKey>": <u64>}}` payload out. All aggregation is done
+    /// on the Rust side; nothing is decided here.
+    ///
+    /// - Parameters:
+    ///   - dataContractId: Base58 id of the data contract holding the type.
+    ///   - documentType: The document type name to count.
+    ///   - whereJSON: Optional `[{field, operator, value}]` filter JSON.
+    ///     Pass `nil` for an unfiltered count.
+    ///   - orderByJSON: Optional `[{field, direction}]` JSON. Pass `nil` for
+    ///     none (server defaults to ascending).
+    ///   - groupByJSON: Optional `["<field>", ...]` JSON. Pass `nil` for an
+    ///     aggregate (ungrouped) count.
+    ///   - limit: Sentinel-encoded `int64`. `-1` = use server default
+    ///     (the default). `> 0` = explicit cap. `0` is rejected at the FFI
+    ///     boundary, so the wrapper rejects it before calling.
+    /// - Returns: A ``DocumentCountResult`` mapping hex-encoded group key →
+    ///   count. For an ungrouped count the total lives under the empty-string
+    ///   key and is surfaced via ``DocumentCountResult/total``.
+    @MainActor
+    public func documentCount(
+        dataContractId: String,
+        documentType: String,
+        whereJSON: String? = nil,
+        orderByJSON: String? = nil,
+        groupByJSON: String? = nil,
+        limit: Int64 = -1
+    ) async throws -> DocumentCountResult {
+        guard let handle = handle else {
+            throw SDKError.invalidState("SDK not initialized")
+        }
+        guard limit != 0 else {
+            // The FFI rejects limit == 0 (the v1 wire rejects Some(0)); fail
+            // fast with a clear message rather than relaying it.
+            throw SDKError.invalidParameter("limit must be -1 (server default) or a positive value, not 0")
+        }
+
+        // Fetch the contract handle (precedent: documentList / documentGet).
+        let contractResult = dash_sdk_data_contract_fetch(handle, dataContractId)
+        if let error = contractResult.error {
+            let sdkError = SDKError.fromDashSDKError(error.pointee)
+            dash_sdk_error_free(error)
+            throw sdkError
+        }
+        guard let contractHandle = contractResult.data else {
+            throw SDKError.notFound("Data contract not found")
+        }
+        defer {
+            dash_sdk_data_contract_destroy(OpaquePointer(contractHandle))
+        }
+
+        // Marshal the optional JSON strings in. nil → null pointer = "none".
+        let result = documentType.withCString { typePtr in
+            withOptionalCString(whereJSON) { wherePtr in
+                withOptionalCString(orderByJSON) { orderPtr in
+                    withOptionalCString(groupByJSON) { groupPtr in
+                        dash_sdk_document_count(
+                            handle,
+                            OpaquePointer(contractHandle),
+                            typePtr,
+                            wherePtr,
+                            orderPtr,
+                            groupPtr,
+                            limit
+                        )
+                    }
+                }
+            }
+        }
+
+        let json = try processJSONResult(result)
+
+        // Payload shape: {"counts": {"<hexKey>": <u64>}}.
+        guard let countsObject = json["counts"] as? [String: Any] else {
+            throw SDKError.serializationError("Expected 'counts' object in document count response")
+        }
+
+        var counts: [String: UInt64] = [:]
+        for (key, value) in countsObject {
+            if let num = value as? NSNumber {
+                counts[key] = num.uint64Value
+            }
+        }
+
+        return DocumentCountResult(counts: counts)
+    }
+
+    /// Sum a numeric property of a document type, optionally filtered by
+    /// `where` and grouped by `group_by`.
+    ///
+    /// Thin bridge over `dash_sdk_document_sum`: it fetches the contract handle
+    /// (same precedent as `documentCount`), marshals the document type + the
+    /// required `sumProperty` + optional `where`/`order_by`/`group_by` JSON +
+    /// the `limit` sentinel in, calls the FFI, and marshals the
+    /// `{"sums": {"<hexKey>": <i64>}}` payload out. All aggregation is done on
+    /// the Rust side; nothing is decided here.
+    ///
+    /// - Parameters:
+    ///   - dataContractId: Base58 id of the data contract holding the type.
+    ///   - documentType: The document type name to aggregate.
+    ///   - sumProperty: Name of the integer property to sum. Required and
+    ///     non-empty (the FFI rejects an empty string), so the wrapper rejects
+    ///     it before calling.
+    ///   - whereJSON: Optional `[{field, operator, value}]` filter JSON. Pass
+    ///     `nil` for an unfiltered sum.
+    ///   - orderByJSON: Optional `[{field, direction}]` JSON. Pass `nil` for
+    ///     none.
+    ///   - groupByJSON: Optional `["<field>", ...]` JSON. Pass `nil` for an
+    ///     aggregate (ungrouped) sum.
+    ///   - limit: Sentinel-encoded `int64`. `-1` = server default (the
+    ///     default). `> 0` = explicit cap. `0` is rejected at the FFI boundary,
+    ///     so the wrapper rejects it before calling.
+    /// - Returns: A ``DocumentSumResult`` mapping hex-encoded group key → sum.
+    ///   For an ungrouped sum the total lives under the empty-string key and is
+    ///   surfaced via ``DocumentSumResult/total``.
+    @MainActor
+    public func documentSum(
+        dataContractId: String,
+        documentType: String,
+        sumProperty: String,
+        whereJSON: String? = nil,
+        orderByJSON: String? = nil,
+        groupByJSON: String? = nil,
+        limit: Int64 = -1
+    ) async throws -> DocumentSumResult {
+        guard let handle = handle else {
+            throw SDKError.invalidState("SDK not initialized")
+        }
+        guard !sumProperty.isEmpty else {
+            // The FFI rejects an empty sum property; fail fast with a clear
+            // message rather than relaying it.
+            throw SDKError.invalidParameter("sumProperty must name the numeric property to sum; it cannot be empty")
+        }
+        guard limit != 0 else {
+            // The FFI rejects limit == 0 (the v1 wire rejects Some(0)); fail
+            // fast with a clear message rather than relaying it.
+            throw SDKError.invalidParameter("limit must be -1 (server default) or a positive value, not 0")
+        }
+
+        // Fetch the contract handle (precedent: documentCount).
+        let contractResult = dash_sdk_data_contract_fetch(handle, dataContractId)
+        if let error = contractResult.error {
+            let sdkError = SDKError.fromDashSDKError(error.pointee)
+            dash_sdk_error_free(error)
+            throw sdkError
+        }
+        guard let contractHandle = contractResult.data else {
+            throw SDKError.notFound("Data contract not found")
+        }
+        defer {
+            dash_sdk_data_contract_destroy(OpaquePointer(contractHandle))
+        }
+
+        // Marshal the strings in. sumProperty is required (non-null);
+        // nil where/order/group → null pointer = "none".
+        let result = documentType.withCString { typePtr in
+            sumProperty.withCString { sumPropPtr in
+                withOptionalCString(whereJSON) { wherePtr in
+                    withOptionalCString(orderByJSON) { orderPtr in
+                        withOptionalCString(groupByJSON) { groupPtr in
+                            dash_sdk_document_sum(
+                                handle,
+                                OpaquePointer(contractHandle),
+                                typePtr,
+                                sumPropPtr,
+                                wherePtr,
+                                orderPtr,
+                                groupPtr,
+                                limit
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        let json = try processJSONResult(result)
+
+        // Payload shape: {"sums": {"<hexKey>": <i64>}}.
+        guard let sumsObject = json["sums"] as? [String: Any] else {
+            throw SDKError.serializationError("Expected 'sums' object in document sum response")
+        }
+
+        var sums: [String: Int64] = [:]
+        for (key, value) in sumsObject {
+            if let num = value as? NSNumber {
+                sums[key] = num.int64Value
+            }
+        }
+
+        return DocumentSumResult(sums: sums)
+    }
+
+    /// Average a numeric property of a document type, optionally filtered by
+    /// `where` and grouped by `group_by`.
+    ///
+    /// Thin bridge over `dash_sdk_document_average`: it fetches the contract
+    /// handle, marshals the document type + the required `sumProperty` +
+    /// optional `where`/`order_by`/`group_by` JSON + the `limit` sentinel in,
+    /// calls the FFI, and marshals the
+    /// `{"averages": {"<hexKey>": {"count": <u64>, "sum": <i64>}}}` payload
+    /// out. The FFI returns the raw `(count, sum)` pair un-divided so callers
+    /// pick their own precision; the wrapper preserves that pair verbatim and
+    /// leaves the division to the caller. All aggregation is done on the Rust
+    /// side; nothing is decided here.
+    ///
+    /// - Parameters:
+    ///   - dataContractId: Base58 id of the data contract holding the type.
+    ///   - documentType: The document type name to aggregate.
+    ///   - sumProperty: Name of the integer property to average. Required and
+    ///     non-empty (the FFI rejects an empty string), so the wrapper rejects
+    ///     it before calling.
+    ///   - whereJSON: Optional `[{field, operator, value}]` filter JSON. Pass
+    ///     `nil` for an unfiltered average.
+    ///   - orderByJSON: Optional `[{field, direction}]` JSON. Pass `nil` for
+    ///     none.
+    ///   - groupByJSON: Optional `["<field>", ...]` JSON. Pass `nil` for an
+    ///     aggregate (ungrouped) average.
+    ///   - limit: Sentinel-encoded `int64`. `-1` = server default (the
+    ///     default). `> 0` = explicit cap. `0` is rejected at the FFI boundary,
+    ///     so the wrapper rejects it before calling.
+    /// - Returns: A ``DocumentAverageResult`` mapping hex-encoded group key →
+    ///   `(count, sum)`. For an ungrouped average the total lives under the
+    ///   empty-string key and is surfaced via ``DocumentAverageResult/total``.
+    @MainActor
+    public func documentAverage(
+        dataContractId: String,
+        documentType: String,
+        sumProperty: String,
+        whereJSON: String? = nil,
+        orderByJSON: String? = nil,
+        groupByJSON: String? = nil,
+        limit: Int64 = -1
+    ) async throws -> DocumentAverageResult {
+        guard let handle = handle else {
+            throw SDKError.invalidState("SDK not initialized")
+        }
+        guard !sumProperty.isEmpty else {
+            // The FFI rejects an empty sum property; fail fast with a clear
+            // message rather than relaying it.
+            throw SDKError.invalidParameter("sumProperty must name the numeric property to average; it cannot be empty")
+        }
+        guard limit != 0 else {
+            // The FFI rejects limit == 0 (the v1 wire rejects Some(0)); fail
+            // fast with a clear message rather than relaying it.
+            throw SDKError.invalidParameter("limit must be -1 (server default) or a positive value, not 0")
+        }
+
+        // Fetch the contract handle (precedent: documentCount).
+        let contractResult = dash_sdk_data_contract_fetch(handle, dataContractId)
+        if let error = contractResult.error {
+            let sdkError = SDKError.fromDashSDKError(error.pointee)
+            dash_sdk_error_free(error)
+            throw sdkError
+        }
+        guard let contractHandle = contractResult.data else {
+            throw SDKError.notFound("Data contract not found")
+        }
+        defer {
+            dash_sdk_data_contract_destroy(OpaquePointer(contractHandle))
+        }
+
+        // Marshal the strings in. sumProperty is required (non-null);
+        // nil where/order/group → null pointer = "none".
+        let result = documentType.withCString { typePtr in
+            sumProperty.withCString { sumPropPtr in
+                withOptionalCString(whereJSON) { wherePtr in
+                    withOptionalCString(orderByJSON) { orderPtr in
+                        withOptionalCString(groupByJSON) { groupPtr in
+                            dash_sdk_document_average(
+                                handle,
+                                OpaquePointer(contractHandle),
+                                typePtr,
+                                sumPropPtr,
+                                wherePtr,
+                                orderPtr,
+                                groupPtr,
+                                limit
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        let json = try processJSONResult(result)
+
+        // Payload shape: {"averages": {"<hexKey>": {"count": <u64>, "sum": <i64>}}}.
+        guard let averagesObject = json["averages"] as? [String: Any] else {
+            throw SDKError.serializationError("Expected 'averages' object in document average response")
+        }
+
+        var averages: [String: DocumentAverageEntry] = [:]
+        for (key, value) in averagesObject {
+            guard let entry = value as? [String: Any],
+                  let countNum = entry["count"] as? NSNumber,
+                  let sumNum = entry["sum"] as? NSNumber else {
+                continue
+            }
+            averages[key] = DocumentAverageEntry(
+                count: countNum.uint64Value,
+                sum: sumNum.int64Value
+            )
+        }
+
+        return DocumentAverageResult(averages: averages)
+    }
+
+    /// Call `body` with a `const char *` for an optional Swift string,
+    /// passing a null pointer when the string is `nil`. Mirrors the FFI's
+    /// "null/empty means none" contract for the where/order/group JSON args.
+    private func withOptionalCString<R>(
+        _ string: String?,
+        _ body: (UnsafePointer<CChar>?) -> R
+    ) -> R {
+        if let string = string {
+            return string.withCString { body($0) }
+        } else {
+            return body(nil)
+        }
     }
 
     // MARK: - DPNS Queries
@@ -948,6 +1407,98 @@ extension SDK {
         return try processJSONArrayResult(result)
     }
 
+    // MARK: - Contested Resource Vote (write path)
+
+    /// Cast a masternode contested-resource (DPNS) vote and wait for the
+    /// platform response.
+    ///
+    /// Thin bridge over `dash_sdk_contested_resource_cast_vote`: it marshals
+    /// the vote poll, the choice, the masternode `proTxHash`, and the 32-byte
+    /// voting private key in, then surfaces success / failure out. All of the
+    /// transition assembly + signing + broadcast happens on the Rust side
+    /// (rs-sdk's `PutVote`); nothing is decided here.
+    ///
+    /// - Important: Contested-resource votes are cast by **masternodes** using
+    ///   their masternode voting key (tied to a `proTxHash`). A regular wallet
+    ///   is not a masternode and has no voting key, so a vote from such a
+    ///   wallet reaches a deterministic authorization rejection on the platform
+    ///   side. Supplying a genuine masternode `proTxHash` + voting private key
+    ///   is required for an accepted vote.
+    ///
+    /// - Parameters:
+    ///   - dataContractId: Base58 contested resource's data-contract id (DPNS
+    ///     for username contests).
+    ///   - documentTypeName: Contested document type (e.g. `"domain"`).
+    ///   - indexName: Contested index name (e.g. `"parentNameAndLabel"`).
+    ///   - indexValues: Index values identifying the contested resource
+    ///     (e.g. `["dash", "alice"]`).
+    ///   - choice: TowardsIdentity / Abstain / Lock.
+    ///   - proTxHash: The masternode's 32-byte pro_tx_hash.
+    ///   - votingPrivateKey: The masternode's 32-byte voting private key. The
+    ///     matching `ECDSA_HASH160` voting public key and the signer are
+    ///     derived from this on the Rust side; the key bytes are not retained.
+    public func castContestedResourceVote(
+        dataContractId: String,
+        documentTypeName: String,
+        indexName: String,
+        indexValues: [String],
+        choice: ContestedResourceVoteChoice,
+        proTxHash: Data,
+        votingPrivateKey: Data
+    ) async throws {
+        guard let handle = handle else {
+            throw SDKError.invalidState("SDK not initialized")
+        }
+        guard proTxHash.count == 32 else {
+            throw SDKError.invalidParameter("proTxHash must be exactly 32 bytes")
+        }
+        guard votingPrivateKey.count == 32 else {
+            throw SDKError.invalidParameter("votingPrivateKey must be exactly 32 bytes")
+        }
+
+        let indexValuesData = try JSONSerialization.data(withJSONObject: indexValues)
+        let indexValuesJson = String(data: indexValuesData, encoding: .utf8) ?? "[]"
+
+        let voteChoiceTag = choice.ffiTag
+        let contenderId: String? = {
+            if case let .towardsIdentity(id) = choice { return id }
+            return nil
+        }()
+        let networkValue = network.ffiValue
+
+        let result = proTxHash.withUnsafeBytes { proTxPtr in
+            votingPrivateKey.withUnsafeBytes { keyPtr in
+                dash_sdk_contested_resource_cast_vote(
+                    handle,
+                    dataContractId,
+                    documentTypeName,
+                    indexName,
+                    indexValuesJson,
+                    voteChoiceTag,
+                    contenderId,
+                    proTxPtr.baseAddress?.assumingMemoryBound(to: UInt8.self),
+                    keyPtr.baseAddress?.assumingMemoryBound(to: UInt8.self),
+                    networkValue
+                )
+            }
+        }
+
+        try processVoidResult(result)
+    }
+
+    /// Process a `DashSDKResult` that carries no payload on success (the
+    /// broadcast / put-style FFIs return `NoData`). Throws on the error arm,
+    /// otherwise returns. Frees the FFI-owned error string on the failure path.
+    private func processVoidResult(_ result: DashSDKResult) throws {
+        if let error = result.error {
+            let errorMessage = error.pointee.message != nil
+                ? String(cString: error.pointee.message!)
+                : "Unknown error"
+            dash_sdk_error_free(error)
+            throw SDKError.internalError(errorMessage)
+        }
+    }
+
     /// Get vote polls by end date
     public func getVotePollsByEndDate(
         startTimeMs: UInt64?,
@@ -986,9 +1537,12 @@ extension SDK {
 
         // Special handling for protocol version upgrade state which returns an array
         if let error = result.error {
-            let errorMessage = error.pointee.message != nil ? String(cString: error.pointee.message!) : "Unknown error"
+            // Preserve the FFI error code so transport failures (e.g. an evonode
+            // serving an expired TLS certificate) surface as .networkError
+            // rather than a misleading .internalError.
+            let sdkError = SDKError.fromDashSDKError(error.pointee)
             dash_sdk_error_free(error)
-            throw SDKError.internalError(errorMessage)
+            throw sdkError
         }
 
         // If no data, return empty result
@@ -1119,11 +1673,16 @@ extension SDK {
         let result = dash_sdk_identities_fetch_token_balances(handle, identityIdsStr, tokenId)
         let json = try processJSONResult(result)
 
-        // Convert the result to [String: UInt64]
+        // Convert the result to [String: UInt64].
+        // JSONSerialization decodes numbers as NSNumber, so read .uint64Value
+        // (matching getIdentityTokenBalances above). The Rust FFI emits `null`
+        // for identities that have never held the token; those decode to NSNull
+        // and are skipped, mirroring how the single-identity query omits
+        // never-held tokens.
         var balances: [String: UInt64] = [:]
         for (key, value) in json {
-            if let balance = value as? UInt64 {
-                balances[key] = balance
+            if let balance = value as? NSNumber {
+                balances[key] = balance.uint64Value
             }
         }
 
@@ -1195,6 +1754,40 @@ extension SDK {
 
         let result = dash_sdk_token_get_contract_info(handle, tokenId)
         return try processJSONResult(result)
+    }
+
+    /// Derive the canonical platform token id for `(contractId, position)`.
+    ///
+    /// This bridges `dash_dpp::tokens::calculate_token_id` over FFI — the
+    /// formula is a protocol constant (`double_sha256("dash_token" ||
+    /// contract_id || u16_be(position))`), not something Swift should
+    /// mirror. Returns base58.
+    ///
+    /// Pure CPU work (a hash) — `nonisolated` and `throws` only, no
+    /// `async` and no SDK handle. Safe to call from any actor.
+    public nonisolated func calculateTokenId(
+        contractId: String,
+        position: UInt16
+    ) throws -> String {
+        let result = contractId.withCString { cId in
+            dash_sdk_calculate_token_id(cId, position)
+        }
+
+        if let error = result.error {
+            let errorMessage = error.pointee.message != nil
+                ? String(cString: error.pointee.message!)
+                : "Unknown error"
+            dash_sdk_error_free(error)
+            throw SDKError.internalError(errorMessage)
+        }
+
+        guard let dataPtr = result.data else {
+            throw SDKError.notFound("No data returned")
+        }
+
+        let string: String = String(cString: dataPtr.assumingMemoryBound(to: CChar.self))
+        dash_sdk_string_free(dataPtr)
+        return string
     }
 
     /// Get token perpetual distribution last claim
@@ -1365,5 +1958,74 @@ extension SDK {
 
         let result = dash_sdk_system_get_prefunded_specialized_balance(handle, id)
         return try processUInt64Result(result)
+    }
+
+    /// Fetch the raw GroveDB elements stored under `keys` within `path`.
+    ///
+    /// Thin bridge over `dash_sdk_system_get_path_elements`: it serializes
+    /// the `path` / `keys` string arrays to JSON, passes them to the FFI,
+    /// and marshals the
+    /// `[{"key":"<hex>","element":"<formatted>","type":"<variant>"}]`
+    /// payload out into ``PathElement`` rows. The FFI accepts each string as
+    /// either hex-encoded bytes (preferred) or plain UTF-8 (hex-decode is
+    /// tried first, with a raw-bytes fallback). All of the GroveDB traversal
+    /// + formatting happens on the Rust side; nothing is decided here.
+    ///
+    /// - Parameters:
+    ///   - path: GroveDB path segments. `[]` is the root. Each segment is
+    ///     hex bytes or a plain string (e.g. `["60"]` for the Balances
+    ///     subtree).
+    ///   - keys: Keys to fetch within `path`, same hex-or-plain rule
+    ///     (e.g. `["20","40","10","60"]` for the top-level RootTree subtrees).
+    /// - Returns: The matching ``PathElement`` rows. Empty when the FFI
+    ///   returns no elements (`NoData`).
+    @MainActor
+    public func systemPathElements(path: [String], keys: [String]) async throws -> [PathElement] {
+        guard let handle = handle else {
+            throw SDKError.invalidState("SDK not initialized")
+        }
+
+        // Serialize the path/keys string arrays to JSON for the FFI.
+        let pathData = try JSONSerialization.data(withJSONObject: path)
+        let keysData = try JSONSerialization.data(withJSONObject: keys)
+        guard let pathJSON = String(data: pathData, encoding: .utf8),
+              let keysJSON = String(data: keysData, encoding: .utf8) else {
+            throw SDKError.serializationError("Failed to encode path/keys JSON")
+        }
+
+        let result = pathJSON.withCString { pathPtr in
+            keysJSON.withCString { keysPtr in
+                dash_sdk_system_get_path_elements(handle, pathPtr, keysPtr)
+            }
+        }
+
+        // Surface FFI errors with their original code (network/timeout/etc.).
+        if let error = result.error {
+            let sdkError = SDKError.fromDashSDKError(error.pointee)
+            dash_sdk_error_free(error)
+            throw sdkError
+        }
+
+        // NoData (null payload, no error) means no elements were found —
+        // treat it as an empty array rather than an error.
+        guard let dataPtr = result.data else {
+            return []
+        }
+
+        let jsonString = String(cString: dataPtr.assumingMemoryBound(to: CChar.self))
+        dash_sdk_string_free(dataPtr)
+
+        guard let data = jsonString.data(using: .utf8),
+              let array = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
+            throw SDKError.serializationError("Failed to parse path elements JSON array")
+        }
+
+        return array.map { entry in
+            PathElement(
+                key: entry["key"] as? String ?? "",
+                element: entry["element"] as? String ?? "",
+                type: entry["type"] as? String ?? ""
+            )
+        }
     }
 }

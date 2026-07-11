@@ -139,7 +139,7 @@ describe('AssetLockProof', () => {
       expect(restoredProof.toObject()).to.deep.equal(objectRepresentation);
     });
 
-    it('should export binary fields as Uint8Array in object form with type field', () => {
+    it('should export internally-tagged {$type:"instant", ...fields} for Instant', () => {
       const instantLockProof = wasm.AssetLockProof.createInstantAssetLockProof(
         instantLockBytes,
         transactionBytes,
@@ -148,15 +148,14 @@ describe('AssetLockProof', () => {
 
       const objectRepresentation = instantLockProof.toObject();
 
-      // Should have type field (0 = Instant)
-      expect(objectRepresentation.type).to.equal(0);
+      expect(objectRepresentation.$type).to.equal('instant');
       expect(objectRepresentation.instantLock).to.be.instanceOf(Uint8Array);
       expect(objectRepresentation.transaction).to.be.instanceOf(Uint8Array);
       expect(objectRepresentation.instantLock).to.deep.equal(instantLockBytes);
       expect(objectRepresentation.transaction).to.deep.equal(transactionBytes);
     });
 
-    it('should export chain lock proof object with type field', () => {
+    it('should export internally-tagged {$type:"chain", ...fields} for Chain', () => {
       const outpoint = new wasm.OutPoint(
         'e8b43025641eea4fd21190f01bd870ef90f1a8b199d8fc3376c5b62c0b1a179d',
         1,
@@ -165,16 +164,14 @@ describe('AssetLockProof', () => {
 
       const objectRepresentation = chainLockProof.toObject();
 
-      // Should have type field (1 = Chain)
-      expect(objectRepresentation.type).to.equal(1);
+      expect(objectRepresentation.$type).to.equal('chain');
       expect(objectRepresentation.coreChainLockedHeight).to.equal(1);
-      // outPoint is {txid, vout} object
       expect(objectRepresentation.outPoint).to.be.an('object');
       expect(objectRepresentation.outPoint.txid).to.exist();
       expect(objectRepresentation.outPoint.vout).to.equal(1);
     });
 
-    it('should allow to return object of lock', () => {
+    it('should flatten the inner proof shape next to the type tag', () => {
       const instantLockProof = new wasm.InstantAssetLockProof(
         instantLockBytes,
         transactionBytes,
@@ -183,21 +180,20 @@ describe('AssetLockProof', () => {
 
       const instantAssetLockProof = new wasm.AssetLockProof(instantLockProof);
 
-      // InstantAssetLockProof.toObject() does not include type field
-      const expectedInner = {
+      const innerExpected = {
         instantLock: instantLockBytes,
         transaction: transactionBytes,
         outputIndex: 0,
       };
 
-      // AssetLockProof.toObject() includes type field (0 = Instant)
-      const expectedOuter = {
-        ...expectedInner,
-        type: 0,
+      // AssetLockProof.toObject() flattens the inner fields next to `type`
+      const outerExpected = {
+        $type: 'instant',
+        ...innerExpected,
       };
 
-      expect(instantLockProof.toObject()).to.deep.equal(expectedInner);
-      expect(instantAssetLockProof.toObject()).to.deep.equal(expectedOuter);
+      expect(instantLockProof.toObject()).to.deep.equal(innerExpected);
+      expect(instantAssetLockProof.toObject()).to.deep.equal(outerExpected);
     });
   });
 
@@ -210,8 +206,7 @@ describe('AssetLockProof', () => {
       );
       const jsonRepresentation = instantLockProof.toJSON();
 
-      // Should have type field (0 = Instant)
-      expect(jsonRepresentation.type).to.equal(0);
+      expect(jsonRepresentation.$type).to.equal('instant');
       expect(jsonRepresentation.instantLock).to.be.a('string');
       expect(jsonRepresentation.transaction).to.be.a('string');
       expect(Buffer.from(jsonRepresentation.instantLock, 'base64')).to.deep.equal(
@@ -234,8 +229,7 @@ describe('AssetLockProof', () => {
       const chainLockProof = wasm.AssetLockProof.createChainAssetLockProof(1, outpoint);
       const jsonRepresentation = chainLockProof.toJSON();
 
-      // Should have type field (1 = Chain)
-      expect(jsonRepresentation.type).to.equal(1);
+      expect(jsonRepresentation.$type).to.equal('chain');
 
       const restoredProof = wasm.AssetLockProof.fromJSON(jsonRepresentation);
 
@@ -243,7 +237,7 @@ describe('AssetLockProof', () => {
     });
   });
 
-  describe('lockTypeName', () => {
+  describe('lockType', () => {
     it('should allow to get lock type', () => {
       const outpoint = new wasm.OutPoint(
         'e8b43025641eea4fd21190f01bd870ef90f1a8b199d8fc3376c5b62c0b1a179d',
@@ -258,8 +252,10 @@ describe('AssetLockProof', () => {
       const instantAssetLockProof = new wasm.AssetLockProof(instantLockProof);
       const chainLockProof = wasm.AssetLockProof.createChainAssetLockProof(1, outpoint);
 
-      expect(instantAssetLockProof.lockTypeName).to.equal('Instant');
-      expect(chainLockProof.lockTypeName).to.equal('Chain');
+      // lockType returns the lowercase wire-shape string, matching
+      // `AssetLockProof.toObject().$type` for round-trip consistency.
+      expect(instantAssetLockProof.lockType).to.equal('instant');
+      expect(chainLockProof.lockType).to.equal('chain');
     });
   });
 

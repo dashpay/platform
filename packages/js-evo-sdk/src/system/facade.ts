@@ -41,13 +41,18 @@ export class SystemFacade {
     return w.getPrefundedSpecializedBalanceWithProofInfo(identityId);
   }
 
-  async pathElements(path: string[], keys: string[]): Promise<wasm.PathElement[]> {
+  async pathElements(
+    path: wasm.GrovePathSegment[],
+    keys: wasm.GrovePathSegment[],
+  ): Promise<wasm.PathElement[]> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getPathElements(path, keys);
   }
 
-  async pathElementsWithProof(path: string[], keys: string[]):
-    Promise<wasm.ProofMetadataResponseTyped<wasm.PathElement[]>> {
+  async pathElementsWithProof(
+    path: wasm.GrovePathSegment[],
+    keys: wasm.GrovePathSegment[],
+  ): Promise<wasm.ProofMetadataResponseTyped<wasm.PathElement[]>> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getPathElementsWithProofInfo(path, keys);
   }

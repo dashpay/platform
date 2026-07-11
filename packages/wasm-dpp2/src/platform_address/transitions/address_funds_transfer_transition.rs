@@ -1,5 +1,5 @@
 use crate::error::{WasmDppError, WasmDppResult};
-use crate::impl_wasm_conversions_serde;
+use crate::impl_wasm_conversions_inner;
 use crate::impl_wasm_type_info;
 use crate::platform_address::{
     PlatformAddressInputWasm, PlatformAddressOutputWasm, fee_strategy_from_js_options,
@@ -35,9 +35,9 @@ export interface AddressFundsTransferTransitionObject {
 }
 
 export interface AddressFundsTransferTransitionJSON {
-    inputs: object[];
-    outputs: object[];
-    feeStrategy: object[];
+    inputs: PlatformAddressInputJSON[];
+    outputs: PlatformAddressOutputJSON[];
+    feeStrategy: FeeStrategyStepJSON[];
     userFeeIncrease: number;
 }
 "#;
@@ -79,7 +79,7 @@ impl AddressFundsTransferTransitionWasm {
             })?
             .unwrap_or(0);
 
-        let inputs_map = inputs.into_iter().map(|i| i.into_inner()).collect();
+        let inputs_map = crate::platform_address::inputs_to_btree_map(inputs)?;
         let outputs_map = outputs_to_btree_map(outputs)?;
         let fee_strategy = fee_strategy_from_steps_or_default(fee_strategy);
 
@@ -146,13 +146,14 @@ impl AddressFundsTransferTransitionWasm {
     }
 
     #[wasm_bindgen(setter = "inputs")]
-    pub fn set_inputs(&mut self, inputs: Vec<PlatformAddressInputWasm>) {
-        let inputs_map = inputs.into_iter().map(|i| i.into_inner()).collect();
+    pub fn set_inputs(&mut self, inputs: Vec<PlatformAddressInputWasm>) -> WasmDppResult<()> {
+        let inputs_map = crate::platform_address::inputs_to_btree_map(inputs)?;
         match &mut self.0 {
             AddressFundsTransferTransition::V0(v0) => {
                 v0.inputs = inputs_map;
             }
         }
+        Ok(())
     }
 
     #[wasm_bindgen(getter = "outputs")]
@@ -216,8 +217,9 @@ impl AddressFundsTransferTransitionWasm {
     }
 }
 
-impl_wasm_conversions_serde!(
+impl_wasm_conversions_inner!(
     AddressFundsTransferTransitionWasm,
+    AddressFundsTransferTransition,
     AddressFundsTransferTransition,
     AddressFundsTransferTransitionObjectJs,
     AddressFundsTransferTransitionJSONJs

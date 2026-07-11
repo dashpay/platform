@@ -30,3 +30,44 @@ impl Drive {
         )])
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::drive::Drive;
+    use crate::error::drive::DriveError;
+    use crate::error::Error;
+
+    #[test]
+    fn balance_at_i64_max_converts_successfully() {
+        // i64::MAX as u64 converts without overflow.
+        let ops =
+            Drive::update_total_balance_op_v0(i64::MAX as u64).expect("i64::MAX should be valid");
+        assert_eq!(ops.len(), 1);
+    }
+
+    #[test]
+    fn balance_exceeding_i64_max_returns_corrupted_drive_state() {
+        // Values > i64::MAX trip the try_from guard and produce CorruptedDriveState.
+        let err = Drive::update_total_balance_op_v0(u64::MAX)
+            .expect_err("u64::MAX > i64::MAX should fail");
+        match err {
+            Error::Drive(DriveError::CorruptedDriveState(msg)) => {
+                assert!(msg.contains("exceeds i64::MAX"));
+            }
+            other => panic!("expected CorruptedDriveState, got: {:?}", other),
+        }
+
+        let err2 = Drive::update_total_balance_op_v0(i64::MAX as u64 + 1)
+            .expect_err("i64::MAX+1 should fail");
+        assert!(matches!(
+            err2,
+            Error::Drive(DriveError::CorruptedDriveState(_))
+        ));
+    }
+
+    #[test]
+    fn balance_zero_produces_single_op() {
+        let ops = Drive::update_total_balance_op_v0(0).expect("zero balance");
+        assert_eq!(ops.len(), 1);
+    }
+}

@@ -54,6 +54,7 @@ pub struct IdentityTransitionAssetLockVersions {
     pub required_asset_lock_duff_balance_for_processing_start_for_address_funding: u64,
     pub validate_asset_lock_transaction_structure: FeatureVersion,
     pub validate_instant_asset_lock_proof_structure: FeatureVersion,
+    pub max_asset_lock_transaction_inputs: u16,
 }
 
 #[derive(Clone, Debug, Default)]

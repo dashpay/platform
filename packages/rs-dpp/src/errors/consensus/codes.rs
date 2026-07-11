@@ -166,6 +166,7 @@ impl ErrorWithCode for BasicError {
             Self::InvalidTokenAmountError(_) => 10458,
             Self::InvalidTokenNoteTooBigError(_) => 10459,
             Self::TokenNoteOnlyAllowedWhenProposerError(_) => 10460,
+            Self::TokenPricingScheduleEmptyError(_) => 10461,
 
             // Identity Errors: 10500-10599
             Self::DuplicatedIdentityPublicKeyBasicError(_) => 10500,
@@ -202,6 +203,7 @@ impl ErrorWithCode for BasicError {
             Self::IdentityAssetLockStateTransitionReplayError(_) => 10531,
             Self::WithdrawalOutputScriptNotAllowedWhenSigningWithOwnerKeyError(_) => 10532,
             Self::InvalidKeyPurposeForContractBoundsError(_) => 10533,
+            Self::IdentityAssetLockTransactionTooManyInputsError(_) => 10534,
 
             // State Transition Errors: 10600-10699
             Self::InvalidStateTransitionTypeError { .. } => 10600,
@@ -232,12 +234,15 @@ impl ErrorWithCode for BasicError {
             Self::OutputAddressAlsoInputError(_) => 10816,
             Self::InvalidRemainderOutputCountError(_) => 10817,
             Self::WithdrawalBelowMinAmountError(_) => 10818,
-            // Shielded transition errors (10819-10825)
+            // Shielded transition errors (10819-10827)
             Self::ShieldedNoActionsError(_) => 10819,
             Self::ShieldedEmptyProofError(_) => 10820,
             Self::ShieldedZeroAnchorError(_) => 10821,
             Self::ShieldedInvalidValueBalanceError(_) => 10822,
+            Self::ShieldedEncryptedNoteSizeMismatchError(_) => 10823,
             Self::ShieldedTooManyActionsError(_) => 10825,
+            Self::ShieldedImplicitFeeCapExceededError(_) => 10826,
+            Self::ShieldedInvalidDenominationError(_) => 10827,
         }
     }
 }

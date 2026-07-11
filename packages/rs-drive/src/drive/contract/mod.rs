@@ -10,9 +10,11 @@ mod contract_fetch_info;
 #[cfg(feature = "server")]
 mod estimation_costs;
 #[cfg(feature = "server")]
-mod get_fetch;
+pub(crate) mod get_fetch;
 #[cfg(feature = "server")]
 mod insert;
+#[cfg(feature = "server")]
+mod migration;
 /// Various paths for contract operations
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod paths;
@@ -27,6 +29,8 @@ pub mod test_helpers;
 mod update;
 #[cfg(feature = "server")]
 pub use contract_fetch_info::*;
+#[cfg(feature = "server")]
+pub use get_fetch::ContractFetchOutcome;
 
 /// How many contracts to fetch at once. This is an arbitrary number and is needed to prevent
 /// the server from being overloaded with requests.
@@ -1762,7 +1766,7 @@ mod tests {
         drive
             .apply_contract(
                 &contract,
-                block_info.clone(),
+                block_info,
                 true,
                 StorageFlags::optional_default_as_cow(),
                 None,
@@ -2451,7 +2455,7 @@ mod tests {
 
     #[test]
     fn test_update_contract_description() {
-        use dpp::data_contract::accessors::v1::{DataContractV1Getters, DataContractV1Setters};
+        use dpp::data_contract::accessors::v1::DataContractV1Setters;
         use dpp::tests::fixtures::get_data_contract_fixture;
 
         let drive = setup_drive_with_keyword_search_contract();
@@ -2550,7 +2554,7 @@ mod tests {
 
     #[test]
     fn test_update_contract_keywords_add_and_remove() {
-        use dpp::data_contract::accessors::v1::{DataContractV1Getters, DataContractV1Setters};
+        use dpp::data_contract::accessors::v1::DataContractV1Setters;
         use dpp::tests::fixtures::get_data_contract_fixture;
 
         let drive = setup_drive_with_keyword_search_contract();
@@ -2751,6 +2755,291 @@ mod tests {
             .expect("expected to apply contract with groups successfully");
 
         // Verify the contract can be fetched back
+        let fetched = drive
+            .get_contract_with_fetch_info(contract.id().to_buffer(), true, None, platform_version)
+            .expect("should fetch contract")
+            .expect("contract should exist");
+
+        assert_eq!(fetched.contract.id(), contract.id());
+    }
+
+    /// Exercises the `ok_or(CorruptedCodeExecution("contract should exist"))`
+    /// branch in `update_contract_v1` (and transitively v0) when `update_contract`
+    /// is called directly against a contract that was never inserted.
+    ///
+    /// This covers the first `.ok_or(...)` on the `get_contract_with_fetch_info_and_add_to_operations`
+    /// result in update_contract/v0 and v1.
+    #[test]
+    fn test_update_contract_errors_when_contract_does_not_exist() {
+        use dpp::tests::fixtures::get_data_contract_fixture;
+
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        // Build a contract but do NOT insert it first.
+        let contract = get_data_contract_fixture(None, 0, platform_version.protocol_version)
+            .data_contract_owned();
+
+        let result = drive.update_contract(
+            &contract,
+            BlockInfo::default(),
+            true,
+            None,
+            platform_version,
+            None,
+        );
+
+        assert!(
+            matches!(
+                result,
+                Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                    "contract should exist"
+                )))
+            ),
+            "Expected CorruptedCodeExecution(\"contract should exist\"), got: {:?}",
+            result
+        );
+    }
+
+    /// Exercises the `if !apply { return self.insert_contract(...) }` delegation
+    /// branch in both `update_contract_v0` and `update_contract_v1`. This code path
+    /// is taken when an update is being estimated (apply=false) for a contract that
+    /// does not yet exist in storage: the update call should forward to insert and
+    /// succeed (returning a valid FeeResult) rather than erroring out.
+    #[test]
+    fn test_update_contract_apply_false_delegates_to_insert_on_missing_contract() {
+        use dpp::tests::fixtures::get_data_contract_fixture;
+
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let contract = get_data_contract_fixture(None, 0, platform_version.protocol_version)
+            .data_contract_owned();
+
+        // Call update_contract with apply=false on a contract that was never inserted.
+        // v0/v1 both short-circuit and delegate to insert_contract(apply=false), which
+        // returns an estimated FeeResult without touching state.
+        let fee = drive
+            .update_contract(
+                &contract,
+                BlockInfo::default(),
+                false,
+                None,
+                platform_version,
+                None,
+            )
+            .expect("expected update_contract(apply=false) to succeed via insert delegation");
+
+        // The contract should NOT have been inserted (apply was false).
+        let fetched = drive
+            .get_contract_with_fetch_info(contract.id().to_buffer(), false, None, platform_version)
+            .expect("fetch should not error");
+        assert!(
+            fetched.is_none(),
+            "contract must not exist after apply=false update"
+        );
+
+        // Estimated fees should still be non-zero since estimation walks the ops.
+        assert!(
+            fee.processing_fee > 0 || fee.storage_fee > 0,
+            "estimated fees should be non-zero, got {:?}",
+            fee
+        );
+    }
+
+    /// Exercises the `update_contract_description_operations_v0` EMPTY branch:
+    /// when no prior description document exists in the Keyword Search contract,
+    /// the code calls `add_new_contract_description_operations(short_only=true)`.
+    ///
+    /// The existing `test_update_contract_description` tests the REPLACE branch
+    /// (prior description exists). This test covers the inverse branch.
+    #[test]
+    fn test_update_contract_description_no_prior_description() {
+        use dpp::tests::fixtures::get_data_contract_fixture;
+
+        let drive = setup_drive_with_keyword_search_contract();
+        let platform_version = PlatformVersion::latest();
+
+        // Insert a contract WITHOUT a description, so the keyword_search contract has
+        // no existing shortDescription document for this contractId.
+        let contract = get_data_contract_fixture(None, 0, platform_version.protocol_version)
+            .data_contract_owned();
+
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("should insert contract without description");
+
+        // Now call update_contract_description — since no existing description doc
+        // is present, update_contract_description_operations_v0 goes through the
+        // add_new_contract_description_operations(short_only=true) branch.
+        let fee = drive
+            .update_contract_description(
+                contract.id(),
+                contract.owner_id(),
+                &"Freshly added description".to_string(),
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("should add description when none existed before");
+
+        assert!(
+            fee.processing_fee > 0,
+            "adding the initial description must produce a non-zero fee"
+        );
+    }
+
+    /// Exercises `update_contract_keywords_operations_v0` add-only path where no
+    /// prior keywords existed for the contract. This covers the branch where
+    /// `existing` is empty and all keywords are added via
+    /// `add_new_contract_keywords_operations`, with zero delete operations.
+    #[test]
+    fn test_update_contract_keywords_no_prior_keywords() {
+        use dpp::tests::fixtures::get_data_contract_fixture;
+
+        let drive = setup_drive_with_keyword_search_contract();
+        let platform_version = PlatformVersion::latest();
+
+        // Insert contract with NO keywords initially.
+        let contract = get_data_contract_fixture(None, 0, platform_version.protocol_version)
+            .data_contract_owned();
+
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("should insert contract with no keywords");
+
+        // Now add keywords via the dedicated update method: the add-only path.
+        let new_keywords = vec!["one".to_string(), "two".to_string()];
+        let fee = drive
+            .update_contract_keywords(
+                contract.id(),
+                contract.owner_id(),
+                &new_keywords,
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("should add keywords when none existed before");
+
+        assert!(
+            fee.processing_fee > 0,
+            "first-time keyword insert should produce a non-zero processing fee"
+        );
+    }
+
+    /// Exercises `update_contract_keywords_operations_v0` remove-all path:
+    /// inserts a contract with keywords, then updates keywords to an empty slice.
+    /// This triggers deletion of every existing keyword document without any adds,
+    /// covering the "keywords_to_add is empty -> skip add_new_contract_keywords"
+    /// branch in the dedicated update method.
+    #[test]
+    fn test_update_contract_keywords_remove_all() {
+        use dpp::data_contract::accessors::v1::DataContractV1Setters;
+        use dpp::tests::fixtures::get_data_contract_fixture;
+
+        let drive = setup_drive_with_keyword_search_contract();
+        let platform_version = PlatformVersion::latest();
+
+        let mut contract = get_data_contract_fixture(None, 0, platform_version.protocol_version)
+            .data_contract_owned();
+        contract.set_keywords(vec![
+            "remove_me_1".to_string(),
+            "remove_me_2".to_string(),
+            "remove_me_3".to_string(),
+        ]);
+
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("should insert contract with keywords");
+
+        // Clear all keywords: all existing keyword docs should be deleted and no
+        // new ones added.
+        let new_keywords: Vec<String> = vec![];
+        let fee = drive
+            .update_contract_keywords(
+                contract.id(),
+                contract.owner_id(),
+                &new_keywords,
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("should remove all keywords successfully");
+
+        assert!(
+            fee.processing_fee > 0,
+            "deleting all existing keywords should still produce a non-zero fee"
+        );
+    }
+
+    /// Exercises `insert_contract_v1`'s token-config branch where `base_supply == 0`
+    /// AND the distribution rules specify a `new_tokens_destination_identity`
+    /// different from `owner_id`. The existing `test_insert_contract_with_token_zero_base_supply`
+    /// test uses the default-most-restrictive config (no custom destination identity
+    /// configured). This test specifically reaches the `unwrap_or(contract.owner_id())`
+    /// fallback path for the else branch where base_supply==0 and we only insert
+    /// the SumItem(0) total supply marker.
+    #[test]
+    fn test_insert_contract_with_token_zero_supply_and_custom_destination() {
+        use dpp::data_contract::accessors::v1::DataContractV1Setters;
+        use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
+        use dpp::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
+        use dpp::data_contract::associated_token::token_configuration::TokenConfiguration;
+        use dpp::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Setters;
+        use dpp::prelude::Identifier;
+        use std::collections::BTreeMap;
+
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let mut contract = get_dashpay_contract_fixture(None, 0, platform_version.protocol_version)
+            .data_contract_owned();
+
+        let mut token_config = TokenConfiguration::V0(
+            TokenConfigurationV0::default_most_restrictive().with_base_supply(0),
+        );
+        // Configure a new_tokens_destination_identity that differs from owner_id.
+        let destination = Identifier::random();
+        token_config
+            .distribution_rules_mut()
+            .set_new_tokens_destination_identity(Some(destination));
+        contract.set_tokens(BTreeMap::from([(0, token_config)]));
+
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("expected to apply token contract with custom destination successfully");
+
         let fetched = drive
             .get_contract_with_fetch_info(contract.id().to_buffer(), true, None, platform_version)
             .expect("should fetch contract")

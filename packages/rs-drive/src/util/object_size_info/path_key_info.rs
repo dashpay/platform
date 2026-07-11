@@ -250,3 +250,193 @@ impl<'a, const N: usize> PathKeyInfo<'a, N> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use grovedb::batch::key_info::KeyInfo::MaxKeySize;
+
+    #[test]
+    fn try_from_empty_vec_errors() {
+        let v: Vec<Vec<u8>> = vec![];
+        let result: Result<PathKeyInfo<'static, 0>, Error> = v.try_into();
+        let err = result.expect_err("empty vec should fail");
+        match err {
+            Error::Drive(DriveError::InvalidPath(msg)) => {
+                assert!(msg.contains("must not be none"));
+            }
+            _ => panic!("expected InvalidPath"),
+        }
+    }
+
+    #[test]
+    fn try_from_non_empty_vec_splits_last() {
+        let v: Vec<Vec<u8>> = vec![vec![1u8], vec![2u8, 3u8], vec![4u8]];
+        let pk: PathKeyInfo<0> = v.try_into().expect("should convert");
+        match pk {
+            PathKey((path, key)) => {
+                assert_eq!(path, vec![vec![1u8], vec![2u8, 3u8]]);
+                assert_eq!(key, vec![4u8]);
+            }
+            _ => panic!("expected PathKey"),
+        }
+    }
+
+    #[test]
+    fn try_from_single_element_vec() {
+        let v: Vec<Vec<u8>> = vec![vec![9u8]];
+        let pk: PathKeyInfo<0> = v.try_into().expect("single element should work");
+        match pk {
+            PathKey((path, key)) => {
+                assert!(path.is_empty());
+                assert_eq!(key, vec![9u8]);
+            }
+            _ => panic!("expected PathKey"),
+        }
+    }
+
+    #[test]
+    fn len_path_key() {
+        let pk: PathKeyInfo<0> = PathKey((vec![vec![1u8, 2], vec![3]], vec![4, 5, 6]));
+        assert_eq!(pk.len(), 6);
+    }
+
+    #[test]
+    fn len_path_key_ref() {
+        let key: &[u8] = &[10u8, 11];
+        let pk: PathKeyInfo<0> = PathKeyRef((vec![vec![1u8]], key));
+        assert_eq!(pk.len(), 3);
+    }
+
+    #[test]
+    fn len_fixed_size_variants() {
+        let path: [&[u8]; 2] = [&[1, 2], &[3]];
+        let pk: PathKeyInfo<2> = PathFixedSizeKey((path, vec![9, 8]));
+        assert_eq!(pk.len(), 5);
+
+        let key: &[u8] = &[7];
+        let pk: PathKeyInfo<2> = PathFixedSizeKeyRef((path, key));
+        assert_eq!(pk.len(), 4);
+    }
+
+    #[test]
+    fn len_path_key_size_uses_max_length() {
+        let kip = KeyInfoPath::from_known_path([b"ab".as_ref()]);
+        let pk: PathKeyInfo<0> = PathKeySize(
+            kip,
+            MaxKeySize {
+                unique_id: vec![],
+                max_size: 5,
+            },
+        );
+        assert_eq!(pk.len(), 7);
+    }
+
+    #[test]
+    fn is_empty_detects_empty_paths_and_keys() {
+        let pk: PathKeyInfo<0> = PathKey((vec![], vec![]));
+        assert!(pk.is_empty());
+
+        let pk: PathKeyInfo<0> = PathKey((vec![vec![1u8]], vec![]));
+        assert!(!pk.is_empty());
+    }
+
+    #[test]
+    fn is_contained_in_cache_path_key() {
+        let mut cache: std::collections::HashSet<Vec<Vec<u8>>> = std::collections::HashSet::new();
+        let path = vec![vec![1u8], vec![2u8]];
+        let key = vec![3u8];
+        let mut expected = path.clone();
+        expected.push(key.clone());
+        cache.insert(expected);
+
+        let pk: PathKeyInfo<0> = PathKey((path, key));
+        assert!(pk.is_contained_in_cache(&cache));
+    }
+
+    #[test]
+    fn add_to_cache_inserts_once() {
+        let mut cache: std::collections::HashSet<Vec<Vec<u8>>> = std::collections::HashSet::new();
+        let path: [&[u8]; 2] = [&[1u8], &[2u8]];
+        let key: &[u8] = &[3u8];
+        let pk: PathKeyInfo<2> = PathFixedSizeKeyRef((path, key));
+        assert!(pk.add_to_cache(&mut cache));
+        assert_eq!(cache.len(), 1);
+        // Inserting the same one again returns false
+        assert!(!pk.add_to_cache(&mut cache));
+    }
+
+    #[test]
+    fn convert_to_key_info_path_all_variants() {
+        // PathKey
+        let pk: PathKeyInfo<0> = PathKey((vec![vec![1u8]], vec![9u8]));
+        let kip = pk.convert_to_key_info_path().expect("ok");
+        assert_eq!(kip.len(), 2);
+
+        // PathKeyRef
+        let key: &[u8] = &[8u8];
+        let pk: PathKeyInfo<0> = PathKeyRef((vec![vec![1u8]], key));
+        let kip = pk.convert_to_key_info_path().expect("ok");
+        assert_eq!(kip.len(), 2);
+
+        // PathFixedSizeKey
+        let path: [&[u8]; 1] = [&[1u8]];
+        let pk: PathKeyInfo<1> = PathFixedSizeKey((path, vec![9u8]));
+        let kip = pk.convert_to_key_info_path().expect("ok");
+        assert_eq!(kip.len(), 2);
+
+        // PathFixedSizeKeyRef
+        let key: &[u8] = &[8u8];
+        let pk: PathKeyInfo<1> = PathFixedSizeKeyRef((path, key));
+        let kip = pk.convert_to_key_info_path().expect("ok");
+        assert_eq!(kip.len(), 2);
+
+        // PathKeySize
+        let pk: PathKeyInfo<0> = PathKeySize(
+            KeyInfoPath::from_known_owned_path(vec![vec![1u8]]),
+            KnownKey(vec![9u8]),
+        );
+        let kip = pk.convert_to_key_info_path().expect("ok");
+        assert_eq!(kip.len(), 2);
+    }
+
+    #[test]
+    fn display_renders_variants() {
+        let pk: PathKeyInfo<0> = PathKey((vec![vec![b'a']], vec![b'b']));
+        let s = format!("{}", pk);
+        assert!(s.starts_with("PathKey(path:"));
+
+        let key: &[u8] = b"c";
+        let pk: PathKeyInfo<0> = PathKeyRef((vec![vec![b'd']], key));
+        let s = format!("{}", pk);
+        assert!(s.starts_with("PathKeyRef(path:"));
+
+        let path: [&[u8]; 1] = [b"a"];
+        let pk: PathKeyInfo<1> = PathFixedSizeKey((path, vec![b'x']));
+        let s = format!("{}", pk);
+        assert!(s.starts_with("PathFixedSizeKey(path:"));
+
+        let key_ref: &[u8] = b"y";
+        let pk: PathKeyInfo<1> = PathFixedSizeKeyRef((path, key_ref));
+        let s = format!("{}", pk);
+        assert!(s.starts_with("PathFixedSizeKeyRef(path:"));
+
+        let pk: PathKeyInfo<0> = PathKeySize(
+            KeyInfoPath::from_known_owned_path(vec![vec![b'p']]),
+            KnownKey(vec![b'k']),
+        );
+        let s = format!("{}", pk);
+        assert!(s.starts_with("PathKeySize(path_info:"));
+
+        // Max size variant path rendering
+        let pk: PathKeyInfo<0> = PathKeySize(
+            KeyInfoPath::from_known_owned_path(vec![vec![b'p']]),
+            MaxKeySize {
+                unique_id: vec![b'z'],
+                max_size: 7,
+            },
+        );
+        let s = format!("{}", pk);
+        assert!(s.contains("MaxKeySize"));
+    }
+}

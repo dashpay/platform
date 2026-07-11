@@ -17,9 +17,15 @@ mod context;
 mod executor;
 mod triggers;
 
+/// Data trigger function pointer.
+///
+/// Takes a mutable `DataTriggerExecutionContext` so `_v1` triggers can
+/// call `context.state_transition_execution_context.add_operation(...)`
+/// directly to bill their drive reads. `_v0` triggers don't call
+/// `add_operation` (preserving PROTOCOL_VERSION_11 chain replay).
 type DataTrigger = fn(
     &DocumentTransitionAction,
-    &DataTriggerExecutionContext<'_>,
+    &mut DataTriggerExecutionContext<'_>,
     &PlatformVersion,
 ) -> Result<DataTriggerExecutionResult, Error>;
 

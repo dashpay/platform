@@ -232,3 +232,203 @@ impl TokenEmergencyActionTransitionActionV0 {
         ))
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unnecessary_literal_unwrap)]
+mod tests {
+    use crate::drive::contract::DataContractFetchInfo;
+    use crate::state_transition_action::batch::batched_transition::token_transition::token_base_transition_action::{
+        TokenBaseTransitionAction, TokenBaseTransitionActionAccessorsV0,
+        TokenBaseTransitionActionV0,
+    };
+    use crate::state_transition_action::batch::batched_transition::token_transition::token_emergency_action_transition_action::{
+        TokenEmergencyActionTransitionAction, TokenEmergencyActionTransitionActionAccessorsV0,
+        TokenEmergencyActionTransitionActionV0,
+    };
+    use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::identifier::Identifier;
+    use dpp::tokens::emergency_action::TokenEmergencyAction;
+    use platform_version::version::PlatformVersion;
+    use std::sync::Arc;
+
+    fn make_base() -> TokenBaseTransitionAction {
+        let fetch_info = DataContractFetchInfo::dpns_contract_fixture(
+            PlatformVersion::latest().protocol_version,
+        );
+        TokenBaseTransitionAction::V0(TokenBaseTransitionActionV0 {
+            token_id: Identifier::new([9u8; 32]),
+            identity_contract_nonce: 7,
+            token_contract_position: 0,
+            data_contract: Arc::new(fetch_info),
+            store_in_group: None,
+            perform_action: true,
+        })
+    }
+
+    fn make_action_v0(
+        action: TokenEmergencyAction,
+        note: Option<&str>,
+    ) -> TokenEmergencyActionTransitionActionV0 {
+        TokenEmergencyActionTransitionActionV0 {
+            base: make_base(),
+            emergency_action: action,
+            public_note: note.map(|s| s.to_string()),
+        }
+    }
+
+    #[test]
+    fn v0_accessors_return_emergency_action_and_note() {
+        let v0 = make_action_v0(TokenEmergencyAction::Pause, Some("pause-note"));
+        assert_eq!(v0.emergency_action(), TokenEmergencyAction::Pause);
+        assert_eq!(v0.public_note(), Some(&"pause-note".to_string()));
+    }
+
+    #[test]
+    fn v0_set_emergency_action_swaps_variant() {
+        let mut v0 = make_action_v0(TokenEmergencyAction::Pause, None);
+        assert!(v0.emergency_action().paused());
+        v0.set_emergency_action(TokenEmergencyAction::Resume);
+        assert_eq!(v0.emergency_action(), TokenEmergencyAction::Resume);
+        assert!(!v0.emergency_action().paused());
+    }
+
+    #[test]
+    fn v0_set_public_note_updates_note() {
+        let mut v0 = make_action_v0(TokenEmergencyAction::Resume, None);
+        assert!(v0.public_note().is_none());
+        v0.set_public_note(Some("hi".to_string()));
+        assert_eq!(v0.public_note(), Some(&"hi".to_string()));
+        v0.set_public_note(None);
+        assert!(v0.public_note().is_none());
+    }
+
+    #[test]
+    fn v0_public_note_owned_consumes_self() {
+        let v0 = make_action_v0(TokenEmergencyAction::Pause, Some("owned"));
+        let owned: Option<String> = v0.public_note_owned();
+        assert_eq!(owned, Some("owned".to_string()));
+    }
+
+    #[test]
+    fn v0_base_ref_and_base_owned_preserve_token_id() {
+        let v0 = make_action_v0(TokenEmergencyAction::Pause, None);
+        assert_eq!(v0.base().token_id(), Identifier::new([9u8; 32]));
+        let base = v0.base_owned();
+        assert_eq!(base.token_id(), Identifier::new([9u8; 32]));
+    }
+
+    #[test]
+    fn v0_default_accessors_delegate_to_base() {
+        let v0 = make_action_v0(TokenEmergencyAction::Pause, None);
+        assert_eq!(v0.token_id(), Identifier::new([9u8; 32]));
+        assert_eq!(v0.token_position(), 0);
+        // data_contract_id comes from the dpns contract fixture
+        let fetched = v0.data_contract_fetch_info();
+        assert_eq!(v0.data_contract_id(), fetched.contract.id());
+        // ref and owned return same id
+        assert_eq!(
+            v0.data_contract_fetch_info_ref().contract.id(),
+            fetched.contract.id()
+        );
+    }
+
+    #[test]
+    fn enum_from_v0_produces_v0_variant() {
+        let v0 = make_action_v0(TokenEmergencyAction::Resume, Some("n"));
+        let action: TokenEmergencyActionTransitionAction = v0.into();
+        assert_eq!(action.emergency_action(), TokenEmergencyAction::Resume);
+        assert_eq!(action.public_note(), Some(&"n".to_string()));
+    }
+
+    #[test]
+    fn enum_accessors_route_through_v0() {
+        let v0 = make_action_v0(TokenEmergencyAction::Pause, Some("start"));
+        let mut action: TokenEmergencyActionTransitionAction = v0.into();
+        assert_eq!(action.emergency_action(), TokenEmergencyAction::Pause);
+
+        action.set_emergency_action(TokenEmergencyAction::Resume);
+        assert_eq!(action.emergency_action(), TokenEmergencyAction::Resume);
+
+        action.set_public_note(Some("replaced".to_string()));
+        assert_eq!(action.public_note(), Some(&"replaced".to_string()));
+
+        let base = action.clone().base_owned();
+        assert_eq!(base.token_id(), Identifier::new([9u8; 32]));
+
+        assert_eq!(action.base().token_id(), Identifier::new([9u8; 32]));
+
+        let note = action.public_note_owned();
+        assert_eq!(note, Some("replaced".to_string()));
+    }
+
+    #[test]
+    fn enum_set_public_note_none_clears() {
+        let mut action: TokenEmergencyActionTransitionAction =
+            make_action_v0(TokenEmergencyAction::Pause, Some("x")).into();
+        action.set_public_note(None);
+        assert!(action.public_note().is_none());
+    }
+
+    #[test]
+    fn emergency_action_paused_helper_matches_variant() {
+        // Sanity check the upstream TokenEmergencyAction helper used by this module.
+        assert!(TokenEmergencyAction::Pause.paused());
+        assert!(!TokenEmergencyAction::Resume.paused());
+    }
+
+    // -------------------------------------------------------------------
+    // Transformer logic fragment tests — note precedence and Copy semantics of
+    // TokenEmergencyAction (exercised by the `emergency_action: *emergency_action`
+    // pattern in the borrowed transformer).
+    // -------------------------------------------------------------------
+
+    #[test]
+    fn emergency_change_note_some_some_wins() {
+        let change_note: Option<Option<String>> = Some(Some("group-override".to_string()));
+        let public_note: Option<String> = Some("user".to_string());
+        let merged = change_note.unwrap_or(public_note);
+        assert_eq!(merged, Some("group-override".to_string()));
+    }
+
+    #[test]
+    fn emergency_change_note_some_none_clears_user_note() {
+        let change_note: Option<Option<String>> = Some(None);
+        let public_note: Option<String> = Some("user".to_string());
+        let merged = change_note.unwrap_or(public_note);
+        assert!(merged.is_none());
+    }
+
+    #[test]
+    fn emergency_change_note_none_keeps_user_note() {
+        let change_note: Option<Option<String>> = None;
+        let public_note: Option<String> = Some("user".to_string());
+        let merged = change_note.unwrap_or(public_note);
+        assert_eq!(merged, Some("user".to_string()));
+    }
+
+    #[test]
+    fn emergency_borrowed_copies_action_via_star_deref() {
+        // The borrowed transformer writes `emergency_action: *emergency_action`
+        // which relies on `TokenEmergencyAction: Copy`. We mirror that via an
+        // intermediate reference binding (a direct `*&pause` would trip
+        // `clippy::deref_addrof`).
+        let pause = TokenEmergencyAction::Pause;
+        let pause_ref: &TokenEmergencyAction = &pause;
+        let copied: TokenEmergencyAction = *pause_ref;
+        assert_eq!(copied, TokenEmergencyAction::Pause);
+
+        let resume = TokenEmergencyAction::Resume;
+        let resume_ref: &TokenEmergencyAction = &resume;
+        let copied: TokenEmergencyAction = *resume_ref;
+        assert_eq!(copied, TokenEmergencyAction::Resume);
+    }
+
+    #[test]
+    fn emergency_borrowed_path_clones_public_note_without_consuming() {
+        let change_note: Option<Option<String>> = None;
+        let public_note: Option<String> = Some("bound".to_string());
+        let merged = change_note.unwrap_or(public_note.clone());
+        assert_eq!(merged, Some("bound".to_string()));
+        assert!(public_note.is_some());
+    }
+}

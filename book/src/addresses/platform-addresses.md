@@ -223,6 +223,8 @@ pub struct ShieldedWithdrawalTransitionV0 {
 
 An asset lock proof from the Core chain funds the shielded pool directly. The recipient is an `OrchardAddress` inside the Orchard bundle. No `PlatformAddress` inputs are needed -- the asset lock proof substitutes for them.
 
+The transition also carries an optional `surplus_output: Option<PlatformAddress>`. When the consumed asset lock exceeds `shield_amount + pool_fee`, the leftover *surplus* is credited to this platform address; if it is unset, the surplus folds into the fee pools (bounded by `shielded_implicit_fee_cap`). See [Entry-Transition Fees](../fees/shielded-fees.md#entry-transition-fees-shield-and-shieldfromassetlock). Unlike the transparent recipients of `Unshield`/`ShieldedWithdrawal` (which are bound through the Orchard sighash `extra_data` above), `surplus_output` is bound through the state transition's **own** `platform_signable` signature -- it sits before the `signature` field, so it is part of the signed payload and cannot be substituted or truncated after signing. The Orchard `extra_data` therefore remains empty for this transition.
+
 ## The Platform Sighash
 
 When transparent fields need to be bound to an Orchard bundle's proof, the platform uses a custom sighash computation defined in `packages/rs-dpp/src/shielded/mod.rs`:

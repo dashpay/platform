@@ -177,8 +177,10 @@ fn test_config_load_from_nonexistent_dotenv_file() {
 
 #[test]
 fn test_server_config_address_with_port_ipv4_literal() {
-    let mut server = ServerConfig::default();
-    server.bind_address = "0.0.0.0".to_string();
+    let server = ServerConfig {
+        bind_address: "0.0.0.0".to_string(),
+        ..Default::default()
+    };
 
     let addr = server
         .address_with_port(1234)
@@ -190,8 +192,10 @@ fn test_server_config_address_with_port_ipv4_literal() {
 
 #[test]
 fn test_server_config_address_with_port_ipv6_literal() {
-    let mut server = ServerConfig::default();
-    server.bind_address = "::1".to_string();
+    let server = ServerConfig {
+        bind_address: "::1".to_string(),
+        ..Default::default()
+    };
 
     let addr = server
         .address_with_port(4321)
@@ -203,8 +207,10 @@ fn test_server_config_address_with_port_ipv6_literal() {
 
 #[test]
 fn test_server_config_address_with_port_hostname() {
-    let mut server = ServerConfig::default();
-    server.bind_address = "localhost".to_string();
+    let server = ServerConfig {
+        bind_address: "localhost".to_string(),
+        ..Default::default()
+    };
 
     let addr = server
         .address_with_port(8080)
@@ -216,8 +222,10 @@ fn test_server_config_address_with_port_hostname() {
 
 #[test]
 fn test_server_config_rejects_port_in_bind_address() {
-    let mut server = ServerConfig::default();
-    server.bind_address = "127.0.0.1:9000".to_string();
+    let server = ServerConfig {
+        bind_address: "127.0.0.1:9000".to_string(),
+        ..Default::default()
+    };
 
     let err = server
         .address_with_port(5000)
@@ -231,8 +239,10 @@ fn test_server_config_rejects_port_in_bind_address() {
 
 #[test]
 fn test_server_config_invalid_bind_address() {
-    let mut server = ServerConfig::default();
-    server.bind_address = "invalid host".to_string();
+    let server = ServerConfig {
+        bind_address: "invalid host".to_string(),
+        ..Default::default()
+    };
 
     let err = server
         .address_with_port(6000)

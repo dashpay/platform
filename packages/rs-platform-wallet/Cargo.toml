@@ -9,35 +9,147 @@ description = "Platform wallet with identity management support"
 [dependencies]
 # Dash Platform packages
 dpp = { path = "../rs-dpp" }
-dash-sdk = { path = "../rs-sdk", default-features = false, features = ["dashpay-contract", "dpns-contract"] }
+dash-sdk = { path = "../rs-sdk", default-features = false, features = ["dashpay-contract", "dpns-contract", "wallet"] }
 platform-encryption = { path = "../rs-platform-encryption" }
 
 # Key wallet dependencies (from rust-dashcore)
 key-wallet = { workspace = true }
-key-wallet-manager = { workspace = true, optional = true }
+key-wallet-manager = { workspace = true, features = [] }
+dash-spv = { workspace = true }
 
 # Core dependencies
 dashcore = { workspace = true }
 
-# SPV context provider dependencies (optional)
-dash-spv = { workspace = true, optional = true }
+# SPV context provider dependency (optional). `dash-spv` and `tokio` are
+# already non-optional dependencies above, so the `spv-context` feature only
+# needs to pull in the context-provider trait crate.
 dash-context-provider = { path = "../rs-context-provider", optional = true }
-tokio = { version = "1.41", features = ["sync"], optional = true }
 
 # Standard dependencies
 thiserror = "1.0"
 async-trait = "0.1"
+arc-swap = "1"
 
 # Collections
-indexmap = "2.0"
+bimap = "0.6"
+
+# Async runtime
+tokio = { version = "1", features = ["sync", "rt", "time", "macros"] }
+tokio-util = { version = "0.7.12" }
+
+# Logging
+tracing = "0.1"
+
+# Encoding
+hex = "0.4"
+bs58 = "0.5"
+serde = { version = "1", default-features = false, features = ["derive"], optional = true }
+serde_json = "1.0"
+
+# Image processing (DIP-15 avatar hash + fingerprint)
+sha2 = "0.10"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif"] }
+
+# Security
+zeroize = "1"
+
+# Shielded pool (optional, behind `shielded` feature)
+grovedb-commitment-tree = { git = "https://github.com/dashpay/grovedb", tag = "v5.0.0", optional = true }
+# Direct `rusqlite` access so `FileBackedShieldedStore::open_path` can set
+# WAL + synchronous=NORMAL pragmas before handing the connection to
+# `ClientPersistentCommitmentTree`. Version locked to match the rev grovedb
+# is built against (its `Cargo.lock` resolves rusqlite at this major).
+rusqlite = { version = "0.38", optional = true }
+zip32 = { version = "0.2.0", default-features = false, optional = true }
+# `StreamExt`/`pin_mut!` to consume the SDK's `sync_shielded_notes_stream`
+# in the interleaved fetch/tree-append consumer (shielded sync only).
+# Same version as `dash-sdk` so the lockfile resolves a single copy.
+futures = { version = "0.3.30", optional = true }
+
+# Networked, opt-in example binaries. Each one performs real network I/O
+# against a live devnet, so they are examples (compiled, never run by
+# `cargo test`) rather than `#[ignore]`d tests. They are crate-gated on the
+# `shielded` feature (`#![cfg(feature = "shielded")]`), so `required-features`
+# lets cargo skip building them entirely when the feature is off — otherwise
+# the emptied file would have no `main`.
+[[example]]
+name = "shielded_sync"
+required-features = ["shielded"]
+
+[[example]]
+name = "shielded_sync_paloma"
+required-features = ["shielded"]
+
+[[example]]
+name = "shielded_chunk_timing_bench"
+required-features = ["shielded"]
 
 [dev-dependencies]
+# Used by `examples/shielded_chunk_timing_bench.rs` and
+# `tests/shielded_decrypt_bench.rs` to assemble per-chunk wire
+# fixtures and decode the `ShieldedEncryptedNote` wire type.
+drive-proof-verifier = { path = "../rs-drive-proof-verifier" }
+# `test-utils` exposes key-wallet's `TestWalletContext` + `Address::dummy`
+# (via `dashcore/test-utils`) for building funded, signable test wallets.
+# Dev-only, so the production build stays on the leaner default features.
+key-wallet = { workspace = true, features = ["test-utils"] }
 rand = "0.8"
+# Drives the parallel decrypt benchmark in `shielded_decrypt_bench.rs`.
+rayon = "1.10"
+# Used by `shielded_tree_append_bench.rs` to open SQLite with tuned PRAGMAs
+# (WAL vs DELETE, sync mode) — confirms whether journal mode is what's
+# making the simulator path so slow.
+rusqlite = "0.38"
+static_assertions = "1.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+# `test-util` brings `tokio::time::pause` / `tokio::test(start_paused = true)`
+# so the time-driven retry logic in `submit_with_cl_height_retry` can be
+# tested deterministically without sleeping wall-clock seconds.
+tokio = { version = "1", features = ["sync", "rt", "time", "macros", "test-util"] }
+# Re-enable the SDK with mocks feature for test-only mock builders;
+# the non-test build keeps the leaner default-feature SDK above.
+dash-sdk = { path = "../rs-sdk", default-features = false, features = ["dashpay-contract", "dpns-contract", "wallet", "mocks"] }
+# Used by `examples/shielded_sync_paloma.rs` to build the SDK against
+# a remote devnet that doesn't have Core RPC reachable — supplies
+# proof verification via a separate HTTP quorum-list service.
+rs-sdk-trusted-context-provider = { path = "../rs-sdk-trusted-context-provider" }
 
 
 [features]
-default = ["bls", "eddsa", "manager"]
-bls = ["key-wallet/bls"]
-eddsa = ["key-wallet/eddsa"]
-manager = ["key-wallet-manager"]
-spv-context = ["dep:dash-spv", "dep:dash-context-provider", "dep:tokio"]
+default = ["bls", "eddsa"]
+# SPV-backed Platform context provider (delegates quorum lookups to the SPV
+# runtime). `dash-spv`/`tokio` are already non-optional deps; this pulls in the
+# context-provider trait crate plus `rt-multi-thread` (the sync->async bridge
+# in `spv_context_provider` uses `tokio::task::block_in_place`).
+spv-context = ["dep:dash-context-provider", "tokio/rt-multi-thread"]
+bls = ["key-wallet/bls", "key-wallet-manager/bls"]
+eddsa = ["key-wallet/eddsa", "key-wallet-manager/eddsa"]
+shielded = ["dep:grovedb-commitment-tree", "dep:rusqlite", "dep:zip32", "dep:futures", "dash-sdk/shielded", "dpp/shielded-client"]
+# Opt-in serde derives on the changeset types in `src/changeset/` plus
+# the per-identity / DashPay scalar types those changesets carry.
+# Activates `key-wallet/serde` (which transitively activates
+# `dashcore/serde` and `dash-network/serde`) so every leaf type in a
+# changeset payload — `TransactionRecord`, `Utxo`, `InstantLock`,
+# `AccountType`, `AddressInfo`, `ExtendedPubKey`, `Network` — has a
+# working `serde::Serialize`/`Deserialize` impl. `dpp` derives serde
+# unconditionally; `key-wallet-manager/serde` covers `DerivedAddress`
+# and friends; `dash-sdk/serde` surfaces serde on SDK-owned types
+# reachable from changeset payloads.
+serde = [
+    "dep:serde",
+    "key-wallet/serde",
+    "key-wallet-manager/serde",
+    "dash-sdk/serde",
+]
+# Forward to the upstream `key-wallet` / `key-wallet-manager`
+# `keep-finalized-transactions` feature. With it OFF (the default),
+# chainlocked transactions are evicted from the in-memory
+# `transactions` map and only their txids are kept (in
+# `finalized_txids`) for dedup; tx history is delivered through the
+# event channel. Turn ON to keep the full `TransactionRecord` for
+# finalized transactions in memory for the wallet's lifetime — useful
+# for debug surfaces that page through history.
+keep-finalized-transactions = [
+    "key-wallet/keep-finalized-transactions",
+    "key-wallet-manager/keep-finalized-transactions",
+]

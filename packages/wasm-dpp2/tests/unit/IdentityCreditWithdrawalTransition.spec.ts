@@ -424,7 +424,7 @@ describe('IdentityCreditWithdrawalTransition', () => {
       expect(json.identityId).to.equal('GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec');
       expect(json.amount).to.equal(111);
       expect(json.coreFeePerByte).to.equal(1);
-      expect(json.pooling).to.equal(0);
+      expect(json.pooling).to.equal('never');
       expect(json.outputScript).to.equal('dqkUAQEBAQEBAQEBAQEBAQEBAQEBAQGIrA==');
       expect(json.nonce).to.equal(1);
       expect(json.userFeeIncrease).to.equal(1);

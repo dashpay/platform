@@ -180,3 +180,150 @@ impl Drive {
         Ok(document)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use dpp::block::block_info::BlockInfo;
+    use dpp::prelude::Identifier;
+    use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
+    use dpp::version::PlatformVersion;
+
+    /// Exercises `add_new_contract_keywords_v0` with an empty slice.
+    /// This covers the "for keyword in keywords.iter() { ... }" loop when
+    /// the iterator is empty: no per-keyword document ops are added, and
+    /// the resulting batch contains only fee-related ops (if any). PR #3516
+    /// covered the non-empty keyword insertion path but not the no-op branch
+    /// invoked directly on the public API.
+    #[test]
+    fn test_add_new_contract_keywords_v0_empty_slice_no_ops() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        // Grove needs the keyword_search contract applied for the
+        // `load_keyword_search` call to be usable downstream. Even though
+        // we'll add zero documents, the document_type lookup still runs.
+        let keyword_search_contract =
+            load_system_data_contract(SystemDataContract::KeywordSearch, platform_version)
+                .expect("keyword_search contract");
+        drive
+            .apply_contract(
+                &keyword_search_contract,
+                BlockInfo::default(),
+                true,
+                None,
+                None,
+                platform_version,
+            )
+            .expect("apply keyword_search contract");
+
+        let contract_id = Identifier::random();
+        let owner_id = Identifier::random();
+
+        let fee = drive
+            .add_new_contract_keywords(
+                contract_id,
+                owner_id,
+                &[], // empty
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("empty keywords add should succeed");
+
+        // No per-keyword ops were added, so processing fee should be 0.
+        assert_eq!(
+            fee.processing_fee, 0,
+            "empty keyword insert should not produce processing fee"
+        );
+    }
+
+    /// Exercises `add_new_contract_keywords_v0` in apply=false estimation mode.
+    /// This populates `estimated_costs_only_with_layer_info = Some(HashMap)`
+    /// which is separate from the normal apply=true path.
+    #[test]
+    fn test_add_new_contract_keywords_v0_estimate_only() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let keyword_search_contract =
+            load_system_data_contract(SystemDataContract::KeywordSearch, platform_version)
+                .expect("keyword_search contract");
+        drive
+            .apply_contract(
+                &keyword_search_contract,
+                BlockInfo::default(),
+                true,
+                None,
+                None,
+                platform_version,
+            )
+            .expect("apply keyword_search contract");
+
+        let contract_id = Identifier::random();
+        let owner_id = Identifier::random();
+
+        let fee = drive
+            .add_new_contract_keywords(
+                contract_id,
+                owner_id,
+                &["kw1".to_string(), "kw2".to_string()],
+                &BlockInfo::default(),
+                false, // apply=false -> estimation
+                None,
+                platform_version,
+            )
+            .expect("estimate-only keyword add should succeed");
+
+        assert!(
+            fee.processing_fee > 0 || fee.storage_fee > 0,
+            "estimation should produce fees"
+        );
+    }
+
+    /// Exercises `build_contract_keyword_document_owned_v0` indirectly by
+    /// constructing keywords with varying byte lengths including multi-byte
+    /// UTF-8. This verifies the `entropy` Vec grows correctly (capacity
+    /// calculation uses `keyword.len()` which is byte length, matching
+    /// `extend_from_slice(keyword.as_bytes())`).
+    #[test]
+    fn test_add_new_contract_keywords_v0_multibyte_keywords() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let keyword_search_contract =
+            load_system_data_contract(SystemDataContract::KeywordSearch, platform_version)
+                .expect("keyword_search contract");
+        drive
+            .apply_contract(
+                &keyword_search_contract,
+                BlockInfo::default(),
+                true,
+                None,
+                None,
+                platform_version,
+            )
+            .expect("apply keyword_search contract");
+
+        let contract_id = Identifier::random();
+        let owner_id = Identifier::random();
+
+        // Include multi-byte UTF-8 ("émoji-ish" — 3 chars, 4 bytes) to
+        // exercise the `keyword.len()` byte-length path used for entropy.
+        // The schema allows `^.{1,50}$` which counts chars, so these are fine.
+        let fee = drive
+            .add_new_contract_keywords(
+                contract_id,
+                owner_id,
+                &["ascii".to_string(), "café".to_string()],
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("multibyte keyword add should succeed");
+
+        assert!(fee.processing_fee > 0);
+    }
+}

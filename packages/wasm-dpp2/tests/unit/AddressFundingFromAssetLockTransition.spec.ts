@@ -115,7 +115,7 @@ describe('AddressFundingFromAssetLockTransition', () => {
       const transition = createTransition();
       const proof = transition.assetLockProof;
       expect(proof).to.exist();
-      expect(proof.lockTypeName).to.equal('Instant');
+      expect(proof.lockType).to.equal('instant');
     });
 
     it('should set asset lock proof', () => {
@@ -127,7 +127,7 @@ describe('AddressFundingFromAssetLockTransition', () => {
       const chainProof = wasm.AssetLockProof.createChainAssetLockProof(11, outpoint);
 
       transition.assetLockProof = chainProof;
-      expect(transition.assetLockProof.lockTypeName).to.equal('Chain');
+      expect(transition.assetLockProof.lockType).to.equal('chain');
     });
   });
 
@@ -182,6 +182,102 @@ describe('AddressFundingFromAssetLockTransition', () => {
       const transition = createTransition();
       transition.userFeeIncrease = 42;
       expect(transition.userFeeIncrease).to.equal(42);
+    });
+  });
+
+  describe('toObject() / toJSON() / fromObject() / fromJSON()', () => {
+    it('toObject() emits inputs as typed array of {address, nonce, amount}', () => {
+      const transition = createTransition();
+      const obj = transition.toObject();
+
+      expect(obj.inputs).to.be.an('array');
+      expect(obj.inputs).to.have.lengthOf(1);
+      expect(obj.inputs[0].address).to.be.instanceOf(Uint8Array);
+      expect(obj.inputs[0].address.length).to.equal(21);
+      expect(obj.inputs[0].nonce).to.equal(0);
+      expect(obj.inputs[0].amount).to.equal(BigInt(100000));
+    });
+
+    it('toObject() emits outputs with absent amount for unspecified', () => {
+      const transition = createTransition();
+      const obj = transition.toObject();
+
+      expect(obj.outputs).to.be.an('array');
+      expect(obj.outputs).to.have.lengthOf(1);
+      expect(obj.outputs[0].address).to.be.instanceOf(Uint8Array);
+      expect(obj.outputs[0].address.length).to.equal(21);
+      // serde Option::None becomes undefined in the wasm Object form (JSON form is null).
+      expect(obj.outputs[0].amount == null).to.be.true(); // null OR undefined
+    });
+
+    it('toObject() emits outputs with explicit bigint amount when set', () => {
+      const inputAddr = wasm.PlatformAddress.fromBytes(addr1Bytes);
+      const outputAddr = wasm.PlatformAddress.fromBytes(addr2Bytes);
+      const input = new wasm.PlatformAddressInput(inputAddr, 0, BigInt(50000));
+      const output = new wasm.PlatformAddressOutput(outputAddr, BigInt(40000));
+      const transition = new wasm.AddressFundingFromAssetLockTransition({
+        assetLockProof: createAssetLockProof(),
+        inputs: [input],
+        outputs: [output],
+      });
+
+      const obj = transition.toObject();
+      expect(obj.outputs[0].amount).to.equal(BigInt(40000));
+    });
+
+    it('toObject() emits feeStrategy as typed array of {type, index}', () => {
+      const transition = createTransition();
+      const obj = transition.toObject();
+
+      expect(obj.feeStrategy).to.be.an('array');
+      expect(obj.feeStrategy.length).to.be.greaterThan(0);
+      expect(obj.feeStrategy[0]).to.have.property('$type');
+      expect(obj.feeStrategy[0].$type).to.be.oneOf(['deductFromInput', 'reduceOutput']);
+      expect(obj.feeStrategy[0].index).to.be.a('number');
+    });
+
+    it('toJSON() emits inputs as typed array with hex address and number/string amount', () => {
+      const transition = createTransition();
+      const json = transition.toJSON();
+
+      expect(json.inputs).to.be.an('array');
+      expect(json.inputs[0].address).to.be.a('string');
+      expect(json.inputs[0].address).to.have.lengthOf(42); // 21 bytes hex-encoded
+      expect(json.inputs[0].nonce).to.equal(0);
+      expect(json.inputs[0].amount).to.satisfy((v: unknown) => typeof v === 'number' || typeof v === 'string');
+    });
+
+    it('toJSON() emits outputs with hex address and null amount when unset', () => {
+      const transition = createTransition();
+      const json = transition.toJSON();
+
+      expect(json.outputs).to.be.an('array');
+      expect(json.outputs[0].address).to.be.a('string');
+      expect(json.outputs[0].address).to.have.lengthOf(42);
+      expect(json.outputs[0].amount).to.be.null();
+    });
+
+    it('toJSON() emits feeStrategy with {type, index} shape', () => {
+      const transition = createTransition();
+      const json = transition.toJSON();
+
+      expect(json.feeStrategy).to.be.an('array');
+      expect(json.feeStrategy[0].$type).to.be.oneOf(['deductFromInput', 'reduceOutput']);
+      expect(json.feeStrategy[0].index).to.be.a('number');
+    });
+
+    it('fromObject(toObject()) round-trips identically', () => {
+      const transition = createTransition();
+      const obj = transition.toObject();
+      const restored = wasm.AddressFundingFromAssetLockTransition.fromObject(obj);
+      expect(restored.toObject()).to.deep.equal(obj);
+    });
+
+    it('fromJSON(toJSON()) round-trips identically', () => {
+      const transition = createTransition();
+      const json = transition.toJSON();
+      const restored = wasm.AddressFundingFromAssetLockTransition.fromJSON(json);
+      expect(restored.toJSON()).to.deep.equal(json);
     });
   });
 

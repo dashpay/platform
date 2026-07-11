@@ -8,6 +8,11 @@ token-history-contract:
   - packages/token-history-contract/schema/**
   - packages/token-history-contract/Cargo.toml
 
+keyword-search-contract:
+  - packages/keyword-search-contract/src/**
+  - packages/keyword-search-contract/schema/**
+  - packages/keyword-search-contract/Cargo.toml
+
 dashpay-contract:
   - packages/dashpay-contract/src/**
   - packages/dashpay-contract/schema/**
@@ -31,6 +36,27 @@ dpns-contract:
 json-schema-compatibility-validator:
   - packages/rs-json-schema-compatibility-validator/**
 
+data-contracts:
+  - packages/data-contracts/**
+
+platform-value:
+  - packages/rs-platform-value/**
+
+platform-value-convertible:
+  - packages/rs-platform-value-convertible/**
+
+platform-serialization:
+  - packages/rs-platform-serialization/**
+
+platform-serialization-derive:
+  - packages/rs-platform-serialization-derive/**
+
+platform-version:
+  - packages/rs-platform-version/**
+
+platform-versioning:
+  - packages/rs-platform-versioning/**
+
 dpp:
   - packages/rs-dpp/**
   - packages/rs-dpp-json-convertible-derive/**
@@ -46,10 +72,29 @@ wasm-dpp2:
 drive:
   - packages/rs-drive/**
 
+simple-signer:
+  - packages/simple-signer/**
+
+strategy-tests:
+  - packages/strategy-tests/**
+
 drive-abci:
   - packages/rs-drive-abci/**
 
+drive-proof-verifier:
+  - packages/rs-drive-proof-verifier/**
+
+dash-async:
+  - packages/rs-dash-async/**
+
+dash-context-provider:
+  - packages/rs-context-provider/**
+
+rs-sdk-trusted-context-provider:
+  - packages/rs-sdk-trusted-context-provider/**
+
 dapi-grpc:
+  - packages/rs-dash-platform-macros/**
   - packages/dapi-grpc/src/**
   - packages/dapi-grpc/protos/**
   - packages/dapi-grpc/build.rs
@@ -57,9 +102,13 @@ dapi-grpc:
 
 rs-dapi:
   - packages/rs-dapi/**
+  - packages/rs-dash-event-bus/**
 
 rs-dapi-client:
   - packages/rs-dapi-client/**
+
+platform-encryption:
+  - packages/rs-platform-encryption/**
 
 dash-sdk:
   - packages/rs-sdk/**
@@ -70,3 +119,27 @@ rs-sdk-ffi:
 wasm-sdk:
   - packages/wasm-sdk/src/**
   - packages/wasm-sdk/Cargo.toml
+
+platform-wallet:
+  - packages/rs-platform-wallet/**
+
+platform-wallet-storage:
+  - packages/rs-platform-wallet-storage/**
+
+platform-wallet-ffi:
+  - packages/rs-platform-wallet-ffi/**
+
+rs-unified-sdk-ffi:
+  - packages/rs-unified-sdk-ffi/**
+
+wasm-drive-verify:
+  - packages/wasm-drive-verify/**
+
+check-features:
+  - packages/check-features/**
+
+dash-platform-balance-checker:
+  - packages/dash-platform-balance-checker/**
+
+rs-scripts:
+  - packages/rs-scripts/**

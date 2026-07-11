@@ -6,7 +6,7 @@
 //! ## Networks Supported
 //! - **Mainnet**: Uses `https://quorums.mainnet.networks.dash.org/`
 //! - **Testnet**: Uses `https://quorums.testnet.networks.dash.org/`
-//! - **Devnet**: Uses `https://quorums.devnet.<devnet_name>.networks.dash.org/`
+//! - **Devnet**: Uses `https://quorums.<devnet_name>.networks.dash.org/`
 
 pub mod error;
 pub mod provider;
@@ -44,7 +44,21 @@ pub fn get_quorum_base_url(
                         "Devnet name cannot start or end with a hyphen".to_string(),
                     ));
                 }
-                Ok(format!("https://quorums.devnet.{}.networks.dash.org", name))
+                // Reserved names that would alias the production / non-devnet quorum
+                // hostnames (e.g. "mainnet" => https://quorums.mainnet.networks.dash.org).
+                // The URL pattern shares its namespace with mainnet/testnet/local, so
+                // the validator is the only line of defense against a cross-network
+                // trust-root mixup labeled `Network::Devnet`.
+                if matches!(
+                    name.to_ascii_lowercase().as_str(),
+                    "mainnet" | "testnet" | "devnet" | "local" | "regtest"
+                ) {
+                    return Err(TrustedContextProviderError::InvalidDevnetName(format!(
+                        "Devnet name '{}' is reserved (would alias a non-devnet quorum hostname)",
+                        name
+                    )));
+                }
+                Ok(format!("https://quorums.{}.networks.dash.org", name))
             } else {
                 Err(TrustedContextProviderError::InvalidDevnetName(
                     "Devnet name must be provided for devnet network".to_string(),
@@ -54,9 +68,5 @@ pub fn get_quorum_base_url(
         Network::Regtest => Err(TrustedContextProviderError::UnsupportedNetwork(
             "Regtest network is not supported by trusted context provider".to_string(),
         )),
-        _ => Err(TrustedContextProviderError::UnsupportedNetwork(format!(
-            "Unknown network type: {:?}",
-            network
-        ))),
     }
 }

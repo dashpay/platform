@@ -1,32 +1,44 @@
 // WalletsContentView.swift
 // SwiftExampleApp
 //
-// Combined wallets + identities screen (Tab 2).
+// Wallets-only tab content. Identities live in the sibling
+// `IdentitiesContentView` tab so users navigate to the right place
+// instead of scrolling through a combined list.
 
 import SwiftUI
 import SwiftDashSDK
 import SwiftData
 
 struct WalletsContentView: View {
-    @EnvironmentObject var walletService: WalletService
-    @EnvironmentObject var unifiedAppState: UnifiedAppState
+    @EnvironmentObject var walletManager: PlatformWalletManager
+    @EnvironmentObject var platformState: AppState
     @EnvironmentObject var platformBalanceSyncService: PlatformBalanceSyncService
     @Environment(\.modelContext) private var modelContext
-    @Query private var wallets: [HDWallet]
+    @Query private var wallets: [PersistentWallet]
     @State private var showingCreateWallet = false
-    @State private var showingLoadIdentity = false
+
+    /// Wallets on the currently-selected network. The persistent
+    /// store keeps every network's rows so flipping back to testnet
+    /// re-surfaces what was synced there, but the tab only renders
+    /// the wallets tied to `platformState.currentNetwork`. Rows with
+    /// `networkRaw == nil` (legacy / not yet hydrated by the
+    /// persister) drop out — once the persister fills the column in,
+    /// they reappear under the matching network.
+    private var visibleWallets: [PersistentWallet] {
+        let raw = platformState.currentNetwork.rawValue
+        return wallets.filter { $0.networkRaw == raw }
+    }
 
     var body: some View {
         List {
-            // Section 1: Wallets
-            Section("Wallets (\(unifiedAppState.platformState.currentNetwork.displayName))") {
-                if wallets.isEmpty {
+            Section("Wallets (\(platformState.currentNetwork.displayName))") {
+                if visibleWallets.isEmpty {
                     VStack(spacing: 12) {
                         Image(systemName: "wallet.pass")
                             .font(.system(size: 40))
                             .foregroundColor(.gray)
 
-                        Text("No \(unifiedAppState.platformState.currentNetwork.displayName) Wallets")
+                        Text("No \(platformState.currentNetwork.displayName) Wallets")
                             .font(.headline)
 
                         Text("Create a wallet to get started")
@@ -43,89 +55,58 @@ struct WalletsContentView: View {
                                 .background(Color.blue)
                                 .cornerRadius(8)
                         }
+                        .accessibilityIdentifier("wallets.empty.createWalletButton")
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 20)
                 } else {
-                    ForEach(wallets) { wallet in
-                        NavigationLink {
-                            WalletDetailView(wallet: wallet)
-                                .environmentObject(unifiedAppState)
-                        } label: {
+                    ForEach(visibleWallets) { wallet in
+                        NavigationLink(value: wallet) {
                             WalletRowView(wallet: wallet)
                         }
-                    }
-                }
-            }
-
-            // Section 2: Identities
-            Section("Identities") {
-                if unifiedAppState.platformState.identities.isEmpty {
-                    VStack(spacing: 12) {
-                        Image(systemName: "person.crop.circle.badge.plus")
-                            .font(.system(size: 40))
-                            .foregroundColor(.gray)
-
-                        Text("No Identities")
-                            .font(.headline)
-
-                        Text("Load an identity to interact with Dash Platform")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-
-                        Button {
-                            showingLoadIdentity = true
-                        } label: {
-                            Label("Load Identity", systemImage: "square.and.arrow.down")
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 8)
-                        }
-                        .buttonStyle(.borderedProminent)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 20)
-                } else {
-                    ForEach(unifiedAppState.platformState.identities) { identity in
-                        IdentityRow(identity: identity)
-                            .environmentObject(unifiedAppState.platformState)
+                        .accessibilityIdentifier("wallets.walletRow.\(wallet.walletId.toHexString())")
+                        .accessibilityLabel(wallet.label)
                     }
                 }
             }
         }
+        .accessibilityIdentifier("wallets.screen")
+        // All navigation pushes from this stack are value-based —
+        // closure-based pushes eagerly construct their destination on
+        // every parent body invocation (which fires constantly during
+        // sync) and stall the click on iOS 26. Value-based push only
+        // builds the destination on actual navigate. Both routes have
+        // to be declared on the stack root (here) — declaring on a
+        // pushed view is unreliable and mixing paradigms (closure
+        // outer + value inner) makes the inner destination
+        // animate-then-pop.
+        .navigationDestination(for: PersistentWallet.self) { wallet in
+            WalletDetailView(wallet: wallet)
+        }
+        .navigationDestination(for: TransactionsRoute.self) { route in
+            TransactionListView(walletId: route.walletId)
+        }
+        .navigationDestination(for: ShieldedActivityRoute.self) { route in
+            ShieldedActivityListView(walletId: route.walletId)
+        }
         .navigationTitle("Wallets")
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
-                Menu {
-                    Button {
-                        showingCreateWallet = true
-                    } label: {
-                        Label("Create Wallet", systemImage: "plus")
-                    }
-
-                    Button {
-                        showingLoadIdentity = true
-                    } label: {
-                        Label("Load Identity", systemImage: "square.and.arrow.down")
-                    }
+                Button {
+                    showingCreateWallet = true
                 } label: {
                     Image(systemName: "plus")
                 }
+                .accessibilityIdentifier("wallets.addWalletButton")
             }
         }
         .sheet(isPresented: $showingCreateWallet) {
             NavigationStack {
                 CreateWalletView()
-                    .environmentObject(walletService)
-                    .environmentObject(unifiedAppState)
-                    .environment(\.modelContext, modelContext)
             }
         }
-        .sheet(isPresented: $showingLoadIdentity) {
-            LoadIdentityView()
-                .environmentObject(unifiedAppState.platformState)
-        }
         .refreshable {
-            await unifiedAppState.performPlatformBalanceSync()
+            await platformBalanceSyncService.performSync()
         }
     }
 }

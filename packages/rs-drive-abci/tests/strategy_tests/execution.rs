@@ -48,7 +48,7 @@ use tenderdash_abci::Application;
 
 pub const GENESIS_TIME_MS: u64 = 1681094380000;
 
-pub(crate) fn run_chain_for_strategy<'a>(
+pub(crate) async fn run_chain_for_strategy<'a>(
     platform: &'a mut Platform<MockCoreRPCLike>,
     block_count: u64,
     strategy: NetworkStrategy,
@@ -781,10 +781,11 @@ pub(crate) fn run_chain_for_strategy<'a>(
         config,
         rng,
     )
+    .await
 }
 
-pub(crate) fn create_chain_for_strategy(
-    platform: &Platform<MockCoreRPCLike>,
+pub(crate) async fn create_chain_for_strategy<'a>(
+    platform: &'a Platform<MockCoreRPCLike>,
     block_count: u64,
     proposers_with_updates: Vec<MasternodeListItemWithUpdates>,
     validator_quorums: BTreeMap<QuorumHash, TestQuorumInfo>,
@@ -792,7 +793,7 @@ pub(crate) fn create_chain_for_strategy(
     strategy: NetworkStrategy,
     config: PlatformConfig,
     rng: StdRng,
-) -> ChainExecutionOutcome<'_> {
+) -> ChainExecutionOutcome<'a> {
     let abci_application = FullAbciApplication::new(platform);
 
     let seed = strategy
@@ -811,10 +812,11 @@ pub(crate) fn create_chain_for_strategy(
         config,
         seed,
     )
+    .await
 }
 
-pub(crate) fn start_chain_for_strategy(
-    abci_application: FullAbciApplication<MockCoreRPCLike>,
+pub(crate) async fn start_chain_for_strategy<'a>(
+    abci_application: FullAbciApplication<'a, MockCoreRPCLike>,
     block_count: u64,
     proposers_with_updates: Vec<MasternodeListItemWithUpdates>,
     validator_quorums: BTreeMap<QuorumHash, TestQuorumInfo>,
@@ -822,7 +824,7 @@ pub(crate) fn start_chain_for_strategy(
     strategy: NetworkStrategy,
     config: PlatformConfig,
     seed: StrategyRandomness,
-) -> ChainExecutionOutcome {
+) -> ChainExecutionOutcome<'a> {
     let mut rng = match seed {
         StrategyRandomness::SeedEntropy(seed) => StdRng::seed_from_u64(seed),
         StrategyRandomness::RNGEntropy(rng) => rng,
@@ -915,15 +917,16 @@ pub(crate) fn start_chain_for_strategy(
         config,
         StrategyRandomness::RNGEntropy(rng),
     )
+    .await
 }
 
-pub(crate) fn continue_chain_for_strategy(
-    abci_app: FullAbciApplication<MockCoreRPCLike>,
+pub(crate) async fn continue_chain_for_strategy<'a>(
+    abci_app: FullAbciApplication<'a, MockCoreRPCLike>,
     chain_execution_parameters: ChainExecutionParameters,
     mut strategy: NetworkStrategy,
     config: PlatformConfig,
     seed: StrategyRandomness,
-) -> ChainExecutionOutcome {
+) -> ChainExecutionOutcome<'a> {
     let platform = abci_app.platform;
     let ChainExecutionParameters {
         block_start,
@@ -1012,20 +1015,22 @@ pub(crate) fn continue_chain_for_strategy(
             .values()
             .nth(i as usize)
             .unwrap();
-        let (state_transitions, finalize_block_operations) = strategy.state_transitions_for_block(
-            platform,
-            block_start,
-            &block_info,
-            &mut current_identities,
-            &mut current_addresses_with_balance,
-            &mut current_identity_nonce_counter,
-            &mut current_identity_contract_nonce_counter,
-            &mut current_votes,
-            &mut signer,
-            &mut rng,
-            &instant_lock_quorums,
-            &mut shielded_state,
-        );
+        let (state_transitions, finalize_block_operations) = strategy
+            .state_transitions_for_block(
+                platform,
+                block_start,
+                &block_info,
+                &mut current_identities,
+                &mut current_addresses_with_balance,
+                &mut current_identity_nonce_counter,
+                &mut current_identity_contract_nonce_counter,
+                &mut current_votes,
+                &mut signer,
+                &mut rng,
+                &instant_lock_quorums,
+                &mut shielded_state,
+            )
+            .await;
 
         state_transitions_per_block.insert(block_height, state_transitions.clone());
 

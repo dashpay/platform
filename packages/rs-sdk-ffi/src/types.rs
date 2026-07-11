@@ -35,21 +35,13 @@ pub struct IdentityPublicKeyHandle {
 /// Alias for compatibility
 pub type DashSDKPublicKeyHandle = IdentityPublicKeyHandle;
 
-/// Network type for SDK configuration
-#[repr(C)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DashSDKNetwork {
-    /// Mainnet
-    SDKMainnet = 0,
-    /// Testnet
-    SDKTestnet = 1,
-    /// Regtest
-    SDKRegtest = 2,
-    /// Devnet
-    SDKDevnet = 3,
-    /// Local development network
-    SDKLocal = 4,
-}
+// Single source of truth for the network type across the Rust-side
+// SDK and the FFI boundary. `Network` is the typed enum; `FFINetwork`
+// is the `#[repr(C)]` mirror cbindgen emits for callers. Every FFI
+// entry point in this crate takes / returns `FFINetwork`; internal
+// Rust code converts via `Network::from(ffi)` / `ffi.into()`.
+pub use dash_network::ffi::FFINetwork;
+pub use dash_network::Network;
 
 /// SDK configuration passed from C callers.
 ///
@@ -64,10 +56,15 @@ pub enum DashSDKNetwork {
 /// `Copy` is intentionally **not** derived: duplicating raw pointers via implicit
 /// copies risks use-after-free if the original string is freed while a copy is
 /// still in use.
+// TODO(CMT-007, #3711): FFI cannot express initial protocol-version seed for
+// older-network interop. Deferred — pending core SDK fix for the broader
+// "first-request-on-default-SDK uses latest() wire shape" issue (CMT-005).
+// Once SDK auto-detects PV before encoding the first request, FFI inherits
+// it without API surface changes.
 #[repr(C)]
 pub struct DashSDKConfig {
     /// Network to connect to
-    pub network: DashSDKNetwork,
+    pub network: FFINetwork,
     /// Comma-separated list of DAPI addresses (e.g., "http://127.0.0.1:3000,http://127.0.0.1:3001")
     /// If null or empty, will use mock SDK.
     ///
@@ -80,6 +77,28 @@ pub struct DashSDKConfig {
     pub request_retry_count: u32,
     /// Timeout for requests in milliseconds
     pub request_timeout_ms: u64,
+    /// Optional override for the trusted-context-provider quorum lookup base URL
+    /// (e.g., `"https://quorums.devnet.example.networks.dash.org"` or
+    /// `"http://127.0.0.1:22444"`). When null/empty, the provider uses the
+    /// default endpoint derived from `network` (mainnet/testnet only — devnet
+    /// needs an explicit URL, regtest defaults to the local sidecar).
+    ///
+    /// **Only honored on the `dash_sdk_create_trusted` path** — that's the
+    /// path that builds a `TrustedHttpContextProvider`, which is the
+    /// component that actually performs quorum lookups. The callback-based
+    /// path (`dash_sdk_create_with_callbacks`) uses `CallbackContextProvider`
+    /// and ignores this field entirely; non-null values there are silently
+    /// dropped.
+    ///
+    /// Same lifetime contract as `dapi_addresses`: borrowed, copied
+    /// immediately, caller may free after the FFI call returns.
+    pub quorum_url: *const c_char,
+    /// Pin to a specific Dash Platform protocol version.
+    /// `0` keeps the SDK default — auto-detect seeded at the default initial
+    /// protocol-version floor, ratcheting up to the network's version; any
+    /// non-zero value is forwarded to `SdkBuilder::with_version` and rejected
+    /// if unknown.
+    pub platform_version: u32,
 }
 
 /// Result data type indicator for iOS

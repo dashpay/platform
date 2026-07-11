@@ -2,11 +2,36 @@ import SwiftUI
 import SwiftDashSDK
 
 struct TransactionDetailView: View {
-    let transaction: WalletTransaction
+    let transaction: PersistentTransaction
+    /// Override amount for asset-lock txs. The wallet's `netAmount`
+    /// shows ~0 for these (credit output is structurally self-owned),
+    /// so the list view passes the linked
+    /// `PersistentAssetLock.amountDuffs`. `nil` for non-asset-lock
+    /// rows OR consumed asset locks whose tracking row was cleaned
+    /// up after successful identity registration.
+    var assetLockAmountDuffs: Int64? = nil
     @Environment(\.dismiss) private var dismiss
     @State private var showCopiedAlert = false
 
+    /// Amount label rendered prominently at the top of the sheet.
+    /// Same precedence rule as the row: asset-lock duffs when we
+    /// have them, else an explicit "amount unknown" label for the
+    /// historical-asset-lock case (rather than the misleading
+    /// `+0.00000000 DASH` from `transaction.formattedAmount`).
+    private var displayAmount: String {
+        if transaction.isAssetLock {
+            if let duffs = assetLockAmountDuffs {
+                let dash = Double(duffs) / 100_000_000.0
+                return String(format: "-%.8f DASH", dash)
+            }
+            return "Asset Lock (amount unknown)"
+        }
+        return transaction.formattedAmount
+    }
+
     private var typeDescription: String {
+        if transaction.isAssetLock { return "Asset Lock" }
+        if transaction.isAssetUnlock { return "Asset Unlock" }
         switch transaction.netAmount {
         case let amount where amount > 0:
             return "Received"
@@ -18,6 +43,8 @@ struct TransactionDetailView: View {
     }
 
     private var typeIcon: String {
+        if transaction.isAssetLock { return "lock.fill" }
+        if transaction.isAssetUnlock { return "lock.open.fill" }
         switch transaction.netAmount {
         case let amount where amount > 0:
             return "arrow.down.circle.fill"
@@ -29,6 +56,9 @@ struct TransactionDetailView: View {
     }
 
     private var typeColor: Color {
+        if transaction.isAssetLock || transaction.isAssetUnlock {
+            return .purple
+        }
         switch transaction.netAmount {
         case let amount where amount > 0:
             return .green
@@ -37,6 +67,25 @@ struct TransactionDetailView: View {
         default:
             return .blue
         }
+    }
+
+    private var isConfirmed: Bool {
+        transaction.context >= 2
+    }
+
+    private var transactionDate: Date {
+        Date(timeIntervalSince1970: TimeInterval(transaction.firstSeen))
+    }
+
+    private var blockHashHex: String? {
+        guard let bh = transaction.blockHash, !bh.isEmpty else { return nil }
+        return bh.map { String(format: "%02x", $0) }.joined()
+    }
+
+    private var formattedFee: String? {
+        guard let fee = transaction.fee else { return nil }
+        let dash = Double(fee) / 100_000_000.0
+        return String(format: "%.8f DASH", dash)
     }
 
     var body: some View {
@@ -53,7 +102,7 @@ struct TransactionDetailView: View {
                             .font(.headline)
                             .foregroundColor(.secondary)
 
-                        Text(transaction.formattedAmount)
+                        Text(displayAmount)
                             .font(.system(size: 32, weight: .bold, design: .rounded))
                             .foregroundColor(typeColor)
                     }
@@ -63,22 +112,22 @@ struct TransactionDetailView: View {
                     VStack(spacing: 16) {
                         TransactionDetailRow(
                             label: "Status",
-                            value: !transaction.isConfirmed ? "Pending" : "Confirmed"
+                            value: isConfirmed ? "Confirmed" : "Pending"
                         )
 
                         TransactionDetailRow(
                             label: "Date",
-                            value: formatDate(transaction.date)
+                            value: formatDate(transactionDate)
                         )
 
-                        if transaction.height != 0 {
+                        if transaction.blockHeight != 0 {
                             TransactionDetailRow(
                                 label: "Block Height",
-                                value: "\(transaction.height)"
+                                value: "\(transaction.blockHeight)"
                             )
                         }
 
-                        if let fee = transaction.formattedFee, transaction.netAmount < 0 {
+                        if let fee = formattedFee, transaction.netAmount < 0 {
                             TransactionDetailRow(
                                 label: "Network Fee",
                                 value: fee
@@ -92,10 +141,10 @@ struct TransactionDetailView: View {
                                 .foregroundColor(.secondary)
 
                             Button {
-                                copyToClipboard(transaction.txid)
+                                copyToClipboard(transaction.txidHex)
                             } label: {
                                 HStack {
-                                    Text(transaction.txid)
+                                    Text(transaction.txidHex)
                                         .font(.system(.footnote, design: .monospaced))
                                         .foregroundColor(.primary)
                                         .lineLimit(nil)
@@ -114,7 +163,7 @@ struct TransactionDetailView: View {
                         }
 
                         // Block Hash (if available)
-                        if let blockHash = transaction.blockHash {
+                        if let blockHash = blockHashHex {
                             VStack(alignment: .leading, spacing: 8) {
                                 Text("Block Hash")
                                     .font(.caption)
@@ -175,7 +224,7 @@ struct TransactionDetailView: View {
     }
 
     private func formatDate(_ date: Date) -> String {
-        let formatter = DateFormatter()
+        let formatter = DateFormatter.gregorian()
         formatter.dateStyle = .medium
         formatter.timeStyle = .short
         return formatter.string(from: date)
@@ -218,20 +267,4 @@ struct TransactionDetailRow: View {
         }
         .padding(.horizontal)
     }
-}
-
-// MARK: - Preview
-
-#Preview {
-    TransactionDetailView(
-        transaction: WalletTransaction(
-            txid: "abc123def456abc123def456abc123def456abc123def456abc123def456abc1",
-            netAmount: 50000000,
-            height: 12345,
-            blockHash: "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f",
-            timestamp: UInt64(Date().timeIntervalSince1970),
-            fee: 226,
-            isOurs: false
-        )
-    )
 }

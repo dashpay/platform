@@ -41,9 +41,9 @@ mod tests {
 
     const STACK_SIZE: usize = 4 * 1024 * 1024; // 4 MB
 
-    #[test]
     #[stack_size(STACK_SIZE)]
-    fn run_chain_with_temporarily_disabled_contested_documents() {
+    #[test]
+    async fn run_chain_with_temporarily_disabled_contested_documents() {
         let epoch_time_length_s = 60;
 
         let config = PlatformConfig {
@@ -91,6 +91,7 @@ mod tests {
                 &mut rng,
                 platform_version,
             )
+            .await
             .into_iter()
             .map(|(identity, transition)| (identity, Some(transition)))
             .collect();
@@ -184,7 +185,8 @@ mod tests {
             15,
             &mut voting_signer,
             &mut None,
-        );
+        )
+        .await;
 
         let platform_state = abci_app.platform.state.load();
 
@@ -243,7 +245,8 @@ mod tests {
             NetworkStrategy::default(),
             config.clone(),
             StrategyRandomness::SeedEntropy(7),
-        );
+        )
+        .await;
 
         let platform_state = abci_app.platform.state.load();
 
@@ -310,7 +313,8 @@ mod tests {
             strategy,
             config.clone(),
             StrategyRandomness::SeedEntropy(7),
-        );
+        )
+        .await;
 
         let state_transitions_block_6 = state_transition_results_per_block
             .get(&6)
@@ -328,9 +332,9 @@ mod tests {
         assert_eq!(execution_result.code, 0);
     }
 
-    #[test]
     #[stack_size(STACK_SIZE)]
-    fn run_chain_block_two_state_transitions_conflicting_unique_index_inserted_same_block_version_8(
+    #[test]
+    async fn run_chain_block_two_state_transitions_conflicting_unique_index_inserted_same_block_version_8(
     ) {
         // In this test we try to insert two state transitions with the same unique index
         // We use the DPNS contract, and we insert two documents both with the same "name"
@@ -380,6 +384,7 @@ mod tests {
                 &mut rng,
                 platform_version,
             )
+            .await
             .into_iter()
             .map(|(identity, transition)| (identity, Some(transition)))
             .collect();
@@ -492,7 +497,8 @@ mod tests {
             15,
             &mut None,
             &mut None,
-        );
+        )
+        .await;
 
         let platform = outcome.abci_app.platform;
 
@@ -579,32 +585,34 @@ mod tests {
 
         assert_eq!(contenders.len(), 2);
 
-        let first_contender = contenders.first().unwrap();
-
-        let second_contender = contenders.last().unwrap();
+        // Look up by identity id rather than vec position — see explanatory
+        // comment in the abstain-only test below.
+        let identity1_contender = contenders
+            .iter()
+            .find(|c| c.identifier == identity1_id.to_vec())
+            .expect("identity1 in contenders");
+        let identity2_contender = contenders
+            .iter()
+            .find(|c| c.identifier == identity2_id.to_vec())
+            .expect("identity2 in contenders");
 
         assert_eq!(
-            first_contender.document.as_ref().map(hex::encode),
-            Some("00177f2479090a0286a67d6a1f67b563b51518edd6eea0461829f7d630fd65708d29124be7e86f97e959894a67a9cc078c3e0106d4bfcfbf34bc403a4f099925b401000700000187690895980000018769089598000001876908959800077175616e74756d077175616e74756d00046461736800210129124be7e86f97e959894a67a9cc078c3e0106d4bfcfbf34bc403a4f099925b40101".to_string())
+            identity1_contender.document.as_ref().map(hex::encode),
+            Some("0021278016512ff707d45a0aa8893a4b1ba67b08158b31bc2bda11a0addb8ab1f4341e6a8e6c01488a75104a8dbc73501ded5cd23abaf688349a8ab34b1157513201000700000187690895980000018769089598000001876908959800077175616e74756d077175616e74756d000464617368002101341e6a8e6c01488a75104a8dbc73501ded5cd23abaf688349a8ab34b115751320100".to_string())
         );
 
         assert_eq!(
-            second_contender.document.as_ref().map(hex::encode),
-            Some("00490e212593a1d3cc6ae17bf107ab9cb465175e7877fcf7d085ed2fce27be11d68b8948a6801501bbe0431e3d994dcf71cf5a2a0939fe51b0e600076199aba4fb01000700000187690895980000018769089598000001876908959800077175616e74756d077175616e74756d0004646173680021018b8948a6801501bbe0431e3d994dcf71cf5a2a0939fe51b0e600076199aba4fb0100".to_string())
+            identity2_contender.document.as_ref().map(hex::encode),
+            Some("0010b1d465b94520e76daf018ee6b2740c871d51b7ce9690f60fc7a4a70f1bfd6f3a3c745d6c4d3b88ea52976eaab80dbaa77258885b7b6d8e1edfd00fed72414a01000700000187690895980000018769089598000001876908959800077175616e74756d077175616e74756d0004646173680021013a3c745d6c4d3b88ea52976eaab80dbaa77258885b7b6d8e1edfd00fed72414a0101".to_string())
         );
 
-        assert_eq!(first_contender.identifier, identity2_id.to_vec());
-
-        assert_eq!(second_contender.identifier, identity1_id.to_vec());
-
-        assert_eq!(first_contender.vote_count, Some(0));
-
-        assert_eq!(second_contender.vote_count, Some(0));
+        assert_eq!(identity1_contender.vote_count, Some(0));
+        assert_eq!(identity2_contender.vote_count, Some(0));
     }
 
-    #[test]
     #[stack_size(STACK_SIZE)]
-    fn run_chain_with_voting_on_conflicting_index_just_abstain_votes() {
+    #[test]
+    async fn run_chain_with_voting_on_conflicting_index_just_abstain_votes() {
         // In this test we try to insert two state transitions with the same unique index
         // We use the DPNS contract, and we insert two documents both with the same "name"
         // This is a common scenario we should see quite often
@@ -652,6 +660,7 @@ mod tests {
                 &mut rng,
                 platform_version,
             )
+            .await
             .into_iter()
             .map(|(identity, transition)| (identity, Some(transition)))
             .collect();
@@ -778,7 +787,8 @@ mod tests {
             15,
             &mut voting_signer,
             &mut None,
-        );
+        )
+        .await;
 
         let platform = abci_app.platform;
 
@@ -871,7 +881,8 @@ mod tests {
             },
             config.clone(),
             StrategyRandomness::SeedEntropy(7),
-        );
+        )
+        .await;
 
         let platform = outcome.abci_app.platform;
 
@@ -936,28 +947,30 @@ mod tests {
 
         assert_eq!(contenders.len(), 2);
 
-        let first_contender = contenders.first().unwrap();
+        // Look up by identity id rather than vec position — contender ordering
+        // follows identifier sort, which derives from the asset-lock txid and
+        // shifts whenever the asset-lock fixture's wire format changes.
+        let identity1_contender = contenders
+            .iter()
+            .find(|c| c.identifier == identity1_id.to_vec())
+            .expect("identity1 in contenders");
+        let identity2_contender = contenders
+            .iter()
+            .find(|c| c.identifier == identity2_id.to_vec())
+            .expect("identity2 in contenders");
 
-        let second_contender = contenders.last().unwrap();
+        assert!(identity1_contender.document.is_some());
+        assert!(identity2_contender.document.is_some());
 
-        assert!(first_contender.document.is_some());
-
-        assert!(second_contender.document.is_some());
-
-        assert_eq!(first_contender.identifier, identity2_id.to_vec());
-
-        assert_eq!(second_contender.identifier, identity1_id.to_vec());
-
-        assert_eq!(first_contender.vote_count, Some(0));
-
-        assert_eq!(second_contender.vote_count, Some(0));
+        assert_eq!(identity1_contender.vote_count, Some(0));
+        assert_eq!(identity2_contender.vote_count, Some(0));
 
         assert_eq!(abstain_vote_tally, Some(124));
     }
 
-    #[test]
     #[stack_size(STACK_SIZE)]
-    fn run_chain_with_voting_on_conflicting_index_various_votes() {
+    #[test]
+    async fn run_chain_with_voting_on_conflicting_index_various_votes() {
         // In this test we try to insert two state transitions with the same unique index
         // We use the DPNS contract, and we insert two documents both with the same "name"
         // This is a common scenario we should see quite often
@@ -1005,6 +1018,7 @@ mod tests {
                 &mut rng,
                 platform_version,
             )
+            .await
             .into_iter()
             .map(|(identity, transition)| (identity, Some(transition)))
             .collect();
@@ -1131,7 +1145,8 @@ mod tests {
             15,
             &mut voting_signer,
             &mut None,
-        );
+        )
+        .await;
 
         let platform = abci_app.platform;
 
@@ -1229,7 +1244,8 @@ mod tests {
             },
             config.clone(),
             StrategyRandomness::SeedEntropy(7),
-        );
+        )
+        .await;
 
         let platform = outcome.abci_app.platform;
 
@@ -1294,23 +1310,24 @@ mod tests {
 
         assert_eq!(contenders.len(), 2);
 
-        let first_contender = contenders.first().unwrap();
+        // Look up by identity id rather than vec position — see explanatory
+        // comment in the abstain-only test above.
+        let identity1_contender = contenders
+            .iter()
+            .find(|c| c.identifier == identity1_id.to_vec())
+            .expect("identity1 in contenders");
+        let identity2_contender = contenders
+            .iter()
+            .find(|c| c.identifier == identity2_id.to_vec())
+            .expect("identity2 in contenders");
 
-        let second_contender = contenders.last().unwrap();
-
-        assert!(first_contender.document.is_some());
-
-        assert!(second_contender.document.is_some());
-
-        assert_eq!(first_contender.identifier, identity2_id.to_vec());
-
-        assert_eq!(second_contender.identifier, identity1_id.to_vec());
+        assert!(identity1_contender.document.is_some());
+        assert!(identity2_contender.document.is_some());
 
         // All vote counts are weighted, so for evonodes, these are in multiples of 4
 
-        assert_eq!(first_contender.vote_count, Some(52));
-
-        assert_eq!(second_contender.vote_count, Some(56));
+        assert_eq!(identity1_contender.vote_count, Some(56));
+        assert_eq!(identity2_contender.vote_count, Some(52));
 
         assert_eq!(lock_vote_tally, Some(16));
 
@@ -1319,9 +1336,9 @@ mod tests {
         assert_eq!(finished_vote_info, None);
     }
 
-    #[test]
     #[stack_size(STACK_SIZE)]
-    fn run_chain_with_voting_after_won_by_identity_no_specialized_funds_distribution() {
+    #[test]
+    async fn run_chain_with_voting_after_won_by_identity_no_specialized_funds_distribution() {
         // In this test we try to insert two state transitions with the same unique index
         // We use the DPNS contract, and we insert two documents both with the same "name"
         // This is a common scenario we should see quite often
@@ -1370,6 +1387,7 @@ mod tests {
                 &mut rng,
                 platform_version,
             )
+            .await
             .into_iter()
             .map(|(identity, transition)| (identity, Some(transition)))
             .collect();
@@ -1495,7 +1513,8 @@ mod tests {
             15,
             &mut voting_signer,
             &mut None,
-        );
+        )
+        .await;
 
         let platform = abci_app.platform;
 
@@ -1606,7 +1625,8 @@ mod tests {
             },
             config.clone(),
             StrategyRandomness::SeedEntropy(9),
-        );
+        )
+        .await;
 
         let platform = outcome.abci_app.platform;
 
@@ -1671,19 +1691,21 @@ mod tests {
 
         assert_eq!(contenders.len(), 2);
 
-        let first_contender = contenders.first().unwrap();
-
-        let second_contender = contenders.last().unwrap();
-
-        assert_eq!(first_contender.identifier, identity2_id.to_vec());
-
-        assert_eq!(second_contender.identifier, identity1_id.to_vec());
+        // Look up by identity id rather than vec position — see explanatory
+        // comment in the abstain-only test above.
+        let identity1_contender = contenders
+            .iter()
+            .find(|c| c.identifier == identity1_id.to_vec())
+            .expect("identity1 in contenders");
+        let identity2_contender = contenders
+            .iter()
+            .find(|c| c.identifier == identity2_id.to_vec())
+            .expect("identity2 in contenders");
 
         // All vote counts are weighted, so for evonodes, these are in multiples of 4
 
-        assert_eq!(first_contender.vote_count, Some(60));
-
-        assert_eq!(second_contender.vote_count, Some(4));
+        assert_eq!(identity1_contender.vote_count, Some(4));
+        assert_eq!(identity2_contender.vote_count, Some(60));
 
         assert_eq!(lock_vote_tally, Some(4));
 
@@ -1717,9 +1739,9 @@ mod tests {
         assert_eq!(processing_fees, 50_000_000);
     }
 
-    #[test]
     #[stack_size(STACK_SIZE)]
-    fn run_chain_with_voting_after_won_by_identity_with_specialized_funds_distribution() {
+    #[test]
+    async fn run_chain_with_voting_after_won_by_identity_with_specialized_funds_distribution() {
         // In this test we try to insert two state transitions with the same unique index
         // We use the DPNS contract, and we insert two documents both with the same "name"
         // This is a common scenario we should see quite often
@@ -1767,6 +1789,7 @@ mod tests {
                 &mut rng,
                 platform_version,
             )
+            .await
             .into_iter()
             .map(|(identity, transition)| (identity, Some(transition)))
             .collect();
@@ -1892,7 +1915,8 @@ mod tests {
             15,
             &mut voting_signer,
             &mut None,
-        );
+        )
+        .await;
 
         let platform = abci_app.platform;
 
@@ -2003,7 +2027,8 @@ mod tests {
             },
             config.clone(),
             StrategyRandomness::SeedEntropy(9),
-        );
+        )
+        .await;
 
         let platform = outcome.abci_app.platform;
 
@@ -2068,21 +2093,23 @@ mod tests {
 
         assert_eq!(contenders.len(), 2);
 
-        let first_contender = contenders.first().unwrap();
-
-        let second_contender = contenders.last().unwrap();
-
-        assert_eq!(first_contender.identifier, identity2_id.to_vec());
-
-        assert_eq!(second_contender.identifier, identity1_id.to_vec());
+        // Look up by identity id rather than vec position — see explanatory
+        // comment in the abstain-only test above.
+        let identity1_contender = contenders
+            .iter()
+            .find(|c| c.identifier == identity1_id.to_vec())
+            .expect("identity1 in contenders");
+        let identity2_contender = contenders
+            .iter()
+            .find(|c| c.identifier == identity2_id.to_vec())
+            .expect("identity2 in contenders");
 
         // All vote counts are weighted, so for evonodes, these are in multiples of 4
 
         // 19 votes were cast
 
-        assert_eq!(first_contender.vote_count, Some(60));
-
-        assert_eq!(second_contender.vote_count, Some(4));
+        assert_eq!(identity1_contender.vote_count, Some(4));
+        assert_eq!(identity2_contender.vote_count, Some(60));
 
         assert_eq!(lock_vote_tally, Some(4));
 
@@ -2118,9 +2145,9 @@ mod tests {
         assert_eq!(processing_fees, 39_860_000_000);
     }
 
-    #[test]
     #[stack_size(STACK_SIZE)]
-    fn run_chain_with_voting_after_won_by_identity_no_specialized_funds_distribution_until_version_8(
+    #[test]
+    async fn run_chain_with_voting_after_won_by_identity_no_specialized_funds_distribution_until_version_8(
     ) {
         // In this test the goal is to verify that when we hit version 8 that the specialized balances
         // that hadn't been properly distributed are distributed.
@@ -2173,6 +2200,7 @@ mod tests {
                 &mut rng,
                 platform_version,
             )
+            .await
             .into_iter()
             .map(|(identity, transition)| (identity, Some(transition)))
             .collect();
@@ -2304,7 +2332,8 @@ mod tests {
             15,
             &mut voting_signer,
             &mut None,
-        );
+        )
+        .await;
 
         let platform = abci_app.platform;
 
@@ -2430,7 +2459,8 @@ mod tests {
             },
             config.clone(),
             StrategyRandomness::SeedEntropy(9),
-        );
+        )
+        .await;
 
         let platform = abci_app.platform;
 
@@ -2496,24 +2526,27 @@ mod tests {
 
         assert_eq!(contenders.len(), 2);
 
-        let first_contender = contenders.first().unwrap();
-
-        let second_contender = contenders.last().unwrap();
-
-        assert_eq!(first_contender.identifier, identity2_id.to_vec());
-
-        assert_eq!(second_contender.identifier, identity1_id.to_vec());
+        // Look up by identity id rather than vec position — see explanatory
+        // comment in the abstain-only test above.
+        let identity1_contender = contenders
+            .iter()
+            .find(|c| c.identifier == identity1_id.to_vec())
+            .expect("identity1 in contenders");
+        let identity2_contender = contenders
+            .iter()
+            .find(|c| c.identifier == identity2_id.to_vec())
+            .expect("identity2 in contenders");
 
         // All vote counts are weighted, so for evonodes, these are in multiples of 4
 
         assert_eq!(
             (
-                first_contender.vote_count,
-                second_contender.vote_count,
+                identity1_contender.vote_count,
+                identity2_contender.vote_count,
                 lock_vote_tally,
                 abstain_vote_tally
             ),
-            (Some(64), Some(8), Some(0), Some(0))
+            (Some(8), Some(64), Some(0), Some(0))
         );
 
         assert_eq!(
@@ -2628,7 +2661,8 @@ mod tests {
             },
             config.clone(),
             StrategyRandomness::SeedEntropy(9203),
-        );
+        )
+        .await;
 
         let platform = abci_app.platform;
 
@@ -2756,7 +2790,8 @@ mod tests {
             },
             config.clone(),
             StrategyRandomness::SeedEntropy(9203),
-        );
+        )
+        .await;
 
         block_start += 1;
 
@@ -2808,7 +2843,8 @@ mod tests {
             },
             config.clone(),
             StrategyRandomness::SeedEntropy(9203),
-        );
+        )
+        .await;
 
         let platform = outcome.abci_app.platform;
         platform

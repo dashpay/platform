@@ -67,3 +67,74 @@ where
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test::helpers::setup::TestPlatformBuilder;
+    use dpp::block::epoch::Epoch;
+
+    /// When `cleanup_expired_locks_of_withdrawal_amounts_limit` is zero in
+    /// the platform version, the function must return `Ok(())` immediately
+    /// without touching any storage. This exercises the short-circuit
+    /// branch that skips cleanup entirely.
+    #[test]
+    fn v0_limit_zero_returns_ok_without_touching_storage() {
+        let mut platform_version = PlatformVersion::latest().clone();
+        platform_version
+            .drive_abci
+            .withdrawal_constants
+            .cleanup_expired_locks_of_withdrawal_amounts_limit = 0;
+
+        let platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_initial_state_structure();
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let block_info = BlockInfo {
+            time_ms: 1_000_000,
+            height: 100,
+            core_height: 10,
+            epoch: Epoch::default(),
+        };
+
+        platform
+            .cleanup_expired_locks_of_withdrawal_amounts_v0(
+                &block_info,
+                &transaction,
+                &platform_version,
+            )
+            .expect("limit of 0 must short-circuit to Ok");
+    }
+
+    /// When the cleanup is enabled but the sum tree contains no entries
+    /// prior to `block_info.time_ms`, the function must still return `Ok(())`
+    /// (empty path query matches nothing, apply_batch is a no-op).
+    #[test]
+    fn v0_nonzero_limit_no_expired_entries_is_ok() {
+        let platform_version = PlatformVersion::latest();
+        let platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_initial_state_structure();
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let block_info = BlockInfo {
+            time_ms: 1_000_000,
+            height: 100,
+            core_height: 10,
+            epoch: Epoch::default(),
+        };
+
+        platform
+            .cleanup_expired_locks_of_withdrawal_amounts_v0(
+                &block_info,
+                &transaction,
+                platform_version,
+            )
+            .expect("non-zero limit with no entries must succeed");
+    }
+}

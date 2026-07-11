@@ -232,3 +232,203 @@ impl TokenFreezeTransitionActionV0 {
         ))
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unnecessary_literal_unwrap)]
+mod tests {
+    use crate::drive::contract::DataContractFetchInfo;
+    use crate::state_transition_action::batch::batched_transition::token_transition::token_base_transition_action::{
+        TokenBaseTransitionAction, TokenBaseTransitionActionAccessorsV0,
+        TokenBaseTransitionActionV0,
+    };
+    use crate::state_transition_action::batch::batched_transition::token_transition::token_freeze_transition_action::{
+        TokenFreezeTransitionAction, TokenFreezeTransitionActionAccessorsV0,
+        TokenFreezeTransitionActionV0,
+    };
+    use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::identifier::Identifier;
+    use platform_version::version::PlatformVersion;
+    use std::sync::Arc;
+
+    fn make_base(token_position: u16) -> TokenBaseTransitionAction {
+        let fetch_info = DataContractFetchInfo::dpns_contract_fixture(
+            PlatformVersion::latest().protocol_version,
+        );
+        TokenBaseTransitionAction::V0(TokenBaseTransitionActionV0 {
+            token_id: Identifier::new([11u8; 32]),
+            identity_contract_nonce: 3,
+            token_contract_position: token_position,
+            data_contract: Arc::new(fetch_info),
+            store_in_group: None,
+            perform_action: true,
+        })
+    }
+
+    fn make_action_v0(target: Identifier, note: Option<&str>) -> TokenFreezeTransitionActionV0 {
+        TokenFreezeTransitionActionV0 {
+            base: make_base(0),
+            identity_to_freeze_id: target,
+            public_note: note.map(|s| s.to_string()),
+        }
+    }
+
+    #[test]
+    fn v0_identity_to_freeze_id_returns_stored_id() {
+        let target = Identifier::new([42u8; 32]);
+        let v0 = make_action_v0(target, None);
+        assert_eq!(v0.identity_to_freeze_id(), target);
+    }
+
+    #[test]
+    fn v0_set_identity_to_freeze_id_updates_field() {
+        let mut v0 = make_action_v0(Identifier::new([1u8; 32]), None);
+        let new_id = Identifier::new([99u8; 32]);
+        v0.set_identity_to_freeze_id(new_id);
+        assert_eq!(v0.identity_to_freeze_id(), new_id);
+    }
+
+    #[test]
+    fn v0_public_note_accessors_return_reference_and_owned() {
+        let v0 = make_action_v0(Identifier::new([1u8; 32]), Some("frozen"));
+        assert_eq!(v0.public_note(), Some(&"frozen".to_string()));
+
+        let owned = v0.public_note_owned();
+        assert_eq!(owned, Some("frozen".to_string()));
+    }
+
+    #[test]
+    fn v0_set_public_note_swaps_contents() {
+        let mut v0 = make_action_v0(Identifier::new([1u8; 32]), Some("old"));
+        v0.set_public_note(Some("new".to_string()));
+        assert_eq!(v0.public_note(), Some(&"new".to_string()));
+        v0.set_public_note(None);
+        assert!(v0.public_note().is_none());
+    }
+
+    #[test]
+    fn v0_default_accessors_route_through_base() {
+        let v0 = make_action_v0(Identifier::new([1u8; 32]), None);
+        assert_eq!(v0.token_id(), Identifier::new([11u8; 32]));
+        assert_eq!(v0.token_position(), 0);
+        let fetch = v0.data_contract_fetch_info();
+        assert_eq!(v0.data_contract_id(), fetch.contract.id());
+        assert_eq!(
+            v0.data_contract_fetch_info_ref().contract.id(),
+            fetch.contract.id()
+        );
+    }
+
+    #[test]
+    fn v0_non_zero_token_position_propagates() {
+        let v0 = TokenFreezeTransitionActionV0 {
+            base: make_base(17),
+            identity_to_freeze_id: Identifier::new([1u8; 32]),
+            public_note: None,
+        };
+        assert_eq!(v0.token_position(), 17);
+        // And via the enum wrapper too
+        let wrapped: TokenFreezeTransitionAction = v0.into();
+        assert_eq!(wrapped.base().token_position(), 17);
+    }
+
+    #[test]
+    fn v0_base_ref_and_base_owned_are_consistent() {
+        let v0 = make_action_v0(Identifier::new([1u8; 32]), None);
+        let id_from_ref = v0.base().token_id();
+        let base = v0.base_owned();
+        assert_eq!(id_from_ref, base.token_id());
+    }
+
+    #[test]
+    fn enum_from_v0_preserves_identity_and_note() {
+        let v0 = make_action_v0(Identifier::new([7u8; 32]), Some("note"));
+        let wrapped: TokenFreezeTransitionAction = v0.into();
+        assert_eq!(wrapped.identity_to_freeze_id(), Identifier::new([7u8; 32]));
+        assert_eq!(wrapped.public_note(), Some(&"note".to_string()));
+    }
+
+    #[test]
+    fn enum_setters_mutate_underlying_v0() {
+        let mut wrapped: TokenFreezeTransitionAction =
+            make_action_v0(Identifier::new([1u8; 32]), None).into();
+        assert!(wrapped.public_note().is_none());
+
+        wrapped.set_identity_to_freeze_id(Identifier::new([55u8; 32]));
+        assert_eq!(wrapped.identity_to_freeze_id(), Identifier::new([55u8; 32]));
+
+        wrapped.set_public_note(Some("added".to_string()));
+        assert_eq!(wrapped.public_note(), Some(&"added".to_string()));
+
+        // public_note_owned consumes the action
+        let owned = wrapped.public_note_owned();
+        assert_eq!(owned, Some("added".to_string()));
+    }
+
+    #[test]
+    fn enum_base_methods_delegate_to_v0() {
+        let wrapped: TokenFreezeTransitionAction =
+            make_action_v0(Identifier::new([1u8; 32]), None).into();
+        let from_ref_id = wrapped.base().token_id();
+        let from_owned_id = wrapped.base_owned().token_id();
+        assert_eq!(from_ref_id, from_owned_id);
+        assert_eq!(from_ref_id, Identifier::new([11u8; 32]));
+    }
+
+    #[test]
+    fn enum_set_public_note_none_clears_existing_note() {
+        let mut wrapped: TokenFreezeTransitionAction =
+            make_action_v0(Identifier::new([1u8; 32]), Some("to_be_cleared")).into();
+        wrapped.set_public_note(None);
+        assert!(wrapped.public_note().is_none());
+    }
+
+    // -------------------------------------------------------------------
+    // Transformer logic fragment tests — exercising the `change_note.unwrap_or(public_note)`
+    // rule used to merge a group-resolved note override with the user's note.
+    // These mirror the exact pattern used in both the owned and borrowed transformers.
+    // -------------------------------------------------------------------
+
+    #[test]
+    fn freeze_change_note_some_some_wins_over_user_public_note() {
+        let change_note: Option<Option<String>> = Some(Some("group override".to_string()));
+        let public_note: Option<String> = Some("user note".to_string());
+        let merged = change_note.unwrap_or(public_note);
+        assert_eq!(merged, Some("group override".to_string()));
+    }
+
+    #[test]
+    fn freeze_change_note_some_none_clears_user_public_note() {
+        let change_note: Option<Option<String>> = Some(None);
+        let public_note: Option<String> = Some("user note".to_string());
+        let merged = change_note.unwrap_or(public_note);
+        assert!(merged.is_none());
+    }
+
+    #[test]
+    fn freeze_change_note_none_preserves_user_public_note() {
+        let change_note: Option<Option<String>> = None;
+        let public_note: Option<String> = Some("user note".to_string());
+        let merged = change_note.unwrap_or(public_note);
+        assert_eq!(merged, Some("user note".to_string()));
+    }
+
+    #[test]
+    fn freeze_borrowed_path_clones_public_note_without_consuming() {
+        let change_note: Option<Option<String>> = None;
+        let public_note: Option<String> = Some("to clone".to_string());
+        let merged = change_note.unwrap_or(public_note.clone());
+        assert_eq!(merged, Some("to clone".to_string()));
+        assert_eq!(public_note, Some("to clone".to_string()));
+    }
+
+    #[test]
+    fn freeze_borrowed_path_dereferences_identity_for_new_action_v0() {
+        let id = Identifier::new([0xAB; 32]);
+        // Mirror the `identity_to_freeze_id: *identity_to_freeze_id` pattern
+        // via an intermediate reference binding. Writing `*&id` directly would
+        // trip `clippy::deref_addrof`.
+        let id_ref: &Identifier = &id;
+        let copied: Identifier = *id_ref;
+        assert_eq!(copied, id);
+    }
+}

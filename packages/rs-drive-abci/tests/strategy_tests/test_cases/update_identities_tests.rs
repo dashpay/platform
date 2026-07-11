@@ -14,8 +14,8 @@ mod tests {
     use strategy_tests::frequency::Frequency;
     use strategy_tests::operations::{IdentityUpdateOp, Operation, OperationType};
     use strategy_tests::{IdentityInsertInfo, StartAddresses, StartIdentities, Strategy};
-    #[test]
-    fn run_chain_update_identities_add_keys() {
+    #[tokio::test]
+    async fn run_chain_update_identities_add_keys() {
         let strategy = NetworkStrategy {
             strategy: Strategy {
                 start_contracts: vec![],
@@ -81,7 +81,8 @@ mod tests {
             15,
             &mut None,
             &mut None,
-        );
+        )
+        .await;
         let state = outcome.abci_app.platform.state.load();
         let protocol_version = state.current_protocol_version_in_consensus();
         let platform_version = PlatformVersion::get(protocol_version).unwrap();
@@ -107,8 +108,8 @@ mod tests {
             .any(|(_, identity)| { identity.expect("expected identity").public_keys().len() > 7 }));
     }
 
-    #[test]
-    fn run_chain_update_identities_remove_keys() {
+    #[tokio::test]
+    async fn run_chain_update_identities_remove_keys() {
         let platform_version = PlatformVersion::latest();
         let strategy = NetworkStrategy {
             strategy: Strategy {
@@ -175,7 +176,8 @@ mod tests {
             15,
             &mut None,
             &mut None,
-        );
+        )
+        .await;
 
         let identities = outcome
             .abci_app

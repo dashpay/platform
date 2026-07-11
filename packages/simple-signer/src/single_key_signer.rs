@@ -1,3 +1,4 @@
+use async_trait::async_trait;
 use dpp::address_funds::AddressWitness;
 use dpp::dashcore;
 use dpp::dashcore::signer;
@@ -25,6 +26,10 @@ impl SingleKeySigner {
         Ok(Self { private_key })
     }
 
+    /// Create a new SingleKeySigner from raw 32 private-key bytes.
+    ///
+    /// `network` controls WIF encoding and address derivation; it does not
+    /// affect signing itself.
     pub fn new_from_slice(private_key_data: &[u8], network: Network) -> Result<Self, String> {
         if private_key_data.len() != 32 {
             return Err("Private key must be 32 bytes".to_string());
@@ -78,8 +83,9 @@ impl SingleKeySigner {
     }
 }
 
+#[async_trait]
 impl Signer<IdentityPublicKey> for SingleKeySigner {
-    fn sign(
+    async fn sign(
         &self,
         identity_public_key: &IdentityPublicKey,
         data: &[u8],
@@ -102,13 +108,13 @@ impl Signer<IdentityPublicKey> for SingleKeySigner {
         }
     }
 
-    fn sign_create_witness(
+    async fn sign_create_witness(
         &self,
         key: &IdentityPublicKey,
         data: &[u8],
     ) -> Result<AddressWitness, ProtocolError> {
         // First, sign the data to get the signature
-        let signature = self.sign(key, data)?;
+        let signature = self.sign(key, data).await?;
 
         // Create the appropriate AddressWitness based on the key type
         // SingleKeySigner only supports ECDSA keys
@@ -194,6 +200,25 @@ mod tests {
             .map_err(|e| format!("signer init failed: {}", e))?;
         assert_eq!(signer.private_key().inner.secret_bytes().len(), 32);
         Ok(())
+    }
+
+    #[test]
+    fn test_single_key_signer_from_slice_threads_network() -> Result<(), String> {
+        let bytes = [0x03u8; 32];
+        let testnet_signer = SingleKeySigner::new_from_slice(&bytes, Network::Testnet)
+            .map_err(|e| format!("signer init failed: {}", e))?;
+        assert!(testnet_signer.private_key().to_wif().starts_with('c'));
+
+        let mainnet_signer = SingleKeySigner::new_from_slice(&bytes, Network::Mainnet)
+            .map_err(|e| format!("signer init failed: {}", e))?;
+        assert!(!mainnet_signer.private_key().to_wif().starts_with('c'));
+        Ok(())
+    }
+
+    #[test]
+    fn test_single_key_signer_from_slice_rejects_wrong_length() {
+        let bytes = [0x01u8; 16];
+        assert!(SingleKeySigner::new_from_slice(&bytes, Network::Testnet).is_err());
     }
 
     #[test]

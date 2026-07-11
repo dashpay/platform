@@ -84,6 +84,11 @@ class PlatformStub(object):
                 request_serializer=platform__pb2.GetDataContractsRequest.SerializeToString,
                 response_deserializer=platform__pb2.GetDataContractsResponse.FromString,
                 )
+        self.getDocumentHistory = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getDocumentHistory',
+                request_serializer=platform__pb2.GetDocumentHistoryRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetDocumentHistoryResponse.FromString,
+                )
         self.getDocuments = channel.unary_unary(
                 '/org.dash.platform.dapi.v0.Platform/getDocuments',
                 request_serializer=platform__pb2.GetDocumentsRequest.SerializeToString,
@@ -289,35 +294,25 @@ class PlatformStub(object):
                 request_serializer=platform__pb2.GetShieldedAnchorsRequest.SerializeToString,
                 response_deserializer=platform__pb2.GetShieldedAnchorsResponse.FromString,
                 )
+        self.getMostRecentShieldedAnchor = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getMostRecentShieldedAnchor',
+                request_serializer=platform__pb2.GetMostRecentShieldedAnchorRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetMostRecentShieldedAnchorResponse.FromString,
+                )
         self.getShieldedPoolState = channel.unary_unary(
                 '/org.dash.platform.dapi.v0.Platform/getShieldedPoolState',
                 request_serializer=platform__pb2.GetShieldedPoolStateRequest.SerializeToString,
                 response_deserializer=platform__pb2.GetShieldedPoolStateResponse.FromString,
                 )
+        self.getShieldedNotesCount = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getShieldedNotesCount',
+                request_serializer=platform__pb2.GetShieldedNotesCountRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetShieldedNotesCountResponse.FromString,
+                )
         self.getShieldedNullifiers = channel.unary_unary(
                 '/org.dash.platform.dapi.v0.Platform/getShieldedNullifiers',
                 request_serializer=platform__pb2.GetShieldedNullifiersRequest.SerializeToString,
                 response_deserializer=platform__pb2.GetShieldedNullifiersResponse.FromString,
-                )
-        self.getNullifiersTrunkState = channel.unary_unary(
-                '/org.dash.platform.dapi.v0.Platform/getNullifiersTrunkState',
-                request_serializer=platform__pb2.GetNullifiersTrunkStateRequest.SerializeToString,
-                response_deserializer=platform__pb2.GetNullifiersTrunkStateResponse.FromString,
-                )
-        self.getNullifiersBranchState = channel.unary_unary(
-                '/org.dash.platform.dapi.v0.Platform/getNullifiersBranchState',
-                request_serializer=platform__pb2.GetNullifiersBranchStateRequest.SerializeToString,
-                response_deserializer=platform__pb2.GetNullifiersBranchStateResponse.FromString,
-                )
-        self.getRecentNullifierChanges = channel.unary_unary(
-                '/org.dash.platform.dapi.v0.Platform/getRecentNullifierChanges',
-                request_serializer=platform__pb2.GetRecentNullifierChangesRequest.SerializeToString,
-                response_deserializer=platform__pb2.GetRecentNullifierChangesResponse.FromString,
-                )
-        self.getRecentCompactedNullifierChanges = channel.unary_unary(
-                '/org.dash.platform.dapi.v0.Platform/getRecentCompactedNullifierChanges',
-                request_serializer=platform__pb2.GetRecentCompactedNullifierChangesRequest.SerializeToString,
-                response_deserializer=platform__pb2.GetRecentCompactedNullifierChangesResponse.FromString,
                 )
 
 
@@ -325,7 +320,8 @@ class PlatformServicer(object):
     """Missing associated documentation comment in .proto file."""
 
     def broadcastStateTransition(self, request, context):
-        """Missing associated documentation comment in .proto file."""
+        """@sdk-ignore: Write-only endpoint, not a query
+        """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
@@ -408,6 +404,12 @@ class PlatformServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def getDocumentHistory(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
     def getDocuments(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
@@ -433,7 +435,8 @@ class PlatformServicer(object):
         raise NotImplementedError('Method not implemented!')
 
     def getConsensusParams(self, request, context):
-        """Missing associated documentation comment in .proto file."""
+        """@sdk-ignore: Consensus params fetched via Tenderdash RPC
+        """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
@@ -659,37 +662,25 @@ class PlatformServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def getMostRecentShieldedAnchor(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
     def getShieldedPoolState(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def getShieldedNotesCount(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
     def getShieldedNullifiers(self, request, context):
-        """Missing associated documentation comment in .proto file."""
-        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
-
-    def getNullifiersTrunkState(self, request, context):
-        """Missing associated documentation comment in .proto file."""
-        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
-
-    def getNullifiersBranchState(self, request, context):
-        """Missing associated documentation comment in .proto file."""
-        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
-
-    def getRecentNullifierChanges(self, request, context):
-        """Missing associated documentation comment in .proto file."""
-        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
-
-    def getRecentCompactedNullifierChanges(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -767,6 +758,11 @@ def add_PlatformServicer_to_server(servicer, server):
                     servicer.getDataContracts,
                     request_deserializer=platform__pb2.GetDataContractsRequest.FromString,
                     response_serializer=platform__pb2.GetDataContractsResponse.SerializeToString,
+            ),
+            'getDocumentHistory': grpc.unary_unary_rpc_method_handler(
+                    servicer.getDocumentHistory,
+                    request_deserializer=platform__pb2.GetDocumentHistoryRequest.FromString,
+                    response_serializer=platform__pb2.GetDocumentHistoryResponse.SerializeToString,
             ),
             'getDocuments': grpc.unary_unary_rpc_method_handler(
                     servicer.getDocuments,
@@ -973,35 +969,25 @@ def add_PlatformServicer_to_server(servicer, server):
                     request_deserializer=platform__pb2.GetShieldedAnchorsRequest.FromString,
                     response_serializer=platform__pb2.GetShieldedAnchorsResponse.SerializeToString,
             ),
+            'getMostRecentShieldedAnchor': grpc.unary_unary_rpc_method_handler(
+                    servicer.getMostRecentShieldedAnchor,
+                    request_deserializer=platform__pb2.GetMostRecentShieldedAnchorRequest.FromString,
+                    response_serializer=platform__pb2.GetMostRecentShieldedAnchorResponse.SerializeToString,
+            ),
             'getShieldedPoolState': grpc.unary_unary_rpc_method_handler(
                     servicer.getShieldedPoolState,
                     request_deserializer=platform__pb2.GetShieldedPoolStateRequest.FromString,
                     response_serializer=platform__pb2.GetShieldedPoolStateResponse.SerializeToString,
             ),
+            'getShieldedNotesCount': grpc.unary_unary_rpc_method_handler(
+                    servicer.getShieldedNotesCount,
+                    request_deserializer=platform__pb2.GetShieldedNotesCountRequest.FromString,
+                    response_serializer=platform__pb2.GetShieldedNotesCountResponse.SerializeToString,
+            ),
             'getShieldedNullifiers': grpc.unary_unary_rpc_method_handler(
                     servicer.getShieldedNullifiers,
                     request_deserializer=platform__pb2.GetShieldedNullifiersRequest.FromString,
                     response_serializer=platform__pb2.GetShieldedNullifiersResponse.SerializeToString,
-            ),
-            'getNullifiersTrunkState': grpc.unary_unary_rpc_method_handler(
-                    servicer.getNullifiersTrunkState,
-                    request_deserializer=platform__pb2.GetNullifiersTrunkStateRequest.FromString,
-                    response_serializer=platform__pb2.GetNullifiersTrunkStateResponse.SerializeToString,
-            ),
-            'getNullifiersBranchState': grpc.unary_unary_rpc_method_handler(
-                    servicer.getNullifiersBranchState,
-                    request_deserializer=platform__pb2.GetNullifiersBranchStateRequest.FromString,
-                    response_serializer=platform__pb2.GetNullifiersBranchStateResponse.SerializeToString,
-            ),
-            'getRecentNullifierChanges': grpc.unary_unary_rpc_method_handler(
-                    servicer.getRecentNullifierChanges,
-                    request_deserializer=platform__pb2.GetRecentNullifierChangesRequest.FromString,
-                    response_serializer=platform__pb2.GetRecentNullifierChangesResponse.SerializeToString,
-            ),
-            'getRecentCompactedNullifierChanges': grpc.unary_unary_rpc_method_handler(
-                    servicer.getRecentCompactedNullifierChanges,
-                    request_deserializer=platform__pb2.GetRecentCompactedNullifierChangesRequest.FromString,
-                    response_serializer=platform__pb2.GetRecentCompactedNullifierChangesResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -1248,6 +1234,23 @@ class Platform(object):
         return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getDataContracts',
             platform__pb2.GetDataContractsRequest.SerializeToString,
             platform__pb2.GetDataContractsResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def getDocumentHistory(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getDocumentHistory',
+            platform__pb2.GetDocumentHistoryRequest.SerializeToString,
+            platform__pb2.GetDocumentHistoryResponse.FromString,
             options, channel_credentials,
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
 
@@ -1949,6 +1952,23 @@ class Platform(object):
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
 
     @staticmethod
+    def getMostRecentShieldedAnchor(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getMostRecentShieldedAnchor',
+            platform__pb2.GetMostRecentShieldedAnchorRequest.SerializeToString,
+            platform__pb2.GetMostRecentShieldedAnchorResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
     def getShieldedPoolState(request,
             target,
             options=(),
@@ -1966,6 +1986,23 @@ class Platform(object):
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
 
     @staticmethod
+    def getShieldedNotesCount(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getShieldedNotesCount',
+            platform__pb2.GetShieldedNotesCountRequest.SerializeToString,
+            platform__pb2.GetShieldedNotesCountResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
     def getShieldedNullifiers(request,
             target,
             options=(),
@@ -1979,73 +2016,5 @@ class Platform(object):
         return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getShieldedNullifiers',
             platform__pb2.GetShieldedNullifiersRequest.SerializeToString,
             platform__pb2.GetShieldedNullifiersResponse.FromString,
-            options, channel_credentials,
-            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
-
-    @staticmethod
-    def getNullifiersTrunkState(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getNullifiersTrunkState',
-            platform__pb2.GetNullifiersTrunkStateRequest.SerializeToString,
-            platform__pb2.GetNullifiersTrunkStateResponse.FromString,
-            options, channel_credentials,
-            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
-
-    @staticmethod
-    def getNullifiersBranchState(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getNullifiersBranchState',
-            platform__pb2.GetNullifiersBranchStateRequest.SerializeToString,
-            platform__pb2.GetNullifiersBranchStateResponse.FromString,
-            options, channel_credentials,
-            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
-
-    @staticmethod
-    def getRecentNullifierChanges(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getRecentNullifierChanges',
-            platform__pb2.GetRecentNullifierChangesRequest.SerializeToString,
-            platform__pb2.GetRecentNullifierChangesResponse.FromString,
-            options, channel_credentials,
-            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
-
-    @staticmethod
-    def getRecentCompactedNullifierChanges(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getRecentCompactedNullifierChanges',
-            platform__pb2.GetRecentCompactedNullifierChangesRequest.SerializeToString,
-            platform__pb2.GetRecentCompactedNullifierChangesResponse.FromString,
             options, channel_credentials,
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)

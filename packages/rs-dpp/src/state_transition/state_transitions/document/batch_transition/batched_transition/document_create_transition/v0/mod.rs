@@ -48,9 +48,22 @@ pub const BINARY_FIELDS: [&str; 1] = ["$entropy"];
 pub use super::super::document_base_transition::IDENTIFIER_FIELDS;
 
 #[derive(Debug, Clone, Default, Encode, Decode, PartialEq, Display)]
+// `json_safe_fields`:
+// - Auto-injects `crate::serialization::serde_bytes` on `entropy: [u8; 32]`
+//   → base64 string in JSON HR, raw bytes in non-HR.
+// - The `data: BTreeMap<String, Value>` flatten catchall and `base:
+//   DocumentBaseTransition` flatten are skipped (serde(flatten) override).
+// - `prefunded_voting_balance: Option<(String, Credits)>` carries an explicit
+//   `serde(with = json_safe_option_string_u64_tuple)` annotation below — the
+//   macro can't auto-route tuple-inside-Option fields, so the helper enforces
+//   JS-safe u64 stringification on the second tuple element manually.
+#[cfg_attr(feature = "json-conversion", crate::serialization::json_safe_fields)]
+// `Deserialize` is implemented manually below — see comments on the impl.
+// Auto-derived `Serialize` produces the desired flat shape correctly; only
+// the deserialize side needs the manual key-routing logic.
 #[cfg_attr(
     feature = "serde-conversion",
-    derive(Serialize, Deserialize),
+    derive(Serialize),
     serde(rename_all = "camelCase")
 )]
 #[display("Base: {}, Entropy: {:?}, Data: {:?}", "base", "entropy", "data")]
@@ -60,6 +73,10 @@ pub struct DocumentCreateTransitionV0 {
     pub base: DocumentBaseTransition,
 
     /// Entropy used to create a Document ID.
+    // `[u8; 32]` is auto-annotated by `#[json_safe_fields]` on this struct
+    // with `crate::serialization::serde_bytes` — base64 string in JSON HR,
+    // raw bytes in non-HR. Same convention as shielded transition byte
+    // fields (`anchor`, `binding_signature`, etc.).
     #[cfg_attr(feature = "serde-conversion", serde(rename = "$entropy"))]
     pub entropy: [u8; 32],
 
@@ -68,13 +85,103 @@ pub struct DocumentCreateTransitionV0 {
 
     #[cfg_attr(
         feature = "serde-conversion",
-        serde(rename = "$prefundedVotingBalance")
+        serde(
+            default,
+            rename = "$prefundedVotingBalance",
+            with = "crate::serialization::json::safe_integer::json_safe_option_string_u64_tuple"
+        )
     )]
     /// Pre funded balance (for unique index conflict resolution voting - the identity will put money
     /// aside that will be used by voters to vote)
     /// This is a map of index names to the amount we want to prefund them for
     /// Since index conflict resolution is not a common feature most often nothing should be added here.
     pub prefunded_voting_balance: Option<(String, Credits)>,
+}
+
+// Manual `Deserialize` impl: the auto-derived one cannot route fields
+// correctly because this struct combines `#[serde(flatten)] base:
+// DocumentBaseTransition` (an internally-tagged enum) with
+// `#[serde(flatten)] data: BTreeMap<String, Value>` (a catchall). Under the
+// auto-derive, the catchall claims the base's discriminator and struct
+// fields before the base flatten gets a chance, leaving `base =
+// Default::default()`. This impl reads the entire object into a `Value`
+// map first, peels off the keys known to belong to the base, reconstructs
+// the base from those, then routes the remaining keys (minus the explicit
+// named fields `$entropy` / `$prefundedVotingBalance`) to `data`.
+//
+// **WARNING**: when adding a new field to `DocumentBaseTransitionV0` /
+// `DocumentBaseTransitionV1`, add its serde rename to `BASE_FIELD_NAMES`
+// below — otherwise it silently routes to the dynamic `data` map at
+// runtime.
+#[cfg(feature = "serde-conversion")]
+impl<'de> Deserialize<'de> for DocumentCreateTransitionV0 {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        use serde::de::Error;
+
+        // Tag + every serde-renamed field of `DocumentBaseTransitionV0` /
+        // `DocumentBaseTransitionV1`. Keep in sync with the base structs.
+        const BASE_FIELD_NAMES: &[&str] = &[
+            "$baseFormatVersion",
+            "$id",
+            "$identityContractNonce",
+            "$type",
+            "$dataContractId",
+            "$tokenPaymentInfo",
+        ];
+
+        let mut map: BTreeMap<String, Value> = BTreeMap::deserialize(deserializer)?;
+
+        let mut base_pairs: Vec<(Value, Value)> = Vec::with_capacity(BASE_FIELD_NAMES.len());
+        for key in BASE_FIELD_NAMES {
+            if let Some(value) = map.remove(*key) {
+                base_pairs.push((Value::Text((*key).to_string()), value));
+            }
+        }
+        let base = platform_value::from_value::<DocumentBaseTransition>(Value::Map(base_pairs))
+            .map_err(D::Error::custom)?;
+
+        let entropy_value = map
+            .remove("$entropy")
+            .ok_or_else(|| D::Error::missing_field("$entropy"))?;
+        // `serde_bytes` (auto-injected by `json_safe_fields`) wants a base64
+        // string in HR and raw bytes in non-HR. After collecting through
+        // `BTreeMap<String, Value>` the `Value` variant tells us which form
+        // we got: `Text` from JSON, `Bytes32` / `Bytes` from platform_value
+        // / bincode. The default `[u8; 32]::deserialize` only accepts an
+        // array shape, so we route the byte variants explicitly.
+        let entropy: [u8; 32] = match entropy_value {
+            Value::Text(s) => {
+                use base64::Engine;
+                let bytes = base64::engine::general_purpose::STANDARD
+                    .decode(s.as_bytes())
+                    .map_err(|e| D::Error::custom(format!("invalid base64 in $entropy: {e}")))?;
+                bytes.try_into().map_err(|v: Vec<u8>| {
+                    D::Error::custom(format!("$entropy: expected 32 bytes, got {}", v.len()))
+                })?
+            }
+            Value::Bytes32(arr) => arr,
+            Value::Bytes(b) => b.try_into().map_err(|v: Vec<u8>| {
+                D::Error::custom(format!("$entropy: expected 32 bytes, got {}", v.len()))
+            })?,
+            other => platform_value::from_value(other).map_err(D::Error::custom)?,
+        };
+
+        let prefunded_voting_balance: Option<(String, Credits)> =
+            match map.remove("$prefundedVotingBalance") {
+                Some(Value::Null) | None => None,
+                Some(other) => Some(platform_value::from_value(other).map_err(D::Error::custom)?),
+            };
+
+        Ok(DocumentCreateTransitionV0 {
+            base,
+            entropy,
+            data: map,
+            prefunded_voting_balance,
+        })
+    }
 }
 
 impl DocumentCreateTransitionV0 {
@@ -406,6 +513,8 @@ impl DocumentFromCreateTransitionV0 for Document {
 mod test {
     use crate::data_contract::v0::DataContractV0;
     use crate::state_transition::batch_transition::document_create_transition::DocumentCreateTransition;
+    use base64::prelude::BASE64_STANDARD;
+    use base64::Engine;
     use platform_value::btreemap_extensions::BTreeValueMapHelper;
     use platform_value::{platform_value, BinaryData, Bytes32, Identifier};
     use platform_version::version::LATEST_PLATFORM_VERSION;
@@ -518,9 +627,16 @@ mod test {
             DocumentCreateTransition::from_object(raw_document, data_contract).unwrap();
 
         let json_transition = transition.to_json().expect("no errors");
-        assert_eq!(json_transition["V0"]["$id"], JsonValue::String(id.into()));
+        // Note: this is `DocumentTransitionObjectLike::to_json`, NOT
+        // `JsonConvertible::to_json`. The former is a custom path
+        // (`to_value_map` flattens base into the transition map manually);
+        // the latter uses serde's auto-derived `Serialize`. The two paths
+        // produce different wire shapes — base fields are flat at the top
+        // level in this path, nested under `"base"` in the JsonConvertible
+        // path.
+        assert_eq!(json_transition["$id"], JsonValue::String(id.into()));
         assert_eq!(
-            json_transition["V0"]["$dataContractId"],
+            json_transition["$dataContractId"],
             JsonValue::String(data_contract_id.into())
         );
         assert_eq!(
@@ -545,17 +661,26 @@ mod test {
         let data_contract_id = vec![13_u8; 32];
         let entropy = vec![11_u8; 32];
 
+        // Binary / identifier fields use the canonical encoded forms
+        // (Identifier=bs58, BinaryData/byteArray=base64). The previous
+        // fixture relied on the `From<JsonValue> for Value` array→bytes
+        // heuristic (Critical-2) to silently coerce JSON arrays into
+        // Value::Bytes; that heuristic has been removed.
         let raw_document = json!({
             "$protocolVersion"  : 0,
             "$version"  : "0",
-            "$id" : id,
+            "$id" : bs58::encode(&id).into_string(),
             "$type" : "test",
-            "$dataContractId" : data_contract_id,
+            "$dataContractId" : bs58::encode(&data_contract_id).into_string(),
             "$identityContractNonce": 0u64,
             "revision" : 1,
-            "alphaBinary" : alpha_value,
-            "alphaIdentifier" : alpha_value,
-            "$entropy" : entropy,
+            // NOTE field naming is misleading: `alphaBinary` is the one with
+            // `contentMediaType: ...identifier` in the contract schema above,
+            // so it gets bs58-decoded. `alphaIdentifier` is plain byteArray
+            // and gets base64-decoded.
+            "alphaBinary" : bs58::encode(&alpha_value).into_string(),
+            "alphaIdentifier" : BASE64_STANDARD.encode(&alpha_value),
+            "$entropy" : BASE64_STANDARD.encode(&entropy),
             "$action": 0 ,
         });
 
@@ -568,13 +693,18 @@ mod test {
             .into_btree_string_map()
             .unwrap();
 
-        let v0 = object_transition.get("V0").expect("to get V0");
+        // Same caveat as `convert_to_json_with_dynamic_binary_paths`: this
+        // is `DocumentTransitionObjectLike::to_object` (custom flat shape),
+        // not `ValueConvertible::to_object` (nested-base shape).
         let right_id = Identifier::from_bytes(&id).unwrap();
         let right_data_contract_id = Identifier::from_bytes(&data_contract_id).unwrap();
 
-        assert_eq!(v0["$id"], Value::Identifier(right_id.into_buffer()));
         assert_eq!(
-            v0["$dataContractId"],
+            object_transition["$id"],
+            Value::Identifier(right_id.into_buffer())
+        );
+        assert_eq!(
+            object_transition["$dataContractId"],
             Value::Identifier(right_data_contract_id.into_buffer())
         );
 

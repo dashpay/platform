@@ -35,14 +35,12 @@ use drive_proof_verifier::types::token_status::TokenStatuses;
 use drive::grovedb::GroveTrunkQueryResult;
 use drive_proof_verifier::types::{
     AddressInfo, Contenders, ContestedResources, CurrentQuorumsInfo, ElementFetchRequestItem,
-    IdentityBalanceAndRevision, IndexMap, MasternodeProtocolVote, NullifiersTrunkState,
+    IdentityBalanceAndRevision, IndexMap, MasternodeProtocolVote, MostRecentShieldedAnchor,
     PlatformAddressTrunkState, PrefundedSpecializedBalance, ProposerBlockCounts,
-    RecentAddressBalanceChanges, RecentCompactedAddressBalanceChanges,
-    MostRecentShieldedAnchor, RecentCompactedNullifierChanges, RecentNullifierChanges,
-    RetrievedValues, ShieldedAnchors, TokenPreProgrammedDistributions,
-    ShieldedEncryptedNote, ShieldedEncryptedNotes, ShieldedNullifierStatus,
-    ShieldedNullifierStatuses, ShieldedPoolState, TotalCreditsInPlatform,
-    VotePollsGroupedByTimestamp, Voters,
+    RecentAddressBalanceChanges, RecentCompactedAddressBalanceChanges, RetrievedValues,
+    ShieldedAnchors, ShieldedEncryptedNote, ShieldedEncryptedNotes, ShieldedNotesCount,
+    ShieldedNullifierStatus, ShieldedNullifierStatuses, ShieldedPoolState,
+    TokenPreProgrammedDistributions, TotalCreditsInPlatform, VotePollsGroupedByTimestamp, Voters,
 };
 use std::{collections::BTreeMap, hash::Hash};
 
@@ -513,14 +511,13 @@ impl_mock_response!(AddressInfo);
 impl_mock_response!(RecentAddressBalanceChanges);
 impl_mock_response!(RecentCompactedAddressBalanceChanges);
 impl_mock_response!(ShieldedPoolState);
+impl_mock_response!(ShieldedNotesCount);
 impl_mock_response!(ShieldedAnchors);
 impl_mock_response!(MostRecentShieldedAnchor);
 impl_mock_response!(ShieldedEncryptedNotes);
 impl_mock_response!(ShieldedEncryptedNote);
 impl_mock_response!(ShieldedNullifierStatuses);
 impl_mock_response!(ShieldedNullifierStatus);
-impl_mock_response!(RecentNullifierChanges);
-impl_mock_response!(RecentCompactedNullifierChanges);
 
 /// MockResponse for GroveTrunkQueryResult - panics when called because the Tree type
 /// doesn't support serialization. Address sync operations should not be mocked.
@@ -552,17 +549,168 @@ impl MockResponse for PlatformAddressTrunkState {
     }
 }
 
-/// MockResponse for NullifiersTrunkState - panics when called because the underlying
-/// Tree type doesn't support serialization. Nullifier sync operations should not be mocked.
-impl MockResponse for NullifiersTrunkState {
+impl MockResponse for drive_proof_verifier::DocumentCount {
     fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
-        unimplemented!("NullifiersTrunkState does not support mock serialization - the Tree type is not serializable")
+        let bincode_config = standard();
+        bincode::encode_to_vec(self.0, bincode_config).expect("encode DocumentCount")
     }
 
-    fn mock_deserialize(_sdk: &MockDashPlatformSdk, _buf: &[u8]) -> Self
+    fn mock_deserialize(_sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
     where
         Self: Sized,
     {
-        unimplemented!("NullifiersTrunkState does not support mock deserialization - the Tree type is not serializable")
+        let bincode_config = standard();
+        let (count, _): (u64, _) =
+            bincode::decode_from_slice(buf, bincode_config).expect("decode DocumentCount");
+        drive_proof_verifier::DocumentCount(count)
+    }
+}
+
+/// Wire shape for `DocumentSplitCounts` mock round-trip:
+/// `(in_key, key, count)` triples preserving the In dimension
+/// AND the verified-vs-absent count distinction. Shared by
+/// `mock_serialize`/`mock_deserialize` below — single source of
+/// truth so the encode/decode generics align by construction,
+/// and clippy's `type_complexity` lint (CI runs with
+/// `-D warnings`) doesn't fire on the inline form.
+type DocumentSplitCountTriples = Vec<(Option<Vec<u8>>, Vec<u8>, Option<u64>)>;
+
+impl MockResponse for drive_proof_verifier::DocumentSplitCounts {
+    fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        let bincode_config = standard();
+        // Serialize as `(in_key, key, count)` triples so the In
+        // dimension AND the verified-vs-absent count distinction
+        // both survive the mock roundtrip. Required for compound
+        // (`In + range + distinct`) test fixtures to keep their
+        // `in_key` values, and for GroupByIn-absent-branch
+        // fixtures to keep their `None` counts.
+        let triples: DocumentSplitCountTriples = self
+            .0
+            .iter()
+            .map(|e| (e.in_key.clone(), e.key.clone(), e.count))
+            .collect();
+        bincode::encode_to_vec(triples, bincode_config).expect("encode DocumentSplitCounts")
+    }
+
+    fn mock_deserialize(_sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
+    where
+        Self: Sized,
+    {
+        let bincode_config = standard();
+        let (triples, _): (DocumentSplitCountTriples, _) =
+            bincode::decode_from_slice(buf, bincode_config).expect("decode DocumentSplitCounts");
+        let entries: Vec<drive_proof_verifier::SplitCountEntry> = triples
+            .into_iter()
+            .map(
+                |(in_key, key, count)| drive_proof_verifier::SplitCountEntry { in_key, key, count },
+            )
+            .collect();
+        drive_proof_verifier::DocumentSplitCounts::from_verified(entries)
+    }
+}
+
+impl MockResponse for drive_proof_verifier::DocumentSum {
+    fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        let bincode_config = standard();
+        bincode::encode_to_vec(self.0, bincode_config).expect("encode DocumentSum")
+    }
+
+    fn mock_deserialize(_sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
+    where
+        Self: Sized,
+    {
+        let bincode_config = standard();
+        let (sum, _): (i64, _) =
+            bincode::decode_from_slice(buf, bincode_config).expect("decode DocumentSum");
+        drive_proof_verifier::DocumentSum(sum)
+    }
+}
+
+/// Wire shape for `DocumentSplitSums` mock round-trip. Mirrors
+/// [`DocumentSplitCountTriples`] — preserves the `in_key` axis
+/// and the verified-vs-absent sum distinction (`Option<i64>`)
+/// across the roundtrip.
+type DocumentSplitSumTriples = Vec<(Option<Vec<u8>>, Vec<u8>, Option<i64>)>;
+
+impl MockResponse for drive_proof_verifier::DocumentSplitSums {
+    fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        let bincode_config = standard();
+        let triples: DocumentSplitSumTriples = self
+            .0
+            .iter()
+            .map(|e| (e.in_key.clone(), e.key.clone(), e.sum))
+            .collect();
+        bincode::encode_to_vec(triples, bincode_config).expect("encode DocumentSplitSums")
+    }
+
+    fn mock_deserialize(_sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
+    where
+        Self: Sized,
+    {
+        let bincode_config = standard();
+        let (triples, _): (DocumentSplitSumTriples, _) =
+            bincode::decode_from_slice(buf, bincode_config).expect("decode DocumentSplitSums");
+        let entries: Vec<drive_proof_verifier::SplitSumEntry> = triples
+            .into_iter()
+            .map(|(in_key, key, sum)| drive_proof_verifier::SplitSumEntry { in_key, key, sum })
+            .collect();
+        drive_proof_verifier::DocumentSplitSums(entries)
+    }
+}
+
+impl MockResponse for drive_proof_verifier::DocumentAverage {
+    fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        let bincode_config = standard();
+        bincode::encode_to_vec((self.count, self.sum), bincode_config)
+            .expect("encode DocumentAverage")
+    }
+
+    fn mock_deserialize(_sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
+    where
+        Self: Sized,
+    {
+        let bincode_config = standard();
+        let ((count, sum), _): ((u64, i64), _) =
+            bincode::decode_from_slice(buf, bincode_config).expect("decode DocumentAverage");
+        drive_proof_verifier::DocumentAverage { count, sum }
+    }
+}
+
+/// Wire shape for `DocumentSplitAverages` mock round-trip. Same
+/// `(in_key, key)` axes as the sum variant, but carries both
+/// `Option<u64>` (count) and `Option<i64>` (sum) so the verified-vs-
+/// absent state of each axis can roundtrip independently.
+type DocumentSplitAverageTuples = Vec<(Option<Vec<u8>>, Vec<u8>, Option<u64>, Option<i64>)>;
+
+impl MockResponse for drive_proof_verifier::DocumentSplitAverages {
+    fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        let bincode_config = standard();
+        let tuples: DocumentSplitAverageTuples = self
+            .0
+            .iter()
+            .map(|e| (e.in_key.clone(), e.key.clone(), e.count, e.sum))
+            .collect();
+        bincode::encode_to_vec(tuples, bincode_config).expect("encode DocumentSplitAverages")
+    }
+
+    fn mock_deserialize(_sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
+    where
+        Self: Sized,
+    {
+        let bincode_config = standard();
+        let (tuples, _): (DocumentSplitAverageTuples, _) =
+            bincode::decode_from_slice(buf, bincode_config).expect("decode DocumentSplitAverages");
+        let entries: Vec<drive_proof_verifier::SplitAverageEntry> = tuples
+            .into_iter()
+            .map(
+                |(in_key, key, count, sum)| drive_proof_verifier::SplitAverageEntry {
+                    in_key,
+                    key,
+                    count,
+                    sum,
+                },
+            )
+            .collect();
+        drive_proof_verifier::DocumentSplitAverages(entries)
     }
 }

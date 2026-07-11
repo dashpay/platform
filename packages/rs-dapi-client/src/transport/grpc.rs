@@ -114,7 +114,70 @@ impl CanRetry for dapi_grpc::tonic::Status {
                 | Aborted
                 | Internal
                 | Unavailable
+                // During a mixed-version network rollout, Unimplemented means this
+                // particular node runs an older build that doesn't expose the method
+                // yet; another node may serve it. Marking it retryable makes the
+                // executor ban the node (see `update_address_ban_status`) and retry
+                // elsewhere.
+                //
+                // When NO node implements the method, how the failure surfaces depends
+                // on which of `DapiClient::execute`'s two caps trips first:
+                //   * `live_addresses <= settings.retries` — the address list is
+                //     exhausted before the retry budget, so the error surfaces as the
+                //     non-retryable `NoAvailableAddressesToRetry`.
+                //   * `live_addresses > settings.retries` — the per-call retry budget
+                //     trips first, banning `settings.retries + 1` nodes and surfacing
+                //     the raw (still-retryable) `Unimplemented`. A caller that honors
+                //     `CanRetry` then re-enters and bans more nodes each round,
+                //     converging on the exhausted-addresses case above; rs-sdk also
+                //     bounds this via its own `total_retries` cap (see
+                //     `rs-sdk/src/sync.rs`). Either way the loop is bounded — it never
+                //     retries the same node forever.
+                //
+                // Caveat: bans are address-scoped, not (address, method)-scoped, and
+                // Unimplemented is also returned deliberately for genuinely unsupported
+                // / feature-gated endpoints (e.g. rs-drive-abci's
+                // broadcast_state_transition / wait_for_state_transition_result /
+                // get_consensus_params, and any rs-dapi `MethodNotFound`). Calling such
+                // an endpoint bans an otherwise-healthy node across ALL methods for the
+                // ban window. Acceptable for the targeted rollout case; per-method ban
+                // granularity is left as a follow-up so optional endpoints can't poison
+                // the shared address list. TODO(per-method-ban).
+                | Unimplemented
         )
+    }
+
+    /// Returns the Envoy-advertised ban duration for a `ResourceExhausted`
+    /// response, or `None` if this is not a rate-limit or carries no usable
+    /// `RateLimit-Reset` header.
+    ///
+    /// Envoy's global rate-limit filter emits `RateLimit-Reset: <seconds>` when
+    /// `LIMIT_RESPONSE_HEADERS_ENABLED=true` is set on the Lyft RLS container
+    /// (see `packages/dashmate/docker-compose.rate_limiter.yml`).  The value is
+    /// the whole-second count until the per-IP window resets.
+    ///
+    /// Parse rules (adversarial-input safe):
+    /// * Non-`ResourceExhausted` code → `None`.
+    /// * Header absent, non-numeric, or `0` → `None` (caller uses normal ban
+    ///   ladder).
+    /// * Valid positive integer → clamped to
+    ///   [`[MIN_RATE_LIMIT_BAN_SECS, MAX_RATE_LIMIT_BAN_SECS]`]
+    ///   (`dapi_client.rs`) and returned as `Some(Duration)`.
+    fn rate_limit_ban_duration(&self) -> Option<std::time::Duration> {
+        use crate::dapi_client::{MAX_RATE_LIMIT_BAN_SECS, MIN_RATE_LIMIT_BAN_SECS};
+        use dapi_grpc::tonic::Code;
+        if self.code() != Code::ResourceExhausted {
+            return None;
+        }
+        let secs = self
+            .metadata()
+            .get("ratelimit-reset")
+            .and_then(|v| v.to_str().ok())
+            .and_then(|s| s.trim().parse::<u64>().ok())
+            .filter(|&s| s > 0)?;
+        Some(std::time::Duration::from_secs(
+            secs.clamp(MIN_RATE_LIMIT_BAN_SECS, MAX_RATE_LIMIT_BAN_SECS),
+        ))
     }
 }
 
@@ -227,6 +290,14 @@ impl_transport_request_grpc!(
     PlatformGrpcClient,
     RequestSettings::default(),
     get_data_contract_history
+);
+
+impl_transport_request_grpc!(
+    platform_proto::GetDocumentHistoryRequest,
+    platform_proto::GetDocumentHistoryResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_document_history
 );
 
 impl_transport_request_grpc!(
@@ -488,6 +559,15 @@ impl_transport_request_grpc!(
     get_shielded_pool_state
 );
 
+// rpc getShieldedNotesCount(GetShieldedNotesCountRequest) returns (GetShieldedNotesCountResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetShieldedNotesCountRequest,
+    platform_proto::GetShieldedNotesCountResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_shielded_notes_count
+);
+
 // rpc getShieldedNullifiers(GetShieldedNullifiersRequest) returns (GetShieldedNullifiersResponse);
 impl_transport_request_grpc!(
     platform_proto::GetShieldedNullifiersRequest,
@@ -495,45 +575,6 @@ impl_transport_request_grpc!(
     PlatformGrpcClient,
     RequestSettings::default(),
     get_shielded_nullifiers
-);
-
-// rpc getRecentNullifierChanges(GetRecentNullifierChangesRequest) returns (GetRecentNullifierChangesResponse);
-impl_transport_request_grpc!(
-    platform_proto::GetRecentNullifierChangesRequest,
-    platform_proto::GetRecentNullifierChangesResponse,
-    PlatformGrpcClient,
-    RequestSettings::default(),
-    get_recent_nullifier_changes
-);
-
-// rpc getRecentCompactedNullifierChanges(GetRecentCompactedNullifierChangesRequest) returns (GetRecentCompactedNullifierChangesResponse);
-impl_transport_request_grpc!(
-    platform_proto::GetRecentCompactedNullifierChangesRequest,
-    platform_proto::GetRecentCompactedNullifierChangesResponse,
-    PlatformGrpcClient,
-    RequestSettings {
-        max_decoding_message_size: Some(16 * 1024 * 1024),
-        ..RequestSettings::default()
-    },
-    get_recent_compacted_nullifier_changes
-);
-
-// rpc getNullifiersTrunkState(GetNullifiersTrunkStateRequest) returns (GetNullifiersTrunkStateResponse);
-impl_transport_request_grpc!(
-    platform_proto::GetNullifiersTrunkStateRequest,
-    platform_proto::GetNullifiersTrunkStateResponse,
-    PlatformGrpcClient,
-    RequestSettings::default(),
-    get_nullifiers_trunk_state
-);
-
-// rpc getNullifiersBranchState(GetNullifiersBranchStateRequest) returns (GetNullifiersBranchStateResponse);
-impl_transport_request_grpc!(
-    platform_proto::GetNullifiersBranchStateRequest,
-    platform_proto::GetNullifiersBranchStateResponse,
-    PlatformGrpcClient,
-    RequestSettings::default(),
-    get_nullifiers_branch_state
 );
 
 // Link to each core gRPC request what client and method to use:

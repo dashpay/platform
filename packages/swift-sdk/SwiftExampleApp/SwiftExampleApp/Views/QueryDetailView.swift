@@ -3,7 +3,7 @@ import SwiftDashSDK
 
 struct QueryDetailView: View {
     let query: QueryDefinition
-    @EnvironmentObject var appState: UnifiedAppState
+    @EnvironmentObject var appState: AppState
     @State private var queryInputs: [String: String] = [:]
     @State private var isLoading = false
     @State private var result: String = ""
@@ -125,7 +125,7 @@ struct QueryDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
             print("🔵 QueryDetailView: View appeared for query: \(query.name)")
-            print("🔵 QueryDetailView: appState.platformState.sdk is \(appState.platformState.sdk != nil ? "initialized" : "nil")")
+            print("🔵 QueryDetailView: appState.sdk is \(appState.sdk != nil ? "initialized" : "nil")")
         }
     }
 
@@ -149,7 +149,7 @@ struct QueryDetailView: View {
     private func executeQuery() {
         print("🔵 QueryDetailView: executeQuery() called for query: \(query.name)")
 
-        guard let sdk = appState.platformState.sdk else {
+        guard let sdk = appState.sdk else {
             print("❌ QueryDetailView: SDK not initialized")
             error = "SDK not initialized"
             return

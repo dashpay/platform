@@ -1,5 +1,6 @@
 import { expect } from './helpers/chai.ts';
 import init, * as sdk from '../../dist/sdk.compressed.js';
+import { prefetchLocalReady } from './helpers/trustedContext.ts';
 
 describe('Utilities', function describeUtilities() {
   this.timeout(60000);
@@ -8,7 +9,7 @@ describe('Utilities', function describeUtilities() {
 
   describe('WasmTrustedContext.prefetchLocal()', () => {
     it('should prefetch trusted quorums for local', async () => {
-      await sdk.WasmTrustedContext.prefetchLocal();
+      await prefetchLocalReady();
     });
   });
 

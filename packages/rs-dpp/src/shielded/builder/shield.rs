@@ -27,9 +27,14 @@ use super::{build_output_only_bundle, serialize_authorized_bundle, OrchardProver
 /// - `user_fee_increase` - Fee multiplier (0 = 100% base fee)
 /// - `prover` - Orchard prover (holds the Halo 2 proving key; cache with `OnceLock` — ~30s to build)
 /// - `memo` - 36-byte structured memo for the recipient (4-byte type tag + 32-byte payload)
+/// - `sender_ovk` - The sender's outgoing viewing key (External scope). With `Some`, the
+///   recipient output's `out_ciphertext` is encrypted under it so the sender can later
+///   recover the sent note (recipient, value, memo) from chain data via OVK recovery —
+///   the Zcash outgoing-transaction-history convention. With `None`, a random outgoing
+///   cipher key is used and the sent note is unrecoverable by anyone.
 /// - `platform_version` - Protocol version
 #[allow(clippy::too_many_arguments)]
-pub fn build_shield_transition<S: Signer<PlatformAddress>, P: OrchardProver>(
+pub async fn build_shield_transition<S: Signer<PlatformAddress>, P: OrchardProver>(
     recipient: &OrchardAddress,
     shield_amount: u64,
     inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
@@ -38,6 +43,7 @@ pub fn build_shield_transition<S: Signer<PlatformAddress>, P: OrchardProver>(
     user_fee_increase: UserFeeIncrease,
     prover: &P,
     memo: [u8; 36],
+    sender_ovk: Option<grovedb_commitment_tree::OutgoingViewingKey>,
     platform_version: &PlatformVersion,
 ) -> Result<StateTransition, ProtocolError> {
     if fee_strategy.is_empty() {
@@ -46,7 +52,9 @@ pub fn build_shield_transition<S: Signer<PlatformAddress>, P: OrchardProver>(
         ));
     }
 
-    let bundle = build_output_only_bundle(recipient, shield_amount, memo, prover)?;
+    // Shield (Type 15) never pads with anonymity-set fillers — only the
+    // Type 18 ShieldFromAssetLock pool-seeding path does (`dummy_outputs`).
+    let bundle = build_output_only_bundle(recipient, shield_amount, memo, sender_ovk, 0, prover)?;
     let sb = serialize_authorized_bundle(&bundle);
 
     ShieldTransition::try_from_bundle_with_signer(
@@ -61,6 +69,7 @@ pub fn build_shield_transition<S: Signer<PlatformAddress>, P: OrchardProver>(
         user_fee_increase,
         platform_version,
     )
+    .await
 }
 
 #[cfg(test)]
@@ -76,12 +85,17 @@ mod tests {
     #[derive(Debug)]
     struct DummySigner;
 
+    #[async_trait::async_trait]
     impl Signer<PlatformAddress> for DummySigner {
-        fn sign(&self, _key: &PlatformAddress, _data: &[u8]) -> Result<BinaryData, ProtocolError> {
+        async fn sign(
+            &self,
+            _key: &PlatformAddress,
+            _data: &[u8],
+        ) -> Result<BinaryData, ProtocolError> {
             Ok(BinaryData::new(vec![0u8; 65]))
         }
 
-        fn sign_create_witness(
+        async fn sign_create_witness(
             &self,
             _key: &PlatformAddress,
             _data: &[u8],
@@ -96,8 +110,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_build_shield_empty_fee_strategy() {
+    #[tokio::test]
+    async fn test_build_shield_empty_fee_strategy() {
         let recipient = test_orchard_address();
         let platform_version = PlatformVersion::latest();
         let result = build_shield_transition(
@@ -109,8 +123,10 @@ mod tests {
             0,
             &TestProver,
             [0u8; 36],
+            None,
             platform_version,
-        );
+        )
+        .await;
 
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
@@ -121,8 +137,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_build_shield_transition_valid() {
+    #[tokio::test]
+    async fn test_build_shield_transition_valid() {
         let recipient = test_orchard_address();
         let platform_version = PlatformVersion::latest();
         // Create a P2PKH address as input
@@ -141,13 +157,121 @@ mod tests {
             0,
             &TestProver,
             [0u8; 36],
+            None,
             platform_version,
-        );
+        )
+        .await;
 
         assert!(result.is_ok(), "expected Ok, got: {:?}", result.err());
         match result.unwrap() {
             StateTransition::Shield(_) => {} // correct variant
             other => panic!("expected Shield variant, got {:?}", other),
         }
+    }
+
+    // ------------------------------------------------------------
+    // Extra coverage: error/edge paths not exercised above.
+    // ------------------------------------------------------------
+
+    #[tokio::test]
+    async fn test_build_shield_multiple_inputs_all_plumbed() {
+        // Multiple input addresses should each produce their own witness
+        // signature and flow through the downstream Shield transition.
+        let recipient = test_orchard_address();
+        let platform_version = PlatformVersion::latest();
+
+        let mut inputs = BTreeMap::new();
+        inputs.insert(PlatformAddress::P2pkh([1u8; 20]), (0u32, 100_000u64));
+        inputs.insert(PlatformAddress::P2pkh([2u8; 20]), (0u32, 200_000u64));
+        inputs.insert(PlatformAddress::P2pkh([3u8; 20]), (0u32, 300_000u64));
+
+        let fee_strategy = vec![AddressFundsFeeStrategyStep::DeductFromInput(0)];
+
+        let result = build_shield_transition(
+            &recipient,
+            50_000,
+            inputs,
+            fee_strategy,
+            &DummySigner,
+            0,
+            &TestProver,
+            [0u8; 36],
+            None,
+            platform_version,
+        )
+        .await;
+        assert!(
+            result.is_ok(),
+            "multi-input shield should succeed: {:?}",
+            result.err()
+        );
+    }
+
+    #[tokio::test]
+    async fn test_build_shield_user_fee_increase_non_zero_succeeds() {
+        // The user_fee_increase param just flows through as metadata.
+        // A non-zero value should not fail the bundle build.
+        let recipient = test_orchard_address();
+        let platform_version = PlatformVersion::latest();
+        let input_address = PlatformAddress::P2pkh([5u8; 20]);
+        let mut inputs = BTreeMap::new();
+        inputs.insert(input_address, (0u32, 500_000u64));
+
+        let fee_strategy = vec![AddressFundsFeeStrategyStep::DeductFromInput(0)];
+
+        let result = build_shield_transition(
+            &recipient,
+            100_000,
+            inputs,
+            fee_strategy,
+            &DummySigner,
+            42, // non-zero fee increase
+            &TestProver,
+            [9u8; 36],
+            None,
+            platform_version,
+        )
+        .await;
+        assert!(
+            result.is_ok(),
+            "non-zero user_fee_increase should succeed: {:?}",
+            result.err()
+        );
+    }
+
+    #[tokio::test]
+    async fn test_build_shield_memo_is_fully_plumbed() {
+        // Any 36-byte memo should be accepted — this test is a guard
+        // against accidental panics/regressions in memo handling.
+        let recipient = test_orchard_address();
+        let platform_version = PlatformVersion::latest();
+        let input_address = PlatformAddress::P2pkh([9u8; 20]);
+        let mut inputs = BTreeMap::new();
+        inputs.insert(input_address, (5u32, 200_000u64));
+
+        let fee_strategy = vec![AddressFundsFeeStrategyStep::DeductFromInput(0)];
+        let mut memo = [0u8; 36];
+        for (i, b) in memo.iter_mut().enumerate() {
+            *b = i as u8;
+        }
+
+        let result = build_shield_transition(
+            &recipient,
+            80_000,
+            inputs,
+            fee_strategy,
+            &DummySigner,
+            0,
+            &TestProver,
+            memo,
+            None,
+            platform_version,
+        )
+        .await;
+        assert!(
+            result.is_ok(),
+            "varied memo should succeed: {:?}",
+            result.err()
+        );
     }
 }

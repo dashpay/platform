@@ -1,13 +1,8 @@
 use crate::utils::getters::VecU8ToUint8Array;
-use dpp::data_contract::associated_token::token_distribution_key::TokenDistributionTypeWithResolvedRecipient;
-use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_recipient::TokenDistributionResolvedRecipient;
 use dpp::group::action_event::GroupActionEvent;
 use dpp::group::group_action::GroupAction;
 use dpp::group::group_action_status::GroupActionStatus;
 use dpp::identifier::Identifier;
-use dpp::tokens::emergency_action::TokenEmergencyAction;
-use dpp::tokens::token_event::TokenEvent;
-use dpp::tokens::token_pricing_schedule::TokenPricingSchedule;
 use dpp::version::PlatformVersion;
 use drive::drive::Drive;
 use drive::verify::RootHash;
@@ -245,459 +240,154 @@ pub fn verify_action_infos_in_contract_map(
 
 // Helper function to convert GroupActionEvent to JS object
 fn group_action_event_to_js(event: &GroupActionEvent) -> Result<JsValue, JsValue> {
-    match event {
-        GroupActionEvent::TokenEvent(token_event) => {
-            let event_obj = Object::new();
+    // Serialize via DPP's canonical serde, matching wasm-dpp2's `to_object`:
+    // internally tagged (`$kind`/`$type`), identifier and byte fields become
+    // `Uint8Array`, and u64 amounts become `BigInt` (JS-safe above 2^53). This
+    // replaces a hand-rolled construction that emitted a divergent bare-`type`,
+    // PascalCase shape.
+    use serde::Serialize;
+    let value = dpp::platform_value::to_value(event)
+        .map_err(|e| JsValue::from_str(&format!("Failed to convert group action event: {e}")))?;
+    // rs-dpp preserves typed map keys (e.g. `TokenPricingSchedule::SetPrices`
+    // emits `Value::U64` keys); JS plain objects require string keys, so
+    // stringify them before handing the tree to serde_wasm_bindgen.
+    let normalized = stringify_map_keys_for_object(&value);
+    let serializer = serde_wasm_bindgen::Serializer::new()
+        .serialize_maps_as_objects(true)
+        .serialize_bytes_as_arrays(false)
+        .serialize_large_number_types_as_bigints(true);
+    normalized
+        .serialize(&serializer)
+        .map_err(|e| JsValue::from_str(&format!("Failed to serialize group action event: {e}")))
+}
 
-            let token_event_js = token_event_to_js(token_event)?;
-            Reflect::set(
-                &event_obj,
-                &JsValue::from_str("TokenEvent"),
-                &token_event_js,
-            )
-            .map_err(|_| JsValue::from_str("Failed to set TokenEvent"))?;
-
-            Ok(event_obj.into())
+/// Recursively normalize a `Value` tree so that all `Map` keys are `Value::Text`.
+/// JS plain objects require string keys, but rs-dpp preserves typed map keys
+/// (e.g. `BTreeMap<TokenAmount, Credits>` emits `Value::U64` keys). Mirrors
+/// wasm-dpp2's `platform_value_to_object` normalization.
+fn stringify_map_keys_for_object(value: &dpp::platform_value::Value) -> dpp::platform_value::Value {
+    use dpp::platform_value::Value;
+    match value {
+        Value::Map(entries) => Value::Map(
+            entries
+                .iter()
+                .map(|(k, v)| (stringify_key(k), stringify_map_keys_for_object(v)))
+                .collect(),
+        ),
+        Value::Array(items) => {
+            Value::Array(items.iter().map(stringify_map_keys_for_object).collect())
         }
+        other => other.clone(),
     }
 }
 
-// Helper function to convert TokenEvent to JS object
-fn token_event_to_js(event: &TokenEvent) -> Result<JsValue, JsValue> {
-    let obj = Object::new();
+fn stringify_key(key: &dpp::platform_value::Value) -> dpp::platform_value::Value {
+    use dpp::platform_value::string_encoding::{encode, Encoding};
+    use dpp::platform_value::Value;
+    match key {
+        Value::Text(_) => key.clone(),
+        Value::U8(n) => Value::Text(n.to_string()),
+        Value::U16(n) => Value::Text(n.to_string()),
+        Value::U32(n) => Value::Text(n.to_string()),
+        Value::U64(n) => Value::Text(n.to_string()),
+        Value::I8(n) => Value::Text(n.to_string()),
+        Value::I16(n) => Value::Text(n.to_string()),
+        Value::I32(n) => Value::Text(n.to_string()),
+        Value::I64(n) => Value::Text(n.to_string()),
+        Value::Bool(b) => Value::Text(b.to_string()),
+        Value::Identifier(bytes) => Value::Text(encode(bytes, Encoding::Base58)),
+        Value::Bytes(bytes) => Value::Text(encode(bytes, Encoding::Base64)),
+        Value::Bytes20(bytes) => Value::Text(encode(bytes, Encoding::Base64)),
+        Value::Bytes32(bytes) => Value::Text(encode(bytes, Encoding::Base64)),
+        Value::Bytes36(bytes) => Value::Text(encode(bytes, Encoding::Base64)),
+        // Float / Null / Array / Map / Tag / EnumU8 fall through; the serializer
+        // surfaces a clear error if any ever appears as a map key (no rs-dpp
+        // domain type in this tree uses them that way).
+        other => other.clone(),
+    }
+}
 
-    match event {
-        TokenEvent::Mint(amount, recipient, note) => {
-            Reflect::set(&obj, &JsValue::from_str("type"), &JsValue::from_str("Mint"))
-                .map_err(|_| JsValue::from_str("Failed to set type"))?;
-            Reflect::set(
-                &obj,
-                &JsValue::from_str("amount"),
-                &JsValue::from_str(&amount.to_string()),
-            )
-            .map_err(|_| JsValue::from_str("Failed to set amount"))?;
+// Pure-Rust coverage of the `Value`-tree the group-action serializer feeds to
+// `serde_wasm_bindgen`. These assert the canonical `$kind`/`$type` shape and the
+// typed-map-key normalization; the final JsValue mapping (typed `U64` -> BigInt,
+// `Identifier` -> Uint8Array) is the wasm-dpp2-proven serializer config and is not
+// re-tested here (it needs a wasm runtime).
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dpp::platform_value::Value;
+    use dpp::tokens::token_event::TokenEvent;
+    use dpp::tokens::token_pricing_schedule::TokenPricingSchedule;
+    use std::collections::BTreeMap;
 
-            let recipient_array = Uint8Array::from(recipient.as_slice());
-            Reflect::set(&obj, &JsValue::from_str("recipient"), &recipient_array)
-                .map_err(|_| JsValue::from_str("Failed to set recipient"))?;
-
-            match note {
-                Some(n) => Reflect::set(&obj, &JsValue::from_str("note"), &JsValue::from_str(n)),
-                None => Reflect::set(&obj, &JsValue::from_str("note"), &JsValue::NULL),
-            }
-            .map_err(|_| JsValue::from_str("Failed to set note"))?;
-        }
-        TokenEvent::Burn(amount, burn_from, note) => {
-            Reflect::set(&obj, &JsValue::from_str("type"), &JsValue::from_str("Burn"))
-                .map_err(|_| JsValue::from_str("Failed to set type"))?;
-            Reflect::set(
-                &obj,
-                &JsValue::from_str("amount"),
-                &JsValue::from_str(&amount.to_string()),
-            )
-            .map_err(|_| JsValue::from_str("Failed to set amount"))?;
-
-            let burn_from_array = Uint8Array::from(burn_from.as_slice());
-            Reflect::set(&obj, &JsValue::from_str("burnFrom"), &burn_from_array)
-                .map_err(|_| JsValue::from_str("Failed to set burnFrom"))?;
-
-            match note {
-                Some(n) => Reflect::set(&obj, &JsValue::from_str("note"), &JsValue::from_str(n)),
-                None => Reflect::set(&obj, &JsValue::from_str("note"), &JsValue::NULL),
-            }
-            .map_err(|_| JsValue::from_str("Failed to set note"))?;
-        }
-        TokenEvent::Freeze(frozen_identity, note) => {
-            Reflect::set(
-                &obj,
-                &JsValue::from_str("type"),
-                &JsValue::from_str("Freeze"),
-            )
-            .map_err(|_| JsValue::from_str("Failed to set type"))?;
-
-            let frozen_array = Uint8Array::from(frozen_identity.as_slice());
-            Reflect::set(&obj, &JsValue::from_str("frozenIdentity"), &frozen_array)
-                .map_err(|_| JsValue::from_str("Failed to set frozenIdentity"))?;
-
-            match note {
-                Some(n) => Reflect::set(&obj, &JsValue::from_str("note"), &JsValue::from_str(n)),
-                None => Reflect::set(&obj, &JsValue::from_str("note"), &JsValue::NULL),
-            }
-            .map_err(|_| JsValue::from_str("Failed to set note"))?;
-        }
-        TokenEvent::Unfreeze(frozen_identity, note) => {
-            Reflect::set(
-                &obj,
-                &JsValue::from_str("type"),
-                &JsValue::from_str("Unfreeze"),
-            )
-            .map_err(|_| JsValue::from_str("Failed to set type"))?;
-
-            let frozen_array = Uint8Array::from(frozen_identity.as_slice());
-            Reflect::set(&obj, &JsValue::from_str("frozenIdentity"), &frozen_array)
-                .map_err(|_| JsValue::from_str("Failed to set frozenIdentity"))?;
-
-            match note {
-                Some(n) => Reflect::set(&obj, &JsValue::from_str("note"), &JsValue::from_str(n)),
-                None => Reflect::set(&obj, &JsValue::from_str("note"), &JsValue::NULL),
-            }
-            .map_err(|_| JsValue::from_str("Failed to set note"))?;
-        }
-        TokenEvent::DestroyFrozenFunds(frozen_identity, amount, note) => {
-            Reflect::set(
-                &obj,
-                &JsValue::from_str("type"),
-                &JsValue::from_str("DestroyFrozenFunds"),
-            )
-            .map_err(|_| JsValue::from_str("Failed to set type"))?;
-
-            let frozen_array = Uint8Array::from(frozen_identity.as_slice());
-            Reflect::set(&obj, &JsValue::from_str("frozenIdentity"), &frozen_array)
-                .map_err(|_| JsValue::from_str("Failed to set frozenIdentity"))?;
-
-            Reflect::set(
-                &obj,
-                &JsValue::from_str("amount"),
-                &JsValue::from_str(&amount.to_string()),
-            )
-            .map_err(|_| JsValue::from_str("Failed to set amount"))?;
-
-            match note {
-                Some(n) => Reflect::set(&obj, &JsValue::from_str("note"), &JsValue::from_str(n)),
-                None => Reflect::set(&obj, &JsValue::from_str("note"), &JsValue::NULL),
-            }
-            .map_err(|_| JsValue::from_str("Failed to set note"))?;
-        }
-        TokenEvent::Transfer(
-            recipient,
-            public_note,
-            shared_encrypted_note,
-            personal_encrypted_note,
-            amount,
-        ) => {
-            Reflect::set(
-                &obj,
-                &JsValue::from_str("type"),
-                &JsValue::from_str("Transfer"),
-            )
-            .map_err(|_| JsValue::from_str("Failed to set type"))?;
-
-            let recipient_array = Uint8Array::from(recipient.as_slice());
-            Reflect::set(&obj, &JsValue::from_str("recipient"), &recipient_array)
-                .map_err(|_| JsValue::from_str("Failed to set recipient"))?;
-
-            match public_note {
-                Some(n) => Reflect::set(
-                    &obj,
-                    &JsValue::from_str("publicNote"),
-                    &JsValue::from_str(n),
-                ),
-                None => Reflect::set(&obj, &JsValue::from_str("publicNote"), &JsValue::NULL),
-            }
-            .map_err(|_| JsValue::from_str("Failed to set publicNote"))?;
-
-            // Serialize shared encrypted note (optional)
-            match shared_encrypted_note {
-                Some((sender_key_index, recipient_key_index, encrypted_data)) => {
-                    let shared_note_obj = Object::new();
-                    Reflect::set(
-                        &shared_note_obj,
-                        &JsValue::from_str("senderKeyIndex"),
-                        &JsValue::from(*sender_key_index),
-                    )
-                    .map_err(|_| JsValue::from_str("Failed to set senderKeyIndex"))?;
-                    Reflect::set(
-                        &shared_note_obj,
-                        &JsValue::from_str("recipientKeyIndex"),
-                        &JsValue::from(*recipient_key_index),
-                    )
-                    .map_err(|_| JsValue::from_str("Failed to set recipientKeyIndex"))?;
-                    let encrypted_array = Uint8Array::from(encrypted_data.as_slice());
-                    Reflect::set(
-                        &shared_note_obj,
-                        &JsValue::from_str("encryptedData"),
-                        &encrypted_array,
-                    )
-                    .map_err(|_| JsValue::from_str("Failed to set encryptedData"))?;
-                    Reflect::set(
-                        &obj,
-                        &JsValue::from_str("sharedEncryptedNote"),
-                        &shared_note_obj,
-                    )
-                    .map_err(|_| JsValue::from_str("Failed to set sharedEncryptedNote"))?;
-                }
-                None => {
-                    Reflect::set(
-                        &obj,
-                        &JsValue::from_str("sharedEncryptedNote"),
-                        &JsValue::NULL,
-                    )
-                    .map_err(|_| JsValue::from_str("Failed to set sharedEncryptedNote"))?;
-                }
-            }
-
-            // Serialize personal encrypted note (optional)
-            match personal_encrypted_note {
-                Some((root_key_index, derivation_key_index, encrypted_data)) => {
-                    let personal_note_obj = Object::new();
-                    Reflect::set(
-                        &personal_note_obj,
-                        &JsValue::from_str("rootKeyIndex"),
-                        &JsValue::from(*root_key_index),
-                    )
-                    .map_err(|_| JsValue::from_str("Failed to set rootKeyIndex"))?;
-                    Reflect::set(
-                        &personal_note_obj,
-                        &JsValue::from_str("derivationKeyIndex"),
-                        &JsValue::from(*derivation_key_index),
-                    )
-                    .map_err(|_| JsValue::from_str("Failed to set derivationKeyIndex"))?;
-                    let encrypted_array = Uint8Array::from(encrypted_data.as_slice());
-                    Reflect::set(
-                        &personal_note_obj,
-                        &JsValue::from_str("encryptedData"),
-                        &encrypted_array,
-                    )
-                    .map_err(|_| JsValue::from_str("Failed to set encryptedData"))?;
-                    Reflect::set(
-                        &obj,
-                        &JsValue::from_str("personalEncryptedNote"),
-                        &personal_note_obj,
-                    )
-                    .map_err(|_| JsValue::from_str("Failed to set personalEncryptedNote"))?;
-                }
-                None => {
-                    Reflect::set(
-                        &obj,
-                        &JsValue::from_str("personalEncryptedNote"),
-                        &JsValue::NULL,
-                    )
-                    .map_err(|_| JsValue::from_str("Failed to set personalEncryptedNote"))?;
-                }
-            }
-
-            Reflect::set(
-                &obj,
-                &JsValue::from_str("amount"),
-                &JsValue::from_str(&amount.to_string()),
-            )
-            .map_err(|_| JsValue::from_str("Failed to set amount"))?;
-        }
-        TokenEvent::Claim(distribution_type, amount, note) => {
-            Reflect::set(
-                &obj,
-                &JsValue::from_str("type"),
-                &JsValue::from_str("Claim"),
-            )
-            .map_err(|_| JsValue::from_str("Failed to set type"))?;
-
-            // Serialize distribution type
-            let dist_obj = Object::new();
-            match distribution_type {
-                TokenDistributionTypeWithResolvedRecipient::PreProgrammed(id) => {
-                    Reflect::set(
-                        &dist_obj,
-                        &JsValue::from_str("type"),
-                        &JsValue::from_str("PreProgrammed"),
-                    )
-                    .map_err(|_| JsValue::from_str("Failed to set distribution type"))?;
-                    let id_array = Uint8Array::from(id.as_slice());
-                    Reflect::set(&dist_obj, &JsValue::from_str("id"), &id_array)
-                        .map_err(|_| JsValue::from_str("Failed to set distribution id"))?;
-                }
-                TokenDistributionTypeWithResolvedRecipient::Perpetual(recipient) => {
-                    Reflect::set(
-                        &dist_obj,
-                        &JsValue::from_str("type"),
-                        &JsValue::from_str("Perpetual"),
-                    )
-                    .map_err(|_| JsValue::from_str("Failed to set distribution type"))?;
-
-                    // Serialize resolved recipient
-                    match recipient {
-                        TokenDistributionResolvedRecipient::ContractOwnerIdentity(id) => {
-                            Reflect::set(
-                                &dist_obj,
-                                &JsValue::from_str("recipientType"),
-                                &JsValue::from_str("ContractOwnerIdentity"),
-                            )
-                            .map_err(|_| JsValue::from_str("Failed to set recipientType"))?;
-                            let id_array = Uint8Array::from(id.as_slice());
-                            Reflect::set(&dist_obj, &JsValue::from_str("recipientId"), &id_array)
-                                .map_err(|_| JsValue::from_str("Failed to set recipientId"))?;
-                        }
-                        TokenDistributionResolvedRecipient::Identity(id) => {
-                            Reflect::set(
-                                &dist_obj,
-                                &JsValue::from_str("recipientType"),
-                                &JsValue::from_str("Identity"),
-                            )
-                            .map_err(|_| JsValue::from_str("Failed to set recipientType"))?;
-                            let id_array = Uint8Array::from(id.as_slice());
-                            Reflect::set(&dist_obj, &JsValue::from_str("recipientId"), &id_array)
-                                .map_err(|_| JsValue::from_str("Failed to set recipientId"))?;
-                        }
-                        TokenDistributionResolvedRecipient::Evonode(id) => {
-                            Reflect::set(
-                                &dist_obj,
-                                &JsValue::from_str("recipientType"),
-                                &JsValue::from_str("Evonode"),
-                            )
-                            .map_err(|_| JsValue::from_str("Failed to set recipientType"))?;
-                            let id_array = Uint8Array::from(id.as_slice());
-                            Reflect::set(&dist_obj, &JsValue::from_str("recipientId"), &id_array)
-                                .map_err(|_| JsValue::from_str("Failed to set recipientId"))?;
-                        }
-                    }
-                }
-            }
-            Reflect::set(&obj, &JsValue::from_str("distributionType"), &dist_obj)
-                .map_err(|_| JsValue::from_str("Failed to set distributionType"))?;
-
-            Reflect::set(
-                &obj,
-                &JsValue::from_str("amount"),
-                &JsValue::from_str(&amount.to_string()),
-            )
-            .map_err(|_| JsValue::from_str("Failed to set amount"))?;
-
-            match note {
-                Some(n) => Reflect::set(&obj, &JsValue::from_str("note"), &JsValue::from_str(n)),
-                None => Reflect::set(&obj, &JsValue::from_str("note"), &JsValue::NULL),
-            }
-            .map_err(|_| JsValue::from_str("Failed to set note"))?;
-        }
-        TokenEvent::EmergencyAction(action, note) => {
-            Reflect::set(
-                &obj,
-                &JsValue::from_str("type"),
-                &JsValue::from_str("EmergencyAction"),
-            )
-            .map_err(|_| JsValue::from_str("Failed to set type"))?;
-
-            let action_str = match action {
-                TokenEmergencyAction::Pause => "Pause",
-                TokenEmergencyAction::Resume => "Resume",
-            };
-            Reflect::set(
-                &obj,
-                &JsValue::from_str("action"),
-                &JsValue::from_str(action_str),
-            )
-            .map_err(|_| JsValue::from_str("Failed to set action"))?;
-
-            match note {
-                Some(n) => Reflect::set(&obj, &JsValue::from_str("note"), &JsValue::from_str(n)),
-                None => Reflect::set(&obj, &JsValue::from_str("note"), &JsValue::NULL),
-            }
-            .map_err(|_| JsValue::from_str("Failed to set note"))?;
-        }
-        TokenEvent::ConfigUpdate(config_item, note) => {
-            Reflect::set(
-                &obj,
-                &JsValue::from_str("type"),
-                &JsValue::from_str("ConfigUpdate"),
-            )
-            .map_err(|_| JsValue::from_str("Failed to set type"))?;
-
-            // For now, we'll just serialize the config item as a string representation
-            // In a real implementation, you might want to handle each variant separately
-            Reflect::set(
-                &obj,
-                &JsValue::from_str("configItem"),
-                &JsValue::from_str(&format!("{:?}", config_item)),
-            )
-            .map_err(|_| JsValue::from_str("Failed to set configItem"))?;
-
-            match note {
-                Some(n) => Reflect::set(&obj, &JsValue::from_str("note"), &JsValue::from_str(n)),
-                None => Reflect::set(&obj, &JsValue::from_str("note"), &JsValue::NULL),
-            }
-            .map_err(|_| JsValue::from_str("Failed to set note"))?;
-        }
-        TokenEvent::ChangePriceForDirectPurchase(pricing_schedule, note) => {
-            Reflect::set(
-                &obj,
-                &JsValue::from_str("type"),
-                &JsValue::from_str("ChangePriceForDirectPurchase"),
-            )
-            .map_err(|_| JsValue::from_str("Failed to set type"))?;
-
-            match pricing_schedule {
-                Some(schedule) => {
-                    let schedule_obj = Object::new();
-                    match schedule {
-                        TokenPricingSchedule::SinglePrice(price) => {
-                            Reflect::set(
-                                &schedule_obj,
-                                &JsValue::from_str("type"),
-                                &JsValue::from_str("SinglePrice"),
-                            )
-                            .map_err(|_| JsValue::from_str("Failed to set schedule type"))?;
-                            Reflect::set(
-                                &schedule_obj,
-                                &JsValue::from_str("price"),
-                                &JsValue::from_str(&price.to_string()),
-                            )
-                            .map_err(|_| JsValue::from_str("Failed to set price"))?;
-                        }
-                        TokenPricingSchedule::SetPrices(prices) => {
-                            Reflect::set(
-                                &schedule_obj,
-                                &JsValue::from_str("type"),
-                                &JsValue::from_str("SetPrices"),
-                            )
-                            .map_err(|_| JsValue::from_str("Failed to set schedule type"))?;
-
-                            let prices_obj = Object::new();
-                            for (amount, price) in prices {
-                                Reflect::set(
-                                    &prices_obj,
-                                    &JsValue::from_str(&amount.to_string()),
-                                    &JsValue::from_str(&price.to_string()),
-                                )
-                                .map_err(|_| JsValue::from_str("Failed to set price entry"))?;
-                            }
-                            Reflect::set(&schedule_obj, &JsValue::from_str("prices"), &prices_obj)
-                                .map_err(|_| JsValue::from_str("Failed to set prices"))?;
-                        }
-                    }
-                    Reflect::set(&obj, &JsValue::from_str("pricingSchedule"), &schedule_obj)
-                        .map_err(|_| JsValue::from_str("Failed to set pricingSchedule"))?;
-                }
-                None => {
-                    Reflect::set(&obj, &JsValue::from_str("pricingSchedule"), &JsValue::NULL)
-                        .map_err(|_| JsValue::from_str("Failed to set pricingSchedule"))?;
-                }
-            }
-
-            match note {
-                Some(n) => Reflect::set(&obj, &JsValue::from_str("note"), &JsValue::from_str(n)),
-                None => Reflect::set(&obj, &JsValue::from_str("note"), &JsValue::NULL),
-            }
-            .map_err(|_| JsValue::from_str("Failed to set note"))?;
-        }
-        TokenEvent::DirectPurchase(amount, credits) => {
-            Reflect::set(
-                &obj,
-                &JsValue::from_str("type"),
-                &JsValue::from_str("DirectPurchase"),
-            )
-            .map_err(|_| JsValue::from_str("Failed to set type"))?;
-            Reflect::set(
-                &obj,
-                &JsValue::from_str("amount"),
-                &JsValue::from_str(&amount.to_string()),
-            )
-            .map_err(|_| JsValue::from_str("Failed to set amount"))?;
-            Reflect::set(
-                &obj,
-                &JsValue::from_str("credits"),
-                &JsValue::from_str(&credits.to_string()),
-            )
-            .map_err(|_| JsValue::from_str("Failed to set credits"))?;
-        }
+    fn event_value(event: &GroupActionEvent) -> Value {
+        let value = dpp::platform_value::to_value(event).expect("to_value");
+        stringify_map_keys_for_object(&value)
     }
 
-    Ok(obj.into())
+    fn field<'a>(map: &'a Value, key: &str) -> Option<&'a Value> {
+        map.as_map()?
+            .iter()
+            .find(|(k, _)| k.as_text() == Some(key))
+            .map(|(_, v)| v)
+    }
+
+    #[test]
+    fn mint_event_has_canonical_kind_type_shape() {
+        let event = GroupActionEvent::TokenEvent(TokenEvent::Mint(
+            1234,
+            Identifier::new([0x11; 32]),
+            Some("note".to_string()),
+        ));
+        let v = event_value(&event);
+        // Internally tagged: `$kind` (GroupActionEvent) + `$type` (TokenEvent),
+        // flattened into one object. Amount stays a typed `U64` (-> BigInt),
+        // recipient a typed `Identifier` (-> Uint8Array) at serialize time.
+        assert_eq!(
+            field(&v, "$kind").and_then(Value::as_text),
+            Some("tokenEvent")
+        );
+        assert_eq!(field(&v, "$type").and_then(Value::as_text), Some("mint"));
+        assert_eq!(field(&v, "amount"), Some(&Value::U64(1234)));
+        assert!(matches!(field(&v, "recipient"), Some(Value::Identifier(_))));
+    }
+
+    #[test]
+    fn set_prices_map_keys_are_stringified() {
+        // `TokenPricingSchedule::SetPrices` emits `BTreeMap<u64, u64>` -> `U64`
+        // map keys; JS plain objects require string keys, so normalization must
+        // convert them (else serde_wasm_bindgen errors "Map key is not a string").
+        let mut prices = BTreeMap::new();
+        prices.insert(5u64, 50u64);
+        prices.insert(9_007_199_254_740_993u64, 1u64); // > 2^53
+        let event = GroupActionEvent::TokenEvent(TokenEvent::ChangePriceForDirectPurchase(
+            Some(TokenPricingSchedule::SetPrices(prices)),
+            None,
+        ));
+        let v = event_value(&event);
+        assert_eq!(
+            field(&v, "$type").and_then(Value::as_text),
+            Some("changePriceForDirectPurchase")
+        );
+        // Walk to the pricing-schedule map and assert every key is now `Text`.
+        let mut found_map = false;
+        fn assert_all_keys_text(v: &Value, found: &mut bool) {
+            match v {
+                Value::Map(entries) => {
+                    for (k, val) in entries {
+                        if matches!(val, Value::U64(_)) && matches!(k, Value::U64(_)) {
+                            panic!("u64 map key survived normalization: {k:?}");
+                        }
+                        assert!(matches!(k, Value::Text(_)), "non-string map key: {k:?}");
+                        *found = true;
+                        assert_all_keys_text(val, found);
+                    }
+                }
+                Value::Array(items) => items.iter().for_each(|i| assert_all_keys_text(i, found)),
+                _ => {}
+            }
+        }
+        assert_all_keys_text(&v, &mut found_map);
+        assert!(found_map, "expected at least one map in the tree");
+    }
 }

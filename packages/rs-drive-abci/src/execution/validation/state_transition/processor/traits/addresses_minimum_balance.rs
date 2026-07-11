@@ -75,7 +75,8 @@ impl StateTransitionAddressesMinimumBalanceValidationV0 for StateTransition {
             | StateTransition::ShieldedTransfer(_)
             | StateTransition::Unshield(_)
             | StateTransition::ShieldFromAssetLock(_)
-            | StateTransition::ShieldedWithdrawal(_) => {
+            | StateTransition::ShieldedWithdrawal(_)
+            | StateTransition::IdentityCreateFromShieldedPool(_) => {
                 return Ok(SimpleConsensusValidationResult::new());
             }
         }?;
@@ -107,7 +108,8 @@ impl StateTransitionAddressesMinimumBalanceValidationV0 for StateTransition {
             | StateTransition::ShieldedTransfer(_)
             | StateTransition::Unshield(_)
             | StateTransition::ShieldFromAssetLock(_)
-            | StateTransition::ShieldedWithdrawal(_) => false,
+            | StateTransition::ShieldedWithdrawal(_)
+            | StateTransition::IdentityCreateFromShieldedPool(_) => false,
         }
     }
 }

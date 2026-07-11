@@ -87,8 +87,10 @@ mod tests {
         let platform_version = PlatformVersion::latest();
         let contract_id = Identifier::new([1u8; 32]);
         let config_v1_true = DataContractConfig::V1(DataContractConfigV1::default());
-        let mut v1_false = DataContractConfigV1::default();
-        v1_false.sized_integer_types = false;
+        let v1_false = DataContractConfigV1 {
+            sized_integer_types: false,
+            ..DataContractConfigV1::default()
+        };
         let config_v1_false = DataContractConfig::V1(v1_false);
 
         assert!(config_v1_true.sized_integer_types());
@@ -168,8 +170,10 @@ mod tests {
         );
 
         // Changing readonly (to true) should be rejected
-        let mut modified2 = DataContractConfigV1::default();
-        modified2.readonly = true;
+        let modified2 = DataContractConfigV1 {
+            readonly: true,
+            ..DataContractConfigV1::default()
+        };
         let config_readonly = DataContractConfig::V1(modified2);
 
         let result2 = config_v1.validate_update_v1(&config_readonly, contract_id, platform_version);

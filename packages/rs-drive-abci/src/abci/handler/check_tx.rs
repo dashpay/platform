@@ -175,3 +175,114 @@ where
             })
         })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::rpc::core::MockCoreRPCLike;
+    use crate::test::helpers::setup::TestPlatformBuilder;
+
+    /// Exercises the early-return path in `check_tx` where `r#type.try_into()?`
+    /// propagates a `BadRequest` error before the validation result pipeline is
+    /// reached. Unlike the `.or_else` branch which converts errors into responses,
+    /// this error path propagates out of the handler entirely.
+    #[test]
+    fn check_tx_invalid_check_tx_type_propagates_bad_request_error() {
+        let platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_initial_state_structure();
+        let core_rpc = MockCoreRPCLike::new();
+
+        let request = proto::RequestCheckTx {
+            tx: vec![1, 2, 3],
+            // Only 0 (New) and 1 (Recheck) are valid. 2 is rejected by TryFrom.
+            r#type: 2,
+        };
+
+        let result = check_tx(&platform.platform, &core_rpc, request);
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        let err_str = err.to_string();
+        assert!(
+            err_str.contains("CheckTxLevel") || err_str.contains("2"),
+            "expected BadRequest about CheckTxLevel, got: {}",
+            err_str
+        );
+    }
+
+    /// Exercises the error-path of the main `and_then` branch where the
+    /// `check_tx_v0` code produces a `ValidationResult` with a consensus error
+    /// (`InvalidEncoding` from `decode_raw_state_transitions`) for garbage bytes.
+    /// Covers the code/info propagation via `response_info_for_version`.
+    #[test]
+    fn check_tx_garbage_bytes_returns_nonzero_consensus_code() {
+        let platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_initial_state_structure();
+        let core_rpc = MockCoreRPCLike::new();
+
+        // Random garbage is guaranteed to fail state transition deserialization.
+        let request = proto::RequestCheckTx {
+            tx: vec![0xFF, 0xFE, 0xFD, 0xFC, 0xFB, 0xFA],
+            r#type: 0,
+        };
+
+        let response = check_tx(&platform.platform, &core_rpc, request)
+            .expect("handler should return Ok with a consensus error code in the response");
+
+        // Rejected, non-zero code and non-empty info (base64-encoded consensus info).
+        assert_ne!(response.code, 0);
+        assert!(
+            !response.info.is_empty(),
+            "expected non-empty response info for consensus error"
+        );
+        assert_eq!(response.gas_wanted, 0);
+    }
+
+    /// Recheck mode (type = 1) should take the same code paths as new, but with
+    /// the different label; here we confirm the handler also returns a response
+    /// (not an error) for garbage bytes in Recheck mode.
+    #[test]
+    fn check_tx_garbage_bytes_recheck_returns_response() {
+        let platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_initial_state_structure();
+        let core_rpc = MockCoreRPCLike::new();
+
+        let request = proto::RequestCheckTx {
+            tx: vec![0x00, 0x01, 0x02, 0x03],
+            r#type: 1, // Recheck
+        };
+
+        let response = check_tx(&platform.platform, &core_rpc, request)
+            .expect("recheck with garbage bytes should not produce an Err");
+
+        assert_ne!(response.code, 0);
+    }
+
+    /// An empty body is a boundary case: depending on decoding, it produces an
+    /// `InvalidEncoding` error. The handler should still return Ok with a
+    /// rejection code - not propagate an error.
+    #[test]
+    fn check_tx_empty_tx_body_returns_rejection_code() {
+        let platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_initial_state_structure();
+        let core_rpc = MockCoreRPCLike::new();
+
+        let request = proto::RequestCheckTx {
+            tx: vec![],
+            r#type: 0,
+        };
+
+        let response = check_tx(&platform.platform, &core_rpc, request)
+            .expect("empty tx should not propagate an Err");
+
+        assert_ne!(response.code, 0);
+    }
+}

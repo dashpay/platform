@@ -18,6 +18,7 @@ mod fetch_unproved;
 pub mod group_actions;
 pub mod identities_contract_keys_query;
 pub mod query;
+pub mod query_settings;
 #[cfg(feature = "shielded")]
 pub mod shielded;
 pub mod tokens;
@@ -29,6 +30,7 @@ pub use dapi_grpc::platform::v0 as proto;
 pub use dash_context_provider::ContextProvider;
 #[cfg(feature = "mocks")]
 pub use dash_context_provider::MockContextProvider;
+pub use documents::document_history_query::DocumentHistoryQuery;
 pub use documents::document_query::DocumentQuery;
 pub use dpp::{
     self as dpp,
@@ -46,4 +48,5 @@ pub use {
         RecentAddressBalanceChangesQuery, RecentCompactedAddressBalanceChangesQuery,
         DEFAULT_EPOCH_QUERY_LIMIT,
     },
+    query_settings::QuerySettings,
 };

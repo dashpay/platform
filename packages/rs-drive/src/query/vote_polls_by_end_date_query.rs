@@ -506,3 +506,275 @@ impl VotePollsByEndDateDriveQuery {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::drive::votes::paths::END_DATE_QUERIES_TREE_KEY;
+    use crate::drive::RootTree;
+    use grovedb::QueryItem;
+
+    fn expected_base_path() -> Vec<Vec<u8>> {
+        vec![
+            vec![RootTree::Votes as u8],
+            vec![END_DATE_QUERIES_TREE_KEY as u8],
+        ]
+    }
+
+    // -----------------------------------------------------------------------
+    // construct_path_query
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn construct_path_query_no_bounds_ascending() {
+        let query = VotePollsByEndDateDriveQuery {
+            start_time: None,
+            end_time: None,
+            limit: Some(10),
+            offset: None,
+            order_ascending: true,
+        };
+
+        let pq = query.construct_path_query();
+        assert_eq!(pq.path, expected_base_path());
+        assert_eq!(pq.query.limit, Some(10));
+        assert_eq!(pq.query.offset, None);
+
+        // Should be RangeFull (insert_all)
+        assert_eq!(pq.query.query.items.len(), 1);
+        assert!(matches!(&pq.query.query.items[0], QueryItem::RangeFull(..)));
+
+        // Direction should be ascending
+        assert!(pq.query.query.left_to_right);
+
+        // Should have a subquery for all items at each timestamp
+        assert!(pq.query.query.default_subquery_branch.subquery.is_some());
+    }
+
+    #[test]
+    fn construct_path_query_no_bounds_descending() {
+        let query = VotePollsByEndDateDriveQuery {
+            start_time: None,
+            end_time: None,
+            limit: None,
+            offset: None,
+            order_ascending: false,
+        };
+
+        let pq = query.construct_path_query();
+        assert!(!pq.query.query.left_to_right);
+        assert_eq!(pq.query.limit, None);
+    }
+
+    #[test]
+    fn construct_path_query_start_time_included() {
+        let query = VotePollsByEndDateDriveQuery {
+            start_time: Some((1000, true)),
+            end_time: None,
+            limit: Some(5),
+            offset: None,
+            order_ascending: true,
+        };
+
+        let pq = query.construct_path_query();
+        let items = &pq.query.query.items;
+        assert_eq!(items.len(), 1);
+        let encoded_1000 = encode_u64(1000);
+        assert!(
+            matches!(&items[0], QueryItem::RangeFrom(r) if r.start == encoded_1000),
+            "expected RangeFrom for included start time"
+        );
+    }
+
+    #[test]
+    fn construct_path_query_start_time_excluded() {
+        let query = VotePollsByEndDateDriveQuery {
+            start_time: Some((1000, false)),
+            end_time: None,
+            limit: Some(5),
+            offset: None,
+            order_ascending: true,
+        };
+
+        let pq = query.construct_path_query();
+        let items = &pq.query.query.items;
+        assert_eq!(items.len(), 1);
+        let encoded_1000 = encode_u64(1000);
+        assert!(
+            matches!(&items[0], QueryItem::RangeAfter(r) if r.start == encoded_1000),
+            "expected RangeAfter for excluded start time"
+        );
+    }
+
+    #[test]
+    fn construct_path_query_end_time_included() {
+        let query = VotePollsByEndDateDriveQuery {
+            start_time: None,
+            end_time: Some((2000, true)),
+            limit: Some(5),
+            offset: None,
+            order_ascending: true,
+        };
+
+        let pq = query.construct_path_query();
+        let items = &pq.query.query.items;
+        assert_eq!(items.len(), 1);
+        let encoded_2000 = encode_u64(2000);
+        assert!(
+            matches!(&items[0], QueryItem::RangeToInclusive(r) if r.end == encoded_2000),
+            "expected RangeToInclusive for included end time"
+        );
+    }
+
+    #[test]
+    fn construct_path_query_end_time_excluded() {
+        let query = VotePollsByEndDateDriveQuery {
+            start_time: None,
+            end_time: Some((2000, false)),
+            limit: Some(5),
+            offset: None,
+            order_ascending: true,
+        };
+
+        let pq = query.construct_path_query();
+        let items = &pq.query.query.items;
+        assert_eq!(items.len(), 1);
+        let encoded_2000 = encode_u64(2000);
+        assert!(
+            matches!(&items[0], QueryItem::RangeTo(r) if r.end == encoded_2000),
+            "expected RangeTo for excluded end time"
+        );
+    }
+
+    #[test]
+    fn construct_path_query_both_bounds_included() {
+        let query = VotePollsByEndDateDriveQuery {
+            start_time: Some((1000, true)),
+            end_time: Some((2000, true)),
+            limit: Some(20),
+            offset: None,
+            order_ascending: true,
+        };
+
+        let pq = query.construct_path_query();
+        let items = &pq.query.query.items;
+        assert_eq!(items.len(), 1);
+        let encoded_1000 = encode_u64(1000);
+        let encoded_2000 = encode_u64(2000);
+        assert!(
+            matches!(&items[0], QueryItem::RangeInclusive(r) if *r.start() == encoded_1000 && *r.end() == encoded_2000),
+            "expected RangeInclusive for both bounds included"
+        );
+    }
+
+    #[test]
+    fn construct_path_query_start_included_end_excluded() {
+        let query = VotePollsByEndDateDriveQuery {
+            start_time: Some((1000, true)),
+            end_time: Some((2000, false)),
+            limit: None,
+            offset: None,
+            order_ascending: true,
+        };
+
+        let pq = query.construct_path_query();
+        let items = &pq.query.query.items;
+        assert_eq!(items.len(), 1);
+        let encoded_1000 = encode_u64(1000);
+        let encoded_2000 = encode_u64(2000);
+        assert!(
+            matches!(&items[0], QueryItem::Range(r) if r.start == encoded_1000 && r.end == encoded_2000),
+            "expected Range (half-open) for start included, end excluded"
+        );
+    }
+
+    #[test]
+    fn construct_path_query_start_excluded_end_included() {
+        let query = VotePollsByEndDateDriveQuery {
+            start_time: Some((1000, false)),
+            end_time: Some((2000, true)),
+            limit: None,
+            offset: None,
+            order_ascending: true,
+        };
+
+        let pq = query.construct_path_query();
+        let items = &pq.query.query.items;
+        assert_eq!(items.len(), 1);
+        let encoded_1000 = encode_u64(1000);
+        let encoded_2000 = encode_u64(2000);
+        assert!(
+            matches!(&items[0], QueryItem::RangeAfterToInclusive(r) if *r.start() == encoded_1000 && *r.end() == encoded_2000),
+            "expected RangeAfterToInclusive"
+        );
+    }
+
+    #[test]
+    fn construct_path_query_both_bounds_excluded() {
+        let query = VotePollsByEndDateDriveQuery {
+            start_time: Some((1000, false)),
+            end_time: Some((2000, false)),
+            limit: None,
+            offset: None,
+            order_ascending: true,
+        };
+
+        let pq = query.construct_path_query();
+        let items = &pq.query.query.items;
+        assert_eq!(items.len(), 1);
+        let encoded_1000 = encode_u64(1000);
+        let encoded_2000 = encode_u64(2000);
+        assert!(
+            matches!(&items[0], QueryItem::RangeAfterTo(r) if r.start == encoded_1000 && r.end == encoded_2000),
+            "expected RangeAfterTo for both excluded"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // path_query_for_end_time_included
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn path_query_for_end_time_included_builds_correct_query() {
+        let end_time: u64 = 5000;
+        let limit: u16 = 50;
+
+        let pq = VotePollsByEndDateDriveQuery::path_query_for_end_time_included(end_time, limit);
+        assert_eq!(pq.path, expected_base_path());
+        assert_eq!(pq.query.limit, Some(limit));
+        assert!(pq.query.query.left_to_right);
+
+        let items = &pq.query.query.items;
+        assert_eq!(items.len(), 1);
+        let encoded_5000 = encode_u64(5000);
+        assert!(
+            matches!(&items[0], QueryItem::RangeToInclusive(r) if r.end == encoded_5000),
+            "expected RangeToInclusive up to end_time"
+        );
+
+        // Should have a sub-query for all items
+        assert!(pq.query.query.default_subquery_branch.subquery.is_some());
+    }
+
+    // -----------------------------------------------------------------------
+    // path_query_for_single_end_time
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn path_query_for_single_end_time_builds_key_query() {
+        let end_time: u64 = 7777;
+        let limit: u16 = 100;
+
+        let pq = VotePollsByEndDateDriveQuery::path_query_for_single_end_time(end_time, limit);
+        assert_eq!(pq.path, expected_base_path());
+        assert_eq!(pq.query.limit, Some(limit));
+
+        let items = &pq.query.query.items;
+        assert_eq!(items.len(), 1);
+        let encoded_7777 = encode_u64(7777);
+        assert!(
+            matches!(&items[0], QueryItem::Key(k) if *k == encoded_7777),
+            "expected Key query for single end time"
+        );
+    }
+}

@@ -1,3 +1,4 @@
+mod identity_create_from_shielded_pool_transition;
 mod shield_from_asset_lock_transition;
 mod shield_transition;
 mod shielded_transfer_transition;
@@ -23,16 +24,18 @@ pub(super) fn insert_nullifiers<'a>(
     }
 }
 
-/// Insert notes into the CommitmentTree (appends cmx to frontier + stores cmx||rho||encrypted_note).
+/// Insert notes into the CommitmentTree (appends cmx to frontier + stores
+/// cmx||rho||cv_net||encrypted_note).
 ///
 /// Each action's nullifier (rho) is stored alongside the note so light clients can derive
-/// Rho for trial decryption.
+/// Rho for trial decryption; cv_net is stored unencrypted for OVK recovery of outgoing notes.
 pub(super) fn insert_notes<'a>(ops: &mut Vec<DriveOperation<'a>>, notes: &[ShieldedActionNote]) {
     for note in notes {
         ops.push(DriveOperation::ShieldedPoolOperation(
             ShieldedPoolOperationType::InsertNote {
                 nullifier: note.nullifier,
                 cmx: note.cmx,
+                cv_net: note.cv_net,
                 encrypted_note: note.encrypted_note.clone(),
             },
         ));

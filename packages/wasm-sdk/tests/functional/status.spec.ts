@@ -1,15 +1,16 @@
 import { expect } from './helpers/chai.ts';
 import init, * as sdk from '../../dist/sdk.compressed.js';
+import { prefetchLocalReady } from './helpers/trustedContext.ts';
 
 describe('Status', function describeStatus() {
-  this.timeout(30000);
+  this.timeout(60000);
 
   let client: sdk.WasmSdk;
   let builder: sdk.WasmSdkBuilder;
 
   before(async () => {
     await init();
-    const context = await sdk.WasmTrustedContext.prefetchLocal();
+    const context = await prefetchLocalReady();
     builder = sdk.WasmSdkBuilder.local().withTrustedContext(context);
     client = await builder.build();
   });

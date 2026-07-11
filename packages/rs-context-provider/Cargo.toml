@@ -7,6 +7,7 @@ license = "MIT"
 description = "Context provider traits for Dash Platform SDK"
 
 [dependencies]
+dash-async = { path = "../rs-dash-async" }
 dpp = { path = "../rs-dpp", default-features = false }
 drive = { path = "../rs-drive", default-features = false, features = [
     "verify",

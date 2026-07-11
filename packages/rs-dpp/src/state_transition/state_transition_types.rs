@@ -40,6 +40,7 @@ pub enum StateTransitionType {
     Unshield = 17,
     ShieldFromAssetLock = 18,
     ShieldedWithdrawal = 19,
+    IdentityCreateFromShieldedPool = 20,
 }
 
 impl std::fmt::Display for StateTransitionType {
@@ -118,6 +119,10 @@ mod tests {
                 StateTransitionType::ShieldedWithdrawal,
                 "ShieldedWithdrawal",
             ),
+            (
+                StateTransitionType::IdentityCreateFromShieldedPool,
+                "IdentityCreateFromShieldedPool",
+            ),
         ];
         for (variant, expected) in cases {
             assert_eq!(
@@ -152,6 +157,7 @@ mod tests {
             (17, StateTransitionType::Unshield),
             (18, StateTransitionType::ShieldFromAssetLock),
             (19, StateTransitionType::ShieldedWithdrawal),
+            (20, StateTransitionType::IdentityCreateFromShieldedPool),
         ];
         for (val, expected) in pairs {
             let result = StateTransitionType::try_from(val).unwrap();
@@ -161,7 +167,7 @@ mod tests {
 
     #[test]
     fn test_try_from_u8_invalid() {
-        assert!(StateTransitionType::try_from(20u8).is_err());
+        assert!(StateTransitionType::try_from(21u8).is_err());
         assert!(StateTransitionType::try_from(255u8).is_err());
     }
 
@@ -188,6 +194,7 @@ mod tests {
             StateTransitionType::Unshield,
             StateTransitionType::ShieldFromAssetLock,
             StateTransitionType::ShieldedWithdrawal,
+            StateTransitionType::IdentityCreateFromShieldedPool,
         ];
         for variant in all_variants {
             let val: u8 = variant.into();
@@ -197,6 +204,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::clone_on_copy)]
     fn test_clone_and_copy() {
         let original = StateTransitionType::MasternodeVote;
         let cloned = original.clone();

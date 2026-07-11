@@ -1,6 +1,6 @@
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
-use crate::impl_wasm_conversions_serde;
+use crate::impl_wasm_conversions_inner;
 use crate::impl_wasm_type_info;
 use crate::platform_address::{
     PlatformAddressInputWasm, PlatformAddressOutputWasm, fee_strategy_from_js_options,
@@ -38,9 +38,9 @@ export interface IdentityTopUpFromAddressesTransitionObject {
 
 export interface IdentityTopUpFromAddressesTransitionJSON {
     identityId: string;
-    inputs: object[];
-    output?: object;
-    feeStrategy: object[];
+    inputs: PlatformAddressInputJSON[];
+    output?: PlatformAddressOutputJSON;
+    feeStrategy: FeeStrategyStepJSON[];
     userFeeIncrease: number;
 }
 "#;
@@ -84,7 +84,7 @@ impl IdentityTopUpFromAddressesTransitionWasm {
             })?
             .unwrap_or(0);
 
-        let inputs_map = inputs.into_iter().map(|i| i.into_inner()).collect();
+        let inputs_map = crate::platform_address::inputs_to_btree_map(inputs)?;
         let output = output.map(|o| o.try_into_inner()).transpose()?;
         let fee_strategy = fee_strategy_from_steps_or_default(fee_strategy);
 
@@ -173,13 +173,14 @@ impl IdentityTopUpFromAddressesTransitionWasm {
     }
 
     #[wasm_bindgen(setter = "inputs")]
-    pub fn set_inputs(&mut self, inputs: Vec<PlatformAddressInputWasm>) {
-        let inputs_map = inputs.into_iter().map(|i| i.into_inner()).collect();
+    pub fn set_inputs(&mut self, inputs: Vec<PlatformAddressInputWasm>) -> WasmDppResult<()> {
+        let inputs_map = crate::platform_address::inputs_to_btree_map(inputs)?;
         match &mut self.0 {
             IdentityTopUpFromAddressesTransition::V0(v0) => {
                 v0.inputs = inputs_map;
             }
         }
+        Ok(())
     }
 
     #[wasm_bindgen(getter = "output")]
@@ -242,8 +243,9 @@ impl IdentityTopUpFromAddressesTransitionWasm {
     }
 }
 
-impl_wasm_conversions_serde!(
+impl_wasm_conversions_inner!(
     IdentityTopUpFromAddressesTransitionWasm,
+    IdentityTopUpFromAddressesTransition,
     IdentityTopUpFromAddressesTransition,
     IdentityTopUpFromAddressesTransitionObjectJs,
     IdentityTopUpFromAddressesTransitionJSONJs

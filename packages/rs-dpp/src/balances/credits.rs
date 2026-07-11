@@ -358,4 +358,266 @@ mod tests {
             // This is by design - if the balance was SET, client must use the full compacted value
         }
     }
+
+    // -----------------------------------------------------------------------
+    // Creditable::to_signed() on Credits (u64)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn credits_to_signed_within_range() {
+        let credits: Credits = 1000;
+        let result = credits.to_signed();
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 1000i64);
+    }
+
+    #[test]
+    fn credits_to_signed_zero() {
+        let credits: Credits = 0;
+        let result = credits.to_signed();
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 0i64);
+    }
+
+    #[test]
+    fn credits_to_signed_max_i64() {
+        let credits: Credits = i64::MAX as u64;
+        let result = credits.to_signed();
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), i64::MAX);
+    }
+
+    #[test]
+    fn credits_to_signed_overflow() {
+        // u64::MAX cannot be represented as i64
+        let credits: Credits = u64::MAX;
+        let result = credits.to_signed();
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            ProtocolError::Overflow(msg) => {
+                assert!(msg.contains("too big"));
+            }
+            other => panic!("Expected Overflow error, got: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn credits_to_signed_just_over_i64_max() {
+        // i64::MAX + 1 should overflow
+        let credits: Credits = (i64::MAX as u64) + 1;
+        let result = credits.to_signed();
+        assert!(result.is_err());
+    }
+
+    // -----------------------------------------------------------------------
+    // Creditable::to_unsigned() on Credits (u64)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn credits_to_unsigned_returns_self() {
+        let credits: Credits = 42;
+        assert_eq!(credits.to_unsigned(), 42);
+    }
+
+    #[test]
+    fn credits_to_unsigned_zero() {
+        let credits: Credits = 0;
+        assert_eq!(credits.to_unsigned(), 0);
+    }
+
+    #[test]
+    fn credits_to_unsigned_max() {
+        let credits: Credits = u64::MAX;
+        assert_eq!(credits.to_unsigned(), u64::MAX);
+    }
+
+    // -----------------------------------------------------------------------
+    // Creditable on SignedCredits (i64)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn signed_credits_to_signed_returns_self() {
+        let sc: SignedCredits = -500;
+        assert_eq!(sc.to_signed().unwrap(), -500);
+    }
+
+    #[test]
+    fn signed_credits_to_unsigned_returns_abs() {
+        let sc: SignedCredits = -500;
+        assert_eq!(sc.to_unsigned(), 500);
+
+        let sc_pos: SignedCredits = 500;
+        assert_eq!(sc_pos.to_unsigned(), 500);
+    }
+
+    #[test]
+    fn signed_credits_to_unsigned_zero() {
+        let sc: SignedCredits = 0;
+        assert_eq!(sc.to_unsigned(), 0);
+    }
+
+    // -----------------------------------------------------------------------
+    // from_vec_bytes / to_vec_bytes round-trip for Credits (u64)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn credits_roundtrip_zero() {
+        let original: Credits = 0;
+        let bytes = original.to_vec_bytes();
+        let decoded = Credits::from_vec_bytes(bytes).unwrap();
+        assert_eq!(decoded, original);
+    }
+
+    #[test]
+    fn credits_roundtrip_one() {
+        let original: Credits = 1;
+        let bytes = original.to_vec_bytes();
+        let decoded = Credits::from_vec_bytes(bytes).unwrap();
+        assert_eq!(decoded, original);
+    }
+
+    #[test]
+    fn credits_roundtrip_max() {
+        let original: Credits = u64::MAX;
+        let bytes = original.to_vec_bytes();
+        let decoded = Credits::from_vec_bytes(bytes).unwrap();
+        assert_eq!(decoded, original);
+    }
+
+    #[test]
+    fn credits_roundtrip_large_value() {
+        let original: Credits = 1_000_000_000_000;
+        let bytes = original.to_vec_bytes();
+        let decoded = Credits::from_vec_bytes(bytes).unwrap();
+        assert_eq!(decoded, original);
+    }
+
+    #[test]
+    fn credits_roundtrip_max_credits_constant() {
+        let original: Credits = MAX_CREDITS;
+        let bytes = original.to_vec_bytes();
+        let decoded = Credits::from_vec_bytes(bytes).unwrap();
+        assert_eq!(decoded, original);
+    }
+
+    #[test]
+    fn credits_from_vec_bytes_empty_vec_error() {
+        let result = Credits::from_vec_bytes(vec![]);
+        assert!(result.is_err());
+    }
+
+    // -----------------------------------------------------------------------
+    // from_vec_bytes / to_vec_bytes round-trip for SignedCredits (i64)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn signed_credits_roundtrip_zero() {
+        let original: SignedCredits = 0;
+        let bytes = original.to_vec_bytes();
+        let decoded = SignedCredits::from_vec_bytes(bytes).unwrap();
+        assert_eq!(decoded, original);
+    }
+
+    #[test]
+    fn signed_credits_roundtrip_positive() {
+        let original: SignedCredits = 123456789;
+        let bytes = original.to_vec_bytes();
+        let decoded = SignedCredits::from_vec_bytes(bytes).unwrap();
+        assert_eq!(decoded, original);
+    }
+
+    #[test]
+    fn signed_credits_roundtrip_negative() {
+        let original: SignedCredits = -987654321;
+        let bytes = original.to_vec_bytes();
+        let decoded = SignedCredits::from_vec_bytes(bytes).unwrap();
+        assert_eq!(decoded, original);
+    }
+
+    #[test]
+    fn signed_credits_roundtrip_max() {
+        let original: SignedCredits = i64::MAX;
+        let bytes = original.to_vec_bytes();
+        let decoded = SignedCredits::from_vec_bytes(bytes).unwrap();
+        assert_eq!(decoded, original);
+    }
+
+    #[test]
+    fn signed_credits_roundtrip_min() {
+        let original: SignedCredits = i64::MIN;
+        let bytes = original.to_vec_bytes();
+        let decoded = SignedCredits::from_vec_bytes(bytes).unwrap();
+        assert_eq!(decoded, original);
+    }
+
+    #[test]
+    fn signed_credits_from_vec_bytes_empty_vec_error() {
+        let result = SignedCredits::from_vec_bytes(vec![]);
+        assert!(result.is_err());
+    }
+
+    // -----------------------------------------------------------------------
+    // MAX_CREDITS constant
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn max_credits_equals_i64_max() {
+        assert_eq!(MAX_CREDITS, i64::MAX as u64);
+    }
+
+    // -----------------------------------------------------------------------
+    // CreditOperation::merge
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn credit_operation_merge_set_set() {
+        let a = CreditOperation::SetCredits(100);
+        let b = CreditOperation::SetCredits(200);
+        assert_eq!(a.merge(&b), CreditOperation::SetCredits(200));
+    }
+
+    #[test]
+    fn credit_operation_merge_set_add() {
+        let a = CreditOperation::SetCredits(100);
+        let b = CreditOperation::AddToCredits(50);
+        assert_eq!(a.merge(&b), CreditOperation::SetCredits(150));
+    }
+
+    #[test]
+    fn credit_operation_merge_add_set() {
+        let a = CreditOperation::AddToCredits(100);
+        let b = CreditOperation::SetCredits(200);
+        assert_eq!(a.merge(&b), CreditOperation::SetCredits(200));
+    }
+
+    #[test]
+    fn credit_operation_merge_add_add() {
+        let a = CreditOperation::AddToCredits(100);
+        let b = CreditOperation::AddToCredits(50);
+        assert_eq!(a.merge(&b), CreditOperation::AddToCredits(150));
+    }
+
+    #[test]
+    fn credit_operation_merge_set_add_saturating() {
+        let a = CreditOperation::SetCredits(u64::MAX);
+        let b = CreditOperation::AddToCredits(1);
+        // Should saturate, not overflow
+        assert_eq!(a.merge(&b), CreditOperation::SetCredits(u64::MAX));
+    }
+
+    #[test]
+    fn credit_operation_merge_add_add_saturating() {
+        let a = CreditOperation::AddToCredits(u64::MAX);
+        let b = CreditOperation::AddToCredits(1);
+        assert_eq!(a.merge(&b), CreditOperation::AddToCredits(u64::MAX));
+    }
+
+    // -----------------------------------------------------------------------
+    // CREDITS_PER_DUFF constant
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn credits_per_duff_is_1000() {
+        assert_eq!(CREDITS_PER_DUFF, 1000);
+    }
 }

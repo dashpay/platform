@@ -218,7 +218,7 @@ mod tests {
         (identity, signer, transfer_key)
     }
 
-    fn create_signed_transfer(
+    async fn create_signed_transfer(
         identity_id: dpp::prelude::Identifier,
         recipient_id: dpp::prelude::Identifier,
         amount: u64,
@@ -239,12 +239,17 @@ mod tests {
 
         let mut st: StateTransition = transfer.into();
         let data = st.signable_bytes().expect("expected signable bytes");
-        st.set_signature(signer.sign(key, data.as_slice()).expect("expected to sign"));
+        st.set_signature(
+            signer
+                .sign(key, data.as_slice())
+                .await
+                .expect("expected to sign"),
+        );
         st.serialize_to_bytes().expect("expected to serialize")
     }
 
-    #[test]
-    fn test_identity_credit_transfer_to_self_rejected() {
+    #[tokio::test]
+    async fn test_identity_credit_transfer_to_self_rejected() {
         let platform_version = PlatformVersion::latest();
         let platform_config = PlatformConfig {
             testing_configs: PlatformTestConfig {
@@ -272,7 +277,8 @@ mod tests {
             1,
             &signer,
             &transfer_key,
-        );
+        )
+        .await;
 
         let transaction = platform.drive.grove.start_transaction();
 
@@ -297,8 +303,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_identity_credit_transfer_below_minimum_amount_rejected() {
+    #[tokio::test]
+    async fn test_identity_credit_transfer_below_minimum_amount_rejected() {
         let platform_version = PlatformVersion::latest();
         let platform_config = PlatformConfig {
             testing_configs: PlatformTestConfig {
@@ -326,7 +332,8 @@ mod tests {
             1,
             &signer,
             &transfer_key,
-        );
+        )
+        .await;
 
         let transaction = platform.drive.grove.start_transaction();
 
@@ -351,8 +358,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_identity_credit_transfer_sender_not_found() {
+    #[tokio::test]
+    async fn test_identity_credit_transfer_sender_not_found() {
         let platform_version = PlatformVersion::latest();
         let platform_config = PlatformConfig {
             testing_configs: PlatformTestConfig {
@@ -389,7 +396,12 @@ mod tests {
 
         let mut st: StateTransition = transfer.into();
         let data = st.signable_bytes().expect("signable bytes");
-        st.set_signature(signer.sign(&transfer_key, data.as_slice()).expect("sign"));
+        st.set_signature(
+            signer
+                .sign(&transfer_key, data.as_slice())
+                .await
+                .expect("sign"),
+        );
         let transfer_bytes = st.serialize_to_bytes().expect("serialize");
 
         let transaction = platform.drive.grove.start_transaction();
@@ -416,8 +428,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_identity_credit_transfer_insufficient_balance() {
+    #[tokio::test]
+    async fn test_identity_credit_transfer_insufficient_balance() {
         let platform_version = PlatformVersion::latest();
         let platform_config = PlatformConfig {
             testing_configs: PlatformTestConfig {
@@ -449,7 +461,8 @@ mod tests {
             1,
             &signer,
             &transfer_key,
-        );
+        )
+        .await;
 
         let transaction = platform.drive.grove.start_transaction();
 
@@ -476,8 +489,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_identity_credit_transfer_recipient_not_found() {
+    #[tokio::test]
+    async fn test_identity_credit_transfer_recipient_not_found() {
         let platform_version = PlatformVersion::latest();
         let platform_config = PlatformConfig {
             testing_configs: PlatformTestConfig {
@@ -506,7 +519,8 @@ mod tests {
             1,
             &signer,
             &transfer_key,
-        );
+        )
+        .await;
 
         let transaction = platform.drive.grove.start_transaction();
 
@@ -534,8 +548,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_identity_credit_transfer_successful() {
+    #[tokio::test]
+    async fn test_identity_credit_transfer_successful() {
         let platform_version = PlatformVersion::latest();
         let platform_config = PlatformConfig {
             testing_configs: PlatformTestConfig {
@@ -566,6 +580,16 @@ mod tests {
             1,
             &signer,
             &transfer_key,
+        )
+        .await;
+
+        // CheckTx root-invariance guard (devnet paloma h788): `check_tx` asserts under
+        // cfg(test) that it never mutates committed grovedb state, so running the canonical
+        // valid fixture through it pins the invariant for this transition type.
+        crate::test::helpers::state_mutation_guard::assert_check_tx_valid_at_all_levels(
+            &platform,
+            &transfer_bytes,
+            "identity credit transfer",
         );
 
         let transaction = platform.drive.grove.start_transaction();

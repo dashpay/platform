@@ -123,6 +123,10 @@ impl DriveHighLevelOperationConverter for StateTransitionAction {
             StateTransitionAction::ShieldedWithdrawalAction(shielded_withdrawal_action) => {
                 shielded_withdrawal_action.into_high_level_drive_operations(epoch, platform_version)
             }
+            StateTransitionAction::IdentityCreateFromShieldedPoolAction(
+                identity_create_from_shielded_pool_action,
+            ) => identity_create_from_shielded_pool_action
+                .into_high_level_drive_operations(epoch, platform_version),
         }
     }
 }

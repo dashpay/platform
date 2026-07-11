@@ -4,6 +4,9 @@ use platform_version::version::PlatformVersion;
 
 mod v0;
 
+#[cfg(test)]
+mod byte_array_widen_accepted_tests;
+
 use crate::validation::SimpleValidationResult;
 
 #[derive(Debug, Clone)]

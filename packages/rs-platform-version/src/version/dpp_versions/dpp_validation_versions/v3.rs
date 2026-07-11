@@ -1,6 +1,6 @@
 use crate::version::dpp_versions::dpp_validation_versions::{
     DPPValidationVersions, DataContractValidationVersions, DocumentTypeValidationVersions,
-    JsonSchemaValidatorVersions, VotingValidationVersions,
+    JsonSchemaValidatorVersions, ValidationResultMethodVersions, VotingValidationVersions,
 };
 
 pub const DPP_VALIDATION_VERSIONS_V3: DPPValidationVersions = DPPValidationVersions {
@@ -31,5 +31,15 @@ pub const DPP_VALIDATION_VERSIONS_V3: DPPValidationVersions = DPPValidationVersi
         allow_other_contenders_time_mainnet_ms: 604_800_000, // 1 week in ms
         allow_other_contenders_time_testing_ms: 2_700_000,   //45 minutes
         votes_allowed_per_masternode: 5,
+    },
+    // Issue #2867: bump aggregator methods to v1 — `flatten` / `merge_many`
+    // now return `data: None` when no input contributed any data, instead of
+    // the legacy `Some(empty_vec)`. Closes the
+    // "validating-state-transition-for-free" gap where an all-failed
+    // documents batch was being recorded as PaidConsensusError with an empty
+    // action and the same exact bytes could be replayed across blocks.
+    validation_result: ValidationResultMethodVersions {
+        flatten: 1,
+        merge_many: 1,
     },
 };

@@ -360,3 +360,214 @@ impl Into<CborValue> for KeyType {
         CborValue::from(self as u128)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // -- default_size() --
+
+    #[test]
+    fn test_default_size_ecdsa_secp256k1() {
+        assert_eq!(KeyType::ECDSA_SECP256K1.default_size(), 33);
+    }
+
+    #[test]
+    fn test_default_size_bls12_381() {
+        assert_eq!(KeyType::BLS12_381.default_size(), 48);
+    }
+
+    #[test]
+    fn test_default_size_ecdsa_hash160() {
+        assert_eq!(KeyType::ECDSA_HASH160.default_size(), 20);
+    }
+
+    #[test]
+    fn test_default_size_bip13_script_hash() {
+        assert_eq!(KeyType::BIP13_SCRIPT_HASH.default_size(), 20);
+    }
+
+    #[test]
+    fn test_default_size_eddsa_25519_hash160() {
+        assert_eq!(KeyType::EDDSA_25519_HASH160.default_size(), 20);
+    }
+
+    // -- all_key_types() --
+
+    #[test]
+    fn test_all_key_types_has_five_elements() {
+        let types = KeyType::all_key_types();
+        assert_eq!(types.len(), 5);
+    }
+
+    #[test]
+    fn test_all_key_types_contains_all_variants() {
+        let types = KeyType::all_key_types();
+        assert_eq!(
+            types,
+            [
+                KeyType::ECDSA_SECP256K1,
+                KeyType::BLS12_381,
+                KeyType::ECDSA_HASH160,
+                KeyType::BIP13_SCRIPT_HASH,
+                KeyType::EDDSA_25519_HASH160,
+            ]
+        );
+    }
+
+    // -- is_unique_key_type() --
+
+    #[test]
+    fn test_ecdsa_secp256k1_is_unique() {
+        assert!(KeyType::ECDSA_SECP256K1.is_unique_key_type());
+    }
+
+    #[test]
+    fn test_bls12_381_is_unique() {
+        assert!(KeyType::BLS12_381.is_unique_key_type());
+    }
+
+    #[test]
+    fn test_ecdsa_hash160_is_not_unique() {
+        assert!(!KeyType::ECDSA_HASH160.is_unique_key_type());
+    }
+
+    #[test]
+    fn test_bip13_script_hash_is_not_unique() {
+        assert!(!KeyType::BIP13_SCRIPT_HASH.is_unique_key_type());
+    }
+
+    #[test]
+    fn test_eddsa_25519_hash160_is_not_unique() {
+        assert!(!KeyType::EDDSA_25519_HASH160.is_unique_key_type());
+    }
+
+    // -- is_core_address_key_type() --
+
+    #[test]
+    fn test_ecdsa_secp256k1_not_core_address() {
+        assert!(!KeyType::ECDSA_SECP256K1.is_core_address_key_type());
+    }
+
+    #[test]
+    fn test_bls12_381_not_core_address() {
+        assert!(!KeyType::BLS12_381.is_core_address_key_type());
+    }
+
+    #[test]
+    fn test_ecdsa_hash160_is_core_address() {
+        assert!(KeyType::ECDSA_HASH160.is_core_address_key_type());
+    }
+
+    #[test]
+    fn test_bip13_script_hash_is_core_address() {
+        assert!(KeyType::BIP13_SCRIPT_HASH.is_core_address_key_type());
+    }
+
+    #[test]
+    fn test_eddsa_25519_hash160_not_core_address() {
+        assert!(!KeyType::EDDSA_25519_HASH160.is_core_address_key_type());
+    }
+
+    // -- TryFrom<u8> valid --
+
+    #[test]
+    fn test_try_from_u8_ecdsa_secp256k1() {
+        assert_eq!(KeyType::try_from(0u8).unwrap(), KeyType::ECDSA_SECP256K1);
+    }
+
+    #[test]
+    fn test_try_from_u8_bls12_381() {
+        assert_eq!(KeyType::try_from(1u8).unwrap(), KeyType::BLS12_381);
+    }
+
+    #[test]
+    fn test_try_from_u8_ecdsa_hash160() {
+        assert_eq!(KeyType::try_from(2u8).unwrap(), KeyType::ECDSA_HASH160);
+    }
+
+    #[test]
+    fn test_try_from_u8_bip13_script_hash() {
+        assert_eq!(KeyType::try_from(3u8).unwrap(), KeyType::BIP13_SCRIPT_HASH);
+    }
+
+    #[test]
+    fn test_try_from_u8_eddsa_25519_hash160() {
+        assert_eq!(
+            KeyType::try_from(4u8).unwrap(),
+            KeyType::EDDSA_25519_HASH160
+        );
+    }
+
+    // -- TryFrom<u8> invalid --
+
+    #[test]
+    fn test_try_from_u8_invalid_5() {
+        assert!(KeyType::try_from(5u8).is_err());
+    }
+
+    #[test]
+    fn test_try_from_u8_invalid_255() {
+        assert!(KeyType::try_from(255u8).is_err());
+    }
+
+    // -- Display --
+
+    #[test]
+    fn test_display_ecdsa_secp256k1() {
+        assert_eq!(format!("{}", KeyType::ECDSA_SECP256K1), "ECDSA_SECP256K1");
+    }
+
+    #[test]
+    fn test_display_bls12_381() {
+        assert_eq!(format!("{}", KeyType::BLS12_381), "BLS12_381");
+    }
+
+    #[test]
+    fn test_display_ecdsa_hash160() {
+        assert_eq!(format!("{}", KeyType::ECDSA_HASH160), "ECDSA_HASH160");
+    }
+
+    #[test]
+    fn test_display_bip13_script_hash() {
+        assert_eq!(
+            format!("{}", KeyType::BIP13_SCRIPT_HASH),
+            "BIP13_SCRIPT_HASH"
+        );
+    }
+
+    #[test]
+    fn test_display_eddsa_25519_hash160() {
+        assert_eq!(
+            format!("{}", KeyType::EDDSA_25519_HASH160),
+            "EDDSA_25519_HASH160"
+        );
+    }
+
+    // -- Default --
+
+    #[test]
+    fn test_default_is_ecdsa_secp256k1() {
+        assert_eq!(KeyType::default(), KeyType::ECDSA_SECP256K1);
+    }
+
+    // -- round-trip: u8 -> KeyType -> u8 --
+
+    #[test]
+    fn test_round_trip_all_valid() {
+        for val in 0u8..=4 {
+            let key_type = KeyType::try_from(val).unwrap();
+            assert_eq!(key_type as u8, val);
+        }
+    }
+
+    // -- unique vs core address are complementary for full-size key types --
+
+    #[test]
+    fn test_unique_and_core_address_are_mutually_exclusive() {
+        for kt in KeyType::all_key_types() {
+            // A key type should not be both unique and a core address key type
+            assert!(!(kt.is_unique_key_type() && kt.is_core_address_key_type()));
+        }
+    }
+}

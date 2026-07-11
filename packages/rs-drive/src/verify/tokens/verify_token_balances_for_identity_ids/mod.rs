@@ -80,6 +80,7 @@ impl Drive {
 }
 
 #[cfg(test)]
+#[allow(clippy::type_complexity)]
 mod tests {
     use super::*;
     use crate::error::drive::DriveError;

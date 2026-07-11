@@ -106,6 +106,10 @@ pub type RetrievedValues<K, I> = IndexMap<K, I>;
 ///
 /// Contains a map of data contract revisions to data contracts.
 pub type DataContractHistory = RetrievedValues<u64, DataContract>;
+/// History of a document.
+///
+/// Contains a map of revision timestamps to documents.
+pub type DocumentHistory = RetrievedValues<u64, Document>;
 /// Multiple data contracts.
 ///
 /// Mapping between data contract IDs and data contracts.
@@ -793,34 +797,6 @@ impl std::ops::DerefMut for PlatformAddressTrunkState {
     }
 }
 
-/// Nullifiers trunk state for nullifier tree synchronization.
-///
-/// This is a newtype wrapper around [`GroveTrunkQueryResult`](drive::grovedb::GroveTrunkQueryResult)
-/// that represents the result of querying the trunk (top levels) of the nullifiers tree.
-#[derive(Debug)]
-pub struct NullifiersTrunkState(pub drive::grovedb::GroveTrunkQueryResult);
-
-impl NullifiersTrunkState {
-    /// Get the inner `GroveTrunkQueryResult`.
-    pub fn into_inner(self) -> drive::grovedb::GroveTrunkQueryResult {
-        self.0
-    }
-}
-
-impl std::ops::Deref for NullifiersTrunkState {
-    type Target = drive::grovedb::GroveTrunkQueryResult;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl std::ops::DerefMut for NullifiersTrunkState {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}
-
 /// Shielded pool total balance
 #[derive(Debug, derive_more::From, Clone, Copy)]
 #[cfg_attr(
@@ -829,6 +805,21 @@ impl std::ops::DerefMut for NullifiersTrunkState {
     platform_serialize(unversioned)
 )]
 pub struct ShieldedPoolState(pub u64);
+
+/// Total number of notes in the shielded pool commitment tree (leaf count).
+///
+/// Wallets use this as the denominator for a determinate
+/// shielded-sync progress bar. The count IS provable: it is the first
+/// field (`total_count`) of the serialized `CommitmentTree` element
+/// whose bytes are bound into the Merk value hash, so a PathQuery proof
+/// of that element authenticates it against the root hash.
+#[derive(Debug, derive_more::From, Clone, Copy)]
+#[cfg_attr(
+    feature = "mocks",
+    derive(Encode, Decode, PlatformSerialize, PlatformDeserialize),
+    platform_serialize(unversioned)
+)]
+pub struct ShieldedNotesCount(pub u64);
 
 /// A single encrypted note (cmx + encrypted data)
 #[derive(Debug, Clone)]
@@ -842,18 +833,33 @@ pub struct ShieldedEncryptedNote {
     pub cmx: Vec<u8>,
     /// The nullifier (32 bytes), needed for Rho derivation in trial decryption
     pub nullifier: Vec<u8>,
+    /// The value commitment (cv_net), 32 bytes. Stored unencrypted so a wallet
+    /// can recover the value of an outgoing note via OVK decryption.
+    pub cv_net: Vec<u8>,
     /// The encrypted note data
     pub encrypted_note: Vec<u8>,
 }
 
-/// Collection of encrypted notes returned by query
-#[derive(Debug, Clone, Default, derive_more::From)]
+/// Collection of encrypted notes returned by query.
+///
+/// `total_count` is the on-chain total number of notes in the shielded
+/// `CommitmentTree` at the proven block — the denominator a wallet needs
+/// for a sync progress bar. It is extracted from the SAME note-fetch proof
+/// (the parent CommitmentTree element is always present in that proof), so
+/// every chunk fetch carries the total "for free" with no separate RPC.
+#[derive(Debug, Clone, Default)]
 #[cfg_attr(
     feature = "mocks",
     derive(Encode, Decode, PlatformSerialize, PlatformDeserialize),
     platform_serialize(unversioned)
 )]
-pub struct ShieldedEncryptedNotes(pub Vec<ShieldedEncryptedNote>);
+pub struct ShieldedEncryptedNotes {
+    /// The encrypted notes for the requested chunk, in tree order.
+    pub notes: Vec<ShieldedEncryptedNote>,
+    /// On-chain total number of notes in the shielded `CommitmentTree`.
+    /// Stable across a sync; carried on every chunk fetch.
+    pub total_count: u64,
+}
 
 /// Valid anchors for building spend proofs
 #[derive(Debug, Clone, Default, derive_more::From)]
@@ -918,82 +924,3 @@ pub struct ShieldedEncryptedNotesQuery {
     platform_serialize(unversioned)
 )]
 pub struct ShieldedNullifiersQuery(pub Vec<[u8; 32]>);
-
-/// Query parameters for nullifier trunk state retrieval.
-///
-/// Used with the `GetNullifiersTrunkStateRequest` RPC to fetch the top levels
-/// of the nullifier tree for privacy-preserving synchronization.
-#[derive(Debug, Clone, Default)]
-#[cfg_attr(
-    feature = "mocks",
-    derive(Encode, Decode, PlatformSerialize, PlatformDeserialize),
-    platform_serialize(unversioned)
-)]
-pub struct NullifiersTrunkQuery {
-    /// The shielded pool type (0 = credit, 1 = main token, 2 = individual token).
-    pub pool_type: u32,
-    /// Optional 32-byte identifier for individual token pools.
-    pub pool_identifier: Option<[u8; 32]>,
-}
-
-/// Nullifier changes for a single block.
-#[derive(Debug, Clone)]
-#[cfg_attr(
-    feature = "mocks",
-    derive(Encode, Decode, PlatformSerialize, PlatformDeserialize),
-    platform_serialize(unversioned)
-)]
-pub struct BlockNullifierChanges {
-    /// The block height
-    pub block_height: u64,
-    /// Nullifiers inserted in this block (each 32 bytes)
-    pub nullifiers: Vec<[u8; 32]>,
-}
-
-/// Recent nullifier changes across multiple blocks.
-#[derive(Debug, Clone, Default, derive_more::From)]
-#[cfg_attr(
-    feature = "mocks",
-    derive(Encode, Decode, PlatformSerialize, PlatformDeserialize),
-    platform_serialize(unversioned)
-)]
-pub struct RecentNullifierChanges(pub Vec<BlockNullifierChanges>);
-
-impl RecentNullifierChanges {
-    /// Get the inner vector
-    pub fn into_inner(self) -> Vec<BlockNullifierChanges> {
-        self.0
-    }
-}
-
-/// Compacted nullifier changes for a range of blocks.
-#[derive(Debug, Clone)]
-#[cfg_attr(
-    feature = "mocks",
-    derive(Encode, Decode, PlatformSerialize, PlatformDeserialize),
-    platform_serialize(unversioned)
-)]
-pub struct CompactedBlockNullifierChanges {
-    /// The start block height of the compacted range
-    pub start_block_height: u64,
-    /// The end block height of the compacted range
-    pub end_block_height: u64,
-    /// Nullifiers from this block range (each 32 bytes)
-    pub nullifiers: Vec<[u8; 32]>,
-}
-
-/// Compacted nullifier changes across multiple ranges.
-#[derive(Debug, Clone, Default, derive_more::From)]
-#[cfg_attr(
-    feature = "mocks",
-    derive(Encode, Decode, PlatformSerialize, PlatformDeserialize),
-    platform_serialize(unversioned)
-)]
-pub struct RecentCompactedNullifierChanges(pub Vec<CompactedBlockNullifierChanges>);
-
-impl RecentCompactedNullifierChanges {
-    /// Get the inner vector
-    pub fn into_inner(self) -> Vec<CompactedBlockNullifierChanges> {
-        self.0
-    }
-}

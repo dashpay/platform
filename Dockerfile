@@ -18,8 +18,18 @@
 # - ALPINE_VERSION - use different version of Alpine base image; requires also rust:apline...
 #   image to be available
 # - USERNAME, USER_UID, USER_GID - specification of user used to run the binary
-# - SDK_TEST_DATA - set to `true` to create SDK test data on chain genesis. It should be used only for testing
-#   purpose in local development environment
+# - SDK_TEST_DATA - set to `true` to create SDK test data on chain genesis
+#   (base fixtures: addresses, group token queries, token direct prices).
+#   For local devnet workflows use `yarn dashmate config set
+#   platform.drive.abci.docker.build.buildArgs.SDK_TEST_DATA true` (the
+#   `yarn setup` script does this automatically for the `local` config) —
+#   do NOT pass it as a shell env. The value flows through dashmate ->
+#   docker-compose `build.args:` -> this ARG.
+# - SHIELDED_TEST_DATA - set to `true` to ALSO seed the shielded pool at
+#   genesis and bake a snapshot file into the runtime image (the
+#   1M-note stress-test path). Implies SDK_TEST_DATA. Off by default —
+#   most devnet setups only need the base SDK fixtures, not the shielded
+#   pool, and seeding shielded notes is expensive at image-build time.
 #
 # # sccache cache backends
 #
@@ -381,11 +391,11 @@ COPY --parents \
     packages/rs-platform-wallet-ffi \
     packages/rs-drive-abci \
     packages/rs-dapi \
+    packages/rs-dash-async \
     packages/rs-dash-event-bus \
     packages/dashpay-contract \
     packages/withdrawals-contract \
     packages/masternode-reward-shares-contract \
-    packages/feature-flags-contract \
     packages/dpns-contract \
     packages/wallet-utils-contract \
     packages/token-history-contract \
@@ -399,15 +409,18 @@ COPY --parents \
     packages/rs-context-provider \
     packages/rs-sdk-trusted-context-provider \
     packages/rs-platform-wallet \
+    packages/rs-platform-wallet-storage \
     packages/wasm-dpp \
     packages/wasm-dpp2 \
     packages/wasm-drive-verify \
     packages/rs-dapi-client \
     packages/rs-sdk \
     packages/rs-sdk-ffi \
+    packages/rs-unified-sdk-ffi \
     packages/check-features \
     packages/dash-platform-balance-checker \
     packages/wasm-sdk \
+    packages/rs-scripts \
     /platform/
 
 RUN --mount=type=secret,id=AWS \
@@ -420,10 +433,21 @@ RUN --mount=type=secret,id=AWS \
 # This will prebuild majority of dependencies
 FROM deps AS build-drive-abci
 
-# Pass SDK_TEST_DATA=true to create SDK test data on chain genesis
-# This is only for testing purpose and should be used only for
-# local development environment
+# SDK_TEST_DATA / SHIELDED_TEST_DATA are forwarded by dashmate from each
+# `local_N` config's `platform.drive.abci.docker.build.buildArgs.*` fields
+# (set by `scripts/setup_local_network.sh` after `dashmate setup local`, as
+# part of `yarn setup`). Do NOT set them via shell env — single source of
+# truth is the dashmate config.
+#
+# SHIELDED_TEST_DATA=true ⇒ implies SDK_TEST_DATA=true (the shielded seeder
+# runs inside `create_sdk_test_data`); installs the SDK-test-data cargo
+# profile (sets `--cfg create_sdk_test_data` for the outer SDK-fixture gate)
+# AND passes `--features=shielded_test_data` to cargo. The drive-abci
+# `shielded_test_data` feature compiles in the shielded seeder + bake/apply
+# code and forwards through `drive/shielded_test_data` →
+# `grovedb/unsafe-dump-load` to unlock the underlying grovedb primitives.
 ARG SDK_TEST_DATA
+ARG SHIELDED_TEST_DATA
 ARG ADDITIONAL_FEATURES=""
 
 SHELL ["/bin/bash", "-o", "pipefail","-e", "-x", "-c"]
@@ -448,11 +472,18 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     if  [[ "${CARGO_BUILD_PROFILE}" == "release" ]] ; then \
     mv .cargo/config-release.toml .cargo/config.toml; \
     fi && \
+    FEATURES_LIST=""; \
     if [[ -n "${ADDITIONAL_FEATURES_TRIMMED}" ]]; then \
-    export FEATURES_FLAG="--features=${ADDITIONAL_FEATURES_TRIMMED}"; \
+    FEATURES_LIST="${ADDITIONAL_FEATURES_TRIMMED}"; \
     fi && \
-    if [ "${SDK_TEST_DATA}" == "true" ]; then \
+    if [ "${SHIELDED_TEST_DATA}" == "true" ] || [ "${SDK_TEST_DATA}" == "true" ]; then \
     mv .cargo/config-test-sdk-data.toml .cargo/config.toml; \
+    fi && \
+    if [ "${SHIELDED_TEST_DATA}" == "true" ]; then \
+    FEATURES_LIST="${FEATURES_LIST:+${FEATURES_LIST},}shielded_test_data"; \
+    fi && \
+    if [[ -n "${FEATURES_LIST}" ]]; then \
+    export FEATURES_FLAG="--features=${FEATURES_LIST}"; \
     fi && \
     cargo chef cook \
     --recipe-path recipe.json \
@@ -471,6 +502,7 @@ COPY --parents \
     packages/dapi-grpc \
     packages/rs-dash-platform-macros \
     packages/rs-dapi \
+    packages/rs-dash-async \
     packages/rs-dash-event-bus \
     packages/rs-dpp \
     packages/rs-dpp-json-convertible-derive \
@@ -490,7 +522,6 @@ COPY --parents \
     packages/keyword-search-contract \
     packages/withdrawals-contract \
     packages/masternode-reward-shares-contract \
-    packages/feature-flags-contract \
     packages/dpns-contract \
     packages/data-contracts \
     packages/strategy-tests \
@@ -503,15 +534,18 @@ COPY --parents \
     packages/rs-context-provider \
     packages/rs-sdk-trusted-context-provider \
     packages/rs-platform-wallet \
+    packages/rs-platform-wallet-storage \
     packages/wasm-dpp \
     packages/wasm-dpp2 \
     packages/wasm-drive-verify \
     packages/rs-dapi-client \
     packages/rs-sdk \
     packages/rs-sdk-ffi \
+    packages/rs-unified-sdk-ffi \
     packages/check-features \
     packages/dash-platform-balance-checker \
     packages/wasm-sdk \
+    packages/rs-scripts \
     /platform/
 
 RUN mkdir /artifacts
@@ -531,11 +565,18 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     else \
     export OUT_DIRECTORY=debug; \
     fi && \
+    FEATURES_LIST=""; \
     if [[ -n "${ADDITIONAL_FEATURES_TRIMMED}" ]]; then \
-    export FEATURES_FLAG="--features=${ADDITIONAL_FEATURES_TRIMMED}"; \
+    FEATURES_LIST="${ADDITIONAL_FEATURES_TRIMMED}"; \
     fi && \
-    if [ "${SDK_TEST_DATA}" == "true" ]; then \
+    if [ "${SHIELDED_TEST_DATA}" == "true" ] || [ "${SDK_TEST_DATA}" == "true" ]; then \
     mv .cargo/config-test-sdk-data.toml .cargo/config.toml; \
+    fi && \
+    if [ "${SHIELDED_TEST_DATA}" == "true" ]; then \
+    FEATURES_LIST="${FEATURES_LIST:+${FEATURES_LIST},}shielded_test_data"; \
+    fi && \
+    if [[ -n "${FEATURES_LIST}" ]]; then \
+    export FEATURES_FLAG="--features=${FEATURES_LIST}"; \
     fi && \
     # Workaround: as we cache dapi-grpc, its build.rs is not rerun, so we need to touch it
     echo "// $(date) " >> /platform/packages/dapi-grpc/build.rs && \
@@ -548,6 +589,41 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     if [[ -x /usr/bin/sccache ]]; then sccache --show-stats; fi && \
     # Remove /platform to reduce layer size
     rm -rf /platform
+
+
+#
+# STAGE: BAKE SHIELDED-POOL SNAPSHOT
+#
+# Self-contained bake step: runs `drive-abci snapshot-bake` against a fresh
+# in-container tempdir to produce /artifacts/shielded-pool.snap. The runtime
+# image COPYs that file in and sets `DRIVE_SHIELDED_SNAPSHOT` so the
+# InitChain hook applies it instead of running the runtime seeder.
+#
+# Skipped (file replaced with a sentinel) when SHIELDED_TEST_DATA != "true",
+# so SDK-only builds (and production) don't carry the shielded fixture.
+# The drive-abci binary itself only contains the `snapshot-bake` subcommand
+# when built with `--cfg create_shielded_test_data` (selected by the
+# SHIELDED_TEST_DATA build arg in the build stage), so invoking it on an
+# SDK-only binary would fail with "unknown subcommand" anyway.
+#
+FROM build-drive-abci AS bake-shielded-snapshot
+
+ARG SHIELDED_TEST_DATA
+
+# libgcc + libstdc++ for the dynamically-linked drive-abci binary (build
+# stage's alpine image normally has them; explicit `apk add` is a no-op if
+# already present).
+RUN apk add --no-cache libgcc libstdc++
+
+RUN set -ex; \
+    mkdir -p /artifacts; \
+    if [ "${SHIELDED_TEST_DATA}" = "true" ]; then \
+        /artifacts/drive-abci snapshot-bake --out /artifacts/shielded-pool.snap ; \
+        ls -la /artifacts/shielded-pool.snap ; \
+    else \
+        echo "SHIELDED_TEST_DATA != true; skipping shielded-pool snapshot bake" ; \
+        : > /artifacts/.no-shielded-snapshot ; \
+    fi
 
 
 #
@@ -588,6 +664,7 @@ COPY --parents \
     rust-toolchain.toml \
     .cargo \
     packages/rs-dapi \
+    packages/rs-dash-async \
     packages/rs-dash-event-bus \
     packages/rs-dpp \
     packages/rs-dpp-json-convertible-derive \
@@ -599,6 +676,7 @@ COPY --parents \
     packages/rs-platform-versioning \
     packages/rs-platform-value-convertible \
     packages/rs-platform-wallet-ffi \
+    packages/rs-unified-sdk-ffi \
     packages/rs-json-schema-compatibility-validator \
     # Common
     packages/wasm-dpp \
@@ -609,7 +687,6 @@ COPY --parents \
     packages/token-history-contract \
     packages/keyword-search-contract \
     packages/masternode-reward-shares-contract \
-    packages/feature-flags-contract \
     packages/dpns-contract \
     packages/data-contracts \
     packages/dapi-grpc \
@@ -662,7 +739,21 @@ RUN mkdir -p /var/log/dash \
     ${REJECTIONS_PATH}
 
 COPY --from=build-drive-abci /artifacts/drive-abci /usr/bin/drive-abci
+COPY --from=bake-shielded-snapshot /artifacts/ /opt/dashmate/snapshots/
 COPY packages/rs-drive-abci/.env.mainnet /var/lib/dash/rs-drive-abci/.env
+
+# Only point InitChain's apply-side at the snapshot when the bake stage
+# actually produced one (SHIELDED_TEST_DATA=true). Otherwise the bake stage
+# leaves only a `.no-shielded-snapshot` sentinel, so exporting
+# DRIVE_SHIELDED_SNAPSHOT unconditionally would make
+# create_data_for_shielded_pool try to apply a missing file and fail instead
+# of falling back to the runtime seeder. We gate on the real file's existence
+# (writing the var into the binary's .env, which is loaded via dotenvy and
+# left unset otherwise so the seeder fallback runs).
+RUN if [ -f /opt/dashmate/snapshots/shielded-pool.snap ]; then \
+        echo "DRIVE_SHIELDED_SNAPSHOT=/opt/dashmate/snapshots/shielded-pool.snap" \
+            >> /var/lib/dash/rs-drive-abci/.env ; \
+    fi
 
 # Create a volume
 VOLUME /var/lib/dash/rs-drive-abci/db
@@ -735,7 +826,6 @@ COPY --from=build-dashmate-helper /platform/packages/token-history-contract pack
 COPY --from=build-dashmate-helper /platform/packages/keyword-search-contract packages/keyword-search-contract
 COPY --from=build-dashmate-helper /platform/packages/withdrawals-contract packages/withdrawals-contract
 COPY --from=build-dashmate-helper /platform/packages/masternode-reward-shares-contract packages/masternode-reward-shares-contract
-COPY --from=build-dashmate-helper /platform/packages/feature-flags-contract packages/feature-flags-contract
 COPY --from=build-dashmate-helper /platform/packages/dpns-contract packages/dpns-contract
 COPY --from=build-dashmate-helper /platform/packages/data-contracts packages/data-contracts
 COPY --from=build-dashmate-helper /platform/packages/wasm-dpp packages/wasm-dpp
@@ -831,6 +921,7 @@ COPY --parents \
     packages/rs-platform-wallet-ffi \
     packages/rs-drive-abci \
     packages/rs-dapi \
+    packages/rs-dash-async \
     packages/rs-dash-event-bus \
     packages/dashpay-contract \
     packages/wallet-utils-contract \
@@ -838,7 +929,6 @@ COPY --parents \
     packages/keyword-search-contract \
     packages/withdrawals-contract \
     packages/masternode-reward-shares-contract \
-    packages/feature-flags-contract \
     packages/dpns-contract \
     packages/data-contracts \
     packages/strategy-tests \
@@ -854,10 +944,13 @@ COPY --parents \
     packages/rs-dapi-client \
     packages/rs-sdk \
     packages/rs-sdk-ffi \
+    packages/rs-unified-sdk-ffi \
     packages/rs-platform-wallet \
+    packages/rs-platform-wallet-storage \
     packages/check-features \
     packages/dash-platform-balance-checker \
     packages/wasm-sdk \
+    packages/rs-scripts \
     /platform/
 
 RUN mkdir /artifacts

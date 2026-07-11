@@ -145,3 +145,187 @@ impl<C> Platform<C> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::query::tests::setup_platform;
+    use dpp::dashcore::Network;
+
+    #[test]
+    fn test_query_finalized_epoch_infos_start_out_of_range() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetFinalizedEpochInfosRequestV0 {
+            start_epoch_index: (u16::MAX as u32) + 1,
+            start_epoch_index_included: true,
+            end_epoch_index: 10,
+            end_epoch_index_included: true,
+            prove: false,
+        };
+
+        let result = platform
+            .query_finalized_epoch_infos_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(matches!(
+            result.errors.as_slice(),
+            [QueryError::InvalidArgument(msg)] if msg.contains("start_epoch_index")
+        ));
+    }
+
+    #[test]
+    fn test_query_finalized_epoch_infos_end_out_of_range() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetFinalizedEpochInfosRequestV0 {
+            start_epoch_index: 0,
+            start_epoch_index_included: true,
+            end_epoch_index: (u16::MAX as u32) + 1,
+            end_epoch_index_included: true,
+            prove: false,
+        };
+
+        let result = platform
+            .query_finalized_epoch_infos_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(matches!(
+            result.errors.as_slice(),
+            [QueryError::InvalidArgument(msg)] if msg.contains("end_epoch_index")
+        ));
+    }
+
+    #[test]
+    fn test_query_finalized_epoch_infos_equal_indexes_without_both_included() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetFinalizedEpochInfosRequestV0 {
+            start_epoch_index: 3,
+            start_epoch_index_included: true,
+            end_epoch_index: 3,
+            end_epoch_index_included: false,
+            prove: false,
+        };
+
+        let result = platform
+            .query_finalized_epoch_infos_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(matches!(
+            result.errors.as_slice(),
+            [QueryError::InvalidArgument(msg)] if msg.contains("both boundaries must be included")
+        ));
+    }
+
+    #[test]
+    fn test_query_empty_finalized_epoch_infos() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetFinalizedEpochInfosRequestV0 {
+            start_epoch_index: 0,
+            start_epoch_index_included: true,
+            end_epoch_index: 5,
+            end_epoch_index_included: true,
+            prove: false,
+        };
+
+        let result = platform
+            .query_finalized_epoch_infos_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(matches!(
+            result.data,
+            Some(GetFinalizedEpochInfosResponseV0 {
+                result: Some(get_finalized_epoch_infos_response_v0::Result::Epochs(FinalizedEpochInfos { finalized_epoch_infos })),
+                metadata: Some(_),
+            }) if finalized_epoch_infos.is_empty()
+        ));
+    }
+
+    #[test]
+    fn test_query_empty_finalized_epoch_infos_proof() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetFinalizedEpochInfosRequestV0 {
+            start_epoch_index: 0,
+            start_epoch_index_included: true,
+            end_epoch_index: 5,
+            end_epoch_index_included: true,
+            prove: true,
+        };
+
+        let result = platform
+            .query_finalized_epoch_infos_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(matches!(
+            result.data,
+            Some(GetFinalizedEpochInfosResponseV0 {
+                result: Some(get_finalized_epoch_infos_response_v0::Result::Proof(_)),
+                metadata: Some(_),
+            })
+        ));
+    }
+
+    #[test]
+    fn test_query_finalized_epoch_infos_equal_indexes_both_included() {
+        // When start == end and both boundaries are included, the range
+        // validation passes; the response should be an empty epoch list
+        // on an uninitialised platform with no finalized epochs yet.
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetFinalizedEpochInfosRequestV0 {
+            start_epoch_index: 3,
+            start_epoch_index_included: true,
+            end_epoch_index: 3,
+            end_epoch_index_included: true,
+            prove: false,
+        };
+
+        let result = platform
+            .query_finalized_epoch_infos_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(matches!(
+            result.data,
+            Some(GetFinalizedEpochInfosResponseV0 {
+                result: Some(get_finalized_epoch_infos_response_v0::Result::Epochs(FinalizedEpochInfos { finalized_epoch_infos })),
+                metadata: Some(_),
+            }) if finalized_epoch_infos.is_empty()
+        ));
+    }
+
+    #[test]
+    fn test_query_finalized_epoch_infos_start_at_max_does_not_trigger_range_guard() {
+        // start_epoch_index exactly at u16::MAX must not trip the
+        // `> u16::MAX` guard. Downstream layers may still reject it, but
+        // not with the InvalidArgument("start_epoch_index ... exceeds
+        // maximum") message this query is responsible for.
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetFinalizedEpochInfosRequestV0 {
+            start_epoch_index: u16::MAX as u32,
+            start_epoch_index_included: true,
+            end_epoch_index: u16::MAX as u32,
+            end_epoch_index_included: true,
+            prove: false,
+        };
+
+        let result = platform
+            .query_finalized_epoch_infos_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        // No "start_epoch_index ... exceeds maximum" InvalidArgument: any
+        // other error (or success) is acceptable, since the range guard is
+        // what this test covers.
+        for err in &result.errors {
+            if let QueryError::InvalidArgument(msg) = err {
+                assert!(
+                    !msg.contains("start_epoch_index") || !msg.contains("exceeds maximum"),
+                    "range guard fired at u16::MAX boundary: {msg}"
+                );
+            }
+        }
+    }
+}

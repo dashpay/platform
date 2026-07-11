@@ -17,7 +17,7 @@ public class Address {
     ///   - address: The address to validate
     ///   - network: The network type
     /// - Returns: True if the address is valid
-    public static func validate(_ address: String, network: KeyWalletNetwork = .mainnet) -> Bool {
+    public static func validate(_ address: String, network: Network = .mainnet) -> Bool {
         var error = FFIError()
 
         let isValid = address.withCString { addressCStr in
@@ -38,7 +38,7 @@ public class Address {
     ///   - address: The address to check
     ///   - network: The network type
     /// - Returns: The address type
-    public static func getType(of address: String, network: KeyWalletNetwork = .mainnet) -> AddressType {
+    public static func getType(of address: String, network: Network = .mainnet) -> AddressType {
         var error = FFIError()
 
         let typeRaw = address.withCString { addressCStr in

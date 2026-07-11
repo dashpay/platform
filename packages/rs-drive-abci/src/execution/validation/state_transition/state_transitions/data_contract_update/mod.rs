@@ -615,8 +615,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_data_contract_update_changing_various_document_type_options() {
+    #[tokio::test]
+    async fn test_data_contract_update_changing_various_document_type_options() {
         let mut platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
             .set_initial_state_structure();
@@ -674,6 +674,7 @@ mod tests {
             platform_version,
             None,
         )
+        .await
         .expect("expect to create documents batch transition");
 
         let data_contract_update_serialized_transition = data_contract_update_transition
@@ -724,8 +725,8 @@ mod tests {
         use super::*;
         use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult::UnpaidConsensusError;
 
-        #[test]
-        fn test_data_contract_update_can_not_remove_groups() {
+        #[tokio::test]
+        async fn test_data_contract_update_can_not_remove_groups() {
             let mut platform = TestPlatformBuilder::new()
                 .build_with_mock_rpc()
                 .set_initial_state_structure();
@@ -798,6 +799,7 @@ mod tests {
                     platform_version,
                     None,
                 )
+                .await
                 .expect("expect to create data contract update transition");
 
             let data_contract_update_serialized_transition = data_contract_update_transition
@@ -850,8 +852,8 @@ mod tests {
                 .expect("expected to commit transaction");
         }
 
-        #[test]
-        fn test_data_contract_update_can_not_alter_group() {
+        #[tokio::test]
+        async fn test_data_contract_update_can_not_alter_group() {
             let mut platform = TestPlatformBuilder::new()
                 .build_with_mock_rpc()
                 .set_initial_state_structure();
@@ -930,6 +932,7 @@ mod tests {
                     platform_version,
                     None,
                 )
+                .await
                 .expect("expect to create data contract update transition");
 
             let data_contract_update_serialized_transition = data_contract_update_transition
@@ -982,8 +985,8 @@ mod tests {
                 .expect("expected to commit transaction");
         }
 
-        #[test]
-        fn test_data_contract_update_can_not_add_new_group_with_gap() {
+        #[tokio::test]
+        async fn test_data_contract_update_can_not_add_new_group_with_gap() {
             let mut platform = TestPlatformBuilder::new()
                 .build_with_mock_rpc()
                 .set_initial_state_structure();
@@ -1060,6 +1063,7 @@ mod tests {
                     platform_version,
                     None,
                 )
+                .await
                 .expect("expect to create data contract update transition");
 
             let data_contract_update_serialized_transition = data_contract_update_transition
@@ -1096,8 +1100,8 @@ mod tests {
                 .expect("expected to commit transaction");
         }
 
-        #[test]
-        fn test_data_contract_update_can_add_new_group() {
+        #[tokio::test]
+        async fn test_data_contract_update_can_add_new_group() {
             let mut platform = TestPlatformBuilder::new()
                 .build_with_mock_rpc()
                 .set_initial_state_structure();
@@ -1193,6 +1197,7 @@ mod tests {
                     platform_version,
                     None,
                 )
+                .await
                 .expect("expect to create data contract update transition");
 
             let data_contract_update_serialized_transition = data_contract_update_transition
@@ -1252,8 +1257,8 @@ mod tests {
         use dpp::state_transition::proof_result::StateTransitionProofResult;
         use drive::drive::Drive;
 
-        #[test]
-        fn test_data_contract_update_can_add_new_token() {
+        #[tokio::test]
+        async fn test_data_contract_update_can_add_new_token() {
             let mut platform = TestPlatformBuilder::new()
                 .build_with_mock_rpc()
                 .set_initial_state_structure();
@@ -1321,6 +1326,7 @@ mod tests {
                     platform_version,
                     None,
                 )
+                .await
                 .expect("expect to create data contract update transition");
 
             let tx_bytes = data_contract_update_transition
@@ -1375,8 +1381,8 @@ mod tests {
             assert_matches!(result, StateTransitionProofResult::VerifiedDataContract(_));
         }
 
-        #[test]
-        fn test_data_contract_update_with_token_setting_identifier_that_does_exist() {
+        #[tokio::test]
+        async fn test_data_contract_update_with_token_setting_identifier_that_does_exist() {
             let mut platform = TestPlatformBuilder::new()
                 .build_with_mock_rpc()
                 .set_initial_state_structure();
@@ -1445,6 +1451,7 @@ mod tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expected update transition");
 
             let serialized = transition.serialize_to_bytes().expect("serialize");
@@ -1475,8 +1482,8 @@ mod tests {
                 .unwrap()
                 .expect("commit");
         }
-        #[test]
-        fn test_data_contract_update_with_token_setting_identifier_that_does_not_exist() {
+        #[tokio::test]
+        async fn test_data_contract_update_with_token_setting_identifier_that_does_not_exist() {
             let mut platform = TestPlatformBuilder::new()
                 .build_with_mock_rpc()
                 .set_initial_state_structure();
@@ -1545,6 +1552,7 @@ mod tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expected update transition");
 
             let serialized = transition.serialize_to_bytes().expect("serialize");
@@ -1581,8 +1589,8 @@ mod tests {
                 .expect("commit");
         }
 
-        #[test]
-        fn test_data_contract_update_can_not_add_new_token_with_gap() {
+        #[tokio::test]
+        async fn test_data_contract_update_can_not_add_new_token_with_gap() {
             let mut platform = TestPlatformBuilder::new()
                 .build_with_mock_rpc()
                 .set_initial_state_structure();
@@ -1651,6 +1659,7 @@ mod tests {
                     platform_version,
                     None,
                 )
+                .await
                 .expect("expect to create data contract update transition");
 
             let tx_bytes = data_contract_update_transition
@@ -1686,8 +1695,8 @@ mod tests {
                 .expect("expected to commit transaction");
         }
 
-        #[test]
-        fn test_data_contract_update_can_not_add_new_token_with_large_base_supply() {
+        #[tokio::test]
+        async fn test_data_contract_update_can_not_add_new_token_with_large_base_supply() {
             let mut platform = TestPlatformBuilder::new()
                 .build_with_mock_rpc()
                 .set_initial_state_structure();
@@ -1738,6 +1747,7 @@ mod tests {
                     platform_version,
                     None,
                 )
+                .await
                 .expect("expect to create data contract update transition");
 
             let tx_bytes = data_contract_update_transition
@@ -1773,8 +1783,8 @@ mod tests {
                 .expect("expected to commit transaction");
         }
 
-        #[test]
-        fn test_data_contract_update_can_not_add_new_token_with_invalid_localization() {
+        #[tokio::test]
+        async fn test_data_contract_update_can_not_add_new_token_with_invalid_localization() {
             let mut platform = TestPlatformBuilder::new()
                 .build_with_mock_rpc()
                 .set_initial_state_structure();
@@ -1833,6 +1843,7 @@ mod tests {
                     platform_version,
                     None,
                 )
+                .await
                 .expect("expect to create data contract update transition");
 
             let tx_bytes = data_contract_update_transition
@@ -1868,8 +1879,8 @@ mod tests {
                 .expect("expected to commit transaction");
         }
 
-        #[test]
-        fn update_token_with_missing_main_group_should_fail() {
+        #[tokio::test]
+        async fn update_token_with_missing_main_group_should_fail() {
             let mut platform = TestPlatformBuilder::new()
                 .build_with_mock_rpc()
                 .set_initial_state_structure();
@@ -1932,6 +1943,7 @@ mod tests {
                 platform_version,
                 None,
             )
+            .await
             .unwrap();
             let tx = platform.drive.grove.start_transaction();
             let result = platform
@@ -1955,8 +1967,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn update_token_with_invalid_distribution_function_should_fail() {
+        #[tokio::test]
+        async fn update_token_with_invalid_distribution_function_should_fail() {
             let mut platform = TestPlatformBuilder::new()
                 .build_with_mock_rpc()
                 .set_initial_state_structure();
@@ -2032,6 +2044,7 @@ mod tests {
                 platform_version,
                 None,
             )
+            .await
             .unwrap();
             let tx = platform.drive.grove.start_transaction();
             let result = platform
@@ -2055,8 +2068,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn update_token_with_random_distribution_should_fail() {
+        #[tokio::test]
+        async fn update_token_with_random_distribution_should_fail() {
             let mut platform = TestPlatformBuilder::new()
                 .build_with_mock_rpc()
                 .set_initial_state_structure();
@@ -2122,6 +2135,7 @@ mod tests {
                 platform_version,
                 None,
             )
+            .await
             .unwrap();
             let tx = platform.drive.grove.start_transaction();
             let result = platform
@@ -2145,8 +2159,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn update_token_overwriting_existing_position_should_fail() {
+        #[tokio::test]
+        async fn update_token_overwriting_existing_position_should_fail() {
             let mut platform = TestPlatformBuilder::new()
                 .build_with_mock_rpc()
                 .set_initial_state_structure();
@@ -2218,6 +2232,7 @@ mod tests {
                 platform_version,
                 None,
             )
+            .await
             .unwrap();
             let tx = platform.drive.grove.start_transaction();
             let result = platform
@@ -2244,8 +2259,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_data_contract_update_token_without_minting_destination_should_fail() {
+        #[tokio::test]
+        async fn test_data_contract_update_token_without_minting_destination_should_fail() {
             let mut platform = TestPlatformBuilder::new()
                 .build_with_mock_rpc()
                 .set_initial_state_structure();
@@ -2330,6 +2345,7 @@ mod tests {
                     platform_version,
                     None,
                 )
+                .await
                 .expect("expect to create data contract update transition");
 
             let tx_bytes = data_contract_update_transition
@@ -2393,7 +2409,7 @@ mod tests {
 
         /// Creates a contract with the supplied keywords and commits it to Drive.
         /// Returns `(contract_id, create_transition)`.
-        fn create_contract_with_keywords(
+        async fn create_contract_with_keywords(
             platform: &mut TempPlatform<MockCoreRPCLike>,
             identity: &Identity,
             signer: &SimpleSigner,
@@ -2410,7 +2426,7 @@ mod tests {
             )
             .expect("load base contract");
 
-            let mut val = base.to_value(platform_version).expect("to_value");
+            let mut val = dpp::platform_value::to_value(&base).expect("to_value");
 
             val["keywords"] = Value::Array(
                 keywords
@@ -2431,6 +2447,7 @@ mod tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("create transition");
 
             let tx_bytes = create.serialize_to_bytes().expect("serialize");
@@ -2482,7 +2499,7 @@ mod tests {
 
         /// Convenience for building and applying an **update** transition that
         /// only changes the `keywords` array.
-        fn apply_keyword_update(
+        async fn apply_keyword_update(
             platform: &mut TempPlatform<MockCoreRPCLike>,
             contract_id: Identifier,
             identity: &Identity,
@@ -2499,7 +2516,7 @@ mod tests {
                 .unwrap()
                 .unwrap();
 
-            let mut val = fetched.contract.to_value(platform_version).unwrap();
+            let mut val = dpp::platform_value::to_value(&fetched.contract).unwrap();
 
             val["keywords"] = Value::Array(
                 new_keywords
@@ -2522,6 +2539,7 @@ mod tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("build update");
 
             let bytes = update.serialize_to_bytes().unwrap();
@@ -2608,8 +2626,8 @@ mod tests {
 
         macro_rules! invalid_update_test {
             ($name:ident, $keywords:expr, $error:pat_param) => {
-                #[test]
-                fn $name() {
+                #[tokio::test]
+                async fn $name() {
                     let platform_version = PlatformVersion::latest();
                     let mut platform = TestPlatformBuilder::new()
                         .build_with_mock_rpc()
@@ -2626,7 +2644,8 @@ mod tests {
                         &key,
                         &["orig"],
                         &platform_version,
-                    );
+                    )
+                    .await;
 
                     // try invalid update
                     let err = apply_keyword_update(
@@ -2638,6 +2657,7 @@ mod tests {
                         &$keywords,
                         &platform_version,
                     )
+                    .await
                     .unwrap_err();
 
                     assert_matches!(
@@ -2689,8 +2709,8 @@ mod tests {
         // positive case – old docs removed, new docs inserted
         // ────────────────────────────────────────────────────────────────────────
 
-        #[test]
-        fn update_keywords_replaces_search_docs() {
+        #[tokio::test]
+        async fn update_keywords_replaces_search_docs() {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
                 .build_with_mock_rpc()
@@ -2706,7 +2726,8 @@ mod tests {
                 &key,
                 &["old1", "old2"],
                 platform_version,
-            );
+            )
+            .await;
 
             // verify initial docs
             let initial_docs = keyword_docs_for_contract(&platform, cid, &platform_version);
@@ -2722,6 +2743,7 @@ mod tests {
                 &["newA", "newB", "newC"],
                 platform_version,
             )
+            .await
             .expect("update should succeed");
 
             // fetch contract – keywords updated?
@@ -2779,7 +2801,7 @@ mod tests {
 
         /// Creates a contract with the supplied description and commits it to Drive.
         /// Returns `(contract_id, create_transition)`.
-        fn create_contract_with_description(
+        async fn create_contract_with_description(
             platform: &mut TempPlatform<MockCoreRPCLike>,
             identity: &Identity,
             signer: &SimpleSigner,
@@ -2796,7 +2818,7 @@ mod tests {
             )
             .expect("load base contract");
 
-            let mut val = base.to_value(platform_version).expect("to_value");
+            let mut val = dpp::platform_value::to_value(&base).expect("to_value");
 
             val["description"] = Value::Text(description.to_string());
 
@@ -2812,6 +2834,7 @@ mod tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("create transition");
 
             let tx_bytes = create.serialize_to_bytes().expect("serialize");
@@ -2863,7 +2886,7 @@ mod tests {
 
         /// Convenience for building and applying an **update** transition that
         /// only changes the `description` string.
-        fn apply_description_update(
+        async fn apply_description_update(
             platform: &mut TempPlatform<MockCoreRPCLike>,
             contract_id: Identifier,
             identity: &Identity,
@@ -2880,7 +2903,7 @@ mod tests {
                 .unwrap()
                 .unwrap();
 
-            let mut val = fetched.contract.to_value(platform_version).unwrap();
+            let mut val = dpp::platform_value::to_value(&fetched.contract).unwrap();
 
             val["description"] = Value::Text(new_description.to_string());
 
@@ -2898,6 +2921,7 @@ mod tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("build update");
 
             let bytes = update.serialize_to_bytes().unwrap();
@@ -2991,8 +3015,8 @@ mod tests {
 
         macro_rules! invalid_update_test {
             ($name:ident, $description:expr, $error:pat_param) => {
-                #[test]
-                fn $name() {
+                #[tokio::test]
+                async fn $name() {
                     let platform_version = PlatformVersion::latest();
                     let mut platform = TestPlatformBuilder::new()
                         .build_with_mock_rpc()
@@ -3009,7 +3033,8 @@ mod tests {
                         &key,
                         &"orig",
                         &platform_version,
-                    );
+                    )
+                    .await;
 
                     // try invalid update
                     let err = apply_description_update(
@@ -3021,6 +3046,7 @@ mod tests {
                         &$description,
                         &platform_version,
                     )
+                    .await
                     .unwrap_err();
 
                     assert_matches!(
@@ -3054,8 +3080,8 @@ mod tests {
         // positive case – old docs removed, new docs inserted
         // ────────────────────────────────────────────────────────────────────────
 
-        #[test]
-        fn update_description_replaces_search_docs() {
+        #[tokio::test]
+        async fn update_description_replaces_search_docs() {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
                 .build_with_mock_rpc()
@@ -3071,7 +3097,8 @@ mod tests {
                 &key,
                 "old1",
                 platform_version,
-            );
+            )
+            .await;
 
             // verify initial docs
             let initial_docs = description_docs_for_contract(&platform, cid, platform_version);
@@ -3087,6 +3114,7 @@ mod tests {
                 "newA",
                 platform_version,
             )
+            .await
             .expect("update should succeed");
 
             // fetch contract – description updated?

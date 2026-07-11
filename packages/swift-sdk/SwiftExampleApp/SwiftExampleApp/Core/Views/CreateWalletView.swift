@@ -1,15 +1,18 @@
 import SwiftUI
+import SwiftData
 import SwiftDashSDK
 
 struct CreateWalletView: View {
     @Environment(\.dismiss) var dismiss
     @Environment(\.modelContext) private var modelContext
-    @EnvironmentObject var walletService: WalletService
-    @EnvironmentObject var unifiedAppState: UnifiedAppState
+    @EnvironmentObject var walletManager: PlatformWalletManager
+    @EnvironmentObject var walletManagerStore: WalletManagerStore
+    @EnvironmentObject var platformState: AppState
 
     @State private var walletLabel: String = ""
     @State private var showImportOption: Bool = false
     @State private var importMnemonic: String = ""
+    @State private var importBirthHeight: String = ""
     @State private var walletPin: String = ""
     @State private var confirmPin: String = ""
     @State private var isCreating: Bool = false
@@ -34,13 +37,21 @@ struct CreateWalletView: View {
         case mnemonic
     }
 
-    var currentNetwork: AppNetwork {
-        unifiedAppState.platformState.currentNetwork
+    var currentNetwork: Network {
+        platformState.currentNetwork
     }
 
     // Only show devnet option if currently on devnet
     var shouldShowDevnet: Bool {
         currentNetwork == .devnet
+    }
+
+    // Mirror of the devnet rule: regtest is a developer-only
+    // network and the toggle would clutter the create screen on
+    // mainnet/testnet. Showing it only when the active network is
+    // regtest also matches the wallet-info network picker pattern.
+    var shouldShowRegtest: Bool {
+        currentNetwork == .regtest
     }
 
     var body: some View {
@@ -50,6 +61,7 @@ struct CreateWalletView: View {
                     .textInputAutocapitalization(.words)
                     .focused($focusedField, equals: .walletName)
                     .submitLabel(.next)
+                    .accessibilityIdentifier("createWallet.walletNameField")
                     .onSubmit {
                         focusedField = .pin
                     }
@@ -96,6 +108,23 @@ struct CreateWalletView: View {
                         }
                         .toggleStyle(CheckboxToggleStyle())
                     }
+
+                    // Mirror Devnet's gating: only render the local
+                    // (regtest) toggle when the user is actually on
+                    // regtest. Without this row there's no path to
+                    // create a regtest wallet from the active-network
+                    // creation flow.
+                    if shouldShowRegtest {
+                        Toggle(isOn: $createForRegtest) {
+                            HStack {
+                                Image(systemName: "network")
+                                    .foregroundColor(.purple)
+                                Text("Local (Regtest)")
+                                    .font(.body)
+                            }
+                        }
+                        .toggleStyle(CheckboxToggleStyle())
+                    }
                 }
                 .padding(.vertical, 4)
             } header: {
@@ -113,6 +142,7 @@ struct CreateWalletView: View {
                         .textContentType(.oneTimeCode)
                         .autocorrectionDisabled()
                         .focused($focusedField, equals: .pin)
+                        .accessibilityIdentifier("createWallet.pinField")
                 }
 
                 HStack {
@@ -123,6 +153,7 @@ struct CreateWalletView: View {
                         .textContentType(.oneTimeCode)
                         .autocorrectionDisabled()
                         .focused($focusedField, equals: .confirmPin)
+                        .accessibilityIdentifier("createWallet.confirmPinField")
                 }
             } header: {
                 Text("Security")
@@ -165,6 +196,15 @@ struct CreateWalletView: View {
                 } footer: {
                     Text("Enter your 12-word recovery phrase separated by spaces")
                 }
+
+                Section {
+                    TextField("Birth height (optional)", text: $importBirthHeight)
+                        .keyboardType(.numberPad)
+                } header: {
+                    Text("Birth Height")
+                } footer: {
+                    Text("Block height the wallet first received funds. Sync anchors at the nearest checkpoint at or before it, avoiding a full-chain scan. Leave empty to scan from genesis.")
+                }
             }
         }
         .navigationTitle("Create Wallet")
@@ -181,6 +221,7 @@ struct CreateWalletView: View {
                     onCreateTapped()
                 }
                 .disabled(!canCreateWallet)
+                .accessibilityIdentifier("createWallet.createButton")
             }
         }
         .disabled(isCreating)
@@ -221,7 +262,16 @@ struct CreateWalletView: View {
     }
 
     private var hasNetworkSelected: Bool {
-        createForMainnet || createForTestnet || createForDevnet
+        // Mirror the same visibility gates used when building
+        // `selectedNetworks` below — without this, a stale
+        // `createForRegtest`/`createForDevnet` flag set by
+        // `setupInitialNetworkSelection()` could leave the Create
+        // button enabled while `selectedNetworks` ends up empty,
+        // surfacing a `"No network selected"` error after the tap.
+        createForMainnet ||
+        createForTestnet ||
+        (createForDevnet && shouldShowDevnet) ||
+        (createForRegtest && shouldShowRegtest)
     }
 
     private func setupInitialNetworkSelection() {
@@ -269,35 +319,208 @@ struct CreateWalletView: View {
         Task {
             do {
                 print("=== STARTING WALLET CREATION ===")
-                
-                let mnemonic = (showImportOption ? importMnemonic : mnemonic)
+
+                let mnemonicPhrase = (showImportOption ? importMnemonic : mnemonic)
                 print("PIN length: \(walletPin.count)")
                 print("Import option enabled: \(showImportOption)")
 
-                // Determine primary network to create the wallet in (SDK enforces unique wallet per mnemonic)
-                let selectedNetworks: [AppNetwork] = [
-                    createForMainnet ? AppNetwork.mainnet : nil,
-                    createForTestnet ? AppNetwork.testnet : nil,
-                    (createForDevnet && shouldShowDevnet) ? AppNetwork.devnet : nil,
+                let selectedNetworks: [Network] = [
+                    createForMainnet ? Network.mainnet : nil,
+                    createForTestnet ? Network.testnet : nil,
+                    (createForDevnet && shouldShowDevnet) ? Network.devnet : nil,
+                    (createForRegtest && shouldShowRegtest) ? Network.regtest : nil,
                 ].compactMap { $0 }
 
-                guard let primaryNetwork = selectedNetworks.first else {
-                    throw WalletError.walletError("No network selected")
+                guard !selectedNetworks.isEmpty else {
+                    struct MissingNetwork: LocalizedError {
+                        var errorDescription: String? { "No network selected" }
+                    }
+                    throw MissingNetwork()
                 }
 
-                // Create exactly one wallet in the SDK; do not append network to label
-                _ = try await walletService.walletManager.createWallet(
-                    label: walletLabel,
-                    mnemonic: mnemonic,
-                    pin: walletPin,
-                    isImport: showImportOption
-                )
+                // Create the wallet in EVERY ticked network. Each
+                // network has its own `PlatformWalletManager` (the
+                // Rust manager is network-locked at construction and
+                // stamps its own network onto the wallet), so routing
+                // through the active manager alone would ignore the
+                // passed `network`. `backgroundManager(for:)` returns
+                // the warm cached manager for the active network and
+                // builds one on demand for the others. The `walletId`
+                // is now network-scoped — the same mnemonic produces a
+                // DIFFERENT id per network — so the Keychain mnemonic +
+                // metadata must be written under EACH freshly-created
+                // network's id, and `isImported` stamped on each id's
+                // row.
+                try await MainActor.run {
+                    // Per-network results for networks the wallet was
+                    // FRESHLY created on this pass — each carries the
+                    // scoped `walletId` Rust returned, which is the
+                    // Keychain key its mnemonic / metadata / `isImported`
+                    // writes hang off of.
+                    var createdWallets: [(network: Network, walletId: Data)] = []
+                    // Real (non-"already exists") failures, surfaced to
+                    // the user so a partial create isn't reported as
+                    // success.
+                    var failures: [(network: Network, message: String)] = []
+                    // For an imported wallet, honour a user-entered birth height:
+                    // sync anchors at the nearest checkpoint at or before it,
+                    // avoiding a full-chain scan. Left empty it falls back to
+                    // genesis (0) so a wallet of unknown age still sees all its
+                    // history. A freshly generated wallet passes nil (tip).
+                    let trimmedImportBirthHeight = importBirthHeight.trimmingCharacters(in: .whitespaces)
+                    let importBirth = UInt32(trimmedImportBirthHeight) ?? 0
+                    // Birth height is chain-local: a single value can't be
+                    // correct for more than one network, so reject a non-empty
+                    // height when importing to multiple networks. Left blank the
+                    // safe genesis (0) fallback still applies to each network.
+                    if showImportOption, !trimmedImportBirthHeight.isEmpty, selectedNetworks.count > 1 {
+                        struct MultiNetworkBirthHeightUnsupported: LocalizedError {
+                            var errorDescription: String? {
+                                "Birth height is network-specific. Select one network or leave birth height empty when importing to multiple networks."
+                            }
+                        }
+                        throw MultiNetworkBirthHeightUnsupported()
+                    }
+                    for net in selectedNetworks {
+                        do {
+                            let mgr = try walletManagerStore.backgroundManager(for: net)
+                            let managed = try mgr.createWallet(
+                                mnemonic: mnemonicPhrase,
+                                network: net,
+                                name: walletLabel,
+                                birthHeight: showImportOption ? importBirth : nil
+                            )
+                            createdWallets.append((net, managed.walletId))
+                        } catch {
+                            // A typed `walletAlreadyExists` throw means the
+                            // wallet is already on this network — benign. We
+                            // do NOT resolve the existing scoped walletId to
+                            // re-store the mnemonic: a wallet that already
+                            // exists on this network had its mnemonic +
+                            // metadata stored under that scoped id at its
+                            // original creation, so there is nothing to
+                            // write. It is also not counted as a freshly-
+                            // created wallet. Any other error is a genuine
+                            // failure.
+                            if case PlatformWalletError.walletAlreadyExists = error {
+                                SDKLogger.error(
+                                    "Wallet already present on \(net.displayName); continuing"
+                                )
+                            } else {
+                                let message = error.localizedDescription
+                                failures.append((net, message))
+                                SDKLogger.error(
+                                    "Wallet creation failed for \(net.displayName): \(message)"
+                                )
+                            }
+                        }
+                    }
 
-                print("=== WALLET CREATION SUCCESS - Created 1 wallet for \(primaryNetwork.displayName) ===")
+                    guard !createdWallets.isEmpty else {
+                        // No wallet was freshly created. Two cases:
+                        if failures.isEmpty {
+                            // Every selected network reported "already
+                            // exists" — the wallet is present on all of
+                            // them and its per-network mnemonic/metadata
+                            // were stored at the original creation.
+                            // Re-importing is a benign no-op; dismiss
+                            // without a misleading "could not be created"
+                            // error.
+                            dismiss()
+                            return
+                        }
+                        // At least one network had a real failure and
+                        // none succeeded — surface the failure detail.
+                        struct AllNetworksFailed: LocalizedError {
+                            let detail: String
+                            var errorDescription: String? {
+                                "Wallet could not be created on any selected network.\n\(detail)"
+                            }
+                        }
+                        let detail = failures
+                            .map { "\($0.network.displayName): \($0.message)" }
+                            .joined(separator: "\n")
+                        throw AllNetworksFailed(detail: detail)
+                    }
 
-                await MainActor.run {
+                    // For EACH freshly-created network, persist that
+                    // network's scoped walletId independently: store the
+                    // mnemonic in the iOS Keychain keyed by that id (so
+                    // the recovery flow can enumerate it on launch), stamp
+                    // `isImported` on its row, and mirror the wallet
+                    // metadata under that id. Each scoped wallet is
+                    // independently recoverable, so its metadata records
+                    // just THAT network. All writes are best-effort —
+                    // failures are logged, not fatal.
+                    let storage = WalletStorage()
+                    for created in createdWallets {
+                        let walletId = created.walletId
+
+                        do {
+                            try storage.storeMnemonic(mnemonicPhrase, for: walletId)
+                        } catch {
+                            SDKLogger.error(
+                                "Failed to persist mnemonic to keychain for \(created.network.displayName): \(error.localizedDescription)"
+                            )
+                        }
+
+                        // Stamp `isImported` on the per-network row for
+                        // this scoped walletId. The persister callbacks
+                        // run synchronously from `createWallet` via the
+                        // background contexts; autosave propagates the
+                        // rows into the main context before this fetch.
+                        let descriptor = FetchDescriptor<PersistentWallet>(
+                            predicate: PersistentWallet.predicate(walletId: walletId)
+                        )
+                        let rows = (try? modelContext.fetch(descriptor)) ?? []
+                        for row in rows {
+                            row.isImported = showImportOption
+                        }
+                        if !rows.isEmpty {
+                            try? modelContext.save()
+                        }
+
+                        // Mirror name + birth height + just THIS network
+                        // into the keychain alongside the mnemonic so an
+                        // orphan-recovery after a wipe restores the
+                        // original label / network / birth height for this
+                        // scoped wallet.
+                        do {
+                            let metadata = WalletKeychainMetadata(
+                                name: walletLabel,
+                                walletDescription: nil,
+                                networks: [created.network.networkName],
+                                birthHeight: rows.first?.birthHeight
+                            )
+                            try storage.setMetadata(metadata, for: walletId)
+                        } catch {
+                            SDKLogger.error(
+                                "Failed to persist wallet metadata to keychain for \(created.network.displayName): \(error.localizedDescription)"
+                            )
+                        }
+                    }
+
+                    // If some (but not all) networks failed, the wallet
+                    // exists — but the user must know it wasn't added
+                    // everywhere they ticked. Surface the partial
+                    // failure instead of silently dismissing as success.
+                    if !failures.isEmpty {
+                        struct PartialCreate: LocalizedError {
+                            let detail: String
+                            var errorDescription: String? {
+                                "Wallet created, but not on every selected network:\n\(detail)"
+                            }
+                        }
+                        let detail = failures
+                            .map { "\($0.network.displayName): \($0.message)" }
+                            .joined(separator: "\n")
+                        throw PartialCreate(detail: detail)
+                    }
+
                     dismiss()
                 }
+
+                print("=== WALLET CREATION SUCCESS - networks: \(selectedNetworks.map { $0.displayName }) ===")
             } catch {
                 print("=== WALLET CREATION ERROR ===")
                 print("Error: \(error)")
@@ -305,6 +528,11 @@ struct CreateWalletView: View {
                 await MainActor.run {
                     self.error = error
                     isCreating = false
+                    // Pop the pushed `SeedBackupView` so the error alert
+                    // (bound to this view) is actually visible — otherwise
+                    // the backup screen sits on top with its submit button
+                    // stuck disabled and no feedback.
+                    showBackupScreen = false
                 }
             }
         }

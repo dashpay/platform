@@ -1,6 +1,6 @@
 {
   "name": "dashmate",
-  "version": "3.1.0-dev.1",
+  "version": "4.0.0",
   "description": "Distribution package for Dash node installation",
   "scripts": {
     "lint": "eslint .",
@@ -128,6 +128,17 @@
     ],
     "commands": "./src/commands",
     "bin": "dashmate",
+    "update": {
+      "node": {
+        "targets": [
+          "linux-x64",
+          "linux-arm64",
+          "win32-x64",
+          "darwin-x64",
+          "darwin-arm64"
+        ]
+      }
+    },
     "macos": {
       "identifier": "org.dash.dashmate",
       "sign": "'Developer ID Installer: The Dash Foundation, Inc.'"

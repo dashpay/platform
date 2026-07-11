@@ -3,6 +3,8 @@ use crate::error::Error;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::identity_create::StateTransitionStateValidationForIdentityCreateTransitionV0;
 use crate::execution::validation::state_transition::identity_create_from_addresses::StateTransitionStateValidationForIdentityCreateFromAddressesTransitionV0;
+use crate::execution::validation::state_transition::identity_create_from_shielded_pool::StateTransitionIdentityCreateFromShieldedPoolTransitionActionTransformer;
+use crate::execution::validation::state_transition::identity_create_from_shielded_pool::StateTransitionStateValidationForIdentityCreateFromShieldedPoolTransitionV0;
 use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformer;
 use crate::execution::validation::state_transition::ValidationMode;
 use crate::platform_types::platform::PlatformRef;
@@ -206,12 +208,56 @@ impl StateTransitionStateValidation for StateTransition {
                     "shielded withdrawal should not have state validation",
                 )))
             }
+            StateTransition::IdentityCreateFromShieldedPool(st) => {
+                // Type 20 keeps `has_advanced_structure_validation_with_state() == false` (the
+                // cheap PoP/key-structure checks stay in `validate_shielded_proof`, ahead of
+                // Halo 2), so the processor never pre-builds the action — it always arrives here
+                // as `None`. Build the optimistic SUCCESS action now via `transform` (the
+                // pool/anchor/nullifier/balance checks); if that already rejects, forward the
+                // rejection, otherwise hand the success action to `validate_state`, which branches
+                // success-vs-Unshield-fallback on the identity-creation state checks. Fail CLOSED
+                // at runtime if the no-pre-build invariant is ever broken: using a pre-built
+                // action would silently route around those checks.
+                let action = match action {
+                    Some(_) => {
+                        return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                            "IdentityCreateFromShieldedPool must not be pre-built by the processor \
+                             (advanced_structure_with_state is false)",
+                        )));
+                    }
+                    None => {
+                        let transform_result = st
+                            .transform_into_action_for_identity_create_from_shielded_pool_transition(
+                                platform,
+                                execution_context,
+                                tx,
+                            )?;
+                        if !transform_result.is_valid_with_data() {
+                            return Ok(transform_result);
+                        }
+                        transform_result.into_data()?
+                    }
+                };
+                let StateTransitionAction::IdentityCreateFromShieldedPoolAction(action) = action
+                else {
+                    return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                        "action must be an identity create from shielded pool transition action",
+                    )));
+                };
+                st.validate_state_for_identity_create_from_shielded_pool_transition(
+                    action,
+                    platform,
+                    execution_context,
+                    tx,
+                )
+            }
         }
     }
 
     fn has_state_validation(&self) -> bool {
         match self {
             StateTransition::IdentityCreateFromAddresses(_)
+            | StateTransition::IdentityCreateFromShieldedPool(_)
             | StateTransition::DataContractCreate(_)
             | StateTransition::IdentityCreate(_)
             | StateTransition::DataContractUpdate(_)
@@ -337,6 +383,28 @@ mod tests {
                         MasternodeVoteTransitionV0::default(),
                     )),
                 ),
+                {
+                    use dpp::state_transition::state_transitions::shielded::identity_create_from_shielded_pool_transition::v0::IdentityCreateFromShieldedPoolTransitionV0;
+                    use dpp::state_transition::state_transitions::shielded::identity_create_from_shielded_pool_transition::IdentityCreateFromShieldedPoolTransition;
+                    (
+                        "IdentityCreateFromShieldedPool",
+                        StateTransition::IdentityCreateFromShieldedPool(
+                            IdentityCreateFromShieldedPoolTransition::V0(
+                                IdentityCreateFromShieldedPoolTransitionV0 {
+                                    public_keys: vec![],
+                                    denomination: 0,
+                                    send_to_address_on_creation_failure:
+                                        dpp::address_funds::PlatformAddress::P2pkh([0u8; 20]),
+                                    actions: vec![],
+                                    anchor: [0u8; 32],
+                                    proof: vec![],
+                                    binding_signature: [0u8; 64],
+                                    identity_id: Default::default(),
+                                },
+                            ),
+                        ),
+                    )
+                },
             ];
             for (name, st) in transitions {
                 assert!(

@@ -165,18 +165,14 @@
     "getShieldedNullifiers": {
       "status": "implemented"
     },
-    "getNullifiersTrunkState": {
+    "getDocumentHistory": {
       "status": "implemented"
     },
-    "getNullifiersBranchState": {
+    "getTokenPreProgrammedDistributions": {
       "status": "implemented"
     },
-    "getRecentNullifierChanges": {
-      "status": "implemented"
-    },
-    "getRecentCompactedNullifierChanges": {
+    "getShieldedNotesCount": {
       "status": "implemented"
     }
-  },
-  "last_updated": "2026-03-10T11:25:01.317388"
+  }
 }

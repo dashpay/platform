@@ -11,8 +11,8 @@ mod token_config_update_tests {
         use drive::drive::Drive;
 
         use super::*;
-        #[test]
-        fn test_token_config_update_by_owner_changing_total_max_supply() {
+        #[tokio::test]
+        async fn test_token_config_update_by_owner_changing_total_max_supply() {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
                 .with_latest_protocol_version()
@@ -61,6 +61,7 @@ mod token_config_update_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
             let config_update_transition_serialized_transition = config_update_transition
@@ -115,8 +116,8 @@ mod token_config_update_tests {
 
         /// Added this test to verify that adding "note" property to token history contract document types
         /// Makes the proof verification work
-        #[test]
-        fn test_token_config_update_by_owner_changing_total_max_supply_with_public_note() {
+        #[tokio::test]
+        async fn test_token_config_update_by_owner_changing_total_max_supply_with_public_note() {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
                 .with_latest_protocol_version()
@@ -165,6 +166,7 @@ mod token_config_update_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
             let config_update_transition_serialized_transition = config_update_transition
@@ -261,9 +263,9 @@ mod token_config_update_tests {
             assert_eq!(updated_token_config.max_supply(), Some(1000000));
         }
 
-        #[test]
-        fn test_token_config_update_by_owner_changing_total_max_supply_to_less_than_current_supply()
-        {
+        #[tokio::test]
+        async fn test_token_config_update_by_owner_changing_total_max_supply_to_less_than_current_supply(
+        ) {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
                 .with_latest_protocol_version()
@@ -312,6 +314,7 @@ mod token_config_update_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
             let config_update_transition_serialized_transition = config_update_transition
@@ -369,8 +372,8 @@ mod token_config_update_tests {
             assert_eq!(updated_token_config.max_supply(), None);
         }
 
-        #[test]
-        fn test_token_config_update_by_owner_change_admin_to_another_identity() {
+        #[tokio::test]
+        async fn test_token_config_update_by_owner_change_admin_to_another_identity() {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
                 .with_latest_protocol_version()
@@ -424,6 +427,7 @@ mod token_config_update_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
             let config_update_transition_serialized_transition = config_update_transition
@@ -472,6 +476,7 @@ mod token_config_update_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
             let config_update_transition_serialized_transition = config_update_transition
@@ -524,8 +529,8 @@ mod token_config_update_tests {
             assert_eq!(updated_token_config.max_supply(), Some(1000000));
         }
 
-        #[test]
-        fn test_token_config_update_by_owner_change_admin_to_a_non_existent_identity_error() {
+        #[tokio::test]
+        async fn test_token_config_update_by_owner_change_admin_to_a_non_existent_identity_error() {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
                 .with_latest_protocol_version()
@@ -578,6 +583,7 @@ mod token_config_update_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
             let config_update_transition_serialized_transition = config_update_transition
@@ -617,8 +623,8 @@ mod token_config_update_tests {
                 .expect("expected to commit transaction");
         }
 
-        #[test]
-        fn test_token_config_update_by_owner_change_admin_to_a_non_existent_group_error() {
+        #[tokio::test]
+        async fn test_token_config_update_by_owner_change_admin_to_a_non_existent_group_error() {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
                 .with_latest_protocol_version()
@@ -669,6 +675,7 @@ mod token_config_update_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
             let config_update_transition_serialized_transition = config_update_transition
@@ -708,8 +715,8 @@ mod token_config_update_tests {
                 .expect("expected to commit transaction");
         }
 
-        #[test]
-        fn test_token_config_update_by_owner_change_admin_to_main_group_not_set_error() {
+        #[tokio::test]
+        async fn test_token_config_update_by_owner_change_admin_to_main_group_not_set_error() {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
                 .with_latest_protocol_version()
@@ -760,6 +767,7 @@ mod token_config_update_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
             let config_update_transition_serialized_transition = config_update_transition
@@ -799,8 +807,8 @@ mod token_config_update_tests {
                 .expect("expected to commit transaction");
         }
 
-        #[test]
-        fn test_token_config_update_by_owner_changing_main_control_group() {
+        #[tokio::test]
+        async fn test_token_config_update_by_owner_changing_main_control_group() {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
                 .with_latest_protocol_version()
@@ -855,6 +863,7 @@ mod token_config_update_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
             let config_update_transition_serialized_transition = config_update_transition
@@ -913,8 +922,8 @@ mod token_config_update_tests {
         use dpp::data_contract::associated_token::token_configuration_localization::v0::TokenConfigurationLocalizationV0;
         use dpp::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Getters;
 
-        #[test]
-        fn test_token_config_update_by_group_member_changing_total_max_supply_not_using_group_gives_error(
+        #[tokio::test]
+        async fn test_token_config_update_by_group_member_changing_total_max_supply_not_using_group_gives_error(
         ) {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
@@ -976,6 +985,7 @@ mod token_config_update_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
             let config_update_transition_serialized_transition = config_update_transition
@@ -1031,8 +1041,8 @@ mod token_config_update_tests {
             assert_eq!(updated_token_config.max_supply(), None);
         }
 
-        #[test]
-        fn test_token_config_update_by_group_member_changing_total_max_supply() {
+        #[tokio::test]
+        async fn test_token_config_update_by_group_member_changing_total_max_supply() {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
                 .with_latest_protocol_version()
@@ -1102,6 +1112,7 @@ mod token_config_update_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
             let config_update_transition_serialized_transition = config_update_transition
@@ -1176,6 +1187,7 @@ mod token_config_update_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
             let config_update_transition_serialized_transition = config_update_transition
@@ -1228,8 +1240,8 @@ mod token_config_update_tests {
             assert_eq!(updated_token_config.max_supply(), Some(1000000));
         }
 
-        #[test]
-        fn test_token_config_update_by_group_member_changing_minting_destination_group() {
+        #[tokio::test]
+        async fn test_token_config_update_by_group_member_changing_minting_destination_group() {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
                 .with_latest_protocol_version()
@@ -1323,6 +1335,7 @@ mod token_config_update_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
             let config_update_transition_serialized_transition = config_update_transition
@@ -1405,6 +1418,7 @@ mod token_config_update_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
             let config_update_transition_serialized_transition = config_update_transition
@@ -1488,6 +1502,7 @@ mod token_config_update_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
             let config_update_transition_serialized_transition = config_update_transition
@@ -1564,6 +1579,7 @@ mod token_config_update_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
             let config_update_transition_serialized_transition = config_update_transition
@@ -1618,8 +1634,8 @@ mod token_config_update_tests {
                 .minting_allow_choosing_destination());
         }
 
-        #[test]
-        fn test_token_config_update_by_group_member_changing_minting_admin_group() {
+        #[tokio::test]
+        async fn test_token_config_update_by_group_member_changing_minting_admin_group() {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
                 .with_latest_protocol_version()
@@ -1717,6 +1733,7 @@ mod token_config_update_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
             let config_update_transition_serialized_transition = config_update_transition
@@ -1799,6 +1816,7 @@ mod token_config_update_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
             let config_update_transition_serialized_transition = config_update_transition
@@ -1875,6 +1893,7 @@ mod token_config_update_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
             let config_update_transition_serialized_transition = config_update_transition
@@ -1943,6 +1962,7 @@ mod token_config_update_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
             let config_update_transition_serialized_transition = config_update_transition
@@ -2025,6 +2045,7 @@ mod token_config_update_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
             let config_update_transition_serialized_transition = config_update_transition
@@ -2083,8 +2104,9 @@ mod token_config_update_tests {
             );
         }
 
-        #[test]
-        fn test_token_config_change_own_admin_group_give_control_power_and_change_admin_back() {
+        #[tokio::test]
+        async fn test_token_config_change_own_admin_group_give_control_power_and_change_admin_back()
+        {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
                 .with_latest_protocol_version()
@@ -2181,6 +2203,7 @@ mod token_config_update_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
             let config_update_transition_serialized_transition = config_update_transition
@@ -2262,6 +2285,7 @@ mod token_config_update_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
             let config_update_transition_serialized_transition = config_update_transition
@@ -2345,6 +2369,7 @@ mod token_config_update_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
             let config_update_transition_serialized_transition = config_update_transition
@@ -2402,6 +2427,7 @@ mod token_config_update_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
             let config_update_transition_serialized_transition = config_update_transition
@@ -2469,6 +2495,7 @@ mod token_config_update_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
             let config_update_transition_serialized_transition = config_update_transition
@@ -2527,6 +2554,7 @@ mod token_config_update_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
             let config_update_transition_serialized_transition = config_update_transition
@@ -2614,6 +2642,7 @@ mod token_config_update_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
             let config_update_transition_serialized_transition = config_update_transition
@@ -2672,6 +2701,7 @@ mod token_config_update_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
             let config_update_transition_serialized_transition = config_update_transition
@@ -2760,6 +2790,7 @@ mod token_config_update_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
             let config_update_transition_serialized_transition = config_update_transition
@@ -2827,6 +2858,7 @@ mod token_config_update_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
             let config_update_transition_serialized_transition = config_update_transition
@@ -2861,8 +2893,8 @@ mod token_config_update_tests {
                 .expect("expected to commit transaction");
         }
 
-        #[test]
-        fn test_token_config_update_as_group_member_but_group_not_needed() {
+        #[tokio::test]
+        async fn test_token_config_update_as_group_member_but_group_not_needed() {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
                 .with_latest_protocol_version()
@@ -2923,6 +2955,7 @@ mod token_config_update_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
             let config_update_transition_serialized_transition = config_update_transition

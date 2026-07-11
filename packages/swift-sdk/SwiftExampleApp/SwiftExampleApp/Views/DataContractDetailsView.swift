@@ -1,9 +1,20 @@
 import SwiftUI
 import SwiftData
+import SwiftDashSDK
 import UIKit
+import SwiftDashSDK
 
 struct DataContractDetailsView: View {
     let contract: PersistentDataContract
+    /// Optional "Save to Device" hook. Set when the view is rendered
+    /// against a preview-only contract held in an in-memory
+    /// `ModelContainer`. Tapping the Save button calls this closure;
+    /// the parent runs the persist pipeline and dismisses the sheet.
+    /// Nil for the normal saved-contract path.
+    var onSave: (() -> Void)? = nil
+    /// In-flight indicator for the Save button. Owned by the parent
+    /// (the persist call lives there); we just toggle the spinner.
+    var isSaving: Bool = false
     @Environment(\.dismiss) var dismiss
     @Environment(\.modelContext) private var modelContext
     @State private var showingShareSheet = false
@@ -29,16 +40,46 @@ struct DataContractDetailsView: View {
     }
 
     var body: some View {
-        NavigationView {
+        // `NavigationStack` + value-based navigation (rather than the
+        // deprecated `NavigationView` + `NavigationLink(destination:)`).
+        // Destination-based links inside a `ForEach` get torn down and
+        // popped whenever the parent re-renders; a re-render of the
+        // contracts list (or this view) would otherwise pop a pushed
+        // drill-down — and dismiss any sheet presented from it, e.g.
+        // the document-create flow. Value-based routes survive a
+        // parent re-render.
+        NavigationStack {
             List {
                 contractConfigurationSection
                 contractInfoSection
                 tokensSection
+                groupsSection
                 documentTypesSection
+                documentsSection
                 actionsSection
             }
             .navigationTitle("Contract Details")
             .navigationBarTitleDisplayMode(.inline)
+            .navigationDestination(for: PersistentToken.self) { token in
+                TokenDetailsView(token: token)
+            }
+            .navigationDestination(for: PersistentDocumentType.self) { docType in
+                DocumentTypeDetailsView(documentType: docType)
+            }
+            .navigationDestination(for: PersistentDocument.self) { document in
+                DocumentStorageDetailView(record: document)
+            }
+            .navigationDestination(for: ParsedGroup.self) { group in
+                GroupDetailView(
+                    contractId: contract.id,
+                    position: group.position,
+                    members: group.members,
+                    requiredPower: group.requiredPower
+                )
+            }
+            .navigationDestination(for: OwnerRoute.self) { route in
+                IdentityDetailView(identityId: route.identityId)
+            }
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Done") {
@@ -133,9 +174,7 @@ struct DataContractDetailsView: View {
                     InfoRow(label: "Version:", value: "\(version)")
                 }
 
-                if let ownerId = contract.ownerIdBase58 {
-                    InfoRow(label: "Owner:", value: ownerId, font: .caption, truncate: true)
-                }
+                ownerRow
 
                 InfoRow(label: "JSON Size:", value: ByteCountFormatter.string(fromByteCount: Int64(contract.serializedContract.count), countStyle: .binary))
 
@@ -155,7 +194,7 @@ struct DataContractDetailsView: View {
         if let tokens = contract.tokens, !tokens.isEmpty {
             Section("Tokens (\(tokens.count))") {
                 ForEach(tokens.sorted(by: { $0.position < $1.position }), id: \.id) { token in
-                    NavigationLink(destination: TokenDetailsView(token: token)) {
+                    NavigationLink(value: token) {
                         TokenRowView(token: token)
                     }
                 }
@@ -168,8 +207,77 @@ struct DataContractDetailsView: View {
         if let documentTypes = contract.documentTypes, !documentTypes.isEmpty {
             Section("Document Types (\(documentTypes.count))") {
                 ForEach(documentTypes.sorted(by: { $0.name < $1.name }), id: \.id) { docType in
-                    NavigationLink(destination: DocumentTypeDetailsView(documentType: docType)) {
+                    NavigationLink(value: docType) {
                         DocumentTypeRowView(docType: docType)
+                    }
+                }
+            }
+        }
+    }
+
+    /// Owner row for `contractInfoSection`. Three modes:
+    ///  - `ownerIdentity` is set → tappable navigation link to the
+    ///    identity detail view, showing the identity's
+    ///    `displayName` plus an "Owner" subtitle.
+    ///  - `ownerId` is set but the identity isn't held locally →
+    ///    show the truncated base58 owner id (non-tappable, in the
+    ///    same style the previous implementation used).
+    ///  - Both are nil (system contracts) → omit the row entirely.
+    @ViewBuilder
+    private var ownerRow: some View {
+        if let owner = contract.ownerIdentity {
+            NavigationLink(value: OwnerRoute(identityId: owner.identityId)) {
+                HStack {
+                    Text("Owner:")
+                        .foregroundColor(.secondary)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(owner.displayName)
+                            .font(.body)
+                            .foregroundColor(.blue)
+                        Text("Owner")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+        } else if let ownerId = contract.ownerIdBase58 {
+            InfoRow(label: "Owner:", value: ownerId, font: .caption, truncate: true)
+        }
+    }
+
+    /// Documents *instances* persisted under this contract. Distinct
+    /// from `documentTypesSection`, which lists the contract's
+    /// declared schemas. Hidden when the contract row hasn't
+    /// accumulated any local documents yet.
+    @ViewBuilder
+    private var documentsSection: some View {
+        if !contract.documents.isEmpty {
+            let sortedDocs = contract.documents.sorted(by: { $0.documentId < $1.documentId })
+            Section("Documents (\(contract.documents.count))") {
+                ForEach(sortedDocs, id: \.documentId) { document in
+                    NavigationLink(value: document) {
+                        DocumentInstanceRowView(document: document)
+                    }
+                }
+            }
+        }
+    }
+
+    /// Groups defined on this contract. Populated lazily by
+    /// `DataContractParser.parseDataContract` from the `groups`
+    /// block of the contract JSON. Hidden entirely when the
+    /// contract has no groups (the common case for the cache).
+    @ViewBuilder
+    private var groupsSection: some View {
+        if let parsedGroups = parseGroups(), !parsedGroups.isEmpty {
+            Section("Groups (\(parsedGroups.count))") {
+                ForEach(parsedGroups, id: \.position) { group in
+                    NavigationLink(value: group) {
+                        GroupRowView(
+                            position: group.position,
+                            memberCount: group.members.count,
+                            requiredPower: group.requiredPower
+                        )
                     }
                 }
             }
@@ -179,6 +287,24 @@ struct DataContractDetailsView: View {
     @ViewBuilder
     private var actionsSection: some View {
         Section {
+            // Preview-mode entry point: caller (the contracts search
+            // sheet) supplies an `onSave` closure that runs the
+            // persist pipeline against the *real* model context.
+            // Hidden in saved-contract mode (`onSave == nil`) since
+            // saving is meaningless for an already-persisted row.
+            if let onSave = onSave {
+                Button(action: onSave) {
+                    HStack {
+                        if isSaving {
+                            ProgressView().controlSize(.small)
+                        }
+                        Label("Save to Device", systemImage: "square.and.arrow.down")
+                            .foregroundColor(.blue)
+                    }
+                }
+                .disabled(isSaving)
+            }
+
             Button(action: { showingShareSheet = true }) {
                 Label("Export Contract", systemImage: "square.and.arrow.up")
                     .foregroundColor(.blue)
@@ -194,6 +320,74 @@ struct DataContractDetailsView: View {
     }
 
     // MARK: - Helper Methods
+
+    /// Flat group entry used by `groupsSection` / `GroupDetailView`.
+    /// Decoupled from the on-row `[String: Any]` shape so the
+    /// section view doesn't have to re-parse on every row render.
+    /// `Hashable` so it can drive value-based `.navigationDestination`
+    /// (synthesized — `GroupMember` is already `Hashable`).
+    private struct ParsedGroup: Hashable {
+        let position: Int
+        let requiredPower: Int
+        let members: [GroupMember]
+    }
+
+    /// Value-based navigation route for the owner-identity drill-down.
+    /// A thin wrapper around the owner's `identityId` so the
+    /// `.navigationDestination(for:)` route type is unambiguous (a bare
+    /// `Data` value could collide with any other `Data`-keyed route).
+    private struct OwnerRoute: Hashable {
+        let identityId: Data
+    }
+
+    /// Decode `contract.groups` (`[String: Any]?`) into a sorted
+    /// list of `ParsedGroup` rows. The on-chain shape is:
+    ///   `{ "<position>": { "members": { "<idBase58>": <power> },
+    ///       "requiredPower": <u32> } }`
+    /// Returns nil when the contract has no groups, an empty array
+    /// when the JSON existed but contained no decodable entries.
+    private func parseGroups() -> [ParsedGroup]? {
+        guard let raw = contract.groups, !raw.isEmpty else { return nil }
+        var out: [ParsedGroup] = []
+        for (positionKey, value) in raw {
+            guard let position = Int(positionKey),
+                  let groupDict = value as? [String: Any] else { continue }
+            let requiredPowerRaw = groupDict["requiredPower"]
+            let requiredPower: Int = {
+                if let i = requiredPowerRaw as? Int { return i }
+                if let n = requiredPowerRaw as? NSNumber { return n.intValue }
+                if let s = requiredPowerRaw as? String, let i = Int(s) { return i }
+                return 0
+            }()
+
+            var members: [GroupMember] = []
+            if let memberDict = groupDict["members"] as? [String: Any] {
+                for (memberId, powerValue) in memberDict {
+                    let power: Int = {
+                        if let i = powerValue as? Int { return i }
+                        if let n = powerValue as? NSNumber { return n.intValue }
+                        if let s = powerValue as? String, let i = Int(s) { return i }
+                        return 0
+                    }()
+                    members.append(GroupMember(memberIdBase58: memberId, power: power))
+                }
+            }
+            out.append(
+                ParsedGroup(
+                    position: position,
+                    requiredPower: requiredPower,
+                    members: members
+                )
+            )
+        }
+        // Position 0 first, then ascending. Bad position keys land
+        // at the bottom by construction (Int.max via `parseGroups`
+        // skip-on-fail above filters those out, but the sort key
+        // here keeps the contract well-defined for any future
+        // change).
+        out.sort(by: { $0.position < $1.position })
+        return out
+    }
 
     private func copyContractHex() {
         guard let hexString = contract.binarySerializationHex else { return }
@@ -245,9 +439,9 @@ struct InfoRow: View {
     init(label: String, value: Date, style: Text.DateStyle) {
         self.label = label
         if style == .date {
-            self.value = value.formatted(date: .abbreviated, time: .omitted)
+            self.value = AppDate.formatted(value, dateStyle: .abbreviated, timeStyle: .omitted)
         } else {
-            self.value = value.formatted(.relative(presentation: .named))
+            self.value = AppDate.relative(value)
         }
         self.font = .body
         self.truncate = false
@@ -386,6 +580,62 @@ struct DocumentTypeRowView: View {
     }
 }
 
+/// Row for one instance of `PersistentDocument` within a contract's
+/// detail Documents section. Mirrors the look of `DocumentTypeRowView`
+/// but works on a *document instance* rather than a document type
+/// definition. Title falls back through `displayTitle` (the
+/// document's own preferred-field heuristic) so application data
+/// surfaces sensibly even when there's no `title`/`name` field.
+struct DocumentInstanceRowView: View {
+    let document: PersistentDocument
+
+    private var truncatedId: String {
+        let s = document.idBase58
+        guard s.count > 14 else { return s }
+        return "\(s.prefix(8))..\(s.suffix(4))"
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(document.displayTitle)
+                .font(.headline)
+                .lineLimit(1)
+                .truncationMode(.tail)
+
+            Text(document.documentType)
+                .font(.caption)
+                .foregroundColor(.secondary)
+
+            Text(truncatedId)
+                .font(.caption2)
+                .foregroundColor(.secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+        }
+        .padding(.vertical, 4)
+    }
+}
+
+/// Row for a single group entry in the contract's Groups section.
+/// Compact: just the position and a one-line summary. The detailed
+/// member list lives in `GroupDetailView`.
+struct GroupRowView: View {
+    let position: Int
+    let memberCount: Int
+    let requiredPower: Int
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Group \(position)")
+                .font(.headline)
+            Text("\(memberCount) members · required power \(requiredPower)")
+                .font(.caption)
+                .foregroundColor(.secondary)
+        }
+        .padding(.vertical, 4)
+    }
+}
+
 struct ShareSheet: UIViewControllerRepresentable {
     let items: [Any]
 
@@ -401,7 +651,8 @@ struct ShareSheet: UIViewControllerRepresentable {
         contract: PersistentDataContract(
             id: Data(),
             name: "Sample Contract",
-            serializedContract: Data()
+            serializedContract: Data(),
+            network: .testnet
         )
     )
 }

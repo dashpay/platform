@@ -90,9 +90,9 @@ impl DocumentsBatchTransitionAccessorsV0 for BatchTransitionV0 {
 
 impl DocumentsBatchTransitionMethodsV0 for BatchTransitionV0 {
     #[cfg(feature = "state-transition-signing")]
-    fn new_document_creation_transition_from_document<S: Signer<IdentityPublicKey>>(
+    async fn new_document_creation_transition_from_document<S: Signer<IdentityPublicKey>>(
         document: Document,
-        document_type: DocumentTypeRef,
+        document_type: DocumentTypeRef<'_>,
         entropy: [u8; 32],
         identity_public_key: &IdentityPublicKey,
         identity_contract_nonce: IdentityNonce,
@@ -124,19 +124,21 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransitionV0 {
         .into();
         let mut state_transition: StateTransition = documents_batch_transition.into();
         let required_security_level = document_type.security_level_requirement();
-        state_transition.sign_external_with_options(
-            identity_public_key,
-            signer,
-            Some(|_, _| Ok(required_security_level)),
-            resolved_options.signing_options,
-        )?;
+        state_transition
+            .sign_external_with_options(
+                identity_public_key,
+                signer,
+                Some(|_, _| Ok(required_security_level)),
+                resolved_options.signing_options,
+            )
+            .await?;
         Ok(state_transition)
     }
 
     #[cfg(feature = "state-transition-signing")]
-    fn new_document_replacement_transition_from_document<S: Signer<IdentityPublicKey>>(
+    async fn new_document_replacement_transition_from_document<S: Signer<IdentityPublicKey>>(
         document: Document,
-        document_type: DocumentTypeRef,
+        document_type: DocumentTypeRef<'_>,
         identity_public_key: &IdentityPublicKey,
         identity_contract_nonce: IdentityNonce,
         user_fee_increase: UserFeeIncrease,
@@ -166,19 +168,21 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransitionV0 {
         .into();
         let mut state_transition: StateTransition = documents_batch_transition.into();
         let required_security_level = document_type.security_level_requirement();
-        state_transition.sign_external_with_options(
-            identity_public_key,
-            signer,
-            Some(|_, _| Ok(required_security_level)),
-            resolved_options.signing_options,
-        )?;
+        state_transition
+            .sign_external_with_options(
+                identity_public_key,
+                signer,
+                Some(|_, _| Ok(required_security_level)),
+                resolved_options.signing_options,
+            )
+            .await?;
         Ok(state_transition)
     }
 
     #[cfg(feature = "state-transition-signing")]
-    fn new_document_transfer_transition_from_document<S: Signer<IdentityPublicKey>>(
+    async fn new_document_transfer_transition_from_document<S: Signer<IdentityPublicKey>>(
         document: Document,
-        document_type: DocumentTypeRef,
+        document_type: DocumentTypeRef<'_>,
         recipient_owner_id: Identifier,
         identity_public_key: &IdentityPublicKey,
         identity_contract_nonce: IdentityNonce,
@@ -210,19 +214,21 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransitionV0 {
         .into();
         let mut state_transition: StateTransition = documents_batch_transition.into();
         let required_security_level = document_type.security_level_requirement();
-        state_transition.sign_external_with_options(
-            identity_public_key,
-            signer,
-            Some(|_, _| Ok(required_security_level)),
-            resolved_options.signing_options,
-        )?;
+        state_transition
+            .sign_external_with_options(
+                identity_public_key,
+                signer,
+                Some(|_, _| Ok(required_security_level)),
+                resolved_options.signing_options,
+            )
+            .await?;
         Ok(state_transition)
     }
 
     #[cfg(feature = "state-transition-signing")]
-    fn new_document_deletion_transition_from_document<S: Signer<IdentityPublicKey>>(
+    async fn new_document_deletion_transition_from_document<S: Signer<IdentityPublicKey>>(
         document: Document,
-        document_type: DocumentTypeRef,
+        document_type: DocumentTypeRef<'_>,
         identity_public_key: &IdentityPublicKey,
         identity_contract_nonce: IdentityNonce,
         user_fee_increase: UserFeeIncrease,
@@ -252,19 +258,21 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransitionV0 {
         .into();
         let mut state_transition: StateTransition = documents_batch_transition.into();
         let required_security_level = document_type.security_level_requirement();
-        state_transition.sign_external_with_options(
-            identity_public_key,
-            signer,
-            Some(|_, _| Ok(required_security_level)),
-            resolved_options.signing_options,
-        )?;
+        state_transition
+            .sign_external_with_options(
+                identity_public_key,
+                signer,
+                Some(|_, _| Ok(required_security_level)),
+                resolved_options.signing_options,
+            )
+            .await?;
         Ok(state_transition)
     }
 
     #[cfg(feature = "state-transition-signing")]
-    fn new_document_update_price_transition_from_document<S: Signer<IdentityPublicKey>>(
+    async fn new_document_update_price_transition_from_document<S: Signer<IdentityPublicKey>>(
         document: Document,
-        document_type: DocumentTypeRef,
+        document_type: DocumentTypeRef<'_>,
         price: Credits,
         identity_public_key: &IdentityPublicKey,
         identity_contract_nonce: IdentityNonce,
@@ -296,19 +304,21 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransitionV0 {
         .into();
         let mut state_transition: StateTransition = documents_batch_transition.into();
         let required_security_level = document_type.security_level_requirement();
-        state_transition.sign_external_with_options(
-            identity_public_key,
-            signer,
-            Some(|_, _| Ok(required_security_level)),
-            resolved_options.signing_options,
-        )?;
+        state_transition
+            .sign_external_with_options(
+                identity_public_key,
+                signer,
+                Some(|_, _| Ok(required_security_level)),
+                resolved_options.signing_options,
+            )
+            .await?;
         Ok(state_transition)
     }
 
     #[cfg(feature = "state-transition-signing")]
-    fn new_document_purchase_transition_from_document<S: Signer<IdentityPublicKey>>(
+    async fn new_document_purchase_transition_from_document<S: Signer<IdentityPublicKey>>(
         document: Document,
-        document_type: DocumentTypeRef,
+        document_type: DocumentTypeRef<'_>,
         new_owner_id: Identifier,
         price: Credits,
         identity_public_key: &IdentityPublicKey,
@@ -340,12 +350,14 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransitionV0 {
         .into();
         let mut state_transition: StateTransition = documents_batch_transition.into();
         let required_security_level = document_type.security_level_requirement();
-        state_transition.sign_external_with_options(
-            identity_public_key,
-            signer,
-            Some(|_, _| Ok(required_security_level)),
-            resolved_options.signing_options,
-        )?;
+        state_transition
+            .sign_external_with_options(
+                identity_public_key,
+                signer,
+                Some(|_, _| Ok(required_security_level)),
+                resolved_options.signing_options,
+            )
+            .await?;
         Ok(state_transition)
     }
 

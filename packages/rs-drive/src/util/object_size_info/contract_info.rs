@@ -241,3 +241,87 @@ impl<'a> DocumentTypeInfo<'a> {
         }
     }
 }
+
+#[cfg(all(feature = "server", test))]
+mod tests {
+    use super::*;
+    use dpp::tests::fixtures::get_data_contract_fixture;
+    use dpp::version::PlatformVersion;
+
+    fn sample_contract() -> DataContract {
+        let platform_version = PlatformVersion::latest();
+        get_data_contract_fixture(None, 0, platform_version.protocol_version).data_contract_owned()
+    }
+
+    #[test]
+    fn owned_resolved_info_id_and_as_ref() {
+        let contract = sample_contract();
+        let expected_id = contract.id();
+        let owned = DataContractOwnedResolvedInfo::OwnedDataContract(contract);
+        assert_eq!(owned.id(), expected_id);
+        let as_ref: &DataContract = owned.as_ref();
+        assert_eq!(as_ref.id(), expected_id);
+    }
+
+    #[test]
+    fn owned_resolved_info_into_owned_returns_inner() {
+        let contract = sample_contract();
+        let expected_id = contract.id();
+        let owned = DataContractOwnedResolvedInfo::OwnedDataContract(contract);
+        let unwrapped = owned.into_owned();
+        assert_eq!(unwrapped.id(), expected_id);
+    }
+
+    #[test]
+    fn resolved_info_borrowed_and_owned() {
+        let contract = sample_contract();
+        let id = contract.id();
+
+        let borrowed: DataContractResolvedInfo =
+            DataContractResolvedInfo::BorrowedDataContract(&contract);
+        assert_eq!(borrowed.id(), id);
+        let as_ref: &DataContract = borrowed.as_ref();
+        assert_eq!(as_ref.id(), id);
+
+        let owned_wrapper = DataContractResolvedInfo::OwnedDataContract(contract);
+        assert_eq!(owned_wrapper.id(), id);
+        let as_ref2: &DataContract = owned_wrapper.as_ref();
+        assert_eq!(as_ref2.id(), id);
+    }
+
+    #[test]
+    fn resolved_info_arc_contract() {
+        use std::sync::Arc;
+        let contract = sample_contract();
+        let id = contract.id();
+        let arc = Arc::new(contract);
+        let info: DataContractResolvedInfo = DataContractResolvedInfo::ArcDataContract(arc);
+        assert_eq!(info.id(), id);
+        let as_ref: &DataContract = info.as_ref();
+        assert_eq!(as_ref.id(), id);
+    }
+
+    #[test]
+    fn from_owned_resolved_info_produces_borrowed_variant() {
+        let contract = sample_contract();
+        let id = contract.id();
+        let owned = DataContractOwnedResolvedInfo::OwnedDataContract(contract);
+        let borrowed: DataContractResolvedInfo = (&owned).into();
+        match borrowed {
+            DataContractResolvedInfo::BorrowedDataContract(b) => {
+                assert_eq!(b.id(), id);
+            }
+            _ => panic!("expected BorrowedDataContract"),
+        }
+    }
+
+    #[test]
+    fn document_type_info_resolve_errors_for_missing_type() {
+        let contract = sample_contract();
+        let info = DocumentTypeInfo::DocumentTypeName("missing".to_string());
+        assert!(info.resolve(&contract).is_err());
+
+        let info = DocumentTypeInfo::DocumentTypeNameAsStr("nope_at_all");
+        assert!(info.resolve(&contract).is_err());
+    }
+}

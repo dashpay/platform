@@ -6,6 +6,7 @@ use dpp::state_transition::state_transitions::shielded::shield_from_asset_lock_t
 
 impl ShieldFromAssetLockTransitionActionV0 {
     /// Transforms the shield from asset lock transition into an action
+    #[allow(clippy::too_many_arguments)]
     pub fn try_from_transition(
         value: &ShieldFromAssetLockTransitionV0,
         asset_lock_outpoint: [u8; 36],
@@ -13,6 +14,7 @@ impl ShieldFromAssetLockTransitionActionV0 {
         signable_bytes_hasher: [u8; 32],
         shield_amount: Credits,
         current_total_balance: Credits,
+        surplus_amount: Credits,
     ) -> ConsensusValidationResult<Self> {
         let notes: Vec<ShieldedActionNote> =
             value.actions.iter().map(ShieldedActionNote::from).collect();
@@ -24,6 +26,8 @@ impl ShieldFromAssetLockTransitionActionV0 {
             shield_amount,
             notes,
             current_total_balance,
+            surplus_output: value.surplus_output,
+            surplus_amount,
         })
     }
 }

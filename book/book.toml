@@ -14,3 +14,8 @@ preferred-dark-theme = "navy"
 git-repository-url = "https://github.com/dashpay/platform"
 additional-js = ["mermaid.min.js", "mermaid-init.js"]
 
+[preprocessor]
+
+[preprocessor.mermaid]
+command = "mdbook-mermaid"
+

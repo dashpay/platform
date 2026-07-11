@@ -1332,4 +1332,113 @@ mod tests {
             "expected both documents to be present after batch insertion"
         );
     }
+
+    // ---------- Error-path tests (added for coverage) ----------
+
+    #[test]
+    fn test_add_document_with_nonexistent_contract_id_returns_data_contract_not_found() {
+        // `add_document` takes a contract_id and must resolve it internally.
+        // Supplying a random id that does not exist should fail with
+        // DocumentError::DataContractNotFound (instead of, e.g., a panic or
+        // lower-level grovedb error).
+        use crate::error::document::DocumentError;
+
+        let (drive, contract) = setup_dashpay("add-doc-nonexistent-contract", true);
+
+        let platform_version = PlatformVersion::latest();
+
+        let document_type = contract
+            .document_type_for_name("profile")
+            .expect("profile document exists");
+
+        let random_owner_id = random::<[u8; 32]>();
+
+        let document = json_document_to_document(
+            "tests/supporting_files/contract/dashpay/profile0.json",
+            Some(random_owner_id.into()),
+            document_type,
+            platform_version,
+        )
+        .expect("expected to get document");
+
+        let nonexistent_contract_id: [u8; 32] = random();
+
+        let err = drive
+            .add_document(
+                OwnedDocumentInfo {
+                    document_info: DocumentRefInfo((
+                        &document,
+                        StorageFlags::optional_default_as_cow(),
+                    )),
+                    owner_id: Some(random_owner_id),
+                },
+                nonexistent_contract_id.into(),
+                "profile",
+                false,
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect_err("expected add_document with nonexistent contract id to fail");
+
+        assert!(
+            matches!(err, Error::Document(DocumentError::DataContractNotFound)),
+            "expected DataContractNotFound, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn test_add_document_with_invalid_document_type_name_returns_error() {
+        // `add_document` should fail when given a document type name that does
+        // not exist in the contract (contract.document_type_for_name(...) ?).
+        let (drive, contract) = setup_dashpay("add-doc-bad-type", true);
+
+        let platform_version = PlatformVersion::latest();
+
+        let document_type = contract
+            .document_type_for_name("profile")
+            .expect("profile document exists");
+
+        let random_owner_id = random::<[u8; 32]>();
+
+        let document = json_document_to_document(
+            "tests/supporting_files/contract/dashpay/profile0.json",
+            Some(random_owner_id.into()),
+            document_type,
+            platform_version,
+        )
+        .expect("expected to get document");
+
+        let err = drive
+            .add_document(
+                OwnedDocumentInfo {
+                    document_info: DocumentRefInfo((
+                        &document,
+                        StorageFlags::optional_default_as_cow(),
+                    )),
+                    owner_id: Some(random_owner_id),
+                },
+                contract.id(),
+                "not_a_real_document_type",
+                false,
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect_err("expected add_document with bad document type to fail");
+
+        // The error originates from DataContract::document_type_for_name, which
+        // maps through the `?` into an Error. We don't match a specific variant
+        // because that depends on dpp's mapping, but we verify it's not a
+        // contract-not-found error (which would be the other likely branch).
+        assert!(
+            !matches!(
+                err,
+                Error::Document(crate::error::document::DocumentError::DataContractNotFound)
+            ),
+            "expected a document-type error, not DataContractNotFound: {err:?}"
+        );
+    }
 }

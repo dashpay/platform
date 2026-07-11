@@ -23,7 +23,10 @@ pub struct ContextProviderHandle {
 }
 
 /// Internal wrapper for context provider
-pub(crate) struct ContextProviderWrapper {
+/// Adapter wrapping any [`ContextProvider`] as an opaque
+/// [`ContextProviderHandle`] for the SDK. Public so sibling FFI crates
+/// (e.g. `platform-wallet-ffi`) can install a native Rust provider.
+pub struct ContextProviderWrapper {
     provider: Arc<dyn ContextProvider>,
 }
 

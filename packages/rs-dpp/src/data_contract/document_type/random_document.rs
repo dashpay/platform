@@ -5,7 +5,8 @@ use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::methods::DocumentTypeV0Methods;
 use crate::data_contract::document_type::{DocumentType, DocumentTypeRef};
 use crate::document::property_names::{
-    CREATED_AT, CREATED_AT_BLOCK_HEIGHT, CREATED_AT_CORE_BLOCK_HEIGHT, UPDATED_AT,
+    CREATED_AT, CREATED_AT_BLOCK_HEIGHT, CREATED_AT_CORE_BLOCK_HEIGHT, TRANSFERRED_AT,
+    TRANSFERRED_AT_BLOCK_HEIGHT, TRANSFERRED_AT_CORE_BLOCK_HEIGHT, UPDATED_AT,
     UPDATED_AT_BLOCK_HEIGHT, UPDATED_AT_CORE_BLOCK_HEIGHT,
 };
 use crate::document::{Document, DocumentV0, INITIAL_REVISION};
@@ -329,6 +330,46 @@ pub trait CreateRandomDocument: DocumentTypeV0Getters + DocumentTypeV0Methods {
             None
         };
 
+        let transferred_at = if self.required_fields().contains(TRANSFERRED_AT) {
+            if time_ms.is_some() {
+                time_ms
+            } else if created_at.is_some() {
+                created_at
+            } else {
+                let now = SystemTime::now();
+                let duration_since_epoch =
+                    now.duration_since(UNIX_EPOCH).expect("Time went backwards");
+                let milliseconds = duration_since_epoch.as_millis() as u64;
+                Some(milliseconds)
+            }
+        } else {
+            None
+        };
+
+        let transferred_at_block_height =
+            if self.required_fields().contains(TRANSFERRED_AT_BLOCK_HEIGHT) {
+                if block_height.is_some() {
+                    block_height
+                } else {
+                    Some(0)
+                }
+            } else {
+                None
+            };
+
+        let transferred_at_core_block_height = if self
+            .required_fields()
+            .contains(TRANSFERRED_AT_CORE_BLOCK_HEIGHT)
+        {
+            if core_block_height.is_some() {
+                core_block_height
+            } else {
+                Some(0)
+            }
+        } else {
+            None
+        };
+
         match platform_version
             .dpp
             .document_versions
@@ -341,13 +382,13 @@ pub trait CreateRandomDocument: DocumentTypeV0Getters + DocumentTypeV0Methods {
                 revision,
                 created_at,
                 updated_at,
-                transferred_at: None,
+                transferred_at,
                 created_at_block_height,
                 updated_at_block_height,
-                transferred_at_block_height: None,
+                transferred_at_block_height,
                 created_at_core_block_height,
                 updated_at_core_block_height,
-                transferred_at_core_block_height: None,
+                transferred_at_core_block_height,
                 creator_id: None,
             }
             .into()),
@@ -424,3 +465,124 @@ pub trait CreateRandomDocument: DocumentTypeV0Getters + DocumentTypeV0Methods {
 impl CreateRandomDocument for DocumentType {}
 
 impl CreateRandomDocument for DocumentTypeRef<'_> {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::data_contract::accessors::v0::DataContractV0Getters;
+    use crate::document::DocumentV0Getters;
+    use crate::system_data_contracts::{load_system_data_contract, SystemDataContract};
+
+    /// Regression test for a bug where `random_document_with_params`
+    /// unconditionally set `transferred_at` / `transferred_at_block_height`
+    /// / `transferred_at_core_block_height` to `None`, even when the
+    /// document type listed those fields in `required_fields`. Callers then
+    /// hit `MissingRequiredKey("transferred at field is not present")` on
+    /// later serialize.
+    ///
+    /// DPNS `domain` lists `$transferredAt` in its required fields, so the
+    /// generated document's `transferred_at` must be `Some(_)`.
+    #[test]
+    fn random_document_populates_transferred_at_when_required() {
+        let platform_version = PlatformVersion::latest();
+        let dpns = load_system_data_contract(SystemDataContract::DPNS, platform_version)
+            .expect("load DPNS");
+        let domain = dpns
+            .document_type_for_name("domain")
+            .expect("domain document type");
+
+        assert!(
+            domain
+                .required_fields()
+                .contains(crate::document::property_names::TRANSFERRED_AT),
+            "precondition: DPNS domain requires $transferredAt"
+        );
+
+        let mut rng = StdRng::seed_from_u64(42);
+        let doc = domain
+            .random_document_with_params(
+                Identifier::random_with_rng(&mut rng),
+                Bytes32::random_with_rng(&mut rng),
+                Some(1_700_000_000_000),
+                Some(10),
+                Some(1),
+                DocumentFieldFillType::FillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+                &mut rng,
+                platform_version,
+            )
+            .expect("generate random DPNS domain");
+
+        assert_eq!(
+            doc.transferred_at(),
+            Some(1_700_000_000_000),
+            "transferred_at should be populated from time_ms when required"
+        );
+    }
+
+    /// When `$transferredAt` is NOT in the required fields, the generated
+    /// document must keep `transferred_at` as `None`. DPNS `preorder` has
+    /// no `$transferredAt*` requirements, so all three must be `None`.
+    #[test]
+    fn random_document_leaves_transferred_at_none_when_not_required() {
+        let platform_version = PlatformVersion::latest();
+        let dpns = load_system_data_contract(SystemDataContract::DPNS, platform_version)
+            .expect("load DPNS");
+        let preorder = dpns
+            .document_type_for_name("preorder")
+            .expect("preorder document type");
+
+        let mut rng = StdRng::seed_from_u64(7);
+        let doc = preorder
+            .random_document_with_params(
+                Identifier::random_with_rng(&mut rng),
+                Bytes32::random_with_rng(&mut rng),
+                Some(1_700_000_000_000),
+                Some(10),
+                Some(1),
+                DocumentFieldFillType::FillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+                &mut rng,
+                platform_version,
+            )
+            .expect("generate random DPNS preorder");
+
+        assert_eq!(doc.transferred_at(), None);
+        assert_eq!(doc.transferred_at_block_height(), None);
+        assert_eq!(doc.transferred_at_core_block_height(), None);
+    }
+
+    /// When `time_ms` / `block_height` / `core_block_height` are not
+    /// provided but the fields are required, the function should fall
+    /// back to `created_at` for `transferred_at`, and `Some(0)` for the
+    /// block-height fields — mirroring the existing CREATED_AT behavior.
+    #[test]
+    fn transferred_at_falls_back_to_created_at_when_no_time_provided() {
+        let platform_version = PlatformVersion::latest();
+        let dpns = load_system_data_contract(SystemDataContract::DPNS, platform_version)
+            .expect("load DPNS");
+        let domain = dpns
+            .document_type_for_name("domain")
+            .expect("domain document type");
+
+        let mut rng = StdRng::seed_from_u64(13);
+        let doc = domain
+            .random_document_with_params(
+                Identifier::random_with_rng(&mut rng),
+                Bytes32::random_with_rng(&mut rng),
+                None,
+                None,
+                None,
+                DocumentFieldFillType::FillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+                &mut rng,
+                platform_version,
+            )
+            .expect("generate random DPNS domain");
+
+        // When time_ms is None and $createdAt is also required (DPNS
+        // domain requires both), transferred_at should equal created_at.
+        assert!(doc.created_at().is_some());
+        assert_eq!(doc.transferred_at(), doc.created_at());
+    }
+}

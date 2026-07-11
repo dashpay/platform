@@ -6,7 +6,7 @@ The `platform.gateway` section configures the Dash Platform Gateway, which serve
 
 | Option | Description | Default | Example |
 |--------|-------------|---------|---------|
-| `platform.gateway.docker.image` | Docker image for Gateway | `dashpay/envoy:1.30.2-impr.1` | `dashpay/envoy:latest` |
+| `platform.gateway.docker.image` | Docker image for Gateway | `dashpay/envoy:1.35.11-impr.1` | `dashpay/envoy:latest` |
 
 ## Listeners
 
@@ -159,6 +159,7 @@ The rate limiter protects the Platform from excessive requests:
 | `platform.gateway.rateLimiter.unit` | Time unit for rate limiting | `minute` | `hour` |
 | `platform.gateway.rateLimiter.whitelist` | IPs exempt from rate limiting | `[]` | `["192.168.1.1"]` |
 | `platform.gateway.rateLimiter.blacklist` | IPs blocked from all requests | `[]` | `["10.0.0.1"]` |
+| `platform.gateway.rateLimiter.responseHeaders.enabled` | Emit `RateLimit-Limit`, `RateLimit-Remaining`, and `RateLimit-Reset` response headers. `rs-dapi-client` reads the Reset header to apply a precise ban window instead of the exponential health-ban ladder. Disable only for privacy reasons. | `true` | `false` |
 
 Available time units:
 - `second`: Per-second rate limiting

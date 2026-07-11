@@ -280,3 +280,234 @@ impl Drive {
         Ok(batch_operations)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::util::storage_flags::StorageFlags;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use dpp::block::block_info::BlockInfo;
+    use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
+    use dpp::data_contract::accessors::v1::DataContractV1Setters;
+    use dpp::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
+    use dpp::data_contract::associated_token::token_configuration::TokenConfiguration;
+    use dpp::data_contract::config::v0::DataContractConfigSettersV0;
+    use dpp::data_contract::group::v0::GroupV0;
+    use dpp::data_contract::group::Group;
+    use dpp::prelude::Identifier;
+    use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
+    use dpp::tests::fixtures::get_dashpay_contract_fixture;
+    use dpp::version::PlatformVersion;
+    use std::collections::BTreeMap;
+
+    /// Exercises `update_contract_operations_v1` when the updated contract
+    /// gains tokens that weren't in the original. This covers the loop that
+    /// calls `create_token_trees_operations` for each token.
+    /// PR #3516 inserts contracts with tokens but does not exercise an
+    /// UPDATE that adds tokens.
+    #[test]
+    fn test_update_contract_v1_adds_tokens_creates_token_trees() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        // Original: no tokens.
+        let mut contract = get_dashpay_contract_fixture(None, 0, platform_version.protocol_version)
+            .data_contract_owned();
+        contract.config_mut().set_readonly(false);
+
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("insert initial contract without tokens");
+
+        // Updated: add a token configuration. The update path exercises the
+        // `create_token_trees_operations` call in update_contract_operations_v1.
+        let token_config = TokenConfiguration::V0(
+            TokenConfigurationV0::default_most_restrictive().with_base_supply(0),
+        );
+        contract.set_tokens(BTreeMap::from([(0, token_config)]));
+        contract.increment_version();
+
+        drive
+            .update_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+                None,
+            )
+            .expect("update adding tokens should succeed");
+    }
+
+    /// Exercises `update_contract_operations_v1` where the updated contract
+    /// gains groups that weren't in the original. This covers the
+    /// `if !contract.groups().is_empty()` true branch inside
+    /// `update_contract_operations_v1`, invoking `add_new_groups_operations`.
+    #[test]
+    fn test_update_contract_v1_adds_groups() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let mut contract = get_dashpay_contract_fixture(None, 0, platform_version.protocol_version)
+            .data_contract_owned();
+
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("insert");
+
+        // Add a group.
+        let member = Identifier::random();
+        let group = Group::V0(GroupV0 {
+            members: BTreeMap::from([(member, 1)]),
+            required_power: 1,
+        });
+        contract.set_groups(BTreeMap::from([(0, group)]));
+        contract.increment_version();
+
+        drive
+            .update_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+                None,
+            )
+            .expect("update adding groups should succeed");
+    }
+
+    /// Exercises `update_contract_operations_v1`'s keyword-update branch:
+    /// update a contract that starts with some keywords to a new set of
+    /// keywords (different set), routed through the full `update_contract_v1`
+    /// path rather than the dedicated `update_contract_keywords` API.
+    /// PR #3516 covers the dedicated API but not the embedded path invoked
+    /// via `update_contract`.
+    #[test]
+    fn test_update_contract_v1_keyword_delta_via_update_contract() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        // Insert the keyword_search system contract first (required because
+        // update_contract_v1 calls update_contract_keywords_operations).
+        let keyword_search =
+            load_system_data_contract(SystemDataContract::KeywordSearch, platform_version)
+                .expect("load keyword_search");
+        drive
+            .apply_contract(
+                &keyword_search,
+                BlockInfo::default(),
+                true,
+                None,
+                None,
+                platform_version,
+            )
+            .expect("apply keyword_search");
+
+        let mut contract = get_dashpay_contract_fixture(None, 0, platform_version.protocol_version)
+            .data_contract_owned();
+        contract.set_keywords(vec!["initial_a".to_string(), "initial_b".to_string()]);
+
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("initial insert with keywords");
+
+        // Now change keywords entirely.
+        contract.set_keywords(vec!["new_x".to_string(), "new_y".to_string()]);
+        contract.increment_version();
+
+        drive
+            .update_contract(
+                &contract,
+                BlockInfo {
+                    time_ms: 2000,
+                    height: 10,
+                    core_height: 5,
+                    epoch: Default::default(),
+                },
+                true,
+                None,
+                platform_version,
+                None,
+            )
+            .expect("update keyword delta via update_contract should succeed");
+    }
+
+    /// Exercises `update_contract_operations_v1`'s description-update branch:
+    /// changing contract description routes through
+    /// `update_contract_description_operations`. Covers the `if let Some(description)`
+    /// true branch specifically from the v1 update path (not the dedicated update
+    /// description API).
+    #[test]
+    fn test_update_contract_v1_description_via_update_contract() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let keyword_search =
+            load_system_data_contract(SystemDataContract::KeywordSearch, platform_version)
+                .expect("load keyword_search");
+        drive
+            .apply_contract(
+                &keyword_search,
+                BlockInfo::default(),
+                true,
+                None,
+                None,
+                platform_version,
+            )
+            .expect("apply keyword_search");
+
+        let mut contract = get_dashpay_contract_fixture(None, 0, platform_version.protocol_version)
+            .data_contract_owned();
+        contract.set_description(Some("initial description".to_string()));
+
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("initial insert with description");
+
+        contract.set_description(Some("updated description text".to_string()));
+        contract.increment_version();
+
+        drive
+            .update_contract(
+                &contract,
+                BlockInfo {
+                    time_ms: 3000,
+                    height: 20,
+                    core_height: 7,
+                    epoch: Default::default(),
+                },
+                true,
+                None,
+                platform_version,
+                None,
+            )
+            .expect("update description via update_contract should succeed");
+    }
+}

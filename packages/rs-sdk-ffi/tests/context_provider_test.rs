@@ -4,7 +4,7 @@ mod tests {
         context_provider::CoreSDKHandle, dash_sdk_context_provider_destroy,
         dash_sdk_context_provider_from_callbacks, dash_sdk_create_extended,
         dash_sdk_register_context_callbacks, CallbackResult, ContextProviderCallbacks,
-        DashSDKConfig, DashSDKConfigExtended, DashSDKNetwork,
+        DashSDKConfig, DashSDKConfigExtended, FFINetwork,
     };
     use std::ffi::CString;
     use std::ptr;
@@ -80,11 +80,13 @@ mod tests {
             // Create base config
             let dapi_addresses = CString::new("https://testnet.dash.org:3000").unwrap();
             let base_config = DashSDKConfig {
-                network: DashSDKNetwork::SDKTestnet,
+                network: FFINetwork::Testnet,
                 dapi_addresses: dapi_addresses.as_ptr(),
                 skip_asset_lock_proof_verification: false,
                 request_retry_count: 3,
                 request_timeout_ms: 30000,
+                quorum_url: ptr::null(),
+                platform_version: 0,
             };
 
             // Create extended config

@@ -1,40 +1,39 @@
-import { MIN_BLOCKS_BEFORE_DKG } from '../../constants.js';
 import wait from '../../util/wait.js';
+import isMasternodeSafeToStopDuringDkg, {
+  shouldInspectDkgStatusForSafeStop,
+} from './isMasternodeSafeToStopDuringDkg.js';
+
+const CHECK_INTERVAL_MS = 10000;
 
 /**
+ * Poll Core until the masternode is safe to stop without disrupting a
+ * DKG session. See {@link isMasternodeSafeToStopDuringDkg} for the
+ * safety rule. The only acceptable exit is reaching a safe state, so
+ * that `--safe` cannot silently fall back to an unsafe restart.
+ *
  * @param {RpcClient} rpcClient
  * @return {Promise<void>}
  */
 export default async function waitForDKGWindowPass(rpcClient) {
-  let startBlockCount;
-  let startNextDkg;
+  for (;;) {
+    const { result: dkgInfo } = await rpcClient.quorum('dkginfo');
 
-  let isInDKG = true;
-
-  do {
-    const [currentBlockCount, currentDkgInfo] = await Promise
-      .all([rpcClient.getBlockCount(), rpcClient.quorum('dkginfo')]);
-
-    const { result: blockCount } = currentBlockCount;
-    const { result: dkgInfo } = currentDkgInfo;
-
-    const { next_dkg: nextDkg } = dkgInfo;
-
-    if (!startBlockCount) {
-      startBlockCount = blockCount;
+    let dkgStatus;
+    let currentHeight;
+    if (shouldInspectDkgStatusForSafeStop(dkgInfo)) {
+      [
+        { result: dkgStatus },
+        { result: currentHeight },
+      ] = await Promise.all([
+        rpcClient.quorum('dkgstatus'),
+        rpcClient.getBlockCount(),
+      ]);
     }
 
-    if (!startNextDkg) {
-      startNextDkg = nextDkg;
+    if (isMasternodeSafeToStopDuringDkg(dkgInfo, dkgStatus, currentHeight)) {
+      return;
     }
 
-    isInDKG = nextDkg <= MIN_BLOCKS_BEFORE_DKG;
-
-    if (isInDKG && blockCount > startBlockCount + startNextDkg + 1) {
-      throw new Error(`waitForDKGWindowPass deadline exceeded: dkg did not happen for ${startBlockCount + nextDkg + 1} ${startNextDkg + 1} blocks`);
-    }
-
-    await wait(10000);
+    await wait(CHECK_INTERVAL_MS);
   }
-  while (isInDKG);
 }

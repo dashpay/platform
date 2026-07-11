@@ -1453,8 +1453,13 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                 | StateTransitionAction::ShieldedTransferAction(_)
                 | StateTransitionAction::UnshieldAction(_)
                 | StateTransitionAction::ShieldFromAssetLockAction(_)
-                | StateTransitionAction::ShieldedWithdrawalAction(_) => {
-                    // Shielded transitions don't support proof verification yet
+                | StateTransitionAction::ShieldedWithdrawalAction(_)
+                | StateTransitionAction::IdentityCreateFromShieldedPoolAction(_) => {
+                    // The strategy harness does not generate shielded transitions (no shielded
+                    // `OperationType`), so their proof-verification roundtrip isn't exercised here.
+                    // IdentityCreateFromShieldedPool's strict prove/verify is covered by the unit
+                    // test in rs-drive's verify module; its credit conservation is pinned by the
+                    // converter conservation unit test (no AddToSystemCredits / RHS-internal).
                 }
             }
         } else {

@@ -1,6 +1,6 @@
 use crate::asset_lock_proof::AssetLockProofWasm;
 use crate::error::{WasmDppError, WasmDppResult};
-use crate::impl_wasm_conversions_serde;
+use crate::impl_wasm_conversions_inner;
 use crate::impl_wasm_type_info;
 use crate::platform_address::{
     PlatformAddressInputWasm, PlatformAddressOutputWasm, fee_strategy_from_js_options,
@@ -39,9 +39,9 @@ export interface AddressFundingFromAssetLockTransitionObject {
 
 export interface AddressFundingFromAssetLockTransitionJSON {
     assetLockProof: AssetLockProofJSON;
-    inputs: object[];
-    outputs: object[];
-    feeStrategy: object[];
+    inputs: PlatformAddressInputJSON[];
+    outputs: PlatformAddressOutputJSON[];
+    feeStrategy: FeeStrategyStepJSON[];
     userFeeIncrease: number;
 }
 "#;
@@ -84,11 +84,8 @@ impl AddressFundingFromAssetLockTransitionWasm {
             })?
             .unwrap_or(0);
 
-        let inputs_map = inputs.into_iter().map(|i| i.into_inner()).collect();
-        let outputs = outputs
-            .into_iter()
-            .map(|o| o.into_inner_optional())
-            .collect();
+        let inputs_map = crate::platform_address::inputs_to_btree_map(inputs)?;
+        let outputs = crate::platform_address::outputs_to_optional_btree_map(outputs)?;
         let fee_strategy = fee_strategy_from_steps_or_default(fee_strategy);
 
         Ok(AddressFundingFromAssetLockTransitionWasm(
@@ -166,13 +163,14 @@ impl AddressFundingFromAssetLockTransitionWasm {
     }
 
     #[wasm_bindgen(setter = "inputs")]
-    pub fn set_inputs(&mut self, inputs: Vec<PlatformAddressInputWasm>) {
-        let inputs_map = inputs.into_iter().map(|i| i.into_inner()).collect();
+    pub fn set_inputs(&mut self, inputs: Vec<PlatformAddressInputWasm>) -> WasmDppResult<()> {
+        let inputs_map = crate::platform_address::inputs_to_btree_map(inputs)?;
         match &mut self.0 {
             AddressFundingFromAssetLockTransition::V0(v0) => {
                 v0.inputs = inputs_map;
             }
         }
+        Ok(())
     }
 
     #[wasm_bindgen(getter = "outputs")]
@@ -185,12 +183,10 @@ impl AddressFundingFromAssetLockTransitionWasm {
     }
 
     #[wasm_bindgen(setter = "outputs")]
-    pub fn set_outputs(&mut self, outputs: Vec<PlatformAddressOutputWasm>) {
-        let outputs_map = outputs
-            .into_iter()
-            .map(|o| o.into_inner_optional())
-            .collect();
+    pub fn set_outputs(&mut self, outputs: Vec<PlatformAddressOutputWasm>) -> WasmDppResult<()> {
+        let outputs_map = crate::platform_address::outputs_to_optional_btree_map(outputs)?;
         self.0.set_outputs(outputs_map);
+        Ok(())
     }
 
     #[wasm_bindgen(getter = "userFeeIncrease")]
@@ -234,8 +230,9 @@ impl AddressFundingFromAssetLockTransitionWasm {
     }
 }
 
-impl_wasm_conversions_serde!(
+impl_wasm_conversions_inner!(
     AddressFundingFromAssetLockTransitionWasm,
+    AddressFundingFromAssetLockTransition,
     AddressFundingFromAssetLockTransition,
     AddressFundingFromAssetLockTransitionObjectJs,
     AddressFundingFromAssetLockTransitionJSONJs

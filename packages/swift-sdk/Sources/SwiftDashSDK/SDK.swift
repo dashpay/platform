@@ -49,16 +49,13 @@ extension Data {
 
 /// Swift wrapper for the Dash Platform SDK
 public final class SDK: @unchecked Sendable {
-  public private(set) var handle: UnsafeMutablePointer<SDKHandle>?
+  public private(set) var handle: OpaquePointer?
 
   /// The network this SDK instance is connected to
-  public private(set) var network: Network = DashSDKNetwork(rawValue: 1) // Default to testnet
+  public private(set) var network: Network = .testnet
 
   /// Identities operations
   public lazy var identities = Identities(sdk: self)
-
-  /// Contracts operations
-  public lazy var contracts = Contracts(sdk: self)
 
   /// Address operations (balance, nonce queries)
   public lazy var addresses = Addresses(sdk: self)
@@ -84,60 +81,19 @@ public final class SDK: @unchecked Sendable {
     print("🔵 SDK: Logging enabled at level: \(level)")
   }
 
-  /// Initialize SPV logging with configurable output options
-  /// - Parameters:
-  ///   - level: Log level (defaults to .info if nil)
-  ///   - enableConsole: Whether to output logs to console/stderr
-  ///   - logDirectory: Directory for log files (nil to disable file logging)
-  ///   - maxFiles: Maximum archived log files to retain (ignored if logDirectory is nil)
-  /// - Returns: true if logging was initialized successfully
+  /// Route the global tracing subscriber to per-bucket files under
+  /// `sessionRoot`. Returns `false` if a subscriber was already
+  /// installed or the path couldn't be written.
   @discardableResult
-  public static func initializeSPVLogging(
-    level: LogLevel? = nil,
-    enableConsole: Bool = true,
-    logDirectory: String? = nil,
-    maxFiles: UInt = 5
+  public static func enableFileLogging(
+    level: LogLevel = .debug,
+    sessionRoot: String
   ) -> Bool {
-    let levelString: String? = level.map { lvl in
-      switch lvl {
-      case .error: return "error"
-      case .warn: return "warn"
-      case .info: return "info"
-      case .debug: return "debug"
-      case .trace: return "trace"
-      }
+    let installed = sessionRoot.withCString { ptr in
+      platform_wallet_enable_file_logging(level.rawValue, ptr)
     }
 
-    let result: Int32
-    if let levelStr = levelString {
-      if let logDir = logDirectory {
-        result = levelStr.withCString { levelCStr in
-          logDir.withCString { dirCStr in
-            dash_spv_ffi_init_logging(levelCStr, enableConsole, dirCStr, maxFiles)
-          }
-        }
-      } else {
-        result = levelStr.withCString { levelCStr in
-          dash_spv_ffi_init_logging(levelCStr, enableConsole, nil, maxFiles)
-        }
-      }
-    } else {
-      if let logDir = logDirectory {
-        result = logDir.withCString { dirCStr in
-          dash_spv_ffi_init_logging(nil, enableConsole, dirCStr, maxFiles)
-        }
-      } else {
-        result = dash_spv_ffi_init_logging(nil, enableConsole, nil, maxFiles)
-      }
-    }
-
-    let success = result == 0
-    if success {
-      print("🔵 SDK: SPV logging initialized (level: \(levelString ?? "default"), console: \(enableConsole))")
-    } else {
-      print("⚠️ SDK: SPV logging initialization returned code \(result)")
-    }
-    return success
+    return installed
   }
 
   /// Local Platform DAPI addresses; override via UserDefaults key "platformDAPIAddresses"
@@ -145,7 +101,143 @@ public final class SDK: @unchecked Sendable {
     if let override = UserDefaults.standard.string(forKey: "platformDAPIAddresses"), !override.isEmpty {
       return override
     }
-    return "http://127.0.0.1:1443"
+    return "http://127.0.0.1:2443"
+  }
+
+  /// Optional caller-provided base URL for the trusted-context-provider's
+  /// quorum lookups. Read from UserDefaults key `platformQuorumURL`.
+  /// Required to connect to devnets (no built-in default exists on the
+  /// Rust side); also usable to override mainnet/testnet for staging
+  /// shards. Returns nil when unset/empty.
+  private static var platformQuorumURL: String? {
+    guard
+      let value = UserDefaults.standard.string(forKey: "platformQuorumURL"),
+      !value.isEmpty
+    else { return nil }
+    return value
+  }
+
+  /// Synchronously fetch `{quorumBase}/masternodes` and return the
+  /// raw `data` array. Both the DAPI list and the SPV peer list are
+  /// derived from this — DAPI takes `<ip>:<platformHTTPPort>`, SPV
+  /// takes the verbatim `address` field (`<ip>:<CoreP2PPort>`).
+  ///
+  /// Returns nil on any failure (timeout, JSON shape mismatch, etc.).
+  /// Filters to `status == "ENABLED" && version_check == "success"`
+  /// to match the Rust trusted-context provider's active-node policy
+  /// (see `rs-sdk-trusted-context-provider/src/provider.rs`). Without
+  /// the `version_check` filter, nodes the quorum service has
+  /// already flagged as incompatible would be seeded into both the
+  /// DAPI fan-out and the SPV peer list, undermining the
+  /// self-healing rebuild this enables.
+  ///
+  /// `public` because both the SDK init (DAPI fan-out) and the
+  /// SwiftExampleApp's SPV start path call it independently against
+  /// the same endpoint — each caller pays its own round-trip, with
+  /// no shared cache. An SDK rebuild on devnet therefore performs
+  /// two `/masternodes` fetches; if that becomes a problem, the
+  /// expectation is that callers add a short-lived cache locally
+  /// (or refactor to share one through the SDK).
+  public static func discoverActiveMasternodes(
+    quorumBase: String
+  ) -> [(spvPeer: String, dapiUrl: String)]? {
+    guard
+      var components = URLComponents(string: quorumBase),
+      let scheme = components.scheme,
+      !scheme.isEmpty
+    else { return nil }
+    if components.path.hasSuffix("/") {
+      components.path = String(components.path.dropLast())
+    }
+    components.path += "/masternodes"
+    guard let url = components.url else { return nil }
+
+    var request = URLRequest(url: url)
+    request.timeoutInterval = 5.0
+    request.httpMethod = "GET"
+
+    // Reference-typed box for the response so the completion
+    // handler can safely store into it from URLSession's worker
+    // thread without violating Swift 6 strict-concurrency capture
+    // rules (which forbid mutating a captured `var Data?` from a
+    // concurrently-executing closure). The semaphore guarantees
+    // we only read `box.data` after the closure has run to
+    // completion, so the cross-thread access is data-race-free.
+    final class ResponseBox: @unchecked Sendable {
+      var data: Data?
+    }
+    let box = ResponseBox()
+    let semaphore = DispatchSemaphore(value: 0)
+    let task = URLSession.shared.dataTask(with: request) { data, _, _ in
+      box.data = data
+      semaphore.signal()
+    }
+    task.resume()
+    _ = semaphore.wait(timeout: .now() + .seconds(6))
+    guard let data = box.data else {
+      task.cancel()
+      return nil
+    }
+
+    struct Envelope: Decodable {
+      let success: Bool
+      let data: [Masternode]
+    }
+    struct Masternode: Decodable {
+      let address: String          // "ip:CoreP2PPort"
+      let status: String
+      // Optional to match the Rust trusted-context provider, which
+      // tolerates entries missing `platformHTTPPort` and substitutes
+      // a per-network default. Requiring this would make a single
+      // misbehaving JSON entry fail the whole decode (Decodable is
+      // all-or-nothing per object), nuking devnet auto-discovery.
+      //
+      // Note JSON wire keys are camelCase (`platformHTTPPort`,
+      // `versionCheck`) — Rust renames its snake_case fields with
+      // `#[serde(rename = ...)]` to produce that on the wire. Swift's
+      // default `Decodable` synthesis matches property name → JSON
+      // key literally, so no `CodingKeys` is needed here as long as
+      // these property names match the wire keys verbatim.
+      let platformHTTPPort: UInt16?
+      // Same `versionCheck` field the Rust provider filters on.
+      // Optional because older quorum-list-server builds may omit it;
+      // callers below treat missing as "not success" (i.e. excluded).
+      let versionCheck: String?
+    }
+
+    guard
+      let env = try? JSONDecoder().decode(Envelope.self, from: data),
+      env.success
+    else { return nil }
+
+    // Conservative default — matches the Rust trusted-context
+    // provider's fallback when the entry omits `platform_http_port`.
+    let defaultDapiPort: UInt16 = 443
+    let active: [(String, String)] = env.data.compactMap { mn in
+      guard mn.status == "ENABLED", mn.versionCheck == "success" else { return nil }
+      let host = mn.address.split(separator: ":").first.map(String.init) ?? mn.address
+      let dapiPort = mn.platformHTTPPort ?? defaultDapiPort
+      return (mn.address, "https://\(host):\(dapiPort)")
+    }
+    return active.isEmpty ? nil : active
+  }
+
+  /// Synchronously fetch `{quorumBase}/masternodes` and build a
+  /// comma-separated DAPI URL list (`https://<ip>:<platformHTTPPort>,…`).
+  /// Returns nil on any error (network failure, JSON shape mismatch,
+  /// timeout). Used by `init(network:)` to auto-populate the DAPI
+  /// fan-out list on devnet when the user hasn't supplied one
+  /// manually — saves the "you must paste 13 URLs" UX.
+  ///
+  /// Filters to `status == "ENABLED"` so down / banned nodes don't
+  /// pollute the AddressList (the DAPI client would ban them on
+  /// first request anyway, but skipping them up front speeds the
+  /// first sync).
+  private static func discoverDAPIAddresses(quorumBase: String) -> String? {
+    guard let active = discoverActiveMasternodes(quorumBase: quorumBase) else {
+      return nil
+    }
+    return active.map(\.dapiUrl).joined(separator: ",")
   }
 
   /// Create a new SDK instance with trusted setup
@@ -153,40 +245,107 @@ public final class SDK: @unchecked Sendable {
   /// This uses a trusted context provider that fetches quorum keys and
   /// data contracts from trusted HTTP endpoints instead of requiring proof verification.
   /// This is suitable for mobile applications where proof verification would be resource-intensive.
-  public init(network: Network) throws {
-    print("🔵 SDK.init: Creating SDK with network: \(network)")
+  ///
+  /// `platformVersion`:
+  /// - `0` (default) — let the Rust SDK seed at the per-network minimum
+  ///   protocol version (mainnet 11, testnet/devnet/regtest 12) with
+  ///   auto-detect on, ratcheting up as the network reports newer
+  ///   versions. The per-network floor encodes the V0/V1 `getDocuments`
+  ///   wire format (mainnet floor 11 = V0 until mainnet upgrades;
+  ///   testnet floor 12 = V1), so this picks the right wire without a
+  ///   Swift-side network→version map.
+  /// - non-zero — pin the SDK to this exact `PlatformVersion`.
+  public init(network: Network, platformVersion: UInt32 = 0) throws {
     var config = DashSDKConfig()
-
-    // Map network - in C enums, Swift imports them as raw values
-    config.network = network
-    print("🔵 SDK.init: Network config set to: \(config.network)")
-
-    // Default to SDK-provided addresses; may override below
+    config.network = network.ffiValue
     config.dapi_addresses = nil
-
+    config.quorum_url = nil
     config.skip_asset_lock_proof_verification = false
     config.request_retry_count = 1
     config.request_timeout_ms = 8000 // 8 seconds
+    // `0` is passed straight through: the FFI `apply_version(builder, 0)`
+    // returns the builder unchanged, so `SdkBuilder::build()` seeds at the
+    // per-network `min_protocol_version` floor with auto-detect on
+    // (version_pinned=false) and ratchets up as the network reports newer
+    // versions. A non-zero value is an explicit pin via `with_version`.
+    config.platform_version = platformVersion
 
-    // Create SDK with trusted setup
-    print("🔵 SDK.init: Creating SDK with trusted setup...")
+    // Create SDK with trusted setup. DAPI / quorum-URL overrides come from
+    // UserDefaults and apply on:
+    //
+    //   * Regtest unconditionally — the Rust side has no built-in DAPI
+    //     defaults for it, so we must supply addresses every time
+    //     (otherwise SDK creation panics with `DAPI addresses not
+    //     available for network: Regtest`, which would stall orphan-
+    //     mnemonic recovery if it ran from a non-regtest active state).
+    //   * Devnet unconditionally — same reason; additionally needs an
+    //     explicit `quorum_url` because the default quorum endpoint
+    //     `https://quorums.devnet.<name>.networks.dash.org` is template-
+    //     interpolated from a devnet name we don't carry across FFI.
+    //   * Mainnet/testnet only when the user opted in via
+    //     `useDockerSetup` (existing dashmate-on-localhost flow). When
+    //     that toggle is off, the Rust side picks the canonical seed
+    //     addresses for the network.
+    //
+    // `quorum_url` is gated identically: applied for devnet/regtest and
+    // under `useDockerSetup`, but NOT for plain mainnet/testnet. The
+    // `platformQuorumURL` UserDefault is only ever populated by the
+    // devnet-only Quorum URL field in Options, so forwarding it to a
+    // mainnet/testnet build leaked a devnet (often http) endpoint into a
+    // network whose Rust provider requires https — refusing to build the
+    // SDK. With the gate off, mainnet/testnet use the canonical quorum
+    // endpoints automatically.
     let result: DashSDKResult
-    // Force local DAPI regardless of selected network when enabled
-    let forceLocal = UserDefaults.standard.bool(forKey: "useLocalhostPlatform")
-    if forceLocal {
-      let localAddresses = Self.platformDAPIAddresses
-      print("🔵 SDK.init: Using local DAPI addresses: \(localAddresses)")
-      result = localAddresses.withCString { addressesCStr -> DashSDKResult in
-        var mutableConfig = config
-        mutableConfig.dapi_addresses = addressesCStr
-        print("🔵 SDK.init: Calling dash_sdk_create_trusted...")
-        return dash_sdk_create_trusted(&mutableConfig)
+    let useOverrideAddresses = network == .regtest
+        || network == .devnet
+        || UserDefaults.standard.bool(forKey: "useDockerSetup")
+    let overrideQuorumURL: String? = useOverrideAddresses ? Self.platformQuorumURL : nil
+
+    // Resolve the DAPI address list. Two paths:
+    //
+    //   * Devnet → ALWAYS auto-discover from `{quorumURL}/masternodes`
+    //     fresh on every SDK build. The user input surface for devnet
+    //     is just the quorum URL — DAPI nodes are an implementation
+    //     detail of which masternodes happen to be ENABLED right now.
+    //     Doing this every init is what makes the path self-healing
+    //     when a node goes down on the chain. Cheap: one HTTP round-
+    //     trip (~200ms) at network-switch cadence, which the user
+    //     pays for explicitly anyway.
+    //
+    //   * Regtest / `useDockerSetup` → respect the existing
+    //     `platformDAPIAddresses` UserDefaults override (default
+    //     `http://127.0.0.1:2443`). This is the dashmate-local flow
+    //     that's been stable; it has no /masternodes service to
+    //     consult.
+    //
+    //   * Mainnet/testnet without overrides → Rust side picks seeds.
+    let overrideAddresses: String?
+    if network == .devnet {
+      if let quorum = overrideQuorumURL,
+         let discovered = Self.discoverDAPIAddresses(quorumBase: quorum) {
+        overrideAddresses = discovered
+      } else {
+        // Quorum URL unset, or /masternodes unreachable / wrong shape.
+        // Fall through with nil; Rust will refuse to build the SDK
+        // and the resulting error surfaces in the iOS UI as
+        // "Disconnected", prompting the user to fix the Quorum URL.
+        overrideAddresses = nil
       }
+    } else if useOverrideAddresses {
+      overrideAddresses = Self.platformDAPIAddresses
     } else {
-      print("🔵 SDK.init: Using default network addresses")
-      result = dash_sdk_create_trusted(&config)
+      overrideAddresses = nil
     }
-    print("🔵 SDK.init: dash_sdk_create_trusted returned")
+
+    result = SDK.withOptionalCStrings(
+      overrideAddresses,
+      overrideQuorumURL
+    ) { addressesCStr, quorumCStr in
+      var mutableConfig = config
+      if let addressesCStr { mutableConfig.dapi_addresses = addressesCStr }
+      if let quorumCStr { mutableConfig.quorum_url = quorumCStr }
+      return dash_sdk_create_trusted(&mutableConfig)
+    }
 
     // Check for errors
     if result.error != nil {
@@ -204,41 +363,63 @@ public final class SDK: @unchecked Sendable {
     }
 
     // Store the handle and network
-    handle = result.data?.assumingMemoryBound(to: SDKHandle.self)
+    handle = OpaquePointer(result.data)
     self.network = network
   }
 
-  /// Create a new SDK instance using SPV-synced quorum data for proof verification.
+  /// Create a new SDK instance that verifies proofs using SPV-synced quorum
+  /// data from `walletManager`'s locally synced masternode list, instead of a
+  /// trusted HTTP quorum service. DAPI transport is resolved exactly as in
+  /// `init(network:)` — SPV only replaces the quorum-key source.
   ///
-  /// Instead of fetching quorum keys from a trusted HTTP endpoint, this uses
-  /// quorum data already synced by the SPV client (masternode list sync).
+  /// The wallet manager's SPV client should be started (and ideally synced)
+  /// for lookups to succeed; otherwise proof verification fails closed until
+  /// it catches up. `walletManager` must outlive this SDK instance.
   ///
-  /// - Parameters:
-  ///   - network: The Dash network to connect to.
-  ///   - spvClientHandle: Raw pointer to the SPV client's `FFIDashSpvClient` handle.
-  ///     Obtain this from `SPVClient.unsafeFFIClientPointer`.
-  ///     The SPV client must remain alive for the lifetime of this SDK instance.
-  public init(network: Network, spvClientHandle: UnsafeMutableRawPointer) throws {
-    NSLog("SDK.init: Creating SDK with SPV quorum provider, network: \(network)")
+  /// `@MainActor`: reads `walletManager.handle`, which is main-actor isolated.
+  @MainActor
+  public init(network: Network, walletManager: PlatformWalletManager, platformVersion: UInt32 = 0)
+    throws
+  {
     var config = DashSDKConfig()
-    config.network = network
+    config.network = network.ffiValue
     config.dapi_addresses = nil
+    config.quorum_url = nil
     config.skip_asset_lock_proof_verification = false
     config.request_retry_count = 1
     config.request_timeout_ms = 8000
+    config.platform_version = platformVersion
 
-    let result: DashSDKResult
-    let forceLocal = UserDefaults.standard.bool(forKey: "useLocalhostPlatform")
-    if forceLocal {
-      let localAddresses = Self.platformDAPIAddresses
-      NSLog("SDK.init: Using local DAPI addresses with SPV quorums: \(localAddresses)")
-      result = localAddresses.withCString { addressesCStr -> DashSDKResult in
-        var mutableConfig = config
-        mutableConfig.dapi_addresses = addressesCStr
-        return dash_sdk_create_with_spv_context(&mutableConfig, spvClientHandle)
-      }
+    // Resolve DAPI addresses / quorum URL identically to `init(network:)`:
+    // devnet auto-discovers from `{quorumURL}/masternodes`; regtest and the
+    // `useDockerSetup` flow use the `platformDAPIAddresses` override; plain
+    // mainnet/testnet let the Rust side pick canonical seeds.
+    // Read the main-actor-isolated handle here (in the isolated init body)
+    // and capture the plain `Handle` value into the nonisolated C-string
+    // closure below — the handle is Sendable, `walletManager` is not.
+    let managerHandle = walletManager.handle
+
+    let useOverrideAddresses =
+      network == .regtest
+      || network == .devnet
+      || UserDefaults.standard.bool(forKey: "useDockerSetup")
+    let overrideQuorumURL: String? = useOverrideAddresses ? Self.platformQuorumURL : nil
+    let overrideAddresses: String?
+    if network == .devnet {
+      overrideAddresses = overrideQuorumURL.flatMap { Self.discoverDAPIAddresses(quorumBase: $0) }
+    } else if useOverrideAddresses {
+      overrideAddresses = Self.platformDAPIAddresses
     } else {
-      result = dash_sdk_create_with_spv_context(&config, spvClientHandle)
+      overrideAddresses = nil
+    }
+
+    let result = SDK.withOptionalCStrings(overrideAddresses, overrideQuorumURL) {
+      addressesCStr, quorumCStr in
+      var mutableConfig = config
+      if let addressesCStr { mutableConfig.dapi_addresses = addressesCStr }
+      if let quorumCStr { mutableConfig.quorum_url = quorumCStr }
+      return platform_wallet_manager_create_sdk_with_spv_context(
+        managerHandle, &mutableConfig)
     }
 
     if result.error != nil {
@@ -252,9 +433,36 @@ public final class SDK: @unchecked Sendable {
       throw SDKError.internalError("No SDK handle returned")
     }
 
-    handle = result.data?.assumingMemoryBound(to: SDKHandle.self)
+    handle = OpaquePointer(result.data)
     self.network = network
-    NSLog("SDK.init: SDK created with SPV quorum provider")
+  }
+
+  /// Run `body` with two optional C-string pointers. Each input string,
+  /// when non-nil, is materialized into a NUL-terminated C buffer that is
+  /// valid for the duration of the call; nil inputs pass through as nil
+  /// pointers. Mirrors `String.withCString` for the two-optional-string
+  /// case so the SDK init can hand both `dapi_addresses` and
+  /// `quorum_url` into a single FFI call without nested withCString
+  /// closures.
+  private static func withOptionalCStrings<R>(
+    _ a: String?,
+    _ b: String?,
+    _ body: (UnsafePointer<CChar>?, UnsafePointer<CChar>?) -> R
+  ) -> R {
+    switch (a, b) {
+    case (nil, nil):
+      return body(nil, nil)
+    case (.some(let sa), nil):
+      return sa.withCString { body($0, nil) }
+    case (nil, .some(let sb)):
+      return sb.withCString { body(nil, $0) }
+    case (.some(let sa), .some(let sb)):
+      return sa.withCString { aPtr in
+        sb.withCString { bPtr in
+          body(aPtr, bPtr)
+        }
+      }
+    }
   }
 
   /// Load known contracts into the trusted context provider
@@ -356,6 +564,54 @@ public final class SDK: @unchecked Sendable {
     }
   }
 
+  /// Refresh this SDK's protocol version from the connected network.
+  ///
+  /// Issues a proven `getEpochsInfo` query on the Rust side and ratchets the
+  /// SDK's auto-detected protocol version up to the network's version through
+  /// the proof + quorum-signature-verified path (no unverified fallback). The
+  /// new version is shared across every clone of the underlying `Sdk`
+  /// (including the clone held by a `PlatformWalletManager`), so fee-sensitive
+  /// flows pick it up automatically.
+  ///
+  /// Call on app start and after every network switch. For an SDK pinned to a
+  /// fixed protocol version (version updating disabled) this is a no-op: no
+  /// network request is made and the pinned version is returned. Bridges
+  /// `dash_sdk_refresh_protocol_version`.
+  ///
+  /// - Returns: the SDK's protocol version number after the (possible) ratchet.
+  @discardableResult
+  public func refreshProtocolVersion() throws -> UInt32 {
+    guard let handle = handle else {
+      throw SDKError.invalidState("SDK not initialized")
+    }
+
+    let result = dash_sdk_refresh_protocol_version(handle)
+
+    if result.error != nil {
+      let error = result.error!.pointee
+      defer {
+        dash_sdk_error_free(result.error)
+      }
+      throw SDKError.fromDashSDKError(error)
+    }
+
+    guard result.data != nil else {
+      throw SDKError.internalError("No protocol version returned")
+    }
+
+    let cStr = result.data.assumingMemoryBound(to: CChar.self)
+    let versionStr = String(cString: cStr)
+    defer {
+      dash_sdk_string_free(cStr)
+    }
+
+    guard let version = UInt32(versionStr) else {
+      throw SDKError.serializationError("Invalid protocol version: \(versionStr)")
+    }
+
+    return version
+  }
+
   // TODO: Re-enable when CDashSDKFFI module is working
   // /// Test the new FFI connection
   // public func testNewFFI() -> Bool {
@@ -372,21 +628,6 @@ public final class SDK: @unchecked Sendable {
   //     return true
   // }
 
-  /// Get an identity by ID
-  @MainActor
-  public func getIdentity(id: String) async throws -> Identity? {
-    // This would call the C function to get identity
-    // For now, return nil as placeholder
-    return nil
-  }
-
-  /// Get a data contract by ID
-  @MainActor
-  public func getDataContract(id: String) async throws -> DataContract? {
-    // This would call the C function to get data contract
-    // For now, return nil as placeholder
-    return nil
-  }
 }
 
 /// SDK Status information
@@ -477,27 +718,6 @@ public class Identities {
 
   init(sdk: SDK) {
     self.sdk = sdk
-  }
-
-  /// Get an identity by ID
-  public func get(id: String) throws -> Identity? {
-    guard let sdk = sdk, sdk.handle != nil else {
-      throw SDKError.invalidState("SDK not initialized")
-    }
-
-    // TODO: Call C function to get identity
-    // For now, return nil
-    return nil
-  }
-
-  /// Get an identity by ID using Data
-  public func get(id: Data) throws -> Identity? {
-    guard id.count == 32 else {
-      throw SDKError.invalidParameter("Identity ID must be exactly 32 bytes")
-    }
-
-    // Convert Data to hex string for now
-    return try get(id: id.toHexString())
   }
 
   /// Get a single identity balance
@@ -654,25 +874,5 @@ public class Identities {
   // Helper function to convert bytes to hex string
   private func bytesToHex(_ bytes: [UInt8]) -> String {
     return bytes.map { String(format: "%02x", $0) }.joined()
-  }
-}
-
-/// Contracts operations
-public class Contracts {
-  private weak var sdk: SDK?
-
-  init(sdk: SDK) {
-    self.sdk = sdk
-  }
-
-  /// Get a data contract by ID
-  public func get(id: String) throws -> DataContract? {
-    guard let sdk = sdk, sdk.handle != nil else {
-      throw SDKError.invalidState("SDK not initialized")
-    }
-
-    // TODO: Call C function to get data contract
-    // For now, return nil
-    return nil
   }
 }

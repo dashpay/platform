@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct PlatformQueriesView: View {
-    @EnvironmentObject var appState: UnifiedAppState
+    @EnvironmentObject var appState: AppState
 
     enum QueryCategory: String, CaseIterable {
         case identity = "Identity"
@@ -82,7 +82,7 @@ struct PlatformQueriesView: View {
 
 struct QueryCategoryDetailView: View {
     let category: PlatformQueriesView.QueryCategory
-    @EnvironmentObject var appState: UnifiedAppState
+    @EnvironmentObject var appState: AppState
 
     var body: some View {
         // Special handling for addresses category - use dedicated view
@@ -103,6 +103,19 @@ struct QueryCategoryDetailView: View {
                             }
                             .padding(.vertical, 4)
                         }
+                    } else if query.name == "getPathElements" {
+                        NavigationLink(destination: GroveDBPathElementsView()) {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(query.label)
+                                    .font(.headline)
+                                Text(query.description)
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                    .lineLimit(2)
+                            }
+                            .padding(.vertical, 4)
+                        }
+                        .accessibilityIdentifier("systemQueries.getPathElementsLink")
                     } else if query.name == "testDPNSQueries" {
                         NavigationLink(destination: DPNSTestView()) {
                             VStack(alignment: .leading, spacing: 4) {
@@ -228,7 +241,8 @@ struct QueryCategoryDetailView: View {
                 QueryDefinition(name: "getStatus", label: "Get Status", description: "Get system status"),
                 QueryDefinition(name: "getTotalCreditsInPlatform", label: "Get Total Credits in Platform", description: "Get total credits in the platform"),
                 QueryDefinition(name: "getCurrentQuorumsInfo", label: "Get Current Quorums Info", description: "Get information about current validator quorums"),
-                QueryDefinition(name: "getPrefundedSpecializedBalance", label: "Get Prefunded Specialized Balance", description: "Get balance of a prefunded specialized account")
+                QueryDefinition(name: "getPrefundedSpecializedBalance", label: "Get Prefunded Specialized Balance", description: "Get balance of a prefunded specialized account"),
+                QueryDefinition(name: "getPathElements", label: "Get GroveDB Path Elements", description: "Fetch raw GroveDB elements by path and keys (diagnostic)")
             ]
 
         case .addresses:

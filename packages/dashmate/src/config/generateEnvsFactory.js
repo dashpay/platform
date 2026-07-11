@@ -103,6 +103,11 @@ export default function generateEnvsFactory(configFile, homeDir, getConfigProfil
       ...convertObjectToEnvs(config.getOptions()),
     };
 
+    // NOTE: per-image docker `build.args` (`…docker.build.buildArgs`) are NOT
+    // forwarded as env vars here. They are rendered directly into the per-config
+    // `dynamic-compose.yml` as `build.args` entries (see
+    // `templates/dynamic-compose.yml.dot`), which is the single source of truth.
+
     const configuredAccessLogPath = config.get('platform.dapi.rsDapi.logs.accessLogPath');
     const hasConfiguredPath = typeof configuredAccessLogPath === 'string'
       && configuredAccessLogPath.trim() !== '';

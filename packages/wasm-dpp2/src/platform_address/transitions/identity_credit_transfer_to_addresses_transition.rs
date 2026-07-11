@@ -1,6 +1,6 @@
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
-use crate::impl_wasm_conversions_serde;
+use crate::impl_wasm_conversions_inner;
 use crate::impl_wasm_type_info;
 use crate::platform_address::{
     PlatformAddressOutputWasm, outputs_from_js_options, outputs_to_btree_map,
@@ -34,7 +34,7 @@ export interface IdentityCreditTransferToAddressesOptions {
  * IdentityCreditTransferToAddresses serialized as a plain object.
  */
 export interface IdentityCreditTransferToAddressesObject {
-    recipientAddresses: Array<{ address: Uint8Array; amount: bigint }>;
+    recipientAddresses: PlatformAddressOutputObject[];
     senderId: Uint8Array;
     nonce: bigint;
     userFeeIncrease: number;
@@ -46,7 +46,7 @@ export interface IdentityCreditTransferToAddressesObject {
  * IdentityCreditTransferToAddresses serialized as JSON.
  */
 export interface IdentityCreditTransferToAddressesJSON {
-    recipientAddresses: Array<{ address: string; amount: string }>;
+    recipientAddresses: PlatformAddressOutputJSON[];
     senderId: string;
     nonce: string;
     userFeeIncrease: number;
@@ -262,8 +262,9 @@ impl IdentityCreditTransferToAddressesTransitionWasm {
     }
 }
 
-impl_wasm_conversions_serde!(
+impl_wasm_conversions_inner!(
     IdentityCreditTransferToAddressesTransitionWasm,
+    IdentityCreditTransferToAddressesTransition,
     IdentityCreditTransferToAddresses,
     IdentityCreditTransferToAddressesObjectJs,
     IdentityCreditTransferToAddressesJSONJs

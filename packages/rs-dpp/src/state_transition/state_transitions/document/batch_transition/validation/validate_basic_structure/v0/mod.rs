@@ -222,3 +222,207 @@ impl BatchTransition {
         Ok(result)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::consensus::ConsensusError;
+    use crate::state_transition::batch_transition::batched_transition::document_create_transition::v0::DocumentCreateTransitionV0;
+    use crate::state_transition::batch_transition::batched_transition::document_create_transition::DocumentCreateTransition;
+    use crate::state_transition::batch_transition::batched_transition::document_delete_transition::v0::DocumentDeleteTransitionV0;
+    use crate::state_transition::batch_transition::batched_transition::document_delete_transition::DocumentDeleteTransition;
+    use crate::state_transition::batch_transition::batched_transition::BatchedTransition;
+    use crate::state_transition::batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
+    use crate::state_transition::batch_transition::document_base_transition::DocumentBaseTransition;
+    use crate::state_transition::batch_transition::{
+        BatchTransition, BatchTransitionV0, BatchTransitionV1,
+    };
+    use platform_value::BinaryData;
+    use std::collections::BTreeMap;
+
+    fn make_base(nonce: u64, type_name: &str) -> DocumentBaseTransition {
+        DocumentBaseTransition::V0(DocumentBaseTransitionV0 {
+            id: Identifier::new([1u8; 32]),
+            identity_contract_nonce: nonce,
+            document_type_name: type_name.to_string(),
+            data_contract_id: Identifier::new([0xAA; 32]),
+        })
+    }
+
+    fn make_create(nonce: u64) -> DocumentTransition {
+        DocumentTransition::Create(DocumentCreateTransition::V0(DocumentCreateTransitionV0 {
+            base: make_base(nonce, "test_doc"),
+            entropy: [0u8; 32],
+            data: BTreeMap::new(),
+            prefunded_voting_balance: None,
+        }))
+    }
+
+    fn make_delete(nonce: u64, id_byte: u8) -> DocumentTransition {
+        DocumentTransition::Delete(DocumentDeleteTransition::V0(DocumentDeleteTransitionV0 {
+            base: DocumentBaseTransition::V0(DocumentBaseTransitionV0 {
+                id: Identifier::new([id_byte; 32]),
+                identity_contract_nonce: nonce,
+                document_type_name: "test_doc".to_string(),
+                data_contract_id: Identifier::new([0xAA; 32]),
+            }),
+        }))
+    }
+
+    fn make_batch_v0(transitions: Vec<DocumentTransition>) -> BatchTransition {
+        BatchTransition::V0(BatchTransitionV0 {
+            owner_id: Identifier::new([0x01; 32]),
+            transitions,
+            user_fee_increase: 0,
+            signature_public_key_id: 0,
+            signature: BinaryData::default(),
+        })
+    }
+
+    fn make_batch_v1_empty() -> BatchTransition {
+        BatchTransition::V1(BatchTransitionV1 {
+            owner_id: Identifier::new([0x02; 32]),
+            transitions: vec![],
+            user_fee_increase: 0,
+            signature_public_key_id: 0,
+            signature: BinaryData::default(),
+        })
+    }
+
+    // -----------------------------------------------------------------------
+    // empty batch — DocumentTransitionsAreAbsentError
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn validate_base_structure_v0_errors_when_v0_empty() {
+        let pv = PlatformVersion::latest();
+        let batch = make_batch_v0(vec![]);
+        let result = batch
+            .validate_base_structure_v0(pv)
+            .expect("no protocol err");
+        assert!(!result.is_valid());
+        let errors = result.errors;
+        assert_eq!(errors.len(), 1);
+        match &errors[0] {
+            ConsensusError::BasicError(BasicError::DocumentTransitionsAreAbsentError(_)) => {}
+            other => panic!(
+                "expected DocumentTransitionsAreAbsentError, got {:?}",
+                other
+            ),
+        }
+    }
+
+    #[test]
+    fn validate_base_structure_v0_errors_when_v1_empty() {
+        let pv = PlatformVersion::latest();
+        let batch = make_batch_v1_empty();
+        let result = batch
+            .validate_base_structure_v0(pv)
+            .expect("no protocol err");
+        assert!(!result.is_valid());
+        match &result.errors[0] {
+            ConsensusError::BasicError(BasicError::DocumentTransitionsAreAbsentError(_)) => {}
+            other => panic!(
+                "expected DocumentTransitionsAreAbsentError, got {:?}",
+                other
+            ),
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // valid single transition with no group / nonce / duplicate issues
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn validate_base_structure_v0_passes_with_single_valid_transition() {
+        let pv = PlatformVersion::latest();
+        let batch = make_batch_v0(vec![make_create(1)]);
+        let result = batch
+            .validate_base_structure_v0(pv)
+            .expect("no protocol err");
+        assert!(result.is_valid(), "expected valid, got {:?}", result.errors);
+    }
+
+    // -----------------------------------------------------------------------
+    // nonce out of bounds — high bits set above 40-bit cap
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn validate_base_structure_v0_errors_on_nonce_with_high_bits_set() {
+        let pv = PlatformVersion::latest();
+        // MISSING_IDENTITY_REVISIONS_FILTER masks the top bits used to mark
+        // a missing revision. Setting a value above 40 bits triggers the
+        // NonceOutOfBoundsError path.
+        let bad_nonce: u64 = u64::MAX;
+        let batch = make_batch_v0(vec![make_delete(bad_nonce, 7)]);
+        let result = batch
+            .validate_base_structure_v0(pv)
+            .expect("no protocol err");
+        assert!(!result.is_valid());
+        let has_nonce_err = result.errors.iter().any(|e| {
+            matches!(
+                e,
+                ConsensusError::BasicError(BasicError::NonceOutOfBoundsError(_))
+            )
+        });
+        assert!(
+            has_nonce_err,
+            "expected NonceOutOfBoundsError, got {:?}",
+            result.errors
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // max-transitions-exceeded — early-return before any other checks
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn validate_base_structure_v0_errors_when_transitions_exceed_max() {
+        // The latest platform version caps the batch at a small number of
+        // transitions. Going over should produce a single
+        // MaxDocumentsTransitionsExceededError and NO other errors (the
+        // function early-returns).
+        let pv = PlatformVersion::latest();
+        let max = pv.system_limits.max_transitions_in_documents_batch as usize;
+        let mut transitions = Vec::with_capacity(max + 1);
+        // Use distinct ids to avoid duplicate noise — but we never reach the
+        // duplicate-detection path anyway because we early-return.
+        for i in 0..(max + 1) {
+            transitions.push(make_delete(i as u64 + 1, i as u8));
+        }
+        let batch = make_batch_v0(transitions);
+        let result = batch
+            .validate_base_structure_v0(pv)
+            .expect("no protocol err");
+        assert!(!result.is_valid());
+        assert_eq!(result.errors.len(), 1, "should early-return with one error");
+        match &result.errors[0] {
+            ConsensusError::BasicError(BasicError::MaxDocumentsTransitionsExceededError(_)) => {}
+            other => panic!(
+                "expected MaxDocumentsTransitionsExceededError, got {:?}",
+                other
+            ),
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // V1 batch with only document transitions — same logic, takes the
+    // BatchedTransitionRef::Document arm of the iterator instead.
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn validate_base_structure_v0_passes_for_v1_with_documents_only() {
+        let pv = PlatformVersion::latest();
+        let batch = BatchTransition::V1(BatchTransitionV1 {
+            owner_id: Identifier::new([0x02; 32]),
+            transitions: vec![BatchedTransition::Document(make_create(1))],
+            user_fee_increase: 0,
+            signature_public_key_id: 0,
+            signature: BinaryData::default(),
+        });
+        let result = batch
+            .validate_base_structure_v0(pv)
+            .expect("no protocol err");
+        assert!(result.is_valid(), "expected valid, got {:?}", result.errors);
+    }
+}

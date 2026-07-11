@@ -1,21 +1,19 @@
 use super::broadcast_request::BroadcastRequestForStateTransition;
 use super::put_settings::PutSettings;
 use crate::error::StateTransitionBroadcastError;
-use crate::platform::block_info_from_metadata::block_info_from_metadata;
 use crate::sync::retry;
 use crate::{Error, Sdk};
 use dapi_grpc::platform::v0::wait_for_state_transition_result_response::wait_for_state_transition_result_response_v0;
 use dapi_grpc::platform::v0::{
-    wait_for_state_transition_result_response, Proof, WaitForStateTransitionResultResponse,
+    wait_for_state_transition_result_response, BroadcastStateTransitionRequest, ResponseMetadata,
+    WaitForStateTransitionResultResponse,
 };
-use dapi_grpc::platform::VersionedGrpcResponse;
 use dash_context_provider::ContextProviderError;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::state_transition::StateTransition;
-use drive::drive::Drive;
-use drive_proof_verifier::DataContractProvider;
+use drive_proof_verifier::FromProof;
+use rs_dapi_client::WrapToExecutionResult;
 use rs_dapi_client::{DapiRequest, ExecutionError, InnerInto, IntoInner, RequestSettings};
-use rs_dapi_client::{ExecutionResponse, WrapToExecutionResult};
 use tracing::{trace, warn};
 
 #[async_trait::async_trait]
@@ -26,11 +24,30 @@ pub trait BroadcastStateTransition {
         sdk: &Sdk,
         settings: Option<PutSettings>,
     ) -> Result<T, Error>;
+    /// Like [`wait_for_response`](Self::wait_for_response), but also
+    /// returns the quorum-authenticated response metadata.
+    /// `metadata.height` is the committed block the proof attests —
+    /// callers that persist proof-attested absolute balances need it as
+    /// the balance's height pin
+    /// (`dash_sdk::platform::address_sync::AddressFunds::as_of_height`).
+    async fn wait_for_response_with_metadata<T: TryFrom<StateTransitionProofResult> + Send>(
+        &self,
+        sdk: &Sdk,
+        settings: Option<PutSettings>,
+    ) -> Result<(T, ResponseMetadata), Error>;
     async fn broadcast_and_wait<T: TryFrom<StateTransitionProofResult> + Send>(
         &self,
         sdk: &Sdk,
         settings: Option<PutSettings>,
     ) -> Result<T, Error>;
+    /// Like [`broadcast_and_wait`](Self::broadcast_and_wait), but also
+    /// returns the quorum-authenticated response metadata (see
+    /// [`wait_for_response_with_metadata`](Self::wait_for_response_with_metadata)).
+    async fn broadcast_and_wait_with_metadata<T: TryFrom<StateTransitionProofResult> + Send>(
+        &self,
+        sdk: &Sdk,
+        settings: Option<PutSettings>,
+    ) -> Result<(T, ResponseMetadata), Error>;
 }
 
 #[async_trait::async_trait]
@@ -96,6 +113,16 @@ impl BroadcastStateTransition for StateTransition {
         sdk: &Sdk,
         settings: Option<PutSettings>,
     ) -> Result<T, Error> {
+        self.wait_for_response_with_metadata::<T>(sdk, settings)
+            .await
+            .map(|(result, _metadata)| result)
+    }
+
+    async fn wait_for_response_with_metadata<T: TryFrom<StateTransitionProofResult> + Send>(
+        &self,
+        sdk: &Sdk,
+        settings: Option<PutSettings>,
+    ) -> Result<(T, ResponseMetadata), Error> {
         trace!(
             transaction_id = %self
                 .transaction_id()
@@ -150,26 +177,6 @@ impl BroadcastStateTransition for StateTransition {
                     .wrap_to_execution_result(&response);
             }
 
-            trace!("wait: extracting metadata");
-            let metadata = grpc_response
-                .metadata()
-                .wrap_to_execution_result(&response)?
-                .inner;
-            let block_info = block_info_from_metadata(metadata)
-                .wrap_to_execution_result(&response)?
-                .inner;
-            trace!(block_info = ?block_info, "wait: block info extracted");
-
-            trace!("wait: extracting proof");
-            let proof: &Proof = (*grpc_response)
-                .proof()
-                .wrap_to_execution_result(&response)?
-                .inner;
-            trace!(
-                proof_size = proof.grovedb_proof.len(),
-                "wait: proof extracted"
-            );
-
             let context_provider = sdk.context_provider().ok_or(ExecutionError {
                 inner: Error::from(ContextProviderError::Config(
                     "Context provider not initialized".to_string(),
@@ -178,41 +185,53 @@ impl BroadcastStateTransition for StateTransition {
                 retries: response.retries,
             })?;
 
-            trace!("wait: verifying proof");
-            let (_, result) = match Drive::verify_state_transition_was_executed_with_proof(
-                self,
-                &block_info,
-                proof.grovedb_proof.as_slice(),
-                &context_provider.as_contract_lookup_fn(sdk.version()),
+            // Verify through the `FromProof` impl: it runs the GroveDB structural check AND
+            // `verify_tenderdash_proof` (the quorum BLS signature gate) that authenticates
+            // `metadata`. The request must be reconstructed to feed that verifier.
+            let request: BroadcastStateTransitionRequest = self
+                .broadcast_request_for_state_transition()
+                .wrap_to_execution_result(&response)?
+                .inner;
+
+            trace!("wait: verifying proof and quorum signature");
+            let (maybe_result, metadata, _proof) = <StateTransitionProofResult as FromProof<
+                BroadcastStateTransitionRequest,
+            >>::maybe_from_proof_with_metadata(
+                request,
+                grpc_response.clone(),
+                sdk.network,
                 sdk.version(),
-            ) {
-                Ok(r) => Ok(ExecutionResponse {
-                    inner: r,
-                    retries: response.retries,
-                    address: response.address.clone(),
-                }),
-                Err(drive::error::Error::Proof(proof_error)) => Err(ExecutionError {
-                    inner: Error::DriveProofError(
-                        proof_error,
-                        proof.grovedb_proof.clone(),
-                        block_info,
-                    ),
-                    retries: response.retries,
-                    address: Some(response.address.clone()),
-                }),
-                Err(e) => Err(ExecutionError {
-                    inner: e.into(),
-                    retries: response.retries,
-                    address: Some(response.address.clone()),
-                }),
-            }?
+                &context_provider,
+            )
+            .map_err(Error::from)
+            .wrap_to_execution_result(&response)?
             .inner;
+
+            // The current `FromProof` impl always yields `Some`; this guards only a future
+            // impl change, so it stays a typed error rather than an unwrap.
+            let result: StateTransitionProofResult = maybe_result
+                .ok_or_else(|| {
+                    Error::InvalidProvedResponse(
+                        "state transition result missing from verified proof".to_string(),
+                    )
+                })
+                .wrap_to_execution_result(&response)?
+                .inner;
+
+            // `metadata` is quorum-authenticated only after the verification above, so the
+            // protocol-version ratchet must run here, never before. A `StaleNode` error is
+            // retryable and prompts another server.
+            let _: () = sdk
+                .verify_response_metadata("wait_for_state_transition_result", &metadata)
+                .wrap_to_execution_result(&response)?
+                .inner;
 
             trace!("wait: proof verification successful");
             trace!(result_variant = %result.to_string(), "wait: result variant");
 
             let variant_name = result.to_string();
             let conversion_result = T::try_from(result)
+                .map(|converted| (converted, metadata))
                 .map_err(|_| {
                     Error::InvalidProvedResponse(format!(
                         "invalid proved response: cannot convert from {} to {}",
@@ -265,11 +284,23 @@ impl BroadcastStateTransition for StateTransition {
         sdk: &Sdk,
         settings: Option<PutSettings>,
     ) -> Result<T, Error> {
+        self.broadcast_and_wait_with_metadata::<T>(sdk, settings)
+            .await
+            .map(|(result, _metadata)| result)
+    }
+
+    async fn broadcast_and_wait_with_metadata<T: TryFrom<StateTransitionProofResult> + Send>(
+        &self,
+        sdk: &Sdk,
+        settings: Option<PutSettings>,
+    ) -> Result<(T, ResponseMetadata), Error> {
         trace!(state_transition = %self.name(), "broadcast_and_wait: start");
         trace!("broadcast_and_wait: step 1 - broadcasting");
         self.broadcast(sdk, settings).await?;
         trace!("broadcast_and_wait: step 2 - waiting for response");
-        let result = self.wait_for_response::<T>(sdk, settings).await;
+        let result = self
+            .wait_for_response_with_metadata::<T>(sdk, settings)
+            .await;
         match &result {
             Ok(_) => trace!("broadcast_and_wait: complete success"),
             Err(e) => warn!(error = ?e, "broadcast_and_wait: failed"),

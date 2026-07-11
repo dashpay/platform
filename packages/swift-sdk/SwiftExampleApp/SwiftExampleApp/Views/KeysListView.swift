@@ -3,13 +3,31 @@ import SwiftUI
 
 struct KeysListView: View {
   struct IdentifiableInt: Identifiable { let id: Int }
-  let identity: IdentityModel
+  let identity: PersistentIdentity
+  @Environment(\.modelContext) private var modelContext
+  @EnvironmentObject var appState: AppState
+  @EnvironmentObject var walletManager: PlatformWalletManager
   @State private var showingPrivateKey: IdentifiableInt? = nil
   @State private var copiedKeyId: Int? = nil
+  /// Drives the Add-Key sheet. Bool flag rather than presentation
+  /// state because the sheet's content is parameter-free — the
+  /// view binds to the surrounding `identity` directly.
+  @State private var showingAddKey = false
+  /// The key the user swiped to disable, pending confirmation. Drives
+  /// a value-based `.confirmationDialog`. The canonical disable home is
+  /// `KeyDetailView`; this swipe action is a shortcut that also reaches
+  /// keys whose row taps into `PrivateKeyView` instead of the detail.
+  @State private var pendingDisableKey: IdentityPublicKey?
+  @State private var isDisabling = false
+  @State private var disableError: String?
+
+  private var publicKeys: [IdentityPublicKey] {
+    identity.identityPublicKeys
+  }
 
   private var privateKeysAvailableCount: Int {
-    identity.publicKeys.filter { publicKey in
-      hasPrivateKey(for: publicKey.id)
+    publicKeys.filter { publicKey in
+      hasPrivateKey(for: publicKey)
     }.count
   }
 
@@ -17,8 +35,8 @@ struct KeysListView: View {
     List {
       // Public Keys Section
       Section("Public Keys") {
-        ForEach(identity.publicKeys.sorted(by: { $0.id < $1.id }), id: \.id) { publicKey in
-          if hasPrivateKey(for: publicKey.id) {
+        ForEach(publicKeys.sorted(by: { $0.id < $1.id }), id: \.id) { publicKey in
+          if hasPrivateKey(for: publicKey) {
             // For keys with private keys, use a button instead of NavigationLink
             Button(action: {
               print("🔑 View Private button pressed for key \(publicKey.id)")
@@ -30,6 +48,9 @@ struct KeysListView: View {
               )
             }
             .foregroundColor(.primary)
+            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+              disableSwipeButton(for: publicKey)
+            }
           } else {
             // For keys without private keys, use NavigationLink
             NavigationLink(destination: KeyDetailView(identity: identity, publicKey: publicKey)) {
@@ -37,6 +58,9 @@ struct KeysListView: View {
                 publicKey: publicKey,
                 privateKeyAvailable: false
               )
+            }
+            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+              disableSwipeButton(for: publicKey)
             }
           }
         }
@@ -47,7 +71,7 @@ struct KeysListView: View {
         HStack {
           Label("Total Public Keys", systemImage: "key")
           Spacer()
-          Text("\(identity.publicKeys.count)")
+          Text("\(publicKeys.count)")
             .foregroundColor(.secondary)
         }
 
@@ -58,7 +82,7 @@ struct KeysListView: View {
             .foregroundColor(.green)
         }
 
-        if identity.votingPrivateKey != nil {
+        if identity.votingPrivateKeyIdentifier != nil {
           HStack {
             Label("Voting Key", systemImage: "hand.raised.fill")
             Spacer()
@@ -67,7 +91,7 @@ struct KeysListView: View {
           }
         }
 
-        if identity.ownerPrivateKey != nil {
+        if identity.ownerPrivateKeyIdentifier != nil {
           HStack {
             Label("Owner Key", systemImage: "person.badge.key.fill")
             Spacer()
@@ -79,6 +103,19 @@ struct KeysListView: View {
     }
     .navigationTitle("Identity Keys")
     .navigationBarTitleDisplayMode(.inline)
+    .toolbar {
+      ToolbarItem(placement: .navigationBarTrailing) {
+        Button {
+          showingAddKey = true
+        } label: {
+          Label("Add Key", systemImage: "plus")
+        }
+        .accessibilityLabel("Add Identity Key")
+      }
+    }
+    .sheet(isPresented: $showingAddKey) {
+      AddIdentityKeyView(identity: identity)
+    }
     .sheet(item: $showingPrivateKey) { keyId in
       PrivateKeyView(
         identity: identity,
@@ -97,13 +134,122 @@ struct KeysListView: View {
           .transition(.move(edge: .bottom).combined(with: .opacity))
       }
     }
+    .confirmationDialog(
+      pendingDisableKey.map { "Disable Key #\($0.id)?" } ?? "Disable Key?",
+      isPresented: Binding(
+        get: { pendingDisableKey != nil },
+        set: { if !$0 { pendingDisableKey = nil } }
+      ),
+      titleVisibility: .visible
+    ) {
+      if let key = pendingDisableKey {
+        Button("Disable Key", role: .destructive) {
+          Task { await disableKey(key) }
+        }
+      }
+      Button("Cancel", role: .cancel) { pendingDisableKey = nil }
+    } message: {
+      if let key = pendingDisableKey {
+        Text("This permanently and irreversibly disables key #\(key.id) on-chain. It can never be re-enabled — you would have to add a new key instead.")
+      }
+    }
+    .alert(
+      "Disable Failed",
+      isPresented: Binding(
+        get: { disableError != nil },
+        set: { if !$0 { disableError = nil } }
+      )
+    ) {
+      Button("OK", role: .cancel) { disableError = nil }
+    } message: {
+      Text(disableError ?? "")
+    }
   }
 
-  private func hasPrivateKey(for keyId: UInt32) -> Bool {
-    // Check if we have a private key for this key ID in keychain
-    let hasKey = KeychainManager.shared.hasPrivateKey(identityId: identity.id, keyIndex: Int32(keyId))
-    print("🔑 Checking private key for keyId: \(keyId) - found: \(hasKey)")
-    return hasKey
+  /// Trailing-edge swipe button for a row. Only shown for keys that
+  /// pass the disable gate; already-disabled or gate-failing keys get
+  /// no swipe action (the full reason is surfaced in `KeyDetailView`).
+  @ViewBuilder
+  private func disableSwipeButton(for publicKey: IdentityPublicKey) -> some View {
+    if case .allowed = KeyDisableGate.evaluate(
+      target: publicKey,
+      allKeys: publicKeys
+    ) {
+      Button(role: .destructive) {
+        pendingDisableKey = publicKey
+      } label: {
+        Label("Disable", systemImage: "xmark.circle")
+      }
+      .disabled(isDisabling)
+    }
+  }
+
+  /// Submit an `IdentityUpdate` disabling `publicKey`, mirroring
+  /// `KeyDetailView.disableKey()` / `AddIdentityKeyView.submit()`: same
+  /// wallet + signer resolution, same `_ = signer` keepalive, same
+  /// post-submit key refresh so the disabled badge appears.
+  @MainActor
+  private func disableKey(_ publicKey: IdentityPublicKey) async {
+    pendingDisableKey = nil
+
+    // Re-check the gate at submit time — the key set could have
+    // changed since the swipe (background sync, a sibling disable).
+    guard case .allowed = KeyDisableGate.evaluate(
+      target: publicKey,
+      allKeys: publicKeys
+    ) else { return }
+
+    guard let walletId = identity.wallet?.walletId else {
+      disableError = "Identity has no wallet linkage; cannot sign the disable transition."
+      return
+    }
+    guard let wallet = walletManager.wallet(for: walletId) else {
+      disableError = "Wallet not loaded in the wallet manager."
+      return
+    }
+    guard let sdk = appState.sdk else {
+      disableError = "SDK not initialized."
+      return
+    }
+
+    isDisabling = true
+    defer { isDisabling = false }
+
+    do {
+      let signer = KeychainSigner(modelContainer: modelContext.container)
+      try await wallet.updateIdentity(
+        identityId: identity.identityId,
+        addPublicKeys: [],
+        disablePublicKeyIds: [publicKey.id],
+        signer: signer
+      )
+      _ = signer  // keepalive: see KeychainSigner lifetime contract.
+
+      try? await IdentityKeyRefresher.refreshBalanceAndKeys(
+        identity: identity,
+        sdk: sdk,
+        modelContext: modelContext
+      )
+    } catch {
+      disableError = error.localizedDescription
+    }
+  }
+
+  private func hasPrivateKey(for publicKey: IdentityPublicKey) -> Bool {
+    // Two private-key storage schemes coexist on the device. The
+    // legacy scheme is keyed by `(identityId, keyIndex)`; the new
+    // wallet-derived scheme is keyed by `identity_privkey.<derivation
+    // path>` with the public-key hex carried in metadata. Wallet-
+    // derived keys (the modern flow) only show up under the second
+    // scheme — checking only the first produces a confusing "we
+    // definitely have them but the UI says we don't" diagnostic
+    // mismatch.
+    let km = KeychainManager.shared
+    if km.hasPrivateKey(identityId: identity.identityId, keyIndex: Int32(publicKey.id)) {
+      return true
+    }
+    let publicKeyHex = publicKey.data.toHexString()
+    return km.hasIdentityPrivateKey(publicKeyHex: publicKeyHex)
   }
 }
 
@@ -171,10 +317,11 @@ struct KeyRowView: View {
 }
 
 struct PrivateKeyView: View {
-  let identity: IdentityModel
+  let identity: PersistentIdentity
   let keyId: UInt32
   let onCopy: (Int) -> Void
   @Environment(\.dismiss) var dismiss
+  @Environment(\.modelContext) private var modelContext
   @EnvironmentObject var appState: AppState
   @State private var showingPrivateKey = false
   @State private var showForgetKeyAlert = false
@@ -209,7 +356,7 @@ struct PrivateKeyView: View {
               .fontWeight(.medium)
           }
 
-          if let publicKey = identity.publicKeys.first(where: { $0.id == keyId }) {
+          if let publicKey = identity.identityPublicKeys.first(where: { $0.id == keyId }) {
             HStack {
               Text("Purpose:")
               Spacer()
@@ -229,10 +376,44 @@ struct PrivateKeyView: View {
         .background(Color.gray.opacity(0.1))
         .cornerRadius(12)
 
+        // Public Key — always visible, doesn't require the
+        // "reveal" gate the private key hides behind. Helps the
+        // user confirm which key the private bytes pair with
+        // (e.g. when copying both into another tool that asks for
+        // both halves).
+        if let publicKey = identity.identityPublicKeys.first(where: { $0.id == keyId }) {
+          VStack(alignment: .leading, spacing: 8) {
+            Text("Public Key (Hex):")
+              .font(.caption)
+              .fontWeight(.medium)
+
+            Text(publicKey.data.toHexString())
+              .font(.system(.caption, design: .monospaced))
+              .padding()
+              .frame(maxWidth: .infinity, alignment: .leading)
+              .background(Color.black.opacity(0.05))
+              .cornerRadius(8)
+              .textSelection(.enabled)
+              .fixedSize(horizontal: false, vertical: true)
+
+            Button(action: {
+              UIPasteboard.general.string = publicKey.data.toHexString()
+              onCopy(Int(keyId))
+            }) {
+              Label("Copy Public Key", systemImage: "doc.on.doc")
+                .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+          }
+          .padding()
+          .background(Color.gray.opacity(0.1))
+          .cornerRadius(12)
+        }
+
         // Private Key Display
         if showingPrivateKey {
           if let privateKeyData = getPrivateKey(for: keyId),
-             let publicKey = identity.publicKeys.first(where: { $0.id == keyId }) {
+             let publicKey = identity.identityPublicKeys.first(where: { $0.id == keyId }) {
             VStack(alignment: .leading, spacing: 16) {
               // Hex Format
               VStack(alignment: .leading, spacing: 8) {
@@ -350,33 +531,51 @@ struct PrivateKeyView: View {
 
   private func forgetPrivateKey() {
     // Remove from keychain
-    let removed = KeychainManager.shared.deletePrivateKey(identityId: identity.id, keyIndex: Int32(keyId))
+    let removed = KeychainManager.shared.deletePrivateKey(identityId: identity.identityId, keyIndex: Int32(keyId))
 
     if removed {
-      // Update the persistent public key to clear the reference
-      appState.removePrivateKeyReference(identityId: identity.id, keyId: Int32(keyId))
+      // Clear the keychain reference on the matching
+      // PersistentPublicKey. The @Query observing the parent
+      // identity will re-render this row automatically.
+      if let persistedKey = identity.publicKeys.first(
+        where: { $0.keyId == Int32(keyId) }
+      ) {
+        persistedKey.privateKeyKeychainIdentifier = nil
+        try? modelContext.save()
+      }
       dismiss()
     }
   }
 
   @MainActor
   private func getPrivateKey(for keyId: UInt32) -> Data? {
-    // Use KeyManager to retrieve private key
-    let dppIdentity = DPPIdentity(
-      id: identity.id,
-      publicKeys: Dictionary(uniqueKeysWithValues: identity.publicKeys.map { ($0.id, $0) }),
-      balance: identity.balance,
-      revision: 0
-    )
-    let keyManager = KeyManager.withSharedKeychain()
-    let privateKey = try? keyManager.getPrivateKey(for: dppIdentity, keyIndex: keyId)
-    print("🔑 Retrieving private key for identity: \(identity.id.toHexString()), keyId: \(keyId)")
-    print("🔑 Private key found: \(privateKey != nil ? "Yes (\(privateKey!.count) bytes)" : "No")")
-    return privateKey
+    // Two private-key storage schemes coexist on the device — see
+    // `KeysListView.hasPrivateKey(for:)` for the long-form note.
+    // Try the legacy `(identityId, keyIndex)` lookup first; if it
+    // misses, fall back to the wallet-derived `identity_privkey.*`
+    // scheme keyed by public-key hex.
+    let km = KeychainManager.shared
+    if let legacy = km.retrievePrivateKey(identityId: identity.identityId, keyIndex: Int32(keyId)) {
+      print("🔑 Retrieved private key for keyId \(keyId) via legacy (id, index) scheme")
+      return legacy
+    }
+    if let publicKey = identity.identityPublicKeys.first(where: { $0.id == keyId }) {
+      let publicKeyHex = publicKey.data.toHexString()
+      if let derived = km.retrieveIdentityPrivateKey(publicKeyHex: publicKeyHex) {
+        print("🔑 Retrieved private key for keyId \(keyId) via wallet-derived (publicKeyHex) scheme")
+        return derived
+      }
+    }
+    print("🔑 No private key found for keyId \(keyId) under either scheme")
+    return nil
   }
 
   private func getWIFForPrivateKey(_ privateKeyData: Data) -> String? {
-    return WIFParser.encodeToWIF(privateKeyData, isTestnet: true)
+    // Mainnet → `X…` compressed prefix; every other network → `c…`.
+    // Fall back to testnet when the SDK isn't loaded so the call
+    // still produces *some* WIF rather than `nil`.
+    let network = appState.sdk?.network ?? .testnet
+    return WIFParser.encodeToWIF(privateKeyData, network: network)
   }
 }
 

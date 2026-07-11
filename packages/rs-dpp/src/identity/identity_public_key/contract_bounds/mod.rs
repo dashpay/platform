@@ -24,7 +24,7 @@ pub type ContractBoundsType = u8;
     Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, Ord, PartialOrd, Hash,
 )]
 #[cfg_attr(feature = "value-conversion", derive(ValueConvertible))]
-#[serde(tag = "type", rename_all = "camelCase")]
+#[serde(tag = "$type", rename_all = "camelCase")]
 pub enum ContractBounds {
     /// this key can only be used within a specific contract
     #[serde(rename = "singleContract")]
@@ -161,6 +161,122 @@ impl ContractBounds {
     //         contract_bounds_document_type,
     //     )
     // }
+}
+
+#[cfg(test)]
+mod core_tests {
+    use super::*;
+
+    // -- new_from_type: valid types --
+    #[test]
+    fn test_new_from_type_single_contract() {
+        let id_bytes = vec![0xAAu8; 32];
+        let bounds =
+            ContractBounds::new_from_type(0, id_bytes.clone(), "ignored".to_string()).unwrap();
+        assert!(matches!(bounds, ContractBounds::SingleContract { .. }));
+        assert_eq!(bounds.contract_bounds_type(), 0);
+        assert_eq!(bounds.contract_bounds_type_string(), "singleContract");
+        assert_eq!(bounds.identifier().as_bytes(), id_bytes.as_slice());
+        // document_type is None for SingleContract regardless of what we passed in.
+        assert!(bounds.document_type().is_none());
+    }
+
+    #[test]
+    fn test_new_from_type_single_contract_document_type() {
+        let id_bytes = vec![0xBBu8; 32];
+        let bounds = ContractBounds::new_from_type(1, id_bytes.clone(), "myDoc".to_string())
+            .expect("expected to construct SingleContractDocumentType");
+        assert!(matches!(
+            bounds,
+            ContractBounds::SingleContractDocumentType { .. }
+        ));
+        assert_eq!(bounds.contract_bounds_type(), 1);
+        assert_eq!(bounds.contract_bounds_type_string(), "documentType");
+        assert_eq!(bounds.identifier().as_bytes(), id_bytes.as_slice());
+        assert_eq!(bounds.document_type().map(String::as_str), Some("myDoc"));
+    }
+
+    // -- new_from_type: invalid type --
+    #[test]
+    fn test_new_from_type_unrecognized_type_returns_error() {
+        let id_bytes = vec![0xCCu8; 32];
+        let err = ContractBounds::new_from_type(99, id_bytes, "".to_string()).unwrap_err();
+        match err {
+            ProtocolError::InvalidKeyContractBoundsError(msg) => {
+                assert!(msg.contains("99"), "expected error message to mention 99");
+            }
+            other => panic!("expected InvalidKeyContractBoundsError, got {:?}", other),
+        }
+    }
+
+    // -- new_from_type: identifier wrong length --
+    #[test]
+    fn test_new_from_type_invalid_identifier_length_returns_error() {
+        // Identifier::from_bytes requires exactly 32 bytes.
+        let short = vec![0x01u8; 10];
+        assert!(ContractBounds::new_from_type(0, short, "".to_string()).is_err());
+    }
+
+    // -- contract_bounds_type_from_str --
+    #[test]
+    fn test_contract_bounds_type_from_str_single_contract() {
+        assert_eq!(
+            ContractBounds::contract_bounds_type_from_str("singleContract").unwrap(),
+            0
+        );
+    }
+
+    #[test]
+    fn test_contract_bounds_type_from_str_document_type() {
+        assert_eq!(
+            ContractBounds::contract_bounds_type_from_str("documentType").unwrap(),
+            1
+        );
+    }
+
+    #[test]
+    fn test_contract_bounds_type_from_str_unknown_returns_error() {
+        let err = ContractBounds::contract_bounds_type_from_str("garbage").unwrap_err();
+        match err {
+            ProtocolError::DecodingError(_) => {}
+            other => panic!("expected ProtocolError::DecodingError, got {:?}", other),
+        }
+    }
+
+    // -- equality / clone / hash (derives) --
+    #[test]
+    fn test_contract_bounds_equality_and_clone() {
+        let id = Identifier::from([0x11u8; 32]);
+        let a = ContractBounds::SingleContract { id };
+        let b = a.clone();
+        assert_eq!(a, b);
+
+        let different = ContractBounds::SingleContractDocumentType {
+            id,
+            document_type_name: "foo".to_string(),
+        };
+        assert_ne!(a, different);
+    }
+
+    #[test]
+    fn test_contract_bounds_type_string_roundtrip_with_from_str() {
+        // The string form produced by the variant should round-trip through from_str
+        // back to its numeric discriminant.
+        let id_bytes = vec![0xD0u8; 32];
+        let sc = ContractBounds::new_from_type(0, id_bytes.clone(), "".to_string()).unwrap();
+        let sctd = ContractBounds::new_from_type(1, id_bytes, "docType".to_string()).unwrap();
+
+        assert_eq!(
+            ContractBounds::contract_bounds_type_from_str(sc.contract_bounds_type_string())
+                .unwrap(),
+            sc.contract_bounds_type()
+        );
+        assert_eq!(
+            ContractBounds::contract_bounds_type_from_str(sctd.contract_bounds_type_string())
+                .unwrap(),
+            sctd.contract_bounds_type()
+        );
+    }
 }
 
 #[cfg(all(test, feature = "json-conversion"))]

@@ -1,9 +1,15 @@
 //! State transitions used to put changed objects to the Dash Platform.
 pub mod address_credit_withdrawal;
 pub(crate) mod address_inputs;
+/// Re-export the canonical address-input fetch + hard balance check so
+/// downstream crates (e.g. platform-wallet's shield path) reuse it
+/// instead of re-implementing the fetch-and-validate dance.
+pub use address_inputs::fetch_inputs_with_nonce;
 pub mod broadcast;
 pub(crate) mod broadcast_identity;
 pub mod broadcast_request;
+#[cfg(feature = "shielded")]
+pub mod identity_create_from_shielded_pool;
 pub mod purchase_document;
 pub mod put_contract;
 pub mod put_document;

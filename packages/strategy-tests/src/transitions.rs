@@ -221,7 +221,7 @@ pub fn instant_asset_lock_proof_transaction_fixture(
     });
 
     Transaction {
-        version: 0,
+        version: 3,
         lock_time: 0,
         input: vec![input],
         output: vec![burn_output, change_output],
@@ -305,7 +305,7 @@ pub fn instant_asset_lock_proof_transaction_fixture_with_dynamic_amount(
     });
 
     Transaction {
-        version: 0,
+        version: 3,
         lock_time: 0,
         input: vec![input],
         output: vec![burn_output, change_output],
@@ -383,7 +383,7 @@ pub fn create_identity_top_up_transition(
         let (asset_lock_proof, private_key) = proof_and_pk;
         let pk_bytes = private_key.to_bytes();
 
-        IdentityTopUpTransition::try_from_identity(
+        IdentityTopUpTransition::try_from_identity_with_private_key(
             identity,
             asset_lock_proof,
             pk_bytes.as_ref(),
@@ -436,7 +436,7 @@ pub fn create_identity_top_up_transition(
 /// - If the identity does not have a master key.
 /// - If there's an error during the random key generation.
 /// - If there's an error during the creation of the identity update transition.
-pub fn create_identity_update_transition_add_keys(
+pub async fn create_identity_update_transition_add_keys(
     identity: &mut Identity,
     count: u16,
     keys_already_added_this_block_count: u32,
@@ -488,6 +488,7 @@ pub fn create_identity_update_transition_add_keys(
         platform_version,
         None,
     )
+    .await
     .expect("expected to create an AddKeys transition");
 
     (state_transition, (identity.id(), add_public_keys))
@@ -532,7 +533,7 @@ pub fn create_identity_update_transition_add_keys(
 /// This function may panic under the following conditions:
 /// - If the identity does not have a master key.
 /// - If there's an error during the creation of the identity update transition.
-pub fn create_identity_update_transition_disable_keys(
+pub async fn create_identity_update_transition_disable_keys(
     identity: &mut Identity,
     count: u16,
     identity_nonce_counter: &mut BTreeMap<Identifier, u64>,
@@ -599,6 +600,7 @@ pub fn create_identity_update_transition_disable_keys(
         platform_version,
         None,
     )
+    .await
     .expect("expected to create a DisableKeys transition");
 
     Some(state_transition)
@@ -638,7 +640,7 @@ pub fn create_identity_update_transition_disable_keys(
 /// # Panics
 /// This function may panic under the following conditions:
 /// - If the identity does not have a suitable withdrawal address or key for signing.
-pub fn create_identity_withdrawal_transition(
+pub async fn create_identity_withdrawal_transition(
     identity: &mut Identity,
     amount_range: AmountRange,
     identity_nonce_counter: &mut BTreeMap<Identifier, u64>,
@@ -662,6 +664,7 @@ pub fn create_identity_withdrawal_transition(
             signer,
             rng,
         )
+        .await
     } else {
         create_identity_withdrawal_transition_with_output_address(
             identity,
@@ -670,6 +673,7 @@ pub fn create_identity_withdrawal_transition(
             signer,
             rng,
         )
+        .await
     }
 }
 
@@ -705,7 +709,7 @@ pub fn create_identity_withdrawal_transition(
 /// This function may panic under the following conditions:
 /// - If the identity does not have a suitable authentication key for signing.
 /// - If there's an error during the signing process.
-pub fn create_identity_withdrawal_transition_sent_to_identity_transfer_key(
+pub async fn create_identity_withdrawal_transition_sent_to_identity_transfer_key(
     identity: &mut Identity,
     amount_range: AmountRange,
     identity_nonce_counter: &mut BTreeMap<Identifier, u64>,
@@ -748,6 +752,7 @@ pub fn create_identity_withdrawal_transition_sent_to_identity_transfer_key(
             signer,
             None::<GetDataContractSecurityLevelRequirementFn>,
         )
+        .await
         .expect("expected to sign withdrawal");
 
     withdrawal
@@ -788,7 +793,7 @@ pub fn create_identity_withdrawal_transition_sent_to_identity_transfer_key(
 /// This function may panic under the following conditions:
 /// - If the identity does not have a suitable transfer key for signing.
 /// - If there's an error during the signing process.
-pub fn create_identity_withdrawal_transition_with_output_address(
+pub async fn create_identity_withdrawal_transition_with_output_address(
     identity: &mut Identity,
     amount_range: AmountRange,
     identity_nonce_counter: &mut BTreeMap<Identifier, u64>,
@@ -835,6 +840,7 @@ pub fn create_identity_withdrawal_transition_with_output_address(
             signer,
             None::<GetDataContractSecurityLevelRequirementFn>,
         )
+        .await
         .expect("expected to sign withdrawal");
 
     withdrawal
@@ -872,7 +878,7 @@ pub fn create_identity_withdrawal_transition_with_output_address(
 /// This function may panic under the following conditions:
 /// - If the sender's identity does not have a suitable authentication key available for signing.
 /// - If there's an error during the signing process.
-pub fn create_identity_credit_transfer_transition(
+pub async fn create_identity_credit_transfer_transition(
     identity: &Identity,
     recipient: &Identity,
     identity_nonce_counter: &mut BTreeMap<Identifier, u64>,
@@ -907,6 +913,7 @@ pub fn create_identity_credit_transfer_transition(
             signer,
             None::<GetDataContractSecurityLevelRequirementFn>,
         )
+        .await
         .expect("expected to sign transfer");
 
     transition
@@ -935,7 +942,7 @@ pub fn create_identity_credit_transfer_transition(
 /// - The sender's identity does not have a suitable transfer key available for signing.
 /// - There's an error during the signing process.
 #[allow(clippy::too_many_arguments)]
-pub fn create_identity_credit_transfer_to_addresses_transition(
+pub async fn create_identity_credit_transfer_to_addresses_transition(
     identity: &Identity,
     identity_nonce_counter: &mut BTreeMap<Identifier, u64>,
     current_addresses_with_balance: &mut AddressesWithBalance,
@@ -969,6 +976,7 @@ pub fn create_identity_credit_transfer_to_addresses_transition(
         platform_version,
         None, // version
     )
+    .await
     .expect("expected to create transfer to addresses transition");
 
     (transition, recipient_addresses)
@@ -992,7 +1000,7 @@ pub fn create_identity_credit_transfer_to_addresses_transition(
 /// This function may panic if:
 /// - The sender's identity does not have a suitable transfer key available for signing.
 /// - There's an error during the signing process.
-pub fn create_identity_credit_transfer_to_addresses_transition_with_outputs(
+pub async fn create_identity_credit_transfer_to_addresses_transition_with_outputs(
     identity: &Identity,
     identity_nonce_counter: &mut BTreeMap<Identifier, u64>,
     signer: &mut SimpleSigner,
@@ -1012,6 +1020,7 @@ pub fn create_identity_credit_transfer_to_addresses_transition_with_outputs(
         platform_version,
         None, // version
     )
+    .await
     .expect("expected to create transfer to addresses transition")
 }
 
@@ -1053,7 +1062,7 @@ pub fn create_identity_credit_transfer_to_addresses_transition_with_outputs(
 /// - When unable to generate random cryptographic keys or identities.
 /// - Conversion and encoding errors related to the cryptographic data.
 #[allow(clippy::too_many_arguments)]
-pub fn create_identities_state_transitions(
+pub async fn create_identities_state_transitions(
     count: u16,
     key_count: KeyID,
     extra_keys: &KeyMaps,
@@ -1109,56 +1118,56 @@ pub fn create_identities_state_transitions(
     }
     signer.add_identity_public_keys(keys);
 
-    // Generate state transitions for each identity
-    identities
-        .into_iter()
-        .enumerate()
-        .map(|(index, mut identity)| {
-            // Calculate the starting KeyID for this identity
-            let identity_starting_id =
-                starting_id_num + index as u32 * (key_count + extra_keys.len() as u32);
+    // Generate state transitions for each identity (sequentially)
+    let mut results: Vec<(Identity, StateTransition)> = Vec::with_capacity(identities.len());
+    for (index, mut identity) in identities.into_iter().enumerate() {
+        // Calculate the starting KeyID for this identity
+        let identity_starting_id =
+            starting_id_num + index as u32 * (key_count + extra_keys.len() as u32);
 
-            // Update the identity with the new KeyIDs
-            let public_keys_map = identity.public_keys_mut();
-            public_keys_map
-                .values_mut()
-                .enumerate()
-                .for_each(|(key_index, public_key)| {
-                    let IdentityPublicKey::V0(ref mut id_pub_key_v0) = public_key;
-                    let new_id = identity_starting_id + key_index as u32;
-                    id_pub_key_v0.set_id(new_id);
-                });
+        // Update the identity with the new KeyIDs
+        let public_keys_map = identity.public_keys_mut();
+        public_keys_map
+            .values_mut()
+            .enumerate()
+            .for_each(|(key_index, public_key)| {
+                let IdentityPublicKey::V0(ref mut id_pub_key_v0) = public_key;
+                let new_id = identity_starting_id + key_index as u32;
+                id_pub_key_v0.set_id(new_id);
+            });
 
-            if let Some(proof_and_pk) = asset_lock_proofs.pop() {
-                let (asset_lock_proof, private_key) = proof_and_pk;
-                let pk = private_key.to_bytes();
-                match IdentityCreateTransition::try_from_identity_with_signer(
-                    &identity,
-                    asset_lock_proof,
-                    &pk,
-                    signer,
-                    &NativeBlsModule,
-                    0,
-                    platform_version,
-                ) {
-                    Ok(identity_create_transition) => {
-                        identity.set_id(
-                            identity_create_transition
-                                .owner_id()
-                                .expect("identity create transitions have an identity id"),
-                        );
-                        Ok((identity, identity_create_transition))
-                    }
-                    Err(e) => Err(e),
+        if let Some(proof_and_pk) = asset_lock_proofs.pop() {
+            let (asset_lock_proof, private_key) = proof_and_pk;
+            let pk = private_key.to_bytes();
+            match IdentityCreateTransition::try_from_identity_with_signer_and_private_key(
+                &identity,
+                asset_lock_proof,
+                &pk,
+                signer,
+                &NativeBlsModule,
+                0,
+                platform_version,
+            )
+            .await
+            {
+                Ok(identity_create_transition) => {
+                    identity.set_id(
+                        identity_create_transition
+                            .owner_id()
+                            .expect("identity create transitions have an identity id"),
+                    );
+                    results.push((identity, identity_create_transition));
                 }
-            } else {
-                Err(ProtocolError::Generic(
-                    "No asset lock proofs available for create_identities_state_transitions"
-                        .to_string(),
-                ))
+                Err(e) => return Err(e),
             }
-        })
-        .collect::<Result<Vec<(Identity, StateTransition)>, ProtocolError>>()
+        } else {
+            return Err(ProtocolError::Generic(
+                "No asset lock proofs available for create_identities_state_transitions"
+                    .to_string(),
+            ));
+        }
+    }
+    Ok(results)
 }
 
 /// Generates state transitions for the creation of new identities.
@@ -1197,7 +1206,7 @@ pub fn create_identities_state_transitions(
 /// - When unable to generate random cryptographic keys.
 /// - When failing to transform an identity into its corresponding state transition.
 /// - Conversion and encoding errors related to the cryptographic data.
-pub fn create_state_transitions_for_identities<'a, I>(
+pub async fn create_state_transitions_for_identities<'a, I>(
     identities: I,
     amount_range: &AmountRange,
     signer: &SimpleSigner,
@@ -1207,38 +1216,38 @@ pub fn create_state_transitions_for_identities<'a, I>(
 where
     I: IntoIterator<Item = &'a mut Identity>,
 {
-    identities
-        .into_iter()
-        .map(|identity| {
-            let (_, pk) = ECDSA_SECP256K1
-                .random_public_and_private_key_data(rng, platform_version)
-                .unwrap();
-            let secret_key = SecretKey::from_str(hex::encode(pk).as_str()).unwrap();
-            let asset_lock_proof = instant_asset_lock_proof_fixture_with_dynamic_range(
-                PrivateKey::new(secret_key, Network::Mainnet),
-                amount_range,
-                rng,
-            );
-            let identity_create_transition =
-                IdentityCreateTransition::try_from_identity_with_signer(
-                    &identity.clone(),
-                    asset_lock_proof,
-                    &pk,
-                    signer,
-                    &NativeBlsModule,
-                    0,
-                    platform_version,
-                )
-                .expect("expected to transform identity into identity create transition");
-            identity.set_id(
-                identity_create_transition
-                    .owner_id()
-                    .expect("identity create transitions have an identity id"),
-            );
+    let mut results = Vec::new();
+    for identity in identities.into_iter() {
+        let (_, pk) = ECDSA_SECP256K1
+            .random_public_and_private_key_data(rng, platform_version)
+            .unwrap();
+        let secret_key = SecretKey::from_str(hex::encode(pk).as_str()).unwrap();
+        let asset_lock_proof = instant_asset_lock_proof_fixture_with_dynamic_range(
+            PrivateKey::new(secret_key, Network::Mainnet),
+            amount_range,
+            rng,
+        );
+        let identity_create_transition =
+            IdentityCreateTransition::try_from_identity_with_signer_and_private_key(
+                &identity.clone(),
+                asset_lock_proof,
+                &pk,
+                signer,
+                &NativeBlsModule,
+                0,
+                platform_version,
+            )
+            .await
+            .expect("expected to transform identity into identity create transition");
+        identity.set_id(
+            identity_create_transition
+                .owner_id()
+                .expect("identity create transitions have an identity id"),
+        );
 
-            (identity.clone(), identity_create_transition)
-        })
-        .collect()
+        results.push((identity.clone(), identity_create_transition));
+    }
+    results
 }
 
 /// Creates state transitions for identities with pre-generated asset lock proofs.
@@ -1261,32 +1270,32 @@ where
 ///
 /// # Panics
 /// Panics if unable to create the identity creation transition.
-pub fn create_state_transitions_for_identities_and_proofs(
+pub async fn create_state_transitions_for_identities_and_proofs(
     identities_with_proofs: Vec<(Identity, [u8; 32], AssetLockProof)>,
     signer: &mut SimpleSigner,
     platform_version: &PlatformVersion,
 ) -> Vec<(Identity, StateTransition)> {
-    identities_with_proofs
-        .into_iter()
-        .map(|(mut identity, private_key, asset_lock_proof)| {
-            let identity_create_transition =
-                IdentityCreateTransition::try_from_identity_with_signer(
-                    &identity.clone(),
-                    asset_lock_proof,
-                    &private_key,
-                    signer,
-                    &NativeBlsModule,
-                    0,
-                    platform_version,
-                )
-                .expect("expected to transform identity into identity create transition");
-            identity.set_id(
-                identity_create_transition
-                    .owner_id()
-                    .expect("identity create transitions have an identity id"),
-            );
+    let mut results = Vec::with_capacity(identities_with_proofs.len());
+    for (mut identity, private_key, asset_lock_proof) in identities_with_proofs.into_iter() {
+        let identity_create_transition =
+            IdentityCreateTransition::try_from_identity_with_signer_and_private_key(
+                &identity.clone(),
+                asset_lock_proof,
+                &private_key,
+                signer,
+                &NativeBlsModule,
+                0,
+                platform_version,
+            )
+            .await
+            .expect("expected to transform identity into identity create transition");
+        identity.set_id(
+            identity_create_transition
+                .owner_id()
+                .expect("identity create transitions have an identity id"),
+        );
 
-            (identity, identity_create_transition)
-        })
-        .collect()
+        results.push((identity, identity_create_transition));
+    }
+    results
 }

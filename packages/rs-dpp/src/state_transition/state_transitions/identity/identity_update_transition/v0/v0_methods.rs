@@ -41,7 +41,7 @@ use crate::{identity::SecurityLevel, ProtocolError};
 
 impl IdentityUpdateTransitionMethodsV0 for IdentityUpdateTransitionV0 {
     #[cfg(feature = "state-transition-signing")]
-    fn try_from_identity_with_signer<'a, S: Signer<IdentityPublicKey>>(
+    async fn try_from_identity_with_signer<S: Signer<IdentityPublicKey>>(
         identity: &Identity,
         master_public_key_id: &KeyID,
         add_public_keys: Vec<IdentityPublicKey>,
@@ -73,18 +73,16 @@ impl IdentityUpdateTransitionMethodsV0 for IdentityUpdateTransitionV0 {
         let key_signable_bytes = state_transition.signable_bytes()?;
 
         // Sign all the keys
-        identity_update_transition
+        for (public_key_with_witness, public_key) in identity_update_transition
             .add_public_keys
             .iter_mut()
             .zip(add_public_keys.iter())
-            .try_for_each(|(public_key_with_witness, public_key)| {
-                if public_key.key_type().is_unique_key_type() {
-                    let signature = signer.sign(public_key, &key_signable_bytes)?;
-                    public_key_with_witness.set_signature(signature);
-                }
-
-                Ok::<(), ProtocolError>(())
-            })?;
+        {
+            if public_key.key_type().is_unique_key_type() {
+                let signature = signer.sign(public_key, &key_signable_bytes).await?;
+                public_key_with_witness.set_signature(signature);
+            }
+        }
 
         let master_public_key = identity
             .public_keys()
@@ -104,11 +102,13 @@ impl IdentityUpdateTransitionMethodsV0 for IdentityUpdateTransitionV0 {
             ))
         } else {
             let mut state_transition: StateTransition = identity_update_transition.into();
-            state_transition.sign_external(
-                master_public_key,
-                signer,
-                None::<GetDataContractSecurityLevelRequirementFn>,
-            )?;
+            state_transition
+                .sign_external(
+                    master_public_key,
+                    signer,
+                    None::<GetDataContractSecurityLevelRequirementFn>,
+                )
+                .await?;
             Ok(state_transition)
         }
     }

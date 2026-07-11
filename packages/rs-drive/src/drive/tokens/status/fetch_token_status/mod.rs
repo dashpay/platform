@@ -106,3 +106,64 @@ impl Drive {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use dpp::tokens::status::v0::TokenStatusV0;
+
+    /// fetch_token_status_with_costs returns (value, FeeResult) and the FeeResult
+    /// must be non-trivial when a real stateful fetch runs against existing data.
+    #[test]
+    fn with_costs_returns_fee_result_for_existing_token() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let token_id = [0x33u8; 32];
+        let paused = TokenStatus::V0(TokenStatusV0 { paused: true });
+        drive
+            .token_apply_status(
+                token_id,
+                paused.clone(),
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("apply status");
+
+        let (value, fees) = drive
+            .fetch_token_status_with_costs(
+                token_id,
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("fetch with costs");
+
+        assert_eq!(value, Some(paused));
+        // A real stateful fetch should have accumulated storage or processing fees.
+        assert!(fees.processing_fee > 0 || fees.storage_fee > 0);
+    }
+
+    /// apply=false (stateless) returns a FeeResult with only estimated costs
+    /// (no real IO), and the value is None when nothing exists.
+    #[test]
+    fn with_costs_stateless_missing_token_returns_none() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let (value, _fees) = drive
+            .fetch_token_status_with_costs(
+                [0xFFu8; 32],
+                &BlockInfo::default(),
+                false, // stateless → stateless direct query + no IO
+                None,
+                platform_version,
+            )
+            .expect("stateless fetch");
+        assert_eq!(value, None);
+    }
+}

@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import SwiftDashSDK
 
 struct DocumentFieldsView: View {
     let documentType: PersistentDocumentType
@@ -9,6 +10,10 @@ struct DocumentFieldsView: View {
     @State private var numberFields: [String: String] = [:]
     @State private var boolFields: [String: Bool] = [:]
     @State private var arrayFields: [String: String] = [:]
+    /// Boolean fields the user has actually toggled. Untouched optional
+    /// booleans are omitted from the payload (absence ≠ `false` for some
+    /// schemas) rather than broadcast as the seeded `false` default.
+    @State private var touchedBoolFields: Set<String> = []
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -55,6 +60,7 @@ struct DocumentFieldsView: View {
                     TextField("Base58 identifier", text: binding(for: property.name, in: $textFields))
                         .textFieldStyle(RoundedBorderTextFieldStyle())
                         .font(.system(.body, design: .monospaced))
+                        .accessibilityIdentifier("createDocument.field.\(property.name)")
                     Text("Enter a valid base58 identifier (e.g., 4EfA9Jrvv3nnCFdSf7fad59851iiTRZ6Wcu6YVJ4iSeF)")
                         .font(.caption2)
                         .foregroundColor(.secondary)
@@ -64,17 +70,21 @@ struct DocumentFieldsView: View {
             case "string":
                 TextField(placeholderText(for: property), text: binding(for: property.name, in: $textFields))
                     .textFieldStyle(RoundedBorderTextFieldStyle())
+                    .accessibilityIdentifier("createDocument.field.\(property.name)")
 
             case "number", "integer":
                 TextField(placeholderText(for: property), text: binding(for: property.name, in: $numberFields))
                     .keyboardType(.numberPad)
                     .textFieldStyle(RoundedBorderTextFieldStyle())
+                    .accessibilityIdentifier("createDocument.field.\(property.name)")
 
             case "boolean":
-                Toggle(isOn: binding(for: property.name, in: $boolFields)) {
+                Toggle(isOn: boolBinding(for: property.name)) {
                     Text("")
                 }
                 .labelsHidden()
+                .accessibilityLabel(property.name)
+                .accessibilityIdentifier("createDocument.field.\(property.name)")
 
             case "array":
                 if property.byteArray {
@@ -85,6 +95,7 @@ struct DocumentFieldsView: View {
                     VStack(alignment: .leading, spacing: 4) {
                         TextField("Enter comma-separated values", text: binding(for: property.name, in: $arrayFields))
                             .textFieldStyle(RoundedBorderTextFieldStyle())
+                            .accessibilityIdentifier("createDocument.field.\(property.name)")
                         Text("Separate multiple values with commas")
                             .font(.caption2)
                             .foregroundColor(.secondary)
@@ -99,10 +110,12 @@ struct DocumentFieldsView: View {
                         RoundedRectangle(cornerRadius: 8)
                             .stroke(Color.gray.opacity(0.3), lineWidth: 1)
                     )
+                    .accessibilityIdentifier("createDocument.field.\(property.name)")
 
                 default:
                     TextField("Enter \(property.name)", text: binding(for: property.name, in: $textFields))
                         .textFieldStyle(RoundedBorderTextFieldStyle())
+                        .accessibilityIdentifier("createDocument.field.\(property.name)")
                 }
             }
 
@@ -134,6 +147,19 @@ struct DocumentFieldsView: View {
         }
 
         return placeholder
+    }
+
+    /// Boolean binding that records a user toggle, so untouched optional
+    /// booleans can be omitted from the payload (see `touchedBoolFields`).
+    private func boolBinding(for key: String) -> Binding<Bool> {
+        Binding(
+            get: { boolFields[key] ?? false },
+            set: {
+                boolFields[key] = $0
+                touchedBoolFields.insert(key)
+                updateFieldValues()
+            }
+        )
     }
 
     private func binding<T>(for key: String, in dictionary: Binding<[String: T]>) -> Binding<T> where T: DefaultInitializable {
@@ -223,9 +249,18 @@ struct DocumentFieldsView: View {
             }
         }
 
-        // Add boolean fields
+        // Add boolean fields. Unlike the other types (which skip empty
+        // input), a seeded boolean has no "empty" state — so only include
+        // it if it's required or the user actually toggled it. This keeps
+        // untouched optional booleans absent from the payload instead of
+        // broadcasting the seeded `false` (absence ≠ `false` for some
+        // schemas).
         for (key, value) in boolFields {
-            values[key] = value
+            let isRequired = documentType.propertiesList?
+                .first(where: { $0.name == key })?.isRequired ?? false
+            if isRequired || touchedBoolFields.contains(key) {
+                values[key] = value
+            }
         }
 
         // Add array fields
@@ -267,11 +302,16 @@ extension DocumentFieldsView {
                     .textFieldStyle(RoundedBorderTextFieldStyle())
                     .autocapitalization(.none)
                     .disableAutocorrection(true)
+                    .accessibilityIdentifier("createDocument.field.\(property.name)")
                     .onChange(of: currentValue) { _, newValue in
                         // Remove any non-hex characters and convert to lowercase
                         let cleaned = newValue.lowercased().filter { "0123456789abcdef".contains($0) }
                         if cleaned != newValue {
                             textFields[property.name] = cleaned
+                            // Direct @State mutation bypasses the binding's
+                            // setter, so re-sync the cleaned value into the
+                            // submitted `fieldValues`.
+                            updateFieldValues()
                         }
                     }
 

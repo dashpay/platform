@@ -23,7 +23,7 @@ use {
 
 pub trait IdentityTopUpFromAddressesTransitionMethodsV0 {
     #[cfg(feature = "state-transition-signing")]
-    fn try_from_inputs_with_signer<S: Signer<PlatformAddress>>(
+    async fn try_from_inputs_with_signer<S: Signer<PlatformAddress>>(
         identity: &Identity,
         inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
         signer: &S,

@@ -89,19 +89,30 @@ where
     Self: Sized,
     O: MockResponse
         + FromProof<
-            Self::Request,
-            Request = Self::Request,
+            Self::Query,
+            Request = Self::Query,
             Response = <<Self as FetchMany<K, O>>::Request as TransportRequest>::Response,
         > + Send
         + Default,
 {
-    /// Type of request used to fetch multiple objects from Platform.
-    ///
-    /// Most likely, one of the types defined in [`dapi_grpc::platform::v0`].
-    ///
-    /// This type must implement [`TransportRequest`].
-    type Request: TransportRequest
-        + Into<<O as FromProof<<Self as FetchMany<K, O>>::Request>>::Request>;
+    /// User-facing query type — the rich form that callers hand to the
+    /// SDK and that [`FromProof`] binds to. See [`super::Fetch::Query`]
+    /// for the rationale; the split lets [`Self::Request`] be the
+    /// protocol-version-aware wire encoding while keeping the proof
+    /// verifier surface PV-agnostic.
+    //
+    // Associated-type defaults are nightly-only (RFC 2532); each impl
+    // must spell out `type Query = Self::Request;` when the rich and
+    // wire forms coincide.
+    type Query: Query<<Self as FetchMany<K, O>>::Request>
+        + dapi_grpc::mock::Mockable
+        + Clone
+        + std::fmt::Debug
+        + Send
+        + Sync;
+
+    /// Wire-encoded request that hits the network.
+    type Request: TransportRequest;
 
     /// Fetch (or search) multiple objects on the Dash Platform
     ///
@@ -141,7 +152,7 @@ where
     /// ## Error Handling
     ///
     /// Any errors encountered during the execution are returned as [`Error`](crate::error::Error) instances.
-    async fn fetch_many<Q: Query<<Self as FetchMany<K, O>>::Request>>(
+    async fn fetch_many<Q: Query<<Self as FetchMany<K, O>>::Query>>(
         sdk: &Sdk,
         query: Q,
     ) -> Result<O, Error> {
@@ -171,7 +182,7 @@ where
     /// ## Error Handling
     ///
     /// Any errors encountered during the execution are returned as [Error] instances.
-    async fn fetch_many_with_metadata<Q: Query<<Self as FetchMany<K, O>>::Request>>(
+    async fn fetch_many_with_metadata<Q: Query<<Self as FetchMany<K, O>>::Query>>(
         sdk: &Sdk,
         query: Q,
         settings: Option<RequestSettings>,
@@ -202,19 +213,23 @@ where
     /// ## Error Handling
     ///
     /// Any errors encountered during the execution are returned as [Error] instances.
-    async fn fetch_many_with_metadata_and_proof<Q: Query<<Self as FetchMany<K, O>>::Request>>(
+    async fn fetch_many_with_metadata_and_proof<Q: Query<<Self as FetchMany<K, O>>::Query>>(
         sdk: &Sdk,
         query: Q,
-        settings: Option<RequestSettings>,
+        request_settings: Option<RequestSettings>,
     ) -> Result<(O, ResponseMetadata, Proof), Error> {
-        let request = &query.query(sdk.prove())?;
+        let settings = sdk.query_settings();
+        let owned_rich: <Self as FetchMany<K, O>>::Query = query.query(&settings)?;
+        let owned_wire: <Self as FetchMany<K, O>>::Request = owned_rich.query(&settings)?;
+        let rich = &owned_rich;
+        let wire = &owned_wire;
 
         let fut = |settings: RequestSettings| async move {
             let ExecutionResponse {
                 address,
                 retries,
                 inner: response,
-            } = request
+            } = wire
                 .clone()
                 .execute(sdk, settings)
                 .await
@@ -222,7 +237,7 @@ where
 
             let object_type = std::any::type_name::<Self>().to_string();
             tracing::trace!(
-                request = ?request,
+                request = ?wire,
                 response = ?response,
                 ?address,
                 retries,
@@ -230,9 +245,10 @@ where
                 "fetched objects from platform"
             );
 
-            sdk.parse_proof_with_metadata_and_proof::<<Self as FetchMany<K, O>>::Request, O>(
-                request.clone(),
+            sdk.parse_proof_with_metadata_and_proof::<<Self as FetchMany<K, O>>::Query, O>(
+                rich.clone(),
                 response,
+                wire.method_name(),
             )
             .await
             .map_err(|e| ExecutionError {
@@ -247,11 +263,13 @@ where
             })
         };
 
-        let settings = sdk
+        let retry_settings = sdk
             .dapi_client_settings
-            .override_by(settings.unwrap_or_default());
+            .override_by(request_settings.unwrap_or_default());
 
-        retry(sdk.address_list(), settings, fut).await.into_inner()
+        retry(sdk.address_list(), retry_settings, fut)
+            .await
+            .into_inner()
     }
 
     /// Fetch multiple objects from Platform by their identifiers.
@@ -272,7 +290,7 @@ where
         identifiers: I,
     ) -> Result<O, Error>
     where
-        Vec<Identifier>: Query<<Self as FetchMany<K, O>>::Request>,
+        Vec<Identifier>: Query<<Self as FetchMany<K, O>>::Query>,
     {
         let ids = identifiers.into_iter().collect::<Vec<Identifier>>();
         Self::fetch_many(sdk, ids).await
@@ -288,13 +306,13 @@ where
     /// - `sdk`: An instance of [Sdk].
     /// - `query`: A query parameter implementing [`Query`](crate::platform::query::Query) to specify the data to be retrieved.
     /// - `limit`: Maximum number of objects to fetch.
-    async fn fetch_many_with_limit<Q: Query<<Self as FetchMany<K, O>>::Request>>(
+    async fn fetch_many_with_limit<Q: Query<<Self as FetchMany<K, O>>::Query>>(
         sdk: &Sdk,
         query: Q,
         limit: u32,
     ) -> Result<O, Error>
     where
-        LimitQuery<Q>: Query<<Self as FetchMany<K, O>>::Request>,
+        LimitQuery<Q>: Query<<Self as FetchMany<K, O>>::Query>,
     {
         let limit_query = LimitQuery {
             limit: Some(limit),
@@ -318,7 +336,8 @@ impl FetchMany<Identifier, Documents> for Document {
     // We need to use the DocumentQuery type here because the DocumentQuery
     // type stores full contract, which is missing in the GetDocumentsRequest type.
     // TODO: Refactor to use ContextProvider
-    type Request = DocumentQuery;
+    type Query = DocumentQuery;
+    type Request = dapi_grpc::platform::v0::GetDocumentsRequest;
 }
 
 /// Retrieve public keys for a given identity.
@@ -330,6 +349,7 @@ impl FetchMany<Identifier, Documents> for Document {
 ///
 /// * [Identifier] - [Identity](crate::platform::Identity) ID for which to retrieve keys
 impl FetchMany<KeyID, IdentityPublicKeys> for IdentityPublicKey {
+    type Query = GetIdentityKeysRequest;
     type Request = GetIdentityKeysRequest;
 }
 
@@ -345,6 +365,7 @@ impl FetchMany<KeyID, IdentityPublicKeys> for IdentityPublicKey {
 /// * [`LimitQuery<EpochQuery>`](super::LimitQuery), [`LimitQuery<EpochIndex>`](super::LimitQuery) - limit query
 ///   that allows to specify maximum number of objects to fetch; see also [FetchMany::fetch_many_with_limit()].
 impl FetchMany<EpochIndex, ExtendedEpochInfos> for ExtendedEpochInfo {
+    type Query = GetEpochsInfoRequest;
     type Request = GetEpochsInfoRequest;
 }
 
@@ -358,6 +379,7 @@ impl FetchMany<EpochIndex, ExtendedEpochInfos> for ExtendedEpochInfo {
 /// * [`(EpochIndex, EpochIndex)`] - tuple of (start_epoch, end_epoch) indices
 /// * [`LimitQuery<FinalizedEpochQuery>`](super::LimitQuery) - limit query that allows to specify maximum number of objects to fetch
 impl FetchMany<EpochIndex, FinalizedEpochInfos> for FinalizedEpochInfo {
+    type Query = GetFinalizedEpochInfosRequest;
     type Request = GetFinalizedEpochInfosRequest;
 }
 
@@ -382,6 +404,7 @@ impl FetchMany<EpochIndex, FinalizedEpochInfos> for FinalizedEpochInfo {
 /// # });
 /// ```
 impl FetchMany<ProtocolVersion, ProtocolVersionUpgrades> for ProtocolVersionVoteCount {
+    type Query = GetProtocolVersionUpgradeStateRequest;
     type Request = GetProtocolVersionUpgradeStateRequest;
 }
 
@@ -400,6 +423,7 @@ impl FetchMany<ProtocolVersion, ProtocolVersionUpgrades> for ProtocolVersionVote
 /// * [`LimitQuery<ProTxHash>`](super::LimitQuery) - limit query that allows to specify maximum number of objects
 ///   to fetch; see also [FetchMany::fetch_many_with_limit()].
 impl FetchMany<ProTxHash, MasternodeProtocolVotes> for MasternodeProtocolVote {
+    type Query = GetProtocolVersionUpgradeVoteStatusRequest;
     type Request = GetProtocolVersionUpgradeVoteStatusRequest;
 }
 
@@ -416,6 +440,7 @@ impl FetchMany<ProTxHash, MasternodeProtocolVotes> for MasternodeProtocolVote {
 /// * [`LimitQuery<GetEvonodesProposedEpochBlocksByRangeRequest>`](super::LimitQuery) - limit query wrapping
 ///   a raw request for more fine-grained control
 impl FetchMany<ProTxHash, ProposerBlockCounts> for ProposerBlockCountByRange {
+    type Query = GetEvonodesProposedEpochBlocksByRangeRequest;
     type Request = GetEvonodesProposedEpochBlocksByRangeRequest;
 }
 
@@ -431,6 +456,7 @@ impl FetchMany<ProTxHash, ProposerBlockCounts> for ProposerBlockCountByRange {
 ///   and a list of evonode ProTxHashes to look up
 /// * [`(EpochIndex, Vec<ProTxHash>)`] - tuple of epoch index and list of evonode ProTxHashes
 impl FetchMany<ProTxHash, ProposerBlockCounts> for ProposerBlockCountById {
+    type Query = GetEvonodesProposedEpochBlocksByIdsRequest;
     type Request = GetEvonodesProposedEpochBlocksByIdsRequest;
 }
 
@@ -443,6 +469,7 @@ impl FetchMany<ProTxHash, ProposerBlockCounts> for ProposerBlockCountById {
 /// * `Vec<Identifier>` - list of identifiers of data contracts to fetch
 ///
 impl FetchMany<Identifier, DataContracts> for DataContract {
+    type Query = GetDataContractsRequest;
     type Request = GetDataContractsRequest;
 }
 
@@ -452,6 +479,7 @@ impl FetchMany<Identifier, DataContracts> for DataContract {
 ///
 /// * [`VotePollsByDocumentTypeQuery`](drive::query::vote_polls_by_document_type_query::VotePollsByDocumentTypeQuery)
 impl FetchMany<Identifier, ContestedResources> for ContestedResource {
+    type Query = GetContestedResourcesRequest;
     type Request = GetContestedResourcesRequest;
 }
 
@@ -464,6 +492,7 @@ impl FetchMany<Identifier, ContestedResources> for ContestedResource {
 /// * [`ContestedDocumentVotePollDriveQuery`](drive::query::vote_poll_vote_state_query::ContestedDocumentVotePollDriveQuery)
 #[async_trait::async_trait]
 impl FetchMany<Identifier, Contenders> for ContenderWithSerializedDocument {
+    type Query = GetContestedResourceVoteStateRequest;
     type Request = GetContestedResourceVoteStateRequest;
 }
 
@@ -473,6 +502,7 @@ impl FetchMany<Identifier, Contenders> for ContenderWithSerializedDocument {
 ///
 /// * [`ContestedDocumentVotePollVotesDriveQuery`](drive::query::vote_poll_contestant_votes_query::ContestedDocumentVotePollVotesDriveQuery)
 impl FetchMany<usize, Voters> for Voter {
+    type Query = GetContestedResourceVotersForIdentityRequest;
     type Request = GetContestedResourceVotersForIdentityRequest;
 }
 
@@ -483,6 +513,7 @@ impl FetchMany<usize, Voters> for Voter {
 ///
 /// * [`ContestedResourceVotesGivenByIdentityQuery`](drive::query::contested_resource_votes_given_by_identity_query::ContestedResourceVotesGivenByIdentityQuery)
 impl FetchMany<Identifier, ResourceVotesByIdentity> for ResourceVote {
+    type Query = GetContestedResourceIdentityVotesRequest;
     type Request = GetContestedResourceIdentityVotesRequest;
 }
 
@@ -493,6 +524,7 @@ impl FetchMany<Identifier, ResourceVotesByIdentity> for ResourceVote {
 ///
 /// * [`VotePollsByEndDateDriveQuery`](drive::query::VotePollsByEndDateDriveQuery)
 impl FetchMany<TimestampMillis, VotePollsGroupedByTimestamp> for VotePoll {
+    type Query = GetVotePollsByEndDateRequest;
     type Request = GetVotePollsByEndDateRequest;
 }
 
@@ -503,10 +535,12 @@ impl FetchMany<TimestampMillis, VotePollsGroupedByTimestamp> for VotePoll {
 ///
 /// * `Vec<Identifier>` - list of identifiers of identities whose balance we want to fetch
 impl FetchMany<Identifier, IdentityBalances> for drive_proof_verifier::types::IdentityBalance {
+    type Query = GetIdentitiesBalancesRequest;
     type Request = GetIdentitiesBalancesRequest;
 }
 
 impl FetchMany<PlatformAddress, AddressInfos> for drive_proof_verifier::types::AddressInfo {
+    type Query = GetAddressesInfosRequest;
     type Request = GetAddressesInfosRequest;
 }
 
@@ -517,6 +551,7 @@ impl FetchMany<PlatformAddress, AddressInfos> for drive_proof_verifier::types::A
 ///
 /// * [`KeysInPath`](drive_proof_verifier::types::KeysInPath)
 impl FetchMany<Key, Elements> for Element {
+    type Query = GetPathElementsRequest;
     type Request = GetPathElementsRequest;
 }
 
@@ -526,5 +561,6 @@ impl FetchMany<Key, Elements> for Element {
 ///
 /// * [`&\[Identifier\]`](dpp::prelude::Identifier) - list of identifiers of tokens whose prices we want to fetch
 impl FetchMany<Identifier, TokenDirectPurchasePrices> for TokenPricingSchedule {
+    type Query = GetTokenDirectPurchasePricesRequest;
     type Request = GetTokenDirectPurchasePricesRequest;
 }

@@ -12,6 +12,8 @@ use crate::data_contract::{
 };
 #[cfg(feature = "json-conversion")]
 use crate::serialization::JsonConvertible;
+#[cfg(feature = "value-conversion")]
+use crate::serialization::ValueConvertible;
 use crate::validation::operations::ProtocolValidationOperation;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
@@ -97,6 +99,10 @@ impl fmt::Display for DataContractMismatch {
     all(feature = "json-conversion", feature = "serde-conversion"),
     derive(JsonConvertible)
 )]
+#[cfg_attr(
+    all(feature = "value-conversion", feature = "serde-conversion"),
+    derive(ValueConvertible)
+)]
 #[derive(Debug, Clone, Encode, Decode, PartialEq, PlatformVersioned, From)]
 #[cfg_attr(
     feature = "serde-conversion",
@@ -131,6 +137,13 @@ impl DataContractInSerializationFormat {
         match self {
             DataContractInSerializationFormat::V0(v0) => &v0.document_schemas,
             DataContractInSerializationFormat::V1(v1) => &v1.document_schemas,
+        }
+    }
+
+    pub fn document_schemas_mut(&mut self) -> &mut BTreeMap<DocumentName, Value> {
+        match self {
+            DataContractInSerializationFormat::V0(v0) => &mut v0.document_schemas,
+            DataContractInSerializationFormat::V1(v1) => &mut v1.document_schemas,
         }
     }
 
@@ -470,5 +483,786 @@ impl DataContract {
                 received: version,
             }),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::data_contract::config::v0::DataContractConfigV0;
+    use crate::data_contract::config::v1::DataContractConfigV1;
+    use crate::data_contract::group::v0::GroupV0;
+    use crate::data_contract::serialized_version::v0::DataContractInSerializationFormatV0;
+    use crate::data_contract::serialized_version::v1::DataContractInSerializationFormatV1;
+    use platform_value::Identifier;
+    use std::collections::BTreeMap;
+
+    /// Helper to create a default V0 serialization format.
+    fn make_v0() -> DataContractInSerializationFormatV0 {
+        DataContractInSerializationFormatV0 {
+            id: Identifier::default(),
+            config: DataContractConfig::V0(DataContractConfigV0::default()),
+            version: 1,
+            owner_id: Identifier::default(),
+            schema_defs: None,
+            document_schemas: BTreeMap::new(),
+        }
+    }
+
+    /// Helper to create a default V1 serialization format.
+    fn make_v1() -> DataContractInSerializationFormatV1 {
+        DataContractInSerializationFormatV1 {
+            id: Identifier::default(),
+            config: DataContractConfig::V1(DataContractConfigV1::default()),
+            version: 1,
+            owner_id: Identifier::default(),
+            schema_defs: None,
+            document_schemas: BTreeMap::new(),
+            created_at: None,
+            updated_at: None,
+            created_at_block_height: None,
+            updated_at_block_height: None,
+            created_at_epoch: None,
+            updated_at_epoch: None,
+            groups: BTreeMap::new(),
+            tokens: BTreeMap::new(),
+            keywords: vec![],
+            description: None,
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // first_mismatch: V0-V0
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn first_mismatch_v0_v0_identical_returns_none() {
+        let a = DataContractInSerializationFormat::V0(make_v0());
+        let b = DataContractInSerializationFormat::V0(make_v0());
+        assert_eq!(a.first_mismatch(&b), None);
+    }
+
+    #[test]
+    fn first_mismatch_v0_v0_different_id() {
+        let mut v0_b = make_v0();
+        v0_b.id = Identifier::from([1u8; 32]);
+        let a = DataContractInSerializationFormat::V0(make_v0());
+        let b = DataContractInSerializationFormat::V0(v0_b);
+        assert_eq!(a.first_mismatch(&b), Some(DataContractMismatch::V0Mismatch));
+    }
+
+    #[test]
+    fn first_mismatch_v0_v0_different_config() {
+        let mut v0_b = make_v0();
+        let mut cfg = DataContractConfigV0::default();
+        cfg.readonly = !cfg.readonly;
+        v0_b.config = DataContractConfig::V0(cfg);
+        let a = DataContractInSerializationFormat::V0(make_v0());
+        let b = DataContractInSerializationFormat::V0(v0_b);
+        assert_eq!(a.first_mismatch(&b), Some(DataContractMismatch::V0Mismatch));
+    }
+
+    #[test]
+    fn first_mismatch_v0_v0_different_version() {
+        let mut v0_b = make_v0();
+        v0_b.version = 99;
+        let a = DataContractInSerializationFormat::V0(make_v0());
+        let b = DataContractInSerializationFormat::V0(v0_b);
+        assert_eq!(a.first_mismatch(&b), Some(DataContractMismatch::V0Mismatch));
+    }
+
+    #[test]
+    fn first_mismatch_v0_v0_different_owner_id() {
+        let mut v0_b = make_v0();
+        v0_b.owner_id = Identifier::from([2u8; 32]);
+        let a = DataContractInSerializationFormat::V0(make_v0());
+        let b = DataContractInSerializationFormat::V0(v0_b);
+        assert_eq!(a.first_mismatch(&b), Some(DataContractMismatch::V0Mismatch));
+    }
+
+    #[test]
+    fn first_mismatch_v0_v0_different_document_schemas() {
+        let mut v0_b = make_v0();
+        v0_b.document_schemas
+            .insert("doc".to_string(), Value::Bool(true));
+        let a = DataContractInSerializationFormat::V0(make_v0());
+        let b = DataContractInSerializationFormat::V0(v0_b);
+        assert_eq!(a.first_mismatch(&b), Some(DataContractMismatch::V0Mismatch));
+    }
+
+    // -----------------------------------------------------------------------
+    // first_mismatch: format mismatch (V0 vs V1)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn first_mismatch_v0_v1_returns_format_version_mismatch() {
+        let a = DataContractInSerializationFormat::V0(make_v0());
+        let b = DataContractInSerializationFormat::V1(make_v1());
+        assert_eq!(
+            a.first_mismatch(&b),
+            Some(DataContractMismatch::FormatVersionMismatch)
+        );
+    }
+
+    #[test]
+    fn first_mismatch_v1_v0_returns_format_version_mismatch() {
+        let a = DataContractInSerializationFormat::V1(make_v1());
+        let b = DataContractInSerializationFormat::V0(make_v0());
+        assert_eq!(
+            a.first_mismatch(&b),
+            Some(DataContractMismatch::FormatVersionMismatch)
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // first_mismatch: V1-V1 identical
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn first_mismatch_v1_v1_identical_returns_none() {
+        let a = DataContractInSerializationFormat::V1(make_v1());
+        let b = DataContractInSerializationFormat::V1(make_v1());
+        assert_eq!(a.first_mismatch(&b), None);
+    }
+
+    // -----------------------------------------------------------------------
+    // first_mismatch: V1-V1 field-by-field mismatches
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn first_mismatch_v1_v1_different_id() {
+        let mut v1_b = make_v1();
+        v1_b.id = Identifier::from([1u8; 32]);
+        let a = DataContractInSerializationFormat::V1(make_v1());
+        let b = DataContractInSerializationFormat::V1(v1_b);
+        assert_eq!(a.first_mismatch(&b), Some(DataContractMismatch::Id));
+    }
+
+    #[test]
+    fn first_mismatch_v1_v1_different_config() {
+        let mut v1_b = make_v1();
+        let mut cfg = DataContractConfigV1::default();
+        cfg.readonly = !cfg.readonly;
+        v1_b.config = DataContractConfig::V1(cfg);
+        let a = DataContractInSerializationFormat::V1(make_v1());
+        let b = DataContractInSerializationFormat::V1(v1_b);
+        assert_eq!(a.first_mismatch(&b), Some(DataContractMismatch::Config));
+    }
+
+    #[test]
+    fn first_mismatch_v1_v1_different_version() {
+        let mut v1_b = make_v1();
+        v1_b.version = 42;
+        let a = DataContractInSerializationFormat::V1(make_v1());
+        let b = DataContractInSerializationFormat::V1(v1_b);
+        assert_eq!(a.first_mismatch(&b), Some(DataContractMismatch::Version));
+    }
+
+    #[test]
+    fn first_mismatch_v1_v1_different_owner_id() {
+        let mut v1_b = make_v1();
+        v1_b.owner_id = Identifier::from([3u8; 32]);
+        let a = DataContractInSerializationFormat::V1(make_v1());
+        let b = DataContractInSerializationFormat::V1(v1_b);
+        assert_eq!(a.first_mismatch(&b), Some(DataContractMismatch::OwnerId));
+    }
+
+    #[test]
+    fn first_mismatch_v1_v1_different_schema_defs() {
+        let mut v1_b = make_v1();
+        let mut defs = BTreeMap::new();
+        defs.insert("someDef".to_string(), Value::Bool(true));
+        v1_b.schema_defs = Some(defs);
+        let a = DataContractInSerializationFormat::V1(make_v1());
+        let b = DataContractInSerializationFormat::V1(v1_b);
+        assert_eq!(a.first_mismatch(&b), Some(DataContractMismatch::SchemaDefs));
+    }
+
+    #[test]
+    fn first_mismatch_v1_v1_different_document_schemas() {
+        let mut v1_b = make_v1();
+        v1_b.document_schemas
+            .insert("doc".to_string(), Value::U64(1));
+        let a = DataContractInSerializationFormat::V1(make_v1());
+        let b = DataContractInSerializationFormat::V1(v1_b);
+        assert_eq!(
+            a.first_mismatch(&b),
+            Some(DataContractMismatch::DocumentSchemas)
+        );
+    }
+
+    #[test]
+    fn first_mismatch_v1_v1_different_groups() {
+        let mut v1_b = make_v1();
+        v1_b.groups.insert(
+            0,
+            Group::V0(GroupV0 {
+                members: Default::default(),
+                required_power: 1,
+            }),
+        );
+        let a = DataContractInSerializationFormat::V1(make_v1());
+        let b = DataContractInSerializationFormat::V1(v1_b);
+        assert_eq!(a.first_mismatch(&b), Some(DataContractMismatch::Groups));
+    }
+
+    #[test]
+    fn first_mismatch_v1_v1_different_tokens() {
+        let mut v1_b = make_v1();
+        v1_b.tokens.insert(
+            0,
+            TokenConfiguration::V0(
+                crate::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0::default_most_restrictive(),
+            ),
+        );
+        let a = DataContractInSerializationFormat::V1(make_v1());
+        let b = DataContractInSerializationFormat::V1(v1_b);
+        assert_eq!(a.first_mismatch(&b), Some(DataContractMismatch::Tokens));
+    }
+
+    #[test]
+    fn first_mismatch_v1_v1_different_keywords() {
+        let mut v1_b = make_v1();
+        v1_b.keywords = vec!["test".to_string()];
+        let a = DataContractInSerializationFormat::V1(make_v1());
+        let b = DataContractInSerializationFormat::V1(v1_b);
+        assert_eq!(a.first_mismatch(&b), Some(DataContractMismatch::Keywords));
+    }
+
+    #[test]
+    fn first_mismatch_v1_v1_keywords_case_insensitive_match() {
+        let mut v1_a = make_v1();
+        v1_a.keywords = vec!["Test".to_string()];
+        let mut v1_b = make_v1();
+        v1_b.keywords = vec!["test".to_string()];
+        let a = DataContractInSerializationFormat::V1(v1_a);
+        let b = DataContractInSerializationFormat::V1(v1_b);
+        // The comparison uses to_lowercase, so "Test" and "test" should match
+        assert_eq!(a.first_mismatch(&b), None);
+    }
+
+    #[test]
+    fn first_mismatch_v1_v1_keywords_different_length() {
+        let mut v1_a = make_v1();
+        v1_a.keywords = vec!["a".to_string()];
+        let mut v1_b = make_v1();
+        v1_b.keywords = vec!["a".to_string(), "b".to_string()];
+        let a = DataContractInSerializationFormat::V1(v1_a);
+        let b = DataContractInSerializationFormat::V1(v1_b);
+        assert_eq!(a.first_mismatch(&b), Some(DataContractMismatch::Keywords));
+    }
+
+    #[test]
+    fn first_mismatch_v1_v1_different_description() {
+        let mut v1_b = make_v1();
+        v1_b.description = Some("a description".to_string());
+        let a = DataContractInSerializationFormat::V1(make_v1());
+        let b = DataContractInSerializationFormat::V1(v1_b);
+        assert_eq!(
+            a.first_mismatch(&b),
+            Some(DataContractMismatch::Description)
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // first_mismatch: priority ordering in V1 (id detected before config, etc.)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn first_mismatch_v1_v1_id_takes_priority_over_config() {
+        let mut v1_b = make_v1();
+        v1_b.id = Identifier::from([5u8; 32]);
+        let mut cfg = DataContractConfigV1::default();
+        cfg.readonly = !cfg.readonly;
+        v1_b.config = DataContractConfig::V1(cfg);
+        let a = DataContractInSerializationFormat::V1(make_v1());
+        let b = DataContractInSerializationFormat::V1(v1_b);
+        // Id is checked before config
+        assert_eq!(a.first_mismatch(&b), Some(DataContractMismatch::Id));
+    }
+
+    // -----------------------------------------------------------------------
+    // DataContractMismatch Display
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn data_contract_mismatch_display() {
+        assert_eq!(format!("{}", DataContractMismatch::Id), "ID fields differ");
+        assert_eq!(
+            format!("{}", DataContractMismatch::FormatVersionMismatch),
+            "Serialization format versions differ (e.g., V0 vs V1)"
+        );
+        assert_eq!(
+            format!("{}", DataContractMismatch::V0Mismatch),
+            "V0 versions differ"
+        );
+        assert_eq!(format!("{}", DataContractMismatch::Tokens), "Tokens differ");
+        assert_eq!(
+            format!("{}", DataContractMismatch::Keywords),
+            "Keywords differ"
+        );
+        assert_eq!(
+            format!("{}", DataContractMismatch::Description),
+            "Description fields differ"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Accessor methods
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn accessor_id_v0() {
+        let v0 = make_v0();
+        let expected_id = v0.id;
+        let format = DataContractInSerializationFormat::V0(v0);
+        assert_eq!(format.id(), expected_id);
+    }
+
+    #[test]
+    fn accessor_id_v1() {
+        let v1 = make_v1();
+        let expected_id = v1.id;
+        let format = DataContractInSerializationFormat::V1(v1);
+        assert_eq!(format.id(), expected_id);
+    }
+
+    #[test]
+    fn accessor_owner_id_v0() {
+        let mut v0 = make_v0();
+        v0.owner_id = Identifier::from([7u8; 32]);
+        let expected = v0.owner_id;
+        let format = DataContractInSerializationFormat::V0(v0);
+        assert_eq!(format.owner_id(), expected);
+    }
+
+    #[test]
+    fn accessor_version_v0() {
+        let mut v0 = make_v0();
+        v0.version = 10;
+        let format = DataContractInSerializationFormat::V0(v0);
+        assert_eq!(format.version(), 10);
+    }
+
+    #[test]
+    fn accessor_version_v1() {
+        let mut v1 = make_v1();
+        v1.version = 20;
+        let format = DataContractInSerializationFormat::V1(v1);
+        assert_eq!(format.version(), 20);
+    }
+
+    #[test]
+    fn accessor_groups_v0_returns_empty() {
+        let format = DataContractInSerializationFormat::V0(make_v0());
+        assert!(format.groups().is_empty());
+    }
+
+    #[test]
+    fn accessor_tokens_v0_returns_empty() {
+        let format = DataContractInSerializationFormat::V0(make_v0());
+        assert!(format.tokens().is_empty());
+    }
+
+    #[test]
+    fn accessor_keywords_v0_returns_empty() {
+        let format = DataContractInSerializationFormat::V0(make_v0());
+        assert!(format.keywords().is_empty());
+    }
+
+    #[test]
+    fn accessor_description_v0_returns_none() {
+        let format = DataContractInSerializationFormat::V0(make_v0());
+        assert_eq!(format.description(), &None);
+    }
+
+    #[test]
+    fn accessor_keywords_v1() {
+        let mut v1 = make_v1();
+        v1.keywords = vec!["hello".to_string()];
+        let format = DataContractInSerializationFormat::V1(v1);
+        assert_eq!(format.keywords(), &vec!["hello".to_string()]);
+    }
+
+    #[test]
+    fn accessor_description_v1_some() {
+        let mut v1 = make_v1();
+        v1.description = Some("desc".to_string());
+        let format = DataContractInSerializationFormat::V1(v1);
+        assert_eq!(format.description(), &Some("desc".to_string()));
+    }
+
+    #[test]
+    fn accessor_document_schemas_v0() {
+        let mut v0 = make_v0();
+        v0.document_schemas
+            .insert("note".to_string(), Value::Bool(true));
+        let format = DataContractInSerializationFormat::V0(v0);
+        assert_eq!(format.document_schemas().len(), 1);
+        assert!(format.document_schemas().contains_key("note"));
+    }
+
+    #[test]
+    fn accessor_schema_defs_v0_none() {
+        let format = DataContractInSerializationFormat::V0(make_v0());
+        assert!(format.schema_defs().is_none());
+    }
+
+    #[test]
+    fn accessor_schema_defs_v1_some() {
+        let mut v1 = make_v1();
+        let mut defs = BTreeMap::new();
+        defs.insert("def1".to_string(), Value::Null);
+        v1.schema_defs = Some(defs);
+        let format = DataContractInSerializationFormat::V1(v1);
+        assert!(format.schema_defs().is_some());
+        assert!(format.schema_defs().unwrap().contains_key("def1"));
+    }
+
+    // -----------------------------------------------------------------------
+    // TryFromPlatformVersioned: DataContractV0 -> DataContractInSerializationFormat
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn try_from_platform_versioned_data_contract_v0_version_0() {
+        let platform_version = PlatformVersion::first();
+        // V1 contract versions use default_current_version: 0
+        let v0 = DataContractV0 {
+            id: Identifier::from([10u8; 32]),
+            config: DataContractConfig::V0(DataContractConfigV0::default()),
+            version: 1,
+            owner_id: Identifier::from([20u8; 32]),
+            schema_defs: None,
+            document_types: BTreeMap::new(),
+            metadata: None,
+        };
+        let result = DataContractInSerializationFormat::try_from_platform_versioned(
+            v0.clone(),
+            platform_version,
+        );
+        assert!(result.is_ok());
+        let format = result.unwrap();
+        assert!(matches!(format, DataContractInSerializationFormat::V0(_)));
+        assert_eq!(format.id(), Identifier::from([10u8; 32]));
+        assert_eq!(format.owner_id(), Identifier::from([20u8; 32]));
+    }
+
+    #[test]
+    fn try_from_platform_versioned_data_contract_v0_ref_version_0() {
+        let platform_version = PlatformVersion::first();
+        let v0 = DataContractV0 {
+            id: Identifier::from([11u8; 32]),
+            config: DataContractConfig::V0(DataContractConfigV0::default()),
+            version: 2,
+            owner_id: Identifier::from([22u8; 32]),
+            schema_defs: None,
+            document_types: BTreeMap::new(),
+            metadata: None,
+        };
+        let result =
+            DataContractInSerializationFormat::try_from_platform_versioned(&v0, platform_version);
+        assert!(result.is_ok());
+        let format = result.unwrap();
+        assert!(matches!(format, DataContractInSerializationFormat::V0(_)));
+        assert_eq!(format.version(), 2);
+    }
+
+    #[test]
+    fn try_from_platform_versioned_data_contract_v0_version_1() {
+        let platform_version = PlatformVersion::latest();
+        // Latest uses default_current_version: 1
+        let v0 = DataContractV0 {
+            id: Identifier::from([10u8; 32]),
+            config: DataContractConfig::V0(DataContractConfigV0::default()),
+            version: 1,
+            owner_id: Identifier::from([20u8; 32]),
+            schema_defs: None,
+            document_types: BTreeMap::new(),
+            metadata: None,
+        };
+        let result = DataContractInSerializationFormat::try_from_platform_versioned(
+            v0.clone(),
+            platform_version,
+        );
+        assert!(result.is_ok());
+        let format = result.unwrap();
+        assert!(matches!(format, DataContractInSerializationFormat::V1(_)));
+    }
+
+    // -----------------------------------------------------------------------
+    // TryFromPlatformVersioned: DataContractV1 -> DataContractInSerializationFormat
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn try_from_platform_versioned_data_contract_v1_version_0() {
+        let platform_version = PlatformVersion::first();
+        let v1 = DataContractV1 {
+            id: Identifier::from([10u8; 32]),
+            config: DataContractConfig::V0(DataContractConfigV0::default()),
+            version: 1,
+            owner_id: Identifier::from([20u8; 32]),
+            schema_defs: None,
+            document_types: BTreeMap::new(),
+            created_at: None,
+            updated_at: None,
+            created_at_block_height: None,
+            updated_at_block_height: None,
+            created_at_epoch: None,
+            updated_at_epoch: None,
+            groups: BTreeMap::new(),
+            tokens: BTreeMap::new(),
+            keywords: vec![],
+            description: None,
+        };
+        let result = DataContractInSerializationFormat::try_from_platform_versioned(
+            v1.clone(),
+            platform_version,
+        );
+        assert!(result.is_ok());
+        let format = result.unwrap();
+        assert!(matches!(format, DataContractInSerializationFormat::V0(_)));
+    }
+
+    #[test]
+    fn try_from_platform_versioned_data_contract_v1_version_1() {
+        let platform_version = PlatformVersion::latest();
+        let v1 = DataContractV1 {
+            id: Identifier::from([10u8; 32]),
+            config: DataContractConfig::V1(DataContractConfigV1::default()),
+            version: 1,
+            owner_id: Identifier::from([20u8; 32]),
+            schema_defs: None,
+            document_types: BTreeMap::new(),
+            created_at: None,
+            updated_at: None,
+            created_at_block_height: None,
+            updated_at_block_height: None,
+            created_at_epoch: None,
+            updated_at_epoch: None,
+            groups: BTreeMap::new(),
+            tokens: BTreeMap::new(),
+            keywords: vec![],
+            description: None,
+        };
+        let result = DataContractInSerializationFormat::try_from_platform_versioned(
+            v1.clone(),
+            platform_version,
+        );
+        assert!(result.is_ok());
+        let format = result.unwrap();
+        assert!(matches!(format, DataContractInSerializationFormat::V1(_)));
+    }
+
+    #[test]
+    fn try_from_platform_versioned_data_contract_v1_ref_version_1() {
+        let platform_version = PlatformVersion::latest();
+        let v1 = DataContractV1 {
+            id: Identifier::from([10u8; 32]),
+            config: DataContractConfig::V1(DataContractConfigV1::default()),
+            version: 3,
+            owner_id: Identifier::from([20u8; 32]),
+            schema_defs: None,
+            document_types: BTreeMap::new(),
+            created_at: None,
+            updated_at: None,
+            created_at_block_height: None,
+            updated_at_block_height: None,
+            created_at_epoch: None,
+            updated_at_epoch: None,
+            groups: BTreeMap::new(),
+            tokens: BTreeMap::new(),
+            keywords: vec![],
+            description: None,
+        };
+        let result =
+            DataContractInSerializationFormat::try_from_platform_versioned(&v1, platform_version);
+        assert!(result.is_ok());
+        let format = result.unwrap();
+        assert!(matches!(format, DataContractInSerializationFormat::V1(_)));
+        assert_eq!(format.version(), 3);
+    }
+
+    // -----------------------------------------------------------------------
+    // TryFromPlatformVersioned: DataContract -> DataContractInSerializationFormat
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn try_from_platform_versioned_data_contract_ref_version_0() {
+        let platform_version = PlatformVersion::first();
+        let contract = DataContract::V0(DataContractV0 {
+            id: Identifier::from([10u8; 32]),
+            config: DataContractConfig::V0(DataContractConfigV0::default()),
+            version: 1,
+            owner_id: Identifier::from([20u8; 32]),
+            schema_defs: None,
+            document_types: BTreeMap::new(),
+            metadata: None,
+        });
+        let result = DataContractInSerializationFormat::try_from_platform_versioned(
+            &contract,
+            platform_version,
+        );
+        assert!(result.is_ok());
+        assert!(matches!(
+            result.unwrap(),
+            DataContractInSerializationFormat::V0(_)
+        ));
+    }
+
+    #[test]
+    fn try_from_platform_versioned_data_contract_owned_version_1() {
+        let platform_version = PlatformVersion::latest();
+        let contract = DataContract::V0(DataContractV0 {
+            id: Identifier::from([10u8; 32]),
+            config: DataContractConfig::V0(DataContractConfigV0::default()),
+            version: 1,
+            owner_id: Identifier::from([20u8; 32]),
+            schema_defs: None,
+            document_types: BTreeMap::new(),
+            metadata: None,
+        });
+        let result = DataContractInSerializationFormat::try_from_platform_versioned(
+            contract,
+            platform_version,
+        );
+        assert!(result.is_ok());
+        assert!(matches!(
+            result.unwrap(),
+            DataContractInSerializationFormat::V1(_)
+        ));
+    }
+
+    // -----------------------------------------------------------------------
+    // Verify serialization version routing
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn first_platform_version_uses_serialization_version_0() {
+        let pv = PlatformVersion::first();
+        assert_eq!(
+            pv.dpp
+                .contract_versions
+                .contract_serialization_version
+                .default_current_version,
+            0
+        );
+    }
+
+    #[test]
+    fn latest_platform_version_uses_serialization_version_1() {
+        let pv = PlatformVersion::latest();
+        assert_eq!(
+            pv.dpp
+                .contract_versions
+                .contract_serialization_version
+                .default_current_version,
+            1
+        );
+    }
+
+    #[test]
+    fn first_platform_version_uses_contract_structure_0() {
+        let pv = PlatformVersion::first();
+        assert_eq!(pv.dpp.contract_versions.contract_structure_version, 0);
+    }
+
+    #[test]
+    fn latest_platform_version_uses_contract_structure_1() {
+        let pv = PlatformVersion::latest();
+        assert_eq!(pv.dpp.contract_versions.contract_structure_version, 1);
+    }
+}
+
+#[cfg(all(
+    test,
+    feature = "json-conversion",
+    feature = "value-conversion",
+    feature = "serde-conversion"
+))]
+mod json_convertible_tests {
+    use super::*;
+    use crate::data_contract::config::v0::DataContractConfigV0;
+    use crate::data_contract::config::DataContractConfig;
+    use crate::data_contract::serialized_version::v0::DataContractInSerializationFormatV0;
+    use platform_value::Identifier;
+    use std::collections::BTreeMap;
+
+    fn fixture() -> DataContractInSerializationFormat {
+        DataContractInSerializationFormat::V0(DataContractInSerializationFormatV0 {
+            id: Identifier::new([0xa1; 32]),
+            config: DataContractConfig::V0(DataContractConfigV0::default()),
+            version: 1,
+            owner_id: Identifier::new([0xb2; 32]),
+            schema_defs: None,
+            document_schemas: BTreeMap::new(),
+        })
+    }
+
+    #[test]
+    fn json_round_trip_with_full_wire_shape() {
+        use crate::serialization::JsonConvertible;
+        use serde_json::json;
+        let original = fixture();
+        let json = original.to_json().expect("to_json");
+        // Tier 3 envelope-only: `DataContractInSerializationFormat` embeds a
+        // versioned `DataContractConfig` and arbitrary `document_schemas` /
+        // `schema_defs` Values. The full inline expansion is verified for the
+        // `DataContractConfig` in its own module. We still pin the top-level
+        // envelope keys + their types here so that any silent drop / rename /
+        // re-keying at this layer would fail the test.
+        assert_eq!(json["$formatVersion"], "0");
+        assert_eq!(
+            json["id"],
+            json!("Bswb3UyeD1pUTaGiE6WvqwFpJZsQSEY1xhJePCDTHdvp")
+        );
+        assert_eq!(
+            json["ownerId"],
+            json!("D2ZcUbtpG5sKq7XLeB4YnpNnTGSptKCxTddoNeydzJQq")
+        );
+        assert_eq!(json["version"], json!(1));
+        assert_eq!(json["schemaDefs"], json!(null));
+        assert_eq!(json["documentSchemas"], json!({}));
+        assert!(json.get("config").is_some(), "config envelope present");
+        assert_eq!(json["config"]["$formatVersion"], "0");
+        let recovered = DataContractInSerializationFormat::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn value_round_trip_with_full_wire_shape() {
+        use crate::serialization::ValueConvertible;
+        use platform_value::Value;
+        let original = fixture();
+        let value = original.to_object().expect("to_object");
+        // Tier 3 envelope-only: see JSON test above. Keys remain `Identifier` /
+        // `Map` / typed integers in non-HR mode (no base58 stringification).
+        let map = match &value {
+            Value::Map(m) => m,
+            other => panic!("expected Value::Map, got {:?}", other),
+        };
+        let get = |k: &str| -> &Value {
+            map.iter()
+                .find(|(key, _)| matches!(key, Value::Text(t) if t == k))
+                .map(|(_, v)| v)
+                .unwrap_or_else(|| panic!("missing key {k}"))
+        };
+        assert_eq!(get("$formatVersion"), &Value::Text("0".to_string()));
+        assert_eq!(get("id"), &Value::Identifier([0xa1; 32]));
+        assert_eq!(get("ownerId"), &Value::Identifier([0xb2; 32]));
+        assert_eq!(get("version"), &Value::U32(1));
+        assert_eq!(get("schemaDefs"), &Value::Null);
+        // documentSchemas: empty Map
+        assert!(matches!(get("documentSchemas"), Value::Map(m) if m.is_empty()));
+        // config: nested Map with its own $formatVersion="0"
+        assert!(matches!(get("config"), Value::Map(_)));
+        let recovered = DataContractInSerializationFormat::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn json_preserves_format_version_tag() {
+        use crate::serialization::JsonConvertible;
+        let json = fixture().to_json().expect("to_json");
+        assert_eq!(json["$formatVersion"], "0");
     }
 }

@@ -3,7 +3,7 @@ import SwiftDashSDK
 import UIKit
 
 struct DiagnosticsView: View {
-    @EnvironmentObject var appState: UnifiedAppState
+    @EnvironmentObject var appState: AppState
     @State private var isRunning = false
     @State private var results: [QueryTestResult] = []
     @State private var currentQuery = ""
@@ -93,7 +93,7 @@ struct DiagnosticsView: View {
                     .foregroundColor(.white)
                     .cornerRadius(10)
                 }
-                .disabled(isRunning || appState.platformState.sdk == nil)
+                .disabled(isRunning || appState.sdk == nil)
                 .padding(.horizontal)
 
                 // Progress
@@ -159,7 +159,7 @@ struct DiagnosticsView: View {
 
     @MainActor
     private func runAllQueries() {
-        guard let sdk = appState.platformState.sdk else { return }
+        guard let sdk = appState.sdk else { return }
 
         isRunning = true
         results = []
@@ -535,7 +535,7 @@ struct DiagnosticsView: View {
     private func copyReport() {
         var report = "Dash Platform iOS SDK - Query Diagnostics Report\n"
         report += "================================================\n\n"
-        report += "Date: \(Date().formatted())\n"
+        report += "Date: \(AppDate.formatted(Date(), dateStyle: .abbreviated, timeStyle: .standard))\n"
         report += "SDK Network: Testnet\n\n"
 
         let successCount = results.filter { $0.success }.count
@@ -726,7 +726,7 @@ struct DiagnosticsView_Previews: PreviewProvider {
     static var previews: some View {
         NavigationView {
             DiagnosticsView()
-                .environmentObject(UnifiedAppState())
+                .environmentObject(AppState())
         }
     }
 }

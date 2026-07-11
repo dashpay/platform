@@ -92,7 +92,7 @@ mod tests {
         );
 
         // Verify the boolean field
-        assert_eq!(json["frozen"].as_bool().unwrap(), true);
+        assert!(json["frozen"].as_bool().unwrap());
 
         // round-trip
         let restored = IdentityTokenInfo::from_json(json).expect("from_json should succeed");
@@ -106,5 +106,47 @@ mod tests {
         let json = info.to_json().expect("to_json should succeed");
         let restored = IdentityTokenInfo::from_json(json).expect("from_json should succeed");
         assert_eq!(info, restored);
+    }
+}
+
+#[cfg(all(
+    test,
+    feature = "json-conversion",
+    feature = "value-conversion",
+    feature = "serde-conversion"
+))]
+mod json_convertible_tests_identitytokeninfo {
+    use super::*;
+    use crate::tokens::info::v0::IdentityTokenInfoV0;
+    use platform_value::platform_value;
+    use serde_json::json;
+
+    fn fixture() -> IdentityTokenInfo {
+        IdentityTokenInfo::V0(IdentityTokenInfoV0 { frozen: true })
+    }
+
+    #[test]
+    fn json_round_trip_with_full_wire_shape() {
+        use crate::serialization::JsonConvertible;
+        let original = fixture();
+        let json = original.to_json().expect("to_json");
+        // Internally-tagged enum with `tag = "$formatVersion"`; `IdentityTokenInfoV0`
+        // has no `rename_all`, so the inner field stays as the raw `frozen`.
+        assert_eq!(json, json!({"$formatVersion": "0", "frozen": true}));
+        let recovered = IdentityTokenInfo::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn value_round_trip_with_full_wire_shape() {
+        use crate::serialization::ValueConvertible;
+        let original = fixture();
+        let value = original.to_object().expect("to_object");
+        assert_eq!(
+            value,
+            platform_value!({"$formatVersion": "0", "frozen": true})
+        );
+        let recovered = IdentityTokenInfo::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
     }
 }

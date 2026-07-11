@@ -60,11 +60,15 @@ pub type FrozenIdentifier = Identifier;
 #[derive(
     Debug, PartialEq, PartialOrd, Clone, Eq, Encode, Decode, PlatformDeserialize, PlatformSerialize,
 )]
-#[cfg_attr(
-    feature = "serde-conversion",
-    derive(serde::Serialize, serde::Deserialize),
-    serde(tag = "type", content = "data", rename_all = "camelCase")
-)]
+// Custom `Serialize` / `Deserialize` below — `TokenEvent` is a flat enum
+// with all-tuple variants. Internal tagging requires struct variants or
+// newtype-of-named-struct, which doesn't apply to tuple shapes. The custom
+// impl maps positional tuple fields to named JSON keys per variant, emits
+// an internal `$type` discriminator (no `data` wrapper), and uses the
+// `json_safe_u64`
+// / `json_safe_option_encrypted_note` helpers for u64 + encrypted-note
+// fields. Bincode `Encode` / `Decode` derives above are untouched —
+// consensus binary path is unaffected.
 #[cfg_attr(feature = "value-conversion", derive(ValueConvertible))]
 #[platform_serialize(unversioned)]
 pub enum TokenEvent {
@@ -160,6 +164,403 @@ pub enum TokenEvent {
 // safe_fields.rs — the developer takes responsibility for these fields.
 #[cfg(feature = "json-conversion")]
 impl JsonConvertible for TokenEvent {}
+
+#[cfg(feature = "serde-conversion")]
+impl serde::Serialize for TokenEvent {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap;
+
+        // Wrappers that route through `json_safe_u64` and the encrypted-note
+        // helper so large u64s stringify in JSON HR and Vec<u8> inside the
+        // tuple becomes base64.
+        struct SafeU64<'a>(&'a u64);
+        impl<'a> serde::Serialize for SafeU64<'a> {
+            fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+                crate::serialization::json::safe_integer::json_safe_u64::serialize(self.0, s)
+            }
+        }
+        struct SafeOptEncNote<'a>(&'a Option<(u32, u32, Vec<u8>)>);
+        impl<'a> serde::Serialize for SafeOptEncNote<'a> {
+            fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+                crate::serialization::json::safe_integer::json_safe_option_encrypted_note::serialize(
+                    self.0, s,
+                )
+            }
+        }
+
+        match self {
+            TokenEvent::Mint(amount, recipient, note) => {
+                let mut m = serializer.serialize_map(Some(4))?;
+                m.serialize_entry("$type", "mint")?;
+                m.serialize_entry("amount", &SafeU64(amount))?;
+                m.serialize_entry("recipient", recipient)?;
+                m.serialize_entry("publicNote", note)?;
+                m.end()
+            }
+            TokenEvent::Burn(amount, from, note) => {
+                let mut m = serializer.serialize_map(Some(4))?;
+                m.serialize_entry("$type", "burn")?;
+                m.serialize_entry("amount", &SafeU64(amount))?;
+                m.serialize_entry("burnFromIdentifier", from)?;
+                m.serialize_entry("publicNote", note)?;
+                m.end()
+            }
+            TokenEvent::Freeze(frozen, note) => {
+                let mut m = serializer.serialize_map(Some(3))?;
+                m.serialize_entry("$type", "freeze")?;
+                m.serialize_entry("frozenIdentifier", frozen)?;
+                m.serialize_entry("publicNote", note)?;
+                m.end()
+            }
+            TokenEvent::Unfreeze(frozen, note) => {
+                let mut m = serializer.serialize_map(Some(3))?;
+                m.serialize_entry("$type", "unfreeze")?;
+                m.serialize_entry("frozenIdentifier", frozen)?;
+                m.serialize_entry("publicNote", note)?;
+                m.end()
+            }
+            TokenEvent::DestroyFrozenFunds(frozen, amount, note) => {
+                let mut m = serializer.serialize_map(Some(4))?;
+                m.serialize_entry("$type", "destroyFrozenFunds")?;
+                m.serialize_entry("frozenIdentifier", frozen)?;
+                m.serialize_entry("amount", &SafeU64(amount))?;
+                m.serialize_entry("publicNote", note)?;
+                m.end()
+            }
+            TokenEvent::Transfer(recipient, note, shared, private, amount) => {
+                let mut m = serializer.serialize_map(Some(6))?;
+                m.serialize_entry("$type", "transfer")?;
+                m.serialize_entry("recipient", recipient)?;
+                m.serialize_entry("publicNote", note)?;
+                m.serialize_entry("sharedEncryptedNote", &SafeOptEncNote(shared))?;
+                m.serialize_entry("privateEncryptedNote", &SafeOptEncNote(private))?;
+                m.serialize_entry("amount", &SafeU64(amount))?;
+                m.end()
+            }
+            TokenEvent::Claim(distribution_type, amount, note) => {
+                let mut m = serializer.serialize_map(Some(4))?;
+                m.serialize_entry("$type", "claim")?;
+                m.serialize_entry("distributionType", distribution_type)?;
+                m.serialize_entry("amount", &SafeU64(amount))?;
+                m.serialize_entry("publicNote", note)?;
+                m.end()
+            }
+            TokenEvent::EmergencyAction(action, note) => {
+                let mut m = serializer.serialize_map(Some(3))?;
+                m.serialize_entry("$type", "emergencyAction")?;
+                m.serialize_entry("action", action)?;
+                m.serialize_entry("publicNote", note)?;
+                m.end()
+            }
+            TokenEvent::ConfigUpdate(change, note) => {
+                let mut m = serializer.serialize_map(Some(3))?;
+                m.serialize_entry("$type", "configUpdate")?;
+                m.serialize_entry("configurationChange", change)?;
+                m.serialize_entry("publicNote", note)?;
+                m.end()
+            }
+            TokenEvent::ChangePriceForDirectPurchase(schedule, note) => {
+                let mut m = serializer.serialize_map(Some(3))?;
+                m.serialize_entry("$type", "changePriceForDirectPurchase")?;
+                m.serialize_entry("pricingSchedule", schedule)?;
+                m.serialize_entry("publicNote", note)?;
+                m.end()
+            }
+            TokenEvent::DirectPurchase(amount, credits) => {
+                let mut m = serializer.serialize_map(Some(3))?;
+                m.serialize_entry("$type", "directPurchase")?;
+                m.serialize_entry("amount", &SafeU64(amount))?;
+                m.serialize_entry("credits", &SafeU64(credits))?;
+                m.end()
+            }
+        }
+    }
+}
+
+#[cfg(feature = "serde-conversion")]
+impl<'de> serde::Deserialize<'de> for TokenEvent {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        use serde::de::{Error, IgnoredAny, MapAccess, Visitor};
+
+        // Newtype wrappers that route u64 / encrypted-note deserialization
+        // through the json_safe helpers (accept both numeric and string forms
+        // for u64; accept either tuple-with-base64 or tuple-with-bytes).
+        #[derive(serde::Deserialize)]
+        #[serde(transparent)]
+        struct U64Safe(
+            #[serde(with = "crate::serialization::json::safe_integer::json_safe_u64")] u64,
+        );
+        #[derive(serde::Deserialize)]
+        #[serde(transparent)]
+        struct OptEncNote(
+            #[serde(
+                with = "crate::serialization::json::safe_integer::json_safe_option_encrypted_note"
+            )]
+            Option<(u32, u32, Vec<u8>)>,
+        );
+
+        struct V;
+
+        impl<'de> Visitor<'de> for V {
+            type Value = TokenEvent;
+
+            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                f.write_str("TokenEvent as a map with `$type` discriminator + variant fields")
+            }
+
+            fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<TokenEvent, A::Error> {
+                let mut ty: Option<String> = None;
+                let mut amount: Option<u64> = None;
+                let mut credits: Option<u64> = None;
+                let mut recipient: Option<Identifier> = None;
+                let mut burn_from: Option<Identifier> = None;
+                let mut frozen: Option<Identifier> = None;
+                let mut public_note: Option<String> = None;
+                let mut shared_note: Option<(u32, u32, Vec<u8>)> = None;
+                let mut private_note: Option<(u32, u32, Vec<u8>)> = None;
+                let mut distribution_type: Option<TokenDistributionTypeWithResolvedRecipient> =
+                    None;
+                let mut action: Option<TokenEmergencyAction> = None;
+                let mut configuration_change: Option<TokenConfigurationChangeItem> = None;
+                let mut pricing_schedule: Option<TokenPricingSchedule> = None;
+
+                while let Some(key) = map.next_key::<String>()? {
+                    match key.as_str() {
+                        "$type" => ty = Some(map.next_value()?),
+                        "amount" => amount = Some(map.next_value::<U64Safe>()?.0),
+                        "credits" => credits = Some(map.next_value::<U64Safe>()?.0),
+                        "recipient" => recipient = Some(map.next_value()?),
+                        "burnFromIdentifier" => burn_from = Some(map.next_value()?),
+                        "frozenIdentifier" => frozen = Some(map.next_value()?),
+                        "publicNote" => public_note = map.next_value()?,
+                        "sharedEncryptedNote" => {
+                            shared_note = map.next_value::<OptEncNote>()?.0;
+                        }
+                        "privateEncryptedNote" => {
+                            private_note = map.next_value::<OptEncNote>()?.0;
+                        }
+                        "distributionType" => distribution_type = Some(map.next_value()?),
+                        "action" => action = Some(map.next_value()?),
+                        "configurationChange" => configuration_change = Some(map.next_value()?),
+                        "pricingSchedule" => pricing_schedule = map.next_value()?,
+                        _ => {
+                            let _: IgnoredAny = map.next_value()?;
+                        }
+                    }
+                }
+
+                let ty = ty.ok_or_else(|| A::Error::missing_field("$type"))?;
+                match ty.as_str() {
+                    "mint" => Ok(TokenEvent::Mint(
+                        amount.ok_or_else(|| A::Error::missing_field("amount"))?,
+                        recipient.ok_or_else(|| A::Error::missing_field("recipient"))?,
+                        public_note,
+                    )),
+                    "burn" => Ok(TokenEvent::Burn(
+                        amount.ok_or_else(|| A::Error::missing_field("amount"))?,
+                        burn_from.ok_or_else(|| A::Error::missing_field("burnFromIdentifier"))?,
+                        public_note,
+                    )),
+                    "freeze" => Ok(TokenEvent::Freeze(
+                        frozen.ok_or_else(|| A::Error::missing_field("frozenIdentifier"))?,
+                        public_note,
+                    )),
+                    "unfreeze" => Ok(TokenEvent::Unfreeze(
+                        frozen.ok_or_else(|| A::Error::missing_field("frozenIdentifier"))?,
+                        public_note,
+                    )),
+                    "destroyFrozenFunds" => Ok(TokenEvent::DestroyFrozenFunds(
+                        frozen.ok_or_else(|| A::Error::missing_field("frozenIdentifier"))?,
+                        amount.ok_or_else(|| A::Error::missing_field("amount"))?,
+                        public_note,
+                    )),
+                    "transfer" => Ok(TokenEvent::Transfer(
+                        recipient.ok_or_else(|| A::Error::missing_field("recipient"))?,
+                        public_note,
+                        shared_note,
+                        private_note,
+                        amount.ok_or_else(|| A::Error::missing_field("amount"))?,
+                    )),
+                    "claim" => Ok(TokenEvent::Claim(
+                        distribution_type
+                            .ok_or_else(|| A::Error::missing_field("distributionType"))?,
+                        amount.ok_or_else(|| A::Error::missing_field("amount"))?,
+                        public_note,
+                    )),
+                    "emergencyAction" => Ok(TokenEvent::EmergencyAction(
+                        action.ok_or_else(|| A::Error::missing_field("action"))?,
+                        public_note,
+                    )),
+                    "configUpdate" => Ok(TokenEvent::ConfigUpdate(
+                        configuration_change
+                            .ok_or_else(|| A::Error::missing_field("configurationChange"))?,
+                        public_note,
+                    )),
+                    "changePriceForDirectPurchase" => Ok(TokenEvent::ChangePriceForDirectPurchase(
+                        pricing_schedule,
+                        public_note,
+                    )),
+                    "directPurchase" => Ok(TokenEvent::DirectPurchase(
+                        amount.ok_or_else(|| A::Error::missing_field("amount"))?,
+                        credits.ok_or_else(|| A::Error::missing_field("credits"))?,
+                    )),
+                    other => Err(A::Error::unknown_variant(
+                        other,
+                        &[
+                            "mint",
+                            "burn",
+                            "freeze",
+                            "unfreeze",
+                            "destroyFrozenFunds",
+                            "transfer",
+                            "claim",
+                            "emergencyAction",
+                            "configUpdate",
+                            "changePriceForDirectPurchase",
+                            "directPurchase",
+                        ],
+                    )),
+                }
+            }
+        }
+
+        deserializer.deserialize_map(V)
+    }
+}
+
+#[cfg(all(
+    test,
+    feature = "json-conversion",
+    feature = "value-conversion",
+    feature = "serde-conversion"
+))]
+pub(crate) mod json_convertible_tests {
+    use super::*;
+    use platform_value::platform_value;
+    use serde_json::json;
+
+    // `TokenEvent` has a custom `Serialize` / `Deserialize` impl emitting an
+    // internally-tagged flat shape: each variant maps positional tuple fields
+    // to named JSON keys (`amount` / `recipient` / `publicNote` / etc.).
+    // Round-trip covers a representative sample: `Mint` (3-tuple), `Freeze`
+    // (2-tuple including null note), `DirectPurchase` (2-tuple of u64 aliases).
+
+    pub(crate) fn mint_fixture() -> TokenEvent {
+        TokenEvent::Mint(
+            5_000,
+            Identifier::new([0xa1; 32]),
+            Some("genesis mint".to_string()),
+        )
+    }
+
+    #[test]
+    fn json_round_trip_mint() {
+        use crate::serialization::JsonConvertible;
+        let original = mint_fixture();
+        let json = original.to_json().expect("to_json");
+        // `TokenAmount` (u64) → `json_safe_u64` (number for small values,
+        // string above MAX_SAFE_INTEGER). `Identifier` → base58 string in HR.
+        assert_eq!(
+            json,
+            json!({
+                "$type": "mint",
+                "amount": 5_000,
+                "recipient": "Bswb3UyeD1pUTaGiE6WvqwFpJZsQSEY1xhJePCDTHdvp",
+                "publicNote": "genesis mint",
+            })
+        );
+        let recovered = TokenEvent::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn json_round_trip_freeze_no_note() {
+        use crate::serialization::JsonConvertible;
+        let original = TokenEvent::Freeze(Identifier::new([0xb2; 32]), None);
+        let json = original.to_json().expect("to_json");
+        assert_eq!(
+            json,
+            json!({
+                "$type": "freeze",
+                "frozenIdentifier": "D2ZcUbtpG5sKq7XLeB4YnpNnTGSptKCxTddoNeydzJQq",
+                "publicNote": null,
+            })
+        );
+        let recovered = TokenEvent::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn json_round_trip_direct_purchase() {
+        use crate::serialization::JsonConvertible;
+        let original = TokenEvent::DirectPurchase(100, 5_000);
+        let json = original.to_json().expect("to_json");
+        assert_eq!(
+            json,
+            json!({
+                "$type": "directPurchase",
+                "amount": 100,
+                "credits": 5_000,
+            })
+        );
+        let recovered = TokenEvent::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn value_round_trip_mint() {
+        use crate::serialization::ValueConvertible;
+        let original = mint_fixture();
+        let value = original.to_object().expect("to_object");
+        // `TokenAmount` is `u64` → `Value::U64`. Identifier → `Value::Identifier`.
+        assert_eq!(
+            value,
+            platform_value!({
+                "$type": "mint",
+                "amount": 5_000u64,
+                "recipient": Identifier::new([0xa1; 32]),
+                "publicNote": "genesis mint",
+            })
+        );
+        let recovered = TokenEvent::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn value_round_trip_freeze_no_note() {
+        use crate::serialization::ValueConvertible;
+        let original = TokenEvent::Freeze(Identifier::new([0xb2; 32]), None);
+        let value = original.to_object().expect("to_object");
+        assert_eq!(
+            value,
+            platform_value!({
+                "$type": "freeze",
+                "frozenIdentifier": Identifier::new([0xb2; 32]),
+                "publicNote": null,
+            })
+        );
+        let recovered = TokenEvent::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn value_round_trip_direct_purchase() {
+        use crate::serialization::ValueConvertible;
+        let original = TokenEvent::DirectPurchase(100, 5_000);
+        let value = original.to_object().expect("to_object");
+        // `TokenAmount` and `Credits` are both `u64`.
+        assert_eq!(
+            value,
+            platform_value!({
+                "$type": "directPurchase",
+                "amount": 100u64,
+                "credits": 5_000u64,
+            })
+        );
+        let recovered = TokenEvent::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
+    }
+}
 
 impl fmt::Display for TokenEvent {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -477,5 +878,137 @@ impl TokenEvent {
         .into();
 
         Ok(document)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_id() -> Identifier {
+        Identifier::from([1u8; 32])
+    }
+
+    fn test_id_2() -> Identifier {
+        Identifier::from([2u8; 32])
+    }
+
+    // ---- associated_document_type_name tests ----
+
+    #[test]
+    fn associated_name_mint() {
+        let event = TokenEvent::Mint(0, test_id(), None);
+        assert_eq!(event.associated_document_type_name(), "mint");
+    }
+
+    #[test]
+    fn associated_name_burn() {
+        let event = TokenEvent::Burn(0, test_id(), None);
+        assert_eq!(event.associated_document_type_name(), "burn");
+    }
+
+    #[test]
+    fn associated_name_freeze() {
+        let event = TokenEvent::Freeze(test_id(), None);
+        assert_eq!(event.associated_document_type_name(), "freeze");
+    }
+
+    #[test]
+    fn associated_name_unfreeze() {
+        let event = TokenEvent::Unfreeze(test_id(), None);
+        assert_eq!(event.associated_document_type_name(), "unfreeze");
+    }
+
+    #[test]
+    fn associated_name_destroy_frozen_funds() {
+        let event = TokenEvent::DestroyFrozenFunds(test_id(), 0, None);
+        assert_eq!(event.associated_document_type_name(), "destroyFrozenFunds");
+    }
+
+    #[test]
+    fn associated_name_transfer() {
+        let event = TokenEvent::Transfer(test_id(), None, None, None, 0);
+        assert_eq!(event.associated_document_type_name(), "transfer");
+    }
+
+    #[test]
+    fn associated_name_claim() {
+        let recipient = TokenDistributionTypeWithResolvedRecipient::PreProgrammed(test_id());
+        let event = TokenEvent::Claim(recipient, 0, None);
+        assert_eq!(event.associated_document_type_name(), "claim");
+    }
+
+    #[test]
+    fn associated_name_emergency_action() {
+        let event = TokenEvent::EmergencyAction(TokenEmergencyAction::Pause, None);
+        assert_eq!(event.associated_document_type_name(), "emergencyAction");
+    }
+
+    #[test]
+    fn associated_name_config_update() {
+        let event = TokenEvent::ConfigUpdate(
+            TokenConfigurationChangeItem::TokenConfigurationNoChange,
+            None,
+        );
+        assert_eq!(event.associated_document_type_name(), "configUpdate");
+    }
+
+    #[test]
+    fn associated_name_direct_purchase() {
+        let event = TokenEvent::DirectPurchase(0, 0);
+        assert_eq!(event.associated_document_type_name(), "directPurchase");
+    }
+
+    #[test]
+    fn associated_name_change_price() {
+        let event = TokenEvent::ChangePriceForDirectPurchase(None, None);
+        assert_eq!(event.associated_document_type_name(), "directPricing");
+    }
+
+    // ---- all associated_document_type_name values are distinct ----
+
+    #[test]
+    fn all_document_type_names_are_unique() {
+        let recipient = TokenDistributionTypeWithResolvedRecipient::PreProgrammed(test_id());
+        let events: Vec<TokenEvent> = vec![
+            TokenEvent::Mint(0, test_id(), None),
+            TokenEvent::Burn(0, test_id(), None),
+            TokenEvent::Freeze(test_id(), None),
+            TokenEvent::Unfreeze(test_id(), None),
+            TokenEvent::DestroyFrozenFunds(test_id(), 0, None),
+            TokenEvent::Transfer(test_id(), None, None, None, 0),
+            TokenEvent::Claim(recipient, 0, None),
+            TokenEvent::EmergencyAction(TokenEmergencyAction::Pause, None),
+            TokenEvent::ConfigUpdate(
+                TokenConfigurationChangeItem::TokenConfigurationNoChange,
+                None,
+            ),
+            TokenEvent::DirectPurchase(0, 0),
+            TokenEvent::ChangePriceForDirectPurchase(None, None),
+        ];
+        let names: Vec<&str> = events
+            .iter()
+            .map(|e| e.associated_document_type_name())
+            .collect();
+        let mut unique = names.clone();
+        unique.sort();
+        unique.dedup();
+        assert_eq!(
+            names.len(),
+            unique.len(),
+            "Duplicate document type names found"
+        );
+    }
+
+    // ---- format_note helper ----
+
+    #[test]
+    fn format_note_none_returns_empty() {
+        assert_eq!(format_note(&None), "");
+    }
+
+    #[test]
+    fn format_note_some_returns_formatted() {
+        assert_eq!(format_note(&Some("hello".to_string())), " (note: hello)");
     }
 }

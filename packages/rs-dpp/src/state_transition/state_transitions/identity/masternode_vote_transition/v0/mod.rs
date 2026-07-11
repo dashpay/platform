@@ -1,11 +1,7 @@
 mod identity_signed;
-#[cfg(feature = "json-conversion")]
-mod json_conversion;
 mod state_transition_like;
 mod types;
 pub(super) mod v0_methods;
-#[cfg(feature = "value-conversion")]
-mod value_conversion;
 mod version;
 
 use crate::identity::KeyID;
@@ -105,4 +101,101 @@ mod test {
 
         test_masternode_vote_transition(transition);
     }
+
+    fn make_vote_v0() -> MasternodeVoteTransitionV0 {
+        MasternodeVoteTransitionV0 {
+            pro_tx_hash: Identifier::random(),
+            voter_identity_id: Identifier::random(),
+            vote: Vote::ResourceVote(ResourceVote::V0(ResourceVoteV0 {
+                vote_poll: VotePoll::ContestedDocumentResourceVotePoll(
+                    ContestedDocumentResourceVotePoll {
+                        contract_id: Default::default(),
+                        document_type_name: "test_doc".to_string(),
+                        index_name: "idx".to_string(),
+                        index_values: vec![],
+                    },
+                ),
+                resource_vote_choice: ResourceVoteChoice::Abstain,
+            })),
+            nonce: 7,
+            signature_public_key_id: 3,
+            signature: [0u8; 65].to_vec().into(),
+        }
+    }
+
+    #[test]
+    fn test_default() {
+        let t = MasternodeVoteTransitionV0::default();
+        assert_eq!(t.nonce, 0);
+        assert_eq!(t.signature_public_key_id, 0);
+    }
+
+    #[test]
+    fn test_state_transition_like_v0() {
+        use crate::state_transition::{
+            StateTransitionLike, StateTransitionOwned, StateTransitionType,
+        };
+        let t = make_vote_v0();
+        assert_eq!(
+            t.state_transition_type(),
+            StateTransitionType::MasternodeVote
+        );
+        assert_eq!(t.state_transition_protocol_version(), 0);
+        assert_eq!(t.modified_data_ids(), vec![t.voter_identity_id]);
+        assert_eq!(t.owner_id(), t.voter_identity_id);
+    }
+
+    #[test]
+    fn test_unique_identifiers_v0() {
+        use crate::state_transition::StateTransitionLike;
+        let t = make_vote_v0();
+        let ids = t.unique_identifiers();
+        assert_eq!(ids.len(), 1);
+        assert!(!ids[0].is_empty());
+    }
+
+    #[test]
+    fn test_identity_signed_v0() {
+        use crate::identity::{Purpose, SecurityLevel};
+        use crate::state_transition::StateTransitionIdentitySigned;
+        let mut t = make_vote_v0();
+        assert_eq!(t.signature_public_key_id(), 3);
+        t.set_signature_public_key_id(77);
+        assert_eq!(t.signature_public_key_id(), 77);
+        let security = t.security_level_requirement(Purpose::VOTING);
+        assert!(security.contains(&SecurityLevel::CRITICAL));
+        assert!(security.contains(&SecurityLevel::HIGH));
+        assert!(security.contains(&SecurityLevel::MEDIUM));
+        let purpose = t.purpose_requirement();
+        assert_eq!(purpose, vec![Purpose::VOTING]);
+    }
+
+    #[test]
+    fn test_single_signed_v0() {
+        use crate::state_transition::StateTransitionSingleSigned;
+        use platform_value::BinaryData;
+        let mut t = make_vote_v0();
+        assert_eq!(t.signature().len(), 65);
+        t.set_signature(BinaryData::new(vec![9, 8, 7]));
+        assert_eq!(t.signature().as_slice(), &[9, 8, 7]);
+        t.set_signature_bytes(vec![6, 5]);
+        assert_eq!(t.signature().as_slice(), &[6, 5]);
+    }
+
+    #[test]
+    fn test_into_state_transition_v0() {
+        use crate::state_transition::StateTransition;
+        let t = make_vote_v0();
+        let st: StateTransition = t.into();
+        match st {
+            StateTransition::MasternodeVote(_) => {}
+            _ => panic!("expected MasternodeVote"),
+        }
+    }
+
+    // Legacy `StateTransitionValueConvert` round-trip / cleaned-object /
+    // skip-signature tests on the V0 inner struct deleted in Phase D
+    // step 9. The canonical `JsonConvertible` / `ValueConvertible`
+    // round-trip is exercised on the outer enum derive — these tested
+    // methods that no longer exist.
 }

@@ -296,6 +296,7 @@ impl<T: Sized, E: Into<DapiError>> MapToDapiResult<T> for Result<T, E> {
 }
 
 #[cfg(test)]
+#[allow(clippy::items_after_test_module)]
 mod tests {
     use super::*;
     use serde_json::json;

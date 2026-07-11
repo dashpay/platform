@@ -1,8 +1,10 @@
 use crate::fetch::common::setup_logs;
 use dash_sdk::platform::tokens::token_contract_info::TokenContractInfoQuery;
-use dash_sdk::platform::{Fetch, Identifier, Query};
+use dash_sdk::platform::{Fetch, Identifier, Query, QuerySettings};
 use dash_sdk::Sdk;
 use dpp::tokens::contract_info::TokenContractInfo;
+use dpp::version::PlatformVersion;
+use rs_dapi_client::RequestSettings;
 
 #[tokio::test]
 async fn test_token_contract_info_fetch_by_identifier() {
@@ -49,7 +51,13 @@ async fn test_token_contract_info_query_prove_true() {
     let token_id = Identifier::from_bytes(&[3u8; 32]).unwrap();
     let query = TokenContractInfoQuery { token_id };
 
-    let request = query.query(true).unwrap();
+    let request_settings = RequestSettings::default();
+    let settings = QuerySettings {
+        request_settings: &request_settings,
+        protocol_version: PlatformVersion::latest(),
+        prove: true,
+    };
+    let request = query.query(&settings).unwrap();
 
     match request.version.unwrap() {
         dapi_grpc::platform::v0::get_token_contract_info_request::Version::V0(v0) => {
@@ -64,7 +72,13 @@ async fn test_token_contract_info_query_prove_false() {
     let token_id = Identifier::from_bytes(&[4u8; 32]).unwrap();
     let query = TokenContractInfoQuery { token_id };
 
-    let request = query.query(false).unwrap();
+    let request_settings = RequestSettings::default();
+    let settings = QuerySettings {
+        request_settings: &request_settings,
+        protocol_version: PlatformVersion::latest(),
+        prove: false,
+    };
+    let request = query.query(&settings).unwrap();
 
     match request.version.unwrap() {
         dapi_grpc::platform::v0::get_token_contract_info_request::Version::V0(v0) => {

@@ -17,11 +17,11 @@ use crate::version::dpp_versions::DPPVersion;
 use crate::version::drive_abci_versions::drive_abci_checkpoint_parameters::v1::DRIVE_ABCI_CHECKPOINT_PARAMETERS_V1;
 use crate::version::drive_abci_versions::drive_abci_method_versions::v1::DRIVE_ABCI_METHOD_VERSIONS_V1;
 use crate::version::drive_abci_versions::drive_abci_query_versions::{
-    DriveAbciQueryAddressFundsVersions, DriveAbciQueryDataContractVersions,
-    DriveAbciQueryGroupVersions, DriveAbciQueryIdentityVersions,
-    DriveAbciQueryPrefundedSpecializedBalancesVersions, DriveAbciQueryShieldedVersions,
-    DriveAbciQuerySystemVersions, DriveAbciQueryTokenVersions, DriveAbciQueryValidatorVersions,
-    DriveAbciQueryVersions, DriveAbciQueryVotingVersions,
+    DriveAbciDocumentQueryHelperVersions, DriveAbciQueryAddressFundsVersions,
+    DriveAbciQueryDataContractVersions, DriveAbciQueryGroupVersions,
+    DriveAbciQueryIdentityVersions, DriveAbciQueryPrefundedSpecializedBalancesVersions,
+    DriveAbciQueryShieldedVersions, DriveAbciQuerySystemVersions, DriveAbciQueryTokenVersions,
+    DriveAbciQueryValidatorVersions, DriveAbciQueryVersions, DriveAbciQueryVotingVersions,
 };
 use crate::version::drive_abci_versions::drive_abci_structure_versions::v1::DRIVE_ABCI_STRUCTURE_VERSIONS_V1;
 use crate::version::drive_abci_versions::drive_abci_validation_versions::v1::DRIVE_ABCI_VALIDATION_VERSIONS_V1;
@@ -146,10 +146,6 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                 insert_note: 0,
                 insert_nullifiers: 0,
                 update_total_balance: 0,
-                prove_nullifiers_trunk_query: 0,
-                prove_nullifiers_branch_query: 0,
-                nullifiers_query_min_depth: 6,
-                nullifiers_query_max_depth: 10,
                 record_anchor_if_changed: 0,
                 prune_anchors: 0,
                 has_anchor: 0,
@@ -157,7 +153,7 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                 read_total_balance: 0,
                 notes_count: 0,
             },
-            saved_block_transactions: DriveSavedBlockTransactionsMethodVersions { store_address_balances: 0, fetch_address_balances: 0, compact_address_balances: 0, cleanup_expired_address_balances: 0, max_blocks_before_compaction: 64, max_addresses_before_compaction: 2048, store_nullifiers: 0, fetch_nullifiers: 0, compact_nullifiers: 0, cleanup_expired_nullifier_compactions: 0, max_blocks_before_nullifier_compaction: 64, max_nullifiers_before_compaction: 2048 },
+            saved_block_transactions: DriveSavedBlockTransactionsMethodVersions { store_address_balances: 0, fetch_address_balances: 0, compact_address_balances: 0, cleanup_expired_address_balances: 0, max_blocks_before_compaction: 64, max_addresses_before_compaction: 2048 },
         },
         grove_methods: DRIVE_GROVE_METHOD_VERSIONS_V1,
         grove_version: GROVE_V1,
@@ -175,6 +171,14 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                 min_version: 0,
                 max_version: 0,
                 default_current_version: 0,
+            },
+            document_history: FeatureVersionBounds {
+                min_version: 0,
+                max_version: 0,
+                default_current_version: 0,
+            },
+            document_query_helpers: DriveAbciDocumentQueryHelperVersions {
+                compute_aggregate_mode_and_check_limit: 0,
             },
             prefunded_specialized_balances: DriveAbciQueryPrefundedSpecializedBalancesVersions {
                 balance: FeatureVersionBounds {
@@ -428,32 +432,17 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                     max_version: 0,
                     default_current_version: 0,
                 },
+                notes_count: FeatureVersionBounds {
+                    min_version: 0,
+                    max_version: 0,
+                    default_current_version: 0,
+                },
                 nullifiers: FeatureVersionBounds {
                     min_version: 0,
                     max_version: 0,
                     default_current_version: 0,
                 },
-                nullifiers_trunk_state: FeatureVersionBounds {
-                    min_version: 0,
-                    max_version: 0,
-                    default_current_version: 0,
-                },
-                nullifiers_branch_state: FeatureVersionBounds {
-                    min_version: 0,
-                    max_version: 0,
-                    default_current_version: 0,
-                },
-                recent_nullifier_changes: FeatureVersionBounds {
-                    min_version: 0,
-                    max_version: 0,
-                    default_current_version: 0,
-                },
-                recent_compacted_nullifier_changes: FeatureVersionBounds {
-                    min_version: 0,
-                    max_version: 0,
-                    default_current_version: 0,
-                },
-                max_encrypted_notes_per_query: 2048,
+                max_query_chunks: 1,
             },
             address_funds_queries: DriveAbciQueryAddressFundsVersions {
                 addresses_infos: FeatureVersionBounds {
@@ -516,9 +505,10 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
         withdrawal_transactions_per_block_limit: 4,
         retry_signing_expired_withdrawal_documents_per_block_limit: 1,
         max_withdrawal_amount: 50_000_000_000_000,
+        min_withdrawal_amount: 190_000,
         max_contract_group_size: 256,
         max_token_redemption_cycles: 128,
-        max_shielded_transition_actions: 100,
+        max_shielded_transition_actions: 16,
     },
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 0,

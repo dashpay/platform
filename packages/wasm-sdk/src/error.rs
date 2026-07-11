@@ -33,11 +33,17 @@ pub enum WasmSdkErrorKind {
     StateTransitionBroadcastError,
     NonceOverflow,
     IdentityNonceNotFound,
+    DriveInternalError,
 
     // Local helper kinds
     InvalidArgument,
     SerializationError,
     NotFound,
+    /// Surface-stable scaffolded API that hasn't been wired through
+    /// the wasm-sdk layer yet. JS callers can branch on this kind
+    /// (vs `Generic`) to detect "the API exists but execution waits
+    /// on a follow-up" without parsing the message.
+    NotImplemented,
 }
 
 /// Structured error surfaced to JS consumers
@@ -84,6 +90,33 @@ impl WasmSdkError {
 
     pub(crate) fn not_found(message: impl Into<String>) -> Self {
         Self::new(WasmSdkErrorKind::NotFound, message, None, false)
+    }
+
+    /// Construct a [`WasmSdkErrorKind::NotImplemented`] error for a
+    /// scaffolded API. `api_name` is the JS-facing method name (e.g.
+    /// `"getDocumentsAverage"`) — keep the message short so JS callers
+    /// can branch on `kind` rather than message-match.
+    ///
+    /// `#[allow(dead_code)]` because all the previously-scaffolded
+    /// SUM/AVG bindings now have real implementations; kept as a
+    /// constructor for future scaffolded APIs so the
+    /// `WasmSdkErrorKind::NotImplemented` variant (still serialized
+    /// in [`WasmSdkErrorKind::Display`] at the bottom of this file)
+    /// has a single canonical construction site.
+    #[allow(dead_code)]
+    pub(crate) fn not_implemented(api_name: impl Into<String>) -> Self {
+        let api = api_name.into();
+        Self::new(
+            WasmSdkErrorKind::NotImplemented,
+            format!(
+                "{api}: scaffolded API not yet wired through the wasm-sdk \
+                 layer. The rs-drive primitives are available; plumbing them \
+                 up to the browser-facing API is the pending SDK fan-out \
+                 follow-up."
+            ),
+            None,
+            false,
+        )
     }
 }
 
@@ -191,6 +224,9 @@ impl From<SdkError> for WasmSdkError {
             IdentityNonceNotFound(msg) => {
                 Self::new(WasmSdkErrorKind::IdentityNonceNotFound, msg, None, true)
             }
+            DriveInternalError(msg) => {
+                Self::new(WasmSdkErrorKind::DriveInternalError, msg, None, retriable)
+            }
             NoAvailableAddressesToRetry(inner) => Self::new(
                 WasmSdkErrorKind::DapiClientError,
                 format!("no available addresses to retry, last error: {}", inner),
@@ -269,9 +305,11 @@ impl WasmSdkError {
             K::StateTransitionBroadcastError => "StateTransitionBroadcastError",
             K::NonceOverflow => "NonceOverflow",
             K::IdentityNonceNotFound => "IdentityNonceNotFound",
+            K::DriveInternalError => "DriveInternalError",
             K::InvalidArgument => "InvalidArgument",
             K::SerializationError => "SerializationError",
             K::NotFound => "NotFound",
+            K::NotImplemented => "NotImplemented",
         }
         .to_string()
     }

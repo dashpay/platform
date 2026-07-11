@@ -8,6 +8,18 @@ rust-version.workspace = true
 crate-type = ["staticlib", "cdylib"]
 
 [dependencies]
-dash-spv-ffi = { workspace = true }
 key-wallet-ffi = { workspace = true }
+platform-wallet-ffi = { path = "../rs-platform-wallet-ffi" }
 rs-sdk-ffi = { path = "../rs-sdk-ffi" }
+dash-network = { workspace = true, features = ["ffi"] }
+
+[features]
+default = []
+# Forwards to `platform-wallet-ffi/shielded`. Pulls Orchard / ZK
+# shielded sync support into the unified iOS framework. Off by
+# default so the framework's transparent surface stays slim.
+shielded = ["platform-wallet-ffi/shielded"]
+tokio-metrics = [
+    "platform-wallet-ffi/tokio-metrics",
+    "rs-sdk-ffi/tokio-metrics",
+]

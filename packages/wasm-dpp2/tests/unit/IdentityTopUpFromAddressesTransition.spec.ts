@@ -164,6 +164,62 @@ describe('IdentityTopUpFromAddressesTransition', () => {
     });
   });
 
+  describe('toObject() / toJSON() / fromObject() / fromJSON()', () => {
+    it('toObject() emits inputs as typed array of {address, nonce, amount}', () => {
+      const transition = createTransition();
+      const obj = transition.toObject();
+
+      expect(obj.inputs).to.be.an('array').with.lengthOf(1);
+      expect(obj.inputs[0].address).to.be.instanceOf(Uint8Array);
+      expect(obj.inputs[0].address.length).to.equal(21);
+      expect(obj.inputs[0].nonce).to.equal(0);
+      expect(obj.inputs[0].amount).to.equal(BigInt(100000));
+    });
+
+    it('toObject() emits singular output as {address, amount}', () => {
+      const transition = createTransition();
+      const obj = transition.toObject();
+
+      expect(obj.output).to.exist();
+      expect(obj.output.address).to.be.instanceOf(Uint8Array);
+      expect(obj.output.address.length).to.equal(21);
+      expect(obj.output.amount).to.equal(BigInt(90000));
+    });
+
+    it('toObject() emits feeStrategy with {type, index} shape', () => {
+      const transition = createTransition();
+      const obj = transition.toObject();
+
+      expect(obj.feeStrategy).to.be.an('array');
+      expect(obj.feeStrategy[0].$type).to.be.oneOf(['deductFromInput', 'reduceOutput']);
+      expect(obj.feeStrategy[0].index).to.be.a('number');
+    });
+
+    it('toJSON() emits hex addresses and number/string amounts', () => {
+      const transition = createTransition();
+      const json = transition.toJSON();
+
+      expect(json.inputs[0].address).to.be.a('string').with.lengthOf(42);
+      expect(json.output).to.exist();
+      expect(json.output.address).to.be.a('string').with.lengthOf(42);
+      expect(json.feeStrategy[0].$type).to.be.oneOf(['deductFromInput', 'reduceOutput']);
+    });
+
+    it('fromObject(toObject()) round-trips identically', () => {
+      const transition = createTransition();
+      const obj = transition.toObject();
+      const restored = wasm.IdentityTopUpFromAddressesTransition.fromObject(obj);
+      expect(restored.toObject()).to.deep.equal(obj);
+    });
+
+    it('fromJSON(toJSON()) round-trips identically', () => {
+      const transition = createTransition();
+      const json = transition.toJSON();
+      const restored = wasm.IdentityTopUpFromAddressesTransition.fromJSON(json);
+      expect(restored.toJSON()).to.deep.equal(json);
+    });
+  });
+
   describe('toStateTransition() / fromStateTransition()', () => {
     it('should convert to and from StateTransition', () => {
       const transition = createTransition();

@@ -13,25 +13,30 @@ struct DashAddress {
     let displayString: String
 
     /// Parse any address string and detect its type
-    static func parse(_ input: String, network: AppNetwork) -> DashAddress {
+    static func parse(_ input: String, network: Network) -> DashAddress {
         // 1. Try bech32m first
         if let decoded = Bech32m.decode(input) {
             let hrp = decoded.hrp
             let data = decoded.data
 
             // Check HRP validity
-            let validPlatformHrp = (network == .mainnet) ? "dashevo" : "tdashevo"
-            let validOrchardHrp = (network == .mainnet) ? "dash" : "tdash"
+            // Platform and Orchard share the same HRP: "dash" (mainnet) / "tdash" (testnet/regtest)
+            // Distinguished by type byte: 0xb0/0x80 = platform, 0x10 = orchard
+            let validHrp = (network == .mainnet) ? "dash" : "tdash"
 
-            if hrp == validPlatformHrp && data.count == 21 {
-                // Platform address: type byte 0xb0 or 0x80 + 20-byte hash
+            if hrp == validHrp && data.count == 21 {
+                // Platform address bech32m wire bytes per
+                // rs-dpp/src/address_funds/platform_address.rs:41-47:
+                //   0xb0 = P2PKH, 0x80 = P2SH.
+                // 0x00/0x01 are the *storage* bytes (GroveDB keys) and must
+                // never appear in a `tdash1…`/`dash1…` string.
                 let typeByte = data[0]
                 if typeByte == 0xb0 || typeByte == 0x80 {
                     return DashAddress(type: .platform(data), displayString: input)
                 }
             }
 
-            if hrp == validOrchardHrp && data.count >= 2 {
+            if hrp == validHrp && data.count >= 2 {
                 let typeByte = data[0]
                 if typeByte == 0x10 {
                     // Orchard address: 0x10 type byte + 43 bytes raw address
@@ -44,7 +49,7 @@ struct DashAddress {
         }
 
         // 2. Try Core address — validate via Rust FFI (Base58Check + network)
-        let keyWalletNetwork: KeyWalletNetwork = (network == .mainnet) ? .mainnet : .testnet
+        let keyWalletNetwork: Network = (network == .mainnet) ? .mainnet : .testnet
         if Address.validate(input, network: keyWalletNetwork),
            let script = coreAddressToOutputScript(input) {
             return DashAddress(type: .core(script), displayString: input)
@@ -56,7 +61,7 @@ struct DashAddress {
 
     /// Encode raw 43-byte Orchard address to bech32m display string.
     /// Prepends 0x10 type byte then bech32m encodes with dash/tdash HRP.
-    static func encodeOrchard(rawBytes: Data, network: AppNetwork) -> String? {
+    static func encodeOrchard(rawBytes: Data, network: Network) -> String? {
         guard rawBytes.count == 43 else { return nil }
         let hrp = (network == .mainnet) ? "dash" : "tdash"
         var payload = Data([0x10])
@@ -64,10 +69,15 @@ struct DashAddress {
         return Bech32m.encode(hrp: hrp, data: payload)
     }
 
-    /// Encode 21-byte platform address to bech32m display string
-    static func encodePlatform(rawBytes: Data, network: AppNetwork) -> String? {
+    /// Encode 21-byte platform address to bech32m display string.
+    ///
+    /// HRP matches what `parse(...)` accepts (`dash` / `tdash`) so a
+    /// round-trip through `encodePlatform` → `parse` resolves as
+    /// `.platform(...)`. The type byte at `rawBytes[0]` (0xb0 / 0x80)
+    /// is what distinguishes platform from Orchard, not the HRP.
+    static func encodePlatform(rawBytes: Data, network: Network) -> String? {
         guard rawBytes.count == 21 else { return nil }
-        let hrp = (network == .mainnet) ? "dashevo" : "tdashevo"
+        let hrp = (network == .mainnet) ? "dash" : "tdash"
         return Bech32m.encode(hrp: hrp, data: rawBytes)
     }
 

@@ -1,4 +1,5 @@
 #[cfg(test)]
+#[allow(clippy::module_inception)]
 mod tests {
     use crate::execution::validation::state_transition::state_transitions::shielded_common::compute_platform_sighash;
     use crate::execution::validation::state_transition::state_transitions::test_helpers::{
@@ -41,13 +42,22 @@ mod tests {
         ))
     }
 
+    /// Minimum shielded fee for `num_actions`, sourced from the canonical
+    /// `dpp::shielded::compute_minimum_shielded_fee` (against `PlatformVersion::latest()`, which is
+    /// what every test in this module uses) so the test fixtures track the per-action fee constants
+    /// and can never go stale relative to consensus.
+    fn minimum_fee(num_actions: usize) -> u64 {
+        dpp::shielded::compute_minimum_shielded_fee(num_actions, PlatformVersion::latest())
+            .expect("minimum shielded fee computation")
+    }
+
     /// Shorthand for creating a structurally valid (but cryptographically invalid) shielded
     /// transfer transition. Has a non-zero anchor, valid field sizes, but random data.
-    /// Includes sufficient fee to pass the minimum shielded fee check (1 action = 111,548,800).
+    /// Includes sufficient fee to pass the minimum shielded fee check (the 1-action minimum).
     fn create_default_shielded_transfer_transition() -> StateTransition {
         create_shielded_transfer_transition(
             vec![create_dummy_serialized_action()],
-            111_548_800,    // minimum fee for 1 action
+            minimum_fee(1),
             [42u8; 32],     // non-zero anchor
             vec![0u8; 100], // dummy proof bytes
             [0u8; 64],      // dummy binding signature
@@ -84,22 +94,22 @@ mod tests {
             );
         }
 
-        /// Tests validate_structure directly because 101 actions exceed the
-        /// max_state_transition_size (20KB) before reaching the actions count check
-        /// in the full pipeline.
+        /// Tests `validate_structure` directly to exercise the
+        /// `max_shielded_transition_actions` check in isolation, without
+        /// depending on the full transition-processing pipeline.
         #[test]
         fn test_too_many_actions_returns_error() {
             use dpp::state_transition::StateTransitionStructureValidation;
 
             let platform_version = PlatformVersion::latest();
 
-            // 101 actions exceeds max_shielded_transition_actions (100)
+            // 17 actions exceeds max_shielded_transition_actions (16)
             let actions: Vec<SerializedAction> =
-                (0..101).map(|_| create_dummy_serialized_action()).collect();
+                (0..17).map(|_| create_dummy_serialized_action()).collect();
 
             let transition = ShieldedTransferTransitionV0 {
                 actions,
-                value_balance: 111_548_800,
+                value_balance: minimum_fee(1),
                 anchor: [42u8; 32],
                 proof: vec![0u8; 100],
                 binding_signature: [0u8; 64],
@@ -260,7 +270,8 @@ mod tests {
             ExtractedNoteCommitment, FullViewingKey, MerklePath, Note, NoteValue, Position,
             RandomSeed, Retention, Rho, Scope, SpendAuthorizingKey, SpendingKey,
         };
-        use rand::rngs::OsRng;
+        use rand::rngs::StdRng;
+        use rand::SeedableRng;
 
         #[test]
         fn test_invalid_proof_returns_shielded_proof_error() {
@@ -287,18 +298,17 @@ mod tests {
             );
         }
 
-        /// Minimum fee for 2 actions (Orchard builder always produces ≥2).
-        const MINIMUM_FEE_2_ACTIONS: u64 = 123_097_600;
-
         #[test]
         fn test_valid_shielded_transfer_proof_succeeds() {
             let platform_version = PlatformVersion::latest();
             let platform = setup_platform();
-            let mut rng = OsRng;
+            let mut rng = StdRng::seed_from_u64(0);
             let pk = get_proving_key();
 
+            // Minimum fee for 2 actions (Orchard builder always produces ≥2).
+            let minimum_fee_2_actions = minimum_fee(2);
             let spend_amount = 200_000_000u64;
-            let output_amount = spend_amount - MINIMUM_FEE_2_ACTIONS;
+            let output_amount = spend_amount - minimum_fee_2_actions;
 
             // --- Create keys ---
             let sk = SpendingKey::from_bytes([0u8; 32]).unwrap();
@@ -347,7 +357,7 @@ mod tests {
             let (actions, value_balance, anchor_bytes, proof_bytes, binding_sig) =
                 serialize_authorized_bundle_u64(&bundle);
 
-            assert_eq!(value_balance, MINIMUM_FEE_2_ACTIONS);
+            assert_eq!(value_balance, minimum_fee_2_actions);
 
             // --- Set pool balance and insert anchor ---
             set_pool_total_balance(&platform, 500_000_000);
@@ -361,6 +371,21 @@ mod tests {
                 proof_bytes,
                 binding_sig,
             );
+
+            // CheckTx root-invariance guard (devnet paloma h788): `check_tx` asserts under
+            // cfg(test) that it never mutates committed grovedb state, so running the
+            // canonical valid fixture through it pins the invariant for this transition type.
+            {
+                use dpp::serialization::PlatformSerializable;
+                let guard_serialized_transition = transition
+                    .serialize_to_bytes()
+                    .expect("expected to serialize transition for the check_tx guard");
+                crate::test::helpers::state_mutation_guard::assert_check_tx_valid_at_all_levels(
+                    &platform,
+                    &guard_serialized_transition,
+                    "shielded transfer",
+                );
+            }
 
             let processing_result = process_transition(&platform, transition, platform_version);
 
@@ -386,7 +411,7 @@ mod tests {
 
             let transition = create_shielded_transfer_transition(
                 vec![bad_action],
-                111_548_800, // minimum fee for 1 action (fee check runs before proof reconstruction)
+                minimum_fee(1), // minimum fee for 1 action (fee check runs before proof reconstruction)
                 anchor,
                 vec![0u8; 100],
                 [0u8; 64],
@@ -394,10 +419,13 @@ mod tests {
 
             let processing_result = process_transition(&platform, transition, platform_version);
 
+            // DPP structure validation now catches this before proof verification
             assert_matches!(
                 processing_result.execution_results().as_slice(),
                 [StateTransitionExecutionResult::UnpaidConsensusError(
-                    ConsensusError::StateError(StateError::InvalidShieldedProofError(_))
+                    ConsensusError::BasicError(BasicError::ShieldedEncryptedNoteSizeMismatchError(
+                        _
+                    ))
                 )]
             );
         }
@@ -410,16 +438,12 @@ mod tests {
     // The minimum shielded fee is:
     //   min_fee = proof_verification_fee + num_actions × (processing_fee + storage_fee)
     //
-    // With current constants:
-    //   proof_verification_fee     = 100_000_000
-    //   per_action_processing_fee  =   3_000_000
-    //   per_action_storage_fee     = 312 × (27_000 + 400) = 8_548_800
-    //   per_action_total           = 11_548_800
-    //
-    // Minimum fees by action count:
-    //   2 actions: 100_000_000 + 2 × 11_548_800 = 123_097_600
-    //   3 actions: 100_000_000 + 3 × 11_548_800 = 134_646_400
-    //   4 actions: 100_000_000 + 4 × 11_548_800 = 146_195_200
+    // The exact per-action / per-bundle constants live in `dpp` and evolve across protocol versions
+    // (e.g. `SHIELDED_STORAGE_BYTES_PER_ACTION` changed when `cv_net` was added). Rather than
+    // hardcode the resulting numbers (which silently go stale when a constant changes), these tests
+    // source the threshold from the canonical `dpp::shielded::compute_minimum_shielded_fee` via the
+    // module-level `minimum_fee(num_actions)` helper, so the fixture fee always matches the consensus
+    // gate.
 
     mod fee_validation {
         use super::*;
@@ -428,11 +452,8 @@ mod tests {
             ExtractedNoteCommitment, FullViewingKey, MerklePath, Note, NoteValue, Position,
             RandomSeed, Retention, Rho, Scope, SpendAuthorizingKey, SpendingKey,
         };
-        use rand::rngs::OsRng;
-
-        const MINIMUM_FEE_2_ACTIONS: u64 = 123_097_600;
-        const MINIMUM_FEE_3_ACTIONS: u64 = 134_646_400;
-        const MINIMUM_FEE_4_ACTIONS: u64 = 146_195_200;
+        use rand::rngs::StdRng;
+        use rand::SeedableRng;
 
         /// Helper to create a dummy action with a unique seed (avoids duplicate nullifiers).
         fn create_dummy_action(seed: u8) -> SerializedAction {
@@ -481,7 +502,7 @@ mod tests {
             // 2 actions with fee one credit below minimum
             let transition = create_shielded_transfer_transition(
                 vec![create_dummy_action(1), create_dummy_action(2)],
-                MINIMUM_FEE_2_ACTIONS - 1, // 121,343,999
+                minimum_fee(2) - 1, // one credit below the 2-action minimum
                 [42u8; 32],
                 vec![0u8; 100],
                 [0u8; 64],
@@ -509,7 +530,7 @@ mod tests {
                     create_dummy_action(2),
                     create_dummy_action(3),
                 ],
-                MINIMUM_FEE_3_ACTIONS - 1, // 134,646,399
+                minimum_fee(3) - 1, // one credit below the 3-action minimum
                 [42u8; 32],
                 vec![0u8; 100],
                 [0u8; 64],
@@ -538,7 +559,7 @@ mod tests {
                     create_dummy_action(3),
                     create_dummy_action(4),
                 ],
-                MINIMUM_FEE_4_ACTIONS - 1, // 146,195,199
+                minimum_fee(4) - 1, // one credit below the 4-action minimum
                 [42u8; 32],
                 vec![0u8; 100],
                 [0u8; 64],
@@ -561,7 +582,7 @@ mod tests {
         fn build_bundle_with_fee(
             fee: u64,
         ) -> (Vec<SerializedAction>, u64, [u8; 32], Vec<u8>, [u8; 64]) {
-            let mut rng = OsRng;
+            let mut rng = StdRng::seed_from_u64(0);
             let pk = get_proving_key();
 
             let sk = SpendingKey::from_bytes([0u8; 32]).unwrap();
@@ -615,11 +636,11 @@ mod tests {
             let platform = setup_platform();
 
             let (actions, value_balance, anchor_bytes, proof_bytes, binding_sig) =
-                build_bundle_with_fee(MINIMUM_FEE_2_ACTIONS);
+                build_bundle_with_fee(minimum_fee(2));
 
             // Verify the bundle has exactly 2 actions and the expected fee
             assert_eq!(actions.len(), 2);
-            assert_eq!(value_balance, MINIMUM_FEE_2_ACTIONS);
+            assert_eq!(value_balance, minimum_fee(2));
 
             // Set pool balance large enough to cover the fee deduction
             set_pool_total_balance(&platform, 500_000_000);
@@ -642,16 +663,19 @@ mod tests {
         }
 
         #[test]
-        fn test_fee_above_minimum_for_2_actions_succeeds() {
+        fn test_fee_above_minimum_for_2_actions_is_rejected() {
+            // A shielded transfer's `value_balance` IS the fee (no recipient amount), so it
+            // must equal the minimum exactly. Paying even 1 credit above the minimum is
+            // rejected — overpayment buys nothing and would leak a fee fingerprint.
             let platform_version = PlatformVersion::latest();
             let platform = setup_platform();
 
             // Pay 1 credit more than the minimum
             let (actions, value_balance, anchor_bytes, proof_bytes, binding_sig) =
-                build_bundle_with_fee(MINIMUM_FEE_2_ACTIONS + 1);
+                build_bundle_with_fee(minimum_fee(2) + 1);
 
             assert_eq!(actions.len(), 2);
-            assert_eq!(value_balance, MINIMUM_FEE_2_ACTIONS + 1);
+            assert_eq!(value_balance, minimum_fee(2) + 1);
 
             set_pool_total_balance(&platform, 500_000_000);
             insert_anchor_into_state(&platform, &anchor_bytes);
@@ -668,8 +692,150 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+                [StateTransitionExecutionResult::UnpaidConsensusError(
+                    ConsensusError::BasicError(BasicError::ShieldedInvalidValueBalanceError(_))
+                )]
             );
+        }
+
+        /// Builds a REAL spend+output Orchard bundle whose output policy mirrors the dpp SDK
+        /// builder `build_shielded_transfer_transition`: `num_spends` spends, then 1 recipient
+        /// output and (when there is change left over) 1 change output — i.e. at most 2 outputs.
+        /// Returns the serialized on-wire actions plus the fee that bundle's `value_balance`
+        /// encodes.
+        ///
+        /// The total spent is sized so `value_balance == compute_minimum_shielded_fee(num_spends
+        /// .max(2))` exactly, and a positive change output is emitted for `num_spends >= 2` (so the
+        /// `> 2 spends` case exercises the change-output branch too) — the same shape the SDK
+        /// builder produces.
+        fn build_transfer_like_bundle(num_spends: usize) -> (Vec<SerializedAction>, u64) {
+            assert!(num_spends >= 1, "need at least one spend");
+            let platform_version = PlatformVersion::latest();
+
+            // The SDK builder carves the fee from spends.len().max(2), BEFORE Orchard padding.
+            let carved_actions = num_spends.max(2);
+            let fee = dpp::shielded::compute_minimum_shielded_fee(carved_actions, platform_version)
+                .expect("fee computation");
+
+            let mut rng = StdRng::seed_from_u64(0);
+            let pk = get_proving_key();
+
+            let sk = SpendingKey::from_bytes([0u8; 32]).unwrap();
+            let fvk = FullViewingKey::from(&sk);
+            let recipient = fvk.address_at(0u32, Scope::External);
+            let ask = SpendAuthorizingKey::from(&sk);
+
+            // Each note holds a generous, equal value so the bundle is value-balanced.
+            let value_each = 200_000_000u64;
+            let total_spent = value_each * num_spends as u64;
+
+            // Build every note, append every commitment into ONE tree (single shared anchor —
+            // the builder uses exactly one anchor), then witness each note at its position.
+            let notes: Vec<Note> = (0..num_spends)
+                .map(|i| {
+                    let mut rho_bytes = [0u8; 32];
+                    rho_bytes[0] = (i as u8).wrapping_add(1); // distinct, non-zero, valid pallas
+                    let rho = Rho::from_bytes(&rho_bytes).unwrap();
+                    let rseed = RandomSeed::from_bytes([42u8; 32], &rho).unwrap();
+                    Note::from_parts(recipient, NoteValue::from_raw(value_each), rho, rseed)
+                        .unwrap()
+                })
+                .collect();
+
+            let mut tree = ClientMemoryCommitmentTree::new(100);
+            for note in &notes {
+                let cmx = ExtractedNoteCommitment::from(note.commitment());
+                tree.append(cmx.to_bytes(), Retention::Marked).unwrap();
+            }
+            tree.checkpoint(0u32).unwrap();
+            let anchor = tree.anchor().unwrap();
+
+            let mut builder = Builder::<DashMemo>::new(BundleType::DEFAULT, anchor);
+            for (i, note) in notes.into_iter().enumerate() {
+                let merkle_path: MerklePath =
+                    tree.witness(Position::from(i as u64), 0).unwrap().unwrap();
+                builder.add_spend(fvk.clone(), note, merkle_path).unwrap();
+            }
+
+            // Mirror the SDK builder's output policy: 1 recipient output + optional 1 change.
+            // recipient_amount + fee + change == total_spent. Send a small recipient amount and
+            // route the rest to change (positive whenever num_spends >= 2 with these values).
+            let recipient_amount = 1_000u64;
+            let change_amount = total_spent - recipient_amount - fee;
+            builder
+                .add_output(
+                    None,
+                    recipient,
+                    NoteValue::from_raw(recipient_amount),
+                    [0u8; 36],
+                )
+                .unwrap();
+            if change_amount > 0 {
+                builder
+                    .add_output(
+                        None,
+                        recipient,
+                        NoteValue::from_raw(change_amount),
+                        [0u8; 36],
+                    )
+                    .unwrap();
+            }
+
+            let (unauthorized, _) = builder.build::<i64>(&mut rng).unwrap().unwrap();
+            let bundle_commitment: [u8; 32] = unauthorized.commitment().into();
+            let sighash = compute_platform_sighash(&bundle_commitment, &[]);
+            let proven = unauthorized.create_proof(pk, &mut rng).unwrap();
+            let bundle = proven.apply_signatures(rng, sighash, &[ask]).unwrap();
+
+            let (actions, value_balance, _anchor, _proof, _binding) =
+                serialize_authorized_bundle_u64(&bundle);
+            (actions, value_balance)
+        }
+
+        /// Pins the dpp SDK builder's fee-vs-actions coupling end-to-end.
+        ///
+        /// The SDK builder `build_shielded_transfer_transition` carves the fee from
+        /// `num_actions = spends.len().max(2)` BEFORE Orchard padding, then emits 1 recipient
+        /// output + (optionally) 1 change output. Consensus prices the shielded fee from the
+        /// on-wire `actions.len()` and pins `value_balance == compute_minimum_shielded_fee(actions
+        /// .len())` EXACTLY. The carved-fee count and the on-wire count agree ONLY because the
+        /// builder emits at most 2 outputs, so `max(spends, outputs, 2) == max(spends, 2)`.
+        ///
+        /// We build REAL bundles whose output policy mirrors the SDK builder (1 recipient + optional
+        /// 1 change) for spend counts {1, 3} and assert the serialized `actions.len()` equals
+        /// `spends.len().max(2)`, and that the bundle's `value_balance` equals
+        /// `compute_minimum_shielded_fee(actions.len())`. If a future change makes the carved-fee
+        /// action count diverge from the on-wire action count (e.g. a 3rd output added with <=2
+        /// spends), this fails loudly — without it, every such transfer would be silently rejected by
+        /// consensus. This is the spend-side analogue of the output-only Shield invariant pinned by
+        /// `dpp`'s `test_output_only_bundle_serializes_to_min_actions`.
+        #[test]
+        fn test_builder_output_policy_actions_match_carved_fee_count() {
+            let platform_version = PlatformVersion::latest();
+
+            // 1 spend  -> on-wire actions padded to 2 (Orchard MIN_ACTIONS), fee carved for 2.
+            // 3 spends -> on-wire actions = 3, fee carved for 3.
+            for (num_spends, expected_actions) in [(1usize, 2usize), (3, 3)] {
+                let (actions, value_balance) = build_transfer_like_bundle(num_spends);
+
+                assert_eq!(
+                    actions.len(),
+                    expected_actions,
+                    "on-wire actions.len() ({}) must equal spends.len().max(2) = {expected_actions} \
+                     for {num_spends} spends; the SDK builder carves the fee for {expected_actions} \
+                     actions and consensus pins value_balance to exactly \
+                     compute_minimum_shielded_fee(actions.len())",
+                    actions.len()
+                );
+
+                let expected_fee =
+                    dpp::shielded::compute_minimum_shielded_fee(expected_actions, platform_version)
+                        .expect("fee computation");
+                assert_eq!(
+                    value_balance, expected_fee,
+                    "value_balance must equal compute_minimum_shielded_fee(on-wire actions.len())"
+                );
+            }
         }
     }
 
@@ -689,21 +855,20 @@ mod tests {
             FullViewingKey, MerklePath, Note, NoteValue, Position, RandomSeed, Retention, Rho,
             Scope, SpendAuthorizingKey, SpendingKey,
         };
-        use rand::rngs::OsRng;
-
-        /// Minimum fee for 2 actions (Orchard builder always produces ≥2).
-        const MINIMUM_FEE_2_ACTIONS: u64 = 123_097_600;
+        use rand::rngs::StdRng;
+        use rand::SeedableRng;
 
         /// Build a valid Orchard bundle for shielded transfer tests.
-        /// Includes sufficient fee (value_balance = MINIMUM_FEE_2_ACTIONS).
+        /// Includes sufficient fee (value_balance = the 2-action minimum fee).
         /// Returns (actions, value_balance, anchor_bytes, proof_bytes, binding_sig).
         fn build_valid_shielded_transfer_bundle(
         ) -> (Vec<SerializedAction>, u64, [u8; 32], Vec<u8>, [u8; 64]) {
-            let mut rng = OsRng;
+            let mut rng = StdRng::seed_from_u64(0);
             let pk = get_proving_key();
 
+            // Minimum fee for 2 actions (Orchard builder always produces ≥2).
             let spend_amount = 200_000_000u64;
-            let output_amount = spend_amount - MINIMUM_FEE_2_ACTIONS;
+            let output_amount = spend_amount - minimum_fee(2);
 
             let sk = SpendingKey::from_bytes([0u8; 32]).unwrap();
             let fvk = FullViewingKey::from(&sk);
@@ -747,13 +912,14 @@ mod tests {
             serialize_authorized_bundle_u64(&bundle)
         }
 
-        /// AUDIT REGRESSION: Mutating value_balance is now caught by BatchValidator.
+        /// AUDIT REGRESSION: Mutating value_balance is rejected.
         ///
-        /// Previously, the code only called `bundle.verify_proof(vk)` which did not
-        /// check the binding signature. Now `BatchValidator` verifies the Halo 2 proof
-        /// AND the binding signature, which cryptographically binds value_balance to
-        /// the value commitments (cv_net). Mutating value_balance changes the bundle
-        /// commitment (sighash), causing signature verification to fail.
+        /// The binding signature cryptographically binds value_balance to the value
+        /// commitments (cv_net), so `BatchValidator` rejects any mutation. With the
+        /// exact-fee rule for shielded transfers (`value_balance == min_fee`), a mutation
+        /// that bumps value_balance off the minimum *also* fails the fee check — which runs
+        /// before proof verification — so the mutation is now caught there first. Either way
+        /// the attack is rejected; this asserts the earlier (fee-check) rejection.
         ///
         /// Original severity: CRITICAL — now FIXED.
         #[test]
@@ -763,7 +929,7 @@ mod tests {
 
             let (actions, value_balance, anchor_bytes, proof_bytes, binding_sig) =
                 build_valid_shielded_transfer_bundle();
-            assert_eq!(value_balance, MINIMUM_FEE_2_ACTIONS);
+            assert_eq!(value_balance, minimum_fee(2));
 
             // ATTACK: Mutate value_balance (increase by 5000 so it still passes fee check)
             let mutated_value_balance = value_balance + 5000;
@@ -780,12 +946,12 @@ mod tests {
 
             let processing_result = process_transition(&platform, transition, platform_version);
 
-            // FIXED: BatchValidator detects the binding signature mismatch
-            // because mutating value_balance changes the bundle commitment (sighash).
+            // The exact-fee rule rejects this before proof verification: the mutation bumps
+            // value_balance above the minimum, and a transfer must pay exactly the minimum.
             assert_matches!(
                 processing_result.execution_results().as_slice(),
                 [StateTransitionExecutionResult::UnpaidConsensusError(
-                    ConsensusError::StateError(StateError::InvalidShieldedProofError(_))
+                    ConsensusError::BasicError(BasicError::ShieldedInvalidValueBalanceError(_))
                 )]
             );
         }
@@ -884,7 +1050,7 @@ mod tests {
 
             let transition = create_shielded_transfer_transition(
                 vec![action1, action2], // Both have nullifier [1u8; 32]
-                MINIMUM_FEE_2_ACTIONS,  // sufficient fee so we reach proof verification
+                minimum_fee(2),         // sufficient fee so we reach proof verification
                 anchor,
                 vec![0u8; 100],
                 [0u8; 64],
@@ -919,19 +1085,18 @@ mod tests {
             FullViewingKey, Note, NoteValue, Position, RandomSeed, Retention, Rho, Scope,
             SpendAuthorizingKey, SpendingKey,
         };
-        use rand::rngs::OsRng;
-
-        const MINIMUM_FEE_2_ACTIONS: u64 = 123_097_600;
+        use rand::rngs::StdRng;
+        use rand::SeedableRng;
 
         #[test]
         fn test_shielded_transfer_prove_and_verify_nullifiers() {
             let platform_version = PlatformVersion::latest();
             let platform = setup_platform();
-            let mut rng = OsRng;
+            let mut rng = StdRng::seed_from_u64(0);
             let pk = get_proving_key();
 
             let spend_amount = 200_000_000u64;
-            let output_amount = spend_amount - MINIMUM_FEE_2_ACTIONS;
+            let output_amount = spend_amount - minimum_fee(2);
 
             // --- Create keys ---
             let sk = SpendingKey::from_bytes([0u8; 32]).unwrap();

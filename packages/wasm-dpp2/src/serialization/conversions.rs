@@ -87,7 +87,11 @@ pub fn json_to_js_value(value: &JsonValue) -> WasmDppResult<JsValue> {
 /// - Recursively processes nested objects and arrays
 ///
 /// Performance: Uses fast path for primitives, only recursively processes objects/arrays.
-fn normalize_js_value_for_json(value: &JsValue) -> WasmDppResult<JsValue> {
+///
+/// `pub(crate)` so wrappers whose `to_object()` embeds JS `Map`s (e.g.
+/// shielded proof-result wrappers backed by `js_sys::Map`) can call this in
+/// their `to_json()` to get a `JSON.stringify`-friendly form.
+pub(crate) fn normalize_js_value_for_json(value: &JsValue) -> WasmDppResult<JsValue> {
     // Fast path: primitives that can't contain BigInt or need conversion
     if value.is_string()
         || value.as_f64().is_some()
@@ -305,14 +309,69 @@ pub fn from_json<T: DeserializeOwned>(value: JsValue) -> WasmDppResult<T> {
 /// Uses serialize_maps_as_objects(true) to ensure objects are plain JS objects.
 /// Uses `serialize_bytes_as_arrays(false)` so bytes become Uint8Array (expected by JS API).
 /// Uses `serialize_large_number_types_as_bigints(true)` for u64/i64 -> BigInt.
+///
+/// Pre-walks the tree to stringify non-Text map keys. JS plain objects require
+/// string keys, but rs-dpp's `MapKeySerializer` (since the typed-key fix in
+/// commit ec43a2a4e2) preserves the source variant — so a `BTreeMap<u32, _>`
+/// emits `Value::U32` keys, a `BTreeMap<Identifier, _>` emits `Value::Identifier`
+/// keys, etc. Without this normalization, `serde_wasm_bindgen` fails with
+/// "Map key is not a string and cannot be an object key" on round-trip
+/// for types like `PartialIdentity::loaded_public_keys` (`BTreeMap<KeyID, _>`).
 pub fn platform_value_to_object(value: &platform_value::Value) -> WasmDppResult<JsValue> {
+    let normalized = stringify_map_keys_for_object(value);
     let serializer = serde_wasm_bindgen::Serializer::new()
         .serialize_maps_as_objects(true)
         .serialize_bytes_as_arrays(false)
         .serialize_large_number_types_as_bigints(true);
-    value
+    normalized
         .serialize(&serializer)
         .map_err(|e| WasmDppError::serialization(format!("platform_value_to_object: {}", e)))
+}
+
+/// Recursively normalize a `Value` tree so that all `Map` keys are `Value::Text`.
+/// Identifiers become base58 strings (matches the `Identifier` JSON convention),
+/// bytes become base64, integers and bools use their `Display` form. Other
+/// variants pass through (will fail downstream if they end up as a map key).
+fn stringify_map_keys_for_object(value: &platform_value::Value) -> platform_value::Value {
+    use dpp::platform_value::Value;
+    match value {
+        Value::Map(entries) => Value::Map(
+            entries
+                .iter()
+                .map(|(k, v)| (stringify_key(k), stringify_map_keys_for_object(v)))
+                .collect(),
+        ),
+        Value::Array(items) => {
+            Value::Array(items.iter().map(stringify_map_keys_for_object).collect())
+        }
+        other => other.clone(),
+    }
+}
+
+fn stringify_key(key: &platform_value::Value) -> platform_value::Value {
+    use dpp::platform_value::Value;
+    use dpp::platform_value::string_encoding::{Encoding, encode};
+    match key {
+        Value::Text(_) => key.clone(),
+        Value::U8(n) => Value::Text(n.to_string()),
+        Value::U16(n) => Value::Text(n.to_string()),
+        Value::U32(n) => Value::Text(n.to_string()),
+        Value::U64(n) => Value::Text(n.to_string()),
+        Value::I8(n) => Value::Text(n.to_string()),
+        Value::I16(n) => Value::Text(n.to_string()),
+        Value::I32(n) => Value::Text(n.to_string()),
+        Value::I64(n) => Value::Text(n.to_string()),
+        Value::Bool(b) => Value::Text(b.to_string()),
+        Value::Identifier(bytes) => Value::Text(encode(bytes, Encoding::Base58)),
+        Value::Bytes(bytes) => Value::Text(encode(bytes, Encoding::Base64)),
+        Value::Bytes20(bytes) => Value::Text(encode(bytes, Encoding::Base64)),
+        Value::Bytes32(bytes) => Value::Text(encode(bytes, Encoding::Base64)),
+        Value::Bytes36(bytes) => Value::Text(encode(bytes, Encoding::Base64)),
+        // Float / Null / Array / Map / Tag / EnumU8 fall through to the
+        // serializer, which will surface a clear error if they ever appear
+        // as a map key (none of the rs-dpp domain types use them this way).
+        other => other.clone(),
+    }
 }
 
 /// Serialize platform_value::Value to JsValue as JSON-compatible (human-readable).
@@ -351,7 +410,14 @@ fn convert_value_for_json(value: &platform_value::Value) -> platform_value::Valu
         }
         platform_value::Value::Map(map) => platform_value::Value::Map(
             map.iter()
-                .map(|(k, v)| (convert_value_for_json(k), convert_value_for_json(v)))
+                .map(|(k, v)| {
+                    // Map keys must be strings on the JSON side. Stringify
+                    // any non-Text variants (u32 KeyID, Identifier, bytes,
+                    // etc.) per the same convention as
+                    // `platform_value_to_object`. Then descend into the
+                    // value to convert nested binary types.
+                    (stringify_key(k), convert_value_for_json(v))
+                })
                 .collect(),
         ),
         platform_value::Value::Array(arr) => {
@@ -612,13 +678,16 @@ macro_rules! impl_wasm_conversions_inner {
 }
 
 /// Macro to implement `toObject`, `fromObject`, `toJSON`, and `fromJSON` methods
-/// for a wasm_bindgen type that implements `Serialize` and `DeserializeOwned`.
+/// for a wasm-only DTO that has `#[derive(Serialize, Deserialize)]` directly.
 ///
-/// Serializes the wasm wrapper directly via **serde** (`#[serde(transparent)]`).
-/// Use this as a fallback when the inner type does NOT have
-/// `JsonConvertible + ValueConvertible` trait impls.
+/// Use this for wasm wrappers that decompose an rs-dpp enum variant into a
+/// named-field struct (e.g., spreading `StateTransitionProofResult::Verified...`
+/// tuple variants into per-variant JS classes), where there is no rs-dpp
+/// domain type to delegate to.
 ///
-/// Prefer [`impl_wasm_conversions_inner!`] when trait impls are available.
+/// For wasm wrappers around an rs-dpp domain type that has
+/// `JsonConvertible + ValueConvertible`, use [`impl_wasm_conversions_inner!`]
+/// instead — it delegates to the canonical traits and is the preferred path.
 ///
 /// # Usage
 ///

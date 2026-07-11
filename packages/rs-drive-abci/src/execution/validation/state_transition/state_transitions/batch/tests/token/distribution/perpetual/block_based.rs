@@ -23,8 +23,8 @@ mod perpetual_distribution_block {
     use crate::test::helpers::fast_forward_to_block::fast_forward_to_block;
     use super::*;
 
-    #[test]
-    fn test_token_perpetual_distribution_block_claim_linear_and_claim_again() {
+    #[tokio::test]
+    async fn test_token_perpetual_distribution_block_claim_linear_and_claim_again() {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
             .with_latest_protocol_version()
@@ -76,6 +76,7 @@ mod perpetual_distribution_block {
             platform_version,
             None,
         )
+        .await
         .expect("expect to create documents batch transition");
 
         let claim_serialized_transition = claim_transition
@@ -142,6 +143,7 @@ mod perpetual_distribution_block {
             platform_version,
             None,
         )
+        .await
         .expect("expect to create documents batch transition");
 
         let claim_serialized_transition = claim_transition
@@ -210,6 +212,7 @@ mod perpetual_distribution_block {
             platform_version,
             None,
         )
+        .await
         .expect("expect to create documents batch transition");
 
         let claim_serialized_transition = claim_transition
@@ -261,8 +264,8 @@ mod perpetual_distribution_block {
         assert_eq!(token_balance, Some(100250));
     }
 
-    #[test]
-    fn test_token_perpetual_distribution_not_claimant() {
+    #[tokio::test]
+    async fn test_token_perpetual_distribution_not_claimant() {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
             .with_latest_protocol_version()
@@ -320,6 +323,7 @@ mod perpetual_distribution_block {
             platform_version,
             None,
         )
+        .await
         .expect("expect to create documents batch transition");
 
         let claim_serialized_transition = claim_transition
@@ -384,8 +388,8 @@ mod perpetual_distribution_block {
         assert_eq!(token_balance_2, None);
     }
 
-    #[test]
-    fn test_token_perpetual_distribution_block_claim_linear_given_to_specific_identity() {
+    #[tokio::test]
+    async fn test_token_perpetual_distribution_block_claim_linear_given_to_specific_identity() {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
             .with_latest_protocol_version()
@@ -441,6 +445,7 @@ mod perpetual_distribution_block {
             platform_version,
             None,
         )
+        .await
         .expect("expect to create documents batch transition");
 
         let claim_serialized_transition = claim_transition
@@ -504,8 +509,8 @@ mod fixed_amount {
     };
     use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_function::{MAX_DISTRIBUTION_CYCLES_PARAM, MAX_DISTRIBUTION_PARAM};
 
-    #[test]
-    fn fixed_amount_1_interval_1() -> Result<(), String> {
+    #[tokio::test]
+    async fn fixed_amount_1_interval_1() -> Result<(), String> {
         check_heights(
             DistributionFunction::FixedAmount { amount: 1 },
             &[
@@ -518,14 +523,15 @@ mod fixed_amount {
             1,
             None,
         )
+        .await
     }
 
     // Given some token configuration,
     // When a claim is made at block 41 and 50,
     // Then the claim should be successful.
     // If we claim again in the interval it should not be successful.
-    #[test]
-    fn fixed_amount_50_interval_10() {
+    #[tokio::test]
+    async fn fixed_amount_50_interval_10() {
         check_heights(
             DistributionFunction::FixedAmount { amount: 50 },
             &[
@@ -539,6 +545,7 @@ mod fixed_amount {
             10,
             None,
         )
+        .await
         .expect("\n-> fixed amount should pass");
     }
 
@@ -547,8 +554,8 @@ mod fixed_amount {
     ///
     /// claim at height 1000000000000: claim failed: assertion 0 failed: expected SuccessfulExecution,
     /// got [InternalError(\"storage: protocol: overflow error: Overflow in FixedAmount evaluation\")]"
-    #[test]
-    fn fixed_amount_at_trillionth_block() {
+    #[tokio::test]
+    async fn fixed_amount_at_trillionth_block() {
         check_heights(
             DistributionFunction::FixedAmount {
                 amount: 1_000_000_000,
@@ -575,14 +582,15 @@ mod fixed_amount {
             10,
             None,
         )
+        .await
         .expect("\n-> fixed amount should pass");
     }
 
-    #[test]
+    #[tokio::test]
     /// Given a fixed amount distribution with value of 0,
     /// When we try to claim,
     /// Then we always fail and the balance remains unchanged.
-    fn fixed_amount_0() {
+    async fn fixed_amount_0() {
         check_heights(
             DistributionFunction::FixedAmount { amount: 0 },
             &[(41, 100000, false)],
@@ -590,14 +598,15 @@ mod fixed_amount {
             10,
             None,
         )
+        .await
         .expect_err("\namount should not be 0\n");
     }
 
-    #[test]
+    #[tokio::test]
     /// Given a fixed amount distribution with value of 1_000_000 and max_supply of 200_000,
     /// When we try to claim,
     /// Then we always fail and the balance remains unchanged.
-    fn fixed_amount_gt_max_supply() {
+    async fn fixed_amount_gt_max_supply() {
         let test = TestStep {
             name: "test_fixed_amount_above_max_supply".to_string(),
             base_height: 41,
@@ -618,14 +627,15 @@ mod fixed_amount {
             10,
             Some(Some(200_000)),
         )
+        .await
         .expect("\nfixed amount zero increase\n");
     }
 
     /// Given a fixed amount distribution with value of u64::MAX,
     /// When I claim tokens,
     /// Then I don't get an InternalError.
-    #[test]
-    fn test_block_based_perpetual_fixed_amount_u64_max_should_error_at_validation() {
+    #[tokio::test]
+    async fn test_block_based_perpetual_fixed_amount_u64_max_should_error_at_validation() {
         check_heights(
             DistributionFunction::FixedAmount { amount: u64::MAX },
             &[TestStep::new(41, 100_000, false)],
@@ -633,14 +643,15 @@ mod fixed_amount {
             10,
             None,
         )
+        .await
         .expect_err("u64::Max is too much for DistributionFunction::FixedAmount");
     }
 
     /// Given a fixed amount distribution with value of u64::MAX,
     /// When I claim tokens,
     /// Then I don't get an InternalError.
-    #[test]
-    fn test_block_based_perpetual_fixed_amount_max_distribution() {
+    #[tokio::test]
+    async fn test_block_based_perpetual_fixed_amount_max_distribution() {
         check_heights(
             DistributionFunction::FixedAmount {
                 amount: MAX_DISTRIBUTION_PARAM,
@@ -654,6 +665,7 @@ mod fixed_amount {
             10,
             None,
         )
+        .await
         .expect("MAX_DISTRIBUTION_PARAM should be valid DistributionFunction::FixedAmount");
     }
 }
@@ -688,9 +700,9 @@ mod random {
     /// Given a random distribution function with min=0, max=100,
     /// When I claim tokens at various heights,
     /// Then I get deterministic balances at those heights.
-    #[test]
+    #[tokio::test]
     #[ignore]
-    fn test_random_max_supply() -> Result<(), String> {
+    async fn test_random_max_supply() -> Result<(), String> {
         let steps = [
             TestStep::new(41, 100_192, true),
             TestStep::new(46, 100_192, false),
@@ -706,7 +718,8 @@ mod random {
                 None,
                 10,
                 Some(max_supply),
-            )?;
+            )
+            .await?;
         }
         Ok(())
     }
@@ -714,9 +727,9 @@ mod random {
     /// Given a random distribution function with min=0, max=0,
     /// When I claim tokens at various heights,
     /// Then claim fails and I get the same balance at those heights.
-    #[test]
+    #[tokio::test]
     #[ignore]
-    fn test_block_based_perpetual_random_0_0() {
+    async fn test_block_based_perpetual_random_0_0() {
         check_heights(
             DistributionFunction::Random { min: 0, max: 0 },
             &[
@@ -728,11 +741,12 @@ mod random {
             10,
             None,
         )
+        .await
         .expect("no rewards");
     }
-    #[test]
+    #[tokio::test]
     #[ignore]
-    fn test_block_based_perpetual_random_0_u64_max_should_error_at_validation() {
+    async fn test_block_based_perpetual_random_0_u64_max_should_error_at_validation() {
         check_heights(
             DistributionFunction::Random {
                 min: 0,
@@ -743,12 +757,13 @@ mod random {
             10,
             None,
         )
+        .await
         .expect_err("max is too much for DistributionFunction::Random");
     }
 
-    #[test]
+    #[tokio::test]
     #[ignore]
-    fn test_block_based_perpetual_random_0_max_distribution_param() {
+    async fn test_block_based_perpetual_random_0_max_distribution_param() {
         check_heights(
             DistributionFunction::Random {
                 min: 0,
@@ -763,15 +778,16 @@ mod random {
             10,
             None,
         )
+        .await
         .expect("no rewards");
     }
 
     /// Given a random distribution function with min=10, max=30,
     /// When I claim tokens at various heights,
     /// Then I get a distribution of balances that is close to the maximum entropy.
-    #[test]
+    #[tokio::test]
     #[ignore]
-    fn test_block_based_perpetual_random_10_30_entropy() {
+    async fn test_block_based_perpetual_random_10_30_entropy() {
         const N: u64 = 200;
         const MIN: u64 = 10;
         const MAX: u64 = 30;
@@ -810,7 +826,7 @@ mod random {
             balances.lock().unwrap().push(balance);
         });
 
-        suite.execute(&tests).expect("should execute");
+        suite.execute(&tests).await.expect("should execute");
 
         let data = balances_result.lock().unwrap();
         // subtract balance from previous step (for first step, subtract initial balance of 100_000)
@@ -967,8 +983,8 @@ mod step_decreasing {
             .collect()
     }
 
-    #[test]
-    fn claim_every_block() {
+    #[tokio::test]
+    async fn claim_every_block() {
         run_test(
             1,
             1,
@@ -987,11 +1003,12 @@ mod step_decreasing {
                 INITIAL_BALANCE + 9_900 + 9_801 + 9_702 + 9_604,
             ],
         )
+        .await
         .expect("expected to succeed");
     }
 
-    #[test]
-    fn claim_every_5_blocks() {
+    #[tokio::test]
+    async fn claim_every_5_blocks() {
         run_test(
             1,
             1,
@@ -1020,11 +1037,12 @@ mod step_decreasing {
                     + 8_946,
             ],
         )
+        .await
         .expect("expected to succeed");
     }
 
-    #[test]
-    fn claim_with_1_percent_increase_should_fail() {
+    #[tokio::test]
+    async fn claim_with_1_percent_increase_should_fail() {
         let result_str = run_test(
             1,
             101,
@@ -1038,6 +1056,7 @@ mod step_decreasing {
             1,
             vec![],
         )
+        .await
         .expect_err("should not allow to increase");
         assert!(
             result_str.contains("Invalid parameter tuple in token distribution function: `decrease_per_interval_numerator` must be smaller than `decrease_per_interval_denominator`"),
@@ -1045,8 +1064,8 @@ mod step_decreasing {
         );
     }
 
-    #[test]
-    fn claim_with_no_decrease_should_fail() {
+    #[tokio::test]
+    async fn claim_with_no_decrease_should_fail() {
         let result_str = run_test(
             1,
             0,
@@ -1060,6 +1079,7 @@ mod step_decreasing {
             1,
             vec![],
         )
+        .await
         .expect_err("should not allow to increase");
         assert!(
             result_str.contains("Invalid parameter `decrease_per_interval_numerator` in token distribution function. Expected range: 1 to 65535"),
@@ -1067,8 +1087,8 @@ mod step_decreasing {
         );
     }
 
-    #[test]
-    fn claim_every_10_blocks_on_100k() {
+    #[tokio::test]
+    async fn claim_every_10_blocks_on_100k() {
         let steps = (1..500).step_by(10).collect::<Vec<_>>();
         run_test(
             1,
@@ -1083,11 +1103,12 @@ mod step_decreasing {
             1,
             sum_till_for_100k_step_1_interval_1(steps),
         )
+        .await
         .expect("should pass");
     }
 
-    #[test]
-    fn claim_every_block_on_100k_128_default_steps() {
+    #[tokio::test]
+    async fn claim_every_block_on_100k_128_default_steps() {
         let steps = (1..140).step_by(1).collect::<Vec<_>>();
         let start_steps = (1..129).step_by(1).collect::<Vec<_>>();
         let start_steps_expected_amounts = sum_till_for_100k_step_1_interval_1(start_steps.clone());
@@ -1111,11 +1132,12 @@ mod step_decreasing {
             1,
             expected_amounts,
         )
+        .await
         .expect("should pass");
     }
 
-    #[test]
-    fn claim_every_block_on_100k_128_default_steps_with_trailing_distribution() {
+    #[tokio::test]
+    async fn claim_every_block_on_100k_128_default_steps_with_trailing_distribution() {
         let steps = (1..200).step_by(1).collect::<Vec<_>>();
         let start_steps = (1..129).step_by(1).collect::<Vec<_>>();
         let start_steps_expected_amounts = sum_till_for_100k_step_1_interval_1(start_steps.clone());
@@ -1140,11 +1162,12 @@ mod step_decreasing {
             1,
             expected_amounts,
         )
+        .await
         .expect("should pass");
     }
 
-    #[test]
-    fn claim_every_10_blocks_on_100k_128_default_steps() {
+    #[tokio::test]
+    async fn claim_every_10_blocks_on_100k_128_default_steps() {
         let steps = (1..500).step_by(10).collect::<Vec<_>>();
         let start_steps = (1..128).step_by(10).collect::<Vec<_>>();
         let start_steps_expected_amounts = sum_till_for_100k_step_1_interval_1(start_steps);
@@ -1170,11 +1193,12 @@ mod step_decreasing {
             1,
             expected_amounts,
         )
+        .await
         .expect("should pass");
     }
 
-    #[test]
-    fn claim_128_default_steps_480_max_token_redemption_cycles() {
+    #[tokio::test]
+    async fn claim_128_default_steps_480_max_token_redemption_cycles() {
         // We can only claim 128 events at a time.
         // The step_wise distribution stops after 500 from the start.
         let claim_heights = vec![1, 400, 400, 400, 400, 401, 450, 500];
@@ -1197,11 +1221,12 @@ mod step_decreasing {
             1,
             expected_amounts,
         )
+        .await
         .expect("should pass");
     }
 
-    #[test]
-    fn decrease_where_min_would_not_matter_min_1_100() {
+    #[tokio::test]
+    async fn decrease_where_min_would_not_matter_min_1_100() {
         let claim_heights = vec![1, 2, 3, 10, 100];
         let expected_amounts = sum_till_for_100k_step_1_interval_1(claim_heights.clone());
         for min in [1, 100] {
@@ -1218,13 +1243,14 @@ mod step_decreasing {
                 1,
                 expected_amounts.clone(),
             )
+            .await
             .map_err(|e| format!("failed with min {}: {}", min, e))
             .expect("should pass");
         }
     }
 
-    #[test]
-    fn heavy_decrease_to_min_with_min_various_values() {
+    #[tokio::test]
+    async fn heavy_decrease_to_min_with_min_various_values() {
         let claim_heights = vec![1, 2, 3, 10, 100];
         for min in [1, 10] {
             let expected_amounts = vec![
@@ -1247,13 +1273,14 @@ mod step_decreasing {
                 1,
                 expected_amounts,
             )
+            .await
             .map_err(|e| format!("failed with min {}: {}", min, e))
             .expect("should pass");
         }
     }
 
-    #[test]
-    fn full_decrease_min_eq_u64_max() {
+    #[tokio::test]
+    async fn full_decrease_min_eq_u64_max() {
         let result_str = run_test(
             1,
             u16::MAX - 1,
@@ -1267,14 +1294,15 @@ mod step_decreasing {
             1,
             vec![],
         )
+        .await
         .expect_err("should fail");
         assert!(
             result_str.contains("Invalid parameter tuple in token distribution function: `n` must be greater than or equal to `min_value`"),
             "Unexpected panic message: {result_str}"
         );
     }
-    #[test]
-    fn full_decrease_min_eq_max_distribution() {
+    #[tokio::test]
+    async fn full_decrease_min_eq_max_distribution() {
         run_test(
             1,
             u16::MAX - 1,
@@ -1292,11 +1320,12 @@ mod step_decreasing {
                 MAX_DISTRIBUTION_PARAM * 10 + INITIAL_BALANCE,
             ],
         )
+        .await
         .expect("should succeed");
     }
 
-    #[test]
-    fn distribute_max_distribution_param_every_step() {
+    #[tokio::test]
+    async fn distribute_max_distribution_param_every_step() {
         let claim_heights = (1..65_536).step_by(128).collect::<Vec<_>>();
         let expected_balances = claim_heights
             .iter()
@@ -1320,11 +1349,12 @@ mod step_decreasing {
             1,
             expected_balances,
         )
+        .await
         .expect("should succeed");
     }
 
-    #[test]
-    fn start_over_max_distribution_param_should_fail() {
+    #[tokio::test]
+    async fn start_over_max_distribution_param_should_fail() {
         let result_str = run_test(
             1,
             1,
@@ -1338,6 +1368,7 @@ mod step_decreasing {
             1,
             vec![],
         )
+        .await
         .expect_err("should fail");
         assert!(
             result_str.contains("Invalid parameter `n` in token distribution function. Expected range: 1 to 281474976710655"),
@@ -1345,8 +1376,8 @@ mod step_decreasing {
         );
     }
 
-    #[test]
-    fn half_decrease_changing_step_5_distribution_interval_1() {
+    #[tokio::test]
+    async fn half_decrease_changing_step_5_distribution_interval_1() {
         let step = 5; // Every 5 blocks the amount divides by 1/2
         let distribution_interval = 1; // The payout happens every block
         let claim_heights = vec![5, 10, 18, 22, 100];
@@ -1365,11 +1396,12 @@ mod step_decreasing {
             distribution_interval,
             expected_balances,
         )
+        .await
         .expect("should pass");
     }
 
-    #[test]
-    fn half_decrease_changing_step_5_distribution_interval_5() {
+    #[tokio::test]
+    async fn half_decrease_changing_step_5_distribution_interval_5() {
         let step = 5; // Every 25 blocks (5 x distribution interval) the amount divides by 1/2
         let distribution_interval = 5; // The payout happens every 5 blocks
         let claim_heights = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 18, 22, 25, 26, 51, 100];
@@ -1388,11 +1420,12 @@ mod step_decreasing {
             distribution_interval,
             expected_balances,
         )
+        .await
         .expect("should pass");
     }
 
-    #[test]
-    fn half_decrease_changing_step_24_distribution_interval_1000() {
+    #[tokio::test]
+    async fn half_decrease_changing_step_24_distribution_interval_1000() {
         let step = 24; // Every 24000 blocks (24 x distribution interval) the amount divides by 1/2
         let distribution_interval = 1000; // The payout happens every 400 blocks
         let claim_heights = vec![3000, 45000, 60000, 300000, 300000];
@@ -1412,11 +1445,12 @@ mod step_decreasing {
             distribution_interval,
             expected_balances,
         )
+        .await
         .expect("should pass");
     }
 
-    #[test]
-    fn half_decrease_changing_step_24_distribution_interval_1000_start_height_2000() {
+    #[tokio::test]
+    async fn half_decrease_changing_step_24_distribution_interval_1000_start_height_2000() {
         let step = 24; // Every 24000 blocks (24 x distribution interval) the amount divides by 1/2
         let distribution_interval = 1000; // The payout happens every 400 blocks
         let claim_heights = vec![3000, 23000, 24000, 25000, 43000, 44000, 300000, 300000];
@@ -1450,12 +1484,13 @@ mod step_decreasing {
             distribution_interval,
             expected_balances,
         )
+        .await
         .expect("should pass");
     }
 
     /// Test various combinations of [DistributionFunction::StepDecreasingAmount] distribution.
     #[allow(clippy::too_many_arguments)]
-    fn run_test(
+    async fn run_test(
         step_count: u32,
         decrease_per_interval_numerator: u16,
         decrease_per_interval_denominator: u16,
@@ -1505,6 +1540,7 @@ mod step_decreasing {
             distribution_interval,
             None,
         )
+        .await
         .inspect_err(|e| {
             tracing::error!(e);
         })
@@ -1516,8 +1552,8 @@ mod stepwise {
     use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_function::DistributionFunction;
     use std::collections::BTreeMap;
 
-    #[test]
-    fn distribution_stepwise_correct() {
+    #[tokio::test]
+    async fn distribution_stepwise_correct() {
         let distribution_interval = 10;
         let periods = BTreeMap::from([
             (0, 10_000), // h 1-20
@@ -1559,6 +1595,7 @@ mod stepwise {
             distribution_interval,
             None,
         )
+        .await
         .inspect_err(|e| {
             tracing::error!("{}", e);
         })
@@ -1570,8 +1607,8 @@ mod linear {
     use super::test_suite::check_heights;
     use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_function::{DistributionFunction, MAX_LINEAR_SLOPE_A_PARAM, MIN_LINEAR_SLOPE_A_PARAM};
 
-    #[test]
-    fn linear_distribution_divide_by_max() -> Result<(), String> {
+    #[tokio::test]
+    async fn linear_distribution_divide_by_max() -> Result<(), String> {
         // Given linear distribution with d=MAX and starting amount of 1,
         // We expect no claim rewards
         test_linear(
@@ -1584,10 +1621,11 @@ mod linear {
             &[(1, 100_000, false), (20, 100_000, false)], // heights
             1,
         )
+        .await
     }
 
-    #[test]
-    fn linear_distribution_x_matrix() -> Result<(), String> {
+    #[tokio::test]
+    async fn linear_distribution_x_matrix() -> Result<(), String> {
         let steps = [
             (1, 100_001, true),
             (2, 100_003, true),
@@ -1598,14 +1636,14 @@ mod linear {
         for start_step in [None, Some(0)] {
             for min_value in [None, Some(0), Some(1)] {
                 for max_value in [None, Some(1000)] {
-                    test_linear(1, 1, start_step, 0, min_value, max_value, &steps, 1)?;
+                    test_linear(1, 1, start_step, 0, min_value, max_value, &steps, 1).await?;
                 }
             }
         }
         Ok(())
     }
-    #[test]
-    fn linear_distribution_slopes() -> Result<(), String> {
+    #[tokio::test]
+    async fn linear_distribution_slopes() -> Result<(), String> {
         for (a, steps) in [
             (-1, [(1, 100_000, false), (20, 100_000, false)]),
             (1, [(1, 100_001, true), (20, 100_210, true)]),
@@ -1618,13 +1656,13 @@ mod linear {
                 [(1, 100_256, true), (20, 153_760, true)],
             ),
         ] {
-            test_linear(a, 1, None, 0, None, None, &steps, 1)?;
+            test_linear(a, 1, None, 0, None, None, &steps, 1).await?;
         }
         Ok(())
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn test_linear(
+    async fn test_linear(
         a: i64,
         d: u64,
         start_step: Option<u64>,
@@ -1659,6 +1697,7 @@ mod linear {
             distribution_interval,
             None,
         )
+        .await
         .inspect_err(|e| {
             tracing::error!("{}", e);
         })
@@ -1689,20 +1728,21 @@ mod exponential {
     // ─────────────────────────────────────────────────────────────────────────
     // helper – one‑liner wrapper around `check_heights` (same as polynomial)
     // ─────────────────────────────────────────────────────────────────────────
-    fn test_exponential(
+    async fn test_exponential(
         dist: DistributionFunction,
         steps: &[(u64, u64, bool)], // (height, expected balance, expect‑pass)
         distribution_interval: u64,
     ) -> Result<(), String> {
         check_heights(dist, steps, None, distribution_interval, None)
+            .await
             .inspect_err(|e| tracing::error!("{e}"))
     }
 
     // ─────────────────────────────────────────────────────────────────────────
     // 1.  Basic positive‑growth example  (m > 0)
     // ─────────────────────────────────────────────────────────────────────────
-    #[test]
-    fn exponential_distribution_growth_basic() -> Result<(), String> {
+    #[tokio::test]
+    async fn exponential_distribution_growth_basic() -> Result<(), String> {
         test_exponential(
             Exponential {
                 a: 1,
@@ -1719,13 +1759,14 @@ mod exponential {
             &[(10, 112_814, true), (20, 6_799_881, true)],
             1,
         )
+        .await
     }
 
     // ─────────────────────────────────────────────────────────────────────────
     // 2.  Basic negative‑decay example  (m < 0)
     // ─────────────────────────────────────────────────────────────────────────
-    #[test]
-    fn exponential_distribution_decay_basic() -> Result<(), String> {
+    #[tokio::test]
+    async fn exponential_distribution_decay_basic() -> Result<(), String> {
         test_exponential(
             Exponential {
                 a: 5,
@@ -1741,13 +1782,14 @@ mod exponential {
             &[(1, 200_005, true), (4, 500_006, true)],
             1,
         )
+        .await
     }
 
     // ─────────────────────────────────────────────────────────────────────────
     // 3.  o at −MAX_DISTRIBUTION_PARAM ⇒ argument very negative ▶ min / 0
     // ─────────────────────────────────────────────────────────────────────────
-    #[test]
-    fn exponential_distribution_o_min() -> Result<(), String> {
+    #[tokio::test]
+    async fn exponential_distribution_o_min() -> Result<(), String> {
         test_exponential(
             Exponential {
                 a: 1,
@@ -1763,13 +1805,14 @@ mod exponential {
             &[(1, 100_000, false), (4, 100_000, false)],
             1,
         )
+        .await
     }
 
     // ─────────────────────────────────────────────────────────────────────────
     // 4.  o at +MAX_DISTRIBUTION_PARAM  (huge positive shift)
     // ─────────────────────────────────────────────────────────────────────────
-    #[test]
-    fn exponential_distribution_o_max() -> Result<(), String> {
+    #[tokio::test]
+    async fn exponential_distribution_o_max() -> Result<(), String> {
         test_exponential(
             Exponential {
                 a: MAX_EXP_A_PARAM,
@@ -1785,14 +1828,15 @@ mod exponential {
             &[(1, 100010, true), (10, 100100, true)],
             1,
         )
+        .await
     }
 
     // ─────────────────────────────────────────────────────────────────────────
     // 5.  Exhaustive combination of extreme parameter values
     //     ‑ ensure no `InternalError`
     // ─────────────────────────────────────────────────────────────────────────
-    #[test]
-    fn exponential_distribution_extreme_values() -> Result<(), String> {
+    #[tokio::test]
+    async fn exponential_distribution_extreme_values() -> Result<(), String> {
         for m in [MIN_EXP_M_PARAM, -1, 1, MAX_EXP_M_PARAM as i64] {
             for n in [1, MAX_EXP_N_PARAM] {
                 for a in [1, MAX_EXP_A_PARAM] {
@@ -1852,6 +1896,7 @@ mod exponential {
 
                     suite
                         .execute(&[step])
+                        .await
                         .map_err(|e| format!("failed with a {a} m {m} n {n}: {e}"))?;
                 }
             }
@@ -1880,8 +1925,8 @@ mod polynomial {
     };
     use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_function::{MAX_DISTRIBUTION_PARAM, MAX_POL_A_PARAM, MAX_POL_M_PARAM, MAX_POL_N_PARAM, MIN_POL_A_PARAM, MIN_POL_M_PARAM};
 
-    #[test]
-    fn polynomial_distribution_basic() -> Result<(), String> {
+    #[tokio::test]
+    async fn polynomial_distribution_basic() -> Result<(), String> {
         test_polynomial(
             Polynomial {
                 a: 1,
@@ -1897,10 +1942,11 @@ mod polynomial {
             &[(10, 100_385, true), (20, 102_870, true)],
             1,
         )
+        .await
     }
 
-    #[test]
-    fn polynomial_distribution_negative_a() -> Result<(), String> {
+    #[tokio::test]
+    async fn polynomial_distribution_negative_a() -> Result<(), String> {
         test_polynomial(
             Polynomial {
                 a: -1,
@@ -1916,10 +1962,11 @@ mod polynomial {
             &[(1, 199_999, true), (4, 499_900, true)],
             1,
         )
+        .await
     }
 
-    #[test]
-    fn polynomial_distribution_a_minus_1_b_0() -> Result<(), String> {
+    #[tokio::test]
+    async fn polynomial_distribution_a_minus_1_b_0() -> Result<(), String> {
         test_polynomial(
             Polynomial {
                 a: -1,
@@ -1935,12 +1982,13 @@ mod polynomial {
             &[(1, 100_000, false), (4, 100_000, false)],
             1,
         )
+        .await
     }
 
     ///  Given a polynomial distribution function with o=-MAX_DISTRIBUTION_PARAM, we should
     /// have no rewards
-    #[test]
-    fn polynomial_distribution_o_min() -> Result<(), String> {
+    #[tokio::test]
+    async fn polynomial_distribution_o_min() -> Result<(), String> {
         test_polynomial(
             Polynomial {
                 a: 1,
@@ -1956,10 +2004,11 @@ mod polynomial {
             &[(1, 100_000, false), (4, 100_000, false)],
             1,
         )
+        .await
     }
 
-    #[test]
-    fn polynomial_distribution_pow_minus_1_at_h_2() -> Result<(), String> {
+    #[tokio::test]
+    async fn polynomial_distribution_pow_minus_1_at_h_2() -> Result<(), String> {
         test_polynomial(
             Polynomial {
                 a: 1,
@@ -1982,10 +2031,11 @@ mod polynomial {
             ],
             1,
         )
+        .await
     }
 
-    #[test]
-    fn polynomial_distribution_o_max() -> Result<(), String> {
+    #[tokio::test]
+    async fn polynomial_distribution_o_max() -> Result<(), String> {
         test_polynomial(
             Polynomial {
                 a: 1,
@@ -2001,11 +2051,12 @@ mod polynomial {
             &[(1, 281474976810655, true), (10, 2814749767206550, true)],
             1,
         )
+        .await
     }
     /// Test polynomial distribution function.
     ///
     /// `f(x) = (a * (x - s + o)^(m/n)) / d + b`
-    fn test_polynomial(
+    async fn test_polynomial(
         dist: DistributionFunction,
         steps: &[(u64, u64, bool)], // height, expected balance, expect pass
         distribution_interval: u64,
@@ -2017,6 +2068,7 @@ mod polynomial {
             distribution_interval,
             None,
         )
+        .await
         .inspect_err(|e| {
             tracing::error!("{}", e);
         })
@@ -2025,8 +2077,8 @@ mod polynomial {
     /// Test various combinations of `m/n` in `[DistributionFunction::Polynomial]` distribution.
     ///
     /// We expect this test not to end with InternalError.
-    #[test]
-    fn polynomial_distribution_power_extreme_values() -> Result<(), String> {
+    #[tokio::test]
+    async fn polynomial_distribution_power_extreme_values() -> Result<(), String> {
         for m in [MIN_POL_M_PARAM, MAX_POL_M_PARAM] {
             for n in [1, MAX_POL_N_PARAM] {
                 for a in [MIN_POL_A_PARAM, MAX_POL_A_PARAM] {
@@ -2095,6 +2147,7 @@ mod polynomial {
 
                             suite
                                 .execute(&[step])
+                                .await
                                 .inspect_err(|e| {
                                     tracing::error!("{}", e);
                                 })
@@ -2115,8 +2168,8 @@ mod logarithmic {
     use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_function::DistributionFunction::{self,Logarithmic};
     use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_function::{MAX_DISTRIBUTION_PARAM, MAX_LOG_A_PARAM, MIN_LOG_A_PARAM};
 
-    #[test]
-    fn log_distribution_basic() -> Result<(), String> {
+    #[tokio::test]
+    async fn log_distribution_basic() -> Result<(), String> {
         test_logarithmic(
             Logarithmic {
                 a: 1,                  // a: i64,
@@ -2137,10 +2190,11 @@ mod logarithmic {
             ],
             1,
         )
+        .await
     }
 
-    #[test]
-    fn log_distribution_1_div_u64_max() -> Result<(), String> {
+    #[tokio::test]
+    async fn log_distribution_1_div_u64_max() -> Result<(), String> {
         // n is very big here, so we would expect to get 0
         test_logarithmic(
             Logarithmic {
@@ -2157,10 +2211,11 @@ mod logarithmic {
             &[(1, 100_000, false), (5, 100_000, false)],
             1,
         )
+        .await
     }
 
-    #[test]
-    fn log_distribution_neg_1_div_u64_max() -> Result<(), String> {
+    #[tokio::test]
+    async fn log_distribution_neg_1_div_u64_max() -> Result<(), String> {
         // n is very big here, so we would expect to get 0
         test_logarithmic(
             Logarithmic {
@@ -2177,10 +2232,11 @@ mod logarithmic {
             &[(1, 100_044, true), (5, 100_214, true)],
             1,
         )
+        .await
     }
 
-    #[test]
-    fn log_distribution_a_min() -> Result<(), String> {
+    #[tokio::test]
+    async fn log_distribution_a_min() -> Result<(), String> {
         test_logarithmic(
             Logarithmic {
                 a: MIN_LOG_A_PARAM,    // a: i64,
@@ -2202,10 +2258,11 @@ mod logarithmic {
             ],
             1,
         )
+        .await
     }
 
-    #[test]
-    fn log_distribution_max_amounts() {
+    #[tokio::test]
+    async fn log_distribution_max_amounts() {
         test_logarithmic(
             Logarithmic {
                 a: MAX_LOG_A_PARAM,               // a: i64,
@@ -2226,11 +2283,12 @@ mod logarithmic {
             ],
             1,
         )
+        .await
         .expect("expect to pass");
     }
 
-    #[test]
-    fn log_distribution_with_b_max() -> Result<(), String> {
+    #[tokio::test]
+    async fn log_distribution_with_b_max() -> Result<(), String> {
         test_logarithmic(
             Logarithmic {
                 a: 1,                      // a: i64,
@@ -2250,9 +2308,10 @@ mod logarithmic {
             ],
             1,
         )
+        .await
     }
     /// f(x) = (a * log(m * (x - s + o) / n)) / d + b
-    fn test_logarithmic(
+    async fn test_logarithmic(
         dist: DistributionFunction,
         steps: &[(u64, u64, bool)], // height, expected balance, expect pass
         distribution_interval: u64,
@@ -2264,6 +2323,7 @@ mod logarithmic {
             distribution_interval,
             None,
         )
+        .await
         .inspect_err(|e| {
             tracing::error!("{}", e);
         })
@@ -2274,8 +2334,8 @@ mod inverted_logarithmic {
     use super::test_suite::check_heights;
     use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_function::DistributionFunction::{self,InvertedLogarithmic};
 
-    #[test]
-    fn inv_log_distribution_very_low_emission() -> Result<(), String> {
+    #[tokio::test]
+    async fn inv_log_distribution_very_low_emission() -> Result<(), String> {
         // At block 2 no more can ever be claimed because the function is decreasing
         let dist = InvertedLogarithmic {
             a: 1,                  // a: i64,
@@ -2297,11 +2357,11 @@ mod inverted_logarithmic {
         assert_eq!(x_1, 1); // This is ln (1/ (1 - 1 + 1)), or basically ln(1) = 1
         let x_2 = dist.evaluate(0, 2).expect("expected to evaluate");
         assert_eq!(x_2, 0); // This is ln (1/ (1 - 1 + 2)), or basically ln(1/2) = 0
-        run_test(dist, &steps, 1)
+        run_test(dist, &steps, 1).await
     }
 
-    #[test]
-    fn inv_log_distribution_reduced_emission() -> Result<(), String> {
+    #[tokio::test]
+    async fn inv_log_distribution_reduced_emission() -> Result<(), String> {
         //       y
         //       ↑
         // 10000 |*
@@ -2345,11 +2405,11 @@ mod inverted_logarithmic {
             (1000, 6_110_958, true),
         ];
 
-        run_test(dist, &steps, 1)
+        run_test(dist, &steps, 1).await
     }
 
-    #[test]
-    fn inv_log_distribution_reduced_emission_passing_0() -> Result<(), String> {
+    #[tokio::test]
+    async fn inv_log_distribution_reduced_emission_passing_0() -> Result<(), String> {
         //         y
         //         ↑
         //     350 |*
@@ -2380,11 +2440,11 @@ mod inverted_logarithmic {
             (300, 119546, false), // past 200 we won't get any more
         ];
 
-        run_test(dist, &steps, 1)
+        run_test(dist, &steps, 1).await
     }
 
-    #[test]
-    fn inv_log_distribution_negative_a_increase_emission() -> Result<(), String> {
+    #[tokio::test]
+    async fn inv_log_distribution_negative_a_increase_emission() -> Result<(), String> {
         //         y
         //          ↑
         //    10000 |
@@ -2426,11 +2486,11 @@ mod inverted_logarithmic {
             (300, 537282, true),
         ];
 
-        run_test(dist, &steps, 1)
+        run_test(dist, &steps, 1).await
     }
 
     /// f(x) = (a * log( n / (m * (x - s + o)) )) / d + b
-    fn run_test(
+    async fn run_test(
         dist: DistributionFunction,
         steps: &[(u64, u64, bool)], // height, expected balance, expect pass
         distribution_interval: u64,
@@ -2442,6 +2502,7 @@ mod inverted_logarithmic {
             distribution_interval,
             None,
         )
+        .await
         .inspect_err(|e| {
             tracing::error!("{}", e);
         })
@@ -2489,7 +2550,7 @@ mod test_suite {
     /// * `expected_balance` - expected balance after claim was made
     /// * `expect_pass` - whether we expect the claim to pass or not
     ///
-    pub(super) fn check_heights<C: Into<TestStep> + Clone>(
+    pub(super) async fn check_heights<C: Into<TestStep> + Clone>(
         distribution_function: DistributionFunction,
         steps: &[C],
         contract_start_time: Option<TimestampMillis>,
@@ -2528,7 +2589,7 @@ mod test_suite {
             .map(|item| item.clone().into())
             .collect::<Vec<TestStep>>();
 
-        suite.execute(&steps)
+        suite.execute(&steps).await
     }
 
     pub(super) type TokenConfigFn = dyn FnOnce(&mut TokenConfiguration) + Send + Sync;
@@ -2730,7 +2791,7 @@ mod test_suite {
         }
 
         /// Submit a claim transition and assert the results
-        pub(crate) fn claim(&mut self, assertions: Vec<AssertionFn>) -> Result<(), String> {
+        pub(crate) async fn claim(&mut self, assertions: Vec<AssertionFn>) -> Result<(), String> {
             let committed_block_info = self.block_info();
             let nonce = self.next_identity_nonce();
             // next block config
@@ -2758,6 +2819,7 @@ mod test_suite {
                 self.platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
             let claim_serialized_transition = claim_transition
@@ -2952,10 +3014,10 @@ mod test_suite {
         }
 
         /// execute test steps, one by one
-        pub(super) fn execute(&mut self, tests: &[TestStep]) -> Result<(), String> {
+        pub(super) async fn execute(&mut self, tests: &[TestStep]) -> Result<(), String> {
             let mut errors = String::new();
             for test_case in tests {
-                let result = self.execute_step(test_case);
+                let result = self.execute_step(test_case).await;
                 if let Err(e) = result {
                     errors += format!("\n--> {}: {}\n", test_case.name, e).as_str();
                 }
@@ -2970,7 +3032,7 @@ mod test_suite {
 
         /// Execute a single test step. It fasts forwards to the block height of the test case,
         /// executes the claim and checks the balance.
-        pub(super) fn execute_step(&mut self, test_case: &TestStep) -> Result<(), String> {
+        pub(super) async fn execute_step(&mut self, test_case: &TestStep) -> Result<(), String> {
             let current_height = self.block_info().height;
             let current_core_height = self.block_info().core_height;
 
@@ -2991,7 +3053,10 @@ mod test_suite {
                 false,
             );
             let mut result = Vec::new();
-            if let Err(e) = self.claim(test_case.claim_transition_assertions.clone()) {
+            if let Err(e) = self
+                .claim(test_case.claim_transition_assertions.clone())
+                .await
+            {
                 result.push(format!("claim failed: {}", e))
             }
 

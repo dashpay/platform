@@ -3,13 +3,13 @@ import DashSDKFFI
 
 /// Swift wrapper for wallet manager that manages multiple wallets
 public class WalletManager {
-    private let handle: UnsafeMutablePointer<FFIWalletManager>
-    internal let network: KeyWalletNetwork
+    private let handle: OpaquePointer
+    internal let network: Network
     private let ownsHandle: Bool
 
     /// Create a new standalone wallet manager
     /// Note: Consider using SPVClient.getWalletManager() instead if you have an SPV client
-    public init(network: KeyWalletNetwork = .mainnet,) throws {
+    public init(network: Network = .mainnet,) throws {
         var error = FFIError()
       guard let managerHandle = wallet_manager_create(network.ffiValue, &error) else {
             defer {
@@ -27,7 +27,7 @@ public class WalletManager {
 
     /// Create a wallet manager wrapper from an existing handle (does not own the handle)
     /// - Parameter handle: The FFI wallet manager handle
-    internal init(handle: UnsafeMutablePointer<FFIWalletManager>) throws {
+    internal init(handle: OpaquePointer) throws {
         var error = FFIError()
         let network = wallet_manager_network(handle, &error)
 
@@ -43,13 +43,13 @@ public class WalletManager {
         }
 
         self.handle = handle
-        self.network = KeyWalletNetwork(ffiNetwork: network)
+        self.network = Network(ffiNetwork: network)
         self.ownsHandle = false
     }
 
     deinit {
         if ownsHandle {
-            dash_spv_ffi_wallet_manager_free(handle)
+            wallet_manager_free(handle)
         }
     }
 
@@ -62,37 +62,18 @@ public class WalletManager {
     ///   - accountOptions: Account creation options
     /// - Returns: The wallet ID
     @discardableResult
-    public func addWallet(mnemonic: String, passphrase: String? = nil,
+    public func addWallet(mnemonic: String,
                           accountOptions: AccountCreationOption = .default) throws -> Data {
         var error = FFIError()
 
         let success = mnemonic.withCString { mnemonicCStr in
             if case .specificAccounts = accountOptions {
                 var options = accountOptions.toFFIOptions()
-
-                if let passphrase = passphrase {
-                    return passphrase.withCString { passphraseCStr in
-                        wallet_manager_add_wallet_from_mnemonic_with_options(
-                            handle, mnemonicCStr, passphraseCStr,
-                            &options, &error)
-                    }
-                } else {
-                    return wallet_manager_add_wallet_from_mnemonic_with_options(
-                        handle, mnemonicCStr, nil,
-                        &options, &error)
-                }
+                return wallet_manager_add_wallet_from_mnemonic_with_options(
+                    handle, mnemonicCStr, &options, &error)
             } else {
-                if let passphrase = passphrase {
-                    return passphrase.withCString { passphraseCStr in
-                        wallet_manager_add_wallet_from_mnemonic(
-                            handle, mnemonicCStr, passphraseCStr,
-                            &error)
-                    }
-                } else {
-                    return wallet_manager_add_wallet_from_mnemonic(
-                        handle, mnemonicCStr, nil,
-                        &error)
-        }
+                return wallet_manager_add_wallet_from_mnemonic(
+                    handle, mnemonicCStr, &error)
             }
         }
 
@@ -364,7 +345,18 @@ public class WalletManager {
                                   contextDetails: TransactionContextDetails,
                                   updateStateIfFound: Bool = true) throws -> Bool {
         var error = FFIError()
-        var ffiContext = contextDetails.toFFI()
+        // Build FFITransactionContext from TransactionContextDetails
+        var ffiContext = FFITransactionContext()
+        ffiContext.context_type = FFITransactionContextType(rawValue: contextDetails.context.rawValue)
+        ffiContext.block_info.height = contextDetails.height
+        ffiContext.block_info.timestamp = contextDetails.timestamp
+        if let hash = contextDetails.blockHash, hash.count == 32 {
+            hash.withUnsafeBytes { buf in
+                withUnsafeMutableBytes(of: &ffiContext.block_info.block_hash) { dst in
+                    dst.copyBytes(from: buf.prefix(32))
+                }
+            }
+        }
 
         let success = transactionData.withUnsafeBytes { txBytes in
             let txPtr = txBytes.bindMemory(to: UInt8.self).baseAddress
@@ -586,7 +578,7 @@ public class WalletManager {
         }
     }
 
-    internal var ffiHandle: UnsafeMutablePointer<FFIWalletManager> { handle }
+    internal var ffiHandle: OpaquePointer { handle }
 
     // MARK: - Serialization
 
@@ -607,6 +599,13 @@ public class WalletManager {
         downgradeToPublicKeyWallet: Bool = false,
         allowExternalSigning: Bool = false
     ) throws -> (walletId: Data, serializedWallet: Data) {
+        if let passphrase, !passphrase.isEmpty {
+            throw KeyWalletError.invalidInput(
+                "BIP-39 passphrase support was removed upstream " +
+                "(rust-dashcore #747); pass nil or an empty string"
+            )
+        }
+
         var error = FFIError()
         var walletBytesPtr: UnsafeMutablePointer<UInt8>?
         var walletBytesLen: size_t = 0
@@ -614,38 +613,18 @@ public class WalletManager {
 
         let success = mnemonic.withCString { mnemonicCStr in
             var options = accountOptions.toFFIOptions()
-
-            if let passphrase = passphrase {
-                return passphrase.withCString { passphraseCStr in
-                    wallet_manager_add_wallet_from_mnemonic_return_serialized_bytes(
-                        handle,
-                        mnemonicCStr,
-                        passphraseCStr,
-                        birthHeight,
-                        &options,
-                        downgradeToPublicKeyWallet,
-                        allowExternalSigning,
-                        &walletBytesPtr,
-                        &walletBytesLen,
-                        &walletId,
-                        &error
-                    )
-                }
-            } else {
-                return wallet_manager_add_wallet_from_mnemonic_return_serialized_bytes(
-                    handle,
-                    mnemonicCStr,
-                    nil,
-                    birthHeight,
-                    &options,
-                    downgradeToPublicKeyWallet,
-                    allowExternalSigning,
-                    &walletBytesPtr,
-                    &walletBytesLen,
-                    &walletId,
-                    &error
-                )
-            }
+            return wallet_manager_add_wallet_from_mnemonic_return_serialized_bytes(
+                handle,
+                mnemonicCStr,
+                birthHeight,
+                &options,
+                downgradeToPublicKeyWallet,
+                allowExternalSigning,
+                &walletBytesPtr,
+                &walletBytesLen,
+                &walletId,
+                &error
+            )
         }
 
         defer {
@@ -673,7 +652,7 @@ public class WalletManager {
     /// - Parameters:
     ///   - walletBytes: The serialized wallet data
     /// - Returns: The wallet ID of the imported wallet
-    public func importWallet(from walletBytes: Data) throws -> Data {
+    public func importWallet(from walletBytes: Data, birthHeight: UInt32 = 0) throws -> Data {
         guard !walletBytes.isEmpty else {
             throw KeyWalletError.invalidInput("Wallet bytes cannot be empty")
         }
@@ -686,6 +665,7 @@ public class WalletManager {
                 handle,
                 bytes.bindMemory(to: UInt8.self).baseAddress,
                 size_t(walletBytes.count),
+                birthHeight,
                 &walletId,
                 &error
             )

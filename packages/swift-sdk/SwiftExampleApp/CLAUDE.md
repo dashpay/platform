@@ -6,6 +6,10 @@ This document provides guidance for AI assistants working with the SwiftExampleA
 
 SwiftExampleApp is an iOS application demonstrating the integration of both Core (SPV wallet) and Platform (identity/documents) functionality of the Dash SDK.
 
+## Funding a testnet wallet for testing
+
+To get testnet funds for a wallet in the app, use the built-in faucet: **Wallet → Receive** has a "request from testnet" button that funds the displayed receive address. No external faucet or pasted seed is needed — create a fresh wallet, open Wallet → Receive, and tap it. Use this when an end-to-end test needs a funded wallet (e.g. registering an identity, signing state transitions).
+
 ## Key Architecture Patterns
 
 ### Unified SDK Integration
@@ -66,11 +70,29 @@ Private keys are stored separately from identities:
 
 ### Service Architecture
 
-- `UnifiedAppState` - Coordinates Core and Platform features
-- `WalletService` - Manages SPV wallet operations
-- `PlatformService` - Handles identity and document operations
-- `DataManager` - Handles SwiftData persistence
-- `KeychainManager` - Manages secure key storage
+- `AppState` - Platform identity/document/contract state (SDK wrapper)
+- `PlatformWalletManager` - Drives wallet creation, SPV sync, and BLAST
+  balance sync via the Rust-side `platform-wallet` crate. Holds **N
+  wallets concurrently** keyed by walletId — BLAST sync iterates all
+  of them. Publishes `spvProgress`, `wallets` (the full map), and
+  `lastError`. Look up a specific wallet with `wallet(for: walletId)`
+  or grab a deterministic default via `firstWallet`. Persists data
+  via SwiftData using `PlatformWalletPersistenceHandler` — UI queries
+  `PersistentWallet`, `PersistentAccount`, `PersistentTransaction`,
+  and `PersistentUtxo` directly with `@Query`.
+- `PlatformBalanceSyncService` - Drives periodic BLAST address sync on the
+  platform side.
+- `ShieldedService` - Shielded pool (Orchard) operations.
+- `TransitionState` - Ephemeral state (pricing, purchase eligibility) for
+  state-transition flows.
+- `AppUIState` - Small UI-only flags (e.g. detailed sync banner).
+- `DataManager` - Handles SwiftData persistence for Platform data.
+- `KeychainManager` - Manages secure key storage.
+
+The previous `UnifiedAppState` / `WalletService` / `CoreWalletManager` /
+`SPVClient` / `SPVEventHandler` stack has been removed. All wallet
+operations now flow through `PlatformWalletManager`; all Core wallet data
+is surfaced to views via SwiftData @Query on the Persistent* models.
 
 ## Common Development Tasks
 

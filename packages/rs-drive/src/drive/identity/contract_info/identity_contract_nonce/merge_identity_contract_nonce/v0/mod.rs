@@ -636,4 +636,70 @@ mod tests {
 
         assert_eq!(result.error_message(), Some("nonce is an invalid value"));
     }
+
+    /// Estimation-only branch (apply=false) must not error and produces a
+    /// MergeIdentityNonceSuccess result with the requested nonce treated as
+    /// new. This exercises the `estimated_costs_only_with_layer_info.is_some()`
+    /// path which mints cost-estimation ops instead of reading real state.
+    #[test]
+    fn merge_estimation_mode_succeeds_without_real_state() {
+        let contract_id = [77; 32];
+        let drive = setup_drive(None);
+        let platform_version = PlatformVersion::first();
+        drive
+            .create_initial_state_structure(None, platform_version)
+            .expect("init");
+
+        // No identity is created — in estimation mode we never touch real state.
+        let mut drive_operations = vec![];
+        let result = drive
+            .merge_identity_contract_nonce_v0(
+                [1u8; 32],
+                contract_id,
+                3,
+                &BlockInfo::default(),
+                false, // estimation mode
+                None,
+                &mut drive_operations,
+                platform_version,
+            )
+            .expect("estimation should succeed");
+        // Error-free success result.
+        assert!(result.error_message().is_none());
+    }
+
+    /// Calling merge_identity_contract_nonce_operations_v0 directly with
+    /// estimated_costs_only_with_layer_info = Some(...) returns a
+    /// MergeIdentityNonceSuccess with drive_operations populated for cost
+    /// estimation (stateless layer info bucket).
+    #[test]
+    fn merge_operations_stateless_layer_info_returns_success() {
+        let drive = setup_drive(None);
+        let platform_version = PlatformVersion::first();
+        drive
+            .create_initial_state_structure(None, platform_version)
+            .expect("init");
+
+        let mut estimated = Some(std::collections::HashMap::<
+            grovedb::batch::KeyInfoPath,
+            grovedb::EstimatedLayerInformation,
+        >::new());
+
+        let (result, ops) = drive
+            .merge_identity_contract_nonce_operations_v0(
+                [2u8; 32],
+                [2u8; 32],
+                5,
+                &BlockInfo::default(),
+                &mut estimated,
+                None,
+                platform_version,
+            )
+            .expect("estimation ops");
+        assert!(result.error_message().is_none());
+        // The estimated layer info map must have been populated during the call.
+        assert!(!estimated.as_ref().unwrap().is_empty());
+        // And some drive ops must have been emitted (for eventual cost calculation).
+        assert!(!ops.is_empty());
+    }
 }

@@ -14,22 +14,34 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 dash-sdk = { path = "../rs-sdk", features = [
     "dpns-contract",
     "dashpay-contract",
-    "shielded",
 ] }
 drive-proof-verifier = { path = "../rs-drive-proof-verifier" }
 rs-sdk-trusted-context-provider = { path = "../rs-sdk-trusted-context-provider", features = [
     "dpns-contract",
+    "dashpay-contract",
+    "withdrawals-contract",
+    "wallet-utils-contract",
+    "token-history-contract",
+    "keywords-contract",
 ] }
 simple-signer = { path = "../simple-signer" }
+async-trait = { version = "0.1.83" }
+dash-async = { path = "../rs-dash-async" }
 
-# SPV client integration for quorum-based proof verification
-dash-spv-ffi = { workspace = true }
+# Used by `dash_sdk_sign_with_mnemonic_and_path` to derive an
+# ECDSA key from `(mnemonic, path)` for one-shot signing without
+# any FFI key export. `Mnemonic`, `bip32::*`, `Network` come from
+# this crate.
+key-wallet = { workspace = true }
 
-# Platform Wallet integration for DashPay support
-platform-wallet-ffi = { path = "../rs-platform-wallet-ffi" }
+# DashPay host crypto primitives (ECDH / AES) for the Keychain signer's
+# raw-secret operations, computed in-process so the scalar never crosses
+# FFI. Single source of truth — reused, not re-implemented.
+platform-encryption = { path = "../rs-platform-encryption" }
 
-# Platform Wallet (pure-Rust SPV context provider)
-platform-wallet = { path = "../rs-platform-wallet", features = ["spv-context"] }
+# Single source of truth for the Network enum and its `#[repr(C)]`
+# FFI variant, both used directly across this crate's FFI surface.
+dash-network = { workspace = true, features = ["ffi"] }
 
 # FFI and serialization
 serde = { version = "1.0", features = ["derive"] }
@@ -37,13 +49,15 @@ serde_json = "1.0"
 bincode = { version = "=2.0.1", features = ["serde"] }
 
 # Async runtime
-tokio = { version = "1.41", features = ["rt-multi-thread", "macros"] }
+tokio = { version = "1.41", features = ["rt-multi-thread", "macros", "sync", "time"] }
+tokio-metrics = { workspace = true, optional = true }
 
 # Error handling
 thiserror = "2.0"
 
 # Logging
 tracing = "0.1.41"
+tracing-subscriber = { version = "0.3.22", features = ["env-filter", "fmt"] }
 
 # Encoding
 bs58 = "0.5"
@@ -54,7 +68,6 @@ libc = "0.2"
 
 # Cryptography
 getrandom = "0.2"
-rand = "0.8"
 zeroize = "1.8"
 
 # Concurrency
@@ -85,6 +98,7 @@ log = "0.4"
 
 [features]
 default = []
+tokio-metrics = ["dep:tokio-metrics"]
 
 # Optional mocks for development/testing; maps to dash-sdk's mocks
 mocks = ["dash-sdk/mocks"]

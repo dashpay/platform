@@ -9,11 +9,33 @@ mod replacement_tests {
     use dpp::tokens::token_payment_info::TokenPaymentInfo;
     use std::collections::BTreeMap;
 
-    #[test]
-    fn test_document_replace_on_document_type_that_is_mutable() {
-        let platform_version = PlatformVersion::latest();
+    #[tokio::test]
+    async fn test_document_replace_on_document_type_that_is_mutable() {
+        run_document_replace_on_document_type_that_is_mutable_at_protocol_version(
+            PlatformVersion::latest().protocol_version,
+            1411320,
+        )
+        .await;
+    }
+
+    /// PROTOCOL_VERSION_11: pre-B7 happy-path fee — transformer's local
+    /// execution context was dropped, so per-transition grovedb reads
+    /// were not billed. Pinned so v11 chain history stays bit-for-bit
+    /// reproducible.
+    #[tokio::test]
+    async fn test_document_replace_on_document_type_that_is_mutable_protocol_version_11() {
+        run_document_replace_on_document_type_that_is_mutable_at_protocol_version(11, 1399260)
+            .await;
+    }
+
+    async fn run_document_replace_on_document_type_that_is_mutable_at_protocol_version(
+        protocol_version: dpp::version::ProtocolVersion,
+        expected_processing_fee: dpp::fee::Credits,
+    ) {
+        let platform_version = PlatformVersion::get(protocol_version)
+            .expect("expected platform version for the requested protocol_version");
         let mut platform = TestPlatformBuilder::new()
-            .with_latest_protocol_version()
+            .with_initial_protocol_version(protocol_version)
             .build_with_mock_rpc()
             .set_genesis_state();
 
@@ -68,6 +90,7 @@ mod replacement_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_create_serialized_transition = documents_batch_create_transition
@@ -110,6 +133,7 @@ mod replacement_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_update_serialized_transition = documents_batch_update_transition
@@ -144,7 +168,12 @@ mod replacement_tests {
 
         assert_eq!(processing_result.valid_count(), 1);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 1399260);
+        assert_eq!(
+            processing_result.aggregated_fees().processing_fee,
+            expected_processing_fee,
+            "PROTOCOL_VERSION_{}: happy-path replace processing fee must match the version-specific baseline",
+            protocol_version,
+        );
 
         let issues = platform
             .drive
@@ -164,7 +193,7 @@ mod replacement_tests {
         );
     }
 
-    fn perform_document_replace_on_profile_after_epoch_change(
+    async fn perform_document_replace_on_profile_after_epoch_change(
         original_name: &str,
         new_names: Vec<(&str, StorageFlags)>,
     ) {
@@ -218,6 +247,7 @@ mod replacement_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_create_serialized_transition = documents_batch_create_transition
@@ -273,6 +303,7 @@ mod replacement_tests {
                     platform_version,
                     None,
                 )
+                .await
                 .expect("expect to create documents batch transition");
 
             let documents_batch_update_serialized_transition = documents_batch_update_transition
@@ -353,8 +384,8 @@ mod replacement_tests {
         );
     }
 
-    #[test]
-    fn test_document_replace_on_document_type_that_is_mutable_different_epoch_bigger_size() {
+    #[tokio::test]
+    async fn test_document_replace_on_document_type_that_is_mutable_different_epoch_bigger_size() {
         perform_document_replace_on_profile_after_epoch_change(
             "Sam",
             vec![(
@@ -365,33 +396,36 @@ mod replacement_tests {
                     Identifier::default().to_buffer(),
                 ),
             )],
-        );
+        )
+        .await;
     }
 
-    #[test]
-    fn test_document_replace_on_document_type_that_is_mutable_different_epoch_smaller_size() {
+    #[tokio::test]
+    async fn test_document_replace_on_document_type_that_is_mutable_different_epoch_smaller_size() {
         perform_document_replace_on_profile_after_epoch_change(
             "Sam",
             vec![(
                 "S",
                 StorageFlags::SingleEpochOwned(0, Identifier::default().to_buffer()),
             )],
-        );
+        )
+        .await;
     }
 
-    #[test]
-    fn test_document_replace_on_document_type_that_is_mutable_different_epoch_same_size() {
+    #[tokio::test]
+    async fn test_document_replace_on_document_type_that_is_mutable_different_epoch_same_size() {
         perform_document_replace_on_profile_after_epoch_change(
             "Sam",
             vec![(
                 "Max",
                 StorageFlags::SingleEpochOwned(0, Identifier::default().to_buffer()),
             )],
-        );
+        )
+        .await;
     }
 
-    #[test]
-    fn test_document_replace_on_document_type_that_is_mutable_different_epoch_bigger_size_then_bigger_size(
+    #[tokio::test]
+    async fn test_document_replace_on_document_type_that_is_mutable_different_epoch_bigger_size_then_bigger_size(
     ) {
         perform_document_replace_on_profile_after_epoch_change(
             "Sam",
@@ -413,11 +447,12 @@ mod replacement_tests {
                     ),
                 ),
             ],
-        );
+        )
+        .await;
     }
 
-    #[test]
-    fn test_document_replace_on_document_type_that_is_mutable_different_epoch_bigger_size_then_bigger_size_by_3_bytes(
+    #[tokio::test]
+    async fn test_document_replace_on_document_type_that_is_mutable_different_epoch_bigger_size_then_bigger_size_by_3_bytes(
     ) {
         perform_document_replace_on_profile_after_epoch_change(
             "Sam",
@@ -439,11 +474,12 @@ mod replacement_tests {
                     ),
                 ),
             ],
-        );
+        )
+        .await;
     }
 
-    #[test]
-    fn test_document_replace_on_document_type_that_is_mutable_different_epoch_bigger_size_then_smaller_size(
+    #[tokio::test]
+    async fn test_document_replace_on_document_type_that_is_mutable_different_epoch_bigger_size_then_smaller_size(
     ) {
         // In this case we start with the size Samuell Base epoch 0 epoch 1 added 7 bytes
         // Then we try to update it to         Sami    Base epoch 2
@@ -473,11 +509,12 @@ mod replacement_tests {
                     ),
                 ),
             ],
-        );
+        )
+        .await;
     }
 
-    #[test]
-    fn test_document_replace_on_document_type_that_is_mutable_different_epoch_bigger_size_then_back_to_original(
+    #[tokio::test]
+    async fn test_document_replace_on_document_type_that_is_mutable_different_epoch_bigger_size_then_back_to_original(
     ) {
         perform_document_replace_on_profile_after_epoch_change(
             "Sam",
@@ -495,14 +532,21 @@ mod replacement_tests {
                     StorageFlags::SingleEpochOwned(0, Identifier::default().to_buffer()),
                 ),
             ],
-        );
+        )
+        .await;
     }
 
-    #[test]
-    fn test_document_replace_on_document_type_that_is_not_mutable() {
-        let platform_version = PlatformVersion::latest();
+    /// Helper for the paired Replace-on-immutable-doc test. The same scenario
+    /// is exercised at PROTOCOL_VERSION_11 (legacy bump-only fee) and at
+    /// PROTOCOL_VERSION_12 (fee covers fetch + validation).
+    async fn run_document_replace_on_document_type_that_is_not_mutable_at_protocol_version(
+        protocol_version: dpp::version::ProtocolVersion,
+        expected_processing_fee: dpp::fee::Credits,
+    ) {
+        let platform_version = PlatformVersion::get(protocol_version)
+            .expect("expected platform version for the requested protocol_version");
         let mut platform = TestPlatformBuilder::new()
-            .with_latest_protocol_version()
+            .with_initial_protocol_version(protocol_version)
             .build_with_mock_rpc()
             .set_genesis_state();
 
@@ -562,6 +606,7 @@ mod replacement_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_create_serialized_transition = documents_batch_create_transition
@@ -604,6 +649,7 @@ mod replacement_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_update_serialized_transition = documents_batch_update_transition
@@ -638,13 +684,294 @@ mod replacement_tests {
 
         assert_eq!(processing_result.valid_count(), 0);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 41880);
+        assert_eq!(
+            processing_result.aggregated_fees().processing_fee,
+            expected_processing_fee,
+            "PROTOCOL_VERSION_{}: processing fee must match the version-specific baseline",
+            protocol_version,
+        );
     }
 
-    #[test]
-    fn test_document_replace_on_document_type_that_is_not_mutable_but_is_transferable() {
+    /// PROTOCOL_VERSION_12+: bump emission charges the user for the fetch +
+    /// structure validation that ran before the failure.
+    #[tokio::test]
+    async fn test_document_replace_on_document_type_that_is_not_mutable() {
+        run_document_replace_on_document_type_that_is_not_mutable_at_protocol_version(
+            PlatformVersion::latest().protocol_version,
+            460920,
+        )
+        .await;
+    }
+
+    /// PROTOCOL_VERSION_11: pre-fix bump-only fee (no charge for the fetch
+    /// + validation work). Pinned so v11 chain history stays bit-for-bit
+    /// reproducible.
+    #[tokio::test]
+    async fn test_document_replace_on_document_type_that_is_not_mutable_protocol_version_11() {
+        run_document_replace_on_document_type_that_is_not_mutable_at_protocol_version(11, 41880)
+            .await;
+    }
+
+    /// Pins the bump-emission contract on Replace's revision-mismatch path.
+    ///
+    /// Without the bump, a failed Replace returns errors-only with no action.
+    /// Fee accounting then charges the user (PaidConsensusError) but the
+    /// identity_contract_nonce in state never advances — the same exact bytes
+    /// can be re-broadcast indefinitely.
+    ///
+    /// The test asserts:
+    ///   1. After a Replace that fails `check_revision_is_bumped_by_one`, the
+    ///      stored contract nonce MUST advance past the submitted nonce.
+    ///   2. Re-submitting the same bytes through CheckTx FirstTimeCheck MUST
+    ///      be rejected with `InvalidIdentityNonceError`.
+    #[tokio::test]
+    async fn replayed_failed_replace_with_consumed_nonce_must_be_rejected_at_check_tx() {
+        use crate::execution::check_tx::CheckTxLevel;
+        use crate::execution::validation::state_transition::check_tx_verification::state_transition_to_execution_event_for_check_tx;
+        use crate::platform_types::platform::PlatformRef;
+        use dpp::serialization::PlatformDeserializable;
+        use dpp::state_transition::StateTransition;
+
         let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let mut rng = StdRng::seed_from_u64(437);
+
+        let platform_state = platform.state.load();
+
+        let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.5));
+
+        let dashpay = platform.drive.cache.system_data_contracts.load_dashpay();
+        let dashpay_contract = dashpay.clone();
+
+        // Use the mutable `profile` doc type — same contract-and-doc-type that
+        // mainnet 35C0 was operating on (DPNS-like profile-replace flow).
+        let profile = dashpay_contract
+            .document_type_for_name("profile")
+            .expect("expected a profile document type");
+        assert!(profile.documents_mutable());
+
+        let entropy = Bytes32::random_with_rng(&mut rng);
+        let mut document = profile
+            .random_document_with_identifier_and_entropy(
+                &mut rng,
+                identity.id(),
+                entropy,
+                DocumentFieldFillType::FillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+                platform_version,
+            )
+            .expect("expected a random document");
+        // Random fillers can produce a non-URI avatarUrl that fails JSON-schema
+        // validation on Create. Pin it to a valid URI like the sibling tests do.
+        document.set("avatarUrl", "http://test.com/bob.jpg".into());
+        document.set("displayName", "Original".into());
+
+        // 1) Create at nonce 2 — consumes nonce 2; doc lands at revision 1.
+        let create_transition = BatchTransition::new_document_creation_transition_from_document(
+            document.clone(),
+            profile,
+            entropy.0,
+            &key,
+            2,
+            0,
+            None,
+            &signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("expected to build create transition");
+
+        let create_serialized = create_transition
+            .serialize_to_bytes()
+            .expect("expected to serialize create");
+
+        let transaction = platform.drive.grove.start_transaction();
+        let create_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &vec![create_serialized],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process create");
+        assert_eq!(create_result.valid_count(), 1);
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit create");
+
+        let (post_create_nonce_raw, _) = platform
+            .drive
+            .fetch_identity_contract_nonce_with_fees(
+                identity.id().to_buffer(),
+                dashpay_contract.id().to_buffer(),
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to fetch contract nonce after create");
+        let post_create_nonce =
+            post_create_nonce_raw.expect("contract nonce must be present after create");
+
+        // 2) Build a Replace at nonce 3 with revision 3. Doc is at revision
+        //    1, so check_revision_is_bumped_by_one_during_replace_v0 returns
+        //    InvalidDocumentRevisionError(Some(1), 3) and we hit the
+        //    failure-with-bump path in the transformer.
+        let mut altered_document = document.clone();
+        altered_document.set_revision(Some(3));
+        altered_document.set("displayName", "Out of order".into());
+
+        let replace_transition =
+            BatchTransition::new_document_replacement_transition_from_document(
+                altered_document,
+                profile,
+                &key,
+                3,
+                0,
+                None,
+                &signer,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expected to build replace transition");
+
+        let replace_serialized = replace_transition
+            .serialize_to_bytes()
+            .expect("expected to serialize replace");
+
+        let transaction = platform.drive.grove.start_transaction();
+        let replace_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &vec![replace_serialized.clone()],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process replace");
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit failed replace");
+
+        assert_eq!(
+            replace_result.invalid_paid_count(),
+            1,
+            "Replace must commit as invalid_paid (PaidConsensusError); execution_results={:?}",
+            replace_result.execution_results()
+        );
+        assert_eq!(replace_result.valid_count(), 0);
+
+        // 3) Direct invariant: the bump must have advanced the contract nonce
+        //    in state. If the stored nonce is still post-create, the bump
+        //    silently dropped — that is the bug.
+        let (post_replace_nonce_raw, _) = platform
+            .drive
+            .fetch_identity_contract_nonce_with_fees(
+                identity.id().to_buffer(),
+                dashpay_contract.id().to_buffer(),
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to fetch contract nonce after failed replace");
+        let post_replace_nonce =
+            post_replace_nonce_raw.expect("contract nonce must be present after failed replace");
+
+        assert_ne!(
+            post_replace_nonce, post_create_nonce,
+            "failed Replace's bump action did not advance the contract \
+             nonce — stored nonce is still {:#x} (= post-create value), so \
+             the same serialized bytes can be replayed",
+            post_create_nonce
+        );
+
+        // 4) Re-submitting identical bytes through CheckTx FirstTimeCheck must
+        //    hit the nonce check first and reject.
+        let replayed_state_transition =
+            StateTransition::deserialize_from_bytes(&replace_serialized)
+                .expect("expected to deserialize replayed transition");
+
+        let platform_state = platform.state.load();
+        let platform_ref = PlatformRef {
+            drive: &platform.drive,
+            state: &platform_state,
+            config: &platform.config,
+            core_rpc: &platform.core_rpc,
+        };
+
+        let check_tx_result = state_transition_to_execution_event_for_check_tx(
+            &platform_ref,
+            replayed_state_transition,
+            CheckTxLevel::FirstTimeCheck,
+            platform_version,
+        )
+        .expect("expected check_tx to not return an Err");
+
+        assert!(
+            !check_tx_result.is_valid(),
+            "CheckTx FirstTimeCheck must reject identical bytes after the \
+             failed-Replace bump consumed the nonce"
+        );
+        assert!(
+            check_tx_result.errors.iter().any(|e| matches!(
+                e,
+                ConsensusError::StateError(StateError::InvalidIdentityNonceError(_))
+            )),
+            "expected InvalidIdentityNonceError on replay; got {:?}",
+            check_tx_result.errors
+        );
+    }
+
+    #[tokio::test]
+    async fn test_document_replace_on_document_type_that_is_not_mutable_but_is_transferable() {
+        run_document_replace_on_document_type_that_is_not_mutable_but_is_transferable_at_protocol_version(
+            PlatformVersion::latest().protocol_version,
+            457660,
+        )
+        .await;
+    }
+
+    /// PROTOCOL_VERSION_11: pre-B7 bump-only fee (transformer's local
+    /// execution context dropped the per-transition reads). Pinned so
+    /// v11 chain history stays bit-for-bit reproducible.
+    #[tokio::test]
+    async fn test_document_replace_on_document_type_that_is_not_mutable_but_is_transferable_protocol_version_11(
+    ) {
+        run_document_replace_on_document_type_that_is_not_mutable_but_is_transferable_at_protocol_version(
+            11,
+            445700,
+        )
+        .await;
+    }
+
+    async fn run_document_replace_on_document_type_that_is_not_mutable_but_is_transferable_at_protocol_version(
+        protocol_version: dpp::version::ProtocolVersion,
+        expected_processing_fee: dpp::fee::Credits,
+    ) {
+        let platform_version = PlatformVersion::get(protocol_version)
+            .expect("expected platform version for the requested protocol_version");
         let (mut platform, contract) = TestPlatformBuilder::new()
+            .with_initial_protocol_version(protocol_version)
             .build_with_mock_rpc()
             .set_initial_state_structure()
             .with_crypto_card_game_transfer_only(Transferable::Always);
@@ -690,6 +1017,7 @@ mod replacement_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_create_serialized_transition = documents_batch_create_transition
@@ -784,6 +1112,7 @@ mod replacement_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition for transfer");
 
         let documents_batch_transfer_serialized_transition = documents_batch_transfer_transition
@@ -818,7 +1147,12 @@ mod replacement_tests {
 
         assert_eq!(processing_result.valid_count(), 0);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 445700);
+        assert_eq!(
+            processing_result.aggregated_fees().processing_fee,
+            expected_processing_fee,
+            "PROTOCOL_VERSION_{}: paid-error replace processing fee must match the version-specific baseline",
+            protocol_version,
+        );
 
         let query_sender_results = platform
             .drive
@@ -836,11 +1170,21 @@ mod replacement_tests {
         assert_eq!(query_receiver_results.documents().len(), 0);
     }
 
-    #[test]
-    fn test_document_replace_that_does_not_yet_exist() {
-        let platform_version = PlatformVersion::latest();
+    /// Helper for the paired Replace-on-missing-document test.
+    ///
+    /// Both versions land as PaidConsensusError because the Replace
+    /// missing-target-document path emits a `BumpIdentityDataContractNonce`
+    /// action on every protocol version (it was the one legacy v0 bump
+    /// site, preserved to keep PROTOCOL_VERSION_11 chain replay bit-for-bit
+    /// reproducible). Only the fee differs.
+    async fn run_document_replace_that_does_not_yet_exist_at_protocol_version(
+        protocol_version: dpp::version::ProtocolVersion,
+        expected_processing_fee: dpp::fee::Credits,
+    ) {
+        let platform_version = PlatformVersion::get(protocol_version)
+            .expect("expected platform version for the requested protocol_version");
         let mut platform = TestPlatformBuilder::new()
-            .with_latest_protocol_version()
+            .with_initial_protocol_version(protocol_version)
             .build_with_mock_rpc()
             .set_genesis_state();
 
@@ -890,6 +1234,7 @@ mod replacement_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_update_serialized_transition = documents_batch_update_transition
@@ -918,17 +1263,47 @@ mod replacement_tests {
             .unwrap()
             .expect("expected to commit transaction");
 
-        assert_eq!(processing_result.invalid_paid_count(), 1);
+        assert_eq!(
+            processing_result.invalid_paid_count(),
+            1,
+            "PROTOCOL_VERSION_{}: must land as PaidConsensusError",
+            protocol_version,
+        );
 
         assert_eq!(processing_result.invalid_unpaid_count(), 0);
 
         assert_eq!(processing_result.valid_count(), 0);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 516040);
+        assert_eq!(
+            processing_result.aggregated_fees().processing_fee,
+            expected_processing_fee,
+            "PROTOCOL_VERSION_{}: processing fee must match the version-specific baseline",
+            protocol_version,
+        );
     }
 
-    #[test]
-    fn test_double_document_replace() {
+    /// PROTOCOL_VERSION_12+ — bump emission for this specific path is
+    /// unconditional (pre-existing legacy behavior), but the document
+    /// query now bills its cost on top of v11's bump-only fee.
+    #[tokio::test]
+    async fn test_document_replace_that_does_not_yet_exist() {
+        run_document_replace_that_does_not_yet_exist_at_protocol_version(
+            PlatformVersion::latest().protocol_version,
+            520340,
+        )
+        .await;
+    }
+
+    /// PROTOCOL_VERSION_11 — pins the legacy fee + bump-emission behavior.
+    /// This is the one Replace failure path that already emitted a bump on
+    /// v11; the bump-emission helper must not strip it on v0.
+    #[tokio::test]
+    async fn test_document_replace_that_does_not_yet_exist_protocol_version_11() {
+        run_document_replace_that_does_not_yet_exist_at_protocol_version(11, 516040).await;
+    }
+
+    #[tokio::test]
+    async fn test_double_document_replace() {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
             .with_latest_protocol_version()
@@ -992,6 +1367,7 @@ mod replacement_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_create_serialized_transition = documents_batch_create_transition
@@ -1055,6 +1431,7 @@ mod replacement_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_update_serialized_transition_1 = documents_batch_update_transition_1
@@ -1073,6 +1450,7 @@ mod replacement_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_update_serialized_transition_2 = documents_batch_update_transition_2
@@ -1140,8 +1518,8 @@ mod replacement_tests {
         );
     }
 
-    #[test]
-    fn test_double_document_replace_different_height_same_epoch() {
+    #[tokio::test]
+    async fn test_double_document_replace_different_height_same_epoch() {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
             .with_latest_protocol_version()
@@ -1205,6 +1583,7 @@ mod replacement_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_create_serialized_transition = documents_batch_create_transition
@@ -1272,6 +1651,7 @@ mod replacement_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_update_serialized_transition_1 = documents_batch_update_transition_1
@@ -1290,6 +1670,7 @@ mod replacement_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_update_serialized_transition_2 = documents_batch_update_transition_2
@@ -1398,8 +1779,8 @@ mod replacement_tests {
         );
     }
 
-    #[test]
-    fn test_double_document_replace_no_change_different_height_same_epoch() {
+    #[tokio::test]
+    async fn test_double_document_replace_no_change_different_height_same_epoch() {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
             .with_latest_protocol_version()
@@ -1459,6 +1840,7 @@ mod replacement_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_create_serialized_transition = documents_batch_create_transition
@@ -1526,6 +1908,7 @@ mod replacement_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_update_serialized_transition_1 = documents_batch_update_transition_1
@@ -1544,6 +1927,7 @@ mod replacement_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_update_serialized_transition_2 = documents_batch_update_transition_2
@@ -1652,8 +2036,8 @@ mod replacement_tests {
         );
     }
 
-    #[test]
-    fn test_double_document_replace_different_height_different_epoch() {
+    #[tokio::test]
+    async fn test_double_document_replace_different_height_different_epoch() {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
             .with_latest_protocol_version()
@@ -1717,6 +2101,7 @@ mod replacement_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_create_serialized_transition = documents_batch_create_transition
@@ -1784,6 +2169,7 @@ mod replacement_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_update_serialized_transition_1 = documents_batch_update_transition_1
@@ -1802,6 +2188,7 @@ mod replacement_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_update_serialized_transition_2 = documents_batch_update_transition_2
@@ -1910,8 +2297,8 @@ mod replacement_tests {
         );
     }
 
-    #[test]
-    fn test_document_replace_on_document_type_that_requires_a_token() {
+    #[tokio::test]
+    async fn test_document_replace_on_document_type_that_requires_a_token() {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
             .with_latest_protocol_version()
@@ -1989,6 +2376,7 @@ mod replacement_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_create_serialized_transition = documents_batch_create_transition
@@ -2040,6 +2428,7 @@ mod replacement_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_update_serialized_transition = documents_batch_update_transition

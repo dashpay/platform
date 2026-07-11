@@ -61,6 +61,9 @@ impl<T: JsonSafeFields> JsonSafeFields for std::collections::HashSet<T> {}
 
 impl JsonSafeFields for platform_value::Identifier {}
 impl JsonSafeFields for platform_value::BinaryData {}
+impl JsonSafeFields for platform_value::Bytes20 {}
+impl JsonSafeFields for platform_value::Bytes32 {}
+impl JsonSafeFields for platform_value::Bytes36 {}
 impl JsonSafeFields for platform_value::Value {}
 impl JsonSafeFields for platform_value::string_encoding::Encoding {}
 
@@ -93,12 +96,88 @@ impl JsonSafeFields for crate::block::epoch::Epoch {}
 impl JsonSafeFields for crate::identity::identity_public_key::IdentityPublicKey {}
 impl JsonSafeFields for crate::identity::state_transition::asset_lock_proof::AssetLockProof {}
 impl JsonSafeFields for crate::address_funds::PlatformAddress {}
+impl JsonSafeFields for crate::address_funds::AddressFundsFeeStrategy {}
+// `AddressWitness` is verified via `#[json_safe_fields]` on the type itself
+// (named-field variants of `BinaryData`), so no manual marker is needed here.
 impl JsonSafeFields for crate::withdrawal::Pooling {}
 impl JsonSafeFields for crate::identity::core_script::CoreScript {}
 impl JsonSafeFields for crate::voting::votes::Vote {}
+// `DocumentBaseTransition` wraps `DocumentBaseTransitionV0` / `V1`, both of
+// which are `#[json_safe_fields]`-annotated, so the wrapper enum is safe by
+// induction: every u64 inside is protected by `json_safe_u64`.
+impl JsonSafeFields
+    for crate::state_transition::batch_transition::document_base_transition::DocumentBaseTransition
+{
+}
+// `TokenPaymentInfo` (v0 wrapper) — V0 is `#[json_safe_fields]`-annotated.
+impl JsonSafeFields for crate::tokens::token_payment_info::TokenPaymentInfo {}
+// `GasFeesPaidBy` is a unit-variant enum (no u64).
+impl JsonSafeFields for crate::tokens::gas_fees_paid_by::GasFeesPaidBy {}
+// `GroupStateTransitionInfo` is verified via `#[json_safe_fields]` on the type
+// itself (named `u16` / `Identifier` / `bool` fields) — no manual marker needed.
+// `TokenBaseTransition` wraps `TokenBaseTransitionV0` which is
+// `#[json_safe_fields]`-annotated, so the wrapper is safe by induction.
+impl JsonSafeFields
+    for crate::state_transition::batch_transition::token_base_transition::TokenBaseTransition
+{
+}
+// BatchTransition family wrappers — each variant's outer enum is itself
+// safe by induction (every V0 inner is `#[json_safe_fields]`-annotated;
+// the outer-enum manual `impl JsonConvertible` doesn't auto-impl
+// JsonSafeFields, so we declare it explicitly here).
+impl JsonSafeFields
+    for crate::state_transition::batch_transition::batched_transition::DocumentTransition
+{
+}
+impl JsonSafeFields
+    for crate::state_transition::batch_transition::batched_transition::TokenTransition
+{
+}
+impl JsonSafeFields
+    for crate::state_transition::batch_transition::batched_transition::BatchedTransition
+{
+}
 impl JsonSafeFields for crate::voting::vote_choices::resource_vote_choice::ResourceVoteChoice {}
 impl JsonSafeFields for crate::group::action_event::GroupActionEvent {}
 // TokenEvent contains u64 aliases (TokenAmount, Credits) in tuple variants that
 // `#[json_safe_fields]` can't auto-annotate. Developer takes responsibility for
 // JS-safe serialization of these fields. See token_event.rs for details.
 impl JsonSafeFields for crate::tokens::token_event::TokenEvent {}
+// `TokenEmergencyAction` is a unit-variant enum (Pause / Resume).
+impl JsonSafeFields for crate::tokens::emergency_action::TokenEmergencyAction {}
+// `TokenDistributionType` is a unit-variant enum.
+impl JsonSafeFields
+    for crate::data_contract::associated_token::token_distribution_key::TokenDistributionType
+{
+}
+// `TokenPricingSchedule` has tuple variants holding `Credits` (u64) and
+// `BTreeMap<TokenAmount, Credits>`. `#[json_safe_fields]` can't auto-annotate
+// variant-internal u64s, so it serializes through an internally-`$type`-tagged
+// `Repr` that routes both through `json_safe_u64` / `json_safe_u64_u64_map` —
+// this marker is therefore truthful, not a bare escape hatch.
+impl JsonSafeFields for crate::tokens::token_pricing_schedule::TokenPricingSchedule {}
+// `TokenConfigurationChangeItem` has tuple variants with `Option<TokenAmount>`
+// and `Option<GroupContractPosition>` (u64-shaped). Same escape-hatch pattern.
+impl JsonSafeFields
+    for crate::data_contract::associated_token::token_configuration_item::TokenConfigurationChangeItem
+{
+}
+// `RewardDistributionMoment` carries `BlockHeight`/`TimestampMillis` (u64) in
+// tuple variants. Unlike the bare escape-hatches above, its u64 fields are
+// *actually* JS-safe: `#[serde(with = "json_safe_u64")]` is applied directly on
+// the variant fields (see reward_distribution_moment/mod.rs).
+impl JsonSafeFields
+    for crate::data_contract::associated_token::token_perpetual_distribution::reward_distribution_moment::RewardDistributionMoment
+{
+}
+// `ContestedIndexFieldMatch::PositiveIntegerMatch(u128)` is made JS-safe via
+// `#[serde(with = "json_safe_u128")]` on the variant field (see
+// document_type/index/mod.rs); `Regex(LazyRegex)` round-trips as a string.
+impl JsonSafeFields for crate::data_contract::document_type::ContestedIndexFieldMatch {}
+// `TokenDistributionInfo::PreProgrammed` carries a `TimestampMillis` (u64) made
+// JS-safe via `#[serde(with = "json_safe_u64")]`; `Perpetual`'s
+// `RewardDistributionMoment` is JS-safe via its own annotation.
+impl JsonSafeFields
+    for crate::data_contract::associated_token::token_distribution_key::TokenDistributionInfo
+{
+}

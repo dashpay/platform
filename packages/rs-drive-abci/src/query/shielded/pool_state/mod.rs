@@ -59,3 +59,87 @@ impl<C> Platform<C> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::query::tests::setup_platform;
+    use dapi_grpc::platform::v0::get_shielded_pool_state_request::GetShieldedPoolStateRequestV0;
+    use dapi_grpc::platform::v0::get_shielded_pool_state_response::get_shielded_pool_state_response_v0;
+    use dpp::dashcore::Network;
+
+    #[test]
+    fn test_query_shielded_pool_state_with_none_version_returns_decoding_error() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetShieldedPoolStateRequest { version: None };
+
+        let result = platform
+            .query_shielded_pool_state(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(matches!(
+            result.errors.as_slice(),
+            [QueryError::DecodingError(msg)] if msg.contains("could not decode shielded pool state query")
+        ));
+    }
+
+    #[test]
+    fn test_query_shielded_pool_state_empty_state_returns_zero_balance() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetShieldedPoolStateRequest {
+            version: Some(RequestVersion::V0(GetShieldedPoolStateRequestV0 {
+                prove: false,
+            })),
+        };
+
+        let result = platform
+            .query_shielded_pool_state(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(result.errors.is_empty(), "expected no errors");
+        let response = result.data.expect("expected response data");
+        let inner = match response.version {
+            Some(ResponseVersion::V0(v)) => v,
+            _ => panic!("expected v0 response"),
+        };
+        match inner.result {
+            Some(get_shielded_pool_state_response_v0::Result::TotalBalance(balance)) => {
+                // Freshly initialized state: no credits have been shielded.
+                assert_eq!(balance, 0, "expected zero total balance on fresh state");
+            }
+            other => panic!("expected TotalBalance result, got {:?}", other),
+        }
+        assert!(inner.metadata.is_some(), "expected metadata present");
+    }
+
+    #[test]
+    fn test_query_shielded_pool_state_empty_state_proof() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetShieldedPoolStateRequest {
+            version: Some(RequestVersion::V0(GetShieldedPoolStateRequestV0 {
+                prove: true,
+            })),
+        };
+
+        let result = platform
+            .query_shielded_pool_state(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(result.errors.is_empty(), "expected no errors for proof");
+        let response = result.data.expect("expected response data");
+        let inner = match response.version {
+            Some(ResponseVersion::V0(v)) => v,
+            _ => panic!("expected v0 response"),
+        };
+        match inner.result {
+            Some(get_shielded_pool_state_response_v0::Result::Proof(proof)) => {
+                assert!(!proof.grovedb_proof.is_empty(), "expected non-empty proof");
+            }
+            other => panic!("expected Proof result, got {:?}", other),
+        }
+        assert!(inner.metadata.is_some(), "expected metadata present");
+    }
+}

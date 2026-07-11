@@ -163,24 +163,15 @@ mod tests {
         let json = rules.to_json().expect("to_json should succeed");
 
         // Verify boolean fields
-        assert_eq!(
-            json["changingAuthorizedActionTakersToNoOneAllowed"]
-                .as_bool()
-                .unwrap(),
-            true
-        );
-        assert_eq!(
-            json["changingAdminActionTakersToNoOneAllowed"]
-                .as_bool()
-                .unwrap(),
-            false
-        );
-        assert_eq!(
-            json["selfChangingAdminActionTakersAllowed"]
-                .as_bool()
-                .unwrap(),
-            true
-        );
+        assert!(json["changingAuthorizedActionTakersToNoOneAllowed"]
+            .as_bool()
+            .unwrap());
+        assert!(!json["changingAdminActionTakersToNoOneAllowed"]
+            .as_bool()
+            .unwrap());
+        assert!(json["selfChangingAdminActionTakersAllowed"]
+            .as_bool()
+            .unwrap());
 
         // round-trip
         let restored = ChangeControlRules::from_json(json).expect("from_json should succeed");
@@ -200,5 +191,77 @@ mod tests {
         let json = rules.to_json().expect("to_json should succeed");
         let restored = ChangeControlRules::from_json(json).expect("from_json should succeed");
         assert_eq!(rules, restored);
+    }
+}
+
+#[cfg(all(
+    test,
+    feature = "json-conversion",
+    feature = "value-conversion",
+    feature = "serde-conversion"
+))]
+mod json_convertible_tests {
+    use super::*;
+    use crate::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
+    use crate::data_contract::change_control_rules::v0::ChangeControlRulesV0;
+    use platform_value::platform_value;
+    use serde_json::json;
+
+    /// Non-default values per field so the wire-shape assertion catches any
+    /// silent zero-out / flip on round-trip.
+    fn fixture() -> ChangeControlRules {
+        ChangeControlRules::V0(ChangeControlRulesV0 {
+            authorized_to_make_change: AuthorizedActionTakers::ContractOwner,
+            admin_action_takers: AuthorizedActionTakers::MainGroup,
+            changing_authorized_action_takers_to_no_one_allowed: true,
+            changing_admin_action_takers_to_no_one_allowed: false,
+            self_changing_admin_action_takers_allowed: true,
+        })
+    }
+
+    #[test]
+    fn json_round_trip_with_full_wire_shape() {
+        use crate::serialization::JsonConvertible;
+        let original = fixture();
+        let json = original.to_json().expect("to_json");
+        // `AuthorizedActionTakers` uses a custom internally-tagged serde impl
+        // (`{"$type": ...}` maps — see authorized_action_takers.rs); unit and
+        // payload variants share the same flat map shape.
+        assert_eq!(
+            json,
+            json!({
+                "$formatVersion": "0",
+                "authorizedToMakeChange": {"$type": "contractOwner"},
+                "adminActionTakers": {"$type": "mainGroup"},
+                "changingAuthorizedActionTakersToNoOneAllowed": true,
+                "changingAdminActionTakersToNoOneAllowed": false,
+                "selfChangingAdminActionTakersAllowed": true,
+            })
+        );
+        let recovered = ChangeControlRules::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn value_round_trip_with_full_wire_shape() {
+        use crate::serialization::ValueConvertible;
+        let original = fixture();
+        let value = original.to_object().expect("to_object");
+        // No sized integers in this fixture — only Text + Bool. The custom
+        // `AuthorizedActionTakers` impl emits `{"$type": ...}` maps on both
+        // wire formats.
+        assert_eq!(
+            value,
+            platform_value!({
+                "$formatVersion": "0",
+                "authorizedToMakeChange": {"$type": "contractOwner"},
+                "adminActionTakers": {"$type": "mainGroup"},
+                "changingAuthorizedActionTakersToNoOneAllowed": true,
+                "changingAdminActionTakersToNoOneAllowed": false,
+                "selfChangingAdminActionTakersAllowed": true,
+            })
+        );
+        let recovered = ChangeControlRules::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
     }
 }

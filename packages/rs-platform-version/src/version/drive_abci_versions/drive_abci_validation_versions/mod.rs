@@ -45,6 +45,18 @@ pub struct DriveAbciValidationConstants {
     /// Per-action fee (in credits) for processing: RedPallas spend auth signature
     /// verification, nullifier duplicate check, and tree insertion.
     pub shielded_per_action_processing_fee: u64,
+    /// Maximum surplus (in credits) that a `ShieldFromAssetLock` may implicitly
+    /// donate to the fee pools when no `surplus_output` address is set. Above this
+    /// cap the transition is rejected so a client cannot accidentally forfeit a
+    /// large asset-lock remainder. 20,000,000,000 credits = 0.2 Dash.
+    pub shielded_implicit_fee_cap: u64,
+    /// Allowed exit denominations (in credits) for `IdentityCreateFromShieldedPool`.
+    /// 0.1, 0.3, 0.5, 1.0 DASH = {10, 30, 50, 100} × 10^9 credits. The exit amount is
+    /// restricted to this small fixed set so every identity-creation exit of a given size
+    /// is indistinguishable on-chain, maximizing the anonymity set (mirroring the exact-fee
+    /// uniformity already enforced for `ShieldedTransfer`). Empty pre-v12 so the transition
+    /// is gated off until the shielded family activates.
+    pub shielded_identity_create_denominations: &'static [u64],
 }
 
 #[derive(Clone, Debug, Default)]
@@ -86,6 +98,8 @@ pub struct DriveAbciStateTransitionValidationVersions {
     pub unshield_state_transition: DriveAbciStateTransitionValidationVersion,
     pub shield_from_asset_lock_state_transition: DriveAbciStateTransitionValidationVersion,
     pub shielded_withdrawal_state_transition: DriveAbciStateTransitionValidationVersion,
+    pub identity_create_from_shielded_pool_state_transition:
+        DriveAbciStateTransitionValidationVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -127,6 +141,32 @@ pub struct DriveAbciDocumentsStateTransitionValidationVersions {
     pub revision: FeatureVersion,
     pub state: FeatureVersion,
     pub transform_into_action: FeatureVersion,
+    /// Versions the action emitted when a per-transition validation fails
+    /// inside [`transform_document_transition`].
+    ///
+    /// - `0` (PROTOCOL_VERSION_11 and below): errors-only, no action data.
+    ///   The empty action flowed through the legacy
+    ///   `flatten` / `merge_many` aggregators as `Some(empty_vec)` and was
+    ///   accounted as `PaidConsensusError`, but no `BumpIdentityDataContractNonce`
+    ///   drive op was created — so the user only paid the bare-bump fee
+    ///   and the contract nonce never advanced.
+    /// - `1` (PROTOCOL_VERSION_12+): emit a `BumpIdentityDataContractNonce`
+    ///   action so the user pays for the validation work that already ran
+    ///   (fetch + ownership/revision check) and the contract nonce advances.
+    ///
+    /// [`transform_document_transition`]: crate
+    pub failed_per_transition_action: FeatureVersion,
+    /// Versions the
+    /// `fetch_documents_for_transitions_knowing_contract_and_document_type`
+    /// helper. v0 (PROTOCOL_VERSION_11 and below) passes `epoch=None`
+    /// to `query_documents` and doesn't bill the cost. v1
+    /// (PROTOCOL_VERSION_12+) passes `Some(epoch)` and bills via
+    /// `execution_context.add_operation`.
+    pub fetch_documents_for_transitions_knowing_contract_and_document_type: FeatureVersion,
+    /// Versions the `fetch_document_with_id` helper. Same v0 vs v1
+    /// semantics as
+    /// `fetch_documents_for_transitions_knowing_contract_and_document_type`.
+    pub fetch_document_with_id: FeatureVersion,
     pub data_triggers: DriveAbciValidationDataTriggerAndBindingVersions,
     pub is_allowed: FeatureVersion,
     pub document_create_transition_structure_validation: FeatureVersion,

@@ -1,10 +1,6 @@
 mod identity_signed;
-#[cfg(feature = "json-conversion")]
-mod json_conversion;
 mod state_transition_like;
 mod types;
-#[cfg(feature = "value-conversion")]
-mod value_conversion;
 mod version;
 
 #[cfg(feature = "json-conversion")]
@@ -35,6 +31,10 @@ pub struct IdentityCreditWithdrawalTransitionV0 {
     pub identity_id: Identifier,
     pub amount: u64,
     pub core_fee_per_byte: u32,
+    #[cfg_attr(
+        feature = "serde-conversion",
+        serde(with = "crate::withdrawal::pooling_serde")
+    )]
     pub pooling: Pooling,
     pub output_script: CoreScript,
     pub nonce: IdentityNonce,
@@ -286,4 +286,101 @@ mod test {
         };
         test_identity_credit_withdrawal_transition(transition);
     }
+
+    fn make_withdrawal_v0() -> super::IdentityCreditWithdrawalTransitionV0 {
+        super::IdentityCreditWithdrawalTransitionV0 {
+            identity_id: Identifier::random(),
+            amount: 100_000,
+            core_fee_per_byte: 1,
+            pooling: Pooling::Never,
+            output_script: CoreScript::from_bytes((0..23).collect::<Vec<u8>>()),
+            nonce: 5,
+            user_fee_increase: 2,
+            signature_public_key_id: 1,
+            signature: [0u8; 65].to_vec().into(),
+        }
+    }
+
+    #[test]
+    fn test_default() {
+        let t = super::IdentityCreditWithdrawalTransitionV0::default();
+        assert_eq!(t.amount, 0);
+        assert_eq!(t.nonce, 0);
+        assert_eq!(t.core_fee_per_byte, 0);
+    }
+
+    #[test]
+    fn test_state_transition_like_v0() {
+        use crate::state_transition::{
+            StateTransitionLike, StateTransitionOwned, StateTransitionType,
+        };
+        let t = make_withdrawal_v0();
+        assert_eq!(
+            t.state_transition_type(),
+            StateTransitionType::IdentityCreditWithdrawal
+        );
+        assert_eq!(t.state_transition_protocol_version(), 0);
+        assert_eq!(t.modified_data_ids(), vec![t.identity_id]);
+        assert_eq!(t.owner_id(), t.identity_id);
+    }
+
+    #[test]
+    fn test_unique_identifiers_v0() {
+        use crate::state_transition::StateTransitionLike;
+        let t = make_withdrawal_v0();
+        let ids = t.unique_identifiers();
+        assert_eq!(ids.len(), 1);
+        assert!(!ids[0].is_empty());
+    }
+
+    #[test]
+    fn test_identity_signed_v0() {
+        use crate::identity::{Purpose, SecurityLevel};
+        use crate::state_transition::StateTransitionIdentitySigned;
+        let mut t = make_withdrawal_v0();
+        assert_eq!(t.signature_public_key_id(), 1);
+        t.set_signature_public_key_id(42);
+        assert_eq!(t.signature_public_key_id(), 42);
+        let security = t.security_level_requirement(Purpose::TRANSFER);
+        assert_eq!(security, vec![SecurityLevel::CRITICAL]);
+        let purpose = t.purpose_requirement();
+        assert_eq!(purpose, vec![Purpose::TRANSFER]);
+    }
+
+    #[test]
+    fn test_user_fee_increase_v0() {
+        use crate::state_transition::StateTransitionHasUserFeeIncrease;
+        let mut t = make_withdrawal_v0();
+        assert_eq!(t.user_fee_increase(), 2);
+        t.set_user_fee_increase(99);
+        assert_eq!(t.user_fee_increase(), 99);
+    }
+
+    #[test]
+    fn test_single_signed_v0() {
+        use crate::state_transition::StateTransitionSingleSigned;
+        use platform_value::BinaryData;
+        let mut t = make_withdrawal_v0();
+        assert_eq!(t.signature().len(), 65);
+        t.set_signature(BinaryData::new(vec![1, 2, 3]));
+        assert_eq!(t.signature().as_slice(), &[1, 2, 3]);
+        t.set_signature_bytes(vec![4, 5]);
+        assert_eq!(t.signature().as_slice(), &[4, 5]);
+    }
+
+    #[test]
+    fn test_into_state_transition_v0() {
+        use crate::state_transition::StateTransition;
+        let t = make_withdrawal_v0();
+        let st: StateTransition = t.into();
+        match st {
+            StateTransition::IdentityCreditWithdrawal(_) => {}
+            _ => panic!("expected IdentityCreditWithdrawal"),
+        }
+    }
+
+    // Legacy `StateTransitionValueConvert` round-trip / pooling tests on
+    // the V0 inner struct deleted in Phase D step 9. The canonical
+    // `JsonConvertible` / `ValueConvertible` round-trip is exercised on
+    // the outer enum derive — these tested methods that no longer exist.
 }

@@ -353,6 +353,32 @@ impl StateTransitionBasicStructureValidationV0 for StateTransition {
                     })),
                 }
             }
+            StateTransition::IdentityCreateFromShieldedPool(st) => {
+                match platform_version
+                    .drive_abci
+                    .validation_and_processing
+                    .state_transitions
+                    .identity_create_from_shielded_pool_state_transition
+                    .basic_structure
+                {
+                    Some(0) => Ok(st.validate_structure(platform_version)),
+                    Some(version) => {
+                        Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
+                            method:
+                                "identity create from shielded pool transition: validate_basic_structure"
+                                    .to_string(),
+                            known_versions: vec![0],
+                            received: version,
+                        }))
+                    }
+                    None => Err(Error::Execution(ExecutionError::VersionNotActive {
+                        method:
+                            "identity create from shielded pool transition: validate_basic_structure"
+                                .to_string(),
+                        known_versions: vec![0],
+                    })),
+                }
+            }
         }
     }
     fn has_basic_structure_validation(&self, platform_version: &PlatformVersion) -> bool {
@@ -422,6 +448,13 @@ impl StateTransitionBasicStructureValidationV0 for StateTransition {
                 .validation_and_processing
                 .state_transitions
                 .shielded_withdrawal_state_transition
+                .basic_structure
+                .is_some(),
+            StateTransition::IdentityCreateFromShieldedPool(_) => platform_version
+                .drive_abci
+                .validation_and_processing
+                .state_transitions
+                .identity_create_from_shielded_pool_state_transition
                 .basic_structure
                 .is_some(),
             StateTransition::MasternodeVote(_) => false,

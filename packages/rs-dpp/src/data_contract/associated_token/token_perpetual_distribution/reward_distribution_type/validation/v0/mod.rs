@@ -22,7 +22,6 @@ impl RewardDistributionType {
                     Network::Testnet => 5,
                     Network::Devnet => 2,
                     Network::Regtest => 1,
-                    _ => 100,
                 };
                 if *interval < min_block_interval {
                     SimpleConsensusValidationResult::new_with_error(
@@ -41,7 +40,6 @@ impl RewardDistributionType {
                     Network::Testnet => 600_000,
                     Network::Devnet => 60_000,
                     Network::Regtest => 60_000,
-                    _ => 3_600_000,
                 };
                 if *interval < min_block_interval {
                     return SimpleConsensusValidationResult::new_with_error(

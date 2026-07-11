@@ -110,7 +110,7 @@ yarn configure:tests:network
 
 **DPP** (`packages/rs-dpp`, `packages/wasm-dpp`): Dash Platform Protocol implementation that defines data structures and validation rules.
 
-**SDK** (`packages/js-dash-sdk`, `packages/rs-sdk`): Client libraries providing high-level interfaces for building applications on Dash Platform. See [packages/rs-sdk/README.md](packages/rs-sdk/README.md) for the Rust SDK checklist for implementing new `Fetch`/`FetchMany` queries.
+**SDK** (`packages/js-evo-sdk`, `packages/rs-sdk`): Client libraries providing high-level interfaces for building applications on Dash Platform. `js-evo-sdk` is the recommended JavaScript SDK, built on the Rust/WASM layer with proof verification support. `packages/js-dash-sdk` is a legacy SDK used internally by the platform test suite and is not recommended for new projects. See [packages/rs-sdk/README.md](packages/rs-sdk/README.md) for the Rust SDK checklist for implementing new `Fetch`/`FetchMany` queries.
 
 **WASM SDK** (`packages/wasm-sdk`): WebAssembly bindings for browser-based applications. See [AI_REFERENCE.md](packages/wasm-sdk/AI_REFERENCE.md) for comprehensive API documentation.
 
@@ -121,7 +121,6 @@ yarn configure:tests:network
 Platform uses data contracts to define application data schemas:
 - `dpns-contract`: Dash Platform Naming Service
 - `dashpay-contract`: Social payments functionality
-- `feature-flags-contract`: System feature toggles
 - `masternode-reward-shares-contract`: Masternode reward distribution
 - `withdrawals-contract`: Platform credit withdrawals
 
@@ -155,7 +154,7 @@ For SwiftExampleApp-specific guidance including token querying and data models, 
 Quick build commands:
 ```bash
 # Build unified iOS framework (includes Core + Platform)
-cd packages/rs-sdk-ffi
+cd packages/swift-sdk
 ./build_ios.sh
 
 # Build SwiftExampleApp

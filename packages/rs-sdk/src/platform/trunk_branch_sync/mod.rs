@@ -78,7 +78,6 @@ pub struct BranchQueryParams {
 pub trait TrunkBranchSyncOps {
     /// Module-specific mutable context carried through the scan.
     ///
-    /// For nullifiers: holds `(&[NullifierKey], &mut NullifierSyncResult)`.
     /// For addresses: holds `(&mut P, &mut HashMap, &mut AddressSyncResult)`.
     type Context<'a>: Send
     where
@@ -107,7 +106,10 @@ pub trait TrunkBranchSyncOps {
     ///
     /// Implementations iterate over their target keys and call the
     /// appropriate methods on `tracker` for keys that trace to leaf subtrees.
-    fn process_trunk_result(
+    ///
+    /// Async so implementations can await `AddressProvider` callbacks that
+    /// mutate internal state (e.g. acquiring async locks).
+    async fn process_trunk_result(
         trunk_result: &GroveTrunkQueryResult,
         context: &mut Self::Context<'_>,
         tracker: &mut KeyLeafTracker,
@@ -139,7 +141,10 @@ pub trait TrunkBranchSyncOps {
 
     /// Process a branch query result: for each target key in the queried
     /// leaf, classify it as found, absent, or needing a deeper query.
-    fn process_branch_result(
+    ///
+    /// Async so implementations can await `AddressProvider` callbacks that
+    /// mutate internal state (e.g. acquiring async locks).
+    async fn process_branch_result(
         branch_result: &GroveBranchQueryResult,
         queried_leaf_key: &[u8],
         context: &mut Self::Context<'_>,
@@ -158,7 +163,10 @@ pub trait TrunkBranchSyncOps {
     /// This allows the address sync module to extend pending addresses
     /// (gap-limit behavior) and add newly pending keys to the tracker.
     /// The default implementation does nothing.
-    fn after_branch_iteration(
+    ///
+    /// Async so implementations can await provider queries that resolve from
+    /// an async store (though the default provided here is a no-op).
+    async fn after_branch_iteration(
         _trunk_result: &GroveTrunkQueryResult,
         _context: &mut Self::Context<'_>,
         _tracker: &mut KeyLeafTracker,
@@ -212,7 +220,7 @@ pub async fn run_full_tree_scan<Ops: TrunkBranchSyncOps>(
 
     // Step 2: Process trunk result
     let mut tracker = KeyLeafTracker::new();
-    Ops::process_trunk_result(&trunk_result, context, &mut tracker)?;
+    Ops::process_trunk_result(&trunk_result, context, &mut tracker).await?;
 
     // Step 3: Iterative branch queries
     let (min_query_depth, max_query_depth) = Ops::depth_limits(platform_version);
@@ -255,12 +263,12 @@ pub async fn run_full_tree_scan<Ops: TrunkBranchSyncOps>(
         .await?;
 
         for (leaf_key, branch_result) in branch_results {
-            Ops::process_branch_result(&branch_result, &leaf_key, context, &mut tracker)?;
+            Ops::process_branch_result(&branch_result, &leaf_key, context, &mut tracker).await?;
             Ops::on_elements_seen(context, branch_result.elements.len());
         }
 
         // Post-iteration hook (gap-limit extension for addresses)
-        Ops::after_branch_iteration(&trunk_result, context, &mut tracker);
+        Ops::after_branch_iteration(&trunk_result, context, &mut tracker).await;
     }
 
     if iterations >= max_iterations {

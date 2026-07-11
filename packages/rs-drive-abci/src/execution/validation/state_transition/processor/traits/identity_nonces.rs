@@ -119,7 +119,10 @@ impl StateTransitionIdentityNonceValidationV0 for StateTransition {
             | StateTransition::ShieldedTransfer(_)
             | StateTransition::Unshield(_)
             | StateTransition::ShieldFromAssetLock(_)
-            | StateTransition::ShieldedWithdrawal(_) => Ok(SimpleConsensusValidationResult::new()),
+            | StateTransition::ShieldedWithdrawal(_)
+            | StateTransition::IdentityCreateFromShieldedPool(_) => {
+                Ok(SimpleConsensusValidationResult::new())
+            }
         }
     }
 }
@@ -170,7 +173,8 @@ impl StateTransitionHasIdentityNonceValidationV0 for StateTransition {
                     | StateTransition::ShieldedTransfer(_)
                     | StateTransition::Unshield(_)
                     | StateTransition::ShieldFromAssetLock(_)
-                    | StateTransition::ShieldedWithdrawal(_) => false,
+                    | StateTransition::ShieldedWithdrawal(_)
+                    | StateTransition::IdentityCreateFromShieldedPool(_) => false,
                 };
 
                 Ok(has_nonce_validation)
@@ -187,3 +191,286 @@ impl StateTransitionHasIdentityNonceValidationV0 for StateTransition {
 // Version dispatch tests for has_identity_nonce_validation were intentionally removed.
 // The version-specific routing (v0 vs v1) is covered by strategy tests that exercise
 // the processor at the platform version used by the test harness.
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dpp::state_transition::batch_transition::BatchTransition;
+    use dpp::state_transition::identity_create_transition::v0::IdentityCreateTransitionV0;
+    use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
+    use dpp::state_transition::identity_credit_transfer_transition::v0::IdentityCreditTransferTransitionV0;
+    use dpp::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
+    use dpp::state_transition::identity_credit_withdrawal_transition::v0::IdentityCreditWithdrawalTransitionV0;
+    use dpp::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
+    use dpp::state_transition::identity_topup_transition::v0::IdentityTopUpTransitionV0;
+    use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
+    use dpp::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0;
+    use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
+    use dpp::state_transition::masternode_vote_transition::v0::MasternodeVoteTransitionV0;
+    use dpp::state_transition::masternode_vote_transition::MasternodeVoteTransition;
+    use dpp::version::PlatformVersion;
+
+    /// Helper to build a Batch StateTransition from a default V0.
+    fn batch_st() -> StateTransition {
+        StateTransition::Batch(BatchTransition::V0(Default::default()))
+    }
+
+    fn identity_update_st() -> StateTransition {
+        StateTransition::IdentityUpdate(IdentityUpdateTransition::from(
+            IdentityUpdateTransitionV0::default(),
+        ))
+    }
+
+    fn identity_credit_transfer_st() -> StateTransition {
+        StateTransition::IdentityCreditTransfer(IdentityCreditTransferTransition::from(
+            IdentityCreditTransferTransitionV0::default(),
+        ))
+    }
+
+    fn identity_credit_withdrawal_st() -> StateTransition {
+        StateTransition::IdentityCreditWithdrawal(IdentityCreditWithdrawalTransition::from(
+            IdentityCreditWithdrawalTransitionV0::default(),
+        ))
+    }
+
+    fn identity_create_st() -> StateTransition {
+        StateTransition::IdentityCreate(IdentityCreateTransition::from(
+            IdentityCreateTransitionV0::default(),
+        ))
+    }
+
+    fn identity_top_up_st() -> StateTransition {
+        StateTransition::IdentityTopUp(IdentityTopUpTransition::from(
+            IdentityTopUpTransitionV0::default(),
+        ))
+    }
+
+    fn masternode_vote_st() -> StateTransition {
+        StateTransition::MasternodeVote(MasternodeVoteTransition::from(
+            MasternodeVoteTransitionV0::default(),
+        ))
+    }
+
+    // ---- has_identity_nonce_validation with version 0 (PlatformVersion::first) ----
+
+    #[test]
+    fn has_nonce_validation_v0_batch_returns_true() {
+        let platform_version = PlatformVersion::first();
+        if platform_version
+            .drive_abci
+            .validation_and_processing
+            .has_nonce_validation
+            != 0
+        {
+            return;
+        }
+        let result = batch_st()
+            .has_identity_nonce_validation(platform_version)
+            .expect("should not error");
+        assert!(result);
+    }
+
+    #[test]
+    fn has_nonce_validation_v0_identity_update_returns_true() {
+        let platform_version = PlatformVersion::first();
+        if platform_version
+            .drive_abci
+            .validation_and_processing
+            .has_nonce_validation
+            != 0
+        {
+            return;
+        }
+        let result = identity_update_st()
+            .has_identity_nonce_validation(platform_version)
+            .expect("should not error");
+        assert!(result);
+    }
+
+    #[test]
+    fn has_nonce_validation_v0_identity_credit_transfer_returns_true() {
+        let platform_version = PlatformVersion::first();
+        if platform_version
+            .drive_abci
+            .validation_and_processing
+            .has_nonce_validation
+            != 0
+        {
+            return;
+        }
+        let result = identity_credit_transfer_st()
+            .has_identity_nonce_validation(platform_version)
+            .expect("should not error");
+        assert!(result);
+    }
+
+    #[test]
+    fn has_nonce_validation_v0_identity_credit_withdrawal_returns_true() {
+        let platform_version = PlatformVersion::first();
+        if platform_version
+            .drive_abci
+            .validation_and_processing
+            .has_nonce_validation
+            != 0
+        {
+            return;
+        }
+        let result = identity_credit_withdrawal_st()
+            .has_identity_nonce_validation(platform_version)
+            .expect("should not error");
+        assert!(result);
+    }
+
+    #[test]
+    fn has_nonce_validation_v0_identity_create_returns_false() {
+        let platform_version = PlatformVersion::first();
+        if platform_version
+            .drive_abci
+            .validation_and_processing
+            .has_nonce_validation
+            != 0
+        {
+            return;
+        }
+        let result = identity_create_st()
+            .has_identity_nonce_validation(platform_version)
+            .expect("should not error");
+        assert!(!result);
+    }
+
+    #[test]
+    fn has_nonce_validation_v0_identity_top_up_returns_false() {
+        let platform_version = PlatformVersion::first();
+        if platform_version
+            .drive_abci
+            .validation_and_processing
+            .has_nonce_validation
+            != 0
+        {
+            return;
+        }
+        let result = identity_top_up_st()
+            .has_identity_nonce_validation(platform_version)
+            .expect("should not error");
+        assert!(!result);
+    }
+
+    #[test]
+    fn has_nonce_validation_v0_masternode_vote_returns_false() {
+        let platform_version = PlatformVersion::first();
+        if platform_version
+            .drive_abci
+            .validation_and_processing
+            .has_nonce_validation
+            != 0
+        {
+            return;
+        }
+        let result = masternode_vote_st()
+            .has_identity_nonce_validation(platform_version)
+            .expect("should not error");
+        // In v0, MasternodeVote does NOT have nonce validation
+        assert!(!result);
+    }
+
+    // ---- has_identity_nonce_validation with version 1 (PlatformVersion::latest) ----
+
+    #[test]
+    fn has_nonce_validation_v1_batch_returns_true() {
+        let platform_version = PlatformVersion::latest();
+        if platform_version
+            .drive_abci
+            .validation_and_processing
+            .has_nonce_validation
+            != 1
+        {
+            return;
+        }
+        let result = batch_st()
+            .has_identity_nonce_validation(platform_version)
+            .expect("should not error");
+        assert!(result);
+    }
+
+    #[test]
+    fn has_nonce_validation_v1_identity_update_returns_true() {
+        let platform_version = PlatformVersion::latest();
+        if platform_version
+            .drive_abci
+            .validation_and_processing
+            .has_nonce_validation
+            != 1
+        {
+            return;
+        }
+        let result = identity_update_st()
+            .has_identity_nonce_validation(platform_version)
+            .expect("should not error");
+        assert!(result);
+    }
+
+    #[test]
+    fn has_nonce_validation_v1_masternode_vote_returns_true() {
+        let platform_version = PlatformVersion::latest();
+        if platform_version
+            .drive_abci
+            .validation_and_processing
+            .has_nonce_validation
+            != 1
+        {
+            return;
+        }
+        let result = masternode_vote_st()
+            .has_identity_nonce_validation(platform_version)
+            .expect("should not error");
+        // In v1, MasternodeVote DOES have nonce validation
+        assert!(result);
+    }
+
+    #[test]
+    fn has_nonce_validation_v1_identity_create_returns_false() {
+        let platform_version = PlatformVersion::latest();
+        if platform_version
+            .drive_abci
+            .validation_and_processing
+            .has_nonce_validation
+            != 1
+        {
+            return;
+        }
+        let result = identity_create_st()
+            .has_identity_nonce_validation(platform_version)
+            .expect("should not error");
+        assert!(!result);
+    }
+
+    #[test]
+    fn has_nonce_validation_v1_identity_top_up_returns_false() {
+        let platform_version = PlatformVersion::latest();
+        if platform_version
+            .drive_abci
+            .validation_and_processing
+            .has_nonce_validation
+            != 1
+        {
+            return;
+        }
+        let result = identity_top_up_st()
+            .has_identity_nonce_validation(platform_version)
+            .expect("should not error");
+        assert!(!result);
+    }
+
+    // ---- unknown version returns error ----
+
+    #[test]
+    fn has_nonce_validation_unknown_version_returns_error() {
+        let mut pv = PlatformVersion::latest().clone();
+        pv.drive_abci.validation_and_processing.has_nonce_validation = 99;
+
+        let result = batch_st().has_identity_nonce_validation(&pv);
+        assert!(result.is_err());
+        let err_string = format!("{:?}", result.unwrap_err());
+        assert!(err_string.contains("UnknownVersionMismatch"));
+    }
+}

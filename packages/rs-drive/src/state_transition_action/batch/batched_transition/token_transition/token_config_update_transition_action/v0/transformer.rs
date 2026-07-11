@@ -233,3 +233,194 @@ impl TokenConfigUpdateTransitionActionV0 {
         ))
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unnecessary_literal_unwrap)]
+mod tests {
+    //! Unit tests for the logic fragments of
+    //! `try_from_{borrowed_,}token_config_update_transition_with_contract_lookup` that
+    //! can be exercised without a full `Drive`.
+    //!
+    //! These cover:
+    //!   * `change_note.unwrap_or(public_note)` priority rule (owned + borrowed)
+    //!   * cloning semantics of `TokenConfigurationChangeItem`
+    //!   * every `TokenConfigurationChangeItem` variant survives a clone round-trip
+    //!   * destructuring of `TokenConfigUpdateTransitionV0` preserves all fields
+
+    use dpp::data_contract::associated_token::token_configuration_item::TokenConfigurationChangeItem;
+    use dpp::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
+
+    #[test]
+    fn config_update_change_note_some_some_wins() {
+        let change_note: Option<Option<String>> = Some(Some("resolved".to_string()));
+        let public_note: Option<String> = Some("user".to_string());
+        let merged = change_note.unwrap_or(public_note);
+        assert_eq!(merged, Some("resolved".to_string()));
+    }
+
+    #[test]
+    fn config_update_change_note_some_none_clears_user_note() {
+        let change_note: Option<Option<String>> = Some(None);
+        let public_note: Option<String> = Some("user".to_string());
+        let merged = change_note.unwrap_or(public_note);
+        assert!(merged.is_none());
+    }
+
+    #[test]
+    fn config_update_change_note_none_falls_back_to_user_note() {
+        let change_note: Option<Option<String>> = None;
+        let public_note: Option<String> = Some("user".to_string());
+        let merged = change_note.unwrap_or(public_note);
+        assert_eq!(merged, Some("user".to_string()));
+    }
+
+    /// The borrowed transformer uses `change_note.unwrap_or(public_note.clone())`
+    /// to avoid moving from a borrowed reference. Verify the clone round-trips.
+    #[test]
+    fn config_update_borrowed_note_clone_round_trip() {
+        let change_note: Option<Option<String>> = None;
+        let public_note: Option<String> = Some("survivor".to_string());
+        let merged = change_note.unwrap_or(public_note.clone());
+        assert_eq!(merged, Some("survivor".to_string()));
+        // Still available for reuse.
+        assert_eq!(public_note, Some("survivor".to_string()));
+    }
+
+    /// The borrowed transformer writes
+    /// `update_token_configuration_item: update_token_configuration_item.clone()`
+    /// so the item must round-trip cleanly through Clone for the variants the
+    /// transformer may encounter.
+    #[test]
+    fn no_change_variant_clone_round_trip() {
+        let orig = TokenConfigurationChangeItem::TokenConfigurationNoChange;
+        let cloned = orig.clone();
+        assert!(matches!(
+            cloned,
+            TokenConfigurationChangeItem::TokenConfigurationNoChange
+        ));
+    }
+
+    #[test]
+    fn max_supply_none_variant_clone_round_trip() {
+        let orig = TokenConfigurationChangeItem::MaxSupply(None);
+        let cloned = orig.clone();
+        assert!(matches!(
+            cloned,
+            TokenConfigurationChangeItem::MaxSupply(None)
+        ));
+    }
+
+    #[test]
+    fn max_supply_some_variant_clone_round_trip() {
+        let orig = TokenConfigurationChangeItem::MaxSupply(Some(10_000));
+        let cloned = orig.clone();
+        match cloned {
+            TokenConfigurationChangeItem::MaxSupply(Some(v)) => assert_eq!(v, 10_000),
+            other => panic!("unexpected variant: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn manual_minting_variant_clone_round_trip() {
+        let orig = TokenConfigurationChangeItem::ManualMinting(AuthorizedActionTakers::NoOne);
+        let cloned = orig.clone();
+        match cloned {
+            TokenConfigurationChangeItem::ManualMinting(AuthorizedActionTakers::NoOne) => {}
+            other => panic!("unexpected variant: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn manual_burning_variant_clone_round_trip() {
+        let orig =
+            TokenConfigurationChangeItem::ManualBurning(AuthorizedActionTakers::ContractOwner);
+        let cloned = orig.clone();
+        match cloned {
+            TokenConfigurationChangeItem::ManualBurning(AuthorizedActionTakers::ContractOwner) => {}
+            other => panic!("unexpected variant: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn freeze_variant_clone_round_trip() {
+        let orig = TokenConfigurationChangeItem::Freeze(AuthorizedActionTakers::MainGroup);
+        let cloned = orig.clone();
+        match cloned {
+            TokenConfigurationChangeItem::Freeze(AuthorizedActionTakers::MainGroup) => {}
+            other => panic!("unexpected variant: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn new_tokens_destination_identity_variant_clone_round_trip() {
+        let id = dpp::identifier::Identifier::new([0x88; 32]);
+        let orig = TokenConfigurationChangeItem::NewTokensDestinationIdentity(Some(id));
+        let cloned = orig.clone();
+        match cloned {
+            TokenConfigurationChangeItem::NewTokensDestinationIdentity(Some(got)) => {
+                assert_eq!(got, id);
+            }
+            other => panic!("unexpected variant: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn main_control_group_none_variant_clone_round_trip() {
+        let orig = TokenConfigurationChangeItem::MainControlGroup(None);
+        let cloned = orig.clone();
+        assert!(matches!(
+            cloned,
+            TokenConfigurationChangeItem::MainControlGroup(None)
+        ));
+    }
+
+    #[test]
+    fn minting_allow_choosing_destination_variant_clone_round_trip() {
+        let orig = TokenConfigurationChangeItem::MintingAllowChoosingDestination(true);
+        let cloned = orig.clone();
+        match cloned {
+            TokenConfigurationChangeItem::MintingAllowChoosingDestination(b) => assert!(b),
+            other => panic!("unexpected variant: {:?}", other),
+        }
+    }
+
+    /// Destructuring mirrors the transformer's `let TokenConfigUpdateTransitionV0 { base, update_token_configuration_item, public_note } = value;`
+    /// pattern. Ensure all fields survive.
+    #[test]
+    fn destructure_owned_transition_preserves_fields() {
+        use dpp::state_transition::batch_transition::token_base_transition::v0::TokenBaseTransitionV0;
+        use dpp::state_transition::batch_transition::token_base_transition::TokenBaseTransition;
+        use dpp::state_transition::batch_transition::token_config_update_transition::v0::TokenConfigUpdateTransitionV0;
+
+        let base = TokenBaseTransition::V0(TokenBaseTransitionV0 {
+            identity_contract_nonce: 99,
+            token_contract_position: 0,
+            data_contract_id: dpp::identifier::Identifier::new([0x01; 32]),
+            token_id: dpp::identifier::Identifier::new([0x02; 32]),
+            using_group_info: None,
+        });
+
+        let v0 = TokenConfigUpdateTransitionV0 {
+            base,
+            update_token_configuration_item: TokenConfigurationChangeItem::MaxSupply(Some(777)),
+            public_note: Some("note".to_string()),
+        };
+
+        let TokenConfigUpdateTransitionV0 {
+            base,
+            update_token_configuration_item,
+            public_note,
+        } = v0;
+
+        match base {
+            TokenBaseTransition::V0(v) => {
+                assert_eq!(v.identity_contract_nonce, 99);
+            }
+        }
+        match update_token_configuration_item {
+            TokenConfigurationChangeItem::MaxSupply(Some(v)) => assert_eq!(v, 777),
+            other => panic!("unexpected item variant: {:?}", other),
+        }
+        assert_eq!(public_note, Some("note".to_string()));
+    }
+}

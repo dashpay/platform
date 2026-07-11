@@ -9,7 +9,7 @@ public class KeyDerivation {
     ///   - seed: The seed bytes
     ///   - network: The network type
     /// - Returns: Extended private key handle
-    public static func createMasterKey(seed: Data, network: KeyWalletNetwork = .mainnet) throws -> ExtendedPrivateKey {
+    public static func createMasterKey(seed: Data, network: Network = .mainnet) throws -> ExtendedPrivateKey {
         var error = FFIError()
 
         let xprivPtr = seed.withUnsafeBytes { seedBytes in
@@ -35,7 +35,7 @@ public class KeyDerivation {
     ///   - network: The network type
     ///   - accountIndex: The account index
     /// - Returns: The derivation path string
-    public static func getBIP44AccountPath(network: KeyWalletNetwork = .mainnet,
+    public static func getBIP44AccountPath(network: Network = .mainnet,
                                           accountIndex: UInt32) throws -> String {
         var error = FFIError()
         let maxPathLen = 256
@@ -67,7 +67,7 @@ public class KeyDerivation {
     ///   - isChange: Whether this is a change address
     ///   - addressIndex: The address index
     /// - Returns: The derivation path string
-    public static func getBIP44PaymentPath(network: KeyWalletNetwork = .mainnet,
+    public static func getBIP44PaymentPath(network: Network = .mainnet,
                                           accountIndex: UInt32,
                                           isChange: Bool,
                                           addressIndex: UInt32) throws -> String {
@@ -100,7 +100,7 @@ public class KeyDerivation {
     ///   - network: The network type
     ///   - accountIndex: The account index
     /// - Returns: The derivation path string
-    public static func getCoinJoinPath(network: KeyWalletNetwork = .mainnet,
+    public static func getCoinJoinPath(network: Network = .mainnet,
                                       accountIndex: UInt32) throws -> String {
         var error = FFIError()
         let maxPathLen = 256
@@ -130,7 +130,7 @@ public class KeyDerivation {
     ///   - network: The network type
     ///   - identityIndex: The identity index
     /// - Returns: The derivation path string
-    public static func getIdentityRegistrationPath(network: KeyWalletNetwork = .mainnet,
+    public static func getIdentityRegistrationPath(network: Network = .mainnet,
                                                   identityIndex: UInt32) throws -> String {
         var error = FFIError()
         let maxPathLen = 256
@@ -161,7 +161,7 @@ public class KeyDerivation {
     ///   - identityIndex: The identity index
     ///   - topupIndex: The top-up index
     /// - Returns: The derivation path string
-    public static func getIdentityTopUpPath(network: KeyWalletNetwork = .mainnet,
+    public static func getIdentityTopUpPath(network: Network = .mainnet,
                                            identityIndex: UInt32,
                                            topupIndex: UInt32) throws -> String {
         var error = FFIError()
@@ -194,7 +194,7 @@ public class KeyDerivation {
     ///   - identityIndex: The identity index
     ///   - keyIndex: The key index
     /// - Returns: The derivation path string
-    public static func getIdentityAuthenticationPath(network: KeyWalletNetwork = .mainnet,
+    public static func getIdentityAuthenticationPath(network: Network = .mainnet,
                                                     identityIndex: UInt32,
                                                     keyIndex: UInt32) throws -> String {
         var error = FFIError()
@@ -262,9 +262,9 @@ public class KeyDerivation {
 
 /// Extended private key handle
 public class ExtendedPrivateKey {
-    private let handle: UnsafeMutablePointer<FFIExtendedPrivKey>
+    private let handle: OpaquePointer
 
-    internal init(handle: UnsafeMutablePointer<FFIExtendedPrivKey>) {
+    internal init(handle: OpaquePointer) {
         self.handle = handle
     }
 
@@ -307,9 +307,9 @@ public class ExtendedPrivateKey {
 
 /// Extended public key handle
 public class ExtendedPublicKey {
-    private let handle: UnsafeMutablePointer<FFIExtendedPubKey>
+    private let handle: OpaquePointer
 
-    internal init(handle: UnsafeMutablePointer<FFIExtendedPubKey>) {
+    internal init(handle: OpaquePointer) {
         self.handle = handle
     }
 

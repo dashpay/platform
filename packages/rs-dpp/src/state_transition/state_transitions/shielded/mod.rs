@@ -1,4 +1,5 @@
-pub(crate) mod common_validation;
+pub mod common_validation;
+pub mod identity_create_from_shielded_pool_transition;
 pub mod shield_from_asset_lock_transition;
 pub mod shield_transition;
 pub mod shielded_transfer_transition;

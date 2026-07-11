@@ -22,13 +22,14 @@ use dapi_grpc::platform::v0::{
     GetContestedResourcesRequest, GetContestedResourcesResponse, GetCurrentQuorumsInfoRequest,
     GetCurrentQuorumsInfoResponse, GetDataContractHistoryRequest, GetDataContractHistoryResponse,
     GetDataContractRequest, GetDataContractResponse, GetDataContractsRequest,
-    GetDataContractsResponse, GetDocumentsRequest, GetDocumentsResponse, GetEpochsInfoRequest,
-    GetEpochsInfoResponse, GetEvonodesProposedEpochBlocksByIdsRequest,
-    GetEvonodesProposedEpochBlocksByRangeRequest, GetEvonodesProposedEpochBlocksResponse,
-    GetFinalizedEpochInfosRequest, GetFinalizedEpochInfosResponse, GetGroupActionSignersRequest,
-    GetGroupActionSignersResponse, GetGroupActionsRequest, GetGroupActionsResponse,
-    GetGroupInfoRequest, GetGroupInfoResponse, GetGroupInfosRequest, GetGroupInfosResponse,
-    GetIdentitiesBalancesRequest, GetIdentitiesBalancesResponse, GetIdentitiesContractKeysRequest,
+    GetDataContractsResponse, GetDocumentHistoryRequest, GetDocumentHistoryResponse,
+    GetDocumentsRequest, GetDocumentsResponse, GetEpochsInfoRequest, GetEpochsInfoResponse,
+    GetEvonodesProposedEpochBlocksByIdsRequest, GetEvonodesProposedEpochBlocksByRangeRequest,
+    GetEvonodesProposedEpochBlocksResponse, GetFinalizedEpochInfosRequest,
+    GetFinalizedEpochInfosResponse, GetGroupActionSignersRequest, GetGroupActionSignersResponse,
+    GetGroupActionsRequest, GetGroupActionsResponse, GetGroupInfoRequest, GetGroupInfoResponse,
+    GetGroupInfosRequest, GetGroupInfosResponse, GetIdentitiesBalancesRequest,
+    GetIdentitiesBalancesResponse, GetIdentitiesContractKeysRequest,
     GetIdentitiesContractKeysResponse, GetIdentitiesTokenBalancesRequest,
     GetIdentitiesTokenBalancesResponse, GetIdentitiesTokenInfosRequest,
     GetIdentitiesTokenInfosResponse, GetIdentityBalanceAndRevisionRequest,
@@ -40,17 +41,14 @@ use dapi_grpc::platform::v0::{
     GetIdentityResponse, GetIdentityTokenBalancesRequest, GetIdentityTokenBalancesResponse,
     GetIdentityTokenInfosRequest, GetIdentityTokenInfosResponse,
     GetMostRecentShieldedAnchorRequest, GetMostRecentShieldedAnchorResponse,
-    GetNullifiersBranchStateRequest, GetNullifiersBranchStateResponse,
-    GetNullifiersTrunkStateRequest, GetNullifiersTrunkStateResponse, GetPathElementsRequest,
-    GetPathElementsResponse, GetPrefundedSpecializedBalanceRequest,
+    GetPathElementsRequest, GetPathElementsResponse, GetPrefundedSpecializedBalanceRequest,
     GetPrefundedSpecializedBalanceResponse, GetProtocolVersionUpgradeStateRequest,
     GetProtocolVersionUpgradeStateResponse, GetProtocolVersionUpgradeVoteStatusRequest,
     GetProtocolVersionUpgradeVoteStatusResponse, GetRecentAddressBalanceChangesRequest,
     GetRecentAddressBalanceChangesResponse, GetRecentCompactedAddressBalanceChangesRequest,
-    GetRecentCompactedAddressBalanceChangesResponse, GetRecentCompactedNullifierChangesRequest,
-    GetRecentCompactedNullifierChangesResponse, GetRecentNullifierChangesRequest,
-    GetRecentNullifierChangesResponse, GetShieldedAnchorsRequest, GetShieldedAnchorsResponse,
-    GetShieldedEncryptedNotesRequest, GetShieldedEncryptedNotesResponse,
+    GetRecentCompactedAddressBalanceChangesResponse, GetShieldedAnchorsRequest,
+    GetShieldedAnchorsResponse, GetShieldedEncryptedNotesRequest,
+    GetShieldedEncryptedNotesResponse, GetShieldedNotesCountRequest, GetShieldedNotesCountResponse,
     GetShieldedNullifiersRequest, GetShieldedNullifiersResponse, GetShieldedPoolStateRequest,
     GetShieldedPoolStateResponse, GetStatusRequest, GetStatusResponse, GetTokenContractInfoRequest,
     GetTokenContractInfoResponse, GetTokenDirectPurchasePricesRequest,
@@ -389,6 +387,18 @@ impl PlatformService for QueryService {
             request,
             Platform::<DefaultCoreRPC>::query_data_contracts,
             "get_data_contracts",
+        )
+        .await
+    }
+
+    async fn get_document_history(
+        &self,
+        request: Request<GetDocumentHistoryRequest>,
+    ) -> Result<Response<GetDocumentHistoryResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_document_history,
+            "get_document_history",
         )
         .await
     }
@@ -935,6 +945,18 @@ impl PlatformService for QueryService {
         .await
     }
 
+    async fn get_shielded_notes_count(
+        &self,
+        request: Request<GetShieldedNotesCountRequest>,
+    ) -> Result<Response<GetShieldedNotesCountResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_shielded_notes_count,
+            "get_shielded_notes_count",
+        )
+        .await
+    }
+
     async fn get_shielded_nullifiers(
         &self,
         request: Request<GetShieldedNullifiersRequest>,
@@ -943,54 +965,6 @@ impl PlatformService for QueryService {
             request,
             Platform::<DefaultCoreRPC>::query_shielded_nullifiers,
             "get_shielded_nullifiers",
-        )
-        .await
-    }
-
-    async fn get_nullifiers_trunk_state(
-        &self,
-        request: Request<GetNullifiersTrunkStateRequest>,
-    ) -> Result<Response<GetNullifiersTrunkStateResponse>, Status> {
-        self.handle_blocking_query(
-            request,
-            Platform::<DefaultCoreRPC>::query_nullifiers_trunk_state,
-            "get_nullifiers_trunk_state",
-        )
-        .await
-    }
-
-    async fn get_nullifiers_branch_state(
-        &self,
-        request: Request<GetNullifiersBranchStateRequest>,
-    ) -> Result<Response<GetNullifiersBranchStateResponse>, Status> {
-        self.handle_blocking_query(
-            request,
-            Platform::<DefaultCoreRPC>::query_nullifiers_branch_state,
-            "get_nullifiers_branch_state",
-        )
-        .await
-    }
-
-    async fn get_recent_nullifier_changes(
-        &self,
-        request: Request<GetRecentNullifierChangesRequest>,
-    ) -> Result<Response<GetRecentNullifierChangesResponse>, Status> {
-        self.handle_blocking_query(
-            request,
-            Platform::<DefaultCoreRPC>::query_recent_nullifier_changes,
-            "get_recent_nullifier_changes",
-        )
-        .await
-    }
-
-    async fn get_recent_compacted_nullifier_changes(
-        &self,
-        request: Request<GetRecentCompactedNullifierChangesRequest>,
-    ) -> Result<Response<GetRecentCompactedNullifierChangesResponse>, Status> {
-        self.handle_blocking_query(
-            request,
-            Platform::<DefaultCoreRPC>::query_recent_compacted_nullifier_changes,
-            "get_recent_compacted_nullifier_changes",
         )
         .await
     }

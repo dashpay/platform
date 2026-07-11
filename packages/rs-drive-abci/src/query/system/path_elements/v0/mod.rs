@@ -137,4 +137,117 @@ mod tests {
 
         assert_eq!(amount, 100);
     }
+
+    #[test]
+    fn test_query_path_elements_exceeds_max_returned_elements() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let platform_version = PlatformVersion::latest();
+        let max = platform_version.drive_abci.query.max_returned_elements as usize;
+
+        // Build a keys list of length max+1 (trivial bytes, content irrelevant)
+        let keys: Vec<Vec<u8>> = (0..(max + 1)).map(|i| vec![i as u8]).collect();
+
+        let request = GetPathElementsRequestV0 {
+            path: vec![vec![RootTree::Misc as u8]],
+            keys,
+            prove: false,
+        };
+
+        let result = platform
+            .query_path_elements_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(matches!(
+            result.errors.as_slice(),
+            [QueryError::Query(
+                drive::error::query::QuerySyntaxError::InvalidLimit(_)
+            )]
+        ));
+    }
+
+    #[test]
+    fn test_query_path_elements_proof_branch() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let platform_version = PlatformVersion::latest();
+
+        platform
+            .drive
+            .add_to_system_credits(100, None, platform_version)
+            .expect("expected to add credits");
+
+        let request = GetPathElementsRequestV0 {
+            path: vec![vec![RootTree::Misc as u8]],
+            keys: vec![TOTAL_SYSTEM_CREDITS_STORAGE_KEY.to_vec()],
+            prove: true,
+        };
+
+        let result = platform
+            .query_path_elements_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(matches!(
+            result.data,
+            Some(GetPathElementsResponseV0 {
+                result: Some(get_path_elements_response_v0::Result::Proof(_)),
+                metadata: Some(_),
+            })
+        ));
+    }
+
+    #[test]
+    fn test_query_path_elements_missing_key_returns_no_entries() {
+        // An existing path with a key that is not present should produce a
+        // valid Elements response. The fetch skips absent keys, so the
+        // returned list is empty.
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetPathElementsRequestV0 {
+            path: vec![vec![RootTree::Misc as u8]],
+            keys: vec![b"nonexistent-key".to_vec()],
+            prove: false,
+        };
+
+        let response = platform
+            .query_path_elements_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        let response_data = response.into_data().expect("expected data");
+
+        let get_path_elements_response_v0::Result::Elements(elements) =
+            response_data.result.expect("expected a result")
+        else {
+            panic!("expected elements")
+        };
+
+        // Missing keys produce no entries.
+        assert!(elements.elements.is_empty());
+    }
+
+    #[test]
+    fn test_query_path_elements_empty_keys() {
+        // Passing an empty `keys` vec must succeed with an empty Elements list.
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetPathElementsRequestV0 {
+            path: vec![vec![RootTree::Misc as u8]],
+            keys: vec![],
+            prove: false,
+        };
+
+        let response = platform
+            .query_path_elements_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        let response_data = response.into_data().expect("expected data");
+
+        let get_path_elements_response_v0::Result::Elements(elements) =
+            response_data.result.expect("expected a result")
+        else {
+            panic!("expected elements")
+        };
+
+        assert!(elements.elements.is_empty());
+    }
 }

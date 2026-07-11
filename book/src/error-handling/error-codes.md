@@ -58,6 +58,7 @@ Error codes are organized into ranges that correspond to error categories and su
 | 10600-10603 | State Transition | `InvalidStateTransitionTypeError` (10600), `StateTransitionMaxSizeExceededError` (10602) |
 | 10700-10700 | General | `OverflowError` (10700) |
 | 10800-10818 | Address | `TransitionOverMaxInputsError` (10800), `WithdrawalBelowMinAmountError` (10818) |
+| 10819-10827 | Shielded | `ShieldedNoActionsError` (10819), `ShieldedTooManyActionsError` (10825), `ShieldedImplicitFeeCapExceededError` (10826), `ShieldedInvalidDenominationError` (10827 — `IdentityCreateFromShieldedPool` exit amount not a member of the versioned denomination set) |
 
 ### SignatureError codes (20000-20012)
 

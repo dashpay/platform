@@ -1,5 +1,5 @@
 use crate::data_contract::document::DocumentWasm;
-use crate::error::{WasmDppError, WasmDppResult};
+use crate::error::WasmDppResult;
 use crate::impl_wasm_type_info;
 use crate::serialization;
 use crate::state_transitions::batch::document_base_transition::DocumentBaseTransitionWasm;
@@ -9,7 +9,7 @@ use crate::state_transitions::batch::prefunded_voting_balance::PrefundedVotingBa
 use crate::state_transitions::batch::token_payment_info::TokenPaymentInfoWasm;
 use crate::utils::{
     try_from_options, try_from_options_optional, try_from_options_with, try_to_u64,
-    ToSerdeJSONExt,
+    try_vec_to_fixed_bytes, ToSerdeJSONExt,
 };
 use dpp::prelude::IdentityNonce;
 use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransition;
@@ -118,15 +118,7 @@ impl DocumentCreateTransitionWasm {
 
     #[wasm_bindgen(setter = "entropy")]
     pub fn set_entropy(&mut self, entropy: Vec<u8>) -> WasmDppResult<()> {
-        if entropy.len() != 32 {
-            return Err(WasmDppError::invalid_argument(format!(
-                "Entropy must be exactly 32 bytes, got {}",
-                entropy.len()
-            )));
-        }
-        let mut entropy_bytes = [0u8; 32];
-        entropy_bytes.copy_from_slice(&entropy);
-
+        let entropy_bytes: [u8; 32] = try_vec_to_fixed_bytes(entropy, "entropy")?;
         self.0.set_entropy(entropy_bytes);
         Ok(())
     }

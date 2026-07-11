@@ -28,7 +28,7 @@ impl IdentityCreditTransferToAddressesTransitionMethodsV0
     for IdentityCreditTransferToAddressesTransitionV0
 {
     #[cfg(feature = "state-transition-signing")]
-    fn try_from_identity<S: Signer<IdentityPublicKey>>(
+    async fn try_from_identity<S: Signer<IdentityPublicKey>>(
         identity: &Identity,
         to_recipient_addresses: BTreeMap<PlatformAddress, Credits>,
         user_fee_increase: UserFeeIncrease,
@@ -101,11 +101,14 @@ impl IdentityCreditTransferToAddressesTransitionMethodsV0
         );
         tracing::debug!("try_from_identity: Calling transition.sign_external");
 
-        match transition.sign_external(
-            identity_public_key,
-            signer,
-            None::<GetDataContractSecurityLevelRequirementFn>,
-        ) {
+        match transition
+            .sign_external(
+                identity_public_key,
+                signer,
+                None::<GetDataContractSecurityLevelRequirementFn>,
+            )
+            .await
+        {
             Ok(_) => tracing::debug!("try_from_identity: sign_external succeeded"),
             Err(e) => {
                 tracing::error!(error = ?e, "try_from_identity: sign_external failed");

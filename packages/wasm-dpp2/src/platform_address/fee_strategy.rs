@@ -2,17 +2,45 @@ use crate::error::{WasmDppError, WasmDppResult};
 use crate::impl_wasm_type_info;
 use crate::utils::{IntoWasm, try_from_options_optional_with, try_to_array};
 use dpp::address_funds::{AddressFundsFeeStrategy, AddressFundsFeeStrategyStep};
-use serde::Deserialize;
-use serde::de::{self, Deserializer, MapAccess, Visitor};
-use std::fmt;
+use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
+
+#[wasm_bindgen(typescript_custom_section)]
+const FEE_STRATEGY_STEP_TS_TYPES: &str = r#"
+/**
+ * Fee strategy step in Object form (output of a transition's `toObject()`).
+ *
+ * Discriminated by `type`: "deductFromInput" reduces an input's contribution
+ * by the fee, "reduceOutput" reduces an output's amount by the fee. The
+ * `index` selects the input/output position.
+ */
+export type FeeStrategyStepObject =
+    | { $type: "deductFromInput"; index: number }
+    | { $type: "reduceOutput"; index: number };
+
+/**
+ * Fee strategy step in JSON form (output of a transition's `toJSON()`).
+ *
+ * Identical shape to `FeeStrategyStepObject` because the only payload is a
+ * small `index` (u16) which serializes the same way in both binary and
+ * human-readable formats.
+ */
+export type FeeStrategyStepJSON =
+    | { $type: "deductFromInput"; index: number }
+    | { $type: "reduceOutput"; index: number };
+"#;
 
 /// Defines how fees are paid in address-based state transitions.
 ///
 /// Fee strategy is a sequence of steps that determine which inputs or outputs
 /// should be reduced to cover the transaction fee.
+///
+/// `#[serde(transparent)]` delegates to the inner `AddressFundsFeeStrategyStep`'s
+/// custom serde, which produces the `{ $type, index }` adjacent shape used by
+/// every wasm-sdk consumer that round-trips a `Vec<FeeStrategyStepWasm>`.
 #[wasm_bindgen(js_name = "FeeStrategyStep")]
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(transparent)]
 pub struct FeeStrategyStepWasm(AddressFundsFeeStrategyStep);
 
 #[wasm_bindgen(js_class = FeeStrategyStep)]
@@ -116,68 +144,4 @@ pub fn fee_strategy_from_js_options(
             })
             .collect()
     })
-}
-
-impl<'de> Deserialize<'de> for FeeStrategyStepWasm {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        #[derive(Deserialize)]
-        #[serde(field_identifier, rename_all = "camelCase")]
-        enum Field {
-            Type,
-            Index,
-        }
-
-        struct FeeStrategyStepVisitor;
-
-        impl<'de> Visitor<'de> for FeeStrategyStepVisitor {
-            type Value = FeeStrategyStepWasm;
-
-            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                formatter.write_str("struct FeeStrategyStep with type and index")
-            }
-
-            fn visit_map<V>(self, mut map: V) -> Result<FeeStrategyStepWasm, V::Error>
-            where
-                V: MapAccess<'de>,
-            {
-                let mut step_type: Option<String> = None;
-                let mut index: Option<u16> = None;
-
-                while let Some(key) = map.next_key()? {
-                    match key {
-                        Field::Type => {
-                            if step_type.is_some() {
-                                return Err(de::Error::duplicate_field("type"));
-                            }
-                            step_type = Some(map.next_value()?);
-                        }
-                        Field::Index => {
-                            if index.is_some() {
-                                return Err(de::Error::duplicate_field("index"));
-                            }
-                            index = Some(map.next_value()?);
-                        }
-                    }
-                }
-
-                let step_type = step_type.ok_or_else(|| de::Error::missing_field("type"))?;
-                let index = index.ok_or_else(|| de::Error::missing_field("index"))?;
-
-                match step_type.as_str() {
-                    "deductFromInput" => Ok(FeeStrategyStepWasm::deduct_from_input(index)),
-                    "reduceOutput" => Ok(FeeStrategyStepWasm::reduce_output(index)),
-                    _ => Err(de::Error::unknown_variant(
-                        &step_type,
-                        &["deductFromInput", "reduceOutput"],
-                    )),
-                }
-            }
-        }
-
-        const FIELDS: &[&str] = &["type", "index"];
-        deserializer.deserialize_struct("FeeStrategyStep", FIELDS, FeeStrategyStepVisitor)
-    }
 }

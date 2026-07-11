@@ -69,9 +69,52 @@ mod tests {
         let json = status.to_json().expect("to_json should succeed");
 
         assert_eq!(json["$formatVersion"].as_str().unwrap(), "0");
-        assert_eq!(json["paused"].as_bool().unwrap(), true);
+        assert!(json["paused"].as_bool().unwrap());
 
         let restored = TokenStatus::from_json(json).expect("from_json should succeed");
         assert_eq!(status, restored);
+    }
+}
+
+#[cfg(all(
+    test,
+    feature = "json-conversion",
+    feature = "value-conversion",
+    feature = "serde-conversion"
+))]
+mod json_convertible_tests_tokenstatus {
+    use super::*;
+    use crate::tokens::status::v0::TokenStatusV0;
+    use platform_value::platform_value;
+    use serde_json::json;
+
+    fn fixture() -> TokenStatus {
+        TokenStatus::V0(TokenStatusV0 { paused: true })
+    }
+
+    #[test]
+    fn json_round_trip_with_full_wire_shape() {
+        use crate::serialization::JsonConvertible;
+        let original = fixture();
+        let json = original.to_json().expect("to_json");
+        // Internally-tagged enum (`tag = "$formatVersion"`); `TokenStatusV0` has
+        // `rename_all = "camelCase"` but the only field (`paused`) is already
+        // a single-token name, so the wire key matches the source identifier.
+        assert_eq!(json, json!({"$formatVersion": "0", "paused": true}));
+        let recovered = TokenStatus::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn value_round_trip_with_full_wire_shape() {
+        use crate::serialization::ValueConvertible;
+        let original = fixture();
+        let value = original.to_object().expect("to_object");
+        assert_eq!(
+            value,
+            platform_value!({"$formatVersion": "0", "paused": true})
+        );
+        let recovered = TokenStatus::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
     }
 }

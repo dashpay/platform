@@ -179,3 +179,116 @@ impl Drive {
         Ok(operations)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::util::storage_flags::StorageFlags;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use dpp::block::block_info::BlockInfo;
+    use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::data_contract::accessors::v1::DataContractV1Setters;
+    use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
+    use dpp::tests::fixtures::get_data_contract_fixture;
+    use dpp::version::PlatformVersion;
+
+    /// Exercises `update_contract_description_v0` in apply=false estimation mode.
+    /// PR #3516 covers apply=true in both "replace existing" and "no prior"
+    /// branches; this test drives the estimation mode (Some(HashMap)).
+    /// The code path: `update_contract_description_add_to_operations_v0` takes
+    /// the `if apply` false branch at line 69 — `Some(HashMap::new())`.
+    #[test]
+    fn test_update_contract_description_v0_estimate_only_add_branch() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let keyword_search =
+            load_system_data_contract(SystemDataContract::KeywordSearch, platform_version)
+                .expect("load keyword_search");
+        drive
+            .apply_contract(
+                &keyword_search,
+                BlockInfo::default(),
+                true,
+                None,
+                None,
+                platform_version,
+            )
+            .expect("apply keyword_search");
+
+        let contract = get_data_contract_fixture(None, 0, platform_version.protocol_version)
+            .data_contract_owned();
+
+        let fee = drive
+            .update_contract_description(
+                contract.id(),
+                contract.owner_id(),
+                &"estimate-only description".to_string(),
+                &BlockInfo::default(),
+                false, // apply=false -> estimation
+                None,
+                platform_version,
+            )
+            .expect("estimate-only update should succeed");
+
+        assert!(
+            fee.processing_fee > 0 || fee.storage_fee > 0,
+            "estimation should produce fees"
+        );
+    }
+
+    /// Exercises `update_contract_description_v0` estimation mode over the
+    /// REPLACE branch: first insert a contract that has a short description,
+    /// then call update_contract_description in estimate mode. This invokes
+    /// the existing-document-len==1 replace path with
+    /// `estimated_costs_only_with_layer_info = Some(..)`.
+    #[test]
+    fn test_update_contract_description_v0_estimate_only_replace_branch() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let keyword_search =
+            load_system_data_contract(SystemDataContract::KeywordSearch, platform_version)
+                .expect("load keyword_search");
+        drive
+            .apply_contract(
+                &keyword_search,
+                BlockInfo::default(),
+                true,
+                None,
+                None,
+                platform_version,
+            )
+            .expect("apply keyword_search");
+
+        let mut contract = get_data_contract_fixture(None, 0, platform_version.protocol_version)
+            .data_contract_owned();
+        contract.set_description(Some("original description".to_string()));
+
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("insert contract with description");
+
+        // Estimate-only replace: exercises the
+        // `update_document_for_contract_operations(..., Some(HashMap))` branch.
+        let fee = drive
+            .update_contract_description(
+                contract.id(),
+                contract.owner_id(),
+                &"estimate-only replacement".to_string(),
+                &BlockInfo::default(),
+                false, // estimate
+                None,
+                platform_version,
+            )
+            .expect("estimate-only replace should succeed");
+
+        assert!(fee.processing_fee > 0 || fee.storage_fee > 0);
+    }
+}

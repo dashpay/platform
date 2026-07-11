@@ -82,8 +82,27 @@ runs:
           [worker.oci]
             gc = false
 
+    # metadata-action fetches repo data from the GitHub API without retries, so a
+    # transient API failure kills the whole build ("Unexpected end of JSON input").
+    # Retry once before giving up.
     - name: Set Docker tags and labels from image tag
       id: docker_meta
+      uses: docker/metadata-action@v5
+      continue-on-error: true
+      with:
+        images: ${{ inputs.image_org }}/${{ inputs.image_name }}
+        tags: |
+          type=semver,pattern={{version}},value=${{inputs.image_version}},enable=${{ inputs.image_version != '' }}
+          type=sha,format=long,enable=${{ inputs.image_version == '' }}
+
+    - name: Wait before retrying Docker meta
+      if: ${{ steps.docker_meta.outcome == 'failure' }}
+      shell: bash
+      run: sleep 10
+
+    - name: Set Docker tags and labels from image tag (retry)
+      id: docker_meta_retry
+      if: ${{ steps.docker_meta.outcome == 'failure' }}
       uses: docker/metadata-action@v5
       with:
         images: ${{ inputs.image_org }}/${{ inputs.image_name }}
@@ -109,7 +128,7 @@ runs:
       run: echo "HOME=$HOME" >> $GITHUB_ENV
 
     - name: Cargo cache for Docker
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       id: cargo-cache
       with:
         path: |
@@ -141,7 +160,7 @@ runs:
         skip-extraction: ${{ steps.cargo-cache.outputs.cache-hit }}
 
     - name: Yarn unplugged cache for Docker
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       id: yarn-cache
       with:
         path: ${{ env.HOME }}/yarn-unplugged-cache
@@ -151,7 +170,7 @@ runs:
 
     - name: Set arch
       id: arch
-      uses: actions/github-script@v6
+      uses: actions/github-script@v8
       with:
         result-encoding: "string"
         script: return '${{ inputs.platform }}'.replace('linux/', '');
@@ -190,9 +209,9 @@ runs:
         context: .
         builder: ${{ steps.buildx.outputs.name }}
         target: ${{ inputs.target }}
-        labels: ${{ steps.docker_meta.outputs.labels }}
+        labels: ${{ steps.docker_meta.outcome == 'success' && steps.docker_meta.outputs.labels || steps.docker_meta_retry.outputs.labels }}
         push: ${{ inputs.push_tags }}
-        tags: ${{ inputs.push_tags == 'true' && steps.docker_meta.outputs.tags || '' }}
+        tags: ${{ inputs.push_tags == 'true' && (steps.docker_meta.outcome == 'success' && steps.docker_meta.outputs.tags || steps.docker_meta_retry.outputs.tags) || '' }}
         platforms: ${{ inputs.platform }}
         secret-files: |
           AWS=${{ env.HOME }}/.aws/credentials

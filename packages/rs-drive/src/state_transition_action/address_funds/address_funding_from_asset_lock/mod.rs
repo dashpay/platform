@@ -140,6 +140,32 @@ impl AddressFundingFromAssetLockTransitionAction {
             }
         }
     }
+
+    /// Restores each input's full balance ahead of the insufficient-funds penalty path.
+    ///
+    /// `inputs_with_remaining_balance` stores each input's balance *after* its intended spend
+    /// (`actual - requested`), which is correct on the success path because the spend funds the
+    /// outputs. On the penalty path the transition failed and no outputs are created, so the spend
+    /// must not be consumed — only the penalty fee should be charged. This adds each input's
+    /// requested spend back so the downstream `PartiallyUseAssetLockAction` deducts the fee from the
+    /// full balance, leaving the user with `actual - fee`. Without this, the spend would be removed
+    /// from the address without being credited anywhere.
+    pub fn restore_input_spends_for_failed_transition(
+        &mut self,
+        requested_inputs: &BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
+    ) {
+        match self {
+            AddressFundingFromAssetLockTransitionAction::V0(transition) => {
+                for (address, (_nonce, balance)) in
+                    transition.inputs_with_remaining_balance.iter_mut()
+                {
+                    if let Some((_, requested_spend)) = requested_inputs.get(address) {
+                        *balance = balance.saturating_add(*requested_spend);
+                    }
+                }
+            }
+        }
+    }
 }
 
 #[cfg(test)]

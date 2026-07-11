@@ -1,35 +1,6 @@
 import Foundation
 import DashSDKFFI
 
-// MARK: - Network Types
-
-/// Network type for Dash networks
-public enum KeyWalletNetwork: UInt32 {
-    case mainnet = 0  // DASH
-    case testnet = 1  // TESTNET
-    case regtest = 2  // REGTEST
-    case devnet = 3   // DEVNET
-
-    var ffiValue: FFINetwork {
-        switch self {
-        case .mainnet: return FFINetwork(rawValue: 0)  // Dash = 0
-        case .testnet: return FFINetwork(rawValue: 1)  // Testnet = 1
-        case .regtest: return FFINetwork(rawValue: 2)  // Regtest = 2
-        case .devnet: return FFINetwork(rawValue: 3)   // Devnet = 3
-        }
-    }
-
-    init(ffiNetwork: FFINetwork) {
-        switch ffiNetwork.rawValue {
-        case 0: self = .mainnet  // Dash = 0
-        case 1: self = .testnet  // Testnet = 1
-        case 2: self = .regtest  // Regtest = 2
-        case 3: self = .devnet   // Devnet = 3
-        default: self = .mainnet
-        }
-    }
-}
-
 // MARK: - Account Types
 
 /// Account type for wallet accounts
@@ -46,11 +17,20 @@ public enum AccountType: UInt32 {
     case providerOperatorKeys = 9
     case providerPlatformKeys = 10
 
-    var ffiValue: FFIAccountType {
-        FFIAccountType(rawValue: self.rawValue)
+    /// Convert to the upstream FFI discriminant enum.
+    ///
+    /// Upstream renamed the FFI account discriminant from `FFIAccountType`
+    /// (the old enum) to `FFIAccountKind` (the new enum) and reused the
+    /// `FFIAccountType` name for a richer struct that bundles the
+    /// discriminant with index / Dashpay-pointer / key-class fields.
+    /// The Swift `AccountType` enum here only models the discriminant
+    /// case — Dashpay and PlatformPayment variants need richer
+    /// construction paths and aren't surfaced through this type today.
+    var ffiValue: FFIAccountKind {
+        FFIAccountKind(rawValue: self.rawValue)
     }
 
-    init(ffiType: FFIAccountType) {
+    init(ffiType: FFIAccountKind) {
         self = AccountType(rawValue: ffiType.rawValue) ?? .standardBIP44
     }
 }
@@ -72,27 +52,10 @@ public enum AddressPoolType: UInt32 {
     }
 }
 
-// MARK: - Transaction Context
-
-/// Transaction context for checking
-public enum TransactionContext: UInt32 {
-    case mempool = 0
-    case inBlock = 1
-    case inChainLockedBlock = 2
-
-    var ffiValue: FFITransactionContext {
-        FFITransactionContext(rawValue: self.rawValue)
-    }
-
-    init(ffiContext: FFITransactionContext) {
-        self = TransactionContext(rawValue: ffiContext.rawValue) ?? .mempool
-    }
-}
-
 // MARK: - Mnemonic Language
 
 /// Language for mnemonic generation
-public enum MnemonicLanguage: UInt32 {
+public enum MnemonicLanguage: UInt32, CaseIterable {
     case english = 0
     case chineseSimplified = 1
     case chineseTraditional = 2
@@ -110,6 +73,15 @@ public enum MnemonicLanguage: UInt32 {
 
     init(ffiLanguage: FFILanguage) {
         self = MnemonicLanguage(rawValue: ffiLanguage.rawValue) ?? .english
+    }
+
+    /// Convert to the platform mnemonic FFI discriminant enum
+    /// (`platform_wallet_mnemonic_word_list`). Distinct C enum from `ffiValue`
+    /// (key-wallet-ffi's `FFILanguage`, used by `generate`) — same 0–9 raw
+    /// values, but a separate type so the two headers don't collide inside the
+    /// single `DashSDKFFI` umbrella module.
+    var ffiMnemonicValue: FFIMnemonicLanguage {
+        FFIMnemonicLanguage(rawValue: self.rawValue)
     }
 }
 
@@ -251,26 +223,19 @@ public struct TransactionCheckResult {
     }
 }
 
-/// Transaction context details
+/// Transaction context details (wraps FFITransactionContext + FFIBlockInfo)
 public struct TransactionContextDetails {
-    public let context: TransactionContext
+    public let context: TransactionContextType
     public let height: UInt32
     public let blockHash: Data?
     public let timestamp: UInt32
 
-    func toFFI() -> FFITransactionContextDetails {
-        var details = FFITransactionContextDetails()
-        details.context_type = context.ffiValue
-        details.height = height
-        details.timestamp = timestamp
-
-        if let hash = blockHash {
-            hash.withUnsafeBytes { bytes in
-                details.block_hash = bytes.bindMemory(to: UInt8.self).baseAddress
-            }
-        }
-
-        return details
+    init(ffiContext: FFITransactionContext) {
+        self.context = TransactionContextType(ffiContext: ffiContext.context_type)
+        self.height = ffiContext.block_info.height
+        self.timestamp = ffiContext.block_info.timestamp
+        let hashBytes = withUnsafeBytes(of: ffiContext.block_info.block_hash) { Data($0) }
+        self.blockHash = hashBytes.allSatisfy({ $0 == 0 }) ? nil : hashBytes
     }
 }
 

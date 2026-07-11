@@ -1,8 +1,9 @@
 use crate::sdk::SDKWrapper;
 use crate::{DashSDKError, DashSDKErrorCode, DataContractHandle, FFIError, SDKHandle};
-use dash_sdk::dpp::data_contract::conversion::json::DataContractJsonConversionMethodsV0;
+use dash_sdk::dpp::data_contract::serialized_version::DataContractInSerializationFormat;
 use dash_sdk::dpp::data_contract::DataContractWithSerialization;
 use dash_sdk::dpp::platform_value::string_encoding::Encoding;
+use dash_sdk::dpp::version::TryIntoPlatformVersioned;
 use dash_sdk::platform::{Fetch, Identifier};
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
@@ -104,14 +105,30 @@ pub unsafe extern "C" fn dash_sdk_data_contract_fetch_with_serialization(
 
     match result {
         Ok(Some((contract, serialization))) => {
-            let platform_version = wrapper.sdk.version();
-
             // Always create a handle since we have the contract
             let handle = Some(Box::into_raw(Box::new(contract.clone())) as *mut DataContractHandle);
 
             // Prepare JSON if requested
             let json = if return_json {
-                match contract.to_json(platform_version) {
+                // Serialize at the SDK's network protocol version (not the
+                // process-global current/latest) so the JSON matches the
+                // proof-verified fetch. Mirrors DataContract's own serde with
+                // the version pinned to `wrapper.sdk.version()`.
+                let platform_version = wrapper.sdk.version();
+                let format: DataContractInSerializationFormat =
+                    match contract.try_into_platform_versioned(platform_version) {
+                        Ok(format) => format,
+                        Err(e) => {
+                            return DashSDKDataContractFetchResult::error(DashSDKError::new(
+                                DashSDKErrorCode::SerializationError,
+                                format!(
+                                    "Failed to convert contract to its serialization format: {}",
+                                    e
+                                ),
+                            ))
+                        }
+                    };
+                match serde_json::to_value(&format) {
                     Ok(json_value) => match serde_json::to_string(&json_value) {
                         Ok(json_string) => match CString::new(json_string) {
                             Ok(c_str) => Some(c_str.into_raw()),
@@ -153,11 +170,28 @@ pub unsafe extern "C" fn dash_sdk_data_contract_fetch_with_serialization(
     }
 }
 
-/// Free the memory allocated for a data contract fetch result
+/// Free the inner heap-allocated buffers of a data contract fetch
+/// result. The outer `DashSDKDataContractFetchResult` struct itself is
+/// returned **by value** from
+/// [`dash_sdk_data_contract_fetch_with_serialization`] and therefore
+/// lives on the caller's stack — this function MUST NOT free that
+/// outer storage. Each owned inner pointer is reclaimed via the same
+/// allocator that produced it (`CString` for `json_string`,
+/// `Box<[u8]>` for `serialized_data`, `Box<DataContract>` for
+/// `contract_handle`, `Box<DashSDKError>` for `error`) and then
+/// nulled out so a redundant call is a no-op.
+///
+/// An earlier version called `Box::from_raw(result)` on `result`
+/// itself — that was undefined behavior whenever the caller passed
+/// the address of a stack-allocated struct (the fetch FFI returns
+/// by value, so every caller does). The current shape is the only
+/// sound option without changing the FFI return type.
 ///
 /// # Safety
-/// - `result` must be a pointer previously returned by this SDK or null (no-op).
-/// - After this call, `result` and all contained pointers become invalid and must not be used again.
+/// - `result` must point at a `DashSDKDataContractFetchResult` whose
+///   inner pointers were produced by this SDK, or be null (no-op).
+/// - After this call every inner pointer is null; the outer struct
+///   may safely be dropped or freed by the caller.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_data_contract_fetch_result_free(
     result: *mut DashSDKDataContractFetchResult,
@@ -165,30 +199,30 @@ pub unsafe extern "C" fn dash_sdk_data_contract_fetch_result_free(
     if result.is_null() {
         return;
     }
+    let result = &mut *result;
 
-    let result = Box::from_raw(result);
-
-    // Free the contract handle if present
     if !result.contract_handle.is_null() {
         use dash_sdk::platform::DataContract;
         let _ = Box::from_raw(result.contract_handle as *mut DataContract);
+        result.contract_handle = std::ptr::null_mut();
     }
 
-    // Free the JSON string if present
     if !result.json_string.is_null() {
         let _ = CString::from_raw(result.json_string);
+        result.json_string = std::ptr::null_mut();
     }
 
-    // Free the serialized data if present
     if !result.serialized_data.is_null() && result.serialized_data_len > 0 {
         let _ = Box::from_raw(std::ptr::slice_from_raw_parts_mut(
             result.serialized_data,
             result.serialized_data_len,
         ));
+        result.serialized_data = std::ptr::null_mut();
+        result.serialized_data_len = 0;
     }
 
-    // Free the error if present
     if !result.error.is_null() {
         let _ = Box::from_raw(result.error);
+        result.error = std::ptr::null_mut();
     }
 }

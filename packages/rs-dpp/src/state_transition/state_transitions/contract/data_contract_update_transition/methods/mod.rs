@@ -16,7 +16,7 @@ use crate::prelude::{IdentityNonce, UserFeeIncrease};
 use platform_version::version::PlatformVersion;
 
 impl DataContractUpdateTransitionMethodsV0 for DataContractUpdateTransition {
-    fn new_from_data_contract<S: Signer<IdentityPublicKey>>(
+    async fn new_from_data_contract<S: Signer<IdentityPublicKey>>(
         data_contract: DataContract,
         identity: &PartialIdentity,
         key_id: KeyID,
@@ -33,16 +33,19 @@ impl DataContractUpdateTransitionMethodsV0 for DataContractUpdateTransition {
                 .contract_update_state_transition
                 .default_current_version,
         ) {
-            0 => DataContractUpdateTransitionV0::new_from_data_contract(
-                data_contract,
-                identity,
-                key_id,
-                identity_contract_nonce,
-                user_fee_increase,
-                signer,
-                platform_version,
-                feature_version,
-            ),
+            0 => {
+                DataContractUpdateTransitionV0::new_from_data_contract(
+                    data_contract,
+                    identity,
+                    key_id,
+                    identity_contract_nonce,
+                    user_fee_increase,
+                    signer,
+                    platform_version,
+                    feature_version,
+                )
+                .await
+            }
             v => Err(ProtocolError::UnknownVersionError(format!(
                 "Unknown DataContractUpdateTransition version for new_from_data_contract {v}"
             ))),

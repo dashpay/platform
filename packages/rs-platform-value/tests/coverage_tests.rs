@@ -1,3 +1,6 @@
+#![allow(clippy::approx_constant)]
+#![allow(clippy::op_ref)]
+
 // Comprehensive coverage tests for platform-value crate.
 //
 // These tests target previously uncovered code paths across multiple modules:
@@ -1954,11 +1957,13 @@ mod json_converter_tests {
     }
 
     #[test]
-    fn json_to_value_large_u8_array_becomes_bytes() {
-        // Arrays >= 10 elements of u8 should become bytes
+    fn json_to_value_large_u8_array_stays_array() {
+        // Per Critical-2 (removed silent array→bytes coercion), JSON integer
+        // arrays of any size stay as arrays. Callers that need bytes use the
+        // explicit `replace_at_paths(_, ReplacementType::BinaryBytes)` path.
         let j = serde_json::json!([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
         let v: Value = j.into();
-        assert!(v.is_bytes());
+        assert!(v.is_array());
     }
 
     #[test]

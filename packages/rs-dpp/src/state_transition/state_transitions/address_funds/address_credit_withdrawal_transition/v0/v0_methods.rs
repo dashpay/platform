@@ -26,7 +26,7 @@ use platform_version::version::PlatformVersion;
 
 impl AddressCreditWithdrawalTransitionMethodsV0 for AddressCreditWithdrawalTransitionV0 {
     #[cfg(feature = "state-transition-signing")]
-    fn try_from_inputs_with_signer<S: Signer<PlatformAddress>>(
+    async fn try_from_inputs_with_signer<S: Signer<PlatformAddress>>(
         inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
         output: Option<(PlatformAddress, Credits)>,
         fee_strategy: AddressFundsFeeStrategy,
@@ -61,10 +61,11 @@ impl AddressCreditWithdrawalTransitionMethodsV0 for AddressCreditWithdrawalTrans
 
         let signable_bytes = state_transition.signable_bytes()?;
 
-        address_credit_withdrawal_transition.input_witnesses = inputs
-            .keys()
-            .map(|address| signer.sign_create_witness(address, &signable_bytes))
-            .collect::<Result<Vec<AddressWitness>, ProtocolError>>()?;
+        let mut input_witnesses: Vec<AddressWitness> = Vec::with_capacity(inputs.len());
+        for address in inputs.keys() {
+            input_witnesses.push(signer.sign_create_witness(address, &signable_bytes).await?);
+        }
+        address_credit_withdrawal_transition.input_witnesses = input_witnesses;
 
         tracing::debug!("try_from_inputs_with_signer: Successfully created transition");
         Ok(address_credit_withdrawal_transition.into())

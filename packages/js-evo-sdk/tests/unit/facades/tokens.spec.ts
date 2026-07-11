@@ -315,17 +315,17 @@ describe('TokensFacade', () => {
 
   describe('contractInfo()', () => {
     it('should fetch token contract information', async () => {
-      await client.tokens.contractInfo(contractId);
+      await client.tokens.contractInfo(tokenId);
 
-      expect(getTokenContractInfoStub).to.be.calledOnceWithExactly(contractId);
+      expect(getTokenContractInfoStub).to.be.calledOnceWithExactly(tokenId);
     });
   });
 
   describe('contractInfoWithProof()', () => {
     it('should fetch contract info with proof', async () => {
-      await client.tokens.contractInfoWithProof(contractId);
+      await client.tokens.contractInfoWithProof(tokenId);
 
-      expect(getTokenContractInfoWithProofInfoStub).to.be.calledOnceWithExactly(contractId);
+      expect(getTokenContractInfoWithProofInfoStub).to.be.calledOnceWithExactly(tokenId);
     });
   });
 

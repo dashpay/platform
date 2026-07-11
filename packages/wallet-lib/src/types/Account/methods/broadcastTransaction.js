@@ -178,7 +178,7 @@ async function broadcastTransaction(transaction, options = {
   } catch (error) {
     cancelMempoolSubscription();
 
-    if (error.message === 'invalid transaction: bad-txns-inputs-missingorspent') {
+    if (error.message && error.message.includes('bad-txns-inputs-missingorspent')) {
       if (this.broadcastRetryAttempts === MAX_RETRY_ATTEMPTS) {
         throw error;
       }

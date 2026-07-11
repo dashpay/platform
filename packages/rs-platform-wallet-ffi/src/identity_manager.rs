@@ -1,361 +1,132 @@
+use crate::check_ptr;
 use crate::error::*;
 use crate::handle::*;
 use crate::types::*;
-use platform_wallet::identity_manager::IdentityManager;
+use crate::{unwrap_option_or_return, unwrap_result_or_return};
+use platform_wallet::wallet::persister::{NoPlatformPersistence, WalletPersister};
+use platform_wallet::IdentityManager;
+use std::sync::Arc;
+
+pub(crate) fn ffi_noop_persister() -> WalletPersister {
+    WalletPersister::new([0u8; 32], Arc::new(NoPlatformPersistence))
+}
 
 /// Create a new empty IdentityManager
 #[no_mangle]
 pub unsafe extern "C" fn identity_manager_create(
     out_handle: *mut Handle,
-    out_error: *mut PlatformWalletFFIError,
 ) -> PlatformWalletFFIResult {
-    if out_handle.is_null() {
-        if !out_error.is_null() {
-            unsafe {
-                *out_error = PlatformWalletFFIError::new(
-                    PlatformWalletFFIResult::ErrorNullPointer,
-                    "Null pointer provided",
-                );
-            }
-        }
-        return PlatformWalletFFIResult::ErrorNullPointer;
-    }
+    check_ptr!(out_handle);
 
     let manager = IdentityManager::default();
     let handle = IDENTITY_MANAGER_STORAGE.insert(manager);
     unsafe { *out_handle = handle };
 
-    PlatformWalletFFIResult::Success
+    PlatformWalletFFIResult::ok()
 }
 
-/// Add a managed identity to the manager
+/// Add a managed identity to the manager.
+///
+/// Stand-alone identity-manager handles aren't bound to a wallet, so
+/// the identity lands in the out-of-wallet bucket — the same place
+/// observed identities go. Real wallet flows route through
+/// [`crate::IdentityWallet`] APIs which thread `wallet_id` themselves.
 #[no_mangle]
 pub unsafe extern "C" fn identity_manager_add_identity(
     manager_handle: Handle,
     identity_handle: Handle,
-    out_error: *mut PlatformWalletFFIError,
 ) -> PlatformWalletFFIResult {
-    let identity_result =
+    let identity_option =
         MANAGED_IDENTITY_STORAGE.with_item(identity_handle, |identity| identity.clone());
+    let identity = unwrap_option_or_return!(identity_option);
 
-    let identity = match identity_result {
-        Some(i) => i,
-        None => {
-            if !out_error.is_null() {
-                unsafe {
-                    *out_error = PlatformWalletFFIError::new(
-                        PlatformWalletFFIResult::ErrorInvalidHandle,
-                        "Invalid identity handle",
-                    );
-                }
-            }
-            return PlatformWalletFFIResult::ErrorInvalidHandle;
-        }
-    };
-
-    IDENTITY_MANAGER_STORAGE
-        .with_item_mut(manager_handle, |manager| {
-            match manager.add_identity(identity.identity) {
-                Ok(_) => PlatformWalletFFIResult::Success,
-                Err(_) => PlatformWalletFFIResult::ErrorWalletOperation,
-            }
-        })
-        .unwrap_or_else(|| {
-            if !out_error.is_null() {
-                unsafe {
-                    *out_error = PlatformWalletFFIError::new(
-                        PlatformWalletFFIResult::ErrorInvalidHandle,
-                        "Invalid manager handle",
-                    );
-                }
-            }
-            PlatformWalletFFIResult::ErrorInvalidHandle
-        })
+    let option = IDENTITY_MANAGER_STORAGE.with_item_mut(manager_handle, |manager| {
+        manager.add_out_of_wallet_identity(identity.identity, &ffi_noop_persister())
+    });
+    let result = unwrap_option_or_return!(option);
+    unwrap_result_or_return!(result);
+    PlatformWalletFFIResult::ok()
 }
 
-/// Remove an identity from the manager
+/// Remove an identity from the manager.
+///
+/// `identity_id` is a `*const u8` pointing at a 32-byte identifier
+/// buffer. Pointer-passing rather than by-value `IdentifierBytes`
+/// keeps the ABI safe across `@_silgen_name` (Swift would otherwise
+/// hand the callee a garbage register slot for >16-byte aggregates).
 #[no_mangle]
 pub unsafe extern "C" fn identity_manager_remove_identity(
     manager_handle: Handle,
-    identity_id: IdentifierBytes,
-    out_error: *mut PlatformWalletFFIError,
+    identity_id: *const u8,
 ) -> PlatformWalletFFIResult {
-    let id = match identity_id.to_identifier() {
-        Ok(i) => i,
-        Err(e) => {
-            if !out_error.is_null() {
-                unsafe {
-                    *out_error = PlatformWalletFFIError::new(
-                        PlatformWalletFFIResult::ErrorInvalidIdentifier,
-                        format!("Invalid identifier: {}", e),
-                    );
-                }
-            }
-            return PlatformWalletFFIResult::ErrorInvalidIdentifier;
-        }
-    };
+    let id = unwrap_result_or_return!(unsafe { read_identifier(identity_id) });
 
-    IDENTITY_MANAGER_STORAGE
-        .with_item_mut(manager_handle, |manager| {
-            if manager.remove_identity(&id).is_ok() {
-                PlatformWalletFFIResult::Success
-            } else {
-                if !out_error.is_null() {
-                    unsafe {
-                        *out_error = PlatformWalletFFIError::new(
-                            PlatformWalletFFIResult::ErrorIdentityNotFound,
-                            "Identity not found",
-                        );
-                    }
-                }
-                PlatformWalletFFIResult::ErrorIdentityNotFound
-            }
-        })
-        .unwrap_or_else(|| {
-            if !out_error.is_null() {
-                unsafe {
-                    *out_error = PlatformWalletFFIError::new(
-                        PlatformWalletFFIResult::ErrorInvalidHandle,
-                        "Invalid manager handle",
-                    );
-                }
-            }
-            PlatformWalletFFIResult::ErrorInvalidHandle
-        })
+    let option = IDENTITY_MANAGER_STORAGE.with_item_mut(manager_handle, |manager| {
+        manager.remove_identity(&id, &ffi_noop_persister())
+    });
+    let result = unwrap_option_or_return!(option);
+    if result.is_err() {
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorIdentityNotFound,
+            "Identity not found",
+        );
+    }
+    PlatformWalletFFIResult::ok()
 }
 
-/// Get an identity by ID
+/// Get an identity by ID. `identity_id` is a `*const u8` to a
+/// 32-byte buffer; see [`identity_manager_remove_identity`] for the
+/// rationale on pointer-passing vs by-value.
 #[no_mangle]
 pub unsafe extern "C" fn identity_manager_get_identity(
     manager_handle: Handle,
-    identity_id: IdentifierBytes,
+    identity_id: *const u8,
     out_handle: *mut Handle,
-    out_error: *mut PlatformWalletFFIError,
 ) -> PlatformWalletFFIResult {
-    if out_handle.is_null() {
-        if !out_error.is_null() {
-            unsafe {
-                *out_error = PlatformWalletFFIError::new(
-                    PlatformWalletFFIResult::ErrorNullPointer,
-                    "Null pointer provided",
-                );
-            }
-        }
-        return PlatformWalletFFIResult::ErrorNullPointer;
-    }
+    check_ptr!(out_handle);
 
-    let id = match identity_id.to_identifier() {
-        Ok(i) => i,
-        Err(e) => {
-            if !out_error.is_null() {
-                unsafe {
-                    *out_error = PlatformWalletFFIError::new(
-                        PlatformWalletFFIResult::ErrorInvalidIdentifier,
-                        format!("Invalid identifier: {}", e),
-                    );
-                }
-            }
-            return PlatformWalletFFIResult::ErrorInvalidIdentifier;
-        }
-    };
+    let id = unwrap_result_or_return!(unsafe { read_identifier(identity_id) });
 
-    IDENTITY_MANAGER_STORAGE
-        .with_item(manager_handle, |manager| {
-            match manager.managed_identity(&id) {
-                Some(identity) => {
-                    let handle = MANAGED_IDENTITY_STORAGE.insert(identity.clone());
-                    unsafe { *out_handle = handle };
-                    PlatformWalletFFIResult::Success
-                }
-                None => {
-                    if !out_error.is_null() {
-                        unsafe {
-                            *out_error = PlatformWalletFFIError::new(
-                                PlatformWalletFFIResult::ErrorIdentityNotFound,
-                                "Identity not found",
-                            );
-                        }
-                    }
-                    PlatformWalletFFIResult::ErrorIdentityNotFound
-                }
-            }
-        })
-        .unwrap_or_else(|| {
-            if !out_error.is_null() {
-                unsafe {
-                    *out_error = PlatformWalletFFIError::new(
-                        PlatformWalletFFIResult::ErrorInvalidHandle,
-                        "Invalid manager handle",
-                    );
-                }
-            }
-            PlatformWalletFFIResult::ErrorInvalidHandle
-        })
+    let option = IDENTITY_MANAGER_STORAGE.with_item(manager_handle, |manager| {
+        manager.managed_identity(&id).cloned()
+    });
+    let inner = unwrap_option_or_return!(option);
+    let identity = unwrap_option_or_return!(inner);
+    unsafe { *out_handle = MANAGED_IDENTITY_STORAGE.insert(identity) };
+    PlatformWalletFFIResult::ok()
 }
 
-/// Get all identity IDs
+/// Get all identity IDs across both buckets.
 #[no_mangle]
 pub unsafe extern "C" fn identity_manager_get_all_identity_ids(
     manager_handle: Handle,
     out_array: *mut IdentifierArray,
-    out_error: *mut PlatformWalletFFIError,
 ) -> PlatformWalletFFIResult {
-    if out_array.is_null() {
-        if !out_error.is_null() {
-            unsafe {
-                *out_error = PlatformWalletFFIError::new(
-                    PlatformWalletFFIResult::ErrorNullPointer,
-                    "Null pointer provided",
-                );
-            }
-        }
-        return PlatformWalletFFIResult::ErrorNullPointer;
-    }
+    check_ptr!(out_array);
+    // Sentinel first: the handle lookup below is fallible, and
+    // `platform_wallet_identifier_array_free` reconstructs a `Vec` from any
+    // non-null pointer/count pair — see `IdentifierArray::empty`.
+    unsafe { *out_array = IdentifierArray::empty() };
 
-    IDENTITY_MANAGER_STORAGE
-        .with_item(manager_handle, |manager| {
-            let ids: Vec<dpp::prelude::Identifier> = manager.identities.keys().cloned().collect();
-            let array = IdentifierArray::new(ids);
-            unsafe { *out_array = array };
-            PlatformWalletFFIResult::Success
-        })
-        .unwrap_or_else(|| {
-            if !out_error.is_null() {
-                unsafe {
-                    *out_error = PlatformWalletFFIError::new(
-                        PlatformWalletFFIResult::ErrorInvalidHandle,
-                        "Invalid manager handle",
-                    );
-                }
-            }
-            PlatformWalletFFIResult::ErrorInvalidHandle
-        })
+    let option =
+        IDENTITY_MANAGER_STORAGE.with_item(manager_handle, |manager| manager.identity_ids());
+    let ids = unwrap_option_or_return!(option);
+    unsafe { *out_array = IdentifierArray::new(ids) };
+    PlatformWalletFFIResult::ok()
 }
 
-/// Get the primary identity ID
-#[no_mangle]
-pub unsafe extern "C" fn identity_manager_get_primary_identity_id(
-    manager_handle: Handle,
-    out_id: *mut IdentifierBytes,
-    out_error: *mut PlatformWalletFFIError,
-) -> PlatformWalletFFIResult {
-    if out_id.is_null() {
-        if !out_error.is_null() {
-            unsafe {
-                *out_error = PlatformWalletFFIError::new(
-                    PlatformWalletFFIResult::ErrorNullPointer,
-                    "Null pointer provided",
-                );
-            }
-        }
-        return PlatformWalletFFIResult::ErrorNullPointer;
-    }
-
-    IDENTITY_MANAGER_STORAGE
-        .with_item(manager_handle, |manager| {
-            if let Some(primary_id) = manager.primary_identity_id {
-                unsafe { *out_id = primary_id.into() };
-                PlatformWalletFFIResult::Success
-            } else {
-                if !out_error.is_null() {
-                    unsafe {
-                        *out_error = PlatformWalletFFIError::new(
-                            PlatformWalletFFIResult::ErrorIdentityNotFound,
-                            "No primary identity set",
-                        );
-                    }
-                }
-                PlatformWalletFFIResult::ErrorIdentityNotFound
-            }
-        })
-        .unwrap_or_else(|| {
-            if !out_error.is_null() {
-                unsafe {
-                    *out_error = PlatformWalletFFIError::new(
-                        PlatformWalletFFIResult::ErrorInvalidHandle,
-                        "Invalid manager handle",
-                    );
-                }
-            }
-            PlatformWalletFFIResult::ErrorInvalidHandle
-        })
-}
-
-/// Set the primary identity
-#[no_mangle]
-pub unsafe extern "C" fn identity_manager_set_primary_identity(
-    manager_handle: Handle,
-    identity_id: IdentifierBytes,
-    out_error: *mut PlatformWalletFFIError,
-) -> PlatformWalletFFIResult {
-    let id = match identity_id.to_identifier() {
-        Ok(i) => i,
-        Err(e) => {
-            if !out_error.is_null() {
-                unsafe {
-                    *out_error = PlatformWalletFFIError::new(
-                        PlatformWalletFFIResult::ErrorInvalidIdentifier,
-                        format!("Invalid identifier: {}", e),
-                    );
-                }
-            }
-            return PlatformWalletFFIResult::ErrorInvalidIdentifier;
-        }
-    };
-
-    IDENTITY_MANAGER_STORAGE
-        .with_item_mut(manager_handle, |manager| {
-            let _ = manager.set_primary_identity(id);
-            PlatformWalletFFIResult::Success
-        })
-        .unwrap_or_else(|| {
-            if !out_error.is_null() {
-                unsafe {
-                    *out_error = PlatformWalletFFIError::new(
-                        PlatformWalletFFIResult::ErrorInvalidHandle,
-                        "Invalid manager handle",
-                    );
-                }
-            }
-            PlatformWalletFFIResult::ErrorInvalidHandle
-        })
-}
-
-/// Get the count of identities
+/// Get the count of identities across both buckets.
 #[no_mangle]
 pub unsafe extern "C" fn identity_manager_get_identity_count(
     manager_handle: Handle,
     out_count: *mut usize,
-    out_error: *mut PlatformWalletFFIError,
 ) -> PlatformWalletFFIResult {
-    if out_count.is_null() {
-        if !out_error.is_null() {
-            unsafe {
-                *out_error = PlatformWalletFFIError::new(
-                    PlatformWalletFFIResult::ErrorNullPointer,
-                    "Null pointer provided",
-                );
-            }
-        }
-        return PlatformWalletFFIResult::ErrorNullPointer;
-    }
+    check_ptr!(out_count);
 
-    IDENTITY_MANAGER_STORAGE
-        .with_item(manager_handle, |manager| {
-            unsafe { *out_count = manager.identities.len() };
-            PlatformWalletFFIResult::Success
-        })
-        .unwrap_or_else(|| {
-            if !out_error.is_null() {
-                unsafe {
-                    *out_error = PlatformWalletFFIError::new(
-                        PlatformWalletFFIResult::ErrorInvalidHandle,
-                        "Invalid manager handle",
-                    );
-                }
-            }
-            PlatformWalletFFIResult::ErrorInvalidHandle
-        })
+    let option =
+        IDENTITY_MANAGER_STORAGE.with_item(manager_handle, |manager| manager.identity_count());
+    *out_count = unwrap_option_or_return!(option);
+    PlatformWalletFFIResult::ok()
 }
 
 /// Destroy IdentityManager and free resources
@@ -364,9 +135,12 @@ pub unsafe extern "C" fn identity_manager_destroy(
     manager_handle: Handle,
 ) -> PlatformWalletFFIResult {
     if IDENTITY_MANAGER_STORAGE.remove(manager_handle).is_some() {
-        PlatformWalletFFIResult::Success
+        PlatformWalletFFIResult::ok()
     } else {
-        PlatformWalletFFIResult::ErrorInvalidHandle
+        PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidHandle,
+            "Invalid manager handle",
+        )
     }
 }
 
@@ -376,7 +150,7 @@ mod tests {
     use dpp::identity::v0::IdentityV0;
     use dpp::identity::{Identity, IdentityPublicKey, KeyType, Purpose, SecurityLevel};
     use dpp::prelude::Identifier;
-    use platform_wallet::managed_identity::ManagedIdentity;
+    use platform_wallet::ManagedIdentity;
     use std::collections::BTreeMap;
 
     fn create_test_identity() -> Identity {
@@ -412,14 +186,12 @@ mod tests {
     fn test_create_identity_manager() {
         unsafe {
             let mut handle: Handle = NULL_HANDLE;
-            let mut error = PlatformWalletFFIError::success();
 
-            let result = identity_manager_create(&mut handle, &mut error);
+            let result = identity_manager_create(&mut handle);
 
-            assert_eq!(result, PlatformWalletFFIResult::Success);
+            assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
             assert_ne!(handle, NULL_HANDLE);
 
-            // Cleanup
             identity_manager_destroy(handle);
         }
     }
@@ -428,54 +200,45 @@ mod tests {
     fn test_get_identity_count() {
         unsafe {
             let mut handle: Handle = NULL_HANDLE;
-            let mut error = PlatformWalletFFIError::success();
 
-            identity_manager_create(&mut handle, &mut error);
+            identity_manager_create(&mut handle);
 
             let mut count: usize = 0;
-            let result = identity_manager_get_identity_count(handle, &mut count, &mut error);
+            let result = identity_manager_get_identity_count(handle, &mut count);
 
-            assert_eq!(result, PlatformWalletFFIResult::Success);
+            assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
             assert_eq!(count, 0);
 
-            // Cleanup
             identity_manager_destroy(handle);
         }
     }
 
     #[test]
-    fn test_set_and_get_primary_identity() {
+    fn test_add_and_lookup_out_of_wallet_identity() {
+        // Standalone manager handle has no wallet — `add_identity`
+        // routes into the out-of-wallet bucket. Verify lookup works
+        // round-trip and the count reflects the insert.
         unsafe {
             let mut manager_handle: Handle = NULL_HANDLE;
-            let mut error = PlatformWalletFFIError::success();
 
-            identity_manager_create(&mut manager_handle, &mut error);
+            identity_manager_create(&mut manager_handle);
 
-            let identity_id = Identifier::random();
-            let id_bytes: IdentifierBytes = identity_id.into();
-
-            // Create and add a managed identity
             let identity = create_test_identity();
-            let managed_identity = ManagedIdentity::new(identity);
+            let id_bytes: [u8; 32] = [1u8; 32];
+            let managed_identity = ManagedIdentity::new(identity, 0);
             let identity_handle = MANAGED_IDENTITY_STORAGE.insert(managed_identity);
 
-            identity_manager_add_identity(manager_handle, identity_handle, &mut error);
+            identity_manager_add_identity(manager_handle, identity_handle);
 
-            // Set primary identity
-            let result =
-                identity_manager_set_primary_identity(manager_handle, id_bytes, &mut error);
-            assert_eq!(result, PlatformWalletFFIResult::Success);
+            let mut count: usize = 0;
+            identity_manager_get_identity_count(manager_handle, &mut count);
+            assert_eq!(count, 1);
 
-            // Get primary identity
-            let mut retrieved_id = IdentifierBytes { bytes: [0u8; 32] };
-            let result = identity_manager_get_primary_identity_id(
-                manager_handle,
-                &mut retrieved_id,
-                &mut error,
-            );
-            assert_eq!(result, PlatformWalletFFIResult::Success);
+            let mut got: Handle = NULL_HANDLE;
+            let result = identity_manager_get_identity(manager_handle, id_bytes.as_ptr(), &mut got);
+            assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+            assert_ne!(got, NULL_HANDLE);
 
-            // Cleanup
             identity_manager_destroy(manager_handle);
         }
     }
@@ -484,7 +247,7 @@ mod tests {
     fn test_destroy_invalid_handle() {
         unsafe {
             let result = identity_manager_destroy(9999);
-            assert_eq!(result, PlatformWalletFFIResult::ErrorInvalidHandle);
+            assert_eq!(result.code, PlatformWalletFFIResultCode::ErrorInvalidHandle);
         }
     }
 }

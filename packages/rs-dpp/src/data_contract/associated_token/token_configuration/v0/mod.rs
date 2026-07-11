@@ -293,6 +293,7 @@ pub enum TokenConfigurationPresetFeatures {
 /// This abstraction allows users to choose between common control configurations
 /// ranging from immutable tokens to fully administrator-controlled assets.
 #[derive(Serialize, Deserialize, Decode, Encode, Debug, Clone, PartialEq, Eq, PartialOrd)]
+#[serde(rename_all = "camelCase")]
 pub struct TokenConfigurationPreset {
     /// Defines the set of capabilities enabled in this preset (e.g., whether minting,
     /// burning, freezing, or emergency actions are permitted).
@@ -307,6 +308,113 @@ pub struct TokenConfigurationPreset {
     /// operations, or performing emergency control (depending on the selected feature set).
     pub action_taker: AuthorizedActionTakers,
 }
+
+// Manual impls because the preset types are flat (not versioned V0/V1).
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+impl crate::serialization::JsonConvertible for TokenConfigurationPresetFeatures {}
+
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+impl crate::serialization::ValueConvertible for TokenConfigurationPresetFeatures {}
+
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+impl crate::serialization::JsonConvertible for TokenConfigurationPreset {}
+
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+impl crate::serialization::ValueConvertible for TokenConfigurationPreset {}
+
+#[cfg(all(
+    test,
+    feature = "json-conversion",
+    feature = "value-conversion",
+    feature = "serde-conversion"
+))]
+mod json_convertible_tests_preset {
+    use super::*;
+    use crate::serialization::{JsonConvertible, ValueConvertible};
+    use platform_value::platform_value;
+    use serde_json::json;
+
+    fn fixture() -> TokenConfigurationPreset {
+        TokenConfigurationPreset {
+            features: TokenConfigurationPresetFeatures::WithAllAdvancedActions,
+            action_taker: AuthorizedActionTakers::Group(7),
+        }
+    }
+
+    #[test]
+    fn preset_json_round_trip_with_full_wire_shape() {
+        let original = fixture();
+        let json = original.to_json().expect("to_json");
+        // `features` is a unit-only enum (bare PascalCase string);
+        // `actionTaker` uses AuthorizedActionTakers' internally-tagged shape.
+        // `position` is u16 — JSON erases the size; the value path locks it.
+        assert_eq!(
+            json,
+            json!({
+                "features": "WithAllAdvancedActions",
+                "actionTaker": {"$type": "group", "position": 7},
+            })
+        );
+        let recovered = TokenConfigurationPreset::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn preset_value_round_trip_with_full_wire_shape() {
+        let original = fixture();
+        let value = original.to_object().expect("to_object");
+        assert_eq!(
+            value,
+            platform_value!({
+                "features": "WithAllAdvancedActions",
+                "actionTaker": {"$type": "group", "position": 7u16},
+            })
+        );
+        let recovered = TokenConfigurationPreset::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn preset_features_round_trips_all_variants() {
+        let cases = [
+            (
+                TokenConfigurationPresetFeatures::MostRestrictive,
+                "MostRestrictive",
+            ),
+            (
+                TokenConfigurationPresetFeatures::WithOnlyEmergencyAction,
+                "WithOnlyEmergencyAction",
+            ),
+            (
+                TokenConfigurationPresetFeatures::WithMintingAndBurningActions,
+                "WithMintingAndBurningActions",
+            ),
+            (
+                TokenConfigurationPresetFeatures::WithAllAdvancedActions,
+                "WithAllAdvancedActions",
+            ),
+            (
+                TokenConfigurationPresetFeatures::WithExtremeActions,
+                "WithExtremeActions",
+            ),
+        ];
+        for (original, expected) in cases {
+            let json_v = original.to_json().expect("to_json");
+            assert_eq!(json_v, json!(expected));
+            assert_eq!(
+                TokenConfigurationPresetFeatures::from_json(json_v).expect("from_json"),
+                original
+            );
+            let value = original.to_object().expect("to_object");
+            assert_eq!(value, platform_value!(expected));
+            assert_eq!(
+                TokenConfigurationPresetFeatures::from_object(value).expect("from_object"),
+                original
+            );
+        }
+    }
+}
+
 impl TokenConfigurationPreset {
     pub fn default_main_control_group_can_be_modified(&self) -> AuthorizedActionTakers {
         match self.features {
@@ -505,5 +613,549 @@ impl TokenConfigurationV0 {
     pub fn with_base_supply(mut self, base_supply: TokenAmount) -> Self {
         self.base_supply = base_supply;
         self
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::data_contract::associated_token::token_configuration::accessors::v0::{
+        TokenConfigurationV0Getters, TokenConfigurationV0Setters,
+    };
+    use platform_value::Identifier;
+
+    fn preset(
+        features: TokenConfigurationPresetFeatures,
+        action_taker: AuthorizedActionTakers,
+    ) -> TokenConfigurationPreset {
+        TokenConfigurationPreset {
+            features,
+            action_taker,
+        }
+    }
+
+    // --- default_main_control_group_can_be_modified ---
+
+    #[test]
+    fn preset_main_control_group_can_be_modified_most_restrictive_is_no_one() {
+        let p = preset(
+            TokenConfigurationPresetFeatures::MostRestrictive,
+            AuthorizedActionTakers::ContractOwner,
+        );
+        assert_eq!(
+            p.default_main_control_group_can_be_modified(),
+            AuthorizedActionTakers::NoOne
+        );
+    }
+
+    #[test]
+    fn preset_main_control_group_can_be_modified_only_emergency_is_no_one() {
+        let p = preset(
+            TokenConfigurationPresetFeatures::WithOnlyEmergencyAction,
+            AuthorizedActionTakers::ContractOwner,
+        );
+        assert_eq!(
+            p.default_main_control_group_can_be_modified(),
+            AuthorizedActionTakers::NoOne
+        );
+    }
+
+    #[test]
+    fn preset_main_control_group_can_be_modified_minting_burning_is_no_one() {
+        let p = preset(
+            TokenConfigurationPresetFeatures::WithMintingAndBurningActions,
+            AuthorizedActionTakers::ContractOwner,
+        );
+        assert_eq!(
+            p.default_main_control_group_can_be_modified(),
+            AuthorizedActionTakers::NoOne
+        );
+    }
+
+    #[test]
+    fn preset_main_control_group_can_be_modified_advanced_is_no_one() {
+        let p = preset(
+            TokenConfigurationPresetFeatures::WithAllAdvancedActions,
+            AuthorizedActionTakers::ContractOwner,
+        );
+        assert_eq!(
+            p.default_main_control_group_can_be_modified(),
+            AuthorizedActionTakers::NoOne
+        );
+    }
+
+    #[test]
+    fn preset_main_control_group_can_be_modified_extreme_is_action_taker() {
+        let taker = AuthorizedActionTakers::Identity(Identifier::from([9u8; 32]));
+        let p = preset(TokenConfigurationPresetFeatures::WithExtremeActions, taker);
+        assert_eq!(p.default_main_control_group_can_be_modified(), taker);
+    }
+
+    // --- default_basic_change_control_rules_v0 ---
+
+    #[test]
+    fn preset_basic_rules_most_restrictive_is_no_one_locked() {
+        let p = preset(
+            TokenConfigurationPresetFeatures::MostRestrictive,
+            AuthorizedActionTakers::ContractOwner,
+        );
+        let rules = p.default_basic_change_control_rules_v0();
+        assert_eq!(
+            rules.authorized_to_make_change,
+            AuthorizedActionTakers::NoOne
+        );
+        assert_eq!(rules.admin_action_takers, AuthorizedActionTakers::NoOne);
+        assert!(!rules.changing_authorized_action_takers_to_no_one_allowed);
+        assert!(!rules.changing_admin_action_takers_to_no_one_allowed);
+        assert!(!rules.self_changing_admin_action_takers_allowed);
+    }
+
+    #[test]
+    fn preset_basic_rules_only_emergency_is_no_one_locked() {
+        let p = preset(
+            TokenConfigurationPresetFeatures::WithOnlyEmergencyAction,
+            AuthorizedActionTakers::ContractOwner,
+        );
+        let rules = p.default_basic_change_control_rules_v0();
+        assert_eq!(
+            rules.authorized_to_make_change,
+            AuthorizedActionTakers::NoOne
+        );
+    }
+
+    #[test]
+    fn preset_basic_rules_minting_burning_is_action_taker_self_mutable() {
+        let taker = AuthorizedActionTakers::ContractOwner;
+        let p = preset(
+            TokenConfigurationPresetFeatures::WithMintingAndBurningActions,
+            taker,
+        );
+        let rules = p.default_basic_change_control_rules_v0();
+        assert_eq!(rules.authorized_to_make_change, taker);
+        assert_eq!(rules.admin_action_takers, taker);
+        assert!(rules.self_changing_admin_action_takers_allowed);
+        // but not to no-one
+        assert!(!rules.changing_authorized_action_takers_to_no_one_allowed);
+    }
+
+    #[test]
+    fn preset_basic_rules_advanced_is_action_taker_self_mutable() {
+        let taker = AuthorizedActionTakers::ContractOwner;
+        let p = preset(
+            TokenConfigurationPresetFeatures::WithAllAdvancedActions,
+            taker,
+        );
+        let rules = p.default_basic_change_control_rules_v0();
+        assert_eq!(rules.authorized_to_make_change, taker);
+        assert!(rules.self_changing_admin_action_takers_allowed);
+        assert!(!rules.changing_admin_action_takers_to_no_one_allowed);
+    }
+
+    #[test]
+    fn preset_basic_rules_extreme_allows_no_one_transitions() {
+        let taker = AuthorizedActionTakers::ContractOwner;
+        let p = preset(TokenConfigurationPresetFeatures::WithExtremeActions, taker);
+        let rules = p.default_basic_change_control_rules_v0();
+        assert_eq!(rules.authorized_to_make_change, taker);
+        assert!(rules.changing_authorized_action_takers_to_no_one_allowed);
+        assert!(rules.changing_admin_action_takers_to_no_one_allowed);
+        assert!(rules.self_changing_admin_action_takers_allowed);
+    }
+
+    // --- default_advanced_change_control_rules_v0 ---
+
+    #[test]
+    fn preset_advanced_rules_most_restrictive_is_locked() {
+        let p = preset(
+            TokenConfigurationPresetFeatures::MostRestrictive,
+            AuthorizedActionTakers::ContractOwner,
+        );
+        let rules = p.default_advanced_change_control_rules_v0();
+        assert_eq!(
+            rules.authorized_to_make_change,
+            AuthorizedActionTakers::NoOne
+        );
+        assert!(!rules.self_changing_admin_action_takers_allowed);
+    }
+
+    #[test]
+    fn preset_advanced_rules_minting_burning_is_locked() {
+        let p = preset(
+            TokenConfigurationPresetFeatures::WithMintingAndBurningActions,
+            AuthorizedActionTakers::ContractOwner,
+        );
+        // Minting/burning does NOT open up advanced operations -> advanced remains NoOne
+        let rules = p.default_advanced_change_control_rules_v0();
+        assert_eq!(
+            rules.authorized_to_make_change,
+            AuthorizedActionTakers::NoOne
+        );
+        assert_eq!(rules.admin_action_takers, AuthorizedActionTakers::NoOne);
+    }
+
+    #[test]
+    fn preset_advanced_rules_only_emergency_is_locked() {
+        let p = preset(
+            TokenConfigurationPresetFeatures::WithOnlyEmergencyAction,
+            AuthorizedActionTakers::ContractOwner,
+        );
+        let rules = p.default_advanced_change_control_rules_v0();
+        assert_eq!(
+            rules.authorized_to_make_change,
+            AuthorizedActionTakers::NoOne
+        );
+    }
+
+    #[test]
+    fn preset_advanced_rules_advanced_allows_action_taker() {
+        let taker = AuthorizedActionTakers::ContractOwner;
+        let p = preset(
+            TokenConfigurationPresetFeatures::WithAllAdvancedActions,
+            taker,
+        );
+        let rules = p.default_advanced_change_control_rules_v0();
+        assert_eq!(rules.authorized_to_make_change, taker);
+        assert!(rules.self_changing_admin_action_takers_allowed);
+        assert!(!rules.changing_authorized_action_takers_to_no_one_allowed);
+    }
+
+    #[test]
+    fn preset_advanced_rules_extreme_allows_everything() {
+        let taker = AuthorizedActionTakers::ContractOwner;
+        let p = preset(TokenConfigurationPresetFeatures::WithExtremeActions, taker);
+        let rules = p.default_advanced_change_control_rules_v0();
+        assert!(rules.changing_authorized_action_takers_to_no_one_allowed);
+        assert!(rules.changing_admin_action_takers_to_no_one_allowed);
+        assert!(rules.self_changing_admin_action_takers_allowed);
+    }
+
+    // --- default_emergency_action_change_control_rules_v0 ---
+
+    #[test]
+    fn preset_emergency_rules_most_restrictive_is_no_one() {
+        let p = preset(
+            TokenConfigurationPresetFeatures::MostRestrictive,
+            AuthorizedActionTakers::ContractOwner,
+        );
+        let rules = p.default_emergency_action_change_control_rules_v0();
+        assert_eq!(
+            rules.authorized_to_make_change,
+            AuthorizedActionTakers::NoOne
+        );
+    }
+
+    #[test]
+    fn preset_emergency_rules_only_emergency_allows_action_taker() {
+        let taker = AuthorizedActionTakers::ContractOwner;
+        let p = preset(
+            TokenConfigurationPresetFeatures::WithOnlyEmergencyAction,
+            taker,
+        );
+        let rules = p.default_emergency_action_change_control_rules_v0();
+        assert_eq!(rules.authorized_to_make_change, taker);
+        assert!(rules.self_changing_admin_action_takers_allowed);
+    }
+
+    #[test]
+    fn preset_emergency_rules_minting_burning_allows_action_taker() {
+        let taker = AuthorizedActionTakers::ContractOwner;
+        let p = preset(
+            TokenConfigurationPresetFeatures::WithMintingAndBurningActions,
+            taker,
+        );
+        let rules = p.default_emergency_action_change_control_rules_v0();
+        assert_eq!(rules.authorized_to_make_change, taker);
+        assert!(rules.self_changing_admin_action_takers_allowed);
+    }
+
+    #[test]
+    fn preset_emergency_rules_advanced_allows_action_taker() {
+        let taker = AuthorizedActionTakers::ContractOwner;
+        let p = preset(
+            TokenConfigurationPresetFeatures::WithAllAdvancedActions,
+            taker,
+        );
+        let rules = p.default_emergency_action_change_control_rules_v0();
+        assert_eq!(rules.authorized_to_make_change, taker);
+    }
+
+    #[test]
+    fn preset_emergency_rules_extreme_allows_no_one_transitions() {
+        let taker = AuthorizedActionTakers::ContractOwner;
+        let p = preset(TokenConfigurationPresetFeatures::WithExtremeActions, taker);
+        let rules = p.default_emergency_action_change_control_rules_v0();
+        assert!(rules.changing_authorized_action_takers_to_no_one_allowed);
+    }
+
+    // --- default_distribution_rules_v0 with/without direct pricing ---
+
+    #[test]
+    fn preset_distribution_rules_with_direct_pricing_uses_basic_rules() {
+        let taker = AuthorizedActionTakers::ContractOwner;
+        let p = preset(TokenConfigurationPresetFeatures::WithExtremeActions, taker);
+        let rules = p.default_distribution_rules_v0(None, None, true);
+        // With direct pricing enabled, the rules match basic (extreme -> owner, all permissive)
+        assert_eq!(
+            rules
+                .change_direct_purchase_pricing_rules
+                .authorized_to_make_change_action_takers(),
+            &taker
+        );
+    }
+
+    #[test]
+    fn preset_distribution_rules_without_direct_pricing_locks_it_down() {
+        let taker = AuthorizedActionTakers::ContractOwner;
+        let p = preset(TokenConfigurationPresetFeatures::WithExtremeActions, taker);
+        let rules = p.default_distribution_rules_v0(None, None, false);
+        // Without direct pricing, change_direct_purchase_pricing_rules is hard-coded to NoOne
+        assert_eq!(
+            rules
+                .change_direct_purchase_pricing_rules
+                .authorized_to_make_change_action_takers(),
+            &AuthorizedActionTakers::NoOne
+        );
+    }
+
+    #[test]
+    fn preset_distribution_rules_minting_choosing_destination_defaults_true() {
+        let p = preset(
+            TokenConfigurationPresetFeatures::MostRestrictive,
+            AuthorizedActionTakers::NoOne,
+        );
+        let rules = p.default_distribution_rules_v0(None, None, false);
+        assert!(rules.minting_allow_choosing_destination);
+        assert!(rules.new_tokens_destination_identity.is_none());
+        assert!(rules.perpetual_distribution.is_none());
+        assert!(rules.pre_programmed_distribution.is_none());
+    }
+
+    // --- default_marketplace_rules_v0 ---
+
+    #[test]
+    fn preset_marketplace_rules_default_is_not_tradeable() {
+        let p = preset(
+            TokenConfigurationPresetFeatures::MostRestrictive,
+            AuthorizedActionTakers::NoOne,
+        );
+        let mp = p.default_marketplace_rules_v0();
+        assert_eq!(mp.trade_mode, TokenTradeMode::NotTradeable);
+    }
+
+    // --- token_configuration_v0 full config ---
+
+    #[test]
+    fn preset_token_configuration_v0_populates_fields() {
+        let taker = AuthorizedActionTakers::ContractOwner;
+        let p = preset(TokenConfigurationPresetFeatures::WithExtremeActions, taker);
+        let conventions = TokenConfigurationConvention::V0(TokenConfigurationConventionV0 {
+            localizations: Default::default(),
+            decimals: 4,
+        });
+        let config = p.token_configuration_v0(conventions, 1_000, Some(5_000), true, true);
+        assert_eq!(config.base_supply, 1_000);
+        assert_eq!(config.max_supply, Some(5_000));
+        assert_eq!(
+            config
+                .manual_minting_rules
+                .authorized_to_make_change_action_takers(),
+            &taker
+        );
+        // start_as_paused is fixed false by constructor
+        assert!(!config.start_as_paused);
+        assert!(config.allow_transfer_to_frozen_balance);
+        assert_eq!(config.main_control_group, None);
+        // extreme => main_control_group_can_be_modified becomes taker
+        assert_eq!(config.main_control_group_can_be_modified, taker);
+        // description is none
+        assert!(config.description.is_none());
+    }
+
+    #[test]
+    fn preset_token_configuration_keeps_all_history_true() {
+        let p = preset(
+            TokenConfigurationPresetFeatures::MostRestrictive,
+            AuthorizedActionTakers::NoOne,
+        );
+        let conventions = TokenConfigurationConvention::V0(TokenConfigurationConventionV0 {
+            localizations: Default::default(),
+            decimals: 8,
+        });
+        let cfg = p.token_configuration_v0(conventions, 100, None, true, false);
+        // keeps_history is TokenKeepsHistoryRules::V0; all fields should be true
+        match &cfg.keeps_history {
+            TokenKeepsHistoryRules::V0(v0) => {
+                assert!(v0.keeps_transfer_history);
+                assert!(v0.keeps_freezing_history);
+                assert!(v0.keeps_minting_history);
+                assert!(v0.keeps_burning_history);
+                assert!(v0.keeps_direct_pricing_history);
+                assert!(v0.keeps_direct_purchase_history);
+            }
+        }
+    }
+
+    #[test]
+    fn preset_token_configuration_keeps_all_history_false() {
+        let p = preset(
+            TokenConfigurationPresetFeatures::MostRestrictive,
+            AuthorizedActionTakers::NoOne,
+        );
+        let conventions = TokenConfigurationConvention::V0(TokenConfigurationConventionV0 {
+            localizations: Default::default(),
+            decimals: 8,
+        });
+        let cfg = p.token_configuration_v0(conventions, 100, None, false, false);
+        match &cfg.keeps_history {
+            TokenKeepsHistoryRules::V0(v0) => {
+                assert!(!v0.keeps_transfer_history);
+                assert!(!v0.keeps_direct_purchase_history);
+            }
+        }
+    }
+
+    // --- default_most_restrictive + with_base_supply chaining ---
+
+    #[test]
+    fn token_configuration_v0_default_most_restrictive_has_no_max_supply() {
+        let c = TokenConfigurationV0::default_most_restrictive();
+        assert_eq!(c.base_supply, 100_000);
+        assert!(c.max_supply.is_none());
+        assert_eq!(
+            c.main_control_group_can_be_modified,
+            AuthorizedActionTakers::NoOne
+        );
+    }
+
+    #[test]
+    fn token_configuration_v0_with_base_supply_overrides_value() {
+        let c = TokenConfigurationV0::default_most_restrictive().with_base_supply(42);
+        assert_eq!(c.base_supply, 42);
+    }
+
+    // --- Display trait ---
+
+    #[test]
+    fn display_token_configuration_v0_contains_key_fields() {
+        let c = TokenConfigurationV0::default_most_restrictive();
+        let s = format!("{}", c);
+        assert!(s.contains("TokenConfigurationV0"));
+        assert!(s.contains("base_supply"));
+        assert!(s.contains("main_control_group"));
+    }
+
+    // --- all_used_group_positions: the interesting branches ---
+
+    #[test]
+    fn all_used_group_positions_empty_when_no_groups_referenced() {
+        let c = TokenConfigurationV0::default_most_restrictive();
+        let (positions, uses_main) = c.all_used_group_positions();
+        assert!(positions.is_empty());
+        assert!(!uses_main);
+    }
+
+    #[test]
+    fn all_used_group_positions_collects_from_group_variant_in_rules() {
+        let mut c = TokenConfigurationV0::default_most_restrictive();
+        c.freeze_rules = ChangeControlRules::V0(ChangeControlRulesV0 {
+            authorized_to_make_change: AuthorizedActionTakers::Group(7),
+            admin_action_takers: AuthorizedActionTakers::Group(9),
+            changing_authorized_action_takers_to_no_one_allowed: false,
+            changing_admin_action_takers_to_no_one_allowed: false,
+            self_changing_admin_action_takers_allowed: false,
+        });
+        let (positions, uses_main) = c.all_used_group_positions();
+        assert!(positions.contains(&7));
+        assert!(positions.contains(&9));
+        assert!(!uses_main);
+    }
+
+    #[test]
+    fn all_used_group_positions_flags_main_group_usage() {
+        let mut c = TokenConfigurationV0::default_most_restrictive();
+        c.emergency_action_rules = ChangeControlRules::V0(ChangeControlRulesV0 {
+            authorized_to_make_change: AuthorizedActionTakers::MainGroup,
+            admin_action_takers: AuthorizedActionTakers::NoOne,
+            changing_authorized_action_takers_to_no_one_allowed: false,
+            changing_admin_action_takers_to_no_one_allowed: false,
+            self_changing_admin_action_takers_allowed: false,
+        });
+        let (_, uses_main) = c.all_used_group_positions();
+        assert!(uses_main);
+    }
+
+    #[test]
+    fn all_used_group_positions_includes_main_control_group() {
+        let mut c = TokenConfigurationV0::default_most_restrictive();
+        c.main_control_group = Some(42);
+        let (positions, _) = c.all_used_group_positions();
+        assert!(positions.contains(&42));
+    }
+
+    #[test]
+    fn all_used_group_positions_includes_positions_from_main_control_group_can_be_modified() {
+        let mut c = TokenConfigurationV0::default_most_restrictive();
+        c.main_control_group_can_be_modified = AuthorizedActionTakers::Group(11);
+        let (positions, _) = c.all_used_group_positions();
+        assert!(positions.contains(&11));
+    }
+
+    #[test]
+    fn all_used_group_positions_ignores_contract_owner_and_identity_and_no_one() {
+        let mut c = TokenConfigurationV0::default_most_restrictive();
+        c.manual_minting_rules = ChangeControlRules::V0(ChangeControlRulesV0 {
+            authorized_to_make_change: AuthorizedActionTakers::ContractOwner,
+            admin_action_takers: AuthorizedActionTakers::Identity(Identifier::from([1u8; 32])),
+            changing_authorized_action_takers_to_no_one_allowed: false,
+            changing_admin_action_takers_to_no_one_allowed: false,
+            self_changing_admin_action_takers_allowed: false,
+        });
+        let (positions, uses_main) = c.all_used_group_positions();
+        assert!(positions.is_empty());
+        assert!(!uses_main);
+    }
+
+    // --- all_change_control_rules ---
+
+    #[test]
+    fn all_change_control_rules_returns_expected_rule_names() {
+        let c = TokenConfigurationV0::default_most_restrictive();
+        let rules = c.all_change_control_rules();
+        let names: Vec<&str> = rules.iter().map(|(name, _)| *name).collect();
+        assert!(names.contains(&"max_supply_change_rules"));
+        assert!(names.contains(&"conventions_change_rules"));
+        assert!(names.contains(&"manual_minting_rules"));
+        assert!(names.contains(&"manual_burning_rules"));
+        assert!(names.contains(&"freeze_rules"));
+        assert!(names.contains(&"unfreeze_rules"));
+        assert!(names.contains(&"destroy_frozen_funds_rules"));
+        assert!(names.contains(&"emergency_action_rules"));
+        assert!(names.contains(&"trade_mode_change_rules"));
+        // 13 rules total per the implementation
+        assert_eq!(rules.len(), 13);
+    }
+
+    // --- setters exercise the right fields ---
+
+    #[test]
+    fn setters_set_description_max_supply_base_supply_main_control_group() {
+        let mut c = TokenConfigurationV0::default_most_restrictive();
+        c.set_description(Some("my token".to_string()));
+        c.set_max_supply(Some(999));
+        c.set_base_supply(77);
+        c.set_main_control_group(Some(3));
+        c.set_start_as_paused(true);
+        c.allow_transfer_to_frozen_balance(false);
+        c.set_main_control_group_can_be_modified(AuthorizedActionTakers::ContractOwner);
+        assert_eq!(c.description(), &Some("my token".to_string()));
+        assert_eq!(c.max_supply(), Some(999));
+        assert_eq!(c.base_supply(), 77);
+        assert_eq!(c.main_control_group(), Some(3));
+        assert!(c.start_as_paused());
+        assert!(!c.is_allowed_transfer_to_frozen_balance());
+        assert_eq!(
+            c.main_control_group_can_be_modified(),
+            &AuthorizedActionTakers::ContractOwner
+        );
     }
 }

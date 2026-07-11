@@ -24,6 +24,7 @@ pub mod mock_bls;
 pub mod platform_address;
 pub mod public_key;
 pub mod serialization;
+pub mod shielded;
 pub mod state_transitions;
 pub mod tokens;
 pub mod utils;
@@ -64,7 +65,13 @@ pub use platform_address::{
     FeeStrategyStepWasm, PlatformAddressInputWasm, PlatformAddressLikeArrayJs,
     PlatformAddressLikeJs, PlatformAddressOutputWasm, PlatformAddressSignerWasm,
     PlatformAddressWasm, default_fee_strategy, fee_strategy_from_steps,
-    fee_strategy_from_steps_or_default, outputs_to_btree_map, outputs_to_optional_btree_map,
+    fee_strategy_from_steps_or_default, inputs_to_btree_map, outputs_to_btree_map,
+    outputs_to_optional_btree_map,
+};
+pub use shielded::{
+    AddressWitnessWasm, SerializedOrchardActionWasm, ShieldFromAssetLockTransitionWasm,
+    ShieldTransitionWasm, ShieldedTransferTransitionWasm, ShieldedWithdrawalTransitionWasm,
+    UnshieldTransitionWasm,
 };
 pub use state_transitions::base::{GroupStateTransitionInfoWasm, StateTransitionWasm};
 pub use state_transitions::proof_result::{StateTransitionProofResultTypeJs, convert_proof_result};

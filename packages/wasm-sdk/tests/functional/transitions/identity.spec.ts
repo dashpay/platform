@@ -1,5 +1,6 @@
 import { expect } from '../helpers/chai.ts';
 import init, * as sdk from '../../../dist/sdk.compressed.js';
+import { prefetchLocalReady } from '../helpers/trustedContext.ts';
 import { wasmFunctionalTestRequirements, createTestSignerAndKey } from '../fixtures/requiredTestData.ts';
 
 /**
@@ -28,7 +29,7 @@ describe('Identity State Transitions', function describeIdentityStateTransitions
 
   before(async () => {
     await init();
-    const context = await sdk.WasmTrustedContext.prefetchLocal();
+    const context = await prefetchLocalReady();
     const builder = sdk.WasmSdkBuilder.local().withTrustedContext(context);
     client = await builder.build();
   });
@@ -182,10 +183,11 @@ describe('Identity State Transitions', function describeIdentityStateTransitions
 
       // Withdraw credits - not specifying toAddress means withdrawal
       // will be to the identity's registered withdrawal address
-      // Minimum is 190000 credits, maximum is 50000000000000
+      // Minimum is 1000000 credits (raised from 190000 in protocol v12),
+      // maximum is 50000000000000
       const remainingBalance = await client.identityCreditWithdrawal({
         identity,
-        amount: 200000n, // Must be >= 190000
+        amount: 1000000n, // Must be >= 1000000
         coreFeePerByte: 1,
         signer,
       });

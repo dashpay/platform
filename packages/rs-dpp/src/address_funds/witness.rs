@@ -1,3 +1,5 @@
+#[cfg(feature = "json-conversion")]
+use crate::serialization::json_safe_fields;
 use bincode::de::{BorrowDecoder, Decoder};
 use bincode::enc::Encoder;
 use bincode::error::{DecodeError, EncodeError};
@@ -13,13 +15,29 @@ pub const MAX_P2SH_SIGNATURES: usize = 17;
 /// The input witness data required to spend from a PlatformAddress.
 ///
 /// This enum captures the different spending patterns for P2PKH and P2SH addresses.
+///
+/// Wire shape (internally tagged on `type`, camelCase variants/fields):
+///   `{ "$type": "p2pkh", "signature": <BinaryData> }`
+///   `{ "$type": "p2sh", "signatures": [<BinaryData>, ...], "redeemScript": <BinaryData> }`
+///
+/// Note: `MAX_P2SH_SIGNATURES` is enforced by the bincode `Decode` path (the
+/// load-bearing wire format). The serde JSON/Value deserialize path does not
+/// enforce it; downstream consumers must validate signature counts before
+/// re-serializing for storage.
+#[cfg_attr(feature = "json-conversion", json_safe_fields)]
 #[derive(Debug, Clone, PartialEq, Ord, PartialOrd, Eq)]
+#[cfg_attr(
+    feature = "serde-conversion",
+    derive(Serialize, Deserialize),
+    serde(tag = "$type")
+)]
 pub enum AddressWitness {
     /// P2PKH witness: recoverable signature only
     ///
     /// Used for spending from a Pay-to-Public-Key-Hash address.
     /// The public key is recovered from the signature during verification,
     /// saving 33 bytes per witness compared to including the public key.
+    #[cfg_attr(feature = "serde-conversion", serde(rename = "p2pkh"))]
     P2pkh {
         /// The recoverable ECDSA signature (65 bytes with recovery byte prefix)
         signature: BinaryData, //todo change to [u8;65]
@@ -29,10 +47,12 @@ pub enum AddressWitness {
     /// Used for spending from a Pay-to-Script-Hash address (e.g., multisig).
     /// For a 2-of-3 multisig, signatures would be `[OP_0, sig1, sig2]` and
     /// redeem_script would be `OP_2 <pub1> <pub2> <pub3> OP_3 OP_CHECKMULTISIG`.
+    #[cfg_attr(feature = "serde-conversion", serde(rename = "p2sh"))]
     P2sh {
         /// The signatures (may include placeholder bytes like OP_0 for CHECKMULTISIG bug)
         signatures: Vec<BinaryData>,
         /// The redeem script that hashes to the address
+        #[cfg_attr(feature = "serde-conversion", serde(rename = "redeemScript"))]
         redeem_script: BinaryData,
     },
 }
@@ -121,123 +141,6 @@ impl<'de, C> bincode::BorrowDecode<'de, C> for AddressWitness {
     }
 }
 
-#[cfg(feature = "serde-conversion")]
-impl Serialize for AddressWitness {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        use serde::ser::SerializeStruct;
-
-        match self {
-            AddressWitness::P2pkh { signature } => {
-                let mut state = serializer.serialize_struct("AddressWitness", 2)?;
-                state.serialize_field("type", "p2pkh")?;
-                state.serialize_field("signature", signature)?;
-                state.end()
-            }
-            AddressWitness::P2sh {
-                signatures,
-                redeem_script,
-            } => {
-                let mut state = serializer.serialize_struct("AddressWitness", 3)?;
-                state.serialize_field("type", "p2sh")?;
-                state.serialize_field("signatures", signatures)?;
-                state.serialize_field("redeemScript", redeem_script)?;
-                state.end()
-            }
-        }
-    }
-}
-
-#[cfg(feature = "serde-conversion")]
-impl<'de> Deserialize<'de> for AddressWitness {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        use serde::de::{self, MapAccess, Visitor};
-        use std::fmt;
-
-        struct AddressWitnessVisitor;
-
-        impl<'de> Visitor<'de> for AddressWitnessVisitor {
-            type Value = AddressWitness;
-
-            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                formatter.write_str("an AddressWitness struct")
-            }
-
-            fn visit_map<V>(self, mut map: V) -> Result<AddressWitness, V::Error>
-            where
-                V: MapAccess<'de>,
-            {
-                let mut witness_type: Option<String> = None;
-                let mut signature: Option<BinaryData> = None;
-                let mut signatures: Option<Vec<BinaryData>> = None;
-                let mut redeem_script: Option<BinaryData> = None;
-
-                while let Some(key) = map.next_key::<String>()? {
-                    match key.as_str() {
-                        "type" => {
-                            witness_type = Some(map.next_value()?);
-                        }
-                        "signature" => {
-                            signature = Some(map.next_value()?);
-                        }
-                        "signatures" => {
-                            signatures = Some(map.next_value()?);
-                        }
-                        "redeemScript" => {
-                            redeem_script = Some(map.next_value()?);
-                        }
-                        _ => {
-                            let _: serde::de::IgnoredAny = map.next_value()?;
-                        }
-                    }
-                }
-
-                let witness_type = witness_type.ok_or_else(|| de::Error::missing_field("type"))?;
-
-                match witness_type.as_str() {
-                    "p2pkh" => {
-                        let signature =
-                            signature.ok_or_else(|| de::Error::missing_field("signature"))?;
-                        Ok(AddressWitness::P2pkh { signature })
-                    }
-                    "p2sh" => {
-                        let signatures =
-                            signatures.ok_or_else(|| de::Error::missing_field("signatures"))?;
-                        if signatures.len() > MAX_P2SH_SIGNATURES {
-                            return Err(de::Error::custom(format!(
-                                "P2SH signatures count {} exceeds maximum {}",
-                                signatures.len(),
-                                MAX_P2SH_SIGNATURES,
-                            )));
-                        }
-                        let redeem_script = redeem_script
-                            .ok_or_else(|| de::Error::missing_field("redeemScript"))?;
-                        Ok(AddressWitness::P2sh {
-                            signatures,
-                            redeem_script,
-                        })
-                    }
-                    _ => Err(de::Error::unknown_variant(
-                        &witness_type,
-                        &["p2pkh", "p2sh"],
-                    )),
-                }
-            }
-        }
-
-        deserializer.deserialize_struct(
-            "AddressWitness",
-            &["type", "signature", "signatures", "redeemScript"],
-            AddressWitnessVisitor,
-        )
-    }
-}
-
 impl AddressWitness {
     /// Generates a unique identifier for this witness based on its contents.
     ///
@@ -288,6 +191,7 @@ impl AddressWitness {
 }
 
 #[cfg(test)]
+#[allow(clippy::needless_borrows_for_generic_args)]
 mod tests {
     use super::*;
     use bincode::config;
@@ -509,5 +413,327 @@ mod tests {
             "P2SH witness with {} signatures (MAX + 1) should be rejected",
             MAX_P2SH_SIGNATURES + 1,
         );
+    }
+
+    // --- Additional encode/decode round-trip tests ---
+
+    #[test]
+    fn test_p2pkh_empty_signature_round_trip() {
+        let witness = AddressWitness::P2pkh {
+            signature: BinaryData::new(vec![]),
+        };
+
+        let encoded = bincode::encode_to_vec(&witness, config::standard()).unwrap();
+        let decoded: AddressWitness = bincode::decode_from_slice(&encoded, config::standard())
+            .unwrap()
+            .0;
+
+        assert_eq!(witness, decoded);
+        assert!(decoded.is_p2pkh());
+    }
+
+    #[test]
+    fn test_p2pkh_65_byte_signature_round_trip() {
+        // Typical recoverable ECDSA signature is 65 bytes
+        let signature_data: Vec<u8> = (0..65).collect();
+        let witness = AddressWitness::P2pkh {
+            signature: BinaryData::new(signature_data),
+        };
+
+        let encoded = bincode::encode_to_vec(&witness, config::standard()).unwrap();
+        let decoded: AddressWitness = bincode::decode_from_slice(&encoded, config::standard())
+            .unwrap()
+            .0;
+
+        assert_eq!(witness, decoded);
+    }
+
+    #[test]
+    fn test_p2sh_single_signature_round_trip() {
+        let witness = AddressWitness::P2sh {
+            signatures: vec![BinaryData::new(vec![0x30, 0x44, 0x02, 0x20])],
+            redeem_script: BinaryData::new(vec![0x51, 0xae]),
+        };
+
+        let encoded = bincode::encode_to_vec(&witness, config::standard()).unwrap();
+        let decoded: AddressWitness = bincode::decode_from_slice(&encoded, config::standard())
+            .unwrap()
+            .0;
+
+        assert_eq!(witness, decoded);
+        assert!(decoded.is_p2sh());
+        assert_eq!(
+            decoded.redeem_script(),
+            Some(&BinaryData::new(vec![0x51, 0xae]))
+        );
+    }
+
+    #[test]
+    fn test_p2sh_empty_signatures_vec_round_trip() {
+        let witness = AddressWitness::P2sh {
+            signatures: vec![],
+            redeem_script: BinaryData::new(vec![0x52, 0xae]),
+        };
+
+        let encoded = bincode::encode_to_vec(&witness, config::standard()).unwrap();
+        let decoded: AddressWitness = bincode::decode_from_slice(&encoded, config::standard())
+            .unwrap()
+            .0;
+
+        assert_eq!(witness, decoded);
+    }
+
+    #[test]
+    fn test_p2sh_empty_redeem_script_round_trip() {
+        let witness = AddressWitness::P2sh {
+            signatures: vec![BinaryData::new(vec![0x00])],
+            redeem_script: BinaryData::new(vec![]),
+        };
+
+        let encoded = bincode::encode_to_vec(&witness, config::standard()).unwrap();
+        let decoded: AddressWitness = bincode::decode_from_slice(&encoded, config::standard())
+            .unwrap()
+            .0;
+
+        assert_eq!(witness, decoded);
+    }
+
+    // --- Error path tests ---
+
+    #[test]
+    fn test_invalid_discriminant_decode_fails() {
+        // Manually craft a payload with discriminant 2 (invalid)
+        let mut data = vec![];
+        bincode::encode_into_std_write(&2u8, &mut data, config::standard()).unwrap();
+        // Add some dummy data
+        data.extend_from_slice(&[0x00, 0x00, 0x00]);
+
+        let result: Result<(AddressWitness, usize), _> =
+            bincode::decode_from_slice(&data, config::standard());
+        assert!(result.is_err());
+        let err_msg = format!("{}", result.unwrap_err());
+        assert!(err_msg.contains("Invalid AddressWitness discriminant"));
+    }
+
+    #[test]
+    fn test_invalid_discriminant_255_decode_fails() {
+        let mut data = vec![];
+        bincode::encode_into_std_write(&255u8, &mut data, config::standard()).unwrap();
+
+        let result: Result<(AddressWitness, usize), _> =
+            bincode::decode_from_slice(&data, config::standard());
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_truncated_p2pkh_payload_fails() {
+        // Encode only the discriminant, no signature data
+        let data = vec![0u8]; // discriminant for P2pkh
+        let result: Result<(AddressWitness, usize), _> =
+            bincode::decode_from_slice(&data, config::standard());
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_truncated_p2sh_payload_fails() {
+        // Encode discriminant for P2sh but no signatures/redeem_script
+        let data = vec![1u8]; // discriminant for P2sh
+        let result: Result<(AddressWitness, usize), _> =
+            bincode::decode_from_slice(&data, config::standard());
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_empty_payload_fails() {
+        let data: Vec<u8> = vec![];
+        let result: Result<(AddressWitness, usize), _> =
+            bincode::decode_from_slice(&data, config::standard());
+        assert!(result.is_err());
+    }
+
+    // --- Accessor tests ---
+
+    #[test]
+    fn test_redeem_script_returns_none_for_p2pkh() {
+        let witness = AddressWitness::P2pkh {
+            signature: BinaryData::new(vec![0x30]),
+        };
+        assert!(witness.redeem_script().is_none());
+    }
+
+    #[test]
+    fn test_redeem_script_returns_some_for_p2sh() {
+        let script = BinaryData::new(vec![0x52, 0xae]);
+        let witness = AddressWitness::P2sh {
+            signatures: vec![],
+            redeem_script: script.clone(),
+        };
+        assert_eq!(witness.redeem_script(), Some(&script));
+    }
+
+    // --- BorrowDecode path tests ---
+
+    #[test]
+    fn test_borrow_decode_p2pkh_round_trip() {
+        let witness = AddressWitness::P2pkh {
+            signature: BinaryData::new(vec![0xAB, 0xCD, 0xEF]),
+        };
+
+        let encoded = bincode::encode_to_vec(&witness, config::standard()).unwrap();
+        // borrow_decode is exercised through decode_from_slice
+        let decoded: AddressWitness = bincode::decode_from_slice(&encoded, config::standard())
+            .unwrap()
+            .0;
+        assert_eq!(witness, decoded);
+    }
+
+    #[test]
+    fn test_borrow_decode_p2sh_round_trip() {
+        let witness = AddressWitness::P2sh {
+            signatures: vec![
+                BinaryData::new(vec![0x00]),
+                BinaryData::new(vec![0x30, 0x44]),
+                BinaryData::new(vec![0x30, 0x45]),
+            ],
+            redeem_script: BinaryData::new(vec![0x52, 0x53, 0xae]),
+        };
+
+        let encoded = bincode::encode_to_vec(&witness, config::standard()).unwrap();
+        let decoded: AddressWitness = bincode::decode_from_slice(&encoded, config::standard())
+            .unwrap()
+            .0;
+        assert_eq!(witness, decoded);
+    }
+
+    #[test]
+    fn test_borrow_decode_rejects_excessive_signatures() {
+        // Ensure BorrowDecode also rejects > MAX_P2SH_SIGNATURES
+        let signatures: Vec<BinaryData> = (0..MAX_P2SH_SIGNATURES + 1)
+            .map(|_| BinaryData::new(vec![0x30]))
+            .collect();
+
+        let witness = AddressWitness::P2sh {
+            signatures,
+            redeem_script: BinaryData::new(vec![0xae]),
+        };
+
+        let encoded = bincode::encode_to_vec(&witness, config::standard()).unwrap();
+        let result: Result<(AddressWitness, usize), _> =
+            bincode::decode_from_slice(&encoded, config::standard());
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_borrow_decode_invalid_discriminant_fails() {
+        let mut data = vec![];
+        bincode::encode_into_std_write(&3u8, &mut data, config::standard()).unwrap();
+        data.extend_from_slice(&[0x00; 10]);
+
+        let result: Result<(AddressWitness, usize), _> =
+            bincode::decode_from_slice(&data, config::standard());
+        assert!(result.is_err());
+    }
+}
+
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+impl crate::serialization::JsonConvertible for AddressWitness {}
+
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+impl crate::serialization::ValueConvertible for AddressWitness {}
+
+#[cfg(all(
+    test,
+    feature = "json-conversion",
+    feature = "value-conversion",
+    feature = "serde-conversion"
+))]
+mod json_convertible_tests {
+    use super::*;
+    use platform_value::{platform_value, BinaryData};
+    use serde_json::json;
+
+    // `AddressWitness` has a manual Serialize/Deserialize that emits a
+    // `{ "$type": "p2pkh"|"p2sh", ... }` discriminator shape. `BinaryData` is
+    // base64-encoded in JSON (HR), and stored as `Value::Bytes` in non-HR.
+
+    #[test]
+    fn json_round_trip_p2pkh_with_full_wire_shape() {
+        use crate::serialization::JsonConvertible;
+        let original = AddressWitness::P2pkh {
+            signature: BinaryData::new(vec![0xa1; 65]),
+        };
+        let json = original.to_json().expect("to_json");
+        assert_eq!(
+            json,
+            json!({
+                "$type": "p2pkh",
+                "signature": "oaGhoaGhoaGhoaGhoaGhoaGhoaGhoaGhoaGhoaGhoaGhoaGhoaGhoaGhoaGhoaGhoaGhoaGhoaGhoaGhoaGhoaE=",
+            })
+        );
+        let recovered = AddressWitness::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn json_round_trip_p2sh_with_full_wire_shape() {
+        use crate::serialization::JsonConvertible;
+        let original = AddressWitness::P2sh {
+            redeem_script: BinaryData::new(vec![0xb2; 30]),
+            signatures: vec![BinaryData::new(vec![0xc3; 65])],
+        };
+        let json = original.to_json().expect("to_json");
+        assert_eq!(
+            json,
+            json!({
+                "$type": "p2sh",
+                "signatures": [
+                    "w8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8M=",
+                ],
+                "redeemScript": "srKysrKysrKysrKysrKysrKysrKysrKysrKysrKy",
+            })
+        );
+        let recovered = AddressWitness::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn value_round_trip_p2pkh_with_full_wire_shape() {
+        use crate::serialization::ValueConvertible;
+        use platform_value::Value;
+        let original = AddressWitness::P2pkh {
+            signature: BinaryData::new(vec![0xa1; 65]),
+        };
+        let value = original.to_object().expect("to_object");
+        // `BinaryData` serializes as `Value::Bytes(Vec<u8>)` in non-HR mode.
+        assert_eq!(
+            value,
+            platform_value!({
+                "$type": "p2pkh",
+                "signature": Value::Bytes(vec![0xa1; 65]),
+            })
+        );
+        let recovered = AddressWitness::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn value_round_trip_p2sh_with_full_wire_shape() {
+        use crate::serialization::ValueConvertible;
+        use platform_value::Value;
+        let original = AddressWitness::P2sh {
+            redeem_script: BinaryData::new(vec![0xb2; 30]),
+            signatures: vec![BinaryData::new(vec![0xc3; 65])],
+        };
+        let value = original.to_object().expect("to_object");
+        assert_eq!(
+            value,
+            platform_value!({
+                "$type": "p2sh",
+                "signatures": [Value::Bytes(vec![0xc3; 65])],
+                "redeemScript": Value::Bytes(vec![0xb2; 30]),
+            })
+        );
+        let recovered = AddressWitness::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
     }
 }

@@ -59,3 +59,59 @@ impl<C> Platform<C> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::query::tests::setup_platform;
+    use dapi_grpc::platform::v0::get_shielded_nullifiers_request::GetShieldedNullifiersRequestV0;
+    use dapi_grpc::platform::v0::get_shielded_nullifiers_response::get_shielded_nullifiers_response_v0;
+    use dpp::dashcore::Network;
+
+    #[test]
+    fn missing_version_returns_decoding_error() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetShieldedNullifiersRequest { version: None };
+
+        let result = platform
+            .query_shielded_nullifiers(request, &state, version)
+            .expect("expected query to succeed with validation errors");
+
+        assert!(matches!(
+            result.errors.as_slice(),
+            [QueryError::DecodingError(msg)] if msg.contains("shielded nullifiers")
+        ));
+    }
+
+    #[test]
+    fn dispatcher_wraps_v0_response() {
+        // The dispatcher must wrap the inner V0 response with Version::V0.
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetShieldedNullifiersRequest {
+            version: Some(RequestVersion::V0(GetShieldedNullifiersRequestV0 {
+                nullifiers: vec![vec![0x11u8; 32]],
+                prove: false,
+            })),
+        };
+
+        let result = platform
+            .query_shielded_nullifiers(request, &state, version)
+            .expect("expected query to succeed");
+        assert!(result.errors.is_empty());
+
+        let response = result.data.expect("expected response data");
+        let inner = match response.version {
+            Some(ResponseVersion::V0(v0)) => v0,
+            other => panic!("expected ResponseVersion::V0, got {:?}", other),
+        };
+        match inner.result {
+            Some(get_shielded_nullifiers_response_v0::Result::NullifierStatuses(statuses)) => {
+                assert_eq!(statuses.entries.len(), 1);
+                assert!(!statuses.entries[0].is_spent);
+            }
+            other => panic!("expected NullifierStatuses, got {:?}", other),
+        }
+    }
+}

@@ -1,4 +1,4 @@
-use crate::drive::contract::paths::contract_storage_path_vec;
+use crate::drive::contract::paths::{contract_root_path_vec, contract_storage_path_vec};
 use crate::drive::Drive;
 use crate::error::proof::ProofError;
 use crate::error::Error;
@@ -50,6 +50,29 @@ impl Drive {
 
         let (root_hash, mut proved_key_values) =
             GroveDb::verify_query(proof, &path_query, &platform_version.drive.grove_version)?;
+
+        // A contract that does NOT keep history stores its single current version as an
+        // Item at the contract root path (key [0]), one level above the history subtree.
+        // Querying history for such a contract proves THAT single Item instead of the
+        // (non-existent) history subtree. Treat it as a valid empty history rather than a
+        // corrupted proof. Require exactly one proved element that is a present item, so any
+        // other shape at this path still fails as corrupted (mirroring the strict path
+        // discrimination applied to the history entries below).
+        if proved_key_values.len() == 1 {
+            let (path, key, maybe_element) = &proved_key_values[0];
+            if path == &contract_root_path_vec(&contract_id) && key == &vec![0u8] {
+                let is_item = maybe_element
+                    .as_ref()
+                    .map(|element| element.is_any_item())
+                    .unwrap_or(false);
+                if !is_item {
+                    return Err(Error::Proof(ProofError::CorruptedProof(
+                        "expected a contract item at the contract root path".to_string(),
+                    )));
+                }
+                return Ok((root_hash, Some(BTreeMap::new())));
+            }
+        }
 
         let mut contracts: BTreeMap<u64, DataContract> = BTreeMap::new();
         for (path, key, maybe_element) in proved_key_values.drain(..) {
@@ -236,6 +259,101 @@ mod tests {
             history.len(),
             2,
             "should have 2 history entries with limit=2"
+        );
+    }
+
+    #[test]
+    fn should_return_empty_history_for_non_history_contract() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let mut contract = get_data_contract_fixture(None, 0, platform_version.protocol_version)
+            .data_contract_owned();
+        // The contract does NOT keep history (the default, but make it explicit).
+        contract.config_mut().set_keeps_history(false);
+        contract.config_mut().set_readonly(false);
+
+        let contract_id = contract.id().to_buffer();
+
+        // Apply the contract once at time 1000
+        apply_contract(
+            &drive,
+            &contract,
+            BlockInfo {
+                time_ms: 1000,
+                height: 100,
+                core_height: 10,
+                epoch: Default::default(),
+            },
+        );
+
+        // Prove history starting from time 0
+        let proof = drive
+            .prove_contract_history(contract_id, None, 0, Some(10), None, platform_version)
+            .expect("should prove contract history for a non-history contract");
+
+        let (_root_hash, verified_history) = Drive::verify_contract_history(
+            &proof,
+            contract_id,
+            0,
+            Some(10),
+            None,
+            platform_version,
+        )
+        .expect("should verify contract history for a non-history contract");
+
+        let history = verified_history.expect("history should be Some (an empty map)");
+        assert!(
+            history.is_empty(),
+            "a contract that does not keep history should return an empty history map"
+        );
+    }
+
+    #[test]
+    fn should_return_empty_history_for_non_history_contract_with_params() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let mut contract = get_data_contract_fixture(None, 0, platform_version.protocol_version)
+            .data_contract_owned();
+        contract.config_mut().set_keeps_history(false);
+        contract.config_mut().set_readonly(false);
+
+        let contract_id = contract.id().to_buffer();
+
+        apply_contract(
+            &drive,
+            &contract,
+            BlockInfo {
+                time_ms: 1000,
+                height: 100,
+                core_height: 10,
+                epoch: Default::default(),
+            },
+        );
+
+        // A non-default limit and start_at_ms must not change the empty result.
+        // (offset is intentionally not exercised here: count-offset pagination is a
+        // prove-side limitation that errors against a non-history contract's item path,
+        // and the FFI never sends a non-zero offset for the no-history case anyway.)
+        let proof = drive
+            .prove_contract_history(contract_id, None, 500, Some(5), None, platform_version)
+            .expect("should prove contract history for a non-history contract");
+
+        let (_root_hash, verified_history) = Drive::verify_contract_history(
+            &proof,
+            contract_id,
+            500,
+            Some(5),
+            None,
+            platform_version,
+        )
+        .expect("should verify contract history for a non-history contract");
+
+        let history = verified_history.expect("history should be Some (an empty map)");
+        assert!(
+            history.is_empty(),
+            "a non-history contract should return empty regardless of limit/start_at_ms"
         );
     }
 }

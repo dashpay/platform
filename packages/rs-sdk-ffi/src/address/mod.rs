@@ -9,6 +9,7 @@ pub use queries::*;
 // Re-export transition functions
 pub use transitions::*;
 
+use crate::types::{FFINetwork, Network};
 use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult};
 use dash_sdk::dpp::address_funds::PlatformAddress;
 use dash_sdk::dpp::dashcore::blockdata::script::Script;
@@ -23,14 +24,13 @@ use std::panic::{self, AssertUnwindSafe};
 ///
 /// # Safety
 /// - `script_pubkey` must point to `script_len` bytes
-/// - `network`: 0 = mainnet, 1 = testnet, 2 = regtest, 3 = devnet
 /// - Returns a DashSDKResult whose `data` field is a heap-allocated C string.
 ///   Free it with `dash_sdk_string_free`.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_encode_platform_address(
     script_pubkey: *const u8,
     script_len: u32,
-    network: u32,
+    network: FFINetwork,
 ) -> DashSDKResult {
     let result = panic::catch_unwind(AssertUnwindSafe(|| {
         if script_pubkey.is_null() {
@@ -64,20 +64,8 @@ pub unsafe extern "C" fn dash_sdk_encode_platform_address(
             .expect("slice is exactly 20 bytes after length check");
         let platform_addr = PlatformAddress::P2pkh(hash);
 
-        let dash_network = match network {
-            0 => dash_sdk::dpp::dashcore::Network::Mainnet,
-            1 => dash_sdk::dpp::dashcore::Network::Testnet,
-            2 => dash_sdk::dpp::dashcore::Network::Regtest,
-            3 => dash_sdk::dpp::dashcore::Network::Devnet,
-            _ => {
-                return DashSDKResult::error(DashSDKError::new(
-                    DashSDKErrorCode::InvalidParameter,
-                    format!("Unknown network code: {}. Expected 0 (mainnet), 1 (testnet), 2 (regtest), or 3 (devnet)", network),
-                ));
-            }
-        };
-
-        let encoded = platform_addr.to_bech32m_string(dash_network);
+        let network: Network = network.into();
+        let encoded = platform_addr.to_bech32m_string(network);
 
         match CString::new(encoded) {
             Ok(c_str) => DashSDKResult::success_string(c_str.into_raw()),

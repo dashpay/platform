@@ -79,7 +79,7 @@ use crate::tokens::token_pricing_schedule::TokenPricingSchedule;
 
 impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
     #[cfg(feature = "state-transition-signing")]
-    fn new_token_mint_transition<S: Signer<IdentityPublicKey>>(
+    async fn new_token_mint_transition<S: Signer<IdentityPublicKey>>(
         token_id: Identifier,
         owner_id: Identifier,
         data_contract_id: Identifier,
@@ -139,25 +139,29 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
         .into();
         let mut state_transition: StateTransition = documents_batch_transition.into();
         if let Some(options) = options {
-            state_transition.sign_external_with_options(
-                identity_public_key,
-                signer,
-                None::<GetDataContractSecurityLevelRequirementFn>,
-                options.signing_options,
-            )?;
+            state_transition
+                .sign_external_with_options(
+                    identity_public_key,
+                    signer,
+                    None::<GetDataContractSecurityLevelRequirementFn>,
+                    options.signing_options,
+                )
+                .await?;
         } else {
-            state_transition.sign_external(
-                identity_public_key,
-                signer,
-                None::<GetDataContractSecurityLevelRequirementFn>,
-            )?;
+            state_transition
+                .sign_external(
+                    identity_public_key,
+                    signer,
+                    None::<GetDataContractSecurityLevelRequirementFn>,
+                )
+                .await?;
         }
 
         Ok(state_transition)
     }
 
     #[cfg(feature = "state-transition-signing")]
-    fn new_token_burn_transition<S: Signer<IdentityPublicKey>>(
+    async fn new_token_burn_transition<S: Signer<IdentityPublicKey>>(
         token_id: Identifier,
         owner_id: Identifier,
         data_contract_id: Identifier,
@@ -218,24 +222,28 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
         // Create the state transition
         let mut state_transition: StateTransition = documents_batch_transition.into();
         if let Some(options) = options {
-            state_transition.sign_external_with_options(
-                identity_public_key,
-                signer,
-                None::<GetDataContractSecurityLevelRequirementFn>,
-                options.signing_options,
-            )?;
+            state_transition
+                .sign_external_with_options(
+                    identity_public_key,
+                    signer,
+                    None::<GetDataContractSecurityLevelRequirementFn>,
+                    options.signing_options,
+                )
+                .await?;
         } else {
-            state_transition.sign_external(
-                identity_public_key,
-                signer,
-                None::<GetDataContractSecurityLevelRequirementFn>,
-            )?;
+            state_transition
+                .sign_external(
+                    identity_public_key,
+                    signer,
+                    None::<GetDataContractSecurityLevelRequirementFn>,
+                )
+                .await?;
         }
 
         Ok(state_transition)
     }
     #[cfg(feature = "state-transition-signing")]
-    fn new_token_transfer_transition<S: Signer<IdentityPublicKey>>(
+    async fn new_token_transfer_transition<S: Signer<IdentityPublicKey>>(
         token_id: Identifier,
         owner_id: Identifier,
         data_contract_id: Identifier,
@@ -281,25 +289,29 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
         // Create the state transition
         let mut state_transition: StateTransition = documents_batch_transition.into();
         if let Some(options) = options {
-            state_transition.sign_external_with_options(
-                identity_public_key,
-                signer,
-                None::<GetDataContractSecurityLevelRequirementFn>,
-                options.signing_options,
-            )?;
+            state_transition
+                .sign_external_with_options(
+                    identity_public_key,
+                    signer,
+                    None::<GetDataContractSecurityLevelRequirementFn>,
+                    options.signing_options,
+                )
+                .await?;
         } else {
-            state_transition.sign_external(
-                identity_public_key,
-                signer,
-                None::<GetDataContractSecurityLevelRequirementFn>,
-            )?;
+            state_transition
+                .sign_external(
+                    identity_public_key,
+                    signer,
+                    None::<GetDataContractSecurityLevelRequirementFn>,
+                )
+                .await?;
         }
 
         Ok(state_transition)
     }
 
     #[cfg(feature = "state-transition-signing")]
-    fn new_token_freeze_transition<S: Signer<IdentityPublicKey>>(
+    async fn new_token_freeze_transition<S: Signer<IdentityPublicKey>>(
         token_id: Identifier,
         owner_id: Identifier,
         data_contract_id: Identifier,
@@ -360,24 +372,28 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
 
         let mut state_transition: StateTransition = documents_batch_transition.into();
         if let Some(options) = options {
-            state_transition.sign_external_with_options(
-                identity_public_key,
-                signer,
-                None::<GetDataContractSecurityLevelRequirementFn>,
-                options.signing_options,
-            )?;
+            state_transition
+                .sign_external_with_options(
+                    identity_public_key,
+                    signer,
+                    None::<GetDataContractSecurityLevelRequirementFn>,
+                    options.signing_options,
+                )
+                .await?;
         } else {
-            state_transition.sign_external(
-                identity_public_key,
-                signer,
-                None::<GetDataContractSecurityLevelRequirementFn>,
-            )?;
+            state_transition
+                .sign_external(
+                    identity_public_key,
+                    signer,
+                    None::<GetDataContractSecurityLevelRequirementFn>,
+                )
+                .await?;
         }
         Ok(state_transition)
     }
 
     #[cfg(feature = "state-transition-signing")]
-    fn new_token_unfreeze_transition<S: Signer<IdentityPublicKey>>(
+    async fn new_token_unfreeze_transition<S: Signer<IdentityPublicKey>>(
         token_id: Identifier,
         owner_id: Identifier,
         data_contract_id: Identifier,
@@ -438,24 +454,28 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
 
         let mut state_transition: StateTransition = documents_batch_transition.into();
         if let Some(options) = options {
-            state_transition.sign_external_with_options(
-                identity_public_key,
-                signer,
-                None::<GetDataContractSecurityLevelRequirementFn>,
-                options.signing_options,
-            )?;
+            state_transition
+                .sign_external_with_options(
+                    identity_public_key,
+                    signer,
+                    None::<GetDataContractSecurityLevelRequirementFn>,
+                    options.signing_options,
+                )
+                .await?;
         } else {
-            state_transition.sign_external(
-                identity_public_key,
-                signer,
-                None::<GetDataContractSecurityLevelRequirementFn>,
-            )?;
+            state_transition
+                .sign_external(
+                    identity_public_key,
+                    signer,
+                    None::<GetDataContractSecurityLevelRequirementFn>,
+                )
+                .await?;
         }
         Ok(state_transition)
     }
 
     #[cfg(feature = "state-transition-signing")]
-    fn new_token_destroy_frozen_funds_transition<S: Signer<IdentityPublicKey>>(
+    async fn new_token_destroy_frozen_funds_transition<S: Signer<IdentityPublicKey>>(
         token_id: Identifier,
         owner_id: Identifier,
         data_contract_id: Identifier,
@@ -518,24 +538,28 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
         .into();
         let mut state_transition: StateTransition = batch_transition.into();
         if let Some(options) = options {
-            state_transition.sign_external_with_options(
-                identity_public_key,
-                signer,
-                None::<GetDataContractSecurityLevelRequirementFn>,
-                options.signing_options,
-            )?;
+            state_transition
+                .sign_external_with_options(
+                    identity_public_key,
+                    signer,
+                    None::<GetDataContractSecurityLevelRequirementFn>,
+                    options.signing_options,
+                )
+                .await?;
         } else {
-            state_transition.sign_external(
-                identity_public_key,
-                signer,
-                None::<GetDataContractSecurityLevelRequirementFn>,
-            )?;
+            state_transition
+                .sign_external(
+                    identity_public_key,
+                    signer,
+                    None::<GetDataContractSecurityLevelRequirementFn>,
+                )
+                .await?;
         }
         Ok(state_transition)
     }
 
     #[cfg(feature = "state-transition-signing")]
-    fn new_token_emergency_action_transition<S: Signer<IdentityPublicKey>>(
+    async fn new_token_emergency_action_transition<S: Signer<IdentityPublicKey>>(
         token_id: Identifier,
         owner_id: Identifier,
         data_contract_id: Identifier,
@@ -596,24 +620,28 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
         .into();
         let mut state_transition: StateTransition = batch_transition.into();
         if let Some(options) = options {
-            state_transition.sign_external_with_options(
-                identity_public_key,
-                signer,
-                None::<GetDataContractSecurityLevelRequirementFn>,
-                options.signing_options,
-            )?;
+            state_transition
+                .sign_external_with_options(
+                    identity_public_key,
+                    signer,
+                    None::<GetDataContractSecurityLevelRequirementFn>,
+                    options.signing_options,
+                )
+                .await?;
         } else {
-            state_transition.sign_external(
-                identity_public_key,
-                signer,
-                None::<GetDataContractSecurityLevelRequirementFn>,
-            )?;
+            state_transition
+                .sign_external(
+                    identity_public_key,
+                    signer,
+                    None::<GetDataContractSecurityLevelRequirementFn>,
+                )
+                .await?;
         }
         Ok(state_transition)
     }
 
     #[cfg(feature = "state-transition-signing")]
-    fn new_token_config_update_transition<S: Signer<IdentityPublicKey>>(
+    async fn new_token_config_update_transition<S: Signer<IdentityPublicKey>>(
         token_id: Identifier,
         owner_id: Identifier,
         data_contract_id: Identifier,
@@ -674,24 +702,28 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
         .into();
         let mut state_transition: StateTransition = batch_transition.into();
         if let Some(options) = options {
-            state_transition.sign_external_with_options(
-                identity_public_key,
-                signer,
-                None::<GetDataContractSecurityLevelRequirementFn>,
-                options.signing_options,
-            )?;
+            state_transition
+                .sign_external_with_options(
+                    identity_public_key,
+                    signer,
+                    None::<GetDataContractSecurityLevelRequirementFn>,
+                    options.signing_options,
+                )
+                .await?;
         } else {
-            state_transition.sign_external(
-                identity_public_key,
-                signer,
-                None::<GetDataContractSecurityLevelRequirementFn>,
-            )?;
+            state_transition
+                .sign_external(
+                    identity_public_key,
+                    signer,
+                    None::<GetDataContractSecurityLevelRequirementFn>,
+                )
+                .await?;
         }
         Ok(state_transition)
     }
 
     #[cfg(feature = "state-transition-signing")]
-    fn new_token_claim_transition<S: Signer<IdentityPublicKey>>(
+    async fn new_token_claim_transition<S: Signer<IdentityPublicKey>>(
         token_id: Identifier,
         owner_id: Identifier,
         data_contract_id: Identifier,
@@ -727,24 +759,28 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
         .into();
         let mut state_transition: StateTransition = batch_transition.into();
         if let Some(options) = options {
-            state_transition.sign_external_with_options(
-                identity_public_key,
-                signer,
-                None::<GetDataContractSecurityLevelRequirementFn>,
-                options.signing_options,
-            )?;
+            state_transition
+                .sign_external_with_options(
+                    identity_public_key,
+                    signer,
+                    None::<GetDataContractSecurityLevelRequirementFn>,
+                    options.signing_options,
+                )
+                .await?;
         } else {
-            state_transition.sign_external(
-                identity_public_key,
-                signer,
-                None::<GetDataContractSecurityLevelRequirementFn>,
-            )?;
+            state_transition
+                .sign_external(
+                    identity_public_key,
+                    signer,
+                    None::<GetDataContractSecurityLevelRequirementFn>,
+                )
+                .await?;
         }
         Ok(state_transition)
     }
 
     #[cfg(feature = "state-transition-signing")]
-    fn new_token_change_direct_purchase_price_transition<S: Signer<IdentityPublicKey>>(
+    async fn new_token_change_direct_purchase_price_transition<S: Signer<IdentityPublicKey>>(
         token_id: Identifier,
         owner_id: Identifier,
         data_contract_id: Identifier,
@@ -809,24 +845,28 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
         .into();
         let mut state_transition: StateTransition = batch_transition.into();
         if let Some(options) = options {
-            state_transition.sign_external_with_options(
-                identity_public_key,
-                signer,
-                None::<GetDataContractSecurityLevelRequirementFn>,
-                options.signing_options,
-            )?;
+            state_transition
+                .sign_external_with_options(
+                    identity_public_key,
+                    signer,
+                    None::<GetDataContractSecurityLevelRequirementFn>,
+                    options.signing_options,
+                )
+                .await?;
         } else {
-            state_transition.sign_external(
-                identity_public_key,
-                signer,
-                None::<GetDataContractSecurityLevelRequirementFn>,
-            )?;
+            state_transition
+                .sign_external(
+                    identity_public_key,
+                    signer,
+                    None::<GetDataContractSecurityLevelRequirementFn>,
+                )
+                .await?;
         }
         Ok(state_transition)
     }
 
     #[cfg(feature = "state-transition-signing")]
-    fn new_token_direct_purchase_transition<S: Signer<IdentityPublicKey>>(
+    async fn new_token_direct_purchase_transition<S: Signer<IdentityPublicKey>>(
         token_id: Identifier,
         owner_id: Identifier,
         data_contract_id: Identifier,
@@ -863,18 +903,22 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
         .into();
         let mut state_transition: StateTransition = batch_transition.into();
         if let Some(options) = options {
-            state_transition.sign_external_with_options(
-                identity_public_key,
-                signer,
-                None::<GetDataContractSecurityLevelRequirementFn>,
-                options.signing_options,
-            )?;
+            state_transition
+                .sign_external_with_options(
+                    identity_public_key,
+                    signer,
+                    None::<GetDataContractSecurityLevelRequirementFn>,
+                    options.signing_options,
+                )
+                .await?;
         } else {
-            state_transition.sign_external(
-                identity_public_key,
-                signer,
-                None::<GetDataContractSecurityLevelRequirementFn>,
-            )?;
+            state_transition
+                .sign_external(
+                    identity_public_key,
+                    signer,
+                    None::<GetDataContractSecurityLevelRequirementFn>,
+                )
+                .await?;
         }
         Ok(state_transition)
     }

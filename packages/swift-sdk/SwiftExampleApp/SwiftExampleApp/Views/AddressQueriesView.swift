@@ -2,7 +2,7 @@ import SwiftDashSDK
 import SwiftUI
 
 struct AddressQueriesView: View {
-  @EnvironmentObject var appState: UnifiedAppState
+  @EnvironmentObject var appState: AppState
 
   var body: some View {
     List {
@@ -86,7 +86,7 @@ struct AddressQueriesView: View {
 // MARK: - Get Address Info View
 
 struct GetAddressInfoView: View {
-  @EnvironmentObject var appState: UnifiedAppState
+  @EnvironmentObject var appState: AppState
   @StateObject private var viewModel = GetAddressInfoViewModel()
 
   var body: some View {
@@ -99,7 +99,7 @@ struct GetAddressInfoView: View {
             .fontWeight(.bold)
 
           Text(
-            "Query the balance and nonce for a Platform address. Supports both bech32m (tdashevo1.../dashevo1...) and hex formats."
+            "Query the balance and nonce for a Platform address. Supports both bech32m (tdash1.../dash1...) and hex formats."
           )
           .font(.body)
           .foregroundColor(.secondary)
@@ -147,9 +147,7 @@ struct GetAddressInfoView: View {
               }
 
               // Debug info for bech32m
-              if viewModel.addressInput.lowercased().hasPrefix("dashevo1")
-                || viewModel.addressInput.lowercased().hasPrefix("tdashevo1")
-              {
+              if Bech32m.looksLikePlatformAddress(viewModel.addressInput) {
                 let debug = Bech32m.debugDecode(viewModel.addressInput)
                 if let hex = debug.hex, let count = debug.byteCount {
                   Text("Decoded: \(count) bytes")
@@ -172,7 +170,7 @@ struct GetAddressInfoView: View {
 
         // Query Button
         Button {
-          guard let sdk = appState.platformState.sdk else { return }
+          guard let sdk = appState.sdk else { return }
           Task { await viewModel.fetchAddressInfo(sdk: sdk) }
         } label: {
           HStack {
@@ -193,7 +191,7 @@ struct GetAddressInfoView: View {
           .cornerRadius(10)
         }
         .disabled(
-          viewModel.isLoading || !viewModel.isFormValid || appState.platformState.sdk == nil
+          viewModel.isLoading || !viewModel.isFormValid || appState.sdk == nil
         )
         .padding(.horizontal)
 
@@ -215,10 +213,10 @@ struct GetAddressInfoView: View {
               .cornerRadius(8)
             } else if let info = viewModel.result {
               VStack(alignment: .leading, spacing: 8) {
-                let network =
-                  viewModel.addressInput.lowercased().hasPrefix("tdashevo")
-                  ? DashSDKNetwork(rawValue: 1)
-                  : DashSDKNetwork(rawValue: 0)
+                let network: Network =
+                  viewModel.addressInput.lowercased().hasPrefix(Bech32m.platformHrpMainnet + "1")
+                  ? .mainnet
+                  : .testnet
                 let bech32mAddress = info.toBech32m(network: network) ?? info.addressHex
 
                 ResultRow(label: "Address", value: bech32mAddress)
@@ -255,7 +253,7 @@ struct GetAddressInfoView: View {
 // MARK: - Get Addresses Infos View
 
 struct GetAddressesInfosView: View {
-  @EnvironmentObject var appState: UnifiedAppState
+  @EnvironmentObject var appState: AppState
   @StateObject private var viewModel = GetAddressesInfosViewModel()
 
   var body: some View {
@@ -312,7 +310,7 @@ struct GetAddressesInfosView: View {
 
         // Query Button
         Button {
-          guard let sdk = appState.platformState.sdk else { return }
+          guard let sdk = appState.sdk else { return }
           Task { await viewModel.fetchAddressesInfos(sdk: sdk) }
         } label: {
           HStack {
@@ -333,7 +331,7 @@ struct GetAddressesInfosView: View {
           .cornerRadius(10)
         }
         .disabled(
-          viewModel.isLoading || !viewModel.isFormValid || appState.platformState.sdk == nil
+          viewModel.isLoading || !viewModel.isFormValid || appState.sdk == nil
         )
         .padding(.horizontal)
 
@@ -354,8 +352,11 @@ struct GetAddressesInfosView: View {
               .background(Color.red.opacity(0.1))
               .cornerRadius(8)
             } else if let result = viewModel.result {
-              let isTestnet = viewModel.addressesText.lowercased().contains("tdashevo")
-              let network = isTestnet ? DashSDKNetwork(rawValue: 1) : DashSDKNetwork(rawValue: 0)
+              // Testnet HRP (tdash) contains the mainnet HRP (dash) as a
+              // substring, so check for the testnet prefix first.
+              let lowered = viewModel.addressesText.lowercased()
+              let isTestnet = lowered.contains(Bech32m.platformHrpTestnet + "1")
+              let network: Network = isTestnet ? .testnet : .mainnet
 
               VStack(alignment: .leading, spacing: 12) {
                 HStack {
@@ -435,7 +436,7 @@ struct GetAddressesInfosView: View {
 // MARK: - Get Trunk State View
 
 struct GetTrunkStateView: View {
-  @EnvironmentObject var appState: UnifiedAppState
+  @EnvironmentObject var appState: AppState
   @State private var isLoading = false
   @State private var result: PlatformTrunkState?
   @State private var errorMessage: String?
@@ -482,7 +483,7 @@ struct GetTrunkStateView: View {
           .foregroundColor(.white)
           .cornerRadius(10)
         }
-        .disabled(isLoading || appState.platformState.sdk == nil)
+        .disabled(isLoading || appState.sdk == nil)
         .padding(.horizontal)
 
         // Result
@@ -661,7 +662,7 @@ struct GetTrunkStateView: View {
   }
 
   private func fetchTrunkState() {
-    guard let sdk = appState.platformState.sdk else { return }
+    guard let sdk = appState.sdk else { return }
 
     isLoading = true
     errorMessage = nil
@@ -691,7 +692,7 @@ struct GetTrunkStateView: View {
 // MARK: - Get Branch State View
 
 struct GetBranchStateView: View {
-  @EnvironmentObject var appState: UnifiedAppState
+  @EnvironmentObject var appState: AppState
   @State private var keyHex: String = ""
   @State private var depth: String = "6"  // Valid range: 6-9
   @State private var expectedHashHex: String = ""
@@ -784,7 +785,7 @@ struct GetBranchStateView: View {
           .foregroundColor(.white)
           .cornerRadius(10)
         }
-        .disabled(isLoading || !isFormValid || appState.platformState.sdk == nil)
+        .disabled(isLoading || !isFormValid || appState.sdk == nil)
         .padding(.horizontal)
 
         // Result
@@ -949,7 +950,7 @@ struct GetBranchStateView: View {
   }
 
   private func fetchBranchState() {
-    guard let sdk = appState.platformState.sdk else { return }
+    guard let sdk = appState.sdk else { return }
 
     guard let keyData = Data(hexString: keyHex) else {
       errorMessage = "Invalid key hex"
@@ -1008,7 +1009,7 @@ struct GetBranchStateView: View {
 // MARK: - Get Recent Balance Changes View
 
 struct GetRecentBalanceChangesView: View {
-  @EnvironmentObject var appState: UnifiedAppState
+  @EnvironmentObject var appState: AppState
   @State private var startHeightInput: String = "0"
   @State private var isLoading = false
   @State private var result: RecentBalanceChanges?
@@ -1088,7 +1089,7 @@ struct GetRecentBalanceChangesView: View {
             .padding(.horizontal)
           } else if let changes = result {
             // Get network from SDK (0 = mainnet, 1 = testnet)
-            let network = appState.platformState.sdk?.network ?? DashSDKNetwork(rawValue: 1)
+            let network = appState.sdk?.network ?? .testnet
             RecentBalanceChangesResultView(changes: changes, network: network)
               .padding(.horizontal)
           }
@@ -1106,7 +1107,7 @@ struct GetRecentBalanceChangesView: View {
   }
 
   private func fetchRecentChanges() {
-    guard let sdk = appState.platformState.sdk else { return }
+    guard let sdk = appState.sdk else { return }
     guard let startHeight = UInt64(startHeightInput) else {
       errorMessage = "Invalid start height"
       showResult = true
@@ -1142,7 +1143,7 @@ struct GetRecentBalanceChangesView: View {
 
 struct RecentBalanceChangesResultView: View {
   let changes: RecentBalanceChanges
-  let network: DashSDKNetwork
+  let network: Network
 
   var body: some View {
     VStack(alignment: .leading, spacing: 16) {
@@ -1184,7 +1185,7 @@ struct RecentBalanceChangesResultView: View {
 
 struct BlockBalanceChangesView: View {
   let block: BlockBalanceChanges
-  let network: DashSDKNetwork
+  let network: Network
 
   @State private var isExpanded = false
 
@@ -1221,7 +1222,7 @@ struct BlockBalanceChangesView: View {
 
 struct AddressBalanceChangeView: View {
   let change: AddressBalanceChange
-  let network: DashSDKNetwork
+  let network: Network
 
   var body: some View {
     VStack(alignment: .leading, spacing: 8) {
@@ -1292,7 +1293,7 @@ struct AddressBalanceChangeView: View {
 // MARK: - Get Compacted Balance Changes View
 
 struct GetCompactedBalanceChangesView: View {
-  @EnvironmentObject var appState: UnifiedAppState
+  @EnvironmentObject var appState: AppState
   @State private var startHeightInput: String = "0"
   @State private var isLoading = false
   @State private var result: CompactedBalanceChanges?
@@ -1378,7 +1379,7 @@ struct GetCompactedBalanceChangesView: View {
             .padding(.horizontal)
           } else if let changes = result {
             // Get network from SDK
-            let network = appState.platformState.sdk?.network ?? DashSDKNetwork(rawValue: 1)
+            let network = appState.sdk?.network ?? .testnet
             CompactedBalanceChangesResultView(changes: changes, network: network)
               .padding(.horizontal)
           }
@@ -1396,7 +1397,7 @@ struct GetCompactedBalanceChangesView: View {
   }
 
   private func fetchCompactedChanges() {
-    guard let sdk = appState.platformState.sdk else { return }
+    guard let sdk = appState.sdk else { return }
     guard let startHeight = UInt64(startHeightInput) else {
       errorMessage = "Invalid start height"
       showResult = true
@@ -1432,7 +1433,7 @@ struct GetCompactedBalanceChangesView: View {
 
 struct CompactedBalanceChangesResultView: View {
   let changes: CompactedBalanceChanges
-  let network: DashSDKNetwork
+  let network: Network
 
   var body: some View {
     VStack(alignment: .leading, spacing: 16) {
@@ -1474,7 +1475,7 @@ struct CompactedBalanceChangesResultView: View {
 
 struct CompactedBlockRangeView: View {
   let range: CompactedBlockRange
-  let network: DashSDKNetwork
+  let network: Network
 
   @State private var isExpanded = false
 
@@ -1511,7 +1512,7 @@ struct CompactedBlockRangeView: View {
 
 struct CompactedAddressChangeView: View {
   let change: CompactedAddressChange
-  let network: DashSDKNetwork
+  let network: Network
 
   var body: some View {
     VStack(alignment: .leading, spacing: 8) {
@@ -1624,7 +1625,7 @@ struct CompactedAddressChangeView: View {
 // MARK: - Transfer Address Funds View
 
 struct TransferAddressFundsView: View {
-  @EnvironmentObject var appState: UnifiedAppState
+  @EnvironmentObject var appState: AppState
   @StateObject private var viewModel = AddressTransferViewModel()
 
   var body: some View {
@@ -1759,7 +1760,7 @@ struct TransferAddressFundsView: View {
 
         // Transfer Button
         Button {
-          guard let sdk = appState.platformState.sdk else { return }
+          guard let sdk = appState.sdk else { return }
           Task { await viewModel.executeTransfer(sdk: sdk) }
         } label: {
           HStack {
@@ -1779,7 +1780,7 @@ struct TransferAddressFundsView: View {
           .cornerRadius(10)
         }
         .disabled(
-          viewModel.isLoading || !viewModel.isFormValid || appState.platformState.sdk == nil
+          viewModel.isLoading || !viewModel.isFormValid || appState.sdk == nil
         )
         .padding(.horizontal)
 
@@ -1846,7 +1847,7 @@ struct TransferAddressFundsView: View {
 // MARK: - Withdraw Address Funds View
 
 struct WithdrawAddressFundsView: View {
-  @EnvironmentObject var appState: UnifiedAppState
+  @EnvironmentObject var appState: AppState
   @StateObject private var viewModel = WithdrawAddressFundsViewModel()
 
   var body: some View {
@@ -2029,7 +2030,7 @@ struct WithdrawAddressFundsView: View {
 
         // Withdraw Button
         Button {
-          guard let sdk = appState.platformState.sdk else { return }
+          guard let sdk = appState.sdk else { return }
           Task { await viewModel.executeWithdrawal(sdk: sdk) }
         } label: {
           HStack {
@@ -2049,7 +2050,7 @@ struct WithdrawAddressFundsView: View {
           .cornerRadius(10)
         }
         .disabled(
-          viewModel.isLoading || !viewModel.isFormValid || appState.platformState.sdk == nil
+          viewModel.isLoading || !viewModel.isFormValid || appState.sdk == nil
         )
         .padding(.horizontal)
 
@@ -2116,7 +2117,7 @@ struct WithdrawAddressFundsView: View {
 // MARK: - Top Up Address From Asset Lock View
 
 struct TopUpAddressFromAssetLockView: View {
-  @EnvironmentObject var appState: UnifiedAppState
+  @EnvironmentObject var appState: AppState
   @StateObject private var viewModel = TopUpAddressFromAssetLockViewModel()
 
   var body: some View {
@@ -2294,7 +2295,7 @@ struct TopUpAddressFromAssetLockView: View {
 
         // Top Up Button
         Button {
-          guard let sdk = appState.platformState.sdk else { return }
+          guard let sdk = appState.sdk else { return }
           Task { await viewModel.executeTopUp(sdk: sdk) }
         } label: {
           HStack {
@@ -2314,7 +2315,7 @@ struct TopUpAddressFromAssetLockView: View {
           .cornerRadius(10)
         }
         .disabled(
-          viewModel.isLoading || !viewModel.isFormValid || appState.platformState.sdk == nil
+          viewModel.isLoading || !viewModel.isFormValid || appState.sdk == nil
         )
         .padding(.horizontal)
 
@@ -2381,7 +2382,7 @@ struct TopUpAddressFromAssetLockView: View {
 // MARK: - Top Up Identity From Addresses View
 
 struct TopUpIdentityFromAddressesView: View {
-  @EnvironmentObject var appState: UnifiedAppState
+  @EnvironmentObject var appState: AppState
 
   @State private var identityId: String = ""
   @State private var inputAddressHex: String = ""
@@ -2508,7 +2509,7 @@ struct TopUpIdentityFromAddressesView: View {
           .foregroundColor(.white)
           .cornerRadius(10)
         }
-        .disabled(isLoading || !isFormValid || appState.platformState.sdk == nil)
+        .disabled(isLoading || !isFormValid || appState.sdk == nil)
         .padding(.horizontal)
 
         // Result
@@ -2596,7 +2597,7 @@ struct TopUpIdentityFromAddressesView: View {
   }
 
   private func executeTopUp() {
-    guard let sdk = appState.platformState.sdk else { return }
+    guard let sdk = appState.sdk else { return }
 
     guard let inputAddressData = Data(hexString: inputAddressHex),
       let privateKeyData = Data(hexString: inputPrivateKeyHex),
@@ -2644,7 +2645,7 @@ struct TopUpIdentityFromAddressesView: View {
 // MARK: - Transfer Identity To Addresses View
 
 struct TransferIdentityToAddressesView: View {
-  @EnvironmentObject var appState: UnifiedAppState
+  @EnvironmentObject var appState: AppState
 
   @State private var identityId: String = ""
   @State private var outputAddressHex: String = ""
@@ -2782,7 +2783,7 @@ struct TransferIdentityToAddressesView: View {
           .foregroundColor(.white)
           .cornerRadius(10)
         }
-        .disabled(isLoading || !isFormValid || appState.platformState.sdk == nil)
+        .disabled(isLoading || !isFormValid || appState.sdk == nil)
         .padding(.horizontal)
 
         // Result
@@ -2870,7 +2871,7 @@ struct TransferIdentityToAddressesView: View {
   }
 
   private func executeTransfer() {
-    guard let sdk = appState.platformState.sdk else { return }
+    guard let sdk = appState.sdk else { return }
 
     guard let outputAddressData = Data(hexString: outputAddressHex),
       let privateKeyData = Data(hexString: identityPrivateKeyHex),
@@ -2918,7 +2919,7 @@ struct TransferIdentityToAddressesView: View {
 // MARK: - Create Identity From Addresses View
 
 struct CreateIdentityFromAddressesView: View {
-  @EnvironmentObject var appState: UnifiedAppState
+  @EnvironmentObject var appState: AppState
 
   @State private var identityId: String = ""
   @State private var inputAddressHex: String = ""
@@ -3110,7 +3111,7 @@ struct CreateIdentityFromAddressesView: View {
           .foregroundColor(.white)
           .cornerRadius(10)
         }
-        .disabled(isLoading || !isFormValid || appState.platformState.sdk == nil)
+        .disabled(isLoading || !isFormValid || appState.sdk == nil)
         .padding(.horizontal)
 
         // Result
@@ -3190,7 +3191,7 @@ struct CreateIdentityFromAddressesView: View {
   }
 
   private func executeCreate() {
-    guard let sdk = appState.platformState.sdk else { return }
+    guard let sdk = appState.sdk else { return }
 
     guard let inputAddressData = Data(hexString: inputAddressHex),
       let inputPrivateKeyData = Data(hexString: inputPrivateKeyHex),
@@ -3326,7 +3327,7 @@ struct AddressQueriesView_Previews: PreviewProvider {
   static var previews: some View {
     NavigationView {
       AddressQueriesView()
-        .environmentObject(UnifiedAppState())
+        .environmentObject(AppState())
     }
   }
 }

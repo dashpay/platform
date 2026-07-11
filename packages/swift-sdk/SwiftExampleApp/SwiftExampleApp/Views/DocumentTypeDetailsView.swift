@@ -1,13 +1,18 @@
 import SwiftUI
 import SwiftData
+import SwiftDashSDK
 
 struct DocumentTypeDetailsView: View {
     let documentType: PersistentDocumentType
+    @EnvironmentObject var appState: AppState
+    @EnvironmentObject var walletManager: PlatformWalletManager
     @Environment(\.dismiss) var dismiss
     @State private var expandedIndices: Set<String> = []
+    @State private var showingCreateDocument = false
 
     var body: some View {
         List {
+            newDocumentSection
             documentInfoSection
             documentSettingsSection
             documentIndexesSection
@@ -15,6 +20,33 @@ struct DocumentTypeDetailsView: View {
         }
         .navigationTitle(documentType.name)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button {
+                    showingCreateDocument = true
+                } label: {
+                    Image(systemName: "plus")
+                }
+                .accessibilityIdentifier("documentType.newDocumentButton")
+            }
+        }
+        .sheet(isPresented: $showingCreateDocument) {
+            CreateDocumentView(presetDocumentType: documentType)
+                .environmentObject(appState)
+                .environmentObject(walletManager)
+        }
+    }
+
+    @ViewBuilder
+    private var newDocumentSection: some View {
+        Section {
+            Button {
+                showingCreateDocument = true
+            } label: {
+                Label("New Document", systemImage: "doc.badge.plus")
+            }
+            .accessibilityIdentifier("documentType.newDocumentRow")
+        }
     }
 
     // MARK: - Section Views

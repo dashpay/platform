@@ -1,5 +1,6 @@
 import { expect } from './helpers/chai.ts';
 import init, * as sdk from '../../dist/sdk.compressed.js';
+import { prefetchLocalReady } from './helpers/trustedContext.ts';
 
 describe('Epochs and Evonode Blocks', function describeEpochs() {
   this.timeout(60000);
@@ -9,7 +10,7 @@ describe('Epochs and Evonode Blocks', function describeEpochs() {
 
   before(async () => {
     await init();
-    const context = await sdk.WasmTrustedContext.prefetchLocal();
+    const context = await prefetchLocalReady();
     const builder = sdk.WasmSdkBuilder.local().withTrustedContext(context);
     client = await builder.build();
 

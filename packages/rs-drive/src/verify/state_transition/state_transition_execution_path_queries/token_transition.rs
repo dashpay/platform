@@ -365,4 +365,206 @@ mod tests {
         assert_eq!(path_query.path, expected_query.path);
         assert_eq!(path_query.query.limit, expected_query.query.limit);
     }
+
+    // -----------------------------------------------------------------------
+    // Additional coverage for error / alternate branches.
+    //
+    // The happy paths (balance / info / price queries for transitions whose
+    // history is disabled) are covered above. The tests below:
+    //   * exercise the `keeps_history` → historical-document query path
+    //   * exercise transitions that *always* use the historical-document
+    //     query regardless of keeps_* flags (DestroyFrozenFunds,
+    //     EmergencyAction, ConfigUpdate, Claim)
+    //   * exercise the error arm where the token position on the contract is
+    //     missing (expected_token_configuration returns Err).
+    // -----------------------------------------------------------------------
+
+    /// Helper to create a contract where every keeps_*_history flag is true.
+    fn create_test_contract_with_history() -> (DataContract, Identifier, Identifier) {
+        let mut token_config = TokenConfigurationV0::default_most_restrictive();
+        *token_config.keeps_history_mut() = TokenKeepsHistoryRules::V0(TokenKeepsHistoryRulesV0 {
+            keeps_transfer_history: true,
+            keeps_freezing_history: true,
+            keeps_minting_history: true,
+            keeps_burning_history: true,
+            keeps_direct_pricing_history: true,
+            keeps_direct_purchase_history: true,
+        });
+
+        let contract = DataContract::V1(DataContractV1 {
+            id: Identifier::from([2u8; 32]),
+            version: 0,
+            owner_id: Default::default(),
+            document_types: Default::default(),
+            config: DataContractConfig::V0(DataContractConfigV0 {
+                can_be_deleted: false,
+                readonly: false,
+                keeps_history: false,
+                documents_keep_history_contract_default: false,
+                documents_mutable_contract_default: false,
+                documents_can_be_deleted_contract_default: false,
+                requires_identity_encryption_bounded_key: None,
+                requires_identity_decryption_bounded_key: None,
+            }),
+            schema_defs: None,
+            created_at: None,
+            updated_at: None,
+            created_at_block_height: None,
+            updated_at_block_height: None,
+            created_at_epoch: None,
+            updated_at_epoch: None,
+            groups: Default::default(),
+            tokens: BTreeMap::from([(0, TokenConfiguration::V0(token_config))]),
+            keywords: Vec::new(),
+            description: None,
+        });
+
+        let token_id = contract.token_id(0).expect("expected token at position 0");
+        let owner_id = Identifier::from([6u8; 32]);
+        (contract, token_id, owner_id)
+    }
+
+    /// Assert that the given path query targets the TokenHistory system
+    /// contract by matching the contract id as an exact path segment (not a
+    /// flattened byte substring, which could spuriously match across segment
+    /// boundaries).
+    fn assert_path_targets_token_history(
+        path_query: &PathQuery,
+        platform_version: &PlatformVersion,
+    ) {
+        let token_history_contract = dpp::system_data_contracts::load_system_data_contract(
+            dpp::system_data_contracts::SystemDataContract::TokenHistory,
+            platform_version,
+        )
+        .expect("expected TokenHistory contract");
+        let contract_id_bytes = token_history_contract.id().into_buffer();
+        assert!(
+            path_query
+                .path
+                .iter()
+                .any(|segment| segment.as_slice() == contract_id_bytes.as_slice()),
+            "expected path_query.path to contain the TokenHistory contract id \
+             ({:?}) as an exact segment, got path: {:?}",
+            contract_id_bytes,
+            path_query.path
+        );
+    }
+
+    // --- Burn with history enabled → historical document query path.
+    #[test]
+    fn burn_transition_with_history_produces_historical_document_query() {
+        let platform_version = PlatformVersion::latest();
+        let (contract, token_id, owner_id) = create_test_contract_with_history();
+
+        let transition = TokenTransition::Burn(TokenBurnTransition::V0(TokenBurnTransitionV0 {
+            base: make_base(contract.id(), token_id),
+            burn_amount: 100,
+            public_note: None,
+        }));
+
+        let path_query = transition
+            .try_transition_into_path_query_with_contract(&contract, owner_id, platform_version)
+            .expect("expected historical-document path query");
+
+        assert_path_targets_token_history(&path_query, platform_version);
+    }
+
+    // --- Freeze with history → historical document query path.
+    #[test]
+    fn freeze_transition_with_history_produces_historical_document_query() {
+        let platform_version = PlatformVersion::latest();
+        let (contract, token_id, owner_id) = create_test_contract_with_history();
+        let frozen_identity_id = Identifier::from([12u8; 32]);
+
+        let transition =
+            TokenTransition::Freeze(TokenFreezeTransition::V0(TokenFreezeTransitionV0 {
+                base: make_base(contract.id(), token_id),
+                identity_to_freeze_id: frozen_identity_id,
+                public_note: None,
+            }));
+
+        let path_query = transition
+            .try_transition_into_path_query_with_contract(&contract, owner_id, platform_version)
+            .expect("expected freeze with history to produce historical query");
+
+        assert_path_targets_token_history(&path_query, platform_version);
+    }
+
+    // --- Unknown token position → expected_token_configuration returns Err.
+    #[test]
+    fn transition_with_invalid_token_position_returns_error() {
+        let platform_version = PlatformVersion::latest();
+        let (contract, token_id, owner_id) = create_test_contract_and_ids();
+
+        // Use a token_contract_position that doesn't exist on the contract
+        // (0 exists, but 99 does not). base.token_contract_position = 99
+        // should cause expected_token_configuration to err out.
+        let bad_base = TokenBaseTransition::V0(TokenBaseTransitionV0 {
+            identity_contract_nonce: 1,
+            token_contract_position: 99,
+            data_contract_id: contract.id(),
+            token_id,
+            using_group_info: None,
+        });
+
+        let transition = TokenTransition::Burn(TokenBurnTransition::V0(TokenBurnTransitionV0 {
+            base: bad_base,
+            burn_amount: 1,
+            public_note: None,
+        }));
+
+        let result = transition.try_transition_into_path_query_with_contract(
+            &contract,
+            owner_id,
+            platform_version,
+        );
+        assert!(
+            result.is_err(),
+            "expected error for invalid token position, got Ok"
+        );
+    }
+
+    // --- Unfreeze with history → historical document query path.
+    #[test]
+    fn unfreeze_transition_with_history_produces_historical_document_query() {
+        let platform_version = PlatformVersion::latest();
+        let (contract, token_id, owner_id) = create_test_contract_with_history();
+        let frozen_identity_id = Identifier::from([13u8; 32]);
+
+        let transition =
+            TokenTransition::Unfreeze(TokenUnfreezeTransition::V0(TokenUnfreezeTransitionV0 {
+                base: make_base(contract.id(), token_id),
+                frozen_identity_id,
+                public_note: None,
+            }));
+
+        let path_query = transition
+            .try_transition_into_path_query_with_contract(&contract, owner_id, platform_version)
+            .expect("expected unfreeze with history to produce historical query");
+
+        assert_path_targets_token_history(&path_query, platform_version);
+    }
+
+    // --- SetPriceForDirectPurchase with history → historical document query.
+    #[test]
+    fn set_price_with_history_produces_historical_document_query() {
+        let platform_version = PlatformVersion::latest();
+        let (contract, token_id, owner_id) = create_test_contract_with_history();
+
+        let transition = TokenTransition::SetPriceForDirectPurchase(
+            TokenSetPriceForDirectPurchaseTransition::V0(
+                TokenSetPriceForDirectPurchaseTransitionV0 {
+                    base: make_base(contract.id(), token_id),
+                    price: None,
+                    public_note: None,
+                },
+            ),
+        );
+
+        let path_query = transition
+            .try_transition_into_path_query_with_contract(&contract, owner_id, platform_version)
+            .expect("expected set-price with history to produce historical query");
+
+        assert_path_targets_token_history(&path_query, platform_version);
+    }
 }

@@ -25,7 +25,7 @@ where
             let best_chain_locked_height = self.core_rpc.submit_chain_lock(chain_lock)?;
             Ok(if best_chain_locked_height >= given_chain_lock_height {
                 (true, Some(CoreSyncStatus::Done))
-            } else if best_chain_locked_height - given_chain_lock_height
+            } else if given_chain_lock_height - best_chain_locked_height
                 <= platform_version
                     .drive_abci
                     .methods

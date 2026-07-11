@@ -15,10 +15,32 @@ chai.use(dirtyChai);
 
 const testTransactionAgainstFilter = require('../../../lib/transactionsFilter/testTransactionAgainstFilter');
 
+// Deterministic test-vector private keys.
+//
+// These tests build a fresh, single-element BloomFilter and then assert that
+// unrelated data (an outpoint, a different address, a transaction hash) does
+// NOT match. A bloom filter has a non-zero false-positive rate, so with
+// randomly generated keys those negative assertions occasionally match by
+// chance and the test flakes (observed rate ~0.3% for the BLOOM_UPDATE_NONE
+// case). Fixed keys make every assertion reproducible. Do not replace these
+// with `new PrivateKey()`.
+const testPrivateKeys = [
+  '0000000000000000000000000000000000000000000000000000000000000001',
+  '0000000000000000000000000000000000000000000000000000000000000002',
+  '0000000000000000000000000000000000000000000000000000000000000003',
+  '0000000000000000000000000000000000000000000000000000000000000004',
+  '0000000000000000000000000000000000000000000000000000000000000005',
+  '0000000000000000000000000000000000000000000000000000000000000006',
+  '0000000000000000000000000000000000000000000000000000000000000007',
+  '0000000000000000000000000000000000000000000000000000000000000008',
+  '0000000000000000000000000000000000000000000000000000000000000009',
+  '000000000000000000000000000000000000000000000000000000000000000a',
+].map((privateKeyHex) => new PrivateKey(privateKeyHex));
+
 describe('testTransactionAgainstFilter', () => {
   it('should match on address in output', () => {
     const filter = BloomFilter.create(1, 0.0001);
-    const address = new PrivateKey().toAddress();
+    const address = testPrivateKeys[0].toAddress();
     const tx = new Transaction().to(address, 10);
     filter.insert(address.hashBuffer);
 
@@ -28,8 +50,8 @@ describe('testTransactionAgainstFilter', () => {
 
   it('should not match on address if there is no such output in transaction', () => {
     const filter = BloomFilter.create(1, 0.0001);
-    const addressInFilter = new PrivateKey().toAddress();
-    const addressInTransaction = new PrivateKey().toAddress();
+    const addressInFilter = testPrivateKeys[1].toAddress();
+    const addressInTransaction = testPrivateKeys[2].toAddress();
     const tx = new Transaction().to(addressInTransaction, 10);
     filter.insert(addressInFilter.hashBuffer);
 
@@ -39,7 +61,7 @@ describe('testTransactionAgainstFilter', () => {
 
   it('should match when input script contains desired data', () => {
     const filter = BloomFilter.create(1, 0.0001);
-    const address = new PrivateKey().toAddress();
+    const address = testPrivateKeys[3].toAddress();
     const tx = new Transaction().to(address, 10);
 
     filter.insert(address.hashBuffer);
@@ -60,8 +82,8 @@ describe('testTransactionAgainstFilter', () => {
 
   it("should not match when input script doesn't contain desired data", () => {
     const filter = BloomFilter.create(1, 0.0001);
-    const addressInFilter = new PrivateKey().toAddress();
-    const addressInTransaction = new PrivateKey().toAddress();
+    const addressInFilter = testPrivateKeys[4].toAddress();
+    const addressInTransaction = testPrivateKeys[5].toAddress();
     const tx = new Transaction().to(addressInTransaction, 10);
 
     filter.insert(addressInFilter.hashBuffer);
@@ -83,7 +105,7 @@ describe('testTransactionAgainstFilter', () => {
   it('should add outpoint to the filter if BLOOM_UPDATE_ALL flag is set in the filter'
     + ' and match transaction with that outpoint in input', () => {
     const filter = BloomFilter.create(1, 0.0001);
-    const address = new PrivateKey().toAddress();
+    const address = testPrivateKeys[6].toAddress();
     const tx = new Transaction().to(address, 10);
 
     filter.nFlags = BloomFilter.BLOOM_UPDATE_ALL;
@@ -107,7 +129,7 @@ describe('testTransactionAgainstFilter', () => {
   it('should not add outpoint to the filter if BLOOM_UPDATE_NONE flag is'
     + ' set in the filter', () => {
     const filter = BloomFilter.create(1, 0.0001);
-    const address = new PrivateKey().toAddress();
+    const address = testPrivateKeys[7].toAddress();
     const tx = new Transaction().to(address, 10);
 
     filter.nFlags = BloomFilter.BLOOM_UPDATE_NONE;
@@ -131,7 +153,7 @@ describe('testTransactionAgainstFilter', () => {
   it('should add outpoint to the filter if BLOOM_UPDATE_P2PUBKEY_ONLY,'
     + ' and output is pub key out', () => {
     const filter = BloomFilter.create(1, 0.0001);
-    const pubKey = new PrivateKey().toPublicKey();
+    const pubKey = testPrivateKeys[8].toPublicKey();
     const output = new Output({
       satoshis: 10,
       script: Script.buildPublicKeyOut(pubKey),
@@ -159,7 +181,7 @@ describe('testTransactionAgainstFilter', () => {
   it('should not add outpoint to the filter if BLOOM_UPDATE_P2PUBKEY_ONLY,'
     + ' and output is to pub key hash', () => {
     const filter = BloomFilter.create(1, 0.0001);
-    const address = new PrivateKey().toAddress();
+    const address = testPrivateKeys[9].toAddress();
     const tx = new Transaction().to(address, 10);
 
     filter.nFlags = BloomFilter.BLOOM_UPDATE_P2PUBKEY_ONLY;
@@ -184,9 +206,9 @@ describe('testTransactionAgainstFilter', () => {
     + ' is set and matched output is multisig', () => {
     const filter = BloomFilter.create(3, 0.0001);
     const pubKeys = [
-      new PrivateKey().toPublicKey(),
-      new PrivateKey().toPublicKey(),
-      new PrivateKey().toPublicKey(),
+      testPrivateKeys[0].toPublicKey(),
+      testPrivateKeys[1].toPublicKey(),
+      testPrivateKeys[2].toPublicKey(),
     ];
     const output = new Output({
       satoshis: 10,
@@ -216,9 +238,9 @@ describe('testTransactionAgainstFilter', () => {
     + 'BLOOM_UPDATE_P2PUBKEY_ONLY flag is not set', () => {
     const filter = BloomFilter.create(3, 0.0001);
     const pubKeys = [
-      new PrivateKey().toPublicKey(),
-      new PrivateKey().toPublicKey(),
-      new PrivateKey().toPublicKey(),
+      testPrivateKeys[3].toPublicKey(),
+      testPrivateKeys[4].toPublicKey(),
+      testPrivateKeys[5].toPublicKey(),
     ];
     const output = new Output({
       satoshis: 10,

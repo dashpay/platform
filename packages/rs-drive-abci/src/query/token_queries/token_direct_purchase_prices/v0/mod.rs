@@ -409,4 +409,159 @@ mod tests {
             })
         ));
     }
+
+    #[test]
+    fn test_empty_token_ids_with_proof_still_rejected() {
+        // Empty list is rejected regardless of prove flag — the len check comes
+        // before any branching.
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetTokenDirectPurchasePricesRequestV0 {
+            token_ids: vec![],
+            prove: true,
+        };
+
+        let result = platform
+            .query_token_direct_purchase_prices_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(matches!(
+            result.errors.as_slice(),
+            [QueryError::InvalidArgument(msg)] if msg.contains("at least one token id")
+        ));
+    }
+
+    #[test]
+    fn test_one_invalid_token_id_in_list_fails_whole_query() {
+        // A single malformed id taints the whole list — the try_into call
+        // short-circuits.
+        let (platform, state, version, _, token_ids, _) = setup_platform_with_token_state();
+
+        let request = GetTokenDirectPurchasePricesRequestV0 {
+            token_ids: vec![token_ids[0].to_vec(), vec![0; 12], token_ids[1].to_vec()],
+            prove: false,
+        };
+
+        let result = platform
+            .query_token_direct_purchase_prices_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(matches!(
+            result.errors.as_slice(),
+            [QueryError::InvalidArgument(msg)] if msg.contains("token_ids")
+        ));
+    }
+
+    #[test]
+    fn test_mixed_existing_and_unknown_tokens_return_entries() {
+        // Known token with a fixed price mixed with unknown + no-price tokens.
+        let (platform, state, version, _, token_ids, _) = setup_platform_with_token_state();
+
+        let unknown = vec![0xCC; 32];
+
+        let request = GetTokenDirectPurchasePricesRequestV0 {
+            token_ids: vec![
+                token_ids[0].to_vec(), // no price
+                token_ids[1].to_vec(), // fixed price 25
+                unknown.clone(),       // unknown
+            ],
+            prove: false,
+        };
+
+        let result = platform
+            .query_token_direct_purchase_prices_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(result.errors.is_empty(), "{:?}", result.errors);
+        let data = result.data.unwrap();
+        match data.result {
+            Some(
+                get_token_direct_purchase_prices_response_v0::Result::TokenDirectPurchasePrices(
+                    prices,
+                ),
+            ) => {
+                assert_eq!(prices.token_direct_purchase_price.len(), 3);
+                let mut saw_fixed = false;
+                let mut none_count = 0;
+                for entry in &prices.token_direct_purchase_price {
+                    match &entry.price {
+                        Some(Price::FixedPrice(p)) => {
+                            assert_eq!(*p, 25);
+                            saw_fixed = true;
+                        }
+                        Some(other) => panic!("unexpected price variant: {:?}", other),
+                        None => none_count += 1,
+                    }
+                }
+                assert!(saw_fixed, "expected at least one fixed-price entry");
+                assert_eq!(none_count, 2, "expected two entries with no price");
+            }
+            other => panic!("expected TokenDirectPurchasePrices result, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_variable_price_preserves_multiple_tiers() {
+        // Token 2 has SetPrices over multiple quantity tiers (10 tiers: 0..900
+        // step 100). Verify the Vec length matches.
+        let (platform, state, version, _, token_ids, _) = setup_platform_with_token_state();
+
+        let request = GetTokenDirectPurchasePricesRequestV0 {
+            token_ids: vec![token_ids[2].to_vec()],
+            prove: false,
+        };
+
+        let result = platform
+            .query_token_direct_purchase_prices_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(result.errors.is_empty());
+        let data = result.data.unwrap();
+        match data.result {
+            Some(
+                get_token_direct_purchase_prices_response_v0::Result::TokenDirectPurchasePrices(
+                    prices,
+                ),
+            ) => {
+                assert_eq!(prices.token_direct_purchase_price.len(), 1);
+                match &prices.token_direct_purchase_price[0].price {
+                    Some(Price::VariablePrice(schedule)) => {
+                        // 0, 100, 200, ..., 900  = 10 entries
+                        assert_eq!(schedule.price_for_quantity.len(), 10);
+                        // Sanity: quantity + price always sum to 1000 by setup.
+                        for pfq in &schedule.price_for_quantity {
+                            assert_eq!(pfq.quantity + pfq.price, 1000);
+                        }
+                    }
+                    other => panic!("expected VariablePrice, got {:?}", other),
+                }
+            }
+            _ => panic!("expected TokenDirectPurchasePrices result"),
+        }
+    }
+
+    #[test]
+    fn test_proof_with_mixed_valid_and_unknown_tokens() {
+        // Prove path with mixed known + unknown tokens should still return a
+        // Proof variant (unknowns become absence proofs).
+        let (platform, state, version, _, token_ids, _) = setup_platform_with_token_state();
+
+        let request = GetTokenDirectPurchasePricesRequestV0 {
+            token_ids: vec![token_ids[1].to_vec(), vec![0xEE; 32]],
+            prove: true,
+        };
+
+        let result = platform
+            .query_token_direct_purchase_prices_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(result.errors.is_empty(), "{:?}", result.errors);
+        let data = result.data.unwrap();
+        assert!(matches!(
+            data.result,
+            Some(get_token_direct_purchase_prices_response_v0::Result::Proof(
+                _
+            ))
+        ));
+    }
 }

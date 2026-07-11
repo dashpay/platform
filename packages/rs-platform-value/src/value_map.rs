@@ -223,6 +223,412 @@ impl ValueMapHelper for ValueMap {
     }
 }
 
+#[cfg(test)]
+#[allow(clippy::items_after_test_module)]
+mod tests {
+    use super::*;
+
+    fn text(s: &str) -> Value {
+        Value::Text(s.to_string())
+    }
+
+    fn make_map(pairs: &[(&str, Value)]) -> ValueMap {
+        pairs.iter().map(|(k, v)| (text(k), v.clone())).collect()
+    }
+
+    // ---------------------------------------------------------------
+    // sort_by_keys
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn sort_by_keys_mixed_text_keys() {
+        let mut map = make_map(&[
+            ("c", Value::U32(3)),
+            ("a", Value::U32(1)),
+            ("b", Value::U32(2)),
+        ]);
+        map.sort_by_keys();
+        let keys: Vec<_> = map.iter().map(|(k, _)| k.clone()).collect();
+        assert_eq!(keys, vec![text("a"), text("b"), text("c")]);
+    }
+
+    #[test]
+    fn sort_by_keys_mixed_types() {
+        // Integer keys should sort before text keys via PartialOrd on Value
+        let mut map: ValueMap = vec![
+            (text("z"), Value::U32(1)),
+            (Value::U32(5), Value::U32(2)),
+            (text("a"), Value::U32(3)),
+        ];
+        map.sort_by_keys();
+        // U32(5) < Text("a") < Text("z") by Value's PartialOrd (enum variant order)
+        assert_eq!(map[0].0, Value::U32(5));
+        assert_eq!(map[1].0, text("a"));
+        assert_eq!(map[2].0, text("z"));
+    }
+
+    // ---------------------------------------------------------------
+    // sort_by_lexicographical_byte_ordering_keys
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn sort_by_lexicographical_byte_ordering_shorter_first() {
+        // "ab" (len 2) should come before "abc" (len 3)
+        let mut map = make_map(&[
+            ("abc", Value::U32(1)),
+            ("ab", Value::U32(2)),
+            ("a", Value::U32(3)),
+        ]);
+        map.sort_by_lexicographical_byte_ordering_keys();
+        let keys: Vec<_> = map.iter().map(|(k, _)| k.to_text().unwrap()).collect();
+        assert_eq!(keys, vec!["a", "ab", "abc"]);
+    }
+
+    #[test]
+    fn sort_by_lexicographical_byte_ordering_same_length_alphabetical() {
+        let mut map = make_map(&[
+            ("cb", Value::U32(1)),
+            ("ab", Value::U32(2)),
+            ("bb", Value::U32(3)),
+        ]);
+        map.sort_by_lexicographical_byte_ordering_keys();
+        let keys: Vec<_> = map.iter().map(|(k, _)| k.to_text().unwrap()).collect();
+        assert_eq!(keys, vec!["ab", "bb", "cb"]);
+    }
+
+    #[test]
+    fn sort_by_lexicographical_byte_ordering_non_text_keys_uses_partial_cmp() {
+        let mut map: ValueMap = vec![(Value::U32(10), Value::Null), (Value::U32(2), Value::Null)];
+        map.sort_by_lexicographical_byte_ordering_keys();
+        assert_eq!(map[0].0, Value::U32(2));
+        assert_eq!(map[1].0, Value::U32(10));
+    }
+
+    // ---------------------------------------------------------------
+    // get_key_mut_or_insert
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn get_key_mut_or_insert_inserts_new() {
+        let mut map = make_map(&[("a", Value::U32(1))]);
+        let val = map.get_key_mut_or_insert("b", Value::U32(99));
+        assert_eq!(*val, Value::U32(99));
+        // Mutate the returned reference
+        *val = Value::U32(100);
+        assert_eq!(map.get_optional_key("b"), Some(&Value::U32(100)));
+    }
+
+    #[test]
+    fn get_key_mut_or_insert_returns_existing() {
+        let mut map = make_map(&[("a", Value::U32(1))]);
+        let val = map.get_key_mut_or_insert("a", Value::U32(99));
+        // Should return existing value, not the default
+        assert_eq!(*val, Value::U32(1));
+    }
+
+    #[test]
+    fn get_key_mut_or_insert_existing_is_mutable() {
+        let mut map = make_map(&[("a", Value::U32(1))]);
+        let val = map.get_key_mut_or_insert("a", Value::U32(99));
+        *val = Value::U32(42);
+        assert_eq!(map.get_optional_key("a"), Some(&Value::U32(42)));
+    }
+
+    // ---------------------------------------------------------------
+    // remove_optional_key_if_null
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn remove_optional_key_if_null_removes_null() {
+        let mut map = make_map(&[("a", Value::Null), ("b", Value::U32(2))]);
+        map.remove_optional_key_if_null("a");
+        assert_eq!(map.get_optional_key("a"), None);
+        assert_eq!(map.get_optional_key("b"), Some(&Value::U32(2)));
+    }
+
+    #[test]
+    fn remove_optional_key_if_null_keeps_non_null() {
+        let mut map = make_map(&[("a", Value::U32(1))]);
+        map.remove_optional_key_if_null("a");
+        assert_eq!(map.get_optional_key("a"), Some(&Value::U32(1)));
+    }
+
+    #[test]
+    fn remove_optional_key_if_null_missing_key_is_noop() {
+        let mut map = make_map(&[("a", Value::U32(1))]);
+        map.remove_optional_key_if_null("missing");
+        assert_eq!(map.len(), 1);
+    }
+
+    // ---------------------------------------------------------------
+    // remove_optional_key_if_empty_array
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn remove_optional_key_if_empty_array_removes_empty() {
+        let mut map = make_map(&[("a", Value::Array(vec![])), ("b", Value::U32(1))]);
+        map.remove_optional_key_if_empty_array("a");
+        assert_eq!(map.get_optional_key("a"), None);
+        assert_eq!(map.get_optional_key("b"), Some(&Value::U32(1)));
+    }
+
+    #[test]
+    fn remove_optional_key_if_empty_array_keeps_non_empty() {
+        let mut map = make_map(&[("a", Value::Array(vec![Value::U32(1)]))]);
+        map.remove_optional_key_if_empty_array("a");
+        assert!(map.get_optional_key("a").is_some());
+    }
+
+    #[test]
+    fn remove_optional_key_if_empty_array_keeps_non_array() {
+        let mut map = make_map(&[("a", Value::U32(42))]);
+        map.remove_optional_key_if_empty_array("a");
+        assert_eq!(map.get_optional_key("a"), Some(&Value::U32(42)));
+    }
+
+    #[test]
+    fn remove_optional_key_if_empty_array_missing_key_is_noop() {
+        let mut map = make_map(&[("a", Value::U32(1))]);
+        map.remove_optional_key_if_empty_array("missing");
+        assert_eq!(map.len(), 1);
+    }
+
+    // ---------------------------------------------------------------
+    // into_btree_string_map
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn into_btree_string_map_valid_conversion() {
+        let val = Value::Map(make_map(&[("b", Value::U32(2)), ("a", Value::U32(1))]));
+        let btree = val.into_btree_string_map().unwrap();
+        assert_eq!(btree.get("a"), Some(&Value::U32(1)));
+        assert_eq!(btree.get("b"), Some(&Value::U32(2)));
+        // BTreeMap should be sorted by key
+        let keys: Vec<_> = btree.keys().collect();
+        assert_eq!(keys, vec!["a", "b"]);
+    }
+
+    #[test]
+    fn into_btree_string_map_error_on_non_string_keys() {
+        let val = Value::Map(vec![(Value::U32(1), Value::U32(2))]);
+        let result = val.into_btree_string_map();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn into_btree_string_map_error_on_non_map() {
+        let val = Value::Bool(true);
+        let result = val.into_btree_string_map();
+        assert!(result.is_err());
+    }
+
+    // ---------------------------------------------------------------
+    // map_ref_into_indexed_string_map
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn map_ref_into_indexed_string_map_sorts_by_integer_key() {
+        let map: ValueMap = vec![
+            (
+                text("second"),
+                Value::Map(make_map(&[("pos", Value::U32(2))])),
+            ),
+            (
+                text("first"),
+                Value::Map(make_map(&[("pos", Value::U32(1))])),
+            ),
+            (
+                text("third"),
+                Value::Map(make_map(&[("pos", Value::U32(3))])),
+            ),
+        ];
+        let indexed = Value::map_ref_into_indexed_string_map::<u32>(&map, "pos").unwrap();
+        let keys: Vec<_> = indexed.keys().collect();
+        assert_eq!(keys, vec!["first", "second", "third"]);
+    }
+
+    #[test]
+    fn map_ref_into_indexed_string_map_error_missing_sort_key() {
+        let map: ValueMap = vec![(
+            text("item"),
+            Value::Map(make_map(&[("other", Value::U32(1))])),
+        )];
+        let result = Value::map_ref_into_indexed_string_map::<u32>(&map, "pos");
+        assert!(result.is_err());
+    }
+
+    // ---------------------------------------------------------------
+    // get_key / get_optional_key
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn get_key_found() {
+        let map = make_map(&[("x", Value::U32(42))]);
+        let val = map.get_key("x").unwrap();
+        assert_eq!(*val, Value::U32(42));
+    }
+
+    #[test]
+    fn get_key_not_found_errors() {
+        let map = make_map(&[("x", Value::U32(42))]);
+        assert!(map.get_key("y").is_err());
+    }
+
+    #[test]
+    fn get_optional_key_none_for_missing() {
+        let map = make_map(&[("x", Value::U32(42))]);
+        assert_eq!(map.get_optional_key("y"), None);
+    }
+
+    #[test]
+    fn get_optional_key_ignores_non_text_keys() {
+        let map: ValueMap = vec![(Value::U32(1), Value::U32(2))];
+        assert_eq!(map.get_optional_key("1"), None);
+    }
+
+    // ---------------------------------------------------------------
+    // remove_key / remove_optional_key
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn remove_key_success() {
+        let mut map = make_map(&[("a", Value::U32(1)), ("b", Value::U32(2))]);
+        let removed = map.remove_key("a").unwrap();
+        assert_eq!(removed, Value::U32(1));
+        assert_eq!(map.len(), 1);
+    }
+
+    #[test]
+    fn remove_key_not_found_errors() {
+        let mut map = make_map(&[("a", Value::U32(1))]);
+        assert!(map.remove_key("missing").is_err());
+    }
+
+    #[test]
+    fn remove_optional_key_returns_none_for_missing() {
+        let mut map = make_map(&[("a", Value::U32(1))]);
+        assert_eq!(map.remove_optional_key("missing"), None);
+    }
+
+    #[test]
+    fn remove_optional_key_returns_value() {
+        let mut map = make_map(&[("a", Value::U32(1))]);
+        assert_eq!(map.remove_optional_key("a"), Some(Value::U32(1)));
+        assert!(map.is_empty());
+    }
+
+    // ---------------------------------------------------------------
+    // remove_optional_key_value
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn remove_optional_key_value_by_value_key() {
+        let mut map: ValueMap = vec![
+            (Value::U32(10), Value::Bool(true)),
+            (text("x"), Value::Bool(false)),
+        ];
+        let removed = map.remove_optional_key_value(&Value::U32(10));
+        assert_eq!(removed, Some(Value::Bool(true)));
+        assert_eq!(map.len(), 1);
+    }
+
+    #[test]
+    fn remove_optional_key_value_not_found() {
+        let mut map = make_map(&[("a", Value::U32(1))]);
+        assert_eq!(map.remove_optional_key_value(&Value::U32(99)), None);
+    }
+
+    // ---------------------------------------------------------------
+    // insert_string_key_value
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn insert_string_key_value_appends() {
+        let mut map: ValueMap = vec![];
+        map.insert_string_key_value("hello".to_string(), Value::Bool(true));
+        assert_eq!(map.len(), 1);
+        assert_eq!(map.get_optional_key("hello"), Some(&Value::Bool(true)));
+    }
+
+    // ---------------------------------------------------------------
+    // from_btree_map
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn from_btree_map_preserves_entries() {
+        let mut btree = BTreeMap::new();
+        btree.insert("b".to_string(), Value::U32(2));
+        btree.insert("a".to_string(), Value::U32(1));
+        let map = ValueMap::from_btree_map(btree);
+        assert_eq!(map.len(), 2);
+        assert_eq!(map.get_optional_key("a"), Some(&Value::U32(1)));
+        assert_eq!(map.get_optional_key("b"), Some(&Value::U32(2)));
+    }
+
+    // ---------------------------------------------------------------
+    // get_key_by_value_mut_or_insert
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn get_key_by_value_mut_or_insert_inserts_new() {
+        let mut map: ValueMap = vec![];
+        let val = map.get_key_by_value_mut_or_insert(&Value::U32(42), Value::Bool(true));
+        assert_eq!(*val, Value::Bool(true));
+        assert_eq!(map.len(), 1);
+    }
+
+    #[test]
+    fn get_key_by_value_mut_or_insert_returns_existing() {
+        let mut map: ValueMap = vec![(Value::U32(42), Value::Bool(false))];
+        let val = map.get_key_by_value_mut_or_insert(&Value::U32(42), Value::Bool(true));
+        assert_eq!(*val, Value::Bool(false));
+    }
+
+    // ---------------------------------------------------------------
+    // sort_by_keys_and_inner_maps
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn sort_by_keys_and_inner_maps_sorts_recursively() {
+        let inner = make_map(&[("z", Value::U32(1)), ("a", Value::U32(2))]);
+        let mut map = make_map(&[("b", Value::Map(inner)), ("a", Value::U32(3))]);
+        map.sort_by_keys_and_inner_maps();
+        // Outer keys should be sorted
+        assert_eq!(map[0].0, text("a"));
+        assert_eq!(map[1].0, text("b"));
+        // Inner map should also be sorted
+        if let Value::Map(ref inner) = map[1].1 {
+            assert_eq!(inner[0].0, text("a"));
+            assert_eq!(inner[1].0, text("z"));
+        } else {
+            panic!("expected inner map");
+        }
+    }
+
+    // ---------------------------------------------------------------
+    // to_btree_ref_string_map
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn to_btree_ref_string_map_valid() {
+        let val = Value::Map(make_map(&[("x", Value::U32(10))]));
+        let btree = val.to_btree_ref_string_map().unwrap();
+        assert_eq!(btree.get("x"), Some(&&Value::U32(10)));
+    }
+
+    #[test]
+    fn to_btree_ref_string_map_error_on_non_map() {
+        let val = Value::U32(1);
+        assert!(val.to_btree_ref_string_map().is_err());
+    }
+
+    #[test]
+    fn to_btree_ref_string_map_error_on_non_string_key() {
+        let val = Value::Map(vec![(Value::U32(1), Value::U32(2))]);
+        assert!(val.to_btree_ref_string_map().is_err());
+    }
+}
+
 impl Value {
     /// If the `Value` is a `Map`, returns a the associated `BTreeMap<String, Value>` data as `Ok`.
     /// Returns `Err(Error::Structure("reason"))` otherwise.

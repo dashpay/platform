@@ -135,7 +135,10 @@ impl StateTransitionIdentityBasedSignatureValidationV0 for StateTransition {
             | StateTransition::ShieldedTransfer(_)
             | StateTransition::Unshield(_)
             | StateTransition::ShieldFromAssetLock(_)
-            | StateTransition::ShieldedWithdrawal(_) => Ok(ConsensusValidationResult::new()),
+            | StateTransition::ShieldedWithdrawal(_)
+            | StateTransition::IdentityCreateFromShieldedPool(_) => {
+                Ok(ConsensusValidationResult::new())
+            }
         }
     }
 
@@ -175,7 +178,8 @@ impl StateTransitionIdentityBasedSignatureValidationV0 for StateTransition {
             | StateTransition::ShieldedTransfer(_)
             | StateTransition::Unshield(_)
             | StateTransition::ShieldFromAssetLock(_)
-            | StateTransition::ShieldedWithdrawal(_) => false,
+            | StateTransition::ShieldedWithdrawal(_)
+            | StateTransition::IdentityCreateFromShieldedPool(_) => false,
             StateTransition::DataContractCreate(_)
             | StateTransition::DataContractUpdate(_)
             | StateTransition::Batch(_)
@@ -203,7 +207,8 @@ impl StateTransitionIdentityBasedSignatureValidationV0 for StateTransition {
             | StateTransition::ShieldedTransfer(_)
             | StateTransition::Unshield(_)
             | StateTransition::ShieldFromAssetLock(_)
-            | StateTransition::ShieldedWithdrawal(_) => false,
+            | StateTransition::ShieldedWithdrawal(_)
+            | StateTransition::IdentityCreateFromShieldedPool(_) => false,
             StateTransition::DataContractCreate(_)
             | StateTransition::DataContractUpdate(_)
             | StateTransition::Batch(_)
@@ -325,6 +330,7 @@ mod tests {
                 anchor: [0u8; 32],
                 proof: vec![],
                 binding_signature: [0u8; 64],
+                surplus_output: None,
                 signature: Default::default(),
             },
         ))
@@ -386,6 +392,28 @@ mod tests {
             ("Unshield", make_unshield()),
             ("ShieldFromAssetLock", make_shield_from_asset_lock()),
             ("ShieldedWithdrawal", make_shielded_withdrawal()),
+            {
+                use dpp::state_transition::state_transitions::shielded::identity_create_from_shielded_pool_transition::v0::IdentityCreateFromShieldedPoolTransitionV0;
+                use dpp::state_transition::state_transitions::shielded::identity_create_from_shielded_pool_transition::IdentityCreateFromShieldedPoolTransition;
+                (
+                    "IdentityCreateFromShieldedPool",
+                    StateTransition::IdentityCreateFromShieldedPool(
+                        IdentityCreateFromShieldedPoolTransition::V0(
+                            IdentityCreateFromShieldedPoolTransitionV0 {
+                                public_keys: vec![],
+                                denomination: 0,
+                                actions: vec![],
+                                anchor: [0u8; 32],
+                                proof: vec![],
+                                binding_signature: [0u8; 64],
+                                send_to_address_on_creation_failure:
+                                    dpp::address_funds::PlatformAddress::P2pkh([0u8; 20]),
+                                identity_id: Default::default(),
+                            },
+                        ),
+                    ),
+                )
+            },
         ]
     }
 
@@ -579,6 +607,28 @@ mod tests {
                 ("Unshield", make_unshield()),
                 ("ShieldFromAssetLock", make_shield_from_asset_lock()),
                 ("ShieldedWithdrawal", make_shielded_withdrawal()),
+                {
+                    use dpp::state_transition::state_transitions::shielded::identity_create_from_shielded_pool_transition::v0::IdentityCreateFromShieldedPoolTransitionV0;
+                    use dpp::state_transition::state_transitions::shielded::identity_create_from_shielded_pool_transition::IdentityCreateFromShieldedPoolTransition;
+                    (
+                        "IdentityCreateFromShieldedPool",
+                        StateTransition::IdentityCreateFromShieldedPool(
+                            IdentityCreateFromShieldedPoolTransition::V0(
+                                IdentityCreateFromShieldedPoolTransitionV0 {
+                                    public_keys: vec![],
+                                    denomination: 0,
+                                    actions: vec![],
+                                    anchor: [0u8; 32],
+                                    proof: vec![],
+                                    binding_signature: [0u8; 64],
+                                    send_to_address_on_creation_failure:
+                                        dpp::address_funds::PlatformAddress::P2pkh([0u8; 20]),
+                                    identity_id: Default::default(),
+                                },
+                            ),
+                        ),
+                    )
+                },
             ];
             for (name, st) in transitions_without_sig_validation {
                 assert!(

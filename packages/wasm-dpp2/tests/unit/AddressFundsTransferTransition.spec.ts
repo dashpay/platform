@@ -156,6 +156,67 @@ describe('AddressFundsTransferTransition', () => {
     });
   });
 
+  describe('toObject() / toJSON() / fromObject() / fromJSON()', () => {
+    it('toObject() emits inputs as typed array of {address, nonce, amount}', () => {
+      const transition = createTransition();
+      const obj = transition.toObject();
+
+      expect(obj.inputs).to.be.an('array').with.lengthOf(1);
+      expect(obj.inputs[0].address).to.be.instanceOf(Uint8Array);
+      expect(obj.inputs[0].address.length).to.equal(21);
+      expect(obj.inputs[0].nonce).to.equal(0);
+      expect(obj.inputs[0].amount).to.equal(BigInt(100000));
+    });
+
+    it('toObject() emits outputs as typed array of {address, amount} (required)', () => {
+      const transition = createTransition();
+      const obj = transition.toObject();
+
+      expect(obj.outputs).to.be.an('array').with.lengthOf(1);
+      expect(obj.outputs[0].address).to.be.instanceOf(Uint8Array);
+      expect(obj.outputs[0].address.length).to.equal(21);
+      expect(obj.outputs[0].amount).to.equal(BigInt(90000));
+    });
+
+    it('toObject() emits feeStrategy with {type, index} shape', () => {
+      const transition = createTransition();
+      const obj = transition.toObject();
+
+      expect(obj.feeStrategy).to.be.an('array');
+      expect(obj.feeStrategy[0].$type).to.be.oneOf(['deductFromInput', 'reduceOutput']);
+      expect(obj.feeStrategy[0].index).to.be.a('number');
+    });
+
+    it('toJSON() emits inputs/outputs with hex address and number/string amount', () => {
+      const transition = createTransition();
+      const json = transition.toJSON();
+
+      expect(json.inputs[0].address).to.be.a('string').with.lengthOf(42);
+      expect(json.inputs[0].nonce).to.equal(0);
+      expect(json.inputs[0].amount).to.satisfy((v: unknown) => typeof v === 'number' || typeof v === 'string');
+
+      expect(json.outputs[0].address).to.be.a('string').with.lengthOf(42);
+      expect(json.outputs[0].amount).to.satisfy((v: unknown) => typeof v === 'number' || typeof v === 'string');
+
+      expect(json.feeStrategy[0].$type).to.be.oneOf(['deductFromInput', 'reduceOutput']);
+      expect(json.feeStrategy[0].index).to.be.a('number');
+    });
+
+    it('fromObject(toObject()) round-trips identically', () => {
+      const transition = createTransition();
+      const obj = transition.toObject();
+      const restored = wasm.AddressFundsTransferTransition.fromObject(obj);
+      expect(restored.toObject()).to.deep.equal(obj);
+    });
+
+    it('fromJSON(toJSON()) round-trips identically', () => {
+      const transition = createTransition();
+      const json = transition.toJSON();
+      const restored = wasm.AddressFundsTransferTransition.fromJSON(json);
+      expect(restored.toJSON()).to.deep.equal(json);
+    });
+  });
+
   describe('toStateTransition() / fromStateTransition()', () => {
     it('should convert to and from StateTransition', () => {
       const transition = createTransition();

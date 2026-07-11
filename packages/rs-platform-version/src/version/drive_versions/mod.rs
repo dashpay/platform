@@ -88,14 +88,6 @@ pub struct DriveSavedBlockTransactionsMethodVersions {
     pub max_blocks_before_compaction: u16,
     /// Maximum number of address balance entries before compaction is triggered
     pub max_addresses_before_compaction: u32,
-    pub store_nullifiers: FeatureVersion,
-    pub fetch_nullifiers: FeatureVersion,
-    pub compact_nullifiers: FeatureVersion,
-    pub cleanup_expired_nullifier_compactions: FeatureVersion,
-    /// Maximum number of blocks to store before nullifier compaction is triggered
-    pub max_blocks_before_nullifier_compaction: u16,
-    /// Maximum number of nullifier entries before compaction is triggered
-    pub max_nullifiers_before_compaction: u32,
 }
 
 #[derive(Clone, Debug, Default)]

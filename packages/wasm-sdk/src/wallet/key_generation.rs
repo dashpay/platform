@@ -203,7 +203,7 @@ impl WasmSdk {
         let net: Network = network_wasm.into();
 
         Address::from_str(address)
-            .map(|addr| *addr.network() == net)
+            .map(|addr| addr.is_valid_for_network(net))
             .unwrap_or(false)
     }
 

@@ -26,7 +26,7 @@ pub trait DataContractCreateTransitionMethodsV0 {
     ///
     /// If successful, returns a `Result<Self, ProtocolError>` containing a `StateTransition`
     /// object. Otherwise, returns `ProtocolError`.
-    fn new_from_data_contract<S: Signer<IdentityPublicKey>>(
+    async fn new_from_data_contract<S: Signer<IdentityPublicKey>>(
         data_contract: DataContract,
         identity_nonce: IdentityNonce,
         identity: &PartialIdentity,

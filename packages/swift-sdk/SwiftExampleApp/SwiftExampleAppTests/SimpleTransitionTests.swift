@@ -16,7 +16,7 @@ final class SimpleTransitionTests: XCTestCase {
     print("SDK initialized")
 
     // Create SDK instance
-    let sdk = try SDK(network: DashSDKNetwork(rawValue: 1))
+    let sdk = try SDK(network: .testnet)
     print("SDK instance created")
 
     // Load env variables (EnvLoader is @MainActor)
@@ -75,7 +75,7 @@ final class SimpleTransitionTests: XCTestCase {
       }
 
       defer {
-        dash_sdk_identity_destroy(identityHandle.assumingMemoryBound(to: IdentityHandle.self))
+        dash_sdk_identity_destroy(OpaquePointer(identityHandle))
       }
 
       // Use key ID 3 (transfer key) directly
@@ -84,7 +84,8 @@ final class SimpleTransitionTests: XCTestCase {
       let signerResult = key3Private.withUnsafeBytes { keyBytes in
         dash_sdk_signer_create_from_private_key(
           keyBytes.bindMemory(to: UInt8.self).baseAddress!,
-          UInt(key3Private.count)
+          UInt(key3Private.count),
+          Network.testnet.ffiValue
         )
       }
 
@@ -96,15 +97,20 @@ final class SimpleTransitionTests: XCTestCase {
       }
 
       defer {
-        dash_sdk_signer_destroy(signer.assumingMemoryBound(to: SignerHandle.self))
+        dash_sdk_signer_destroy(OpaquePointer(signer))
       }
 
+      // `OpaquePointer` lost its retroactive `Sendable` conformance
+      // under compiler 6.2+; surface the pointers as unsafe-but-sendable
+      // locals so they can cross the awaited call.
+      nonisolated(unsafe) let identityPtr = OpaquePointer(identityHandle)
+      nonisolated(unsafe) let signerPtr = OpaquePointer(signer)
       let result = try await sdk.identityTransferCredits(
-        fromIdentity: OpaquePointer(identityHandle),
+        fromIdentity: identityPtr,
         toIdentityId: recipientId,
         amount: amount,
         publicKeyId: 3,  // Transfer key ID
-        signer: OpaquePointer(signer)
+        signer: signerPtr
       )
 
       print("✅ Transfer successful!")

@@ -256,6 +256,21 @@ impl TokenConfiguration {
             }
         }
 
+        // Check immutable fields: pre_programmed_distribution
+        if old.distribution_rules.pre_programmed_distribution()
+            != new.distribution_rules.pre_programmed_distribution()
+        {
+            return SimpleConsensusValidationResult::new_with_error(
+                DataContractTokenConfigurationUpdateError::new(
+                    "update".to_string(),
+                    "preProgrammedDistribution".to_string(),
+                    self.clone(),
+                    new_config.clone(),
+                )
+                .into(),
+            );
+        }
+
         // Check changes to manual_minting_rules
         #[allow(clippy::collapsible_if)]
         if old.manual_minting_rules != new.manual_minting_rules {

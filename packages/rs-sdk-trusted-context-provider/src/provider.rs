@@ -27,7 +27,7 @@ use reqwest::Client;
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::error::Error as StdError;
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(not(target_arch = "wasm32"), not(target_os = "ios")))]
 use std::net::ToSocketAddrs;
 use std::num::NonZeroUsize;
 use std::sync::{Arc, Mutex};
@@ -38,6 +38,7 @@ use url::Url;
 
 /// A trusted HTTP-based context provider that fetches quorum information
 /// from trusted HTTP endpoints instead of requiring Core RPC access.
+#[derive(Clone)]
 pub struct TrustedHttpContextProvider {
     network: Network,
     client: Client,
@@ -56,7 +57,7 @@ pub struct TrustedHttpContextProvider {
     last_previous_quorums: Arc<ArcSwap<Option<PreviousQuorumsResponse>>>,
 
     /// Optional fallback provider for data contracts and token configurations
-    fallback_provider: Option<Box<dyn ContextProvider>>,
+    fallback_provider: Option<Arc<dyn ContextProvider>>,
 
     /// Known contracts cache - contracts that are pre-loaded and can be served immediately
     known_contracts: Arc<Mutex<HashMap<Identifier, Arc<DataContract>>>>,
@@ -138,6 +139,25 @@ impl TrustedHttpContextProvider {
         base_url: String,
         cache_size: NonZeroUsize,
     ) -> Result<Self, TrustedContextProviderError> {
+        // The base URL is the SDK's root of trust for proof verification
+        // (quorum public keys) and network connectivity (discovered masternode
+        // addresses). For production networks (mainnet/testnet) there is no
+        // legitimate plaintext workflow — HTTPS is deployed — so refuse to
+        // hand a non-TLS quorum URL to the SDK. Devnet/Regtest keep the
+        // plaintext escape hatch (early-stage devnets without a cert yet,
+        // local sidecars on loopback).
+        if matches!(network, Network::Mainnet | Network::Testnet) {
+            let parsed = Url::parse(&base_url).map_err(|e| {
+                TrustedContextProviderError::NetworkError(format!("Invalid URL: {}", e))
+            })?;
+            if !parsed.scheme().eq_ignore_ascii_case("https") {
+                return Err(TrustedContextProviderError::NetworkError(format!(
+                    "Custom quorum URL for {:?} must use https://; got '{}'",
+                    network, base_url
+                )));
+            }
+        }
+
         // Verify the domain resolves before proceeding (skip on WASM and iOS)
         #[cfg(all(not(target_arch = "wasm32"), not(target_os = "ios")))]
         Self::verify_domain_resolves(&base_url)?;
@@ -177,7 +197,7 @@ impl TrustedHttpContextProvider {
 
     /// Set a fallback provider for data contracts and token configurations
     pub fn with_fallback_provider<P: ContextProvider + 'static>(mut self, provider: P) -> Self {
-        self.fallback_provider = Some(Box::new(provider));
+        self.fallback_provider = Some(Arc::new(provider));
         self
     }
 
@@ -543,6 +563,31 @@ impl TrustedHttpContextProvider {
             quorum_hash: hex::encode(quorum_hash),
         })
     }
+
+    /// Parse a BLS quorum public key from its hex representation.
+    ///
+    /// Accepts an optional `0x` prefix. Returns `ContextProviderError::Generic`
+    /// on invalid hex, wrong length (must be 48 bytes), or conversion failure.
+    fn parse_quorum_public_key(key: &str) -> Result<[u8; 48], ContextProviderError> {
+        let pubkey_hex = key
+            .strip_prefix("0x")
+            .or_else(|| key.strip_prefix("0X"))
+            .unwrap_or(key);
+        let pubkey_bytes = hex::decode(pubkey_hex).map_err(|e| {
+            ContextProviderError::Generic(format!("Invalid hex in public key: {}", e))
+        })?;
+
+        if pubkey_bytes.len() != 48 {
+            return Err(ContextProviderError::Generic(format!(
+                "Invalid public key length: {} bytes, expected 48",
+                pubkey_bytes.len()
+            )));
+        }
+
+        pubkey_bytes.try_into().map_err(|_| {
+            ContextProviderError::Generic("Failed to convert public key to array".to_string())
+        })
+    }
 }
 
 impl ContextProvider for TrustedHttpContextProvider {
@@ -562,25 +607,7 @@ impl ContextProvider for TrustedHttpContextProvider {
         if let Ok(mut cache) = self.current_quorums_cache.lock() {
             if let Some(quorum) = cache.get(&quorum_hash) {
                 debug!("Found quorum in current cache");
-
-                // Parse the public key from the 'key' field
-                let pubkey_hex = quorum.key.trim_start_matches("0x");
-                let pubkey_bytes = hex::decode(pubkey_hex).map_err(|e| {
-                    ContextProviderError::Generic(format!("Invalid hex in public key: {}", e))
-                })?;
-
-                if pubkey_bytes.len() != 48 {
-                    return Err(ContextProviderError::Generic(format!(
-                        "Invalid public key length: {} bytes, expected 48",
-                        pubkey_bytes.len()
-                    )));
-                }
-
-                return pubkey_bytes.try_into().map_err(|_| {
-                    ContextProviderError::Generic(
-                        "Failed to convert public key to array".to_string(),
-                    )
-                });
+                return Self::parse_quorum_public_key(&quorum.key);
             }
         }
 
@@ -588,25 +615,7 @@ impl ContextProvider for TrustedHttpContextProvider {
         if let Ok(mut cache) = self.previous_quorums_cache.lock() {
             if let Some(quorum) = cache.get(&quorum_hash) {
                 debug!("Found quorum in previous cache");
-
-                // Parse the public key from the 'key' field
-                let pubkey_hex = quorum.key.trim_start_matches("0x");
-                let pubkey_bytes = hex::decode(pubkey_hex).map_err(|e| {
-                    ContextProviderError::Generic(format!("Invalid hex in public key: {}", e))
-                })?;
-
-                if pubkey_bytes.len() != 48 {
-                    return Err(ContextProviderError::Generic(format!(
-                        "Invalid public key length: {} bytes, expected 48",
-                        pubkey_bytes.len()
-                    )));
-                }
-
-                return pubkey_bytes.try_into().map_err(|_| {
-                    ContextProviderError::Generic(
-                        "Failed to convert public key to array".to_string(),
-                    )
-                });
+                return Self::parse_quorum_public_key(&quorum.key);
             }
         }
 
@@ -618,47 +627,15 @@ impl ContextProvider for TrustedHttpContextProvider {
             )));
         }
 
-        // For non-WASM targets, we can use block_on to fetch
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            // Use blocking to run async code in sync context
-            let quorum =
-                match futures::executor::block_on(self.find_quorum(quorum_type, quorum_hash)) {
-                    Ok(q) => q,
-                    Err(e) => {
-                        debug!("Error finding quorum: {}", e);
-                        return Err(ContextProviderError::Generic(format!(
-                            "Failed to find quorum: {}",
-                            e
-                        )));
-                    }
-                };
+        let this = self.clone();
+        let quorum =
+            dash_async::block_on(async move { this.find_quorum(quorum_type, quorum_hash).await })?
+                .map_err(|e| {
+                    debug!("Error finding quorum: {}", e);
+                    ContextProviderError::Generic(format!("Failed to find quorum: {}", e))
+                })?;
 
-            // Parse the public key from the 'key' field
-            let pubkey_hex = quorum.key.trim_start_matches("0x");
-            let pubkey_bytes = hex::decode(pubkey_hex).map_err(|e| {
-                ContextProviderError::Generic(format!("Invalid hex in public key: {}", e))
-            })?;
-
-            if pubkey_bytes.len() != 48 {
-                return Err(ContextProviderError::Generic(format!(
-                    "Invalid public key length: {} bytes, expected 48",
-                    pubkey_bytes.len()
-                )));
-            }
-
-            pubkey_bytes.try_into().map_err(|_| {
-                ContextProviderError::Generic("Failed to convert public key to array".to_string())
-            })
-        }
-        #[cfg(target_arch = "wasm32")]
-        {
-            // For WASM, we rely on pre-fetched cache
-            Err(ContextProviderError::Generic(
-                "Quorum not found in cache. In WASM, call update_quorum_caches() first."
-                    .to_string(),
-            ))
-        }
+        Self::parse_quorum_public_key(&quorum.key)
     }
 
     fn get_data_contract(
@@ -804,10 +781,7 @@ impl ContextProvider for TrustedHttpContextProvider {
         match self.network {
             Network::Mainnet => Ok(2132092), // Mainnet L1 locked height
             Network::Testnet => Ok(1090319), // Testnet L1 locked height
-            Network::Devnet => Ok(1),        // Devnet activation height
-            _ => Err(ContextProviderError::Generic(
-                "Unsupported network".to_string(),
-            )),
+            Network::Devnet | Network::Regtest => Ok(1), // Devnet/Regtest activation height
         }
     }
 }
@@ -830,7 +804,7 @@ mod tests {
 
         assert_eq!(
             get_quorum_base_url(Network::Devnet, Some("example")).unwrap(),
-            "https://quorums.devnet.example.networks.dash.org"
+            "https://quorums.example.networks.dash.org"
         );
     }
 
@@ -876,6 +850,115 @@ mod tests {
         assert!(get_quorum_base_url(Network::Devnet, Some("test")).is_ok());
         assert!(get_quorum_base_url(Network::Devnet, Some("test-123")).is_ok());
         assert!(get_quorum_base_url(Network::Devnet, Some("TEST123")).is_ok());
+    }
+
+    #[test]
+    fn test_new_with_url_rejects_plaintext_for_production_networks() {
+        // Mainnet and testnet have HTTPS deployed; reject plaintext URLs to
+        // prevent silently weakening the trust root via a typo or misconfig.
+        // Mixed-case scheme must also be rejected (case-insensitive match).
+        for url in ["http://example.com", "HTTP://example.com"] {
+            for network in [Network::Mainnet, Network::Testnet] {
+                let result = TrustedHttpContextProvider::new_with_url(
+                    network,
+                    url.to_string(),
+                    NonZeroUsize::new(10).unwrap(),
+                );
+                match result {
+                    Ok(_) => panic!("expected {} to be rejected for {:?}", url, network),
+                    Err(e) => {
+                        let msg = e.to_string();
+                        assert!(
+                            msg.contains("must use https://"),
+                            "expected HTTPS-gate error for {:?} + {}, got: {}",
+                            network,
+                            url,
+                            msg
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_new_with_url_does_not_reject_https_on_production_networks() {
+        // Positive path: an HTTPS URL must not trip the new HTTPS gate.
+        // The constructor may still fail downstream (DNS, on non-wasm/non-iOS
+        // builds), but if so the error must NOT be the HTTPS-gate variant.
+        // Mixed-case `HTTPS://` must also be accepted by the gate.
+        for url in [
+            "https://example.com",
+            "HTTPS://example.com",
+            "https://example.com:8443/sub/path",
+        ] {
+            for network in [Network::Mainnet, Network::Testnet] {
+                let result = TrustedHttpContextProvider::new_with_url(
+                    network,
+                    url.to_string(),
+                    NonZeroUsize::new(10).unwrap(),
+                );
+                if let Err(e) = result {
+                    let msg = e.to_string();
+                    assert!(
+                        !msg.contains("must use https://"),
+                        "HTTPS gate incorrectly rejected {} for {:?}: {}",
+                        url,
+                        network,
+                        msg
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_new_with_url_does_not_reject_plaintext_on_devnet_or_regtest() {
+        // Positive path: plaintext stays acceptable for devnet/regtest (early
+        // devnets without certs, loopback sidecars). The HTTPS gate must not
+        // contribute to any failure here.
+        for network in [Network::Devnet, Network::Regtest] {
+            let result = TrustedHttpContextProvider::new_with_url(
+                network,
+                "http://127.0.0.1:22444".to_string(),
+                NonZeroUsize::new(10).unwrap(),
+            );
+            if let Err(e) = result {
+                let msg = e.to_string();
+                assert!(
+                    !msg.contains("must use https://"),
+                    "HTTPS gate incorrectly rejected http:// for {:?}: {}",
+                    network,
+                    msg
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_reserved_devnet_names_rejected() {
+        // Names that would alias non-devnet quorum hostnames must be rejected.
+        for reserved in ["mainnet", "testnet", "devnet", "local", "regtest"] {
+            assert!(
+                matches!(
+                    get_quorum_base_url(Network::Devnet, Some(reserved)),
+                    Err(TrustedContextProviderError::InvalidDevnetName(_))
+                ),
+                "expected '{}' to be rejected as a reserved devnet name",
+                reserved
+            );
+        }
+        // Case-insensitive: uppercase variants must also be rejected.
+        for reserved in ["Mainnet", "TESTNET", "DevNet"] {
+            assert!(
+                matches!(
+                    get_quorum_base_url(Network::Devnet, Some(reserved)),
+                    Err(TrustedContextProviderError::InvalidDevnetName(_))
+                ),
+                "expected '{}' to be rejected as a reserved devnet name (case-insensitive)",
+                reserved
+            );
+        }
     }
 
     #[test]

@@ -3,7 +3,7 @@ import SwiftDashSDK
 import DashSDKFFI
 
 struct StateTransitionsView: View {
-    @EnvironmentObject var appState: UnifiedAppState
+    @EnvironmentObject var appState: AppState
 
     enum TransitionCategory: String, CaseIterable {
         case address = "Address"
@@ -71,7 +71,7 @@ struct StateTransitionsView_Previews: PreviewProvider {
     static var previews: some View {
         NavigationView {
             StateTransitionsView()
-                .environmentObject(UnifiedAppState())
+                .environmentObject(AppState())
         }
     }
 }

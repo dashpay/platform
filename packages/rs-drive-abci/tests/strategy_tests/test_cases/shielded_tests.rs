@@ -105,7 +105,7 @@ mod tests {
             .build_with_mock_rpc();
 
         let outcome =
-            run_chain_for_strategy(&mut platform, 5, strategy, config, 15, &mut None, &mut None);
+            run_chain_for_strategy(&mut platform, 5, strategy, config, 15, &mut None, &mut None).await;
 
         // Count successful shield transitions across all blocks
         let shield_count = outcome
@@ -156,7 +156,7 @@ mod tests {
             .build_with_mock_rpc();
 
         let outcome =
-            run_chain_for_strategy(&mut platform, 5, strategy, config, 15, &mut None, &mut None);
+            run_chain_for_strategy(&mut platform, 5, strategy, config, 15, &mut None, &mut None).await;
 
         let shield_from_asset_lock_count = outcome
             .state_transition_results_per_block
@@ -230,7 +230,7 @@ mod tests {
             .build_with_mock_rpc();
 
         let outcome =
-            run_chain_for_strategy(&mut platform, 8, strategy, config, 15, &mut None, &mut None);
+            run_chain_for_strategy(&mut platform, 8, strategy, config, 15, &mut None, &mut None).await;
 
         // Count all shielded transitions
         let shield_count = outcome
@@ -317,7 +317,7 @@ mod tests {
             .build_with_mock_rpc();
 
         let outcome =
-            run_chain_for_strategy(&mut platform, 8, strategy, config, 15, &mut None, &mut None);
+            run_chain_for_strategy(&mut platform, 8, strategy, config, 15, &mut None, &mut None).await;
 
         let shield_count = outcome
             .state_transition_results_per_block
@@ -361,7 +361,6 @@ mod tests {
     fn run_chain_verify_anchors_after_shielding() {
         use drive::drive::shielded::paths::{
             shielded_credit_pool_anchors_by_height_path, shielded_credit_pool_anchors_path_vec,
-            shielded_credit_pool_path, SHIELDED_MOST_RECENT_ANCHOR_KEY,
         };
         use drive::grovedb::query_result_type::QueryResultType;
         use drive::grovedb::{Element, PathQuery, Query, SizedQuery};
@@ -404,7 +403,7 @@ mod tests {
             15,
             &mut None,
             &mut None,
-        );
+        ).await;
 
         // Verify at least one shield succeeded (prerequisite for anchors)
         let shield_count = outcome
@@ -532,41 +531,55 @@ mod tests {
             }
         }
 
-        // 3. Verify most recent anchor is set and non-zero
-        let pool_path = shielded_credit_pool_path();
-        let most_recent_element = drive
-            .grove
-            .get(
-                &pool_path,
-                &[SHIELDED_MOST_RECENT_ANCHOR_KEY],
+        // 3. Verify the derived "most recent anchor" — i.e. the
+        //    highest-block-height entry in the anchors-by-height
+        //    index — exists and matches one of the recorded anchors.
+        //    There is no longer a separate "most recent anchor"
+        //    slot; the index is the canonical source.
+        //
+        //    Read directly via the same path query the production
+        //    handler uses, rather than reaching across crates for
+        //    the internal `read_latest_recorded_shielded_anchor_v0`
+        //    helper — its visibility is `pub(in crate::drive)` and
+        //    a strategy test has no reason to push that to the
+        //    public Drive surface.
+        use drive::drive::shielded::paths::shielded_latest_recorded_anchor_path_query;
+        let path_query = shielded_latest_recorded_anchor_path_query();
+        let (results, _) = drive
+            .grove_get_raw_path_query(
+                &path_query,
                 None,
-                &platform_version.drive.grove_version,
+                QueryResultType::QueryKeyElementPairResultType,
+                &mut vec![],
+                &platform_version.drive,
             )
-            .unwrap()
-            .expect("most recent anchor element must exist");
-
-        if let Element::Item(most_recent_bytes, _) = most_recent_element {
-            assert_eq!(
-                most_recent_bytes.len(),
-                32,
-                "most recent anchor must be 32 bytes"
-            );
-            assert_ne!(
-                most_recent_bytes,
-                vec![0u8; 32],
-                "most recent anchor must not be all zeros after successful shields"
-            );
-            // Most recent anchor must be one of the recorded anchors
-            let is_known = anchor_to_height
-                .iter()
-                .any(|(a, _)| *a == most_recent_bytes);
-            assert!(
-                is_known,
-                "most recent anchor must match one of the recorded anchors"
-            );
+            .expect("query latest recorded shielded anchor");
+        let mut entries = results.to_key_elements();
+        let (_, most_recent_element) = entries
+            .pop()
+            .expect("most recent anchor must exist after successful shields");
+        let most_recent_anchor = if let Element::Item(bytes, _) = most_recent_element {
+            bytes
         } else {
-            panic!("most recent anchor must be an Item element");
-        }
+            panic!("expected Item element in anchors-by-height tree");
+        };
+        assert_eq!(
+            most_recent_anchor.len(),
+            32,
+            "most recent anchor must be 32 bytes"
+        );
+        assert_ne!(
+            most_recent_anchor,
+            vec![0u8; 32],
+            "most recent anchor must not be all zeros after successful shields"
+        );
+        let is_known = anchor_to_height
+            .iter()
+            .any(|(a, _)| *a == most_recent_anchor);
+        assert!(
+            is_known,
+            "most recent anchor must match one of the recorded anchors"
+        );
 
         tracing::info!(
             anchor_count = anchor_entries.len(),
@@ -625,7 +638,7 @@ mod tests {
             .build_with_mock_rpc();
 
         let outcome =
-            run_chain_for_strategy(&mut platform, 8, strategy, config, 15, &mut None, &mut None);
+            run_chain_for_strategy(&mut platform, 8, strategy, config, 15, &mut None, &mut None).await;
 
         let shield_count = outcome
             .state_transition_results_per_block

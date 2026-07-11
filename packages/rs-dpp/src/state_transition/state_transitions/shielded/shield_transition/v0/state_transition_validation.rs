@@ -1,12 +1,14 @@
+use crate::address_funds::AddressFundsFeeStrategyStep;
 use crate::consensus::basic::state_transition::{
-    FeeStrategyDuplicateError, FeeStrategyEmptyError, FeeStrategyTooManyStepsError,
-    InputBelowMinimumError, InputWitnessCountMismatchError, ShieldedInvalidValueBalanceError,
-    TransitionNoInputsError,
+    FeeStrategyDuplicateError, FeeStrategyEmptyError, FeeStrategyIndexOutOfBoundsError,
+    FeeStrategyTooManyStepsError, InputBelowMinimumError, InputWitnessCountMismatchError,
+    ShieldedInvalidValueBalanceError, TransitionNoInputsError,
 };
 use crate::consensus::basic::BasicError;
 use crate::state_transition::shield_transition::v0::ShieldTransitionV0;
 use crate::state_transition::state_transitions::shielded::common_validation::{
-    validate_actions_count, validate_anchor_not_zero, validate_proof_not_empty,
+    validate_actions_count, validate_anchor_not_zero, validate_encrypted_note_sizes,
+    validate_proof_not_empty,
 };
 use crate::state_transition::StateTransitionStructureValidation;
 use crate::validation::SimpleConsensusValidationResult;
@@ -25,6 +27,12 @@ impl StateTransitionStructureValidation for ShieldTransitionV0 {
                 .system_limits
                 .max_shielded_transition_actions,
         );
+        if !result.is_valid() {
+            return result;
+        }
+
+        // Each action's encrypted_note must be exactly ENCRYPTED_NOTE_SIZE bytes
+        let result = validate_encrypted_note_sizes(&self.actions);
         if !result.is_valid() {
             return result;
         }
@@ -89,21 +97,64 @@ impl StateTransitionStructureValidation for ShieldTransitionV0 {
             );
         }
 
-        // Total input amounts must cover the shield amount.
-        // Without this check, an attacker could provide small inputs but a large
-        // shield amount, crediting the pool more than the inputs debited.
+        // Total input amounts must cover the shield amount PLUS the shielded COMPUTE fee
+        // (`compute_shielded_verification_fee`: proof verification + per-action processing, NO storage
+        // term). This is a stateless lower bound: the real per-action storage cost is metered by
+        // GroveDB at execution and is unknowable here, so we deliberately do NOT add the 312-byte
+        // storage ESTIMATE — doing so would falsely reject otherwise-valid transitions whose actual
+        // metered storage is below the estimate.
+        //
+        // This is a cheap early reject. The AUTHORITATIVE funding gate is `validate_fees_of_event`
+        // (drive-abci), which re-checks `metered_storage + metered_processing + compute_fee` against
+        // the per-input balances AFTER the shield-amount reallocation. Anti-mint safety does NOT
+        // depend on this `+fee` term: it depends on `Σrequested >= amount` enforced by the
+        // reallocation plus that authoritative gate. `input_sum` here only bounds the sum of max
+        // contributions.
+        //
+        // `compute_shielded_verification_fee` returns a `Result`, but this validator returns a
+        // `SimpleConsensusValidationResult`, so we cannot `?`-propagate; we map an overflow to a
+        // consensus error (reachable only via pathological fee constants).
+        let minimum_fee = match crate::shielded::compute_shielded_verification_fee(
+            self.actions.len(),
+            platform_version,
+        ) {
+            Ok(fee) => fee,
+            Err(_) => {
+                return SimpleConsensusValidationResult::new_with_error(
+                    BasicError::ShieldedInvalidValueBalanceError(
+                        ShieldedInvalidValueBalanceError::new(
+                            "minimum shielded fee computation overflowed".to_string(),
+                        ),
+                    )
+                    .into(),
+                );
+            }
+        };
+        let required_input = match self.amount.checked_add(minimum_fee) {
+            Some(required) => required,
+            None => {
+                return SimpleConsensusValidationResult::new_with_error(
+                    BasicError::ShieldedInvalidValueBalanceError(
+                        ShieldedInvalidValueBalanceError::new(
+                            "shield amount plus minimum shielded fee overflows".to_string(),
+                        ),
+                    )
+                    .into(),
+                );
+            }
+        };
         let input_sum = self
             .inputs
             .values()
             .try_fold(0u64, |acc, (_, amount)| acc.checked_add(*amount));
         match input_sum {
-            Some(sum) if sum >= self.amount => {}
+            Some(sum) if sum >= required_input => {}
             Some(sum) => {
                 return SimpleConsensusValidationResult::new_with_error(
                     BasicError::ShieldedInvalidValueBalanceError(
                         ShieldedInvalidValueBalanceError::new(format!(
-                            "total input amount ({}) is less than shield amount ({})",
-                            sum, self.amount
+                            "total input amount ({}) is less than shield amount ({}) plus minimum shielded fee ({})",
+                            sum, self.amount, minimum_fee
                         )),
                     )
                     .into(),
@@ -161,6 +212,38 @@ impl StateTransitionStructureValidation for ShieldTransitionV0 {
                     BasicError::FeeStrategyDuplicateError(FeeStrategyDuplicateError::new()).into(),
                 );
             }
+
+            // Reject structurally-unusable fee-strategy steps here — cheaply, before Orchard proof
+            // verification — rather than letting an out-of-range/no-op step slip through and only
+            // surface later as a generic `AddressesNotEnoughFundsError`. A `Shield` has transparent
+            // inputs but NO transparent outputs, so `DeductFromInput` must index a real input and
+            // `ReduceOutput` can never apply. Mirrors `AddressFundingFromAssetLock`'s validator.
+            match step {
+                AddressFundsFeeStrategyStep::DeductFromInput(index) => {
+                    if *index as usize >= self.inputs.len() {
+                        return SimpleConsensusValidationResult::new_with_error(
+                            BasicError::FeeStrategyIndexOutOfBoundsError(
+                                FeeStrategyIndexOutOfBoundsError::new(
+                                    "DeductFromInput",
+                                    *index,
+                                    self.inputs.len().min(u16::MAX as usize) as u16,
+                                ),
+                            )
+                            .into(),
+                        );
+                    }
+                }
+                AddressFundsFeeStrategyStep::ReduceOutput(index) => {
+                    // A Shield has no transparent outputs (count 0), so any `ReduceOutput` is out of
+                    // bounds.
+                    return SimpleConsensusValidationResult::new_with_error(
+                        BasicError::FeeStrategyIndexOutOfBoundsError(
+                            FeeStrategyIndexOutOfBoundsError::new("ReduceOutput", *index, 0),
+                        )
+                        .into(),
+                    );
+                }
+            }
         }
 
         SimpleConsensusValidationResult::new()
@@ -187,9 +270,13 @@ mod tests {
     }
 
     /// Creates a valid ShieldTransitionV0 that passes all validation checks.
+    ///
+    /// The input must cover `amount + compute_shielded_verification_fee(num_actions)`. The shielded
+    /// compute fee is dominated by the ~100M-credit proof-verification fee, so the input is set
+    /// well above the amount to clear the fee floor.
     fn valid_shield_transition() -> ShieldTransitionV0 {
         let mut inputs = BTreeMap::new();
-        inputs.insert(PlatformAddress::P2pkh([1u8; 20]), (0u32, 1_000_000u64));
+        inputs.insert(PlatformAddress::P2pkh([1u8; 20]), (0u32, 1_000_000_000u64));
 
         ShieldTransitionV0 {
             inputs,
@@ -215,6 +302,51 @@ mod tests {
             result.is_valid(),
             "Expected valid result, got errors: {:?}",
             result.errors
+        );
+    }
+
+    #[test]
+    fn should_reject_deduct_from_input_index_out_of_bounds() {
+        let platform_version = PlatformVersion::latest();
+        let mut transition = valid_shield_transition();
+        // Only one input (index 0); index 1 is out of range and must be rejected structurally.
+        transition.fee_strategy = vec![AddressFundsFeeStrategyStep::DeductFromInput(1)];
+        let result = transition.validate_structure(platform_version);
+        assert_matches!(
+            result.errors.as_slice(),
+            [ConsensusError::BasicError(
+                BasicError::FeeStrategyIndexOutOfBoundsError(_)
+            )]
+        );
+    }
+
+    #[test]
+    fn should_reject_reduce_output_fee_strategy() {
+        let platform_version = PlatformVersion::latest();
+        let mut transition = valid_shield_transition();
+        // A Shield has no transparent outputs, so any ReduceOutput step is structurally invalid.
+        transition.fee_strategy = vec![AddressFundsFeeStrategyStep::ReduceOutput(0)];
+        let result = transition.validate_structure(platform_version);
+        assert_matches!(
+            result.errors.as_slice(),
+            [ConsensusError::BasicError(
+                BasicError::FeeStrategyIndexOutOfBoundsError(_)
+            )]
+        );
+    }
+
+    #[test]
+    fn should_reject_invalid_encrypted_note_size() {
+        let platform_version = PlatformVersion::latest();
+        let mut transition = valid_shield_transition();
+        transition.actions[0].encrypted_note = vec![4u8; 100]; // Wrong size
+
+        let result = transition.validate_structure(platform_version);
+        assert_matches!(
+            result.errors.as_slice(),
+            [ConsensusError::BasicError(
+                BasicError::ShieldedEncryptedNoteSizeMismatchError(_)
+            )]
         );
     }
 
@@ -337,11 +469,16 @@ mod tests {
     }
 
     #[test]
-    fn should_reject_input_sum_less_than_shield_amount() {
+    fn should_reject_input_sum_less_than_shield_amount_plus_fee() {
         let platform_version = PlatformVersion::latest();
         let mut transition = valid_shield_transition();
-        // Input = 1_000_000 but amount = 2_000_000
+        // The input covers the shield amount but NOT the amount + the shielded compute fee
+        // (`compute_shielded_verification_fee`, ~100M credits). It must be rejected.
         transition.amount = 2_000_000;
+        transition.inputs.clear();
+        transition
+            .inputs
+            .insert(PlatformAddress::P2pkh([1u8; 20]), (0u32, 2_500_000u64));
 
         let result = transition.validate_structure(platform_version);
         assert_matches!(
@@ -443,9 +580,12 @@ mod tests {
             let mut hash = [0u8; 20];
             hash[0] = (i & 0xFF) as u8;
             hash[1] = ((i >> 8) & 0xFF) as u8;
+            // Each input is large enough that the total clears the amount + shielded-fee floor
+            // (~130M for one action), so validation reaches the fee-strategy step-count check
+            // rather than tripping the input-sum check first.
             transition
                 .inputs
-                .insert(PlatformAddress::P2pkh(hash), (0u32, 1_000_000u64));
+                .insert(PlatformAddress::P2pkh(hash), (0u32, 50_000_000u64));
             transition.input_witnesses.push(AddressWitness::P2pkh {
                 signature: vec![0u8; 65].into(),
             });
@@ -482,21 +622,53 @@ mod tests {
     }
 
     #[test]
-    fn should_accept_input_sum_exactly_equal_to_amount() {
+    fn should_accept_input_sum_exactly_equal_to_amount_plus_fee() {
         let platform_version = PlatformVersion::latest();
         let mut transition = valid_shield_transition();
-        // Set input exactly equal to amount
+        let amount = 500_000u64;
+        let fee = crate::shielded::compute_shielded_verification_fee(
+            transition.actions.len(),
+            platform_version,
+        )
+        .expect("shielded compute fee");
+        // Input exactly equal to amount + the shielded compute fee (the boundary): must be accepted.
         transition.inputs.clear();
         transition
             .inputs
-            .insert(PlatformAddress::P2pkh([1u8; 20]), (0u32, 500_000u64));
-        transition.amount = 500_000;
+            .insert(PlatformAddress::P2pkh([1u8; 20]), (0u32, amount + fee));
+        transition.amount = amount;
 
         let result = transition.validate_structure(platform_version);
         assert!(
             result.is_valid(),
             "Expected valid result, got errors: {:?}",
             result.errors
+        );
+    }
+
+    #[test]
+    fn should_reject_input_sum_one_below_amount_plus_fee() {
+        let platform_version = PlatformVersion::latest();
+        let mut transition = valid_shield_transition();
+        let amount = 500_000u64;
+        let fee = crate::shielded::compute_shielded_verification_fee(
+            transition.actions.len(),
+            platform_version,
+        )
+        .expect("shielded compute fee");
+        // One credit below the amount + fee boundary: must be rejected.
+        transition.inputs.clear();
+        transition
+            .inputs
+            .insert(PlatformAddress::P2pkh([1u8; 20]), (0u32, amount + fee - 1));
+        transition.amount = amount;
+
+        let result = transition.validate_structure(platform_version);
+        assert_matches!(
+            result.errors.as_slice(),
+            [ConsensusError::BasicError(
+                BasicError::ShieldedInvalidValueBalanceError(_)
+            )]
         );
     }
 }

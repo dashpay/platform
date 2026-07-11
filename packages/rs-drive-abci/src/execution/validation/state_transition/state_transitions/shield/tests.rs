@@ -1,10 +1,12 @@
 #[cfg(test)]
+#[allow(clippy::module_inception)]
 mod tests {
     use crate::execution::validation::state_transition::state_transitions::shielded_common::compute_platform_sighash;
     use crate::execution::validation::state_transition::state_transitions::test_helpers::{
         create_dummy_serialized_action, create_dummy_witness, create_platform_address,
         get_proving_key, process_transition, serialize_authorized_bundle_with_flags,
-        setup_address_with_balance, setup_platform, TestAddressSigner,
+        setup_address_with_balance, setup_address_with_balance_and_system_credits, setup_platform,
+        TestAddressSigner,
     };
     use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
     use assert_matches::assert_matches;
@@ -65,7 +67,7 @@ mod tests {
 
     /// Builds a `ShieldTransitionV0` and signs it with the provided signer.
     /// The transition will have valid witnesses for all inputs.
-    fn create_signed_shield_transition(
+    async fn create_signed_shield_transition(
         signer: &TestAddressSigner,
         inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
         actions: Vec<SerializedAction>,
@@ -91,14 +93,14 @@ mod tests {
         let signable_bytes = st.signable_bytes().expect("should compute signable bytes");
 
         // Sign each input with the signer
-        let witnesses: Vec<AddressWitness> = inputs
-            .keys()
-            .map(|address| {
-                signer
-                    .sign_create_witness(address, &signable_bytes)
-                    .expect("should sign")
-            })
-            .collect();
+        let mut witnesses: Vec<AddressWitness> = Vec::with_capacity(inputs.len());
+        for address in inputs.keys() {
+            let witness = signer
+                .sign_create_witness(address, &signable_bytes)
+                .await
+                .expect("should sign");
+            witnesses.push(witness);
+        }
 
         // Inject witnesses
         if let StateTransition::Shield(ShieldTransition::V0(ref mut v0)) = st {
@@ -109,7 +111,7 @@ mod tests {
 
     /// Shorthand for creating a structurally valid (but cryptographically invalid) signed shield
     /// transition with a single input address. The ZK proof data is random/dummy.
-    fn create_default_signed_shield_transition(
+    async fn create_default_signed_shield_transition(
         signer: &TestAddressSigner,
         input_address: PlatformAddress,
         input_nonce: AddressNonce,
@@ -127,6 +129,7 @@ mod tests {
             [0u8; 64],      // dummy binding signature
             AddressFundsFeeStrategy::from(vec![AddressFundsFeeStrategyStep::DeductFromInput(0)]),
         )
+        .await
     }
 
     // (Orchard ProvingKey and serialize_authorized_bundle are now shared
@@ -139,8 +142,8 @@ mod tests {
     mod structure_validation {
         use super::*;
 
-        #[test]
-        fn test_empty_actions_returns_error() {
+        #[tokio::test]
+        async fn test_empty_actions_returns_error() {
             let platform_version = PlatformVersion::latest();
             let mut platform = setup_platform();
 
@@ -163,7 +166,8 @@ mod tests {
                 AddressFundsFeeStrategy::from(vec![AddressFundsFeeStrategyStep::DeductFromInput(
                     0,
                 )]),
-            );
+            )
+            .await;
 
             let processing_result = process_transition(&platform, transition, platform_version);
 
@@ -175,8 +179,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_no_inputs_returns_error() {
+        #[tokio::test]
+        async fn test_no_inputs_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform = setup_platform();
 
@@ -203,8 +207,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_witness_count_mismatch_returns_error() {
+        #[tokio::test]
+        async fn test_witness_count_mismatch_returns_error() {
             let platform_version = PlatformVersion::latest();
             let mut platform = setup_platform();
 
@@ -218,7 +222,8 @@ mod tests {
                 input_address,
                 1,
                 dash_to_credits!(0.5),
-            );
+            )
+            .await;
 
             // Add an extra dummy witness to cause mismatch (1 input, 2 witnesses)
             if let StateTransition::Shield(ShieldTransition::V0(ref mut v0)) = transition {
@@ -239,8 +244,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_input_below_minimum_returns_error() {
+        #[tokio::test]
+        async fn test_input_below_minimum_returns_error() {
             let platform_version = PlatformVersion::latest();
             let mut platform = setup_platform();
 
@@ -261,7 +266,8 @@ mod tests {
                 AddressFundsFeeStrategy::from(vec![AddressFundsFeeStrategyStep::DeductFromInput(
                     0,
                 )]),
-            );
+            )
+            .await;
 
             let processing_result = process_transition(&platform, transition, platform_version);
 
@@ -273,18 +279,18 @@ mod tests {
             );
         }
 
-        /// Tests validate_structure directly because 101 actions exceed the
-        /// max_state_transition_size (20KB) before reaching the actions count check
-        /// in the full pipeline.
+        /// Tests `validate_structure` directly to exercise the
+        /// `max_shielded_transition_actions` check in isolation, without
+        /// depending on the full transition-processing pipeline.
         #[test]
         fn test_too_many_actions_returns_error() {
             use dpp::state_transition::StateTransitionStructureValidation;
 
             let platform_version = PlatformVersion::latest();
 
-            // 101 actions exceeds max_shielded_transition_actions (100)
+            // 17 actions exceeds max_shielded_transition_actions (16)
             let actions: Vec<SerializedAction> =
-                (0..101).map(|_| create_dummy_serialized_action()).collect();
+                (0..17).map(|_| create_dummy_serialized_action()).collect();
 
             let transition = ShieldTransitionV0 {
                 inputs: BTreeMap::new(),
@@ -310,8 +316,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_amount_exceeding_i64_max_returns_error() {
+        #[tokio::test]
+        async fn test_amount_exceeding_i64_max_returns_error() {
             let platform_version = PlatformVersion::latest();
             let mut platform = setup_platform();
 
@@ -332,7 +338,8 @@ mod tests {
                 AddressFundsFeeStrategy::from(vec![AddressFundsFeeStrategyStep::DeductFromInput(
                     0,
                 )]),
-            );
+            )
+            .await;
 
             let processing_result = process_transition(&platform, transition, platform_version);
 
@@ -344,8 +351,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_zero_value_balance_returns_error() {
+        #[tokio::test]
+        async fn test_zero_value_balance_returns_error() {
             let platform_version = PlatformVersion::latest();
             let mut platform = setup_platform();
 
@@ -366,7 +373,8 @@ mod tests {
                 AddressFundsFeeStrategy::from(vec![AddressFundsFeeStrategyStep::DeductFromInput(
                     0,
                 )]),
-            );
+            )
+            .await;
 
             let processing_result = process_transition(&platform, transition, platform_version);
 
@@ -378,8 +386,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_empty_proof_returns_error() {
+        #[tokio::test]
+        async fn test_empty_proof_returns_error() {
             let platform_version = PlatformVersion::latest();
             let mut platform = setup_platform();
 
@@ -400,7 +408,8 @@ mod tests {
                 AddressFundsFeeStrategy::from(vec![AddressFundsFeeStrategyStep::DeductFromInput(
                     0,
                 )]),
-            );
+            )
+            .await;
 
             let processing_result = process_transition(&platform, transition, platform_version);
 
@@ -412,8 +421,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_empty_fee_strategy_returns_error() {
+        #[tokio::test]
+        async fn test_empty_fee_strategy_returns_error() {
             let platform_version = PlatformVersion::latest();
             let mut platform = setup_platform();
 
@@ -432,7 +441,8 @@ mod tests {
                 vec![0u8; 100],
                 [0u8; 64],
                 AddressFundsFeeStrategy::from(vec![]), // Empty fee strategy
-            );
+            )
+            .await;
 
             let processing_result = process_transition(&platform, transition, platform_version);
 
@@ -444,8 +454,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_fee_strategy_too_many_steps_returns_error() {
+        #[tokio::test]
+        async fn test_fee_strategy_too_many_steps_returns_error() {
             let platform_version = PlatformVersion::latest();
             let mut platform = setup_platform();
 
@@ -471,7 +481,8 @@ mod tests {
                     AddressFundsFeeStrategyStep::DeductFromInput(3),
                     AddressFundsFeeStrategyStep::DeductFromInput(4),
                 ]),
-            );
+            )
+            .await;
 
             let processing_result = process_transition(&platform, transition, platform_version);
 
@@ -483,8 +494,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_fee_strategy_duplicate_returns_error() {
+        #[tokio::test]
+        async fn test_fee_strategy_duplicate_returns_error() {
             let platform_version = PlatformVersion::latest();
             let mut platform = setup_platform();
 
@@ -506,7 +517,8 @@ mod tests {
                     AddressFundsFeeStrategyStep::DeductFromInput(0),
                     AddressFundsFeeStrategyStep::DeductFromInput(0), // Duplicate
                 ]),
-            );
+            )
+            .await;
 
             let processing_result = process_transition(&platform, transition, platform_version);
 
@@ -526,8 +538,8 @@ mod tests {
     mod witness_validation {
         use super::*;
 
-        #[test]
-        fn test_invalid_witness_returns_error() {
+        #[tokio::test]
+        async fn test_invalid_witness_returns_error() {
             let platform_version = PlatformVersion::latest();
             let mut platform = setup_platform();
 
@@ -541,7 +553,8 @@ mod tests {
                 input_address,
                 1,
                 dash_to_credits!(0.5),
-            );
+            )
+            .await;
 
             // Tamper the witness signature
             if let StateTransition::Shield(ShieldTransition::V0(ref mut v0)) = transition {
@@ -567,8 +580,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_wrong_key_witness_returns_error() {
+        #[tokio::test]
+        async fn test_wrong_key_witness_returns_error() {
             let platform_version = PlatformVersion::latest();
             let mut platform = setup_platform();
 
@@ -595,7 +608,8 @@ mod tests {
                 AddressFundsFeeStrategy::from(vec![AddressFundsFeeStrategyStep::DeductFromInput(
                     0,
                 )]),
-            );
+            )
+            .await;
 
             // Replace the valid witness with one signed by a different key
             let signable_bytes = transition
@@ -603,6 +617,7 @@ mod tests {
                 .expect("should compute signable bytes");
             let wrong_witness = wrong_signer
                 .sign_create_witness(&_wrong_address, &signable_bytes)
+                .await
                 .expect("should sign");
 
             if let StateTransition::Shield(ShieldTransition::V0(ref mut v0)) = transition {
@@ -629,8 +644,8 @@ mod tests {
     mod address_state_validation {
         use super::*;
 
-        #[test]
-        fn test_address_not_found_returns_error() {
+        #[tokio::test]
+        async fn test_address_not_found_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform = setup_platform();
 
@@ -643,7 +658,8 @@ mod tests {
                 input_address,
                 1,
                 dash_to_credits!(0.5),
-            );
+            )
+            .await;
 
             let processing_result = process_transition(&platform, transition, platform_version);
 
@@ -655,8 +671,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_wrong_nonce_returns_error() {
+        #[tokio::test]
+        async fn test_wrong_nonce_returns_error() {
             let platform_version = PlatformVersion::latest();
             let mut platform = setup_platform();
 
@@ -671,7 +687,8 @@ mod tests {
                 input_address,
                 5, // Wrong nonce — state has 0, expected next is 1
                 dash_to_credits!(0.5),
-            );
+            )
+            .await;
 
             let processing_result = process_transition(&platform, transition, platform_version);
 
@@ -683,8 +700,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_insufficient_balance_returns_error() {
+        #[tokio::test]
+        async fn test_insufficient_balance_returns_error() {
             let platform_version = PlatformVersion::latest();
             let mut platform = setup_platform();
 
@@ -699,7 +716,8 @@ mod tests {
                 input_address,
                 1,
                 dash_to_credits!(1.0), // Way more than 0.001 Dash balance
-            );
+            )
+            .await;
 
             let processing_result = process_transition(&platform, transition, platform_version);
 
@@ -719,8 +737,8 @@ mod tests {
     mod proof_verification {
         use super::*;
 
-        #[test]
-        fn test_invalid_proof_returns_shielded_proof_error() {
+        #[tokio::test]
+        async fn test_invalid_proof_returns_shielded_proof_error() {
             let platform_version = PlatformVersion::latest();
             let mut platform = setup_platform();
 
@@ -736,7 +754,8 @@ mod tests {
                 input_address,
                 1,
                 dash_to_credits!(0.5),
-            );
+            )
+            .await;
 
             let processing_result = process_transition(&platform, transition, platform_version);
 
@@ -752,8 +771,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_valid_shield_proof_succeeds() {
+        #[tokio::test]
+        async fn test_valid_shield_proof_succeeds() {
             let platform_version = PlatformVersion::latest();
             let mut platform = setup_platform();
 
@@ -825,17 +844,32 @@ mod tests {
             }));
 
             let signable_bytes = st.signable_bytes().expect("should compute signable bytes");
-            let witnesses: Vec<AddressWitness> = inputs
-                .keys()
-                .map(|address| {
-                    signer
-                        .sign_create_witness(address, &signable_bytes)
-                        .expect("should sign")
-                })
-                .collect();
+            let mut witnesses: Vec<AddressWitness> = Vec::with_capacity(inputs.len());
+            for address in inputs.keys() {
+                let witness = signer
+                    .sign_create_witness(address, &signable_bytes)
+                    .await
+                    .expect("should sign");
+                witnesses.push(witness);
+            }
 
             if let StateTransition::Shield(ShieldTransition::V0(ref mut v0)) = st {
                 v0.input_witnesses = witnesses;
+            }
+
+            // CheckTx root-invariance guard (devnet paloma h788): `check_tx` asserts under
+            // cfg(test) that it never mutates committed grovedb state, so running the
+            // canonical valid fixture through it pins the invariant for this transition type.
+            {
+                use dpp::serialization::PlatformSerializable;
+                let guard_serialized_transition = st
+                    .serialize_to_bytes()
+                    .expect("expected to serialize transition for the check_tx guard");
+                crate::test::helpers::state_mutation_guard::assert_check_tx_valid_at_all_levels(
+                    &platform,
+                    &guard_serialized_transition,
+                    "shield",
+                );
             }
 
             let processing_result = process_transition(&platform, st, platform_version);
@@ -846,8 +880,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_wrong_encrypted_note_size_returns_error() {
+        #[tokio::test]
+        async fn test_wrong_encrypted_note_size_returns_error() {
             let platform_version = PlatformVersion::latest();
             let mut platform = setup_platform();
 
@@ -872,16 +906,19 @@ mod tests {
                 AddressFundsFeeStrategy::from(vec![AddressFundsFeeStrategyStep::DeductFromInput(
                     0,
                 )]),
-            );
+            )
+            .await;
 
             let processing_result = process_transition(&platform, transition, platform_version);
 
-            // The encrypted_note size check happens in reconstruct_and_verify_bundle,
-            // which now runs at the processor level before state validation.
+            // The encrypted_note size check now happens in DPP structure validation
+            // (before reaching proof verification), returning a BasicError.
             assert_matches!(
                 processing_result.execution_results().as_slice(),
                 [StateTransitionExecutionResult::UnpaidConsensusError(
-                    ConsensusError::StateError(StateError::InvalidShieldedProofError(_))
+                    ConsensusError::BasicError(BasicError::ShieldedEncryptedNoteSizeMismatchError(
+                        _
+                    ))
                 )]
             );
         }
@@ -897,8 +934,8 @@ mod tests {
         /// Zero anchor is rejected at structure validation.
         /// Tests validate_structure directly because witness verification runs before
         /// structure validation in the full pipeline.
-        #[test]
-        fn test_zero_anchor_returns_error() {
+        #[tokio::test]
+        async fn test_zero_anchor_returns_error() {
             use dpp::state_transition::StateTransitionStructureValidation;
 
             let platform_version = PlatformVersion::latest();
@@ -939,8 +976,8 @@ mod tests {
         /// value_balance from -5000 to -100000 was accepted. Now with
         /// BatchValidator, the changed value_balance produces a different
         /// bundle commitment (sighash), causing signature verification to fail.
-        #[test]
-        fn test_valid_proof_with_mutated_value_balance_is_rejected() {
+        #[tokio::test]
+        async fn test_valid_proof_with_mutated_value_balance_is_rejected() {
             let platform_version = PlatformVersion::latest();
             let mut platform = setup_platform();
 
@@ -1010,14 +1047,14 @@ mod tests {
             }));
 
             let signable_bytes = st.signable_bytes().expect("should compute signable bytes");
-            let witnesses: Vec<AddressWitness> = inputs
-                .keys()
-                .map(|address| {
-                    signer
-                        .sign_create_witness(address, &signable_bytes)
-                        .expect("should sign")
-                })
-                .collect();
+            let mut witnesses: Vec<AddressWitness> = Vec::with_capacity(inputs.len());
+            for address in inputs.keys() {
+                let witness = signer
+                    .sign_create_witness(address, &signable_bytes)
+                    .await
+                    .expect("should sign");
+                witnesses.push(witness);
+            }
 
             if let StateTransition::Shield(ShieldTransition::V0(ref mut v0)) = st {
                 v0.input_witnesses = witnesses;
@@ -1046,8 +1083,8 @@ mod tests {
         /// With the fix, the transition is rejected at structure validation.
         ///
         /// Based on reproducer by pasta (commit a85f4b74).
-        #[test]
-        fn test_rejects_shield_when_inputs_less_than_amount() {
+        #[tokio::test]
+        async fn test_rejects_shield_when_inputs_less_than_amount() {
             let platform_version = PlatformVersion::latest();
             let mut platform = setup_platform();
 
@@ -1117,14 +1154,14 @@ mod tests {
             }));
 
             let signable_bytes = st.signable_bytes().expect("should compute signable bytes");
-            let witnesses: Vec<AddressWitness> = inputs
-                .keys()
-                .map(|address| {
-                    signer
-                        .sign_create_witness(address, &signable_bytes)
-                        .expect("should sign")
-                })
-                .collect();
+            let mut witnesses: Vec<AddressWitness> = Vec::with_capacity(inputs.len());
+            for address in inputs.keys() {
+                let witness = signer
+                    .sign_create_witness(address, &signable_bytes)
+                    .await
+                    .expect("should sign");
+                witnesses.push(witness);
+            }
 
             if let StateTransition::Shield(ShieldTransition::V0(ref mut v0)) = st {
                 v0.input_witnesses = witnesses;
@@ -1159,8 +1196,8 @@ mod tests {
         };
         use rand::rngs::OsRng;
 
-        #[test]
-        fn test_shield_prove_and_verify_address_balances() {
+        #[tokio::test]
+        async fn test_shield_prove_and_verify_address_balances() {
             let platform_version = PlatformVersion::latest();
             let mut platform = setup_platform();
             let mut rng = OsRng;
@@ -1231,14 +1268,14 @@ mod tests {
             }));
 
             let signable_bytes = st.signable_bytes().expect("should compute signable bytes");
-            let witnesses: Vec<AddressWitness> = inputs
-                .keys()
-                .map(|address| {
-                    signer
-                        .sign_create_witness(address, &signable_bytes)
-                        .expect("should sign")
-                })
-                .collect();
+            let mut witnesses: Vec<AddressWitness> = Vec::with_capacity(inputs.len());
+            for address in inputs.keys() {
+                let witness = signer
+                    .sign_create_witness(address, &signable_bytes)
+                    .await
+                    .expect("should sign");
+                witnesses.push(witness);
+            }
 
             if let StateTransition::Shield(ShieldTransition::V0(ref mut v0)) = st {
                 v0.input_witnesses = witnesses;
@@ -1330,6 +1367,363 @@ mod tests {
             assert!(
                 balance_after < dash_to_credits!(1.0),
                 "balance should be less than original after shield"
+            );
+        }
+    }
+
+    // ==========================================
+    // CREDIT CONSERVATION TESTS (sum-tree balance)
+    // ==========================================
+
+    /// Regression test for the shield credit-destruction chain-halt bug.
+    ///
+    /// A `Shield` whose inputs declare a per-input `requested` (max contribution)
+    /// larger than the shielded `amount` must NOT destroy the excess credits. The
+    /// shared address-balance validation debits the FULL `requested` per input, but
+    /// the pool is only credited `amount`. Without the reallocation fix in
+    /// `transform_into_action_v0`, the addresses lose `Σrequested + fee` while the
+    /// pool gains only `amount`, destroying `Σrequested - amount` credits and tripping
+    /// the block-end sum-tree conservation check (`CorruptedCreditsNotBalanced`),
+    /// which halts the chain.
+    ///
+    /// This drives a real shield (real Halo2 proof via the shared process-wide
+    /// proving key — no fresh ~30s proof) through the FULL block pipeline via
+    /// `process_state_transitions`, which runs
+    /// `process_block_fees_and_validate_sum_trees`. That block-end routine calls
+    /// `calculate_total_credits_balance(...).ok()` and returns the
+    /// `CorruptedCreditsNotBalanced` error (the chain-halt) if the sum of all credit
+    /// sub-trees no longer equals the platform total. With `verify_sum_trees`
+    /// enabled (the default), the helper's `.expect("expected to process block fees")`
+    /// therefore panics if the shield destroyed credits — so a passing test is a
+    /// genuine block-level proof of conservation.
+    mod credit_conservation {
+        use super::*;
+        use crate::execution::validation::state_transition::tests::process_state_transitions;
+        use dpp::block::block_info::BlockInfo;
+        // `Anchor`, `Builder`, `BundleType`, `DashMemo`, `OrchardFlags`, `FullViewingKey`,
+        // `NoteValue`, `Scope`, `SpendingKey` and `OsRng` are already in scope via `use super::*`
+        // (the parent module's imports), so they are intentionally not re-imported here.
+
+        #[tokio::test]
+        async fn test_shield_with_inputs_greater_than_amount_conserves_credits() {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = setup_platform();
+
+            // --- Set up input address with a generous balance ---
+            // Use the system-credits variant so the fixture starts in a *balanced*
+            // state (total_credits_in_platform == sum of sub-trees). The block-end
+            // sum-tree validation inside `process_state_transitions` then asserts the
+            // exact production invariant, faithfully reproducing the chain-halt check.
+            let mut signer = TestAddressSigner::new();
+            let input_address = signer.add_p2pkh([1u8; 32]);
+            setup_address_with_balance_and_system_credits(
+                &mut platform,
+                input_address,
+                0,
+                dash_to_credits!(1.0),
+            );
+
+            // Platform total credits before the shield. A shield only moves credits
+            // between addresses, the shielded pool, and fee pools — it never mints or
+            // burns system credits — so this total must be unchanged afterwards and
+            // the sum-tree conservation invariant must continue to hold.
+            let credits_before = platform
+                .drive
+                .calculate_total_credits_balance(None, &platform_version.drive)
+                .expect("should calculate total credits before shield");
+            assert!(
+                credits_before
+                    .ok()
+                    .expect("credit balance check should not overflow"),
+                "credits must be balanced before the shield: {}",
+                credits_before
+            );
+
+            // --- Build a valid Orchard shield bundle (outputs only) ---
+            let mut rng = OsRng;
+            let pk = get_proving_key();
+
+            let sk = SpendingKey::from_bytes([0u8; 32]).unwrap();
+            let fvk = FullViewingKey::from(&sk);
+            let recipient = fvk.address_at(0u32, Scope::External);
+
+            let anchor = Anchor::empty_tree();
+            let mut builder = Builder::<DashMemo>::new(
+                BundleType::Transactional {
+                    flags: OrchardFlags::SPENDS_DISABLED,
+                    bundle_required: false,
+                },
+                anchor,
+            );
+
+            let shield_value = 5_000u64;
+            builder
+                .add_output(
+                    None,
+                    recipient,
+                    NoteValue::from_raw(shield_value),
+                    [0u8; 36],
+                )
+                .unwrap();
+
+            let (unauthorized, _) = builder.build::<i64>(&mut rng).unwrap().unwrap();
+            let bundle_commitment: [u8; 32] = unauthorized.commitment().into();
+            let sighash = compute_platform_sighash(&bundle_commitment, &[]);
+            let proven = unauthorized.create_proof(pk, &mut rng).unwrap();
+            let bundle = proven.apply_signatures(rng, sighash, &[]).unwrap();
+
+            let (actions, _flags, value_balance, anchor_bytes, proof_bytes, binding_sig) =
+                serialize_authorized_bundle_with_flags(&bundle);
+
+            assert!(value_balance < 0);
+            let shield_amount = (-value_balance) as u64;
+            // Action count used to price the shielded compute fee (asserted on the booked fee below).
+            let num_actions_in_shield = actions.len();
+
+            // CRITICAL: requested (max contribution) is MUCH larger than the shielded
+            // amount. This is the routine builder behavior that triggered the bug: the
+            // full `requested` would be debited from the address while the pool only
+            // gains `shield_amount`. With the fix, only `shield_amount` is debited and
+            // the excess stays in the address.
+            let requested = shield_amount + dash_to_credits!(0.2);
+            assert!(
+                requested > shield_amount,
+                "test must exercise Σinputs > amount"
+            );
+
+            let mut inputs = BTreeMap::new();
+            inputs.insert(input_address, (1 as AddressNonce, requested));
+
+            let mut st = StateTransition::Shield(ShieldTransition::V0(ShieldTransitionV0 {
+                inputs: inputs.clone(),
+                actions,
+                amount: shield_amount,
+                anchor: anchor_bytes,
+                proof: proof_bytes,
+                binding_signature: binding_sig,
+                fee_strategy: AddressFundsFeeStrategy::from(vec![
+                    AddressFundsFeeStrategyStep::DeductFromInput(0),
+                ]),
+                user_fee_increase: 0,
+                input_witnesses: vec![],
+            }));
+
+            let signable_bytes = st.signable_bytes().expect("should compute signable bytes");
+            let mut witnesses: Vec<AddressWitness> = Vec::with_capacity(inputs.len());
+            for address in inputs.keys() {
+                let witness = signer
+                    .sign_create_witness(address, &signable_bytes)
+                    .await
+                    .expect("should sign");
+                witnesses.push(witness);
+            }
+
+            if let StateTransition::Shield(ShieldTransition::V0(ref mut v0)) = st {
+                v0.input_witnesses = witnesses;
+            }
+
+            // --- Run the FULL block pipeline (execute + distribute fees + validate
+            //     sum trees). With `verify_sum_trees` enabled (the default),
+            //     `process_block_fees_and_validate_sum_trees` would return
+            //     `CorruptedCreditsNotBalanced` and the helper's `.expect(...)` would
+            //     panic here if the shield destroyed credits. This is the block-level
+            //     conservation assertion. ---
+            let platform_state = platform.state.load();
+            let (fee_results, _processed_block_fees) =
+                process_state_transitions(&platform, &[st], BlockInfo::default(), &platform_state);
+
+            // --- Assert the metered + compute fee model directly on the booked fee. ---
+            // The Shield fee is `metered_storage + metered_processing + shielded_verification_fee`.
+            // A positive `storage_fee` proves the metered GroveDB storage of the note/nullifier
+            // writes is captured (it is not discarded in favor of a flat estimate), and
+            // `processing_fee >= shielded_verification_fee` proves the ZK compute fee is added on
+            // top of the metered processing.
+            let shielded_verification_fee = dpp::shielded::compute_shielded_verification_fee(
+                num_actions_in_shield,
+                platform_version,
+            )
+            .expect("shielded compute fee");
+            let booked = &fee_results[0];
+            assert!(
+                booked.storage_fee > 0,
+                "metered storage of the note/nullifier writes must be captured (storage_fee > 0), got {}",
+                booked.storage_fee
+            );
+            assert!(
+                booked.processing_fee >= shielded_verification_fee,
+                "processing fee ({}) must include the shielded compute fee ({}) on top of metered processing",
+                booked.processing_fee,
+                shielded_verification_fee
+            );
+
+            // --- Additionally assert the invariant directly post-block ---
+            let credits_after = platform
+                .drive
+                .calculate_total_credits_balance(None, &platform_version.drive)
+                .expect("should calculate total credits after shield");
+
+            assert!(
+                credits_after
+                    .ok()
+                    .expect("credit balance check should not overflow"),
+                "credits must remain balanced after shield with Σinputs > amount \
+                 (this is the invariant whose failure halts the chain): {}",
+                credits_after
+            );
+
+            // The shield neither mints nor burns system credits.
+            assert_eq!(
+                credits_after.total_credits_in_platform, credits_before.total_credits_in_platform,
+                "shield must not change total platform credits"
+            );
+
+            // The shielded pool gained exactly `shield_amount`.
+            assert_eq!(
+                credits_after.total_in_shielded_balances
+                    - credits_before.total_in_shielded_balances,
+                shield_amount as i64,
+                "shielded pool must gain exactly the shield amount"
+            );
+        }
+
+        /// Multi-input variant: two funded addresses with Σrequested > amount and a
+        /// fee strategy pointing at input 0. The shield amount is chosen to exceed a
+        /// single input's `requested`, so the reallocation must spill across BOTH
+        /// inputs. Runs the full block pipeline (execute + fee distribution + sum-tree
+        /// validation) and asserts conservation holds with more than one input — the
+        /// path the single-input test cannot exercise.
+        #[tokio::test]
+        async fn test_multi_input_shield_conserves_credits() {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = setup_platform();
+
+            let mut signer = TestAddressSigner::new();
+            let addr_a = signer.add_p2pkh([1u8; 32]);
+            let addr_b = signer.add_p2pkh([2u8; 32]);
+            setup_address_with_balance_and_system_credits(
+                &mut platform,
+                addr_a,
+                0,
+                dash_to_credits!(1.0),
+            );
+            setup_address_with_balance_and_system_credits(
+                &mut platform,
+                addr_b,
+                0,
+                dash_to_credits!(1.0),
+            );
+
+            let credits_before = platform
+                .drive
+                .calculate_total_credits_balance(None, &platform_version.drive)
+                .expect("should calculate total credits before shield");
+            assert!(
+                credits_before
+                    .ok()
+                    .expect("credit balance check should not overflow"),
+                "credits must be balanced before the shield: {}",
+                credits_before
+            );
+
+            // Orchard bundle whose value is large enough that the shield amount spans
+            // both inputs (forces cross-input consumption / spillover).
+            let mut rng = OsRng;
+            let pk = get_proving_key();
+            let sk = SpendingKey::from_bytes([0u8; 32]).unwrap();
+            let fvk = FullViewingKey::from(&sk);
+            let recipient = fvk.address_at(0u32, Scope::External);
+            let anchor = Anchor::empty_tree();
+            let mut builder = Builder::<DashMemo>::new(
+                BundleType::Transactional {
+                    flags: OrchardFlags::SPENDS_DISABLED,
+                    bundle_required: false,
+                },
+                anchor,
+            );
+            let shield_value = 15_000_000_000u64; // 0.15 DASH
+            builder
+                .add_output(
+                    None,
+                    recipient,
+                    NoteValue::from_raw(shield_value),
+                    [0u8; 36],
+                )
+                .unwrap();
+            let (unauthorized, _) = builder.build::<i64>(&mut rng).unwrap().unwrap();
+            let bundle_commitment: [u8; 32] = unauthorized.commitment().into();
+            let sighash = compute_platform_sighash(&bundle_commitment, &[]);
+            let proven = unauthorized.create_proof(pk, &mut rng).unwrap();
+            let bundle = proven.apply_signatures(rng, sighash, &[]).unwrap();
+            let (actions, _flags, value_balance, anchor_bytes, proof_bytes, binding_sig) =
+                serialize_authorized_bundle_with_flags(&bundle);
+            assert!(value_balance < 0);
+            let shield_amount = (-value_balance) as u64;
+
+            // Each input contributes up to 0.1 DASH. Σrequested = 0.2 DASH > amount,
+            // and amount (0.15) exceeds a single input's requested (0.1), so the
+            // reallocation must consume from both inputs.
+            let requested = dash_to_credits!(0.1);
+            assert!(
+                requested < shield_amount,
+                "amount must span more than one input"
+            );
+            assert!(requested * 2 > shield_amount, "Σinputs must exceed amount");
+
+            let mut inputs = BTreeMap::new();
+            inputs.insert(addr_a, (1 as AddressNonce, requested));
+            inputs.insert(addr_b, (1 as AddressNonce, requested));
+
+            let mut st = StateTransition::Shield(ShieldTransition::V0(ShieldTransitionV0 {
+                inputs: inputs.clone(),
+                actions,
+                amount: shield_amount,
+                anchor: anchor_bytes,
+                proof: proof_bytes,
+                binding_signature: binding_sig,
+                fee_strategy: AddressFundsFeeStrategy::from(vec![
+                    AddressFundsFeeStrategyStep::DeductFromInput(0),
+                ]),
+                user_fee_increase: 0,
+                input_witnesses: vec![],
+            }));
+
+            let signable_bytes = st.signable_bytes().expect("should compute signable bytes");
+            let mut witnesses: Vec<AddressWitness> = Vec::with_capacity(inputs.len());
+            for address in inputs.keys() {
+                let witness = signer
+                    .sign_create_witness(address, &signable_bytes)
+                    .await
+                    .expect("should sign");
+                witnesses.push(witness);
+            }
+            if let StateTransition::Shield(ShieldTransition::V0(ref mut v0)) = st {
+                v0.input_witnesses = witnesses;
+            }
+
+            let platform_state = platform.state.load();
+            let (_fee_results, _processed_block_fees) =
+                process_state_transitions(&platform, &[st], BlockInfo::default(), &platform_state);
+
+            let credits_after = platform
+                .drive
+                .calculate_total_credits_balance(None, &platform_version.drive)
+                .expect("should calculate total credits after shield");
+            assert!(
+                credits_after
+                    .ok()
+                    .expect("credit balance check should not overflow"),
+                "credits must remain balanced after a multi-input shield: {}",
+                credits_after
+            );
+            assert_eq!(
+                credits_after.total_credits_in_platform, credits_before.total_credits_in_platform,
+                "shield must not change total platform credits"
+            );
+            assert_eq!(
+                credits_after.total_in_shielded_balances
+                    - credits_before.total_in_shielded_balances,
+                shield_amount as i64,
+                "shielded pool must gain exactly the shield amount"
             );
         }
     }

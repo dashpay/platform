@@ -116,7 +116,7 @@ final class StateTransitionTests: XCTestCase {
       }
 
       defer {
-        dash_sdk_identity_destroy(identityHandle.assumingMemoryBound(to: IdentityHandle.self))
+        dash_sdk_identity_destroy(OpaquePointer(identityHandle))
       }
 
       // Use key ID 3 (transfer key) directly
@@ -125,7 +125,8 @@ final class StateTransitionTests: XCTestCase {
       let signerResult = key3Private.withUnsafeBytes { keyBytes in
         dash_sdk_signer_create_from_private_key(
           keyBytes.bindMemory(to: UInt8.self).baseAddress!,
-          UInt(key3Private.count)
+          UInt(key3Private.count),
+          Network.testnet.ffiValue
         )
       }
 
@@ -136,15 +137,22 @@ final class StateTransitionTests: XCTestCase {
       }
 
       defer {
-        dash_sdk_signer_destroy(signer.assumingMemoryBound(to: SignerHandle.self))
+        dash_sdk_signer_destroy(OpaquePointer(signer))
       }
 
+      // `OpaquePointer` lost its retroactive `Sendable` conformance
+      // under compiler 6.2+; surface the pointers as unsafe-but-sendable
+      // locals so they can cross the awaited call without strict-
+      // concurrency errors. This is an integration-test-only fix; the
+      // runtime path is unchanged.
+      nonisolated(unsafe) let identityPtr = OpaquePointer(identityHandle)
+      nonisolated(unsafe) let signerPtr = OpaquePointer(signer)
       let (senderBalance, receiverBalance) = try await sdk.identityTransferCredits(
-        fromIdentity: OpaquePointer(identityHandle),
+        fromIdentity: identityPtr,
         toIdentityId: recipientId,
         amount: amount,
         publicKeyId: 0,  // Auto-select transfer key
-        signer: OpaquePointer(signer)
+        signer: signerPtr
       )
 
       print("✅ Transfer successful!")
@@ -266,7 +274,8 @@ final class StateTransitionTests: XCTestCase {
         let signerResult = key3Private.withUnsafeBytes { keyBytes in
           dash_sdk_signer_create_from_private_key(
             keyBytes.bindMemory(to: UInt8.self).baseAddress!,
-            UInt(key3Private.count)
+            UInt(key3Private.count),
+            Network.testnet.ffiValue
           )
         }
 
@@ -277,15 +286,16 @@ final class StateTransitionTests: XCTestCase {
         }
 
         defer {
-          dash_sdk_signer_destroy(signer.assumingMemoryBound(to: SignerHandle.self))
+          dash_sdk_signer_destroy(OpaquePointer(signer))
         }
 
         print("   Calling transferCredits...")
+        nonisolated(unsafe) let signerPtr = OpaquePointer(signer)
         let result = try await sdk.transferCredits(
           from: dppIdentity,
           toIdentityId: recipientId,
           amount: amount,
-          signer: OpaquePointer(signer)
+          signer: signerPtr
         )
 
         print("   ✅ Transfer successful!")
@@ -358,7 +368,8 @@ final class StateTransitionTests: XCTestCase {
     let signerResult = key3Private.withUnsafeBytes { keyBytes in
       dash_sdk_signer_create_from_private_key(
         keyBytes.bindMemory(to: UInt8.self).baseAddress!,
-        UInt(key3Private.count)
+        UInt(key3Private.count),
+        Network.testnet.ffiValue
       )
     }
 
@@ -369,15 +380,16 @@ final class StateTransitionTests: XCTestCase {
     }
 
     defer {
-      dash_sdk_signer_destroy(signer.assumingMemoryBound(to: SignerHandle.self))
+      dash_sdk_signer_destroy(OpaquePointer(signer))
     }
 
+    nonisolated(unsafe) let signerPtr = OpaquePointer(signer)
     let newBalance = try await sdk.withdrawFromIdentity(
       identity,
       amount: amount,
       toAddress: withdrawalAddress,
       coreFeePerByte: 1,
-      signer: OpaquePointer(signer)
+      signer: signerPtr
     )
 
     print("✅ Withdrawal successful!")
@@ -445,7 +457,8 @@ final class StateTransitionTests: XCTestCase {
     let signerResult = key3Private.withUnsafeBytes { keyBytes in
       dash_sdk_signer_create_from_private_key(
         keyBytes.bindMemory(to: UInt8.self).baseAddress!,
-        UInt(key3Private.count)
+        UInt(key3Private.count),
+        Network.testnet.ffiValue
       )
     }
 
@@ -462,7 +475,7 @@ final class StateTransitionTests: XCTestCase {
     }
 
     defer {
-      dash_sdk_signer_destroy(signer.assumingMemoryBound(to: SignerHandle.self))
+      dash_sdk_signer_destroy(OpaquePointer(signer))
     }
 
     print("✅ Signer created successfully")
@@ -479,7 +492,7 @@ final class StateTransitionTests: XCTestCase {
     // Try to sign the data
     let signResult = testData.withUnsafeBytes { dataBytes in
       dash_sdk_signer_sign(
-        signer.assumingMemoryBound(to: SignerHandle.self),
+        OpaquePointer(signer),
         dataBytes.bindMemory(to: UInt8.self).baseAddress!,
         UInt(testData.count)
       )
@@ -522,7 +535,8 @@ final class StateTransitionTests: XCTestCase {
     let signerResult = key3Private.withUnsafeBytes { keyBytes in
       dash_sdk_signer_create_from_private_key(
         keyBytes.bindMemory(to: UInt8.self).baseAddress!,
-        UInt(key3Private.count)
+        UInt(key3Private.count),
+        Network.testnet.ffiValue
       )
     }
 
@@ -532,7 +546,7 @@ final class StateTransitionTests: XCTestCase {
     }
 
     defer {
-      dash_sdk_signer_destroy(signer.assumingMemoryBound(to: SignerHandle.self))
+      dash_sdk_signer_destroy(OpaquePointer(signer))
     }
 
     print("✅ Signer created")
@@ -554,7 +568,7 @@ final class StateTransitionTests: XCTestCase {
     }
 
     defer {
-      dash_sdk_identity_destroy(identityHandle.assumingMemoryBound(to: IdentityHandle.self))
+      dash_sdk_identity_destroy(OpaquePointer(identityHandle))
     }
 
     print("✅ Identity handle fetched")
@@ -572,11 +586,11 @@ final class StateTransitionTests: XCTestCase {
     let result = recipientId.withCString { toIdCStr in
       dash_sdk_identity_transfer_credits(
         sdk.handle,
-        identityHandle.assumingMemoryBound(to: IdentityHandle.self),
+        OpaquePointer(identityHandle),
         toIdCStr,
         amount,
         0,  // Auto-select key
-        signer.assumingMemoryBound(to: SignerHandle.self),
+        OpaquePointer(signer),
         nil  // Default put settings
       )
     }
@@ -642,8 +656,7 @@ final class StateTransitionTests: XCTestCase {
     SDK.initialize()
 
     // Create SDK instance for testnet
-    let testnetNetwork = DashSDKNetwork(rawValue: 1)
-    return try SDK(network: testnetNetwork)
+    return try SDK(network: .testnet)
   }
 
   private func decodePrivateKey(from base58: String) throws -> Data {
