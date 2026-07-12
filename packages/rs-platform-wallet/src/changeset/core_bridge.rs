@@ -24,12 +24,16 @@
 //! manager's lifetime; on shutdown, fire the [`CancellationToken`] to
 //! make the task exit cleanly.
 
+use std::collections::{BTreeMap, HashSet};
 use std::sync::Arc;
 
 use dashcore::blockdata::transaction::{txout::TxOut, OutPoint};
 use dashcore::ScriptBuf;
+use key_wallet::account::AccountType;
+use key_wallet::managed_account::address_pool::AddressPoolType;
 use key_wallet::managed_account::transaction_record::{OutputRole, TransactionRecord};
-use key_wallet::transaction_checking::TransactionContext;
+use key_wallet::transaction_checking::transaction_router::AccountTypeToCheck;
+use key_wallet::transaction_checking::{DerivedAddressInfo, TransactionContext};
 use key_wallet::Utxo;
 use key_wallet_manager::{WalletEvent, WalletId, WalletManager};
 use tokio::sync::broadcast::error::RecvError;
@@ -37,7 +41,7 @@ use tokio::sync::RwLock;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
-use crate::changeset::changeset::{CoreChangeSet, PlatformWalletChangeSet};
+use crate::changeset::changeset::{CoreChangeSet, HighestUsedIndexes, PlatformWalletChangeSet};
 use crate::changeset::traits::PlatformWalletPersistence;
 use crate::wallet::platform_wallet::PlatformWalletInfo;
 
@@ -125,12 +129,15 @@ async fn build_core_changeset(
 ) -> CoreChangeSet {
     match event {
         WalletEvent::TransactionDetected {
+            wallet_id,
             record,
             addresses_derived,
             ..
         } => {
             // Derive UTXO deltas before moving the record into `records`
             // so the per-record borrows are still live.
+            let (addresses_marked_used, account_highest_used) =
+                collect_usage_deltas(wallet_manager, wallet_id, vec![&**record]).await;
             CoreChangeSet {
                 new_utxos: derive_new_utxos(record),
                 spent_utxos: derive_spent_utxos(record),
@@ -142,6 +149,8 @@ async fn build_core_changeset(
                 // `CoreChangeSet.addresses_derived` for the cascade-
                 // link rationale.
                 addresses_derived: addresses_derived.clone(),
+                addresses_marked_used,
+                account_highest_used,
                 ..CoreChangeSet::default()
             }
         }
@@ -163,6 +172,7 @@ async fn build_core_changeset(
             cs
         }
         WalletEvent::BlockProcessed {
+            wallet_id,
             height,
             inserted,
             updated,
@@ -189,6 +199,20 @@ async fn build_core_changeset(
             // Already deduped upstream by `project_derived_addresses`;
             // `Merge` re-dedupes if multiple events fold together.
             cs.addresses_derived = addresses_derived.clone();
+            // Used-flag flips + highest-used watermarks for every
+            // record in the block. `updated` / `matured` records
+            // re-emit their involved addresses — idempotent at the
+            // persister, and it lets a rescan converge stores that
+            // missed the original insert-time flip.
+            let records: Vec<&TransactionRecord> = inserted
+                .iter()
+                .chain(updated.iter())
+                .chain(matured.iter())
+                .collect();
+            let (addresses_marked_used, account_highest_used) =
+                collect_usage_deltas(wallet_manager, wallet_id, records).await;
+            cs.addresses_marked_used = addresses_marked_used;
+            cs.account_highest_used = account_highest_used;
             cs
         }
         WalletEvent::SyncHeightAdvanced { height, .. } => CoreChangeSet {
@@ -226,6 +250,130 @@ async fn build_core_changeset(
             }
         }
     }
+}
+
+/// Rebuild the "addresses marked used" delta plus the post-batch
+/// highest-used watermarks for the accounts touched by `records`.
+///
+/// Upstream `wallet_checker` marks matched addresses used (and bumps
+/// each pool's `highest_used`) **in memory only** — `WalletEvent`
+/// carries neither. Without re-deriving the flips here, a match found
+/// during SPV block processing (a TXO on a BIP44 address, or a
+/// special-tx payload hitting a provider owner / voting key) never
+/// reaches the persister and every mirrored store keeps
+/// `is_used = false` / `highest_used = None` forever.
+///
+/// For each record this re-runs the same **read-only** matcher the
+/// wallet used during processing
+/// ([`ManagedAccountCollection::check_transaction`]), scoped to the
+/// record's own account type, then resolves every involved address
+/// back to its owning pool for the authoritative post-mark
+/// [`AddressInfo`](key_wallet::managed_account::address_pool::AddressInfo)
+/// and the pool's `highest_used` watermark. `used` is forced `true`
+/// on the emitted entry — involvement in a recorded transaction is
+/// the definition of "used", independent of snapshot timing.
+///
+/// Returns empty deltas when the wallet is unknown (raced a removal)
+/// — the next sync round re-emits.
+async fn collect_usage_deltas(
+    wallet_manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+    wallet_id: &WalletId,
+    records: Vec<&TransactionRecord>,
+) -> (
+    Vec<DerivedAddressInfo>,
+    BTreeMap<AccountType, HighestUsedIndexes>,
+) {
+    let mut marked_used: Vec<DerivedAddressInfo> = Vec::new();
+    let mut highest_used: BTreeMap<AccountType, HighestUsedIndexes> = BTreeMap::new();
+    if records.is_empty() {
+        return (marked_used, highest_used);
+    }
+
+    let guard = wallet_manager.read().await;
+    let Some(info) = guard.get_wallet_info(wallet_id) else {
+        return (marked_used, highest_used);
+    };
+    let accounts = &info.core_wallet.accounts;
+    let account_refs = accounts.all_accounts();
+
+    let mut seen: HashSet<(AccountType, AddressPoolType, u32)> = HashSet::new();
+    // A block can carry several records for the same account type
+    // (and `check_transaction` is per-tx anyway), so dedup the
+    // (txid, type-to-check) pairs to avoid re-matching the same
+    // transaction against the same accounts. `AccountTypeToCheck`
+    // isn't `Hash` upstream; a linear scan over this per-batch-sized
+    // vec is cheaper than hashing anyway.
+    let mut checked: Vec<(dashcore::Txid, AccountTypeToCheck)> = Vec::new();
+
+    for record in records {
+        // The matcher wants the runtime `AccountTypeToCheck`
+        // discriminant; resolve it through the live managed account so
+        // the conversion stays upstream-owned. A record whose account
+        // vanished from the collection (removed mid-flight) is skipped
+        // — nothing to flip in a pool that no longer exists.
+        let Some(account) = account_refs
+            .iter()
+            .find(|a| a.managed_account_type().to_account_type() == record.account_type)
+        else {
+            continue;
+        };
+        let Ok(type_to_check) = AccountTypeToCheck::try_from(account.managed_account_type()) else {
+            continue;
+        };
+        if checked.contains(&(record.txid, type_to_check)) {
+            continue;
+        }
+        checked.push((record.txid, type_to_check));
+
+        let result = accounts.check_transaction(&record.transaction, &[type_to_check]);
+        for account_match in result.affected_accounts {
+            for involved in account_match.account_type_match.all_involved_addresses() {
+                // Resolve the involved address back to its owning
+                // account + pool. This recovers the `pool_type` (which
+                // the match doesn't carry) and the authoritative
+                // post-mark `AddressInfo`; any account monitoring the
+                // address is a genuine usage site, matching upstream's
+                // per-matched-account `mark_address_used` sweep.
+                for owner in &account_refs {
+                    let owner_type = owner.managed_account_type().to_account_type();
+                    for pool in owner.managed_account_type().address_pools() {
+                        let Some(pool_info) = pool.address_info(&involved.address) else {
+                            continue;
+                        };
+                        if seen.insert((owner_type, pool.pool_type, pool_info.index)) {
+                            let mut info = pool_info.clone();
+                            info.used = true;
+                            marked_used.push(DerivedAddressInfo {
+                                account_type: owner_type,
+                                pool_type: pool.pool_type,
+                                info,
+                            });
+                        }
+                        // Snapshot the owning account's highest-used
+                        // watermarks. Standard accounts map External /
+                        // Internal onto the two persisted slots;
+                        // single-pool accounts (provider keys, identity
+                        // funding) surface theirs as `external`.
+                        let slot = highest_used.entry(owner_type).or_default();
+                        let mut snapshot = HighestUsedIndexes::default();
+                        for p in owner.managed_account_type().address_pools() {
+                            if p.is_internal() {
+                                snapshot.internal = p.highest_used;
+                            } else {
+                                snapshot.external = match (snapshot.external, p.highest_used) {
+                                    (Some(a), Some(b)) => Some(a.max(b)),
+                                    (a, b) => a.or(b),
+                                };
+                            }
+                        }
+                        slot.merge_max(snapshot);
+                    }
+                }
+            }
+        }
+    }
+
+    (marked_used, highest_used)
 }
 
 /// Returns `true` when the wallet's stored record for `txid` is in a
@@ -355,5 +503,7 @@ impl CoreChangeSet {
             && self.synced_height.is_none()
             && self.last_applied_chain_lock.is_none()
             && self.addresses_derived.is_empty()
+            && self.addresses_marked_used.is_empty()
+            && self.account_highest_used.is_empty()
     }
 }

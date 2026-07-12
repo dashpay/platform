@@ -338,6 +338,16 @@ impl WalletChangeSetFFI {
             // sync-path emit for the same account collapse onto a
             // single SwiftData row.
             let tags = account_type_to_tags(&account_type);
+            // Post-batch highest-used watermarks, captured by the
+            // event bridge from the authoritative in-memory pools for
+            // every account this batch marked an address used on
+            // (`CoreChangeSet::account_highest_used`). `has_* = false`
+            // means "no update this batch" — the Swift persister only
+            // overwrites its row when the flag is set, so batches
+            // without usage never regress a stored watermark.
+            let highest = cs.account_highest_used.get(&account_type);
+            let external_highest_used = highest.and_then(|h| h.external);
+            let internal_highest_used = highest.and_then(|h| h.internal);
             ffi_accounts.push(AccountChangeSetFFI {
                 account_type_name: type_name.into_raw(),
                 account_index,
@@ -357,15 +367,10 @@ impl WalletChangeSetFFI {
                 utxos_instant_locked_count: 0,
                 transactions: vec_to_ptr(transactions),
                 transactions_count,
-                // Highest-used pool indices were a feature of the
-                // deleted upstream changeset's per-account bucket.
-                // The new event-bus model doesn't surface them; the
-                // persister can derive them from monitored addresses
-                // if needed.
-                external_highest_used: -1,
-                has_external_highest_used: false,
-                internal_highest_used: -1,
-                has_internal_highest_used: false,
+                external_highest_used: external_highest_used.map_or(-1, |v| v as i32),
+                has_external_highest_used: external_highest_used.is_some(),
+                internal_highest_used: internal_highest_used.map_or(-1, |v| v as i32),
+                has_internal_highest_used: internal_highest_used.is_some(),
             });
         }
 
