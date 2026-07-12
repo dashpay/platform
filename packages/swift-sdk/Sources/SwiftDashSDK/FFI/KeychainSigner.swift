@@ -723,7 +723,7 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
         } catch KeyManagerError.signerCreationFailed(let message) {
             return .failure(.ffiSignerCreationFailed(message: message))
         } catch KeyManagerError.invalidKeyFormat(let message) {
-            return .failure(.ffiSignerCreationFailed(message: message))
+            return .failure(.ffiSignerCreationFailed(message: "invalid key format: \(message)"))
         } catch KeyManagerError.signingFailed(let message) {
             return .failure(.ffiSignFailed(message: message))
         } catch {
