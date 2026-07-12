@@ -3,7 +3,7 @@ import XCTest
 
 /// Pure-function tests for `TransactionDecoder` — no wallet handle or network
 /// access. The fixture is the same synthetic transaction exercised by the
-/// Rust-side unit tests in `rs-platform-wallet-ffi/src/tx_decode.rs`:
+/// Rust-side unit tests in `key-wallet-ffi/src/tx_decode.rs` (rust-dashcore):
 /// one P2PKH input (spending 1111…11:3, scriptSig = push(sig) push(pubkey)),
 /// one P2PKH output of 151 072 duffs, and one OP_RETURN output.
 final class TransactionDecoderTests: XCTestCase {
