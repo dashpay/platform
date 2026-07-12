@@ -179,6 +179,46 @@ class WalletStorageUpgradeMatrixTest {
         // the blob; the wrong-key failure is absorbed and surfaces as null.
         assertNull(storage.retrievePrivateKey(pub))
         assertTrue(fake.legacyRsaFallbackCalls > 0) // recovery was tried, not skipped
+
+        // And key-health must NOT report the stranded blob decryptable
+        // (finding e17e265dc680): the former RSA key is present but does not open
+        // this sibling-alias blob, so probing it yields BadPadding -> false, which
+        // lets WalletKeyHealthSheet offer the re-derive/repair path. Before the
+        // fix this returned true on bare key presence.
+        assertFalse(storage.isPrivateKeyDecryptable(pub))
+    }
+
+    /**
+     * Key-health probes actual decryptability, not presence — but an auth-gated
+     * key with a closed window is DECRYPTABLE, not stranded (finding e17e265dc680).
+     * A provisioned policy-alias blob whose decrypt throws
+     * UserNotAuthenticatedException (window closed) must report decryptable: the
+     * key is present and the value recovers once the user authenticates, and the
+     * probe must not prompt. (Contrast siblingAlias above, where the key is present
+     * but genuinely wrong -> BadPadding -> not decryptable.)
+     */
+    @Test
+    fun authGatedPolicyKeyReportsDecryptableWithoutPrompting() = runBlocking {
+        fake.scheme = FakeKeystoreManager.Scheme.CURRENT
+        storage.storePrivateKey(pub, secret) // provisions the policy alias, TAG_POLICY blob
+
+        fake.throwAuthOnPolicyDecrypt = true // closed auth window: decrypt throws UserNotAuth
+        assertTrue(storage.isPrivateKeyDecryptable(pub))
+    }
+
+    /**
+     * The same auth-gated semantics on the former-RSA recovery path: a present but
+     * auth-gated KEYS_ALIAS RSA key that would open the blob after auth reports
+     * decryptable when the window is closed (UserNotAuth), rather than stranded.
+     */
+    @Test
+    fun authGatedFormerRsaKeyReportsDecryptable() = runBlocking {
+        fake.keysAliasKind = FakeKeystoreManager.KeysAliasKind.RSA
+        fake.scheme = FakeKeystoreManager.Scheme.FORMER_RSA
+        storage.storePrivateKey(pub, secret) // former-RSA blob; policy alias unprovisioned
+
+        fake.throwAuthOnLegacyRsaDecrypt = true // closed window on the former RSA key
+        assertTrue(storage.isPrivateKeyDecryptable(pub))
     }
 
     /**
@@ -220,6 +260,7 @@ private class FakeKeystoreManager :
     var keysAliasKind: KeysAliasKind = KeysAliasKind.NONE
     var policyKeyProvisioned: Boolean = false
     var throwAuthOnPolicyDecrypt: Boolean = false
+    var throwAuthOnLegacyRsaDecrypt: Boolean = false
     var legacyRsaFallbackCalls: Int = 0
 
     override val keysAlias: String get() = POLICY_ALIAS
@@ -250,6 +291,9 @@ private class FakeKeystoreManager :
     override fun decryptLegacyRsaKeysBlob(blob: EncryptedBlob): ByteArray? {
         legacyRsaFallbackCalls++
         if (keysAliasKind != KeysAliasKind.RSA) return null
+        // Auth-gated former RSA key with a closed window throws before the padding
+        // check (parity with AndroidKeyStore), independent of blob match.
+        if (throwAuthOnLegacyRsaDecrypt) throw UserNotAuthenticatedException()
         if (blob.ciphertext[0] == TAG_FORMER_RSA) return plaintextOfRsa(blob)
         throw BadPaddingException("former RSA key cannot open this blob")
     }

@@ -354,30 +354,68 @@ class WalletStorage(
         store.data.first().contains(privateKeyKey(pubkeyHex))
 
     /**
-     * Whether the blob stored for [pubkeyHex] can actually be recovered — a
-     * structural + Keystore-presence check (never decrypts, never prompts) that
-     * reflects real decryptability, not blob shape alone:
-     *  - **Legacy AES-GCM** blob (non-empty IV): recoverable iff the retained
-     *    legacy AES key still exists ([KeystoreManager.hasLegacyKeysKey]).
-     *  - **Empty-IV RSA** blob: recoverable iff SOME present RSA private key can
-     *    open it — the current policy alias's key
-     *    ([KeystoreManager.hasIdentityKeysKey]) or the retained former
-     *    KEYS_ALIAS keypair used as the migration fallback
-     *    ([KeystoreManager.hasLegacyRsaKeysKey], dashpay/platform#4060). A
-     *    correctly-shaped RSA blob whose keys were all deleted by an older build
-     *    is stranded, so shape is NOT sufficient.
-     * An unrecoverable blob is treated by key-health as missing and offers a
-     * re-derive.
+     * Whether the blob stored for [pubkeyHex] can actually be recovered. This
+     * PROBES the same candidate keys [retrievePrivateKey] would use and returns
+     * true only when a present key actually opens the blob — NOT a bare
+     * key-presence check, which reported a stranded/sibling-alias blob "healthy"
+     * merely because an unrelated key of the right shape existed
+     * (dashpay/platform#4060, finding e17e265dc680), so `WalletKeyHealthSheet`
+     * never offered the re-derive/repair path this check exists to drive.
+     *
+     * The probe never prompts: [KeystoreManager.decrypt] /
+     * [KeystoreManager.decryptLegacyRsaKeysBlob] / [KeystoreManager.decryptLegacyKeysBlob]
+     * are bare Cipher operations — the biometric prompt is driven only by
+     * `KeystoreSigner`/`BiometricGate`, never here. An auth-gated key whose auth
+     * window is closed therefore throws `UserNotAuthenticatedException` (rather
+     * than showing UI), which counts as DECRYPTABLE: the key is present and the
+     * value would recover after the user authenticates, so a health check must not
+     * report it strandable. Only a wrong-key crypto failure (BadPadding / AEAD tag)
+     * or an absent key yields "not decryptable". Recovered plaintext is scrubbed
+     * immediately — a health check must not leave key bytes on the heap.
+     *
+     *  - **Legacy AES-GCM** blob (non-empty IV): probe [KeystoreManager.decryptLegacyKeysBlob].
+     *  - **Empty-IV RSA** blob: probe the current policy alias (only if
+     *    provisioned — an unprovisioned alias can't have written it), then the
+     *    retained former KEYS_ALIAS RSA keypair. A structurally non-RSA blob is
+     *    not decryptable.
      */
     suspend fun isPrivateKeyDecryptable(pubkeyHex: String): Boolean {
         val encoded = store.data.first()[privateKeyKey(pubkeyHex)] ?: return false
         val blob = decode(encoded)
-        if (keystore.isLegacyKeysBlob(blob)) {
-            return keystore.hasLegacyKeysKey()
+        return when {
+            keystore.isLegacyKeysBlob(blob) ->
+                probeOpensBlob { keystore.decryptLegacyKeysBlob(blob) }
+            !keystore.isKeysBlobDecryptable(blob) -> false
+            else ->
+                (keystore.hasIdentityKeysKey(keystore.keysAlias) &&
+                    probeOpensBlob { keystore.decrypt(blob, keystore.keysAlias) }) ||
+                    (keystore.hasLegacyRsaKeysKey() &&
+                        probeOpensBlob { keystore.decryptLegacyRsaKeysBlob(blob) })
         }
-        return keystore.isKeysBlobDecryptable(blob) &&
-            (keystore.hasIdentityKeysKey(keystore.keysAlias) || keystore.hasLegacyRsaKeysKey())
     }
+
+    /**
+     * True iff [decrypt] recovers [blob] with a PRESENT key (plaintext scrubbed
+     * immediately), or the key is auth-gated with a closed window
+     * (`UserNotAuthenticatedException` — present and would recover after auth, so
+     * decryptable). A wrong-key crypto failure or an absent key (`null`) is false.
+     * Prompt-free by construction — see [isPrivateKeyDecryptable]. Used only by the
+     * non-prompting key-health probe, never on a signing path.
+     */
+    private fun probeOpensBlob(decrypt: () -> ByteArray?): Boolean =
+        try {
+            val plain = decrypt()
+            if (plain != null) {
+                plain.fill(0)
+                true
+            } else {
+                false
+            }
+        } catch (e: UserNotAuthenticatedException) {
+            true
+        } catch (e: GeneralSecurityException) {
+            false
+        }
 
     /** All entry names (masked listing for the Keystore Explorer screen). */
     suspend fun listEntryNames(): List<String> =
