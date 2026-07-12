@@ -133,4 +133,118 @@ class DocumentTransactions internal constructor() {
             )
         }
     }
+
+    /**
+     * Replace + broadcast the full property set of [documentId] on
+     * [contractId]'s [documentType], owned by [ownerId] — signed via
+     * [signerHandle] with key [signingKeyId]. Mirrors Swift
+     * `ManagedPlatformWallet.replaceDocument`. The document revision is
+     * bumped on the Rust side; the caller does not pass a revision.
+     *
+     * @param propertiesJson the FULL replacement property object (byte-array
+     *   fields as hex, identifier fields as base58), same encoding as
+     *   [create].
+     * @return the confirmed document's canonical JSON (its 32-byte id is the
+     *   `$id` field).
+     */
+    suspend fun replace(
+        walletHandle: Long,
+        ownerId: ByteArray,
+        contractId: ByteArray,
+        documentType: String,
+        documentId: ByteArray,
+        propertiesJson: String,
+        signingKeyId: Int,
+        signerHandle: Long,
+    ): String = withContext(Dispatchers.IO) {
+        require(ownerId.size == 32) { "ownerId must be 32 bytes" }
+        require(contractId.size == 32) { "contractId must be 32 bytes" }
+        require(documentId.size == 32) { "documentId must be 32 bytes" }
+        require(signingKeyId >= 0) { "signingKeyId must be non-negative, got $signingKeyId" }
+        mapNativeErrors {
+            TransactionsNative.documentReplace(
+                walletHandle,
+                ownerId,
+                contractId,
+                documentType,
+                documentId,
+                propertiesJson,
+                signingKeyId,
+                signerHandle,
+            )
+        }
+    }
+
+    /**
+     * Delete + broadcast [documentId] on [contractId]'s [documentType],
+     * owned by [ownerId] — signed via [signerHandle] with key [signingKeyId].
+     * Mirrors Swift `ManagedPlatformWallet.deleteDocument`. Delete returns no
+     * document body.
+     *
+     * @return the deleted document's 32-byte id, for confirmation.
+     */
+    suspend fun delete(
+        walletHandle: Long,
+        ownerId: ByteArray,
+        contractId: ByteArray,
+        documentType: String,
+        documentId: ByteArray,
+        signingKeyId: Int,
+        signerHandle: Long,
+    ): ByteArray = withContext(Dispatchers.IO) {
+        require(ownerId.size == 32) { "ownerId must be 32 bytes" }
+        require(contractId.size == 32) { "contractId must be 32 bytes" }
+        require(documentId.size == 32) { "documentId must be 32 bytes" }
+        require(signingKeyId >= 0) { "signingKeyId must be non-negative, got $signingKeyId" }
+        mapNativeErrors {
+            TransactionsNative.documentDelete(
+                walletHandle,
+                ownerId,
+                contractId,
+                documentType,
+                documentId,
+                signingKeyId,
+                signerHandle,
+            )
+        }
+    }
+
+    /**
+     * Transfer + broadcast [documentId] on [contractId]'s [documentType],
+     * from [ownerId] to [recipientId] — signed via [signerHandle] with key
+     * [signingKeyId]. Mirrors Swift `ManagedPlatformWallet.transferDocument`.
+     * Only valid for document types whose schema is `transferable`; the
+     * caller's UI gates against non-transferable types and self-transfer.
+     *
+     * @return the confirmed document's canonical JSON, now reflecting the
+     *   new owner (its 32-byte id is the `$id` field).
+     */
+    suspend fun transfer(
+        walletHandle: Long,
+        ownerId: ByteArray,
+        contractId: ByteArray,
+        documentType: String,
+        documentId: ByteArray,
+        recipientId: ByteArray,
+        signingKeyId: Int,
+        signerHandle: Long,
+    ): String = withContext(Dispatchers.IO) {
+        require(ownerId.size == 32) { "ownerId must be 32 bytes" }
+        require(contractId.size == 32) { "contractId must be 32 bytes" }
+        require(documentId.size == 32) { "documentId must be 32 bytes" }
+        require(recipientId.size == 32) { "recipientId must be 32 bytes" }
+        require(signingKeyId >= 0) { "signingKeyId must be non-negative, got $signingKeyId" }
+        mapNativeErrors {
+            TransactionsNative.documentTransfer(
+                walletHandle,
+                ownerId,
+                contractId,
+                documentType,
+                documentId,
+                recipientId,
+                signingKeyId,
+                signerHandle,
+            )
+        }
+    }
 }

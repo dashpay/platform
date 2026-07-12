@@ -228,4 +228,30 @@ internal object IdentityNative {
         configJson: String?,
         signerHandle: Long,
     ): ByteArray
+
+    /**
+     * Update + broadcast the existing data contract [contractId] (32 bytes)
+     * owned by [ownerIdentityId], signed via [signerHandle]. Thin marshaler
+     * over `platform_wallet_update_data_contract_with_signer` — the wallet
+     * fetches the live contract, bumps its version, and *merges* the
+     * supplied sections additively (omitted keys keep their on-chain
+     * definition). Unlike the document ops there is **no** `signingKeyId` —
+     * the wallet selects the key internally.
+     *
+     * [documentsSchemaJson] is required; the rest are optional (`null` or
+     * empty ⇒ the section is omitted). Returns the 32-byte updated contract
+     * id.
+     */
+    external fun updateDataContract(
+        walletHandle: Long,
+        ownerIdentityId: ByteArray,
+        contractId: ByteArray,
+        documentsSchemaJson: String,
+        tokensSchemaJson: String?,
+        groupsSchemaJson: String?,
+        keywordsJson: String?,
+        description: String?,
+        configJson: String?,
+        signerHandle: Long,
+    ): ByteArray
 }
