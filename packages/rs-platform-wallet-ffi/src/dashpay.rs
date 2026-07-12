@@ -533,6 +533,8 @@ pub unsafe extern "C" fn platform_wallet_fetch_sent_contact_requests(
 /// - `core_signer_handle` must be a valid, non-destroyed
 ///   `*mut MnemonicResolverHandle`. Ownership is retained by the caller —
 ///   this function does NOT destroy it.
+/// - `out_fee_duffs` may be NULL to ignore the fee; when non-null it must
+///   point to valid writable `u64` storage, written only on success.
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
 pub unsafe extern "C" fn platform_wallet_send_dashpay_payment(
@@ -594,9 +596,11 @@ pub unsafe extern "C" fn platform_wallet_send_dashpay_payment(
     });
     let result = unwrap_option_or_return!(option);
     let (txid, _entry, fee_duffs) = unwrap_result_or_return!(result);
-    // Exact network fee of the broadcast transaction (inputs − outputs),
-    // straight from the builder — nullable so callers that don't care
-    // can pass NULL.
+    // Exact network fee of the broadcast transaction — Σ(selected input
+    // values) − Σ(output values), computed by the transaction builder
+    // itself since rust-dashcore#872, so a sub-dust change remainder
+    // folded into the fee is reflected here. Nullable so callers that
+    // don't care can pass NULL.
     if !out_fee_duffs.is_null() {
         unsafe { *out_fee_duffs = fee_duffs };
     }

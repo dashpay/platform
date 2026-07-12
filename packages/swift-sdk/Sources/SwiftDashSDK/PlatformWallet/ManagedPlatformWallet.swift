@@ -2102,7 +2102,10 @@ extension ManagedPlatformWallet {
     /// Send a Dash payment to an established DashPay contact.
     /// `amountDuffs` is in duffs (1 DASH = 100_000_000 duffs).
     /// Returns the 32-byte transaction id plus the exact network fee
-    /// (duffs) of the broadcast transaction, straight from the builder.
+    /// (duffs) of the broadcast transaction, computed Rust-side as
+    /// Σ(selected input values) − Σ(output values) — so any sub-dust
+    /// change the builder folds into the fee is reflected, not the
+    /// builder's size-based estimate.
     ///
     /// Prerequisite: `register_external_contact_account` must have
     /// run for the `(fromIdentityId, toContactIdentityId)` pair on
