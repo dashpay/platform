@@ -229,12 +229,27 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         removed: [Data]
     ) {
         onQueue {
+            // Log fetch failures on the invitation path rather than swallowing
+            // them: SwiftData is the sole UI source (no Rust→Swift rehydrate), so
+            // a silently skipped upsert would make a created invitation vanish
+            // from the list with no trace. The commit itself is the shared
+            // changeset `save()` in `endChangeset`, which already logs its own
+            // failures; the file-wide `try?`-on-save convention (asset locks,
+            // identities, txs, …) is intentionally left unchanged here —
+            // repo-wide persistence-error telemetry is a separate follow-up.
             for entry in upserts {
                 let outPointHex = entry.outPointHex
                 let descriptor = FetchDescriptor<PersistentInvitation>(
                     predicate: #Predicate { $0.outPointHex == outPointHex }
                 )
-                if let existing = try? backgroundContext.fetch(descriptor).first {
+                let existing: PersistentInvitation?
+                do {
+                    existing = try backgroundContext.fetch(descriptor).first
+                } catch {
+                    print("⚠️ persistInvitations: fetch failed for outpoint \(outPointHex) — skipping upsert; this invitation may be missing from the Sent list: \(error)")
+                    continue
+                }
+                if let existing {
                     existing.walletId = walletId
                     existing.rawOutPoint = entry.rawOutPoint
                     existing.fundingIndexRaw = entry.fundingIndexRaw
@@ -265,8 +280,12 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 let descriptor = FetchDescriptor<PersistentInvitation>(
                     predicate: #Predicate { $0.outPointHex == hex }
                 )
-                if let existing = try? backgroundContext.fetch(descriptor).first {
-                    backgroundContext.delete(existing)
+                do {
+                    if let existing = try backgroundContext.fetch(descriptor).first {
+                        backgroundContext.delete(existing)
+                    }
+                } catch {
+                    print("⚠️ persistInvitations: fetch failed for removal of outpoint \(hex) — stale invitation may linger in the Sent list: \(error)")
                 }
             }
         }
