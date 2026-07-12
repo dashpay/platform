@@ -21,6 +21,15 @@ struct CoreContentView: View {
     @State private var dashPayLastSync: Date?
     // Progress values come from PlatformWalletManager (polled from FFI each second)
 
+    /// Rescan controls: the height-choice dialog, the follow-up
+    /// custom-height alert + its numeric field, and a transient
+    /// caption summarizing the last arm attempt (the Core section
+    /// has no other feedback surface — Start/Clear only `print`).
+    @State private var showRescanDialog = false
+    @State private var showCustomHeightAlert = false
+    @State private var customHeightText = ""
+    @State private var rescanStatus: String?
+
     /// All persisted platform addresses across every wallet. Summed
     /// directly here so the global Sync Status view survives app
     /// restarts / wallet reconfigures without depending on the
@@ -172,6 +181,17 @@ var body: some View {
                         .tint(isSpvRunning ? .orange : .blue)
                         .controlSize(.mini)
 
+                        Button(action: { showRescanDialog = true }) {
+                            Text("Rescan")
+                                .font(.caption)
+                                .fontWeight(.medium)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.indigo)
+                        .controlSize(.mini)
+                        .disabled(walletIdsOnNetwork.isEmpty)
+                        .accessibilityIdentifier("coreSync.rescanFiltersButton")
+
                         Button(action: clearSyncData) {
                             Text("Clear")
                                 .font(.caption)
@@ -183,8 +203,47 @@ var body: some View {
                         .disabled(isSpvRunning)
                         .opacity(isSpvRunning ? 0.5 : 1.0)
                     }
+
+                    // Last rescan-arm outcome (success summary or the
+                    // per-wallet failures). Cleared on the next arm.
+                    if let rescanStatus {
+                        Text(rescanStatus)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .lineLimit(3)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
                 }
                 .padding(.vertical, 4)
+                .confirmationDialog(
+                    "Rescan Compact Filters",
+                    isPresented: $showRescanDialog,
+                    titleVisibility: .visible
+                ) {
+                    Button("Last 1,000 blocks") { armRescan(lastBlocks: 1_000) }
+                    Button("Last 10,000 blocks") { armRescan(lastBlocks: 10_000) }
+                    Button("Everything (from height 0)") { armRescan(fromHeight: 0) }
+                    Button("Custom height…") { showCustomHeightAlert = true }
+                    Button("Cancel", role: .cancel) {}
+                } message: {
+                    Text("Rewind the filter scan to re-download and re-match "
+                        + "compact filters for every wallet on this network.")
+                }
+                .alert("Rescan From Height", isPresented: $showCustomHeightAlert) {
+                    TextField("Block height", text: $customHeightText)
+                        .keyboardType(.numberPad)
+                    Button("Rescan") {
+                        if let height = UInt32(
+                            customHeightText.trimmingCharacters(in: .whitespaces)
+                        ) {
+                            armRescan(fromHeight: height)
+                        }
+                        customHeightText = ""
+                    }
+                    Button("Cancel", role: .cancel) { customHeightText = "" }
+                } message: {
+                    Text("Enter the core block height to rescan compact filters from.")
+                }
             } header: {
                 Text("Core Sync Status")
             }
@@ -852,6 +911,58 @@ var body: some View {
         } catch {
             print("❌ Failed to clear SPV storage: \(error)")
         }
+    }
+
+    // MARK: - Rescan
+
+    /// Height the "last N blocks" rescan choices count back from:
+    /// filter-scan tip, falling back to filter-headers then headers
+    /// when the earlier stages haven't produced a height yet.
+    private var rescanReferenceTip: UInt32 {
+        let filters = walletManager.spvProgress.filters?.currentHeight ?? 0
+        if filters > 0 { return filters }
+        let filterHeaders = walletManager.spvProgress.filterHeaders?.currentHeight ?? 0
+        if filterHeaders > 0 { return filterHeaders }
+        return walletManager.spvProgress.headers?.currentHeight ?? 0
+    }
+
+    private func armRescan(lastBlocks: UInt32) {
+        let tip = rescanReferenceTip
+        armRescan(fromHeight: tip > lastBlocks ? tip - lastBlocks : 0)
+    }
+
+    /// Rewind the filter-scan checkpoint to `fromHeight` for every
+    /// wallet on the active network. Collects per-wallet failures
+    /// instead of aborting on the first, then reports the outcome in
+    /// `rescanStatus`.
+    private func armRescan(fromHeight: UInt32) {
+        let ids = walletIdsOnNetwork
+        guard !ids.isEmpty else { return }
+
+        var failures: [String] = []
+        for walletId in ids {
+            do {
+                try walletManager.spvRescanFilters(walletId: walletId, fromHeight: fromHeight)
+            } catch {
+                failures.append("\(rescanShortId(walletId)): \(error.localizedDescription)")
+            }
+        }
+
+        let armed = ids.count - failures.count
+        var msg = "Rescan armed from height \(fromHeight.formatted()) "
+            + "for \(armed) wallet\(armed == 1 ? "" : "s")"
+        if !isSpvRunning {
+            msg += " — applies on next SPV start"
+        }
+        if !failures.isEmpty {
+            msg += ". Failed: " + failures.joined(separator: ", ")
+        }
+        rescanStatus = msg
+    }
+
+    /// First 4 bytes of a wallet id as hex, for compact failure lines.
+    private func rescanShortId(_ walletId: Data) -> String {
+        walletId.prefix(4).map { String(format: "%02x", $0) }.joined()
     }
 
     @MainActor
