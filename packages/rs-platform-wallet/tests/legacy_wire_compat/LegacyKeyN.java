@@ -2,12 +2,23 @@ import java.util.*;
 import org.bitcoinj.crypto.*;
 
 /**
- * Wire-compat vector generator for the Kotlin-SDK txMetadata migration.
- * Reproduces the legacy org.dashj.platform / dashj-core createTxMetadata
- * key derivation + AES-256-CBC envelope for a given identity slot.
+ * txMetadata key/blob generator for the Kotlin-SDK migration tests.
+ *
+ * IMPORTANT — provenance caveat: this generator HAND-BUILDS the account path
+ * m/9'/1'/5'/0'/0'/<identityIndex'> below (see the explicit ChildNumber.add
+ * calls). It does NOT call the real dashj DerivationPathFactory
+ * .blockchainIdentityECDSADerivationPath(). At identityIndex 0 the hand-built
+ * path coincides with the factory's output (independently confirmed against the
+ * real factory — see the `legacy_dashj_wire_compat_vector` Rust test), so the
+ * index-0 key IS a genuine legacy wire-compat anchor. At a NONZERO identityIndex
+ * it merely re-derives, under dashj-core's raw HDKeyDerivation, the same path the
+ * Rust `tx_metadata_derivation_path` constructs — a SELF-REFERENTIAL internal
+ * consistency check, not proof that any legacy platform code selects that path.
+ * The legacy createTxMetadata flow has no identity-index component (it always
+ * uses the primary identity), so no legacy document is keyed at identityIndex>0.
  *
  * Args: <identityIndex> <keyId> <encryptionKeyIndex>
- * (blockchainIdentityECDSADerivationPath = m/9'/1'/5'/0'/<keyType=0'>/<identityIndex'>)
+ * (hand-built account path = m/9'/1'/5'/0'/<keyType=0'>/<identityIndex'>)
  */
 public class LegacyKeyN {
     static String hex(byte[] b){ StringBuilder s=new StringBuilder(); for(byte x:b) s.append(String.format("%02x",x)); return s.toString(); }
@@ -24,9 +35,12 @@ public class LegacyKeyN {
         DeterministicKey root = HDKeyDerivation.createMasterPrivateKey(seed);
         DeterministicHierarchy h = new DeterministicHierarchy(root);
 
-        // blockchainIdentityECDSADerivationPath(testnet) for identity `identityIndex`:
+        // Hand-built account path mirroring blockchainIdentityECDSADerivationPath's
+        // SHAPE (NOT a call to the real DerivationPathFactory — see class doc):
         //   FEATURE_PURPOSE=9', coinType(testnet)=1', FEATURE_PURPOSE_IDENTITIES=5',
         //   0' (subfeature), 0' (keyType=ECDSA), identityIndex'
+        // At identityIndex=0 this equals the factory output; at >0 it is only a
+        // self-referential re-derivation of the Rust-constructed path.
         List<ChildNumber> accountPath = new ArrayList<>();
         accountPath.add(new ChildNumber(9, true));
         accountPath.add(new ChildNumber(1, true));
