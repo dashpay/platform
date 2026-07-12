@@ -981,8 +981,18 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_do
             throw_sdk_exception(env, 1, "encryptionKeyIndex must be non-negative");
             return ptr::null_mut();
         }
-        if !(0..=255).contains(&version) {
-            throw_sdk_exception(env, 1, "version must be in 0..=255");
+        // Only 0 (CBOR) and 1 (protobuf) are wire-decodable by the legacy dashj
+        // decryptTxMetadata; anything else seals a document the legacy stack
+        // can't read. Fail fast here with the correct bound instead of the stale
+        // 0..=255 range (dashpay/platform#4091, finding 79595960d201). The Rust
+        // core `seal_tx_metadata` enforces the same invariant as the last line
+        // of defense.
+        if !(0..=1).contains(&version) {
+            throw_sdk_exception(
+                env,
+                1,
+                "version must be 0 (CBOR) or 1 (protobuf) — the only wire-decodable txMetadata versions",
+            );
             return ptr::null_mut();
         }
         let payload_bytes = match env.convert_byte_array(&payload) {
