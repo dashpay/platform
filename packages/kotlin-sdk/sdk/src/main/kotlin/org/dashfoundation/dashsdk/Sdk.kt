@@ -124,8 +124,16 @@ class Sdk private constructor(
      * `discoverActiveMasternodes`) — a single strict field would fail the
      * whole devnet discovery.
      */
+    // `internal`, not public: this is a wire-format DTO for the `/masternodes`
+    // response, touched only by the `private` [MasternodesEnvelope] and
+    // `internal` [parseActiveMasternodes] — never returned by a public function
+    // (public discovery returns the non-@Serializable [ActiveMasternode]). Keeping
+    // it out of the public ABI means its generated `serializer()` isn't public
+    // API, so consumers of the published coordinate don't need
+    // kotlinx-serialization on their compile classpath and it can stay
+    // `implementation` (dashpay/platform#4045, finding 96b7b2a236ff).
     @Serializable
-    data class MasternodeEntry(
+    internal data class MasternodeEntry(
         val address: String,
         val status: String = "",
         val platformHTTPPort: Int? = null,

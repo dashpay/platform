@@ -58,6 +58,12 @@ android {
     publishing {
         singleVariant("release") {
             withSourcesJar()
+            // Maven Central's Publisher Portal rejects any non-POM component that
+            // lacks a javadoc jar, and the snapshot deployer sets
+            // applyMavenCentralRules(true) which enforces it before upload
+            // (dashpay/platform#4045). AGP emits a (Kotlin-appropriate) javadoc jar
+            // here — no Dokka dependency required.
+            withJavadocJar()
         }
     }
 
@@ -176,6 +182,19 @@ afterEvaluate {
     // (signing.keyId + signing.password + signing.secretKeyRingFile, or the in-memory
     // ORG_GRADLE_PROJECT_signingKey / signingPassword pair) when a remote publish runs.
     signing {
+        // Wire the documented in-memory-key path: the ORG_GRADLE_PROJECT_signingKey
+        // / signingPassword env vars land as the Gradle project properties
+        // `signingKey` / `signingPassword`, but the signing plugin does not consume
+        // them automatically — a CI release following that path would otherwise fail
+        // in signReleasePublication before staging anything (dashpay/platform#4045).
+        // Absent (local dev), this is skipped and, with required=false below, no key
+        // is needed. The legacy signing.keyId/password/secretKeyRingFile path is
+        // untouched and still handled by Gradle's standard signing properties.
+        val signingKey = project.findProperty("signingKey") as String?
+        val signingPassword = project.findProperty("signingPassword") as String?
+        if (!signingKey.isNullOrBlank()) {
+            useInMemoryPgpKeys(signingKey, signingPassword)
+        }
         setRequired(Callable {
             gradle.taskGraph.allTasks.any { it is PublishToMavenRepository }
         })
@@ -188,30 +207,68 @@ afterEvaluate {
 // src/main/jniLibs/<abi>/; that directory is gitignored and absent in a clean
 // checkout, so without this guard a publish from a fresh tree yields an artifact
 // that installs cleanly but dies at runtime with UnsatisfiedLinkError
-// (NativeLoader.ensureLoaded → System.loadLibrary("dash_sdk_jni")). Run
-// ../build_android.sh first, or pass -PallowMissingJni to publish anyway (e.g. a
-// POM/metadata-only dry run).
+// (NativeLoader.ensureLoaded → System.loadLibrary("dash_sdk_jni")).
 val requiredJniAbis = listOf("arm64-v8a", "x86_64") // build_android.sh ABI policy
-val verifyJniLibsPresent = tasks.register("verifyJniLibsPresent") {
+
+fun missingJniAbis(): List<String> = requiredJniAbis.filterNot { abi ->
+    file("src/main/jniLibs/$abi/libdash_sdk_jni.so").isFile
+}
+
+fun jniMissingMessage(missing: List<String>): String =
+    "Native JNI library libdash_sdk_jni.so is missing for ABI(s) " +
+        "${missing.joinToString()} under src/main/jniLibs/ — run ./build_android.sh " +
+        "before publishing so the coordinate isn't broken at runtime."
+
+// Remote / staging publish: ALWAYS hard-fail on a missing .so. `-PallowMissingJni`
+// is deliberately NOT honored here — a nativeless AAR must never reach a network
+// repo, nor jreleaser's build/staging-deploy dir (which `jreleaserDeploy` then
+// uploads to Maven Central). This closes the escape where `-PallowMissingJni`
+// previously downgraded the check to a warning for every publish task
+// (dashpay/platform#4045, finding 8b899bc2e5e8).
+val verifyJniLibsForRemotePublish = tasks.register("verifyJniLibsForRemotePublish") {
     doLast {
-        val missing = requiredJniAbis.filterNot { abi ->
-            file("src/main/jniLibs/$abi/libdash_sdk_jni.so").isFile
-        }
+        val missing = missingJniAbis()
         if (missing.isNotEmpty()) {
-            val message = "Native JNI library libdash_sdk_jni.so is missing for ABI(s) " +
-                "${missing.joinToString()} under src/main/jniLibs/ — run ./build_android.sh " +
-                "before publishing so the coordinate isn't broken at runtime."
+            throw GradleException(
+                jniMissingMessage(missing) +
+                    " -PallowMissingJni is a local-only escape and is NOT honored for " +
+                    "remote/staging deploys."
+            )
+        }
+    }
+}
+
+// Local publish (`publishToMavenLocal`): a dev may pass `-PallowMissingJni` for a
+// POM/metadata-only dry run into the local ~/.m2, which never leaves the machine.
+val verifyJniLibsForLocalPublish = tasks.register("verifyJniLibsForLocalPublish") {
+    doLast {
+        val missing = missingJniAbis()
+        if (missing.isNotEmpty()) {
+            val message = jniMissingMessage(missing)
             if (project.hasProperty("allowMissingJni")) {
-                logger.warn("WARNING: $message (continuing anyway: -PallowMissingJni is set)")
+                logger.warn(
+                    "WARNING: $message (continuing: -PallowMissingJni is set — local publish only.)"
+                )
             } else {
-                throw GradleException("$message Pass -PallowMissingJni to override.")
+                throw GradleException("$message Pass -PallowMissingJni for a local-only dry run.")
             }
         }
     }
 }
 
-tasks.withType<PublishToMavenRepository>().configureEach { dependsOn(verifyJniLibsPresent) }
-tasks.withType<PublishToMavenLocal>().configureEach { dependsOn(verifyJniLibsPresent) }
+tasks.withType<PublishToMavenRepository>().configureEach {
+    dependsOn(verifyJniLibsForRemotePublish)
+}
+tasks.withType<PublishToMavenLocal>().configureEach {
+    dependsOn(verifyJniLibsForLocalPublish)
+}
+// jreleaser's deploy/upload/release tasks push the already-staged artifacts, so
+// gate them on the strict remote check too — a staging dir populated out-of-band
+// (or by a future task rewiring) can't be uploaded without the native library.
+tasks.matching { task ->
+    task.name.startsWith("jreleaser") &&
+        listOf("Deploy", "Upload", "Release").any { task.name.contains(it) }
+}.configureEach { dependsOn(verifyJniLibsForRemotePublish) }
 
 // Maven Central / Sonatype deployment via jreleaser, mirroring
 // dashj/core/build.gradle (https://github.com/dashpay/dashj/blob/master/core/build.gradle#L139).
