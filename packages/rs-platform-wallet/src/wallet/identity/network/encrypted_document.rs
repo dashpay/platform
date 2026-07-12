@@ -340,7 +340,10 @@ impl IdentityWallet {
             })?;
         let mut iv = [0u8; 16];
         thread_rng().fill_bytes(&mut iv);
-        let blob = seal_tx_metadata(&aes_key, version, &iv, payload);
+        // Rejects a non-wire-decodable version byte (only 0/1) before it can be
+        // sealed into a document the legacy stack can't decode
+        // (dashpay/platform#4091, findings 9c0ce58c3bb7 / 79595960d201).
+        let blob = seal_tx_metadata(&aes_key, version, &iv, payload)?;
 
         // Byte-array fields are accepted as hex strings by the generic create
         // path, which sanitizes them into `Bytes` against the schema.
