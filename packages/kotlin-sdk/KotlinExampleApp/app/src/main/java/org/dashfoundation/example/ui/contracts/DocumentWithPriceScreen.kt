@@ -350,8 +350,8 @@ fun DocumentWithPriceScreen(
     ErrorAlertDialog(message = error, onDismiss = { error = null })
 }
 
-/** Launch [body] with begin/end/fail plumbing shared by both submits. */
-private fun submitDocumentTransaction(
+/** Launch [body] with begin/end/fail plumbing shared by the document submits. */
+internal fun submitDocumentTransaction(
     begin: () -> Unit,
     end: () -> Unit,
     fail: (String) -> Unit,
@@ -371,7 +371,7 @@ private fun submitDocumentTransaction(
 }
 
 /** `(walletHandle, manager, signingKeyId)` for [identity]'s submits. */
-private data class ResolvedSigning(
+internal data class ResolvedSigning(
     val walletHandle: Long,
     val manager: org.dashfoundation.dashsdk.wallet.PlatformWalletManager,
     val signingKeyId: Int,
@@ -383,7 +383,7 @@ private data class ResolvedSigning(
  * Throws with user-facing copy when the identity has no loaded wallet or
  * no qualifying key.
  */
-private suspend fun resolveSigning(
+internal suspend fun resolveSigning(
     container: org.dashfoundation.example.di.AppContainer,
     identity: IdentityEntity,
 ): ResolvedSigning {
@@ -418,7 +418,7 @@ private suspend fun resolveSigning(
 }
 
 /** DPP `SecurityLevel.HIGH` rank — the default document signing bound. */
-private const val SIGNING_MINIMUM_LEVEL_HIGH = 2
+internal const val SIGNING_MINIMUM_LEVEL_HIGH = 2
 
 /** The fields the probe reads off the fetched document object. */
 private data class ProbedDocument(

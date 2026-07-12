@@ -296,9 +296,14 @@ fun CreateDocumentScreen(
     ErrorAlertDialog(message = error, onDismiss = { error = null })
 }
 
-/** One schema-property editor, dispatched on the JSON-schema `type`. */
+/**
+ * One schema-property editor, dispatched on the JSON-schema `type`. Shared
+ * by the create form and the DOC-03 replace form ([DocumentActionsScreen]),
+ * which pass distinct [tagPrefix]es so their fields get non-colliding
+ * testTags.
+ */
 @Composable
-private fun DocumentPropertyField(
+internal fun DocumentPropertyField(
     name: String,
     prop: JsonObject,
     isRequired: Boolean,
@@ -306,11 +311,12 @@ private fun DocumentPropertyField(
     textValues: MutableMap<String, String>,
     boolValues: MutableMap<String, Boolean>,
     touchedBools: MutableSet<String>,
+    tagPrefix: String = "createDocument.field",
 ) {
     val type = prop.stringField("type")
     val isByteArray = prop.boolField("byteArray") == true
     val isIdentifier = prop.stringField("contentMediaType")?.contains("identifier") == true
-    val tag = "createDocument.field.$name"
+    val tag = "$tagPrefix.$name"
 
     Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
         Row {
@@ -380,7 +386,7 @@ private fun DocumentPropertyField(
     }
 }
 
-private fun stringHint(prop: JsonObject): String {
+internal fun stringHint(prop: JsonObject): String {
     val min = prop.intField("minLength")
     val max = prop.intField("maxLength")
     return when {
@@ -391,7 +397,7 @@ private fun stringHint(prop: JsonObject): String {
     }
 }
 
-private fun numericHint(prop: JsonObject): String {
+internal fun numericHint(prop: JsonObject): String {
     val min = prop.intField("minimum")
     val max = prop.intField("maximum")
     return when {
@@ -411,7 +417,7 @@ private fun numericHint(prop: JsonObject): String {
  * them Rust-side. `object` fields are parsed so they serialize as nested
  * objects rather than a JSON string. Throws on invalid `object` JSON.
  */
-private fun buildPropertiesJson(
+internal fun buildPropertiesJson(
     properties: JsonObject,
     required: Set<String>,
     textValues: Map<String, String>,
@@ -472,7 +478,7 @@ private fun buildPropertiesJson(
 }.toString()
 
 /** Read the confirmed document id (`$id`, base58) off the canonical JSON. */
-private fun parseDocumentId(json: String): String? = try {
+internal fun parseDocumentId(json: String): String? = try {
     val root = LenientJson.parseToJsonElement(json).jsonObject
     ((root["\$id"] ?: root["id"]) as? JsonPrimitive)?.content
 } catch (_: Exception) {

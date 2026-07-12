@@ -10,6 +10,7 @@ import org.dashfoundation.example.ui.contracts.ContractsHomeScreen
 import org.dashfoundation.example.ui.contracts.CountDocumentsScreen
 import org.dashfoundation.example.ui.contracts.CreateDocumentScreen
 import org.dashfoundation.example.ui.contracts.DataContractDetailsScreen
+import org.dashfoundation.example.ui.contracts.DocumentActionsScreen
 import org.dashfoundation.example.ui.contracts.DocumentFieldsScreen
 import org.dashfoundation.example.ui.contracts.DocumentTypeDetailsScreen
 import org.dashfoundation.example.ui.contracts.DocumentWithPriceScreen
@@ -21,6 +22,7 @@ import org.dashfoundation.example.ui.contracts.RegisterContractSourceScreen
 import org.dashfoundation.example.ui.contracts.QueriesListScreen
 import org.dashfoundation.example.ui.contracts.QueryDetailScreen
 import org.dashfoundation.example.ui.contracts.SumAverageDocumentsScreen
+import org.dashfoundation.example.ui.contracts.UpdateContractScreen
 import org.dashfoundation.example.ui.diagnostics.AddressQueriesScreen
 import org.dashfoundation.example.ui.diagnostics.BannedAddressesScreen
 import org.dashfoundation.example.ui.diagnostics.DiagnosticsScreen
@@ -332,6 +334,24 @@ fun AppNavHost(
                 contractIdHex = route.contractIdHex,
                 typeName = route.typeName,
                 initialDocumentId = route.documentId,
+                navController = navController,
+            )
+        }
+
+        composable<DocumentActions> { entry ->
+            val route = entry.toRoute<DocumentActions>()
+            DocumentActionsScreen(
+                contractIdHex = route.contractIdHex,
+                typeName = route.typeName,
+                initialDocumentId = route.documentId,
+                navController = navController,
+            )
+        }
+
+        composable<UpdateContract> { entry ->
+            val route = entry.toRoute<UpdateContract>()
+            UpdateContractScreen(
+                prefillContractIdHex = route.contractIdHex,
                 navController = navController,
             )
         }
