@@ -596,10 +596,10 @@ pub unsafe extern "C" fn platform_wallet_send_dashpay_payment(
     });
     let result = unwrap_option_or_return!(option);
     let (txid, _entry, fee_duffs) = unwrap_result_or_return!(result);
-    // Exact network fee of the broadcast transaction: `send_payment`
-    // computes it as Σ(selected input values) − Σ(output values), so any
-    // sub-dust change the builder folds into the fee is reflected here —
-    // not the builder's size-based estimate. Nullable so callers that
+    // Exact network fee of the broadcast transaction — Σ(selected input
+    // values) − Σ(output values), computed by the transaction builder
+    // itself since rust-dashcore#872, so a sub-dust change remainder
+    // folded into the fee is reflected here. Nullable so callers that
     // don't care can pass NULL.
     if !out_fee_duffs.is_null() {
         unsafe { *out_fee_duffs = fee_duffs };
