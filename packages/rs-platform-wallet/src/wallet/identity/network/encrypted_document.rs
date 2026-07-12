@@ -401,10 +401,13 @@ impl IdentityWallet {
                     "Data contract {contract_id} not found on Platform; cannot fetch documents"
                 ))
             })?;
-        if let Some(provider) = self.sdk.context_provider() {
-            provider.register_data_contract(Arc::new(contract.clone()));
-        }
+        // Wrap once and share the cheap `Arc` handle with the context provider
+        // rather than deep-cloning the whole `DataContract` (document-type/index
+        // metadata) a second time.
         let contract = Arc::new(contract);
+        if let Some(provider) = self.sdk.context_provider() {
+            provider.register_data_contract(Arc::clone(&contract));
+        }
 
         let (_identity, identity_index, wallet) = self
             .resolve_encryption_context(owner_identity_id)
