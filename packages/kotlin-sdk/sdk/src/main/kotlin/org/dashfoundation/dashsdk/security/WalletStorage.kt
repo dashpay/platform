@@ -1,5 +1,6 @@
 package org.dashfoundation.dashsdk.security
 
+import android.app.KeyguardManager
 import android.content.Context
 import android.security.keystore.UserNotAuthenticatedException
 import androidx.datastore.core.DataStore
@@ -40,7 +41,8 @@ private val Context.secretsStore: DataStore<Preferences> by preferencesDataStore
  */
 class WalletStorage(
     context: Context,
-    private val keystore: KeystoreManager = KeystoreManager(),
+    private val keystore: KeystoreManager =
+        KeystoreManager(deviceSecureProbe = deviceSecureProbe(context)),
 ) {
     /**
      * Construct with an explicit identity-key [keySecurityPolicy] —
@@ -49,7 +51,7 @@ class WalletStorage(
      * [KeySecurityPolicy.AUTH_GATED] default.
      */
     constructor(context: Context, keySecurityPolicy: KeySecurityPolicy) :
-        this(context, KeystoreManager(keySecurityPolicy))
+        this(context, KeystoreManager(keySecurityPolicy, deviceSecureProbe(context)))
 
     private val store = context.secretsStore
 
@@ -374,10 +376,26 @@ class WalletStorage(
      * immediately — a health check must not leave key bytes on the heap.
      *
      *  - **Legacy AES-GCM** blob (non-empty IV): probe [KeystoreManager.decryptLegacyKeysBlob].
-     *  - **Empty-IV RSA** blob: probe the current policy alias (only if
-     *    provisioned — an unprovisioned alias can't have written it), then the
-     *    retained former KEYS_ALIAS RSA keypair. A structurally non-RSA blob is
-     *    not decryptable.
+     *  - **Empty-IV RSA** blob: first let a prompt-free DEVICE_BOUND sibling
+     *    DISPROVE ownership (see below), then probe the current policy alias
+     *    (only if provisioned — an unprovisioned alias can't have written it),
+     *    then the retained former KEYS_ALIAS RSA keypair. A structurally non-RSA
+     *    blob is not decryptable.
+     *
+     * **AUTH_GATED residual (dashpay/platform#4060, finding b80a15c93339).** A
+     * locked auth-gated alias throws `UserNotAuthenticatedException` at
+     * `cipher.init` — before the ciphertext is examined — so a bare catch cannot
+     * tell a locked *legitimate owner* from a locked *wrong* alias, and would
+     * mis-report a sibling-written blob as decryptable. The prompt-free
+     * DEVICE_BOUND sibling ([KeystoreManager.opensUnderNonGatedDeviceBoundSibling])
+     * resolves the common case: if that non-gated sibling opens the blob, the
+     * current (auth-gated) policy alias does NOT own it, and since
+     * [retrievePrivateKey] never falls back to the sibling the blob is genuinely
+     * strandable → `false` (drives the re-derive/repair path). The irreducible
+     * residual is the symmetric one — a locked auth-gated FORMER RSA key at
+     * KEYS_ALIAS whose ownership can't be disproved prompt-free: it is still
+     * reported decryptable until the first real unlock surfaces the BadPadding,
+     * at which point [retrievePrivateKey]'s fallback→null drives the same repair.
      */
     suspend fun isPrivateKeyDecryptable(pubkeyHex: String): Boolean {
         val encoded = store.data.first()[privateKeyKey(pubkeyHex)] ?: return false
@@ -386,6 +404,11 @@ class WalletStorage(
             keystore.isLegacyKeysBlob(blob) ->
                 probeOpensBlob { keystore.decryptLegacyKeysBlob(blob) }
             !keystore.isKeysBlobDecryptable(blob) -> false
+            // A prompt-free sibling proves the blob belongs to the non-gated
+            // DEVICE_BOUND alias, not the current (auth-gated, possibly locked)
+            // policy alias — and retrieve never tries the sibling — so it is
+            // unrecoverable here (finding b80a15c93339).
+            keystore.opensUnderNonGatedDeviceBoundSibling(blob) -> false
             else ->
                 (keystore.hasIdentityKeysKey(keystore.keysAlias) &&
                     probeOpensBlob { keystore.decrypt(blob, keystore.keysAlias) }) ||
@@ -452,5 +475,22 @@ class WalletStorage(
         const val PRIVKEY_OWNERS_PREFIX = "privkeyowners."
 
         fun ByteArray.toHex(): String = joinToString("") { "%02x".format(it) }
+
+        /**
+         * A prompt-free probe of whether the device currently has a secure lock
+         * screen (`KeyguardManager.isDeviceSecure`), captured against the
+         * application context so it re-reads live state at each key generation
+         * (a lock can be added/removed at any time). Handed to [KeystoreManager]
+         * so it can drop the lock-screen-bound key-gen parameters when no lock is
+         * configured — the wallet must work without a screen lock
+         * (dashpay/platform#4060).
+         */
+        fun deviceSecureProbe(context: Context): () -> Boolean {
+            val appContext = context.applicationContext
+            return {
+                (appContext.getSystemService(Context.KEYGUARD_SERVICE) as? KeyguardManager)
+                    ?.isDeviceSecure == true
+            }
+        }
     }
 }

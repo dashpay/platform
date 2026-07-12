@@ -222,6 +222,48 @@ class WalletStorageUpgradeMatrixTest {
     }
 
     /**
+     * Regression (dashpay/platform#4060, finding b80a15c93339): the
+     * "provisioned + locked + WRONG alias" case. The current AUTH_GATED policy
+     * alias is provisioned from an earlier period and its auth window is closed,
+     * but the blob was actually written by the DEVICE_BOUND sibling. The locked
+     * policy alias throws UserNotAuthenticatedException at cipher.init — before
+     * the ciphertext is examined — so a bare catch would mis-report it
+     * "decryptable". The prompt-free DEVICE_BOUND sibling opens the blob, proving
+     * the policy alias does not own it; since retrievePrivateKey under this policy
+     * never falls back to the sibling, the blob is genuinely strandable and
+     * key-health must report it undecryptable so the repair path fires.
+     */
+    @Test
+    fun provisionedLockedWrongAliasBlobDisprovedByPromptFreeSibling() = runBlocking {
+        fake.scheme = FakeKeystoreManager.Scheme.SIBLING_POLICY
+        storage.storePrivateKey(pub, secret) // sibling-written blob (TAG_SIBLING)
+
+        fake.policyKeyProvisioned = true // AUTH_GATED alias provisioned earlier...
+        fake.throwAuthOnPolicyDecrypt = true // ...and its auth window is closed
+        fake.deviceBoundSiblingPresent = true // DEVICE_BOUND actually wrote it, key present
+
+        assertFalse(storage.isPrivateKeyDecryptable(pub))
+    }
+
+    /**
+     * The disproof must NOT fire when the sibling can't open the blob: a locked
+     * auth-gated policy alias that legitimately owns its blob still reports
+     * decryptable even with an unrelated DEVICE_BOUND key present (which raises
+     * BadPadding on this policy-written blob, so it proves nothing). Guards
+     * against the b80a15c93339 fix regressing the legitimate locked-owner case.
+     */
+    @Test
+    fun lockedPolicyOwnerNotDisprovedWhenSiblingCannotOpen() = runBlocking {
+        fake.scheme = FakeKeystoreManager.Scheme.CURRENT
+        storage.storePrivateKey(pub, secret) // policy-alias-owned blob (TAG_POLICY)
+
+        fake.throwAuthOnPolicyDecrypt = true // locked window
+        fake.deviceBoundSiblingPresent = true // sibling present but cannot open a TAG_POLICY blob
+
+        assertTrue(storage.isPrivateKeyDecryptable(pub))
+    }
+
+    /**
      * A closed auth window must NOT be mistaken for a wrong key: the
      * UserNotAuthenticatedException propagates so KeystoreSigner can prompt,
      * instead of being swallowed into the former-RSA fallback.
@@ -263,7 +305,17 @@ private class FakeKeystoreManager :
     var throwAuthOnLegacyRsaDecrypt: Boolean = false
     var legacyRsaFallbackCalls: Int = 0
 
+    /**
+     * A present, non-auth-gated DEVICE_BOUND sibling key. Modelling the JCE
+     * invariant, it opens ONLY the sibling-written blob (TAG_SIBLING) — the one
+     * alias that produced it — prompt-free.
+     */
+    var deviceBoundSiblingPresent: Boolean = false
+
     override val keysAlias: String get() = POLICY_ALIAS
+
+    override fun opensUnderNonGatedDeviceBoundSibling(blob: EncryptedBlob): Boolean =
+        deviceBoundSiblingPresent && blob.ciphertext[0] == TAG_SIBLING
 
     override fun encrypt(plaintext: ByteArray, alias: String): EncryptedBlob = when (scheme) {
         Scheme.CURRENT -> {
