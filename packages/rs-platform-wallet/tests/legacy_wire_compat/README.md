@@ -1,29 +1,42 @@
 # Legacy txMetadata wire-compat vector generator
 
 `LegacyKeyN.java` is the reproducible JVM generator behind the hard-coded
-cross-stack vectors in
+vectors in
 `src/wallet/identity/crypto/tx_metadata.rs`
 (`legacy_dashj_wire_compat_vector` and
-`legacy_dashj_wire_compat_vector_nonzero_identity_index`).
+`nonzero_identity_index_derivation_slot_is_internally_consistent`).
 
-It runs the **actual legacy `org.dashj.platform` / dashj-core stack** — the same
-`HDKeyDerivation`, `blockchainIdentityECDSADerivationPath` constants,
+It runs dashj-core's cryptographic primitives — the same `HDKeyDerivation`,
 `KeyCrypterAESCBC.deriveKey/encrypt`, and `createTxMetadata` blob framing that
-dash-sdk-kotlin 4.0.0-RC2 used — so the Rust `derive_tx_metadata_key` /
-`seal_tx_metadata` implementations can be pinned against a value the Rust code
-did not itself produce. This is what makes the wire-compat guarantee auditable
-rather than self-referential (dashpay/platform#4091 review).
+dash-sdk-kotlin 4.0.0-RC2 used — but it **hand-builds the account path** rather
+than calling the real `DerivationPathFactory.blockchainIdentityECDSADerivationPath()`.
 
-## Why a nonzero `identity_index` vector exists
+## What each vector proves (and what it does NOT)
 
-The Rust path is `base / key_type' / identity_index' / key_index' / 32769' /
-encryption_key_index'` and `KeyDerivationType::ECDSA == 0`. At
-`identity_index = 0` the `key_type'` and `identity_index'` components are both
-`0'` and adjacent, so an index-0-only vector cannot distinguish a correctly
-placed `identity_index` from one that was dropped or swapped. The
-`identity_index = 1` vector (`m/9'/1'/5'/0'/0'/1'/2'/32769'/1'`) derives a
-provably different key (`8cda…5196` vs the index-0 `4a2e…84d7`), exercising that
-component directly.
+- **`legacy_dashj_wire_compat_vector` (identity_index 0) — a genuine legacy
+  wire-compat anchor.** The index-0 account path
+  `m/9'/1'/5'/0'/0'/0'/keyId'/32769'/encryptionKeyIndex'` was independently
+  confirmed to equal the output of the REAL dashj `DerivationPathFactory`
+  (driven directly, with `32769'` read straight off
+  `TxMetadataDocument`) — so the `4a2e…84d7` key is pinned against a path the
+  legacy library itself chose, not one this repo constructed. This is the sole
+  point at which legacy wire-compat is defined: the legacy `createTxMetadata`
+  flow has NO identity-index component (it always derives against the primary
+  identity), so identity_index 0 is the only slot a legacy wallet ever wrote.
+
+- **`nonzero_identity_index_derivation_slot_is_internally_consistent`
+  (identity_index 1) — a SELF-REFERENTIAL internal check, NOT a wire-compat
+  claim.** `KeyDerivationType::ECDSA == 0` sits immediately before
+  `identity_index'` in `base / key_type' / identity_index' / key_index' /
+  32769' / encryption_key_index'`, so at index 0 the two adjacent `0'`
+  components are indistinguishable. The `identity_index = 1` vector
+  (`m/9'/1'/5'/0'/0'/1'/2'/32769'/1'`) derives a provably different key
+  (`8cda…5196` vs `4a2e…84d7`), exercising that the component occupies its own
+  slot. But because the generator hand-builds this path (the same one Rust's
+  `tx_metadata_derivation_path` constructs), the value is a cross-check of
+  Rust ⟷ dashj-core HD derivation for a path THIS repo picked — not evidence
+  that any legacy platform code selects it. No legacy document is keyed at
+  identity_index > 0.
 
 ## Reproduce
 
