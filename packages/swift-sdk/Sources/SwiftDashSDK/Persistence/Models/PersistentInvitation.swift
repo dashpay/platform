@@ -64,6 +64,15 @@ public final class PersistentInvitation {
     /// value to an explicit `.unknown` label).
     public var statusRaw: Int
 
+    /// Set true just before this wallet's own reclaim consume is submitted, and
+    /// cleared once the terminal status is saved. It survives a crash between the
+    /// on-chain consume and the `statusRaw = 2` save, so a retry that hits
+    /// "already consumed" can tell *our own* reclaim (in-flight → Reclaimed) from
+    /// a voucher someone else claimed (never in-flight → Claimed). Defaults to
+    /// `false`, making it an additive SwiftData migration (the property-level
+    /// default lets existing rows migrate without a mapping model).
+    public var reclaimInFlight: Bool = false
+
     /// Record timestamps.
     public var createdAt: Date
     public var updatedAt: Date
@@ -77,7 +86,8 @@ public final class PersistentInvitation {
         expiryUnix: Int,
         createdAtSecs: Int,
         hasInviter: Bool,
-        statusRaw: Int
+        statusRaw: Int,
+        reclaimInFlight: Bool = false
     ) {
         self.outPointHex = outPointHex
         self.rawOutPoint = rawOutPoint
@@ -88,6 +98,7 @@ public final class PersistentInvitation {
         self.createdAtSecs = createdAtSecs
         self.hasInviter = hasInviter
         self.statusRaw = statusRaw
+        self.reclaimInFlight = reclaimInFlight
         self.createdAt = Date()
         self.updatedAt = Date()
     }

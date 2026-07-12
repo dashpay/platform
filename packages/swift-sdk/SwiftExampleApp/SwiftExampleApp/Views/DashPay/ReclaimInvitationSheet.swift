@@ -169,6 +169,10 @@ struct ReclaimInvitationSheet: View {
         isReclaiming = true
         errorMessage = nil
         infoMessage = nil
+        // Whether a *previous* reclaim attempt was already in flight when this
+        // one started. Captured before the marker is set below so the catch can
+        // read it (a `do`-local binding wouldn't be visible there).
+        var hadPriorReclaimInFlight = false
         Task { @MainActor in
             defer { isReclaiming = false }
             do {
@@ -177,6 +181,14 @@ struct ReclaimInvitationSheet: View {
                     return
                 }
                 let (txid, vout) = try outPointParts()
+
+                // Persist an in-flight marker before submitting our consume, so a
+                // crash between the on-chain consume and the terminal save can be
+                // recovered on retry: a later "already consumed" that finds this
+                // marker set was *our own* reclaim, not a foreign claim.
+                hadPriorReclaimInFlight = invitation.reclaimInFlight
+                invitation.reclaimInFlight = true
+                try? modelContext.save()
 
                 switch target {
                 case .topUp:
@@ -208,20 +220,37 @@ struct ReclaimInvitationSheet: View {
 
                 // SwiftData is the UI source: flip the local row to Reclaimed.
                 invitation.statusRaw = 2
+                invitation.reclaimInFlight = false
                 invitation.updatedAt = Date()
                 try? modelContext.save()
                 dismiss()
             } catch {
                 if Self.isAlreadyConsumed(error) {
-                    // Someone already claimed this voucher (or a prior reclaim
-                    // consumed it). The consume is deterministically rejected —
-                    // no funds are lost. Reflect the terminal state and show a
-                    // neutral message (the claimant is intentionally not named).
-                    invitation.statusRaw = 1
-                    invitation.updatedAt = Date()
-                    try? modelContext.save()
-                    infoMessage = "This invitation was already claimed."
+                    // The consume was deterministically rejected because the
+                    // voucher is already spent — no funds are lost. The in-flight
+                    // marker disambiguates the two ways that happens:
+                    if hadPriorReclaimInFlight {
+                        // Our own earlier reclaim landed on-chain but crashed
+                        // before saving the terminal status. Recover it as
+                        // Reclaimed and clear the marker.
+                        invitation.statusRaw = 2
+                        invitation.reclaimInFlight = false
+                        invitation.updatedAt = Date()
+                        try? modelContext.save()
+                        infoMessage = "This invitation was already reclaimed."
+                    } else {
+                        // Someone else claimed the voucher first. Reflect the
+                        // terminal state with a neutral message (the claimant is
+                        // intentionally not named).
+                        invitation.statusRaw = 1
+                        invitation.updatedAt = Date()
+                        try? modelContext.save()
+                        infoMessage = "This invitation was already claimed."
+                    }
                 } else {
+                    // Uncertain outcome: leave the in-flight marker set so a later
+                    // retry that hits "already consumed" classifies it as our own
+                    // reclaim rather than a foreign claim.
                     errorMessage = error.localizedDescription
                 }
             }
