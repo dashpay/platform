@@ -21,14 +21,12 @@ struct CoreContentView: View {
     @State private var dashPayLastSync: Date?
     // Progress values come from PlatformWalletManager (polled from FFI each second)
 
-    /// Rescan controls: the height-choice dialog, the follow-up
-    /// custom-height alert + its numeric field, and a transient
-    /// caption summarizing the last arm attempt (the Core section
-    /// has no other feedback surface — Start/Clear only `print`).
+    /// Rescan controls: the height-choice dialog and the follow-up
+    /// custom-height alert + its numeric field. The arm outcome is
+    /// logged to the console, matching Start/Clear — no UI surface.
     @State private var showRescanDialog = false
     @State private var showCustomHeightAlert = false
     @State private var customHeightText = ""
-    @State private var rescanStatus: String?
 
     /// All persisted platform addresses across every wallet. Summed
     /// directly here so the global Sync Status view survives app
@@ -202,16 +200,6 @@ var body: some View {
                         .controlSize(.mini)
                         .disabled(isSpvRunning)
                         .opacity(isSpvRunning ? 0.5 : 1.0)
-                    }
-
-                    // Last rescan-arm outcome (success summary or the
-                    // per-wallet failures). Cleared on the next arm.
-                    if let rescanStatus {
-                        Text(rescanStatus)
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                            .lineLimit(3)
-                            .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
                 .padding(.vertical, 4)
@@ -933,8 +921,8 @@ var body: some View {
 
     /// Rewind the filter-scan checkpoint to `fromHeight` for every
     /// wallet on the active network. Collects per-wallet failures
-    /// instead of aborting on the first, then reports the outcome in
-    /// `rescanStatus`.
+    /// instead of aborting on the first, then logs the outcome to the
+    /// console (matching Start/Clear — no UI surface).
     private func armRescan(fromHeight: UInt32) {
         let ids = walletIdsOnNetwork
         guard !ids.isEmpty else { return }
@@ -949,15 +937,12 @@ var body: some View {
         }
 
         let armed = ids.count - failures.count
-        var msg = "Rescan armed from height \(fromHeight.formatted()) "
-            + "for \(armed) wallet\(armed == 1 ? "" : "s")"
-        if !isSpvRunning {
-            msg += " — applies on next SPV start"
-        }
+        let applied = isSpvRunning ? "" : " (applies on next SPV start)"
+        print("🔁 Rescan armed from height \(fromHeight.formatted()) "
+            + "for \(armed) wallet\(armed == 1 ? "" : "s")\(applied)")
         if !failures.isEmpty {
-            msg += ". Failed: " + failures.joined(separator: ", ")
+            print("❌ Rescan failed for: \(failures.joined(separator: ", "))")
         }
-        rescanStatus = msg
     }
 
     /// First 4 bytes of a wallet id as hex, for compact failure lines.
