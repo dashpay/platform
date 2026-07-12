@@ -296,7 +296,14 @@ class DocumentTransactions internal constructor(
         require(encryptionKeyIndex >= 0) {
             "encryptionKeyIndex must be non-negative, got $encryptionKeyIndex"
         }
-        require(version in 0..255) { "version must be in 0..255, got $version" }
+        // Only 0 (CBOR) and 1 (protobuf) are wire-meaningful: `seal_tx_metadata`
+        // writes this byte verbatim into the envelope and the legacy dashj stack
+        // (decryptTxMetadata) switches on exactly those two values. Accepting 2..255
+        // would silently seal a document the legacy stack can't decode, breaking the
+        // bidirectional wire-compat guarantee (dashpay/platform#4091).
+        require(version == 0 || version == 1) {
+            "version must be 0 (CBOR) or 1 (protobuf), got $version"
+        }
         mapNativeErrors {
             TransactionsNative.documentCreateEncrypted(
                 walletHandle,
