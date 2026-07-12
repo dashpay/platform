@@ -273,7 +273,9 @@ public struct TestnetFaucet {
         // few seconds of parallel hashing.
         let expectedWork = Double(c) * pow(16, Double(d))
         guard expectedWork <= 64_000_000 else {
-            throw FaucetError.message("Captcha challenge too expensive (c=\(c), d=\(d))")
+            throw FaucetError.message(
+                "Captcha challenge too expensive (c=\(c), d=\(d), "
+                    + "expectedWork=\(Int(expectedWork)) > 64000000)")
         }
 
         // Solve all c sub-challenges off the main actor, parallelized, under
