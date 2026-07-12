@@ -13,20 +13,28 @@ import SwiftDashSDK
 @MainActor
 enum CoreSpvLauncher {
     /// Build the start config for `network` and start SPV on
-    /// `walletManager`. Returns immediately — `startSpv` spawns the
-    /// sync loop on the shared tokio runtime. Rethrows whatever
-    /// `startSpv` throws; the caller decides whether to surface or log.
+    /// `walletManager`. `startSpv` itself returns immediately (it spawns
+    /// the sync loop on the shared tokio runtime), but resolving the
+    /// peer override is done off the main actor first: on devnet
+    /// `peerOverride` blocks on a `DispatchSemaphore` up to ~6 s inside
+    /// `SDK.discoverActiveMasternodes`, which would freeze the UI on a
+    /// cold launch. Rethrows whatever `startSpv` throws; the caller
+    /// decides whether to surface or log.
     static func start(
         network: Network,
         on walletManager: PlatformWalletManager
-    ) throws {
+    ) async throws {
         let dataDirURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)
             .first!
             .appendingPathComponent("SPV")
             .appendingPathComponent(network.networkName)
         try? FileManager.default.createDirectory(at: dataDirURL, withIntermediateDirectories: true)
 
-        let peers = peerOverride(network: network)
+        // Resolve peers off the main actor — the devnet branch can block
+        // for seconds. `network` is `Sendable` and the result is
+        // `[String]`; nothing main-actor-bound (no `walletManager`) is
+        // captured, so the detached hop is data-race-free.
+        let peers = await Task.detached { Self.peerOverride(network: network) }.value
         let restrictToConfiguredPeers = !peers.isEmpty
 
         // Devnet requires a name so `DevnetConfig` can embed
@@ -71,7 +79,12 @@ enum CoreSpvLauncher {
     ///      seeds and edits this string.
     ///   3. **everything else** — empty list, FFI uses the network's
     ///      built-in seed nodes.
-    private static func peerOverride(network: Network) -> [String] {
+    ///
+    /// `nonisolated` so `start` can resolve it on a detached task: it
+    /// touches only `UserDefaults` and the (nonisolated) blocking
+    /// `SDK.discoverActiveMasternodes` static, both safe off the main
+    /// actor.
+    nonisolated private static func peerOverride(network: Network) -> [String] {
         let useDocker = UserDefaults.standard.bool(forKey: "useDockerSetup")
         if network == .regtest && useDocker {
             return ["127.0.0.1:20301"]
@@ -98,5 +111,52 @@ enum CoreSpvLauncher {
             .split(separator: ",")
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty }
+    }
+}
+
+/// Pure decision for the launch-time Core SPV auto-start gate, split out
+/// from `SwiftExampleAppApp.autoStartCoreSpvIfNeeded` so the gate matrix
+/// is unit-testable without a configured wallet manager. Encodes two
+/// non-obvious rules the caller relies on:
+///
+///   * a **no-wallets** launch does NOT latch (leaving the door open for
+///     a future call once wallets exist), whereas
+///   * an **already-running** client DOES latch (the auto-start is
+///     considered "handled" — we don't want to keep re-checking).
+enum CoreSpvAutoStart {
+    enum Decision: Equatable {
+        /// Auto-start already ran this launch — do nothing.
+        case skipAlreadyLatched
+        /// No wallets on the active network — do nothing, don't latch.
+        case skipNoWallets
+        /// A client is already running — latch, but don't restart it.
+        case latchOnly
+        /// Start SPV and latch.
+        case startAndLatch
+
+        /// Whether the caller should set its once-per-launch latch.
+        var shouldLatch: Bool {
+            switch self {
+            case .latchOnly, .startAndLatch: return true
+            case .skipAlreadyLatched, .skipNoWallets: return false
+            }
+        }
+
+        /// Whether the caller should actually start the SPV client.
+        var shouldStart: Bool { self == .startAndLatch }
+    }
+
+    /// Resolve the gate. Order matters: the latch short-circuits first,
+    /// then the wallet gate (which must not latch), then the
+    /// already-running gate (which latches without starting).
+    static func decision(
+        alreadyLatched: Bool,
+        hasWallets: Bool,
+        spvRunning: Bool
+    ) -> Decision {
+        if alreadyLatched { return .skipAlreadyLatched }
+        if !hasWallets { return .skipNoWallets }
+        if spvRunning { return .latchOnly }
+        return .startAndLatch
     }
 }

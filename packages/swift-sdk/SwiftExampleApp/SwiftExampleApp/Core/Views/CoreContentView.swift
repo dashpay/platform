@@ -753,13 +753,18 @@ var body: some View {
     }
 
     private func startSync() {
-        do {
-            try CoreSpvLauncher.start(
-                network: platformState.currentNetwork,
-                on: walletManager
-            )
-        } catch {
-            print("❌ Sync failed: \(error)")
+        // `CoreSpvLauncher.start` resolves peers off the main actor (the
+        // devnet branch can block for seconds), so it's async — drive it
+        // from a main-actor `Task` so the button tap stays non-blocking.
+        Task {
+            do {
+                try await CoreSpvLauncher.start(
+                    network: platformState.currentNetwork,
+                    on: walletManager
+                )
+            } catch {
+                print("❌ Sync failed: \(error)")
+            }
         }
     }
 

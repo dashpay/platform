@@ -308,32 +308,33 @@ struct SwiftExampleAppApp: App {
         }
     }
 
-    /// Auto-start Core SPV sync for the launch network. Gated three
-    /// ways so it's safe to call from `bootstrap`:
+    /// Auto-start Core SPV sync for the launch network. The gate matrix
+    /// (once-per-launch latch / wallet-gated / no-double-start) lives in
+    /// the pure `CoreSpvAutoStart.decision` so it can be unit-tested; see
+    /// its doc for why a no-wallets launch doesn't latch but an
+    /// already-running client does.
     ///
-    ///   * **Once per launch** — `didAutoStartCoreSpv` latches so a
-    ///     `retryBootstrap` after a partial first pass can't restart it.
-    ///   * **No double-start** — skips when the client is already
-    ///     running (e.g. a retry after the first pass got it going).
-    ///   * **Wallet-gated** — skips when the active (per-network)
-    ///     manager has no wallets, so first-run onboarding doesn't burn
-    ///     bandwidth syncing headers for a wallet that doesn't exist
-    ///     yet. The active manager is already scoped to the launch
-    ///     network, so `wallets` is the right cheap signal.
+    /// `CoreSpvLauncher.start` is `async` (it resolves peers off the main
+    /// actor), so we **latch before the first `await`**: the latch write
+    /// happens synchronously on the main actor, closing the window where
+    /// a concurrent `bootstrap` (e.g. `retryBootstrap` overlapping the
+    /// original `.task`) could pass the gate during the off-main peer
+    /// resolution and double-start.
     ///
-    /// Best-effort: a start failure is logged, never fatal — it must
-    /// not propagate into `bootstrap`'s catch and trip the error UI.
+    /// Best-effort: a start failure is logged, never fatal — it must not
+    /// propagate into `bootstrap`'s catch and trip the error UI.
     @MainActor
-    private func autoStartCoreSpvIfNeeded() {
-        guard !didAutoStartCoreSpv else { return }
-        guard !walletManager.wallets.isEmpty else { return }
-        // Latch before the (idempotent) start so a re-entrant call
-        // can't race a second launch.
-        didAutoStartCoreSpv = true
+    private func autoStartCoreSpvIfNeeded() async {
+        let decision = CoreSpvAutoStart.decision(
+            alreadyLatched: didAutoStartCoreSpv,
+            hasWallets: !walletManager.wallets.isEmpty,
+            spvRunning: walletManager.spvIsRunning
+        )
+        if decision.shouldLatch { didAutoStartCoreSpv = true }
+        guard decision.shouldStart else { return }
 
-        guard !walletManager.spvIsRunning else { return }
         do {
-            try CoreSpvLauncher.start(
+            try await CoreSpvLauncher.start(
                 network: platformState.currentNetwork,
                 on: walletManager
             )
@@ -405,7 +406,7 @@ struct SwiftExampleAppApp: App {
 
                 // Kick off Core SPV sync for the launch network so the
                 // user doesn't have to tap Start on the Sync tab.
-                autoStartCoreSpvIfNeeded()
+                await autoStartCoreSpvIfNeeded()
             }
 
             isInitialized = true
