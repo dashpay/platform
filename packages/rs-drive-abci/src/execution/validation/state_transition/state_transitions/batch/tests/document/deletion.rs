@@ -361,38 +361,34 @@ mod deletion_tests {
         assert_eq!(processing_result.aggregated_fees().processing_fee, 445700);
     }
 
-    /// Regression test for #3927: a delete state transition against a
-    /// document type whose schema sets both `documentsKeepHistory: true`
-    /// and `canBeDeleted: true` must be classified as an invalid (paid)
-    /// consensus error, NOT surfaced as `ExecutionResult::InternalError`.
-    ///
-    /// Before the fix, the structure validator only checked
-    /// `documents_can_be_deleted()` and let the transition through; at
-    /// execution rs-drive's force-delete path returned
-    /// `InvalidDeletionOfDocumentThatKeepsHistory` which the processor
-    /// reclassified as `InternalError` — the transition was neither
-    /// valid nor invalid-paid, leaving the SDK with no clean accept/
-    /// reject signal. The fixture is loaded with `full_validation: false`
-    /// to simulate an already-deployed contradictory contract (the DPP
-    /// `try_from_schema` cross-flag rule prevents NEW contracts with
-    /// this combination but cannot fix on-chain ones).
+    /// PROTOCOL_VERSION_12 rejects deletes against contradictory keep-history
+    /// document types as invalid-paid consensus errors.
     #[tokio::test]
-    async fn test_document_delete_on_document_type_that_keeps_history_is_rejected() {
-        // Pinned to protocol v12 — the keep-history delete guard is
-        // version-gated to v12 (validation v8 selects
-        // `document_delete_transition_structure_validation: 1`, which
-        // dispatches to `advanced_structure_v1` adding the
-        // `documents_keep_history()` check). Pre-fix this test ran against
-        // `current_platform_version()` (i.e. whatever the test rig's
-        // initial state landed on), so as new protocol versions ship the
-        // test would silently exercise a different version's validation
-        // path — possibly one where the guard regressed. Pinning here keeps
-        // the regression assertion bit-for-bit reproducible.
-        const PROTOCOL_VERSION: dpp::version::ProtocolVersion = 12;
-        let platform_version = PlatformVersion::get(PROTOCOL_VERSION)
-            .expect("expected platform version for protocol_version 12");
+    async fn test_document_delete_on_document_type_that_keeps_history_is_rejected_protocol_version_12(
+    ) {
+        run_document_delete_on_document_type_that_keeps_history_at_protocol_version(12, true).await;
+    }
+
+    /// PROTOCOL_VERSION_11 preserves the historical InternalError result for
+    /// replay compatibility. The keep-history structure guard must not run.
+    #[tokio::test]
+    async fn test_document_delete_on_document_type_that_keeps_history_replays_protocol_version_11()
+    {
+        run_document_delete_on_document_type_that_keeps_history_at_protocol_version(11, false)
+            .await;
+    }
+
+    /// Exercises an already-deployed contradictory contract at both sides of
+    /// the v12 validation-version boundary. Loading with `full_validation:
+    /// false` is intentional: reparsing deployed contracts must remain allowed.
+    async fn run_document_delete_on_document_type_that_keeps_history_at_protocol_version(
+        protocol_version: dpp::version::ProtocolVersion,
+        expect_invalid_paid: bool,
+    ) {
+        let platform_version = PlatformVersion::get(protocol_version)
+            .expect("expected platform version for the requested protocol_version");
         let mut platform = TestPlatformBuilder::new()
-            .with_initial_protocol_version(PROTOCOL_VERSION)
+            .with_initial_protocol_version(protocol_version)
             .build_with_mock_rpc()
             .set_initial_state_structure();
 
@@ -498,8 +494,8 @@ mod deletion_tests {
             .unwrap()
             .expect("expected to commit transaction");
 
-        // Now attempt the delete — pre-fix this surfaces as InternalError,
-        // post-fix it's a clean invalid-paid consensus error.
+        // V12 rejects during structure validation; v11 reaches rs-drive and
+        // retains the historical InternalError classification for replay.
         let documents_batch_deletion_transition =
             BatchTransition::new_document_deletion_transition_from_document(
                 altered_document,
@@ -543,21 +539,21 @@ mod deletion_tests {
 
         assert_eq!(
             processing_result.invalid_paid_count(),
-            1,
-            "delete against keep-history doctype must be classified as invalid-paid, \
-             not surfaced as InternalError"
+            usize::from(expect_invalid_paid),
+            "unexpected invalid-paid classification at protocol version {protocol_version}"
         );
         assert_eq!(processing_result.invalid_unpaid_count(), 0);
         assert_eq!(processing_result.valid_count(), 0);
-        // Pre-fix the result would have been an InternalError — assert none
-        // of the execution results are internal errors.
-        for result in processing_result.execution_results() {
-            assert!(
-                !matches!(result, StateTransitionExecutionResult::InternalError(_)),
-                "delete must not surface as InternalError; got {:?}",
-                result
-            );
-        }
+        let internal_error_count = processing_result
+            .execution_results()
+            .iter()
+            .filter(|result| matches!(result, StateTransitionExecutionResult::InternalError(_)))
+            .count();
+        assert_eq!(
+            internal_error_count,
+            usize::from(!expect_invalid_paid),
+            "unexpected InternalError classification at protocol version {protocol_version}"
+        );
     }
 
     #[tokio::test]

@@ -331,8 +331,8 @@ impl DocumentTypeV2 {
                 DataContractError::InvalidContractStructure(format!(
                     "document type \"{}\" sets both `documentsKeepHistory: true` and \
                      `canBeDeleted: true`, but the storage layer unconditionally refuses to \
-                     delete a document whose type keeps history. Set one of the two flags to \
-                     false (or omit it).",
+                     delete a document whose type keeps history. Set `canBeDeleted` to false or \
+                     disable `documentsKeepHistory`.",
                     name,
                 )),
             ));
@@ -1018,6 +1018,35 @@ mod tests {
         );
     }
 
+    /// Omitting `canBeDeleted` exercises the contract-config default boundary:
+    /// the latest config defaults it to `true`, so a keep-history document type
+    /// remains contradictory and must be rejected during full validation.
+    #[test]
+    fn doctype_keep_history_with_can_be_deleted_omitted_rejected() {
+        let schema = platform_value!({
+            "type": "object",
+            "properties": {
+                "label": {
+                    "type": "string",
+                    "maxLength": 50,
+                    "position": 0,
+                },
+            },
+            "additionalProperties": false,
+            "documentsKeepHistory": true,
+        });
+        let result = parse(schema);
+        assert!(
+            result.is_err(),
+            "omitted canBeDeleted must default to true and conflict with documentsKeepHistory"
+        );
+        let msg = format!("{:?}", result.unwrap_err());
+        assert!(
+            msg.contains("documentsKeepHistory") && msg.contains("canBeDeleted"),
+            "error must reference both documentsKeepHistory and defaulted canBeDeleted; got {msg}"
+        );
+    }
+
     /// `documentsKeepHistory: true` + `canBeDeleted: true` is rejected
     /// ONLY when `full_validation: true`. With `full_validation: false`
     /// (the restore / migration / cache-warmup path) the same schema must
@@ -1068,10 +1097,9 @@ mod tests {
 
     /// Guard against an over-broad fix: `documentsKeepHistory: true` +
     /// `canBeDeleted: false` is consistent (the doctype is append-only)
-    /// and must continue to parse cleanly. Same for `documentsKeepHistory:
-    /// true` with `canBeDeleted` omitted — covered by the existing
-    /// `doctype_keep_history_without_summable_accepted` test, which
-    /// leaves `canBeDeleted` at its config default (false).
+    /// and must continue to parse cleanly. The sibling omitted-key regression
+    /// covers the distinct default-`true` boundary and therefore expects
+    /// rejection rather than acceptance.
     #[test]
     fn doctype_keep_history_with_can_be_deleted_false_accepted() {
         let schema = platform_value!({
