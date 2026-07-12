@@ -59,6 +59,11 @@ struct SwiftExampleAppApp: App {
     @State private var bootstrapError: Error?
     @State private var bootstrapTask: Task<Void, Never>?
 
+    /// Guards the launch-time Core SPV auto-start so it fires at most
+    /// once per process, even if `bootstrap()` re-runs via
+    /// `retryBootstrap`.
+    @State private var didAutoStartCoreSpv = false
+
     /// Resolver that backs the platform-wallet-ffi `MnemonicResolverHandle`
     /// for shielded wallet binding. Reuses the default `WalletStorage`
     /// keychain access — same shape as the identity-key signing path.
@@ -303,6 +308,47 @@ struct SwiftExampleAppApp: App {
         }
     }
 
+    /// Auto-start Core SPV sync for the launch network. Gated three
+    /// ways so it's safe to call from `bootstrap`:
+    ///
+    ///   * **Once per launch** — `didAutoStartCoreSpv` latches so a
+    ///     `retryBootstrap` after a partial first pass can't restart it.
+    ///   * **No double-start** — skips when the client is already
+    ///     running (e.g. a retry after the first pass got it going).
+    ///   * **Wallet-gated** — skips when the active (per-network)
+    ///     manager has no wallets, so first-run onboarding doesn't burn
+    ///     bandwidth syncing headers for a wallet that doesn't exist
+    ///     yet. The active manager is already scoped to the launch
+    ///     network, so `wallets` is the right cheap signal.
+    ///
+    /// Best-effort: a start failure is logged, never fatal — it must
+    /// not propagate into `bootstrap`'s catch and trip the error UI.
+    @MainActor
+    private func autoStartCoreSpvIfNeeded() {
+        guard !didAutoStartCoreSpv else { return }
+        guard !walletManager.wallets.isEmpty else { return }
+        // Latch before the (idempotent) start so a re-entrant call
+        // can't race a second launch.
+        didAutoStartCoreSpv = true
+
+        guard !walletManager.spvIsRunning else { return }
+        do {
+            try CoreSpvLauncher.start(
+                network: platformState.currentNetwork,
+                on: walletManager
+            )
+            SDKLogger.log(
+                "🟢 Auto-started Core SPV sync for "
+                    + platformState.currentNetwork.displayName,
+                minimumLevel: .medium
+            )
+        } catch {
+            SDKLogger.error(
+                "Auto-start Core SPV sync failed: \(error.localizedDescription)"
+            )
+        }
+    }
+
     @MainActor
     private func bootstrap() async {
         do {
@@ -356,6 +402,10 @@ struct SwiftExampleAppApp: App {
                 preWarmOrphanNetworkManagers()
 
                 rebindWalletScopedServices()
+
+                // Kick off Core SPV sync for the launch network so the
+                // user doesn't have to tap Start on the Sync tab.
+                autoStartCoreSpvIfNeeded()
             }
 
             isInitialized = true

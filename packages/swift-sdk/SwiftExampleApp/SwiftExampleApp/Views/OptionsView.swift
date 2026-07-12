@@ -137,7 +137,7 @@ struct OptionsView: View {
                                     // Devnet's SPV peers come from
                                     // `{platformQuorumURL}/masternodes`
                                     // — no UserDefaults state to seed
-                                    // here. See `CoreContentView.spvPeerOverride`
+                                    // here. See `CoreSpvLauncher.peerOverride`
                                     // for the devnet branch.
 
                                     // Update platform state (which will trigger SDK switch)
