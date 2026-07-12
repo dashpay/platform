@@ -5,4 +5,6 @@ mod contested_resources;
 mod decode_index_value;
 mod vote_polls_by_end_date_query;
 
-pub(crate) use decode_index_value::decode_serialized_index_value;
+pub(crate) use decode_index_value::{
+    decode_serialized_index_value, validate_serialized_index_values,
+};

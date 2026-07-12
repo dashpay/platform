@@ -94,14 +94,22 @@ impl<C> Platform<C> {
             ))));
         }
 
+        if let Err(error) = super::super::validate_serialized_index_values(
+            index_values.iter().map(Vec::as_slice),
+            index.properties.len(),
+            || "serialized index values exceed the contested index query limits".to_string(),
+        ) {
+            return Ok(QueryValidationResult::new_with_error(error));
+        }
+
         let index_values = match index_values
             .into_iter()
             .enumerate()
             .map(|(pos, serialized_value)| {
                 super::super::decode_serialized_index_value(serialized_value.as_slice(), || {
                     format!(
-                        "could not convert {:?} to a value in the index values at position {}",
-                        serialized_value, pos
+                        "could not convert a value in the index values at position {}",
+                        pos
                     )
                 })
             })
@@ -392,6 +400,33 @@ mod tests {
         assert!(matches!(
             result.errors.as_slice(),
             [QueryError::InvalidArgument(msg)] if msg.contains("contract_id must be a valid identifier")
+        ));
+    }
+
+    #[test]
+    fn test_query_contested_resource_vote_state_aggregate_index_bytes_rejected() {
+        let (platform, state, version) = setup_platform(Some((1, 1)), Network::Testnet, None);
+
+        let request = GetContestedResourceVoteStateRequestV0 {
+            contract_id: dpp::system_data_contracts::dpns_contract::ID.to_vec(),
+            document_type_name: "domain".to_string(),
+            index_name: "parentNameAndLabel".to_string(),
+            index_values: vec![vec![0xff; 5 * 1024], vec![]],
+            result_type: 0,
+            allow_include_locked_and_abstaining_vote_tally: false,
+            start_at_identifier_info: None,
+            count: None,
+            prove: false,
+        };
+
+        let result = platform
+            .query_contested_resource_vote_state_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(matches!(
+            result.errors.as_slice(),
+            [QueryError::InvalidArgument(msg)]
+                if msg == "serialized index values exceed the contested index query limits"
         ));
     }
 }

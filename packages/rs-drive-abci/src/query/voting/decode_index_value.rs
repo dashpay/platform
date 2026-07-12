@@ -14,8 +14,45 @@ use dpp::platform_value::Value;
 /// consensus servers, such a panic on a public, unauthenticated query would
 /// take the whole node down. Bounding both the raw input length and the
 /// decoder's allocation budget keeps decoding safe. Legitimate index/cursor
-/// values are far smaller than this ceiling.
-pub(crate) const MAX_ENCODED_INDEX_VALUE_BYTES: usize = 64 * 1024;
+/// encoded values are far smaller than this ceiling. The protocol limits a
+/// complete index key to 255 bytes, so 4 KiB leaves ample room for bincode
+/// overhead.
+pub(crate) const MAX_ENCODED_INDEX_VALUE_BYTES: usize = 4 * 1024;
+
+/// Maximum decoded-memory budget for one value. This remains deliberately
+/// larger than the encoded budget to accommodate valid nested Values while
+/// preventing declared container lengths from causing unreasonable allocation.
+const MAX_DECODED_INDEX_VALUE_BYTES: usize = 64 * 1024;
+
+/// Validate the aggregate cursor budget before decoding any individual value.
+///
+/// A per-value bincode limit alone is insufficient for protobuf repeated
+/// fields because its budget resets for every element. Bounding both the
+/// number of values and their total encoded size prevents a request from
+/// multiplying many individually bounded allocations.
+pub(crate) fn validate_serialized_index_values<'a, I, F>(
+    serialized_values: I,
+    max_values: usize,
+    invalid_argument: F,
+) -> Result<(), QueryError>
+where
+    I: IntoIterator<Item = &'a [u8]>,
+    F: FnOnce() -> String,
+{
+    let mut count = 0usize;
+    let mut total_bytes = 0usize;
+
+    for serialized_value in serialized_values {
+        count = count.saturating_add(1);
+        total_bytes = total_bytes.saturating_add(serialized_value.len());
+
+        if count > max_values || total_bytes > MAX_ENCODED_INDEX_VALUE_BYTES {
+            return Err(QueryError::InvalidArgument(invalid_argument()));
+        }
+    }
+
+    Ok(())
+}
 
 /// Decode a single caller-supplied, `bincode`-encoded `platform_value::Value`
 /// (an index or cursor value) under a finite budget.
@@ -42,7 +79,7 @@ where
 
         let config = bincode::config::standard()
             .with_big_endian()
-            .with_limit::<MAX_ENCODED_INDEX_VALUE_BYTES>();
+            .with_limit::<MAX_DECODED_INDEX_VALUE_BYTES>();
 
         let (value, consumed) =
             bincode::decode_from_slice::<Value, _>(serialized_value, config).ok()?;
@@ -83,6 +120,38 @@ mod tests {
     }
 
     #[test]
+    fn rejects_too_many_serialized_values() {
+        let values = [vec![0u8], vec![1u8]];
+        let result = validate_serialized_index_values(values.iter().map(Vec::as_slice), 1, || {
+            "invalid".to_string()
+        });
+        assert!(matches!(result, Err(QueryError::InvalidArgument(_))));
+    }
+
+    #[test]
+    fn rejects_aggregate_input_over_the_byte_ceiling() {
+        let values = [
+            vec![0u8; MAX_ENCODED_INDEX_VALUE_BYTES / 2 + 1],
+            vec![0u8; MAX_ENCODED_INDEX_VALUE_BYTES / 2],
+        ];
+        let result = validate_serialized_index_values(
+            values.iter().map(Vec::as_slice),
+            values.len(),
+            || "invalid".to_string(),
+        );
+        assert!(matches!(result, Err(QueryError::InvalidArgument(_))));
+    }
+
+    #[test]
+    fn accepts_values_within_the_aggregate_budget() {
+        let values = [vec![0u8; 32], vec![1u8; 32]];
+        validate_serialized_index_values(values.iter().map(Vec::as_slice), values.len(), || {
+            "invalid".to_string()
+        })
+        .expect("values should be within the aggregate budget");
+    }
+
+    #[test]
     fn rejects_trailing_bytes() {
         // A valid encoding of Value::U8(1) is `[0x08, 0x01]`; append a stray byte.
         let mut encoded =
@@ -103,5 +172,18 @@ mod tests {
         let decoded =
             decode_serialized_index_value(&encoded, || "invalid".to_string()).expect("decode");
         assert_eq!(decoded, Value::Text("hello".to_string()));
+    }
+
+    #[test]
+    fn round_trips_a_valid_nested_value() {
+        let value = Value::Array(vec![Value::U8(1); 512]);
+        let encoded =
+            bincode::encode_to_vec(value.clone(), bincode::config::standard().with_big_endian())
+                .expect("encode");
+        assert!(encoded.len() < MAX_ENCODED_INDEX_VALUE_BYTES);
+
+        let decoded =
+            decode_serialized_index_value(&encoded, || "invalid".to_string()).expect("decode");
+        assert_eq!(decoded, value);
     }
 }

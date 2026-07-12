@@ -81,14 +81,30 @@ impl<C> Platform<C> {
             ))));
         }
 
+        if let Err(error) = super::super::validate_serialized_index_values(
+            start_index_values
+                .iter()
+                .chain(end_index_values.iter())
+                .map(Vec::as_slice)
+                .chain(
+                    start_at_value_info
+                        .iter()
+                        .map(|info| info.start_value.as_slice()),
+                ),
+            index.properties.len(),
+            || "serialized index values exceed the contested index query limits".to_string(),
+        ) {
+            return Ok(QueryValidationResult::new_with_error(error));
+        }
+
         let start_index_values = match start_index_values
             .into_iter()
             .enumerate()
             .map(|(pos, serialized_value)| {
                 super::super::decode_serialized_index_value(serialized_value.as_slice(), || {
                     format!(
-                        "could not convert {:?} to a value in the start index values at position {}",
-                        serialized_value, pos
+                        "could not convert a value in the start index values at position {}",
+                        pos
                     )
                 })
             })
@@ -104,8 +120,7 @@ impl<C> Platform<C> {
             .map(|(pos, serialized_value)| {
                 super::super::decode_serialized_index_value(serialized_value.as_slice(), || {
                     format!(
-                        "could not convert {:?} to a value in the end index values at position {}",
-                        serialized_value,
+                        "could not convert a value in the end index values at position {}",
                         pos + start_index_values.len() + 1
                     )
                 })
@@ -136,12 +151,7 @@ impl<C> Platform<C> {
             .map(|start_at_value_info| {
                 let start = super::super::decode_serialized_index_value(
                     start_at_value_info.start_value.as_slice(),
-                    || {
-                        format!(
-                            "could not convert {:?} to a value for start at",
-                            start_at_value_info.start_value
-                        )
-                    },
+                    || "could not convert a value for start at".to_string(),
                 )?;
 
                 Ok::<(dpp::platform_value::Value, bool), QueryError>((
@@ -428,6 +438,49 @@ mod tests {
         assert!(matches!(
             result.errors.as_slice(),
             [QueryError::InvalidArgument(msg)] if msg.contains("start at")
+        ));
+    }
+
+    #[test]
+    fn test_query_contested_resources_too_many_cursor_values_rejected_before_decoding() {
+        let (platform, state, version) = setup_platform(Some((1, 1)), Network::Testnet, None);
+        let encoded =
+            bincode::encode_to_vec(Value::U8(1), bincode::config::standard().with_big_endian())
+                .expect("encode");
+
+        let request = GetContestedResourcesRequestV0 {
+            start_index_values: vec![encoded; 3],
+            ..dpns_contested_request()
+        };
+
+        let result = platform
+            .query_contested_resources_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(matches!(
+            result.errors.as_slice(),
+            [QueryError::InvalidArgument(msg)]
+                if msg == "serialized index values exceed the contested index query limits"
+        ));
+    }
+
+    #[test]
+    fn test_query_contested_resources_aggregate_cursor_bytes_rejected_without_payload_echo() {
+        let (platform, state, version) = setup_platform(Some((1, 1)), Network::Testnet, None);
+
+        let request = GetContestedResourcesRequestV0 {
+            start_index_values: vec![vec![0xff; 5 * 1024]],
+            ..dpns_contested_request()
+        };
+
+        let result = platform
+            .query_contested_resources_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(matches!(
+            result.errors.as_slice(),
+            [QueryError::InvalidArgument(msg)]
+                if msg == "serialized index values exceed the contested index query limits"
         ));
     }
 }
