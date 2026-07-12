@@ -221,13 +221,12 @@ var body: some View {
                     TextField("Block height", text: $customHeightText)
                         .keyboardType(.numberPad)
                     Button("Rescan") {
-                        if let height = UInt32(
-                            customHeightText.trimmingCharacters(in: .whitespaces)
-                        ) {
+                        if let height = customHeightValue {
                             armRescan(fromHeight: height)
                         }
                         customHeightText = ""
                     }
+                    .disabled(customHeightValue == nil)
                     Button("Cancel", role: .cancel) { customHeightText = "" }
                 } message: {
                     Text("Enter the core block height to rescan compact filters from.")
@@ -917,6 +916,13 @@ var body: some View {
     private func armRescan(lastBlocks: UInt32) {
         let tip = rescanReferenceTip
         armRescan(fromHeight: tip > lastBlocks ? tip - lastBlocks : 0)
+    }
+
+    /// The custom-height field parsed as a block height, or `nil` when
+    /// blank / non-numeric. Shared by the alert's disabled check and
+    /// its action so the two can't drift out of sync.
+    private var customHeightValue: UInt32? {
+        UInt32(customHeightText.trimmingCharacters(in: .whitespaces))
     }
 
     /// Rewind the filter-scan checkpoint to `fromHeight` for every
