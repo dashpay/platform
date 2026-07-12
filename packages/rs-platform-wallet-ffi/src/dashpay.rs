@@ -1261,4 +1261,30 @@ mod tests {
         assert_eq!(r.code, PlatformWalletFFIResultCode::NotFound);
         assert_eq!(count, 7, "out_count is untouched on a lookup miss");
     }
+
+    /// An unknown `wallet_handle` surfaces `ErrorInvalidHandle` — the OUTER
+    /// `with_item` miss — NOT `NotFound` (dashpay/platform#4060). This is the
+    /// load-bearing half of the dual-error contract: the Kotlin `Dashpay` layer
+    /// translates only `NotFound` (a valid wallet that does not manage the id)
+    /// into a zero handle, so a stale/closed wallet MUST arrive as
+    /// `ErrorInvalidHandle` to avoid masquerading as an unmanaged identity. The
+    /// 32-byte `identity_id` is read before the wallet lookup (`read_identifier`),
+    /// so a real buffer is supplied; `out_managed_identity_handle` must be left
+    /// untouched on the miss.
+    ///
+    /// The complementary inner outcome (a valid wallet lacking the managed
+    /// identity → `NotFound`) needs a fully seeded wallet in
+    /// `PLATFORM_WALLET_STORAGE`, which this unit-test module has no fixture for;
+    /// that path is covered at the translation layer by the Kotlin
+    /// `ManagedIdentityNotFoundTranslationTest`.
+    #[test]
+    fn get_managed_identity_unknown_wallet_is_invalid_handle() {
+        let id = [0u8; 32];
+        let mut out: Handle = 0;
+        let r = unsafe {
+            platform_wallet_get_managed_identity(0xDEAD_BEEF, id.as_ptr(), &mut out)
+        };
+        assert_eq!(r.code, PlatformWalletFFIResultCode::ErrorInvalidHandle);
+        assert_eq!(out, 0, "out handle is untouched on an invalid-handle miss");
+    }
 }

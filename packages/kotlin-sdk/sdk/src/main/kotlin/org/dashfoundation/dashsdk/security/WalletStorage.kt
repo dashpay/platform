@@ -238,36 +238,65 @@ class WalletStorage(
             migrateToPolicyAlias(pubkeyHex, plain)
             return plain
         }
-        // Empty-IV RSA blob: encrypted under EITHER the current policy alias
-        // (steady state) or the former RSA keypair still at KEYS_ALIAS (scheme 2
-        // blobs written before the alias split, dashpay/platform#4060).
-        //
-        // Upgrade fast path: when the policy alias has no keypair yet it cannot
-        // have encrypted this blob, so if the former RSA key is present the blob
-        // is unambiguously a scheme-2 blob — recover with it directly instead of
-        // provisioning a throwaway policy keypair only to fail. (In steady state
-        // the policy alias HAS a key, so this short-circuits without the second
-        // Keystore probe.)
-        if (!keystore.hasIdentityKeysKey(keystore.keysAlias) && keystore.hasLegacyRsaKeysKey()) {
-            val recovered = keystore.decryptLegacyRsaKeysBlob(blob) ?: return null
+        // Empty-IV RSA blob: encrypted under the current policy alias (steady
+        // state), the former RSA keypair still at KEYS_ALIAS (scheme 2 blobs
+        // written before the alias split), or — after a policy switch (e.g.
+        // AUTH_GATED→DEVICE_BOUND) — a *sibling* policy alias we no longer target
+        // (dashpay/platform#4060). Key *presence* never proves which alias wrote
+        // THIS blob: an unrelated former RSA key can linger next to a
+        // sibling-alias blob, so every candidate key is TRIED and a wrong-key
+        // crypto failure is treated as "not this key" (per the
+        // [KeystoreManager.decryptLegacyRsaKeysBlob] contract) rather than letting
+        // a BadPaddingException escape uncaught into KeystoreSigner. A blob that no
+        // present key can open is unrecoverable → null (key-health then offers a
+        // re-derive), mirroring the legacy-AES stranded path above — never a bogus
+        // plaintext. UserNotAuthenticatedException is NOT a wrong-key signal and
+        // always propagates so KeystoreSigner can prompt and retry.
+
+        // Upgrade fast path: an unprovisioned policy alias cannot have produced
+        // the blob, so recover with the former RSA keypair directly instead of
+        // provisioning a throwaway policy keypair only to fail. If that key does
+        // not open it either (former key absent, or the blob belongs to a sibling
+        // alias), the blob is unrecoverable here → null.
+        if (!keystore.hasIdentityKeysKey(keystore.keysAlias)) {
+            val recovered = tryFormerRsaRecovery(blob) ?: return null
             migrateToPolicyAlias(pubkeyHex, recovered)
             return recovered
         }
-        // Otherwise try the current policy alias first; on a wrong-key crypto
-        // failure (a scheme-2 blob lingering while newer keys already live at
-        // the policy alias) fall back to the former RSA keypair and migrate.
-        // UserNotAuthenticatedException is NOT a wrong-key signal — it must
-        // propagate so KeystoreSigner can prompt and retry.
+        // Steady state: try the current policy alias first; on a wrong-key crypto
+        // failure (a scheme-2 / sibling blob lingering while a key already lives at
+        // the policy alias) fall back to the former RSA keypair and migrate, else
+        // report the blob unrecoverable (null).
         return try {
             keystore.decrypt(blob, alias = keystore.keysAlias)
         } catch (e: UserNotAuthenticatedException) {
             throw e
         } catch (e: GeneralSecurityException) {
-            val recovered = keystore.decryptLegacyRsaKeysBlob(blob) ?: throw e
+            val recovered = tryFormerRsaRecovery(blob) ?: return null
             migrateToPolicyAlias(pubkeyHex, recovered)
             recovered
         }
     }
+
+    /**
+     * Attempt recovery of an empty-IV RSA blob with the retained former
+     * pre-alias-split RSA keypair at [KeystoreManager.KEYS_ALIAS], converting a
+     * wrong-key crypto failure to `null` ("not this key",
+     * dashpay/platform#4060). [KeystoreManager.decryptLegacyRsaKeysBlob] returns
+     * `null` when that key is absent and throws a JCE `BadPaddingException` when
+     * the key is present but did not write the blob — presence alone is not proof
+     * of origin, so that throw must be absorbed here rather than escaping
+     * uncaught. `UserNotAuthenticatedException` is a closed-auth-window signal,
+     * never a wrong key, so it propagates unchanged.
+     */
+    private fun tryFormerRsaRecovery(blob: KeystoreManager.EncryptedBlob): ByteArray? =
+        try {
+            keystore.decryptLegacyRsaKeysBlob(blob)
+        } catch (e: UserNotAuthenticatedException) {
+            throw e
+        } catch (e: GeneralSecurityException) {
+            null
+        }
 
     /**
      * Best-effort re-encrypt [plain] under the current policy alias

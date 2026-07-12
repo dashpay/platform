@@ -13,7 +13,6 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
-import java.security.GeneralSecurityException
 import javax.crypto.BadPaddingException
 
 /**
@@ -139,23 +138,47 @@ class WalletStorageUpgradeMatrixTest {
         assertTrue(fake.legacyRsaFallbackCalls > 0) // reached the catch-branch fallback
     }
 
-    /** Former-RSA blob whose KEYS_ALIAS key is gone → stranded (no wrong-value recovery). */
+    /**
+     * Former-RSA blob whose KEYS_ALIAS key is gone → stranded. No present key can
+     * open it, so recovery yields null (a re-derive signal, like the legacy-AES
+     * stranded path) rather than a bogus plaintext — and, critically, rather than
+     * an uncaught crypto exception into KeystoreSigner (dashpay/platform#4060).
+     */
     @Test
-    fun formerRsaBlobWithDeletedKeyIsStranded() {
-        runBlocking {
-            fake.keysAliasKind = FakeKeystoreManager.KeysAliasKind.RSA
-            fake.scheme = FakeKeystoreManager.Scheme.FORMER_RSA
-            storage.storePrivateKey(pub, secret)
+    fun formerRsaBlobWithDeletedKeyIsStranded() = runBlocking {
+        fake.keysAliasKind = FakeKeystoreManager.KeysAliasKind.RSA
+        fake.scheme = FakeKeystoreManager.Scheme.FORMER_RSA
+        storage.storePrivateKey(pub, secret)
 
-            fake.keysAliasKind = FakeKeystoreManager.KeysAliasKind.NONE // former RSA key gone
-            fake.scheme = FakeKeystoreManager.Scheme.CURRENT
-            assertFalse(storage.isPrivateKeyDecryptable(pub))
-        }
-        // Policy decrypt fails (wrong key) and there is no former key to fall
-        // back to → the crypto failure surfaces rather than a bogus plaintext.
-        assertThrows(GeneralSecurityException::class.java) {
-            runBlocking { storage.retrievePrivateKey(pub) }
-        }
+        fake.keysAliasKind = FakeKeystoreManager.KeysAliasKind.NONE // former RSA key gone
+        fake.scheme = FakeKeystoreManager.Scheme.CURRENT
+        assertFalse(storage.isPrivateKeyDecryptable(pub))
+        // Unrecoverable → null (not a wrong value, not a thrown BadPaddingException).
+        assertNull(storage.retrievePrivateKey(pub))
+    }
+
+    /**
+     * Regression (dashpay/platform#4060): a blob written under a *sibling* policy
+     * alias (e.g. a KEYS_ALIAS_AUTH_GATED blob read after an AUTH_GATED→DEVICE_BOUND
+     * switch) while an UNRELATED former RSA key still lingers at KEYS_ALIAS. The
+     * policy alias is unprovisioned, so the upgrade fast path is entered on former-
+     * RSA-key *presence* alone — but that key did not write this blob, so
+     * decryptLegacyRsaKeysBlob raises BadPaddingException. That wrong-key failure
+     * must be absorbed ("not this key") and reported as unrecoverable (null) so the
+     * host can re-derive, NOT escape uncaught into KeystoreSigner (which only
+     * catches UserNotAuthenticatedException). Before the fix this threw a raw
+     * BadPaddingException out of retrievePrivateKey.
+     */
+    @Test
+    fun siblingAliasBlobUnderUnprovisionedPolicyDoesNotThrow() = runBlocking {
+        fake.keysAliasKind = FakeKeystoreManager.KeysAliasKind.RSA // unrelated former RSA key present
+        fake.scheme = FakeKeystoreManager.Scheme.SIBLING_POLICY
+        storage.storePrivateKey(pub, secret) // sibling-alias blob; policy alias NOT provisioned
+
+        // The former-RSA fast path is attempted (presence-based) but cannot open
+        // the blob; the wrong-key failure is absorbed and surfaces as null.
+        assertNull(storage.retrievePrivateKey(pub))
+        assertTrue(fake.legacyRsaFallbackCalls > 0) // recovery was tried, not skipped
     }
 
     /**
@@ -189,7 +212,7 @@ class WalletStorageUpgradeMatrixTest {
 private class FakeKeystoreManager :
     KeystoreManager(KeySecurityPolicy.AUTH_GATED) {
 
-    enum class Scheme { CURRENT, FORMER_RSA, LEGACY_AES }
+    enum class Scheme { CURRENT, FORMER_RSA, LEGACY_AES, SIBLING_POLICY }
 
     enum class KeysAliasKind { NONE, AES, RSA }
 
@@ -207,6 +230,10 @@ private class FakeKeystoreManager :
             rsaBlob(TAG_POLICY, plaintext)
         }
         Scheme.FORMER_RSA -> rsaBlob(TAG_FORMER_RSA, plaintext) // does NOT provision policy
+        // A blob produced by a sibling policy alias: neither the current policy
+        // alias key nor the former RSA key can open it, and it does NOT provision
+        // the policy alias (dashpay/platform#4060).
+        Scheme.SIBLING_POLICY -> rsaBlob(TAG_SIBLING, plaintext)
         Scheme.LEGACY_AES -> aesBlob(plaintext)
     }
 
@@ -264,5 +291,6 @@ private class FakeKeystoreManager :
         const val RSA_BLOB_BYTES = 2048 / 8
         const val TAG_POLICY: Byte = 0
         const val TAG_FORMER_RSA: Byte = 2
+        const val TAG_SIBLING: Byte = 3
     }
 }
