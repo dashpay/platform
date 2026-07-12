@@ -281,11 +281,13 @@ internal data class AverageResult(
 /**
  * Parse the average result: group key → `{count, sum}` objects, with the
  * empty-string key as the overall entry; a bare `{count, sum}` object is
- * an ungrouped total.
+ * an ungrouped total. The FFI wraps the map in an `{"averages": {...}}`
+ * envelope (see `dash_sdk_document_average`'s contract) — unwrap it first.
  */
 internal fun parseAverageResult(response: String?): AverageResult? {
     if (response.isNullOrBlank()) return null
-    val root = LenientJson.parseToJsonElement(response) as? JsonObject ?: return null
+    var root = LenientJson.parseToJsonElement(response) as? JsonObject ?: return null
+    if (root.size == 1) (root["averages"] as? JsonObject)?.let { root = it }
 
     fun entryOf(obj: JsonObject): AverageEntry? {
         val count = (obj["count"] as? JsonPrimitive)?.content?.toLongOrNull() ?: return null
