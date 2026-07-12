@@ -189,13 +189,33 @@ pub fn derive_tx_metadata_key_from_master(
 /// `version == VERSION_PROTOBUF`); this crate does not parse it. `iv` MUST be a
 /// fresh random 16 bytes per document (the legacy stack draws it from
 /// `SecureRandom`).
-pub fn seal_tx_metadata(key: &[u8; 32], version: u8, iv: &[u8; 16], payload: &[u8]) -> Vec<u8> {
+///
+/// `version` MUST be [`VERSION_CBOR`] (0) or [`VERSION_PROTOBUF`] (1) — the only
+/// two values the legacy dashj `decryptTxMetadata` switches on. Sealing any
+/// other byte would produce a document that installs fine but the legacy stack
+/// cannot decode, silently breaking the bidirectional wire-compat guarantee, so
+/// it is rejected HERE, at the one choke point every layer (JNI, FFI, resident
+/// wallet) funnels through — not only in the Kotlin `require`
+/// (dashpay/platform#4091, findings 9c0ce58c3bb7 / 79595960d201).
+pub fn seal_tx_metadata(
+    key: &[u8; 32],
+    version: u8,
+    iv: &[u8; 16],
+    payload: &[u8],
+) -> Result<Vec<u8>, PlatformWalletError> {
+    if version != VERSION_CBOR && version != VERSION_PROTOBUF {
+        return Err(PlatformWalletError::InvalidIdentityData(format!(
+            "txMetadata version byte {version} is not wire-decodable; only \
+             {VERSION_CBOR} (CBOR) and {VERSION_PROTOBUF} (protobuf) are understood \
+             by the legacy decryptTxMetadata"
+        )));
+    }
     let ciphertext = platform_encryption::encrypt_aes_256_cbc(key, iv, payload);
     let mut blob = Vec::with_capacity(BLOB_HEADER_LEN + ciphertext.len());
     blob.push(version);
     blob.extend_from_slice(iv);
     blob.extend_from_slice(&ciphertext);
-    blob
+    Ok(blob)
 }
 
 /// The plaintext recovered from a stored `encryptedMetadata` blob.
@@ -299,13 +319,38 @@ mod tests {
         let iv = [0x22u8; 16];
         for version in [VERSION_CBOR, VERSION_PROTOBUF] {
             let payload = b"opaque protobuf TxMetadataBatch bytes".to_vec();
-            let blob = seal_tx_metadata(&key, version, &iv, &payload);
+            let blob = seal_tx_metadata(&key, version, &iv, &payload).expect("valid version");
             // Framing: version at [0], IV at [1..17), ciphertext after.
             assert_eq!(blob[0], version);
             assert_eq!(&blob[1..17], &iv);
             let opened = open_tx_metadata(&key, &blob).expect("open");
             assert_eq!(opened.version, version);
             assert_eq!(opened.payload, payload);
+        }
+    }
+
+    /// Rust-side wire-version guard (dashpay/platform#4091, findings
+    /// 9c0ce58c3bb7 / 79595960d201): `seal_tx_metadata` accepts only the two
+    /// versions the legacy `decryptTxMetadata` understands (0 = CBOR, 1 =
+    /// protobuf) and rejects everything else, so the guard holds even when a
+    /// caller bypasses the Kotlin `require` (e.g. through the FFI/JNI directly).
+    #[test]
+    fn seal_rejects_non_wire_versions() {
+        let key = [0x11u8; 32];
+        let iv = [0x22u8; 16];
+        let payload = b"opaque".to_vec();
+
+        // The two legal versions seal successfully.
+        assert!(seal_tx_metadata(&key, VERSION_CBOR, &iv, &payload).is_ok());
+        assert!(seal_tx_metadata(&key, VERSION_PROTOBUF, &iv, &payload).is_ok());
+
+        // Every other byte (2..=255) is rejected — none can be produced by
+        // sealing, so a non-decodable document can never reach the wire.
+        for version in 2u8..=255 {
+            assert!(
+                seal_tx_metadata(&key, version, &iv, &payload).is_err(),
+                "version {version} must be rejected as non-wire-decodable"
+            );
         }
     }
 
@@ -318,7 +363,7 @@ mod tests {
         let wrong = [0x44u8; 32];
         let iv = [0x55u8; 16];
         let payload = b"secret memo".to_vec();
-        let blob = seal_tx_metadata(&key, VERSION_PROTOBUF, &iv, &payload);
+        let blob = seal_tx_metadata(&key, VERSION_PROTOBUF, &iv, &payload).expect("valid version");
 
         match open_tx_metadata(&wrong, &blob) {
             Err(_) => {}
@@ -457,12 +502,14 @@ mod tests {
         let payload = b"external-signable round-trip".to_vec();
         let iv = [0x66u8; 16];
 
-        let sealed_by_resident = seal_tx_metadata(&resident_key, VERSION_PROTOBUF, &iv, &payload);
+        let sealed_by_resident =
+            seal_tx_metadata(&resident_key, VERSION_PROTOBUF, &iv, &payload).expect("valid version");
         let opened_by_master =
             open_tx_metadata(&master_key, &sealed_by_resident).expect("master key opens");
         assert_eq!(opened_by_master.payload, payload);
 
-        let sealed_by_master = seal_tx_metadata(&master_key, VERSION_PROTOBUF, &iv, &payload);
+        let sealed_by_master =
+            seal_tx_metadata(&master_key, VERSION_PROTOBUF, &iv, &payload).expect("valid version");
         let opened_by_resident =
             open_tx_metadata(&resident_key, &sealed_by_master).expect("resident key opens");
         assert_eq!(opened_by_resident.payload, payload);
@@ -490,7 +537,8 @@ mod tests {
         let plaintext_block: [u8; 16] = hex_lit("6bc1bee22e409f96e93d7e117393172a");
         let expected_ct_block1: [u8; 16] = hex_lit("f58c4c04d6e5f1ba779eabfb5f7bfbd6");
 
-        let blob = seal_tx_metadata(&key, VERSION_PROTOBUF, &iv, &plaintext_block);
+        let blob =
+            seal_tx_metadata(&key, VERSION_PROTOBUF, &iv, &plaintext_block).expect("valid version");
 
         // version ‖ IV ‖ ciphertext(2 blocks: data + PKCS7 pad).
         assert_eq!(blob.len(), 1 + 16 + 32, "1 version + 16 IV + 2 AES blocks");
