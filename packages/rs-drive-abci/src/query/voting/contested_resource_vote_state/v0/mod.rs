@@ -94,24 +94,16 @@ impl<C> Platform<C> {
             ))));
         }
 
-        let bincode_config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
-
         let index_values = match index_values
             .into_iter()
             .enumerate()
             .map(|(pos, serialized_value)| {
-                Ok(
-                    bincode::decode_from_slice(serialized_value.as_slice(), bincode_config)
-                        .map_err(|_| {
-                            QueryError::InvalidArgument(format!(
+                super::super::decode_serialized_index_value(serialized_value.as_slice(), || {
+                    format!(
                         "could not convert {:?} to a value in the index values at position {}",
                         serialized_value, pos
-                    ))
-                        })?
-                        .0,
-                )
+                    )
+                })
             })
             .collect::<Result<Vec<_>, QueryError>>()
         {
