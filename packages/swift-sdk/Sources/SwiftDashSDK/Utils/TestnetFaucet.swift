@@ -265,6 +265,19 @@ public struct TestnetFaucet {
             throw FaucetError.message("Unsupported captcha challenge (c=\(c), s=\(s), d=\(d))")
         }
 
+        // The per-field bounds alone still admit c=256, d=6 ≈ 4.3B expected
+        // attempts — enough to pin the CPU until the 30 s timeout on every
+        // tap. Cap the AGGREGATE expected work (c × 16^d). The live faucet's
+        // soft challenge is c=100, d=4 ≈ 6.6M attempts; 64M gives ~10×
+        // headroom for server-side tuning while keeping the worst case to a
+        // few seconds of parallel hashing.
+        let expectedWork = Double(c) * pow(16, Double(d))
+        guard expectedWork <= 64_000_000 else {
+            throw FaucetError.message(
+                "Captcha challenge too expensive (c=\(c), d=\(d), "
+                    + "expectedWork=\(Int(expectedWork)) > 64000000)")
+        }
+
         // Solve all c sub-challenges off the main actor, parallelized, under
         // an overall timeout so even an in-bounds-but-slow challenge can't
         // hang the UI indefinitely (the timeout cancels the solve tasks).
