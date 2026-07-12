@@ -234,9 +234,21 @@ open class KeystoreManager(
 
     /**
      * Whether [blob] opens under the non-auth-gated [KEYS_ALIAS_DEVICE_BOUND]
-     * sibling — probed PROMPT-FREE (that alias never gates) and WITHOUT
-     * generating a key (guarded on [hasIdentityKeysKey] presence; recovered
-     * plaintext is scrubbed immediately).
+     * sibling — probed PROMPT-FREE and WITHOUT generating a key (guarded on
+     * [hasIdentityKeysKey] presence; recovered plaintext is scrubbed
+     * immediately). "Prompt-free" means it never shows a biometric prompt: the
+     * DEVICE_BOUND alias carries no `setUserAuthenticationRequired` gate, so a
+     * positive result never blocks on user authentication. It is NOT
+     * unconditional, though — a lock-bound DEVICE_BOUND key still has
+     * `setUnlockedDeviceRequired`, so if this probe runs while the device is
+     * CURRENTLY LOCKED the decrypt throws `UserNotAuthenticatedException` (a
+     * [GeneralSecurityException] subclass), which the catch below treats as
+     * "cannot disprove" and returns false. That is the conservative direction:
+     * the caller ([WalletStorage.isPrivateKeyDecryptable]) then reports the blob
+     * decryptable rather than falsely offering repair, and the disproof simply
+     * defers to the next unlock (the same residual as the locked FORMER-RSA case
+     * documented below). In practice the key-health sheet runs in-app on an
+     * unlocked device, where the probe is live.
      *
      * An RSA-OAEP ciphertext opens under exactly one keypair, so a positive
      * result PROVES the blob belongs to the DEVICE_BOUND sibling rather than to
