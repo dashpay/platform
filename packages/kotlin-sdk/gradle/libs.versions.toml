@@ -20,6 +20,7 @@ androidxTestExtJunit = "1.2.1"
 androidxTestRunner = "1.6.2"
 espresso = "3.6.1"
 robolectric = "4.14.1"
+jreleaser = "1.17.0"
 
 [libraries]
 kotlinx-coroutines-core = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-core", version.ref = "coroutines" }
@@ -66,3 +67,4 @@ kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
 ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
+jreleaser = { id = "org.jreleaser", version.ref = "jreleaser" }
