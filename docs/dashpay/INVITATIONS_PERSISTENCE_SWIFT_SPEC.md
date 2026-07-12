@@ -186,9 +186,9 @@ unlike the Rust match). Entry point: a "Sent invitations" `NavigationLink` in `D
   the outpoint hex matching the created voucher. Then drive a second `store()` touching the same
   outpoint (or re-create) to confirm **upsert-in-place**, not a duplicate row. Reuse the proven
   DP-14 flow.
-- **T1 seam test:** even though reclaim is a v1 non-goal, add a create→(simulated
-  reclaim/removal)→row-deleted assertion so the upsert-key ↔ removal-key form is exercised before
-  reclaim ships. Otherwise the seam ships untested and bites when reclaim lands.
+- **T1 seam test:** a create→(simulated reclaim/removal)→row-deleted assertion pins the
+  upsert-key ↔ removal-key form. Reclaim ships in this PR (§8), and this seam is covered by
+  `InvitationPersistenceTests`; keep the assertion so a future key-form drift is caught.
 - **QA rows:** add DP-16 ("Sent invitations list reflects a created invitation; upsert-in-place on
   status change") to `TEST_PLAN.md` §4.10.
 

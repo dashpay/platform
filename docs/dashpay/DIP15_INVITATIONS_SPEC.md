@@ -378,7 +378,7 @@ reference's six loose query params. Rationale in §7. The payload is a small ver
 rejects it), so the envelope can evolve without breaking older links. The as-built wire order
 (see `crypto/invitation.rs`) is:
 
-```
+```text
 wire = version:u8               // = 0
      ‖ voucher_key:[u8; 32]     // one-time ECDSA private key (secret; zeroized)
      ‖ expiry_unix:u32(LE)      // ADVISORY, IS-scoped (§5.1); not consensus
