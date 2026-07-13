@@ -405,6 +405,24 @@ public final class SDK: @unchecked Sendable {
     quorumSource = .spv
   }
 
+  /// Revert this SDK's proof verification from SPV-synced quorums back to the
+  /// trusted HTTP quorum service it was created with. Because the provider slot
+  /// is shared across SDK clones, this also reverts a wallet manager's cloned
+  /// SDK. Requires the SDK to have been created via the trusted path.
+  public func restoreTrustedQuorums() throws {
+    guard let handle else {
+      throw SDKError.internalError("Cannot restore trusted quorums: SDK handle is nil")
+    }
+    let result = dash_sdk_restore_trusted_context_provider(handle)
+    if result.error != nil {
+      let error = result.error!.pointee
+      let message = error.message != nil ? String(cString: error.message!) : "Unknown error"
+      defer { dash_sdk_error_free(result.error) }
+      throw SDKError.internalError("Failed to restore trusted quorum provider: \(message)")
+    }
+    quorumSource = .trusted
+  }
+
   /// Run `body` with two optional C-string pointers. Each input string,
   /// when non-nil, is materialized into a NUL-terminated C buffer that is
   /// valid for the duration of the call; nil inputs pass through as nil

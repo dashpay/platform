@@ -506,9 +506,10 @@ pub unsafe extern "C" fn platform_wallet_manager_spv_clear_storage(
 /// list is synced (see `platform_wallet_manager_sync_progress`); before that,
 /// lookups fail closed (no per-lookup fallback once installed).
 ///
-/// The manager must have been created (`configure`d) against this same SDK
-/// before attaching — that ordering is what keeps the manager's own cloned SDK
-/// on its trusted provider (the SDK clone snapshots the provider slot).
+/// `dash_sdk::Sdk` shares its context-provider slot across clones, so this
+/// single install also switches the manager's own cloned SDK (used for wallet /
+/// DashPay sync) to SPV — both the app's queries and the manager's background
+/// sync verify against the same SPV-synced quorum data.
 ///
 /// # Safety
 /// - `manager_handle` must be a live `PlatformWalletManager` handle.

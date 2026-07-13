@@ -157,10 +157,17 @@ pub struct Sdk {
 
     /// Context provider used by the SDK.
     ///
+    /// Wrapped in `Arc` so the slot is **shared across clones**: a
+    /// [`set_context_provider`](Sdk::set_context_provider) on any clone is
+    /// observed by all of them. This lets a consumer that hands out SDK clones
+    /// (e.g. a wallet manager) swap the provider once and have every clone pick
+    /// it up — used to switch proof verification from a trusted quorum service
+    /// to SPV-synced quorums at runtime.
+    ///
     /// ## Panics
     ///
     /// Note that setting this to None can panic.
-    context_provider: ArcSwapOption<Box<dyn ContextProvider>>,
+    context_provider: Arc<ArcSwapOption<Box<dyn ContextProvider>>>,
 
     /// Protocol version number detected from the network. Shared between clones.
     protocol_version: Arc<atomic::AtomicU32>,
@@ -201,7 +208,10 @@ impl Clone for Sdk {
             inner: self.inner.clone(),
             proofs: self.proofs,
             nonce_cache: Arc::clone(&self.nonce_cache),
-            context_provider: ArcSwapOption::new(self.context_provider.load_full()),
+            // Share the provider slot (not a snapshot): a later
+            // `set_context_provider` on either the original or this clone is
+            // seen by both.
+            context_provider: Arc::clone(&self.context_provider),
             cancel_token: self.cancel_token.clone(),
             protocol_version: Arc::clone(&self.protocol_version),
             version_pinned: self.version_pinned,
@@ -1119,7 +1129,9 @@ impl SdkBuilder {
                     dapi_client_settings,
                     inner:SdkInstance::Dapi { dapi },
                     proofs:self.proofs,
-                    context_provider: ArcSwapOption::new( self.context_provider.map(Arc::new)),
+                    context_provider: Arc::new(ArcSwapOption::new(
+                        self.context_provider.map(Arc::new),
+                    )),
                     cancel_token: self.cancel_token,
                     nonce_cache: Default::default(),
                     // Seed atomic with the initial version; whether the version is
@@ -1194,7 +1206,7 @@ impl SdkBuilder {
                     nonce_cache: Default::default(),
                     protocol_version: Arc::new(atomic::AtomicU32::new(initial_version.protocol_version)),
                     version_pinned: self.version_pinned,
-                    context_provider: ArcSwapOption::new(Some(Arc::new(context_provider))),
+                    context_provider: Arc::new(ArcSwapOption::new(Some(Arc::new(context_provider)))),
                     cancel_token: self.cancel_token,
                     metadata_last_seen_height: Arc::new(atomic::AtomicU64::new(0)),
                     metadata_height_tolerance: self.metadata_height_tolerance,

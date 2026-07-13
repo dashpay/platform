@@ -347,8 +347,16 @@ struct OptionsView: View {
                         }
                     }
 
-                    Toggle("Fallback to Trusted Quorums", isOn: $appState.useTrustedQuorumFallback)
-                        .help("When enabled, proof verification stays on the trusted HTTP quorum provider until the SPV masternode list is synced, then switches to SPV. Disable to switch to SPV as soon as it is running (no trusted fallback; proofs fail until synced). Takes effect on the next SDK build.")
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Quorum Source")
+                        Picker("Quorum Source", selection: $appState.quorumMode) {
+                            ForEach(AppState.QuorumMode.allCases) { mode in
+                                Text(mode.label).tag(mode)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                    }
+                    .help("Which quorum public-key source to use for Platform proof verification, applied live. Auto: trusted until the SPV masternode list syncs, then SPV. SPV: force SPV now (proofs fail closed until synced; no trusted fallback). Trusted: force the trusted HTTP quorum service. The Proof Quorum Source below shows what is actually active.")
 
                     HStack {
                         Text("Proof Quorum Source")

@@ -175,7 +175,13 @@ struct SwiftExampleAppApp: App {
                 // already on SPV, and re-evaluated for the new manager after a
                 // network switch (which resets `quorumSource` to `.trusted`).
                 .onChange(of: walletManager.spvProgress) { _, _ in
-                    platformState.attachSpvIfReady(manager: walletManager)
+                    platformState.applyQuorumMode(manager: walletManager)
+                }
+                // Apply the Quorum Source picker (Auto / SPV / Trusted) live via
+                // a provider swap on the shared slot — no SDK rebuild, so it
+                // stays consistent with the manager's shared context provider.
+                .onChange(of: platformState.quorumMode) { _, _ in
+                    platformState.applyQuorumMode(manager: walletManager)
                 }
         }
     }

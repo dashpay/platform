@@ -601,6 +601,40 @@ pub unsafe extern "C" fn dash_sdk_install_context_provider(
     DashSDKResult::success(std::ptr::null_mut())
 }
 
+/// Restore the trusted HTTP quorum provider on an SDK that previously had an
+/// SPV provider installed via [`dash_sdk_install_context_provider`]. The
+/// trusted provider is the one captured at `dash_sdk_create_trusted` time, so
+/// this only works for SDKs created that way (returns an error otherwise).
+///
+/// Because the provider slot is shared across `Sdk` clones, this reverts both
+/// the app's SDK and any manager clone back to trusted proof verification.
+///
+/// # Safety
+/// - `sdk_handle` must be a valid `SDKHandle` for the duration of the call (or
+///   null, which returns an error).
+#[no_mangle]
+pub unsafe extern "C" fn dash_sdk_restore_trusted_context_provider(
+    sdk_handle: *mut SDKHandle,
+) -> DashSDKResult {
+    if sdk_handle.is_null() {
+        return DashSDKResult::error(DashSDKError::new(
+            DashSDKErrorCode::InvalidParameter,
+            "SDK handle is null".to_string(),
+        ));
+    }
+    let wrapper = &*(sdk_handle as *const SDKWrapper);
+    match &wrapper.trusted_provider {
+        Some(tp) => {
+            wrapper.sdk.set_context_provider(Arc::clone(tp));
+            DashSDKResult::success(std::ptr::null_mut())
+        }
+        None => DashSDKResult::error(DashSDKError::new(
+            DashSDKErrorCode::InvalidParameter,
+            "SDK has no stored trusted quorum provider to restore".to_string(),
+        )),
+    }
+}
+
 /// Register global context provider callbacks
 ///
 /// This must be called before creating an SDK instance that needs Core SDK functionality.
