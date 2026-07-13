@@ -7,9 +7,11 @@
 
 use bincode::config;
 use key_wallet::account::account_collection::AccountCollection;
-use key_wallet::account::{Account, AccountType, StandardAccountType};
+use key_wallet::account::{Account, AccountType, BLSAccount, EdDSAAccount, StandardAccountType};
 use key_wallet::bip32::DerivationPath;
 use key_wallet::bip32::ExtendedPubKey;
+use key_wallet::derivation_bls_bip32::ExtendedBLSPubKey;
+use key_wallet::derivation_slip10::ExtendedEd25519PubKey;
 use key_wallet::managed_account::address_pool::{AddressPool, AddressPoolType, PublicKeyType};
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
@@ -22,6 +24,7 @@ use crate::types::{FFINetwork, Network};
 use platform_wallet::changeset::{
     AccountAddressPoolEntry, AccountRegistrationEntry, ClientStartState, ClientWalletStartState,
     Merge, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
+    ProviderKeyAccountEntry, ProviderKeyExtendedPubKey,
 };
 use platform_wallet::wallet::platform_wallet::WalletId;
 use platform_wallet::wallet::{PerAccountPlatformAddressState, PerWalletPlatformAddressState};
@@ -48,8 +51,8 @@ use crate::wallet_registration_persistence::AccountAddressPoolFFI;
 use crate::wallet_restore_types::{
     AccountSpecFFI, AccountTypeTagFFI, ContactProfileRestoreEntryFFI, IdentityKeyRestoreFFI,
     IdentityRestoreEntryFFI, LoadWalletListFreeFn, PaymentRestoreEntryFFI,
-    StandardAccountTypeTagFFI, UnresolvedAssetLockTxRecordFFI, UtxoRestoreEntryFFI,
-    WalletRestoreEntryFFI,
+    ProviderPlatformNodeKeyFFI, StandardAccountTypeTagFFI, UnresolvedAssetLockTxRecordFFI,
+    UtxoRestoreEntryFFI, WalletRestoreEntryFFI,
 };
 use dpp::address_funds::PlatformAddress;
 use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
@@ -676,11 +679,15 @@ impl PlatformWalletPersistence for FFIPersister {
         // window — `AccountSpecFFI.account_xpub_bytes` borrows into
         // it. Same lifetime discipline the prior dedicated callback
         // used.
-        if !changeset.account_registrations.is_empty() {
+        if !changeset.account_registrations.is_empty()
+            || !changeset.provider_key_account_registrations.is_empty()
+        {
             if let Some(cb) = self.callbacks.on_persist_account_registrations_fn {
-                let entries = &changeset.account_registrations;
-                match build_account_specs_for_callback(entries) {
-                    Ok((specs, _xpub_bytes_storage)) => {
+                match build_account_specs_for_callback(
+                    &changeset.account_registrations,
+                    &changeset.provider_key_account_registrations,
+                ) {
+                    Ok((specs, _xpub_bytes_storage, _derived_keys_storage)) => {
                         let result = unsafe {
                             cb(
                                 self.callbacks.context,
@@ -689,11 +696,12 @@ impl PlatformWalletPersistence for FFIPersister {
                                 specs.len(),
                             )
                         };
-                        // Force the spec / byte buffers to live
-                        // until after the callback even though
-                        // their drop happens on scope exit anyway.
+                        // Force the spec / byte buffers / derived-key
+                        // buffers to live until after the callback even
+                        // though their drop happens on scope exit anyway.
                         drop(specs);
                         drop(_xpub_bytes_storage);
+                        drop(_derived_keys_storage);
                         if result != 0 {
                             eprintln!(
                                 "Account registrations persistence callback returned error code {}",
@@ -821,6 +829,49 @@ impl PlatformWalletPersistence for FFIPersister {
                         }
                         Err(e) => {
                             eprintln!("Failed to encode derived address pool entries: {}", e);
+                            round_success = false;
+                        }
+                    }
+                }
+            }
+
+            // Fan out used-flag flips AFTER the derived-address emit:
+            // a tx can land on a freshly-derived address in the same
+            // round, and the Swift-side `persistAccountAddresses`
+            // overwrites `isUsed` with whatever the latest emit says —
+            // derived-first (`is_used: false`) then marked-used
+            // (`is_used: true`) leaves the row correctly flipped.
+            // These entries carry the authoritative post-mark
+            // `AddressInfo` from the wallet's pools (see
+            // `CoreChangeSet::addresses_marked_used`), so reusing the
+            // whole-pool snapshot encoder is exact, not approximate.
+            if !core_cs.addresses_marked_used.is_empty() {
+                if let Some(cb) = self.callbacks.on_persist_account_address_pools_fn {
+                    let entries =
+                        group_marked_used_into_pool_entries(&core_cs.addresses_marked_used);
+                    match build_address_pools_for_callback(&entries) {
+                        Ok((pools, _address_storage, _string_storage)) => {
+                            let result = unsafe {
+                                cb(
+                                    self.callbacks.context,
+                                    wallet_id.as_ptr(),
+                                    pools.as_ptr(),
+                                    pools.len(),
+                                )
+                            };
+                            drop(pools);
+                            drop(_address_storage);
+                            drop(_string_storage);
+                            if result != 0 {
+                                eprintln!(
+                                    "Marked-used address persistence callback returned error code {}",
+                                    result
+                                );
+                                round_success = false;
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!("Failed to encode marked-used address pool entries: {}", e);
                             round_success = false;
                         }
                     }
@@ -2290,6 +2341,10 @@ fn build_account_spec_ffi(account_type: &AccountType, xpub_bytes: &[u8]) -> Acco
         friend_identity_id: [0u8; 32],
         account_xpub_bytes: xpub_bytes.as_ptr(),
         account_xpub_bytes_len: xpub_bytes.len(),
+        // Set by `build_account_specs_for_callback` for the
+        // `ProviderPlatformKeys` entry; null/0 for every other account.
+        derived_platform_node_keys: std::ptr::null(),
+        derived_platform_node_keys_count: 0,
     };
     // The producer side casts each `AccountTypeTagFFI` /
     // `StandardAccountTypeTagFFI` variant to `u8` because both fields
@@ -2383,28 +2438,94 @@ fn build_account_spec_ffi(account_type: &AccountType, xpub_bytes: &[u8]) -> Acco
 }
 
 /// Build the `Vec<AccountSpecFFI>` array for
-/// `on_persist_account_registrations_fn` plus the parallel
-/// `Vec<Vec<u8>>` of bincoded xpub byte buffers each spec borrows
-/// from. The two Vecs share lifetime — caller drops both after the
-/// callback returns.
+/// `on_persist_account_registrations_fn` plus the parallel storage each
+/// spec borrows into:
+/// 1. `Vec<Vec<u8>>` — bincoded xpub byte buffers
+///    (`account_xpub_bytes`).
+/// 2. `Vec<Vec<ProviderPlatformNodeKeyFFI>>` — one inner Vec per
+///    provider entry holding its pre-derived platform-node keys
+///    (`derived_platform_node_keys`); empty for the BLS operator entry
+///    and for every ECDSA account.
+///
+/// All three share lifetime — the caller must keep them alive until
+/// after the callback returns.
+#[allow(clippy::type_complexity)]
 fn build_account_specs_for_callback(
     entries: &[AccountRegistrationEntry],
-) -> Result<(Vec<AccountSpecFFI>, Vec<Vec<u8>>), String> {
-    // Pre-encode every xpub once so the spec slot can borrow the
-    // pointer + length without a self-referential lifetime trick.
-    let xpub_buffers: Vec<Vec<u8>> = entries
+    provider_entries: &[ProviderKeyAccountEntry],
+) -> Result<
+    (
+        Vec<AccountSpecFFI>,
+        Vec<Vec<u8>>,
+        Vec<Vec<ProviderPlatformNodeKeyFFI>>,
+    ),
+    String,
+> {
+    // Pre-encode every extended public key once so each spec slot can
+    // borrow the pointer + length without a self-referential lifetime
+    // trick. ECDSA accounts encode their secp256k1 `ExtendedPubKey`;
+    // provider key accounts (BLS operator / EdDSA platform node)
+    // encode their own-curve extended public key into the same slot —
+    // the `type_tag` disambiguates the decode on the restore side.
+    let mut xpub_buffers: Vec<Vec<u8>> = Vec::with_capacity(entries.len() + provider_entries.len());
+    for entry in entries {
+        let bytes = bincode::encode_to_vec(entry.account_xpub, config::standard())
+            .map_err(|e| format!("failed to encode account xpub: {}", e))?;
+        xpub_buffers.push(bytes);
+    }
+    for entry in provider_entries {
+        let bytes = match &entry.extended_public_key {
+            ProviderKeyExtendedPubKey::Bls(key) => bincode::encode_to_vec(key, config::standard())
+                .map_err(|e| format!("failed to encode provider BLS xpub: {}", e))?,
+            ProviderKeyExtendedPubKey::EdDSA(key) => {
+                bincode::encode_to_vec(key, config::standard())
+                    .map_err(|e| format!("failed to encode provider EdDSA xpub: {}", e))?
+            }
+        };
+        xpub_buffers.push(bytes);
+    }
+
+    // Pre-derived platform-node key storage, index-aligned to
+    // `provider_entries`. Built to completion BEFORE any spec borrows a
+    // pointer into it so the inner Vecs never move under a live pointer.
+    let derived_storage: Vec<Vec<ProviderPlatformNodeKeyFFI>> = provider_entries
         .iter()
         .map(|entry| {
-            bincode::encode_to_vec(entry.account_xpub, config::standard())
-                .map_err(|e| format!("failed to encode account xpub: {}", e))
+            entry
+                .derived_platform_node_keys
+                .iter()
+                .map(|k| ProviderPlatformNodeKeyFFI {
+                    index: k.index,
+                    public_key: k.public_key,
+                    node_id: k.node_id,
+                })
+                .collect()
         })
-        .collect::<Result<_, _>>()?;
-    let specs: Vec<AccountSpecFFI> = entries
-        .iter()
-        .zip(xpub_buffers.iter())
-        .map(|(entry, bytes)| build_account_spec_ffi(&entry.account_type, bytes))
         .collect();
-    Ok((specs, xpub_buffers))
+
+    let mut specs: Vec<AccountSpecFFI> = Vec::with_capacity(xpub_buffers.len());
+    let mut idx = 0;
+    for entry in entries {
+        specs.push(build_account_spec_ffi(
+            &entry.account_type,
+            &xpub_buffers[idx],
+        ));
+        idx += 1;
+    }
+    for (p_idx, entry) in provider_entries.iter().enumerate() {
+        let mut spec = build_account_spec_ffi(&entry.account_type, &xpub_buffers[idx]);
+        // Point at the pre-built (stable) derived-key storage for this
+        // provider entry. Empty for the BLS operator account, so its
+        // spec keeps the null/0 default from `build_account_spec_ffi`.
+        let rows = &derived_storage[p_idx];
+        if !rows.is_empty() {
+            spec.derived_platform_node_keys = rows.as_ptr();
+            spec.derived_platform_node_keys_count = rows.len();
+        }
+        specs.push(spec);
+        idx += 1;
+    }
+    Ok((specs, xpub_buffers, derived_storage))
 }
 
 /// Build the `Vec<AccountAddressPoolFFI>` array for
@@ -2801,6 +2922,38 @@ fn build_address_pools_from_derived(
     Ok((pools, address_storage, owned_strings))
 }
 
+/// Bucket the changeset's marked-used address entries into
+/// [`AccountAddressPoolEntry`] values so the used-flag flip rides the
+/// same `build_address_pools_for_callback` →
+/// `on_persist_account_address_pools_fn` pipeline the registration
+/// snapshot and derived-address emits already use — one Swift code
+/// path (`persistAccountAddresses`) covers all three.
+///
+/// Grouping key is `(account_type, pool_type)`, mirroring
+/// `build_address_pools_from_derived`. Each entry's `AddressInfo` is
+/// the authoritative post-mark pool snapshot the bridge captured
+/// (`used == true`), so no field synthesis happens here.
+fn group_marked_used_into_pool_entries(
+    marked: &[key_wallet::transaction_checking::DerivedAddressInfo],
+) -> Vec<AccountAddressPoolEntry> {
+    let mut entries: Vec<AccountAddressPoolEntry> = Vec::new();
+    for d in marked {
+        if let Some(bucket) = entries
+            .iter_mut()
+            .find(|e| e.account_type == d.account_type && e.pool_type == d.pool_type)
+        {
+            bucket.addresses.push(d.info.clone());
+        } else {
+            entries.push(AccountAddressPoolEntry {
+                account_type: d.account_type,
+                pool_type: d.pool_type,
+                addresses: vec![d.info.clone()],
+            });
+        }
+    }
+    entries
+}
+
 /// RAII drop-guard that invokes the paired free callback on exit, so
 /// any error path through `FFIPersister::load` still returns memory
 /// to Swift.
@@ -2877,6 +3030,68 @@ fn build_wallet_start_state(
         };
         let xpub_bytes =
             unsafe { slice_from_raw(spec.account_xpub_bytes, spec.account_xpub_bytes_len) };
+
+        // Provider key-material accounts (BLS operator keys / EdDSA
+        // platform node keys) live in dedicated `Option` fields on the
+        // collection and carry a non-secp256k1 extended public key in
+        // the same `account_xpub_bytes` slot. Rebuild them watch-only
+        // via the type-specific `new` + insert methods rather than the
+        // ECDSA `Account::from_xpub` / `insert` path (which would fail
+        // to decode the bytes and reject the provider `AccountType`).
+        match account_type {
+            AccountType::ProviderOperatorKeys => {
+                let (bls_pubkey, _): (ExtendedBLSPubKey, usize) =
+                    bincode::decode_from_slice(xpub_bytes, config::standard()).map_err(|e| {
+                        PersistenceError::backend(format!(
+                            "failed to decode provider BLS xpub: {}",
+                            e
+                        ))
+                    })?;
+                let bls_account = BLSAccount::new(
+                    Some(entry.wallet_id.to_vec()),
+                    account_type,
+                    bls_pubkey,
+                    network,
+                )
+                .map_err(|e| {
+                    PersistenceError::backend(format!("BLSAccount::new failed: {:?}", e))
+                })?;
+                accounts.insert_bls_account(bls_account).map_err(|e| {
+                    PersistenceError::backend(format!(
+                        "AccountCollection::insert_bls_account failed: {}",
+                        e
+                    ))
+                })?;
+                continue;
+            }
+            AccountType::ProviderPlatformKeys => {
+                let (ed_pubkey, _): (ExtendedEd25519PubKey, usize) =
+                    bincode::decode_from_slice(xpub_bytes, config::standard()).map_err(|e| {
+                        PersistenceError::backend(format!(
+                            "failed to decode provider EdDSA xpub: {}",
+                            e
+                        ))
+                    })?;
+                let eddsa_account = EdDSAAccount::new(
+                    Some(entry.wallet_id.to_vec()),
+                    account_type,
+                    ed_pubkey,
+                    network,
+                )
+                .map_err(|e| {
+                    PersistenceError::backend(format!("EdDSAAccount::new failed: {:?}", e))
+                })?;
+                accounts.insert_eddsa_account(eddsa_account).map_err(|e| {
+                    PersistenceError::backend(format!(
+                        "AccountCollection::insert_eddsa_account failed: {}",
+                        e
+                    ))
+                })?;
+                continue;
+            }
+            _ => {}
+        }
+
         let (account_xpub, _): (ExtendedPubKey, usize) =
             bincode::decode_from_slice(xpub_bytes, config::standard()).map_err(|e| {
                 PersistenceError::backend(format!("failed to decode account xpub: {}", e))
@@ -3137,6 +3352,9 @@ fn build_wallet_start_state(
             friend_identity_id: u.friend_identity_id,
             account_xpub_bytes: std::ptr::null(),
             account_xpub_bytes_len: 0,
+            // Irrelevant to `account_type_from_spec` routing.
+            derived_platform_node_keys: std::ptr::null(),
+            derived_platform_node_keys_count: 0,
         };
         // Skip-and-continue is correct ONLY for the legacy
         // `IdentityAuthentication{Ecdsa,Bls}` tag bytes (15 / 16)
@@ -5080,5 +5298,94 @@ mod tests {
         );
 
         unsafe { free_contact_requests_ffi(rows.as_mut_ptr(), rows.len()) };
+    }
+
+    /// Stub one marked-used entry at `(account_type, pool_type, index)`
+    /// for the grouping test. Only the grouping key and the `used`
+    /// flag matter here.
+    fn stub_marked_used(
+        account_type: AccountType,
+        pool_type: AddressPoolType,
+        index: u32,
+    ) -> key_wallet::transaction_checking::DerivedAddressInfo {
+        use key_wallet::bip32::{ChildNumber, DerivationPath};
+        // Compressed secp256k1 generator point — a well-known valid key.
+        const TEST_PUBKEY_G: [u8; 33] = [
+            0x02, 0x79, 0xbe, 0x66, 0x7e, 0xf9, 0xdc, 0xbb, 0xac, 0x55, 0xa0, 0x62, 0x95, 0xce,
+            0x87, 0x0b, 0x07, 0x02, 0x9b, 0xfc, 0xdb, 0x2d, 0xce, 0x28, 0xd9, 0x59, 0xf2, 0x81,
+            0x5b, 0x16, 0xf8, 0x17, 0x98,
+        ];
+        let pubkey =
+            dashcore::PublicKey::from_slice(&TEST_PUBKEY_G).expect("generator point is valid");
+        let address = dashcore::Address::p2pkh(&pubkey, Network::Testnet);
+        let script_pubkey = address.script_pubkey();
+        let path = DerivationPath::from(vec![
+            ChildNumber::from_normal_idx(0).expect("valid child number"),
+            ChildNumber::from_normal_idx(index).expect("valid child number"),
+        ]);
+        key_wallet::transaction_checking::DerivedAddressInfo {
+            account_type,
+            pool_type,
+            info: AddressInfo {
+                address,
+                script_pubkey,
+                public_key: Some(PublicKeyType::ECDSA(TEST_PUBKEY_G.to_vec())),
+                index,
+                path,
+                used: true,
+                generated_at: 0,
+                used_at: None,
+                tx_count: 0,
+                total_received: 0,
+                total_sent: 0,
+                balance: 0,
+                label: None,
+                metadata: BTreeMap::new(),
+            },
+        }
+    }
+
+    /// Marked-used entries bucket into one `AccountAddressPoolEntry`
+    /// per `(account_type, pool_type)` pair — the shape
+    /// `build_address_pools_for_callback` expects — and every emitted
+    /// address keeps `used == true` so the Swift persister flips the
+    /// row instead of resetting it.
+    #[test]
+    fn marked_used_entries_group_per_account_and_pool() {
+        let bip44 = AccountType::Standard {
+            index: 0,
+            standard_account_type: StandardAccountType::BIP44Account,
+        };
+        let owner_keys = AccountType::ProviderOwnerKeys;
+
+        let marked = vec![
+            stub_marked_used(bip44, AddressPoolType::External, 0),
+            stub_marked_used(bip44, AddressPoolType::External, 3),
+            stub_marked_used(bip44, AddressPoolType::Internal, 1),
+            stub_marked_used(owner_keys, AddressPoolType::Absent, 0),
+        ];
+
+        let entries = group_marked_used_into_pool_entries(&marked);
+        assert_eq!(entries.len(), 3, "one bucket per (account, pool) pair");
+
+        let bip44_external = entries
+            .iter()
+            .find(|e| e.account_type == bip44 && e.pool_type == AddressPoolType::External)
+            .expect("bip44 external bucket");
+        assert_eq!(bip44_external.addresses.len(), 2);
+
+        let owner_bucket = entries
+            .iter()
+            .find(|e| e.account_type == owner_keys)
+            .expect("provider owner keys bucket");
+        assert_eq!(owner_bucket.pool_type, AddressPoolType::Absent);
+        assert_eq!(owner_bucket.addresses.len(), 1);
+        assert!(
+            entries
+                .iter()
+                .flat_map(|e| e.addresses.iter())
+                .all(|a| a.used),
+            "every emitted marked-used address must carry used == true"
+        );
     }
 }

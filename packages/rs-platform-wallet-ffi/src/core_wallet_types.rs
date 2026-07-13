@@ -305,6 +305,20 @@ impl WalletChangeSetFFI {
             }
         }
 
+        // Watermark-only accounts still need an `AccountChangeSetFFI`
+        // row. A batch can carry a highest-used advance for an account
+        // with no record of its own this round — e.g. upstream's
+        // `confirm_transaction` returning `None` for an idempotent
+        // re-confirmation while `mark_address_used` still ran, or the
+        // bridge's re-check resolving a sibling account of the same
+        // category. Without an empty bucket the watermark would be
+        // silently dropped below.
+        for account_type in cs.account_highest_used.keys() {
+            if !by_account.iter().any(|(at, _)| at == account_type) {
+                by_account.push((*account_type, Vec::new()));
+            }
+        }
+
         let mut ffi_accounts = Vec::with_capacity(by_account.len());
         for (account_type, recs) in by_account {
             let type_name = CString::new(format!("{:?}", account_type))
@@ -338,6 +352,16 @@ impl WalletChangeSetFFI {
             // sync-path emit for the same account collapse onto a
             // single SwiftData row.
             let tags = account_type_to_tags(&account_type);
+            // Post-batch highest-used watermarks, captured by the
+            // event bridge from the authoritative in-memory pools for
+            // every account this batch marked an address used on
+            // (`CoreChangeSet::account_highest_used`). `has_* = false`
+            // means "no update this batch" — the Swift persister only
+            // overwrites its row when the flag is set, so batches
+            // without usage never regress a stored watermark.
+            let highest = cs.account_highest_used.get(&account_type);
+            let external_highest_used = highest.and_then(|h| h.external);
+            let internal_highest_used = highest.and_then(|h| h.internal);
             ffi_accounts.push(AccountChangeSetFFI {
                 account_type_name: type_name.into_raw(),
                 account_index,
@@ -357,15 +381,10 @@ impl WalletChangeSetFFI {
                 utxos_instant_locked_count: 0,
                 transactions: vec_to_ptr(transactions),
                 transactions_count,
-                // Highest-used pool indices were a feature of the
-                // deleted upstream changeset's per-account bucket.
-                // The new event-bus model doesn't surface them; the
-                // persister can derive them from monitored addresses
-                // if needed.
-                external_highest_used: -1,
-                has_external_highest_used: false,
-                internal_highest_used: -1,
-                has_internal_highest_used: false,
+                external_highest_used: external_highest_used.map_or(-1, |v| v as i32),
+                has_external_highest_used: external_highest_used.is_some(),
+                internal_highest_used: internal_highest_used.map_or(-1, |v| v as i32),
+                has_internal_highest_used: internal_highest_used.is_some(),
             });
         }
 
@@ -1086,4 +1105,55 @@ pub unsafe fn free_wallet_changeset_ffi(cs: &WalletChangeSetFFI) {
         cs.accounts_count,
         cs.accounts_count,
     ));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use key_wallet::account::{AccountType, StandardAccountType};
+    use platform_wallet::changeset::{CoreChangeSet, HighestUsedIndexes};
+
+    /// A batch can carry a highest-used advance for an account with no
+    /// record of its own in the same `store()` round (idempotent
+    /// re-confirmation, sibling-account resolution). `from_changeset`
+    /// must still surface it as an (otherwise empty) account bucket —
+    /// regression for the shape where the watermark was silently
+    /// dropped because buckets were built from `cs.records` alone.
+    #[test]
+    fn watermark_only_account_survives_from_changeset() {
+        let account = AccountType::Standard {
+            index: 0,
+            standard_account_type: StandardAccountType::BIP44Account,
+        };
+        let mut cs = CoreChangeSet::default();
+        cs.account_highest_used.insert(
+            account,
+            HighestUsedIndexes {
+                external: Some(7),
+                internal: Some(3),
+            },
+        );
+
+        let ffi = WalletChangeSetFFI::from_changeset(&cs);
+        assert_eq!(ffi.accounts_count, 1, "watermark-only account must emit");
+        let bucket = unsafe { &*ffi.accounts };
+        assert!(bucket.has_external_highest_used);
+        assert_eq!(bucket.external_highest_used, 7);
+        assert!(bucket.has_internal_highest_used);
+        assert_eq!(bucket.internal_highest_used, 3);
+        assert_eq!(bucket.transactions_count, 0);
+        assert_eq!(bucket.utxos_added_count, 0);
+        unsafe { free_wallet_changeset_ffi(&ffi) };
+    }
+
+    /// The `has_*` flags stay false (values -1) for accounts with
+    /// records but no watermark update this batch, so the Swift
+    /// persister never regresses a stored value on a no-usage round.
+    #[test]
+    fn accounts_without_watermarks_emit_unset_flags() {
+        let cs = CoreChangeSet::default();
+        let ffi = WalletChangeSetFFI::from_changeset(&cs);
+        assert_eq!(ffi.accounts_count, 0);
+        unsafe { free_wallet_changeset_ffi(&ffi) };
+    }
 }

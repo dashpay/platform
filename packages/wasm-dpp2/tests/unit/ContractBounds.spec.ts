@@ -52,7 +52,7 @@ describe('ContractBounds', () => {
 
       const json = bounds.toJSON();
       expect(json).to.deep.equal({
-        type: 'singleContract',
+        $type: 'singleContract',
         id: contractIdBase58,
       });
     });
@@ -62,7 +62,7 @@ describe('ContractBounds', () => {
 
       const json = bounds.toJSON();
       expect(json).to.deep.equal({
-        type: 'documentType',
+        $type: 'documentType',
         id: contractIdBase58,
         documentTypeName: 'profile',
       });
@@ -72,7 +72,7 @@ describe('ContractBounds', () => {
   describe('fromJSON()', () => {
     it('should create SingleContract from JSON fixture and verify getters', () => {
       const fixture = {
-        type: 'singleContract',
+        $type: 'singleContract',
         id: contractIdBase58,
       };
 
@@ -85,7 +85,7 @@ describe('ContractBounds', () => {
 
     it('should create SingleContractDocumentType from JSON fixture and verify getters', () => {
       const fixture = {
-        type: 'documentType',
+        $type: 'documentType',
         id: contractIdBase58,
         documentTypeName: 'profile',
       };
@@ -103,7 +103,7 @@ describe('ContractBounds', () => {
       const bounds = wasm.ContractBounds.SingleContract(contractIdBase58);
 
       const obj = bounds.toObject();
-      expect(obj.type).to.equal('singleContract');
+      expect(obj.$type).to.equal('singleContract');
       expect(obj.id).to.be.instanceOf(Uint8Array);
       expect(wasm.Identifier.fromBytes(obj.id).toHex()).to.equal(contractIdHex);
     });
@@ -112,7 +112,7 @@ describe('ContractBounds', () => {
       const bounds = wasm.ContractBounds.SingleContractDocumentType(contractIdBase58, 'profile');
 
       const obj = bounds.toObject();
-      expect(obj.type).to.equal('documentType');
+      expect(obj.$type).to.equal('documentType');
       expect(obj.id).to.be.instanceOf(Uint8Array);
       expect(wasm.Identifier.fromBytes(obj.id).toHex()).to.equal(contractIdHex);
       expect(obj.documentTypeName).to.equal('profile');
@@ -122,7 +122,7 @@ describe('ContractBounds', () => {
   describe('fromObject()', () => {
     it('should create SingleContract from Object fixture and verify getters', () => {
       const obj = {
-        type: 'singleContract',
+        $type: 'singleContract',
         id: contractIdBase58,
       };
 
@@ -135,7 +135,7 @@ describe('ContractBounds', () => {
 
     it('should create SingleContractDocumentType from Object fixture and verify getters', () => {
       const obj = {
-        type: 'documentType',
+        $type: 'documentType',
         id: contractIdBase58,
         documentTypeName: 'profile',
       };

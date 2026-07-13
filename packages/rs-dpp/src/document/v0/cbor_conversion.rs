@@ -5,9 +5,7 @@ use crate::prelude::{BlockHeight, CoreBlockHeight, Revision};
 
 use crate::ProtocolError;
 
-use crate::document::serialization_traits::{
-    DocumentCborMethodsV0, DocumentPlatformValueMethodsV0,
-};
+use crate::document::serialization_traits::DocumentCborMethodsV0;
 use crate::document::v0::DocumentV0;
 use crate::version::PlatformVersion;
 use ciborium::Value as CborValue;
@@ -191,8 +189,13 @@ impl DocumentCborMethodsV0 for DocumentV0 {
     }
 
     fn to_cbor_value(&self) -> Result<CborValue, ProtocolError> {
-        self.to_object()
-            .map(|v| v.try_into().map_err(ProtocolError::ValueError))?
+        // After Phase D step 8 slice A, the V0 trait `to_object` was
+        // deleted (1:1 canonical equivalent). Inline the body —
+        // `IdentityPublicKeyV0` doesn't derive `ValueConvertible` directly
+        // (only the outer `Document` enum does), so we go through
+        // `platform_value::to_value` directly.
+        let value = platform_value::to_value(self).map_err(ProtocolError::ValueError)?;
+        value.try_into().map_err(ProtocolError::ValueError)
     }
 
     /// Serializes the Document to CBOR.

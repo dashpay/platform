@@ -1,15 +1,16 @@
 const { InvalidDocumentError } = require('../../../..');
-const getDocumentsFixture = require('../../../../lib/test/fixtures/getDocumentsFixture');
 
 describe('InvalidDocumentError', () => {
   let rawDocument;
   let error;
 
-  beforeEach(async () => {
+  beforeEach(() => {
     error = new Error('Some error');
 
-    const [document] = await getDocumentsFixture();
-    rawDocument = document.toObject();
+    // ExtendedDocument no longer exposes toObject(); InvalidDocumentError stores
+    // the raw document opaquely (round-tripped as a JsValue), so a representative
+    // plain object is sufficient for these wrapper tests.
+    rawDocument = { $type: 'niceDocument', name: 'someName' };
   });
 
   it('should return errors', () => {

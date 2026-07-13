@@ -8,7 +8,7 @@ use crate::shielded::address_witness::{AddressWitnessWasm, input_witnesses_from_
 use crate::shielded::orchard_action::{SerializedOrchardActionWasm, actions_from_js_options};
 use crate::utils::try_vec_to_fixed_bytes;
 use crate::utils::{try_from_options_optional_with, try_to_u16};
-use crate::{impl_wasm_conversions_serde, impl_wasm_type_info};
+use crate::{impl_wasm_conversions_inner, impl_wasm_type_info};
 use dpp::prelude::UserFeeIncrease;
 use dpp::serialization::{PlatformDeserializable, PlatformSerializable};
 use dpp::state_transition::shield_transition::ShieldTransition;
@@ -280,8 +280,9 @@ impl ShieldTransitionWasm {
     }
 }
 
-impl_wasm_conversions_serde!(
+impl_wasm_conversions_inner!(
     ShieldTransitionWasm,
+    ShieldTransition,
     ShieldTransition,
     ShieldTransitionObjectJs,
     ShieldTransitionJSONJs

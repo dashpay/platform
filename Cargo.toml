@@ -52,15 +52,17 @@ members = [
 [workspace.dependencies]
 # TODO(pin): tracks dashpay/rust-dashcore#851 (draft) — key-wallet
 # out-of-order UTXO spend fix (#649). Bump to the merged `dev` SHA once
-# that PR lands.
-dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "b3fb82445a3a0ac1a9c1ff6f8c18c7201d08c1e5" }
-dash-network-seeds = { git = "https://github.com/dashpay/rust-dashcore", rev = "b3fb82445a3a0ac1a9c1ff6f8c18c7201d08c1e5" }
-dash-spv = { git = "https://github.com/dashpay/rust-dashcore", rev = "b3fb82445a3a0ac1a9c1ff6f8c18c7201d08c1e5" }
-key-wallet = { git = "https://github.com/dashpay/rust-dashcore", rev = "b3fb82445a3a0ac1a9c1ff6f8c18c7201d08c1e5" }
-key-wallet-ffi = { git = "https://github.com/dashpay/rust-dashcore", rev = "b3fb82445a3a0ac1a9c1ff6f8c18c7201d08c1e5" }
-key-wallet-manager = { git = "https://github.com/dashpay/rust-dashcore", rev = "b3fb82445a3a0ac1a9c1ff6f8c18c7201d08c1e5" }
-dash-network = { git = "https://github.com/dashpay/rust-dashcore", rev = "b3fb82445a3a0ac1a9c1ff6f8c18c7201d08c1e5" }
-dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", rev = "b3fb82445a3a0ac1a9c1ff6f8c18c7201d08c1e5" }
+# that PR lands. 2026-07-13: re-pinned to #851's head after it merged
+# `dev` forward (was 30 commits behind actual dev HEAD) — this SHA is a
+# strict superset of both the fix and current upstream `dev`.
+dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "be6e776d69af9f31ec622898176e4b33bdc969d3" }
+dash-network-seeds = { git = "https://github.com/dashpay/rust-dashcore", rev = "be6e776d69af9f31ec622898176e4b33bdc969d3" }
+dash-spv = { git = "https://github.com/dashpay/rust-dashcore", rev = "be6e776d69af9f31ec622898176e4b33bdc969d3" }
+key-wallet = { git = "https://github.com/dashpay/rust-dashcore", rev = "be6e776d69af9f31ec622898176e4b33bdc969d3" }
+key-wallet-ffi = { git = "https://github.com/dashpay/rust-dashcore", rev = "be6e776d69af9f31ec622898176e4b33bdc969d3" }
+key-wallet-manager = { git = "https://github.com/dashpay/rust-dashcore", rev = "be6e776d69af9f31ec622898176e4b33bdc969d3" }
+dash-network = { git = "https://github.com/dashpay/rust-dashcore", rev = "be6e776d69af9f31ec622898176e4b33bdc969d3" }
+dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", rev = "be6e776d69af9f31ec622898176e4b33bdc969d3" }
 
 tokio-metrics = "0.5"
 

@@ -13,26 +13,26 @@ use wasm_bindgen::prelude::wasm_bindgen;
 const TS_TYPES: &str = r#"
 /**
  * Vote serialized as a plain object.
+ *
+ * Internally tagged with `$type` ($-prefix because the level also carries
+ * the inner ResourceVote's `$formatVersion`). The single ResourceVote
+ * variant flattens its V0 body — no `data` wrapper.
  */
 export interface VoteObject {
-    type: "resourceVote";
-    data: {
-        $formatVersion: string;
-        votePoll: VotePollObject;
-        resourceVoteChoice: ResourceVoteChoiceObject;
-    };
+    $type: "resourceVote";
+    $formatVersion: string;
+    votePoll: VotePollObject;
+    resourceVoteChoice: ResourceVoteChoiceObject;
 }
 
 /**
  * Vote serialized as JSON.
  */
 export interface VoteJSON {
-    type: "resourceVote";
-    data: {
-        $formatVersion: string;
-        votePoll: VotePollJSON;
-        resourceVoteChoice: ResourceVoteChoiceJSON;
-    };
+    $type: "resourceVote";
+    $formatVersion: string;
+    votePoll: VotePollJSON;
+    resourceVoteChoice: ResourceVoteChoiceJSON;
 }
 "#;
 

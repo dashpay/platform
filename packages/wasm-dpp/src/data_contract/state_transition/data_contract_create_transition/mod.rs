@@ -15,7 +15,9 @@ use dpp::state_transition::{
     StateTransitionIdentitySigned, StateTransitionOwned, StateTransitionSingleSigned,
 };
 
-use dpp::state_transition::{StateTransition, StateTransitionValueConvert};
+use dpp::serialization::ValueConvertible;
+use dpp::state_transition::StateTransition;
+use dpp::state_transition::StateTransitionFieldTypes;
 use dpp::version::PlatformVersion;
 use dpp::{state_transition::StateTransitionLike, ProtocolError};
 use serde::Serialize;
@@ -47,14 +49,32 @@ impl From<DataContractCreateTransitionWasm> for DataContractCreateTransition {
 impl DataContractCreateTransitionWasm {
     #[wasm_bindgen(constructor)]
     pub fn new(value: JsValue) -> Result<DataContractCreateTransitionWasm, JsValue> {
-        let platform_value = PlatformVersion::first();
-
-        DataContractCreateTransition::from_object(
-            value.with_serde_to_platform_value()?,
-            platform_value,
-        )
-        .map(Into::into)
-        .with_js_error()
+        use dpp::platform_value::Value;
+        let mut raw = value.with_serde_to_platform_value()?;
+        // Canonical `ValueConvertible::from_object` is a strict serde
+        // deserialization: it dispatches on the enum's `$formatVersion` tag and
+        // requires every field. Legacy JS clients construct a transition from
+        // its essential inputs (data contract + identity nonce) and sign it
+        // afterwards, so default the format tag plus the protocol-managed and
+        // signature fields they omit — preserving the lenient construction the
+        // pre-canonical path provided.
+        if let Value::Map(ref mut entries) = raw {
+            let mut ensure = |key: &str, default: Value| {
+                if !entries
+                    .iter()
+                    .any(|(k, _)| matches!(k, Value::Text(s) if s == key))
+                {
+                    entries.push((Value::Text(key.to_string()), default));
+                }
+            };
+            ensure("$formatVersion", Value::Text("0".to_string()));
+            ensure("userFeeIncrease", Value::U16(0));
+            ensure("signaturePublicKeyId", Value::U32(0));
+            ensure("signature", Value::Bytes(vec![]));
+        }
+        DataContractCreateTransition::from_object(raw)
+            .map(Into::into)
+            .with_js_error()
     }
 
     #[wasm_bindgen(js_name=getDataContract)]
@@ -187,10 +207,17 @@ impl DataContractCreateTransitionWasm {
 
     #[wasm_bindgen(js_name=toObject)]
     pub fn to_object(&self, skip_signature: Option<bool>) -> Result<JsValue, JsValue> {
-        let serde_object = self
-            .0
-            .to_cleaned_object(skip_signature.unwrap_or(false))
-            .map_err(from_protocol_error)?;
+        let mut serde_object = self.0.to_object().map_err(from_protocol_error)?;
+
+        if skip_signature.unwrap_or(false) {
+            for path in
+                <DataContractCreateTransition as StateTransitionFieldTypes>::signature_property_paths()
+            {
+                serde_object
+                    .remove_values_matching_path(path)
+                    .map_err(|e| from_protocol_error(dpp::ProtocolError::ValueError(e)))?;
+            }
+        }
 
         let serializer = serde_wasm_bindgen::Serializer::json_compatible();
 

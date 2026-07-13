@@ -561,6 +561,46 @@ mod tests {
     }
 
     #[test]
+    fn sanitize_document_properties_converts_integer_array_bytearray_to_bytes() {
+        // A binary property re-hydrated through a schemaless JSON layer (an edited
+        // and replaced cached document) arrives as a plain array of numbers that
+        // decode to wider Value integer variants (U64), not Value::U8. Sanitize must
+        // normalize it to Value::Bytes so the strict binary serializer accepts it;
+        // otherwise the replace fails with "not an array of bytes".
+        let schema = platform_value!({
+            "type": "object",
+            "properties": {
+                "payload": {
+                    "type": "array",
+                    "byteArray": true,
+                    "minItems": 1_u32,
+                    "maxItems": 64_u32,
+                    "position": 0
+                }
+            },
+            "additionalProperties": false,
+        });
+        let dt = build_doc_type("blob_doc", schema);
+        let mut props: BTreeMap<String, Value> = BTreeMap::new();
+        props.insert(
+            "payload".to_string(),
+            Value::Array(vec![
+                Value::U64(0xde),
+                Value::U64(0xad),
+                Value::U64(0xbe),
+                Value::U64(0xef),
+            ]),
+        );
+
+        dt.as_ref().sanitize_document_properties_ref(&mut props);
+
+        match props.get("payload").unwrap() {
+            Value::Bytes(bytes) => assert_eq!(bytes.as_slice(), &[0xde, 0xad, 0xbe, 0xef]),
+            other => panic!("expected sanitized Bytes, got {:?}", other),
+        }
+    }
+
+    #[test]
     fn sanitize_document_properties_leaves_unknown_fields_untouched() {
         let schema = platform_value!({
             "type": "object",

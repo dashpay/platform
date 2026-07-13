@@ -1,6 +1,7 @@
 import SwiftUI
 import SwiftData
 import SwiftDashSDK
+import UIKit
 
 // MARK: - Shared Helpers
 
@@ -1555,6 +1556,18 @@ struct AccountStorageDetailView: View {
 struct CoreAddressDetailView: View {
     let record: PersistentCoreAddress
 
+    @EnvironmentObject private var walletManager: PlatformWalletManager
+
+    /// The revealed key material, held only after the user confirms.
+    /// `nil` keeps the section in its "View Private Key" gated state.
+    @State private var privateKey: ManagedPlatformWallet.CoreAddressPrivateKey?
+    @State private var showRevealConfirm = false
+    @State private var isRevealing = false
+    @State private var revealError: String?
+    /// Label of the row whose value was just copied, for a transient
+    /// "Copied" confirmation.
+    @State private var copiedLabel: String?
+
     var body: some View {
         Form {
             Section("Address") {
@@ -1572,6 +1585,7 @@ struct CoreAddressDetailView: View {
                         : record.publicKey.map { String(format: "%02x", $0) }.joined()
                 )
             }
+            privateKeySection
             Section("Balance / Activity") {
                 FieldRow(label: "Balance", value: "\(record.balance)")
                 FieldRow(
@@ -1594,6 +1608,127 @@ struct CoreAddressDetailView: View {
         }
         .navigationTitle("Address")
         .navigationBarTitleDisplayMode(.inline)
+    }
+
+    /// Reveal-gated private-key section. Before reveal it shows a single
+    /// "View Private Key" button that pops a confirmation dialog (this is
+    /// a developer example app, so a plain confirm — no biometrics — is
+    /// enough). After the user confirms, the derived hex + WIF are shown
+    /// monospaced with tap-to-copy.
+    @ViewBuilder
+    private var privateKeySection: some View {
+        Section("Private Key") {
+            if let key = privateKey {
+                copyableKeyRow(label: "Hex", value: key.hex)
+                copyableKeyRow(label: "WIF", value: key.wif)
+                Text("Anyone with this key controls this address's funds. Never share it.")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            } else {
+                Button {
+                    showRevealConfirm = true
+                } label: {
+                    HStack {
+                        Image(systemName: "key.fill")
+                        Text(isRevealing ? "Revealing…" : "View Private Key")
+                    }
+                }
+                .disabled(isRevealing)
+
+                if let revealError {
+                    Text(revealError)
+                        .font(.caption)
+                        .foregroundColor(.red)
+                }
+            }
+        }
+        .confirmationDialog(
+            "Reveal Private Key?",
+            isPresented: $showRevealConfirm,
+            titleVisibility: .visible
+        ) {
+            Button("Reveal Private Key", role: .destructive) { reveal() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("The private key grants full control of this address's funds. Only reveal it somewhere private.")
+        }
+    }
+
+    /// One monospaced key row (hex or WIF) with tap-to-copy and a
+    /// transient "Copied" confirmation.
+    @ViewBuilder
+    private func copyableKeyRow(label: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text(label).foregroundColor(.secondary)
+                Spacer()
+                if copiedLabel == label {
+                    Label("Copied", systemImage: "checkmark")
+                        .font(.caption2)
+                        .foregroundColor(.green)
+                } else {
+                    Image(systemName: "doc.on.doc")
+                        .font(.caption)
+                        .foregroundColor(.accentColor)
+                }
+            }
+            Text(value)
+                .font(.system(.footnote, design: .monospaced))
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .contentShape(Rectangle())
+        .onTapGesture { copy(value, label: label) }
+    }
+
+    /// Look up the owning wallet and ask Rust to derive this address's
+    /// private key. All derivation happens on the Rust side; the mnemonic
+    /// is pulled on demand via the resolver and never enters Swift.
+    private func reveal() {
+        guard let walletId = record.account?.wallet.walletId else {
+            revealError = "This address is not linked to a wallet."
+            return
+        }
+        guard let wallet = walletManager.wallet(for: walletId) else {
+            revealError = "The owning wallet is not loaded."
+            return
+        }
+        isRevealing = true
+        revealError = nil
+        // Off the main thread: the synchronous FFI's resolver reads the
+        // iOS Keychain, which can stall. Mirrors
+        // `AccountDetailView.revealPrivateKey(index:)`.
+        Task {
+            do {
+                let key = try wallet.coreAddressPrivateKey(address: record.address)
+                await MainActor.run {
+                    privateKey = key
+                    isRevealing = false
+                }
+            } catch {
+                await MainActor.run {
+                    revealError = error.localizedDescription
+                    isRevealing = false
+                }
+            }
+        }
+    }
+
+    private func copy(_ value: String, label: String) {
+        // This copies a raw private key / WIF to the system-wide
+        // pasteboard, which other apps and clipboard managers can read and
+        // Universal Clipboard syncs across devices. Set a short expiry so
+        // the secret doesn't linger there indefinitely. Fine for this demo
+        // app; a production wallet should avoid clipboard export of secrets
+        // (or gate it far more tightly).
+        UIPasteboard.general.setItems(
+            [["public.utf8-plain-text": value]],
+            options: [.expirationDate: Date().addingTimeInterval(60)]
+        )
+        copiedLabel = label
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+            if copiedLabel == label { copiedLabel = nil }
+        }
     }
 }
 

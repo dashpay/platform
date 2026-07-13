@@ -198,7 +198,7 @@ describe('IdentityCreateFromAddressesTransition', () => {
       const obj = transition.toObject();
 
       expect(obj.feeStrategy).to.be.an('array');
-      expect(obj.feeStrategy[0].type).to.be.oneOf(['deductFromInput', 'reduceOutput']);
+      expect(obj.feeStrategy[0].$type).to.be.oneOf(['deductFromInput', 'reduceOutput']);
       expect(obj.feeStrategy[0].index).to.be.a('number');
     });
 
@@ -210,7 +210,7 @@ describe('IdentityCreateFromAddressesTransition', () => {
       expect(json.inputs[0].nonce).to.equal(0);
       expect(json.output).to.be.an('object');
       expect(json.output.address).to.be.a('string').with.lengthOf(42);
-      expect(json.feeStrategy[0].type).to.be.oneOf(['deductFromInput', 'reduceOutput']);
+      expect(json.feeStrategy[0].$type).to.be.oneOf(['deductFromInput', 'reduceOutput']);
     });
 
     it('fromObject(toObject()) round-trips identically', () => {

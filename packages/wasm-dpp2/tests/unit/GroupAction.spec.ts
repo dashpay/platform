@@ -11,18 +11,24 @@ describe('GroupAction', () => {
   // Mint(amount, recipientId, publicNote)
   const recipientIdBase58 = '4fJLR2GYTPFdomuTVvNy3VRrvWgvkKPzqehEBpNf2nk6';
 
-  // JSON fixture for a GroupAction V0 containing a TokenEvent::Mint
+  // JSON fixture for a GroupAction V0 containing a TokenEvent::Mint.
+  //
+  // Wire shape after rs-dpp PR #3573 (json-value unification):
+  //   - GroupAction:      `tag = "$formatVersion"`, V0 → "0" (unchanged)
+  //   - GroupActionEvent: internally tagged `$kind:` (was adjacent `type/data`)
+  //   - TokenEvent:       custom Serialize emits flat named fields
+  //                       (was adjacent `type/data`-with-positional-tuple)
   const jsonFixture = {
     $formatVersion: '0',
     contract_id: contractIdBase58,
     proposer_id: proposerIdBase58,
     token_contract_position: 0,
     event: {
-      type: 'tokenEvent',
-      data: {
-        type: 'mint',
-        data: [1000, recipientIdBase58, 'test mint note'],
-      },
+      $kind: 'tokenEvent',
+      $type: 'mint',
+      amount: 1000,
+      recipient: recipientIdBase58,
+      publicNote: 'test mint note',
     },
   };
 
@@ -88,22 +94,21 @@ describe('GroupAction', () => {
 describe('GroupActionEvent', () => {
   const recipientIdBase58 = '4fJLR2GYTPFdomuTVvNy3VRrvWgvkKPzqehEBpNf2nk6';
 
-  // TokenEvent::Freeze(frozenIdentifier, publicNote)
+  // GroupActionEvent: internally tagged `$kind:` (was adjacent `type/data`).
+  // Inner TokenEvent now flat-named — see TokenEvent describe block below.
   const freezeEventFixture = {
-    type: 'tokenEvent',
-    data: {
-      type: 'freeze',
-      data: [recipientIdBase58, 'freeze note'],
-    },
+    $kind: 'tokenEvent',
+    $type: 'freeze',
+    frozenIdentifier: recipientIdBase58,
+    publicNote: 'freeze note',
   };
 
-  // TokenEvent::Mint(amount, recipientId, publicNote)
   const mintEventFixture = {
-    type: 'tokenEvent',
-    data: {
-      type: 'mint',
-      data: [500, recipientIdBase58, null],
-    },
+    $kind: 'tokenEvent',
+    $type: 'mint',
+    amount: 500,
+    recipient: recipientIdBase58,
+    publicNote: null,
   };
 
   describe('fromJSON()', () => {
@@ -177,22 +182,28 @@ describe('GroupActionEvent', () => {
 describe('TokenEvent', () => {
   const recipientIdBase58 = '4fJLR2GYTPFdomuTVvNy3VRrvWgvkKPzqehEBpNf2nk6';
 
-  // TokenEvent::Mint(amount, recipientId, publicNote)
+  // TokenEvent now uses a custom Serialize impl that maps positional tuple
+  // fields to named JSON keys (`amount` / `recipient` / `burnFromIdentifier` /
+  // `frozenIdentifier` / `publicNote` / etc.), internally tagged with `$type:`,
+  // no `data` wrapper. Old shape was `{ $type: 'mint', data: [<positional>] }`.
   const mintFixture = {
-    type: 'mint',
-    data: [1000, recipientIdBase58, 'mint note'],
+    $type: 'mint',
+    amount: 1000,
+    recipient: recipientIdBase58,
+    publicNote: 'mint note',
   };
 
-  // TokenEvent::Burn(amount, burnFromId, publicNote)
   const burnFixture = {
-    type: 'burn',
-    data: [500, recipientIdBase58, null],
+    $type: 'burn',
+    amount: 500,
+    burnFromIdentifier: recipientIdBase58,
+    publicNote: null,
   };
 
-  // TokenEvent::Freeze(frozenId, publicNote)
   const freezeFixture = {
-    type: 'freeze',
-    data: [recipientIdBase58, 'frozen'],
+    $type: 'freeze',
+    frozenIdentifier: recipientIdBase58,
+    publicNote: 'frozen',
   };
 
   describe('fromJSON()', () => {

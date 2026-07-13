@@ -77,9 +77,10 @@ impl Domain {
 /// Domains carrying data in `cs`. The destructure is exhaustive (no `..`), so
 /// adding a field to `PlatformWalletChangeSet` is a compile error here until
 /// it gains a `Domain` variant and an arm below — the R8 forgotten-domain
-/// guard. The feature-gated `shielded` field is bound under the storage
-/// crate's pass-through `shielded` feature; storage versions no shielded state
-/// here, so it is deliberately ignored, not mapped to a domain.
+/// guard. Two fields are bound and deliberately ignored rather than mapped:
+/// `shielded` (feature-gated; storage versions no shielded state here) and
+/// `provider_key_account_registrations` (deferred — see the comment on its
+/// binding below).
 pub fn touched_domains(cs: &PlatformWalletChangeSet) -> Vec<Domain> {
     let PlatformWalletChangeSet {
         core,
@@ -93,6 +94,7 @@ pub fn touched_domains(cs: &PlatformWalletChangeSet) -> Vec<Domain> {
         dashpay_payments_overlay,
         wallet_metadata,
         account_registrations,
+        provider_key_account_registrations,
         account_address_pools,
         pending_contact_crypto_added,
         pending_contact_crypto_cleared,
@@ -101,6 +103,13 @@ pub fn touched_domains(cs: &PlatformWalletChangeSet) -> Vec<Domain> {
     } = cs;
     #[cfg(feature = "shielded")]
     let _ = shielded;
+    // `provider_key_account_registrations` (BLS operator-key / EdDSA
+    // platform-node-key accounts) carries a live data path — both key types are
+    // default-on — but is not yet mapped to a `Domain`. Deferred, not dropped:
+    // nothing ever persisted it (this persister is new, so there is no
+    // regression), and no consumer reads it back yet. Tracked in
+    // https://github.com/dashpay/platform/issues/4113.
+    let _ = provider_key_account_registrations;
 
     // A sub-changeset carried but empty (`Some(default)`) is not a real
     // change; the `Merge::is_empty` bound is the shared emptiness contract.

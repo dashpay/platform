@@ -1,15 +1,11 @@
 pub mod accessors;
 pub mod fields;
 mod identity_signed;
-#[cfg(feature = "json-conversion")]
-mod json_conversion;
 pub mod methods;
 mod state_transition_estimated_fee_validation;
 mod state_transition_like;
 pub mod v0;
 mod v0_methods;
-#[cfg(feature = "value-conversion")]
-mod value_conversion;
 mod version;
 
 #[cfg(feature = "json-conversion")]
@@ -110,10 +106,10 @@ mod test {
     use crate::state_transition::{
         StateTransitionEstimatedFeeValidation, StateTransitionHasUserFeeIncrease,
         StateTransitionIdentityEstimatedFeeValidation, StateTransitionLike, StateTransitionOwned,
-        StateTransitionSingleSigned, StateTransitionType, StateTransitionValueConvert,
+        StateTransitionSingleSigned, StateTransitionType,
     };
     use crate::version::LATEST_PLATFORM_VERSION;
-    use platform_value::{BinaryData, Identifier, Value};
+    use platform_value::{BinaryData, Identifier};
 
     fn make_update() -> IdentityUpdateTransition {
         IdentityUpdateTransition::V0(IdentityUpdateTransitionV0 {
@@ -231,48 +227,11 @@ mod test {
         assert!(!result.is_valid());
     }
 
-    #[test]
-    fn test_value_conversion_roundtrip() {
-        let t = make_update();
-        let obj = StateTransitionValueConvert::to_object(&t, false).expect("should work");
-        let restored = <IdentityUpdateTransition as StateTransitionValueConvert>::from_object(
-            obj,
-            LATEST_PLATFORM_VERSION,
-        )
-        .expect("should work");
-        assert_eq!(t, restored);
-    }
-
-    #[test]
-    fn test_from_value_map() {
-        let t = make_update();
-        let obj = StateTransitionValueConvert::to_object(&t, false).expect("should work");
-        let map = obj.into_btree_string_map().expect("should be map");
-        let restored = <IdentityUpdateTransition as StateTransitionValueConvert>::from_value_map(
-            map,
-            LATEST_PLATFORM_VERSION,
-        )
-        .expect("should work");
-        assert_eq!(t, restored);
-    }
-
-    #[test]
-    fn test_from_object_unknown_version() {
-        let value = Value::from([("$stateTransitionProtocolVersion", Value::U16(255))]);
-        let result = <IdentityUpdateTransition as StateTransitionValueConvert>::from_object(
-            value,
-            LATEST_PLATFORM_VERSION,
-        );
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_clean_value_unknown_version() {
-        let mut value = Value::from([("$stateTransitionProtocolVersion", Value::U8(255))]);
-        let result =
-            <IdentityUpdateTransition as StateTransitionValueConvert>::clean_value(&mut value);
-        assert!(result.is_err());
-    }
+    // Legacy `StateTransitionValueConvert` round-trip and
+    // unknown-version tests deleted in Phase D step 9. The canonical
+    // `JsonConvertible` / `ValueConvertible` round-trip is exercised on
+    // the outer enum derive (see `json_convertible_tests` below) — these
+    // tested methods that no longer exist.
 
     #[test]
     fn test_into_from_v0() {
@@ -281,5 +240,84 @@ mod test {
         match t {
             IdentityUpdateTransition::V0(inner) => assert_eq!(inner, v0),
         }
+    }
+}
+
+#[cfg(all(
+    test,
+    feature = "json-conversion",
+    feature = "value-conversion",
+    feature = "serde-conversion"
+))]
+pub(crate) mod json_convertible_tests {
+    use super::*;
+
+    use platform_value::{platform_value, BinaryData, Identifier};
+    use serde_json::json;
+
+    pub(crate) fn fixture() -> IdentityUpdateTransition {
+        IdentityUpdateTransition::V0(IdentityUpdateTransitionV0 {
+            identity_id: Identifier::new([0x55; 32]),
+            revision: 3,
+            nonce: 17,
+            add_public_keys: vec![],
+            disable_public_keys: vec![1, 2, 3],
+            user_fee_increase: 4,
+            signature_public_key_id: 6,
+            signature: BinaryData::new(vec![0xd4; 65]),
+        })
+    }
+
+    #[test]
+    fn json_round_trip_with_full_wire_shape() {
+        use crate::serialization::JsonConvertible;
+        let original = fixture();
+        let json = original.to_json().expect("to_json");
+        // Sized-int fields whose JSON wire encoding loses size info:
+        // `revision` (u64), `nonce` (u64), `userFeeIncrease` (u16),
+        // `signaturePublicKeyId` (u32), `disablePublicKeys` items (u32 KeyIDs).
+        // The value-path assertion below uses explicit suffixes to lock variants.
+        assert_eq!(
+            json,
+            json!({
+                "$formatVersion": "0",
+                "identityId": Identifier::new([0x55; 32]),
+                "revision": 3,
+                "nonce": 17,
+                "addPublicKeys": [],
+                "disablePublicKeys": [1, 2, 3],
+                "userFeeIncrease": 4,
+                "signaturePublicKeyId": 6,
+                "signature": "1NTU1NTU1NTU1NTU1NTU1NTU1NTU1NTU1NTU1NTU1NTU1NTU1NTU1NTU1NTU1NTU1NTU1NTU1NTU1NTU1NTU1NQ=",
+            })
+        );
+        let recovered = IdentityUpdateTransition::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn value_round_trip_with_full_wire_shape() {
+        use crate::serialization::ValueConvertible;
+        let original = fixture();
+        let value = original.to_object().expect("to_object");
+        // Explicit suffixes lock in sized variants: `revision` u64, `nonce` u64,
+        // `userFeeIncrease` u16, `signaturePublicKeyId` u32 (KeyID),
+        // `disablePublicKeys` items u32 (KeyID).
+        assert_eq!(
+            value,
+            platform_value!({
+                "$formatVersion": "0",
+                "identityId": Identifier::new([0x55; 32]),
+                "revision": 3u64,
+                "nonce": 17u64,
+                "addPublicKeys": Vec::<platform_value::Value>::new(),
+                "disablePublicKeys": [1u32, 2u32, 3u32],
+                "userFeeIncrease": 4u16,
+                "signaturePublicKeyId": 6u32,
+                "signature": BinaryData::new(vec![0xd4; 65]),
+            })
+        );
+        let recovered = IdentityUpdateTransition::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
     }
 }
