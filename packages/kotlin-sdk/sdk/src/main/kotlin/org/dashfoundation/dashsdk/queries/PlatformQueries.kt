@@ -3,6 +3,9 @@ package org.dashfoundation.dashsdk.queries
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
 import org.dashfoundation.dashsdk.Sdk
 import org.dashfoundation.dashsdk.errors.mapNativeErrors
 import org.dashfoundation.dashsdk.ffi.NativeCleaner
@@ -655,6 +658,30 @@ class DataContractRef internal constructor(handle: Long) : AutoCloseable {
     }
 }
 
+/**
+ * Unwrap the first document object from a `dash_sdk_document_search` response.
+ *
+ * The FFI returns a JSON object `{"documents":[ {...}, ... ],"total_count":N}`
+ * (see `dash_sdk_document_search` in rs-sdk-ffi), so a single-document fetch
+ * has to reach into `documents[0]`. Older builds returned a bare array
+ * `[ {...} ]`, so that shape is still accepted defensively — mirroring
+ * `DocumentsScreen.parseDocuments` in the example app.
+ *
+ * Returns the first document as a compact JSON object string, or null when the
+ * response is blank, malformed, or carries no documents.
+ */
+internal fun unwrapFirstDocument(response: String?): String? {
+    if (response.isNullOrBlank()) return null
+    val root = runCatching { Json.parseToJsonElement(response) }.getOrNull() ?: return null
+    val documents = when (root) {
+        is JsonArray -> root
+        is JsonObject -> root["documents"] as? JsonArray ?: return null
+        else -> return null
+    }
+    val first = documents.firstOrNull() as? JsonObject ?: return null
+    return first.toString()
+}
+
 class Documents internal constructor(private val sdk: Sdk) {
 
     /**
@@ -663,7 +690,8 @@ class Documents internal constructor(private val sdk: Sdk) {
      * where clause (rs-sdk-ffi exposes single-document fetch only as an
      * opaque handle, which has no JSON serializer across the FFI). The
      * document id is base58, so it needs no JSON escaping. Returns the first
-     * matching document object, unwrapped from the search array, or null.
+     * matching document object, unwrapped from the search response's
+     * `documents` array (see [unwrapFirstDocument]), or null.
      */
     suspend fun fetch(
         contract: DataContractRef,
@@ -671,18 +699,12 @@ class Documents internal constructor(private val sdk: Sdk) {
         documentId: String,
     ): String? = withContext(Dispatchers.IO) {
         val whereJson = """[{"field":"${'$'}id","operator":"=","value":"$documentId"}]"""
-        val array = mapNativeErrors {
+        val response = mapNativeErrors {
             QueriesNative.documentSearch(
                 sdk.handle, contract.value, documentType, whereJson, null, 1, 0,
             )
         } ?: return@withContext null
-        // Unwrap the single element from the JSON array `[ {...} ]`. Empty
-        // (`[]`) means not found → null. Kept as a raw substring so this
-        // wrapper stays serialization-library-free like its siblings.
-        val trimmed = array.trim()
-        if (!trimmed.startsWith("[")) return@withContext null
-        val inner = trimmed.removePrefix("[").removeSuffix("]").trim()
-        if (inner.isEmpty()) null else inner
+        unwrapFirstDocument(response)
     }
 
     /** Search documents; returns a JSON array. */
