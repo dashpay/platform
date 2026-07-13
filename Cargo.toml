@@ -97,6 +97,13 @@ opt-level = 3
 opt-level = 3
 [profile.dev.package.grovedb-commitment-tree]
 opt-level = 3
+# Same reasoning for Argon2id: a debug-built KDF is memory-hard by design, so
+# an unoptimized one costs seconds per derivation and dominates any test that
+# unlocks a `platform-wallet-storage` vault. `platform-wallet-storage` is the
+# only workspace member that compiles argon2, so this override touches nothing
+# else here despite the workspace-global syntax.
+[profile.dev.package.argon2]
+opt-level = 3
 
 [profile.test.package.halo2_proofs]
 opt-level = 3
@@ -109,6 +116,8 @@ opt-level = 3
 [profile.test.package.pasta_curves]
 opt-level = 3
 [profile.test.package.grovedb-commitment-tree]
+opt-level = 3
+[profile.test.package.argon2]
 opt-level = 3
 
 [workspace.package]
