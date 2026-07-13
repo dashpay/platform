@@ -328,7 +328,6 @@ struct SwiftExampleAppApp: App {
         let network = platformState.currentNetwork
         let manager = walletManager
         let store = walletManagerStore
-        let generation = store.spvStartGeneration
         let decision = CoreSpvAutoStart.decision(
             alreadyLatched: didAutoStartCoreSpv,
             hasWallets: !manager.wallets.isEmpty,
@@ -336,6 +335,16 @@ struct SwiftExampleAppApp: App {
         )
         if decision.shouldLatch { didAutoStartCoreSpv = true }
         guard decision.shouldStart else { return }
+
+        // Symmetry with the Start button's "latest wins": supersede any
+        // prior in-flight start, then capture our own fresh generation
+        // synchronously before the await. The latch above already prevents
+        // auto-start from arming twice, so this is belt-and-suspenders —
+        // done only on the shouldStart path so a bail (e.g. already
+        // running) never bumps the generation and cancels a legitimate
+        // pending start.
+        store.invalidatePendingSpvStarts()
+        let generation = store.spvStartGeneration
 
         do {
             try await CoreSpvLauncher.start(

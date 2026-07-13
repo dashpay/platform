@@ -72,13 +72,30 @@ final class WalletManagerStore: ObservableObject {
     /// closures only.
     private(set) var spvStartGeneration: UInt64 = 0
 
-    /// Invalidate every in-flight SPV start. Call at the earliest
-    /// synchronous point of any path that stops or replaces a manager
-    /// (network switch, devnet/SDK rebuild, peer-config change) so a
-    /// start suspended in the stop→activate gap bails instead of
-    /// reviving the superseded manager.
+    /// Invalidate every in-flight SPV start.
+    ///
+    /// Invariant: **every user-visible or programmatic stop / replace of
+    /// the active manager's SPV must bump the generation first.** Call
+    /// this at the earliest synchronous point of any such path (network
+    /// switch, devnet/SDK rebuild, peer-config change, a Stop/Pause
+    /// button) so a start suspended in the stop→activate gap bails
+    /// instead of reviving the superseded manager. User-facing stop
+    /// buttons should route through `stopSpvCancellingPendingStarts(_:)`
+    /// so they can't forget; supersession flows (see `OptionsView`)
+    /// invalidate explicitly at their flow's earliest sync point.
     func invalidatePendingSpvStarts() {
         spvStartGeneration &+= 1
+    }
+
+    /// Stop `manager`'s SPV client after cancelling any in-flight
+    /// `CoreSpvLauncher.start`. The blessed path for every user-visible
+    /// or programmatic SPV stop of the active manager: it bumps the
+    /// generation first, so a start suspended in peer resolution can't
+    /// resume and revive sync after the stop. Best-effort stop (`try?`),
+    /// matching the raw call sites it replaces.
+    func stopSpvCancellingPendingStarts(_ manager: PlatformWalletManager) {
+        invalidatePendingSpvStarts()
+        try? manager.stopSpv()
     }
 
     /// Per-network managers. Lazily populated on first activation

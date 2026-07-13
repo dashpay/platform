@@ -766,9 +766,16 @@ var body: some View {
         // during the peer lookup, `stillCurrent` reports a generation
         // mismatch (or a swapped-out manager) and the start bails rather
         // than reviving sync on the abandoned network.
+        //
+        // Bump the generation FIRST so rapid Start taps (before the 1 Hz
+        // poll flips `spvIsRunning`) collapse to "latest wins": each tap
+        // supersedes any prior still-pending start. Capture our own fresh
+        // generation immediately after — synchronously, before any await —
+        // so we don't cancel ourselves.
         let network = platformState.currentNetwork
         let manager = walletManager
         let store = walletManagerStore
+        store.invalidatePendingSpvStarts()
         let generation = store.spvStartGeneration
         Task {
             do {
@@ -790,10 +797,10 @@ var body: some View {
     }
 
     private func pauseSync() {
-        // Cancel any in-flight start so a fast Start→Pause can't have the
-        // start resume and revive sync after the user paused.
-        walletManagerStore.invalidatePendingSpvStarts()
-        try? walletManager.stopSpv()
+        // Cancel any in-flight start (so a fast Start→Pause can't resume
+        // and revive sync after the pause) then stop, via the blessed
+        // helper.
+        walletManagerStore.stopSpvCancellingPendingStarts(walletManager)
     }
 
     private func clearSyncData() {
