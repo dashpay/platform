@@ -66,6 +66,23 @@ impl KdfParams {
         }
     }
 
+    /// The fastest configuration [`enforce_bounds`] still accepts — the
+    /// enforced floor itself. Test-only: it is what
+    /// [`SecretStore::file_mock`] derives at so a downstream suite does not
+    /// pay the 64 MiB target per call (#4111).
+    ///
+    /// [`enforce_bounds`]: KdfParams::enforce_bounds
+    /// [`SecretStore::file_mock`]: crate::secrets::SecretStore::file_mock
+    #[cfg(any(test, feature = "test-util"))]
+    pub(crate) fn floor_target() -> Self {
+        Self {
+            id: KDF_ID_ARGON2ID,
+            m_kib: ARGON2_MIN_M_KIB,
+            t: ARGON2_MIN_T,
+            p: ARGON2_P,
+        }
+    }
+
     /// Reject out-of-bounds params before any derivation/allocation: the
     /// lower bound refuses a downgraded vault, the upper bound an inflated
     /// one (huge allocation / unbounded derivation ahead of any tag
@@ -203,12 +220,7 @@ mod tests {
     /// Argon2id floor params — fast enough for unit tests; production
     /// runs at the default target (64 MiB).
     fn floor_params() -> KdfParams {
-        KdfParams {
-            id: KDF_ID_ARGON2ID,
-            m_kib: ARGON2_MIN_M_KIB,
-            t: ARGON2_MIN_T,
-            p: ARGON2_P,
-        }
+        KdfParams::floor_target()
     }
 
     #[test]

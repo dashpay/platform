@@ -96,6 +96,17 @@ pub struct EncryptedFileStore {
     /// Shared clone of [`EncryptedFileStoreInner::durability_uncertain`] so
     /// the pollable accessor reads it WITHOUT taking the state lock.
     durability_uncertain: Arc<AtomicU64>,
+    /// Argon2 params this store DERIVES at: the header written by a fresh
+    /// vault or a [`rekey`](Self::rekey), and the per-secret Tier-2 wrap
+    /// (via [`kdf_params`](Self::kdf_params)). Always
+    /// [`KdfParams::default_target`] except on a mock store
+    /// ([`open_mock`](Self::open_mock)), which floors it (#4111).
+    ///
+    /// Read-only after open and `Copy`, so `rekey` reads it without taking
+    /// the state lock — preserving its derive-outside-the-lock property.
+    /// It does NOT describe an already-existing vault: unlocking one always
+    /// re-derives under the params in ITS header.
+    kdf: KdfParams,
 }
 
 /// Resident store state behind a single [`Mutex`] so every mutation sees
@@ -159,7 +170,65 @@ impl EncryptedFileStore {
         // must use [`open_unprotected`](Self::open_unprotected). No vault
         // file is created or altered for a blank passphrase.
         reject_weak_passphrase(&passphrase)?;
-        Self::open_inner(path.as_ref(), passphrase)
+        Self::open_inner(path.as_ref(), passphrase, KdfParams::default_target())
+    }
+
+    /// [`open`](Self::open), but every Argon2id derivation this store
+    /// performs runs at the enforced FLOOR instead of the shipped 64 MiB
+    /// target — the fastest configuration the crate's own bounds check
+    /// still accepts. Covers both the vault-unlock derivation here and the
+    /// per-secret Tier-2 wrap inside
+    /// [`SecretStore::set_secret`](crate::secrets::SecretStore::set_secret) /
+    /// [`reprotect`](crate::secrets::SecretStore::reprotect).
+    ///
+    /// **Test-only.** A downstream suite that drives real end-to-end
+    /// `SecretStore` flows otherwise pays a production-strength KDF per call
+    /// (#4111). The resulting vault is REAL — same formats, same AAD
+    /// binding, same fail-closed reads — merely cheap to attack. Never build
+    /// one over a vault that holds live secrets.
+    ///
+    /// Two independent gates keep it out of production:
+    /// 1. compile-time — the `test-util` feature (or `cfg(test)`);
+    /// 2. runtime — the [panic](#panics) below, in case feature unification
+    ///    silently switches `test-util` on for a release build.
+    ///
+    /// # Panics
+    ///
+    /// Panics unless the build has `debug_assertions` on, or is this crate's
+    /// own test harness. `cfg!(debug_assertions)` is a runtime *value*, not a
+    /// `debug_assert!` — it is evaluated in every profile, so the check is
+    /// present precisely in the optimized build it defends. A release build
+    /// that reaches this constructor is a build-graph bug, and handing back a
+    /// weak-crypto store instead of stopping would be the worse failure.
+    /// `cargo test --release` on a DOWNSTREAM crate is indistinguishable from
+    /// that bug and panics too; such a suite must keep `debug-assertions = true`.
+    ///
+    /// An EXISTING vault is still unlocked under the params in its own header
+    /// — a mock store cannot make a production vault cheap to open.
+    #[cfg(any(test, feature = "test-util"))]
+    // Constant per build — that IS the design. It folds away in a test build
+    // and folds to an unconditional panic in the release build it guards, so
+    // the cost is zero exactly where it must be and the stop is certain
+    // exactly where it matters. A `const {}` assert would instead break the
+    // BUILD, taking `--release --all-features` down with it; the refusal
+    // belongs at the call, not at every consumer's compile.
+    #[expect(
+        clippy::assertions_on_constants,
+        reason = "build-configuration guard: folds to `panic!` iff test-util reached a release build"
+    )]
+    pub fn open_mock(
+        path: impl AsRef<Path>,
+        passphrase: SecretString,
+    ) -> Result<Self, SecretStoreError> {
+        assert!(
+            cfg!(debug_assertions) || cfg!(test),
+            "EncryptedFileStore::open_mock derives at the Argon2id floor and is test-only, \
+             but this build has debug_assertions off — the `test-util` feature reached a \
+             release build (likely via feature unification). Refusing to hand back a \
+             weak-crypto vault."
+        );
+        reject_weak_passphrase(&passphrase)?;
+        Self::open_inner(path.as_ref(), passphrase, KdfParams::floor_target())
     }
 
     /// Open (or create) a **deliberately keyless** vault — the only door
@@ -171,13 +240,23 @@ impl EncryptedFileStore {
     /// keyless door, distinct from [`open`](Self::open) (which now rejects a
     /// blank passphrase).
     pub fn open_unprotected(path: impl AsRef<Path>) -> Result<Self, SecretStoreError> {
-        Self::open_inner(path.as_ref(), SecretString::empty())
+        Self::open_inner(
+            path.as_ref(),
+            SecretString::empty(),
+            KdfParams::default_target(),
+        )
     }
 
-    /// Shared open/create core for [`open`](Self::open) and
-    /// [`open_unprotected`](Self::open_unprotected). Does NOT apply the
-    /// blank-passphrase guard — the public doors decide that.
-    fn open_inner(path: &Path, passphrase: SecretString) -> Result<Self, SecretStoreError> {
+    /// Shared open/create core for [`open`](Self::open),
+    /// [`open_unprotected`](Self::open_unprotected) and
+    /// [`open_mock`](Self::open_mock). Does NOT apply the blank-passphrase
+    /// guard — the public doors decide that. `kdf` is the params a FRESH
+    /// vault is created under; an existing one keeps its own header.
+    fn open_inner(
+        path: &Path,
+        passphrase: SecretString,
+        kdf: KdfParams,
+    ) -> Result<Self, SecretStoreError> {
         let path = path.to_path_buf();
 
         // Materialize the parent so the lock-sidecar open and vault
@@ -195,7 +274,7 @@ impl EncryptedFileStore {
         // NotFound → create fresh; anything else → load.
         let (vault, derived_key) = match Self::load_existing_vault(&path, &passphrase)? {
             Some(loaded) => loaded,
-            None => Self::create_new_vault(&path, &passphrase)?,
+            None => Self::create_new_vault(&path, &passphrase, kdf)?,
         };
 
         let durability_uncertain = Arc::new(AtomicU64::new(0));
@@ -209,7 +288,16 @@ impl EncryptedFileStore {
                 _lock: lock,
             })),
             durability_uncertain,
+            kdf,
         })
+    }
+
+    /// The Argon2 params this store derives at — see [`kdf`](Self::kdf).
+    /// The Tier-2 wrap in [`SecretStore`](crate::secrets::SecretStore) reads
+    /// it so a mock store's per-secret seals are floored too, with no new
+    /// parameter on any public method.
+    pub(crate) fn kdf_params(&self) -> KdfParams {
+        self.kdf
     }
 
     /// Number of vault writes whose data committed but whose parent-directory
@@ -238,13 +326,14 @@ impl EncryptedFileStore {
         Ok(Some((vault, key)))
     }
 
-    /// Build a brand-new empty vault, persist it at `0600`, and return
-    /// the in-memory state + derived key.
+    /// Build a brand-new empty vault under `kdf`, persist it at `0600`, and
+    /// return the in-memory state + derived key.
     fn create_new_vault(
         path: &Path,
         passphrase: &SecretString,
+        kdf: KdfParams,
     ) -> Result<(Vault, SecretBytes), SecretStoreError> {
-        let (vault, key) = build_fresh_vault(passphrase)?;
+        let (vault, key) = build_fresh_vault(passphrase, kdf)?;
         // Initial create: the store isn't built yet, so no durability counter
         // to bump — a brand-new store's count starts at 0.
         write_vault_at(path, &vault, None)?;
@@ -265,7 +354,7 @@ impl EncryptedFileStore {
         // vault, key, and on-disk file are untouched on rejection. To make a
         // vault keyless, use `open_unprotected` on a fresh path instead.
         reject_weak_passphrase(&new_passphrase)?;
-        let (new_vault, new_key) = build_fresh_vault(&new_passphrase)?;
+        let (new_vault, new_key) = build_fresh_vault(&new_passphrase, self.kdf)?;
         lock_inner(&self.inner).rekey(new_vault, new_key, new_passphrase)
     }
 
@@ -564,13 +653,17 @@ fn reject_weak_passphrase(passphrase: &SecretString) -> Result<(), SecretStoreEr
     Ok(())
 }
 
-/// Build a fresh entry-less vault (random salt, default Argon2 params,
+/// Build a fresh entry-less vault (random salt, `kdf` Argon2 params,
 /// verify-token sealed under the derived key) plus that derived key, so
-/// the caller can seal entries without re-deriving.
-fn build_fresh_vault(passphrase: &SecretString) -> Result<(Vault, SecretBytes), SecretStoreError> {
+/// the caller can seal entries without re-deriving. `kdf` lands in the
+/// header AND in the verify-token's AAD, so the params stay tamper-bound
+/// whichever value the caller picked.
+fn build_fresh_vault(
+    passphrase: &SecretString,
+    kdf: KdfParams,
+) -> Result<(Vault, SecretBytes), SecretStoreError> {
     let mut salt = [0u8; SALT_LEN];
     crypto::random_bytes(&mut salt)?;
-    let kdf = KdfParams::default_target();
     let key = crypto::derive_key(passphrase, &salt, kdf)?;
     let v_aad = format::verify_aad(format::FORMAT_VERSION, &salt, &kdf);
     let (verify_nonce, verify_ct) = crypto::seal(&key, &v_aad, format::VERIFY_CONSTANT)?;

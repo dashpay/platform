@@ -149,8 +149,10 @@ serial_test = "3"
 # Test surface is opted into explicitly: `secrets` and `kv` are listed
 # so the plain `cargo test -p platform-wallet-storage` invocation runs
 # both feature paths (the `kv`-gated `sqlite_object_metadata.rs`
-# integration test and the `secrets`-gated unit tests).
-platform-wallet-storage = { path = ".", default-features = false, features = ["sqlite", "cli", "secrets", "kv", "__test-helpers"] }
+# integration test and the `secrets`-gated unit tests). `test-util` is here
+# so `secrets_mock_store_test_util.rs` proves the feature gate from the
+# outside — `cfg(test)` alone would satisfy it from within the crate.
+platform-wallet-storage = { path = ".", default-features = false, features = ["sqlite", "cli", "secrets", "kv", "__test-helpers", "test-util"] }
 tempfile = "3"
 # `sqlite_hardening_3625.rs`, `sqlite_persist_roundtrip.rs`, and
 # `sqlite_load_reconstruction.rs` import `dash_sdk::platform::address_sync::AddressFunds`.
@@ -252,6 +254,12 @@ kv = ["sqlite"]
 __test-helpers = ["sqlite"]
 # e2e tests that drive the #3692 manager-apply path; enabled in the integrated stack (dash-evo-tool).
 rehydration-apply = []
+# Exposes `SecretStore::file_mock` / `EncryptedFileStore::open_mock` — vault
+# constructors that force every Argon2id derivation to the enforced floor so a
+# downstream test suite is not charged a production-strength KDF per call
+# (#4111). Enable it in `[dev-dependencies]` ONLY; the constructors panic in a
+# build without `debug_assertions`.
+test-util = []
 # Pass-through to `platform-wallet/shielded` so the feature-gated
 # `PlatformWalletChangeSet::shielded` field is visible to the exhaustive
 # `versions::touched_domains` destructure (the R8 forgotten-domain guard).

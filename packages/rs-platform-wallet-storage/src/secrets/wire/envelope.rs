@@ -1,5 +1,5 @@
 //! Tier-2 envelope wire format — bincode-encoded `Envelope` / `Payload`
-//! plus the [`wrap`] / [`wrap_with_params`] / [`unwrap`] API.
+//! plus the [`wrap_with_params`] / [`unwrap`] API.
 //!
 //! Every byte that crosses the AEAD seam is produced by
 //! `bincode::encode_to_vec` against [`WIRE_CONFIG`], so a future config
@@ -92,31 +92,18 @@ const DECODE_BUDGET: usize = MAX_SECRET_LEN + MAX_ENVELOPE_OVERHEAD;
 const DECODE_CONFIG: Configuration<BigEndian, Varint, Limit<DECODE_BUDGET>> =
     WIRE_CONFIG.with_limit::<DECODE_BUDGET>();
 
-/// Wrap `plaintext` for `(wallet_id, label)` using the shipped default
-/// Argon2 target when a password is supplied.
+/// Wrap `plaintext` for `(wallet_id, label)` under Argon2 `params`.
 ///
-/// `None` → an unprotected (scheme-0) envelope; `Some(pw)` → a scheme-1
-/// envelope sealed under `pw`. A blank password is rejected at enrol
-/// (`SecretStoreError::BlankPassphrase`).
+/// `None` → an unprotected (scheme-0) envelope, and `params` is unused;
+/// `Some(pw)` → a scheme-1 envelope sealed under `pw`. A blank password is
+/// rejected at enrol (`SecretStoreError::BlankPassphrase`).
+///
+/// Callers pass [`KdfParams::default_target`]; a mock store
+/// ([`SecretStore::file_mock`]) passes the floor instead (#4111).
 ///
 /// Returns the envelope inside a zeroizing [`SecretBytes`].
-pub(crate) fn wrap(
-    wallet_id: &WalletId,
-    label: &str,
-    password: Option<&SecretString>,
-    plaintext: &[u8],
-) -> Result<SecretBytes, SecretStoreError> {
-    wrap_with_params(
-        wallet_id,
-        label,
-        password,
-        plaintext,
-        KdfParams::default_target(),
-    )
-}
-
-/// [`wrap`] with explicit Argon2 `params` (tests use floor params for
-/// speed). `params` is ignored when `password` is `None`.
+///
+/// [`SecretStore::file_mock`]: crate::secrets::SecretStore::file_mock
 pub(crate) fn wrap_with_params(
     wallet_id: &WalletId,
     label: &str,
@@ -368,8 +355,7 @@ pub(crate) fn wrap_with_params_for_test(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::secrets::file::crypto::{ARGON2_MIN_M_KIB, ARGON2_MIN_T, ARGON2_P};
-    use crate::secrets::file::format::KDF_ID_ARGON2ID;
+    use crate::secrets::file::crypto::{ARGON2_MIN_M_KIB, ARGON2_MIN_T};
 
     /// Captured once from the runtime encoder; a subsequent CI failure
     /// here means a wire-format drift to investigate, NOT to "fix" by
@@ -395,12 +381,7 @@ mod tests {
     }
 
     fn floor() -> KdfParams {
-        KdfParams {
-            id: KDF_ID_ARGON2ID,
-            m_kib: ARGON2_MIN_M_KIB,
-            t: ARGON2_MIN_T,
-            p: ARGON2_P,
-        }
+        KdfParams::floor_target()
     }
 
     /// TC-033 — blank object password rejected at enrol (wrap-side).
@@ -441,10 +422,10 @@ mod tests {
         let at_cap = vec![0x5Au8; MAX_PLAINTEXT_LEN];
         let over = vec![0x5Au8; MAX_PLAINTEXT_LEN + 1];
 
-        // Scheme 0
-        assert!(wrap(&wid(1), "seed", None, &at_cap).is_ok());
+        // Scheme 0 — `params` is unused on the unprotected path.
+        assert!(wrap_with_params(&wid(1), "seed", None, &at_cap, floor()).is_ok());
         assert!(matches!(
-            wrap(&wid(1), "seed", None, &over).unwrap_err(),
+            wrap_with_params(&wid(1), "seed", None, &over, floor()).unwrap_err(),
             SecretStoreError::SecretTooLarge { found, max }
                 if found == MAX_PLAINTEXT_LEN + 1 && max == MAX_PLAINTEXT_LEN
         ));
@@ -458,7 +439,7 @@ mod tests {
         ));
 
         // Scheme-0 enveloped bytes for an at-cap plaintext fit the backend cap.
-        let enveloped = wrap(&wid(1), "seed", None, &at_cap).unwrap();
+        let enveloped = wrap_with_params(&wid(1), "seed", None, &at_cap, floor()).unwrap();
         assert!(enveloped.len() <= MAX_SECRET_LEN);
     }
 
@@ -482,7 +463,8 @@ mod tests {
     /// bincode-config drift (endianness, varint mode, limit) trips this.
     #[test]
     fn scheme0_golden_vector_matches_const() {
-        let blob = wrap(&WalletId::from([0u8; 32]), "seed", None, b"hello").unwrap();
+        let blob =
+            wrap_with_params(&WalletId::from([0u8; 32]), "seed", None, b"hello", floor()).unwrap();
         let actual = hex::encode(blob.expose_secret());
         assert_eq!(actual, SCHEME0_GOLDEN_HEX);
     }
@@ -571,7 +553,8 @@ mod tests {
     /// TC-001 — scheme-0 round-trip preserves plaintext.
     #[test]
     fn scheme0_round_trip_preserves_plaintext() {
-        let blob = wrap(&wid(1), "seed", None, b"top secret seed bytes").unwrap();
+        let blob =
+            wrap_with_params(&wid(1), "seed", None, b"top secret seed bytes", floor()).unwrap();
         let got = unwrap(&wid(1), "seed", None, blob.expose_secret()).unwrap();
         assert_eq!(got.expose_secret(), b"top secret seed bytes");
     }
@@ -846,7 +829,7 @@ mod tests {
     /// TC-021 — Some(pw) + scheme-0 yields ExpectedProtectedButUnsealed.
     #[test]
     fn some_pw_on_scheme0_fails_closed() {
-        let blob = wrap(&wid(1), "seed", None, b"attacker-seed").unwrap();
+        let blob = wrap_with_params(&wid(1), "seed", None, b"attacker-seed", floor()).unwrap();
         let err = unwrap(&wid(1), "seed", Some(&pw("pw")), blob.expose_secret()).unwrap_err();
         assert!(
             matches!(err, SecretStoreError::ExpectedProtectedButUnsealed),
