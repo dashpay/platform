@@ -20,6 +20,17 @@ use crate::spv::SpvRuntime;
 use crate::wallet::platform_wallet::WalletId;
 use crate::wallet::PlatformWallet;
 
+/// Result of [`PlatformWalletManager::provider_masternode_txs_blocking`]:
+/// the wallet's network (for base58 address encoding on the FFI side),
+/// its retained provider special transactions with their confirmation
+/// heights, and a DML snapshot (`proTxHash -> is_valid`, `None` when the
+/// deterministic masternode list isn't available yet).
+pub type ProviderMasternodeTxs = (
+    dashcore::Network,
+    Vec<(u32, dashcore::Transaction)>,
+    Option<std::collections::HashMap<[u8; 32], bool>>,
+);
+
 use super::PlatformWalletManager;
 
 /// Snapshot of [`PlatformAddressSyncManager`] tunables and last-event
@@ -809,11 +820,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     pub fn provider_masternode_txs_blocking(
         &self,
         wallet_id: &WalletId,
-    ) -> Option<(
-        dashcore::Network,
-        Vec<(u32, dashcore::Transaction)>,
-        Option<std::collections::HashMap<[u8; 32], bool>>,
-    )> {
+    ) -> Option<ProviderMasternodeTxs> {
         // Scope the wallet-manager read lock so it's released before we
         // acquire the SPV client / engine locks for the DML snapshot — the
         // two never nest.

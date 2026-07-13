@@ -2059,6 +2059,64 @@ struct WalletManagerMetadataStorageDetailView: View {
     }
 }
 
+// MARK: - PersistentMasternode
+
+struct MasternodeStorageDetailView: View {
+    let record: PersistentMasternode
+
+    var body: some View {
+        Form {
+            Section("Identity") {
+                FieldRow(label: "Wallet ID", value: hexString(record.walletId))
+                FieldRow(label: "proTxHash", value: record.proTxHashHex)
+                FieldRow(label: "Registration Txid", value: hexString(record.registrationTxid))
+                FieldRow(label: "Type", value: record.typeName)
+                FieldRow(label: "Status", value: record.statusName)
+            }
+            Section("Service") {
+                FieldRow(label: "Service Address", value: record.serviceAddress ?? "—")
+            }
+            Section("Keys") {
+                FieldRow(
+                    label: "Owner Key Hash",
+                    value: record.ownerKeyHash.map(hexString) ?? "—"
+                )
+                FieldRow(
+                    label: "Voting Key Hash",
+                    value: record.votingKeyHash.map(hexString) ?? "—"
+                )
+                FieldRow(label: "Owner Address", value: record.ownerAddress ?? "—")
+                FieldRow(label: "Voting Address", value: record.votingAddress ?? "—")
+            }
+            Section("Collateral") {
+                FieldRow(
+                    label: "Collateral Txid",
+                    value: record.collateralTxid.map(hexString) ?? "—"
+                )
+                FieldRow(label: "Collateral Vout", value: "\(record.collateralVout)")
+            }
+            Section("Aggregation") {
+                FieldRow(label: "Has Registration", value: record.hasRegistration ? "Yes" : "No")
+                FieldRow(label: "Registration Height", value: "\(record.registrationHeight)")
+                FieldRow(label: "Tx Count", value: "\(record.txCount)")
+                FieldRow(label: "Order Index", value: "\(record.orderIndex)")
+                FieldRow(label: "Type Index", value: "\(record.typeIndex)")
+            }
+            Section("Revocation") {
+                FieldRow(label: "Revoked", value: record.revoked ? "Yes" : "No")
+                FieldRow(label: "Revocation Reason", value: "\(record.revocationReason)")
+                FieldRow(label: "Status Raw", value: "\(record.statusRaw)")
+            }
+            Section("Timestamps") {
+                FieldRow(label: "Created", value: dateString(record.createdAt))
+                FieldRow(label: "Updated", value: dateString(record.lastUpdated))
+            }
+        }
+        .navigationTitle(record.displayTitle)
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
 // MARK: - PersistentShieldedNote
 
 struct ShieldedNoteStorageDetailView: View {
