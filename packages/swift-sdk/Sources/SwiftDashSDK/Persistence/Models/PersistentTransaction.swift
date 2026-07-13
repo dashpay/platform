@@ -84,6 +84,29 @@ public final class PersistentTransaction {
     public var label: String
     /// Timestamp when first observed (Unix seconds).
     public var firstSeen: UInt64
+
+    // MARK: - Provider (masternode) special-transaction payload
+
+    /// Fields lifted by the Rust FFI from a ProRegTx / ProUpServTx
+    /// DIP-3 payload (see `provider_payload_fields` in
+    /// `rs-platform-wallet-ffi`). All optional — populated only when
+    /// [`typedKind`] is `.providerRegistration` / `.providerUpdateService`.
+    /// The Swift side never decodes the payload; these are pure storage.
+    ///
+    /// Masternode service endpoint as `"ip:port"`.
+    public var providerServiceAddress: String? = nil
+    /// ProUpServTx `proTxHash` (32 raw wire bytes) linking the update to
+    /// its registration. `nil` for ProRegTx (whose own txid is the
+    /// proTxHash).
+    public var providerProTxHash: Data? = nil
+    /// ProRegTx collateral outpoint txid (32 raw wire bytes); pair with
+    /// [`providerCollateralVout`]. `nil` when not a ProRegTx.
+    public var providerCollateralTxid: Data? = nil
+    public var providerCollateralVout: UInt32 = 0
+    /// ProRegTx owner / voting key hashes (hash160, 20 bytes each).
+    public var providerOwnerKeyHash: Data? = nil
+    public var providerVotingKeyHash: Data? = nil
+
     /// Record timestamps.
     public var createdAt: Date
     public var lastUpdated: Date
@@ -230,6 +253,41 @@ public final class PersistentTransaction {
     /// Companion to [`isAssetLock`] — withdrawal back to L1.
     public var isAssetUnlock: Bool {
         typedKind == .assetUnlock
+    }
+
+    /// `true` for a masternode provider-registration (ProRegTx).
+    public var isProviderRegistration: Bool {
+        typedKind == .providerRegistration
+    }
+
+    /// `true` for a masternode provider-update-service (ProUpServTx).
+    public var isProviderUpdateService: Bool {
+        typedKind == .providerUpdateService
+    }
+
+    /// ProUpServTx proTxHash in block-explorer (reversed) hex, or `nil`.
+    /// Matches [`txidHex`]'s display-order convention.
+    public var providerProTxHashHex: String? {
+        providerProTxHash.map { $0.reversed().map { String(format: "%02x", $0) }.joined() }
+    }
+
+    /// ProRegTx collateral outpoint as `"txidHex:vout"` in display order,
+    /// or `nil` when there's no collateral field.
+    public var providerCollateralDisplay: String? {
+        guard let txid = providerCollateralTxid else { return nil }
+        let hex = txid.reversed().map { String(format: "%02x", $0) }.joined()
+        return "\(hex):\(providerCollateralVout)"
+    }
+
+    /// ProRegTx owner key hash (hash160) in hex — key hashes are shown
+    /// in their natural forward byte order, unlike txids.
+    public var providerOwnerKeyHashHex: String? {
+        providerOwnerKeyHash.map { $0.map { String(format: "%02x", $0) }.joined() }
+    }
+
+    /// ProRegTx voting key hash (hash160) in forward-order hex.
+    public var providerVotingKeyHashHex: String? {
+        providerVotingKeyHash.map { $0.map { String(format: "%02x", $0) }.joined() }
     }
 
     /// `true` for masternode provider special transactions (ProRegTx

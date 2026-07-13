@@ -121,6 +121,30 @@ pub struct TransactionRecordFFI {
     /// for coinbase transactions.
     pub input_outpoints: *mut OutPointFFI,
     pub input_outpoints_count: usize,
+    // --- Provider (masternode) special-transaction payload, UI only ---
+    // Parsed once here from the DIP-3 special-tx payload so the Swift
+    // side never decodes it. Populated only for ProRegTx
+    // (`transaction_type_kind == 2`) and ProUpServTx (`== 4`); for every
+    // other tx the string is null, the byte arrays are zeroed, and the
+    // `has_*` flags are false.
+    /// Masternode service endpoint rendered as `"ip:port"`, or null.
+    pub provider_service_address: *mut c_char,
+    /// ProUpServTx `pro_tx_hash` (32 bytes) linking the update to its
+    /// registration. `has_provider_pro_tx_hash == false` for ProRegTx
+    /// (whose own `txid` is the proTxHash) and for non-provider txs.
+    pub provider_pro_tx_hash: [u8; 32],
+    pub has_provider_pro_tx_hash: bool,
+    /// ProRegTx collateral outpoint (`txid` in raw wire order + `vout`),
+    /// gated by `has_provider_collateral`.
+    pub provider_collateral_txid: [u8; 32],
+    pub provider_collateral_vout: u32,
+    pub has_provider_collateral: bool,
+    /// ProRegTx owner / voting key hashes (hash160, 20 bytes each),
+    /// each gated by its `has_*` flag.
+    pub provider_owner_key_hash: [u8; 20],
+    pub has_provider_owner_key_hash: bool,
+    pub provider_voting_key_hash: [u8; 20],
+    pub has_provider_voting_key_hash: bool,
 }
 
 // ---------------------------------------------------------------------------
@@ -879,6 +903,76 @@ fn transaction_type_to_u8(
     }
 }
 
+/// Provider (masternode) special-transaction payload fields lifted for
+/// the Swift UI. All optional / gated — only a ProRegTx or ProUpServTx
+/// populates them. The single seam where the DIP-3 payload is decoded;
+/// Swift only marshals the flat results.
+#[derive(Default)]
+struct ProviderPayloadFields {
+    /// Service endpoint as `"ip:port"`.
+    service_address: Option<String>,
+    /// ProUpServTx registration linkage. `None` for ProRegTx (its own
+    /// txid is the proTxHash).
+    pro_tx_hash: Option<[u8; 32]>,
+    /// ProRegTx collateral outpoint (`txid` wire bytes, `vout`).
+    collateral: Option<([u8; 32], u32)>,
+    /// ProRegTx owner / voting key hashes (hash160, 20 bytes).
+    owner_key_hash: Option<[u8; 20]>,
+    voting_key_hash: Option<[u8; 20]>,
+}
+
+/// Extract provider-registration (ProRegTx) / provider-update-service
+/// (ProUpServTx) payload fields from a transaction for display. Returns
+/// all-`None` for any other transaction. Pure; the only allocation is
+/// the returned service-address `String`.
+fn provider_payload_fields(tx: &dashcore::Transaction) -> ProviderPayloadFields {
+    use dashcore::transaction::TransactionPayload;
+
+    // Fixed-size hash copies: `Txid`/`PubkeyHash` are 32/20 bytes, so
+    // `copy_from_slice` on `as_ref()` is length-exact and cannot panic —
+    // the same pattern the txid copy in `tx_record_to_ffi` relies on.
+    fn to_32(bytes: &[u8]) -> [u8; 32] {
+        let mut out = [0u8; 32];
+        out.copy_from_slice(bytes);
+        out
+    }
+    fn to_20(bytes: &[u8]) -> [u8; 20] {
+        let mut out = [0u8; 20];
+        out.copy_from_slice(bytes);
+        out
+    }
+
+    match &tx.special_transaction_payload {
+        Some(TransactionPayload::ProviderRegistrationPayloadType(p)) => ProviderPayloadFields {
+            service_address: Some(p.service_address.to_string()),
+            pro_tx_hash: None,
+            collateral: Some((
+                to_32(p.collateral_outpoint.txid.as_ref()),
+                p.collateral_outpoint.vout,
+            )),
+            owner_key_hash: Some(to_20(p.owner_key_hash.as_ref())),
+            voting_key_hash: Some(to_20(p.voting_key_hash.as_ref())),
+        },
+        Some(TransactionPayload::ProviderUpdateServicePayloadType(p)) => {
+            // ProUpServTx stores the endpoint as a little-endian
+            // IPv6-mapped `u128` + separate `port`, not a `SocketAddr`;
+            // rebuild one and collapse IPv4-mapped addresses to V4 so a
+            // normal masternode renders as `"1.2.3.4:port"`.
+            let v6 = std::net::Ipv6Addr::from(p.ip_address.to_le_bytes());
+            let ip = v6
+                .to_ipv4_mapped()
+                .map(std::net::IpAddr::V4)
+                .unwrap_or(std::net::IpAddr::V6(v6));
+            ProviderPayloadFields {
+                service_address: Some(format!("{}:{}", ip, p.port)),
+                pro_tx_hash: Some(to_32(p.pro_tx_hash.as_ref())),
+                ..Default::default()
+            }
+        }
+        _ => ProviderPayloadFields::default(),
+    }
+}
+
 fn tx_record_to_ffi(
     tr: &key_wallet::managed_account::transaction_record::TransactionRecord,
 ) -> TransactionRecordFFI {
@@ -954,6 +1048,21 @@ fn tx_record_to_ffi(
     let input_outpoints_count = input_outpoints_vec.len();
     let input_outpoints = vec_to_ptr(input_outpoints_vec);
 
+    // Provider (masternode) payload projection. Non-provider txs yield
+    // all-`None`, i.e. null string / zeroed arrays / `has_* = false`.
+    let provider = provider_payload_fields(&tr.transaction);
+    let provider_service_address = match provider.service_address {
+        Some(s) => CString::new(s)
+            .map(CString::into_raw)
+            .unwrap_or(std::ptr::null_mut()),
+        None => std::ptr::null_mut(),
+    };
+    let (provider_collateral_txid, provider_collateral_vout, has_provider_collateral) =
+        match provider.collateral {
+            Some((txid, vout)) => (txid, vout, true),
+            None => ([0u8; 32], 0, false),
+        };
+
     TransactionRecordFFI {
         txid,
         tx_data: tx_ptr,
@@ -980,6 +1089,16 @@ fn tx_record_to_ffi(
         first_seen: blk_ts as u64,
         input_outpoints,
         input_outpoints_count,
+        provider_service_address,
+        provider_pro_tx_hash: provider.pro_tx_hash.unwrap_or([0u8; 32]),
+        has_provider_pro_tx_hash: provider.pro_tx_hash.is_some(),
+        provider_collateral_txid,
+        provider_collateral_vout,
+        has_provider_collateral,
+        provider_owner_key_hash: provider.owner_key_hash.unwrap_or([0u8; 20]),
+        has_provider_owner_key_hash: provider.owner_key_hash.is_some(),
+        provider_voting_key_hash: provider.voting_key_hash.unwrap_or([0u8; 20]),
+        has_provider_voting_key_hash: provider.voting_key_hash.is_some(),
     }
 }
 
@@ -1085,6 +1204,9 @@ pub unsafe fn free_wallet_changeset_ffi(cs: &WalletChangeSetFFI) {
                 if !tx.label.is_null() {
                     let _ = CString::from_raw(tx.label);
                 }
+                if !tx.provider_service_address.is_null() {
+                    let _ = CString::from_raw(tx.provider_service_address);
+                }
                 if !tx.input_outpoints.is_null() && tx.input_outpoints_count > 0 {
                     drop(Vec::from_raw_parts(
                         tx.input_outpoints,
@@ -1155,5 +1277,100 @@ mod tests {
         let ffi = WalletChangeSetFFI::from_changeset(&cs);
         assert_eq!(ffi.accounts_count, 0);
         unsafe { free_wallet_changeset_ffi(&ffi) };
+    }
+
+    /// ProRegTx provider payload is lifted from the DIP-3 special-tx
+    /// body for the UI. Fixture is the testnet
+    /// collateral-provider-registration transaction from rust-dashcore's
+    /// own `provider_registration` tests
+    /// (`test_collateral_provider_registration_transaction`), whose
+    /// service address is `1.2.5.6:19999` and whose owner/voting key
+    /// hashes are asserted below. ProRegTx carries no explicit
+    /// `pro_tx_hash` (its own txid is the proTxHash), so that field
+    /// stays `None`.
+    #[test]
+    fn provider_registration_payload_fields_extracted() {
+        let raw = "0300010001ca9a43051750da7c5f858008f2ff7732d15691e48eb7f845c791e5dca78bab58010000006b483045022100fe8fec0b3880bcac29614348887769b0b589908e3f5ec55a6cf478a6652e736502202f30430806a6690524e4dd599ba498e5ff100dea6a872ebb89c2fd651caa71ed012103d85b25d6886f0b3b8ce1eef63b720b518fad0b8e103eba4e85b6980bfdda2dfdffffffff018e37807e090000001976a9144ee1d4e5d61ac40a13b357ac6e368997079678c888ac00000000fd1201010000000000ca9a43051750da7c5f858008f2ff7732d15691e48eb7f845c791e5dca78bab580000000000000000000000000000ffff010205064e1f3dd03f9ec192b5f275a433bfc90f468ee1a3eb4c157b10706659e25eb362b5d902d809f9160b1688e201ee6e94b40f9b5062d7074683ef05a2d5efb7793c47059c878dfad38a30fafe61575db40f05ab0a08d55119b0aad300001976a9144fbc8fb6e11e253d77e5a9c987418e89cf4a63d288ac3477990b757387cb0406168c2720acf55f83603736a314a37d01b135b873a27b411fb37e49c1ff2b8057713939a5513e6e711a71cff2e517e6224df724ed750aef1b7f9ad9ec612b4a7250232e1e400da718a9501e1d9a5565526e4b1ff68c028763";
+        let bytes = hex::decode(raw).expect("valid fixture hex");
+        let tx: dashcore::Transaction =
+            dashcore::consensus::encode::deserialize(&bytes).expect("decode ProRegTx");
+
+        let fields = provider_payload_fields(&tx);
+
+        assert_eq!(
+            fields.service_address.as_deref(),
+            Some("1.2.5.6:19999"),
+            "service address must be lifted from the ProRegTx payload"
+        );
+        assert!(
+            fields.collateral.is_some(),
+            "ProRegTx carries a collateral outpoint"
+        );
+        assert_eq!(
+            hex::encode(fields.owner_key_hash.expect("owner key hash")),
+            "3dd03f9ec192b5f275a433bfc90f468ee1a3eb4c"
+        );
+        assert_eq!(
+            hex::encode(fields.voting_key_hash.expect("voting key hash")),
+            "d38a30fafe61575db40f05ab0a08d55119b0aad3"
+        );
+        assert!(
+            fields.pro_tx_hash.is_none(),
+            "ProRegTx has no explicit pro_tx_hash"
+        );
+    }
+
+    /// ProUpServTx (provider-update-service) also carries a service
+    /// address — reconstructed here from its little-endian IPv6-mapped
+    /// `ip_address` + `port` — plus an explicit `pro_tx_hash` linking it
+    /// to the registration. Fixture is rust-dashcore's own
+    /// `test_provider_update_service_transaction` vector, whose endpoint
+    /// is `52.36.64.148:19999`. The `pro_tx_hash` is asserted in raw
+    /// wire order (what `to_32(txid.as_ref())` stores) — the reverse of
+    /// the block-explorer display form.
+    #[test]
+    fn provider_update_service_payload_fields_extracted() {
+        let raw = "03000200018f3fe6683e36326669b6e34876fb2a2264e8327e822f6fec304b66f47d61b3e1010000006b48304502210082af6727408f0f2ec16c7da1c42ccf0a026abea6a3a422776272b03c8f4e262a022033b406e556f6de980b2d728e6812b3ae18ee1c863ae573ece1cbdf777ca3e56101210351036c1192eaf763cd8345b44137482ad24b12003f23e9022ce46752edf47e6effffffff0180220e43000000001976a914123cbc06289e768ca7d743c8174b1e6eeb610f1488ac00000000b501003a72099db84b1c1158568eec863bea1b64f90eccee3304209cebe1df5e7539fd00000000000000000000ffff342440944e1f00e6725f799ea20480f06fb105ebe27e7c4845ab84155e4c2adf2d6e5b73a998b1174f9621bbeda5009c5a6487bdf75edcf602b67fe0da15c275cc91777cb25f5fd4bb94e84fd42cb2bb547c83792e57c80d196acd47020e4054895a0640b7861b3729c41dd681d4996090d5750f65c4b649a5cd5b2bdf55c880459821e53d91c9";
+        let bytes = hex::decode(raw).expect("valid fixture hex");
+        let tx: dashcore::Transaction =
+            dashcore::consensus::encode::deserialize(&bytes).expect("decode ProUpServTx");
+
+        let fields = provider_payload_fields(&tx);
+
+        assert_eq!(
+            fields.service_address.as_deref(),
+            Some("52.36.64.148:19999"),
+            "ProUpServTx endpoint must be rebuilt from ip_address + port"
+        );
+        assert_eq!(
+            fields.pro_tx_hash.map(hex::encode).as_deref(),
+            Some("3a72099db84b1c1158568eec863bea1b64f90eccee3304209cebe1df5e7539fd"),
+            "ProUpServTx carries an explicit pro_tx_hash (wire order)"
+        );
+        assert!(
+            fields.collateral.is_none(),
+            "ProUpServTx has no collateral outpoint"
+        );
+        assert!(fields.owner_key_hash.is_none());
+        assert!(fields.voting_key_hash.is_none());
+    }
+
+    /// A plain (non-provider) transaction yields no provider fields, so
+    /// the FFI record emits null/zeroed/`false` for all of them.
+    #[test]
+    fn non_provider_tx_has_no_provider_fields() {
+        let tx = dashcore::Transaction {
+            version: 2,
+            lock_time: 0,
+            input: vec![],
+            output: vec![],
+            special_transaction_payload: None,
+        };
+        let fields = provider_payload_fields(&tx);
+        assert!(fields.service_address.is_none());
+        assert!(fields.pro_tx_hash.is_none());
+        assert!(fields.collateral.is_none());
+        assert!(fields.owner_key_hash.is_none());
+        assert!(fields.voting_key_hash.is_none());
     }
 }
