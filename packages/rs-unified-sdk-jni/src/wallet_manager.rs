@@ -1006,6 +1006,97 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_c
     })
 }
 
+/// `core_wallet_build_signed_payment` — build + sign a standard L1 payment
+/// funded from the UNION of the wallet's signable funds accounts (BIP44 +
+/// BIP32 + CoinJoin + DashPay receiving; watch-only DashPay external accounts
+/// excluded), and return the result WITHOUT broadcasting.
+///
+/// `core_handle` is the transient core-wallet `Handle` from
+/// [platformWalletGetCore]. `outputs_blob` is the recipients, encoded
+/// big-endian as `u32 count` then per row `u32 addrLen, addr utf8, u64 amount`
+/// (`ManagedPlatformWallet.encodePaymentOutputs`). `fee_per_kb` is duffs/kB, or
+/// 0 for the default. `core_signer_handle` is the manager's
+/// `MnemonicResolverHandle`.
+///
+/// Returns a `byte[]` packed big-endian as `u64 fee, u64 change,` then the
+/// consensus-serialized signed transaction bytes (`fee` and `change` in duffs),
+/// or null after throwing. The FFI-owned tx bytes are freed here before
+/// returning; Kotlin decodes the packed array via
+/// `ManagedPlatformWallet.decodeSignedPayment`.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_coreWalletBuildSignedPayment(
+    mut env: JNIEnv,
+    _class: JClass,
+    core_handle: jlong,
+    outputs_blob: JByteArray,
+    fee_per_kb: jlong,
+    core_signer_handle: jlong,
+) -> jbyteArray {
+    guard(&mut env, ptr::null_mut(), |env| {
+        if core_handle == 0 {
+            throw_sdk_exception(env, 1, "core handle is 0");
+            return ptr::null_mut();
+        }
+        if core_signer_handle == 0 {
+            throw_sdk_exception(env, 1, "coreSignerHandle is 0");
+            return ptr::null_mut();
+        }
+        if fee_per_kb < 0 {
+            throw_sdk_exception(env, 1, "feePerKb must be non-negative");
+            return ptr::null_mut();
+        }
+        let blob = match env.convert_byte_array(&outputs_blob) {
+            Ok(b) => b,
+            Err(_) => {
+                let _ = env.exception_clear();
+                throw_sdk_exception(env, 1, "outputs byte[] was invalid");
+                return ptr::null_mut();
+            }
+        };
+
+        let mut out_tx_bytes: *mut u8 = ptr::null_mut();
+        let mut out_tx_len: usize = 0;
+        let mut out_fee: u64 = 0;
+        let mut out_change: u64 = 0;
+        let result = unsafe {
+            platform_wallet_ffi::core_wallet_build_signed_payment(
+                core_handle as Handle,
+                blob.as_ptr(),
+                blob.len(),
+                fee_per_kb as u64,
+                core_signer_handle as *mut rs_sdk_ffi::MnemonicResolverHandle,
+                &mut out_tx_bytes,
+                &mut out_tx_len,
+                &mut out_fee,
+                &mut out_change,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return ptr::null_mut();
+        }
+
+        // Copy the FFI-owned tx bytes out, then free them, then pack the
+        // metadata-prefixed result for Kotlin. `fee` and `change` are written
+        // big-endian ahead of the raw tx bytes.
+        let tx_bytes: &[u8] = if out_tx_bytes.is_null() || out_tx_len == 0 {
+            &[]
+        } else {
+            unsafe { std::slice::from_raw_parts(out_tx_bytes, out_tx_len) }
+        };
+        let mut packed = Vec::with_capacity(16 + tx_bytes.len());
+        packed.extend_from_slice(&out_fee.to_be_bytes());
+        packed.extend_from_slice(&out_change.to_be_bytes());
+        packed.extend_from_slice(tx_bytes);
+        unsafe {
+            platform_wallet_ffi::core_wallet_free_payment_bytes(out_tx_bytes, out_tx_len);
+        }
+
+        env.byte_array_from_slice(&packed)
+            .map(|a| a.into_raw())
+            .unwrap_or(ptr::null_mut())
+    })
+}
+
 /// `platform_wallet_get_core` — resolve the transient core-wallet `Handle`
 /// (as `jlong`) from a `PlatformWallet` handle, for [coreWalletBroadcastTransaction].
 /// Free with [coreWalletDestroy]. Returns 0 after throwing.

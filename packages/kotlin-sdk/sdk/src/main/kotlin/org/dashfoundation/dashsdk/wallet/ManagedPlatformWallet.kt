@@ -361,6 +361,77 @@ class ManagedPlatformWallet internal constructor(
     }
 
     /**
+     * A built-and-signed Core L1 payment that was NOT broadcast — the output of
+     * [buildSignedPayment]. [txBytes] is the consensus-serialized signed
+     * transaction the caller commits/broadcasts itself (dashj during the
+     * dashj→SDK transition; the SDK's own broadcast afterwards). [fee] and
+     * [change] are duffs.
+     */
+    data class SignedCorePayment(
+        val txBytes: ByteArray,
+        val fee: Long,
+        val change: Long,
+    ) {
+        override fun equals(other: Any?): Boolean =
+            other is SignedCorePayment &&
+                txBytes.contentEquals(other.txBytes) &&
+                fee == other.fee &&
+                change == other.change
+
+        override fun hashCode(): Int =
+            (31 * txBytes.contentHashCode() + fee.hashCode()) * 31 + change.hashCode()
+    }
+
+    /**
+     * Build and sign a Core L1 payment to [recipients], funding it from the
+     * UNION of this wallet's signable funds accounts (BIP44 + BIP32 + CoinJoin
+     * + DashPay receiving; watch-only DashPay external accounts excluded), and
+     * return the signed raw transaction bytes plus the fee and change —
+     * **WITHOUT broadcasting**.
+     *
+     * This is the transition-era "give me signed bytes" primitive: the Android
+     * wallet hands [SignedCorePayment.txBytes] to dashj for commit + broadcast
+     * (keeping dashj's `maybeCommitTx` bookkeeping — CrowdNode, memos,
+     * confidence listeners), while the SDK owns coin selection and signing. It
+     * does not broadcast and does not persist a debit; the selected inputs are
+     * only reserved in memory (released when the spend is later observed by sync
+     * or by the reservation-TTL backstop). Coin selection auto-spans every
+     * signable account, so — unlike [sendToAddresses] — the caller does not
+     * pick a funding account.
+     *
+     * Runs through the manager's [TeardownGate] like every other native op.
+     * A concurrent build cannot select the same UTXO because the underlying
+     * `build_signed_payment` holds the wallet-manager write lock across coin
+     * selection and signing (the same native serialization [sendToAddresses]
+     * relies on).
+     *
+     * @param recipients `(address, amountDuffs)` pairs; must be non-empty and
+     *   every amount positive.
+     * @param coreSignerHandle the manager's `MnemonicResolverHandle`
+     *   (`PlatformWalletManager.mnemonicResolverHandle`); no private key crosses
+     *   the boundary.
+     * @param feePerKb fee rate in duffs/kB, or 0 for the SDK default.
+     */
+    suspend fun buildSignedPayment(
+        recipients: List<Pair<String, Long>>,
+        coreSignerHandle: Long,
+        feePerKb: Long = 0,
+    ): SignedCorePayment = gate.op {
+        require(recipients.isNotEmpty()) { "recipients must not be empty" }
+        require(recipients.all { it.second > 0 }) { "every recipient amount must be positive" }
+        require(feePerKb >= 0) { "feePerKb must be non-negative, got $feePerKb" }
+
+        val outputsBlob = encodePaymentOutputs(recipients)
+        mapNativeErrors {
+            coreWallet().use { core ->
+                decodeSignedPayment(
+                    core.buildSignedPayment(outputsBlob, feePerKb, coreSignerHandle),
+                )
+            }
+        }
+    }
+
+    /**
      * Broadcast the deferred payment behind [token] (from [buildSignedPayment])
      * and return its broadcast txid — the "merchant server acked" arm. Consumes
      * the token. Rather than double-broadcasting, an unusable token throws one
@@ -888,6 +959,41 @@ class ManagedPlatformWallet internal constructor(
             dos.writeLong(o.credits)
         }
         return out.toByteArray()
+    }
+
+    /**
+     * Encode [recipients] to the payment-outputs blob
+     * `core_wallet_build_signed_payment` reads: `u32 count` then per row
+     * `u32 addrLen, addr utf8 bytes, u64 amount` (all big-endian, matching
+     * `DataOutputStream`'s wire order and the Rust `from_be_bytes` decoder).
+     */
+    private fun encodePaymentOutputs(recipients: List<Pair<String, Long>>): ByteArray {
+        val out = java.io.ByteArrayOutputStream()
+        val dos = java.io.DataOutputStream(out)
+        dos.writeInt(recipients.size)
+        for ((address, amount) in recipients) {
+            val addrBytes = address.toByteArray(Charsets.UTF_8)
+            dos.writeInt(addrBytes.size)
+            dos.write(addrBytes)
+            dos.writeLong(amount)
+        }
+        return out.toByteArray()
+    }
+
+    /**
+     * Decode the packed [SignedCorePayment] the native build returns:
+     * `u64 fee, u64 change,` then the signed transaction bytes (big-endian).
+     */
+    private fun decodeSignedPayment(packed: ByteArray): SignedCorePayment {
+        require(packed.size >= 16) {
+            "signed-payment result too short (${packed.size} bytes, need >= 16)"
+        }
+        val buffer = java.nio.ByteBuffer.wrap(packed) // big-endian by default
+        val fee = buffer.long
+        val change = buffer.long
+        val txBytes = ByteArray(buffer.remaining())
+        buffer.get(txBytes)
+        return SignedCorePayment(txBytes = txBytes, fee = fee, change = change)
     }
 
     /**
