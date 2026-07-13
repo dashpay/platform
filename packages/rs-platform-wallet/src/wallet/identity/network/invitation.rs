@@ -38,11 +38,15 @@ use crate::wallet::identity::network::contact_requests::ContactCryptoProvider;
 
 use super::*;
 
-/// Hard cap on the amount an invitation can lock (0.01 DASH). The voucher is a
+/// Hard cap on the amount an invitation can lock (0.05 DASH). The voucher is a
 /// bearer credential, so the blast radius of a leaked link is bounded here in
-/// Rust — not just in the UI. Generous enough for identity registration plus a
-/// small starting balance; tune if onboarding needs more.
-pub const MAX_INVITATION_DUFFS: u64 = 1_000_000;
+/// Rust — not just in the UI. Sized for onboarding: the invitee spends the
+/// voucher on identity creation **plus** a normal DPNS name (~0.03 DASH — the
+/// legacy `DASH_PAY_FEE`), so the previous 0.01 cap was actually below a usable
+/// invitation and rejected its own onboarding default. The contested/premium-name
+/// tier (~0.25 DASH) is deferred until contested-name-via-invite claim exists;
+/// raise this cap when it does.
+pub const MAX_INVITATION_DUFFS: u64 = 5_000_000;
 
 /// Floor on the amount an invitation can lock (0.003 DASH). A voucher funds a
 /// Platform identity operation, and creating an identity — which is what the
