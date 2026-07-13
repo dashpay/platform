@@ -554,6 +554,53 @@ pub unsafe extern "C" fn dash_sdk_get_inner_sdk_ptr(
     &wrapper.sdk as *const dash_sdk::Sdk as *const std::os::raw::c_void
 }
 
+/// Install a native context provider onto an existing SDK, replacing whatever
+/// provider it currently uses. Subsequent proof-verified queries on this SDK
+/// handle resolve quorum keys through the new provider (the SDK loads the
+/// provider fresh per verification).
+///
+/// Ownership of `provider` is TAKEN: this function reclaims the
+/// `ContextProviderWrapper` box exactly once on every return path. Callers
+/// (e.g. `platform-wallet-ffi`) must build it via
+/// `Box::into_raw(Box::new(ContextProviderWrapper::new(..)))` and must NOT
+/// reclaim it themselves.
+///
+/// # Safety
+/// - `sdk_handle` must be a valid `SDKHandle` for the duration of the call (or
+///   null, which returns an error).
+/// - `provider` must be a `*mut ContextProviderHandle` produced as described
+///   above (or null, which returns an error).
+#[no_mangle]
+pub unsafe extern "C" fn dash_sdk_install_context_provider(
+    sdk_handle: *mut SDKHandle,
+    provider: *mut ContextProviderHandle,
+) -> DashSDKResult {
+    if provider.is_null() {
+        return DashSDKResult::error(DashSDKError::new(
+            DashSDKErrorCode::InvalidParameter,
+            "Context provider handle is null".to_string(),
+        ));
+    }
+    // Take ownership immediately so the box is reclaimed exactly once on every
+    // path below (including the null-SDK error return).
+    let wrapper = Box::from_raw(provider as *mut ContextProviderWrapper);
+
+    if sdk_handle.is_null() {
+        return DashSDKResult::error(DashSDKError::new(
+            DashSDKErrorCode::InvalidParameter,
+            "SDK handle is null".to_string(),
+        ));
+    }
+
+    let sdk_wrapper = &*(sdk_handle as *const SDKWrapper);
+    // Swaps the SDK's `ArcSwapOption` provider slot in place; the SDK keeps its
+    // own `Arc` clone. `wrapper` drops at end of scope, releasing this
+    // function's refcount on the provider.
+    sdk_wrapper.sdk.set_context_provider(wrapper.provider());
+
+    DashSDKResult::success(std::ptr::null_mut())
+}
+
 /// Register global context provider callbacks
 ///
 /// This must be called before creating an SDK instance that needs Core SDK functionality.

@@ -168,6 +168,15 @@ struct SwiftExampleAppApp: App {
                 .onChange(of: platformState.walletScopedServicesRebindTick) { _, _ in
                     rebindWalletScopedServices()
                 }
+                // Switch Platform proof verification from the trusted quorum
+                // service to the active manager's SPV-synced quorum data once
+                // SPV has synced. Driven off the manager's published sync
+                // progress (also powers the sync UI). Idempotent — a no-op once
+                // already on SPV, and re-evaluated for the new manager after a
+                // network switch (which resets `quorumSource` to `.trusted`).
+                .onChange(of: walletManager.spvProgress) { _, _ in
+                    platformState.attachSpvIfReady(manager: walletManager)
+                }
         }
     }
 
@@ -316,8 +325,7 @@ struct SwiftExampleAppApp: App {
                 await PlatformWalletManager.warmUpShieldedProver()
             }
 
-            platformState.initializeSDK(
-                modelContext: modelContainer.mainContext, walletManager: walletManager)
+            platformState.initializeSDK(modelContext: modelContainer.mainContext)
 
             // Give the Platform SDK a moment to finish its internal init.
             try? await Task.sleep(for: .milliseconds(500))

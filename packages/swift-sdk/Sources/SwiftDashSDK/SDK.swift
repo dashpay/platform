@@ -367,74 +367,42 @@ public final class SDK: @unchecked Sendable {
     self.network = network
   }
 
-  /// Create a new SDK instance that verifies proofs using SPV-synced quorum
-  /// data from `walletManager`'s locally synced masternode list, instead of a
-  /// trusted HTTP quorum service. DAPI transport is resolved exactly as in
-  /// `init(network:)` — SPV only replaces the quorum-key source.
+  /// Which quorum-key source this SDK's proof verification currently uses.
+  public enum QuorumSource: Sendable {
+    /// Centralized trusted HTTP quorum service — how every `SDK` starts.
+    case trusted
+    /// SPV-synced masternode quorum data, installed via `attachSpvQuorums`.
+    case spv
+  }
+
+  /// The quorum source proof verification currently uses. Starts `.trusted`
+  /// and flips to `.spv` after a successful `attachSpvQuorums(from:)`.
+  public private(set) var quorumSource: QuorumSource = .trusted
+
+  /// Swap this SDK's proof-verification context provider to use
+  /// `walletManager`'s SPV-synced quorum data instead of the trusted HTTP
+  /// service. After this returns, proof-verified queries on this SDK verify
+  /// quorum signatures against the locally synced masternode list.
   ///
-  /// The wallet manager's SPV client should be started (and ideally synced)
-  /// for lookups to succeed; otherwise proof verification fails closed until
-  /// it catches up. `walletManager` must outlive this SDK instance.
+  /// Call only once the manager's SPV client is started and its masternode
+  /// list is synced — before that, lookups fail closed (there is no per-lookup
+  /// fallback to trusted once SPV is installed).
   ///
   /// `@MainActor`: reads `walletManager.handle`, which is main-actor isolated.
   @MainActor
-  public init(network: Network, walletManager: PlatformWalletManager, platformVersion: UInt32 = 0)
-    throws
-  {
-    var config = DashSDKConfig()
-    config.network = network.ffiValue
-    config.dapi_addresses = nil
-    config.quorum_url = nil
-    config.skip_asset_lock_proof_verification = false
-    config.request_retry_count = 1
-    config.request_timeout_ms = 8000
-    config.platform_version = platformVersion
-
-    // Resolve DAPI addresses / quorum URL identically to `init(network:)`:
-    // devnet auto-discovers from `{quorumURL}/masternodes`; regtest and the
-    // `useDockerSetup` flow use the `platformDAPIAddresses` override; plain
-    // mainnet/testnet let the Rust side pick canonical seeds.
-    // Read the main-actor-isolated handle here (in the isolated init body)
-    // and capture the plain `Handle` value into the nonisolated C-string
-    // closure below — the handle is Sendable, `walletManager` is not.
-    let managerHandle = walletManager.handle
-
-    let useOverrideAddresses =
-      network == .regtest
-      || network == .devnet
-      || UserDefaults.standard.bool(forKey: "useDockerSetup")
-    let overrideQuorumURL: String? = useOverrideAddresses ? Self.platformQuorumURL : nil
-    let overrideAddresses: String?
-    if network == .devnet {
-      overrideAddresses = overrideQuorumURL.flatMap { Self.discoverDAPIAddresses(quorumBase: $0) }
-    } else if useOverrideAddresses {
-      overrideAddresses = Self.platformDAPIAddresses
-    } else {
-      overrideAddresses = nil
+  public func attachSpvQuorums(from walletManager: PlatformWalletManager) throws {
+    guard let handle else {
+      throw SDKError.internalError("Cannot attach SPV quorums: SDK handle is nil")
     }
-
-    let result = SDK.withOptionalCStrings(overrideAddresses, overrideQuorumURL) {
-      addressesCStr, quorumCStr in
-      var mutableConfig = config
-      if let addressesCStr { mutableConfig.dapi_addresses = addressesCStr }
-      if let quorumCStr { mutableConfig.quorum_url = quorumCStr }
-      return platform_wallet_manager_create_sdk_with_spv_context(
-        managerHandle, &mutableConfig)
-    }
-
+    let result = platform_wallet_manager_attach_spv_context(
+      walletManager.handle, handle, network.ffiValue)
     if result.error != nil {
       let error = result.error!.pointee
-      let errorMessage = error.message != nil ? String(cString: error.message!) : "Unknown error"
+      let message = error.message != nil ? String(cString: error.message!) : "Unknown error"
       defer { dash_sdk_error_free(result.error) }
-      throw SDKError.internalError("Failed to create SDK with SPV quorums: \(errorMessage)")
+      throw SDKError.internalError("Failed to attach SPV quorum provider: \(message)")
     }
-
-    guard result.data != nil else {
-      throw SDKError.internalError("No SDK handle returned")
-    }
-
-    handle = OpaquePointer(result.data)
-    self.network = network
+    quorumSource = .spv
   }
 
   /// Run `body` with two optional C-string pointers. Each input string,

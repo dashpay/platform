@@ -348,7 +348,23 @@ struct OptionsView: View {
                     }
 
                     Toggle("Fallback to Trusted Quorums", isOn: $appState.useTrustedQuorumFallback)
-                        .help("When enabled, falls back to trusted HTTP quorum provider if SPV quorum data is unavailable. Disable to require SPV-synced quorums for proof verification.")
+                        .help("When enabled, proof verification stays on the trusted HTTP quorum provider until the SPV masternode list is synced, then switches to SPV. Disable to switch to SPV as soon as it is running (no trusted fallback; proofs fail until synced). Takes effect on the next SDK build.")
+
+                    HStack {
+                        Text("Proof Quorum Source")
+                        Spacer()
+                        switch appState.quorumSource {
+                        case .spv:
+                            Label("SPV (trustless)", systemImage: "checkmark.shield.fill")
+                                .foregroundColor(.green)
+                                .font(.caption.weight(.semibold))
+                        case .trusted:
+                            Label("Trusted (HTTP)", systemImage: "network")
+                                .foregroundColor(.orange)
+                                .font(.caption.weight(.semibold))
+                        }
+                    }
+                    .help("Which quorum public-key source the SDK currently uses to verify Platform proofs. Switches to SPV automatically once the masternode list has synced (start SPV sync from the Core tab).")
 
                     HStack {
                         Text("Network Status")

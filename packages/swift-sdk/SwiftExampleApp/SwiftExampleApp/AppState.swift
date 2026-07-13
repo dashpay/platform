@@ -9,6 +9,13 @@ class AppState: ObservableObject {
     @Published var showError = false
     @Published var errorMessage = ""
 
+    /// The quorum-key source the current SDK uses for proof verification.
+    /// Starts `.trusted` on every SDK build and flips to `.spv` once
+    /// `attachSpvIfReady` installs the SPV provider. Drives the app's indicator;
+    /// intentionally mirrors `SDK.quorumSource` (this one is the observable the
+    /// UI binds to).
+    @Published private(set) var quorumSource: SDK.QuorumSource = .trusted
+
     @Published var currentNetwork: Network {
         didSet {
             UserDefaults.standard.set(Int(currentNetwork.rawValue), forKey: "currentNetwork")
@@ -58,9 +65,6 @@ class AppState: ObservableObject {
     // construction effectively free.
     private var dataManager: DataManager?
     private var modelContext: ModelContext?
-    /// The active per-network wallet manager, supplied by the app at
-    /// `initializeSDK`. Its SPV runtime backs trustless quorum lookups.
-    private var walletManager: PlatformWalletManager?
 
     init() {
         // Load saved network preference or use default. Read via
@@ -90,11 +94,9 @@ class AppState: ObservableObject {
             : true
     }
 
-    func initializeSDK(modelContext: ModelContext, walletManager: PlatformWalletManager? = nil) {
+    func initializeSDK(modelContext: ModelContext) {
         // Save the model context for later use
         self.modelContext = modelContext
-        // The manager whose SPV runtime backs trustless quorum lookups.
-        self.walletManager = walletManager
 
         // Initialize DataManager
         self.dataManager = DataManager(modelContext: modelContext, currentNetwork: currentNetwork)
@@ -108,8 +110,14 @@ class AppState: ObservableObject {
                 SDK.enableLogging(level: .debug)
 
                 NSLog("🔵 AppState: Creating SDK for network=\(currentNetwork), docker=\(useDockerSetup)")
-                let newSDK = try makeSDK(for: currentNetwork)
+                // Build with the trusted quorum provider. Proof verification is
+                // switched to SPV-synced quorums later via `attachSpvIfReady`,
+                // once the active wallet manager's SPV masternode list is synced
+                // (the manager can only be created *from* an SDK, so the SDK
+                // must exist first — hence attach-after rather than build-from).
+                let newSDK = try SDK(network: currentNetwork)
                 sdk = newSDK
+                quorumSource = .trusted
                 NSLog("✅ AppState: SDK created successfully")
 
                 // Eagerly learn the network's protocol version so
@@ -117,7 +125,7 @@ class AppState: ObservableObject {
                 // first metadata-bearing response ratchets the SDK.
                 refreshProtocolVersion(for: newSDK)
 
-                // Load known contracts into the SDK's trusted provider
+                // Load known contracts into the SDK's provider cache.
                 await loadKnownContractsIntoSDK(sdk: newSDK, modelContext: modelContext)
 
                 isLoading = false
@@ -130,26 +138,35 @@ class AppState: ObservableObject {
         }
     }
 
-    /// Build an SDK for `network`, preferring the wallet manager's SPV-synced
-    /// quorums for trustless proof verification and falling back to the trusted
-    /// HTTP quorum provider when SPV construction fails (if enabled).
-    private func makeSDK(for network: Network) throws -> SDK {
-        if let walletManager {
-            do {
-                let newSDK = try SDK(network: network, walletManager: walletManager)
-                NSLog("✅ AppState: SDK using SPV-synced quorum provider")
-                return newSDK
-            } catch {
-                guard useTrustedQuorumFallback else { throw error }
-                NSLog(
-                    "⚠️ AppState: SPV quorum provider unavailable (\(error.localizedDescription)); using trusted"
-                )
-            }
-        } else if !useTrustedQuorumFallback {
-            throw SDKError.internalError(
-                "No wallet manager available and trusted quorum fallback is disabled")
+    /// Switch the SDK's proof verification from the trusted HTTP quorum service
+    /// to `manager`'s SPV-synced quorum data, once SPV has synced enough for
+    /// lookups to succeed. Idempotent — a no-op once already on SPV. Call
+    /// whenever the active manager's `spvProgress` changes.
+    ///
+    /// Policy (`useTrustedQuorumFallback`):
+    /// - ON (default): stay on trusted until the SPV header + masternode lists
+    ///   are fully synced, then switch to SPV.
+    /// - OFF: switch to SPV as soon as the SPV client is running (before full
+    ///   sync), so proof verification exercises SPV with no trusted safety net
+    ///   (lookups fail closed until sync catches up).
+    @MainActor
+    func attachSpvIfReady(manager: PlatformWalletManager) {
+        guard let sdk, quorumSource == .trusted else { return }
+
+        let progress = manager.spvProgress
+        let running =
+            progress.overallState == .syncing || progress.overallState == .synced
+        let fullySynced =
+            progress.headers?.state == .synced && progress.masternodes?.state == .synced
+        guard useTrustedQuorumFallback ? fullySynced : running else { return }
+
+        do {
+            try sdk.attachSpvQuorums(from: manager)
+            quorumSource = .spv
+            NSLog("✅ AppState: proof verification now uses SPV-synced quorums")
+        } catch {
+            NSLog("⚠️ AppState: failed to attach SPV quorums: \(error.localizedDescription)")
         }
-        return try SDK(network: network)
     }
 
     func showError(message: String) {
@@ -172,9 +189,12 @@ class AppState: ObservableObject {
         do {
             isLoading = true
 
-            // Create new SDK instance for the network
+            // Create new SDK instance for the network (trusted provider; SPV is
+            // re-attached by `attachSpvIfReady` once the new network's manager
+            // has synced).
             let newSDK = try SDK(network: network)
             sdk = newSDK
+            quorumSource = .trusted
 
             // Eagerly learn the new network's protocol version (see
             // `initializeSDK`). Non-fatal: the SDK still ratchets from

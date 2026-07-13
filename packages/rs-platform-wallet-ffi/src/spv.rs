@@ -497,33 +497,31 @@ pub unsafe extern "C" fn platform_wallet_manager_spv_clear_storage(
     PlatformWalletFFIResult::ok()
 }
 
-/// Create a Platform SDK that verifies proofs using this wallet manager's
-/// SPV-synced quorum data instead of a trusted HTTP quorum service.
+/// Install this wallet manager's SPV-synced quorum data as the proof-verification
+/// context provider on an already-built Platform SDK, replacing its trusted
+/// provider. Subsequent proof-verified queries on that SDK handle resolve quorum
+/// public keys live from the locally synced masternode list.
 ///
-/// The returned SDK holds a shared reference to the manager's SPV runtime and
-/// resolves quorum public keys live from the locally synced masternode list.
-/// The manager's SPV client should be started (and ideally synced) for lookups
-/// to succeed; otherwise proof verification fails closed until it catches up.
+/// Call this only once the manager's SPV client is started and its masternode
+/// list is synced (see `platform_wallet_manager_sync_progress`); before that,
+/// lookups fail closed (no per-lookup fallback once installed).
+///
+/// The manager must have been created (`configure`d) against this same SDK
+/// before attaching — that ordering is what keeps the manager's own cloned SDK
+/// on its trusted provider (the SDK clone snapshots the provider slot).
 ///
 /// # Safety
-/// - `config` must be a valid pointer to a `DashSDKConfig` for the call.
 /// - `manager_handle` must be a live `PlatformWalletManager` handle.
+/// - `sdk_handle` must be a valid `SDKHandle` for the duration of the call.
 #[no_mangle]
-pub unsafe extern "C" fn platform_wallet_manager_create_sdk_with_spv_context(
+pub unsafe extern "C" fn platform_wallet_manager_attach_spv_context(
     manager_handle: Handle,
-    config: *const rs_sdk_ffi::DashSDKConfig,
+    sdk_handle: *mut rs_sdk_ffi::SDKHandle,
+    network: crate::types::FFINetwork,
 ) -> rs_sdk_ffi::DashSDKResult {
-    if config.is_null() {
-        return rs_sdk_ffi::DashSDKResult::error(rs_sdk_ffi::DashSDKError::new(
-            rs_sdk_ffi::DashSDKErrorCode::InvalidParameter,
-            "Config is null".to_string(),
-        ));
-    }
-    let config_ref = &*config;
-
     // A shared handle to the manager's SPV runtime — the same runtime the SPV
     // client writes to during sync. Cloned out of the storage closure so it
-    // outlives the borrow and backs the provider for the SDK's lifetime.
+    // outlives the borrow and backs the provider for as long as it's installed.
     let spv = match PLATFORM_WALLET_MANAGER_STORAGE.with_item(manager_handle, |m| m.spv_arc()) {
         Some(spv) => spv,
         None => {
@@ -534,34 +532,12 @@ pub unsafe extern "C" fn platform_wallet_manager_create_sdk_with_spv_context(
         }
     };
 
-    let network: crate::types::Network = config_ref.network.into();
-
+    let network: crate::types::Network = network.into();
     let provider = platform_wallet::spv_context_provider::SpvContextProvider::new(spv, network);
-    let wrapper = Box::new(rs_sdk_ffi::ContextProviderWrapper::new(provider));
-    let context_provider = Box::into_raw(wrapper) as *mut rs_sdk_ffi::ContextProviderHandle;
+    let handle = Box::into_raw(Box::new(rs_sdk_ffi::ContextProviderWrapper::new(provider)))
+        as *mut rs_sdk_ffi::ContextProviderHandle;
 
-    let extended = rs_sdk_ffi::DashSDKConfigExtended {
-        base_config: rs_sdk_ffi::DashSDKConfig {
-            network: config_ref.network,
-            dapi_addresses: config_ref.dapi_addresses,
-            skip_asset_lock_proof_verification: config_ref.skip_asset_lock_proof_verification,
-            request_retry_count: config_ref.request_retry_count,
-            request_timeout_ms: config_ref.request_timeout_ms,
-            quorum_url: config_ref.quorum_url,
-            platform_version: config_ref.platform_version,
-        },
-        context_provider,
-        core_sdk_handle: std::ptr::null_mut(),
-    };
-
-    let result = rs_sdk_ffi::dash_sdk_create_extended(&extended);
-
-    // `dash_sdk_create_extended` only borrows the wrapper and clones the inner
-    // provider `Arc`; it never takes ownership. Reclaim the box so the wrapper
-    // (and its `Arc<SpvRuntime>`) isn't leaked on every SDK creation.
-    drop(Box::from_raw(
-        context_provider as *mut rs_sdk_ffi::ContextProviderWrapper,
-    ));
-
-    result
+    // `dash_sdk_install_context_provider` TAKES ownership of the wrapper box and
+    // reclaims it exactly once — this function must not reclaim it.
+    rs_sdk_ffi::dash_sdk_install_context_provider(sdk_handle, handle)
 }
