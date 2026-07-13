@@ -126,6 +126,7 @@ struct ClaimInvitationSheet: View {
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
                 .lineLimit(2...4)
+                .disabled(isClaiming)
                 .accessibilityIdentifier("dashpay.invite.claim.uriField")
         } header: {
             Text("Paste an invitation link")
@@ -170,6 +171,10 @@ struct ClaimInvitationSheet: View {
 
     private func claim() {
         guard canClaim, !isClaiming, let preview else { return }
+        // Freeze the URI alongside the already-frozen `preview` so the claim
+        // submits exactly what was previewed (the field is also disabled while
+        // claiming, so this is belt-and-suspenders coherence).
+        let submittedURI = trimmedURI
         isClaiming = true
         errorMessage = nil
         Task { @MainActor in
@@ -199,7 +204,7 @@ struct ClaimInvitationSheet: View {
                 ))
 
                 let managed = try await wallet.claimInvitation(
-                    uri: trimmedURI,
+                    uri: submittedURI,
                     identityIndex: identityIndex,
                     identityPubkeys: keys,
                     signer: signer,

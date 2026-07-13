@@ -10,14 +10,18 @@ import SwiftUI
 struct InvitationsView: View {
     let walletId: Data
     let network: Network
-    let identity: PersistentIdentity
+    /// The active identity, if any. The reclaim list needs only `walletId`;
+    /// `identity` is required solely to *create* a new invitation, so it is
+    /// optional — a wallet whose last identity was deleted can still reclaim its
+    /// funded invitations, only the "+" create action is hidden.
+    let identity: PersistentIdentity?
 
     @Query private var invitations: [PersistentInvitation]
 
     @State private var reclaimTarget: PersistentInvitation?
     @State private var showCreateInvitation = false
 
-    init(walletId: Data, network: Network, identity: PersistentIdentity) {
+    init(walletId: Data, network: Network, identity: PersistentIdentity?) {
         self.walletId = walletId
         self.network = network
         self.identity = identity
@@ -57,13 +61,18 @@ struct InvitationsView: View {
         .accessibilityIdentifier("dashpay.invitations.list")
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
-                Button {
-                    showCreateInvitation = true
-                } label: {
-                    Image(systemName: "plus.circle")
+                // Creating an invitation needs an inviter identity; reclaiming does
+                // not. Hide "+" when there's no active identity so the reclaim list
+                // stays usable.
+                if identity != nil {
+                    Button {
+                        showCreateInvitation = true
+                    } label: {
+                        Image(systemName: "plus.circle")
+                    }
+                    .accessibilityLabel("Create invitation")
+                    .accessibilityIdentifier("dashpay.invitations.create")
                 }
-                .accessibilityLabel("Create invitation")
-                .accessibilityIdentifier("dashpay.invitations.create")
             }
         }
         .sheet(item: $reclaimTarget) { invitation in
@@ -74,7 +83,9 @@ struct InvitationsView: View {
             )
         }
         .sheet(isPresented: $showCreateInvitation) {
-            CreateInvitationSheet(identity: identity)
+            if let identity {
+                CreateInvitationSheet(identity: identity)
+            }
         }
     }
 

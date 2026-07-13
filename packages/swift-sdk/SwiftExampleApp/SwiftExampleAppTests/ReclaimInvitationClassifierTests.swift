@@ -58,4 +58,53 @@ final class ReclaimInvitationClassifierTests: XCTestCase {
         XCTAssertFalse(ReclaimInvitationSheet.isAlreadyConsumed(message: "already consumed"))
         XCTAssertFalse(ReclaimInvitationSheet.isAlreadyConsumed(message: "AlreadyConsumed"))
     }
+
+    // MARK: - Terminal-outcome decision (classifyReclaimFailure)
+
+    private struct StubError: LocalizedError {
+        let message: String
+        var errorDescription: String? { message }
+    }
+
+    private static let alreadyConsumed = StubError(
+        message: "SDK error: Protocol error: Asset lock transaction "
+            + "3ff8e26d02e53f97a5f06b12327f40fc10cb859077e2788362c5d93032850ff0 "
+            + "output 0 already completely used"
+    )
+
+    /// Already-consumed + our own reclaim was in flight ⇒ recover as Reclaimed.
+    func test_classify_alreadyConsumed_priorInFlight_isReclaimed() {
+        XCTAssertEqual(
+            ReclaimInvitationSheet.classifyReclaimFailure(
+                error: Self.alreadyConsumed, hadPriorReclaimInFlight: true),
+            .reclaimed
+        )
+    }
+
+    /// Already-consumed + no prior reclaim ⇒ the invitee claimed it first (Claimed).
+    func test_classify_alreadyConsumed_noPrior_isClaimed() {
+        XCTAssertEqual(
+            ReclaimInvitationSheet.classifyReclaimFailure(
+                error: Self.alreadyConsumed, hadPriorReclaimInFlight: false),
+            .claimed
+        )
+    }
+
+    /// A non-already-consumed failure is `.error` regardless of the marker — the
+    /// row is left as-is. This is the safety net behind the S3 marker-placement
+    /// fix: a pre-broadcast local failure (never already-consumed, and with the
+    /// marker never set) must never be mistaken for a self-reclaim or a claim.
+    func test_classify_otherError_isError_regardlessOfMarker() {
+        let other = StubError(message: "SDK error: Transport error: connection refused")
+        XCTAssertEqual(
+            ReclaimInvitationSheet.classifyReclaimFailure(
+                error: other, hadPriorReclaimInFlight: true),
+            .error
+        )
+        XCTAssertEqual(
+            ReclaimInvitationSheet.classifyReclaimFailure(
+                error: other, hadPriorReclaimInFlight: false),
+            .error
+        )
+    }
 }

@@ -182,13 +182,21 @@ struct ReclaimInvitationSheet: View {
                 }
                 let (txid, vout) = try outPointParts()
 
-                // Persist an in-flight marker before submitting our consume, so a
-                // crash between the on-chain consume and the terminal save can be
-                // recovered on retry: a later "already consumed" that finds this
-                // marker set was *our own* reclaim, not a foreign claim.
-                hadPriorReclaimInFlight = invitation.reclaimInFlight
-                invitation.reclaimInFlight = true
-                try? modelContext.save()
+                // Persist the in-flight marker ONLY immediately before the on-chain
+                // consume — never before pre-broadcast local work (e.g. register's
+                // key pre-persist). A crash between the consume and the terminal
+                // save is then recoverable: a later "already consumed" that finds
+                // this marker set was *our own* reclaim, not a foreign claim. Setting
+                // it earlier would let a purely local failure leave the marker set,
+                // misclassifying a subsequent genuine foreign claim as self-reclaim.
+                // `hadPriorReclaimInFlight` captures the PERSISTED prior value first.
+                // `@MainActor` because a nested func is nonisolated by default in
+                // Swift 6 and this touches main-actor `invitation`/`modelContext`.
+                @MainActor func markInFlight() {
+                    hadPriorReclaimInFlight = invitation.reclaimInFlight
+                    invitation.reclaimInFlight = true
+                    try? modelContext.save()
+                }
 
                 switch target {
                 case .topUp:
@@ -196,6 +204,7 @@ struct ReclaimInvitationSheet: View {
                         errorMessage = "Pick an identity to top up."
                         return
                     }
+                    markInFlight()
                     _ = try await wallet.topUpIdentityWithExistingAssetLock(
                         outPointTxid: txid,
                         outPointVout: vout,
@@ -204,11 +213,14 @@ struct ReclaimInvitationSheet: View {
                 case .register:
                     let signer = KeychainSigner(modelContainer: modelContext.container)
                     let identityIndex = nextUnusedIdentityIndex()
+                    // Pre-broadcast local work — BEFORE the marker is set, so a
+                    // failure here leaves no in-flight marker.
                     let keys = try wallet.prePersistIdentityKeysForRegistration(
                         identityIndex: identityIndex,
                         keyCount: Self.authKeyCount,
                         network: network
                     )
+                    markInFlight()
                     _ = try await wallet.resumeIdentityWithAssetLock(
                         outPointTxid: txid,
                         outPointVout: vout,
@@ -225,30 +237,29 @@ struct ReclaimInvitationSheet: View {
                 try? modelContext.save()
                 dismiss()
             } catch {
-                if Self.isAlreadyConsumed(error) {
-                    // The consume was deterministically rejected because the
-                    // voucher is already spent — no funds are lost. The in-flight
-                    // marker disambiguates the two ways that happens:
-                    if hadPriorReclaimInFlight {
-                        // Our own earlier reclaim landed on-chain but crashed
-                        // before saving the terminal status. Recover it as
-                        // Reclaimed and clear the marker.
-                        invitation.statusRaw = 2
-                        invitation.reclaimInFlight = false
-                        invitation.updatedAt = Date()
-                        try? modelContext.save()
-                        infoMessage = "This invitation was already reclaimed."
-                    } else {
-                        // Someone else claimed the voucher first. Reflect the
-                        // terminal state with a neutral message (the claimant is
-                        // intentionally not named).
-                        invitation.statusRaw = 1
-                        invitation.updatedAt = Date()
-                        try? modelContext.save()
-                        infoMessage = "This invitation was already claimed."
-                    }
-                } else {
-                    // Uncertain outcome: leave the in-flight marker set so a later
+                switch Self.classifyReclaimFailure(
+                    error: error,
+                    hadPriorReclaimInFlight: hadPriorReclaimInFlight
+                ) {
+                case .reclaimed:
+                    // Our own earlier reclaim landed on-chain but crashed before
+                    // saving the terminal status. Recover it as Reclaimed and clear
+                    // the marker.
+                    invitation.statusRaw = 2
+                    invitation.reclaimInFlight = false
+                    invitation.updatedAt = Date()
+                    try? modelContext.save()
+                    infoMessage = "This invitation was already reclaimed."
+                case .claimed:
+                    // Someone else claimed the voucher first. Reflect the terminal
+                    // state with a neutral message (the claimant is intentionally
+                    // not named).
+                    invitation.statusRaw = 1
+                    invitation.updatedAt = Date()
+                    try? modelContext.save()
+                    infoMessage = "This invitation was already claimed."
+                case .error:
+                    // Uncertain outcome: leave the in-flight marker as-is so a later
                     // retry that hits "already consumed" classifies it as our own
                     // reclaim rather than a foreign claim.
                     errorMessage = error.localizedDescription
@@ -279,6 +290,29 @@ struct ReclaimInvitationSheet: View {
         let used = walletIdentities.map(\.identityIndex)
         guard let highest = used.max() else { return 0 }
         return highest == UInt32.max ? UInt32.max : highest + 1
+    }
+
+    /// The terminal state a reclaim attempt resolves to.
+    enum ReclaimOutcome: Equatable {
+        /// The voucher was consumed by our own earlier (crash-interrupted) reclaim.
+        case reclaimed
+        /// The voucher was consumed by the invitee's claim.
+        case claimed
+        /// An uncertain, non-"already-consumed" failure — leave state as-is.
+        case error
+    }
+
+    /// Pure decision for the reclaim `catch`: an "already consumed" rejection is
+    /// disambiguated by whether *our own* reclaim was already in flight when this
+    /// attempt started (persisted `reclaimInFlight` marker). Kept side-effect-free
+    /// and `nonisolated` so it is the unit-tested seam for all three outcomes; the
+    /// view maps the outcome to `statusRaw`/message/save.
+    nonisolated static func classifyReclaimFailure(
+        error: Error,
+        hadPriorReclaimInFlight: Bool
+    ) -> ReclaimOutcome {
+        guard isAlreadyConsumed(error) else { return .error }
+        return hadPriorReclaimInFlight ? .reclaimed : .claimed
     }
 
     /// Whether an error is the deterministic "asset lock outpoint already
