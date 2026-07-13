@@ -923,6 +923,49 @@ impl PlatformWalletPersistence for FFIPersister {
                 }
             }
 
+            // Fan out used-flag flips AFTER the derived-address emit:
+            // a tx can land on a freshly-derived address in the same
+            // round, and the Swift-side `persistAccountAddresses`
+            // overwrites `isUsed` with whatever the latest emit says —
+            // derived-first (`is_used: false`) then marked-used
+            // (`is_used: true`) leaves the row correctly flipped.
+            // These entries carry the authoritative post-mark
+            // `AddressInfo` from the wallet's pools (see
+            // `CoreChangeSet::addresses_marked_used`), so reusing the
+            // whole-pool snapshot encoder is exact, not approximate.
+            if !core_cs.addresses_marked_used.is_empty() {
+                if let Some(cb) = self.callbacks.on_persist_account_address_pools_fn {
+                    let entries =
+                        group_marked_used_into_pool_entries(&core_cs.addresses_marked_used);
+                    match build_address_pools_for_callback(&entries) {
+                        Ok((pools, _address_storage, _string_storage)) => {
+                            let result = unsafe {
+                                cb(
+                                    self.callbacks.context,
+                                    wallet_id.as_ptr(),
+                                    pools.as_ptr(),
+                                    pools.len(),
+                                )
+                            };
+                            drop(pools);
+                            drop(_address_storage);
+                            drop(_string_storage);
+                            if result != 0 {
+                                eprintln!(
+                                    "Marked-used address persistence callback returned error code {}",
+                                    result
+                                );
+                                round_success = false;
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!("Failed to encode marked-used address pool entries: {}", e);
+                            round_success = false;
+                        }
+                    }
+                }
+            }
+
             if let Some(cb) = self.callbacks.on_persist_wallet_changeset_fn {
                 let ffi_cs = WalletChangeSetFFI::from_changeset(core_cs);
                 let result = unsafe { cb(self.callbacks.context, wallet_id.as_ptr(), &ffi_cs) };
@@ -2974,6 +3017,38 @@ fn build_address_pools_from_derived(
     }
 
     Ok((pools, address_storage, owned_strings))
+}
+
+/// Bucket the changeset's marked-used address entries into
+/// [`AccountAddressPoolEntry`] values so the used-flag flip rides the
+/// same `build_address_pools_for_callback` →
+/// `on_persist_account_address_pools_fn` pipeline the registration
+/// snapshot and derived-address emits already use — one Swift code
+/// path (`persistAccountAddresses`) covers all three.
+///
+/// Grouping key is `(account_type, pool_type)`, mirroring
+/// `build_address_pools_from_derived`. Each entry's `AddressInfo` is
+/// the authoritative post-mark pool snapshot the bridge captured
+/// (`used == true`), so no field synthesis happens here.
+fn group_marked_used_into_pool_entries(
+    marked: &[key_wallet::transaction_checking::DerivedAddressInfo],
+) -> Vec<AccountAddressPoolEntry> {
+    let mut entries: Vec<AccountAddressPoolEntry> = Vec::new();
+    for d in marked {
+        if let Some(bucket) = entries
+            .iter_mut()
+            .find(|e| e.account_type == d.account_type && e.pool_type == d.pool_type)
+        {
+            bucket.addresses.push(d.info.clone());
+        } else {
+            entries.push(AccountAddressPoolEntry {
+                account_type: d.account_type,
+                pool_type: d.pool_type,
+                addresses: vec![d.info.clone()],
+            });
+        }
+    }
+    entries
 }
 
 /// RAII drop-guard that invokes the paired free callback on exit, so
@@ -5513,5 +5588,94 @@ mod tests {
         state
             .end_round()
             .expect("end must close the reopened round");
+    }
+
+    /// Stub one marked-used entry at `(account_type, pool_type, index)`
+    /// for the grouping test. Only the grouping key and the `used`
+    /// flag matter here.
+    fn stub_marked_used(
+        account_type: AccountType,
+        pool_type: AddressPoolType,
+        index: u32,
+    ) -> key_wallet::transaction_checking::DerivedAddressInfo {
+        use key_wallet::bip32::{ChildNumber, DerivationPath};
+        // Compressed secp256k1 generator point — a well-known valid key.
+        const TEST_PUBKEY_G: [u8; 33] = [
+            0x02, 0x79, 0xbe, 0x66, 0x7e, 0xf9, 0xdc, 0xbb, 0xac, 0x55, 0xa0, 0x62, 0x95, 0xce,
+            0x87, 0x0b, 0x07, 0x02, 0x9b, 0xfc, 0xdb, 0x2d, 0xce, 0x28, 0xd9, 0x59, 0xf2, 0x81,
+            0x5b, 0x16, 0xf8, 0x17, 0x98,
+        ];
+        let pubkey =
+            dashcore::PublicKey::from_slice(&TEST_PUBKEY_G).expect("generator point is valid");
+        let address = dashcore::Address::p2pkh(&pubkey, Network::Testnet);
+        let script_pubkey = address.script_pubkey();
+        let path = DerivationPath::from(vec![
+            ChildNumber::from_normal_idx(0).expect("valid child number"),
+            ChildNumber::from_normal_idx(index).expect("valid child number"),
+        ]);
+        key_wallet::transaction_checking::DerivedAddressInfo {
+            account_type,
+            pool_type,
+            info: AddressInfo {
+                address,
+                script_pubkey,
+                public_key: Some(PublicKeyType::ECDSA(TEST_PUBKEY_G.to_vec())),
+                index,
+                path,
+                used: true,
+                generated_at: 0,
+                used_at: None,
+                tx_count: 0,
+                total_received: 0,
+                total_sent: 0,
+                balance: 0,
+                label: None,
+                metadata: BTreeMap::new(),
+            },
+        }
+    }
+
+    /// Marked-used entries bucket into one `AccountAddressPoolEntry`
+    /// per `(account_type, pool_type)` pair — the shape
+    /// `build_address_pools_for_callback` expects — and every emitted
+    /// address keeps `used == true` so the Swift persister flips the
+    /// row instead of resetting it.
+    #[test]
+    fn marked_used_entries_group_per_account_and_pool() {
+        let bip44 = AccountType::Standard {
+            index: 0,
+            standard_account_type: StandardAccountType::BIP44Account,
+        };
+        let owner_keys = AccountType::ProviderOwnerKeys;
+
+        let marked = vec![
+            stub_marked_used(bip44, AddressPoolType::External, 0),
+            stub_marked_used(bip44, AddressPoolType::External, 3),
+            stub_marked_used(bip44, AddressPoolType::Internal, 1),
+            stub_marked_used(owner_keys, AddressPoolType::Absent, 0),
+        ];
+
+        let entries = group_marked_used_into_pool_entries(&marked);
+        assert_eq!(entries.len(), 3, "one bucket per (account, pool) pair");
+
+        let bip44_external = entries
+            .iter()
+            .find(|e| e.account_type == bip44 && e.pool_type == AddressPoolType::External)
+            .expect("bip44 external bucket");
+        assert_eq!(bip44_external.addresses.len(), 2);
+
+        let owner_bucket = entries
+            .iter()
+            .find(|e| e.account_type == owner_keys)
+            .expect("provider owner keys bucket");
+        assert_eq!(owner_bucket.pool_type, AddressPoolType::Absent);
+        assert_eq!(owner_bucket.addresses.len(), 1);
+        assert!(
+            entries
+                .iter()
+                .flat_map(|e| e.addresses.iter())
+                .all(|a| a.used),
+            "every emitted marked-used address must carry used == true"
+        );
     }
 }

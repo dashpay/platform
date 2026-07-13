@@ -148,6 +148,43 @@ pub struct CoreChangeSet {
     #[cfg_attr(feature = "serde", serde(skip))]
     pub addresses_derived: Vec<key_wallet_manager::DerivedAddress>,
 
+    /// Addresses the wallet marked **used** while processing the
+    /// records in this batch — the persistence-seam counterpart of
+    /// upstream `wallet_checker`'s in-memory `mark_address_used`
+    /// calls, which the `WalletEvent` bus does not carry. Rebuilt by
+    /// the event bridge from the post-processing pool state (the
+    /// authoritative `AddressInfo`, `used == true`) so persisters can
+    /// flip their mirrored address rows. Without this delta a match
+    /// found during SPV block processing (a TXO landing on a BIP44
+    /// address, or a special-tx payload hitting a provider owner /
+    /// voting key) updates only the in-memory pool and every store
+    /// keeps `is_used = false` forever.
+    ///
+    /// De-duplicated on merge by `(account_type, pool_type, index)`,
+    /// same key discipline as [`Self::addresses_derived`]. Re-emitting
+    /// an already-used address is idempotent on the persister side.
+    ///
+    /// `#[serde(skip)]`: same rationale as `addresses_derived` — the
+    /// breadcrumb targets typed persister tables, not the serialized
+    /// parent changeset.
+    #[cfg_attr(feature = "serde", serde(skip))]
+    pub addresses_marked_used: Vec<key_wallet::transaction_checking::DerivedAddressInfo>,
+
+    /// Post-batch highest-used derivation indexes for every account
+    /// that had an address marked used in this batch, read from the
+    /// authoritative in-memory pools (`AddressPool::highest_used`)
+    /// right after the wallet processed the records. Single-pool
+    /// accounts (provider keys, identity funding — pool type Absent /
+    /// AbsentHardened) surface their pool in the `external` slot,
+    /// matching how the FFI account row exposes exactly two
+    /// highest-used fields. Monotonic-max on merge per account per
+    /// slot; `None` means "no update".
+    ///
+    /// `#[serde(skip)]`: persister breadcrumb, same as the address
+    /// deltas above.
+    #[cfg_attr(feature = "serde", serde(skip))]
+    pub account_highest_used: BTreeMap<AccountType, HighestUsedIndexes>,
+
     /// Highest chainlock the wallet has applied (mirrors
     /// `WalletMetadata::last_applied_chain_lock`). Populated by the
     /// `ChainLockProcessed` bridge arm so the persister can
@@ -160,6 +197,37 @@ pub struct CoreChangeSet {
     /// lower height never overwrites a higher one — chain locks are
     /// strictly forward-advancing per upstream's contract).
     pub last_applied_chain_lock: Option<ChainLock>,
+}
+
+/// Highest-used derivation index per pool slot for one account, as
+/// carried by [`CoreChangeSet::account_highest_used`].
+///
+/// Accounts expose at most two persisted highest-used watermarks
+/// (external / internal). Standard accounts map their External /
+/// Internal pools onto the matching slot; single-pool accounts
+/// (provider keys, identity funding) surface their sole pool in
+/// `external`. `None` means the pool has never had a used address (or
+/// the account has no such pool) — distinct from `Some(0)`, which
+/// means index #0 is used.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct HighestUsedIndexes {
+    /// Highest used index of the external (or sole) pool.
+    pub external: Option<u32>,
+    /// Highest used index of the internal (change) pool.
+    pub internal: Option<u32>,
+}
+
+impl HighestUsedIndexes {
+    /// Fold `other` in with monotonic-max semantics per slot —
+    /// watermarks only advance, `None` never overwrites `Some`.
+    pub fn merge_max(&mut self, other: Self) {
+        if let Some(v) = other.external {
+            self.external = Some(self.external.map_or(v, |e| e.max(v)));
+        }
+        if let Some(v) = other.internal {
+            self.internal = Some(self.internal.map_or(v, |e| e.max(v)));
+        }
+    }
 }
 
 impl Merge for CoreChangeSet {
@@ -233,6 +301,37 @@ impl Merge for CoreChangeSet {
                 }
             }
         }
+
+        // Marked-used dedup: same `(account_type, pool_type, index)`
+        // key as the derived-address dedup above. Re-emitting a used
+        // flip is idempotent at the persister, so first-seen-wins is
+        // purely a payload-size optimization.
+        if !other.addresses_marked_used.is_empty() {
+            let mut seen: std::collections::HashSet<(
+                key_wallet::account::AccountType,
+                key_wallet::managed_account::address_pool::AddressPoolType,
+                u32,
+            )> = self
+                .addresses_marked_used
+                .iter()
+                .map(|d| (d.account_type, d.pool_type, d.info.index))
+                .collect();
+            for d in other.addresses_marked_used {
+                let key = (d.account_type, d.pool_type, d.info.index);
+                if seen.insert(key) {
+                    self.addresses_marked_used.push(d);
+                }
+            }
+        }
+
+        // Highest-used watermarks: monotonic-max per account per pool
+        // slot, same forward-only discipline as the height watermarks.
+        for (account_type, indexes) in other.account_highest_used {
+            self.account_highest_used
+                .entry(account_type)
+                .or_default()
+                .merge_max(indexes);
+        }
     }
 
     fn is_empty(&self) -> bool {
@@ -243,6 +342,8 @@ impl Merge for CoreChangeSet {
             && self.last_processed_height.is_none()
             && self.synced_height.is_none()
             && self.addresses_derived.is_empty()
+            && self.addresses_marked_used.is_empty()
+            && self.account_highest_used.is_empty()
             && self.last_applied_chain_lock.is_none()
     }
 }
@@ -1894,5 +1995,144 @@ mod tests {
         let taken = cs.take();
         assert!(taken.is_some());
         assert!(cs.is_empty());
+    }
+
+    /// Compressed encoding of the secp256k1 generator point — a
+    /// well-known valid public key for stubbing `AddressInfo`s.
+    const TEST_PUBKEY_G: [u8; 33] = [
+        0x02, 0x79, 0xbe, 0x66, 0x7e, 0xf9, 0xdc, 0xbb, 0xac, 0x55, 0xa0, 0x62, 0x95, 0xce, 0x87,
+        0x0b, 0x07, 0x02, 0x9b, 0xfc, 0xdb, 0x2d, 0xce, 0x28, 0xd9, 0x59, 0xf2, 0x81, 0x5b, 0x16,
+        0xf8, 0x17, 0x98,
+    ];
+
+    /// Stub a marked-used entry at `(account_type, pool_type, index)`.
+    /// Tests only exercise the dedup key, not address↔pubkey
+    /// consistency.
+    fn stub_marked_used(
+        account_type: AccountType,
+        pool_type: AddressPoolType,
+        index: u32,
+    ) -> key_wallet::transaction_checking::DerivedAddressInfo {
+        use key_wallet::bip32::{ChildNumber, DerivationPath};
+        use key_wallet::managed_account::address_pool::{AddressInfo, PublicKeyType};
+
+        let pubkey =
+            dashcore::PublicKey::from_slice(&TEST_PUBKEY_G).expect("generator point is valid");
+        let address = dashcore::Address::p2pkh(&pubkey, Network::Testnet);
+        let script_pubkey = address.script_pubkey();
+        let path = DerivationPath::from(vec![
+            ChildNumber::from_normal_idx(0).expect("valid child number"),
+            ChildNumber::from_normal_idx(index).expect("valid child number"),
+        ]);
+        key_wallet::transaction_checking::DerivedAddressInfo {
+            account_type,
+            pool_type,
+            info: AddressInfo {
+                address,
+                script_pubkey,
+                public_key: Some(PublicKeyType::ECDSA(TEST_PUBKEY_G.to_vec())),
+                index,
+                path,
+                used: true,
+                generated_at: 0,
+                used_at: None,
+                tx_count: 0,
+                total_received: 0,
+                total_sent: 0,
+                balance: 0,
+                label: None,
+                metadata: BTreeMap::new(),
+            },
+        }
+    }
+
+    fn bip44_account_0() -> AccountType {
+        AccountType::Standard {
+            index: 0,
+            standard_account_type: key_wallet::account::StandardAccountType::BIP44Account,
+        }
+    }
+
+    /// A marked-used delta (or a highest-used watermark) alone must
+    /// mark the core changeset non-empty, or the event adapter drops
+    /// the persist round and the used flip never reaches any store —
+    /// the exact bug this delta exists to fix.
+    #[test]
+    fn marked_used_and_highest_used_mark_core_changeset_non_empty() {
+        let mut cs = CoreChangeSet::default();
+        assert!(cs.is_empty());
+        cs.addresses_marked_used = vec![stub_marked_used(
+            bip44_account_0(),
+            AddressPoolType::External,
+            0,
+        )];
+        assert!(!cs.is_empty(), "marked-used delta must be persisted");
+
+        let mut cs = CoreChangeSet::default();
+        cs.account_highest_used.insert(
+            bip44_account_0(),
+            HighestUsedIndexes {
+                external: Some(0),
+                internal: None,
+            },
+        );
+        assert!(!cs.is_empty(), "highest-used watermark must be persisted");
+    }
+
+    /// Merge dedups marked-used entries on `(account_type, pool_type,
+    /// index)` — same discipline as `addresses_derived` — and keeps
+    /// distinct indices / pools apart.
+    #[test]
+    fn merge_dedups_marked_used_entries() {
+        let acct = bip44_account_0();
+        let mut cs = CoreChangeSet {
+            addresses_marked_used: vec![stub_marked_used(acct, AddressPoolType::External, 5)],
+            ..CoreChangeSet::default()
+        };
+        cs.merge(CoreChangeSet {
+            addresses_marked_used: vec![
+                // duplicate of the existing entry — dropped
+                stub_marked_used(acct, AddressPoolType::External, 5),
+                // same index, different pool — kept
+                stub_marked_used(acct, AddressPoolType::Internal, 5),
+                // same pool, different index — kept
+                stub_marked_used(acct, AddressPoolType::External, 6),
+            ],
+            ..CoreChangeSet::default()
+        });
+        assert_eq!(cs.addresses_marked_used.len(), 3);
+    }
+
+    /// Highest-used watermarks merge monotonic-max per account per
+    /// pool slot: a later batch can only advance a slot, and `None`
+    /// never erases a prior `Some`.
+    #[test]
+    fn merge_highest_used_is_monotonic_max_per_slot() {
+        let acct = bip44_account_0();
+        let mut cs = CoreChangeSet::default();
+        cs.account_highest_used.insert(
+            acct,
+            HighestUsedIndexes {
+                external: Some(5),
+                internal: None,
+            },
+        );
+        cs.merge(CoreChangeSet {
+            account_highest_used: {
+                let mut m = BTreeMap::new();
+                m.insert(
+                    acct,
+                    HighestUsedIndexes {
+                        external: Some(2), // lower — must not regress
+                        internal: Some(1), // fills the empty slot
+                    },
+                );
+                m
+            },
+            ..CoreChangeSet::default()
+        });
+        let merged = cs.account_highest_used[&acct];
+        assert_eq!(merged.external, Some(5));
+        assert_eq!(merged.internal, Some(1));
     }
 }
