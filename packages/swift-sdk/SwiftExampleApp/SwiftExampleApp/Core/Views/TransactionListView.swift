@@ -5,7 +5,10 @@ import SwiftDashSDK
 struct TransactionListView: View {
     /// Per-wallet transaction list. Queries `PersistentTxo` flat by
     /// the denormalized `walletId` column and resolves distinct
-    /// creating-or-spending `PersistentTransaction`s in the body —
+    /// creating-or-spending `PersistentTransaction`s in the body,
+    /// then unions in each account's payload-only
+    /// `involvedTransactions` (special txs that matched an account by
+    /// payload and produced no TXO, so the TXO join misses them) —
     /// same union `WalletDetailView`'s count uses.
     ///
     /// Reached via value-based navigation (see
@@ -19,6 +22,11 @@ struct TransactionListView: View {
     /// Membership: which txids belong to this wallet, via the
     /// denormalized `walletId` on TXOs.
     @Query private var walletTxos: [PersistentTxo]
+    /// This wallet's accounts, for the payload-only
+    /// `involvedTransactions` union below — special txs that matched an
+    /// account by payload with no TXO in the wallet, invisible to the
+    /// `walletTxos` join.
+    @Query private var walletAccounts: [PersistentAccount]
     @Query private var transactionObservation: [PersistentTransaction]
     /// Per-wallet asset-lock rows. Used to look up the *locked* amount
     /// for each asset-lock tx — `PersistentTransaction.netAmount` is
@@ -48,6 +56,9 @@ struct TransactionListView: View {
             predicate: #Predicate { $0.walletId == walletId }
         )
         _walletTxos = Query(txoDescriptor)
+        _walletAccounts = Query(
+            filter: #Predicate<PersistentAccount> { $0.wallet.walletId == walletId }
+        )
         let assetLockDescriptor = FetchDescriptor<PersistentAssetLock>(
             predicate: PersistentAssetLock.predicate(walletId: walletId)
         )
@@ -126,6 +137,15 @@ struct TransactionListView: View {
             }
             if let spending = txo.spendingTransaction, seen.insert(spending.txid).inserted {
                 result.append(spending)
+            }
+        }
+        // Payload-only involvement: special txs that matched one of
+        // this wallet's accounts by payload (provider owner / voting
+        // key address) with no TXO, so the `walletTxos` join above
+        // never sees them. De-dup by txid against the funded set.
+        for account in walletAccounts {
+            for tx in account.involvedTransactions where seen.insert(tx.txid).inserted {
+                result.append(tx)
             }
         }
         return result.sorted { lhs, rhs in

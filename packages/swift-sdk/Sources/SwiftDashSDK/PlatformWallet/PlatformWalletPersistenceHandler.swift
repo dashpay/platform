@@ -592,11 +592,22 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
 
     private func upsertTransaction(account: PersistentAccount, tx: TransactionRecordFFI) {
         // The `account` parameter scopes the wallet-id used for the
-        // input-reconciliation pass at the bottom of this method.
-        // The transaction row itself stays account-agnostic — a
+        // input-reconciliation pass at the bottom of this method, and
+        // records this account's participation in the tx via the
+        // `involvedAccounts` join appended below.
+        //
+        // The transaction row's *funds* stay account-agnostic — a
         // single tx can land in multiple accounts (or wallets), and
-        // per-wallet membership is recovered through the TXO graph
-        // (`outputs` / `inputs`) rather than a denormalized column.
+        // per-wallet fund membership is recovered through the TXO
+        // graph (`outputs` / `inputs`) rather than a denormalized
+        // column. But this handler is invoked once per matched account
+        // (the Rust changeset buckets `cs.records` by
+        // `record.account_type`), including for payload-only matches —
+        // a special-tx payload matching this account's provider owner /
+        // voting key address with no TXO in the account. The TXO join
+        // is blind to those, so we append `account` to
+        // `record.involvedAccounts` to keep the involvement
+        // representable at all.
         //
         let resolvedWalletId: Data = account.wallet.walletId
         let txidData = hashData(tx.txid)
@@ -666,6 +677,21 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         }
         record.transactionData = transactionData
         record.lastUpdated = Date()
+
+        // Record this account's participation in the tx. Idempotent:
+        // SPV re-upserts the same (account, tx) pair on every touch, so
+        // append only when the account isn't already linked. Compare by
+        // `persistentModelID` — object identity isn't stable across
+        // fetches within a context, but the model id is. This is the
+        // sole carrier of payload-only involvement (no TXO in the
+        // account); for ordinary funded txs it harmlessly duplicates
+        // the TXO-derived membership, which the per-account union
+        // de-dups.
+        if !record.involvedAccounts.contains(where: {
+            $0.persistentModelID == account.persistentModelID
+        }) {
+            record.involvedAccounts.append(account)
+        }
 
         // Walk every input in this transaction and reconcile it
         // against the `PersistentTxo` table. The FFI populates
@@ -3730,10 +3756,22 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
 
                 try backgroundContext.save()
 
+                // Orphan sweep: drop tx rows no longer referenced by any
+                // wallet. A row is referenced through the TXO graph
+                // (outputs / inputs / pendingInputs) OR through the
+                // `involvedAccounts` join — payload-only special txs
+                // (e.g. a ProRegTx matching a provider owner key) have
+                // no TXOs anywhere yet legitimately belong to a live
+                // account, so sweeping on the TXO relations alone would
+                // erase another wallet's payload-only history. The
+                // deleted wallet's own payload-only rows still qualify:
+                // its accounts were deleted (and their join links
+                // nullified) in the earlier save above.
                 let txRows = try backgroundContext.fetch(FetchDescriptor<PersistentTransaction>())
                 for tx in txRows where tx.outputs.isEmpty &&
                     tx.inputs.isEmpty &&
-                    tx.pendingInputs.isEmpty {
+                    tx.pendingInputs.isEmpty &&
+                    tx.involvedAccounts.isEmpty {
                     backgroundContext.delete(tx)
                 }
 
