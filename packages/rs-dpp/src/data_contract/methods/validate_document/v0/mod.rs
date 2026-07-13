@@ -65,7 +65,7 @@ impl DataContract {
             value.has_data_larger_than(platform_version.system_limits.max_field_value_size)
         {
             let field = match key {
-                Some(Value::Text(field)) => field,
+                Some(Value::Text(field)) => field.clone(),
                 _ => "".to_string(),
             };
             return Ok(SimpleConsensusValidationResult::new_with_error(

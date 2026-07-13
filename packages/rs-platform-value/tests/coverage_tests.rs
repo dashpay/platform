@@ -23,8 +23,9 @@
 
 use platform_value::patch::{diff, merge};
 use platform_value::{
-    from_value, patch, platform_value, to_value, BinaryData, Error, Identifier,
-    IntegerReplacementType, Patch, Value, ValueMap, ValueMapHelper,
+    from_value, patch, platform_value, to_value, with_value_decode_depth_limit, BinaryData, Error,
+    Identifier, IntegerReplacementType, Patch, Value, ValueMap, ValueMapHelper,
+    DEFAULT_MAX_VALUE_DECODE_DEPTH,
 };
 use std::collections::BTreeMap;
 
@@ -283,10 +284,11 @@ mod has_data_larger_than_tests {
             )])]),
         )]);
 
-        assert_eq!(
-            v.has_data_larger_than(5),
-            Some((Some(Value::Text("outer".into())), 9))
-        );
+        let (reported_value, actual_size) = v
+            .has_data_larger_than(5)
+            .expect("the oversized value should be reported");
+        assert_eq!(reported_value, Some(&Value::Text("outer".into())));
+        assert_eq!(actual_size, 9);
     }
 
     #[test]
@@ -297,6 +299,160 @@ mod has_data_larger_than_tests {
         assert!(value.has_data_larger_than(1).is_none());
 
         // Avoid recursively dropping the intentionally extreme test value.
+        std::mem::forget(value);
+    }
+
+    #[test]
+    fn reports_deeply_nested_oversized_root_array_without_cloning() {
+        let value = (0..8_000).fold(Value::Text("oversized".into()), |value, _| {
+            Value::Array(vec![value])
+        });
+
+        let (reported_value, actual_size) = value
+            .has_data_larger_than(5)
+            .expect("the oversized value should be reported");
+        assert!(matches!(reported_value, Some(Value::Array(_))));
+        assert_eq!(actual_size, 9);
+
+        // Avoid recursively dropping the intentionally extreme test value.
+        std::mem::forget(value);
+    }
+}
+
+mod value_decode_depth_tests {
+    use super::*;
+
+    fn encoded_nested_arrays(depth: usize) -> Vec<u8> {
+        let config = bincode::config::standard();
+        let array_prefix = [
+            bincode::encode_to_vec(21u32, config).expect("array variant should encode"),
+            bincode::encode_to_vec(1u64, config).expect("array length should encode"),
+        ]
+        .concat();
+        let null = bincode::encode_to_vec(20u32, config).expect("null variant should encode");
+        let mut encoded = Vec::with_capacity(array_prefix.len() * depth + null.len());
+
+        for _ in 0..depth {
+            encoded.extend_from_slice(&array_prefix);
+        }
+        encoded.extend_from_slice(&null);
+        encoded
+    }
+
+    #[test]
+    fn iterative_decoder_preserves_every_value_variant() {
+        let values = vec![
+            Value::U128(u128::MAX),
+            Value::I128(i128::MIN),
+            Value::U64(u64::MAX),
+            Value::I64(i64::MIN),
+            Value::U32(u32::MAX),
+            Value::I32(i32::MIN),
+            Value::U16(u16::MAX),
+            Value::I16(i16::MIN),
+            Value::U8(u8::MAX),
+            Value::I8(i8::MIN),
+            Value::Bytes(vec![1, 2, 3]),
+            Value::Bytes20([4; 20]),
+            Value::Bytes32([5; 32]),
+            Value::Bytes36([6; 36]),
+            Value::EnumU8(vec![7, 8]),
+            Value::EnumString(vec!["a".into(), "b".into()]),
+            Value::Identifier([9; 32]),
+            Value::Float(1.25),
+            Value::Text("text".into()),
+            Value::Bool(true),
+            Value::Null,
+            Value::Array(vec![Value::Null, Value::U8(1)]),
+            Value::Map(vec![
+                (Value::Text("first".into()), Value::Array(Vec::new())),
+                (Value::Array(vec![Value::Null]), Value::Map(Vec::new())),
+            ]),
+        ];
+        let config = bincode::config::standard();
+
+        for value in values {
+            let encoded = bincode::encode_to_vec(&value, config).expect("value should encode");
+            let (decoded, consumed) = bincode::decode_from_slice::<Value, _>(&encoded, config)
+                .expect("value should decode");
+            assert_eq!(decoded, value);
+            assert_eq!(consumed, encoded.len());
+        }
+    }
+
+    #[test]
+    fn rejects_excessive_nesting_during_iterative_decode() {
+        let config = bincode::config::standard();
+        let encoded = encoded_nested_arrays(4_000);
+
+        let result = bincode::decode_from_slice::<Value, _>(&encoded, config);
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("value nesting depth 257 exceeds maximum 256"));
+    }
+
+    #[test]
+    fn accepts_nesting_at_the_decode_limit() {
+        let encoded = encoded_nested_arrays(DEFAULT_MAX_VALUE_DECODE_DEPTH);
+        let (value, consumed) =
+            bincode::decode_from_slice::<Value, _>(&encoded, bincode::config::standard())
+                .expect("nesting at the limit should decode");
+
+        assert_eq!(consumed, encoded.len());
+        assert_eq!(
+            value.first_depth_exceeding(DEFAULT_MAX_VALUE_DECODE_DEPTH),
+            None
+        );
+        std::mem::forget(value);
+    }
+
+    #[test]
+    fn scoped_decode_limit_is_restored() {
+        let encoded = encoded_nested_arrays(2);
+        let config = bincode::config::standard();
+
+        let limited = with_value_decode_depth_limit(Some(1), || {
+            bincode::decode_from_slice::<Value, _>(&encoded, config)
+        });
+        assert!(limited.is_err());
+
+        let (value, _) = bincode::decode_from_slice::<Value, _>(&encoded, config)
+            .expect("the default depth limit should be restored");
+        assert_eq!(value.first_depth_exceeding(2), None);
+    }
+
+    #[test]
+    fn scoped_limit_counts_recursive_map_keys() {
+        let value = Value::Map(vec![(
+            Value::Map(vec![(Value::Null, Value::Null)]),
+            Value::Null,
+        )]);
+        let config = bincode::config::standard();
+        let encoded = bincode::encode_to_vec(&value, config).expect("value should encode");
+
+        let result = with_value_decode_depth_limit(Some(1), || {
+            bincode::decode_from_slice::<Value, _>(&encoded, config)
+        });
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("value nesting depth 2 exceeds maximum 1"));
+    }
+
+    #[test]
+    fn unbounded_scope_still_decodes_deep_values_iteratively() {
+        let encoded = encoded_nested_arrays(4_000);
+        let config = bincode::config::standard();
+        let (value, consumed) = with_value_decode_depth_limit(None, || {
+            bincode::decode_from_slice::<Value, _>(&encoded, config)
+        })
+        .expect("an unbounded scope should preserve legacy decoding");
+
+        assert_eq!(consumed, encoded.len());
+        assert_eq!(value.first_depth_exceeding(3_999), Some(4_000));
         std::mem::forget(value);
     }
 }

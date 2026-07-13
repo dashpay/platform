@@ -269,6 +269,11 @@ pub trait DocumentTransitionV0Methods {
     fn data_contract_id(&self) -> Identifier;
     /// get the data of the transition if exits
     fn data(&self) -> Option<&BTreeMap<String, Value>>;
+    /// Returns the first document-data container depth greater than `max_depth`.
+    ///
+    /// The document's root property map counts as depth one. The traversal borrows transition
+    /// data so invalid nesting can be rejected before action construction clones recursive values.
+    fn first_data_depth_exceeding(&self, max_depth: usize) -> Option<usize>;
     /// get the revision of transition if exits
     fn revision(&self) -> Option<Revision>;
 
@@ -344,6 +349,20 @@ impl DocumentTransitionV0Methods for DocumentTransition {
             DocumentTransition::UpdatePrice(_) => None,
             DocumentTransition::Purchase(_) => None,
         }
+    }
+
+    fn first_data_depth_exceeding(&self, max_depth: usize) -> Option<usize> {
+        let data = self.data()?;
+
+        if max_depth == 0 {
+            return Some(1);
+        }
+
+        data.values().find_map(|value| {
+            value
+                .first_depth_exceeding(max_depth - 1)
+                .map(|depth| depth + 1)
+        })
     }
 
     fn revision(&self) -> Option<Revision> {
@@ -557,6 +576,25 @@ mod tests {
     fn get_dynamic_property_returns_none_for_update_price() {
         let transition = make_update_price_transition();
         assert!(transition.get_dynamic_property("anything").is_none());
+    }
+
+    #[test]
+    fn data_depth_check_borrows_create_and_replace_properties() {
+        let data = BTreeMap::from([(
+            "nested".to_string(),
+            Value::Array(vec![Value::Array(vec![Value::Null])]),
+        )]);
+        let create = make_create_transition(data.clone());
+        let replace = make_replace_transition(data);
+
+        // Root property map is depth 1 and the two arrays reach depth 3.
+        assert_eq!(create.first_data_depth_exceeding(2), Some(3));
+        assert_eq!(replace.first_data_depth_exceeding(3), None);
+    }
+
+    #[test]
+    fn data_depth_check_ignores_transitions_without_document_data() {
+        assert_eq!(make_delete_transition().first_data_depth_exceeding(0), None);
     }
 
     #[test]
