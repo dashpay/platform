@@ -172,6 +172,7 @@ pub unsafe extern "C" fn platform_wallet_create_invitation(
                     funding_account_index,
                     inviter,
                     expiry_unix,
+                    now_unix,
                     &asset_lock_signer,
                     &provider,
                 )

@@ -192,12 +192,14 @@ impl IdentityWallet {
     /// The proof is kept as an **InstantSend** proof (owner decision) — fast, and
     /// the embedded tx + islock make the link self-contained; staleness is
     /// bounded by the short advisory expiry, not a CL upgrade.
+    #[allow(clippy::too_many_arguments)]
     pub async fn create_invitation<AS, CP>(
         &self,
         amount_duffs: u64,
         funding_account_index: u32,
         inviter: Option<InviterInfo>,
         expiry_unix: u32,
+        created_at_secs: u32,
         asset_lock_signer: &AS,
         crypto_provider: &CP,
     ) -> Result<Invitation, PlatformWalletError>
@@ -252,6 +254,51 @@ impl IdentityWallet {
             ));
         }
 
+        // Persist the inviter-side invitation record NOW — after the funding is
+        // confirmed valid (IS-locked) but BEFORE the fallible voucher-key export
+        // and URI encode below. Ordering matters: those later steps can fail on an
+        // already-funded voucher (a too-long username rejected by the encoder, an
+        // export error), and the "Sent invitations"/reclaim UI lists only persisted
+        // records — so recording the row first is what keeps a funded-but-not-yet-
+        // linked voucher reclaimable. The store is REQUIRED, not best-effort: a
+        // funded voucher we cannot record is a hard failure to surface, not a silent
+        // success. No secret is stored — only the funding index (display metadata;
+        // reclaim resumes by outpoint). If the funding path carries no u32 index
+        // tail (a structural can't-happen for the invitation account), warn-skip:
+        // an untrackable row can't be reclaimed either way, and the link is valid.
+        if let Some(funding_index) = funding_index_from_path(&path) {
+            let mut inv_cs = InvitationChangeSet::default();
+            inv_cs.invitations.insert(
+                out_point,
+                InvitationEntry {
+                    out_point,
+                    funding_index,
+                    amount_duffs,
+                    expiry_unix,
+                    created_at_secs,
+                    has_inviter: inviter.is_some(),
+                    status: InvitationStatus::Created,
+                },
+            );
+            self.persister
+                .store(crate::changeset::PlatformWalletChangeSet {
+                    invitations: Some(inv_cs),
+                    ..Default::default()
+                })
+                .map_err(|e| {
+                    PlatformWalletError::AssetLockTransaction(format!(
+                        "the invitation voucher is funded but its record could not be \
+                         persisted (it would be missing from Sent invitations and \
+                         unreclaimable): {e}"
+                    ))
+                })?;
+        } else {
+            tracing::warn!(
+                "invitation funding path has no u32 index tail; \
+                 skipping the local invitation record"
+            );
+        }
+
         // Export the one-time voucher private key at the funding path. This is
         // the one deliberate raw-key export (the whole point of an invitation);
         // it is path-gated to the invitation sub-feature inside the provider.
@@ -268,41 +315,6 @@ impl IdentityWallet {
         let uri_result = encode_invitation_uri(&voucher_key, network, &proof, inviter.as_ref());
         voucher_key.non_secure_erase();
         let uri = uri_result?;
-
-        // Persist an inviter-side invitation record for the "Sent invitations"
-        // list + (future) reclaim. No secret is stored — only the funding index,
-        // which is display metadata (reclaim resumes by outpoint, not by this
-        // index). Best-effort: the link is already valid, so skipping the record
-        // never fails the create.
-        if let Some(funding_index) = funding_index_from_path(&path) {
-            let mut inv_cs = InvitationChangeSet::default();
-            inv_cs.invitations.insert(
-                out_point,
-                InvitationEntry {
-                    out_point,
-                    funding_index,
-                    amount_duffs,
-                    expiry_unix,
-                    created_at_secs: expiry_unix.saturating_sub(MAX_INVITATION_TTL_SECS),
-                    has_inviter: inviter.is_some(),
-                    status: InvitationStatus::Created,
-                },
-            );
-            if let Err(e) = self
-                .persister
-                .store(crate::changeset::PlatformWalletChangeSet {
-                    invitations: Some(inv_cs),
-                    ..Default::default()
-                })
-            {
-                tracing::warn!(error = %e, "failed to persist invitation record; the link is still valid");
-            }
-        } else {
-            tracing::warn!(
-                "invitation funding path has no u32 index tail; \
-                 skipping the local invitation record"
-            );
-        }
 
         Ok(Invitation {
             uri,
