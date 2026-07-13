@@ -3756,10 +3756,22 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
 
                 try backgroundContext.save()
 
+                // Orphan sweep: drop tx rows no longer referenced by any
+                // wallet. A row is referenced through the TXO graph
+                // (outputs / inputs / pendingInputs) OR through the
+                // `involvedAccounts` join — payload-only special txs
+                // (e.g. a ProRegTx matching a provider owner key) have
+                // no TXOs anywhere yet legitimately belong to a live
+                // account, so sweeping on the TXO relations alone would
+                // erase another wallet's payload-only history. The
+                // deleted wallet's own payload-only rows still qualify:
+                // its accounts were deleted (and their join links
+                // nullified) in the earlier save above.
                 let txRows = try backgroundContext.fetch(FetchDescriptor<PersistentTransaction>())
                 for tx in txRows where tx.outputs.isEmpty &&
                     tx.inputs.isEmpty &&
-                    tx.pendingInputs.isEmpty {
+                    tx.pendingInputs.isEmpty &&
+                    tx.involvedAccounts.isEmpty {
                     backgroundContext.delete(tx)
                 }
 
