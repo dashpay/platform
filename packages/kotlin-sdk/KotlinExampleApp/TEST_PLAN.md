@@ -278,7 +278,7 @@ Shielded notes/balance/activity have **no read-side FFI** by design — Rust pus
 | SYS-04 | Run-all-queries / DPNS test harness | Platform | Thorough | ✅ | | `QueriesListScreen` diagnostics (`runAllQueries`, `testDPNSQueries`), `DiagnosticsScreen`. |
 | SYS-05 | Storage / Keystore / Wallet-memory explorers | — | Thorough | ✅ | read-only | `StorageExplorerScreen`, `KeystoreExplorerScreen`, `WalletMemoryExplorerScreen` (Settings; debug tooling). |
 | SYS-06 | Path elements (raw GroveDB) | Platform | Uncommon | 🧪 | read-only | **Get GroveDB Path Elements** read view → `dash_sdk_system_get_path_elements`. Enter `path` + `keys` JSON array; returns `[{key, element, type}]`. Use a **bounded** path. |
-| SYS-07 | Platform balance sync is per-active-wallet, **not** concurrent | Platform | Thorough | ✅ | multiwallet | `PlatformBalanceSyncService` is configured for ONE wallet. Unlike Core SPV (`CORE-20`), wallet B's Platform balances can be **stale until you switch to B and Sync Now**. |
+| SYS-07 | Platform balance sync covers every registered wallet | Platform | Thorough | ✅ | multiwallet | The Rust `PlatformAddressSyncManager` sweeps EVERY registered wallet each pass (like Core SPV, `CORE-20`); `PlatformBalanceSyncService.configure(manager)` merely reflects the shared loop. Verify wallet B's Platform address balances update **without** switching to B. (Row previously claimed per-active-wallet staleness — obsolete since the manager-level all-wallet sweep.) |
 | SYS-08 | Per-wallet Platform isolation (identities / usernames / tokens / contacts) | Platform | Thorough | ✅ | multiwallet | Wallet A's identities, DPNS names, token balances, and DashPay contacts must never surface under wallet B. |
 
 ---
