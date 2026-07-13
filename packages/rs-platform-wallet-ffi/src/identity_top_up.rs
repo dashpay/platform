@@ -65,7 +65,6 @@ use crate::{unwrap_option_or_return, unwrap_result_or_return};
 ///   The caller retains ownership; this function does NOT destroy it.
 /// - `out_new_balance` must be writable for the duration of the call.
 #[no_mangle]
-#[allow(clippy::too_many_arguments)]
 pub unsafe extern "C" fn platform_wallet_top_up_from_addresses_with_signer(
     wallet_handle: Handle,
     identity_id: *const [u8; 32],
@@ -86,7 +85,7 @@ pub unsafe extern "C" fn platform_wallet_top_up_from_addresses_with_signer(
     }
 
     let identity_id_bytes: [u8; 32] = *identity_id;
-    let identity_id = Identifier::from_bytes(&identity_id_bytes).unwrap_or_default();
+    let identity_id = Identifier::from(identity_id_bytes);
 
     let entries = slice::from_raw_parts(inputs, inputs_count);
     let mut input_map: BTreeMap<PlatformAddress, Credits> = BTreeMap::new();
@@ -174,7 +173,6 @@ pub unsafe extern "C" fn platform_wallet_top_up_from_addresses_with_signer(
 ///   ownership; this function does NOT destroy it.
 /// - `out_new_balance` must be writable for the duration of the call.
 #[no_mangle]
-#[allow(clippy::too_many_arguments)]
 pub unsafe extern "C" fn platform_wallet_top_up_identity_with_funding_signer(
     wallet_handle: Handle,
     identity_id: *const [u8; 32],
@@ -194,7 +192,7 @@ pub unsafe extern "C" fn platform_wallet_top_up_identity_with_funding_signer(
     }
 
     let identity_id_bytes: [u8; 32] = *identity_id;
-    let identity_id = Identifier::from_bytes(&identity_id_bytes).unwrap_or_default();
+    let identity_id = Identifier::from(identity_id_bytes);
 
     // Round-trip the handle through `usize` so the spawned future's
     // capture is `Send + 'static` — same pattern as the registration

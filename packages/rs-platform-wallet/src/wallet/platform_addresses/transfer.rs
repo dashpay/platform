@@ -477,7 +477,7 @@ impl PlatformAddressWallet {
 
         // Candidate SET only — every candidate's BALANCE is read fresh from the
         // chain below, NOT from the account cache. Sizing auto-selection from
-        // the cache was the ADDR-02 transfer bug: a freshly-loaded wallet whose
+        // the cache was a past transfer bug: a freshly-loaded wallet whose
         // in-memory account was never hydrated with per-address credit balances
         // reports 0 for every address, so auto-selection found no candidates and
         // failed with "available 0 credits" — even though the same addresses
