@@ -25,6 +25,13 @@ use crate::wallet::PlatformWallet;
 /// its retained provider special transactions with their confirmation
 /// heights, and a DML snapshot (`proTxHash -> is_valid`, `None` when the
 /// deterministic masternode list isn't available yet).
+///
+/// Key-ownership annotation is NOT computed here: the wallet's in-memory
+/// provider-key pools aren't rehydrated for imported/restored wallets, so
+/// a pool scan reports "not in wallet" for keys the wallet demonstrably
+/// holds. Ownership is instead resolved app-side against the persisted
+/// `PersistentCoreAddress` rows (address ⇒ account type + index) — the
+/// same durable source the account screen + address-subtitle join use.
 pub type ProviderMasternodeTxs = (
     dashcore::Network,
     Vec<(u32, dashcore::Transaction)>,

@@ -60,6 +60,35 @@ enum MasternodeSync {
                 row.votingKeyHash = mn.votingKeyHash
                 row.ownerAddress = mn.ownerAddress
                 row.votingAddress = mn.votingAddress
+                row.operatorPublicKey = mn.operatorPublicKey
+                row.platformNodeId = mn.platformNodeId
+                row.payoutAddress = mn.payoutAddress
+
+                // Key ownership: join each key's base58 address against the
+                // persisted `PersistentCoreAddress` rows (address ⇒ account
+                // type + index). This durable source works for imported /
+                // restored wallets whose in-memory provider pools aren't
+                // rehydrated — the same join the account screen + address
+                // subtitle rely on.
+                let owner = ownership(for: mn.ownerAddress, modelContext: modelContext)
+                row.ownerInWallet = owner.inWallet
+                row.ownerAccountType = owner.accountType
+                row.ownerKeyIndex = owner.index
+                let voting = ownership(for: mn.votingAddress, modelContext: modelContext)
+                row.votingInWallet = voting.inWallet
+                row.votingAccountType = voting.accountType
+                row.votingKeyIndex = voting.index
+                let operatorOwn = ownership(
+                    for: mn.operatorPseudoAddress, modelContext: modelContext)
+                row.operatorInWallet = operatorOwn.inWallet
+                row.operatorAccountType = operatorOwn.accountType
+                row.operatorKeyIndex = operatorOwn.index
+                let platform = ownership(
+                    for: mn.platformNodeAddress, modelContext: modelContext)
+                row.platformInWallet = platform.inWallet
+                row.platformAccountType = platform.accountType
+                row.platformKeyIndex = platform.index
+
                 row.collateralTxid = mn.collateralTxid
                 row.collateralVout = mn.collateralVout
                 row.revoked = mn.revoked
@@ -93,5 +122,26 @@ enum MasternodeSync {
         if changed {
             try? modelContext.save()
         }
+    }
+
+    /// Resolve a provider key's wallet ownership by looking up its base58
+    /// `address` in the persisted `PersistentCoreAddress` rows (address is
+    /// `@Attribute(.unique)`, so at most one match). Returns the row's
+    /// account-type tag + derivation index. Pure load + string join — no
+    /// key material or decisions.
+    private static func ownership(
+        for address: String?,
+        modelContext: ModelContext
+    ) -> (inWallet: Bool, accountType: UInt8, index: UInt32) {
+        guard let address, !address.isEmpty else { return (false, 0, 0) }
+        let descriptor = FetchDescriptor<PersistentCoreAddress>(
+            predicate: #Predicate { $0.address == address }
+        )
+        guard let row = try? modelContext.fetch(descriptor).first,
+              let account = row.account
+        else {
+            return (false, 0, 0)
+        }
+        return (true, UInt8(truncatingIfNeeded: account.accountType), row.addressIndex)
     }
 }

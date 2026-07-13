@@ -45,6 +45,27 @@ public final class PersistentMasternode {
     /// Swift-side key hashing.
     public var ownerAddress: String?
     public var votingAddress: String?
+    /// Operator BLS public key (48 raw bytes), or nil.
+    public var operatorPublicKey: Data?
+    /// Platform node id (hash160, 20 bytes) for evonodes, or nil.
+    public var platformNodeId: Data?
+    /// Base58 payout address (Rust-encoded), or nil.
+    public var payoutAddress: String?
+
+    /// Per-key wallet ownership (computed in Rust during the list call).
+    /// `*AccountType`/`*Index` are meaningful only when `*InWallet`.
+    public var ownerInWallet: Bool = false
+    public var ownerAccountType: UInt8 = 0
+    public var ownerKeyIndex: UInt32 = 0
+    public var votingInWallet: Bool = false
+    public var votingAccountType: UInt8 = 0
+    public var votingKeyIndex: UInt32 = 0
+    public var operatorInWallet: Bool = false
+    public var operatorAccountType: UInt8 = 0
+    public var operatorKeyIndex: UInt32 = 0
+    public var platformInWallet: Bool = false
+    public var platformAccountType: UInt8 = 0
+    public var platformKeyIndex: UInt32 = 0
 
     /// ProRegTx collateral outpoint.
     public var collateralTxid: Data?
@@ -92,6 +113,9 @@ public final class PersistentMasternode {
         votingKeyHash: Data? = nil,
         ownerAddress: String? = nil,
         votingAddress: String? = nil,
+        operatorPublicKey: Data? = nil,
+        platformNodeId: Data? = nil,
+        payoutAddress: String? = nil,
         collateralTxid: Data? = nil,
         collateralVout: UInt32 = 0,
         revoked: Bool = false,
@@ -112,6 +136,9 @@ public final class PersistentMasternode {
         self.votingKeyHash = votingKeyHash
         self.ownerAddress = ownerAddress
         self.votingAddress = votingAddress
+        self.operatorPublicKey = operatorPublicKey
+        self.platformNodeId = platformNodeId
+        self.payoutAddress = payoutAddress
         self.collateralTxid = collateralTxid
         self.collateralVout = collateralVout
         self.revoked = revoked
@@ -139,6 +166,58 @@ public final class PersistentMasternode {
         let hex = proTxHashHex
         guard hex.count >= 12 else { return hex }
         return "\(String(hex.prefix(6)))…\(String(hex.suffix(6)))"
+    }
+
+    /// Owner key hash (hash160) in forward-order hex, or nil. Key hashes
+    /// are shown in natural byte order, unlike txids.
+    public var ownerKeyHashHex: String? {
+        ownerKeyHash.map { $0.map { String(format: "%02x", $0) }.joined() }
+    }
+
+    /// Voting key hash (hash160) in forward-order hex, or nil.
+    public var votingKeyHashHex: String? {
+        votingKeyHash.map { $0.map { String(format: "%02x", $0) }.joined() }
+    }
+
+    /// Human name for a provider-key-account type tag (8/9/10/11).
+    public static func providerAccountTypeName(_ tag: UInt8) -> String {
+        switch tag {
+        case 8: return "ProviderVotingKeys"
+        case 9: return "ProviderOwnerKeys"
+        case 10: return "ProviderOperatorKeys"
+        case 11: return "ProviderPlatformKeys"
+        default: return "Unknown(\(tag))"
+        }
+    }
+
+    /// Ownership subtitle for one key: `"ProviderOwnerKeys #4"` when the
+    /// key is in this wallet, else `"not in this wallet"`.
+    public static func keyOwnershipLabel(
+        inWallet: Bool,
+        accountType: UInt8,
+        index: UInt32
+    ) -> String {
+        inWallet
+            ? "\(providerAccountTypeName(accountType)) #\(index)"
+            : "not in this wallet"
+    }
+
+    /// Operator BLS public key in hex (96 chars), or nil.
+    public var operatorPublicKeyHex: String? {
+        operatorPublicKey.map { $0.map { String(format: "%02x", $0) }.joined() }
+    }
+
+    /// Platform node id (hash160) in forward-order hex, or nil.
+    public var platformNodeIdHex: String? {
+        platformNodeId.map { $0.map { String(format: "%02x", $0) }.joined() }
+    }
+
+    /// Collateral outpoint as `"txidHex:vout"` in display (reversed-txid)
+    /// order, or nil when there's no collateral field.
+    public var collateralDisplay: String? {
+        guard let txid = collateralTxid else { return nil }
+        let hex = txid.reversed().map { String(format: "%02x", $0) }.joined()
+        return "\(hex):\(collateralVout)"
     }
 
     /// User-facing number (1-based) within the entity's own type

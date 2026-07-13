@@ -284,6 +284,9 @@ pub unsafe extern "C" fn platform_wallet_manager_free_masternodes(
             entry.service_address,
             entry.owner_address,
             entry.voting_address,
+            entry.payout_address,
+            entry.operator_pseudo_address,
+            entry.platform_node_address,
         ] {
             if !ptr.is_null() {
                 let _ = std::ffi::CString::from_raw(ptr);

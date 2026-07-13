@@ -180,6 +180,9 @@ struct IdentitiesContentView: View {
             )
         }
         .navigationTitle("Identities")
+        .navigationDestination(for: PersistentMasternode.self) { masternode in
+            MasternodeDetailView(masternode: masternode)
+        }
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
                 Menu {
@@ -286,7 +289,12 @@ struct IdentitiesContentView: View {
                 .accessibilityIdentifier("masternodes.showRetiredToggle")
 
             ForEach(visibleMasternodes) { masternode in
-                MasternodeRow(masternode: masternode)
+                // Value-based navigation (destination hoisted onto the
+                // List below) so a `@Query` re-render can't dismiss an
+                // open detail page mid-scroll — see the nav-churn note.
+                NavigationLink(value: masternode) {
+                    MasternodeRow(masternode: masternode)
+                }
             }
 
             // Guard against a blank-looking list when every masternode is

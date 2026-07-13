@@ -1052,6 +1052,19 @@ pub(crate) struct MasternodeAggregate {
     pub voting_key_hash: Option<[u8; 20]>,
     /// Height that set `voting_key_hash` (drives latest-wins).
     voting_height: u32,
+    /// Operator BLS public key (48 bytes) — follows the latest ProRegTx /
+    /// ProUpReg.
+    pub operator_public_key: Option<[u8; 48]>,
+    operator_height: u32,
+    /// Platform node id (hash160, 20 bytes) for evonodes — follows the
+    /// latest ProRegTx / ProUpServ.
+    pub platform_node_id: Option<[u8; 20]>,
+    platform_node_height: u32,
+    /// Payout script (raw bytes) — follows the latest ProRegTx / ProUpReg
+    /// (owner payout). Encoded to a base58 address by `masternode_entry_ffi`
+    /// where the network is available.
+    pub payout_script: Option<Vec<u8>>,
+    payout_height: u32,
     /// Collateral outpoint (`txid` wire bytes, `vout`) from the ProRegTx.
     pub collateral: Option<([u8; 32], u32)>,
     /// A ProUpRevTx was seen ⇒ the masternode was revoked ("previously
@@ -1152,17 +1165,49 @@ where
                     agg.voting_key_hash = Some(provider_hash_to_20(p.voting_key_hash.as_ref()));
                     agg.voting_height = height;
                 }
+                if agg.operator_public_key.is_none() || height >= agg.operator_height {
+                    let bls: &[u8; 48] = p.operator_public_key.as_ref();
+                    agg.operator_public_key = Some(*bls);
+                    agg.operator_height = height;
+                }
+                if agg.platform_node_id.is_none() || height >= agg.platform_node_height {
+                    // Evonode-only; `None` on a regular masternode.
+                    if let Some(node_id) = p.platform_node_id.as_ref() {
+                        agg.platform_node_id = Some(provider_hash_to_20(node_id.as_ref()));
+                        agg.platform_node_height = height;
+                    }
+                }
+                if agg.payout_script.is_none() || height >= agg.payout_height {
+                    agg.payout_script = Some(p.script_payout.as_bytes().to_vec());
+                    agg.payout_height = height;
+                }
             }
             Some(TransactionPayload::ProviderUpdateServicePayloadType(p)) => {
                 if agg.service_address.is_none() || height >= agg.service_height {
                     agg.service_address = Some(provider_ip_port(p.ip_address, p.port));
                     agg.service_height = height;
                 }
+                // ProUpServ's `platform_node_id` is a raw `Option<[u8; 20]>`.
+                if let Some(node_id) = p.platform_node_id {
+                    if agg.platform_node_id.is_none() || height >= agg.platform_node_height {
+                        agg.platform_node_id = Some(node_id);
+                        agg.platform_node_height = height;
+                    }
+                }
             }
             Some(TransactionPayload::ProviderUpdateRegistrarPayloadType(p)) => {
                 if agg.voting_key_hash.is_none() || height >= agg.voting_height {
                     agg.voting_key_hash = Some(provider_hash_to_20(p.voting_key_hash.as_ref()));
                     agg.voting_height = height;
+                }
+                if agg.operator_public_key.is_none() || height >= agg.operator_height {
+                    let bls: &[u8; 48] = p.operator_public_key.as_ref();
+                    agg.operator_public_key = Some(*bls);
+                    agg.operator_height = height;
+                }
+                if agg.payout_script.is_none() || height >= agg.payout_height {
+                    agg.payout_script = Some(p.script_payout.as_bytes().to_vec());
+                    agg.payout_height = height;
                 }
             }
             Some(TransactionPayload::ProviderUpdateRevocationPayloadType(p)) => {
@@ -1258,6 +1303,26 @@ pub struct MasternodeEntryFFI {
     /// hashes keys.
     pub owner_address: *mut c_char,
     pub voting_address: *mut c_char,
+    /// Operator BLS public key (48 bytes), gated by `has_operator_key`.
+    pub operator_public_key: [u8; 48],
+    pub has_operator_key: bool,
+    /// Platform node id (hash160, 20 bytes) — evonodes only — gated by
+    /// `has_platform_node_id`.
+    pub platform_node_id: [u8; 20],
+    pub has_platform_node_id: bool,
+    /// Base58 payout address for the network, or null (non-standard
+    /// payout script, or none seen).
+    pub payout_address: *mut c_char,
+    // --- Base58 P2PKH addresses of the operator / platform keys ---
+    // Owner / voting addresses are `owner_address` / `voting_address`
+    // above. These two complete the set so the app can join ALL FOUR key
+    // kinds against persisted `PersistentCoreAddress` rows (address ⇒
+    // account type + index) — the durable ownership source. Pure encoding,
+    // no in-wallet lookup on the Rust side.
+    /// Base58 P2PKH pseudo-address of `hash160(operator BLS key)`, or null.
+    pub operator_pseudo_address: *mut c_char,
+    /// Base58 P2PKH address of the platform node id (evonode), or null.
+    pub platform_node_address: *mut c_char,
 }
 
 /// Encode a hash160 as a network-specific base58 P2PKH address string
@@ -1276,15 +1341,44 @@ fn masternode_p2pkh_cstring(hash: [u8; 20], network: dashcore::Network) -> *mut 
         .unwrap_or(std::ptr::null_mut())
 }
 
+/// Encode a payout `script` to its base58 address for `network`, or null
+/// when the script is non-standard (not addressable).
+fn masternode_payout_cstring(script_bytes: &[u8], network: dashcore::Network) -> *mut c_char {
+    let script = dashcore::ScriptBuf::from_bytes(script_bytes.to_vec());
+    match dashcore::Address::from_script(&script, network) {
+        Ok(address) => std::ffi::CString::new(address.to_string())
+            .map(std::ffi::CString::into_raw)
+            .unwrap_or(std::ptr::null_mut()),
+        Err(_) => std::ptr::null_mut(),
+    }
+}
+
 /// Flatten one aggregate into its C-ABI entry, encoding the owner /
-/// voting addresses for `network`. `order_index` is the caller's stable
-/// position in the sorted aggregate list.
+/// voting / payout / operator / platform-node base58 addresses for
+/// `network`. `order_index` is the caller's stable position in the sorted
+/// aggregate list. Key-ownership is resolved app-side by joining these
+/// address strings against persisted `PersistentCoreAddress` rows.
 pub(crate) fn masternode_entry_ffi(
     mn: &MasternodeAggregate,
     order_index: u32,
     network: dashcore::Network,
 ) -> MasternodeEntryFFI {
+    use dashcore::hashes::{hash160, Hash};
     use std::ffi::CString;
+
+    // Operator pseudo-address = P2PKH of hash160(BLS key); platform-node
+    // address = P2PKH of the 20-byte node id.
+    let operator_pseudo_address = mn
+        .operator_public_key
+        .map(|k| {
+            let h: [u8; 20] = hash160::Hash::hash(&k).to_byte_array();
+            masternode_p2pkh_cstring(h, network)
+        })
+        .unwrap_or(std::ptr::null_mut());
+    let platform_node_address = mn
+        .platform_node_id
+        .map(|h| masternode_p2pkh_cstring(h, network))
+        .unwrap_or(std::ptr::null_mut());
 
     let service_address = match &mn.service_address {
         Some(s) => CString::new(s.clone())
@@ -1303,6 +1397,11 @@ pub(crate) fn masternode_entry_ffi(
     let voting_address = mn
         .voting_key_hash
         .map(|h| masternode_p2pkh_cstring(h, network))
+        .unwrap_or(std::ptr::null_mut());
+    let payout_address = mn
+        .payout_script
+        .as_deref()
+        .map(|s| masternode_payout_cstring(s, network))
         .unwrap_or(std::ptr::null_mut());
 
     MasternodeEntryFFI {
@@ -1326,6 +1425,13 @@ pub(crate) fn masternode_entry_ffi(
         service_address,
         owner_address,
         voting_address,
+        operator_public_key: mn.operator_public_key.unwrap_or([0u8; 48]),
+        has_operator_key: mn.operator_public_key.is_some(),
+        platform_node_id: mn.platform_node_id.unwrap_or([0u8; 20]),
+        has_platform_node_id: mn.platform_node_id.is_some(),
+        payout_address,
+        operator_pseudo_address,
+        platform_node_address,
     }
 }
 
@@ -1766,6 +1872,21 @@ mod tests {
         assert!(mn.owner_key_hash.is_some());
         assert!(mn.voting_key_hash.is_some());
         assert!(mn.collateral.is_some());
+        // #4116 key-ownership extraction: operator BLS key + payout script
+        // are lifted; the legacy (v1) fixture is a regular MN so it has no
+        // platform node id.
+        assert!(
+            mn.operator_public_key.is_some(),
+            "ProRegTx carries a 48-byte operator BLS key"
+        );
+        assert!(
+            mn.payout_script.as_ref().map_or(false, |s| !s.is_empty()),
+            "ProRegTx carries a payout script"
+        );
+        assert!(
+            mn.platform_node_id.is_none(),
+            "legacy regular-MN fixture has no platform node id"
+        );
         assert_eq!(mn.tx_count, 1);
     }
 

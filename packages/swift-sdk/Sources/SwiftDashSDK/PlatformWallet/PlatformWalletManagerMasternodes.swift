@@ -34,6 +34,18 @@ public struct PlatformMasternode: Sendable {
     /// network) — the join key for a provider-key account's address rows.
     public let ownerAddress: String?
     public let votingAddress: String?
+    /// Operator BLS public key (48 raw bytes), or nil.
+    public let operatorPublicKey: Data?
+    /// Platform node id (hash160, 20 bytes) for evonodes, or nil.
+    public let platformNodeId: Data?
+    /// Base58 payout address (Rust-encoded), or nil for a non-standard /
+    /// unseen payout script.
+    public let payoutAddress: String?
+    /// Base58 P2PKH pseudo-address of `hash160(operator BLS key)`, or nil.
+    /// The join key for operator-key ownership against persisted addresses.
+    public let operatorPseudoAddress: String?
+    /// Base58 P2PKH address of the platform node id (evonode), or nil.
+    public let platformNodeAddress: String?
 }
 
 extension PlatformWalletManager {
@@ -104,7 +116,16 @@ extension PlatformWalletManager {
                 votingKeyHash: votingHash,
                 serviceAddress: entry.service_address.map { String(cString: $0) },
                 ownerAddress: entry.owner_address.map { String(cString: $0) },
-                votingAddress: entry.voting_address.map { String(cString: $0) }
+                votingAddress: entry.voting_address.map { String(cString: $0) },
+                operatorPublicKey: entry.has_operator_key
+                    ? withUnsafeBytes(of: &entry.operator_public_key) { Data($0) }
+                    : nil,
+                platformNodeId: entry.has_platform_node_id
+                    ? withUnsafeBytes(of: &entry.platform_node_id) { Data($0) }
+                    : nil,
+                payoutAddress: entry.payout_address.map { String(cString: $0) },
+                operatorPseudoAddress: entry.operator_pseudo_address.map { String(cString: $0) },
+                platformNodeAddress: entry.platform_node_address.map { String(cString: $0) }
             )
         }
     }
