@@ -1143,6 +1143,26 @@ pub struct ProviderKeyAccountEntry {
     pub derived_platform_node_keys: Vec<ProviderPlatformNodePubKey>,
 }
 
+/// A [`ProviderKeyAccountEntry`] minus its
+/// [`derived_platform_node_keys`](ProviderKeyAccountEntry::derived_platform_node_keys) —
+/// the shape a backend serializes into a single account-registration slot.
+///
+/// The node-key list is an unbounded one-to-many and belongs in its own
+/// rows (the SQLite backend gives it a child table), so a backend that
+/// stores the account as one opaque payload carries only the two scalar
+/// fields here. [`account_type`](Self::account_type) is kept even though a
+/// backend also indexes it out-of-band: it lets a reader cross-check the
+/// typed column against the decoded payload and reject a mis-bucketed or
+/// cross-curve-confused row.
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct ProviderKeyRegistrationBlob {
+    /// `ProviderOperatorKeys` (BLS) or `ProviderPlatformKeys` (EdDSA).
+    pub account_type: AccountType,
+    /// The account's extended public key.
+    pub extended_public_key: ProviderKeyExtendedPubKey,
+}
+
 /// Address-pool snapshot for one `(account_type, pool_type)` pair.
 ///
 /// Routed through the changeset rather than a dedicated trait method
