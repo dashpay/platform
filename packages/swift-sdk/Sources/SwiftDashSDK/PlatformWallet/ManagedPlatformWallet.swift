@@ -1977,19 +1977,21 @@ extension ManagedPlatformWallet {
         /// The link decoded structurally. When false, every other field is unset
         /// and the link is malformed / unreadable.
         public let structurallyValid: Bool
-        /// The embedded asset-lock proof is an InstantSend proof. Claim only
-        /// accepts Instant proofs, so `false` means the link is unclaimable.
+        /// The link carried an `islock`, so the claim will build an InstantSend
+        /// proof; `false` is a ChainLock-confirmed invite (still claimable). Not a
+        /// claimability gate — the proof is reconstructed at claim time.
         public let isInstant: Bool
         /// The link carries inviter info (the contact-bootstrap is available).
         public let hasInviter: Bool
-        /// Inviter identity id (32 bytes) when `hasInviter`, else nil.
+        /// Always nil: the legacy link carries only the inviter's username, not an
+        /// identity id (resolve it via `resolveDpnsName` at contact-bootstrap).
         public let inviterId: Data?
         /// Inviter DPNS username when `hasInviter`, else nil.
         public let inviterUsername: String?
-        /// Amount locked in the voucher (duffs); 0 for a non-Instant proof.
+        /// Always 0: the amount isn't in the link (it carries the funding txid,
+        /// not the proof) and is only known after the tx is fetched at claim time.
         public let amountDuffs: UInt64
-        /// Advisory expiry (unix seconds). Compare against the current time for
-        /// an "expired" badge.
+        /// Always 0: the legacy link carries no expiry field.
         public let expiryUnix: UInt32
     }
 

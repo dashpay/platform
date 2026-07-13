@@ -21,9 +21,9 @@ struct CreateInvitationSheet: View {
 
     /// 1 DASH = 100,000,000 duffs.
     private static let duffsPerDash: UInt64 = 100_000_000
-    /// Rust-enforced cap (`MAX_INVITATION_DUFFS`, 0.01 DASH). Mirrored here so the
+    /// Rust-enforced cap (`MAX_INVITATION_DUFFS`, 0.05 DASH). Mirrored here so the
     /// UI rejects an over-cap amount before the FFI does.
-    private static let maxInvitationDuffs: UInt64 = 1_000_000
+    private static let maxInvitationDuffs: UInt64 = 5_000_000
     /// Rust-enforced floor (`MIN_INVITATION_DUFFS`, 0.003 DASH). A smaller voucher
     /// can't fund identity registration (which needs ~0.00228 DASH) plus the
     /// asset-lock overhead, so it could be neither claimed nor reclaimed. Rust is
@@ -35,10 +35,11 @@ struct CreateInvitationSheet: View {
     /// funding type derives the voucher credit key internally (not this account).
     private static let fundingAccount: UInt32 = 0
 
-    /// Amount to lock in the voucher, as a DASH string (decimal). Default 0.005
-    /// DASH — comfortably above the ~0.00228 DASH identity-registration floor,
-    /// leaving the invitee a usable starting balance.
-    @State private var amountDashText: String = "0.005"
+    /// Amount to lock in the voucher, as a DASH string (decimal). Default 0.03
+    /// DASH — the normal onboarding tier that funds a new identity *and* a normal
+    /// DPNS name (matches the legacy wallet's onboarding fee); a smaller voucher
+    /// registers an identity with no name and little usable balance.
+    @State private var amountDashText: String = "0.03"
     /// Opt into the contact-bootstrap: the link carries the inviter so the invitee
     /// can send a contact request back. Requires a registered username.
     @State private var sendRequestBack = true
@@ -102,13 +103,13 @@ struct CreateInvitationSheet: View {
     private var inputSection: some View {
         Section("Amount") {
             HStack {
-                TextField("0.005", text: $amountDashText)
+                TextField("0.03", text: $amountDashText)
                     .keyboardType(.decimalPad)
                     .accessibilityIdentifier("dashpay.invite.create.amount")
                 Text("DASH")
                     .foregroundColor(.secondary)
             }
-            Text("Funds a one-time voucher your friend uses to register their identity. Between 0.003 and 0.01 DASH.")
+            Text("Funds a one-time voucher your friend uses to register their identity and a username. Between 0.003 and 0.05 DASH.")
                 .font(.caption)
                 .foregroundColor(.secondary)
         }
@@ -146,7 +147,7 @@ struct CreateInvitationSheet: View {
             .accessibilityIdentifier("dashpay.invite.create.submit")
         } footer: {
             if amountDuffs == nil {
-                Text("Minimum 0.003 DASH — a smaller voucher can't fund identity registration. Maximum 0.01 DASH.")
+                Text("Minimum 0.003 DASH — a smaller voucher can't fund identity registration. Maximum 0.05 DASH.")
                     .foregroundColor(.orange)
             }
         }

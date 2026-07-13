@@ -6,8 +6,10 @@ import SwiftUI
 /// funded by the imported voucher, then optionally send a contact request back
 /// to the inviter.
 ///
-/// The invitee pastes an invitation link; a read-only preview (amount, sender,
-/// expiry) is shown before they commit. Claiming derives the invitee's own
+/// The invitee pastes an invitation link; a read-only preview (sender, if the
+/// link carries one) is shown before they commit — the amount isn't in the link
+/// and is only known once the funding tx is fetched during the claim. Claiming
+/// derives the invitee's own
 /// identity keys — including a DashPay Encryption/Decryption pair so the new
 /// identity can send the contact request back — exactly like a normal
 /// registration, but funds the identity from the voucher instead of a wallet
@@ -32,11 +34,12 @@ struct ClaimInvitationSheet: View {
     @State private var errorMessage: String?
     @State private var contactPrompt: ContactPrompt?
 
-    /// Post-claim "establish contact with <sender>?" prompt payload.
+    /// Post-claim "establish contact with <sender>?" prompt payload. Carries the
+    /// inviter's DPNS username (`du`) rather than an identity id — the legacy link
+    /// has no id, so it is resolved via DPNS when the request is actually sent.
     private struct ContactPrompt: Identifiable {
         let id = UUID()
         let newIdentityId: Identifier
-        let inviterId: Identifier
         let username: String
     }
 
@@ -107,18 +110,19 @@ struct ClaimInvitationSheet: View {
 
     private var canClaim: Bool {
         guard let preview, !isClaiming, !trimmedURI.isEmpty else { return false }
-        return preview.structurallyValid && preview.isInstant && !isExpired(preview)
-    }
-
-    private func isExpired(_ p: ManagedPlatformWallet.InvitationPreview) -> Bool {
-        UInt32(Date().timeIntervalSince1970) > p.expiryUnix
+        // The legacy link carries only the funding txid — the amount, proof type,
+        // and (for a chainlock invite) the instant lock are resolved at claim time
+        // by fetching the tx on-chain. So the only pre-claim gate is a
+        // structurally valid link; instant-vs-chainlock and the exact amount are
+        // no longer known here, and there is no expiry to check.
+        return preview.structurallyValid
     }
 
     // MARK: - Sections
 
     @ViewBuilder private var inputSection: some View {
         Section {
-            TextField("dashpay://invite?data=…", text: $uri, axis: .vertical)
+            TextField("dashpay://invite?…", text: $uri, axis: .vertical)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
                 .lineLimit(2...4)
@@ -136,18 +140,10 @@ struct ClaimInvitationSheet: View {
             if !p.structurallyValid {
                 Label("This link isn't a valid invitation.", systemImage: "xmark.octagon")
                     .foregroundColor(.red)
-            } else if !p.isInstant {
-                Label(
-                    "This invitation can't be claimed (missing an InstantSend proof).",
-                    systemImage: "xmark.octagon"
-                )
-                .foregroundColor(.red)
             } else {
-                LabeledContent("Amount", value: formatDash(p.amountDuffs))
-                if isExpired(p) {
-                    Label("Expired — ask the sender for a new link.", systemImage: "clock.badge.xmark")
-                        .foregroundColor(.orange)
-                }
+                // The amount isn't in the link — it's read from the funding tx
+                // during the claim — so show a placeholder until then.
+                LabeledContent("Amount", value: "—")
                 if p.hasInviter, let name = p.inviterUsername {
                     LabeledContent("From", value: name)
                 }
@@ -212,14 +208,13 @@ struct ClaimInvitationSheet: View {
                 let newIdentityId = try managed.getId()
                 kickDashPaySync(walletManager)
 
-                // Offer the contact-bootstrap when the link carried an inviter;
-                // otherwise the claim is done.
-                if preview.hasInviter,
-                   let inviterId = preview.inviterId,
-                   let username = preview.inviterUsername {
+                // Offer the contact-bootstrap when the link carried an inviter
+                // (its username); otherwise the claim is done. The inviter's
+                // identity id is resolved from the username via DPNS when the
+                // request is sent, not from the link.
+                if preview.hasInviter, let username = preview.inviterUsername {
                     contactPrompt = ContactPrompt(
                         newIdentityId: newIdentityId,
-                        inviterId: inviterId,
                         username: username
                     )
                 } else {
@@ -238,10 +233,17 @@ struct ClaimInvitationSheet: View {
                 return
             }
             do {
+                // The legacy link carries only the inviter's username, not their
+                // identity id — resolve it via DPNS before sending the request
+                // (mirrors Android's identityRepository.getUser(invite.user)).
+                guard let inviterId = try await wallet.resolveDpnsName(prompt.username) else {
+                    errorMessage = "Identity claimed, but \(prompt.username) couldn't be found to add."
+                    return
+                }
                 let signer = KeychainSigner(modelContainer: modelContext.container)
                 _ = try await wallet.sendContactRequest(
                     senderIdentityId: prompt.newIdentityId,
-                    recipientIdentityId: prompt.inviterId,
+                    recipientIdentityId: inviterId,
                     signer: signer
                 )
                 kickDashPaySync(walletManager)
@@ -263,9 +265,5 @@ struct ClaimInvitationSheet: View {
             .map(\.identityIndex)
         guard let highest = used.max() else { return 0 }
         return highest == UInt32.max ? UInt32.max : highest + 1
-    }
-
-    private func formatDash(_ duffs: UInt64) -> String {
-        String(format: "%.8f DASH", Double(duffs) / 100_000_000)
     }
 }
