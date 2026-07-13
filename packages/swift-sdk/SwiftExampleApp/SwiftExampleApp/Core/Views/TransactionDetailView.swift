@@ -36,9 +36,12 @@ struct TransactionDetailView: View {
     }
 
     private var typeDescription: String {
-        if transaction.isAssetLock { return "Asset Lock" }
-        if transaction.isAssetUnlock { return "Asset Unlock" }
-        if let name = transaction.providerSpecialName { return name }
+        // Special kinds (asset lock/unlock, provider txs) take their
+        // label from the model so it can't drift from the list rows.
+        if transaction.isAssetLock || transaction.isAssetUnlock
+            || transaction.isProviderSpecial {
+            return transaction.displayDirection
+        }
         switch transaction.netAmount {
         case let amount where amount > 0:
             return "Received"
