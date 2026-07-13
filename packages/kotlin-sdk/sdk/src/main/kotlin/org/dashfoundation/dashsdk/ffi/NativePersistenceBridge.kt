@@ -9,10 +9,10 @@ package org.dashfoundation.dashsdk.ffi
  *
  * The Rust trampolines resolve each method with a single `GetMethodID`
  * against this concrete class. A `class` hierarchy keeps that lookup
- * stable and lets `PersistenceNative.createCallbacks` cache the method
- * ids off one `FindClass`. Every method has a base implementation here so
- * a subclass only overrides the slots it cares about; the defaults are
- * no-ops that return the success sentinel.
+ * stable and lets the vtable builder cache the method ids off one
+ * `FindClass`. Every method has a base implementation here so a subclass
+ * only overrides the slots it cares about; the defaults are no-ops that
+ * return the success sentinel.
  *
  * ## The 32 vtable slots
  *

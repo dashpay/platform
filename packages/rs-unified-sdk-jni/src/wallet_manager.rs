@@ -452,30 +452,6 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_r
 
 // ── Exports: per-wallet accessors ─────────────────────────────────────
 
-/// The 32-byte wallet id of a `PlatformWallet` handle, as `byte[]`.
-#[no_mangle]
-pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_walletGetId(
-    mut env: JNIEnv,
-    _class: JClass,
-    wallet_handle: jlong,
-) -> jbyteArray {
-    guard(&mut env, ptr::null_mut(), |env| {
-        let mut id = [0u8; 32];
-        let result = unsafe {
-            platform_wallet_ffi::platform_wallet_get_id(
-                wallet_handle as Handle,
-                &mut id as *mut [u8; 32],
-            )
-        };
-        if take_pwffi_error(env, result) {
-            return ptr::null_mut();
-        }
-        env.byte_array_from_slice(&id)
-            .map(|a| a.into_raw())
-            .unwrap_or(ptr::null_mut())
-    })
-}
-
 /// Lock-free balance of a `PlatformWallet` handle as a
 /// `long[4]` = {confirmed, unconfirmed, immature, locked}.
 #[no_mangle]
