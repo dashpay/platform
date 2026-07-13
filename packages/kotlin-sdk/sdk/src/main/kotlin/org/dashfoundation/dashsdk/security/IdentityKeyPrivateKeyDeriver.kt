@@ -15,14 +15,14 @@ import org.dashfoundation.dashsdk.persistence.toHex
  * path → key` derivation behind a single FFI call; Kotlin only encrypts
  * the returned bytes into Keystore-backed storage and never derives.
  *
- * ## Why the resolver-keyed FFI (not the wallet-handle one)
+ * ## Why the resolver-keyed FFI
  *
  * The identity-key persist callback fires synchronously from inside a
  * platform-wallet operation that holds the wallet-manager **write** lock
  * (`registration.rs` persists the identity changeset under
- * `wallet_manager.write().await`). The handle-keyed
- * [IdentityNative.deriveIdentityPrivateKey] would re-`blocking_read` that
- * same RwLock in its capability check and **deadlock**. This deriver uses
+ * `wallet_manager.write().await`). A wallet-handle-keyed derive would
+ * re-`blocking_read` that same RwLock in its capability check and
+ * **deadlock**. This deriver uses
  * [IdentityNative.deriveIdentityPrivateKeyWithResolver], a pure derive
  * (`resolver → mnemonic → master → key`) that never touches the
  * wallet-manager registry, so it is safe from the callback. The mnemonic

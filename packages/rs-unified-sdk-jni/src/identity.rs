@@ -39,7 +39,6 @@ use platform_wallet_ffi::error::platform_wallet_ffi_result_free;
 use platform_wallet_ffi::handle::Handle;
 use platform_wallet_ffi::identity_discovery::DiscoveredIdentityIdsFFI;
 use platform_wallet_ffi::identity_key_preview::{IdentityKeyPreviewFFI, IdentityKeyPreviewsFFI};
-use platform_wallet_ffi::identity_private_key_at_slot::IdentityPrivateKeyFFI;
 use platform_wallet_ffi::identity_registration::IdentityFundingInputFFI;
 use platform_wallet_ffi::identity_registration_with_signer::IdentityPubkeyFFI;
 use platform_wallet_ffi::types::FFINetwork;
@@ -307,93 +306,6 @@ unsafe fn encode_preview_rows(previews: &IdentityKeyPreviewsFFI) -> Vec<u8> {
     out
 }
 
-// ── Single-slot private-key derivation ────────────────────────────────
-
-/// Derive the ready-to-persist 32-byte ECDSA private-key scalar for the
-/// identity key at `(identityIndex, keyIndex)` on the wallet behind
-/// `walletHandle`, and return it as a JVM `byte[32]`.
-///
-/// This is the JNI bridge over
-/// `platform_wallet_derive_identity_private_key_at_slot` — the single
-/// Rust entry point that performs the whole `mnemonic → seed → path →
-/// key` derivation on the Rust side (the CLAUDE.md "one allowed
-/// exception" shape). The Kotlin persistence handler then just encrypts
-/// the returned bytes into Keystore-backed storage; it never derives.
-///
-/// The derivation source (resident wallet vs. resolver-provided mnemonic)
-/// is chosen by the wallet's capability; `resolverHandle` is consulted
-/// only for external-signable / watch-only wallets and may be `0` (null)
-/// otherwise. The network + path shape are read from the wallet handle,
-/// so Kotlin decides nothing.
-///
-/// The Rust-owned buffer (including the sensitive scalar) is zeroized and
-/// freed via `platform_wallet_derive_identity_private_key_at_slot_free`
-/// before this returns — the only copy that escapes is the JVM `byte[]`,
-/// which the Kotlin caller is expected to scrub after storing.
-///
-/// Returns the 32-byte scalar on success, or `null` (with a
-/// `DashSDKException` thrown) on any derivation / marshalling error.
-#[no_mangle]
-pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_deriveIdentityPrivateKey(
-    mut env: JNIEnv,
-    _class: JClass,
-    wallet_handle: jlong,
-    resolver_handle: jlong,
-    identity_index: jint,
-    key_index: jint,
-) -> jbyteArray {
-    guard(&mut env, ptr::null_mut(), |env| {
-        // Reject negative slot indices at the boundary — a clamped 0 would
-        // silently derive (and persist) the wrong slot's key material.
-        if identity_index < 0 {
-            throw_sdk_exception(env, 1, "identityIndex must be non-negative");
-            return ptr::null_mut();
-        }
-        if key_index < 0 {
-            throw_sdk_exception(env, 1, "keyIndex must be non-negative");
-            return ptr::null_mut();
-        }
-        let mut out_key = IdentityPrivateKeyFFI::empty();
-        let result = unsafe {
-            platform_wallet_ffi::platform_wallet_derive_identity_private_key_at_slot(
-                wallet_handle as Handle,
-                resolver_handle as *mut MnemonicResolverHandle,
-                identity_index as u32,
-                key_index as u32,
-                &mut out_key as *mut IdentityPrivateKeyFFI,
-            )
-        };
-        if take_pwffi_error(env, result) {
-            // Free even on the error path — the FFI pre-clears to empty,
-            // so this is a safe no-op, but keep the pairing explicit.
-            unsafe {
-                platform_wallet_ffi::platform_wallet_derive_identity_private_key_at_slot_free(
-                    &mut out_key as *mut IdentityPrivateKeyFFI,
-                )
-            };
-            return ptr::null_mut();
-        }
-
-        // Build the JVM byte[] straight from the Rust-owned buffer BEFORE
-        // freeing it — no independent stack copy of the scalar is left
-        // behind for the free's zeroize pass to miss.
-        let jarr = env
-            .byte_array_from_slice(&out_key.private_key_bytes)
-            .map(|a| a.into_raw())
-            .unwrap_or(ptr::null_mut());
-
-        // Zeroize + free the Rust-owned buffer (scrubs the scalar and
-        // reclaims the path string).
-        unsafe {
-            platform_wallet_ffi::platform_wallet_derive_identity_private_key_at_slot_free(
-                &mut out_key as *mut IdentityPrivateKeyFFI,
-            )
-        };
-
-        jarr
-    })
-}
-
 /// FFINetwork ordinal → the crate's `FFINetwork` enum
 /// (0=Mainnet, 2=Devnet, 3=Regtest, else Testnet). Kept in step with
 /// `persistence::net_from_ord`.
@@ -406,16 +318,14 @@ fn net_from_ord(ord: i32) -> FFINetwork {
     }
 }
 
-/// Resolver-keyed sibling of [`Java_..._deriveIdentityPrivateKey`] for the
+/// Resolver-keyed single-slot identity private-key derive for the
 /// **persistence-callback** path.
 ///
 /// The identity-key persistence callback fires synchronously from inside
 /// a platform-wallet operation that holds the wallet-manager **write**
 /// lock (`registration.rs` persists the identity changeset under
-/// `wallet_manager.write().await`). Any derive that re-locks the wallet
-/// manager — including the handle-keyed
-/// `platform_wallet_derive_identity_private_key_at_slot`, whose
-/// capability check does a `blocking_read` — would deadlock on that same
+/// `wallet_manager.write().await`). Any wallet-handle-keyed derive whose
+/// capability check does a `blocking_read` would deadlock on that same
 /// RwLock. This variant routes through
 /// `dash_sdk_derive_identity_key_at_slot_with_resolver`, which is
 /// **pure** (resolver → mnemonic → master → derive) and never touches the

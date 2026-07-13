@@ -67,44 +67,16 @@ internal object IdentityNative {
     ): ByteArray
 
     /**
-     * Derive the ready-to-persist 32-byte ECDSA private-key scalar for the
-     * identity key at ([identityIndex], [keyIndex]) on the wallet behind
-     * [walletHandle].
-     *
-     * The whole `mnemonic → seed → path → key` derivation runs on the Rust
-     * side (the `packages/kotlin-sdk/CLAUDE.md` "one allowed exception"
-     * shape): Kotlin receives bytes ready to encrypt into Keystore-backed
-     * storage and never derives. The Rust-owned buffer is zeroized + freed
-     * before this returns; the returned array is the only copy that
-     * escapes, so callers should scrub it after storing.
-     *
-     * The derivation source (resident wallet vs. resolver-provided
-     * mnemonic) is chosen by the wallet's capability. [resolverHandle] is
-     * consulted only for watch-only / external-signable wallets and may be
-     * `0` (null) otherwise. Network + path shape come from the wallet
-     * handle — Kotlin decides nothing.
-     *
-     * @return the 32-byte private-key scalar.
-     */
-    external fun deriveIdentityPrivateKey(
-        walletHandle: Long,
-        resolverHandle: Long,
-        identityIndex: Int,
-        keyIndex: Int,
-    ): ByteArray
-
-    /**
-     * Resolver-keyed sibling of [deriveIdentityPrivateKey] for the
+     * Resolver-keyed single-slot identity private-key derive for the
      * **persistence-callback** path.
      *
      * The identity-key persistence callback fires synchronously from
      * inside a platform-wallet operation that holds the wallet-manager
-     * write lock, so a derive that re-locks the manager (including
-     * [deriveIdentityPrivateKey], whose capability check reads the
-     * registry) would deadlock. This variant routes through a **pure**
-     * Rust derive (`resolver → mnemonic → master → key`) that never
-     * touches the wallet-manager registry, so it is safe to call from the
-     * callback.
+     * write lock, so any derive whose capability check re-locks the
+     * manager registry would deadlock. This variant routes through a
+     * **pure** Rust derive (`resolver → mnemonic → master → key`) that
+     * never touches the wallet-manager registry, so it is safe to call
+     * from the callback.
      *
      * The network + [walletId] are passed explicitly because the callback
      * has no wallet handle; the resolver resolves the mnemonic keyed by
