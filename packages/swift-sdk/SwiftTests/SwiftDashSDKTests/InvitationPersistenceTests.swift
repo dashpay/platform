@@ -87,4 +87,66 @@ final class InvitationPersistenceTests: XCTestCase {
             "removal via encodeOutPoint(rawBytes:) must match the upsert key and delete the row"
         )
     }
+
+    /// A clean upsert reports success — the signal the callback maps to `0`
+    /// (round commits). Pins the new `Bool` return added so a *skipped* upsert
+    /// can instead surface as a `store()` failure rather than a silent drop.
+    func testPersistInvitationsReportsSuccessOnCleanUpsert() throws {
+        let (handler, _) = try makeHandler()
+        handler.beginChangeset(walletId: walletId)
+        let ok = handler.persistInvitations(
+            walletId: walletId, upserts: [snapshot(statusRaw: 0)], removed: [])
+        _ = handler.endChangeset(walletId: walletId, success: true)
+        XCTAssertTrue(ok, "a clean upsert must report success")
+    }
+
+    // MARK: - Voucher-index durability gate scoping (B2)
+
+    /// `AccountTypeTagFFI`: IdentityInvitation = 5, Standard = 0.
+    private func lookupKey(typeTag: UInt32) -> PlatformWalletPersistenceHandler.AccountLookupKey {
+        .init(
+            typeTag: typeTag,
+            index: 0,
+            standardTag: 0,
+            registrationIndex: 0,
+            keyClass: 0,
+            userIdentityId: Data(count: 32),
+            friendIdentityId: Data(count: 32)
+        )
+    }
+
+    private func addressSnapshot() -> PlatformWalletPersistenceHandler.CoreAddressEntrySnapshot {
+        .init(
+            address: "yTestAddress0000000000000000000000000",
+            publicKey: Data(count: 33),
+            poolTypeTag: 0,
+            addressIndex: 0,
+            isUsed: false,
+            balance: 0,
+            derivationPath: "m/9'/1'/5'/3'/0'"
+        )
+    }
+
+    /// A missing `IdentityInvitation` (tag 5) account is a hard failure: that
+    /// account's funding pool is the only durable record of the one-time voucher
+    /// key's derivation index, so a persist that stages nothing MUST signal
+    /// failure (nonzero) — which drives `store() -> Err` and aborts the
+    /// pre-broadcast gate, preventing voucher-key reuse.
+    func testPersistAccountAddressesFailsForMissingInvitationAccount() throws {
+        let (handler, _) = try makeHandler()
+        let ok = handler.persistAccountAddresses(
+            walletId: walletId, accountKey: lookupKey(typeTag: 5), entries: [addressSnapshot()])
+        XCTAssertFalse(ok, "a missing IdentityInvitation account must signal failure")
+    }
+
+    /// A missing NON-invitation account (e.g. Standard, tag 0) stays tolerant.
+    /// Returning false here would roll back the whole round and could permanently
+    /// wedge ordinary address sync (a first-registration account staged but not
+    /// yet committed in the same round) — so the strictness is scoped to tag 5.
+    func testPersistAccountAddressesTolerantForMissingNonInvitationAccount() throws {
+        let (handler, _) = try makeHandler()
+        let ok = handler.persistAccountAddresses(
+            walletId: walletId, accountKey: lookupKey(typeTag: 0), entries: [addressSnapshot()])
+        XCTAssertTrue(ok, "a missing non-invitation account must stay tolerant (no sync wedge)")
+    }
 }
