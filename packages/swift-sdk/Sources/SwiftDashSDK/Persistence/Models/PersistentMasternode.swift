@@ -51,6 +51,11 @@ public final class PersistentMasternode {
     public var platformNodeId: Data?
     /// Base58 payout address (Rust-encoded), or nil.
     public var payoutAddress: String?
+    /// Base58 P2PKH pseudo-address of the operator key / platform node id
+    /// (Rust-encoded). These keys have no real on-chain address, so the
+    /// pseudo-address is the join key for the account-screen usage subtitle.
+    public var operatorPseudoAddress: String?
+    public var platformNodeAddress: String?
 
     /// Per-key wallet ownership (computed in Rust during the list call).
     /// `*AccountType`/`*Index` are meaningful only when `*InWallet`.

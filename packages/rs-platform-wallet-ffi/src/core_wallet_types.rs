@@ -1323,6 +1323,17 @@ pub struct MasternodeEntryFFI {
     pub operator_pseudo_address: *mut c_char,
     /// Base58 P2PKH address of the platform node id (evonode), or null.
     pub platform_node_address: *mut c_char,
+    // --- Operator / platform ownership (derive-and-compare) ---
+    // These key kinds live only in payloads (no on-chain address), so
+    // their ownership is derived in Rust and matched here. `*_account_type`
+    // is the AccountTypeTagFFI value (10 ProviderOperatorKeys,
+    // 11 ProviderPlatformKeys); meaningful only when `*_in_wallet`.
+    pub operator_in_wallet: bool,
+    pub operator_account_type: u8,
+    pub operator_key_index: u32,
+    pub platform_in_wallet: bool,
+    pub platform_account_type: u8,
+    pub platform_key_index: u32,
 }
 
 /// Encode a hash160 as a network-specific base58 P2PKH address string
@@ -1356,12 +1367,19 @@ fn masternode_payout_cstring(script_bytes: &[u8], network: dashcore::Network) ->
 /// Flatten one aggregate into its C-ABI entry, encoding the owner /
 /// voting / payout / operator / platform-node base58 addresses for
 /// `network`. `order_index` is the caller's stable position in the sorted
-/// aggregate list. Key-ownership is resolved app-side by joining these
-/// address strings against persisted `PersistentCoreAddress` rows.
+/// aggregate list.
+///
+/// Owner / voting key ownership is resolved app-side (persisted-address
+/// join). Operator / platform key ownership is resolved HERE via the
+/// derive-and-compare maps (`operator_index`: BLS pubkey ⇒ index,
+/// `platform_index`: node id ⇒ index) — those keys have no on-chain
+/// address to join against.
 pub(crate) fn masternode_entry_ffi(
     mn: &MasternodeAggregate,
     order_index: u32,
     network: dashcore::Network,
+    operator_index: &std::collections::HashMap<[u8; 48], u32>,
+    platform_index: &std::collections::HashMap<[u8; 20], u32>,
 ) -> MasternodeEntryFFI {
     use dashcore::hashes::{hash160, Hash};
     use std::ffi::CString;
@@ -1379,6 +1397,19 @@ pub(crate) fn masternode_entry_ffi(
         .platform_node_id
         .map(|h| masternode_p2pkh_cstring(h, network))
         .unwrap_or(std::ptr::null_mut());
+
+    // Derive-and-compare ownership: match the masternode's payload key
+    // against the wallet's derived provider keys.
+    let (operator_in_wallet, operator_account_type, operator_key_index) = mn
+        .operator_public_key
+        .and_then(|k| operator_index.get(&k))
+        .map(|index| (true, 10u8, *index))
+        .unwrap_or((false, 0, 0));
+    let (platform_in_wallet, platform_account_type, platform_key_index) = mn
+        .platform_node_id
+        .and_then(|id| platform_index.get(&id))
+        .map(|index| (true, 11u8, *index))
+        .unwrap_or((false, 0, 0));
 
     let service_address = match &mn.service_address {
         Some(s) => CString::new(s.clone())
@@ -1432,6 +1463,12 @@ pub(crate) fn masternode_entry_ffi(
         payout_address,
         operator_pseudo_address,
         platform_node_address,
+        operator_in_wallet,
+        operator_account_type,
+        operator_key_index,
+        platform_in_wallet,
+        platform_account_type,
+        platform_key_index,
     }
 }
 

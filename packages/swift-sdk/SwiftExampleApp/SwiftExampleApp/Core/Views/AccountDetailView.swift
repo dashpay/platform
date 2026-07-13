@@ -620,19 +620,36 @@ struct AccountDetailView: View {
         .contentShape(Rectangle())
     }
 
-    /// Masternode-usage subtitle for a provider owner / voting key
-    /// address. Joins the address (base58) to a masternode's Rust-encoded
-    /// owner / voting address — the "join by key hash" without any Swift
-    /// key hashing. `nil` for non-provider-key accounts or unmatched
-    /// addresses, so the caller falls back to "used".
+    /// Masternode-usage subtitle for a provider key address. Joins the
+    /// address (base58) to the matching masternode field — the "join by key
+    /// hash" without any Swift key hashing:
+    ///   * owner / voting (accountType 9 / 8) ↔ `owner/votingAddress`
+    ///     (real on-chain addresses), and
+    ///   * operator / platform-node (accountType 10 / 11) ↔
+    ///     `operator/platformNodeAddress` (base58 pseudo-addresses Rust
+    ///     encoded from the payload key — these keys have no on-chain
+    ///     address, so this is the only way to surface their usage).
+    /// `nil` for non-provider-key accounts or unmatched addresses, so the
+    /// caller falls back to "used".
     private func masternodeUsage(for addr: PersistentCoreAddress) -> String? {
-        // 8 = ProviderVotingKeys, 9 = ProviderOwnerKeys.
-        guard account.accountType == 8 || account.accountType == 9 else { return nil }
-        let wid = wallet.walletId
-        let matches = allMasternodes.filter {
-            $0.walletId == wid
-                && ($0.ownerAddress == addr.address || $0.votingAddress == addr.address)
+        // 8 ProviderVotingKeys, 9 ProviderOwnerKeys, 10 ProviderOperatorKeys,
+        // 11 ProviderPlatformKeys.
+        let addressMatches: (PersistentMasternode) -> Bool
+        switch account.accountType {
+        case 8, 9:
+            addressMatches = {
+                $0.ownerAddress == addr.address || $0.votingAddress == addr.address
+            }
+        case 10:
+            addressMatches = { $0.operatorPseudoAddress == addr.address }
+        case 11:
+            addressMatches = { $0.platformNodeAddress == addr.address }
+        default:
+            return nil
         }
+
+        let wid = wallet.walletId
+        let matches = allMasternodes.filter { $0.walletId == wid && addressMatches($0) }
         guard let first = matches.min(by: { $0.orderIndex < $1.orderIndex }) else {
             return nil
         }

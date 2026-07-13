@@ -228,7 +228,7 @@ pub unsafe extern "C" fn platform_wallet_manager_list_masternodes(
     });
     // Outer Option: handle resolved. Inner Option: wallet found.
     let inner = unwrap_option_or_return!(option);
-    let (network, txs, dml) = unwrap_option_or_return!(inner);
+    let (network, txs, dml, operator_index, platform_index) = unwrap_option_or_return!(inner);
 
     // Derive DML membership from the owned snapshot (`None` ⇒ list not
     // available ⇒ Unknown status ⇒ persist layer keeps the prior value).
@@ -252,7 +252,15 @@ pub unsafe extern "C" fn platform_wallet_manager_list_masternodes(
     let entries: Vec<crate::core_wallet_types::MasternodeEntryFFI> = aggregates
         .iter()
         .enumerate()
-        .map(|(idx, mn)| crate::core_wallet_types::masternode_entry_ffi(mn, idx as u32, network))
+        .map(|(idx, mn)| {
+            crate::core_wallet_types::masternode_entry_ffi(
+                mn,
+                idx as u32,
+                network,
+                &operator_index,
+                &platform_index,
+            )
+        })
         .collect();
     let count = entries.len();
 

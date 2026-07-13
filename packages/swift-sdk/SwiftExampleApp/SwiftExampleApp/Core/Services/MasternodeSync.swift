@@ -63,13 +63,15 @@ enum MasternodeSync {
                 row.operatorPublicKey = mn.operatorPublicKey
                 row.platformNodeId = mn.platformNodeId
                 row.payoutAddress = mn.payoutAddress
+                row.operatorPseudoAddress = mn.operatorPseudoAddress
+                row.platformNodeAddress = mn.platformNodeAddress
 
-                // Key ownership: join each key's base58 address against the
-                // persisted `PersistentCoreAddress` rows (address ⇒ account
-                // type + index). This durable source works for imported /
-                // restored wallets whose in-memory provider pools aren't
-                // rehydrated — the same join the account screen + address
-                // subtitle rely on.
+                // Owner / voting key ownership: join each key's base58
+                // address against the persisted `PersistentCoreAddress`
+                // rows (address ⇒ account type + index). Durable source
+                // that works for imported / restored wallets whose
+                // in-memory pools aren't rehydrated — the same join the
+                // account screen + address subtitle rely on.
                 let owner = ownership(for: mn.ownerAddress, modelContext: modelContext)
                 row.ownerInWallet = owner.inWallet
                 row.ownerAccountType = owner.accountType
@@ -78,16 +80,17 @@ enum MasternodeSync {
                 row.votingInWallet = voting.inWallet
                 row.votingAccountType = voting.accountType
                 row.votingKeyIndex = voting.index
-                let operatorOwn = ownership(
-                    for: mn.operatorPseudoAddress, modelContext: modelContext)
-                row.operatorInWallet = operatorOwn.inWallet
-                row.operatorAccountType = operatorOwn.accountType
-                row.operatorKeyIndex = operatorOwn.index
-                let platform = ownership(
-                    for: mn.platformNodeAddress, modelContext: modelContext)
-                row.platformInWallet = platform.inWallet
-                row.platformAccountType = platform.accountType
-                row.platformKeyIndex = platform.index
+
+                // Operator / platform key ownership comes from Rust's
+                // derive-and-compare (these keys have no on-chain address to
+                // join against). Platform is empty for watch-only wallets
+                // (needs the seed) — a documented follow-up.
+                row.operatorInWallet = mn.operatorInWallet
+                row.operatorAccountType = mn.operatorAccountType
+                row.operatorKeyIndex = mn.operatorKeyIndex
+                row.platformInWallet = mn.platformInWallet
+                row.platformAccountType = mn.platformAccountType
+                row.platformKeyIndex = mn.platformKeyIndex
 
                 row.collateralTxid = mn.collateralTxid
                 row.collateralVout = mn.collateralVout

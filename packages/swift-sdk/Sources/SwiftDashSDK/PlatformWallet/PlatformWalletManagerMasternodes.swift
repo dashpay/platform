@@ -46,6 +46,16 @@ public struct PlatformMasternode: Sendable {
     public let operatorPseudoAddress: String?
     /// Base58 P2PKH address of the platform node id (evonode), or nil.
     public let platformNodeAddress: String?
+
+    /// Operator / platform key ownership, resolved in Rust by
+    /// derive-and-compare (these keys have no on-chain address). Tag is
+    /// 10 (operator) / 11 (platform); meaningful only when `inWallet`.
+    public let operatorInWallet: Bool
+    public let operatorAccountType: UInt8
+    public let operatorKeyIndex: UInt32
+    public let platformInWallet: Bool
+    public let platformAccountType: UInt8
+    public let platformKeyIndex: UInt32
 }
 
 extension PlatformWalletManager {
@@ -125,7 +135,13 @@ extension PlatformWalletManager {
                     : nil,
                 payoutAddress: entry.payout_address.map { String(cString: $0) },
                 operatorPseudoAddress: entry.operator_pseudo_address.map { String(cString: $0) },
-                platformNodeAddress: entry.platform_node_address.map { String(cString: $0) }
+                platformNodeAddress: entry.platform_node_address.map { String(cString: $0) },
+                operatorInWallet: entry.operator_in_wallet,
+                operatorAccountType: entry.operator_account_type,
+                operatorKeyIndex: entry.operator_key_index,
+                platformInWallet: entry.platform_in_wallet,
+                platformAccountType: entry.platform_account_type,
+                platformKeyIndex: entry.platform_key_index
             )
         }
     }
