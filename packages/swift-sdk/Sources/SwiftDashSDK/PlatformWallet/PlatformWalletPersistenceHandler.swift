@@ -4324,6 +4324,18 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             entry.unresolved_asset_lock_tx_records = unresolvedBuf.map { UnsafePointer($0) }
             entry.unresolved_asset_lock_tx_records_count = UInt(unresolvedCount)
 
+            // Provider special transactions (ProRegTx / ProUpServTx /
+            // ProUpRegTx / ProUpRevTx) re-staged onto the provider-key
+            // accounts so #876 retention keeps them and the masternode
+            // list survives a restart (mirrors the asset-lock records above).
+            let (providerTxBuf, providerTxCount) =
+                buildProviderSpecialTxRestoreBuffer(
+                    walletId: w.walletId,
+                    allocation: allocation
+                )
+            entry.provider_special_txs = providerTxBuf.map { UnsafePointer($0) }
+            entry.provider_special_txs_count = UInt(providerTxCount)
+
             // Primary-identity selection + gap-limit scan watermark
             // were dropped from the FFI shape — both moved off the
             // Rust manager (UI owns selection now, scan resume is
@@ -4779,6 +4791,82 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             return (nil, 0)
         }
         allocation.unresolvedAssetLockTxRecordArrays.append((buf, written))
+        return (buf, written)
+    }
+
+    /// Stage this wallet's persisted provider special transactions
+    /// (ProRegTx / ProUpServTx / ProUpRegTx / ProUpRevTx — `transactionTypeKind`
+    /// 2...5) so the Rust load path re-inserts them onto the provider-key
+    /// accounts and rust-dashcore #876 retention keeps them resident.
+    /// Without this the masternode-list aggregation is empty after a
+    /// restart until a rescan re-processes the blocks.
+    ///
+    /// Scoped to the wallet through `involvedAccounts` (provider txs create
+    /// no TXOs, so they're payload-only matches carried by that
+    /// many-to-many). Mirrors `buildUnresolvedAssetLockTxRecordBuffer`; the
+    /// `tx_bytes` buffers live in `allocation.scalarBuffers` and the array
+    /// in `allocation.providerSpecialTxRecordArrays`, both freed by
+    /// `release()`.
+    private func buildProviderSpecialTxRestoreBuffer(
+        walletId: Data,
+        allocation: LoadAllocation
+    ) -> (UnsafeMutablePointer<ProviderSpecialTxRestoreEntryFFI>?, Int) {
+        // Provider special-tx kinds are the contiguous discriminant range
+        // 2...5 (ProviderRegistration=2 … ProviderUpdateRevocation=5).
+        let descriptor = FetchDescriptor<PersistentTransaction>(
+            predicate: #Predicate { tx in
+                tx.transactionTypeKind >= 2 && tx.transactionTypeKind <= 5
+            }
+        )
+        guard let providerTxs = try? backgroundContext.fetch(descriptor),
+              !providerTxs.isEmpty
+        else {
+            return (nil, 0)
+        }
+
+        // Scope to this wallet via payload-only involvement — provider txs
+        // create no TXOs, so `involvedAccounts` is the only link.
+        let scoped = providerTxs.filter { tx in
+            tx.involvedAccounts.contains { $0.wallet.walletId == walletId }
+        }
+        guard !scoped.isEmpty else { return (nil, 0) }
+
+        let buf = UnsafeMutablePointer<ProviderSpecialTxRestoreEntryFFI>.allocate(
+            capacity: scoped.count
+        )
+        var written = 0
+        for txRow in scoped {
+            let txBytes = txRow.transactionData
+            guard !txBytes.isEmpty else {
+                // Stub row whose real upsert never landed — skip rather
+                // than emit an undecodable buffer.
+                continue
+            }
+
+            let txBuf = UnsafeMutablePointer<UInt8>.allocate(capacity: txBytes.count)
+            txBytes.copyBytes(to: txBuf, count: txBytes.count)
+            allocation.scalarBuffers.append((txBuf, txBytes.count))
+
+            var entry = ProviderSpecialTxRestoreEntryFFI()
+            entry.tx_bytes = txBuf
+            entry.tx_bytes_len = UInt(txBytes.count)
+            entry.context_raw = txRow.context
+            entry.block_height = txRow.blockHeight
+            if let hash = txRow.blockHash, hash.count == 32 {
+                withUnsafeMutableBytes(of: &entry.block_hash) { raw in
+                    raw.copyBytes(from: hash)
+                }
+            }
+            entry.block_timestamp = UInt64(txRow.blockTimestamp)
+            entry.first_seen = txRow.firstSeen
+            buf[written] = entry
+            written += 1
+        }
+        if written == 0 {
+            buf.deallocate()
+            return (nil, 0)
+        }
+        allocation.providerSpecialTxRecordArrays.append((buf, written))
         return (buf, written)
     }
 
@@ -5451,6 +5539,11 @@ private final class LoadAllocation {
     /// so the next chain-lock event can cascade-promote them. The
     /// `tx_bytes` buffer each row references lives in `scalarBuffers`.
     var unresolvedAssetLockTxRecordArrays: [(UnsafeMutablePointer<UnresolvedAssetLockTxRecordFFI>, Int)] = []
+    /// Per-wallet `ProviderSpecialTxRestoreEntryFFI` arrays — provider
+    /// special txs re-staged so #876 retention keeps them resident after a
+    /// restart. The `tx_bytes` buffer each row references lives in
+    /// `scalarBuffers`.
+    var providerSpecialTxRecordArrays: [(UnsafeMutablePointer<ProviderSpecialTxRestoreEntryFFI>, Int)] = []
     /// Per-wallet `AccountAddressPoolFFI` arrays, the persisted core
     /// address pools
     var coreAddressPoolArrays: [(UnsafeMutablePointer<AccountAddressPoolFFI>, Int)] = []
@@ -5523,6 +5616,10 @@ private final class LoadAllocation {
             ptr.deallocate()
         }
         for (ptr, count) in unresolvedAssetLockTxRecordArrays {
+            ptr.deinitialize(count: count)
+            ptr.deallocate()
+        }
+        for (ptr, count) in providerSpecialTxRecordArrays {
             ptr.deinitialize(count: count)
             ptr.deallocate()
         }

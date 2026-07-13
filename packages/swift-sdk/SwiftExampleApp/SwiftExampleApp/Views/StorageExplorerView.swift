@@ -134,6 +134,9 @@ struct StorageExplorerView: View {
             modelRow("Asset Locks", icon: "lock.shield", type: PersistentAssetLock.self) {
                 AssetLockStorageListView(network: network)
             }
+            modelRow("Masternodes", icon: "server.rack", type: PersistentMasternode.self) {
+                MasternodeStorageListView(network: network)
+            }
             modelRow("Manager Metadata", icon: "gearshape.2", type: PersistentWalletManagerMetadata.self) {
                 WalletManagerMetadataStorageListView(network: network)
             }
@@ -313,6 +316,9 @@ struct StorageExplorerView: View {
             walletsOnNetwork.contains($0.walletId)
         }
         filteredCount(PersistentAssetLock.self) {
+            walletsOnNetwork.contains($0.walletId)
+        }
+        filteredCount(PersistentMasternode.self) {
             walletsOnNetwork.contains($0.walletId)
         }
 
