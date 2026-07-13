@@ -275,15 +275,18 @@ class PlatformWalletManager(
      * Returns the recorded storage identifier (e.g. `privkey.<pubkeyHex>`),
      * or throws on a derivation / storage failure.
      */
-    fun repairIdentityKey(
+    suspend fun repairIdentityKey(
         walletId: ByteArray,
         publicKeyData: ByteArray,
         identityIndex: Int,
         keyIndex: Int,
-    ): String? {
+    ): String? = teardownGate.op {
         require(identityIndex >= 0) { "identityIndex must be non-negative, got $identityIndex" }
         require(keyIndex >= 0) { "keyIndex must be non-negative, got $keyIndex" }
-        return identityKeyDeriver.deriveAndStore(
+        // deriveAndStore is a synchronous JNI call keyed on the manager's
+        // resolver handle — the gate keeps teardown from freeing it
+        // mid-derive (callers run on their own Compose scopes).
+        identityKeyDeriver.deriveAndStore(
             walletId = walletId,
             publicKeyData = publicKeyData,
             identityIndex = identityIndex,
@@ -301,7 +304,7 @@ class PlatformWalletManager(
         walletId: ByteArray,
         identityIndex: Int,
         keyIndex: Int,
-    ): Pair<ByteArray, ByteArray> = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+    ): Pair<ByteArray, ByteArray> = teardownGate.op {
         require(identityIndex >= 0) { "identityIndex must be non-negative, got $identityIndex" }
         require(keyIndex >= 0) { "keyIndex must be non-negative, got $keyIndex" }
         val pair = org.dashfoundation.dashsdk.errors.mapNativeErrors {
@@ -1486,7 +1489,12 @@ class PlatformWalletManager(
         // invalid-parameter failure elsewhere from being mistaken for a
         // seed mismatch. Rethrown so callers keep their own handling.
         try {
-            withContext(Dispatchers.IO) {
+            // Gated: the verify borrows the manager's resolver handle from
+            // the CALLER's scope (DashPayTabScreen / loadPersistedWallets)
+            // — invisible to the scope join, so it must be counted by the
+            // gate. The drain below stays ungated on the manager scope: it
+            // creates and owns its own resolver/signer.
+            teardownGate.op {
                 mapNativeErrors {
                     DashpayNative.verifySeedBindsToWallet(
                         managed.handle,

@@ -96,7 +96,11 @@ class AppState(
             )
             val old = _sdk.value
             _sdk.value = newSdk
-            old?.close()
+            // Suspending close: awaits queries already in flight against
+            // the old instance (they run under Sdk.queryGate), so the
+            // native handle is never freed mid-JNI-call. New queries
+            // against the old instance fail fast once this begins.
+            old?.closeSuspending()
             _errorMessage.value = null
         } catch (e: Exception) {
             _errorMessage.value = e.message ?: "Failed to initialize SDK"

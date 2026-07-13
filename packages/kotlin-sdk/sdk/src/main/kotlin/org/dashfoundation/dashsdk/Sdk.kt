@@ -94,6 +94,31 @@ class Sdk private constructor(
 
     val isClosed: Boolean get() = handleRef.get() == 0L
 
+    /**
+     * Lease fence for in-flight queries: every [org.dashfoundation.dashsdk.queries]
+     * entry point runs under it, and [closeSuspending] awaits it before
+     * freeing the native SDK (`dash_sdk_destroy` is a raw, non-refcounted
+     * `Box::from_raw`). Same primitive as the wallet manager's teardown
+     * fence.
+     */
+    internal val queryGate = org.dashfoundation.dashsdk.wallet.TeardownGate()
+
+    /**
+     * Suspending close — the production path (`AppState.initializeSdk`
+     * replaces the SDK on a network switch): rejects new queries, awaits
+     * every in-flight one, then destroys the native handle. Without this,
+     * a query mid-JNI-call could keep dereferencing the freed pointer.
+     */
+    suspend fun closeSuspending() {
+        queryGate.closeAndAwait()
+        cleanable.clean()
+    }
+
+    /**
+     * Blocking close for non-suspend contexts (tests) and the [NativeCleaner]
+     * backstop. Does NOT await in-flight queries — production replacement
+     * goes through [closeSuspending].
+     */
     override fun close() {
         cleanable.clean()
     }

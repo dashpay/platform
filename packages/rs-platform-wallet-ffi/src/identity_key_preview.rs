@@ -454,9 +454,10 @@ unsafe fn preview_identity_registration_keys_inner(
                         key_index,
                     )?;
                     let private_key = Zeroizing::new(ext_priv.private_key.secret_bytes());
-                    // `ExtendedPrivKey` has no zeroizing Drop: erase the
-                    // resident-path intermediate before it drops (matches
-                    // identity_private_key_at_slot.rs).
+                    // Belt-and-braces: the pinned key-wallet rev zeroizes
+                    // `ExtendedPrivKey` on Drop; erase explicitly anyway
+                    // (matches identity_private_key_at_slot.rs — cheap, and
+                    // robust to an upstream Drop regression).
                     ext_priv.private_key.non_secure_erase();
                     Ok(RowMaterial {
                         path: path.to_string(),
