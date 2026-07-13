@@ -909,3 +909,102 @@ pub unsafe extern "C" fn dash_sdk_create_handle_with_mock(
         }
     }
 }
+
+#[cfg(test)]
+mod context_provider_install_tests {
+    use super::*;
+    use crate::test_utils::test_utils::{create_mock_sdk_handle, destroy_mock_sdk_handle};
+    use dash_sdk::dpp::data_contract::TokenConfiguration;
+    use dash_sdk::dpp::prelude::{CoreBlockHeight, DataContract, Identifier};
+    use dash_sdk::dpp::version::PlatformVersion;
+    use drive_proof_verifier::{ContextProvider, ContextProviderError};
+
+    /// Provider whose activation height is a distinctive sentinel, so a swap can
+    /// be observed by reading it back off the SDK.
+    struct SentinelProvider(CoreBlockHeight);
+    impl ContextProvider for SentinelProvider {
+        fn get_quorum_public_key(
+            &self,
+            _quorum_type: u32,
+            _quorum_hash: [u8; 32],
+            _height: u32,
+        ) -> Result<[u8; 48], ContextProviderError> {
+            Ok([0u8; 48])
+        }
+        fn get_data_contract(
+            &self,
+            _id: &Identifier,
+            _pv: &PlatformVersion,
+        ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
+            Ok(None)
+        }
+        fn get_token_configuration(
+            &self,
+            _id: &Identifier,
+        ) -> Result<Option<TokenConfiguration>, ContextProviderError> {
+            Ok(None)
+        }
+        fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
+            Ok(self.0)
+        }
+    }
+
+    fn provider_handle(p: impl ContextProvider + 'static) -> *mut ContextProviderHandle {
+        Box::into_raw(Box::new(ContextProviderWrapper::new(p))) as *mut ContextProviderHandle
+    }
+
+    #[test]
+    fn install_swaps_provider_and_guards_nulls() {
+        unsafe {
+            let sdk = create_mock_sdk_handle();
+
+            // Null provider handle -> error, nothing installed.
+            let r = dash_sdk_install_context_provider(sdk, std::ptr::null_mut());
+            assert!(!r.error.is_null(), "null provider must error");
+            crate::error::dash_sdk_error_free(r.error);
+
+            // Null SDK handle -> error, but the provider box is still reclaimed
+            // exactly once (no leak / no UB).
+            let ph = provider_handle(SentinelProvider(111));
+            let r = dash_sdk_install_context_provider(std::ptr::null_mut(), ph);
+            assert!(!r.error.is_null(), "null sdk handle must error");
+            crate::error::dash_sdk_error_free(r.error);
+
+            // Success: the swap is observable on the SDK.
+            const SENTINEL: CoreBlockHeight = 7_777_777;
+            let ph = provider_handle(SentinelProvider(SENTINEL));
+            let r = dash_sdk_install_context_provider(sdk, ph);
+            assert!(r.error.is_null(), "install should succeed");
+            let wrapper = &*(sdk as *const SDKWrapper);
+            let height = wrapper
+                .sdk
+                .context_provider()
+                .expect("provider present")
+                .get_platform_activation_height()
+                .expect("activation height");
+            assert_eq!(height, SENTINEL);
+
+            destroy_mock_sdk_handle(sdk);
+        }
+    }
+
+    #[test]
+    fn restore_errors_without_stored_trusted_provider() {
+        unsafe {
+            // Null handle -> error.
+            let r = dash_sdk_restore_trusted_context_provider(std::ptr::null_mut());
+            assert!(!r.error.is_null(), "null handle must error");
+            crate::error::dash_sdk_error_free(r.error);
+
+            // A mock SDK wrapper stores no trusted provider, so restore errors.
+            let sdk = create_mock_sdk_handle();
+            let r = dash_sdk_restore_trusted_context_provider(sdk);
+            assert!(
+                !r.error.is_null(),
+                "restore without a stored trusted provider must error"
+            );
+            crate::error::dash_sdk_error_free(r.error);
+            destroy_mock_sdk_handle(sdk);
+        }
+    }
+}

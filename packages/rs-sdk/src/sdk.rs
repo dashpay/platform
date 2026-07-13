@@ -1274,6 +1274,75 @@ mod test {
     /// Testnet Evo masternodes expose the Platform HTTP endpoint on 1443.
     const TESTNET_PLATFORM_HTTP_PORT: u16 = 1443;
 
+    /// Regression guard for the shared context-provider slot. `Sdk::clone`
+    /// shares the provider slot (via `Arc<ArcSwapOption>`) rather than
+    /// snapshotting it, so a `set_context_provider` on any clone is observed by
+    /// all of them. This is what lets a wallet manager (which holds an SDK
+    /// clone) pick up a runtime switch to SPV-synced quorums installed on the
+    /// app's SDK. A snapshot-per-clone would leave the original on its old
+    /// provider and fail this test.
+    #[test]
+    fn context_provider_is_shared_across_clones() {
+        use dash_context_provider::{ContextProvider, ContextProviderError};
+        use dpp::data_contract::TokenConfiguration;
+        use dpp::prelude::{CoreBlockHeight, DataContract, Identifier};
+        use dpp::version::PlatformVersion;
+
+        /// Provider whose activation height is a distinctive sentinel so it can
+        /// be told apart from the mock SDK's default provider.
+        struct SentinelProvider(CoreBlockHeight);
+        impl ContextProvider for SentinelProvider {
+            fn get_quorum_public_key(
+                &self,
+                _quorum_type: u32,
+                _quorum_hash: [u8; 32],
+                _height: u32,
+            ) -> Result<[u8; 48], ContextProviderError> {
+                Ok([0u8; 48])
+            }
+            fn get_data_contract(
+                &self,
+                _id: &Identifier,
+                _pv: &PlatformVersion,
+            ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
+                Ok(None)
+            }
+            fn get_token_configuration(
+                &self,
+                _id: &Identifier,
+            ) -> Result<Option<TokenConfiguration>, ContextProviderError> {
+                Ok(None)
+            }
+            fn get_platform_activation_height(
+                &self,
+            ) -> Result<CoreBlockHeight, ContextProviderError> {
+                Ok(self.0)
+            }
+        }
+
+        const SENTINEL: CoreBlockHeight = 4_242_424;
+
+        let sdk = SdkBuilder::new_mock()
+            .build()
+            .expect("mock sdk should build");
+        let clone = sdk.clone();
+
+        // Install the sentinel provider on the CLONE only.
+        clone.set_context_provider(SentinelProvider(SENTINEL));
+
+        // The ORIGINAL must observe it — proving the slot is shared, not a
+        // per-clone snapshot.
+        let height = sdk
+            .context_provider()
+            .expect("provider present after set")
+            .get_platform_activation_height()
+            .expect("activation height");
+        assert_eq!(
+            height, SENTINEL,
+            "set_context_provider on a clone must be visible on the original (shared slot)"
+        );
+    }
+
     #[test]
     fn new_testnet_sources_bootstrap_from_seeds() {
         let builder = SdkBuilder::new_testnet();
