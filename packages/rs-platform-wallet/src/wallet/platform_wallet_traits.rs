@@ -101,6 +101,10 @@ impl WalletInfoInterface for PlatformWalletInfo {
         self.core_wallet.monitored_script_pubkeys()
     }
 
+    fn monitored_filter_elements(&self) -> Vec<Vec<u8>> {
+        self.core_wallet.monitored_filter_elements()
+    }
+
     fn utxos(&self) -> BTreeSet<&Utxo> {
         self.core_wallet.utxos()
     }

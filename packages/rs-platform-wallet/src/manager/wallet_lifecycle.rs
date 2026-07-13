@@ -2,6 +2,7 @@
 
 use std::sync::Arc;
 
+use dash_spv::chain::CheckpointManager;
 use key_wallet::mnemonic::{Language, Mnemonic};
 use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
@@ -66,7 +67,8 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// anything funded before init is invisible — **but** when SPV is
     /// not running yet or header state is unavailable (e.g. wallet
     /// created before the SPV client is started), it falls back to
-    /// `0`, i.e. a full historical scan from genesis. `Some(0)`
+    /// the latest network checkpoint height, keeping the scan near
+    /// the chain head instead of rescanning from genesis. `Some(0)`
     /// always requests a full historical scan from genesis (use
     /// sparingly — expensive on long-lived chains, but required when
     /// an address may have received funds before the wallet was first
@@ -96,7 +98,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// See [`Self::create_wallet_from_mnemonic`] for the
     /// `birth_height_override` semantics. `None` scans from the
     /// current SPV tip forward when SPV is running, otherwise from
-    /// genesis; `Some(h)` is for callers that need to see funding
+    /// the latest network checkpoint; `Some(h)` is for callers that need to see funding
     /// deposited before the wallet was registered (e.g. a long-lived
     /// bank address pre-funded with testnet duffs).
     pub async fn create_wallet_from_seed_bytes(
@@ -151,18 +153,30 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // persisted id verbatim, so it stays self-consistent across
         // launches.
 
-        // Birth height resolution: explicit override wins; otherwise
-        // fall back to SPV's confirmed header tip (default for fresh
-        // wallets — they only need to see funding from now on); 0 if
-        // SPV isn't running yet.
+        // Birth height resolution: explicit override wins; otherwise fall back
+        // to SPV's confirmed header tip (default for fresh wallets — they only
+        // need to see funding from now on). Before SPV has synced any headers
+        // the tip is 0, so a brand-new wallet created at startup would otherwise
+        // anchor at genesis and rescan the whole chain. Fall back to the latest
+        // hardcoded checkpoint instead, keeping the scan near the chain head.
         let birth_height: u32 = match birth_height_override {
             Some(h) => h,
-            None => self
-                .spv_manager
-                .sync_progress()
-                .await
-                .and_then(|p| p.headers().ok().map(|h| h.tip_height()))
-                .unwrap_or(0),
+            None => {
+                let tip = self
+                    .spv_manager
+                    .sync_progress()
+                    .await
+                    .and_then(|p| p.headers().ok().map(|h| h.tip_height()))
+                    .unwrap_or(0);
+                if tip > 0 {
+                    tip
+                } else {
+                    CheckpointManager::for_network(self.sdk.network)
+                        .last_checkpoint()
+                        .map(|checkpoint| checkpoint.height)
+                        .unwrap_or(0)
+                }
+            }
         };
 
         let wallet_info = ManagedWalletInfo::from_wallet(&wallet, birth_height);

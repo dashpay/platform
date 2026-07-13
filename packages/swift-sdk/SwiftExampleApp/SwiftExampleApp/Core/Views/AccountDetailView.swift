@@ -38,23 +38,49 @@ struct AccountDetailView: View {
     /// "Copied" confirmation.
     @State private var derivedCopiedKey: String?
 
-    /// Distinct on-chain transactions this account participates in:
-    /// the union of every TXO's creating tx and spending tx. Lives
-    /// here rather than on the model because `PersistentTransaction`
-    /// is no longer account-scoped (a single tx can produce outputs
-    /// into multiple accounts), so the per-account set has to be
-    /// derived on demand. Walks the address pool — the canonical
-    /// account → TXO path is `coreAddresses.flatMap(\.txos)` now
-    /// that `PersistentAccount.outputs` is gone.
-    private var distinctTransactionCount: Int {
+    /// The transaction sheet currently presented from the Transactions
+    /// card (`nil` = none). Mirrors `TransactionListView`'s pattern.
+    @State private var selectedTransaction: PersistentTransaction?
+
+    /// Distinct transactions this account participates in, as display
+    /// rows: the **union** of the TXO-derived set (every TXO's creating
+    /// tx + spending tx) and the payload-only `involvedTransactions`
+    /// join. Lives here rather than on the model because
+    /// `PersistentTransaction` is not account-scoped (a single tx can
+    /// produce outputs into multiple accounts), so the per-account set
+    /// is derived on demand.
+    ///
+    /// The TXO walk covers funded involvement (canonical path:
+    /// `coreAddresses.flatMap(\.txos)`); `involvedTransactions` adds the
+    /// payload-only special txs that produced no TXO here and are
+    /// therefore invisible to that walk. De-dup is by `txid` so a tx
+    /// that is both funded and payload-linked appears once.
+    ///
+    /// Sorted to match `TransactionListView`: unconfirmed (context 0)
+    /// first, then by `firstSeen` descending.
+    private var distinctTransactions: [PersistentTransaction] {
         var seen: Set<Data> = []
+        var result: [PersistentTransaction] = []
+        func add(_ tx: PersistentTransaction) {
+            if seen.insert(tx.txid).inserted { result.append(tx) }
+        }
         for address in account.coreAddresses {
             for txo in address.txos {
-                if let tx = txo.transaction { seen.insert(tx.txid) }
-                if let spending = txo.spendingTransaction { seen.insert(spending.txid) }
+                if let tx = txo.transaction { add(tx) }
+                if let spending = txo.spendingTransaction { add(spending) }
             }
         }
-        return seen.count
+        for tx in account.involvedTransactions { add(tx) }
+        return result.sorted { lhs, rhs in
+            if (lhs.context == 0) != (rhs.context == 0) {
+                return lhs.context == 0
+            }
+            return lhs.firstSeen > rhs.firstSeen
+        }
+    }
+
+    private var distinctTransactionCount: Int {
+        distinctTransactions.count
     }
 
     /// Total TXO count for the account, summed across address
@@ -86,6 +112,11 @@ struct AccountDetailView: View {
                         // ...and the per-index keys derived from it (the
                         // actual operator / platform-node keys).
                         derivedKeysCard()
+                        // Operator-key accounts hold no TXOs, but a
+                        // ProRegTx can still match them payload-only
+                        // (provider owner / voting key address), so
+                        // surface those txs here too.
+                        transactionsCard()
                     } else {
                         if shouldShowBalance {
                             balanceCard()
@@ -118,6 +149,8 @@ struct AccountDetailView: View {
                                 emptyAddressesCard()
                             }
                         }
+
+                        transactionsCard()
                     }
                 }
                 .padding()
@@ -125,6 +158,9 @@ struct AccountDetailView: View {
         }
         .navigationTitle(account.accountTypeName)
         .navigationBarTitleDisplayMode(.large)
+        .sheet(item: $selectedTransaction) { transaction in
+            TransactionDetailView(transaction: transaction)
+        }
         .sheet(isPresented: $showingPINPrompt) {
             PINPromptView(
                 pinInput: $pinInput,
@@ -400,6 +436,43 @@ struct AccountDetailView: View {
         .background(Color(.systemBackground))
         .cornerRadius(12)
         .shadow(color: Color.black.opacity(0.05), radius: 5, x: 0, y: 2)
+    }
+
+    /// Lists this account's distinct transactions (see
+    /// `distinctTransactions`) — the union of TXO-derived and
+    /// payload-only involvement — each tappable to open its detail
+    /// sheet. Rendered in both the provider-key and address-pool
+    /// branches since operator-key accounts can be payload-matched
+    /// too; skipped for PlatformPayment (tag 14), which has no core
+    /// txs, and hidden entirely when the list is empty.
+    @ViewBuilder
+    private func transactionsCard() -> some View {
+        let txs = distinctTransactions
+        if account.accountType != 14, !txs.isEmpty {
+            VStack(alignment: .leading, spacing: 12) {
+                Label("Transactions (\(txs.count))", systemImage: "list.bullet.rectangle")
+                    .font(.headline)
+                    .foregroundColor(.primary)
+
+                Divider()
+
+                ForEach(Array(txs.enumerated()), id: \.element.txid) { idx, tx in
+                    Button {
+                        selectedTransaction = tx
+                    } label: {
+                        TransactionRowView(transaction: tx)
+                    }
+                    .buttonStyle(.plain)
+                    if idx < txs.count - 1 {
+                        Divider()
+                    }
+                }
+            }
+            .padding()
+            .background(Color(.systemBackground))
+            .cornerRadius(12)
+            .shadow(color: Color.black.opacity(0.05), radius: 5, x: 0, y: 2)
+        }
     }
 
     /// Group this account's persisted addresses by pool tag, in a

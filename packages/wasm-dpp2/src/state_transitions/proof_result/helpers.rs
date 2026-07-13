@@ -5,10 +5,12 @@
 
 use crate::DocumentWasm;
 use crate::PlatformAddressWasm;
+use crate::error::{WasmDppError, WasmDppResult};
 use crate::utils::JsMapExt;
 use dpp::document::Document;
 use dpp::platform_value::Identifier;
 use js_sys::{BigInt, Map};
+use wasm_bindgen::JsCast;
 use wasm_bindgen::JsValue;
 
 /// Build a plain JS object from key-value pairs.
@@ -18,6 +20,35 @@ pub(super) fn js_obj(entries: &[(&str, JsValue)]) -> JsValue {
         js_sys::Reflect::set(&obj, &(*key).into(), val).unwrap();
     }
     obj.into()
+}
+
+/// Read a `Map`-shaped property from an ingested JS value.
+///
+/// `toJSON` normalizes a `Map` to a plain object so it survives
+/// `JSON.stringify`. A value that round-tripped through
+/// `JSON.parse(JSON.stringify(...))` therefore arrives here as a plain
+/// object, not a `Map`. Accept both: use a real `Map` directly, otherwise
+/// rebuild one from the plain object's entries so `.size`/`.get()`/iteration
+/// behave as a `Map`.
+pub(super) fn read_map_property(value: &JsValue, name: &str) -> WasmDppResult<Map> {
+    let raw = js_sys::Reflect::get(value, &name.into())
+        .map_err(|_| WasmDppError::generic(format!("Missing property: {}", name)))?;
+    if raw.is_instance_of::<Map>() {
+        Ok(raw.unchecked_into())
+    } else if raw.is_object() {
+        let entries = js_sys::Object::entries(raw.unchecked_ref());
+        let map = Map::new();
+        for entry in entries.iter() {
+            let pair: js_sys::Array = entry.unchecked_into();
+            map.set(&pair.get(0), &pair.get(1));
+        }
+        Ok(map)
+    } else {
+        Err(WasmDppError::generic(format!(
+            "Property {} must be a Map or plain object",
+            name
+        )))
+    }
 }
 
 /// Wrap a raw `Document` into `DocumentWasm`.

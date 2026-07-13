@@ -2324,7 +2324,11 @@ extension ManagedPlatformWallet {
 
     /// Send a Dash payment to an established DashPay contact.
     /// `amountDuffs` is in duffs (1 DASH = 100_000_000 duffs).
-    /// Returns the 32-byte transaction id.
+    /// Returns the 32-byte transaction id plus the exact network fee
+    /// (duffs) of the broadcast transaction, computed Rust-side as
+    /// Σ(selected input values) − Σ(output values) — so any sub-dust
+    /// change the builder folds into the fee is reflected, not the
+    /// builder's size-based estimate.
     ///
     /// Prerequisite: `register_external_contact_account` must have
     /// run for the `(fromIdentityId, toContactIdentityId)` pair on
@@ -2336,7 +2340,7 @@ extension ManagedPlatformWallet {
         toContactIdentityId: Identifier,
         amountDuffs: UInt64,
         memo: String? = nil
-    ) async throws -> Data {
+    ) async throws -> (txid: Data, feeDuffs: UInt64) {
         let handle = self.handle
         let fromBytes: [UInt8] = fromIdentityId.withFFIBytes { ptr in
             Array(UnsafeBufferPointer(start: ptr, count: 32))
@@ -2351,7 +2355,8 @@ extension ManagedPlatformWallet {
         // derived, digest signed, buffers zeroed) — the seed never becomes
         // resident and no private key leaves Swift.
         let coreSigner = MnemonicResolver()
-        return try await Task.detached(priority: .userInitiated) { () -> Data in
+        return try await Task.detached(priority: .userInitiated) { () -> (txid: Data, feeDuffs: UInt64) in
+            var feeDuffs: UInt64 = 0
             var txidTuple: (
                 UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
                 UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
@@ -2376,7 +2381,8 @@ extension ManagedPlatformWallet {
                                 amountDuffs,
                                 memoPtr,
                                 coreSigner.handle,
-                                &txidTuple
+                                &txidTuple,
+                                &feeDuffs
                             )
                         }
                         if let memoCopy {
@@ -2388,7 +2394,8 @@ extension ManagedPlatformWallet {
                 }
             }
             try result.check()
-            return Swift.withUnsafeBytes(of: &txidTuple) { Data($0) }
+            let txid = Swift.withUnsafeBytes(of: &txidTuple) { Data($0) }
+            return (txid: txid, feeDuffs: feeDuffs)
         }.value
     }
 }
@@ -3253,11 +3260,13 @@ extension ManagedPlatformWallet {
     /// JSON once Platform confirms the transition.
     ///
     /// The returned JSON is DPP's canonical representation of the
-    /// confirmed document (system fields `$id`/`$ownerId`/timestamps/
-    /// `$revision` with identifiers as base58 strings, only populated
-    /// fields present) — what a DOC-01 query would return. Callers
-    /// persist this verbatim so the local cache matches the on-chain
-    /// document rather than the user's raw form input.
+    /// confirmed document — the same bytes a DOC-01 list query
+    /// (`dash_sdk_document_search`) returns: `$formatVersion` present,
+    /// `$id`/`$ownerId` as base58 strings, binary properties as base64,
+    /// and unset system fields as `null`. Callers persist this verbatim
+    /// so the local cache matches the on-chain document rather than the
+    /// user's raw form input. (A single-document `documentGet` fetch
+    /// uses a different, per-field shape.)
     ///
     /// Routes through `IdentityWallet::create_document_with_signer`
     /// (via `platform_wallet_create_document_with_signer`), the

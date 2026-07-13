@@ -1,5 +1,5 @@
 #[cfg(feature = "serde-conversion")]
-use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, PartialEq, PartialOrd, Clone, Eq)]
 #[cfg_attr(feature = "serde-conversion", derive(Serialize, Deserialize))]
@@ -21,11 +21,7 @@ use crate::data_contract::errors::DataContractError::RegexError;
 use platform_value::{Value, ValueMap};
 use rand::distributions::{Alphanumeric, DistString};
 use regex::Regex;
-#[cfg(feature = "serde-conversion")]
-use serde::de::{VariantAccess, Visitor};
 use std::cmp::Ordering;
-#[cfg(feature = "serde-conversion")]
-use std::fmt;
 use std::sync::OnceLock;
 use std::{collections::BTreeMap, convert::TryFrom};
 
@@ -54,15 +50,84 @@ impl TryFrom<u8> for ContestedIndexResolution {
 
 #[repr(u8)]
 #[derive(Debug)]
+#[cfg_attr(
+    feature = "serde-conversion",
+    derive(Serialize, Deserialize),
+    serde(
+        into = "ContestedIndexFieldMatchRepr",
+        from = "ContestedIndexFieldMatchRepr"
+    )
+)]
 pub enum ContestedIndexFieldMatch {
     Regex(LazyRegex),
     PositiveIntegerMatch(u128),
 }
 
+// Internal-`$type` serde shape with a uniform `value` payload, via a
+// struct-variant Repr (tuple variants can't auto-internal-tag). `LazyRegex`
+// round-trips as a bare string; the `u128` uses `json_safe_u128_content` rather
+// than the plain `json_safe_u128` because internal tagging buffers the map
+// through serde's `Content`, which can't hold a `u128` — see that helper's docs.
+#[cfg(feature = "serde-conversion")]
+#[derive(Serialize, Deserialize)]
+#[serde(tag = "$type", rename_all = "camelCase")]
+enum ContestedIndexFieldMatchRepr {
+    Regex {
+        value: LazyRegex,
+    },
+    PositiveIntegerMatch {
+        #[serde(with = "crate::serialization::json_safe_u128_content")]
+        value: u128,
+    },
+}
+
+#[cfg(feature = "serde-conversion")]
+impl From<ContestedIndexFieldMatch> for ContestedIndexFieldMatchRepr {
+    fn from(m: ContestedIndexFieldMatch) -> Self {
+        match m {
+            ContestedIndexFieldMatch::Regex(value) => Self::Regex { value },
+            ContestedIndexFieldMatch::PositiveIntegerMatch(value) => {
+                Self::PositiveIntegerMatch { value }
+            }
+        }
+    }
+}
+
+#[cfg(feature = "serde-conversion")]
+impl From<ContestedIndexFieldMatchRepr> for ContestedIndexFieldMatch {
+    fn from(r: ContestedIndexFieldMatchRepr) -> Self {
+        match r {
+            ContestedIndexFieldMatchRepr::Regex { value } => Self::Regex(value),
+            ContestedIndexFieldMatchRepr::PositiveIntegerMatch { value } => {
+                Self::PositiveIntegerMatch(value)
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
+#[cfg_attr(
+    feature = "serde-conversion",
+    derive(Serialize, Deserialize),
+    serde(from = "String", into = "String")
+)]
 pub struct LazyRegex {
     regex: OnceLock<Regex>,
     regex_str: String,
+}
+
+#[cfg(feature = "serde-conversion")]
+impl From<String> for LazyRegex {
+    fn from(regex_str: String) -> Self {
+        LazyRegex::new(regex_str)
+    }
+}
+
+#[cfg(feature = "serde-conversion")]
+impl From<LazyRegex> for String {
+    fn from(value: LazyRegex) -> Self {
+        value.regex_str
+    }
 }
 
 impl LazyRegex {
@@ -86,101 +151,13 @@ impl LazyRegex {
     }
 }
 
-#[cfg(feature = "serde-conversion")]
-impl Serialize for ContestedIndexFieldMatch {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        match *self {
-            ContestedIndexFieldMatch::Regex(ref regex) => serializer.serialize_newtype_variant(
-                "ContestedIndexFieldMatch",
-                0,
-                "Regex",
-                regex.as_str(),
-            ),
-            ContestedIndexFieldMatch::PositiveIntegerMatch(ref num) => serializer
-                .serialize_newtype_variant(
-                    "ContestedIndexFieldMatch",
-                    1,
-                    "PositiveIntegerMatch",
-                    num,
-                ),
-        }
-    }
-}
-
-#[cfg(feature = "serde-conversion")]
-impl<'de> Deserialize<'de> for ContestedIndexFieldMatch {
-    fn deserialize<D>(deserializer: D) -> Result<ContestedIndexFieldMatch, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        #[derive(Deserialize)]
-        #[serde(field_identifier, rename_all = "snake_case")]
-        enum Field {
-            Regex,
-            PositiveIntegerMatch,
-        }
-
-        struct FieldVisitor;
-
-        impl Visitor<'_> for FieldVisitor {
-            type Value = Field;
-
-            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                formatter.write_str("`regex` or `positive_integer_match`")
-            }
-
-            fn visit_str<E>(self, value: &str) -> Result<Field, E>
-            where
-                E: de::Error,
-            {
-                match value {
-                    "regex" => Ok(Field::Regex),
-                    "positive_integer_match" => Ok(Field::PositiveIntegerMatch),
-                    _ => Err(de::Error::unknown_variant(
-                        value,
-                        &["regex", "positive_integer_match"],
-                    )),
-                }
-            }
-        }
-
-        struct ContestedIndexFieldMatchVisitor;
-
-        impl<'de> Visitor<'de> for ContestedIndexFieldMatchVisitor {
-            type Value = ContestedIndexFieldMatch;
-
-            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                formatter.write_str("enum ContestedIndexFieldMatch")
-            }
-
-            fn visit_enum<V>(self, visitor: V) -> Result<ContestedIndexFieldMatch, V::Error>
-            where
-                V: de::EnumAccess<'de>,
-            {
-                match visitor.variant()? {
-                    (Field::Regex, v) => {
-                        let regex_str: String = v.newtype_variant()?;
-
-                        Ok(ContestedIndexFieldMatch::Regex(LazyRegex::new(regex_str)))
-                    }
-                    (Field::PositiveIntegerMatch, v) => {
-                        let num: u128 = v.newtype_variant()?;
-                        Ok(ContestedIndexFieldMatch::PositiveIntegerMatch(num))
-                    }
-                }
-            }
-        }
-
-        deserializer.deserialize_enum(
-            "ContestedIndexFieldMatch",
-            &["regex", "positive_integer_match"],
-            ContestedIndexFieldMatchVisitor,
-        )
-    }
-}
+// Manual Serialize/Deserialize impls deleted in Phase D step 11.
+// The previous custom Serialize emitted PascalCase variant tags
+// (`{"Regex": ...}`) while the custom Deserialize expected snake_case
+// (`{"regex": ...}`) — non-round-trippable. The replacement uses serde
+// `rename_all = "camelCase"` matching the rest of the codebase's
+// JSON wire-shape convention. `LazyRegex` round-trips as a plain
+// string via `serde(from = "String", into = "String")` above.
 
 #[allow(clippy::non_canonical_partial_ord_impl)]
 impl PartialOrd for ContestedIndexFieldMatch {
@@ -355,6 +332,12 @@ pub struct Index {
     pub contested_index: Option<ContestedIndexInformation>,
     /// Whether and how the index supports count fast paths. See
     /// [`IndexCountability`].
+    //
+    // `serde(default)` on this and the three fields below: they were added
+    // after the struct's serde shape was already in the wild (#3623 count
+    // fields, #3661 sum fields), so JSON serialized before then must still
+    // deserialize.
+    #[cfg_attr(feature = "serde-conversion", serde(default))]
     pub countable: IndexCountability,
     /// Whether the index supports O(log n) count queries over a *range* of
     /// values for the index's last property (the terminator). The flag
@@ -372,6 +355,7 @@ pub struct Index {
     ///
     /// `range_countable: true` requires `countable` to be `Countable` or
     /// `CountableAllowingOffset` (it's additive, not a replacement).
+    #[cfg_attr(feature = "serde-conversion", serde(default))]
     pub range_countable: bool,
     /// When set to `Some(property_name)`, this index's value-tree is laid out
     /// as a `SumTree` (or `CountSumTree` if [`Index::countable`] is also set
@@ -394,6 +378,7 @@ pub struct Index {
     /// non-null (the terminal is a bare reference at key `[0]`), and it
     /// does meaningful sum-aggregation work only for null-bearing entries
     /// (which take the same sum-tree branch a non-unique index uses).
+    #[cfg_attr(feature = "serde-conversion", serde(default))]
     pub summable: Option<String>,
     /// When `true`, this index supports O(log n) range-sum queries on its
     /// last property. The storage-layout effect mirrors
@@ -415,6 +400,7 @@ pub struct Index {
     /// single tree carries both metrics. The dispatcher in
     /// `packages/rs-drive/src/drive/document/primary_key_tree_type.rs`
     /// picks the appropriate variant.
+    #[cfg_attr(feature = "serde-conversion", serde(default))]
     pub range_summable: bool,
 }
 
@@ -2158,5 +2144,319 @@ mod tests {
         assert!(result.is_err());
         let err_msg = format!("{}", result.unwrap_err());
         assert!(err_msg.contains("more than one"));
+    }
+}
+
+// --- canonical conversion trait impls (unification pass 1) ---
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+impl crate::serialization::JsonConvertible for OrderBy {}
+
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+impl crate::serialization::ValueConvertible for OrderBy {}
+
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+impl crate::serialization::JsonConvertible for ContestedIndexResolution {}
+
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+impl crate::serialization::ValueConvertible for ContestedIndexResolution {}
+
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+impl crate::serialization::JsonConvertible for ContestedIndexFieldMatch {}
+
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+impl crate::serialization::ValueConvertible for ContestedIndexFieldMatch {}
+
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+impl crate::serialization::JsonConvertible for ContestedIndexInformation {}
+
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+impl crate::serialization::ValueConvertible for ContestedIndexInformation {}
+
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+impl crate::serialization::JsonConvertible for Index {}
+
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+impl crate::serialization::ValueConvertible for Index {}
+
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+impl crate::serialization::JsonConvertible for IndexProperty {}
+
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+impl crate::serialization::ValueConvertible for IndexProperty {}
+
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+impl crate::serialization::JsonConvertible for IndexCountability {}
+
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+impl crate::serialization::ValueConvertible for IndexCountability {}
+
+#[cfg(all(
+    test,
+    feature = "json-conversion",
+    feature = "value-conversion",
+    feature = "serde-conversion"
+))]
+mod json_convertible_tests {
+    use super::*;
+
+    fn ix_info_fixture() -> ContestedIndexInformation {
+        ContestedIndexInformation::default()
+    }
+
+    #[test]
+    fn json_round_trip_contested_index_information() {
+        use crate::serialization::JsonConvertible;
+        let original = ix_info_fixture();
+        let json = original.to_json().expect("to_json");
+        let recovered = ContestedIndexInformation::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn value_round_trip_contested_index_information() {
+        use crate::serialization::ValueConvertible;
+        let original = ix_info_fixture();
+        let value = original.to_object().expect("to_object");
+        let recovered = ContestedIndexInformation::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn json_round_trip_order_by() {
+        use crate::serialization::JsonConvertible;
+        for original in [OrderBy::Asc, OrderBy::Desc] {
+            let json = original.to_json().expect("to_json");
+            let recovered = OrderBy::from_json(json).expect("from_json");
+            assert_eq!(original, recovered, "variant: {:?}", original);
+        }
+    }
+
+    #[test]
+    fn json_round_trip_contested_index_resolution() {
+        use crate::serialization::JsonConvertible;
+        let original = ContestedIndexResolution::MasternodeVote;
+        let json = original.to_json().expect("to_json");
+        let recovered = ContestedIndexResolution::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    // --- ContestedIndexFieldMatch (internal `$type` tag) ---
+    // Wire shape: internally tagged with a uniform `value` payload.
+    //   `{"$type":"regex","value":"<pattern>"}` -> Regex(LazyRegex)
+    //   `{"$type":"positiveIntegerMatch","value":<u128>}` -> PositiveIntegerMatch
+    // LazyRegex serializes as the bare regex string via
+    // `serde(from = "String", into = "String")`, carried in `value`.
+
+    #[test]
+    fn json_round_trip_contested_index_field_match_regex() {
+        use crate::serialization::JsonConvertible;
+        let original = ContestedIndexFieldMatch::Regex(LazyRegex::new("^dash$".to_string()));
+        let json = original.to_json().expect("to_json");
+        assert_eq!(
+            json,
+            serde_json::json!({ "$type": "regex", "value": "^dash$" })
+        );
+        let recovered = ContestedIndexFieldMatch::from_json(json).expect("from_json");
+        match recovered {
+            ContestedIndexFieldMatch::Regex(r) => assert_eq!(r.as_str(), "^dash$"),
+            other => panic!("expected Regex, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn json_round_trip_contested_index_field_match_positive_integer() {
+        use crate::serialization::JsonConvertible;
+        let original = ContestedIndexFieldMatch::PositiveIntegerMatch(42);
+        let json = original.to_json().expect("to_json");
+        assert_eq!(
+            json,
+            serde_json::json!({ "$type": "positiveIntegerMatch", "value": 42 })
+        );
+        let recovered = ContestedIndexFieldMatch::from_json(json).expect("from_json");
+        match recovered {
+            ContestedIndexFieldMatch::PositiveIntegerMatch(n) => assert_eq!(n, 42),
+            other => panic!("expected PositiveIntegerMatch, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn value_round_trip_contested_index_field_match_regex() {
+        use crate::serialization::ValueConvertible;
+        let original = ContestedIndexFieldMatch::Regex(LazyRegex::new("[a-z]+".to_string()));
+        let value = original.to_object().expect("to_object");
+        // LazyRegex serializes as a bare string in non-HR Value too.
+        assert_eq!(
+            value,
+            platform_value::platform_value!({ "$type": "regex", "value": "[a-z]+" })
+        );
+        let recovered = ContestedIndexFieldMatch::from_object(value).expect("from_object");
+        match recovered {
+            ContestedIndexFieldMatch::Regex(r) => assert_eq!(r.as_str(), "[a-z]+"),
+            other => panic!("expected Regex, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn value_round_trip_contested_index_field_match_positive_integer() {
+        use crate::serialization::ValueConvertible;
+        let original = ContestedIndexFieldMatch::PositiveIntegerMatch(u128::MAX);
+        let value = original.to_object().expect("to_object");
+        // u128::MAX exceeds u64::MAX, so it's encoded as a string (Content-safe;
+        // serde's internal-tag buffer can't hold a 128-bit int). Values that fit
+        // in u64 stay numeric.
+        assert_eq!(
+            value,
+            platform_value::platform_value!({ "$type": "positiveIntegerMatch", "value": "340282366920938463463374607431768211455" })
+        );
+        let recovered = ContestedIndexFieldMatch::from_object(value).expect("from_object");
+        match recovered {
+            ContestedIndexFieldMatch::PositiveIntegerMatch(n) => assert_eq!(n, u128::MAX),
+            other => panic!("expected PositiveIntegerMatch, got {:?}", other),
+        }
+    }
+
+    // --- Index / IndexProperty / IndexCountability (count + sum fields from
+    // base PRs #3623 / #3661) ---
+
+    fn index_fixture() -> Index {
+        Index {
+            name: "byOwnerAndPrice".to_string(),
+            properties: vec![
+                IndexProperty {
+                    name: "ownerId".to_string(),
+                    ascending: true,
+                },
+                IndexProperty {
+                    name: "price".to_string(),
+                    ascending: false,
+                },
+            ],
+            unique: false,
+            null_searchable: true,
+            contested_index: None,
+            countable: IndexCountability::CountableAllowingOffset,
+            range_countable: true,
+            summable: Some("price".to_string()),
+            range_summable: true,
+        }
+    }
+
+    #[test]
+    fn index_json_round_trip_with_full_wire_shape() {
+        use crate::serialization::JsonConvertible;
+        let original = index_fixture();
+        let json = original.to_json().expect("to_json");
+        // Internal (non-user-authored) shape: snake_case field names, no
+        // rename_all on the struct. `countable` is the camelCase-renamed
+        // IndexCountability unit enum.
+        assert_eq!(
+            json,
+            serde_json::json!({
+                "name": "byOwnerAndPrice",
+                "properties": [
+                    {"name": "ownerId", "ascending": true},
+                    {"name": "price", "ascending": false},
+                ],
+                "unique": false,
+                "null_searchable": true,
+                "contested_index": serde_json::Value::Null,
+                "countable": "countableAllowingOffset",
+                "range_countable": true,
+                "summable": "price",
+                "range_summable": true,
+            })
+        );
+        let recovered = Index::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn index_value_round_trip() {
+        use crate::serialization::ValueConvertible;
+        let original = index_fixture();
+        let value = original.to_object().expect("to_object");
+        let recovered = Index::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
+    }
+
+    /// JSON serialized before the count (#3623) and sum (#3661) fields existed
+    /// must still deserialize — the four new fields default (NotCountable /
+    /// false / None / false). Without `serde(default)` this fails with
+    /// "missing field `countable`".
+    #[test]
+    fn index_deserializes_pre_count_sum_json() {
+        use crate::serialization::JsonConvertible;
+        let old_json = serde_json::json!({
+            "name": "byOwner",
+            "properties": [{"name": "ownerId", "ascending": true}],
+            "unique": true,
+            "null_searchable": false,
+            "contested_index": serde_json::Value::Null,
+        });
+        let recovered = Index::from_json(old_json).expect("pre-#3623 JSON must deserialize");
+        assert_eq!(recovered.countable, IndexCountability::NotCountable);
+        assert!(!recovered.range_countable);
+        assert_eq!(recovered.summable, None);
+        assert!(!recovered.range_summable);
+    }
+
+    #[test]
+    fn index_property_json_round_trip_with_full_wire_shape() {
+        use crate::serialization::JsonConvertible;
+        let original = IndexProperty {
+            name: "ownerId".to_string(),
+            ascending: false,
+        };
+        let json = original.to_json().expect("to_json");
+        assert_eq!(
+            json,
+            serde_json::json!({"name": "ownerId", "ascending": false})
+        );
+        let recovered = IndexProperty::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn index_property_value_round_trip_with_full_wire_shape() {
+        use crate::serialization::ValueConvertible;
+        use platform_value::platform_value;
+        let original = IndexProperty {
+            name: "ownerId".to_string(),
+            ascending: false,
+        };
+        let value = original.to_object().expect("to_object");
+        assert_eq!(
+            value,
+            platform_value!({"name": "ownerId", "ascending": false})
+        );
+        let recovered = IndexProperty::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn index_countability_round_trips_all_variants() {
+        use crate::serialization::{JsonConvertible, ValueConvertible};
+        let cases = [
+            (IndexCountability::NotCountable, "notCountable"),
+            (IndexCountability::Countable, "countable"),
+            (
+                IndexCountability::CountableAllowingOffset,
+                "countableAllowingOffset",
+            ),
+        ];
+        for (original, expected) in cases {
+            let json_v = original.to_json().expect("to_json");
+            assert_eq!(json_v, serde_json::json!(expected));
+            assert_eq!(
+                IndexCountability::from_json(json_v).expect("from_json"),
+                original
+            );
+            let value = original.to_object().expect("to_object");
+            assert_eq!(value, platform_value::Value::Text(expected.to_string()));
+            assert_eq!(
+                IndexCountability::from_object(value).expect("from_object"),
+                original
+            );
+        }
     }
 }

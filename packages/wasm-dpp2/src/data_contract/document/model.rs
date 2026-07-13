@@ -11,8 +11,13 @@ use crate::utils::{
 };
 use crate::version::{PlatformVersionLikeJs, PlatformVersionWasm};
 use dpp::document::serialization_traits::{
-    DocumentJsonMethodsV0, DocumentPlatformConversionMethodsV0, DocumentPlatformValueMethodsV0,
+    DocumentPlatformConversionMethodsV0, DocumentPlatformValueMethodsV0,
 };
+// `DocumentPlatformValueMethodsV0` is brought in for `to_map_value`
+// (the only method on it the wasm wrapper still uses, after Phase D
+// step 8 slice B). `DocumentPlatformConversionMethodsV0` is the binary
+// serialization trait. Canonical `JsonConvertible` / `ValueConvertible`
+// are imported inline at the call sites.
 use dpp::document::{Document, DocumentV0, DocumentV0Getters, DocumentV0Setters};
 use dpp::identifier::Identifier;
 use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
@@ -20,7 +25,6 @@ use dpp::platform_value::string_encoding::encode;
 use dpp::platform_value::{Value, ValueMapHelper};
 use dpp::util::entropy_generator;
 use dpp::util::entropy_generator::EntropyGenerator;
-use dpp::version::PlatformVersion;
 use serde::Deserialize;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -105,7 +109,7 @@ pub struct DocumentWasm {
     pub(crate) document_type_name: String,
     #[serde(
         rename = "$entropy",
-        with = "serialization::bytes_b64::option",
+        with = "dpp::serialization::serde_bytes::option",
         skip_serializing_if = "Option::is_none",
         default
     )]
@@ -485,10 +489,21 @@ impl DocumentWasm {
     }
 
     /// Convert to a JS object with binary fields as Uint8Array.
+    ///
+    /// Wire shape (Phase D step 8 slice B):
+    /// - `$formatVersion: "0"` — canonical Document version tag
+    /// - `$dataContractId`, `$type`, `$entropy` — wasm-side metadata
+    /// - V0 Document fields (`$id`, `$ownerId`, `$revision`, …) flat
+    ///   alongside user-defined properties
     #[wasm_bindgen(js_name = "toObject")]
     pub fn to_object(&self) -> WasmDppResult<DocumentObjectJs> {
         let mut map = self.document.to_map_value()?;
-        // Add metadata fields not in core Document
+        // Canonical Document version tag — matches `IdentityWasm.toObject`
+        // and every other rs-dpp type's canonical wire shape. Symmetric
+        // with `fromObject` which now uses canonical
+        // `Document::from_object` (requires the tag).
+        map.insert("$formatVersion".to_string(), Value::Text("0".to_string()));
+        // wasm-side metadata not in core Document
         let data_contract_id: Identifier = self.data_contract_id.into();
         map.insert(
             "$dataContractId".to_string(),
@@ -507,20 +522,20 @@ impl DocumentWasm {
         Ok(js_value.into())
     }
 
-    /// Create a Document from a JS object.
+    /// Create a Document from a JS object (canonical-tagged shape).
     #[wasm_bindgen(js_name = "fromObject")]
     pub fn from_object(
         value: DocumentObjectJs,
-        platform_version: PlatformVersionLikeJs,
+        _platform_version: PlatformVersionLikeJs,
     ) -> WasmDppResult<DocumentWasm> {
-        let platform_version: PlatformVersion = platform_version.try_into()?;
         let platform_value = serialization::js_value_to_platform_value(&value.into())?;
 
         let Value::Map(mut map) = platform_value else {
             return Err(WasmDppError::invalid_argument("Expected an object"));
         };
 
-        // Extract metadata fields using ValueMapHelper trait methods
+        // Extract wasm-side metadata fields before passing to canonical
+        // `Document::from_object`.
         let data_contract_id = map
             .remove_optional_key("$dataContractId")
             .ok_or_else(|| WasmDppError::invalid_argument("Missing $dataContractId"))?
@@ -545,8 +560,12 @@ impl DocumentWasm {
             })
         });
 
-        // Create Document from remaining fields
-        let document = Document::from_platform_value(Value::Map(map), &platform_version)?;
+        // Canonical `ValueConvertible::from_object` after Phase D step 8
+        // slice B. The legacy `from_platform_value` accepted un-tagged
+        // shapes; with `toObject` now emitting `$formatVersion: "0"`,
+        // canonical handles round-trip cleanly.
+        use dpp::serialization::ValueConvertible;
+        let document = Document::from_object(Value::Map(map))?;
 
         Ok(DocumentWasm::new(
             document,
@@ -560,11 +579,14 @@ impl DocumentWasm {
     #[wasm_bindgen(js_name = "toJSON")]
     pub fn to_json(
         &self,
-        platform_version: PlatformVersionLikeJs,
+        _platform_version: PlatformVersionLikeJs,
     ) -> WasmDppResult<DocumentJSONJs> {
-        let platform_version: PlatformVersion = platform_version.try_into()?;
-        // Get document fields as JSON
-        let mut json_value = self.document.to_json(&platform_version)?;
+        // Canonical `JsonConvertible::to_json` after Phase D step 8 slice A.
+        // The legacy `to_json(&self, &PlatformVersion)` was a 1:1 canonical
+        // equivalent. `platform_version` stays in the JS API for SDK
+        // consistency.
+        use dpp::serialization::JsonConvertible;
+        let mut json_value = self.document.to_json()?;
 
         // Serialize wrapper fields using serde and merge into document JSON
         let wrapper_json =
@@ -584,29 +606,32 @@ impl DocumentWasm {
         Ok(js_value.into())
     }
 
-    /// Create a Document from a JSON object.
+    /// Create a Document from a JSON object (canonical-tagged shape).
     /// JSON format has identifiers as base58 strings.
     #[wasm_bindgen(js_name = "fromJSON")]
     pub fn from_json(
         value: DocumentJSONJs,
-        platform_version: PlatformVersionLikeJs,
+        _platform_version: PlatformVersionLikeJs,
     ) -> WasmDppResult<DocumentWasm> {
-        let platform_version: PlatformVersion = platform_version.try_into()?;
         let mut json_value = serialization::js_value_to_json(&value.into())?;
 
         // Deserialize wrapper fields using serde
         let mut wrapper: DocumentWasm = serde_json::from_value(json_value.clone())
             .map_err(|e| WasmDppError::serialization(e.to_string()))?;
 
-        // Remove wrapper fields from JSON before passing to Document::from_json_value
+        // Remove wrapper fields from JSON before passing to Document::from_json
         if let serde_json::Value::Object(ref mut obj) = json_value {
             obj.remove("$dataContractId");
             obj.remove("$type");
             obj.remove("$entropy");
         }
 
-        // Create Document from remaining fields
-        wrapper.document = Document::from_json_value::<String, _>(json_value, &platform_version)?;
+        // Canonical `JsonConvertible::from_json` after Phase D step 8
+        // slice B. The wasm-dpp2 `toJSON` already emits canonical-tagged
+        // JSON (it routes through `Document::to_json` which carries
+        // `$formatVersion`), so the round-trip works through canonical.
+        use dpp::serialization::JsonConvertible;
+        wrapper.document = Document::from_json(json_value)?;
 
         Ok(wrapper)
     }

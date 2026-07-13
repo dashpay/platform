@@ -23,7 +23,6 @@ use dash_sdk::platform::Fetch;
 use dash_sdk::{Sdk, SdkBuilder};
 use dpp::dashcore::Network;
 use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
-use dpp::data_contract::conversion::json::DataContractJsonConversionMethodsV0;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::signer::Signer;
@@ -31,7 +30,6 @@ use dpp::identity::{Identity, IdentityPublicKey, KeyType, Purpose, SecurityLevel
 use dpp::platform_value::string_encoding::Encoding;
 use dpp::platform_value::Identifier;
 use dpp::prelude::DataContract;
-use platform_version::version::PlatformVersion;
 use rs_dapi_client::AddressList;
 use rs_sdk_trusted_context_provider::TrustedHttpContextProvider;
 use simple_signer::single_key_signer::SingleKeySigner;
@@ -104,7 +102,6 @@ async fn run() -> Result<(), String> {
     let args = Args::parse();
 
     let network = parse_network(&args.network)?;
-    let platform_version = PlatformVersion::latest();
 
     let identity_id = Identifier::from_string(&args.identity_id, Encoding::Base58)
         .map_err(|e| format!("invalid --identity (expected base58): {e}"))?;
@@ -121,13 +118,15 @@ async fn run() -> Result<(), String> {
         )
     })?;
 
-    // full_validation = false: the file may carry an `id` /
+    // Non-validating deserialization: the file may carry an `id` /
     // `ownerId` from a fixture that we're about to overwrite, and
     // strict id-vs-owner checks would reject otherwise-valid
     // contracts. The schema itself is still parsed and shape-
     // checked. The on-chain `validate_basic_structure` runs server-
-    // side during state-transition validation anyway.
-    let mut data_contract = DataContract::from_json(json_value, false, platform_version)
+    // side during state-transition validation anyway. Uses the
+    // canonical (no-validation) `serde_json::from_value::<DataContract>`
+    // path — the validating opt-in is `DataContract::from_json`.
+    let mut data_contract: DataContract = serde_json::from_value(json_value)
         .map_err(|e| format!("failed to build DataContract from JSON: {e}"))?;
 
     // Set owner so the SDK's PutContract path fetches the right

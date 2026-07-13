@@ -1,6 +1,6 @@
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identity::transitions::public_key_in_creation::IdentityPublicKeyInCreationWasm;
-use crate::impl_wasm_conversions_serde;
+use crate::impl_wasm_conversions_inner;
 use crate::impl_wasm_type_info;
 use crate::platform_address::{
     PlatformAddressInputWasm, PlatformAddressOutputWasm, fee_strategy_from_js_options,
@@ -258,8 +258,9 @@ impl IdentityCreateFromAddressesTransitionWasm {
     }
 }
 
-impl_wasm_conversions_serde!(
+impl_wasm_conversions_inner!(
     IdentityCreateFromAddressesTransitionWasm,
+    IdentityCreateFromAddressesTransition,
     IdentityCreateFromAddressesTransition,
     IdentityCreateFromAddressesTransitionObjectJs,
     IdentityCreateFromAddressesTransitionJSONJs

@@ -1,7 +1,6 @@
 use crate::document::extended_document::v0::ExtendedDocumentV0;
 use crate::document::property_names;
 use crate::document::serialization_traits::DocumentPlatformValueMethodsV0;
-use crate::version::PlatformVersion;
 use crate::ProtocolError;
 
 use platform_value::Value;
@@ -58,20 +57,5 @@ impl DocumentPlatformValueMethodsV0<'_> for ExtendedDocumentV0 {
         map.extend(self.properties().to_owned());
 
         Ok(map)
-    }
-
-    fn into_value(self) -> Result<Value, ProtocolError> {
-        Ok(self.into_map_value()?.into())
-    }
-
-    fn to_object(&self) -> Result<Value, ProtocolError> {
-        Ok(self.to_map_value()?.into())
-    }
-
-    fn from_platform_value(
-        document_value: Value,
-        _platform_version: &PlatformVersion,
-    ) -> Result<Self, ProtocolError> {
-        Ok(platform_value::from_value(document_value)?)
     }
 }
