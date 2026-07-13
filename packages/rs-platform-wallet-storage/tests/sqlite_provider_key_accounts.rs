@@ -854,3 +854,161 @@ fn node_key_row_count(conn: &rusqlite::Connection, wallet_id: &WalletId) -> i64 
     )
     .expect("count node keys")
 }
+
+/// MARVIN adversarial re-check #1 — original repro (two entries, same
+/// account_type, disjoint node-key batches, one `store()` call): must union,
+/// not last-write-wins.
+#[test]
+fn marvin_recheck_two_entries_disjoint_batches_union_not_overwrite() {
+    let (persister, _tmp, _path) = fresh_persister();
+    let w: WalletId = wid(0xF1);
+    ensure_wallet_meta(&persister, &w);
+
+    persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                provider_key_account_registrations: vec![
+                    platform_entry(0x41, vec![node_key(10), node_key(11)]),
+                    platform_entry(0x41, vec![node_key(20), node_key(21)]),
+                ],
+                ..Default::default()
+            },
+        )
+        .expect("disjoint-batch duplicates must union, not conflict");
+
+    let conn = persister.lock_conn_for_test();
+    assert_eq!(
+        persisted_node_key_indices(&conn, &w),
+        vec![10, 11, 20, 21],
+        "both entries' node keys must survive, unioned"
+    );
+}
+
+/// MARVIN adversarial #2 — three-way duplicate in one changeset: same
+/// account_type/xpub, three batches, each contributing new indices. Union
+/// must not special-case "exactly two".
+#[test]
+fn marvin_adversarial_three_way_duplicate_unions_all_three() {
+    let (persister, _tmp, _path) = fresh_persister();
+    let w: WalletId = wid(0xF2);
+    ensure_wallet_meta(&persister, &w);
+
+    persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                provider_key_account_registrations: vec![
+                    platform_entry(0x42, vec![node_key(0)]),
+                    platform_entry(0x42, vec![node_key(1)]),
+                    platform_entry(0x42, vec![node_key(2)]),
+                ],
+                ..Default::default()
+            },
+        )
+        .expect("three-way identical-account duplicates must union");
+
+    let conn = persister.lock_conn_for_test();
+    assert_eq!(
+        persisted_node_key_indices(&conn, &w),
+        vec![0, 1, 2],
+        "all three contributions must be present"
+    );
+}
+
+/// MARVIN adversarial #3 — duplicate entries with node-key batches that
+/// differ only in ORDER, not value (same set, reshuffled): must not be
+/// flagged as a conflict, and the union must still be exactly that set.
+#[test]
+fn marvin_adversarial_reordered_but_equal_node_keys_is_not_a_conflict() {
+    let (persister, _tmp, _path) = fresh_persister();
+    let w: WalletId = wid(0xF3);
+    ensure_wallet_meta(&persister, &w);
+
+    persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                provider_key_account_registrations: vec![
+                    platform_entry(0x43, vec![node_key(0), node_key(1), node_key(2)]),
+                    platform_entry(0x43, vec![node_key(2), node_key(0), node_key(1)]),
+                ],
+                ..Default::default()
+            },
+        )
+        .expect("reordered-but-identical-value duplicates must not conflict");
+
+    let conn = persister.lock_conn_for_test();
+    assert_eq!(
+        persisted_node_key_indices(&conn, &w),
+        vec![0, 1, 2],
+        "same set, reshuffled, must reconcile to exactly that set"
+    );
+}
+
+/// MARVIN adversarial #4 (the sharp one) — two entries share account_type AND
+/// xpub (so the parent-level payload comparison sees no conflict and skips
+/// the fail-closed path), but disagree about the VALUE at the SAME node-key
+/// index. The account-level conflict check only compares the encoded
+/// `ProviderKeyRegistrationBlob` (account_type + xpub) — it has no visibility
+/// into node-key contents, so this collision reaches the
+/// `ON CONFLICT ... DO UPDATE` upsert with no arbitration. Confirms whether
+/// this is silent last-write-wins on signing-relevant node-key material,
+/// which the same "cannot tell which is right, fail closed" argument used for
+/// `ProviderKeyAccountConflict` would also seem to demand.
+#[test]
+fn marvin_adversarial_same_index_conflicting_node_key_value_is_silently_overwritten() {
+    let (persister, _tmp, _path) = fresh_persister();
+    let w: WalletId = wid(0xF4);
+    ensure_wallet_meta(&persister, &w);
+
+    let first = node_key(7);
+    let mut second = node_key(7);
+    second.public_key = [0xFFu8; 32];
+    second.node_id = [0xEEu8; 20];
+    assert_ne!(
+        first, second,
+        "test fixture sanity: these must be genuinely different keys at the same index"
+    );
+
+    let result = persister.store(
+        w,
+        PlatformWalletChangeSet {
+            provider_key_account_registrations: vec![
+                platform_entry(0x44, vec![first]),
+                platform_entry(0x44, vec![second]),
+            ],
+            ..Default::default()
+        },
+    );
+
+    let conn = persister.lock_conn_for_test();
+    match result {
+        Err(e) => {
+            // If the implementation DOES arbitrate this, it must be a typed,
+            // documented rejection — not a panic or a generic error.
+            panic!(
+                "if same-index/different-value node keys are meant to be \
+                 rejected, that contract isn't visible from the account-level \
+                 conflict check alone: got Err({e:?}) instead of a silent \
+                 upsert. Update this test's expectation once the intended \
+                 contract is confirmed."
+            );
+        }
+        Ok(()) => {
+            let provider = accounts::load_state(&conn, &w)
+                .expect("load_state")
+                .provider;
+            let stored = provider[0]
+                .derived_platform_node_keys
+                .iter()
+                .find(|k| k.index == 7)
+                .expect("index 7 must be present");
+            eprintln!(
+                "MARVIN FINDING: same-index node-key collision resolved silently \
+                 to {stored:?} (last-write-wins) with no error, no diagnostic, \
+                 no way for the caller to know a collision happened at all."
+            );
+        }
+    }
+}
