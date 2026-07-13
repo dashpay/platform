@@ -432,13 +432,21 @@ struct SwiftExampleAppApp: App {
                 preWarmOrphanNetworkManagers()
 
                 rebindWalletScopedServices()
-
-                // Kick off Core SPV sync for the launch network so the
-                // user doesn't have to tap Start on the Sync tab.
-                await autoStartCoreSpvIfNeeded()
             }
 
+            // Unlock the UI first, then kick off Core SPV sync for the
+            // launch network so the user doesn't have to tap Start on the
+            // Sync tab. Auto-start runs AFTER the unlock because it's
+            // best-effort (all errors handled internally, so it can't trip
+            // `bootstrapError`) and its devnet peer discovery can block
+            // ~6 s off the main actor — no reason to make the first render
+            // wait on it. It self-gates on wallet presence, so it no-ops
+            // when the SDK path above didn't activate a manager. A user who
+            // races a manual Start the instant the UI unlocks is safe: both
+            // starts bump-then-capture the generation token, so whichever
+            // bumps last wins and the other bails (never a double-start).
             isInitialized = true
+            await autoStartCoreSpvIfNeeded()
         } catch {
             bootstrapError = error
         }

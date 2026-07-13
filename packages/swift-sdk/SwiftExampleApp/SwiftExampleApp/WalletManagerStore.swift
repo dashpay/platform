@@ -94,8 +94,18 @@ final class WalletManagerStore: ObservableObject {
     /// resume and revive sync after the stop. Best-effort stop (`try?`),
     /// matching the raw call sites it replaces.
     func stopSpvCancellingPendingStarts(_ manager: PlatformWalletManager) {
+        stopSpvCancellingPendingStarts(stop: { try? manager.stopSpv() })
+    }
+
+    /// Testable core of `stopSpvCancellingPendingStarts(_:)`: the actual
+    /// stop is injected so a unit test can assert the generation was
+    /// already bumped by the time `stop` runs (pinning the
+    /// invalidate-before-stop ordering) without a real, network-locked
+    /// `PlatformWalletManager`. The public overload supplies the real
+    /// `try? manager.stopSpv()`.
+    func stopSpvCancellingPendingStarts(stop: () -> Void) {
         invalidatePendingSpvStarts()
-        try? manager.stopSpv()
+        stop()
     }
 
     /// Per-network managers. Lazily populated on first activation
