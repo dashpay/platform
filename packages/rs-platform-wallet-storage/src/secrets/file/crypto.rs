@@ -67,14 +67,40 @@ impl KdfParams {
     }
 
     /// The fastest configuration [`enforce_bounds`] still accepts — the
-    /// enforced floor itself. Test-only: it is what
-    /// [`SecretStore::file_mock`] derives at so a downstream suite does not
-    /// pay the 64 MiB target per call (#4111).
+    /// enforced floor itself, and the ONE definition of "fastest legal
+    /// Argon2id params" in this crate. Every test call site and
+    /// [`SecretStore::file_mock`] derive at it, so a suite does not pay the
+    /// 64 MiB target per call (#4111).
+    ///
+    /// # Panics
+    ///
+    /// Panics unless the build has `debug_assertions` on, or is this crate's
+    /// own test harness. This is the single choke point for weak-but-legal
+    /// params, so guarding it here covers EVERY caller uniformly — the mock
+    /// constructors inherit it rather than repeating the check.
+    ///
+    /// `cfg!(debug_assertions)` is a runtime *value*, not a `debug_assert!`:
+    /// it is evaluated in every profile, so the check is present precisely in
+    /// the optimized build it defends. If `test-util` ever reaches a release
+    /// build (feature unification), any path to floor params stops loudly
+    /// instead of silently yielding weak crypto. A `const {}` assert would
+    /// instead break the BUILD, taking `--release --all-features` down with
+    /// it; the refusal belongs at the call, not at every consumer's compile.
     ///
     /// [`enforce_bounds`]: KdfParams::enforce_bounds
     /// [`SecretStore::file_mock`]: crate::secrets::SecretStore::file_mock
     #[cfg(any(test, feature = "test-util"))]
+    #[expect(
+        clippy::assertions_on_constants,
+        reason = "build-configuration guard: folds to `panic!` iff test-util reached a release build"
+    )]
     pub(crate) fn floor_target() -> Self {
+        assert!(
+            cfg!(debug_assertions) || cfg!(test),
+            "KdfParams::floor_target is the Argon2id FLOOR and is test-only, but this build \
+             has debug_assertions off — the `test-util` feature reached a release build \
+             (likely via feature unification). Refusing to hand back weak-crypto params."
+        );
         Self {
             id: KDF_ID_ARGON2ID,
             m_kib: ARGON2_MIN_M_KIB,
@@ -217,15 +243,9 @@ mod tests {
     // gated, so this fails to build if `argon2/zeroize` is ever dropped.
     static_assertions::assert_impl_all!(argon2::Block: zeroize::Zeroize);
 
-    /// Argon2id floor params — fast enough for unit tests; production
-    /// runs at the default target (64 MiB).
-    fn floor_params() -> KdfParams {
-        KdfParams::floor_target()
-    }
-
     #[test]
     fn floors_reject_weak_params() {
-        let base = floor_params();
+        let base = KdfParams::floor_target();
         assert!(KdfParams {
             m_kib: 1024,
             ..base
@@ -241,7 +261,7 @@ mod tests {
     fn ceilings_reject_inflated_params() {
         // An attacker-controllable JSON kdf cannot force a huge
         // allocation or unbounded derivation.
-        let base = floor_params();
+        let base = KdfParams::floor_target();
         assert!(KdfParams {
             m_kib: u32::MAX,
             ..base
@@ -276,7 +296,7 @@ mod tests {
         // algorithm id is refused before any derivation runs.
         let bad = KdfParams {
             id: 7,
-            ..floor_params()
+            ..KdfParams::floor_target()
         };
         assert!(matches!(
             bad.enforce_bounds(),
@@ -297,7 +317,7 @@ mod tests {
             &[0u8; SALT_LEN],
             KdfParams {
                 m_kib: u32::MAX,
-                ..floor_params()
+                ..KdfParams::floor_target()
             },
         )
         .unwrap_err();
@@ -308,7 +328,12 @@ mod tests {
     fn seal_open_roundtrip_with_floor_params() {
         let mut salt = [0u8; SALT_LEN];
         random_bytes(&mut salt).unwrap();
-        let key = derive_key(&SecretString::new("correct horse"), &salt, floor_params()).unwrap();
+        let key = derive_key(
+            &SecretString::new("correct horse"),
+            &salt,
+            KdfParams::floor_target(),
+        )
+        .unwrap();
         let aad = b"v1|wallet|label";
         let (nonce, ct) = seal(&key, aad, b"top secret seed").unwrap();
         let pt = open(&key, &nonce, aad, &ct).unwrap();
@@ -317,7 +342,12 @@ mod tests {
 
     #[test]
     fn wrong_aad_fails_with_no_plaintext() {
-        let key = derive_key(&SecretString::new("pw"), &[9u8; SALT_LEN], floor_params()).unwrap();
+        let key = derive_key(
+            &SecretString::new("pw"),
+            &[9u8; SALT_LEN],
+            KdfParams::floor_target(),
+        )
+        .unwrap();
         let (nonce, ct) = seal(&key, b"slot-A", b"seed").unwrap();
         let err = open(&key, &nonce, b"slot-B", &ct).unwrap_err();
         assert!(matches!(err, SecretStoreError::Decrypt));
@@ -326,8 +356,18 @@ mod tests {
     #[test]
     fn wrong_key_fails() {
         let salt = [1u8; SALT_LEN];
-        let k1 = derive_key(&SecretString::new("right"), &salt, floor_params()).unwrap();
-        let k2 = derive_key(&SecretString::new("wrong"), &salt, floor_params()).unwrap();
+        let k1 = derive_key(
+            &SecretString::new("right"),
+            &salt,
+            KdfParams::floor_target(),
+        )
+        .unwrap();
+        let k2 = derive_key(
+            &SecretString::new("wrong"),
+            &salt,
+            KdfParams::floor_target(),
+        )
+        .unwrap();
         let (nonce, ct) = seal(&k1, b"aad", b"seed").unwrap();
         assert!(matches!(
             open(&k2, &nonce, b"aad", &ct),
@@ -337,7 +377,12 @@ mod tests {
 
     #[test]
     fn nonces_are_unique_across_seals() {
-        let key = derive_key(&SecretString::new("pw"), &[2u8; SALT_LEN], floor_params()).unwrap();
+        let key = derive_key(
+            &SecretString::new("pw"),
+            &[2u8; SALT_LEN],
+            KdfParams::floor_target(),
+        )
+        .unwrap();
         let mut seen = std::collections::HashSet::new();
         for _ in 0..256 {
             let (nonce, _) = seal(&key, b"aad", b"x").unwrap();

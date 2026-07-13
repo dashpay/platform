@@ -638,21 +638,22 @@ mod tests {
 
     use keyring_core::mock;
 
-    /// Argon2id floor params — fast enough for these tests.
-    fn floor() -> KdfParams {
-        KdfParams::floor_target()
-    }
-
     fn protected(w: &WalletId, label: &str, pw: &str, secret: &[u8]) -> Vec<u8> {
-        envelope::wrap_with_params(w, label, Some(&SecretString::new(pw)), secret, floor())
-            .unwrap()
-            .expose_secret()
-            .to_vec()
+        envelope::wrap_with_params(
+            w,
+            label,
+            Some(&SecretString::new(pw)),
+            secret,
+            KdfParams::floor_target(),
+        )
+        .unwrap()
+        .expose_secret()
+        .to_vec()
     }
 
     fn unprotected(w: &WalletId, label: &str, secret: &[u8]) -> Vec<u8> {
         // `params` is unused on the unprotected path.
-        envelope::wrap_with_params(w, label, None, secret, floor())
+        envelope::wrap_with_params(w, label, None, secret, KdfParams::floor_target())
             .unwrap()
             .expose_secret()
             .to_vec()

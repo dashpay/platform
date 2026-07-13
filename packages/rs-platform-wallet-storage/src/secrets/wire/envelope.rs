@@ -380,16 +380,18 @@ mod tests {
         SecretString::new(s)
     }
 
-    fn floor() -> KdfParams {
-        KdfParams::floor_target()
-    }
-
     /// TC-033 — blank object password rejected at enrol (wrap-side).
     #[test]
     fn blank_object_password_rejected_at_wrap() {
         for blank in [SecretString::empty(), pw(""), pw("   "), pw("\t\n")] {
-            let err =
-                wrap_with_params(&wid(1), "seed", Some(&blank), b"seed", floor()).unwrap_err();
+            let err = wrap_with_params(
+                &wid(1),
+                "seed",
+                Some(&blank),
+                b"seed",
+                KdfParams::floor_target(),
+            )
+            .unwrap_err();
             assert!(
                 matches!(err, SecretStoreError::BlankPassphrase),
                 "got {err:?}"
@@ -423,9 +425,11 @@ mod tests {
         let over = vec![0x5Au8; MAX_PLAINTEXT_LEN + 1];
 
         // Scheme 0 — `params` is unused on the unprotected path.
-        assert!(wrap_with_params(&wid(1), "seed", None, &at_cap, floor()).is_ok());
+        assert!(
+            wrap_with_params(&wid(1), "seed", None, &at_cap, KdfParams::floor_target()).is_ok()
+        );
         assert!(matches!(
-            wrap_with_params(&wid(1), "seed", None, &over, floor()).unwrap_err(),
+            wrap_with_params(&wid(1), "seed", None, &over, KdfParams::floor_target()).unwrap_err(),
             SecretStoreError::SecretTooLarge { found, max }
                 if found == MAX_PLAINTEXT_LEN + 1 && max == MAX_PLAINTEXT_LEN
         ));
@@ -433,13 +437,14 @@ mod tests {
         // Scheme 1 — cap check fires before any derivation.
         let p = pw("pw");
         assert!(matches!(
-            wrap_with_params(&wid(1), "seed", Some(&p), &over, floor()).unwrap_err(),
+            wrap_with_params(&wid(1), "seed", Some(&p), &over, KdfParams::floor_target()).unwrap_err(),
             SecretStoreError::SecretTooLarge { found, max }
                 if found == MAX_PLAINTEXT_LEN + 1 && max == MAX_PLAINTEXT_LEN
         ));
 
         // Scheme-0 enveloped bytes for an at-cap plaintext fit the backend cap.
-        let enveloped = wrap_with_params(&wid(1), "seed", None, &at_cap, floor()).unwrap();
+        let enveloped =
+            wrap_with_params(&wid(1), "seed", None, &at_cap, KdfParams::floor_target()).unwrap();
         assert!(enveloped.len() <= MAX_SECRET_LEN);
     }
 
@@ -450,7 +455,8 @@ mod tests {
     fn scheme1_at_cap_envelope_fits_backend_cap() {
         let p = pw("pw");
         let pt = vec![0x5Au8; MAX_PLAINTEXT_LEN];
-        let blob = wrap_with_params(&wid(1), "seed", Some(&p), &pt, floor()).unwrap();
+        let blob =
+            wrap_with_params(&wid(1), "seed", Some(&p), &pt, KdfParams::floor_target()).unwrap();
         assert!(
             blob.len() <= MAX_SECRET_LEN,
             "enveloped bytes ({} B) exceed backend cap ({} B)",
@@ -463,8 +469,14 @@ mod tests {
     /// bincode-config drift (endianness, varint mode, limit) trips this.
     #[test]
     fn scheme0_golden_vector_matches_const() {
-        let blob =
-            wrap_with_params(&WalletId::from([0u8; 32]), "seed", None, b"hello", floor()).unwrap();
+        let blob = wrap_with_params(
+            &WalletId::from([0u8; 32]),
+            "seed",
+            None,
+            b"hello",
+            KdfParams::floor_target(),
+        )
+        .unwrap();
         let actual = hex::encode(blob.expose_secret());
         assert_eq!(actual, SCHEME0_GOLDEN_HEX);
     }
@@ -478,7 +490,7 @@ mod tests {
             "seed",
             &pw("pw"),
             b"hello",
-            floor(),
+            KdfParams::floor_target(),
             [0x11u8; SALT_LEN],
             [0x22u8; NONCE_LEN],
         )
@@ -502,7 +514,7 @@ mod tests {
             "seed",
             &pw("pw"),
             b"",
-            floor(),
+            KdfParams::floor_target(),
             [0x11u8; SALT_LEN],
             [0x22u8; NONCE_LEN],
         )
@@ -544,7 +556,7 @@ mod tests {
     /// Build a fresh scheme-1 envelope (under wid(1)/"seed"/pw=`p`) and
     /// hand back the bytes for mutation tests.
     fn scheme1_blob(p: &SecretString) -> Vec<u8> {
-        wrap_with_params(&wid(1), "seed", Some(p), b"seed", floor())
+        wrap_with_params(&wid(1), "seed", Some(p), b"seed", KdfParams::floor_target())
             .unwrap()
             .expose_secret()
             .to_vec()
@@ -553,8 +565,14 @@ mod tests {
     /// TC-001 — scheme-0 round-trip preserves plaintext.
     #[test]
     fn scheme0_round_trip_preserves_plaintext() {
-        let blob =
-            wrap_with_params(&wid(1), "seed", None, b"top secret seed bytes", floor()).unwrap();
+        let blob = wrap_with_params(
+            &wid(1),
+            "seed",
+            None,
+            b"top secret seed bytes",
+            KdfParams::floor_target(),
+        )
+        .unwrap();
         let got = unwrap(&wid(1), "seed", None, blob.expose_secret()).unwrap();
         assert_eq!(got.expose_secret(), b"top secret seed bytes");
     }
@@ -568,7 +586,7 @@ mod tests {
             "seed",
             Some(&p),
             b"correct horse battery staple",
-            floor(),
+            KdfParams::floor_target(),
         )
         .unwrap();
         assert_ne!(blob.expose_secret(), b"correct horse battery staple");
@@ -701,7 +719,14 @@ mod tests {
     #[test]
     fn relocation_across_wallet_id_rejected() {
         let p = pw("pw");
-        let blob = wrap_with_params(&wid(0xA), "seed", Some(&p), b"seed", floor()).unwrap();
+        let blob = wrap_with_params(
+            &wid(0xA),
+            "seed",
+            Some(&p),
+            b"seed",
+            KdfParams::floor_target(),
+        )
+        .unwrap();
         let err = unwrap(&wid(0xB), "seed", Some(&p), blob.expose_secret()).unwrap_err();
         assert!(
             matches!(err, SecretStoreError::WrongPassword),
@@ -713,7 +738,14 @@ mod tests {
     #[test]
     fn relocation_across_label_rejected() {
         let p = pw("pw");
-        let blob = wrap_with_params(&wid(1), "labelA", Some(&p), b"seed", floor()).unwrap();
+        let blob = wrap_with_params(
+            &wid(1),
+            "labelA",
+            Some(&p),
+            b"seed",
+            KdfParams::floor_target(),
+        )
+        .unwrap();
         let err = unwrap(&wid(1), "labelB", Some(&p), blob.expose_secret()).unwrap_err();
         assert!(
             matches!(err, SecretStoreError::WrongPassword),
@@ -829,7 +861,14 @@ mod tests {
     /// TC-021 — Some(pw) + scheme-0 yields ExpectedProtectedButUnsealed.
     #[test]
     fn some_pw_on_scheme0_fails_closed() {
-        let blob = wrap_with_params(&wid(1), "seed", None, b"attacker-seed", floor()).unwrap();
+        let blob = wrap_with_params(
+            &wid(1),
+            "seed",
+            None,
+            b"attacker-seed",
+            KdfParams::floor_target(),
+        )
+        .unwrap();
         let err = unwrap(&wid(1), "seed", Some(&pw("pw")), blob.expose_secret()).unwrap_err();
         assert!(
             matches!(err, SecretStoreError::ExpectedProtectedButUnsealed),
@@ -933,8 +972,14 @@ mod tests {
     fn round_trip_is_constant_time_equal() {
         let p = pw("pw");
         let original = SecretBytes::from_slice(b"seed material");
-        let blob =
-            wrap_with_params(&wid(1), "seed", Some(&p), original.expose_secret(), floor()).unwrap();
+        let blob = wrap_with_params(
+            &wid(1),
+            "seed",
+            Some(&p),
+            original.expose_secret(),
+            KdfParams::floor_target(),
+        )
+        .unwrap();
         let got = unwrap(&wid(1), "seed", Some(&p), blob.expose_secret()).unwrap();
         assert!(bool::from(got.ct_eq(&original)));
     }
@@ -945,7 +990,8 @@ mod tests {
     fn scheme1_at_cap_round_trips_within_backend_cap() {
         let p = pw("pw");
         let pt = vec![0x5Au8; MAX_PLAINTEXT_LEN];
-        let blob = wrap_with_params(&wid(1), "seed", Some(&p), &pt, floor()).unwrap();
+        let blob =
+            wrap_with_params(&wid(1), "seed", Some(&p), &pt, KdfParams::floor_target()).unwrap();
         assert!(blob.len() <= MAX_SECRET_LEN);
         let got = unwrap(&wid(1), "seed", Some(&p), blob.expose_secret()).unwrap();
         assert_eq!(got.expose_secret(), &pt[..]);
@@ -999,8 +1045,22 @@ mod tests {
     #[test]
     fn value_rollback_is_not_defended() {
         let p = pw("pw");
-        let old = wrap_with_params(&wid(1), "seed", Some(&p), b"OLD-VALUE", floor()).unwrap();
-        let _new = wrap_with_params(&wid(1), "seed", Some(&p), b"NEW-VALUE", floor()).unwrap();
+        let old = wrap_with_params(
+            &wid(1),
+            "seed",
+            Some(&p),
+            b"OLD-VALUE",
+            KdfParams::floor_target(),
+        )
+        .unwrap();
+        let _new = wrap_with_params(
+            &wid(1),
+            "seed",
+            Some(&p),
+            b"NEW-VALUE",
+            KdfParams::floor_target(),
+        )
+        .unwrap();
         let got = unwrap(&wid(1), "seed", Some(&p), old.expose_secret()).unwrap();
         assert_eq!(got.expose_secret(), b"OLD-VALUE");
     }
@@ -1080,7 +1140,7 @@ mod tests {
             // independently of the host RNG.
             let plaintext: &[u8] = b"goldfinch";
             let p = pw("pw");
-            let valid = wrap_with_params(&wid(1), "seed", Some(&p), plaintext, floor())
+            let valid = wrap_with_params(&wid(1), "seed", Some(&p), plaintext, KdfParams::floor_target())
                 .unwrap()
                 .expose_secret()
                 .to_vec();

@@ -189,46 +189,30 @@ impl EncryptedFileStore {
     ///
     /// Two independent gates keep it out of production:
     /// 1. compile-time — the `test-util` feature (or `cfg(test)`);
-    /// 2. runtime — the [panic](#panics) below, in case feature unification
-    ///    silently switches `test-util` on for a release build.
+    /// 2. runtime — the panic inherited from `KdfParams::floor_target`, in
+    ///    case feature unification switches `test-util` on for a release build.
     ///
     /// # Panics
     ///
     /// Panics unless the build has `debug_assertions` on, or is this crate's
-    /// own test harness. `cfg!(debug_assertions)` is a runtime *value*, not a
-    /// `debug_assert!` — it is evaluated in every profile, so the check is
-    /// present precisely in the optimized build it defends. A release build
-    /// that reaches this constructor is a build-graph bug, and handing back a
-    /// weak-crypto store instead of stopping would be the worse failure.
-    /// `cargo test --release` on a DOWNSTREAM crate is indistinguishable from
-    /// that bug and panics too; such a suite must keep `debug-assertions = true`.
+    /// own test harness — the guard lives on `KdfParams::floor_target`, the
+    /// single choke point for weak-but-legal params, and fires before this
+    /// constructor touches the filesystem. `cargo test --release` on a
+    /// DOWNSTREAM crate is indistinguishable from a leaked release build and
+    /// panics too; such a suite must keep `debug-assertions = true`.
     ///
     /// An EXISTING vault is still unlocked under the params in its own header
     /// — a mock store cannot make a production vault cheap to open.
     #[cfg(any(test, feature = "test-util"))]
-    // Constant per build — that IS the design. It folds away in a test build
-    // and folds to an unconditional panic in the release build it guards, so
-    // the cost is zero exactly where it must be and the stop is certain
-    // exactly where it matters. A `const {}` assert would instead break the
-    // BUILD, taking `--release --all-features` down with it; the refusal
-    // belongs at the call, not at every consumer's compile.
-    #[expect(
-        clippy::assertions_on_constants,
-        reason = "build-configuration guard: folds to `panic!` iff test-util reached a release build"
-    )]
     pub fn open_mock(
         path: impl AsRef<Path>,
         passphrase: SecretString,
     ) -> Result<Self, SecretStoreError> {
-        assert!(
-            cfg!(debug_assertions) || cfg!(test),
-            "EncryptedFileStore::open_mock derives at the Argon2id floor and is test-only, \
-             but this build has debug_assertions off — the `test-util` feature reached a \
-             release build (likely via feature unification). Refusing to hand back a \
-             weak-crypto vault."
-        );
+        // Ahead of every other check, so a rejected passphrase cannot mask the
+        // release-build panic behind a plain `Err`.
+        let kdf = KdfParams::floor_target();
         reject_weak_passphrase(&passphrase)?;
-        Self::open_inner(path.as_ref(), passphrase, KdfParams::floor_target())
+        Self::open_inner(path.as_ref(), passphrase, kdf)
     }
 
     /// Open (or create) a **deliberately keyless** vault — the only door
