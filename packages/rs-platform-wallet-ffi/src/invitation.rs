@@ -29,7 +29,6 @@ use std::ffi::CStr;
 use std::os::raw::c_char;
 
 use dpp::identity::accessors::IdentityGettersV0;
-use dpp::prelude::AssetLockProof;
 use platform_wallet::wallet::identity::crypto::{parse_invitation_uri, InviterInfo};
 use rs_sdk_ffi::{MnemonicResolverCoreSigner, MnemonicResolverHandle, SignerHandle, VTableSigner};
 
@@ -116,7 +115,10 @@ pub unsafe extern "C" fn platform_wallet_create_invitation(
     let expiry_unix = now_unix.saturating_add(MAX_INVITATION_TTL_SECS);
 
     // Build the optional inviter info: present iff `inviter_identity_id` is
-    // non-null, and the username is required in that case.
+    // non-null (the opt-in flag), and the username is required in that case. The
+    // legacy link carries only the inviter's username (`du`), not the identity
+    // id — the invitee resolves the id from the username via DPNS at
+    // contact-bootstrap time — so the id bytes themselves are not embedded.
     let inviter: Option<InviterInfo> = if inviter_identity_id.is_null() {
         None
     } else {
@@ -126,17 +128,13 @@ pub unsafe extern "C" fn platform_wallet_create_invitation(
                 "inviter_username is required when inviter_identity_id is provided",
             );
         }
-        let mut identity_id = [0u8; 32];
-        unsafe {
-            std::ptr::copy_nonoverlapping(inviter_identity_id, identity_id.as_mut_ptr(), 32);
-        }
         let username =
             unwrap_result_or_return!(unsafe { CStr::from_ptr(inviter_username) }.to_str())
                 .to_string();
         Some(InviterInfo {
-            identity_id,
             username,
             display_name: None,
+            avatar_url: None,
         })
     };
 
@@ -213,7 +211,7 @@ pub unsafe extern "C" fn platform_wallet_create_invitation(
 /// Claim a DashPay invitation: register a NEW identity for the invitee, funded
 /// by the imported voucher carried in `uri`.
 ///
-/// `uri` is the `dashpay://invite?data=…` link; it is parsed into a
+/// `uri` is the `dashpay://invite?…` link; it is parsed into a
 /// `ParsedInvitation` and validated (fail-fast on a stale / wrong-type /
 /// mismatched link) before any network act. `identity_pubkeys` are the
 /// invitee's own new-identity keys (derived from the invitee's seed), signed by
@@ -273,11 +271,15 @@ pub unsafe extern "C" fn platform_wallet_claim_invitation(
         );
     }
 
+    // `now_unix` is retained for ABI stability but unused: the legacy link
+    // carries no expiry, so the claim has no time-based gate.
+    let _ = now_unix;
+
     let uri = unwrap_result_or_return!(unsafe { CStr::from_ptr(uri) }.to_str()).to_string();
-    // Decode the off-chain envelope up front (pure, no network). Structural
-    // validity (scheme, version, size caps, key/proof shape) is checked here;
-    // the claimability checks (expiry, proof type, credit-output binding) run
-    // inside `claim_invitation`.
+    // Decode the off-chain link up front (pure, no network). Structural validity
+    // (scheme/host, size cap, WIF network+compression) is checked here; the
+    // funding tx is fetched and the credit-output binding resolved inside
+    // `claim_invitation`.
     let invitation = unwrap_result_or_return!(parse_invitation_uri(&uri));
     let keys_map = match decode_identity_pubkeys(identity_pubkeys, identity_pubkeys_count) {
         Ok(m) => m,
@@ -293,14 +295,7 @@ pub unsafe extern "C" fn platform_wallet_claim_invitation(
             // `signer_handle` for the duration of this call.
             let identity_signer: &VTableSigner = unsafe { &*(signer_addr as *const VTableSigner) };
             identity_wallet
-                .claim_invitation(
-                    invitation,
-                    identity_index,
-                    keys_map,
-                    identity_signer,
-                    now_unix,
-                    None,
-                )
+                .claim_invitation(invitation, identity_index, keys_map, identity_signer, None)
                 .await
         })
     });
@@ -324,24 +319,25 @@ pub unsafe extern "C" fn platform_wallet_claim_invitation(
 /// before the user commits, and to drive the contact-bootstrap prompt.
 #[repr(C)]
 pub struct InvitationPreviewFFI {
-    /// The link decoded structurally (base58 envelope + version + fields). When
+    /// The link decoded structurally (scheme/host + required fields + WIF). When
     /// false, every other field is unset/zero and the link is malformed.
     pub structurally_valid: bool,
-    /// The embedded asset-lock proof is an InstantSend proof. Claim only accepts
-    /// Instant proofs, so a Chain proof (`false`) is unclaimable via this path.
+    /// The link carried an `islock`, so the claim will build an InstantSend
+    /// proof; `false` ⇒ a ChainLock-confirmed invite (islock absent / `"null"`).
     pub is_instant: bool,
     /// The link carries inviter info (the contact-bootstrap is available).
     pub has_inviter: bool,
-    /// Inviter identity id (32 bytes); zeroed when `has_inviter` is false.
+    /// Inviter identity id (32 bytes) — always zeroed: the legacy link carries
+    /// only the username (`du`), from which the id is resolved via DPNS.
     pub inviter_id: [u8; 32],
     /// Inviter DPNS username — heap C string, or null when `has_inviter` is
     /// false. Free with [`crate::platform_wallet_string_free`].
     pub inviter_username: *mut c_char,
-    /// Amount locked in the voucher (duffs) — the Instant proof's credit-output
-    /// value; 0 for a non-Instant proof.
+    /// Amount locked in the voucher (duffs) — always 0: unknown pre-fetch (the
+    /// link carries the funding txid, not the proof), resolved at claim time.
     pub amount_duffs: u64,
-    /// Advisory expiry (unix seconds). The caller compares it against the current
-    /// time for an "expired" badge (the FFI stays clock-free).
+    /// Advisory expiry (unix seconds) — always 0: the legacy link carries no
+    /// expiry field.
     pub expiry_unix: u32,
 }
 
@@ -361,7 +357,7 @@ impl InvitationPreviewFFI {
     }
 }
 
-/// Decode a `dashpay://invite?data=…` link into a read-only
+/// Decode a `dashpay://invite?…` link into a read-only
 /// [`InvitationPreviewFFI`] — NO claim, NO network, NO wallet handle.
 ///
 /// A well-formed-but-invalid link (bad base58, unsupported version, truncated,
@@ -398,11 +394,11 @@ pub unsafe extern "C" fn platform_wallet_parse_invitation(
         Err(_) => return PlatformWalletFFIResult::ok(),
     };
 
-    let is_instant = matches!(parsed.asset_lock, AssetLockProof::Instant(_));
-    let amount_duffs = match &parsed.asset_lock {
-        AssetLockProof::Instant(instant) => instant.output().map(|o| o.value).unwrap_or(0),
-        AssetLockProof::Chain(_) => 0,
-    };
+    // The legacy link carries the funding txid, not the proof — so the amount
+    // is unknown until the claim refetches the tx (shown as "—" pre-fetch), and
+    // the InstantSend-vs-ChainLock signal is the presence of the `islock` field.
+    let is_instant = parsed.islock_hex.is_some();
+    let amount_duffs = 0;
 
     let (has_inviter, inviter_id, inviter_username) = match parsed.inviter.as_ref() {
         Some(info) => {
@@ -411,7 +407,9 @@ pub unsafe extern "C" fn platform_wallet_parse_invitation(
             let username = std::ffi::CString::new(info.username.clone())
                 .map(|c| c.into_raw())
                 .unwrap_or(std::ptr::null_mut());
-            (true, info.identity_id, username)
+            // The link has no inviter identity id (resolved from the username via
+            // DPNS at contact-bootstrap); report zeros.
+            (true, [0u8; 32], username)
         }
         None => (false, [0u8; 32], std::ptr::null_mut()),
     };
@@ -424,7 +422,8 @@ pub unsafe extern "C" fn platform_wallet_parse_invitation(
             inviter_id,
             inviter_username,
             amount_duffs,
-            expiry_unix: parsed.expiry_unix,
+            // The link carries no expiry (legacy format); 0 ⇒ "no expiry".
+            expiry_unix: 0,
         };
     }
     PlatformWalletFFIResult::ok()
