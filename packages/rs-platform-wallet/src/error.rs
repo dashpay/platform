@@ -71,6 +71,19 @@ pub enum PlatformWalletError {
     #[error("Asset lock transaction failed: {0}")]
     AssetLockTransaction(String),
 
+    /// A general Core L1 payment build (`CoreWallet::build_signed_payment`)
+    /// could not cover the requested outputs plus fee from the union of the
+    /// wallet's *signable* funds accounts (BIP44 + BIP32 + CoinJoin + DashPay
+    /// receiving; watch-only DashPay external accounts are excluded). `available`
+    /// is the total selectable value across those accounts, `required` the
+    /// outputs-plus-fee target — carried as exact duff amounts (instead of being
+    /// flattened into a string) so callers can render a precise shortfall.
+    #[error(
+        "payment coin selection is short: available {available} duffs, \
+         required {required} duffs"
+    )]
+    PaymentInsufficientFunds { available: u64, required: u64 },
+
     #[error("Transaction broadcast failed: {0}")]
     TransactionBroadcast(String),
 
