@@ -51,19 +51,28 @@ struct WalletDetailView: View {
     /// This wallet's accounts, for the payload-only
     /// `involvedTransactions` contribution to `transactionCount` —
     /// special txs that matched an account by payload with no TXO,
-    /// which the `walletTxos` join can't see.
+    /// which the `walletTxos` join can't see. Scoped to this wallet
+    /// row's network as well as its walletId: the same 32-byte
+    /// walletId legitimately exists once per network (same mnemonic
+    /// imported on mainnet and testnet), and matching on walletId
+    /// alone would fold the sibling network's payload-only txs into
+    /// this wallet's badge.
     @Query private var walletAccounts: [PersistentAccount]
 
     init(wallet: PersistentWallet) {
         self.wallet = wallet
         let walletId = wallet.walletId
+        let networkRaw = wallet.networkRaw
         var descriptor = FetchDescriptor<PersistentTxo>(
             predicate: #Predicate { $0.walletId == walletId }
         )
         descriptor.propertiesToFetch = [\.walletId]
         _walletTxos = Query(descriptor)
         _walletAccounts = Query(
-            filter: #Predicate<PersistentAccount> { $0.wallet.walletId == walletId }
+            filter: #Predicate<PersistentAccount> {
+                $0.wallet.walletId == walletId
+                    && $0.wallet.networkRaw == networkRaw
+            }
         )
         _walletAssetLocks = Query(
             filter: PersistentAssetLock.predicate(walletId: walletId),
