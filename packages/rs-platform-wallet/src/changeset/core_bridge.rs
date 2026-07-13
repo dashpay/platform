@@ -30,7 +30,7 @@ use std::sync::Arc;
 use dashcore::blockdata::transaction::{txout::TxOut, OutPoint};
 use dashcore::ScriptBuf;
 use key_wallet::account::AccountType;
-use key_wallet::managed_account::address_pool::AddressPoolType;
+use key_wallet::managed_account::address_pool::{AddressPool, AddressPoolType};
 use key_wallet::managed_account::transaction_record::{OutputRole, TransactionRecord};
 use key_wallet::transaction_checking::transaction_router::AccountTypeToCheck;
 use key_wallet::transaction_checking::{DerivedAddressInfo, TransactionContext};
@@ -263,18 +263,9 @@ async fn build_core_changeset(
 /// reaches the persister and every mirrored store keeps
 /// `is_used = false` / `highest_used = None` forever.
 ///
-/// For each record this re-runs the same **read-only** matcher the
-/// wallet used during processing
-/// ([`ManagedAccountCollection::check_transaction`]), scoped to the
-/// record's own account type, then resolves every involved address
-/// back to its owning pool for the authoritative post-mark
-/// [`AddressInfo`](key_wallet::managed_account::address_pool::AddressInfo)
-/// and the pool's `highest_used` watermark. `used` is forced `true`
-/// on the emitted entry — involvement in a recorded transaction is
-/// the definition of "used", independent of snapshot timing.
-///
 /// Returns empty deltas when the wallet is unknown (raced a removal)
-/// — the next sync round re-emits.
+/// — the next sync round re-emits. See
+/// [`collect_usage_deltas_from_accounts`] for the derivation itself.
 async fn collect_usage_deltas(
     wallet_manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
     wallet_id: &WalletId,
@@ -283,20 +274,69 @@ async fn collect_usage_deltas(
     Vec<DerivedAddressInfo>,
     BTreeMap<AccountType, HighestUsedIndexes>,
 ) {
-    let mut marked_used: Vec<DerivedAddressInfo> = Vec::new();
-    let mut highest_used: BTreeMap<AccountType, HighestUsedIndexes> = BTreeMap::new();
     if records.is_empty() {
-        return (marked_used, highest_used);
+        return (Vec::new(), BTreeMap::new());
     }
-
     let guard = wallet_manager.read().await;
     let Some(info) = guard.get_wallet_info(wallet_id) else {
-        return (marked_used, highest_used);
+        return (Vec::new(), BTreeMap::new());
     };
-    let accounts = &info.core_wallet.accounts;
-    let account_refs = accounts.all_accounts();
+    collect_usage_deltas_from_accounts(&info.core_wallet.accounts, &records)
+}
 
+/// Synchronous core of [`collect_usage_deltas`], factored over the
+/// account collection so tests can drive it without a `WalletManager`.
+///
+/// Usage-site candidates for each record come from two complementary
+/// sources:
+///
+/// 1. **The record's own `input_details` / `output_details`.**
+///    `input_details` entries are wallet-owned by construction and are
+///    the ONLY reliable source for spent-input addresses: by the time
+///    this bridge runs, `record_transaction`'s UTXO update has already
+///    removed the spent outpoints from the live account, so a replayed
+///    match can no longer see them. Output details are filtered to the
+///    `Received` / `Change` roles (a `Sent` detail carries the
+///    counterparty's address).
+/// 2. **A replayed read-only match**
+///    ([`ManagedAccountCollection::check_transaction`], scoped to the
+///    record's account type), which covers involvement the details
+///    don't carry — most importantly special-tx payload matches: a
+///    ProRegTx hitting a provider owner / voting key produces a record
+///    with no input/output detail for the matched key.
+///
+/// Every candidate is then resolved against the live pools for the
+/// authoritative post-mark
+/// [`AddressInfo`](key_wallet::managed_account::address_pool::AddressInfo)
+/// and its `(account_type, pool_type)`; candidates no pool monitors
+/// (counterparty addresses) simply drop out. `used` is forced `true`
+/// on the emitted entry — involvement in a recorded transaction is the
+/// definition of "used", independent of snapshot timing. Highest-used
+/// watermarks are snapshotted once per touched account at the end.
+fn collect_usage_deltas_from_accounts(
+    accounts: &key_wallet::managed_account::managed_account_collection::ManagedAccountCollection,
+    records: &[&TransactionRecord],
+) -> (
+    Vec<DerivedAddressInfo>,
+    BTreeMap<AccountType, HighestUsedIndexes>,
+) {
+    let account_refs = accounts.all_accounts();
+    // Hoisted `(account_type, pools)` snapshot — `address_pools()`
+    // allocates a fresh Vec per call, so build it once per batch
+    // instead of once per (candidate address × account).
+    let pools_by_account: Vec<(AccountType, Vec<&AddressPool>)> = account_refs
+        .iter()
+        .map(|a| {
+            (
+                a.managed_account_type().to_account_type(),
+                a.managed_account_type().address_pools(),
+            )
+        })
+        .collect();
+
+    let mut marked_used: Vec<DerivedAddressInfo> = Vec::new();
     let mut seen: HashSet<(AccountType, AddressPoolType, u32)> = HashSet::new();
+    let mut touched: HashSet<AccountType> = HashSet::new();
     // A block can carry several records for the same account type
     // (and `check_transaction` is per-tx anyway), so dedup the
     // (txid, type-to-check) pairs to avoid re-matching the same
@@ -306,71 +346,91 @@ async fn collect_usage_deltas(
     let mut checked: Vec<(dashcore::Txid, AccountTypeToCheck)> = Vec::new();
 
     for record in records {
-        // The matcher wants the runtime `AccountTypeToCheck`
-        // discriminant; resolve it through the live managed account so
-        // the conversion stays upstream-owned. A record whose account
-        // vanished from the collection (removed mid-flight) is skipped
-        // — nothing to flip in a pool that no longer exists.
-        let Some(account) = account_refs
+        // Source 1: the record's own details (see doc comment). These
+        // survive the UTXO-set mutation that precedes this bridge.
+        let mut candidates: Vec<dashcore::Address> = record
+            .input_details
             .iter()
-            .find(|a| a.managed_account_type().to_account_type() == record.account_type)
-        else {
-            continue;
-        };
-        let Ok(type_to_check) = AccountTypeToCheck::try_from(account.managed_account_type()) else {
-            continue;
-        };
-        if checked.contains(&(record.txid, type_to_check)) {
-            continue;
-        }
-        checked.push((record.txid, type_to_check));
+            .map(|detail| detail.address.clone())
+            .collect();
+        candidates.extend(record.output_details.iter().filter_map(|detail| {
+            matches!(detail.role, OutputRole::Received | OutputRole::Change)
+                .then(|| detail.address.clone())
+                .flatten()
+        }));
 
-        let result = accounts.check_transaction(&record.transaction, &[type_to_check]);
-        for account_match in result.affected_accounts {
-            for involved in account_match.account_type_match.all_involved_addresses() {
-                // Resolve the involved address back to its owning
-                // account + pool. This recovers the `pool_type` (which
-                // the match doesn't carry) and the authoritative
-                // post-mark `AddressInfo`; any account monitoring the
-                // address is a genuine usage site, matching upstream's
-                // per-matched-account `mark_address_used` sweep.
-                for owner in &account_refs {
-                    let owner_type = owner.managed_account_type().to_account_type();
-                    for pool in owner.managed_account_type().address_pools() {
-                        let Some(pool_info) = pool.address_info(&involved.address) else {
-                            continue;
-                        };
-                        if seen.insert((owner_type, pool.pool_type, pool_info.index)) {
-                            let mut info = pool_info.clone();
-                            info.used = true;
-                            marked_used.push(DerivedAddressInfo {
-                                account_type: owner_type,
-                                pool_type: pool.pool_type,
-                                info,
-                            });
-                        }
-                        // Snapshot the owning account's highest-used
-                        // watermarks. Standard accounts map External /
-                        // Internal onto the two persisted slots;
-                        // single-pool accounts (provider keys, identity
-                        // funding) surface theirs as `external`.
-                        let slot = highest_used.entry(owner_type).or_default();
-                        let mut snapshot = HighestUsedIndexes::default();
-                        for p in owner.managed_account_type().address_pools() {
-                            if p.is_internal() {
-                                snapshot.internal = p.highest_used;
-                            } else {
-                                snapshot.external = match (snapshot.external, p.highest_used) {
-                                    (Some(a), Some(b)) => Some(a.max(b)),
-                                    (a, b) => a.or(b),
-                                };
-                            }
-                        }
-                        slot.merge_max(snapshot);
+        // Source 2: replayed read-only match for involvement the
+        // details don't carry (special-tx payload matches). Account
+        // types with no Core-chain matcher (`PlatformPayment`) skip
+        // the replay and rely on the details alone.
+        if let Ok(type_to_check) = AccountTypeToCheck::try_from(record.account_type) {
+            if !checked.contains(&(record.txid, type_to_check)) {
+                checked.push((record.txid, type_to_check));
+                let result = accounts.check_transaction(&record.transaction, &[type_to_check]);
+                for account_match in result.affected_accounts {
+                    candidates.extend(
+                        account_match
+                            .account_type_match
+                            .all_involved_addresses()
+                            .into_iter()
+                            .map(|involved| involved.address),
+                    );
+                }
+            }
+        }
+
+        // Resolve every candidate back to its owning account + pool.
+        // This recovers the `pool_type` (which neither source carries)
+        // and the authoritative post-mark `AddressInfo`; any account
+        // monitoring the address is a genuine usage site, matching
+        // upstream's per-matched-account `mark_address_used` sweep.
+        for address in candidates {
+            for (owner_type, pools) in &pools_by_account {
+                for pool in pools {
+                    let Some(pool_info) = pool.address_info(&address) else {
+                        continue;
+                    };
+                    touched.insert(*owner_type);
+                    if seen.insert((*owner_type, pool.pool_type, pool_info.index)) {
+                        let mut info = pool_info.clone();
+                        info.used = true;
+                        marked_used.push(DerivedAddressInfo {
+                            account_type: *owner_type,
+                            pool_type: pool.pool_type,
+                            info,
+                        });
                     }
                 }
             }
         }
+    }
+
+    // Snapshot highest-used watermarks once per touched account.
+    // Standard accounts map External / Internal onto the two persisted
+    // slots; single-pool accounts (provider keys, identity funding)
+    // surface theirs as `external`. Folding with max keeps the
+    // invariant if an account ever grows several non-internal pools.
+    let mut highest_used: BTreeMap<AccountType, HighestUsedIndexes> = BTreeMap::new();
+    for (owner_type, pools) in &pools_by_account {
+        if !touched.contains(owner_type) {
+            continue;
+        }
+        let mut snapshot = HighestUsedIndexes::default();
+        for pool in pools {
+            let slot = if pool.is_internal() {
+                &mut snapshot.internal
+            } else {
+                &mut snapshot.external
+            };
+            *slot = match (*slot, pool.highest_used) {
+                (Some(a), Some(b)) => Some(a.max(b)),
+                (a, b) => a.or(b),
+            };
+        }
+        highest_used
+            .entry(*owner_type)
+            .or_default()
+            .merge_max(snapshot);
     }
 
     (marked_used, highest_used)
@@ -505,5 +565,186 @@ impl CoreChangeSet {
             && self.addresses_derived.is_empty()
             && self.addresses_marked_used.is_empty()
             && self.account_highest_used.is_empty()
+    }
+}
+
+#[cfg(test)]
+mod usage_delta_tests {
+    //! Regression coverage for [`collect_usage_deltas_from_accounts`] —
+    //! the matching/resolution seam that rebuilds `mark_address_used`
+    //! results the `WalletEvent` bus doesn't carry. Drives a real
+    //! `ManagedWalletInfo` through `check_core_transaction` (the same
+    //! mutating entry point SPV block processing uses) and then runs
+    //! the bridge's derivation over the post-mutation state, exactly
+    //! as the event adapter does at runtime.
+
+    use super::*;
+    use dashcore::hashes::Hash;
+    use dashcore::{BlockHash, OutPoint, ScriptBuf, Transaction, TxIn, TxOut, Txid, Witness};
+    use key_wallet::account::{AccountType, StandardAccountType};
+    use key_wallet::test_utils::TestWalletContext;
+    use key_wallet::transaction_checking::{BlockInfo, WalletTransactionChecker};
+
+    fn bip44_account_0() -> AccountType {
+        AccountType::Standard {
+            index: 0,
+            standard_account_type: StandardAccountType::BIP44Account,
+        }
+    }
+
+    fn in_block(height: u32) -> TransactionContext {
+        TransactionContext::InBlock(BlockInfo::new(
+            height,
+            BlockHash::from_slice(&[1u8; 32]).expect("valid block hash"),
+            1_234_567_890,
+        ))
+    }
+
+    /// A P2PKH script the wallet does not monitor, for counterparty
+    /// outputs. Built from the secp256k1 generator point.
+    fn foreign_script() -> ScriptBuf {
+        const TEST_PUBKEY_G: [u8; 33] = [
+            0x02, 0x79, 0xbe, 0x66, 0x7e, 0xf9, 0xdc, 0xbb, 0xac, 0x55, 0xa0, 0x62, 0x95, 0xce,
+            0x87, 0x0b, 0x07, 0x02, 0x9b, 0xfc, 0xdb, 0x2d, 0xce, 0x28, 0xd9, 0x59, 0xf2, 0x81,
+            0x5b, 0x16, 0xf8, 0x17, 0x98,
+        ];
+        let pubkey =
+            dashcore::PublicKey::from_slice(&TEST_PUBKEY_G).expect("generator point is valid");
+        dashcore::Address::p2pkh(&pubkey, key_wallet::Network::Testnet).script_pubkey()
+    }
+
+    fn spend_to(previous_output: OutPoint, script_pubkey: ScriptBuf, value: u64) -> Transaction {
+        Transaction {
+            version: 2,
+            lock_time: 0,
+            input: vec![TxIn {
+                previous_output,
+                script_sig: ScriptBuf::new(),
+                sequence: 0xffffffff,
+                witness: Witness::new(),
+            }],
+            output: vec![TxOut {
+                value,
+                script_pubkey,
+            }],
+            special_transaction_payload: None,
+        }
+    }
+
+    /// An output paying a monitored BIP44 receive address must surface
+    /// as a marked-used entry (External pool, index 0, `used == true`)
+    /// and advance the account's external highest-used watermark to 0.
+    #[tokio::test]
+    async fn receive_output_marks_address_used_and_advances_highest_used() {
+        let TestWalletContext {
+            mut managed_wallet,
+            mut wallet,
+            receive_address,
+            ..
+        } = TestWalletContext::new_random();
+
+        let funding_outpoint = OutPoint {
+            txid: Txid::from_slice(&[2u8; 32]).expect("valid txid"),
+            vout: 0,
+        };
+        let tx = spend_to(funding_outpoint, receive_address.script_pubkey(), 75_000);
+        let result = managed_wallet
+            .check_core_transaction(&tx, in_block(100_000), &mut wallet, true, true)
+            .await;
+        assert!(result.is_relevant, "fixture tx must match the wallet");
+
+        let records: Vec<&TransactionRecord> = result.new_records.iter().collect();
+        let (marked, highest) =
+            collect_usage_deltas_from_accounts(&managed_wallet.accounts, &records);
+
+        let entry = marked
+            .iter()
+            .find(|d| d.info.address == receive_address)
+            .expect("receive address must be in the marked-used delta");
+        assert_eq!(entry.account_type, bip44_account_0());
+        assert_eq!(entry.pool_type, AddressPoolType::External);
+        assert_eq!(entry.info.index, 0);
+        assert!(entry.info.used);
+
+        let watermarks = highest
+            .get(&bip44_account_0())
+            .expect("touched account must carry a highest-used snapshot");
+        assert_eq!(watermarks.external, Some(0));
+    }
+
+    /// Spending a wallet-owned UTXO removes it from the live account
+    /// BEFORE the wallet event fires, so the replayed
+    /// `check_transaction` can no longer see the input match. The
+    /// spent address must still be captured — via the record's
+    /// `input_details`, which key-wallet populates pre-removal.
+    #[tokio::test]
+    async fn spent_input_address_is_captured_after_utxo_removal() {
+        let TestWalletContext {
+            mut managed_wallet,
+            mut wallet,
+            receive_address,
+            ..
+        } = TestWalletContext::new_random();
+
+        // Fund the wallet at the receive address...
+        let funding_outpoint = OutPoint {
+            txid: Txid::from_slice(&[2u8; 32]).expect("valid txid"),
+            vout: 0,
+        };
+        let fund_tx = spend_to(funding_outpoint, receive_address.script_pubkey(), 75_000);
+        let fund_result = managed_wallet
+            .check_core_transaction(&fund_tx, in_block(100_000), &mut wallet, true, true)
+            .await;
+        assert!(fund_result.is_relevant);
+
+        // ...then spend that UTXO entirely to a foreign address. After
+        // this call the funded outpoint is gone from the account's
+        // live UTXO set.
+        let spend_tx = spend_to(
+            OutPoint {
+                txid: fund_tx.txid(),
+                vout: 0,
+            },
+            foreign_script(),
+            74_000,
+        );
+        let spend_result = managed_wallet
+            .check_core_transaction(&spend_tx, in_block(100_001), &mut wallet, true, true)
+            .await;
+        assert!(spend_result.is_relevant, "spend of our UTXO must match");
+
+        // Derive usage deltas from the SPEND records only — the
+        // funding record is deliberately excluded, so the only path to
+        // the spent address is the record's own `input_details`.
+        let records: Vec<&TransactionRecord> = spend_result
+            .new_records
+            .iter()
+            .chain(spend_result.updated_records.iter())
+            .collect();
+        assert!(!records.is_empty(), "spend must produce a record");
+        let (marked, highest) =
+            collect_usage_deltas_from_accounts(&managed_wallet.accounts, &records);
+
+        let entry = marked
+            .iter()
+            .find(|d| d.info.address == receive_address)
+            .expect("spent-input address must be in the marked-used delta");
+        assert_eq!(entry.pool_type, AddressPoolType::External);
+        assert!(entry.info.used);
+        // The foreign output must NOT resolve to any pool.
+        assert!(
+            marked.iter().all(|d| d.info.address != {
+                dashcore::Address::from_script(&foreign_script(), key_wallet::Network::Testnet)
+                    .expect("foreign script is a valid P2PKH")
+            }),
+            "counterparty addresses must drop out at pool resolution"
+        );
+        assert_eq!(
+            highest
+                .get(&bip44_account_0())
+                .expect("account touched via input details")
+                .external,
+            Some(0)
+        );
     }
 }
