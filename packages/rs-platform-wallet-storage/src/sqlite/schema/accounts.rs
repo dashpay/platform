@@ -204,6 +204,16 @@ fn upsert_account_row(
 /// an empty batch when pre-derivation fails
 /// (`manager::wallet_lifecycle::register_wallet`), and `Merge` is append-only,
 /// so one flush can carry two entries for the same account.
+///
+/// # Errors
+///
+/// [`WalletStorageError::ProviderKeyAccountEntryMismatch`] if an entry pairs an
+/// `account_type` with the wrong curve — the same invariant the reader enforces,
+/// checked here so a mis-paired entry cannot upsert onto (and destroy) the
+/// ECDSA account sharing this table's PK space.
+///
+/// [`WalletStorageError::ProviderKeyAccountConflict`] if two entries in one call
+/// claim the same account with **different** extended public keys.
 pub fn apply_provider_registrations(
     tx: &Transaction<'_>,
     wallet_id: &WalletId,
@@ -212,6 +222,37 @@ pub fn apply_provider_registrations(
     if entries.is_empty() {
         return Ok(());
     }
+    // Validate the whole batch before any SQL runs: a rejected entry must not
+    // leave a half-applied sibling behind (the tx would roll it back, but
+    // failing before the first write keeps that guarantee independent of the
+    // caller's tx discipline).
+    let mut encoded: Vec<(&ProviderKeyAccountEntry, &'static str, Vec<u8>)> =
+        Vec::with_capacity(entries.len());
+    for entry in entries {
+        if !provider_curve_matches_type(&entry.account_type, &entry.extended_public_key) {
+            return Err(WalletStorageError::ProviderKeyAccountEntryMismatch);
+        }
+        let label = account_type_db_label(&entry.account_type);
+        let payload = blob::encode(&ProviderKeyRegistrationBlob {
+            account_type: entry.account_type,
+            extended_public_key: entry.extended_public_key.clone(),
+        })?;
+        // Two entries for one account are expected — `Merge` is append-only, so
+        // a re-emitted registration can ride the same flush. Identical ones are
+        // reconciled below (node keys union by index, nothing is lost). Two that
+        // disagree about the account's own xpub are a contradiction no merge
+        // semantic can resolve — one of them is wrong and we cannot tell which,
+        // so fail closed rather than let write order decide.
+        if let Some((_, _, prior)) = encoded.iter().find(|(_, l, _)| *l == label) {
+            if prior != &payload {
+                return Err(WalletStorageError::ProviderKeyAccountConflict {
+                    account_type: label,
+                });
+            }
+        }
+        encoded.push((entry, label, payload));
+    }
+
     let mut account_stmt = tx.prepare_cached(UPSERT_ACCOUNT_SQL)?;
     let mut node_key_stmt = tx.prepare_cached(
         "INSERT INTO provider_platform_node_keys \
@@ -220,12 +261,7 @@ pub fn apply_provider_registrations(
              ON CONFLICT(wallet_id, account_type, key_index) DO UPDATE SET \
                 public_key = excluded.public_key, node_id = excluded.node_id",
     )?;
-    for entry in entries {
-        let account_type = account_type_db_label(&entry.account_type);
-        let payload = blob::encode(&ProviderKeyRegistrationBlob {
-            account_type: entry.account_type,
-            extended_public_key: entry.extended_public_key.clone(),
-        })?;
+    for (entry, account_type, payload) in encoded {
         upsert_account_row(&mut account_stmt, wallet_id, &entry.account_type, payload)?;
         for key in &entry.derived_platform_node_keys {
             node_key_stmt.execute(params![
@@ -289,8 +325,15 @@ fn load_platform_node_keys(
 }
 
 /// True when the extended public key's curve is the one its account type
-/// mandates. The `account_type` column is the decode discriminator (same
-/// convention as the FFI backend), so a row whose blob carries the other
+/// mandates. Enforced on both the write and the read path.
+///
+/// `account_type` is the discriminator that decides the curve — there is no tag
+/// byte inside the payload. The FFI backend's restore side picks the same
+/// discriminator (`platform-wallet-ffi::persistence`, which branches on
+/// `account_type` to choose its decode), so the two backends agree on *how* a
+/// provider account is identified even though their payload bytes differ (the
+/// FFI bincodes the bare key; this one wraps it in a
+/// [`ProviderKeyRegistrationBlob`]). A row whose payload carries the other
 /// curve is cross-curve confusion, not a decodable account.
 fn provider_curve_matches_type(at: &AccountType, key: &ProviderKeyExtendedPubKey) -> bool {
     matches!(

@@ -588,9 +588,163 @@ fn tc_pka_016_empty_node_key_batch_never_wipes_a_populated_pool() {
     );
 }
 
+/// SEC-001 — the writer enforces the curve/type pairing the reader enforces.
+/// The two writers share one table, one PK space and one blob column,
+/// discriminated only by `account_type`: a `ProviderOperatorKeys` entry
+/// carrying an EdDSA key would upsert onto the operator account's row with a
+/// payload the fail-hard reader then rejects — bricking `load()` for the whole
+/// wallet. Reject it at write time instead of storing a landmine.
+#[test]
+fn sec_001_writer_rejects_mispaired_curve_and_account_type() {
+    let (persister, _tmp, _path) = fresh_persister();
+    let w: WalletId = wid(0xD1);
+    ensure_wallet_meta(&persister, &w);
+
+    // ProviderOperatorKeys (BLS by contract) carrying an EdDSA key.
+    let mispaired = ProviderKeyAccountEntry {
+        account_type: AccountType::ProviderOperatorKeys,
+        extended_public_key: eddsa_xpub(0x31),
+        derived_platform_node_keys: Vec::new(),
+    };
+    let err = persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                provider_key_account_registrations: vec![mispaired],
+                ..Default::default()
+            },
+        )
+        .expect_err("a mis-paired provider entry must be rejected at write time");
+    assert!(
+        format!("{err:?}").contains("ProviderKeyAccountEntryMismatch"),
+        "expected a curve/type mismatch, got {err:?}"
+    );
+
+    let conn = persister.lock_conn_for_test();
+    assert_eq!(
+        account_row_count(&conn, &w),
+        0,
+        "a rejected entry must leave no row behind"
+    );
+}
+
+/// Two entries for one account that disagree about its extended public key are
+/// a contradiction no merge semantic can resolve — one is wrong and the store
+/// cannot tell which. Fail closed rather than let write order pick the winner.
+#[test]
+fn conflicting_duplicate_provider_entries_are_rejected() {
+    let (persister, _tmp, _path) = fresh_persister();
+    let w: WalletId = wid(0xD2);
+    ensure_wallet_meta(&persister, &w);
+
+    // Same account type, two different seeds → two different xpubs.
+    let err = persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                provider_key_account_registrations: vec![
+                    platform_entry(0x32, vec![node_key(0)]),
+                    platform_entry(0x33, vec![node_key(1)]),
+                ],
+                ..Default::default()
+            },
+        )
+        .expect_err("conflicting entries for one account must be rejected");
+    assert!(
+        format!("{err:?}").contains("ProviderKeyAccountConflict"),
+        "expected ProviderKeyAccountConflict, got {err:?}"
+    );
+
+    let conn = persister.lock_conn_for_test();
+    assert_eq!(
+        account_row_count(&conn, &w),
+        0,
+        "neither entry may be written"
+    );
+    assert_eq!(node_key_row_count(&conn, &w), 0);
+}
+
+/// QA-002 — the provider write path rides the flush transaction: when a later
+/// writer in the same `store()` fails, the account row, its node keys, and the
+/// domain-seq bump all roll back together. Mirrors `tc_b_012`, which pins the
+/// same invariant for the pool writer.
+#[test]
+fn qa_002_partial_failure_rolls_back_provider_rows_and_bump() {
+    let (persister, _tmp, _path) = fresh_persister();
+    let w: WalletId = wid(0xD3);
+    ensure_wallet_meta(&persister, &w);
+
+    // No `identities` row for this id → the token-balances writer trips an FK
+    // violation after the provider rows have already been written in this tx.
+    let mut balances = std::collections::BTreeMap::new();
+    balances.insert(
+        (
+            dpp::prelude::Identifier::from([0xEE; 32]),
+            dpp::prelude::Identifier::from([0xEF; 32]),
+        ),
+        1u64,
+    );
+    let result = persister.store(
+        w,
+        PlatformWalletChangeSet {
+            provider_key_account_registrations: vec![platform_entry(
+                0x34,
+                vec![node_key(0), node_key(1)],
+            )],
+            token_balances: Some(platform_wallet::changeset::TokenBalanceChangeSet {
+                balances,
+                ..Default::default()
+            }),
+            ..Default::default()
+        },
+    );
+    assert!(result.is_err(), "the FK violation must fail the flush");
+
+    let conn = persister.lock_conn_for_test();
+    assert_eq!(
+        account_row_count(&conn, &w),
+        0,
+        "the provider account row must roll back with the failed flush"
+    );
+    assert_eq!(
+        node_key_row_count(&conn, &w),
+        0,
+        "its node keys must roll back too — no orphan child rows"
+    );
+    assert_eq!(
+        versions::read_seq(&conn, &w, Domain::AccountRegistrations).expect("read_seq"),
+        0,
+        "the domain bump must roll back with the data it marks"
+    );
+}
+
+/// A registered provider account with an EMPTY pre-derived batch is a real
+/// state (pre-derivation is allowed to fail at registration) and is distinct
+/// from having no account at all: the account must still come back, carrying
+/// zero node keys.
+#[test]
+fn present_provider_account_with_empty_node_key_batch_round_trips() {
+    let (persister, _tmp, _path) = fresh_persister();
+    let w: WalletId = wid(0xD5);
+    ensure_wallet_meta(&persister, &w);
+
+    store_platform_entry(&persister, w, 0x35, Vec::new());
+
+    let conn = persister.lock_conn_for_test();
+    let provider = accounts::load_state(&conn, &w)
+        .expect("load_state")
+        .provider;
+    assert_eq!(provider.len(), 1, "the account itself must be persisted");
+    assert!(
+        provider[0].derived_platform_node_keys.is_empty(),
+        "with no pre-derived keys, not with a missing account"
+    );
+    assert_eq!(node_key_row_count(&conn, &w), 0);
+}
+
 /// TC-PKA-016 (merged) — `Merge` is append-only `.extend()`, so ONE flush can
-/// carry two entries for the same account. Neither may retract the other's
-/// keys, whichever order they land in.
+/// carry two entries for the same account. Identical entries reconcile: the
+/// node keys union by index and neither retracts the other's.
 #[test]
 fn tc_pka_016_merged_duplicate_entries_keep_the_union() {
     let (persister, _tmp, _path) = fresh_persister();
@@ -678,6 +832,17 @@ fn wallet_delete_cascades_to_node_keys() {
         0,
         "node keys must cascade away with their wallet"
     );
+}
+
+/// Provider account-registration rows for one wallet, counted straight from SQL.
+fn account_row_count(conn: &rusqlite::Connection, wallet_id: &WalletId) -> i64 {
+    conn.query_row(
+        "SELECT COUNT(*) FROM account_registrations WHERE wallet_id = ?1 \
+           AND account_type IN ('provider_operator', 'provider_platform')",
+        rusqlite::params![wallet_id.as_slice()],
+        |row| row.get(0),
+    )
+    .expect("count provider account rows")
 }
 
 /// Node-key rows for one wallet, counted straight from SQL.

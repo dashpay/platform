@@ -217,6 +217,16 @@ pub enum WalletStorageError {
     )]
     ProviderKeyAccountEntryMismatch,
 
+    /// One flush carried two provider key-material entries for the same account
+    /// with different extended public keys. One of them is wrong and the store
+    /// cannot tell which, so neither is written — letting write order decide
+    /// would silently pick a winner.
+    #[error(
+        "conflicting provider key accounts for {account_type} in one flush \
+         (two entries carry different extended public keys)"
+    )]
+    ProviderKeyAccountConflict { account_type: &'static str },
+
     /// Account was rejected by the wallet manager (e.g. `account_type` is unknown, or
     /// `account_index` is out of range). The `cause` is a static string describing the reason.
     #[error("account rejected by wallet manager: {cause}")]
@@ -424,6 +434,7 @@ impl WalletStorageError {
             | Self::IdentityEntryIdMismatch
             | Self::AccountRegistrationEntryMismatch
             | Self::ProviderKeyAccountEntryMismatch
+            | Self::ProviderKeyAccountConflict { .. }
             | Self::AccountRecordInvalid { .. }
             | Self::MissingAccount { .. }
             | Self::AccountRejected { .. }
@@ -510,6 +521,7 @@ impl WalletStorageError {
             Self::AccountRejected { .. } => "account_rejected",
             Self::AccountRegistrationEntryMismatch => "account_registration_entry_mismatch",
             Self::ProviderKeyAccountEntryMismatch => "provider_key_account_entry_mismatch",
+            Self::ProviderKeyAccountConflict { .. } => "provider_key_account_conflict",
             Self::AssetLockEntryMismatch { .. } => "asset_lock_entry_mismatch",
             Self::BlobTooLarge { .. } => "blob_too_large",
             Self::IntegerOverflow { .. } => "integer_overflow",
