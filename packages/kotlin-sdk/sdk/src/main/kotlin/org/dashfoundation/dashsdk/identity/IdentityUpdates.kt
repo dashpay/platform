@@ -1,5 +1,7 @@
 package org.dashfoundation.dashsdk.identity
 
+import org.dashfoundation.dashsdk.wallet.op
+
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.dashfoundation.dashsdk.errors.mapNativeErrors
@@ -141,7 +143,9 @@ data class IdentityPubkey(
  * supplied by the caller — `PlatformWalletManager` owns the [signerHandle],
  * `ManagedPlatformWallet` owns the wallet handle.
  */
-class IdentityUpdates internal constructor() {
+class IdentityUpdates internal constructor(
+    private val gate: org.dashfoundation.dashsdk.wallet.TeardownGate? = null,
+) {
 
     /**
      * Add a single public key to [identityId], signed via [signerHandle].
@@ -175,7 +179,7 @@ class IdentityUpdates internal constructor() {
         addPublicKeys: List<IdentityPubkey> = emptyList(),
         disablePublicKeyIds: List<Int> = emptyList(),
         signerHandle: Long,
-    ) = withContext(Dispatchers.IO) {
+    ) = gate.op {
         require(identityId.size == 32) {
             "identityId must be 32 bytes, got ${identityId.size}"
         }

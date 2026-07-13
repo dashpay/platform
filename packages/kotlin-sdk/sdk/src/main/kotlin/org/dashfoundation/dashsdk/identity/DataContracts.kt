@@ -1,5 +1,7 @@
 package org.dashfoundation.dashsdk.identity
 
+import org.dashfoundation.dashsdk.wallet.op
+
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.dashfoundation.dashsdk.errors.mapNativeErrors
@@ -17,7 +19,9 @@ import org.dashfoundation.dashsdk.ffi.IdentityNative
  * @param walletHandle a live `PlatformWallet` handle (the wallet that owns
  *   the acting identity).
  */
-class DataContracts internal constructor(private val walletHandle: Long) {
+class DataContracts internal constructor(private val walletHandle: Long,
+    private val gate: org.dashfoundation.dashsdk.wallet.TeardownGate? = null,
+) {
 
     /**
      * Create + broadcast a new data contract.
@@ -46,7 +50,7 @@ class DataContracts internal constructor(private val walletHandle: Long) {
         configJson: String? = null,
         @Suppress("UNUSED_PARAMETER") signingKeyId: Int = 0,
         signerHandle: Long,
-    ): ByteArray = withContext(Dispatchers.IO) {
+    ): ByteArray = gate.op {
         mapNativeErrors {
             IdentityNative.createDataContract(
                 walletHandle = walletHandle,

@@ -45,6 +45,11 @@ class ManagedPlatformWallet internal constructor(
     // select+sign+broadcast; this restores that atomicity at the orchestration
     // layer.
     private val coreSendMutex: kotlinx.coroutines.sync.Mutex,
+    // Owning manager's teardown fence: ops that borrow the manager's raw
+    // signer/resolver handles run on the CALLER's scope, so manager
+    // teardown must await them through this gate before freeing the boxes.
+    // Null only for bare test construction (no fence, old behavior).
+    private val gate: TeardownGate? = null,
 ) : AutoCloseable {
 
     private val handleRef = AtomicLong(handle)
@@ -68,14 +73,14 @@ class ManagedPlatformWallet internal constructor(
      * [handle] afresh, so a closed wrapper fails fast.
      */
     val tokens: org.dashfoundation.dashsdk.tokens.Tokens
-        get() = org.dashfoundation.dashsdk.tokens.Tokens(handle)
+        get() = org.dashfoundation.dashsdk.tokens.Tokens(handle, gate)
 
     /**
      * Group-action discovery bound to this wallet's handle — the Kotlin
      * analog of the Swift `TokenGroupActionQueries.swift` extension.
      */
     val groups: org.dashfoundation.dashsdk.tokens.Groups
-        get() = org.dashfoundation.dashsdk.tokens.Groups(handle)
+        get() = org.dashfoundation.dashsdk.tokens.Groups(handle, gate)
 
     /**
      * DashPay contact/payment surface bound to this wallet's handle —
@@ -83,14 +88,14 @@ class ManagedPlatformWallet internal constructor(
      * extension.
      */
     val dashpay: org.dashfoundation.dashsdk.tokens.Dashpay
-        get() = org.dashfoundation.dashsdk.tokens.Dashpay(handle)
+        get() = org.dashfoundation.dashsdk.tokens.Dashpay(handle, gate)
 
     /**
      * Data-contract create surface bound to this wallet's handle — the
      * Kotlin analog of Swift's `ManagedPlatformWallet.createDataContract`.
      */
     val dataContracts: org.dashfoundation.dashsdk.identity.DataContracts
-        get() = org.dashfoundation.dashsdk.identity.DataContracts(handle)
+        get() = org.dashfoundation.dashsdk.identity.DataContracts(handle, gate)
 
     /** Lock-free balance snapshot from Rust's in-memory state. */
     data class Balance(
@@ -157,7 +162,7 @@ class ManagedPlatformWallet internal constructor(
         coreSignerHandle: Long,
         accountType: AccountType = AccountType.BIP44,
         accountIndex: Int = 0,
-    ): String = withContext(Dispatchers.IO) {
+    ): String = gate.op {
         require(accountIndex >= 0) { "accountIndex must be non-negative, got $accountIndex" }
         require(recipients.isNotEmpty()) { "recipients must not be empty" }
         require(recipients.all { it.second > 0 }) {
@@ -271,7 +276,7 @@ class ManagedPlatformWallet internal constructor(
         recipients: List<FundRecipient>,
         signerHandle: Long,
         coreSignerHandle: Long,
-    ): List<UpdatedBalance> = withContext(Dispatchers.IO) {
+    ): List<UpdatedBalance> = gate.op {
         require(amountDuffs > 0) { "amountDuffs must be positive, got $amountDuffs" }
         require(fundingAccountIndex >= 0) {
             "fundingAccountIndex must be non-negative, got $fundingAccountIndex"
@@ -306,7 +311,7 @@ class ManagedPlatformWallet internal constructor(
         recipients: List<FundRecipient>,
         signerHandle: Long,
         coreSignerHandle: Long,
-    ): List<UpdatedBalance> = withContext(Dispatchers.IO) {
+    ): List<UpdatedBalance> = gate.op {
         require(outPointTxid.size == 32) {
             "outPointTxid must be exactly 32 bytes, got ${outPointTxid.size}"
         }
@@ -371,7 +376,7 @@ class ManagedPlatformWallet internal constructor(
         outputs: List<CreditOutput>,
         signerHandle: Long,
         accountIndex: Int = 0,
-    ): List<UpdatedBalance> = withContext(Dispatchers.IO) {
+    ): List<UpdatedBalance> = gate.op {
         require(accountIndex >= 0) { "accountIndex must be non-negative, got $accountIndex" }
         val blob = mapNativeErrors {
             WalletManagerNative.walletPlatformAddressTransfer(
@@ -400,7 +405,7 @@ class ManagedPlatformWallet internal constructor(
         coreFeePerByte: Int,
         signerHandle: Long,
         accountIndex: Int = 0,
-    ): List<UpdatedBalance> = withContext(Dispatchers.IO) {
+    ): List<UpdatedBalance> = gate.op {
         require(accountIndex >= 0) { "accountIndex must be non-negative, got $accountIndex" }
         val blob = mapNativeErrors {
             WalletManagerNative.walletPlatformAddressWithdraw(

@@ -30,14 +30,17 @@ import org.dashfoundation.dashsdk.security.WalletStorage
  * SDK.
  *
  * @param isClosedOf probe: has this manager been closed?
- * @param closeOf tear down a manager.
+ * @param closeOf tear down a manager. Suspending: teardown joins in-flight
+ *   native calls, and [activate]/[closeAll] may run on the Main dispatcher
+ *   (the network switch arrives from Compose), so it must suspend rather
+ *   than block the caller's thread.
  * @param handleOf the native handle identifying an SDK context (a
  *   rebuilt SDK changes handle, invalidating the cached manager).
  * @param factory build a manager for `(network, sdk)`.
  */
 internal class WalletManagerCache<S, M>(
     private val isClosedOf: (M) -> Boolean,
-    private val closeOf: (M) -> Unit,
+    private val closeOf: suspend (M) -> Unit,
     private val handleOf: (S) -> Long,
     private val factory: (network: Network, sdk: S) -> M,
 ) {
@@ -126,7 +129,10 @@ class WalletManagerStore(
 ) {
     private val cache = WalletManagerCache<Sdk, PlatformWalletManager>(
         isClosedOf = { it.isClosed },
-        closeOf = { it.close() },
+        // closeSuspending, not close(): the switch arrives on Compose Main
+        // and teardown joins an in-flight (network-bound) DashPay drain —
+        // the blocking close() there is a textbook ANR.
+        closeOf = { it.closeSuspending() },
         handleOf = { it.handle },
         factory = { network, sdk ->
             PlatformWalletManager(sdk, network, database, walletStorage, biometricGate)

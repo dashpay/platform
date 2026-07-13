@@ -1,5 +1,7 @@
 package org.dashfoundation.dashsdk.tokens
 
+import org.dashfoundation.dashsdk.wallet.op
+
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.dashfoundation.dashsdk.errors.mapNativeErrors
@@ -30,7 +32,9 @@ import org.dashfoundation.dashsdk.ffi.TokensNative
  * mint/burn/transfer); the caller decodes them, mirroring how the Swift
  * wrappers hand JSON up to their callers.
  */
-class Tokens internal constructor(private val walletHandle: Long) {
+class Tokens internal constructor(private val walletHandle: Long,
+    private val gate: org.dashfoundation.dashsdk.wallet.TeardownGate? = null,
+) {
 
     /**
      * Mint [amount]; [issuedToIdentityId] null mints to [identityId].
@@ -46,7 +50,7 @@ class Tokens internal constructor(private val walletHandle: Long) {
         groupAction: GroupAction = GroupAction.None,
         signingKeyId: Int,
         signerHandle: Long,
-    ): String? = withContext(Dispatchers.IO) {
+    ): String? = gate.op {
         validateSelectors(tokenPosition, signingKeyId)
         require(amount > 0) { "amount must be positive, got $amount" }
         val g = groupAction.flatten()
@@ -70,7 +74,7 @@ class Tokens internal constructor(private val walletHandle: Long) {
         groupAction: GroupAction = GroupAction.None,
         signingKeyId: Int,
         signerHandle: Long,
-    ): String? = withContext(Dispatchers.IO) {
+    ): String? = gate.op {
         validateSelectors(tokenPosition, signingKeyId)
         require(amount > 0) { "amount must be positive, got $amount" }
         val g = groupAction.flatten()
@@ -94,7 +98,7 @@ class Tokens internal constructor(private val walletHandle: Long) {
         publicNote: String? = null,
         signingKeyId: Int,
         signerHandle: Long,
-    ): String? = withContext(Dispatchers.IO) {
+    ): String? = gate.op {
         validateSelectors(tokenPosition, signingKeyId)
         require(amount > 0) { "amount must be positive, got $amount" }
         mapNativeErrors {
@@ -115,7 +119,7 @@ class Tokens internal constructor(private val walletHandle: Long) {
         groupAction: GroupAction = GroupAction.None,
         signingKeyId: Int,
         signerHandle: Long,
-    ): Unit = withContext(Dispatchers.IO) {
+    ): Unit = gate.op {
         validateSelectors(tokenPosition, signingKeyId)
         val g = groupAction.flatten()
         mapNativeErrors {
@@ -138,7 +142,7 @@ class Tokens internal constructor(private val walletHandle: Long) {
         groupAction: GroupAction = GroupAction.None,
         signingKeyId: Int,
         signerHandle: Long,
-    ): Unit = withContext(Dispatchers.IO) {
+    ): Unit = gate.op {
         validateSelectors(tokenPosition, signingKeyId)
         val g = groupAction.flatten()
         mapNativeErrors {
@@ -161,7 +165,7 @@ class Tokens internal constructor(private val walletHandle: Long) {
         groupAction: GroupAction = GroupAction.None,
         signingKeyId: Int,
         signerHandle: Long,
-    ): Unit = withContext(Dispatchers.IO) {
+    ): Unit = gate.op {
         validateSelectors(tokenPosition, signingKeyId)
         val g = groupAction.flatten()
         mapNativeErrors {
@@ -183,7 +187,7 @@ class Tokens internal constructor(private val walletHandle: Long) {
         groupAction: GroupAction = GroupAction.None,
         signingKeyId: Int,
         signerHandle: Long,
-    ): Unit = withContext(Dispatchers.IO) {
+    ): Unit = gate.op {
         validateSelectors(tokenPosition, signingKeyId)
         val g = groupAction.flatten()
         mapNativeErrors {
@@ -204,7 +208,7 @@ class Tokens internal constructor(private val walletHandle: Long) {
         groupAction: GroupAction = GroupAction.None,
         signingKeyId: Int,
         signerHandle: Long,
-    ): Unit = withContext(Dispatchers.IO) {
+    ): Unit = gate.op {
         validateSelectors(tokenPosition, signingKeyId)
         val g = groupAction.flatten()
         mapNativeErrors {
@@ -226,7 +230,7 @@ class Tokens internal constructor(private val walletHandle: Long) {
         groupAction: GroupAction = GroupAction.None,
         signingKeyId: Int,
         signerHandle: Long,
-    ): Unit = withContext(Dispatchers.IO) {
+    ): Unit = gate.op {
         validateSelectors(tokenPosition, signingKeyId)
         require(pricePerToken >= 0) {
             "pricePerToken must be non-negative (0 disables direct purchase), got $pricePerToken"
@@ -251,7 +255,7 @@ class Tokens internal constructor(private val walletHandle: Long) {
         expectedTotalCost: Long,
         signingKeyId: Int,
         signerHandle: Long,
-    ): Unit = withContext(Dispatchers.IO) {
+    ): Unit = gate.op {
         validateSelectors(tokenPosition, signingKeyId)
         require(amount > 0) { "amount must be positive, got $amount" }
         require(expectedTotalCost > 0) {
@@ -274,7 +278,7 @@ class Tokens internal constructor(private val walletHandle: Long) {
         publicNote: String? = null,
         signingKeyId: Int,
         signerHandle: Long,
-    ): Unit = withContext(Dispatchers.IO) {
+    ): Unit = gate.op {
         validateSelectors(tokenPosition, signingKeyId)
         mapNativeErrors {
             TokensNative.tokenClaim(
@@ -298,7 +302,7 @@ class Tokens internal constructor(private val walletHandle: Long) {
         groupAction: GroupAction = GroupAction.None,
         signingKeyId: Int,
         signerHandle: Long,
-    ): Unit = withContext(Dispatchers.IO) {
+    ): Unit = gate.op {
         validateSelectors(tokenPosition, signingKeyId)
         val g = groupAction.flatten()
         mapNativeErrors {
