@@ -16,7 +16,62 @@ use rs_dapi_client::{DapiRequestExecutor, IntoInner, RequestSettings};
 use std::time::Duration;
 use tokio::time::{sleep, timeout};
 
+/// A Core transaction fetched by id, plus the finality metadata needed to
+/// reconstruct an asset-lock proof from it (an InstantSend proof when the
+/// InstantLock is known, otherwise a ChainLock proof once chain-locked).
+#[derive(Clone, Debug)]
+pub struct FetchedCoreTransaction {
+    /// The decoded transaction.
+    pub transaction: Transaction,
+    /// Height of the block the transaction was mined in (0 if unconfirmed).
+    pub height: u32,
+    /// Whether the transaction's block is ChainLocked.
+    pub is_chain_locked: bool,
+    /// Whether the transaction is InstantSend-locked.
+    pub is_instant_locked: bool,
+}
+
 impl Sdk {
+    /// Fetch a Core transaction by its id via DAPI `getTransaction`.
+    ///
+    /// `txid` is the transaction id as a hex string (big-endian display form).
+    /// Returns the decoded transaction plus its confirmation/lock metadata.
+    /// A transaction that DAPI does not know surfaces as an error (the caller
+    /// may retry with the id byte-reversed for old little-endian links).
+    pub async fn get_transaction(&self, txid: &str) -> Result<FetchedCoreTransaction, Error> {
+        let GetTransactionResponse {
+            transaction,
+            height,
+            is_chain_locked,
+            is_instant_locked,
+            ..
+        } = self
+            .execute(
+                GetTransactionRequest {
+                    id: txid.to_string(),
+                },
+                RequestSettings::default(),
+            )
+            .await
+            .into_inner()?;
+
+        if transaction.is_empty() {
+            return Err(Error::Generic(format!(
+                "transaction {txid} not found (empty response)"
+            )));
+        }
+
+        let transaction = Transaction::consensus_decode(&mut transaction.as_slice())
+            .map_err(|e| Error::CoreError(e.into()))?;
+
+        Ok(FetchedCoreTransaction {
+            transaction,
+            height,
+            is_chain_locked,
+            is_instant_locked,
+        })
+    }
+
     /// Starts the stream to listen for instant send lock messages
     pub async fn start_instant_send_lock_stream(
         &self,
