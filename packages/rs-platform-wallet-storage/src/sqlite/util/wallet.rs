@@ -10,9 +10,11 @@ use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::Wallet;
 use key_wallet::Network;
 
-use platform_wallet::changeset::{AccountRegistrationEntry, CoreChangeSet};
+use platform_wallet::changeset::{
+    AccountRegistrationEntry, CoreChangeSet, ProviderKeyExtendedPubKey,
+};
 
-use crate::sqlite::schema::accounts;
+use crate::sqlite::schema::accounts::{self, AccountManifest};
 use crate::sqlite::schema::core_pool::OwningAccount;
 use crate::WalletStorageError;
 
@@ -20,7 +22,7 @@ use crate::WalletStorageError;
 pub(crate) fn build_wallet(
     network: Network,
     expected_wallet_id: [u8; 32],
-    manifest: &[AccountRegistrationEntry],
+    manifest: &AccountManifest,
 ) -> Result<Wallet, WalletStorageError> {
     if manifest.is_empty() {
         return Err(WalletStorageError::MissingAccount {
@@ -28,7 +30,7 @@ pub(crate) fn build_wallet(
         });
     }
     let mut accounts = AccountCollection::new();
-    for entry in manifest {
+    for entry in &manifest.ecdsa {
         // `Account::from_xpub` is infallible in the pinned key-wallet rev; this
         // map_err is a defensive guard for when that signature becomes fallible.
         let account = Account::from_xpub(
@@ -41,6 +43,37 @@ pub(crate) fn build_wallet(
         accounts
             .insert(account)
             .map_err(|_| WalletStorageError::AccountRegistrationEntryMismatch)?;
+    }
+    // Provider key-material accounts live in dedicated `Option` slots that
+    // `AccountCollection::insert` rejects by design — the curve-specific
+    // inserters are the only way in. Both `new`s mint watch-only accounts.
+    for entry in &manifest.provider {
+        match &entry.extended_public_key {
+            ProviderKeyExtendedPubKey::Bls(key) => {
+                let account = key_wallet::account::BLSAccount::new(
+                    Some(expected_wallet_id.to_vec()),
+                    entry.account_type,
+                    key.clone(),
+                    network,
+                )
+                .map_err(|e| WalletStorageError::AccountRecordInvalid { e })?;
+                accounts
+                    .insert_bls_account(account)
+                    .map_err(|_| WalletStorageError::ProviderKeyAccountEntryMismatch)?;
+            }
+            ProviderKeyExtendedPubKey::EdDSA(key) => {
+                let account = key_wallet::account::EdDSAAccount::new(
+                    Some(expected_wallet_id.to_vec()),
+                    entry.account_type,
+                    key.clone(),
+                    network,
+                )
+                .map_err(|e| WalletStorageError::AccountRecordInvalid { e })?;
+                accounts
+                    .insert_eddsa_account(account)
+                    .map_err(|_| WalletStorageError::ProviderKeyAccountEntryMismatch)?;
+            }
+        }
     }
     Ok(Wallet::new_external_signable(
         network,
@@ -634,7 +667,11 @@ mod tests {
         )
         .unwrap();
         let id = w.compute_wallet_id();
-        let manifest = manifest_for(&w);
+        let ecdsa = manifest_for(&w);
+        let manifest = AccountManifest {
+            ecdsa: ecdsa.clone(),
+            provider: Vec::new(),
+        };
 
         let restored = build_wallet(Network::Testnet, id, &manifest).unwrap();
         assert_eq!(restored.wallet_id, id);
@@ -645,7 +682,7 @@ mod tests {
             .into_iter()
             .map(|a| a.account_type)
             .collect();
-        let manifest_types: Vec<_> = manifest.iter().map(|e| e.account_type).collect();
+        let manifest_types: Vec<_> = ecdsa.iter().map(|e| e.account_type).collect();
         assert_eq!(restored_types.len(), manifest_types.len());
         for t in &manifest_types {
             assert!(restored_types.contains(t));
@@ -654,7 +691,7 @@ mod tests {
 
     #[test]
     fn empty_manifest_is_missing_manifest() {
-        let err = build_wallet(Network::Testnet, [0u8; 32], &[])
+        let err = build_wallet(Network::Testnet, [0u8; 32], &AccountManifest::default())
             .expect_err("empty manifest must be MissingManifest");
         assert!(matches!(err, WalletStorageError::MissingAccount { .. }));
     }

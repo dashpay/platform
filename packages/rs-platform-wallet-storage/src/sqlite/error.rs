@@ -205,6 +205,18 @@ pub enum WalletStorageError {
     )]
     AccountRegistrationEntryMismatch,
 
+    /// A provider key-material `account_registrations` row disagreed with
+    /// itself: either its typed columns contradict the decoded
+    /// `ProviderKeyRegistrationBlob`, or the blob's curve contradicts its
+    /// account type (a BLS key under `provider_platform`, or an EdDSA key
+    /// under `provider_operator`). Rejected at decode time so a
+    /// cross-curve-confused row can never be rebuilt into an account.
+    #[error(
+        "provider key account entry disagrees with its typed columns or \
+         carries the wrong curve for its account type"
+    )]
+    ProviderKeyAccountEntryMismatch,
+
     /// Account was rejected by the wallet manager (e.g. `account_type` is unknown, or
     /// `account_index` is out of range). The `cause` is a static string describing the reason.
     #[error("account rejected by wallet manager: {cause}")]
@@ -411,6 +423,7 @@ impl WalletStorageError {
             | Self::IdentityKeyEntryMismatch
             | Self::IdentityEntryIdMismatch
             | Self::AccountRegistrationEntryMismatch
+            | Self::ProviderKeyAccountEntryMismatch
             | Self::AccountRecordInvalid { .. }
             | Self::MissingAccount { .. }
             | Self::AccountRejected { .. }
@@ -496,6 +509,7 @@ impl WalletStorageError {
             Self::MissingAccount { .. } => "missing_account_registration_entry",
             Self::AccountRejected { .. } => "account_rejected",
             Self::AccountRegistrationEntryMismatch => "account_registration_entry_mismatch",
+            Self::ProviderKeyAccountEntryMismatch => "provider_key_account_entry_mismatch",
             Self::AssetLockEntryMismatch { .. } => "asset_lock_entry_mismatch",
             Self::BlobTooLarge { .. } => "blob_too_large",
             Self::IntegerOverflow { .. } => "integer_overflow",

@@ -51,30 +51,30 @@ impl OptionalExists for rusqlite::Result<()> {
     }
 }
 
-/// The unified migration lifts the supported schema version to 3.
+/// The unified migration is embedded and supported. The exact ceiling moves
+/// with the newest migration and is pinned in that migration's own test file.
 #[test]
-fn max_supported_version_is_three() {
-    assert_eq!(
-        mig::max_supported_version(),
-        3,
-        "V003 must raise max_supported_version to 3"
+fn v003_is_embedded_and_supported() {
+    assert!(
+        mig::embedded_migrations().iter().any(|(v, _)| *v == 3),
+        "V003 must be in the embedded migration set"
     );
+    assert!(mig::max_supported_version() >= 3, "V003 must be applicable");
 }
 
-/// TC-B-030 — a fresh store migrates clean to the new target version and
-/// every new table exists.
+/// TC-B-030 — a fresh store applies V003 and every table it creates exists.
 #[test]
 fn tc_b_030_fresh_store_migrates_to_version_three() {
     let (persister, _tmp, _path) = fresh_persister();
     let conn = persister.lock_conn_for_test();
-    let max: i64 = conn
+    let applied: i64 = conn
         .query_row(
-            "SELECT MAX(version) FROM refinery_schema_history",
+            "SELECT COUNT(*) FROM refinery_schema_history WHERE version = 3",
             [],
             |r| r.get(0),
         )
         .unwrap();
-    assert_eq!(max, 3, "fresh store must land at schema version 3");
+    assert_eq!(applied, 1, "a fresh store must apply V003");
     for table in [
         "core_address_pool",
         "meta_data_versions",

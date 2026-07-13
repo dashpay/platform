@@ -1006,7 +1006,7 @@ impl PlatformWalletPersistence for SqlitePersister {
             // this directly — the old skeleton + core_state replay fallback is
             // gone.
             let wallet = if account_manifest.is_empty() {
-                // No core (spending) accounts for this wallet. An empty manifest
+                // No accounts of any kind for this wallet. An empty manifest
                 // is NOT necessarily an orphaned row: a platform-only wallet — a
                 // Platform identity plus contacts, with no core accounts —
                 // legitimately has one. Register it as an external-signable
@@ -1043,9 +1043,11 @@ impl PlatformWalletPersistence for SqlitePersister {
                     &wallet,
                     birth_height,
                 );
+            // Provider key-material accounts hold no funds and have no address
+            // pools, so only the ECDSA half feeds the core-state projection.
             apply_persisted_core_state(
                 &mut wallet_info,
-                &account_manifest,
+                &account_manifest.ecdsa,
                 &core_state,
                 &utxo_accounts,
                 &used_core_addresses,
@@ -1175,6 +1177,13 @@ fn apply_changeset_to_tx(
     }
     if !cs.account_registrations.is_empty() {
         schema::accounts::apply_registrations(tx, wallet_id, &cs.account_registrations)?;
+    }
+    if !cs.provider_key_account_registrations.is_empty() {
+        schema::accounts::apply_provider_registrations(
+            tx,
+            wallet_id,
+            &cs.provider_key_account_registrations,
+        )?;
     }
     // Pools land before core so the UTXO writer can attribute each outpoint
     // to its owning account by matching the outpoint's script against a
