@@ -37,7 +37,7 @@ Any `meta_*` row whose parent object does not exist — because it was never cre
 
 A future garbage-collection pass is expected to reap orphan metadata — rows with no live parent object older than approximately one week — but no such GC is implemented yet. Callers should not rely on orphan metadata persisting forever, nor assume it will be cleaned up promptly. `meta_global` is intentionally parentless and always survives.
 
-The 21 tables are split into five domain diagrams below. `WALLETS` is the root anchor and appears in each diagram. For full column listings see the [Tables](#tables) section.
+The tables are split into five domain diagrams below. `WALLETS` is the root anchor and appears in each diagram. Diagrams and the [Tables](#tables) section below cover V001 plus `provider_platform_node_keys` (V004); `core_address_pool`, `meta_data_versions`, and `meta_store_generation` (V003) are not yet documented here — see the [Migrations](#migrations) log for what they add in the meantime.
 
 ## Diagram 1 — Core / L1 (Bitcoin/Dash layer)
 
@@ -46,6 +46,7 @@ Account registrations, transactions, UTXOs, instant locks, and SPV sync state.
 ```mermaid
 erDiagram
     WALLETS ||--o{ ACCOUNT_REGISTRATIONS : "registers"
+    ACCOUNT_REGISTRATIONS ||--o{ PROVIDER_PLATFORM_NODE_KEYS : "pre-derives"
     WALLETS ||--o{ CORE_TRANSACTIONS : "records"
     WALLETS ||--o{ CORE_UTXOS : "owns"
     WALLETS ||--o{ CORE_INSTANT_LOCKS : "holds"
@@ -60,9 +61,20 @@ erDiagram
 
     ACCOUNT_REGISTRATIONS {
         BLOB wallet_id PK
-        TEXT account_type PK "standard_bip44 | standard_bip32 | coinjoin | identity_registration | ..."
+        TEXT account_type PK "standard_bip44 | ... | provider_operator | provider_platform"
         INTEGER account_index PK
-        BLOB account_xpub_bytes "bincode-encoded AccountRegistrationEntry"
+        INTEGER key_class PK "discriminator; sentinel 0 unless PlatformPayment"
+        BLOB user_identity_id PK "discriminator; sentinel zeroblob(32) unless DashPay"
+        BLOB friend_identity_id PK "discriminator; sentinel zeroblob(32) unless DashPay"
+        BLOB account_xpub_bytes "bincode: AccountRegistrationEntry, or ProviderKeyRegistrationBlob for provider_* types"
+    }
+
+    PROVIDER_PLATFORM_NODE_KEYS {
+        BLOB wallet_id PK
+        TEXT account_type PK "provider_platform (EdDSA); always empty for provider_operator"
+        INTEGER key_index PK "hardened index within the platform-node pool"
+        BLOB public_key "Ed25519 public key"
+        BLOB node_id
     }
 
     CORE_TRANSACTIONS {
@@ -338,12 +350,39 @@ direct children; identity-owned children cascade through `identities`.
 ### `account_registrations`
 
 One row per account registered on a wallet (xpub + account type + index).
-The `account_xpub_bytes` blob carries the full `AccountRegistrationEntry`;
-the typed `account_type` / `account_index` columns mirror it for SQL
-lookups without blob decoding.
+The `account_xpub_bytes` blob carries the full `AccountRegistrationEntry`
+for secp256k1 accounts, or a `ProviderKeyRegistrationBlob` for the two
+provider key-material account types (`'provider_operator'` BLS,
+`'provider_platform'` EdDSA — index-less, always `account_index = 0`); the
+typed `account_type` / `account_index` columns mirror the common fields for
+SQL lookups without blob decoding. A provider account's pre-derived
+platform-node keys live in the child table
+[`provider_platform_node_keys`](#provider_platform_node_keys), not here.
 
-- PK: `(wallet_id, account_type, account_index)`.
+- PK: `(wallet_id, account_type, account_index, key_class, user_identity_id,
+  friend_identity_id)` — the last three columns discriminate accounts that
+  otherwise share `(account_type, account_index)`: PlatformPayment's
+  `key_class` axis, and the DashPay `(user_identity_id, friend_identity_id)`
+  pair. Sentinel `0` / `zeroblob(32)` default for account types without
+  that axis (including the provider key-material types).
 - FK: `wallet_id → wallets(wallet_id) ON DELETE CASCADE`.
+
+### `provider_platform_node_keys`
+
+Pre-derived Ed25519 platform-node public keys for a `'provider_platform'`
+(EdDSA) account, captured at registration. Ed25519/SLIP-10 is
+hardened-only, so a watch-only wallet cannot re-derive this pool from the
+account xpub — persisting it is the only way a restored wallet lists its
+node keys without re-prompting for the recovery phrase. PUBLIC material
+only (`public_key`, `node_id`); no signing material. Always empty for the
+`'provider_operator'` (BLS) account, whose pool is re-derivable on demand.
+
+- PK: `(wallet_id, account_type, key_index)`.
+- FK: `(wallet_id, account_type, account_index, key_class, user_identity_id,
+  friend_identity_id) → account_registrations(...) ON DELETE CASCADE` — the
+  same six-column parent key `account_registrations` itself carries;
+  provider accounts hold sentinel `0` / `zeroblob(32)` in the
+  index/key-class/DashPay columns.
 
 ### `core_transactions`
 
@@ -654,3 +693,6 @@ having to grep this repo.
 | Version | File | Description |
 |---|---|---|
 | V001 | `V001__initial.rs` | Full schema: all 21 tables (including the six `meta_*` per-object metadata tables), every index, and six triggers (`setnull_core_utxos_on_tx_delete` + the five `meta_*` soft-cascade triggers) |
+| V002 | `V002__address_height_pin.rs` | Adds `platform_addresses.as_of_height` (the Platform-block-height pin reconciling proof-attested balances against the delta stream; `DEFAULT 0` = unknown provenance for pre-existing rows). Additive column, no new table. |
+| V003 | `V003__unified.rs` | Adds `core_address_pool` (per-index address-pool rows replacing `core_utxos` script-derivation for the address-reuse guard), `meta_data_versions` (per-`(wallet_id, domain)` cache-invalidation `seq`), and `meta_store_generation` (single-row store-generation token). Additive only. |
+| V004 | `V004__provider_key_accounts.rs` | Adds `provider_platform_node_keys`: pre-derived Ed25519 platform-node public keys for the EdDSA provider account, one row per key, FK'd to its `account_registrations` parent. Additive only — `account_registrations` gets no DDL change (provider accounts ride its existing columns and `'provider_operator'`/`'provider_platform'` CHECK labels, both already present since V001). Closes dashpay/platform#4113. |
