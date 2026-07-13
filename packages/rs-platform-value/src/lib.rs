@@ -1318,178 +1318,91 @@ impl Value {
         }
     }
 
-    /// can determine if there is any very big data in a value
+    /// Returns the first container depth greater than `max_depth`.
+    ///
+    /// Maps and arrays each add one level, including a container at the root. Map keys are
+    /// included because they are also attacker-controlled [`Value`] instances. The traversal is
+    /// iterative so checking an invalid value cannot itself consume attacker-selected stack depth.
+    pub fn first_depth_exceeding(&self, max_depth: usize) -> Option<usize> {
+        let mut pending = vec![(self, 0usize)];
+
+        while let Some((value, parent_depth)) = pending.pop() {
+            let children: &[_] = match value {
+                Value::Array(values) => values,
+                Value::Map(map) => {
+                    let depth = parent_depth + 1;
+                    if depth > max_depth {
+                        return Some(depth);
+                    }
+                    for (key, value) in map.iter().rev() {
+                        pending.push((value, depth));
+                        pending.push((key, depth));
+                    }
+                    continue;
+                }
+                _ => continue,
+            };
+
+            let depth = parent_depth + 1;
+            if depth > max_depth {
+                return Some(depth);
+            }
+            pending.extend(children.iter().rev().map(|value| (value, depth)));
+        }
+
+        None
+    }
+
+    /// Determines whether any scalar data in this value is larger than `size`.
+    ///
+    /// Container traversal is iterative to keep stack use independent of attacker-controlled
+    /// nesting. The reported map key or array child remains the outermost value that identifies
+    /// the oversized field, matching the previous recursive behavior.
     pub fn has_data_larger_than(&self, size: u32) -> Option<(Option<Value>, u32)> {
-        match self {
-            Value::U128(_) => {
-                if size < 16 {
-                    Some((None, 16))
-                } else {
-                    None
+        let mut pending = vec![(self, None)];
+
+        while let Some((value, reported_value)) = pending.pop() {
+            let actual_size = match value {
+                Value::U128(_) | Value::I128(_) => (size < 16).then_some(16),
+                Value::U64(_) | Value::I64(_) | Value::Float(_) => (size < 8).then_some(8),
+                Value::U32(_) | Value::I32(_) => (size < 4).then_some(4),
+                Value::U16(_) | Value::I16(_) => (size < 2).then_some(2),
+                Value::U8(_) | Value::I8(_) | Value::EnumU8(_) | Value::Bool(_) | Value::Null => {
+                    (size < 1).then_some(1)
                 }
-            }
-            Value::I128(_) => {
-                if size < 16 {
-                    Some((None, 16))
-                } else {
-                    None
+                Value::Bytes(bytes) => (bytes.len() > size as usize).then_some(bytes.len() as u32),
+                Value::Bytes20(_) => (size < 20).then_some(20),
+                Value::Bytes32(_) | Value::Identifier(_) => (size < 32).then_some(32),
+                Value::Bytes36(_) => (size < 36).then_some(36),
+                Value::EnumString(strings) => strings
+                    .iter()
+                    .map(|string| string.len())
+                    .max()
+                    .filter(|actual_size| *actual_size > size as usize)
+                    .map(|actual_size| actual_size as u32),
+                Value::Text(string) => {
+                    (string.len() > size as usize).then_some(string.len() as u32)
                 }
-            }
-            Value::U64(_) => {
-                if size < 8 {
-                    Some((None, 8))
-                } else {
-                    None
-                }
-            }
-            Value::I64(_) => {
-                if size < 8 {
-                    Some((None, 8))
-                } else {
-                    None
-                }
-            }
-            Value::U32(_) => {
-                if size < 4 {
-                    Some((None, 4))
-                } else {
-                    None
-                }
-            }
-            Value::I32(_) => {
-                if size < 4 {
-                    Some((None, 4))
-                } else {
-                    None
-                }
-            }
-            Value::U16(_) => {
-                if size < 2 {
-                    Some((None, 2))
-                } else {
-                    None
-                }
-            }
-            Value::I16(_) => {
-                if size < 2 {
-                    Some((None, 2))
-                } else {
-                    None
-                }
-            }
-            Value::U8(_) => {
-                if size < 1 {
-                    Some((None, 1))
-                } else {
-                    None
-                }
-            }
-            Value::I8(_) => {
-                if size < 1 {
-                    Some((None, 1))
-                } else {
-                    None
-                }
-            }
-            Value::Bytes(bytes) => {
-                if (size as usize) < bytes.len() {
-                    Some((None, bytes.len() as u32))
-                } else {
-                    None
-                }
-            }
-            Value::Bytes20(_) => {
-                if size < 20 {
-                    Some((None, 20))
-                } else {
-                    None
-                }
-            }
-            Value::Bytes32(_) => {
-                if size < 32 {
-                    Some((None, 32))
-                } else {
-                    None
-                }
-            }
-            Value::Bytes36(_) => {
-                if size < 36 {
-                    Some((None, 36))
-                } else {
-                    None
-                }
-            }
-            Value::EnumU8(_) => {
-                if size < 1 {
-                    Some((None, 1))
-                } else {
-                    None
-                }
-            }
-            Value::EnumString(strings) => {
-                let max_len = strings.iter().map(|string| string.len()).max();
-                if let Some(max) = max_len {
-                    if max > size as usize {
-                        Some((None, max as u32))
-                    } else {
-                        None
+                Value::Array(values) => {
+                    for value in values.iter().rev() {
+                        pending.push((value, reported_value.or(Some(value))));
                     }
-                } else {
-                    None
+                    continue;
                 }
-            }
-            Value::Identifier(_) => {
-                if size < 32 {
-                    Some((None, 32))
-                } else {
-                    None
-                }
-            }
-            Value::Float(_) => {
-                if size < 8 {
-                    Some((None, 8))
-                } else {
-                    None
-                }
-            }
-            Value::Text(string) => {
-                if string.len() > size as usize {
-                    Some((None, string.len() as u32))
-                } else {
-                    None
-                }
-            }
-            Value::Bool(_) => {
-                if size < 1 {
-                    Some((None, 1))
-                } else {
-                    None
-                }
-            }
-            Value::Null => {
-                if size < 1 {
-                    Some((None, 1))
-                } else {
-                    None
-                }
-            }
-            Value::Array(values) => {
-                for value in values {
-                    if let Some(result) = value.has_data_larger_than(size) {
-                        return Some((Some(value.clone()), result.1));
+                Value::Map(map) => {
+                    for (key, value) in map.iter().rev() {
+                        pending.push((value, reported_value.or(Some(key))));
                     }
+                    continue;
                 }
-                None
-            }
-            Value::Map(map) => {
-                for (key, value) in map {
-                    if let Some(result) = value.has_data_larger_than(size) {
-                        return Some((Some(key.clone()), result.1));
-                    }
-                }
-                None
+            };
+
+            if let Some(actual_size) = actual_size {
+                return Some((reported_value.cloned(), actual_size));
             }
         }
+
+        None
     }
 }
 

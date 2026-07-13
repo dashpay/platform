@@ -272,6 +272,74 @@ mod has_data_larger_than_tests {
         assert!(v.has_data_larger_than(5).is_some());
         assert!(v.has_data_larger_than(100).is_none());
     }
+
+    #[test]
+    fn reports_the_outermost_field_from_nested_containers() {
+        let v = Value::Map(vec![(
+            Value::Text("outer".into()),
+            Value::Array(vec![Value::Map(vec![(
+                Value::Text("inner".into()),
+                Value::Text("oversized".into()),
+            )])]),
+        )]);
+
+        assert_eq!(
+            v.has_data_larger_than(5),
+            Some((Some(Value::Text("outer".into())), 9))
+        );
+    }
+
+    #[test]
+    fn iteratively_walks_deeply_nested_values() {
+        let nested = (0..10_000).fold(Value::Null, |value, _| Value::Array(vec![value]));
+        let value = Value::Map(vec![(Value::Text("field".into()), nested)]);
+
+        assert!(value.has_data_larger_than(1).is_none());
+
+        // Avoid recursively dropping the intentionally extreme test value.
+        std::mem::forget(value);
+    }
+}
+
+mod value_depth_tests {
+    use super::*;
+
+    #[test]
+    fn accepts_container_depth_at_the_limit() {
+        let value = Value::Map(vec![(
+            Value::Text("field".into()),
+            Value::Array(vec![Value::Null]),
+        )]);
+
+        assert_eq!(value.first_depth_exceeding(2), None);
+    }
+
+    #[test]
+    fn rejects_array_map_and_alternating_depth_over_the_limit() {
+        let arrays = Value::Array(vec![Value::Array(vec![Value::Null])]);
+        let maps = Value::Map(vec![(
+            Value::Text("outer".into()),
+            Value::Map(vec![(Value::Text("inner".into()), Value::Null)]),
+        )]);
+        let alternating = Value::Array(vec![Value::Map(vec![(
+            Value::Text("field".into()),
+            Value::Array(vec![Value::Null]),
+        )])]);
+
+        assert_eq!(arrays.first_depth_exceeding(1), Some(2));
+        assert_eq!(maps.first_depth_exceeding(1), Some(2));
+        assert_eq!(alternating.first_depth_exceeding(2), Some(3));
+    }
+
+    #[test]
+    fn includes_recursive_map_keys_in_the_limit() {
+        let value = Value::Map(vec![(
+            Value::Array(vec![Value::Array(vec![Value::Null])]),
+            Value::Null,
+        )]);
+
+        assert_eq!(value.first_depth_exceeding(2), Some(3));
+    }
 }
 
 // ===========================================================================

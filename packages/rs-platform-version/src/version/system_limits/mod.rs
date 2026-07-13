@@ -5,6 +5,10 @@ pub mod v2;
 pub struct SystemLimits {
     pub estimated_contract_max_serialized_size: u16,
     pub max_field_value_size: u32,
+    /// Maximum number of nested map/array containers in document properties.
+    ///
+    /// `None` preserves the behavior of protocol versions that predate this limit.
+    pub max_document_value_depth: Option<u16>,
     /// Max size of a state transition in bytes.
     ///
     /// NOTE: This must be equal to the `max-tx-bytes` in the Tenderdash config
@@ -25,4 +29,27 @@ pub struct SystemLimits {
     // do this that much
     pub max_token_redemption_cycles: u32,
     pub max_shielded_transition_actions: u16,
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::version::PlatformVersion;
+
+    #[test]
+    fn document_value_depth_limit_starts_at_protocol_version_12() {
+        assert_eq!(
+            PlatformVersion::get(11)
+                .expect("protocol version 11 should exist")
+                .system_limits
+                .max_document_value_depth,
+            None
+        );
+        assert_eq!(
+            PlatformVersion::get(12)
+                .expect("protocol version 12 should exist")
+                .system_limits
+                .max_document_value_depth,
+            Some(256)
+        );
+    }
 }

@@ -7,7 +7,10 @@ use crate::version::system_limits::SystemLimits;
 /// the bare asset-unlock transaction fee and too low a minimum for a Core `TxOut`.
 pub const SYSTEM_LIMITS_V2: SystemLimits = SystemLimits {
     estimated_contract_max_serialized_size: 16384,
-    max_field_value_size: 5120,       //5 KiB
+    max_field_value_size: 5120, //5 KiB
+    // Use the protocol's existing data-contract schema-depth ceiling as the conservative
+    // instance budget, bounding pre-schema work well above known document requirements.
+    max_document_value_depth: Some(256),
     max_state_transition_size: 20480, //20 KiB
     max_transitions_in_documents_batch: 1,
     withdrawal_transactions_per_block_limit: 4,
