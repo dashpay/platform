@@ -157,10 +157,7 @@ pub fn apply_registrations(
 }
 
 /// Upsert for one `account_registrations` row, shared by both writers — they
-/// key on the same six-column PK and differ only in what they encode into
-/// `account_xpub_bytes`. `key_class` and the DashPay `(user, friend)` identity
-/// pair widen the PK so distinct accounts sharing `(account_type,
-/// account_index)` don't overwrite each other; re-persisting one updates it.
+/// key on the same six-column PK and differ only in the encoded payload.
 const UPSERT_ACCOUNT_SQL: &str = "INSERT INTO account_registrations \
         (wallet_id, account_type, account_index, key_class, \
          user_identity_id, friend_identity_id, account_xpub_bytes) \
@@ -169,9 +166,9 @@ const UPSERT_ACCOUNT_SQL: &str = "INSERT INTO account_registrations \
          user_identity_id, friend_identity_id) DO UPDATE SET \
         account_xpub_bytes = excluded.account_xpub_bytes";
 
-/// Bind and execute [`UPSERT_ACCOUNT_SQL`]: the typed PK columns are derived
-/// from `account_type` so they always mirror the blob the reader cross-checks
-/// them against.
+/// Bind and execute [`UPSERT_ACCOUNT_SQL`]. The typed PK columns are derived
+/// from `account_type` in this one place, so writer and reader cross-check
+/// cannot drift apart.
 fn upsert_account_row(
     stmt: &mut rusqlite::CachedStatement<'_>,
     wallet_id: &WalletId,
@@ -195,12 +192,18 @@ fn upsert_account_row(
 /// platform node) into `account_registrations`, and each account's
 /// pre-derived platform-node keys into `provider_platform_node_keys`.
 ///
-/// The account row upserts on the same PK as [`apply_registrations`] — a
+/// The account row upserts on the same PK as [`apply_registrations`]: a
 /// provider account is index-less, so `(wallet_id, account_type)` plus the
-/// sentinel columns is its natural key and a re-persist must update, not
-/// duplicate. The node-key batch is replaced wholesale per account
-/// (delete-then-insert in the caller's tx): the changeset carries a
-/// whole-batch snapshot captured at registration, never a delta.
+/// sentinel columns is its natural key and a re-persist updates it.
+///
+/// Node keys are upserted per `key_index` and **never deleted**. The pool is
+/// hardened-only (Ed25519/SLIP-10), so a key this store forgets is one no
+/// watch-only wallet can re-derive — a shorter or empty incoming batch is
+/// therefore treated as "nothing new to say" about the missing indices, not as
+/// a retraction. Two callers make that a live case: registration falls back to
+/// an empty batch when pre-derivation fails
+/// (`manager::wallet_lifecycle::register_wallet`), and `Merge` is append-only,
+/// so one flush can carry two entries for the same account.
 pub fn apply_provider_registrations(
     tx: &Transaction<'_>,
     wallet_id: &WalletId,
@@ -210,13 +213,12 @@ pub fn apply_provider_registrations(
         return Ok(());
     }
     let mut account_stmt = tx.prepare_cached(UPSERT_ACCOUNT_SQL)?;
-    let mut clear_node_keys_stmt = tx.prepare_cached(
-        "DELETE FROM provider_platform_node_keys WHERE wallet_id = ?1 AND account_type = ?2",
-    )?;
     let mut node_key_stmt = tx.prepare_cached(
         "INSERT INTO provider_platform_node_keys \
                 (wallet_id, account_type, key_index, public_key, node_id) \
-             VALUES (?1, ?2, ?3, ?4, ?5)",
+             VALUES (?1, ?2, ?3, ?4, ?5) \
+             ON CONFLICT(wallet_id, account_type, key_index) DO UPDATE SET \
+                public_key = excluded.public_key, node_id = excluded.node_id",
     )?;
     for entry in entries {
         let account_type = account_type_db_label(&entry.account_type);
@@ -225,7 +227,6 @@ pub fn apply_provider_registrations(
             extended_public_key: entry.extended_public_key.clone(),
         })?;
         upsert_account_row(&mut account_stmt, wallet_id, &entry.account_type, payload)?;
-        clear_node_keys_stmt.execute(params![wallet_id.as_slice(), account_type])?;
         for key in &entry.derived_platform_node_keys {
             node_key_stmt.execute(params![
                 wallet_id.as_slice(),

@@ -515,44 +515,138 @@ fn tc_pka_015_idempotent_repersist_does_not_duplicate() {
     assert_eq!(node_key_row_count(&conn, &w), 2, "nor duplicate node keys");
 }
 
-/// TC-PKA-016 — re-persisting an extended node-key batch replaces the whole
-/// set: the observable result is exactly the new batch, no duplicate indices,
-/// no key from the first batch dropped.
+/// TC-PKA-016 — a re-persisted, extended node-key batch is observable whole,
+/// with no duplicate index.
 #[test]
-fn tc_pka_016_node_key_batch_is_replaced_wholesale() {
+fn tc_pka_016_growing_node_key_batch_is_observable_whole() {
     let (persister, _tmp, _path) = fresh_persister();
     let w: WalletId = wid(0xCB);
     ensure_wallet_meta(&persister, &w);
 
-    let store = |keys: Vec<ProviderPlatformNodePubKey>| {
-        persister
-            .store(
-                w,
-                PlatformWalletChangeSet {
-                    provider_key_account_registrations: vec![platform_entry(0x2B, keys)],
-                    ..Default::default()
-                },
-            )
-            .expect("store");
-    };
-    store(vec![node_key(0), node_key(1), node_key(2)]);
-    store((0..5).map(node_key).collect());
+    store_platform_entry(
+        &persister,
+        w,
+        0x2B,
+        vec![node_key(0), node_key(1), node_key(2)],
+    );
+    store_platform_entry(&persister, w, 0x2B, (0..5).map(node_key).collect());
 
     let conn = persister.lock_conn_for_test();
-    let provider = accounts::load_state(&conn, &w)
-        .expect("load_state")
-        .provider;
-    let indices: Vec<u32> = provider[0]
-        .derived_platform_node_keys
-        .iter()
-        .map(|k| k.index)
-        .collect();
     assert_eq!(
-        indices,
+        persisted_node_key_indices(&conn, &w),
         vec![0, 1, 2, 3, 4],
         "the extended batch must be observable whole, with no duplicate index"
     );
     assert_eq!(node_key_row_count(&conn, &w), 5);
+}
+
+/// TC-PKA-016 (shrink) — a later, SHORTER batch must never retract keys the
+/// store already holds. The pool is hardened-only (Ed25519/SLIP-10): a key
+/// dropped here cannot be re-derived by any watch-only wallet, so the only
+/// safe reading of a shorter batch is "says nothing about the missing
+/// indices", never "delete them".
+#[test]
+fn tc_pka_016_shrinking_node_key_batch_never_drops_persisted_keys() {
+    let (persister, _tmp, _path) = fresh_persister();
+    let w: WalletId = wid(0xCD);
+    ensure_wallet_meta(&persister, &w);
+
+    store_platform_entry(&persister, w, 0x2D, (0..5).map(node_key).collect());
+    store_platform_entry(&persister, w, 0x2D, vec![node_key(0), node_key(1)]);
+
+    let conn = persister.lock_conn_for_test();
+    assert_eq!(
+        persisted_node_key_indices(&conn, &w),
+        vec![0, 1, 2, 3, 4],
+        "a shorter batch must not delete indices 2..4 — they are unrecoverable"
+    );
+}
+
+/// TC-PKA-016 (empty) — registration falls back to an EMPTY node-key batch
+/// when pre-derivation fails (`wallet_lifecycle::register_wallet` treats that
+/// as non-fatal), so an empty batch is a live input, not a hypothetical. It
+/// must never wipe a populated pool.
+#[test]
+fn tc_pka_016_empty_node_key_batch_never_wipes_a_populated_pool() {
+    let (persister, _tmp, _path) = fresh_persister();
+    let w: WalletId = wid(0xCE);
+    ensure_wallet_meta(&persister, &w);
+
+    store_platform_entry(
+        &persister,
+        w,
+        0x2E,
+        vec![node_key(0), node_key(1), node_key(2)],
+    );
+    store_platform_entry(&persister, w, 0x2E, Vec::new());
+
+    let conn = persister.lock_conn_for_test();
+    assert_eq!(
+        persisted_node_key_indices(&conn, &w),
+        vec![0, 1, 2],
+        "an empty batch must leave the persisted pool intact"
+    );
+}
+
+/// TC-PKA-016 (merged) — `Merge` is append-only `.extend()`, so ONE flush can
+/// carry two entries for the same account. Neither may retract the other's
+/// keys, whichever order they land in.
+#[test]
+fn tc_pka_016_merged_duplicate_entries_keep_the_union() {
+    let (persister, _tmp, _path) = fresh_persister();
+    let w: WalletId = wid(0xCF);
+    ensure_wallet_meta(&persister, &w);
+
+    persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                provider_key_account_registrations: vec![
+                    platform_entry(0x2F, (0..4).map(node_key).collect()),
+                    platform_entry(0x2F, vec![node_key(0)]),
+                ],
+                ..Default::default()
+            },
+        )
+        .expect("store");
+
+    let conn = persister.lock_conn_for_test();
+    assert_eq!(
+        persisted_node_key_indices(&conn, &w),
+        vec![0, 1, 2, 3],
+        "the shorter second entry of a merged round must not drop the first's keys"
+    );
+}
+
+/// Store one `ProviderPlatformKeys` entry with the given node-key batch.
+fn store_platform_entry(
+    persister: &SqlitePersister,
+    wallet_id: WalletId,
+    seed: u8,
+    keys: Vec<ProviderPlatformNodePubKey>,
+) {
+    persister
+        .store(
+            wallet_id,
+            PlatformWalletChangeSet {
+                provider_key_account_registrations: vec![platform_entry(seed, keys)],
+                ..Default::default()
+            },
+        )
+        .expect("store");
+}
+
+/// Node-key indices the reader hands back for the (single) provider account.
+fn persisted_node_key_indices(conn: &rusqlite::Connection, wallet_id: &WalletId) -> Vec<u32> {
+    accounts::load_state(conn, wallet_id)
+        .expect("load_state")
+        .provider
+        .first()
+        .expect("a provider account")
+        .derived_platform_node_keys
+        .iter()
+        .map(|k| k.index)
+        .collect()
 }
 
 /// Deleting the wallet reaps the node keys through the account row — the

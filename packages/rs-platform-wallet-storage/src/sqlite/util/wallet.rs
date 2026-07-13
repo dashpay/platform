@@ -11,7 +11,8 @@ use key_wallet::wallet::Wallet;
 use key_wallet::Network;
 
 use platform_wallet::changeset::{
-    AccountRegistrationEntry, CoreChangeSet, ProviderKeyExtendedPubKey,
+    rebuild_provider_key_account, AccountRegistrationEntry, CoreChangeSet,
+    ProviderAccountRebuildError,
 };
 
 use crate::sqlite::schema::accounts::{self, AccountManifest};
@@ -44,36 +45,24 @@ pub(crate) fn build_wallet(
             .insert(account)
             .map_err(|_| WalletStorageError::AccountRegistrationEntryMismatch)?;
     }
-    // Provider key-material accounts live in dedicated `Option` slots that
-    // `AccountCollection::insert` rejects by design — the curve-specific
-    // inserters are the only way in. Both `new`s mint watch-only accounts.
+    // Provider key-material accounts take the shared rebuild path (the FFI
+    // backend's restore side calls the same helper).
     for entry in &manifest.provider {
-        match &entry.extended_public_key {
-            ProviderKeyExtendedPubKey::Bls(key) => {
-                let account = key_wallet::account::BLSAccount::new(
-                    Some(expected_wallet_id.to_vec()),
-                    entry.account_type,
-                    key.clone(),
-                    network,
-                )
-                .map_err(|e| WalletStorageError::AccountRecordInvalid { e })?;
-                accounts
-                    .insert_bls_account(account)
-                    .map_err(|_| WalletStorageError::ProviderKeyAccountEntryMismatch)?;
+        rebuild_provider_key_account(
+            &mut accounts,
+            expected_wallet_id,
+            network,
+            entry.account_type,
+            &entry.extended_public_key,
+        )
+        .map_err(|e| match e {
+            ProviderAccountRebuildError::Invalid(e) => {
+                WalletStorageError::AccountRecordInvalid { e }
             }
-            ProviderKeyExtendedPubKey::EdDSA(key) => {
-                let account = key_wallet::account::EdDSAAccount::new(
-                    Some(expected_wallet_id.to_vec()),
-                    entry.account_type,
-                    key.clone(),
-                    network,
-                )
-                .map_err(|e| WalletStorageError::AccountRecordInvalid { e })?;
-                accounts
-                    .insert_eddsa_account(account)
-                    .map_err(|_| WalletStorageError::ProviderKeyAccountEntryMismatch)?;
+            ProviderAccountRebuildError::Rejected(_) => {
+                WalletStorageError::ProviderKeyAccountEntryMismatch
             }
-        }
+        })?;
     }
     Ok(Wallet::new_external_signable(
         network,

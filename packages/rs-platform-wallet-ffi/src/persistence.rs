@@ -7,7 +7,7 @@
 
 use bincode::config;
 use key_wallet::account::account_collection::AccountCollection;
-use key_wallet::account::{Account, AccountType, BLSAccount, EdDSAAccount, StandardAccountType};
+use key_wallet::account::{Account, AccountType, StandardAccountType};
 use key_wallet::bip32::DerivationPath;
 use key_wallet::bip32::ExtendedPubKey;
 use key_wallet::derivation_bls_bip32::ExtendedBLSPubKey;
@@ -22,9 +22,9 @@ use std::str::FromStr;
 
 use crate::types::{FFINetwork, Network};
 use platform_wallet::changeset::{
-    AccountAddressPoolEntry, AccountRegistrationEntry, ClientStartState, ClientWalletStartState,
-    Merge, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
-    ProviderKeyAccountEntry, ProviderKeyExtendedPubKey,
+    rebuild_provider_key_account, AccountAddressPoolEntry, AccountRegistrationEntry,
+    ClientStartState, ClientWalletStartState, Merge, PersistenceError, PlatformWalletChangeSet,
+    PlatformWalletPersistence, ProviderKeyAccountEntry, ProviderKeyExtendedPubKey,
 };
 use platform_wallet::wallet::platform_wallet::WalletId;
 use platform_wallet::wallet::{PerAccountPlatformAddressState, PerWalletPlatformAddressState};
@@ -3032,13 +3032,11 @@ fn build_wallet_start_state(
             unsafe { slice_from_raw(spec.account_xpub_bytes, spec.account_xpub_bytes_len) };
 
         // Provider key-material accounts (BLS operator keys / EdDSA
-        // platform node keys) live in dedicated `Option` fields on the
-        // collection and carry a non-secp256k1 extended public key in
-        // the same `account_xpub_bytes` slot. Rebuild them watch-only
-        // via the type-specific `new` + insert methods rather than the
-        // ECDSA `Account::from_xpub` / `insert` path (which would fail
-        // to decode the bytes and reject the provider `AccountType`).
-        match account_type {
+        // platform node keys) carry a non-secp256k1 extended public key in
+        // the same `account_xpub_bytes` slot; `account_type` discriminates
+        // the decode. The rebuild itself is the shared helper every backend's
+        // restore path uses (the SQLite backend calls it too).
+        let provider_key = match account_type {
             AccountType::ProviderOperatorKeys => {
                 let (bls_pubkey, _): (ExtendedBLSPubKey, usize) =
                     bincode::decode_from_slice(xpub_bytes, config::standard()).map_err(|e| {
@@ -3047,22 +3045,7 @@ fn build_wallet_start_state(
                             e
                         ))
                     })?;
-                let bls_account = BLSAccount::new(
-                    Some(entry.wallet_id.to_vec()),
-                    account_type,
-                    bls_pubkey,
-                    network,
-                )
-                .map_err(|e| {
-                    PersistenceError::backend(format!("BLSAccount::new failed: {:?}", e))
-                })?;
-                accounts.insert_bls_account(bls_account).map_err(|e| {
-                    PersistenceError::backend(format!(
-                        "AccountCollection::insert_bls_account failed: {}",
-                        e
-                    ))
-                })?;
-                continue;
+                Some(ProviderKeyExtendedPubKey::Bls(bls_pubkey))
             }
             AccountType::ProviderPlatformKeys => {
                 let (ed_pubkey, _): (ExtendedEd25519PubKey, usize) =
@@ -3072,24 +3055,22 @@ fn build_wallet_start_state(
                             e
                         ))
                     })?;
-                let eddsa_account = EdDSAAccount::new(
-                    Some(entry.wallet_id.to_vec()),
-                    account_type,
-                    ed_pubkey,
-                    network,
-                )
-                .map_err(|e| {
-                    PersistenceError::backend(format!("EdDSAAccount::new failed: {:?}", e))
-                })?;
-                accounts.insert_eddsa_account(eddsa_account).map_err(|e| {
-                    PersistenceError::backend(format!(
-                        "AccountCollection::insert_eddsa_account failed: {}",
-                        e
-                    ))
-                })?;
-                continue;
+                Some(ProviderKeyExtendedPubKey::EdDSA(ed_pubkey))
             }
-            _ => {}
+            _ => None,
+        };
+        if let Some(key) = provider_key {
+            rebuild_provider_key_account(
+                &mut accounts,
+                entry.wallet_id,
+                network,
+                account_type,
+                &key,
+            )
+            .map_err(|e| {
+                PersistenceError::backend(format!("provider key account rebuild failed: {e}"))
+            })?;
+            continue;
         }
 
         let (account_xpub, _): (ExtendedPubKey, usize) =
