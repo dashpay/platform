@@ -218,61 +218,11 @@ struct TransactionDetailView: View {
                         masternodeSection
 
                         // Transaction ID
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Transaction ID")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-
-                            Button {
-                                copyToClipboard(transaction.txidHex)
-                            } label: {
-                                HStack {
-                                    Text(transaction.txidHex)
-                                        .font(.system(.footnote, design: .monospaced))
-                                        .foregroundColor(.primary)
-                                        .lineLimit(nil)
-                                        .fixedSize(horizontal: false, vertical: true)
-
-                                    Spacer()
-
-                                    Image(systemName: "doc.on.doc")
-                                        .font(.caption)
-                                        .foregroundColor(.blue)
-                                }
-                                .padding()
-                                .background(Color(UIColor.secondarySystemBackground))
-                                .cornerRadius(8)
-                            }
-                        }
+                        copyableHashRow(title: "Transaction ID", value: transaction.txidHex)
 
                         // Block Hash (if available)
                         if let blockHash = blockHashHex {
-                            VStack(alignment: .leading, spacing: 8) {
-                                Text("Block Hash")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-
-                                Button {
-                                    copyToClipboard(blockHash)
-                                } label: {
-                                    HStack {
-                                        Text(blockHash)
-                                            .font(.system(.footnote, design: .monospaced))
-                                            .foregroundColor(.primary)
-                                            .lineLimit(nil)
-                                            .fixedSize(horizontal: false, vertical: true)
-
-                                        Spacer()
-
-                                        Image(systemName: "doc.on.doc")
-                                            .font(.caption)
-                                            .foregroundColor(.blue)
-                                    }
-                                    .padding()
-                                    .background(Color(UIColor.secondarySystemBackground))
-                                    .cornerRadius(8)
-                                }
-                            }
+                            copyableHashRow(title: "Block Hash", value: blockHash)
                         }
                     }
                     .padding(.horizontal)

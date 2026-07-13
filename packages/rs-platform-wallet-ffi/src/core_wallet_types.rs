@@ -1320,6 +1320,41 @@ mod tests {
         );
     }
 
+    /// ProUpServTx (provider-update-service) also carries a service
+    /// address — reconstructed here from its little-endian IPv6-mapped
+    /// `ip_address` + `port` — plus an explicit `pro_tx_hash` linking it
+    /// to the registration. Fixture is rust-dashcore's own
+    /// `test_provider_update_service_transaction` vector, whose endpoint
+    /// is `52.36.64.148:19999`. The `pro_tx_hash` is asserted in raw
+    /// wire order (what `to_32(txid.as_ref())` stores) — the reverse of
+    /// the block-explorer display form.
+    #[test]
+    fn provider_update_service_payload_fields_extracted() {
+        let raw = "03000200018f3fe6683e36326669b6e34876fb2a2264e8327e822f6fec304b66f47d61b3e1010000006b48304502210082af6727408f0f2ec16c7da1c42ccf0a026abea6a3a422776272b03c8f4e262a022033b406e556f6de980b2d728e6812b3ae18ee1c863ae573ece1cbdf777ca3e56101210351036c1192eaf763cd8345b44137482ad24b12003f23e9022ce46752edf47e6effffffff0180220e43000000001976a914123cbc06289e768ca7d743c8174b1e6eeb610f1488ac00000000b501003a72099db84b1c1158568eec863bea1b64f90eccee3304209cebe1df5e7539fd00000000000000000000ffff342440944e1f00e6725f799ea20480f06fb105ebe27e7c4845ab84155e4c2adf2d6e5b73a998b1174f9621bbeda5009c5a6487bdf75edcf602b67fe0da15c275cc91777cb25f5fd4bb94e84fd42cb2bb547c83792e57c80d196acd47020e4054895a0640b7861b3729c41dd681d4996090d5750f65c4b649a5cd5b2bdf55c880459821e53d91c9";
+        let bytes = hex::decode(raw).expect("valid fixture hex");
+        let tx: dashcore::Transaction =
+            dashcore::consensus::encode::deserialize(&bytes).expect("decode ProUpServTx");
+
+        let fields = provider_payload_fields(&tx);
+
+        assert_eq!(
+            fields.service_address.as_deref(),
+            Some("52.36.64.148:19999"),
+            "ProUpServTx endpoint must be rebuilt from ip_address + port"
+        );
+        assert_eq!(
+            fields.pro_tx_hash.map(hex::encode).as_deref(),
+            Some("3a72099db84b1c1158568eec863bea1b64f90eccee3304209cebe1df5e7539fd"),
+            "ProUpServTx carries an explicit pro_tx_hash (wire order)"
+        );
+        assert!(
+            fields.collateral.is_none(),
+            "ProUpServTx has no collateral outpoint"
+        );
+        assert!(fields.owner_key_hash.is_none());
+        assert!(fields.voting_key_hash.is_none());
+    }
+
     /// A plain (non-provider) transaction yields no provider fields, so
     /// the FFI record emits null/zeroed/`false` for all of them.
     #[test]
