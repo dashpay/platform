@@ -37,7 +37,7 @@ A row's **primary home** is the §4 section it lives in (its `Domain=…`). **Ca
 | "test all non-Uncommon Token tests" | `Category=Token AND Tier≠Uncommon` | `TOK-01..07`, `TOK-17`, `TOK-18`, `TOK-19` |
 | "exercise every token admin action" | `Category=Token AND Tier=Uncommon` | `TOK-08..TOK-16`, `TOK-20` |
 | "run all Shielded tests" | `Category=Shielded` | `SH-01..17` |
-| "run all multi-wallet tests" | `Tag=multiwallet` | `CORE-14..23`, `ID-14/15`, `TOK-17`, `DPNS-08`, `DP-11`, `DOC-15`, `SH-14/15/16`, `SYS-07/08` |
+| "run all multi-wallet tests" | `Tag=multiwallet` | `CORE-14..23`, `ID-14/15`, `TOK-17`, `DPNS-08`, `DP-11`, `DOC-15`, `SH-14/15/16`, `SYS-08` |
 | "run all read queries" | `Tag=read-only` (or Appendix A) | the read-only rows + the gRPC read-RPC coverage table |
 
 ### Generic pass criteria (apply per action type unless a row overrides)
@@ -272,7 +272,7 @@ Shielded notes/balance/activity have **no read-side FFI** by design — Rust pus
 | SH-12 | Clear shielded state (wipe notes + re-sync) | Shielded | Uncommon | ✅ |  | "Clear" button on the Sync tab (`CoreContentView` → `ShieldedService.clearLocalState` → `clearShielded`). Stops sync, wipes every wallet's shielded notes + sync state, zeroes the Swift mirror; bind credentials are kept so "Sync Now" rebinds and re-scans. "Sync Now" after Clear now re-binds EVERY loaded wallet (the mirror via `bind`, others via `engineBindOtherWallets`), so cross-wallet rows (`SH-14/15/16`) work right after an SH-12 run without an app restart. (On-disk SQLite tree is intentionally retained.) Verify balance/activity reset, then restore after Sync Now. |
 | SH-13 | Display / share your shielded receive address | Shielded | Common | ✅ | read-only | "Receive Dash" sheet → **Shielded** tab (`ReceiveAddressView`, `ReceiveAddressTab.shielded`): QR + full `tdash1…`/`dash1…` bech32m address + Copy Address. Hand your shielded address to a payer, or grab wallet B's address for `SH-14`. |
 | SH-14 | Shielded transfer between two on-device wallets | Shielded | Thorough | ✅ | multiwallet | Wallet A's pool → wallet B's shielded address (`SH-05`); copy B's address from its Receive → Shielded tab (`SH-13`, now resolved per-wallet). Both wallets are bound automatically at rebind (no wallet-swap needed); B's shielded balance rises on the next sync pass. The global Sync tab still mirrors one wallet, but per-wallet Receive/Balance surfaces read B directly. |
-| SH-15 | Unshield from A to a Platform address owned by B | Shielded | Uncommon | ✅ | multiwallet | A unshields (`SH-06`) to a Platform address belonging to wallet B; verify B receives the credits (subject to the `SYS-07` sync caveat). Both wallets are engine-bound automatically at rebind, so A can spend from its own pool without a wallet-swap. |
+| SH-15 | Unshield from A to a Platform address owned by B | Shielded | Uncommon | ✅ | multiwallet | A unshields (`SH-06`) to a Platform address belonging to wallet B; B's balance lands on the next platform-address sweep (every wallet syncs each pass, no wallet-switch needed). Both wallets are engine-bound automatically at rebind, so A can spend from its own pool without a wallet-swap. |
 | SH-16 | Shielded withdraw from A to B's Core L1 address | Shielded | Uncommon | ✅ | multiwallet, withdrawal | Wallet A's pool → a Core L1 address owned by wallet B (`SH-08`). Completes the cross-wallet shielded exit set (→ shielded `SH-14`, → Platform `SH-15`, → Core `SH-16`). Both wallets are engine-bound automatically at rebind (no wallet-swap needed). Verify B's Core balance rises after SPV sync. |
 | SH-17 | Multiple wallets bound to the shielded pool concurrently | Shielded | Uncommon | ✅ | multiwallet | `platform_wallet_manager_bind_shielded` is per `wallet_id`; the manager syncs all bound wallets. UI (`ShieldedService.boundWalletId`) displays one wallet's shielded state at a time — switching should swap cleanly, not merge balances. |
 
@@ -302,7 +302,7 @@ Shielded notes/balance/activity have **no read-side FFI** by design — Rust pus
 | SYS-04 | Run-all-queries / DPNS test harness | Platform | Thorough | ✅ | read-only | `PlatformQueriesView` diagnostics (`runAllQueries`, `testDPNSQueries`), `DiagnosticsView`. |
 | SYS-05 | Storage / Keychain / Wallet-memory explorers | — | Thorough | ✅ | read-only | `StorageExplorerView`, `KeychainExplorerView`, `WalletMemoryExplorerView` (Settings; debug tooling). |
 | SYS-06 | Path elements (raw GroveDB) | Platform | Uncommon | 🧪 | read-only | **Get GroveDB Path Elements** read view (Platform Queries → System & Utility) → Swift wrapper over FFI `dash_sdk_system_get_path_elements` (proof-verified `Element::fetch_many` over `KeysInPath`). Enter a `path` + `keys` JSON array (hex bytes); returns `[{key, element, type}]`. Use a **bounded** path — root-level queries (`path=[]`) fail GroveDB proof verification ("Cannot verify lower bound"). The "DPNS contract example" preset fills `path=["40"]` (DataContractDocuments root) + the DPNS contract id → its subtree `tree` element. |
-| SYS-07 | Platform balance sync is per-active-wallet, **not** concurrent | Platform | Thorough | ✅ | multiwallet | `PlatformBalanceSyncService` is configured for ONE wallet (`configure(...walletId:)`, re-run on switch). Unlike Core SPV (`CORE-20`, all wallets at once), wallet B's Platform address/credit balances can be **stale until you switch to B and Sync Now**. Verify this is the intended behavior, not a bug. |
+| SYS-07 | Platform balance sync covers every registered wallet | Platform | — | ➖ | | Retired — the row verified a per-active-wallet staleness caveat that no longer exists: the Rust `PlatformAddressSyncManager` sweeps EVERY registered wallet each pass (platform twin of `CORE-20`; only the `configure(...walletId:)` UI mirror is per-wallet), and the cross-wallet receives (`SH-15`, `DOC-15`) already exercise it. |
 | SYS-08 | Per-wallet Platform isolation (identities / usernames / tokens / contacts) | Platform | Thorough | ✅ | multiwallet | Extends `CORE-18` to Platform reads: wallet A's identities, DPNS names, token balances, and DashPay contacts must never surface under wallet B. |
 
 ---
@@ -354,7 +354,7 @@ Each row's **primary home** is its §4 section, but a few rows are cross-cutting
 
 **By tag (cross-cutting, the Tags column):**
 
-- **multiwallet** — `CORE-14..23`, `ID-14`, `ID-15`, `TOK-17`, `DPNS-08`, `DP-11`, `DOC-15`, `SH-14`, `SH-15`, `SH-16`, `SYS-07`, `SYS-08`
+- **multiwallet** — `CORE-14..23`, `ID-14`, `ID-15`, `TOK-17`, `DPNS-08`, `DP-11`, `DOC-15`, `SH-14`, `SH-15`, `SH-16`, `SYS-08`
 - **group** — `TOK-15`, `TOK-16`, `TOK-18`, `TOK-19`, `TOK-20`
 - **contested** — `DPNS-05`, `DPNS-08`, `VOTE-01..07`
 - **withdrawal** — `ID-10`, `ADDR-04`, `SH-08`, `SH-16`

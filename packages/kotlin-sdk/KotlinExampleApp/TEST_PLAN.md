@@ -278,7 +278,7 @@ Shielded notes/balance/activity have **no read-side FFI** by design — Rust pus
 | SYS-04 | Run-all-queries / DPNS test harness | Platform | Thorough | ✅ | | `QueriesListScreen` diagnostics (`runAllQueries`, `testDPNSQueries`), `DiagnosticsScreen`. |
 | SYS-05 | Storage / Keystore / Wallet-memory explorers | — | Thorough | ✅ | read-only | `StorageExplorerScreen`, `KeystoreExplorerScreen`, `WalletMemoryExplorerScreen` (Settings; debug tooling). |
 | SYS-06 | Path elements (raw GroveDB) | Platform | Uncommon | 🧪 | read-only | **Get GroveDB Path Elements** read view → `dash_sdk_system_get_path_elements`. Enter `path` + `keys` JSON array; returns `[{key, element, type}]`. Use a **bounded** path. |
-| SYS-07 | Platform balance sync is per-active-wallet, **not** concurrent | Platform | Thorough | ✅ | multiwallet | `PlatformBalanceSyncService` is configured for ONE wallet. Unlike Core SPV (`CORE-20`), wallet B's Platform balances can be **stale until you switch to B and Sync Now**. |
+| SYS-07 | Platform balance sync covers every registered wallet | Platform | — | ➖ | | Retired — the row verified a per-active-wallet staleness caveat that no longer exists: the Rust `PlatformAddressSyncManager` sweeps EVERY registered wallet each pass (platform twin of `CORE-20`), and the cross-wallet receives (`SH-15`, `DOC-15`) already exercise it. |
 | SYS-08 | Per-wallet Platform isolation (identities / usernames / tokens / contacts) | Platform | Thorough | ✅ | multiwallet | Wallet A's identities, DPNS names, token balances, and DashPay contacts must never surface under wallet B. |
 
 ---
@@ -328,7 +328,7 @@ Membership of each feature category across **all** sections (primary section mem
 
 Tags are cross-cutting modalities. A test may appear under multiple tags.
 
-- **multiwallet** — `CORE-14..23`, `ID-14`, `ID-15`, `TOK-17`, `DPNS-08`, `DP-11`, `DOC-15`, `SH-14`, `SH-15`, `SH-16`, `SYS-07`, `SYS-08`
+- **multiwallet** — `CORE-14..23`, `ID-14`, `ID-15`, `TOK-17`, `DPNS-08`, `DP-11`, `DOC-15`, `SH-14`, `SH-15`, `SH-16`, `SYS-08`
 - **group** — `TOK-15`, `TOK-16`
 - **contested** — `DPNS-05`, `DPNS-08`, `VOTE-01..06`
 - **withdrawal** — `ID-10`, `ADDR-04`, `SH-08`, `SH-16`
