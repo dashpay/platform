@@ -33,8 +33,7 @@ pub use changeset::{
     PendingContactCryptoKey, PendingContactCryptoKind, PendingContactCryptoOp,
     PlatformAddressBalanceEntry, PlatformAddressChangeSet, PlatformWalletChangeSet,
     ProviderKeyAccountEntry, ProviderKeyExtendedPubKey, ProviderPlatformNodePubKey,
-    ReceivedContactRequestKey, SentContactRequestKey, TokenBalanceChangeSet,
-    WalletMetadataEntry,
+    ReceivedContactRequestKey, SentContactRequestKey, TokenBalanceChangeSet, WalletMetadataEntry,
 };
 pub use client_start_state::ClientStartState;
 pub use client_wallet_start_state::ClientWalletStartState;
