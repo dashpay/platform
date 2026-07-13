@@ -328,6 +328,7 @@ struct SwiftExampleAppApp: App {
         let network = platformState.currentNetwork
         let manager = walletManager
         let store = walletManagerStore
+        let generation = store.spvStartGeneration
         let decision = CoreSpvAutoStart.decision(
             alreadyLatched: didAutoStartCoreSpv,
             hasWallets: !manager.wallets.isEmpty,
@@ -340,19 +341,24 @@ struct SwiftExampleAppApp: App {
             try await CoreSpvLauncher.start(
                 network: network,
                 on: manager,
-                stillCurrent: { store.activeManager === manager }
+                stillCurrent: {
+                    store.spvStartGeneration == generation
+                        && store.activeManager === manager
+                }
             )
             SDKLogger.log(
                 "🟢 Auto-started Core SPV sync for " + network.displayName,
                 minimumLevel: .medium
             )
         } catch is CancellationError {
-            // The user switched networks during the peer lookup, so the
-            // launch network's auto-start window is over. The latch stays
-            // set (set before the await) — we deliberately do NOT unlatch
-            // and re-fire for a network the user has left; the now-active
-            // network's `rebindWalletScopedServices` + its own auto-start
-            // own its sync.
+            // A network switch / SDK rebuild superseded this start during
+            // the peer lookup. The latch stays set (set before the await);
+            // we deliberately do NOT unlatch. Auto-start is a
+            // once-per-launch bootstrap step, so it does NOT re-fire for
+            // the newly-selected network — the user starts that network's
+            // Core SPV from the Sync tab's Start button. (The
+            // platform/shielded/DashPay loops for the new network are
+            // handled separately by `rebindWalletScopedServices`.)
             SDKLogger.log(
                 "ℹ️ Core SPV auto-start superseded by a network switch",
                 minimumLevel: .medium

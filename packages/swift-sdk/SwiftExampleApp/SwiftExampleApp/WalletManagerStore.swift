@@ -52,6 +52,35 @@ final class WalletManagerStore: ObservableObject {
     /// gating the pre-refactor single-manager flow used).
     @Published private(set) var activeManager: PlatformWalletManager
 
+    /// Monotonic token bumped whenever a network switch / SDK rebuild
+    /// supersedes any in-flight `CoreSpvLauncher.start`.
+    ///
+    /// A start captures this synchronously before it begins and
+    /// re-checks it (alongside manager identity) after its off-main
+    /// peer resolution; a mismatch means the start is stale and must
+    /// not revive a stopped or replaced manager. Identity alone is not
+    /// enough because of the stop→activate gap: OptionsView's picker
+    /// stops the old manager synchronously but the store only swaps
+    /// `activeManager` later (from the app-level `onChange`), and the
+    /// devnet rebuild widens that gap with an `await` on the SDK
+    /// rebuild. This token is invalidated at the *earliest* synchronous
+    /// point of each such path, closing the window. See the guard in
+    /// `CoreSpvLauncher.start`.
+    ///
+    /// Not `@Published` — nothing renders off it; it's read
+    /// synchronously by start call sites and their revalidation
+    /// closures only.
+    private(set) var spvStartGeneration: UInt64 = 0
+
+    /// Invalidate every in-flight SPV start. Call at the earliest
+    /// synchronous point of any path that stops or replaces a manager
+    /// (network switch, devnet/SDK rebuild, peer-config change) so a
+    /// start suspended in the stop→activate gap bails instead of
+    /// reviving the superseded manager.
+    func invalidatePendingSpvStarts() {
+        spvStartGeneration &+= 1
+    }
+
     /// Per-network managers. Lazily populated on first activation
     /// of each network; lookup is O(1).
     private var managers: [Network: PlatformWalletManager] = [:]
@@ -107,6 +136,12 @@ final class WalletManagerStore: ObservableObject {
             let cachedHandle = managerSdkHandles[network]
             if cachedHandle == sdk.handle {
                 if makeActive && existing !== activeManager {
+                    // Swapping to a different warm manager supersedes any
+                    // in-flight SPV start against the outgoing one.
+                    // Defensive backstop so every present/future activate
+                    // path is covered even if a caller forgets to
+                    // invalidate at its own supersession point.
+                    invalidatePendingSpvStarts()
                     activeManager = existing
                 }
                 return
@@ -144,6 +179,11 @@ final class WalletManagerStore: ObservableObject {
         managers[network] = manager
         managerSdkHandles[network] = sdk.handle
         if makeActive {
+            // A freshly (re)built active manager supersedes any in-flight
+            // SPV start against the previous one (defensive backstop; the
+            // supersession call sites also invalidate at their earliest
+            // synchronous point).
+            invalidatePendingSpvStarts()
             activeManager = manager
         }
     }

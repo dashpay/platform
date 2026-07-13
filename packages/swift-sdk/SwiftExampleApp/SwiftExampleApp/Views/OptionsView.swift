@@ -127,6 +127,12 @@ struct OptionsView: View {
                         get: { appState.currentNetwork },
                         set: { newNetwork in
                             if newNetwork != appState.currentNetwork {
+                                // Earliest synchronous point of the switch:
+                                // cancel any in-flight SPV start before the
+                                // async body stops the old manager, so a
+                                // start resuming in the stop→activate gap
+                                // can't revive it.
+                                walletManagerStore.invalidatePendingSpvStarts()
                                 isSwitchingNetwork = true
                                 Task {
                                     // Auto-disable Docker when leaving Local
@@ -183,6 +189,11 @@ struct OptionsView: View {
                     if appState.currentNetwork == .regtest {
                         Toggle("Use Docker Setup", isOn: $appState.useDockerSetup)
                             .onChange(of: appState.useDockerSetup) { _, _ in
+                                // Toggling Docker rebuilds the SDK and flips
+                                // the peer override; cancel any in-flight
+                                // start so it can't proceed with stale peer
+                                // config against the rebuilt SDK.
+                                walletManagerStore.invalidatePendingSpvStarts()
                                 isSwitchingNetwork = true
                                 Task {
                                     await appState.switchNetwork(to: appState.currentNetwork)
@@ -291,6 +302,10 @@ struct OptionsView: View {
                             devnetNameSnapshot = nil
                             guard quorumChanged || nameChanged else { return }
                             guard appState.currentNetwork == .devnet else { return }
+                            // Widest supersession gap (stop → await SDK
+                            // rebuild → activate). Invalidate first so a
+                            // start resuming anywhere in it bails.
+                            walletManagerStore.invalidatePendingSpvStarts()
                             try? walletManager.stopSpv()
                             Task {
                                 await appState.switchNetwork(to: .devnet)
@@ -333,6 +348,10 @@ struct OptionsView: View {
                                 if isOn && (customSpvPeers.isEmpty || !customSpvPeers.contains(":")) {
                                     customSpvPeers = defaultSpvPeers(for: appState.currentNetwork)
                                 }
+                                // Cancel any in-flight start (it captured the
+                                // pre-toggle peer config) before stopping, so
+                                // the next start picks up the new peers.
+                                walletManagerStore.invalidatePendingSpvStarts()
                                 // Stop SPV so the next start picks up the
                                 // new peer config in CoreContentView.
                                 try? walletManager.stopSpv()

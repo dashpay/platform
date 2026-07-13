@@ -761,19 +761,24 @@ var body: some View {
         // devnet branch can block for seconds), so it's async — drive it
         // from a main-actor `Task` so the button tap stays non-blocking.
         //
-        // Capture the target manager/network/store up front. If the user
-        // switches networks during the peer lookup, `stillCurrent` reports
-        // the captured manager is no longer active and the start bails
-        // rather than reviving sync on the abandoned network.
+        // Capture the target manager/network/store + generation token up
+        // front. If a network switch / SDK rebuild supersedes this start
+        // during the peer lookup, `stillCurrent` reports a generation
+        // mismatch (or a swapped-out manager) and the start bails rather
+        // than reviving sync on the abandoned network.
         let network = platformState.currentNetwork
         let manager = walletManager
         let store = walletManagerStore
+        let generation = store.spvStartGeneration
         Task {
             do {
                 try await CoreSpvLauncher.start(
                     network: network,
                     on: manager,
-                    stillCurrent: { store.activeManager === manager }
+                    stillCurrent: {
+                        store.spvStartGeneration == generation
+                            && store.activeManager === manager
+                    }
                 )
             } catch is CancellationError {
                 // Superseded by a network switch during peer resolution —
@@ -785,6 +790,9 @@ var body: some View {
     }
 
     private func pauseSync() {
+        // Cancel any in-flight start so a fast Start→Pause can't have the
+        // start resume and revive sync after the user paused.
+        walletManagerStore.invalidatePendingSpvStarts()
         try? walletManager.stopSpv()
     }
 

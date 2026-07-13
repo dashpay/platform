@@ -35,9 +35,29 @@ enum CoreSpvLauncher {
         on walletManager: PlatformWalletManager,
         stillCurrent: @MainActor () -> Bool
     ) async throws {
+        try await start(
+            network: network,
+            stillCurrent: stillCurrent,
+            startSpv: { config in try walletManager.startSpv(config: config) }
+        )
+    }
+
+    /// Testable core: assembles the config and drives the whole
+    /// supersession guard, but the terminal `startSpv` step is injected
+    /// rather than calling `PlatformWalletManager` directly. Lets a unit
+    /// test assert the guard bails (throws `CancellationError`, injected
+    /// closure never runs) on a stale start and passes the expected
+    /// config through on a fresh one — no real, network-locked wallet
+    /// manager required. The public overload above supplies the real
+    /// `startSpv`.
+    static func start(
+        network: Network,
+        stillCurrent: @MainActor () -> Bool,
+        startSpv: @MainActor (PlatformSpvStartConfig) throws -> Void
+    ) async throws {
         // Network-derived; safe to compute pre-await because we bail on a
-        // `stillCurrent` mismatch below before touching `walletManager` —
-        // and creating the data dir alone starts nothing.
+        // `stillCurrent` mismatch below before invoking `startSpv` — and
+        // creating the data dir alone starts nothing.
         let dataDirURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)
             .first!
             .appendingPathComponent("SPV")
@@ -46,14 +66,15 @@ enum CoreSpvLauncher {
 
         // Resolve peers off the main actor — the devnet branch can block
         // for seconds. `network` is `Sendable` and the result is
-        // `[String]`; nothing main-actor-bound (no `walletManager`) is
-        // captured, so the detached hop is data-race-free.
+        // `[String]`; nothing main-actor-bound is captured, so the
+        // detached hop is data-race-free.
         let peers = await Task.detached { Self.peerOverride(network: network) }.value
 
-        // Back on the main actor: bail if a network switch superseded this
-        // start during the peer lookup. Manager identity is the strongest
-        // signal — it also catches a devnet→devnet SDK rebuild where the
-        // network is unchanged but the manager instance was replaced.
+        // Back on the main actor: bail if a network switch / SDK rebuild
+        // superseded this start during the peer lookup. Call sites pair a
+        // generation token with manager identity (`store.spvStartGeneration
+        // == captured && store.activeManager === manager`) so the
+        // stop→activate gap is covered, not just the post-swap state.
         guard stillCurrent() else { throw CancellationError() }
 
         let restrictToConfiguredPeers = !peers.isEmpty
@@ -76,7 +97,7 @@ enum CoreSpvLauncher {
             restrictToConfiguredPeers: restrictToConfiguredPeers,
             devnetName: devnetName
         )
-        try walletManager.startSpv(config: config)
+        try startSpv(config)
     }
 
     /// Resolve the SPV peer override for the given network / docker
