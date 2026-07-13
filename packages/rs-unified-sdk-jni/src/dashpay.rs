@@ -202,39 +202,6 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_getCont
     })
 }
 
-/// Read the managed identity's own cached DashPay profile off its handle
-/// (bridges `managed_identity_get_dashpay_profile`). Same JSON shape /
-/// null convention as [`Java_org_dashfoundation_dashsdk_ffi_DashpayNative_getContactProfile`].
-#[no_mangle]
-pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_managedIdentityDashPayProfile(
-    mut env: JNIEnv,
-    _class: JClass,
-    identity_handle: jlong,
-) -> jstring {
-    guard(&mut env, ptr::null_mut(), |env| {
-        let mut profile = DashPayProfileFFI::empty();
-        let mut has_profile = false;
-        let result = unsafe {
-            platform_wallet_ffi::managed_identity_get_dashpay_profile(
-                identity_handle as Handle,
-                &mut profile as *mut DashPayProfileFFI,
-                &mut has_profile as *mut bool,
-            )
-        };
-        if take_pwffi_error(env, result) {
-            return ptr::null_mut();
-        }
-        if !has_profile {
-            return ptr::null_mut();
-        }
-        let json = crate::tokens::profile_to_json(&profile);
-        unsafe {
-            platform_wallet_ffi::dashpay_profile_ffi_free(&mut profile as *mut DashPayProfileFFI)
-        };
-        new_jstring(env, json)
-    })
-}
-
 // ── Sync state ────────────────────────────────────────────────────────
 
 /// Read the managed identity's DashPay sync state (bridges
@@ -771,28 +738,6 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_setCont
             return -1;
         }
         outcome as jint
-    })
-}
-
-// ── Signer capability preflight ───────────────────────────────────────
-
-/// Whether the mnemonic resolver can derive-sign identity keys of
-/// `keyType` (bridges `dash_sdk_resolver_supports_key_type`). Preflight
-/// only — keeps `canSignWith` consistent with the sign path's
-/// `UNSUPPORTED_KEY_TYPE` rejection by reading the one Rust source of
-/// truth (Swift `KeychainSigner.resolverCanDeriveSign`).
-#[no_mangle]
-pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_resolverSupportsKeyType(
-    mut env: JNIEnv,
-    _class: JClass,
-    key_type: jint,
-) -> jboolean {
-    guard(&mut env, 0, |_| {
-        let Ok(kt) = u8::try_from(key_type) else {
-            return 0;
-        };
-        let supported = unsafe { platform_wallet_ffi::dash_sdk_resolver_supports_key_type(kt) };
-        supported as jboolean
     })
 }
 

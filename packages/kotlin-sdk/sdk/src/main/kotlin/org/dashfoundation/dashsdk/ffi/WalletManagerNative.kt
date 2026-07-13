@@ -93,9 +93,6 @@ internal object WalletManagerNative {
 
     // ── Per-wallet accessors ──────────────────────────────────────────
 
-    /** 32-byte wallet id of a `PlatformWallet` handle. */
-    external fun walletGetId(walletHandle: Long): ByteArray
-
     /** Balance as `long[4]` = {confirmed, unconfirmed, immature, locked}. */
     external fun walletGetBalance(walletHandle: Long): LongArray
 

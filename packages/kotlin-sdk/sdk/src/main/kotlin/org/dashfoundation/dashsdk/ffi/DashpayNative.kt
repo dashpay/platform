@@ -37,12 +37,6 @@ internal object DashpayNative {
     ): String?
 
     /**
-     * The managed identity's own cached DashPay profile off its handle,
-     * or null. ← Swift `ManagedIdentity.getDashPayProfile()`.
-     */
-    external fun managedIdentityDashPayProfile(identityHandle: Long): String?
-
-    /**
      * DashPay sync state off a managed-identity handle: JSON object of
      * collection counts (`establishedContacts`, `incomingRequests`,
      * `sentRequests`, `ignoredSenders`, `contactProfiles`,
@@ -165,14 +159,6 @@ internal object DashpayNative {
         signerHandle: Long,
         coreSignerHandle: Long,
     ): Int
-
-    /**
-     * Whether the mnemonic resolver can derive-sign identity keys of
-     * [keyType] — the preflight predicate keeping `canSignWith`
-     * consistent with the sign path's UNSUPPORTED_KEY_TYPE rejection.
-     * ← Swift `KeychainSigner.resolverCanDeriveSign`.
-     */
-    external fun resolverSupportsKeyType(keyType: Int): Boolean
 
     // ── DIP-15 auto-accept QR ─────────────────────────────────────────
 

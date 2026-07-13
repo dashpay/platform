@@ -3,11 +3,12 @@
 //! Kotlin counterpart: `org.dashfoundation.dashsdk.ffi.PersistenceNative`
 //! + `NativePersistenceBridge`.
 //!
-//! [`Java_..._createCallbacks`] wraps a Kotlin `NativePersistenceBridge`
-//! object in a heap-boxed [`platform_wallet_ffi::PersistenceCallbacks`]
-//! whose 32 slots are filled with trampolines defined below, plus a boxed
-//! [`KotlinPersistenceCtx`] holding the bridge as a JNI `GlobalRef`. Both
-//! boxes are freed by [`Java_..._destroyCallbacks`].
+//! The vtable — a heap-boxed [`platform_wallet_ffi::PersistenceCallbacks`]
+//! whose 32 slots are filled with the trampolines defined below, plus a
+//! boxed [`KotlinPersistenceCtx`] holding the Kotlin `NativePersistenceBridge`
+//! as a JNI `GlobalRef` — is built by [`build_vtable`] on the wallet-manager
+//! creation path (`wallet_manager.rs`), which owns both boxes for the
+//! manager's lifetime.
 //!
 //! ## Trampoline contract (every slot)
 //!
@@ -46,9 +47,8 @@
 
 #![allow(clippy::missing_safety_doc)]
 
-use crate::support::{guard, JVM};
-use jni::objects::{GlobalRef, JByteArray, JClass, JObject, JString, JValue};
-use jni::sys::jlong;
+use crate::support::JVM;
+use jni::objects::{GlobalRef, JByteArray, JObject, JString, JValue};
 use jni::JNIEnv;
 use platform_wallet_ffi::{
     AccountAddressPoolFFI, AccountChangeSetFFI, AccountSpecFFI, AddressBalanceEntryFFI,
@@ -82,10 +82,9 @@ pub struct KotlinPersistenceCtx {
 
 impl KotlinPersistenceCtx {
     /// Box a Kotlin `NativePersistenceBridge` `GlobalRef` as the context a
-    /// [`PersistenceCallbacks`] vtable points at. Shared by the standalone
-    /// [`Java_..._createCallbacks`] export and the wallet-manager path
-    /// (`wallet_manager.rs`), which builds the vtable inline so its
-    /// context is owned by the manager for its lifetime.
+    /// [`PersistenceCallbacks`] vtable points at. Used by the wallet-manager
+    /// creation path (`wallet_manager.rs`), which builds the vtable via
+    /// [`build_vtable`] and owns this context for the manager's lifetime.
     pub(crate) fn new(bridge: GlobalRef) -> Self {
         Self { bridge }
     }
@@ -109,58 +108,6 @@ unsafe impl Sync for KotlinPersistenceCtx {}
 //   ShieldedSyncStateData     org/dashfoundation/dashsdk/ffi/ShieldedSyncStateData
 //   ShieldedActivityData      org/dashfoundation/dashsdk/ffi/ShieldedActivityData
 //   CoreTxRecordData          org/dashfoundation/dashsdk/ffi/CoreTxRecordData
-
-// ── Exports ───────────────────────────────────────────────────────────
-
-/// Build a native `PersistenceCallbacks` vtable delegating to the Kotlin
-/// bridge object. Returns the boxed pointer as jlong, 0 on failure.
-#[no_mangle]
-pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_PersistenceNative_createCallbacks(
-    mut env: JNIEnv,
-    _class: JClass,
-    bridge: JObject,
-) -> jlong {
-    guard(&mut env, 0, |env| {
-        let global = match env.new_global_ref(&bridge) {
-            Ok(g) => g,
-            Err(_) => {
-                crate::support::throw_sdk_exception(env, 99, "NewGlobalRef(bridge) failed");
-                return 0;
-            }
-        };
-        let ctx = Box::new(KotlinPersistenceCtx { bridge: global });
-        let ctx_ptr = Box::into_raw(ctx) as *mut c_void;
-
-        let callbacks = Box::new(build_vtable(ctx_ptr));
-        Box::into_raw(callbacks) as jlong
-    })
-}
-
-/// Free a vtable handle and its context `GlobalRef`. Safe on 0.
-#[no_mangle]
-pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_PersistenceNative_destroyCallbacks(
-    mut env: JNIEnv,
-    _class: JClass,
-    handle: jlong,
-) {
-    guard(&mut env, (), |_| {
-        if handle == 0 {
-            return;
-        }
-        // SAFETY: `handle` is a pointer returned by `createCallbacks`; it
-        // is not used after this call (Kotlin drops it). Reconstruct both
-        // boxes so their `Drop` runs — the context box drops the
-        // `GlobalRef`, releasing the Kotlin bridge.
-        unsafe {
-            let callbacks = Box::from_raw(handle as *mut PersistenceCallbacks);
-            let ctx_ptr = callbacks.context as *mut KotlinPersistenceCtx;
-            drop(callbacks);
-            if !ctx_ptr.is_null() {
-                drop(Box::from_raw(ctx_ptr));
-            }
-        }
-    })
-}
 
 /// Assemble the full 32-slot vtable. `context` is the boxed
 /// [`KotlinPersistenceCtx`] pointer.
@@ -228,7 +175,7 @@ const ERR_JNI: i32 = 1;
 ///
 /// # Safety
 /// `context` must be a live `KotlinPersistenceCtx` pointer produced by
-/// `createCallbacks`.
+/// [`KotlinPersistenceCtx::new`] and installed via [`build_vtable`].
 unsafe fn with_bridge<F>(context: *mut c_void, f: F) -> i32
 where
     F: FnOnce(&mut JNIEnv, &JObject) -> Result<i32, jni::errors::Error>,
