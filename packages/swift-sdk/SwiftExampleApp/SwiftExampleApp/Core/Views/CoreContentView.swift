@@ -4,6 +4,10 @@ import SwiftData
 
 struct CoreContentView: View {
     @EnvironmentObject var walletManager: PlatformWalletManager
+    /// Used only to revalidate that the Start we kicked off is still for
+    /// the active per-network manager after the async peer resolution —
+    /// see `startSync`.
+    @EnvironmentObject var walletManagerStore: WalletManagerStore
     @EnvironmentObject var platformState: AppState
     @EnvironmentObject var appUIState: AppUIState
     @EnvironmentObject var platformBalanceSyncService: PlatformBalanceSyncService
@@ -799,92 +803,50 @@ var body: some View {
     }
 
     private func startSync() {
-        do {
-            let dataDirURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)
-                .first!
-                .appendingPathComponent("SPV")
-                .appendingPathComponent(platformState.currentNetwork.networkName)
-            try? FileManager.default.createDirectory(at: dataDirURL, withIntermediateDirectories: true)
-
-            let peers = spvPeerOverride()
-            let restrictToConfiguredPeers = !peers.isEmpty
-
-            // Devnet requires a name so `DevnetConfig` can embed
-            // `devnet.devnet-<name>` in the SPV user agent (Dash
-            // Core devnet peers drop inbound handshakes without it).
-            // Read from the same UserDefaults key OptionsView writes.
-            let devnetName: String? = platformState.currentNetwork == .devnet
-                ? UserDefaults.standard.string(forKey: "platformDevnetName").flatMap {
-                    let trimmed = $0.trimmingCharacters(in: .whitespaces)
-                    return trimmed.isEmpty ? nil : trimmed
-                }
-                : nil
-
-            let config = PlatformSpvStartConfig(
-                dataDir: dataDirURL.path,
-                network: platformState.currentNetwork,
-                peers: peers,
-                restrictToConfiguredPeers: restrictToConfiguredPeers,
-                devnetName: devnetName
-            )
-            try walletManager.startSpv(config: config)
-        } catch {
-            print("❌ Sync failed: \(error)")
+        // `CoreSpvLauncher.start` resolves peers off the main actor (the
+        // devnet branch can block for seconds), so it's async — drive it
+        // from a main-actor `Task` so the button tap stays non-blocking.
+        //
+        // Capture the target manager/network/store + generation token up
+        // front. If a network switch / SDK rebuild supersedes this start
+        // during the peer lookup, `stillCurrent` reports a generation
+        // mismatch (or a swapped-out manager) and the start bails rather
+        // than reviving sync on the abandoned network.
+        //
+        // Bump the generation FIRST so rapid Start taps (before the 1 Hz
+        // poll flips `spvIsRunning`) collapse to "latest wins": each tap
+        // supersedes any prior still-pending start. Capture our own fresh
+        // generation immediately after — synchronously, before any await —
+        // so we don't cancel ourselves.
+        let network = platformState.currentNetwork
+        let manager = walletManager
+        let store = walletManagerStore
+        store.invalidatePendingSpvStarts()
+        let generation = store.spvStartGeneration
+        Task {
+            do {
+                try await CoreSpvLauncher.start(
+                    network: network,
+                    on: manager,
+                    stillCurrent: {
+                        store.spvStartGeneration == generation
+                            && store.activeManager === manager
+                    }
+                )
+            } catch is CancellationError {
+                // Superseded by a network switch during peer resolution —
+                // the now-active manager owns its own sync.
+            } catch {
+                print("❌ Sync failed: \(error)")
+            }
         }
-    }
-
-    /// Resolve the SPV peer override for the current network /
-    /// docker combo.
-    ///
-    /// Three modes coexist on top of the same `useLocalhostCore` /
-    /// `localCorePeers` `UserDefaults` keys, which used to bleed into
-    /// each other when the user reconfigured between sessions:
-    ///
-    ///   1. **regtest + docker** — connect to dashmate's `local_seed`
-    ///      Core P2P port. The default 3-node setup maps the seed to
-    ///      `127.0.0.1:20301` (`getLocalConfigFactory.js` base 20001
-    ///      + `setupLocalPresetTaskFactory.js` `+ i*100` with seed
-    ///      at index = `nodeCount`, typically 3). Anything sitting
-    ///      in `localCorePeers` from a previous testnet / mainnet
-    ///      "custom peers" session is ignored — the UI doesn't show
-    ///      that knob on regtest+docker so a stale value is always
-    ///      bleed-through, never user intent.
-    ///   2. **non-regtest + custom peers** — honor `localCorePeers`
-    ///      verbatim. The OptionsView "Use Custom SPV Peers" toggle
-    ///      seeds and edits this string.
-    ///   3. **everything else** — empty list, FFI uses the network's
-    ///      built-in seed nodes.
-    private func spvPeerOverride() -> [String] {
-        let useDocker = UserDefaults.standard.bool(forKey: "useDockerSetup")
-        if platformState.currentNetwork == .regtest && useDocker {
-            return ["127.0.0.1:20301"]
-        }
-        // Devnet: auto-discover SPV peers from the quorum-list
-        // service's `/masternodes` endpoint. Each masternode reports
-        // its own `address` field (`ip:CoreP2PPort`) — use the
-        // verbatim values rather than guessing the canonical 29999
-        // port (paloma reports 20001 per masternode, for example).
-        // No manual SPV input on devnet — the quorum URL is the
-        // single source of truth (see `OptionsView`'s devnet branch).
-        if platformState.currentNetwork == .devnet {
-            guard
-                let quorum = UserDefaults.standard.string(forKey: "platformQuorumURL"),
-                !quorum.isEmpty,
-                let active = SDK.discoverActiveMasternodes(quorumBase: quorum)
-            else { return [] }
-            return active.map(\.spvPeer)
-        }
-        let useLocalCore = UserDefaults.standard.bool(forKey: "useLocalhostCore")
-        guard useLocalCore else { return [] }
-        let raw = UserDefaults.standard.string(forKey: "localCorePeers") ?? ""
-        return raw
-            .split(separator: ",")
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-            .filter { !$0.isEmpty }
     }
 
     private func pauseSync() {
-        try? walletManager.stopSpv()
+        // Cancel any in-flight start (so a fast Start→Pause can't resume
+        // and revive sync after the pause) then stop, via the blessed
+        // helper.
+        walletManagerStore.stopSpvCancellingPendingStarts(walletManager)
     }
 
     private func clearSyncData() {
