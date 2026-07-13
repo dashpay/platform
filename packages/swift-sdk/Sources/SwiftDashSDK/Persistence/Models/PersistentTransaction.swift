@@ -232,10 +232,33 @@ public final class PersistentTransaction {
         typedKind == .assetUnlock
     }
 
+    /// `true` for masternode provider special transactions (ProRegTx
+    /// and the three ProUp*Tx kinds). Like asset locks, these get
+    /// classified `Internal` by the wallet's direction logic (the
+    /// wallet only sees its own owner/voting/payout keys referenced
+    /// in the payload), so direction-derived labels like
+    /// "Self-Transfer" are misleading for them.
+    public var isProviderSpecial: Bool {
+        providerSpecialName != nil
+    }
+
+    /// Human-readable name for provider special transactions, `nil`
+    /// for every other kind.
+    public var providerSpecialName: String? {
+        switch typedKind {
+        case .providerRegistration: return "Provider Registration"
+        case .providerUpdateRegistrar: return "Provider Update Registrar"
+        case .providerUpdateService: return "Provider Update Service"
+        case .providerUpdateRevocation: return "Provider Update Revocation"
+        default: return nil
+        }
+    }
+
     /// Direction text for UI surfaces, overridden for asset-lock /
-    /// asset-unlock txs where the raw `Internal` direction is
-    /// misleading (the L1 DASH isn't going "to myself" — it's being
-    /// converted to / from L2 platform credits).
+    /// asset-unlock txs (the L1 DASH isn't going "to myself" — it's
+    /// being converted to / from L2 platform credits) and for
+    /// provider special txs (the payload references our keys but no
+    /// value moves "to myself").
     ///
     /// Use this anywhere a human-readable "what happened" label is
     /// needed; fall back to [`directionName`] only when the consumer
@@ -243,6 +266,7 @@ public final class PersistentTransaction {
     public var displayDirection: String {
         if isAssetLock { return "Asset Lock" }
         if isAssetUnlock { return "Asset Unlock" }
+        if let name = providerSpecialName { return name }
         return directionName
     }
 
