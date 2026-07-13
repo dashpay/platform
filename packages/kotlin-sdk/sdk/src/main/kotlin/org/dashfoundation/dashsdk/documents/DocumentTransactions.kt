@@ -1,5 +1,7 @@
 package org.dashfoundation.dashsdk.documents
 
+import org.dashfoundation.dashsdk.wallet.op
+
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.dashfoundation.dashsdk.errors.mapNativeErrors
@@ -17,7 +19,9 @@ import org.dashfoundation.dashsdk.ffi.TransactionsNative
  * All ids are 32-byte canonical form; [contractId] / [documentId] /
  * [purchaserId] / [ownerId] must decode from base58 or hex before the call.
  */
-class DocumentTransactions internal constructor() {
+class DocumentTransactions internal constructor(
+    private val gate: org.dashfoundation.dashsdk.wallet.TeardownGate? = null,
+) {
 
     /**
      * Purchase for-sale [documentId] on [contractId]'s [documentType] for
@@ -39,7 +43,7 @@ class DocumentTransactions internal constructor() {
         price: Long,
         signingKeyId: Int,
         signerHandle: Long,
-    ): String = withContext(Dispatchers.IO) {
+    ): String = gate.op {
         require(purchaserId.size == 32) { "purchaserId must be 32 bytes" }
         require(contractId.size == 32) { "contractId must be 32 bytes" }
         require(documentId.size == 32) { "documentId must be 32 bytes" }
@@ -77,7 +81,7 @@ class DocumentTransactions internal constructor() {
         price: Long,
         signingKeyId: Int,
         signerHandle: Long,
-    ): String = withContext(Dispatchers.IO) {
+    ): String = gate.op {
         require(ownerId.size == 32) { "ownerId must be 32 bytes" }
         require(contractId.size == 32) { "contractId must be 32 bytes" }
         require(documentId.size == 32) { "documentId must be 32 bytes" }
@@ -119,7 +123,7 @@ class DocumentTransactions internal constructor() {
         documentType: String,
         propertiesJson: String,
         signerHandle: Long,
-    ): String = withContext(Dispatchers.IO) {
+    ): String = gate.op {
         require(ownerId.size == 32) { "ownerId must be 32 bytes" }
         require(contractId.size == 32) { "contractId must be 32 bytes" }
         mapNativeErrors {

@@ -858,6 +858,183 @@ extension ManagedPlatformWallet {
         }
     }
 
+    /// The private key for one of this wallet's core (Layer-1)
+    /// addresses, in the two forms the developer UI renders it.
+    public struct CoreAddressPrivateKey: Sendable {
+        /// Lowercase hex of the raw 32-byte secp256k1 scalar (64 chars).
+        public let hex: String
+        /// Private key in WIF (Wallet Import Format) — network-aware,
+        /// compressed. Matches how other views in the example app
+        /// accept / display private keys.
+        public let wif: String
+    }
+
+    /// Reveal the private key for one of this wallet's tracked core
+    /// addresses, returned as hex + WIF.
+    ///
+    /// Routes through the resolver-based FFI
+    /// `platform_wallet_address_private_key`. All of the
+    /// address-lookup + derivation-path work happens on the Rust side;
+    /// Swift only supplies the `MnemonicResolver` (so Rust can pull the
+    /// BIP-39 mnemonic on demand for the app's external-signable
+    /// wallets — the seed never round-trips into a Swift `String`) and
+    /// marshals the resulting strings back out. The same
+    /// capability-selected key-source contract as
+    /// `previewIdentityRegistrationKeys` applies: the resolver is
+    /// consulted only when the in-process wallet lacks resident keys.
+    ///
+    /// - Parameters:
+    ///   - address: the core address string to reveal the key for. Must
+    ///     be one of this wallet's tracked addresses.
+    ///   - storage: defaults to a fresh `WalletStorage()` — overridable
+    ///     for tests. Used by the resolver vtable to read the mnemonic.
+    /// - Throws: `PlatformWalletError` if the address is not tracked by
+    ///   this wallet, the handle is invalid, or derivation fails.
+    public func coreAddressPrivateKey(
+        address: String,
+        storage: WalletStorage = WalletStorage()
+    ) throws -> CoreAddressPrivateKey {
+        // Same resolver lifetime rationale as
+        // `previewIdentityRegistrationKeys`: `withExtendedLifetime`
+        // pins the resolver across the whole synchronous FFI call so
+        // ARC can't deallocate its `passUnretained` ctx mid-call.
+        let resolver = MnemonicResolver(storage: storage)
+
+        return try withExtendedLifetime(resolver) {
+            var out = AddressPrivateKeyFFI()
+            let result = address.withCString { addressPtr in
+                platform_wallet_address_private_key(
+                    handle,
+                    resolver.handle,
+                    addressPtr,
+                    &out
+                )
+            }
+            // Free the Rust-owned (zeroizing) strings whether we
+            // succeeded or bailed — the free function no-ops on the
+            // zero struct.
+            defer { platform_wallet_address_private_key_free(&out) }
+
+            try result.check()
+
+            let hex = out.private_key_hex.map { String(cString: $0) } ?? ""
+            let wif = out.private_key_wif.map { String(cString: $0) } ?? ""
+            return CoreAddressPrivateKey(hex: hex, wif: wif)
+        }
+    }
+
+    /// Which provider key-material account to derive from. Raw values
+    /// match the account `type_tag`s the host already renders with
+    /// (`PersistentAccount.accountType` 10 = operator, 11 = platform
+    /// node), so callers pass the same discriminator they display.
+    public enum ProviderKeyKind: UInt8, Sendable {
+        /// BLS masternode operator keys (`ProviderOperatorKeys`, tag 10).
+        case operatorBLS = 10
+        /// Ed25519 platform-node keys (`ProviderPlatformKeys`, tag 11).
+        case platformNodeEdDSA = 11
+    }
+
+    /// One provider key derived at a single index, in the hex forms the
+    /// developer UI renders.
+    public struct ProviderDerivedKey: Sendable {
+        /// The key index that was derived (`#0..`).
+        public let index: UInt32
+        /// Lowercase hex of the raw curve public key — 96 chars for a
+        /// BLS-48 operator key (the bytes a ProRegTx operator field
+        /// carries), 64 for an Ed25519-32 platform-node key.
+        public let publicKeyHex: String
+        /// Lowercase hex of the 20-byte platform node id (`hash160` of
+        /// the Ed25519 public key, the ProRegTx `platform_node_id`).
+        /// `nil` for operator keys, which have no node id.
+        public let nodeIdHex: String?
+        /// Lowercase hex of the raw 32-byte private scalar, present only
+        /// when the reveal requested it. BLS / Ed25519 keys have no WIF,
+        /// so this is the only private form.
+        public let privateKeyHex: String?
+
+        /// Public memberwise init so hosts can build display rows from a
+        /// persisted platform-node batch (see
+        /// `PersistentAccount.derivedPlatformNodeKeys`) without a fresh
+        /// FFI derivation — the synthesized memberwise init is internal
+        /// and unreachable from the app module.
+        public init(
+            index: UInt32,
+            publicKeyHex: String,
+            nodeIdHex: String?,
+            privateKeyHex: String?
+        ) {
+            self.index = index
+            self.publicKeyHex = publicKeyHex
+            self.nodeIdHex = nodeIdHex
+            self.privateKeyHex = privateKeyHex
+        }
+    }
+
+    /// Derive this wallet's provider key of `kind` at `index`, returned
+    /// as hex (public key, optional node id, optional private key).
+    ///
+    /// Routes through the resolver-based FFI
+    /// `platform_wallet_provider_key_at_index`. All of the derivation
+    /// (which curve, hardened vs non-hardened, whether a seed is even
+    /// needed) happens on the Rust side; Swift only supplies the
+    /// `MnemonicResolver` and marshals the resulting strings back out.
+    ///
+    /// The resolver is only *consulted* when Rust actually needs a seed:
+    /// an operator (BLS) public listing derives straight from the
+    /// account xpub and never fires the keychain read, whereas a
+    /// platform-node (Ed25519, SLIP-10 hardened-only) key needs the seed
+    /// even for its public key. Passing the resolver here is therefore
+    /// always safe — it stays dormant unless Rust calls it.
+    ///
+    /// - Parameters:
+    ///   - kind: operator (BLS) or platform-node (Ed25519) keys.
+    ///   - index: the key index to derive (`#0..`).
+    ///   - includePrivate: also return the raw private scalar.
+    ///   - storage: defaults to a fresh `WalletStorage()` — overridable
+    ///     for tests. Used by the resolver vtable to read the mnemonic.
+    /// - Throws: `PlatformWalletError` if the wallet has no account of
+    ///   that kind, the handle is invalid, or derivation fails.
+    public func providerKeyAtIndex(
+        kind: ProviderKeyKind,
+        index: UInt32,
+        includePrivate: Bool,
+        storage: WalletStorage = WalletStorage()
+    ) throws -> ProviderDerivedKey {
+        // Same resolver lifetime rationale as `coreAddressPrivateKey`:
+        // `withExtendedLifetime` pins the resolver across the whole
+        // synchronous FFI call so ARC can't deallocate its
+        // `passUnretained` ctx mid-call.
+        let resolver = MnemonicResolver(storage: storage)
+
+        return try withExtendedLifetime(resolver) {
+            var out = ProviderKeyAtIndexFFI()
+            let result = platform_wallet_provider_key_at_index(
+                handle,
+                resolver.handle,
+                kind.rawValue,
+                index,
+                includePrivate,
+                &out
+            )
+            // Free the Rust-owned strings (the private-key hex is
+            // zeroized inside) whether we succeeded or bailed — the free
+            // function no-ops on the zero struct.
+            defer { platform_wallet_provider_key_at_index_free(&out) }
+
+            try result.check()
+
+            let publicKeyHex = out.public_key_hex.map { String(cString: $0) } ?? ""
+            let nodeIdHex = out.node_id_hex.map { String(cString: $0) }
+            let privateKeyHex = out.private_key_hex.map { String(cString: $0) }
+            return ProviderDerivedKey(
+                index: out.index,
+                publicKeyHex: publicKeyHex,
+                nodeIdHex: nodeIdHex,
+                privateKeyHex: privateKeyHex
+            )
+        }
+    }
+
     /// Derive a single ECDSA identity-authentication keypair at an
     /// arbitrary `(identityIndex, keyId)` slot — the building block
     /// the "add key to existing identity" flow runs on.
@@ -1924,7 +2101,11 @@ extension ManagedPlatformWallet {
 
     /// Send a Dash payment to an established DashPay contact.
     /// `amountDuffs` is in duffs (1 DASH = 100_000_000 duffs).
-    /// Returns the 32-byte transaction id.
+    /// Returns the 32-byte transaction id plus the exact network fee
+    /// (duffs) of the broadcast transaction, computed Rust-side as
+    /// Σ(selected input values) − Σ(output values) — so any sub-dust
+    /// change the builder folds into the fee is reflected, not the
+    /// builder's size-based estimate.
     ///
     /// Prerequisite: `register_external_contact_account` must have
     /// run for the `(fromIdentityId, toContactIdentityId)` pair on
@@ -1936,7 +2117,7 @@ extension ManagedPlatformWallet {
         toContactIdentityId: Identifier,
         amountDuffs: UInt64,
         memo: String? = nil
-    ) async throws -> Data {
+    ) async throws -> (txid: Data, feeDuffs: UInt64) {
         let handle = self.handle
         let fromBytes: [UInt8] = fromIdentityId.withFFIBytes { ptr in
             Array(UnsafeBufferPointer(start: ptr, count: 32))
@@ -1951,7 +2132,8 @@ extension ManagedPlatformWallet {
         // derived, digest signed, buffers zeroed) — the seed never becomes
         // resident and no private key leaves Swift.
         let coreSigner = MnemonicResolver()
-        return try await Task.detached(priority: .userInitiated) { () -> Data in
+        return try await Task.detached(priority: .userInitiated) { () -> (txid: Data, feeDuffs: UInt64) in
+            var feeDuffs: UInt64 = 0
             var txidTuple: (
                 UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
                 UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
@@ -1976,7 +2158,8 @@ extension ManagedPlatformWallet {
                                 amountDuffs,
                                 memoPtr,
                                 coreSigner.handle,
-                                &txidTuple
+                                &txidTuple,
+                                &feeDuffs
                             )
                         }
                         if let memoCopy {
@@ -1988,7 +2171,8 @@ extension ManagedPlatformWallet {
                 }
             }
             try result.check()
-            return Swift.withUnsafeBytes(of: &txidTuple) { Data($0) }
+            let txid = Swift.withUnsafeBytes(of: &txidTuple) { Data($0) }
+            return (txid: txid, feeDuffs: feeDuffs)
         }.value
     }
 }
@@ -2853,11 +3037,13 @@ extension ManagedPlatformWallet {
     /// JSON once Platform confirms the transition.
     ///
     /// The returned JSON is DPP's canonical representation of the
-    /// confirmed document (system fields `$id`/`$ownerId`/timestamps/
-    /// `$revision` with identifiers as base58 strings, only populated
-    /// fields present) — what a DOC-01 query would return. Callers
-    /// persist this verbatim so the local cache matches the on-chain
-    /// document rather than the user's raw form input.
+    /// confirmed document — the same bytes a DOC-01 list query
+    /// (`dash_sdk_document_search`) returns: `$formatVersion` present,
+    /// `$id`/`$ownerId` as base58 strings, binary properties as base64,
+    /// and unset system fields as `null`. Callers persist this verbatim
+    /// so the local cache matches the on-chain document rather than the
+    /// user's raw form input. (A single-document `documentGet` fetch
+    /// uses a different, per-field shape.)
     ///
     /// Routes through `IdentityWallet::create_document_with_signer`
     /// (via `platform_wallet_create_document_with_signer`), the

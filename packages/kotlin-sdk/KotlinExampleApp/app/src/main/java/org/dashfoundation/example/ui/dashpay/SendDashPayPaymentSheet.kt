@@ -96,7 +96,7 @@ fun SendDashPayPaymentSheet(
                         amountDuffs = duffs,
                         coreSignerHandle = manager.mnemonicResolverHandle,
                         memo = null,
-                    )
+                    )?.txid
                 },
                 onSuccessTxid = { successTxidHex = it },
                 onError = { errorMessage = it },

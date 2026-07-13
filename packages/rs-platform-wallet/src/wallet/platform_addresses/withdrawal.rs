@@ -10,6 +10,7 @@ use dpp::withdrawal::Pooling;
 use key_wallet::PlatformP2PKHAddress;
 
 use super::InputSelection;
+use crate::error::promote_address_nonce_error_or_sdk;
 use crate::wallet::PlatformAddressWallet;
 use crate::{PlatformAddressChangeSet, PlatformWalletError};
 use dash_sdk::platform::transition::address_credit_withdrawal::WithdrawAddressFunds;
@@ -133,7 +134,8 @@ impl PlatformAddressWallet {
                         address_signer,
                         None,
                     )
-                    .await?
+                    .await
+                    .map_err(promote_address_nonce_error_or_sdk)?
             }
             InputSelection::ExplicitWithNonces(inputs) => {
                 if inputs.is_empty() {
@@ -152,7 +154,8 @@ impl PlatformAddressWallet {
                         address_signer,
                         None,
                     )
-                    .await?
+                    .await
+                    .map_err(promote_address_nonce_error_or_sdk)?
             }
             InputSelection::Auto => {
                 // The AUTO path owns its own fee strategy: it picks the
@@ -183,7 +186,8 @@ impl PlatformAddressWallet {
                         address_signer,
                         None,
                     )
-                    .await?
+                    .await
+                    .map_err(promote_address_nonce_error_or_sdk)?
             }
         };
 

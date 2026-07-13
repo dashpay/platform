@@ -28,7 +28,10 @@ use std::fmt;
 #[cfg_attr(
     feature = "serde-conversion",
     derive(Serialize, Deserialize),
-    serde(rename_all = "camelCase")
+    serde(
+        into = "TokenConfigurationChangeItemRepr",
+        from = "TokenConfigurationChangeItemRepr"
+    )
 )]
 pub enum TokenConfigurationChangeItem {
     #[default]
@@ -65,6 +68,87 @@ pub enum TokenConfigurationChangeItem {
     MarketplaceTradeModeAdminGroup(AuthorizedActionTakers),
     MainControlGroup(Option<GroupContractPosition>),
 }
+
+// Internal-`$type` serde shape via a struct-variant Repr (the outer enum mixes
+// AuthorizedActionTakers/struct variants with primitive/Option/unit variants
+// that serde cannot auto-internal-tag). Unit -> `{"$type":"..."}`; data ->
+// `{"$type":"...","value":...}`. `MaxSupply` gains the json_safe protection it
+// previously lacked (Option<u64> above MAX_SAFE_INTEGER -> string in HR JSON;
+// Content-safe — never emits u128). `MainControlGroup` is u16 (always JS-safe).
+// The macro keeps the Repr and both `From` impls in lockstep with one variant
+// list — avoiding the "update Serialize AND Deserialize" maintenance trap.
+#[cfg(feature = "serde-conversion")]
+macro_rules! token_configuration_change_item_repr {
+    (
+        unit: $unit:ident,
+        $( $variant:ident : $ty:ty $(, with = $with:literal)? );* $(;)?
+    ) => {
+        #[derive(Serialize, Deserialize)]
+        #[serde(tag = "$type", rename_all = "camelCase")]
+        enum TokenConfigurationChangeItemRepr {
+            $unit,
+            $( $variant {
+                $(#[serde(with = $with)])?
+                value: $ty,
+            } ),*
+        }
+
+        impl From<TokenConfigurationChangeItem> for TokenConfigurationChangeItemRepr {
+            fn from(item: TokenConfigurationChangeItem) -> Self {
+                match item {
+                    TokenConfigurationChangeItem::$unit => Self::$unit,
+                    $( TokenConfigurationChangeItem::$variant(value) => Self::$variant { value }, )*
+                }
+            }
+        }
+
+        impl From<TokenConfigurationChangeItemRepr> for TokenConfigurationChangeItem {
+            fn from(repr: TokenConfigurationChangeItemRepr) -> Self {
+                match repr {
+                    TokenConfigurationChangeItemRepr::$unit => Self::$unit,
+                    $( TokenConfigurationChangeItemRepr::$variant { value } => Self::$variant(value), )*
+                }
+            }
+        }
+    };
+}
+
+#[cfg(feature = "serde-conversion")]
+token_configuration_change_item_repr! {
+    unit: TokenConfigurationNoChange,
+    Conventions: TokenConfigurationConvention;
+    ConventionsControlGroup: AuthorizedActionTakers;
+    ConventionsAdminGroup: AuthorizedActionTakers;
+    MaxSupply: Option<TokenAmount>, with = "crate::serialization::json_safe_option_u64";
+    MaxSupplyControlGroup: AuthorizedActionTakers;
+    MaxSupplyAdminGroup: AuthorizedActionTakers;
+    PerpetualDistribution: Option<TokenPerpetualDistribution>;
+    PerpetualDistributionControlGroup: AuthorizedActionTakers;
+    PerpetualDistributionAdminGroup: AuthorizedActionTakers;
+    NewTokensDestinationIdentity: Option<Identifier>;
+    NewTokensDestinationIdentityControlGroup: AuthorizedActionTakers;
+    NewTokensDestinationIdentityAdminGroup: AuthorizedActionTakers;
+    MintingAllowChoosingDestination: bool;
+    MintingAllowChoosingDestinationControlGroup: AuthorizedActionTakers;
+    MintingAllowChoosingDestinationAdminGroup: AuthorizedActionTakers;
+    ManualMinting: AuthorizedActionTakers;
+    ManualMintingAdminGroup: AuthorizedActionTakers;
+    ManualBurning: AuthorizedActionTakers;
+    ManualBurningAdminGroup: AuthorizedActionTakers;
+    Freeze: AuthorizedActionTakers;
+    FreezeAdminGroup: AuthorizedActionTakers;
+    Unfreeze: AuthorizedActionTakers;
+    UnfreezeAdminGroup: AuthorizedActionTakers;
+    DestroyFrozenFunds: AuthorizedActionTakers;
+    DestroyFrozenFundsAdminGroup: AuthorizedActionTakers;
+    EmergencyAction: AuthorizedActionTakers;
+    EmergencyActionAdminGroup: AuthorizedActionTakers;
+    MarketplaceTradeMode: TokenTradeMode;
+    MarketplaceTradeModeControlGroup: AuthorizedActionTakers;
+    MarketplaceTradeModeAdminGroup: AuthorizedActionTakers;
+    MainControlGroup: Option<GroupContractPosition>;
+}
+
 impl TokenConfigurationChangeItem {
     pub fn payload_serialization(&self) -> Result<Option<Vec<u8>>, ProtocolError> {
         Ok(match self {
@@ -748,5 +832,78 @@ mod tests {
         let a = TokenConfigurationChangeItem::ManualMinting(AuthorizedActionTakers::NoOne);
         let dbg = format!("{:?}", a);
         assert!(dbg.contains("ManualMinting"));
+    }
+}
+
+// --- canonical conversion trait impls (unification pass 1) ---
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+impl crate::serialization::JsonConvertible for TokenConfigurationChangeItem {}
+
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+impl crate::serialization::ValueConvertible for TokenConfigurationChangeItem {}
+
+#[cfg(all(
+    test,
+    feature = "json-conversion",
+    feature = "value-conversion",
+    feature = "serde-conversion"
+))]
+mod json_convertible_tests {
+    use super::*;
+    use platform_value::platform_value;
+    use serde_json::json;
+
+    /// Non-default variant (`MaxSupply(Some(...))`) with a non-zero inner amount
+    /// so the wire-shape assertion catches a silent variant flip or inner-zero
+    /// on round-trip.
+    fn fixture() -> TokenConfigurationChangeItem {
+        TokenConfigurationChangeItem::MaxSupply(Some(123_456_789u64))
+    }
+
+    #[test]
+    fn json_round_trip_with_full_wire_shape() {
+        use crate::serialization::JsonConvertible;
+        let original = fixture();
+        let json = original.to_json().expect("to_json");
+        // `TokenConfigurationChangeItem` is internally tagged via its Repr:
+        // `{ "$type":"maxSupply", "value":<inner> }` where `Some(x)` -> `x`.
+        // `MaxSupply` now carries json_safe (Option<u64> -> string above
+        // MAX_SAFE_INTEGER in HR JSON); here 123_456_789 stays numeric.
+        // The value-path assertion uses `123_456_789u64` to lock in `Value::U64`.
+        assert_eq!(json, json!({"$type": "maxSupply", "value": 123_456_789u64}));
+        let recovered = TokenConfigurationChangeItem::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn value_round_trip_with_full_wire_shape() {
+        use crate::serialization::ValueConvertible;
+        let original = fixture();
+        let value = original.to_object().expect("to_object");
+        // `123_456_789u64`: explicit suffix forces `Value::U64`, matching
+        // `TokenAmount`'s u64 type. Bare integer would expand to `Value::I32`.
+        assert_eq!(
+            value,
+            platform_value!({"$type": "maxSupply", "value": 123_456_789u64})
+        );
+        let recovered = TokenConfigurationChangeItem::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn json_large_max_supply_serializes_as_string_for_js_safety() {
+        use crate::serialization::JsonConvertible;
+        // `MaxSupply` previously had NO json_safe annotation — a latent JS
+        // precision bug. Above `Number.MAX_SAFE_INTEGER` it must now serialize
+        // as a string in human-readable JSON. This pins that the Repr's
+        // json_safe_option_u64 survives the internal-tag Content buffer.
+        let original = TokenConfigurationChangeItem::MaxSupply(Some(9_007_199_254_740_993)); // 2^53 + 1
+        let json = original.to_json().expect("to_json");
+        assert_eq!(
+            json,
+            json!({"$type": "maxSupply", "value": "9007199254740993"})
+        );
+        let recovered = TokenConfigurationChangeItem::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
     }
 }

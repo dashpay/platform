@@ -211,8 +211,13 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_MnemonicNative_genera
                     .to_string_lossy()
                     .into_owned()
             };
+            // Capture the code BEFORE clean(): FFIError::clean() resets
+            // `code` to Success while freeing the message, so reading it
+            // afterwards reports every failure as 0 / InternalError
+            // (e.g. an invalid word count loses its InvalidParameter).
+            let code = error.code as i32;
             unsafe { error.clean() };
-            crate::support::throw_sdk_exception(env, error.code as i32, &message);
+            crate::support::throw_sdk_exception(env, code, &message);
             return std::ptr::null_mut();
         }
         let mut phrase = unsafe { std::ffi::CStr::from_ptr(phrase_ptr) }

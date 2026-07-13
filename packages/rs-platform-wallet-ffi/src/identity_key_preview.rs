@@ -447,16 +447,22 @@ unsafe fn preview_identity_registration_keys_inner(
                     // wallet. The read guard + `&Wallet` were re-acquired
                     // once before the loop (see below) so this is a
                     // pure secp256k1 pass with no per-row locking.
-                    let (path, ext_priv, public_key) = derive_identity_auth_keypair(
+                    let (path, mut ext_priv, public_key) = derive_identity_auth_keypair(
                         key_wallet,
                         network,
                         identity_index,
                         key_index,
                     )?;
+                    let private_key = Zeroizing::new(ext_priv.private_key.secret_bytes());
+                    // Belt-and-braces: the pinned key-wallet rev zeroizes
+                    // `ExtendedPrivKey` on Drop; erase explicitly anyway
+                    // (matches identity_private_key_at_slot.rs — cheap, and
+                    // robust to an upstream Drop regression).
+                    ext_priv.private_key.non_secure_erase();
                     Ok(RowMaterial {
                         path: path.to_string(),
                         public_key: public_key.serialize(),
-                        private_key: Zeroizing::new(ext_priv.private_key.secret_bytes()),
+                        private_key,
                     })
                 }
             }

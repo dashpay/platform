@@ -538,8 +538,10 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     ///
     /// # Returns
     ///
-    /// The `Txid` of the broadcast transaction and the newly created
-    /// [`PaymentEntry`] recording the outgoing payment.
+    /// The `Txid` of the broadcast transaction, the newly created
+    /// [`PaymentEntry`] recording the outgoing payment, and the exact
+    /// network fee in duffs (inputs − outputs) of the broadcast
+    /// transaction.
     pub async fn send_payment<S, C>(
         &self,
         from_identity_id: &Identifier,
@@ -552,6 +554,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         (
             dashcore::Txid,
             crate::wallet::identity::types::dashpay::payment::PaymentEntry,
+            u64, // network fee in duffs, from the broadcast transaction
         ),
         PlatformWalletError,
     >
@@ -575,7 +578,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         // re-acquires that (non-reentrant) lock internally.
         self.drain_pending_contact_crypto(provider).await;
 
-        let (payment_address, tx) = {
+        let (payment_address, tx, fee) = {
             let mut wm = self.wallet_manager.write().await;
 
             // Resolve the external account's xpub so we can derive addresses.
@@ -712,14 +715,19 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             // `impl<S: Signer> TransactionSigner for S`) rather than the
             // resident `wallet`, so funding-input signatures are produced
             // from Keychain-derived keys without a resident seed.
-            let (tx, _fee) = builder
+            // `build_signed` returns the fee the transaction actually
+            // pays — Σ(selected input values) − Σ(output values), a
+            // dropped sub-dust change remainder included — since
+            // rust-dashcore#872 (pinned above). No caller-side
+            // recomputation needed.
+            let (tx, fee) = builder
                 .build_signed(signer, |addr| {
                     managed_account.address_derivation_path(&addr)
                 })
                 .await
                 .map_err(|e| PlatformWalletError::TransactionBuild(e.to_string()))?;
 
-            (payment_address, tx)
+            (payment_address, tx, fee)
         };
 
         // --- 3. Broadcast the transaction, releasing the build's UTXO
@@ -774,7 +782,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 })?;
         }
 
-        Ok((txid, entry))
+        Ok((txid, entry, fee))
     }
 }
 
@@ -3592,6 +3600,277 @@ mod tests {
             flip_persisted,
             "send_payment must persist the external-account pool snapshot \
              with the consumed address marked used"
+        );
+    }
+
+    /// Broadcaster stub that accepts every transaction, so a send-path test
+    /// can reach `send_payment`'s return value. The production `identity()`
+    /// pins [`SpvBroadcaster`], whose runtime is never started in tests
+    /// (`broadcast` returns `Rejected { "SPV client not started" }`); the
+    /// `IdentityWallet<B>` broadcaster generic is the sanctioned injection
+    /// seam, exercised here with the same-crate `pub(crate)` fields. The
+    /// build + sign + fee computation all run for real — only the network
+    /// transport is stubbed.
+    struct AcceptingBroadcaster;
+
+    #[async_trait::async_trait]
+    impl crate::broadcaster::TransactionBroadcaster for AcceptingBroadcaster {
+        async fn broadcast(
+            &self,
+            transaction: &dashcore::Transaction,
+        ) -> Result<dashcore::Txid, crate::broadcaster::BroadcastError> {
+            Ok(transaction.txid())
+        }
+    }
+
+    /// Re-specialize a live `IdentityWallet<SpvBroadcaster>` onto the
+    /// accepting broadcaster, sharing every other Arc (wallet manager, SDK,
+    /// asset locks, persister, sdk_writer) so the two handles operate on the
+    /// same wallet state.
+    fn with_accepting_broadcaster(
+        real: &crate::wallet::identity::IdentityWallet<crate::broadcaster::SpvBroadcaster>,
+    ) -> crate::wallet::identity::IdentityWallet<AcceptingBroadcaster> {
+        crate::wallet::identity::IdentityWallet {
+            sdk: Arc::clone(&real.sdk),
+            wallet_manager: Arc::clone(&real.wallet_manager),
+            wallet_id: real.wallet_id,
+            asset_locks: Arc::clone(&real.asset_locks),
+            persister: real.persister.clone(),
+            broadcaster: Arc::new(AcceptingBroadcaster),
+            sdk_writer: Arc::clone(&real.sdk_writer),
+        }
+    }
+
+    /// Plant a single spendable UTXO of `value_duffs` on BIP-44 account 0's
+    /// first pool address (a real derived address, so its derivation path is
+    /// resolvable and [`SeedSigner`] can sign the funding input).
+    async fn fund_bip44_account_0(
+        manager: &Arc<PlatformWalletManager<RecordingPersister>>,
+        wallet_id: WalletId,
+        txid_byte: u8,
+        value_duffs: u64,
+    ) {
+        use dashcore::hashes::Hash;
+        use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+        let wallet = manager
+            .get_wallet(&wallet_id)
+            .await
+            .expect("wallet registered");
+        let iw = wallet.identity();
+        let mut wm = iw.wallet_manager.write().await;
+        let info = wm.get_wallet_info_mut(&wallet_id).expect("wallet info");
+        let account = info
+            .core_wallet
+            .accounts
+            .standard_bip44_accounts
+            .get_mut(&0)
+            .expect("BIP-44 managed account 0");
+        let address_info = account
+            .managed_account_type()
+            .address_pools()
+            .first()
+            .expect("BIP-44 account has an address pool")
+            .addresses
+            .values()
+            .next()
+            .expect("pool has at least one derived address")
+            .clone();
+        let txid = dashcore::Txid::from_slice(&[txid_byte; 32]).expect("txid");
+        let outpoint = dashcore::OutPoint { txid, vout: 0 };
+        account.utxos.insert(
+            outpoint,
+            key_wallet::Utxo {
+                outpoint,
+                txout: dashcore::TxOut {
+                    value: value_duffs,
+                    script_pubkey: address_info.script_pubkey.clone(),
+                },
+                address: address_info.address.clone(),
+                height: 100,
+                is_coinbase: false,
+                is_confirmed: true,
+                is_instantlocked: false,
+                is_locked: false,
+                is_trusted: false,
+            },
+        );
+    }
+
+    /// Create a testnet wallet, add the sender identity, and register the
+    /// external contact account for `(owner, contact)` via the faithful
+    /// precomputed-shared-key path — the shared setup the two full-send fee
+    /// tests build on (mirrors
+    /// `send_payment_passes_external_lookup_once_account_built` up to the send).
+    async fn register_sender_and_external_account() -> (
+        Arc<PlatformWalletManager<RecordingPersister>>,
+        WalletId,
+        Identifier,
+        Identifier,
+    ) {
+        let (manager, persister, wallet_id) = make_wallet().await;
+        let wallet_arc = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet_arc.identity();
+
+        let owner_id = Identifier::from([0x11; 32]);
+        let contact_id = Identifier::from([0x22; 32]);
+        {
+            let mut wm = iw.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("info");
+            info.identity_manager
+                .add_identity(
+                    bare_identity([0x11; 32]),
+                    0,
+                    wallet_id,
+                    &WalletPersister::new(wallet_id, Arc::clone(&persister) as _),
+                )
+                .expect("add owner");
+        }
+
+        let shared_key = [0x55u8; 32];
+        let iv = [0x11u8; 16];
+        let compact = {
+            let seed = Mnemonic::from_phrase(TEST_MNEMONIC, Language::English)
+                .expect("mnemonic")
+                .to_seed("");
+            let w = key_wallet::wallet::Wallet::from_seed_bytes(
+                seed,
+                Network::Testnet,
+                WalletAccountCreationOptions::None,
+            )
+            .expect("seed wallet");
+            crate::wallet::identity::crypto::dip14::derive_contact_xpub(
+                &w,
+                Network::Testnet,
+                0,
+                &owner_id,
+                &contact_id,
+            )
+            .expect("derive a valid compact xpub")
+            .compact
+            .to_bytes()
+        };
+        let encrypted =
+            platform_encryption::encrypt_extended_public_key(&shared_key, &iv, &compact);
+        let contact = bare_identity([0x22; 32]);
+        iw.dashpay()
+            .register_external_contact_account(
+                &owner_id,
+                &contact,
+                &encrypted,
+                zeroize::Zeroizing::new(shared_key),
+            )
+            .await
+            .expect("register external account");
+
+        (manager, wallet_id, owner_id, contact_id)
+    }
+
+    /// A fully-successful `send_payment` whose exact change would be dust
+    /// (≤ 546 duffs) must fold that remainder into the reported fee instead
+    /// of dropping it silently. With one funded UTXO of `V` and a payment of
+    /// `A` engineered so the change is dust, the builder emits a single
+    /// output (no change) and the returned fee is `V − A` — the exact
+    /// Σ(inputs) − Σ(outputs), strictly larger than the builder's
+    /// size-based fee by the dropped dust. Pins the bug this PR fixed.
+    #[tokio::test]
+    async fn send_payment_reports_exact_fee_folding_dropped_dust_change() {
+        use crate::wallet::identity::network::contact_requests::SeedCryptoProvider;
+
+        let (manager, wallet_id, owner_id, contact_id) =
+            register_sender_and_external_account().await;
+
+        // One UTXO of V = A + 526. The size-based fee for 1 input + 1 output
+        // is ~192 duffs and the coin selector reserves 226 (it sizes with a
+        // phantom change output); the resulting change (~300) is below the
+        // 546-duff dust threshold, so the builder drops it and emits ONLY the
+        // payment output. The real fee is therefore V − A = 526, NOT the
+        // ~192-duff size fee.
+        let amount = 50_000u64;
+        let funded = amount + 526;
+        fund_bip44_account_0(&manager, wallet_id, 0xA1, funded).await;
+
+        let seed = Mnemonic::from_phrase(TEST_MNEMONIC, Language::English)
+            .expect("valid mnemonic")
+            .to_seed("");
+        let provider = SeedCryptoProvider::from_seed(seed, Network::Testnet);
+        let signer = SeedSigner::new(seed, Network::Testnet);
+
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = with_accepting_broadcaster(wallet.identity());
+
+        let (_txid, entry, fee) = iw
+            .dashpay()
+            .send_payment(&owner_id, &contact_id, amount, None, &signer, &provider)
+            .await
+            .expect("funded + signable send must succeed through the accepting broadcaster");
+
+        // Exact fee = Σ(selected input values) − Σ(output values). The single
+        // funded UTXO is the only input, and because the dust change was
+        // dropped the only output is the payment itself, so Σout == amount.
+        assert_eq!(
+            fee,
+            funded - amount,
+            "the reported fee must be Σin − Σout, folding the dropped dust \
+             change into the fee (V − A)"
+        );
+        // fee == funded − amount can ONLY hold when Σout == amount, i.e. no
+        // change output was emitted: any change output would make Σout larger
+        // and the fee strictly smaller. So this equality alone proves the
+        // dust-drop.
+        assert_eq!(
+            entry.amount_duffs, amount,
+            "recorded payment amount is the send amount"
+        );
+    }
+
+    /// The control case: when the change clears the dust threshold the
+    /// builder DOES emit a change output, and Σ(inputs) − Σ(outputs) then
+    /// equals the ordinary size-based fee — the change output absorbs the
+    /// remainder, so nothing is folded in. Confirms the fee computation is
+    /// not blindly inflating every send.
+    #[tokio::test]
+    async fn send_payment_reports_size_fee_when_change_is_emitted() {
+        use crate::wallet::identity::network::contact_requests::SeedCryptoProvider;
+
+        let (manager, wallet_id, owner_id, contact_id) =
+            register_sender_and_external_account().await;
+
+        // One UTXO of V = A + 1226. Change = V − A − size_fee = 1226 − 226 =
+        // 1000 > 546, so the builder emits a 1000-duff change output. Σout =
+        // A + 1000, so the fee is V − Σout = 226 — the size-based fee for a
+        // 1-input, 2-output type-3 tx at 1 duff/byte (base 78 + 148 input),
+        // with NO dust folded in.
+        let amount = 50_000u64;
+        let funded = amount + 1226;
+        fund_bip44_account_0(&manager, wallet_id, 0xB2, funded).await;
+
+        let seed = Mnemonic::from_phrase(TEST_MNEMONIC, Language::English)
+            .expect("valid mnemonic")
+            .to_seed("");
+        let provider = SeedCryptoProvider::from_seed(seed, Network::Testnet);
+        let signer = SeedSigner::new(seed, Network::Testnet);
+
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = with_accepting_broadcaster(wallet.identity());
+
+        let (_txid, _entry, fee) = iw
+            .dashpay()
+            .send_payment(&owner_id, &contact_id, amount, None, &signer, &provider)
+            .await
+            .expect("funded + signable send must succeed through the accepting broadcaster");
+
+        // The change output absorbed the remainder: the fee is the plain
+        // size-based fee, NOT the full V − A.
+        assert!(
+            fee < funded - amount,
+            "with a change output emitted the fee must be smaller than V − A \
+             (the change absorbs the remainder), got fee={fee}, V−A={}",
+            funded - amount
+        );
+        assert_eq!(
+            fee, 226,
+            "Σin − Σout equals the size-based fee for a 1-input, 2-output \
+             type-3 tx at 1 duff/byte when change is emitted"
         );
     }
 }

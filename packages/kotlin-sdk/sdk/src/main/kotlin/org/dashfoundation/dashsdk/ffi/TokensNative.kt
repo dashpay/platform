@@ -298,7 +298,9 @@ internal object TokensNative {
     /**
      * Send a Dash payment ([amountDuffs] in duffs), signing the funding
      * inputs through [coreSignerHandle] (the manager's
-     * `MnemonicResolverHandle`). Returns the 32-byte txid, or null.
+     * `MnemonicResolverHandle`). Returns a 40-byte packed array —
+     * `txid[32] || feeDuffs(u64 LE)`, the exact network fee (Σin − Σout) —
+     * or null. `Dashpay.sendPayment` splits it into a typed result.
      */
     external fun sendDashPayPayment(
         walletHandle: Long,

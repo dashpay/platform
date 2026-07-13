@@ -1,4 +1,5 @@
 pub mod address_witness;
+pub mod identity_create_from_shielded_pool_transition;
 pub mod orchard_action;
 pub mod shield_from_asset_lock_transition;
 pub mod shield_transition;
@@ -7,6 +8,7 @@ pub mod shielded_withdrawal_transition;
 pub mod unshield_transition;
 
 pub use address_witness::{AddressWitnessWasm, input_witnesses_from_js_options};
+pub use identity_create_from_shielded_pool_transition::IdentityCreateFromShieldedPoolTransitionWasm;
 pub use orchard_action::{SerializedOrchardActionWasm, actions_from_js_options};
 pub use shield_from_asset_lock_transition::ShieldFromAssetLockTransitionWasm;
 pub use shield_transition::ShieldTransitionWasm;

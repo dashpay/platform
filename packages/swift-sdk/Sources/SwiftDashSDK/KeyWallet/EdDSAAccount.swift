@@ -3,10 +3,10 @@ import DashSDKFFI
 
 /// Swift wrapper for an EdDSA account (used for platform P2P keys)
 public class EdDSAAccount {
-    internal let handle: UnsafeMutablePointer<FFIEdDSAAccount>
+    internal let handle: OpaquePointer
     private weak var wallet: Wallet?
 
-    internal init(handle: UnsafeMutablePointer<FFIEdDSAAccount>, wallet: Wallet?) {
+    internal init(handle: OpaquePointer, wallet: Wallet?) {
         self.handle = handle
         self.wallet = wallet
     }

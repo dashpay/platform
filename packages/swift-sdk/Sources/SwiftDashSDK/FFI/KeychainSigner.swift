@@ -88,13 +88,13 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
 
     /// FFI signer handle. Pass to any `*_with_signer` entry point;
     /// the underlying pointer is the C-imported
-    /// `UnsafeMutablePointer<SignerHandle>` from `platform-wallet-ffi.h`
+    /// `OpaquePointer` from `platform-wallet-ffi.h`
     /// (and equivalently `rs-sdk-ffi.h`). Owned by this object —
     /// freed in `deinit` via `dash_sdk_signer_destroy`. Caller must
     /// keep the `KeychainSigner` alive for the duration of any FFI
     /// call that captured this pointer (see the keepalive contract
     /// above).
-    public var handle: UnsafeMutablePointer<SignerHandle> {
+    public var handle: OpaquePointer {
         handlePtr
     }
 
@@ -182,7 +182,7 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
 
     /// Raw pointer to the FFI signer handle. Boxed by Rust and freed
     /// in `deinit`.
-    private var handlePtr: UnsafeMutablePointer<SignerHandle>!
+    private var handlePtr: OpaquePointer!
 
     // MARK: Init
 
@@ -706,77 +706,29 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
         return .success(signature)
     }
 
-    /// v1 sign primitive. Wraps the raw 32-byte ECDSA scalar in a
-    /// throwaway FFI signer just long enough to produce a signature;
-    /// the keychain bytes are zeroed from the local copy as soon as
-    /// the FFI call returns.
+    /// v1 sign primitive. Delegates to `RawKeySigner.sign` (the shared
+    /// create-signer → sign → destroy round-trip; the key copy is zeroed
+    /// there), mapping its typed errors onto this signer's error space.
     ///
-    /// TODO(KeychainSigner v2): replace this whole function with a
-    /// native-Swift `secp256k1` invocation once we add the
+    /// TODO(KeychainSigner v2): replace `RawKeySigner`'s FFI round-trip
+    /// with a native-Swift `secp256k1` invocation once we add the
     /// `swift-secp256k1` SPM dep.
     fileprivate func ffiSign(
         privateKey: Data,
         data: Data
     ) -> Result<Data, Error> {
-        // Defensive copy into a mutable buffer we can zero on exit.
-        var keyCopy = [UInt8](privateKey)
-        defer {
-            // Best-effort scrub. Swift doesn't guarantee this won't be
-            // optimised away, but an explicit `withContiguousMutableStorageIfAvailable`
-            // pattern does keep the touch in the IR.
-            keyCopy.withUnsafeMutableBufferPointer { buf in
-                if let base = buf.baseAddress {
-                    memset_s(UnsafeMutableRawPointer(base), buf.count, 0, buf.count)
-                }
-            }
-        }
-
-        let signerResult = keyCopy.withUnsafeBufferPointer { keyBuf -> DashSDKResult in
-            dash_sdk_signer_create_from_private_key(
-                keyBuf.baseAddress!,
-                UInt(keyBuf.count),
-                self.network.ffiValue
-            )
-        }
-
-        if let errPtr = signerResult.error {
-            let message = errPtr.pointee.message.map { String(cString: $0) } ?? "unknown"
-            dash_sdk_error_free(errPtr)
+        do {
+            return .success(
+                try RawKeySigner.sign(data: data, privateKey: privateKey, network: self.network))
+        } catch KeyManagerError.signerCreationFailed(let message) {
             return .failure(.ffiSignerCreationFailed(message: message))
-        }
-        guard let rawSigner = signerResult.data else {
-            return .failure(.ffiSignerCreationFailed(message: "null handle"))
-        }
-        let signerHandle = rawSigner.assumingMemoryBound(to: SignerHandle.self)
-        defer { dash_sdk_signer_destroy(signerHandle) }
-
-        let signResult = data.withUnsafeBytes { dataBuf -> DashSDKResult in
-            dash_sdk_signer_sign(
-                signerHandle,
-                dataBuf.bindMemory(to: UInt8.self).baseAddress,
-                UInt(dataBuf.count)
-            )
-        }
-
-        if let errPtr = signResult.error {
-            let message = errPtr.pointee.message.map { String(cString: $0) } ?? "unknown"
-            dash_sdk_error_free(errPtr)
+        } catch KeyManagerError.invalidKeyFormat(let message) {
+            return .failure(.ffiSignerCreationFailed(message: "invalid key format: \(message)"))
+        } catch KeyManagerError.signingFailed(let message) {
             return .failure(.ffiSignFailed(message: message))
+        } catch {
+            return .failure(.ffiSignFailed(message: String(describing: error)))
         }
-        guard let sigPtr = signResult.data else {
-            return .failure(.ffiSignFailed(message: "null signature"))
-        }
-
-        let sigStruct = sigPtr.assumingMemoryBound(to: DashSDKSignature.self)
-        defer { dash_sdk_signature_free(sigStruct) }
-
-        let sigBytes: Data
-        if let bytes = sigStruct.pointee.signature {
-            sigBytes = Data(bytes: bytes, count: Int(sigStruct.pointee.signature_len))
-        } else {
-            sigBytes = Data()
-        }
-        return .success(sigBytes)
     }
 
     // MARK: - Signer protocol conformance (legacy)

@@ -1,5 +1,7 @@
 package org.dashfoundation.dashsdk.tokens
 
+import org.dashfoundation.dashsdk.wallet.op
+
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -29,7 +31,9 @@ import org.dashfoundation.dashsdk.ffi.TokensNative
  * `WalletManagerNative.getWallet`; [signerHandle] is a native `SignerHandle`
  * from `SignerNative.createSigner`.
  */
-class Dashpay internal constructor(private val walletHandle: Long) {
+class Dashpay internal constructor(private val walletHandle: Long,
+    private val gate: org.dashfoundation.dashsdk.wallet.TeardownGate? = null,
+) {
 
     /**
      * Send a contact request to [recipientIdentityId], signing the document
@@ -49,7 +53,7 @@ class Dashpay internal constructor(private val walletHandle: Long) {
         coreSignerHandle: Long,
         accountLabel: String? = null,
         autoAcceptProof: ByteArray? = null,
-    ): ContactRequestRef = withContext(Dispatchers.IO) {
+    ): ContactRequestRef = gate.op {
         val handle = mapNativeErrors {
             TokensNative.sendContactRequest(
                 walletHandle, senderIdentityId, recipientIdentityId,
@@ -70,7 +74,7 @@ class Dashpay internal constructor(private val walletHandle: Long) {
         request: ContactRequestRef,
         signerHandle: Long,
         coreSignerHandle: Long,
-    ): EstablishedContactRef = withContext(Dispatchers.IO) {
+    ): EstablishedContactRef = gate.op {
         val handle = mapNativeErrors {
             TokensNative.acceptContactRequest(
                 walletHandle, request.value, signerHandle, coreSignerHandle,
@@ -116,7 +120,8 @@ class Dashpay internal constructor(private val walletHandle: Long) {
      * signing the funding inputs through [coreSignerHandle] (the manager's
      * `MnemonicResolverHandle` — the seed never becomes resident).
      * [amountDuffs] is in duffs (not DASH). Returns the 32-byte transaction
-     * id, or null.
+     * id plus the exact network fee (Σin − Σout, sub-dust change folded in)
+     * — the Swift `sendPayment` `(txid, feeDuffs)` shape — or null.
      */
     suspend fun sendPayment(
         fromIdentityId: ByteArray,
@@ -124,14 +129,30 @@ class Dashpay internal constructor(private val walletHandle: Long) {
         amountDuffs: Long,
         coreSignerHandle: Long,
         memo: String? = null,
-    ): ByteArray? = withContext(Dispatchers.IO) {
+    ): SendPaymentResult? = gate.op {
         require(amountDuffs > 0) { "amountDuffs must be positive, got $amountDuffs" }
-        mapNativeErrors {
+        val packed = mapNativeErrors {
             TokensNative.sendDashPayPayment(
                 walletHandle, fromIdentityId, toContactIdentityId, amountDuffs, memo,
                 coreSignerHandle,
             )
-        }
+        } ?: return@op null
+        check(packed.size == 40) { "expected 40-byte txid||fee, got ${packed.size}" }
+        var fee = 0L
+        for (i in 0 until 8) fee = fee or ((packed[32 + i].toLong() and 0xFF) shl (8 * i))
+        SendPaymentResult(txid = packed.copyOfRange(0, 32), feeDuffs = fee)
+    }
+
+    /**
+     * A broadcast DashPay payment: the transaction id and the exact network
+     * fee the transaction pays (mirror of Swift's `(txid, feeDuffs)`).
+     */
+    data class SendPaymentResult(val txid: ByteArray, val feeDuffs: Long) {
+        override fun equals(other: Any?): Boolean =
+            other is SendPaymentResult && txid.contentEquals(other.txid) &&
+                feeDuffs == other.feeDuffs
+
+        override fun hashCode(): Int = 31 * txid.contentHashCode() + feeDuffs.hashCode()
     }
 
     /** Sync DashPay profiles for every managed identity. Returns the synced count. */
@@ -230,7 +251,7 @@ class Dashpay internal constructor(private val walletHandle: Long) {
         senderId: ByteArray,
         signerHandle: Long,
         coreSignerHandle: Long,
-    ): Boolean = withContext(Dispatchers.IO) {
+    ): Boolean = gate.op {
         mapNativeErrors {
             val identityHandle = TokensNative.getManagedIdentity(walletHandle, ourIdentityId)
             if (identityHandle == 0L) return@mapNativeErrors false
@@ -336,7 +357,7 @@ class Dashpay internal constructor(private val walletHandle: Long) {
         identityId: ByteArray,
         username: String,
         coreSignerHandle: Long,
-    ): String? = withContext(Dispatchers.IO) {
+    ): String? = gate.op {
         mapNativeErrors {
             DashpayNative.buildAutoAcceptQr(walletHandle, identityId, username, coreSignerHandle)
         }
@@ -354,7 +375,7 @@ class Dashpay internal constructor(private val walletHandle: Long) {
         uri: String,
         signerHandle: Long,
         coreSignerHandle: Long,
-    ): ContactRequestRef = withContext(Dispatchers.IO) {
+    ): ContactRequestRef = gate.op {
         val handle = mapNativeErrors {
             DashpayNative.sendContactRequestFromQr(
                 walletHandle, senderIdentityId, uri, signerHandle, coreSignerHandle,
@@ -382,7 +403,7 @@ class Dashpay internal constructor(private val walletHandle: Long) {
         avatarBytes: ByteArray? = null,
         doCreate: Boolean,
         signerHandle: Long,
-    ): String? = withContext(Dispatchers.IO) {
+    ): String? = gate.op {
         mapNativeErrors {
             DashpayNative.createOrUpdateProfile(
                 walletHandle, identityId, displayName, publicMessage,
@@ -409,7 +430,7 @@ class Dashpay internal constructor(private val walletHandle: Long) {
         displayHidden: Boolean,
         signerHandle: Long,
         coreSignerHandle: Long,
-    ): ContactInfoPublishOutcome = withContext(Dispatchers.IO) {
+    ): ContactInfoPublishOutcome = gate.op {
         val raw = mapNativeErrors {
             DashpayNative.setContactInfo(
                 walletHandle, identityId, contactId, alias, note,

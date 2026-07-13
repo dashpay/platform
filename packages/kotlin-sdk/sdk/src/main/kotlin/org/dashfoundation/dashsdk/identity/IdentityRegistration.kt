@@ -1,5 +1,7 @@
 package org.dashfoundation.dashsdk.identity
 
+import org.dashfoundation.dashsdk.wallet.op
+
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.dashfoundation.dashsdk.credits.FundingInput
@@ -17,7 +19,9 @@ import org.dashfoundation.dashsdk.ffi.IdentityNative
  * `mnemonicResolverHandle`, and `ManagedPlatformWallet` owns the wallet
  * handle.
  */
-class IdentityRegistration internal constructor() {
+class IdentityRegistration internal constructor(
+    private val gate: org.dashfoundation.dashsdk.wallet.TeardownGate? = null,
+) {
 
     /**
      * Derive the identity-registration keys for a wallet slot (path +
@@ -33,7 +37,7 @@ class IdentityRegistration internal constructor() {
         mnemonicResolverHandle: Long,
         startIndex: Int,
         count: Int = -1,
-    ): List<IdentityKeyPreview> = withContext(Dispatchers.IO) {
+    ): List<IdentityKeyPreview> = gate.op {
         val blob = mapNativeErrors {
             IdentityNative.previewRegistrationKeys(
                 walletHandle,
@@ -72,7 +76,7 @@ class IdentityRegistration internal constructor() {
         mnemonicResolverHandle: Long,
         identityIndex: Int,
         count: Int = -1,
-    ): List<IdentityKeyPreview> = withContext(Dispatchers.IO) {
+    ): List<IdentityKeyPreview> = gate.op {
         val blob = mapNativeErrors {
             IdentityNative.previewRegistrationKeySet(
                 walletHandle,
@@ -99,7 +103,7 @@ class IdentityRegistration internal constructor() {
         keys: List<IdentityKeyPreview>,
         signerHandle: Long,
         coreSignerHandle: Long,
-    ): ByteArray = withContext(Dispatchers.IO) {
+    ): ByteArray = gate.op {
         require(amountDuffs > 0) { "amountDuffs must be positive, got $amountDuffs" }
         require(accountIndex >= 0) { "accountIndex must be non-negative, got $accountIndex" }
         require(identityIndex >= 0) { "identityIndex must be non-negative, got $identityIndex" }
@@ -134,7 +138,7 @@ class IdentityRegistration internal constructor() {
         keys: List<IdentityKeyPreview>,
         signerHandle: Long,
         inputs: List<FundingInput>,
-    ): ByteArray = withContext(Dispatchers.IO) {
+    ): ByteArray = gate.op {
         require(identityIndex >= 0) { "identityIndex must be non-negative, got $identityIndex" }
         require(inputs.isNotEmpty()) { "inputs must not be empty" }
         mapNativeErrors {
@@ -159,7 +163,7 @@ class IdentityRegistration internal constructor() {
         mnemonicResolverHandle: Long,
         startIndex: Int = -1,
         gapLimit: Int = 5,
-    ): List<ByteArray> = withContext(Dispatchers.IO) {
+    ): List<ByteArray> = gate.op {
         val flat = mapNativeErrors {
             IdentityNative.discoverIdentities(
                 walletHandle,
@@ -180,7 +184,7 @@ class IdentityRegistration internal constructor() {
         identityId: ByteArray,
         label: String,
         signerHandle: Long,
-    ): String = withContext(Dispatchers.IO) {
+    ): String = gate.op {
         mapNativeErrors {
             IdentityNative.registerDpnsName(walletHandle, identityId, label, signerHandle)
         }

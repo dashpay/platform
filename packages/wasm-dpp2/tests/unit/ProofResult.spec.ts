@@ -302,26 +302,24 @@ describe('StateTransitionProofResult types', () => {
 
   describe('VerifiedMasternodeVote', () => {
     it('should construct from object with Abstain vote', () => {
-      // Vote: tag = "type", content = "data", rename_all = "camelCase"
-      // ResourceVote: tag = "$formatVersion", V0 renamed to "0"
-      // VotePoll: tag = "type", content = "data", rename_all = "camelCase"
-      // ResourceVoteChoice: tag = "type", content = "data", rename_all = "camelCase"
+      // Vote:               internal tag `$type` ($-prefix because the level
+      //                     also carries the inner `$formatVersion`)
+      // ResourceVote:       single V0 variant flattens its body, contributing
+      //                     `$formatVersion: "0"` at top level
+      // VotePoll:           internal tag `type` (plain — no `$`-fields here)
+      // ResourceVoteChoice: custom serde, flat `{type, identity?}`
       const data = {
         vote: {
-          type: 'resourceVote',
-          data: {
-            $formatVersion: '0',
-            votePoll: {
-              type: 'contestedDocumentResourceVotePoll',
-              data: {
-                contractId: identifier,
-                documentTypeName: 'domain',
-                indexName: 'parentNameAndLabel',
-                indexValues: ['dash', 'test'],
-              },
-            },
-            resourceVoteChoice: { type: 'abstain' },
+          $type: 'resourceVote',
+          $formatVersion: '0',
+          votePoll: {
+            $type: 'contestedDocumentResourceVotePoll',
+            contractId: identifier,
+            documentTypeName: 'domain',
+            indexName: 'parentNameAndLabel',
+            indexValues: ['dash', 'test'],
           },
+          resourceVoteChoice: { $type: 'abstain' },
         },
       };
       const result = wasm.VerifiedMasternodeVote.fromObject(data);
@@ -337,20 +335,16 @@ describe('StateTransitionProofResult types', () => {
     it('should construct from object with Abstain vote', () => {
       const data = {
         vote: {
-          type: 'resourceVote',
-          data: {
-            $formatVersion: '0',
-            votePoll: {
-              type: 'contestedDocumentResourceVotePoll',
-              data: {
-                contractId: identifier,
-                documentTypeName: 'domain',
-                indexName: 'parentNameAndLabel',
-                indexValues: ['dash', 'test'],
-              },
-            },
-            resourceVoteChoice: { type: 'abstain' },
+          $type: 'resourceVote',
+          $formatVersion: '0',
+          votePoll: {
+            $type: 'contestedDocumentResourceVotePoll',
+            contractId: identifier,
+            documentTypeName: 'domain',
+            indexName: 'parentNameAndLabel',
+            indexValues: ['dash', 'test'],
           },
+          resourceVoteChoice: { $type: 'abstain' },
         },
       };
       const result = wasm.VerifiedNextDistribution.fromObject(data);

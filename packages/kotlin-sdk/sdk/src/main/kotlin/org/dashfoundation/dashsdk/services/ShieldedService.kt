@@ -399,17 +399,21 @@ class ShieldedService(private val database: DashDatabase) {
      *    the post-clear resync cold-rebuilds from index 0 instead of
      *    gate-skipping every re-downloaded position against a stale tree
      *    (the frozen-tree / zero-notes desync this Clear exists to fix).
-     * 2. **Room wipe — EVERY wallet's shielded rows** (INCLUDING
+     * 2. **Room wipe — every wallet on THIS network** (INCLUDING
      *    `shielded_sync_states`, the per-subwallet watermark; leaving any
      *    would let [bind]'s `restore_for_wallet` re-seed a caught-up
      *    watermark and re-freeze the tree) in one transaction, and zero the
-     *    published counters. The wipe is deliberately GLOBAL, not scoped to
-     *    the bound wallet: with multi-engine-bind, every loaded wallet has
-     *    rows, and [clearShieldedStorage] empties the SHARED tree — a
-     *    non-mirror wallet whose Room watermark survived would restore a
-     *    position ahead of the now-empty tree on re-bind and gate-skip
-     *    every note (the exact Room↔SQLite watermark-divergence freeze
-     *    this Clear exists to fix).
+     *    published counters. Scoped to the active network's wallets
+     *    (`walletDao().getByNetwork`), NOT global: [clearShieldedStorage]
+     *    empties only this network's `shielded_tree_<network>.sqlite`, so
+     *    wiping other networks' rows would drop notes/activity/watermarks
+     *    whose Rust trees are still populated → data loss + Room↔Rust
+     *    divergence on the next network switch. Within this network the wipe
+     *    must cover EVERY wallet (not just the loaded/bound fleet — an
+     *    unloaded same-network wallet's surviving watermark would restore a
+     *    position ahead of the now-empty shared tree on re-bind and
+     *    gate-skip every note, the exact Room↔SQLite watermark-divergence
+     *    freeze this Clear exists to fix).
      * 3. **Re-bind + restart sync** — [clearShieldedStorage] dropped every
      *    coordinator registration and quiesced the sync loop, so nothing
      *    would resync until the next app relaunch otherwise. Re-run [bind]
@@ -456,15 +460,28 @@ class ShieldedService(private val database: DashDatabase) {
         mgr.clearShieldedStorage()
         android.util.Log.i(TAG, "Shielded clear: Rust store reset OK; wiping Room rows")
 
-        // Global wipe — every wallet's rows, not just the mirror's. The
-        // Rust reset above emptied the SHARED tree for all wallets; any
-        // surviving Room watermark would restore a position ahead of the
-        // empty tree on re-bind and gate-skip every note (see doc, step 2).
+        // Wipe every wallet on THIS network, but NOT other networks'. `mgr`
+        // is network-scoped and its shielded tree
+        // (`shielded_tree_<network>.sqlite`) is per-network, so the Rust
+        // reset above emptied only the ACTIVE network's SHARED tree. A
+        // global deleteAll* would drop other networks' notes/activity/
+        // watermarks while their Rust trees stay populated → Room/Rust
+        // divergence + data loss on the next network switch. Scope to the
+        // network via `walletDao().getByNetwork` — NOT `mgr.wallets`, which
+        // only holds the successfully-loaded fleet: a same-network wallet
+        // that failed restore still has Room rows, and a surviving watermark
+        // would restore a position ahead of the now-empty tree on re-bind
+        // and gate-skip every note (see doc, step 2).
+        val networkWalletIds = db.walletDao()
+            .getByNetwork(mgr.network.ffiValue)
+            .map { it.walletId }
         db.withTransaction {
-            db.shieldedDao().deleteAllActivity()
-            db.shieldedDao().deleteAllOutgoingNotes()
-            db.shieldedDao().deleteAllNotes()
-            db.shieldedDao().deleteAllSyncStates()
+            for (wid in networkWalletIds) {
+                db.shieldedDao().deleteActivityByWallet(wid)
+                db.shieldedDao().deleteOutgoingNotesByWallet(wid)
+                db.shieldedDao().deleteNotesByWallet(wid)
+                db.shieldedDao().deleteSyncStatesByWallet(wid)
+            }
         }
         _state.update { it.copy(shieldedBalance = 0, totalScanned = 0, totalNewNotes = 0) }
 

@@ -68,6 +68,11 @@ data class IdentityKeyPreview(
                     ),
                 )
             }
+            // The source blob interleaves every row's raw private scalar —
+            // consume-and-wipe it so the only remaining plaintext copies
+            // are the per-row arrays the caller owns (and must zero after
+            // use, per this class's contract).
+            blob.fill(0)
             return rows
         }
 

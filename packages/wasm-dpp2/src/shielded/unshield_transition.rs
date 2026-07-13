@@ -4,7 +4,7 @@ use crate::platform_address::PlatformAddressWasm;
 use crate::shielded::orchard_action::{SerializedOrchardActionWasm, actions_from_js_options};
 use crate::utils::try_from_options;
 use crate::utils::try_vec_to_fixed_bytes;
-use crate::{impl_wasm_conversions_serde, impl_wasm_type_info};
+use crate::{impl_wasm_conversions_inner, impl_wasm_type_info};
 use dpp::serialization::{PlatformDeserializable, PlatformSerializable};
 use dpp::state_transition::unshield_transition::UnshieldTransition;
 use dpp::state_transition::unshield_transition::v0::UnshieldTransitionV0;
@@ -209,8 +209,9 @@ impl UnshieldTransitionWasm {
     }
 }
 
-impl_wasm_conversions_serde!(
+impl_wasm_conversions_inner!(
     UnshieldTransitionWasm,
+    UnshieldTransition,
     UnshieldTransition,
     UnshieldTransitionObjectJs,
     UnshieldTransitionJSONJs

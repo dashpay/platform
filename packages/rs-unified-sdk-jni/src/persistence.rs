@@ -760,10 +760,23 @@ unsafe fn persist_changeset_transaction(
     let block_hash = env.byte_array_from_slice(&t.block_hash)?;
     let tx_type = cstr(env, t.transaction_type)?;
     let label = cstr(env, t.label)?;
+    // Input outpoints (one per tx input, in vin order; empty for coinbase).
+    // Flatten to txid[32] || vout(u32 LE) = 36 bytes each — byte-identical to
+    // Kotlin/Swift makeOutpoint, so the pending-input join key matches with no
+    // per-element conversion on the Kotlin side. Dropping these is what left a
+    // spend-before-funding output restorable as spendable (CORE-06).
+    let ops = slice_or_empty(t.input_outpoints, t.input_outpoints_count);
+    let mut packed = Vec::with_capacity(ops.len() * 36);
+    for op in ops {
+        packed.extend_from_slice(&op.txid);
+        packed.extend_from_slice(&op.vout.to_le_bytes());
+    }
+    let input_outpoints = env.byte_array_from_slice(&packed)?;
+    let input_outpoint_count = ops.len() as i32;
     env.call_method(
         bridge,
         "onWalletChangesetTransaction",
-        "([B[B[BII[BIILjava/lang/String;IJJZLjava/lang/String;J)I",
+        "([B[B[BII[BIILjava/lang/String;IJJZLjava/lang/String;J[BI)I",
         &[
             wid.into(),
             (&txid).into(),
@@ -780,6 +793,8 @@ unsafe fn persist_changeset_transaction(
             JValue::Bool(t.has_fee as u8),
             (&label).into(),
             JValue::Long(t.first_seen as i64),
+            (&input_outpoints).into(),
+            JValue::Int(input_outpoint_count),
         ],
     )?
     .i()
@@ -2925,6 +2940,11 @@ fn build_account_spec(
             friend_identity_id,
             account_xpub_bytes: ptr::null(),
             account_xpub_bytes_len: 0,
+            // Load-callback contract (see AccountSpecFFI): hosts leave the
+            // pre-derived platform-node keys null/0 on restore — the Rust
+            // load path never consumes them (write-callback display data).
+            derived_platform_node_keys: ptr::null(),
+            derived_platform_node_keys_count: 0,
         },
         xpub,
     })

@@ -1,5 +1,7 @@
 package org.dashfoundation.dashsdk.queries
 
+import org.dashfoundation.dashsdk.wallet.op
+
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -24,24 +26,24 @@ import org.dashfoundation.dashsdk.ffi.QueriesNative
 class Identities internal constructor(private val sdk: Sdk) {
 
     /** Fetch an identity as JSON, or null if it doesn't exist. */
-    suspend fun fetch(identityId: String): String? = withContext(Dispatchers.IO) {
+    suspend fun fetch(identityId: String): String? = sdk.queryGate.op {
         mapNativeErrors { QueriesNative.identityFetch(sdk.handle, identityId) }
     }
 
     /** Fetch an identity's balance in credits. */
-    suspend fun fetchBalance(identityId: String): Long? = withContext(Dispatchers.IO) {
+    suspend fun fetchBalance(identityId: String): Long? = sdk.queryGate.op {
         mapNativeErrors { QueriesNative.identityFetchBalance(sdk.handle, identityId) }
             ?.toLongOrNull()
     }
 
     /** Fetch an identity's public keys (JSON array), or null if absent. */
-    suspend fun fetchPublicKeys(identityId: String): String? = withContext(Dispatchers.IO) {
+    suspend fun fetchPublicKeys(identityId: String): String? = sdk.queryGate.op {
         mapNativeErrors { QueriesNative.identityFetchPublicKeys(sdk.handle, identityId) }
     }
 
     /** Fetch an identity's balance + revision as a JSON object, or null. */
     suspend fun fetchBalanceAndRevision(identityId: String): String? =
-        withContext(Dispatchers.IO) {
+        sdk.queryGate.op {
             mapNativeErrors { QueriesNative.identityFetchBalanceAndRevision(sdk.handle, identityId) }
         }
 
@@ -49,7 +51,7 @@ class Identities internal constructor(private val sdk: Sdk) {
      * Fetch the identity that owns a unique public-key [hashHex] (hex), as
      * JSON, or null if none.
      */
-    suspend fun fetchByPublicKeyHash(hashHex: String): String? = withContext(Dispatchers.IO) {
+    suspend fun fetchByPublicKeyHash(hashHex: String): String? = sdk.queryGate.op {
         mapNativeErrors { QueriesNative.identityFetchByPublicKeyHash(sdk.handle, hashHex) }
     }
 
@@ -61,7 +63,7 @@ class Identities internal constructor(private val sdk: Sdk) {
     suspend fun fetchByNonUniquePublicKeyHash(
         hashHex: String,
         startAfter: String? = null,
-    ): String? = withContext(Dispatchers.IO) {
+    ): String? = sdk.queryGate.op {
         mapNativeErrors {
             QueriesNative.identityFetchByNonUniquePublicKeyHash(sdk.handle, hashHex, startAfter)
         }
@@ -74,8 +76,8 @@ class Identities internal constructor(private val sdk: Sdk) {
      * short-circuits to `"[]"`.
      */
     suspend fun fetchBalances(identityIds: List<ByteArray>): String? =
-        withContext(Dispatchers.IO) {
-            if (identityIds.isEmpty()) return@withContext "[]"
+        sdk.queryGate.op {
+            if (identityIds.isEmpty()) return@op "[]"
             require(identityIds.all { it.size == 32 }) {
                 "each identity id must be exactly 32 bytes"
             }
@@ -85,14 +87,14 @@ class Identities internal constructor(private val sdk: Sdk) {
         }
 
     /** Fetch an identity's current nonce, or null if not found. */
-    suspend fun fetchNonce(identityId: String): Long? = withContext(Dispatchers.IO) {
+    suspend fun fetchNonce(identityId: String): Long? = sdk.queryGate.op {
         mapNativeErrors { QueriesNative.identityFetchNonce(sdk.handle, identityId) }
             ?.toLongOrNull()
     }
 
     /** Fetch an identity's nonce for a specific contract, or null if not found. */
     suspend fun fetchContractNonce(identityId: String, contractId: String): Long? =
-        withContext(Dispatchers.IO) {
+        sdk.queryGate.op {
             mapNativeErrors {
                 QueriesNative.identityFetchContractNonce(sdk.handle, identityId, contractId)
             }?.toLongOrNull()
@@ -110,8 +112,8 @@ class Identities internal constructor(private val sdk: Sdk) {
         contractId: String,
         purposes: List<Int>,
         documentTypeName: String? = null,
-    ): String? = withContext(Dispatchers.IO) {
-        if (identityIds.isEmpty()) return@withContext "{}"
+    ): String? = sdk.queryGate.op {
+        if (identityIds.isEmpty()) return@op "{}"
         require(purposes.isNotEmpty()) { "at least one key purpose is required" }
         mapNativeErrors {
             QueriesNative.identitiesFetchContractKeys(
@@ -136,7 +138,7 @@ class Addresses internal constructor(private val sdk: Sdk) {
      * Fetch a single address's balance + nonce as a JSON object
      * `{"addressHex":..,"nonce":..,"balance":..,"found":..}`, or null.
      */
-    suspend fun fetchInfo(address: ByteArray): String? = withContext(Dispatchers.IO) {
+    suspend fun fetchInfo(address: ByteArray): String? = sdk.queryGate.op {
         mapNativeErrors { QueriesNative.addressFetchInfo(sdk.handle, address) }
     }
 
@@ -145,8 +147,8 @@ class Addresses internal constructor(private val sdk: Sdk) {
      * [addresses] must share the same length (typically 21). Empty input
      * short-circuits to `"[]"`.
      */
-    suspend fun fetchInfos(addresses: List<ByteArray>): String? = withContext(Dispatchers.IO) {
-        if (addresses.isEmpty()) return@withContext "[]"
+    suspend fun fetchInfos(addresses: List<ByteArray>): String? = sdk.queryGate.op {
+        if (addresses.isEmpty()) return@op "[]"
         val len = addresses.first().size
         require(addresses.all { it.size == len }) { "all addresses must be the same length" }
         val flat = ByteArray(addresses.size * len)
@@ -176,7 +178,7 @@ class Voting internal constructor(private val sdk: Sdk) {
         endIndexValuesJson: String? = null,
         count: Int = 0,
         orderAscending: Boolean = true,
-    ): String? = withContext(Dispatchers.IO) {
+    ): String? = sdk.queryGate.op {
         mapNativeErrors {
             QueriesNative.contestedResourcesGet(
                 sdk.handle,
@@ -204,7 +206,7 @@ class Voting internal constructor(private val sdk: Sdk) {
         resultType: Int,
         allowIncludeLockedAndAbstaining: Boolean = true,
         count: Int = 0,
-    ): String? = withContext(Dispatchers.IO) {
+    ): String? = sdk.queryGate.op {
         mapNativeErrors {
             QueriesNative.contestedResourceVoteState(
                 sdk.handle,
@@ -228,7 +230,7 @@ class Voting internal constructor(private val sdk: Sdk) {
         contestantId: String,
         count: Int = 0,
         orderAscending: Boolean = true,
-    ): String? = withContext(Dispatchers.IO) {
+    ): String? = sdk.queryGate.op {
         mapNativeErrors {
             QueriesNative.contestedResourceVotersForIdentity(
                 sdk.handle,
@@ -249,7 +251,7 @@ class Voting internal constructor(private val sdk: Sdk) {
         limit: Int = 0,
         offset: Int = 0,
         orderAscending: Boolean = true,
-    ): String? = withContext(Dispatchers.IO) {
+    ): String? = sdk.queryGate.op {
         mapNativeErrors {
             QueriesNative.contestedResourceIdentityVotes(
                 sdk.handle, identityId, limit, offset, orderAscending,
@@ -269,7 +271,7 @@ class Voting internal constructor(private val sdk: Sdk) {
         limit: Int = 0,
         offset: Int = 0,
         ascending: Boolean = true,
-    ): String? = withContext(Dispatchers.IO) {
+    ): String? = sdk.queryGate.op {
         mapNativeErrors {
             QueriesNative.votingVotePollsByEndDate(
                 sdk.handle,
@@ -293,7 +295,7 @@ class Evonodes internal constructor(private val sdk: Sdk) {
      * JSON array of pro-tx-hash strings. Returns JSON, or null.
      */
     suspend fun proposedEpochBlocksByIds(epoch: Int, idsJson: String): String? =
-        withContext(Dispatchers.IO) {
+        sdk.queryGate.op {
             mapNativeErrors {
                 QueriesNative.evonodeProposedEpochBlocksByIds(sdk.handle, epoch, idsJson)
             }
@@ -308,7 +310,7 @@ class Evonodes internal constructor(private val sdk: Sdk) {
         limit: Int = 0,
         startAfter: String? = null,
         startAt: String? = null,
-    ): String? = withContext(Dispatchers.IO) {
+    ): String? = sdk.queryGate.op {
         mapNativeErrors {
             QueriesNative.evonodeProposedEpochBlocksByRange(
                 sdk.handle, epoch, limit, startAfter, startAt,
@@ -329,23 +331,23 @@ class SystemQueries internal constructor(private val sdk: Sdk) {
      * array of elements, or null. Backs the iOS `GroveDBPathElementsView`.
      */
     suspend fun groveDbPathElements(pathJson: String, keysJson: String?): String? =
-        withContext(Dispatchers.IO) {
+        sdk.queryGate.op {
             mapNativeErrors { QueriesNative.systemGetPathElements(sdk.handle, pathJson, keysJson) }
         }
 
     /** Prefunded specialized balance for a base58 [id], as JSON, or null. */
-    suspend fun prefundedSpecializedBalance(id: String): String? = withContext(Dispatchers.IO) {
+    suspend fun prefundedSpecializedBalance(id: String): String? = sdk.queryGate.op {
         mapNativeErrors { QueriesNative.systemGetPrefundedSpecializedBalance(sdk.handle, id) }
     }
 
     /** Total credits currently in Platform, or null. */
-    suspend fun totalCreditsInPlatform(): Long? = withContext(Dispatchers.IO) {
+    suspend fun totalCreditsInPlatform(): Long? = sdk.queryGate.op {
         mapNativeErrors { QueriesNative.systemGetTotalCreditsInPlatform(sdk.handle) }
             ?.toLongOrNull()
     }
 
     /** Current quorums info as a JSON array, or null. */
-    suspend fun currentQuorumsInfo(): String? = withContext(Dispatchers.IO) {
+    suspend fun currentQuorumsInfo(): String? = sdk.queryGate.op {
         mapNativeErrors { QueriesNative.systemGetCurrentQuorumsInfo(sdk.handle) }
     }
 
@@ -357,14 +359,14 @@ class SystemQueries internal constructor(private val sdk: Sdk) {
         startEpoch: String? = null,
         count: Int = 0,
         ascending: Boolean = true,
-    ): String? = withContext(Dispatchers.IO) {
+    ): String? = sdk.queryGate.op {
         mapNativeErrors {
             QueriesNative.systemGetEpochsInfo(sdk.handle, startEpoch, count, ascending)
         }
     }
 
     /** Protocol-version upgrade state (per-version tallies) as JSON, or null. */
-    suspend fun protocolVersionUpgradeState(): String? = withContext(Dispatchers.IO) {
+    suspend fun protocolVersionUpgradeState(): String? = sdk.queryGate.op {
         mapNativeErrors { QueriesNative.protocolVersionUpgradeState(sdk.handle) }
     }
 
@@ -375,7 +377,7 @@ class SystemQueries internal constructor(private val sdk: Sdk) {
     suspend fun protocolVersionUpgradeVoteStatus(
         startProTxHash: String? = null,
         count: Int = 0,
-    ): String? = withContext(Dispatchers.IO) {
+    ): String? = sdk.queryGate.op {
         mapNativeErrors {
             QueriesNative.protocolVersionUpgradeVoteStatus(sdk.handle, startProTxHash, count)
         }
@@ -387,7 +389,7 @@ class Groups internal constructor(private val sdk: Sdk) {
 
     /** Group info (required power + members) at a position, as JSON, or null. */
     suspend fun info(contractId: String, groupContractPosition: Int): String? =
-        withContext(Dispatchers.IO) {
+        sdk.queryGate.op {
             mapNativeErrors {
                 QueriesNative.groupGetInfo(sdk.handle, contractId, groupContractPosition)
             }
@@ -403,7 +405,7 @@ class Groups internal constructor(private val sdk: Sdk) {
         status: Int,
         startAtActionId: String? = null,
         limit: Int = 0,
-    ): String? = withContext(Dispatchers.IO) {
+    ): String? = sdk.queryGate.op {
         mapNativeErrors {
             QueriesNative.groupGetActions(
                 sdk.handle, contractId, groupContractPosition, status, startAtActionId, limit,
@@ -417,7 +419,7 @@ class Groups internal constructor(private val sdk: Sdk) {
         groupContractPosition: Int,
         status: Int,
         actionId: String,
-    ): String? = withContext(Dispatchers.IO) {
+    ): String? = sdk.queryGate.op {
         mapNativeErrors {
             QueriesNative.groupGetActionSigners(
                 sdk.handle, contractId, groupContractPosition, status, actionId,
@@ -429,23 +431,23 @@ class Groups internal constructor(private val sdk: Sdk) {
 class Dpns internal constructor(private val sdk: Sdk) {
 
     /** Resolve a DPNS name to its record (JSON), or null if unregistered. */
-    suspend fun resolve(name: String): String? = withContext(Dispatchers.IO) {
+    suspend fun resolve(name: String): String? = sdk.queryGate.op {
         mapNativeErrors { QueriesNative.dpnsResolve(sdk.handle, name) }
     }
 
     /** Check label availability; returns the JSON availability object. */
-    suspend fun checkAvailability(label: String): String? = withContext(Dispatchers.IO) {
+    suspend fun checkAvailability(label: String): String? = sdk.queryGate.op {
         mapNativeErrors { QueriesNative.dpnsCheckAvailability(sdk.handle, label) }
     }
 
     /** Usernames owned by an identity (JSON array). */
     suspend fun usernames(identityId: String, limit: Int = 0): String? =
-        withContext(Dispatchers.IO) {
+        sdk.queryGate.op {
             mapNativeErrors { QueriesNative.dpnsGetUsernames(sdk.handle, identityId, limit) }
         }
 
     /** Search names by prefix (JSON array). */
-    suspend fun search(prefix: String, limit: Int = 0): String? = withContext(Dispatchers.IO) {
+    suspend fun search(prefix: String, limit: Int = 0): String? = sdk.queryGate.op {
         mapNativeErrors { QueriesNative.dpnsSearch(sdk.handle, prefix, limit) }
     }
 }
@@ -458,7 +460,7 @@ class TokenQueries internal constructor(private val sdk: Sdk) {
      * Mirrors Swift's `calculateTokenId(contractId:position:)`.
      */
     suspend fun calculateTokenId(contractId: String, position: Int): String? =
-        withContext(Dispatchers.IO) {
+        sdk.queryGate.op {
             require(position in 0..0xFFFF) { "position must be in 0..65535, got $position" }
             mapNativeErrors { QueriesNative.calculateTokenId(contractId, position) }
         }
@@ -470,8 +472,8 @@ class TokenQueries internal constructor(private val sdk: Sdk) {
     suspend fun identityTokenBalances(
         identityId: String,
         tokenIds: List<String>,
-    ): String? = withContext(Dispatchers.IO) {
-        if (tokenIds.isEmpty()) return@withContext null
+    ): String? = sdk.queryGate.op {
+        if (tokenIds.isEmpty()) return@op null
         mapNativeErrors {
             QueriesNative.identityFetchTokenBalances(
                 sdk.handle, identityId, tokenIds.joinToString(","),
@@ -483,8 +485,8 @@ class TokenQueries internal constructor(private val sdk: Sdk) {
      * On-chain token statuses as JSON `{"<base58Id>": {"paused": bool}, ...}`.
      * [tokenIds] are base58 token ids. Null if the query fails.
      */
-    suspend fun statuses(tokenIds: List<String>): String? = withContext(Dispatchers.IO) {
-        if (tokenIds.isEmpty()) return@withContext null
+    suspend fun statuses(tokenIds: List<String>): String? = sdk.queryGate.op {
+        if (tokenIds.isEmpty()) return@op null
         mapNativeErrors { QueriesNative.tokenGetStatuses(sdk.handle, tokenIds.joinToString(",")) }
     }
 
@@ -493,12 +495,12 @@ class TokenQueries internal constructor(private val sdk: Sdk) {
      * `{"contract_id": "<base58>", "token_contract_position": <u16>}`, or
      * null if the token is unknown.
      */
-    suspend fun contractInfo(tokenId: String): String? = withContext(Dispatchers.IO) {
+    suspend fun contractInfo(tokenId: String): String? = sdk.queryGate.op {
         mapNativeErrors { QueriesNative.tokenGetContractInfo(sdk.handle, tokenId) }
     }
 
     /** A token's total supply, or null. */
-    suspend fun totalSupply(tokenId: String): String? = withContext(Dispatchers.IO) {
+    suspend fun totalSupply(tokenId: String): String? = sdk.queryGate.op {
         mapNativeErrors { QueriesNative.tokenGetTotalSupply(sdk.handle, tokenId) }
     }
 
@@ -509,7 +511,7 @@ class TokenQueries internal constructor(private val sdk: Sdk) {
     suspend fun perpetualDistributionLastClaim(
         tokenId: String,
         identityId: String,
-    ): String? = withContext(Dispatchers.IO) {
+    ): String? = sdk.queryGate.op {
         mapNativeErrors {
             QueriesNative.tokenGetPerpetualDistributionLastClaim(sdk.handle, tokenId, identityId)
         }
@@ -520,8 +522,8 @@ class TokenQueries internal constructor(private val sdk: Sdk) {
      * input short-circuits to null.
      */
     suspend fun directPurchasePrices(tokenIds: List<String>): String? =
-        withContext(Dispatchers.IO) {
-            if (tokenIds.isEmpty()) return@withContext null
+        sdk.queryGate.op {
+            if (tokenIds.isEmpty()) return@op null
             mapNativeErrors {
                 QueriesNative.tokenGetDirectPurchasePrices(sdk.handle, tokenIds.joinToString(","))
             }
@@ -537,7 +539,7 @@ class TokenQueries internal constructor(private val sdk: Sdk) {
         startRecipient: String? = null,
         startRecipientIncluded: Boolean = true,
         limit: Int = 0,
-    ): String? = withContext(Dispatchers.IO) {
+    ): String? = sdk.queryGate.op {
         mapNativeErrors {
             QueriesNative.tokenGetPreProgrammedDistributions(
                 sdk.handle,
@@ -554,7 +556,7 @@ class TokenQueries internal constructor(private val sdk: Sdk) {
 class Contracts internal constructor(private val sdk: Sdk) {
 
     /** Fetch a data contract as JSON. */
-    suspend fun fetchJson(contractId: String): String? = withContext(Dispatchers.IO) {
+    suspend fun fetchJson(contractId: String): String? = sdk.queryGate.op {
         mapNativeErrors { QueriesNative.dataContractFetchJson(sdk.handle, contractId) }
     }
 
@@ -564,11 +566,11 @@ class Contracts internal constructor(private val sdk: Sdk) {
      * Mirrors Swift's `dataContractGetWithSerialization`.
      */
     suspend fun fetchWithSerialization(contractId: String): ContractWithSerialization? =
-        withContext(Dispatchers.IO) {
+        sdk.queryGate.op {
             val payload = mapNativeErrors {
                 QueriesNative.dataContractFetchWithSerialization(sdk.handle, contractId)
-            } ?: return@withContext null
-            val json = payload.getOrNull(0) as? String ?: return@withContext null
+            } ?: return@op null
+            val json = payload.getOrNull(0) as? String ?: return@op null
             val serialization = payload.getOrNull(1) as? ByteArray
             ContractWithSerialization(json = json, binarySerialization = serialization)
         }
@@ -577,7 +579,7 @@ class Contracts internal constructor(private val sdk: Sdk) {
      * Fetch a contract as a native handle for document queries. The handle
      * must be [DataContractRef.close]d; prefer `use {}`.
      */
-    suspend fun fetch(contractId: String): DataContractRef = withContext(Dispatchers.IO) {
+    suspend fun fetch(contractId: String): DataContractRef = sdk.queryGate.op {
         val handle = mapNativeErrors { QueriesNative.dataContractFetch(sdk.handle, contractId) }
         DataContractRef(handle)
     }
@@ -593,9 +595,9 @@ class Contracts internal constructor(private val sdk: Sdk) {
      * Throws on error (missing trusted provider or a malformed contract).
      */
     suspend fun loadKnownContracts(contracts: List<Pair<String, ByteArray>>) =
-        withContext(Dispatchers.IO) {
+        sdk.queryGate.op {
             val filtered = contracts.filter { it.first.isNotEmpty() && it.second.isNotEmpty() }
-            if (filtered.isEmpty()) return@withContext
+            if (filtered.isEmpty()) return@op
             mapNativeErrors {
                 QueriesNative.addKnownContracts(
                     sdk.handle,
@@ -697,13 +699,13 @@ class Documents internal constructor(private val sdk: Sdk) {
         contract: DataContractRef,
         documentType: String,
         documentId: String,
-    ): String? = withContext(Dispatchers.IO) {
+    ): String? = sdk.queryGate.op {
         val whereJson = """[{"field":"${'$'}id","operator":"=","value":"$documentId"}]"""
         val response = mapNativeErrors {
             QueriesNative.documentSearch(
                 sdk.handle, contract.value, documentType, whereJson, null, 1, 0,
             )
-        } ?: return@withContext null
+        } ?: return@op null
         unwrapFirstDocument(response)
     }
 
@@ -715,7 +717,7 @@ class Documents internal constructor(private val sdk: Sdk) {
         orderByJson: String? = null,
         limit: Int = 0,
         startAt: Int = 0,
-    ): String? = withContext(Dispatchers.IO) {
+    ): String? = sdk.queryGate.op {
         mapNativeErrors {
             QueriesNative.documentSearch(
                 sdk.handle, contract.value, documentType, whereJson, orderByJson, limit, startAt,
@@ -734,7 +736,7 @@ class Documents internal constructor(private val sdk: Sdk) {
         // on aggregate queries ("zero-cap query is structurally meaningless"),
         // and these forms have no limit control, so default to the server cap.
         limit: Long = -1,
-    ): String? = withContext(Dispatchers.IO) {
+    ): String? = sdk.queryGate.op {
         mapNativeErrors {
             QueriesNative.documentCount(
                 sdk.handle, contract.value, documentType, whereJson, orderByJson, groupByJson, limit,
@@ -754,7 +756,7 @@ class Documents internal constructor(private val sdk: Sdk) {
         // on aggregate queries ("zero-cap query is structurally meaningless"),
         // and these forms have no limit control, so default to the server cap.
         limit: Long = -1,
-    ): String? = withContext(Dispatchers.IO) {
+    ): String? = sdk.queryGate.op {
         mapNativeErrors {
             QueriesNative.documentSum(
                 sdk.handle, contract.value, documentType, property,
@@ -775,7 +777,7 @@ class Documents internal constructor(private val sdk: Sdk) {
         // on aggregate queries ("zero-cap query is structurally meaningless"),
         // and these forms have no limit control, so default to the server cap.
         limit: Long = -1,
-    ): String? = withContext(Dispatchers.IO) {
+    ): String? = sdk.queryGate.op {
         mapNativeErrors {
             QueriesNative.documentAverage(
                 sdk.handle, contract.value, documentType, property,

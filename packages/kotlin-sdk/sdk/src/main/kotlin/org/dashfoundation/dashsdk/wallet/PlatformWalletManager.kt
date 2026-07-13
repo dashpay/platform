@@ -3,6 +3,7 @@ package org.dashfoundation.dashsdk.wallet
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
@@ -15,6 +16,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import org.dashfoundation.dashsdk.Network
 import org.dashfoundation.dashsdk.Sdk
@@ -97,6 +99,17 @@ class PlatformWalletManager(
      * cancelled in [close].
      */
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    /**
+     * Fence for operations that borrow this manager's raw native handles
+     * ([signerHandle] / [mnemonicResolverHandle]) from THEIR OWN coroutine
+     * scopes — the manager-scope join in teardown cannot cover them.
+     * Threaded into every wallet wrapper and stateless facade this manager
+     * builds; [closeSuspending] awaits it before freeing the signer /
+     * resolver boxes (raw, non-refcounted `Box::from_raw` frees on the
+     * Rust side).
+     */
+    private val teardownGate = TeardownGate()
 
     /**
      * Typed sync events fanned from the native `EventHandlerCallbacks`
@@ -262,15 +275,18 @@ class PlatformWalletManager(
      * Returns the recorded storage identifier (e.g. `privkey.<pubkeyHex>`),
      * or throws on a derivation / storage failure.
      */
-    fun repairIdentityKey(
+    suspend fun repairIdentityKey(
         walletId: ByteArray,
         publicKeyData: ByteArray,
         identityIndex: Int,
         keyIndex: Int,
-    ): String? {
+    ): String? = teardownGate.op {
         require(identityIndex >= 0) { "identityIndex must be non-negative, got $identityIndex" }
         require(keyIndex >= 0) { "keyIndex must be non-negative, got $keyIndex" }
-        return identityKeyDeriver.deriveAndStore(
+        // deriveAndStore is a synchronous JNI call keyed on the manager's
+        // resolver handle — the gate keeps teardown from freeing it
+        // mid-derive (callers run on their own Compose scopes).
+        identityKeyDeriver.deriveAndStore(
             walletId = walletId,
             publicKeyData = publicKeyData,
             identityIndex = identityIndex,
@@ -288,7 +304,7 @@ class PlatformWalletManager(
         walletId: ByteArray,
         identityIndex: Int,
         keyIndex: Int,
-    ): Pair<ByteArray, ByteArray> = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+    ): Pair<ByteArray, ByteArray> = teardownGate.op {
         require(identityIndex >= 0) { "identityIndex must be non-negative, got $identityIndex" }
         require(keyIndex >= 0) { "keyIndex must be non-negative, got $keyIndex" }
         val pair = org.dashfoundation.dashsdk.errors.mapNativeErrors {
@@ -311,7 +327,7 @@ class PlatformWalletManager(
      * ← the identity slice of `ManagedPlatformWallet.swift`.
      */
     val identityRegistration: org.dashfoundation.dashsdk.identity.IdentityRegistration =
-        org.dashfoundation.dashsdk.identity.IdentityRegistration()
+        org.dashfoundation.dashsdk.identity.IdentityRegistration(teardownGate)
 
     /**
      * Identity credit-movement bridge — transfer / withdraw / top-up.
@@ -320,7 +336,7 @@ class PlatformWalletManager(
      * slice of `ManagedPlatformWallet.swift`.
      */
     val identityCredits: org.dashfoundation.dashsdk.credits.IdentityCredits =
-        org.dashfoundation.dashsdk.credits.IdentityCredits()
+        org.dashfoundation.dashsdk.credits.IdentityCredits(teardownGate)
 
     /**
      * Identity add/disable-keys bridge — the identity-update slice of
@@ -329,7 +345,7 @@ class PlatformWalletManager(
      * wallet handle + [signerHandle] into each call.
      */
     val identityUpdates: org.dashfoundation.dashsdk.identity.IdentityUpdates =
-        org.dashfoundation.dashsdk.identity.IdentityUpdates()
+        org.dashfoundation.dashsdk.identity.IdentityUpdates(teardownGate)
 
     /**
      * Document purchase + set-price bridge — the document state-transition
@@ -338,7 +354,7 @@ class PlatformWalletManager(
      * [signerHandle] into each call.
      */
     val documentTransactions: org.dashfoundation.dashsdk.documents.DocumentTransactions =
-        org.dashfoundation.dashsdk.documents.DocumentTransactions()
+        org.dashfoundation.dashsdk.documents.DocumentTransactions(teardownGate)
 
     /**
      * Masternode contested-resource vote bridge — port of
@@ -447,6 +463,7 @@ class PlatformWalletManager(
             handle = outHandle[0],
             walletId = walletId,
             coreSendMutex = coreSendMutex(walletId.toHex()),
+            gate = teardownGate,
         )
         try {
             // Store the mnemonic keyed by the id the FFI just derived.
@@ -578,6 +595,7 @@ class PlatformWalletManager(
                 handle = handle,
                 walletId = walletId,
                 coreSendMutex = coreSendMutex(walletId.toHex()),
+                gate = teardownGate,
             )
             restored.add(managed)
             // Publish into [wallets] BEFORE unlocking (Swift's per-wallet
@@ -806,7 +824,7 @@ class PlatformWalletManager(
     suspend fun bindShielded(
         walletId: ByteArray,
         accounts: List<Int> = listOf(0),
-    ) = withContext(Dispatchers.IO) {
+    ) = teardownGate.op {
         require(walletId.size == 32) {
             "walletId must be exactly 32 bytes, got ${walletId.size}"
         }
@@ -916,7 +934,7 @@ class PlatformWalletManager(
         amountDuffs: Long,
         fundingAccountIndex: Int = 0,
         surplusOutput: ByteArray? = null,
-    ): Unit = withContext(Dispatchers.IO) {
+    ): Unit = teardownGate.op {
         require(amountDuffs > 0) { "amountDuffs must be positive, got $amountDuffs" }
         require(fundingAccountIndex >= 0) {
             "fundingAccountIndex must be non-negative, got $fundingAccountIndex"
@@ -953,7 +971,7 @@ class PlatformWalletManager(
         amount: Long,
         shieldedAccount: Int = 0,
         paymentAccount: Int = 0,
-    ): Unit = withContext(Dispatchers.IO) {
+    ): Unit = teardownGate.op {
         require(amount > 0) { "amount must be positive, got $amount" }
         require(shieldedAccount >= 0) {
             "shieldedAccount must be non-negative, got $shieldedAccount"
@@ -994,7 +1012,7 @@ class PlatformWalletManager(
         denomination: Long,
         fallbackAddress: ByteArray,
         account: Int = 0,
-    ): ByteArray = withContext(Dispatchers.IO) {
+    ): ByteArray = teardownGate.op {
         require(identityIndex >= 0) { "identityIndex must be non-negative, got $identityIndex" }
         require(denomination > 0) { "denomination must be positive, got $denomination" }
         require(fallbackAddress.size == 21) {
@@ -1027,7 +1045,7 @@ class PlatformWalletManager(
         outPointVout: Int,
         recipientRaw43: ByteArray,
         surplusOutput: ByteArray? = null,
-    ): Unit = withContext(Dispatchers.IO) {
+    ): Unit = teardownGate.op {
         require(outPointTxid.size == 32) {
             "outPointTxid must be exactly 32 bytes, got ${outPointTxid.size}"
         }
@@ -1063,7 +1081,7 @@ class PlatformWalletManager(
         account: Int = 0,
         fundingAccountIndex: Int = 0,
         onProgress: ((batchIndex: Long, batchesTotalEstimate: Long, poolNotesNow: Long, target: Long) -> Unit)? = null,
-    ): Unit = withContext(Dispatchers.IO) {
+    ): Unit = teardownGate.op {
         require(targetTotalNotes > 0) {
             "targetTotalNotes must be positive, got $targetTotalNotes"
         }
@@ -1471,7 +1489,12 @@ class PlatformWalletManager(
         // invalid-parameter failure elsewhere from being mistaken for a
         // seed mismatch. Rethrown so callers keep their own handling.
         try {
-            withContext(Dispatchers.IO) {
+            // Gated: the verify borrows the manager's resolver handle from
+            // the CALLER's scope (DashPayTabScreen / loadPersistedWallets)
+            // — invisible to the scope join, so it must be counted by the
+            // gate. The drain below stays ungated on the manager scope: it
+            // creates and owns its own resolver/signer.
+            teardownGate.op {
                 mapNativeErrors {
                     DashpayNative.verifySeedBindsToWallet(
                         managed.handle,
@@ -1509,16 +1532,18 @@ class PlatformWalletManager(
         // Drain in the background — it re-fetches and decrypts over the
         // network, so it must not block the caller. The drain gets its OWN
         // resolver + signer, owned by this coroutine (the Swift
-        // Task.detached + withExtendedLifetime shape): the manager's shared
-        // children are freed by close() without waiting for an in-flight
-        // blocking JNI call, so borrowing them would be a use-after-free
-        // when a manager swap races a slow drain. The raw wallet handle is
-        // captured, not the wrapper: a wallet destroyed before the drain
-        // runs just misses Rust-side (NotFound) — wallet handles are
-        // storage-keyed, unlike the resolver/signer boxes. An auth-gated
-        // signing failure inside the drain (Android-only: identity keys
-        // are biometric-gated here, unlike iOS) leaves the entry queued —
-        // the sweep self-heals — and surfaces like any other drain error.
+        // Task.detached + withExtendedLifetime shape), so a manager swap
+        // never races their teardown. Launched on the manager scope so
+        // close() can JOIN it before nativeDestroy — the drain's store()
+        // path reaches the manager-owned PersistenceCallbacks context, so
+        // it must have returned before that context is freed. The raw
+        // wallet handle is captured, not the wrapper: a wallet destroyed
+        // before the drain runs just misses Rust-side (NotFound) — wallet
+        // handles are storage-keyed, unlike the resolver/signer boxes. An
+        // auth-gated signing failure inside the drain (Android-only:
+        // identity keys are biometric-gated here, unlike iOS) leaves the
+        // entry queued — the sweep self-heals — and surfaces like any
+        // other drain error.
         val walletHandle = managed.handle
         scope.launch(Dispatchers.IO) {
             val drainResolver = MnemonicResolverAndPersister(walletStorage)
@@ -1611,34 +1636,85 @@ class PlatformWalletManager(
      * Closing the wallet wrappers is left to their owners (each is its own
      * `AutoCloseable`); the map is cleared so no stale handle leaks.
      */
-    override fun close() {
+    /**
+     * Suspending teardown — the production path (`WalletManagerStore`'s
+     * network switch runs on the Compose Main dispatcher, so teardown must
+     * never block the caller's thread; joins suspend and the blocking JNI
+     * teardown hops to [Dispatchers.IO]).
+     */
+    suspend fun closeSuspending() {
         val bundle = bundleRef.getAndSet(0)
         if (bundle == 0L) return
+        // NonCancellable from the moment the bundle is claimed: bundleRef
+        // is already 0, so a caller cancelled mid-teardown could never
+        // retry (the guard above no-ops) — the native manager, its
+        // callback GlobalRefs, the signer/resolver boxes, and the
+        // persistence executor would all leak silently. Teardown must run
+        // to completion once started.
+        withContext(NonCancellable) { closeInternal(bundle) }
+    }
 
+    private suspend fun closeInternal(bundle: Long) {
         // Stop the progress poll loops + event fan-out scope before teardown
         // so no collector touches a destroyed handle.
         progressPollJob?.cancel()
         dashPayPollJob?.cancel()
         scope.cancel()
+        // Cancellation is cooperative: a coroutine already inside a
+        // synchronous JNI call — the DashPay contact-crypto drain, or a
+        // poll mid-call — keeps running until that call returns, and the
+        // drain can still reach persister.store(), whose
+        // PersistenceCallbacks context nativeDestroy() below frees. Join
+        // the scope (suspending — no thread is blocked) so every in-flight
+        // native call has returned before the contexts it can reach are
+        // torn down (polls exit at their next suspension; the drain when
+        // its JNI call returns, bounded by the FFI's own network timeouts).
+        scope.coroutineContext[Job]?.join()
+        // Operations that borrow signerHandle / mnemonicResolverHandle run
+        // on their CALLERS' scopes (e.g. Dashpay.sendPayment), which the
+        // join above does not cover. The gate rejects new borrows and
+        // awaits in-flight ones, so the raw signer/resolver boxes below
+        // (non-refcounted Box::from_raw frees) are never freed mid-call.
+        teardownGate.closeAndAwait()
 
-        // Best-effort stop; ignore failures (destroy shuts everything down).
-        runCatching { DashpayNative.dashPaySyncStop(managerHandle) }
-        runCatching { WalletManagerNative.platformAddressSyncStop(managerHandle) }
-        runCatching { WalletManagerNative.identitySyncStop(managerHandle) }
-        runCatching { WalletManagerNative.shieldedSyncStop(managerHandle) }
-        runCatching { WalletManagerNative.spvStop(managerHandle) }
+        withContext(Dispatchers.IO) {
+            // Best-effort stop; ignore failures (destroy shuts it all down).
+            runCatching { DashpayNative.dashPaySyncStop(managerHandle) }
+            runCatching { WalletManagerNative.platformAddressSyncStop(managerHandle) }
+            runCatching { WalletManagerNative.identitySyncStop(managerHandle) }
+            runCatching { WalletManagerNative.shieldedSyncStop(managerHandle) }
+            runCatching { WalletManagerNative.spvStop(managerHandle) }
 
-        // Destroy the native manager (shutdown + free contexts).
-        WalletManagerNative.nativeDestroy(bundle)
+            // Destroy the native manager (shutdown + free contexts).
+            WalletManagerNative.nativeDestroy(bundle)
 
-        // Now safe to release the resolver / signer bridges.
-        runCatching { mnemonicResolver.close() }
-        runCatching { signer.close() }
+            // Now safe to release the resolver / signer bridges.
+            runCatching { mnemonicResolver.close() }
+            runCatching { signer.close() }
 
-        // Drop wallet wrappers we handed out; each still self-destructs via
-        // its own Cleaner, but clearing avoids surfacing stale handles.
-        _wallets.value.values.forEach { runCatching { it.close() } }
-        _wallets.value = emptyMap()
+            // The persistence handler's owned single-thread executor is only
+            // safe to shut down once the native manager can no longer fire
+            // callbacks into it (a network switch replaces the manager;
+            // without this, every switch leaks a live non-daemon
+            // "dash-persistence" thread).
+            runCatching { persistenceHandler.close() }
+
+            // Drop wallet wrappers we handed out; each still self-destructs
+            // via its own Cleaner, but clearing avoids stale handles.
+            _wallets.value.values.forEach { runCatching { it.close() } }
+            _wallets.value = emptyMap()
+        }
+    }
+
+    /**
+     * Blocking convenience for non-suspend contexts (tests, JVM shutdown
+     * paths). Blocks the calling thread until teardown completes —
+     * including any in-flight network-bound drain — so NEVER call this on
+     * the Android main thread; production teardown goes through
+     * [closeSuspending] (see `WalletManagerStore`).
+     */
+    override fun close() {
+        runBlocking { closeSuspending() }
     }
 
     private companion object {

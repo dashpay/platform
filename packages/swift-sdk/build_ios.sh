@@ -173,20 +173,6 @@ module DashSDKFFI {
 }
 EOF
   log_info "  → module.modulemap + umbrella header injected in $HEADERS_DIR"
-
-  # Give opaque struct forward declarations a body so Swift can use UnsafeMutablePointer<T>.
-  # Skip types that already have a full definition in another header to avoid redefinition.
-  local defined
-  defined=$(grep -oh 'typedef struct [A-Za-z_][A-Za-z_0-9]* {' "$HEADERS_DIR"/*/*.h 2>/dev/null \
-    | sed 's/typedef struct \([^ ]*\) {/\1/' | sort -u | paste -sd'|' - || true)
-  for h in "$HEADERS_DIR"/*/*.h; do
-    if [ -n "$defined" ]; then
-      perl -i -pe "s/^typedef struct (\w+) \1;\$/
-        my \$n=\$1; \$n=~m{^($defined)\$} ? \$_ : \"typedef struct \$n { uint8_t _opaque; } \$n;\n\"/e" "$h"
-    else
-      perl -i -pe 's/^typedef struct (\w+) \1;$/typedef struct $1 { uint8_t _opaque; } $1;/' "$h"
-    fi
-  done
 }
 
 # Shielded (Orchard / ZK) support is compiled in by default. The

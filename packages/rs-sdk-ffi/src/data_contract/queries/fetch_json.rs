@@ -1,7 +1,6 @@
 use crate::error::{DashSDKError, DashSDKErrorCode, FFIError};
 use crate::sdk::SDKWrapper;
 use crate::types::{DashSDKResult, SDKHandle};
-use dash_sdk::dpp::data_contract::conversion::json::DataContractJsonConversionMethodsV0;
 use dash_sdk::dpp::platform_value::string_encoding::Encoding;
 use dash_sdk::platform::{DataContract, Fetch, Identifier};
 use std::ffi::{CStr, CString};
@@ -50,11 +49,9 @@ pub unsafe extern "C" fn dash_sdk_data_contract_fetch_json(
 
     match result {
         Ok(Some(contract)) => {
-            // Get the platform version
-            let platform_version = wrapper.sdk.version();
-
-            // Convert to JSON
-            match contract.to_json(platform_version) {
+            // Convert to JSON via canonical serde (manual Serialize on the
+            // outer DataContract enum threads the active platform version).
+            match serde_json::to_value(&contract) {
                 Ok(json_value) => match serde_json::to_string(&json_value) {
                     Ok(json_string) => match CString::new(json_string) {
                         Ok(c_str) => DashSDKResult::success_string(c_str.into_raw()),

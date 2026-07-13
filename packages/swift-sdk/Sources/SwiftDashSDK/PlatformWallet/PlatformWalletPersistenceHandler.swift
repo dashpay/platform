@@ -3800,6 +3800,31 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 xpubBytes = Data()
             }
 
+            // Pre-derived platform-node (Ed25519) keys for the
+            // ProviderPlatformKeys account. Rust-owned + valid only for
+            // the callback window, so copy each row's bytes out now.
+            var derivedPlatformNodeKeys: [DerivedPlatformNodeKey] = []
+            if let dkPtr = spec.derived_platform_node_keys,
+               spec.derived_platform_node_keys_count > 0 {
+                let rows = UnsafeBufferPointer(
+                    start: dkPtr,
+                    count: Int(spec.derived_platform_node_keys_count)
+                )
+                for row in rows {
+                    var pub = Data(count: 32)
+                    withUnsafeBytes(of: row.public_key) { src in
+                        pub.withUnsafeMutableBytes { dst in dst.copyMemory(from: src) }
+                    }
+                    var node = Data(count: 20)
+                    withUnsafeBytes(of: row.node_id) { src in
+                        node.withUnsafeMutableBytes { dst in dst.copyMemory(from: src) }
+                    }
+                    derivedPlatformNodeKeys.append(
+                        DerivedPlatformNodeKey(index: row.index, publicKey: pub, nodeId: node)
+                    )
+                }
+            }
+
             // Upsert keyed by the full account identity. We can't easily
             // express the identity tuple in a #Predicate with local `Data`
             // captures, so fetch by (walletId, accountType, accountIndex)
@@ -3845,6 +3870,15 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             account.userIdentityId = userIdentityId
             account.friendIdentityId = friendIdentityId
             account.accountExtendedPubKeyBytes = xpubBytes
+            // Only overwrite the batch when this callback actually
+            // carries one (i.e. the registration-time ProviderPlatformKeys
+            // spec). Any other emitter passes an empty array, so a
+            // balance-only re-persist never wipes the registration batch —
+            // Swift is the sole source of truth for it (Rust never echoes
+            // it back on the load path).
+            if !derivedPlatformNodeKeys.isEmpty {
+                account.derivedPlatformNodeKeys = derivedPlatformNodeKeys
+            }
             account.lastUpdated = Date()
             if !self.inChangeset { try? backgroundContext.save() }
         }
@@ -4028,6 +4062,12 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     copyBytes(acc.friendIdentityId, into: &spec.friend_identity_id)
                     spec.account_xpub_bytes = UnsafePointer(xpubBuffer)
                     spec.account_xpub_bytes_len = UInt(xpub.count)
+                    // Display-only data the Rust load path ignores. The
+                    // persisted account row keeps the batch on the Swift
+                    // side (never rewritten after registration), so it is
+                    // not round-tripped back through the restore entry.
+                    spec.derived_platform_node_keys = nil
+                    spec.derived_platform_node_keys_count = 0
                     buf[written] = spec
                     written += 1
                 }
@@ -4452,6 +4492,8 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             copyBytes(account.friendIdentityId, into: &spec.friend_identity_id)
             spec.account_xpub_bytes = nil
             spec.account_xpub_bytes_len = 0
+            spec.derived_platform_node_keys = nil
+            spec.derived_platform_node_keys_count = 0
 
             var pool = AccountAddressPoolFFI()
             pool.account = spec
@@ -5148,7 +5190,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         case 8: return "Provider Voting Keys"
         case 9: return "Provider Owner Keys"
         case 10: return "Provider Operator Keys"
-        case 11: return "Provider Platform Keys"
+        case 11: return "Provider Platform Node Keys"
         case 12: return "DashPay Receiving Funds"
         case 13: return "DashPay External Account"
         case 14: return "Platform Payment"

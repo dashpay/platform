@@ -7,21 +7,24 @@
 
 use bincode::config;
 use key_wallet::account::account_collection::AccountCollection;
-use key_wallet::account::{Account, AccountType, StandardAccountType};
+use key_wallet::account::{Account, AccountType, BLSAccount, EdDSAAccount, StandardAccountType};
 use key_wallet::bip32::DerivationPath;
 use key_wallet::bip32::ExtendedPubKey;
+use key_wallet::derivation_bls_bip32::ExtendedBLSPubKey;
+use key_wallet::derivation_slip10::ExtendedEd25519PubKey;
 use key_wallet::managed_account::address_pool::{AddressPool, AddressPoolType, PublicKeyType};
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::Wallet;
 use key_wallet::AddressInfo;
-use parking_lot::RwLock;
+use parking_lot::{Mutex, RwLock};
 use std::str::FromStr;
 
 use crate::types::{FFINetwork, Network};
 use platform_wallet::changeset::{
     AccountAddressPoolEntry, AccountRegistrationEntry, ClientStartState, ClientWalletStartState,
     Merge, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
+    ProviderKeyAccountEntry, ProviderKeyExtendedPubKey,
 };
 use platform_wallet::wallet::platform_wallet::WalletId;
 use platform_wallet::wallet::{PerAccountPlatformAddressState, PerWalletPlatformAddressState};
@@ -48,8 +51,8 @@ use crate::wallet_registration_persistence::AccountAddressPoolFFI;
 use crate::wallet_restore_types::{
     AccountSpecFFI, AccountTypeTagFFI, ContactProfileRestoreEntryFFI, IdentityKeyRestoreFFI,
     IdentityRestoreEntryFFI, LoadWalletListFreeFn, PaymentRestoreEntryFFI,
-    StandardAccountTypeTagFFI, UnresolvedAssetLockTxRecordFFI, UtxoRestoreEntryFFI,
-    WalletRestoreEntryFFI,
+    ProviderPlatformNodeKeyFFI, StandardAccountTypeTagFFI, UnresolvedAssetLockTxRecordFFI,
+    UtxoRestoreEntryFFI, WalletRestoreEntryFFI,
 };
 use dpp::address_funds::PlatformAddress;
 use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
@@ -610,10 +613,62 @@ impl Default for PersistenceCallbacks {
     }
 }
 
+/// Defensive state machine for the begin→end FFI callback round, guarded
+/// by [`FFIPersister::round_lock`]. `in_round` is set when a round opens
+/// and cleared once it closes, so a nested begin (or an `end` with no
+/// matching `begin`) is detectable and rejected — as an error, never a
+/// panic — instead of silently corrupting the client's single in-flight
+/// transaction state.
+#[derive(Default)]
+struct RoundGuardState {
+    in_round: bool,
+}
+
+impl RoundGuardState {
+    /// Open a round. Rejects (does not panic) if one is already open —
+    /// a nested begin, or an unclean round left open by a prior call
+    /// that unwound between its begin and end.
+    fn begin_round(&mut self) -> Result<(), PersistenceError> {
+        if self.in_round {
+            return Err(PersistenceError::backend(
+                "FFIPersister: changeset round already open (nested begin); \
+                 refusing to start a new round",
+            ));
+        }
+        self.in_round = true;
+        Ok(())
+    }
+
+    /// Close the current round. Rejects (does not panic) if no round is
+    /// open — an unmatched end.
+    fn end_round(&mut self) -> Result<(), PersistenceError> {
+        if !self.in_round {
+            return Err(PersistenceError::backend(
+                "FFIPersister: changeset round is not open (unmatched end)",
+            ));
+        }
+        self.in_round = false;
+        Ok(())
+    }
+}
+
 /// In-memory persister that accumulates changesets and notifies via callbacks.
 pub struct FFIPersister {
     callbacks: PersistenceCallbacks,
     pending: RwLock<BTreeMap<WalletId, PlatformWalletChangeSet>>,
+    /// Serializes the ENTIRE begin→per-kind→end callback round of
+    /// [`Self::store`]. Every round producer (the core-changeset bridge,
+    /// platform-address sync, shielded sync, spawned DashPay tasks) shares
+    /// one `Arc<FFIPersister>` and calls `store()` concurrently; the host
+    /// client keeps a single in-flight-round transaction state (Kotlin: one
+    /// per-wallet buffer; Swift: one global `inChangeset` flag), so two
+    /// overlapping rounds would let one round's writes land in — or roll
+    /// back with — the other round's transaction. That drops core TXO /
+    /// spent-marker rows while both `store()` calls still return `Ok`,
+    /// bypassing the durable-watermark fault latch and recreating
+    /// dashpay/platform#4069. Holding this lock for the whole round makes
+    /// each round atomic with respect to every other round.
+    round_lock: Mutex<RoundGuardState>,
 }
 
 impl FFIPersister {
@@ -621,6 +676,7 @@ impl FFIPersister {
         Self {
             callbacks,
             pending: RwLock::new(BTreeMap::new()),
+            round_lock: Mutex::new(RoundGuardState::default()),
         }
     }
 }
@@ -637,6 +693,23 @@ impl PlatformWalletPersistence for FFIPersister {
         wallet_id: WalletId,
         changeset: PlatformWalletChangeSet,
     ) -> Result<(), PersistenceError> {
+        // Serialize the ENTIRE begin→per-kind→end round against every
+        // other round producer (see `round_lock`'s field doc and
+        // dashpay/platform#4069). The lock is a synchronous
+        // `parking_lot::Mutex`, NOT a `tokio::sync::Mutex`: `store()`
+        // is a synchronous trait method invoked directly (blocking) from
+        // both async tasks and blocking FFI entry points, so an async
+        // mutex cannot be `.await`ed here and `blocking_lock()` panics
+        // inside a runtime. Serialization — not async yielding — is the
+        // requirement; callers already block for the round's duration, so
+        // the sync mutex only adds waiting under genuine round contention.
+        let mut round = self.round_lock.lock();
+
+        // Open the round on the Rust side (rejects a nested begin / an
+        // unclean round left open by a prior unwind — error, never
+        // panic). Matched 1:1 with the `round.end_round()` below.
+        round.begin_round()?;
+
         // Bracket the whole per-kind callback sequence with a
         // begin/end pair so clients (Swift, etc.) can treat the
         // round as a single atomic transaction: begin opens a
@@ -648,7 +721,19 @@ impl PlatformWalletPersistence for FFIPersister {
         if let Some(cb) = self.callbacks.on_changeset_begin_fn {
             let result = unsafe { cb(self.callbacks.context, wallet_id.as_ptr()) };
             if result != 0 {
-                eprintln!("Changeset-begin callback returned error code {}", result);
+                // A nonzero begin means the client could NOT open its
+                // transaction. Proceeding would run every per-kind
+                // callback against no batch and then fire an unmatched
+                // `end`. Treat it as fatal: close the Rust-side round
+                // (so `in_round` doesn't wedge) and fail now, before any
+                // per-kind write. (Unlike the previous advisory-log
+                // behavior, the round is aborted so no state advances
+                // against an unopened batch.)
+                let _ = round.end_round();
+                return Err(PersistenceError::backend(format!(
+                    "changeset-begin callback returned error code {result}; \
+                     round aborted before any write"
+                )));
             }
         }
         let mut round_success = true;
@@ -682,11 +767,15 @@ impl PlatformWalletPersistence for FFIPersister {
         // window — `AccountSpecFFI.account_xpub_bytes` borrows into
         // it. Same lifetime discipline the prior dedicated callback
         // used.
-        if !changeset.account_registrations.is_empty() {
+        if !changeset.account_registrations.is_empty()
+            || !changeset.provider_key_account_registrations.is_empty()
+        {
             if let Some(cb) = self.callbacks.on_persist_account_registrations_fn {
-                let entries = &changeset.account_registrations;
-                match build_account_specs_for_callback(entries) {
-                    Ok((specs, _xpub_bytes_storage)) => {
+                match build_account_specs_for_callback(
+                    &changeset.account_registrations,
+                    &changeset.provider_key_account_registrations,
+                ) {
+                    Ok((specs, _xpub_bytes_storage, _derived_keys_storage)) => {
                         let result = unsafe {
                             cb(
                                 self.callbacks.context,
@@ -695,11 +784,12 @@ impl PlatformWalletPersistence for FFIPersister {
                                 specs.len(),
                             )
                         };
-                        // Force the spec / byte buffers to live
-                        // until after the callback even though
-                        // their drop happens on scope exit anyway.
+                        // Force the spec / byte buffers / derived-key
+                        // buffers to live until after the callback even
+                        // though their drop happens on scope exit anyway.
                         drop(specs);
                         drop(_xpub_bytes_storage);
+                        drop(_derived_keys_storage);
                         if result != 0 {
                             eprintln!(
                                 "Account registrations persistence callback returned error code {}",
@@ -827,6 +917,49 @@ impl PlatformWalletPersistence for FFIPersister {
                         }
                         Err(e) => {
                             eprintln!("Failed to encode derived address pool entries: {}", e);
+                            round_success = false;
+                        }
+                    }
+                }
+            }
+
+            // Fan out used-flag flips AFTER the derived-address emit:
+            // a tx can land on a freshly-derived address in the same
+            // round, and the Swift-side `persistAccountAddresses`
+            // overwrites `isUsed` with whatever the latest emit says —
+            // derived-first (`is_used: false`) then marked-used
+            // (`is_used: true`) leaves the row correctly flipped.
+            // These entries carry the authoritative post-mark
+            // `AddressInfo` from the wallet's pools (see
+            // `CoreChangeSet::addresses_marked_used`), so reusing the
+            // whole-pool snapshot encoder is exact, not approximate.
+            if !core_cs.addresses_marked_used.is_empty() {
+                if let Some(cb) = self.callbacks.on_persist_account_address_pools_fn {
+                    let entries =
+                        group_marked_used_into_pool_entries(&core_cs.addresses_marked_used);
+                    match build_address_pools_for_callback(&entries) {
+                        Ok((pools, _address_storage, _string_storage)) => {
+                            let result = unsafe {
+                                cb(
+                                    self.callbacks.context,
+                                    wallet_id.as_ptr(),
+                                    pools.as_ptr(),
+                                    pools.len(),
+                                )
+                            };
+                            drop(pools);
+                            drop(_address_storage);
+                            drop(_string_storage);
+                            if result != 0 {
+                                eprintln!(
+                                    "Marked-used address persistence callback returned error code {}",
+                                    result
+                                );
+                                round_success = false;
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!("Failed to encode marked-used address pool entries: {}", e);
                             round_success = false;
                         }
                     }
@@ -1525,6 +1658,15 @@ impl PlatformWalletPersistence for FFIPersister {
                 round_success = false;
             }
         }
+
+        // Close the round: its `end` callback has fired (committing or
+        // rolling back the client transaction), or there was no end
+        // callback wired. Clear the state-machine flag now — BEFORE any
+        // early return below — so a rejected round doesn't wedge the
+        // persister into permanent "round already open" rejection on the
+        // next `store()`. (`end_round` only errors on an unmatched end,
+        // which cannot happen here since `begin_round` succeeded above.)
+        round.end_round()?;
 
         if !round_success {
             return Err(PersistenceError::backend(
@@ -2296,6 +2438,10 @@ fn build_account_spec_ffi(account_type: &AccountType, xpub_bytes: &[u8]) -> Acco
         friend_identity_id: [0u8; 32],
         account_xpub_bytes: xpub_bytes.as_ptr(),
         account_xpub_bytes_len: xpub_bytes.len(),
+        // Set by `build_account_specs_for_callback` for the
+        // `ProviderPlatformKeys` entry; null/0 for every other account.
+        derived_platform_node_keys: std::ptr::null(),
+        derived_platform_node_keys_count: 0,
     };
     // The producer side casts each `AccountTypeTagFFI` /
     // `StandardAccountTypeTagFFI` variant to `u8` because both fields
@@ -2389,28 +2535,94 @@ fn build_account_spec_ffi(account_type: &AccountType, xpub_bytes: &[u8]) -> Acco
 }
 
 /// Build the `Vec<AccountSpecFFI>` array for
-/// `on_persist_account_registrations_fn` plus the parallel
-/// `Vec<Vec<u8>>` of bincoded xpub byte buffers each spec borrows
-/// from. The two Vecs share lifetime — caller drops both after the
-/// callback returns.
+/// `on_persist_account_registrations_fn` plus the parallel storage each
+/// spec borrows into:
+/// 1. `Vec<Vec<u8>>` — bincoded xpub byte buffers
+///    (`account_xpub_bytes`).
+/// 2. `Vec<Vec<ProviderPlatformNodeKeyFFI>>` — one inner Vec per
+///    provider entry holding its pre-derived platform-node keys
+///    (`derived_platform_node_keys`); empty for the BLS operator entry
+///    and for every ECDSA account.
+///
+/// All three share lifetime — the caller must keep them alive until
+/// after the callback returns.
+#[allow(clippy::type_complexity)]
 fn build_account_specs_for_callback(
     entries: &[AccountRegistrationEntry],
-) -> Result<(Vec<AccountSpecFFI>, Vec<Vec<u8>>), String> {
-    // Pre-encode every xpub once so the spec slot can borrow the
-    // pointer + length without a self-referential lifetime trick.
-    let xpub_buffers: Vec<Vec<u8>> = entries
+    provider_entries: &[ProviderKeyAccountEntry],
+) -> Result<
+    (
+        Vec<AccountSpecFFI>,
+        Vec<Vec<u8>>,
+        Vec<Vec<ProviderPlatformNodeKeyFFI>>,
+    ),
+    String,
+> {
+    // Pre-encode every extended public key once so each spec slot can
+    // borrow the pointer + length without a self-referential lifetime
+    // trick. ECDSA accounts encode their secp256k1 `ExtendedPubKey`;
+    // provider key accounts (BLS operator / EdDSA platform node)
+    // encode their own-curve extended public key into the same slot —
+    // the `type_tag` disambiguates the decode on the restore side.
+    let mut xpub_buffers: Vec<Vec<u8>> = Vec::with_capacity(entries.len() + provider_entries.len());
+    for entry in entries {
+        let bytes = bincode::encode_to_vec(entry.account_xpub, config::standard())
+            .map_err(|e| format!("failed to encode account xpub: {}", e))?;
+        xpub_buffers.push(bytes);
+    }
+    for entry in provider_entries {
+        let bytes = match &entry.extended_public_key {
+            ProviderKeyExtendedPubKey::Bls(key) => bincode::encode_to_vec(key, config::standard())
+                .map_err(|e| format!("failed to encode provider BLS xpub: {}", e))?,
+            ProviderKeyExtendedPubKey::EdDSA(key) => {
+                bincode::encode_to_vec(key, config::standard())
+                    .map_err(|e| format!("failed to encode provider EdDSA xpub: {}", e))?
+            }
+        };
+        xpub_buffers.push(bytes);
+    }
+
+    // Pre-derived platform-node key storage, index-aligned to
+    // `provider_entries`. Built to completion BEFORE any spec borrows a
+    // pointer into it so the inner Vecs never move under a live pointer.
+    let derived_storage: Vec<Vec<ProviderPlatformNodeKeyFFI>> = provider_entries
         .iter()
         .map(|entry| {
-            bincode::encode_to_vec(entry.account_xpub, config::standard())
-                .map_err(|e| format!("failed to encode account xpub: {}", e))
+            entry
+                .derived_platform_node_keys
+                .iter()
+                .map(|k| ProviderPlatformNodeKeyFFI {
+                    index: k.index,
+                    public_key: k.public_key,
+                    node_id: k.node_id,
+                })
+                .collect()
         })
-        .collect::<Result<_, _>>()?;
-    let specs: Vec<AccountSpecFFI> = entries
-        .iter()
-        .zip(xpub_buffers.iter())
-        .map(|(entry, bytes)| build_account_spec_ffi(&entry.account_type, bytes))
         .collect();
-    Ok((specs, xpub_buffers))
+
+    let mut specs: Vec<AccountSpecFFI> = Vec::with_capacity(xpub_buffers.len());
+    let mut idx = 0;
+    for entry in entries {
+        specs.push(build_account_spec_ffi(
+            &entry.account_type,
+            &xpub_buffers[idx],
+        ));
+        idx += 1;
+    }
+    for (p_idx, entry) in provider_entries.iter().enumerate() {
+        let mut spec = build_account_spec_ffi(&entry.account_type, &xpub_buffers[idx]);
+        // Point at the pre-built (stable) derived-key storage for this
+        // provider entry. Empty for the BLS operator account, so its
+        // spec keeps the null/0 default from `build_account_spec_ffi`.
+        let rows = &derived_storage[p_idx];
+        if !rows.is_empty() {
+            spec.derived_platform_node_keys = rows.as_ptr();
+            spec.derived_platform_node_keys_count = rows.len();
+        }
+        specs.push(spec);
+        idx += 1;
+    }
+    Ok((specs, xpub_buffers, derived_storage))
 }
 
 /// Build the `Vec<AccountAddressPoolFFI>` array for
@@ -2807,6 +3019,38 @@ fn build_address_pools_from_derived(
     Ok((pools, address_storage, owned_strings))
 }
 
+/// Bucket the changeset's marked-used address entries into
+/// [`AccountAddressPoolEntry`] values so the used-flag flip rides the
+/// same `build_address_pools_for_callback` →
+/// `on_persist_account_address_pools_fn` pipeline the registration
+/// snapshot and derived-address emits already use — one Swift code
+/// path (`persistAccountAddresses`) covers all three.
+///
+/// Grouping key is `(account_type, pool_type)`, mirroring
+/// `build_address_pools_from_derived`. Each entry's `AddressInfo` is
+/// the authoritative post-mark pool snapshot the bridge captured
+/// (`used == true`), so no field synthesis happens here.
+fn group_marked_used_into_pool_entries(
+    marked: &[key_wallet::transaction_checking::DerivedAddressInfo],
+) -> Vec<AccountAddressPoolEntry> {
+    let mut entries: Vec<AccountAddressPoolEntry> = Vec::new();
+    for d in marked {
+        if let Some(bucket) = entries
+            .iter_mut()
+            .find(|e| e.account_type == d.account_type && e.pool_type == d.pool_type)
+        {
+            bucket.addresses.push(d.info.clone());
+        } else {
+            entries.push(AccountAddressPoolEntry {
+                account_type: d.account_type,
+                pool_type: d.pool_type,
+                addresses: vec![d.info.clone()],
+            });
+        }
+    }
+    entries
+}
+
 /// RAII drop-guard that invokes the paired free callback on exit, so
 /// any error path through `FFIPersister::load` still returns memory
 /// to Swift.
@@ -2883,6 +3127,68 @@ fn build_wallet_start_state(
         };
         let xpub_bytes =
             unsafe { slice_from_raw(spec.account_xpub_bytes, spec.account_xpub_bytes_len) };
+
+        // Provider key-material accounts (BLS operator keys / EdDSA
+        // platform node keys) live in dedicated `Option` fields on the
+        // collection and carry a non-secp256k1 extended public key in
+        // the same `account_xpub_bytes` slot. Rebuild them watch-only
+        // via the type-specific `new` + insert methods rather than the
+        // ECDSA `Account::from_xpub` / `insert` path (which would fail
+        // to decode the bytes and reject the provider `AccountType`).
+        match account_type {
+            AccountType::ProviderOperatorKeys => {
+                let (bls_pubkey, _): (ExtendedBLSPubKey, usize) =
+                    bincode::decode_from_slice(xpub_bytes, config::standard()).map_err(|e| {
+                        PersistenceError::backend(format!(
+                            "failed to decode provider BLS xpub: {}",
+                            e
+                        ))
+                    })?;
+                let bls_account = BLSAccount::new(
+                    Some(entry.wallet_id.to_vec()),
+                    account_type,
+                    bls_pubkey,
+                    network,
+                )
+                .map_err(|e| {
+                    PersistenceError::backend(format!("BLSAccount::new failed: {:?}", e))
+                })?;
+                accounts.insert_bls_account(bls_account).map_err(|e| {
+                    PersistenceError::backend(format!(
+                        "AccountCollection::insert_bls_account failed: {}",
+                        e
+                    ))
+                })?;
+                continue;
+            }
+            AccountType::ProviderPlatformKeys => {
+                let (ed_pubkey, _): (ExtendedEd25519PubKey, usize) =
+                    bincode::decode_from_slice(xpub_bytes, config::standard()).map_err(|e| {
+                        PersistenceError::backend(format!(
+                            "failed to decode provider EdDSA xpub: {}",
+                            e
+                        ))
+                    })?;
+                let eddsa_account = EdDSAAccount::new(
+                    Some(entry.wallet_id.to_vec()),
+                    account_type,
+                    ed_pubkey,
+                    network,
+                )
+                .map_err(|e| {
+                    PersistenceError::backend(format!("EdDSAAccount::new failed: {:?}", e))
+                })?;
+                accounts.insert_eddsa_account(eddsa_account).map_err(|e| {
+                    PersistenceError::backend(format!(
+                        "AccountCollection::insert_eddsa_account failed: {}",
+                        e
+                    ))
+                })?;
+                continue;
+            }
+            _ => {}
+        }
+
         let (account_xpub, _): (ExtendedPubKey, usize) =
             bincode::decode_from_slice(xpub_bytes, config::standard()).map_err(|e| {
                 PersistenceError::backend(format!("failed to decode account xpub: {}", e))
@@ -3143,6 +3449,9 @@ fn build_wallet_start_state(
             friend_identity_id: u.friend_identity_id,
             account_xpub_bytes: std::ptr::null(),
             account_xpub_bytes_len: 0,
+            // Irrelevant to `account_type_from_spec` routing.
+            derived_platform_node_keys: std::ptr::null(),
+            derived_platform_node_keys_count: 0,
         };
         // Skip-and-continue is correct ONLY for the legacy
         // `IdentityAuthentication{Ecdsa,Bls}` tag bytes (15 / 16)
@@ -5086,5 +5395,287 @@ mod tests {
         );
 
         unsafe { free_contact_requests_ffi(rows.as_mut_ptr(), rows.len()) };
+    }
+
+    // ── Round serialization + defensive state machine (dashpay/platform#4069) ──
+
+    use std::os::raw::c_void as TestCVoid;
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+    use std::sync::Arc;
+
+    /// Shared context for the begin/end probe callbacks. Records the
+    /// chronological boundary log and flags any interleave (a begin while
+    /// another round is already open, or an end that doesn't close the
+    /// round it should).
+    struct RoundProbe {
+        /// `true` = begin fired, `false` = end fired, in call order.
+        events: parking_lot::Mutex<Vec<bool>>,
+        /// Live round depth: must only ever toggle 0↔1. Anything else
+        /// means two rounds overlapped.
+        depth: AtomicUsize,
+        /// Latched if `depth` ever leaves the {0,1} set.
+        interleaved: AtomicBool,
+    }
+
+    impl RoundProbe {
+        fn new() -> Arc<Self> {
+            Arc::new(Self {
+                events: parking_lot::Mutex::new(Vec::new()),
+                depth: AtomicUsize::new(0),
+                interleaved: AtomicBool::new(false),
+            })
+        }
+    }
+
+    extern "C" fn probe_begin(ctx: *mut TestCVoid, _wallet_id: *const u8) -> i32 {
+        let probe = unsafe { &*(ctx as *const RoundProbe) };
+        // Entering a round: depth must transition 0 -> 1.
+        if probe.depth.fetch_add(1, Ordering::SeqCst) != 0 {
+            probe.interleaved.store(true, Ordering::SeqCst);
+        }
+        probe.events.lock().push(true);
+        // Widen the interleave window so an UNSERIALIZED persister is
+        // caught deterministically: without the round lock, the sibling
+        // thread's begin lands inside this sleep.
+        std::thread::sleep(std::time::Duration::from_millis(15));
+        0
+    }
+
+    extern "C" fn probe_end(ctx: *mut TestCVoid, _wallet_id: *const u8, _success: bool) -> i32 {
+        let probe = unsafe { &*(ctx as *const RoundProbe) };
+        probe.events.lock().push(false);
+        // Leaving a round: depth must transition 1 -> 0.
+        if probe.depth.fetch_sub(1, Ordering::SeqCst) != 1 {
+            probe.interleaved.store(true, Ordering::SeqCst);
+        }
+        0
+    }
+
+    /// dashpay/platform#4069 (P1 from QuantumExplorer's review): two
+    /// concurrent `store()` rounds through the SAME `FFIPersister` must be
+    /// fully serialized — no begin fires while another round's begin→end
+    /// bracket is still open. Without the global round lock the probe's
+    /// `begin` sleep lets the sibling thread's begin interleave, tripping
+    /// `interleaved`.
+    #[test]
+    fn concurrent_store_rounds_are_serialized() {
+        let probe = RoundProbe::new();
+        let callbacks = PersistenceCallbacks {
+            context: Arc::as_ptr(&probe) as *mut TestCVoid,
+            on_changeset_begin_fn: Some(probe_begin),
+            on_changeset_end_fn: Some(probe_end),
+            ..PersistenceCallbacks::default()
+        };
+        let persister = Arc::new(FFIPersister::new(callbacks));
+
+        const THREADS: u8 = 2;
+        const ROUNDS_PER_THREAD: usize = 10;
+        let mut handles = Vec::new();
+        for t in 0..THREADS {
+            let p = Arc::clone(&persister);
+            handles.push(std::thread::spawn(move || {
+                for _ in 0..ROUNDS_PER_THREAD {
+                    // An empty changeset still fires begin + end (they
+                    // bracket every round unconditionally).
+                    p.store([t; 32], PlatformWalletChangeSet::default())
+                        .expect("empty changeset round must succeed");
+                }
+            }));
+        }
+        for h in handles {
+            h.join().expect("store thread panicked");
+        }
+
+        assert!(
+            !probe.interleaved.load(Ordering::SeqCst),
+            "begin/end rounds interleaved — the global round lock did not \
+             serialize concurrent store() calls"
+        );
+
+        let events = probe.events.lock();
+        let expected = THREADS as usize * ROUNDS_PER_THREAD * 2;
+        assert_eq!(
+            events.len(),
+            expected,
+            "each round must fire exactly one begin + one end"
+        );
+        // Every begin must be immediately followed by its own end.
+        let mut i = 0;
+        while i < events.len() {
+            assert!(events[i], "expected a begin at position {i}");
+            assert!(!events[i + 1], "expected an end at position {}", i + 1);
+            i += 2;
+        }
+        drop(events);
+
+        // Keep the probe alive until no thread can touch the context
+        // pointer any more.
+        drop(persister);
+        drop(probe);
+    }
+
+    /// A nonzero `begin` return is fatal: the client failed to open its
+    /// transaction, so `store()` must abort before any per-kind write and
+    /// leave the round CLOSED (so the next `store()` isn't wedged).
+    #[test]
+    fn nonzero_begin_aborts_the_round() {
+        extern "C" fn failing_begin(_ctx: *mut TestCVoid, _wallet_id: *const u8) -> i32 {
+            7
+        }
+        let callbacks = PersistenceCallbacks {
+            on_changeset_begin_fn: Some(failing_begin),
+            ..PersistenceCallbacks::default()
+        };
+        let persister = FFIPersister::new(callbacks);
+        let err = persister
+            .store([1u8; 32], PlatformWalletChangeSet::default())
+            .expect_err("a nonzero begin must fail the round");
+        assert!(
+            err.to_string()
+                .contains("changeset-begin callback returned error code 7"),
+            "unexpected error: {err}"
+        );
+        // The round must be closed again: a follow-up store() with a
+        // healthy (absent) begin succeeds — proving `in_round` was reset.
+        let healthy = PersistenceCallbacks::default();
+        let persister2 = FFIPersister::new(healthy);
+        persister2
+            .store([1u8; 32], PlatformWalletChangeSet::default())
+            .expect("a healthy round must succeed");
+        // And the failing persister itself is not wedged: repeated calls
+        // keep returning the same begin error, never a "round already
+        // open" rejection.
+        let err2 = persister
+            .store([1u8; 32], PlatformWalletChangeSet::default())
+            .expect_err("second call must also fail on begin, not on a stuck round");
+        assert!(
+            err2.to_string().contains("changeset-begin"),
+            "expected a fresh begin error, got a wedged-round error: {err2}"
+        );
+    }
+
+    /// The round state machine rejects a nested begin and an unmatched end
+    /// as errors (never panics), and a normal begin→end pair round-trips.
+    #[test]
+    fn round_guard_state_machine_rejects_nesting_and_unmatched_end() {
+        let mut state = RoundGuardState::default();
+        // Fresh: begin opens the round.
+        state
+            .begin_round()
+            .expect("first begin must open the round");
+        // Nested begin is rejected (error, not panic).
+        let nested = state
+            .begin_round()
+            .expect_err("a nested begin must be rejected");
+        assert!(
+            nested.to_string().contains("nested begin"),
+            "unexpected nested-begin error: {nested}"
+        );
+        // End closes it.
+        state.end_round().expect("end must close the open round");
+        // A second end is unmatched → rejected.
+        let unmatched = state
+            .end_round()
+            .expect_err("an unmatched end must be rejected");
+        assert!(
+            unmatched.to_string().contains("unmatched end"),
+            "unexpected unmatched-end error: {unmatched}"
+        );
+        // Fully cycled back to a usable state.
+        state
+            .begin_round()
+            .expect("state must be reusable after a clean cycle");
+        state
+            .end_round()
+            .expect("end must close the reopened round");
+    }
+
+    /// Stub one marked-used entry at `(account_type, pool_type, index)`
+    /// for the grouping test. Only the grouping key and the `used`
+    /// flag matter here.
+    fn stub_marked_used(
+        account_type: AccountType,
+        pool_type: AddressPoolType,
+        index: u32,
+    ) -> key_wallet::transaction_checking::DerivedAddressInfo {
+        use key_wallet::bip32::{ChildNumber, DerivationPath};
+        // Compressed secp256k1 generator point — a well-known valid key.
+        const TEST_PUBKEY_G: [u8; 33] = [
+            0x02, 0x79, 0xbe, 0x66, 0x7e, 0xf9, 0xdc, 0xbb, 0xac, 0x55, 0xa0, 0x62, 0x95, 0xce,
+            0x87, 0x0b, 0x07, 0x02, 0x9b, 0xfc, 0xdb, 0x2d, 0xce, 0x28, 0xd9, 0x59, 0xf2, 0x81,
+            0x5b, 0x16, 0xf8, 0x17, 0x98,
+        ];
+        let pubkey =
+            dashcore::PublicKey::from_slice(&TEST_PUBKEY_G).expect("generator point is valid");
+        let address = dashcore::Address::p2pkh(&pubkey, Network::Testnet);
+        let script_pubkey = address.script_pubkey();
+        let path = DerivationPath::from(vec![
+            ChildNumber::from_normal_idx(0).expect("valid child number"),
+            ChildNumber::from_normal_idx(index).expect("valid child number"),
+        ]);
+        key_wallet::transaction_checking::DerivedAddressInfo {
+            account_type,
+            pool_type,
+            info: AddressInfo {
+                address,
+                script_pubkey,
+                public_key: Some(PublicKeyType::ECDSA(TEST_PUBKEY_G.to_vec())),
+                index,
+                path,
+                used: true,
+                generated_at: 0,
+                used_at: None,
+                tx_count: 0,
+                total_received: 0,
+                total_sent: 0,
+                balance: 0,
+                label: None,
+                metadata: BTreeMap::new(),
+            },
+        }
+    }
+
+    /// Marked-used entries bucket into one `AccountAddressPoolEntry`
+    /// per `(account_type, pool_type)` pair — the shape
+    /// `build_address_pools_for_callback` expects — and every emitted
+    /// address keeps `used == true` so the Swift persister flips the
+    /// row instead of resetting it.
+    #[test]
+    fn marked_used_entries_group_per_account_and_pool() {
+        let bip44 = AccountType::Standard {
+            index: 0,
+            standard_account_type: StandardAccountType::BIP44Account,
+        };
+        let owner_keys = AccountType::ProviderOwnerKeys;
+
+        let marked = vec![
+            stub_marked_used(bip44, AddressPoolType::External, 0),
+            stub_marked_used(bip44, AddressPoolType::External, 3),
+            stub_marked_used(bip44, AddressPoolType::Internal, 1),
+            stub_marked_used(owner_keys, AddressPoolType::Absent, 0),
+        ];
+
+        let entries = group_marked_used_into_pool_entries(&marked);
+        assert_eq!(entries.len(), 3, "one bucket per (account, pool) pair");
+
+        let bip44_external = entries
+            .iter()
+            .find(|e| e.account_type == bip44 && e.pool_type == AddressPoolType::External)
+            .expect("bip44 external bucket");
+        assert_eq!(bip44_external.addresses.len(), 2);
+
+        let owner_bucket = entries
+            .iter()
+            .find(|e| e.account_type == owner_keys)
+            .expect("provider owner keys bucket");
+        assert_eq!(owner_bucket.pool_type, AddressPoolType::Absent);
+        assert_eq!(owner_bucket.addresses.len(), 1);
+        assert!(
+            entries
+                .iter()
+                .flat_map(|e| e.addresses.iter())
+                .all(|a| a.used),
+            "every emitted marked-used address must carry used == true"
+        );
     }
 }

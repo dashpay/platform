@@ -57,6 +57,62 @@ where
     map.push((key.into(), value.into()));
 }
 
+/// Recursively collapse sized integer variants in a `Value` tree to the
+/// shape JSON can preserve.
+///
+/// JSON has a single `Number` type, so a round-trip through `serde_json::Value`
+/// erases the distinction between `Value::U32` / `Value::U16` / `Value::U8` /
+/// `Value::I32` / `Value::I16` / `Value::I8` and lands on `Value::U64` (for
+/// non-negatives) or `Value::I64` (for negatives). This helper normalizes a
+/// `Value` tree to the same projection so that `assert_eq!(canonical(original),
+/// canonical(recovered))` is meaningful for JSON-round-trip tests of
+/// schema-bearing types like `DataContract`'s `document_schemas`.
+///
+/// The normalization is intentionally lossy on the same axis JSON itself is
+/// lossy on. Use only in tests where you need to compare values modulo
+/// sized-int distinction.
+pub fn normalize_integer_variants_for_json_round_trip(value: &mut Value) {
+    match value {
+        Value::U8(v) => *value = Value::U64(*v as u64),
+        Value::U16(v) => *value = Value::U64(*v as u64),
+        Value::U32(v) => *value = Value::U64(*v as u64),
+        Value::I8(v) => {
+            *value = if *v < 0 {
+                Value::I64(*v as i64)
+            } else {
+                Value::U64(*v as u64)
+            }
+        }
+        Value::I16(v) => {
+            *value = if *v < 0 {
+                Value::I64(*v as i64)
+            } else {
+                Value::U64(*v as u64)
+            }
+        }
+        Value::I32(v) => {
+            *value = if *v < 0 {
+                Value::I64(*v as i64)
+            } else {
+                Value::U64(*v as u64)
+            }
+        }
+        Value::I64(v) if *v >= 0 => *value = Value::U64(*v as u64),
+        Value::Array(items) => {
+            for item in items.iter_mut() {
+                normalize_integer_variants_for_json_round_trip(item);
+            }
+        }
+        Value::Map(entries) => {
+            for (k, v) in entries.iter_mut() {
+                normalize_integer_variants_for_json_round_trip(k);
+                normalize_integer_variants_for_json_round_trip(v);
+            }
+        }
+        _ => {}
+    }
+}
+
 pub fn generate_random_identifier_struct() -> Identifier {
     let mut buffer = [0u8; 32];
     getrandom::getrandom(&mut buffer).unwrap();

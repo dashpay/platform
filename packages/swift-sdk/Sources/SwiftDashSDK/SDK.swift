@@ -49,7 +49,7 @@ extension Data {
 
 /// Swift wrapper for the Dash Platform SDK
 public final class SDK: @unchecked Sendable {
-  public private(set) var handle: UnsafeMutablePointer<SDKHandle>?
+  public private(set) var handle: OpaquePointer?
 
   /// The network this SDK instance is connected to
   public private(set) var network: Network = .testnet
@@ -363,7 +363,7 @@ public final class SDK: @unchecked Sendable {
     }
 
     // Store the handle and network
-    handle = result.data?.assumingMemoryBound(to: SDKHandle.self)
+    handle = OpaquePointer(result.data)
     self.network = network
   }
 

@@ -1,5 +1,7 @@
 package org.dashfoundation.dashsdk.credits
 
+import org.dashfoundation.dashsdk.wallet.op
+
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.dashfoundation.dashsdk.errors.mapNativeErrors
@@ -63,7 +65,9 @@ data class FundingInput(
  * — `PlatformWalletManager` owns the `signerHandle`, `ManagedPlatformWallet`
  * owns the wallet handle.
  */
-class IdentityCredits internal constructor() {
+class IdentityCredits internal constructor(
+    private val gate: org.dashfoundation.dashsdk.wallet.TeardownGate? = null,
+) {
 
     /**
      * Transfer [amount] credits from [fromIdentityId] to [toIdentityId]
@@ -75,7 +79,7 @@ class IdentityCredits internal constructor() {
         toIdentityId: ByteArray,
         amount: Long,
         signerHandle: Long,
-    ) = withContext(Dispatchers.IO) {
+    ) = gate.op {
         require(amount > 0) { "amount must be positive, got $amount" }
         mapNativeErrors {
             CreditsNative.transferCredits(
@@ -98,7 +102,7 @@ class IdentityCredits internal constructor() {
         amount: Long,
         toAddress: String,
         signerHandle: Long,
-    ) = withContext(Dispatchers.IO) {
+    ) = gate.op {
         require(amount > 0) { "amount must be positive, got $amount" }
         mapNativeErrors {
             CreditsNative.withdrawCredits(
@@ -120,7 +124,7 @@ class IdentityCredits internal constructor() {
         identityId: ByteArray,
         inputs: List<FundingInput>,
         signerHandle: Long,
-    ): Long = withContext(Dispatchers.IO) {
+    ): Long = gate.op {
         mapNativeErrors {
             CreditsNative.topUpFromAddresses(
                 walletHandle,
@@ -145,7 +149,7 @@ class IdentityCredits internal constructor() {
         fromIdentityId: ByteArray,
         outputs: List<FundingInput>,
         signerHandle: Long,
-    ): Long = withContext(Dispatchers.IO) {
+    ): Long = gate.op {
         require(outputs.isNotEmpty()) { "outputs must not be empty" }
         mapNativeErrors {
             CreditsNative.transferCreditsToAddresses(
@@ -173,7 +177,7 @@ class IdentityCredits internal constructor() {
         amountDuffs: Long,
         accountIndex: Int,
         coreSignerHandle: Long,
-    ): Long = withContext(Dispatchers.IO) {
+    ): Long = gate.op {
         require(amountDuffs > 0) { "amountDuffs must be positive, got $amountDuffs" }
         require(accountIndex >= 0) { "accountIndex must be non-negative, got $accountIndex" }
         mapNativeErrors {

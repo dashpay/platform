@@ -3,6 +3,7 @@ package org.dashfoundation.dashsdk.persistence
 import android.util.Log
 import androidx.room.withTransaction
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.ExecutorCoroutineDispatcher
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -42,6 +43,7 @@ import org.dashfoundation.dashsdk.persistence.entities.ShieldedNoteEntity
 import org.dashfoundation.dashsdk.persistence.entities.ShieldedOutgoingNoteEntity
 import org.dashfoundation.dashsdk.persistence.entities.ShieldedSyncStateEntity
 import org.dashfoundation.dashsdk.persistence.entities.TokenBalanceEntity
+import org.dashfoundation.dashsdk.persistence.entities.PendingInputEntity
 import org.dashfoundation.dashsdk.persistence.entities.TransactionEntity
 import org.dashfoundation.dashsdk.persistence.entities.TxoEntity
 import org.dashfoundation.dashsdk.persistence.entities.WalletEntity
@@ -83,7 +85,9 @@ import java.util.concurrent.Executors
  *
  * @param database the Room database to persist into.
  * @param dispatcher single-thread dispatcher confining all callback work;
- *   defaults to a dedicated executor (override in tests).
+ *   `null` (the production default) creates a dedicated owned executor
+ *   that [close] shuts down. Tests inject their own dispatcher, which the
+ *   handler never closes.
  * @param privateKeyDeriver derives + persists the 32-byte private half of
  *   an identity key when the persist callback carries a derivation
  *   breadcrumb. `null` (the default) keeps every key watch-only — the
@@ -93,9 +97,7 @@ import java.util.concurrent.Executors
  */
 class PlatformWalletPersistenceHandler(
     private val database: DashDatabase,
-    private val dispatcher: CoroutineDispatcher =
-        Executors.newSingleThreadExecutor { r -> Thread(r, "dash-persistence") }
-            .asCoroutineDispatcher(),
+    dispatcher: CoroutineDispatcher? = null,
     private val privateKeyDeriver: PrivateKeyDeriver? = null,
     /**
      * Network the owning manager is locked to. Load callbacks that hydrate
@@ -107,7 +109,34 @@ class PlatformWalletPersistenceHandler(
      * Null = unscoped (unit tests exercising raw persistence only).
      */
     private val network: org.dashfoundation.dashsdk.Network? = null,
-) : NativePersistenceBridge() {
+) : NativePersistenceBridge(), AutoCloseable {
+
+    /**
+     * The single-thread executor created when no [dispatcher] is injected.
+     * Owned by this handler and released by [close] — its "dash-persistence"
+     * thread is non-daemon, so a manager retired on network switch would
+     * otherwise leak one live OS thread per switch, unbounded.
+     */
+    private val ownedDispatcher: ExecutorCoroutineDispatcher? =
+        if (dispatcher == null) {
+            Executors.newSingleThreadExecutor { r -> Thread(r, "dash-persistence") }
+                .asCoroutineDispatcher()
+        } else {
+            null
+        }
+
+    /** All callback work is confined to this single-thread dispatcher. */
+    private val dispatcher: CoroutineDispatcher = dispatcher ?: ownedDispatcher!!
+
+    /**
+     * Shut down the owned executor (no-op for an injected dispatcher).
+     * Callers must quiesce native callbacks first — the manager invokes
+     * this only after `nativeDestroy` has freed the callback contexts, so
+     * nothing can dispatch onto the executor afterwards.
+     */
+    override fun close() {
+        ownedDispatcher?.close()
+    }
 
     /**
      * One in-flight store() round. Holds the ordered list of Room
@@ -467,6 +496,8 @@ class PlatformWalletPersistenceHandler(
         hasFee: Boolean,
         label: String,
         firstSeen: Long,
+        inputOutpoints: ByteArray,
+        inputOutpointCount: Int,
     ): Int = guarded {
         stage(walletId) { db ->
             val existing = db.transactionDao().getByTxid(txid)
@@ -496,18 +527,50 @@ class PlatformWalletPersistenceHandler(
                     lastUpdated = now(),
                 ),
             )
-            // Spend-flip reconcile: a TXO spent while this tx was still
-            // pre-block got its `spendingTxid` linked but kept
-            // `isSpent = false` (see onWalletChangesetUtxoSpent's
-            // in-block guard). iOS flips it on the next upsert of the
-            // spending tx with a confirmed context
-            // (`resolveInputOutpoint`); without this pass the flag
-            // never converges on Android and the UTXO-restore path
-            // (CORE-06) would hand a consumed output back to Rust as
-            // spendable after relaunch.
-            if (context >= CONTEXT_IN_BLOCK) {
-                for (txo in db.txoDao().getUnspentBySpendingTxid(txid)) {
-                    db.txoDao().upsert(txo.copy(isSpent = true, lastUpdated = now()))
+            // Reconcile every spent input outpoint against our TXOs — a 1:1
+            // port of Swift resolveInputOutpoint
+            // (PlatformWalletPersistenceHandler.swift:688-785). `inputOutpoints`
+            // carries EVERY input of this spending tx (even ones whose funding
+            // TXO isn't known yet — Rust builds it from tx.input directly, not
+            // the classified utxos_spent slice), so a spend observed before its
+            // funding output can't be lost: if the funding TXO is present we
+            // link the spend now; otherwise we stage a pending row that the
+            // funding TXO's later upsert drains. Without this the UTXO-restore
+            // path (CORE-06) would hand a consumed output back to Rust as
+            // spendable after relaunch. Replaces the old getUnspentBySpendingTxid
+            // flip pass, which had no Swift analog and could not see
+            // out-of-order / unclassified inputs.
+            for (i in 0 until inputOutpointCount) {
+                val outpoint = inputOutpoints.copyOfRange(i * 36, i * 36 + 36)
+                val txo = db.txoDao().getByOutpoint(outpoint)
+                if (txo != null) {
+                    // Found: link the spend. Monotonic — only a confirmed
+                    // (in-block) context flips isSpent; a mempool re-emit never
+                    // downgrades a flag that is already true (mirrors spendIsInBlock).
+                    db.txoDao().upsert(
+                        txo.copy(
+                            isSpent = txo.isSpent || context >= CONTEXT_IN_BLOCK,
+                            spendingTxid = txid,
+                            spendingInputIndex = i,
+                            lastUpdated = now(),
+                        ),
+                    )
+                    for (p in db.documentDao().getPendingInputsByOutpoint(outpoint)) {
+                        db.documentDao().deletePendingInput(p)
+                    }
+                } else if (db.documentDao().getPendingInput(outpoint, txid) == null) {
+                    // Funding TXO unknown — defer via a pending row (dedup-guarded
+                    // on outpoint+spendingTxid). FK parent = the tx row upserted
+                    // just above, so the CASCADE relationship holds.
+                    db.documentDao().upsertPendingInput(
+                        PendingInputEntity(
+                            outpoint = outpoint,
+                            inputIndex = i,
+                            spendingTxid = txid,
+                            spendingTransactionTxid = txid,
+                            walletId = walletId,
+                        ),
+                    )
                 }
             }
         }
@@ -538,29 +601,51 @@ class PlatformWalletPersistenceHandler(
             }
             val existing = db.txoDao().getByOutpoint(outpoint)
             val coreAddressId = if (address.isNotEmpty()) address else null
-            db.txoDao().upsert(
-                TxoEntity(
-                    outpoint = outpoint,
-                    vout = vout,
-                    amount = amount,
-                    address = address,
-                    scriptPubKey = scriptPubKey,
-                    height = height,
-                    isCoinbase = isCoinbase,
-                    isConfirmed = isConfirmed,
-                    isInstantLocked = isInstantLocked,
-                    isLocked = isLocked,
-                    isSpent = existing?.isSpent ?: false,
-                    walletId = walletId,
-                    txid = txid,
-                    spendingTxid = existing?.spendingTxid,
-                    spendingInputIndex = existing?.spendingInputIndex,
-                    accountId = existing?.accountId,
-                    coreAddressId = existing?.coreAddressId ?: coreAddressIdIfPresent(db, coreAddressId),
-                    createdAt = existing?.createdAt ?: java.util.Date(),
-                    lastUpdated = now(),
-                ),
+            val row = TxoEntity(
+                outpoint = outpoint,
+                vout = vout,
+                amount = amount,
+                address = address,
+                scriptPubKey = scriptPubKey,
+                height = height,
+                isCoinbase = isCoinbase,
+                isConfirmed = isConfirmed,
+                isInstantLocked = isInstantLocked,
+                isLocked = isLocked,
+                isSpent = existing?.isSpent ?: false,
+                walletId = walletId,
+                txid = txid,
+                spendingTxid = existing?.spendingTxid,
+                spendingInputIndex = existing?.spendingInputIndex,
+                accountId = existing?.accountId,
+                coreAddressId = existing?.coreAddressId ?: coreAddressIdIfPresent(db, coreAddressId),
+                createdAt = existing?.createdAt ?: java.util.Date(),
+                lastUpdated = now(),
             )
+            db.txoDao().upsert(row)
+            // Drain any pending-input rows staged before this funding TXO
+            // existed — a 1:1 port of the Swift upsertUtxo drain
+            // (PlatformWalletPersistenceHandler.swift:895-953). A spend that
+            // arrived first was deferred (see onWalletChangesetTransaction);
+            // now that the funding output is here, link the newest pending
+            // spend (reorg/double-spend: newest wins) and clear the rows so
+            // the UTXO-restore path won't hand this consumed output back to
+            // Rust as spendable.
+            val pending = db.documentDao().getPendingInputsByOutpoint(outpoint)
+            if (pending.isNotEmpty()) {
+                val chosen = pending.maxByOrNull { it.createdAt }!!
+                val spending = db.transactionDao().getByTxid(chosen.spendingTxid)
+                val spentInBlock = spending != null && spending.context >= CONTEXT_IN_BLOCK
+                db.txoDao().upsert(
+                    row.copy(
+                        isSpent = row.isSpent || spentInBlock,
+                        spendingTxid = chosen.spendingTxid,
+                        spendingInputIndex = chosen.inputIndex,
+                        lastUpdated = now(),
+                    ),
+                )
+                for (p in pending) db.documentDao().deletePendingInput(p)
+            }
         }
         0
     }

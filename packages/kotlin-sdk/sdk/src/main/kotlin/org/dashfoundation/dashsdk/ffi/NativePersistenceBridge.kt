@@ -230,7 +230,17 @@ abstract class NativePersistenceBridge {
         spendingTxid: ByteArray,
     ): Int = 0
 
-    /** One `TransactionRecordFFI` on the current account. Descriptor `([B[B[BII[BIILjava/lang/String;IJJZLjava/lang/String;J)I`. */
+    /**
+     * One `TransactionRecordFFI` on the current account. Descriptor
+     * `([B[B[BII[BIILjava/lang/String;IJJZLjava/lang/String;J[BI)I`.
+     *
+     * [inputOutpoints] is a flat `36 * inputOutpointCount` byte array — the
+     * i-th input outpoint (vin order) is `copyOfRange(i*36, i*36+36)`, packed
+     * as `txid[32] || vout(u32 LE)`, byte-identical to `makeOutpoint`. Empty
+     * for coinbase. Carries every spent outpoint even when the funding TXO is
+     * not yet known to Rust, so hosts can reconcile spend-before-funding via
+     * the pending-input table (see `PlatformWalletPersistenceHandler`).
+     */
     @Suppress("LongParameterList")
     open fun onWalletChangesetTransaction(
         walletId: ByteArray,
@@ -248,6 +258,8 @@ abstract class NativePersistenceBridge {
         hasFee: Boolean,
         label: String,
         firstSeen: Long,
+        inputOutpoints: ByteArray,
+        inputOutpointCount: Int,
     ): Int = 0
 
     /** Close the current account bucket. Descriptor `([BI)I`. */
