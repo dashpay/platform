@@ -483,4 +483,34 @@ mod tests {
                 if msg == "serialized index values exceed the contested index query limits"
         ));
     }
+
+    #[test]
+    fn test_query_contested_resources_accepts_cursor_count_at_index_arity() {
+        use dapi_grpc::platform::v0::get_contested_resources_request::get_contested_resources_request_v0::StartAtValueInfo;
+
+        let (platform, state, version) = setup_platform(Some((1, 1)), Network::Testnet, None);
+        let config = bincode::config::standard().with_big_endian();
+        let end_value =
+            bincode::encode_to_vec(Value::Text("label".to_string()), config).expect("encode");
+        let start_at_value =
+            bincode::encode_to_vec(Value::Text("$root".to_string()), config).expect("encode");
+
+        // DPNS parentNameAndLabel has two properties. One end-range value plus
+        // start-at occupies exactly the two slots allowed by the aggregate
+        // arity guard and must remain a valid query shape.
+        let request = GetContestedResourcesRequestV0 {
+            end_index_values: vec![end_value],
+            start_at_value_info: Some(StartAtValueInfo {
+                start_value: start_at_value,
+                start_value_included: true,
+            }),
+            ..dpns_contested_request()
+        };
+
+        let result = platform
+            .query_contested_resources_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(result.errors.is_empty());
+    }
 }
