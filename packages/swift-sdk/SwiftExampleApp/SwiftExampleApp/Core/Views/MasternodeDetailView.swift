@@ -14,6 +14,17 @@ struct MasternodeDetailView: View {
     let masternode: PersistentMasternode
     /// Platform SDK access for the evonode claimable-balance fetch.
     @EnvironmentObject var platformState: AppState
+    /// Drives the owner-key claim (withdrawal) FFI.
+    @EnvironmentObject var walletManager: PlatformWalletManager
+
+    // Claim (owner-key withdrawal) UI state.
+    @State private var showClaimSheet = false
+    @State private var claimAmountText = ""
+    @State private var claiming = false
+    @State private var claimError: String?
+
+    /// ~0.005 DASH fee headroom kept back from a max claim, in credits.
+    private static let claimFeeHeadroomCredits: UInt64 = 500_000_000
 
     /// Core payout coinbase TXOs paid to this node's payout address, if
     /// that address belongs to this wallet. Sourced from persisted
@@ -207,6 +218,18 @@ struct MasternodeDetailView: View {
                     }
                     .disabled(balanceLoading)
                     .accessibilityIdentifier("masternode.refreshBalance")
+
+                    // Claim is only offered when there's a balance AND this
+                    // wallet holds the owner key (the owner-key withdrawal
+                    // path signs with it).
+                    if canClaim {
+                        Button {
+                            prepareClaim()
+                        } label: {
+                            Label("Claim", systemImage: "arrow.down.circle")
+                        }
+                        .accessibilityIdentifier("masternode.claimButton")
+                    }
                 }
             }
         }
@@ -216,6 +239,127 @@ struct MasternodeDetailView: View {
             if masternode.isEvonode {
                 await fetchClaimableBalance()
             }
+        }
+        .sheet(isPresented: $showClaimSheet) {
+            claimConfirmationSheet
+        }
+    }
+
+    /// Claim is enabled only with a positive balance and this wallet's
+    /// owner key (the FFI's owner-key path requires it).
+    private var canClaim: Bool {
+        (claimableCredits ?? 0) > 0 && masternode.ownerInWallet
+    }
+
+    /// Default claim amount = full balance minus the fee headroom.
+    private var defaultClaimCredits: UInt64 {
+        let credits = claimableCredits ?? 0
+        return credits > Self.claimFeeHeadroomCredits
+            ? credits - Self.claimFeeHeadroomCredits
+            : 0
+    }
+
+    private func prepareClaim() {
+        claimError = nil
+        claimAmountText = Self.creditsAsDash(defaultClaimCredits)
+            .replacingOccurrences(of: " DASH", with: "")
+        showClaimSheet = true
+    }
+
+    /// Parsed claim amount (DASH text ⇒ credits), or nil if unparseable / 0.
+    private var parsedClaimCredits: UInt64? {
+        guard let dash = Double(claimAmountText.trimmingCharacters(in: .whitespaces)),
+            dash > 0
+        else { return nil }
+        let credits = (dash * 100_000_000_000.0).rounded()
+        guard credits >= 1, credits <= Double(claimableCredits ?? 0) else { return nil }
+        return UInt64(credits)
+    }
+
+    @ViewBuilder
+    private var claimConfirmationSheet: some View {
+        NavigationView {
+            Form {
+                Section("Amount") {
+                    TextField("Amount (DASH)", text: $claimAmountText)
+                        .keyboardType(.decimalPad)
+                        .accessibilityIdentifier("masternode.claim.amountField")
+                    if let credits = parsedClaimCredits {
+                        MasternodeDetailRow(label: "Credits", value: "\(credits)")
+                    } else {
+                        Text("Enter an amount up to the claimable balance.")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+
+                Section("Destination") {
+                    MasternodeDetailRow(
+                        label: "Payout Address",
+                        value: masternode.payoutAddress ?? "registered payout address"
+                    )
+                    Text("Withdrawals with the owner key pay to the registered "
+                        + "payout address — the destination can't be changed.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+
+                Section("Signing Key") {
+                    MasternodeDetailRow(
+                        label: "Owner Key",
+                        value: PersistentMasternode.keyOwnershipLabel(
+                            inWallet: masternode.ownerInWallet,
+                            accountType: masternode.ownerAccountType,
+                            index: masternode.ownerKeyIndex
+                        )
+                    )
+                }
+
+                if let err = claimError {
+                    Section {
+                        Text(err).font(.caption).foregroundColor(.red)
+                    }
+                }
+            }
+            .navigationTitle("Claim Credits")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { showClaimSheet = false }
+                        .accessibilityIdentifier("masternode.claim.cancel")
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Confirm") { Task { await submitClaim() } }
+                        .disabled(claiming || parsedClaimCredits == nil)
+                        .accessibilityIdentifier("masternode.claim.confirm")
+                }
+            }
+        }
+    }
+
+    @MainActor
+    private func submitClaim() async {
+        guard let credits = parsedClaimCredits else { return }
+        claiming = true
+        claimError = nil
+        do {
+            // `PlatformWalletManager` is `@MainActor`; call directly. (When
+            // the network-signing path lands, the whole orchestration runs
+            // in Rust behind this one call — see the FFI doc — so blocking
+            // is bounded to a single FFI round-trip.)
+            _ = try walletManager.masternodeWithdraw(
+                walletId: masternode.walletId,
+                proTxHash: masternode.proTxHash,
+                amountCredits: credits,
+                ownerKeyIndex: masternode.ownerKeyIndex
+            )
+            claiming = false
+            showClaimSheet = false
+            // Reflect the new (reduced) balance.
+            await fetchClaimableBalance()
+        } catch {
+            claiming = false
+            claimError = error.localizedDescription
         }
     }
 

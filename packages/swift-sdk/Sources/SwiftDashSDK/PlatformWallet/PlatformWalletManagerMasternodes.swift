@@ -129,4 +129,50 @@ extension PlatformWalletManager {
             )
         }
     }
+
+    /// Claim (withdraw) `amountCredits` from a masternode's Platform
+    /// identity using the wallet-held OWNER key. Owner-key withdrawals pay
+    /// the node's registered payout address (no chosen destination). Returns
+    /// the new balance; throws on failure (surfaced to the confirmation UI).
+    ///
+    /// Pure bridge — the whole orchestration (identity fetch, OWNER-key
+    /// guard, owner-key derivation + sign, withdraw broadcast) lives in
+    /// `platform-wallet` behind this one FFI call, per CLAUDE.md.
+    /// `proTxHash` is passed in stored WIRE order; Rust reverses it to the
+    /// display-order identity id.
+    public func masternodeWithdraw(
+        walletId: Data,
+        proTxHash: Data,
+        amountCredits: UInt64,
+        ownerKeyIndex: UInt32
+    ) throws -> UInt64 {
+        guard isConfigured, handle != NULL_HANDLE,
+            walletId.count == 32, proTxHash.count == 32
+        else {
+            throw PlatformWalletError.invalidParameter(
+                "Manager not configured, or wallet id / proTxHash not 32 bytes")
+        }
+
+        var outBalance: UInt64 = 0
+        let ffiResult = walletId.withUnsafeBytes { (widRaw: UnsafeRawBufferPointer) -> PlatformWalletFFIResult in
+            proTxHash.withUnsafeBytes { (ptRaw: UnsafeRawBufferPointer) -> PlatformWalletFFIResult in
+                platform_wallet_manager_masternode_withdraw(
+                    handle,
+                    widRaw.baseAddress?.assumingMemoryBound(to: UInt8.self),
+                    ptRaw.baseAddress?.assumingMemoryBound(to: UInt8.self),
+                    amountCredits,
+                    ownerKeyIndex,
+                    nil,  // dest_address: owner-key path pays the registered payout address
+                    true, // use_owner_key
+                    &outBalance
+                )
+            }
+        }
+
+        let result = PlatformWalletResult(ffiResult)
+        guard result.isSuccess else {
+            throw PlatformWalletError(result: result)
+        }
+        return outBalance
+    }
 }
