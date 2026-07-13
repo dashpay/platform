@@ -19,7 +19,7 @@ pub use dip14::{
     derive_contact_xpub, unmask_account_reference, ContactXpubData, DEFAULT_CONTACT_GAP_LIMIT,
 };
 pub use invitation::{
-    encode_invitation_uri, parse_invitation_uri, voucher_output_index, InviterInfo,
-    ParsedInvitation,
+    encode_invitation_uri, parse_invitation_uri, voucher_output_index, wif_network_matches,
+    InviterInfo, ParsedInvitation,
 };
 pub use validation::pubkey_binds_expected_key_data;

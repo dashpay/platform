@@ -132,7 +132,7 @@ pub unsafe extern "C" fn platform_wallet_create_invitation(
             unwrap_result_or_return!(unsafe { CStr::from_ptr(inviter_username) }.to_str())
                 .to_string();
         Some(InviterInfo {
-            username,
+            username: Some(username),
             display_name: None,
             avatar_url: None,
         })
@@ -402,9 +402,13 @@ pub unsafe extern "C" fn platform_wallet_parse_invitation(
 
     let (has_inviter, inviter_id, inviter_username) = match parsed.inviter.as_ref() {
         Some(info) => {
-            // An interior NUL can't occur in a decoded UTF-8 DPNS label, but fall
-            // back to a null username rather than fail the whole preview.
-            let username = std::ffi::CString::new(info.username.clone())
+            // Username is absent for a metadata-only (du-less) link; an interior
+            // NUL can't occur in a decoded UTF-8 DPNS label, but fall back to a
+            // null username rather than fail the whole preview.
+            let username = info
+                .username
+                .as_ref()
+                .and_then(|u| std::ffi::CString::new(u.clone()).ok())
                 .map(|c| c.into_raw())
                 .unwrap_or(std::ptr::null_mut());
             // The link has no inviter identity id (resolved from the username via

@@ -35,7 +35,9 @@ use dash_sdk::platform::transition::put_identity::PutIdentity;
 use dash_sdk::platform::transition::put_settings::PutSettings;
 
 use crate::error::PlatformWalletError;
-use crate::wallet::identity::crypto::{encode_invitation_uri, voucher_output_index};
+use crate::wallet::identity::crypto::{
+    encode_invitation_uri, voucher_output_index, wif_network_matches,
+};
 use crate::wallet::identity::crypto::{InviterInfo, ParsedInvitation};
 use crate::wallet::identity::network::contact_requests::ContactCryptoProvider;
 
@@ -348,6 +350,16 @@ impl IdentityWallet {
     {
         preflight_keys_map(&keys_map)?;
 
+        // Reject a wrong-network link before any network work: a testnet WIF is a
+        // valid key on the wrong chain, so it would otherwise surface as a
+        // confusing funding-tx fetch miss rather than a clear "wrong network".
+        if !wif_network_matches(invitation.voucher_key_network, self.sdk.network) {
+            return Err(PlatformWalletError::InvalidIdentityData(format!(
+                "invitation is for the {:?} network but this wallet is on {:?}",
+                invitation.voucher_key_network, self.sdk.network
+            )));
+        }
+
         // Reconstruct the funding asset-lock proof by refetching the tx. Consensus
         // enforces pk↔output, islock↔tx, and identity_id↔outpoint, so the local
         // guards below are for fast-fail + correct-index selection, not theft
@@ -459,14 +471,28 @@ impl IdentityWallet {
         // Fetch the funding tx; on a miss retry with the txid byte-reversed
         // (old iOS links are little-endian). Propagate the reversed attempt's
         // error if both fail.
-        let fetched = match self.sdk.get_transaction(&invitation.funding_txid).await {
-            Ok(tx) => tx,
-            Err(_) => {
+        let fetched = match self
+            .sdk
+            .get_transaction(&invitation.funding_txid)
+            .await
+            .map_err(PlatformWalletError::Sdk)?
+        {
+            Some(tx) => tx,
+            // Not found as-given: retry with the txid byte-reversed (old iOS
+            // links are little-endian). A transient error is NOT retried — it
+            // propagated above — so the reversed lookup never masks it.
+            None => {
                 let reversed = reverse_txid_hex(&invitation.funding_txid)?;
                 self.sdk
                     .get_transaction(&reversed)
                     .await
                     .map_err(PlatformWalletError::Sdk)?
+                    .ok_or_else(|| {
+                        PlatformWalletError::InvalidIdentityData(
+                            "invitation funding transaction not found (tried both byte orders)"
+                                .to_string(),
+                        )
+                    })?
             }
         };
         let transaction = fetched.transaction;

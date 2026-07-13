@@ -37,8 +37,9 @@
 //! funded identity. The URI is a secret: callers MUST NOT log or persist it, and
 //! the voucher key is never stored (it is HD-derived and re-derivable from the
 //! funding index). Parsing is bounded (URI length cap) so a hostile link can't
-//! force a large allocation, and the WIF is network- and compression-checked so
-//! a malformed key is rejected before any network call.
+//! force a large allocation; the WIF is decoded + compression-checked at parse,
+//! and its network is validated against the wallet at claim (a wrong-network WIF
+//! is a valid key on the wrong chain, caught before the funding fetch).
 
 use dashcore::secp256k1::{PublicKey, Secp256k1, SecretKey};
 use dashcore::transaction::special_transaction::TransactionPayload;
@@ -48,12 +49,18 @@ use dpp::prelude::AssetLockProof;
 use crate::error::PlatformWalletError;
 
 /// The `dashpay://invite` custom scheme — the canonical form we emit and the
-/// primary form we parse (QR / in-person / deep link).
+/// primary form we parse (QR / in-person / deep link). `invite` is the URI
+/// authority (Android's `URI_PREFIX`), so the accepted host is exactly `invite`.
+const INVITATION_SCHEME: &str = "dashpay";
+const INVITATION_SCHEME_HOST: &str = "invite";
+/// The full canonical prefix we emit.
 const INVITATION_SCHEME_PREFIX: &str = "dashpay://invite";
 
-/// The AppsFlyer OneLink applink host the iOS reference wallet emits. Parsed as
-/// a first-class alternative to the custom scheme (field-level interop).
-const INVITATION_APPLINK_HOST: &str = "invitations.dashpay.io/applink";
+/// The AppsFlyer OneLink applink the iOS reference wallet emits
+/// (`https://invitations.dashpay.io/applink?…`). Parsed as a first-class
+/// alternative to the custom scheme (field-level interop).
+const INVITATION_APPLINK_HOST: &str = "invitations.dashpay.io";
+const INVITATION_APPLINK_PATH: &str = "/applink";
 
 /// Query parameter names — identical to the legacy wallets' contract.
 const PARAM_USER: &str = "du";
@@ -78,15 +85,21 @@ const MAX_INVITATION_URI_LEN: usize = 8192;
 /// url). DPNS labels are short; this only bounds a hostile link.
 const MAX_STR_BYTES: usize = 2048;
 
-/// Inviter contact-bootstrap info — present iff the link carries a `du`
-/// (username). Absent ⇒ the invitation is a pure funding voucher. The link does
+/// Inviter contact-bootstrap info — present iff the link carries any of `du`,
+/// `display-name`, or `avatar-url`. Absent ⇒ pure funding voucher. The link does
 /// not carry the inviter's identity id (the legacy format has no such field);
 /// the invitee resolves it from `username` via DPNS at contact-bootstrap time.
+///
+/// `username` is optional: the reference wallets emit `display-name`/`avatar-url`
+/// in blocks independent of `du`, so a `du`-less link can still carry inviter
+/// metadata (surfaced in the preview even though no contact request is possible
+/// without a username).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct InviterInfo {
     /// The inviter's DPNS username (`du`), shown to the invitee and used to
-    /// resolve the inviter's identity for the contact request.
-    pub username: String,
+    /// resolve the inviter's identity for the contact request. `None` for a
+    /// metadata-only (`du`-less) link.
+    pub username: Option<String>,
     /// Optional display name (`display-name`) for the claim UI.
     pub display_name: Option<String>,
     /// Optional avatar url (`avatar-url`) for the claim UI.
@@ -102,6 +115,11 @@ pub struct ParsedInvitation {
     /// One-time ECDSA voucher private key that funds the invitee's identity
     /// create (signs the asset-lock's outer state-transition signature).
     pub voucher_key: SecretKey,
+    /// The network the voucher key's WIF was encoded for (`0xCC` ⇒ Mainnet,
+    /// `0xEF` ⇒ the testnet family). The claim path rejects a link whose WIF
+    /// network does not match the wallet's, turning a wrong-network link into a
+    /// clear error instead of a mysterious fetch miss.
+    pub voucher_key_network: Network,
     /// The funding transaction id as carried in the link (`assetlocktx`),
     /// lowercased. Kept as the raw hex string so the claim can try it as-given
     /// and byte-reversed on a fetch miss (old iOS links are little-endian).
@@ -221,6 +239,48 @@ fn field<'a>(pairs: &'a [(String, String)], name: &str) -> Option<&'a str> {
         .filter(|v| !v.is_empty())
 }
 
+/// The parts of an invitation URI we gate on. Extracted with a small hand parser
+/// (no `url` crate in this crate's deps) so the transport check is anchored to
+/// the real scheme/host/path — not a substring/prefix that a decoy URL could
+/// smuggle (`dashpay://inviteXYZ`, `https://evil/?next=invitations.dashpay.io/applink&…`).
+struct UriParts<'a> {
+    scheme: &'a str,
+    /// Authority host, lowercased for comparison (userinfo + port stripped).
+    host: String,
+    path: &'a str,
+    query: Option<&'a str>,
+}
+
+/// Strip `userinfo@` and `:port` from an authority, leaving the bare host.
+fn authority_host(authority: &str) -> &str {
+    let after_userinfo = authority.rsplit_once('@').map_or(authority, |(_, h)| h);
+    // A bare `host:port` — take the host. (Our hosts are never bracketed IPv6.)
+    after_userinfo.split(':').next().unwrap_or(after_userinfo)
+}
+
+/// Split `scheme://authority/path?query#fragment` into the parts we gate on.
+/// Requires the `://` authority form (both accepted transports use it) and drops
+/// the fragment. Returns `None` for a shape we don't recognize as a URI.
+fn split_uri(uri: &str) -> Option<UriParts<'_>> {
+    let (scheme, rest) = uri.split_once(':')?;
+    let rest = rest.strip_prefix("//")?;
+    let auth_end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
+    let authority = &rest[..auth_end];
+    let after_auth = &rest[auth_end..];
+    // Drop the fragment, then split path from query.
+    let after_auth = after_auth.split('#').next().unwrap_or(after_auth);
+    let (path, query) = match after_auth.split_once('?') {
+        Some((p, q)) => (p, Some(q)),
+        None => (after_auth, None),
+    };
+    Some(UriParts {
+        scheme,
+        host: authority_host(authority).to_ascii_lowercase(),
+        path,
+        query,
+    })
+}
+
 /// Encode an invitation into a legacy-compatible `dashpay://invite?…` link.
 ///
 /// The returned URI **contains the plaintext voucher key** (WIF) — treat it as a
@@ -259,13 +319,14 @@ pub fn encode_invitation_uri(
         query.push_str(&percent_encode(val));
     };
 
-    // `du` is emitted first (canonical) when the inviter opted in; a pure
-    // funding voucher emits a `du`-less link (still parseable — iOS accepts it).
-    if let Some(info) = inviter {
-        if info.username.len() > MAX_STR_BYTES {
+    // `du` is emitted first (canonical) when the inviter opted in with a
+    // username; a pure funding voucher emits a `du`-less link (still parseable —
+    // iOS accepts it).
+    if let Some(username) = inviter.and_then(|info| info.username.as_ref()) {
+        if username.len() > MAX_STR_BYTES {
             return Err(invalid("inviter username too long"));
         }
-        push(PARAM_USER, &info.username);
+        push(PARAM_USER, username);
     }
     push(PARAM_ASSET_LOCK_TX, &funding_txid);
     push(PARAM_PRIVATE_KEY, &wif);
@@ -292,11 +353,15 @@ pub fn encode_invitation_uri(
 
 /// Parse a legacy-compatible invitation link into a [`ParsedInvitation`].
 ///
-/// Accepts both the `dashpay://invite` scheme and the
-/// `https://invitations.dashpay.io/applink` host, by field name and
-/// order-independent. Requires `assetlocktx` + `pk` (non-blank); `du` and
-/// `islock` are optional (a missing/`"null"` `islock` is a ChainLock invite).
-/// The WIF is network- and compression-checked. Does **not** fetch or validate
+/// Accepts exactly the `dashpay://invite` scheme (host `invite`) and the
+/// `https://invitations.dashpay.io/applink` URL (host + path anchored, so a
+/// decoy URL that merely mentions the applink cannot smuggle a query in). Fields
+/// are matched by name, order-independent. Requires `assetlocktx` + `pk`
+/// (non-blank, each appearing at most once); `du` and `islock` are optional (a
+/// missing/`"null"` `islock` is a ChainLock invite). The WIF is decoded and
+/// compression-checked here; its **network** is captured for the claim path to
+/// validate against the wallet (a wrong-network WIF is a valid key on the wrong
+/// chain, so it must be caught there, not here). Does **not** fetch or validate
 /// the funding tx — that happens at claim.
 pub fn parse_invitation_uri(uri: &str) -> Result<ParsedInvitation, PlatformWalletError> {
     if uri.len() > MAX_INVITATION_URI_LEN {
@@ -306,23 +371,42 @@ pub fn parse_invitation_uri(uri: &str) -> Result<ParsedInvitation, PlatformWalle
         )));
     }
 
-    // Accept the custom scheme or the applink host; the transport differs but
-    // the query contract is identical (field-level, not byte-level, parity).
-    let is_scheme = uri.starts_with(INVITATION_SCHEME_PREFIX);
-    let is_applink = uri.contains(INVITATION_APPLINK_HOST);
-    if !is_scheme && !is_applink {
+    // Anchor the transport gate to the real scheme/host/path, not a prefix or
+    // substring: `dashpay://invite` (host == `invite`) or the applink URL
+    // (host == invitations.dashpay.io, path == /applink). A trailing slash on
+    // the applink path is tolerated.
+    let parts = split_uri(uri).ok_or_else(|| invalid("not a valid invitation link URI"))?;
+    let accepted = match parts.scheme.to_ascii_lowercase().as_str() {
+        INVITATION_SCHEME => {
+            parts.host == INVITATION_SCHEME_HOST && (parts.path.is_empty() || parts.path == "/")
+        }
+        "https" | "http" => {
+            parts.host == INVITATION_APPLINK_HOST
+                && parts.path.trim_end_matches('/') == INVITATION_APPLINK_PATH
+        }
+        _ => false,
+    };
+    if !accepted {
         return Err(invalid(
-            "not a dashpay://invite or invitations.dashpay.io/applink link",
+            "not a dashpay://invite or https://invitations.dashpay.io/applink link",
         ));
     }
 
-    // Everything after the first `?`, up to an optional fragment.
-    let query = uri
-        .split_once('?')
-        .map(|(_, q)| q)
+    let query = parts
+        .query
         .ok_or_else(|| invalid("invitation link has no query parameters"))?;
-    let query = query.split('#').next().unwrap_or(query);
     let pairs = parse_query(query)?;
+
+    // A duplicated required key is ambiguous and dangerous: the two reference
+    // wallets bind different occurrences (iOS the last, Android the first), so a
+    // `?pk=A&pk=B` link would claim different keys per wallet. Reject it.
+    for key in [PARAM_PRIVATE_KEY, PARAM_ASSET_LOCK_TX] {
+        if pairs.iter().filter(|(k, _)| k == key).count() > 1 {
+            return Err(invalid(format!(
+                "invitation link has a duplicated `{key}` field"
+            )));
+        }
+    }
 
     // iOS minimum: `assetlocktx` + `pk` present and non-blank. Never reject on a
     // missing/`"null"` `islock` or a missing `du`.
@@ -331,15 +415,18 @@ pub fn parse_invitation_uri(uri: &str) -> Result<ParsedInvitation, PlatformWalle
     let pk = field(&pairs, PARAM_PRIVATE_KEY)
         .ok_or_else(|| invalid("invitation link is missing the pk field"))?;
 
-    // WIF: network-checked decode (`from_wif` rejects a foreign network byte),
-    // compression required (the credit-output hash uses the compressed pubkey —
-    // an uncompressed key would produce a mismatching hash160 and a dead claim).
+    // WIF: decode + require compression (the credit-output hash uses the
+    // compressed pubkey — an uncompressed key would produce a mismatching
+    // hash160 and a dead claim). `from_wif` rejects a non-Dash network byte but
+    // cannot tell mainnet from testnet against *this* wallet; the claim path does
+    // that (see `voucher_key_network`).
     let private_key = PrivateKey::from_wif(pk)
         .map_err(|e| invalid(format!("invitation pk is not a valid WIF key: {e}")))?;
     if !private_key.compressed {
         return Err(invalid("invitation pk must be a compressed WIF key"));
     }
     let voucher_key = private_key.inner;
+    let voucher_key_network = private_key.network;
 
     let funding_txid = assetlocktx.to_lowercase();
 
@@ -349,20 +436,48 @@ pub fn parse_invitation_uri(uri: &str) -> Result<ParsedInvitation, PlatformWalle
         .filter(|v| *v != IS_LOCK_NULL_SENTINEL)
         .map(|v| v.to_lowercase());
 
-    // Inviter present iff `du` is present. The identity id is not in the link;
-    // it is resolved from the username at contact-bootstrap time.
-    let inviter = field(&pairs, PARAM_USER).map(|username| InviterInfo {
-        username: username.to_string(),
-        display_name: field(&pairs, PARAM_DISPLAY_NAME).map(str::to_string),
-        avatar_url: field(&pairs, PARAM_AVATAR_URL).map(str::to_string),
-    });
+    // Inviter metadata is parsed field-by-field, independent of `du` (the
+    // reference wallets emit `display-name`/`avatar-url` in blocks separate from
+    // `du`, so a `du`-less link can still carry them). Present iff any field is.
+    // The identity id is not in the link; it is resolved from the username at
+    // contact-bootstrap time.
+    //
+    // Note: an unencoded `&` inside a legacy `avatar-url` would truncate that
+    // field at the naive `&` split. Cosmetic (avatar only, low likelihood) — not
+    // worth a full nested-query parser; the required fields are unaffected.
+    let username = field(&pairs, PARAM_USER).map(str::to_string);
+    let display_name = field(&pairs, PARAM_DISPLAY_NAME).map(str::to_string);
+    let avatar_url = field(&pairs, PARAM_AVATAR_URL).map(str::to_string);
+    let inviter = if username.is_some() || display_name.is_some() || avatar_url.is_some() {
+        Some(InviterInfo {
+            username,
+            display_name,
+            avatar_url,
+        })
+    } else {
+        None
+    };
 
     Ok(ParsedInvitation {
         voucher_key,
+        voucher_key_network,
         funding_txid,
         islock_hex,
         inviter,
     })
+}
+
+/// Whether a voucher WIF encoded for `pk_network` is usable on a wallet running
+/// `wallet_network`.
+///
+/// WIF carries only two network bytes — `0xCC` (Mainnet) and `0xEF` (the whole
+/// testnet family: Testnet/Devnet/Regtest) — so the meaningful check is
+/// mainnet-vs-not: a testnet/devnet/regtest wallet accepts any `0xEF` WIF, and a
+/// mainnet wallet accepts only a `0xCC` WIF. This catches a testnet link pasted
+/// into a mainnet wallet (a valid key on the wrong chain) as a clear error
+/// rather than a mysterious funding-tx fetch miss.
+pub fn wif_network_matches(pk_network: Network, wallet_network: Network) -> bool {
+    matches!(pk_network, Network::Mainnet) == matches!(wallet_network, Network::Mainnet)
 }
 
 /// Select the funded credit output the voucher key controls.
@@ -410,7 +525,7 @@ mod tests {
 
     fn inviter_info() -> InviterInfo {
         InviterInfo {
-            username: "alice".to_string(),
+            username: Some("alice".to_string()),
             display_name: Some("Alice Example".to_string()),
             avatar_url: Some("https://example.com/a b.png?x=1".to_string()),
         }
@@ -503,7 +618,10 @@ mod tests {
         let parsed = parse_invitation_uri(&uri).expect("parse");
         assert_eq!(parsed.funding_txid, "aabbcc");
         assert_eq!(parsed.islock_hex.as_deref(), Some("deadbeef"));
-        assert_eq!(parsed.inviter.as_ref().unwrap().username, "bob");
+        assert_eq!(
+            parsed.inviter.as_ref().unwrap().username.as_deref(),
+            Some("bob")
+        );
     }
 
     /// The `https://invitations.dashpay.io/applink` host is accepted as a
@@ -515,7 +633,10 @@ mod tests {
             "https://invitations.dashpay.io/applink?du=carol&assetlocktx=aabb&pk={wif}&islock=cc"
         );
         let parsed = parse_invitation_uri(&uri).expect("parse applink");
-        assert_eq!(parsed.inviter.as_ref().unwrap().username, "carol");
+        assert_eq!(
+            parsed.inviter.as_ref().unwrap().username.as_deref(),
+            Some("carol")
+        );
         assert_eq!(parsed.funding_txid, "aabb");
     }
 
@@ -609,7 +730,7 @@ mod tests {
         );
         assert_eq!(parsed.islock_hex.as_deref(), Some("01"));
         let inviter = parsed.inviter.as_ref().expect("inviter");
-        assert_eq!(inviter.username, "satoshi");
+        assert_eq!(inviter.username.as_deref(), Some("satoshi"));
         assert_eq!(inviter.display_name.as_deref(), Some("Sat Oshi"));
         assert_eq!(
             inviter.avatar_url.as_deref(),
@@ -646,5 +767,78 @@ mod tests {
             special_transaction_payload: None,
         };
         assert!(voucher_output_index(&tx, &key).is_err());
+    }
+
+    /// A `du`-less link that still carries `display-name`/`avatar-url` must
+    /// surface them (the reference wallets emit those independently of `du`).
+    #[test]
+    fn parse_du_less_link_keeps_metadata() {
+        let wif = PrivateKey::new(voucher(), Network::Testnet).to_wif();
+        let uri = format!(
+            "dashpay://invite?assetlocktx=aa&pk={wif}&display-name=No%20User&avatar-url=https%3A%2F%2Fimg%2Fx.png"
+        );
+        let parsed = parse_invitation_uri(&uri).expect("parse");
+        let inviter = parsed.inviter.as_ref().expect("metadata-only inviter");
+        assert!(inviter.username.is_none(), "no du ⇒ no username");
+        assert_eq!(inviter.display_name.as_deref(), Some("No User"));
+        assert_eq!(inviter.avatar_url.as_deref(), Some("https://img/x.png"));
+    }
+
+    /// A duplicated required key is ambiguous (iOS binds the last, Android the
+    /// first) — reject rather than claim a wallet-dependent key.
+    #[test]
+    fn parse_rejects_duplicate_required_keys() {
+        let wif = PrivateKey::new(voucher(), Network::Testnet).to_wif();
+        let other = PrivateKey::new(
+            SecretKey::from_slice(&[0x44u8; 32]).unwrap(),
+            Network::Testnet,
+        )
+        .to_wif();
+        let dup_pk = format!("dashpay://invite?assetlocktx=aa&pk={wif}&pk={other}");
+        assert!(parse_invitation_uri(&dup_pk)
+            .unwrap_err()
+            .to_string()
+            .contains("duplicated"));
+
+        let dup_tx = format!("dashpay://invite?assetlocktx=aa&assetlocktx=bb&pk={wif}");
+        assert!(parse_invitation_uri(&dup_tx)
+            .unwrap_err()
+            .to_string()
+            .contains("duplicated"));
+    }
+
+    /// The scheme/host gate must be anchored: a suffixed scheme host
+    /// (`dashpay://inviteXYZ`) and a decoy URL that merely *mentions* the applink
+    /// host in its own query must both be rejected — otherwise the decoy's query
+    /// (with a `pk`/`assetlocktx`) would be parsed.
+    #[test]
+    fn parse_rejects_decoy_scheme_and_host() {
+        let wif = PrivateKey::new(voucher(), Network::Testnet).to_wif();
+        // Suffixed authority — not exactly `invite`.
+        let suffixed = format!("dashpay://inviteXYZ?assetlocktx=aa&pk={wif}");
+        assert!(parse_invitation_uri(&suffixed).is_err());
+        // Decoy host: the real host is evil.example; the applink string only
+        // appears inside the decoy's own query value.
+        let decoy = format!(
+            "https://evil.example/r?next=invitations.dashpay.io/applink&assetlocktx=aa&pk={wif}"
+        );
+        assert!(parse_invitation_uri(&decoy).is_err());
+        // Wrong path on the right host.
+        let wrong_path = format!("https://invitations.dashpay.io/evil?assetlocktx=aa&pk={wif}");
+        assert!(parse_invitation_uri(&wrong_path).is_err());
+    }
+
+    /// WIF network compatibility is mainnet-vs-not: a testnet WIF is rejected on
+    /// a mainnet wallet, but accepted on any testnet-family wallet.
+    #[test]
+    fn wif_network_matches_is_mainnet_vs_testnet_family() {
+        assert!(wif_network_matches(Network::Mainnet, Network::Mainnet));
+        assert!(wif_network_matches(Network::Testnet, Network::Testnet));
+        // WIF decodes 0xEF to Testnet; a devnet/regtest wallet must still accept.
+        assert!(wif_network_matches(Network::Testnet, Network::Devnet));
+        assert!(wif_network_matches(Network::Testnet, Network::Regtest));
+        // Cross mainnet/testnet is rejected (the wrong-chain paste).
+        assert!(!wif_network_matches(Network::Testnet, Network::Mainnet));
+        assert!(!wif_network_matches(Network::Mainnet, Network::Testnet));
     }
 }
