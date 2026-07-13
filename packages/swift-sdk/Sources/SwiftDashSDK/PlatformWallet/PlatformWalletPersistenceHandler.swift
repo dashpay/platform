@@ -651,6 +651,23 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             record.transactionType = String(cString: typeName)
         }
         record.transactionTypeKind = tx.transaction_type_kind
+        // Provider (masternode) payload — parsed on the Rust side from
+        // the DIP-3 special-tx body; marshal the flat fields straight
+        // onto the row (null string / `has_* == false` ⇒ nil).
+        record.providerServiceAddress = tx.provider_service_address.map { String(cString: $0) }
+        record.providerProTxHash = tx.has_provider_pro_tx_hash
+            ? withUnsafeBytes(of: tx.provider_pro_tx_hash) { Data($0) }
+            : nil
+        record.providerCollateralTxid = tx.has_provider_collateral
+            ? withUnsafeBytes(of: tx.provider_collateral_txid) { Data($0) }
+            : nil
+        record.providerCollateralVout = tx.has_provider_collateral ? tx.provider_collateral_vout : 0
+        record.providerOwnerKeyHash = tx.has_provider_owner_key_hash
+            ? withUnsafeBytes(of: tx.provider_owner_key_hash) { Data($0) }
+            : nil
+        record.providerVotingKeyHash = tx.has_provider_voting_key_hash
+            ? withUnsafeBytes(of: tx.provider_voting_key_hash) { Data($0) }
+            : nil
         record.netAmount = tx.net_amount
         record.fee = tx.has_fee ? tx.fee : nil
         if let labelPtr = tx.label {
