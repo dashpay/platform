@@ -61,6 +61,11 @@ Replace the binary envelope with the query form.
 - **Keep `MIN_INVITATION_DUFFS = 0.003`** (already == Android `DASH_PAY_INVITE_MIN`).
 - **Contested tier `0.25 DASH` — DEFERRED** until contested/premium-name registration is actually wired into the new-stack claim flow (scope review F5; don't ship a price tier with no consumer). Add the tier + picker when that lands.
 
+## 4b. Consequences of matching the legacy format (confirmed during impl)
+- **No inviter identity-id on the wire.** The legacy link carries only `du` (username) — no identity id. So `InviterInfo = {username, display_name, avatar_url}`, and the **invitee resolves the inviter's identity from `du` via DPNS at contact-bootstrap** (mirrors Android `identityRepository.getUser(invite.user)`). Swift contact-bootstrap must do the DPNS lookup instead of using an embedded id.
+- **No expiry on the wire.** Legacy links have no expiry; the pre-network staleness gate is dropped (the real bound is the amount cap + reclaim; expiry was advisory anyway). The inviter-side local reclaim TTL is unchanged.
+- **islock ISLOCK-fallback is a documented limitation, not a gap.** We decode the modern deterministic ISDLOCK (what every live wallet emits and what we emit). rust-dashcore's `InstantLock` cannot represent the ancient non-deterministic ISLOCK; such a link fails closed (clean failed claim, `islock.txid != tx.txid` guard also catches it). Acceptable — add a manual ISLOCK parser only if a live producer is ever found.
+
 ## 5. Preserved (unchanged): reclaim (outpoint + `funding_index`, orthogonal to link format), seedless key handling, shared Rust core. Regression-test reclaim after the codec change.
 
 ## 6. Decisions — resolved
