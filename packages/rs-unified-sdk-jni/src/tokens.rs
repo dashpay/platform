@@ -1379,6 +1379,11 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TokensNative_sendDash
             return ptr::null_mut();
         };
         let mut txid = [0u8; 32];
+        // Exact network fee (Σin − Σout) reported by the builder since
+        // upstream #4095. Captured to satisfy the FFI contract; not yet
+        // surfaced to Kotlin (the send flow reads the fee from the
+        // persisted payment entry, as iOS does).
+        let mut fee_duffs: u64 = 0;
         let result = unsafe {
             platform_wallet_ffi::platform_wallet_send_dashpay_payment(
                 wallet_handle as Handle,
@@ -1388,6 +1393,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TokensNative_sendDash
                 opt_c_ptr(&memo_c),
                 core_signer_handle as *mut MnemonicResolverHandle,
                 &mut txid as *mut [u8; 32],
+                &mut fee_duffs as *mut u64,
             )
         };
         if take_pwffi_error(env, result) {

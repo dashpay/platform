@@ -21,6 +21,13 @@ struct CoreContentView: View {
     @State private var dashPayLastSync: Date?
     // Progress values come from PlatformWalletManager (polled from FFI each second)
 
+    /// Rescan controls: the height-choice dialog and the follow-up
+    /// custom-height alert + its numeric field. The arm outcome is
+    /// logged to the console, matching Start/Clear — no UI surface.
+    @State private var showRescanDialog = false
+    @State private var showCustomHeightAlert = false
+    @State private var customHeightText = ""
+
     /// All persisted platform addresses across every wallet. Summed
     /// directly here so the global Sync Status view survives app
     /// restarts / wallet reconfigures without depending on the
@@ -172,6 +179,17 @@ var body: some View {
                         .tint(isSpvRunning ? .orange : .blue)
                         .controlSize(.mini)
 
+                        Button(action: { showRescanDialog = true }) {
+                            Text("Rescan")
+                                .font(.caption)
+                                .fontWeight(.medium)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.indigo)
+                        .controlSize(.mini)
+                        .disabled(walletIdsOnNetwork.isEmpty)
+                        .accessibilityIdentifier("coreSync.rescanFiltersButton")
+
                         Button(action: clearSyncData) {
                             Text("Clear")
                                 .font(.caption)
@@ -185,6 +203,34 @@ var body: some View {
                     }
                 }
                 .padding(.vertical, 4)
+                .confirmationDialog(
+                    "Rescan Compact Filters",
+                    isPresented: $showRescanDialog,
+                    titleVisibility: .visible
+                ) {
+                    Button("Last 1,000 blocks") { armRescan(lastBlocks: 1_000) }
+                    Button("Last 10,000 blocks") { armRescan(lastBlocks: 10_000) }
+                    Button("Everything (from height 0)") { armRescan(fromHeight: 0) }
+                    Button("Custom height…") { showCustomHeightAlert = true }
+                    Button("Cancel", role: .cancel) {}
+                } message: {
+                    Text("Rewind the filter scan to re-download and re-match "
+                        + "compact filters for every wallet on this network.")
+                }
+                .alert("Rescan From Height", isPresented: $showCustomHeightAlert) {
+                    TextField("Block height", text: $customHeightText)
+                        .keyboardType(.numberPad)
+                    Button("Rescan") {
+                        if let height = customHeightValue {
+                            armRescan(fromHeight: height)
+                        }
+                        customHeightText = ""
+                    }
+                    .disabled(customHeightValue == nil)
+                    Button("Cancel", role: .cancel) { customHeightText = "" }
+                } message: {
+                    Text("Enter the core block height to rescan compact filters from.")
+                }
             } header: {
                 Text("Core Sync Status")
             }
@@ -852,6 +898,62 @@ var body: some View {
         } catch {
             print("❌ Failed to clear SPV storage: \(error)")
         }
+    }
+
+    // MARK: - Rescan
+
+    /// Height the "last N blocks" rescan choices count back from:
+    /// filter-scan tip, falling back to filter-headers then headers
+    /// when the earlier stages haven't produced a height yet.
+    private var rescanReferenceTip: UInt32 {
+        let filters = walletManager.spvProgress.filters?.currentHeight ?? 0
+        if filters > 0 { return filters }
+        let filterHeaders = walletManager.spvProgress.filterHeaders?.currentHeight ?? 0
+        if filterHeaders > 0 { return filterHeaders }
+        return walletManager.spvProgress.headers?.currentHeight ?? 0
+    }
+
+    private func armRescan(lastBlocks: UInt32) {
+        let tip = rescanReferenceTip
+        armRescan(fromHeight: tip > lastBlocks ? tip - lastBlocks : 0)
+    }
+
+    /// The custom-height field parsed as a block height, or `nil` when
+    /// blank / non-numeric. Shared by the alert's disabled check and
+    /// its action so the two can't drift out of sync.
+    private var customHeightValue: UInt32? {
+        UInt32(customHeightText.trimmingCharacters(in: .whitespaces))
+    }
+
+    /// Rewind the filter-scan checkpoint to `fromHeight` for every
+    /// wallet on the active network. Collects per-wallet failures
+    /// instead of aborting on the first, then logs the outcome to the
+    /// console (matching Start/Clear — no UI surface).
+    private func armRescan(fromHeight: UInt32) {
+        let ids = walletIdsOnNetwork
+        guard !ids.isEmpty else { return }
+
+        var failures: [String] = []
+        for walletId in ids {
+            do {
+                try walletManager.spvRescanFilters(walletId: walletId, fromHeight: fromHeight)
+            } catch {
+                failures.append("\(rescanShortId(walletId)): \(error.localizedDescription)")
+            }
+        }
+
+        let armed = ids.count - failures.count
+        let applied = isSpvRunning ? "" : " (applies on next SPV start)"
+        print("🔁 Rescan armed from height \(fromHeight.formatted()) "
+            + "for \(armed) wallet\(armed == 1 ? "" : "s")\(applied)")
+        if !failures.isEmpty {
+            print("❌ Rescan failed for: \(failures.joined(separator: ", "))")
+        }
+    }
+
+    /// First 4 bytes of a wallet id as hex, for compact failure lines.
+    private func rescanShortId(_ walletId: Data) -> String {
+        walletId.prefix(4).map { String(format: "%02x", $0) }.joined()
     }
 
     @MainActor
