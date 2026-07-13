@@ -39,6 +39,7 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import org.dashfoundation.example.di.LocalAppState
+import org.dashfoundation.example.navigation.DocumentActions
 import org.dashfoundation.example.navigation.DocumentFields
 import org.dashfoundation.example.navigation.DocumentWithPrice
 import org.dashfoundation.example.ui.components.FormSection
@@ -50,10 +51,11 @@ import org.dashfoundation.example.util.truncateMiddle
 
 /**
  * Document query builder + result list — the read/query role of
- * `DocumentsView.swift` (its create/replace/delete/transfer flows need
- * state-transition FFI the Kotlin queries layer doesn't expose yet).
- * Where/orderBy syntax matches the JSON strings iOS passes to
- * `sdk.documentList` (see the keyword search in ContractsTabView.swift:684-707).
+ * `DocumentsView.swift`. Each result row drills into the document viewer, a
+ * price/purchase screen ("Price…"), and the replace/delete/transfer actions
+ * ("Actions…" → [DocumentActionsScreen]). Where/orderBy syntax matches the
+ * JSON strings iOS passes to `sdk.documentList` (see the keyword search in
+ * ContractsTabView.swift:684-707).
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -244,21 +246,36 @@ fun DocumentsScreen(
                                 }
                             },
                             // Price / purchase drill-in (← the Set Price… /
-                            // Purchase… context actions on iOS document rows).
+                            // Purchase… context actions on iOS document rows)
+                            // plus the replace/delete/transfer actions menu.
                             trailingContent = {
                                 if (id.isNotEmpty()) {
-                                    TextButton(
-                                        onClick = {
-                                            navController.navigate(
-                                                DocumentWithPrice(
-                                                    contractIdHex = contractIdHex,
-                                                    typeName = typeName,
-                                                    documentId = id,
-                                                ),
-                                            )
-                                        },
-                                        modifier = Modifier.testTag("documents.price.$id"),
-                                    ) { Text("Price…") }
+                                    Column {
+                                        TextButton(
+                                            onClick = {
+                                                navController.navigate(
+                                                    DocumentWithPrice(
+                                                        contractIdHex = contractIdHex,
+                                                        typeName = typeName,
+                                                        documentId = id,
+                                                    ),
+                                                )
+                                            },
+                                            modifier = Modifier.testTag("documents.price.$id"),
+                                        ) { Text("Price…") }
+                                        TextButton(
+                                            onClick = {
+                                                navController.navigate(
+                                                    DocumentActions(
+                                                        contractIdHex = contractIdHex,
+                                                        typeName = typeName,
+                                                        documentId = id,
+                                                    ),
+                                                )
+                                            },
+                                            modifier = Modifier.testTag("documents.actions.$id"),
+                                        ) { Text("Actions…") }
+                                    }
                                 }
                             },
                         )

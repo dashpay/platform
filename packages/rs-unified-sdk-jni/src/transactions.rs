@@ -701,6 +701,243 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_do
     })
 }
 
+// ── Document replace / delete / transfer ──────────────────────────────
+
+/// Replace + broadcast the full property set of `documentId` on
+/// `contractId`'s `documentType`, owned by `ownerId`, signed via
+/// `signerHandle` with key `signingKeyId` — the JNI bridge over
+/// `platform_wallet_document_replace` (Swift
+/// `ManagedPlatformWallet.replaceDocument`, behind the DOC-03 menu).
+///
+/// The revision is bumped on the Rust side — the caller does NOT pass a
+/// revision. `propertiesJson` is the FULL replacement property object
+/// (same hex/base58 encoding rules as create); unlike create the replace
+/// FFI takes an explicit `signingKeyId` (an AUTHENTICATION + ECDSA key on
+/// the owner). Returns the confirmed document's canonical query-side JSON
+/// (with the 32-byte id as the base58 `$id` field); null after throwing on
+/// error.
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_documentReplace(
+    mut env: JNIEnv,
+    _class: JClass,
+    wallet_handle: jlong,
+    owner_id: JByteArray,
+    contract_id: JByteArray,
+    document_type: JString,
+    document_id: JByteArray,
+    properties_json: JString,
+    signing_key_id: jint,
+    signer_handle: jlong,
+) -> jstring {
+    guard(&mut env, ptr::null_mut(), |env| {
+        if signing_key_id < 0 {
+            throw_sdk_exception(env, 1, "signingKeyId must be non-negative");
+            return ptr::null_mut();
+        }
+        let Some(owner) = read_id32(env, &owner_id, "ownerId") else {
+            return ptr::null_mut();
+        };
+        let Some(contract) = read_id32(env, &contract_id, "contractId") else {
+            return ptr::null_mut();
+        };
+        let Some(doc_id) = read_id32(env, &document_id, "documentId") else {
+            return ptr::null_mut();
+        };
+        let Some(doc_type) = read_cstring(env, &document_type, "documentType") else {
+            return ptr::null_mut();
+        };
+        let Some(props) = read_cstring(env, &properties_json, "propertiesJson") else {
+            return ptr::null_mut();
+        };
+
+        let mut out_id = [0u8; 32];
+        let mut out_json: *mut c_char = ptr::null_mut();
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_document_replace(
+                wallet_handle as Handle,
+                owner.as_ptr(),
+                contract.as_ptr(),
+                doc_type.as_ptr(),
+                doc_id.as_ptr(),
+                props.as_ptr(),
+                signing_key_id as u32,
+                signer_handle as *mut SignerHandle,
+                out_id.as_mut_ptr(),
+                &mut out_json as *mut *mut c_char,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return ptr::null_mut();
+        }
+
+        if out_json.is_null() {
+            throw_sdk_exception(
+                env,
+                99,
+                "document replace returned success but no canonical JSON",
+            );
+            return ptr::null_mut();
+        }
+        // Copy the JSON out, then free the Rust-owned string.
+        let json = unsafe { CStr::from_ptr(out_json) }
+            .to_string_lossy()
+            .into_owned();
+        unsafe { platform_wallet_ffi::platform_wallet_string_free(out_json) };
+
+        env.new_string(json)
+            .map(|s| s.into_raw())
+            .unwrap_or(ptr::null_mut())
+    })
+}
+
+/// Delete + broadcast `documentId` on `contractId`'s `documentType`,
+/// owned by `ownerId`, signed via `signerHandle` with key `signingKeyId`
+/// — the JNI bridge over `platform_wallet_document_delete` (Swift
+/// `ManagedPlatformWallet.deleteDocument`, behind the DOC-04 menu).
+///
+/// Delete returns no document body (there is no canonical JSON), so this
+/// returns the deleted document's 32-byte id as a `byte[]` for
+/// confirmation. Null after throwing on error.
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_documentDelete(
+    mut env: JNIEnv,
+    _class: JClass,
+    wallet_handle: jlong,
+    owner_id: JByteArray,
+    contract_id: JByteArray,
+    document_type: JString,
+    document_id: JByteArray,
+    signing_key_id: jint,
+    signer_handle: jlong,
+) -> jni::sys::jbyteArray {
+    guard(&mut env, ptr::null_mut(), |env| {
+        if signing_key_id < 0 {
+            throw_sdk_exception(env, 1, "signingKeyId must be non-negative");
+            return ptr::null_mut();
+        }
+        let Some(owner) = read_id32(env, &owner_id, "ownerId") else {
+            return ptr::null_mut();
+        };
+        let Some(contract) = read_id32(env, &contract_id, "contractId") else {
+            return ptr::null_mut();
+        };
+        let Some(doc_id) = read_id32(env, &document_id, "documentId") else {
+            return ptr::null_mut();
+        };
+        let Some(doc_type) = read_cstring(env, &document_type, "documentType") else {
+            return ptr::null_mut();
+        };
+
+        let mut out_id = [0u8; 32];
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_document_delete(
+                wallet_handle as Handle,
+                owner.as_ptr(),
+                contract.as_ptr(),
+                doc_type.as_ptr(),
+                doc_id.as_ptr(),
+                signing_key_id as u32,
+                signer_handle as *mut SignerHandle,
+                out_id.as_mut_ptr(),
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return ptr::null_mut();
+        }
+
+        env.byte_array_from_slice(&out_id)
+            .map(|a| a.into_raw())
+            .unwrap_or(ptr::null_mut())
+    })
+}
+
+/// Transfer + broadcast `documentId` on `contractId`'s `documentType`,
+/// from `ownerId` to `recipientId`, signed via `signerHandle` with key
+/// `signingKeyId` — the JNI bridge over `platform_wallet_document_transfer`
+/// (Swift `ManagedPlatformWallet.transferDocument`, behind the DOC-05
+/// menu). Only valid for document types whose schema is `transferable`
+/// (gated by the caller).
+///
+/// Returns the confirmed document's canonical query-side JSON (now
+/// reflecting the new owner, with the 32-byte id as the base58 `$id`
+/// field); null after throwing on error.
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_documentTransfer(
+    mut env: JNIEnv,
+    _class: JClass,
+    wallet_handle: jlong,
+    owner_id: JByteArray,
+    contract_id: JByteArray,
+    document_type: JString,
+    document_id: JByteArray,
+    recipient_id: JByteArray,
+    signing_key_id: jint,
+    signer_handle: jlong,
+) -> jstring {
+    guard(&mut env, ptr::null_mut(), |env| {
+        if signing_key_id < 0 {
+            throw_sdk_exception(env, 1, "signingKeyId must be non-negative");
+            return ptr::null_mut();
+        }
+        let Some(owner) = read_id32(env, &owner_id, "ownerId") else {
+            return ptr::null_mut();
+        };
+        let Some(contract) = read_id32(env, &contract_id, "contractId") else {
+            return ptr::null_mut();
+        };
+        let Some(doc_id) = read_id32(env, &document_id, "documentId") else {
+            return ptr::null_mut();
+        };
+        let Some(recipient) = read_id32(env, &recipient_id, "recipientId") else {
+            return ptr::null_mut();
+        };
+        let Some(doc_type) = read_cstring(env, &document_type, "documentType") else {
+            return ptr::null_mut();
+        };
+
+        let mut out_id = [0u8; 32];
+        let mut out_json: *mut c_char = ptr::null_mut();
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_document_transfer(
+                wallet_handle as Handle,
+                owner.as_ptr(),
+                contract.as_ptr(),
+                doc_type.as_ptr(),
+                doc_id.as_ptr(),
+                recipient.as_ptr(),
+                signing_key_id as u32,
+                signer_handle as *mut SignerHandle,
+                out_id.as_mut_ptr(),
+                &mut out_json as *mut *mut c_char,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return ptr::null_mut();
+        }
+
+        if out_json.is_null() {
+            throw_sdk_exception(
+                env,
+                99,
+                "document transfer returned success but no canonical JSON",
+            );
+            return ptr::null_mut();
+        }
+        // Copy the JSON out, then free the Rust-owned string.
+        let json = unsafe { CStr::from_ptr(out_json) }
+            .to_string_lossy()
+            .into_owned();
+        unsafe { platform_wallet_ffi::platform_wallet_string_free(out_json) };
+
+        env.new_string(json)
+            .map(|s| s.into_raw())
+            .unwrap_or(ptr::null_mut())
+    })
+}
+
 // ── Contested-resource vote ───────────────────────────────────────────
 
 /// Cast a masternode contested-resource vote and wait for the response —

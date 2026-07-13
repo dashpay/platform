@@ -218,13 +218,20 @@ internal data class AggregateResult(
 /**
  * Parse a count/sum result JSON: a bare number is the ungrouped total; an
  * object maps group keys to numbers, with `""` (or `total`) as the total.
+ * The FFI wraps that map in a single-key envelope — `{"counts": {...}}` /
+ * `{"sums": {...}}` per `dash_sdk_document_count`/`_sum`'s contract — so
+ * unwrap it before reading entries.
  */
 internal fun parseAggregateResult(response: String?): AggregateResult? {
     if (response.isNullOrBlank()) return null
-    return when (val element = LenientJson.parseToJsonElement(response)) {
-        is JsonPrimitive -> AggregateResult(total = element.content, groups = emptyMap())
+    var element = LenientJson.parseToJsonElement(response)
+    (element as? JsonObject)?.takeIf { it.size == 1 }?.let { root ->
+        (root["counts"] ?: root["sums"])?.let { if (it is JsonObject) element = it }
+    }
+    return when (val el = element) {
+        is JsonPrimitive -> AggregateResult(total = el.content, groups = emptyMap())
         is JsonObject -> {
-            val entries = element.entries.mapNotNull { (key, value) ->
+            val entries = el.entries.mapNotNull { (key, value) ->
                 (value as? JsonPrimitive)?.content?.let { key to it }
             }.toMap()
             AggregateResult(

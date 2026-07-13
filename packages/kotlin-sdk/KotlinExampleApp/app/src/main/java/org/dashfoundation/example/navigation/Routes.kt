@@ -278,6 +278,26 @@ import kotlinx.serialization.Serializable
     val documentId: String = "",
 )
 
+/**
+ * Owned-document actions for one document (DOC-03 replace / DOC-04 delete /
+ * DOC-05 transfer), reached from a document row's "Actions…" button and from
+ * the document replace/delete/transfer transition-catalog entries.
+ * [documentId] may arrive empty (the catalog entries let the user type one).
+ */
+@Serializable data class DocumentActions(
+    val contractIdHex: String,
+    val typeName: String,
+    val documentId: String = "",
+)
+
+/**
+ * Update an existing data contract (DC-04) — merge new document / token /
+ * group schemas onto the live contract. [contractIdHex] prefills the
+ * contract-id field (empty ⇒ blank, entered on-screen); the owner identity
+ * is picked on-screen.
+ */
+@Serializable data class UpdateContract(val contractIdHex: String = "")
+
 /** Sum/average aggregate form (← `SumAverageDocumentsView.swift`). */
 @Serializable data class SumAverageDocuments(val contractIdHex: String, val typeName: String)
 

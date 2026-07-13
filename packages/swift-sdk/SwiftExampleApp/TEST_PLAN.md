@@ -24,7 +24,7 @@ Every catalog row carries four orthogonal, machine-filterable fields. Select tes
 
 A test is **automatable now** only if Status is `✅`, `🧪`, or `⚠️` (reachable and drivable in the simulator) **and** `Tier ≠ Manual`. `Tier=Manual` marks implemented features that need a human on a physical device (e.g. a camera) — the automated QA agent must **skip and flag them for manual testing**, never mark them failed. `🔌`/`🚫` rows are listed for completeness — skip them unless asked to confirm absence.
 
-A row's **primary home** is the §4 section it lives in (its `Domain=…`). **Category** stays a distinct selection axis, though: a handful of rows are cross-cutting and belong to a category *other* than their section — e.g. `ID-06`/`ID-08`/`ID-11` are **Address** tests that live in §4.2 Identity, `SH-11` is an **Identity** test in the Shielded section, and `CORE-21` is **Shielded**. Resolve any `Category=…` selection through the **§6 category index**, which lists every member per category (primary + cross-cutting). Separately, the old MultiWallet/Group *sections* are gone — those cross-cutting concerns are now **tags**: e.g. `TOK-17` (token transfer between two wallets) lives in **Token** and carries `Tag=multiwallet`. Select cross-cutting sets with the Tags column — `Tag=multiwallet`, `Tag=group`, `Tag=read-only`, etc. — intersected with `Tier`/`Layer`/`Status`/`Category` as needed. This is the axis behind requests like *"run all multi-wallet token tests"* (`Category=Token AND Tag=multiwallet`).
+A row's **primary home** is the §4 section it lives in (its `Domain=…`). **Category** stays a distinct selection axis, though: a handful of rows are cross-cutting and belong to a category *other* than their section — e.g. `ID-06`/`ID-08`/`ID-11` are **Address** tests that live in §4.2 Identity, and `SH-11` is an **Identity** test in the Shielded section. Resolve any `Category=…` selection through the **§6 category index**, which lists every member per category (primary + cross-cutting). Separately, the old MultiWallet/Group *sections* are gone — those cross-cutting concerns are now **tags**: e.g. `TOK-17` (token transfer between two wallets) lives in **Token** and carries `Tag=multiwallet`. Select cross-cutting sets with the Tags column — `Tag=multiwallet`, `Tag=group`, `Tag=read-only`, etc. — intersected with `Tier`/`Layer`/`Status`/`Category` as needed. This is the axis behind requests like *"run all multi-wallet token tests"* (`Category=Token AND Tag=multiwallet`).
 
 **Worked examples of a request → selection:**
 
@@ -36,7 +36,7 @@ A row's **primary home** is the §4 section it lives in (its `Domain=…`). **Ca
 | "smoke test the wallet" | `Category=Core AND Status=✅` | `CORE-01..CORE-10` |
 | "test all non-Uncommon Token tests" | `Category=Token AND Tier≠Uncommon` | `TOK-01..07`, `TOK-17`, `TOK-18`, `TOK-19` |
 | "exercise every token admin action" | `Category=Token AND Tier=Uncommon` | `TOK-08..TOK-16`, `TOK-20` |
-| "run all Shielded tests" | `Category=Shielded` | `SH-01..16`, `CORE-21` |
+| "run all Shielded tests" | `Category=Shielded` | `SH-01..17` |
 | "run all multi-wallet tests" | `Tag=multiwallet` | `CORE-14..23`, `ID-14/15`, `TOK-17`, `DPNS-08`, `DP-11`, `DOC-15`, `SH-14/15/16`, `SYS-07/08` |
 | "run all read queries" | `Tag=read-only` (or Appendix A) | the read-only rows + the gRPC read-RPC coverage table |
 
@@ -135,7 +135,6 @@ The app is a full multi-wallet client: `PlatformWalletManager` holds N wallets c
 | CORE-18 | Per-wallet isolation (identities / addresses / balances / shielded) | Core | Thorough | ✅ | multiwallet | Confirm wallet A's identities, addresses, Core/Platform balances and shielded state never surface under wallet B (`@Query` predicates filtered by `walletId`). Key correctness check for multi-wallet. |
 | CORE-19 | Send between two on-device wallets | Core | Thorough | ✅ | multiwallet | Normal send from wallet A to wallet B's receive address (no intra-app picker — you must paste/scan B's address). B's balance increases after sync. Variants: identity→identity (`ID-04`) or shielded between two local wallets. |
 | CORE-20 | Concurrent SPV sync across all wallets | Core | Thorough | ✅ | multiwallet | One SPV runtime per network filters every wallet's addresses; `spvProgress` is manager-global, not per-wallet. With 2+ wallets, confirm each reaches the tip and detects its own funds. |
-| CORE-21 | Multiple wallets bound to the shielded pool concurrently | Shielded | Uncommon | ✅ | multiwallet | `platform_wallet_manager_bind_shielded` is per `wallet_id`; the manager syncs all bound wallets. Every loaded wallet is now engine-bound automatically at rebind (`rebindWalletScopedServices` → `ShieldedService.bindEngine`). The global Sync tab mirror (`ShieldedService.boundWalletId`) still displays one wallet's shielded state at a time, but per-wallet Receive addresses and Balance rows now read each wallet directly (`shieldedDefaultAddress(walletId:)` / `PersistentShieldedNote`), so they no longer merge or mask non-mirror wallets. |
 | CORE-22 | Re-add a previously deleted wallet (same network) | Core | Uncommon | ✅ | multiwallet | After `CORE-17`, re-import the same mnemonic on the same network. Re-derives the same (network-scoped) `wallet_id`, re-creates the wallet, and must re-discover identities/addresses/balances cleanly — no stale Keychain keys or orphaned SwiftData rows left over from the delete. Verify the wallet is fully functional again, not a half-restored duplicate. |
 | CORE-23 | Re-add a deleted wallet that also exists on another network | Core | Uncommon | ✅ | multiwallet | Same mnemonic present as a wallet on two networks (e.g. testnet + devnet) → **distinct** network-scoped `wallet_id`s, each with its own Keychain mnemonic copy. Delete it on network X (`CORE-17`) and verify the network-Y wallet is untouched (still listed, mnemonic intact, functional); then re-add on X and confirm both coexist. Exercises the `walletRowCountAcrossNetworks` cross-network mnemonic-purge guard in `PlatformWalletManager.deleteWallet`. |
 
@@ -275,6 +274,7 @@ Shielded notes/balance/activity have **no read-side FFI** by design — Rust pus
 | SH-14 | Shielded transfer between two on-device wallets | Shielded | Thorough | ✅ | multiwallet | Wallet A's pool → wallet B's shielded address (`SH-05`); copy B's address from its Receive → Shielded tab (`SH-13`, now resolved per-wallet). Both wallets are bound automatically at rebind (no wallet-swap needed); B's shielded balance rises on the next sync pass. The global Sync tab still mirrors one wallet, but per-wallet Receive/Balance surfaces read B directly. |
 | SH-15 | Unshield from A to a Platform address owned by B | Shielded | Uncommon | ✅ | multiwallet | A unshields (`SH-06`) to a Platform address belonging to wallet B; verify B receives the credits (subject to the `SYS-07` sync caveat). Both wallets are engine-bound automatically at rebind, so A can spend from its own pool without a wallet-swap. |
 | SH-16 | Shielded withdraw from A to B's Core L1 address | Shielded | Uncommon | ✅ | multiwallet, withdrawal | Wallet A's pool → a Core L1 address owned by wallet B (`SH-08`). Completes the cross-wallet shielded exit set (→ shielded `SH-14`, → Platform `SH-15`, → Core `SH-16`). Both wallets are engine-bound automatically at rebind (no wallet-swap needed). Verify B's Core balance rises after SPV sync. |
+| SH-17 | Multiple wallets bound to the shielded pool concurrently | Shielded | Uncommon | ✅ | multiwallet | `platform_wallet_manager_bind_shielded` is per `wallet_id`; the manager syncs all bound wallets. UI (`ShieldedService.boundWalletId`) displays one wallet's shielded state at a time — switching should swap cleanly, not merge balances. |
 
 ### 4.10 DashPay — `Domain=DashPay`
 
@@ -336,7 +336,7 @@ Counts are of rows reachable in the app (Status `✅`/`🧪`/`⚠️`); `🔌`/`
 
 ## 6. Category & tag index
 
-Each row's **primary home** is its §4 section, but a few rows are cross-cutting and are listed under an additional **category** below (e.g. `ID-06`/`ID-08`/`ID-11` under Address, `SH-11` under Identity, `CORE-21` under Shielded). To run a `Category=X` selection, take the category list below — it already includes those cross-cutting members. For cross-cutting *modalities* (multi-wallet, group, read-only, …) use the **tag index** that follows. Intersect either with `Tier` / `Layer` / `Status` as needed. `A-01..09` means every id in that span.
+Each row's **primary home** is its §4 section, but a few rows are cross-cutting and are listed under an additional **category** below (e.g. `ID-06`/`ID-08`/`ID-11` under Address, `SH-11` under Identity). To run a `Category=X` selection, take the category list below — it already includes those cross-cutting members. For cross-cutting *modalities* (multi-wallet, group, read-only, …) use the **tag index** that follows. Intersect either with `Tier` / `Layer` / `Status` as needed. `A-01..09` means every id in that span.
 
 **By category (§4 section):**
 
@@ -348,7 +348,7 @@ Each row's **primary home** is its §4 section, but a few rows are cross-cutting
 - **Contract** — `DC-01..04`
 - **Document** — `DOC-01..15`
 - **Token** — `TOK-01..20`
-- **Shielded** — `SH-01..16`, `CORE-21`
+- **Shielded** — `SH-01..17`
 - **DashPay** — `DP-01..11`
 - **System / Diagnostics** — `SYS-01..08`
 

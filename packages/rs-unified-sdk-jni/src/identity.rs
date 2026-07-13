@@ -1156,3 +1156,107 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_create
             .unwrap_or(ptr::null_mut())
     })
 }
+
+/// Update + broadcast an existing data contract owned by
+/// `ownerIdentityId`, signed via the external signer. Thin marshaler over
+/// `platform_wallet_update_data_contract_with_signer` — the wallet fetches
+/// the live contract, bumps its version, and *merges* the supplied
+/// sections additively (omitted keys keep their on-chain definition), so a
+/// single-section update never wipes the rest. Mirrors the DC-04 update
+/// flow.
+///
+/// `contractId` (the 32-byte id of the contract to update) and
+/// `documentsSchemaJson` are required; `tokens`/`groups`/`keywords`/
+/// `description`/`config` are optional (null or empty ⇒ omitted). Unlike
+/// the document ops this takes NO `signingKeyId` — the wallet selects the
+/// key internally. Returns the 32-byte updated contract id.
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_updateDataContract(
+    mut env: JNIEnv,
+    _class: JClass,
+    wallet_handle: jlong,
+    owner_identity_id: JByteArray,
+    contract_id: JByteArray,
+    documents_schema_json: JString,
+    tokens_schema_json: JString,
+    groups_schema_json: JString,
+    keywords_json: JString,
+    description: JString,
+    config_json: JString,
+    signer_handle: jlong,
+) -> jbyteArray {
+    guard(&mut env, ptr::null_mut(), |env| {
+        let Some(owner) = read_id32(env, &owner_identity_id, "ownerIdentityId") else {
+            return ptr::null_mut();
+        };
+        let Some(contract) = read_id32(env, &contract_id, "contractId") else {
+            return ptr::null_mut();
+        };
+
+        // Documents schema is required.
+        if documents_schema_json.is_null() {
+            throw_sdk_exception(env, 1, "documentsSchemaJson is required");
+            return ptr::null_mut();
+        }
+        let documents: String = match env.get_string(&documents_schema_json) {
+            Ok(s) => s.into(),
+            Err(_) => {
+                let _ = env.exception_clear();
+                throw_sdk_exception(env, 1, "documentsSchemaJson was invalid");
+                return ptr::null_mut();
+            }
+        };
+        let Ok(documents_c) = CString::new(documents) else {
+            throw_sdk_exception(env, 1, "documentsSchemaJson contained an interior NUL");
+            return ptr::null_mut();
+        };
+
+        let (tokens, groups, keywords, desc, config) = {
+            let Ok(t) = read_optional_cstring(env, &tokens_schema_json, "tokensSchemaJson") else {
+                return ptr::null_mut();
+            };
+            let Ok(g) = read_optional_cstring(env, &groups_schema_json, "groupsSchemaJson") else {
+                return ptr::null_mut();
+            };
+            let Ok(k) = read_optional_cstring(env, &keywords_json, "keywordsJson") else {
+                return ptr::null_mut();
+            };
+            let Ok(d) = read_optional_cstring(env, &description, "description") else {
+                return ptr::null_mut();
+            };
+            let Ok(c) = read_optional_cstring(env, &config_json, "configJson") else {
+                return ptr::null_mut();
+            };
+            (t, g, k, d, c)
+        };
+
+        let opt_ptr = |c: &Option<CString>| -> *const c_char {
+            c.as_ref().map_or(ptr::null(), |s| s.as_ptr())
+        };
+
+        let mut out_contract_id = [0u8; 32];
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_update_data_contract_with_signer(
+                wallet_handle as Handle,
+                owner.as_ptr(),
+                contract.as_ptr(),
+                documents_c.as_ptr(),
+                opt_ptr(&tokens),
+                opt_ptr(&groups),
+                opt_ptr(&keywords),
+                opt_ptr(&desc),
+                opt_ptr(&config),
+                signer_handle as *mut SignerHandle,
+                out_contract_id.as_mut_ptr(),
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return ptr::null_mut();
+        }
+
+        env.byte_array_from_slice(&out_contract_id)
+            .map(|a| a.into_raw())
+            .unwrap_or(ptr::null_mut())
+    })
+}

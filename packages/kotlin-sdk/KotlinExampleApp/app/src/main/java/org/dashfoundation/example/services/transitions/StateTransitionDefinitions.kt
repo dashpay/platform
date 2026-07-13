@@ -90,7 +90,9 @@ enum class DedicatedTransition {
     TOP_UP_IDENTITY,
     CREATE_IDENTITY,
     REGISTER_CONTRACT,
+    UPDATE_CONTRACT,
     DOCUMENT_WITH_PRICE,
+    DOCUMENT_ACTIONS,
     TOKEN_ACTION,
     CONTEST_DETAIL,
 }
@@ -193,11 +195,14 @@ object StateTransitionDefinitions {
             label = "Update Data Contract",
             description = "Add document / token schemas or groups",
             inputs = listOf(
-                TransitionInput("dataContractId", text, "Data contract ID", true, placeholder = "Enter data contract ID"),
-                TransitionInput("newDocumentSchemas", json, "New document schemas (JSON)", false),
-                TransitionInput("newTokenSchemas", json, "New token schemas (JSON)", false),
-                TransitionInput("newGroups", json, "New groups (JSON)", false),
+                TransitionInput(
+                    "dataContractId", contractPicker, "Data contract", false,
+                    placeholder = "Enter data contract ID",
+                    help = "Optional — the update screen also lets you type or edit the id.",
+                ),
             ),
+            executable = true,
+            dedicatedRoute = DedicatedTransition.UPDATE_CONTRACT,
         ),
         // ── Document ──────────────────────────────────────────────────
         TransitionDefinition(
@@ -219,9 +224,10 @@ object StateTransitionDefinitions {
             inputs = listOf(
                 TransitionInput("contractId", contractPicker, "Data contract", true),
                 TransitionInput("documentType", docTypePicker, "Document type", true),
-                TransitionInput("documentId", docPicker, "Document ID", true),
-                TransitionInput("documentFields", json, "Document fields (JSON)", true),
+                TransitionInput("documentId", docPicker, "Document ID", false),
             ),
+            executable = true,
+            dedicatedRoute = DedicatedTransition.DOCUMENT_ACTIONS,
         ),
         TransitionDefinition(
             key = "documentDelete",
@@ -231,8 +237,10 @@ object StateTransitionDefinitions {
             inputs = listOf(
                 TransitionInput("contractId", contractPicker, "Data contract", true),
                 TransitionInput("documentType", docTypePicker, "Document type", true),
-                TransitionInput("documentId", docPicker, "Document ID", true),
+                TransitionInput("documentId", docPicker, "Document ID", false),
             ),
+            executable = true,
+            dedicatedRoute = DedicatedTransition.DOCUMENT_ACTIONS,
         ),
         TransitionDefinition(
             key = "documentTransfer",
@@ -242,9 +250,10 @@ object StateTransitionDefinitions {
             inputs = listOf(
                 TransitionInput("contractId", contractPicker, "Data contract", true),
                 TransitionInput("documentType", docTypePicker, "Document type", true),
-                TransitionInput("documentId", docPicker, "Document ID", true),
-                TransitionInput("recipientId", identityPicker, "Recipient", true),
+                TransitionInput("documentId", docPicker, "Document ID", false),
             ),
+            executable = true,
+            dedicatedRoute = DedicatedTransition.DOCUMENT_ACTIONS,
         ),
         TransitionDefinition(
             key = "documentUpdatePrice",

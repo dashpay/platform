@@ -47,11 +47,13 @@ import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.di.LocalAppState
 import org.dashfoundation.example.navigation.ContestDetail
 import org.dashfoundation.example.navigation.CreateIdentity
+import org.dashfoundation.example.navigation.DocumentActions
 import org.dashfoundation.example.navigation.DocumentWithPrice
 import org.dashfoundation.example.navigation.RegisterContractSource
 import org.dashfoundation.example.navigation.TokenAction
 import org.dashfoundation.example.navigation.TopUpIdentity
 import org.dashfoundation.example.navigation.TransferCredits
+import org.dashfoundation.example.navigation.UpdateContract
 import org.dashfoundation.example.navigation.WithdrawCredits
 import org.dashfoundation.example.services.IdentityKeyAdditionFlow
 import org.dashfoundation.example.services.transitions.DedicatedTransition
@@ -77,18 +79,18 @@ import org.dashfoundation.example.util.truncateMiddle
  * bridged surface):
  * - [DedicatedTransition] entries navigate to the fully wired dedicated
  *   screen with the picked context (credits flows, identity create,
- *   contract register, document price/purchase, the eight token action
- *   forms, and the DPNS contest drill-in).
+ *   contract register / update, document price/purchase, the owned-document
+ *   replace/delete/transfer actions, the eight token action forms, and the
+ *   DPNS contest drill-in).
  * - `identityUpdate` executes inline via
  *   `PlatformWalletManager.identityUpdates` (disable path; the add-keys
  *   path names the pubkey-returning slot-derive gap, see
  *   [IdentityKeyAdditionFlow.UnbridgedSlotDeriver]).
  * - `masternodeVote` executes inline via
  *   `PlatformWalletManager.voteCasting.castVote`.
- * - The remaining definitions (data-contract update; document
- *   create / replace / delete / transfer) surface the named-missing-export
- *   dialog on submit — their platform-wallet FFIs are not bridged into
- *   `rs-unified-sdk-jni`.
+ * - The remaining definitions (document create) surface the
+ *   named-missing-export dialog on submit — their platform-wallet FFIs are
+ *   not bridged into `rs-unified-sdk-jni`.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -278,6 +280,15 @@ fun TransitionDetailScreen(transitionKey: String, navController: NavHostControll
             DedicatedTransition.REGISTER_CONTRACT -> identityHex
                 ?.let { navController.navigate(RegisterContractSource(it)) }
                 ?: report("Pick the owner identity.", true)
+            DedicatedTransition.UPDATE_CONTRACT -> {
+                // The contract id is optional here — the update screen lets the
+                // user type / edit it. Prefill it (as hex) when one was picked.
+                val contractHex = textInputs["dataContractId"].orEmpty().trim()
+                    .takeIf { it.isNotEmpty() }
+                    ?.let { Base58.decodeIdentifier(it)?.toHex() }
+                    ?: ""
+                navController.navigate(UpdateContract(contractIdHex = contractHex))
+            }
             DedicatedTransition.DOCUMENT_WITH_PRICE -> {
                 val contractHex = Base58
                     .decodeIdentifier(textInputs["contractId"].orEmpty())?.toHex()
@@ -289,6 +300,23 @@ fun TransitionDetailScreen(transitionKey: String, navController: NavHostControll
                 }
                 navController.navigate(
                     DocumentWithPrice(
+                        contractIdHex = contractHex,
+                        typeName = typeName,
+                        documentId = textInputs["documentId"].orEmpty().trim(),
+                    ),
+                )
+            }
+            DedicatedTransition.DOCUMENT_ACTIONS -> {
+                val contractHex = Base58
+                    .decodeIdentifier(textInputs["contractId"].orEmpty())?.toHex()
+                    ?: run { report("Pick a data contract.", true); return }
+                val typeName = textInputs["documentType"].orEmpty().trim()
+                if (typeName.isEmpty()) {
+                    report("Pick a document type.", true)
+                    return
+                }
+                navController.navigate(
+                    DocumentActions(
                         contractIdHex = contractHex,
                         typeName = typeName,
                         documentId = textInputs["documentId"].orEmpty().trim(),

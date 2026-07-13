@@ -101,6 +101,70 @@ internal object TransactionsNative {
     ): String
 
     /**
+     * Replace + broadcast the full property set of [documentId] on
+     * [contractId]'s [documentType], owned by [ownerId], signed via
+     * [signerHandle] with key [signingKeyId]. Bridges
+     * `platform_wallet_document_replace` (Swift
+     * `ManagedPlatformWallet.replaceDocument`). The revision is bumped on
+     * the Rust side — the caller does not pass a revision.
+     *
+     * @param propertiesJson the FULL replacement property object (byte-array
+     *   fields as hex, identifier fields as base58), same encoding as
+     *   [documentCreate].
+     * @return the confirmed document's canonical JSON (its 32-byte id is the
+     *   base58 `$id` field).
+     */
+    external fun documentReplace(
+        walletHandle: Long,
+        ownerId: ByteArray,
+        contractId: ByteArray,
+        documentType: String,
+        documentId: ByteArray,
+        propertiesJson: String,
+        signingKeyId: Int,
+        signerHandle: Long,
+    ): String
+
+    /**
+     * Delete + broadcast [documentId] on [contractId]'s [documentType],
+     * owned by [ownerId], signed via [signerHandle] with key [signingKeyId].
+     * Bridges `platform_wallet_document_delete` (Swift
+     * `ManagedPlatformWallet.deleteDocument`). Delete returns no document
+     * body, so this returns the deleted document's 32-byte id for
+     * confirmation.
+     */
+    external fun documentDelete(
+        walletHandle: Long,
+        ownerId: ByteArray,
+        contractId: ByteArray,
+        documentType: String,
+        documentId: ByteArray,
+        signingKeyId: Int,
+        signerHandle: Long,
+    ): ByteArray
+
+    /**
+     * Transfer + broadcast [documentId] on [contractId]'s [documentType],
+     * from [ownerId] to [recipientId], signed via [signerHandle] with key
+     * [signingKeyId]. Bridges `platform_wallet_document_transfer` (Swift
+     * `ManagedPlatformWallet.transferDocument`). Only valid for document
+     * types whose schema is `transferable`.
+     *
+     * @return the confirmed document's canonical JSON, now reflecting the
+     *   new owner (its 32-byte id is the base58 `$id` field).
+     */
+    external fun documentTransfer(
+        walletHandle: Long,
+        ownerId: ByteArray,
+        contractId: ByteArray,
+        documentType: String,
+        documentId: ByteArray,
+        recipientId: ByteArray,
+        signingKeyId: Int,
+        signerHandle: Long,
+    ): String
+
+    /**
      * Cast a masternode contested-resource vote and wait for the response.
      * Bridges `dash_sdk_contested_resource_cast_vote` (Swift
      * `SDK.castContestedResourceVote`).
