@@ -14,6 +14,15 @@ import SwiftData
 /// by joining through the TXOs (`outputs` + `inputs`); see
 /// `PersistentTxo.walletId` for the per-row denorm that makes those
 /// joins index-friendly.
+///
+/// The TXO join is the canonical membership path for funds, but it
+/// is empty for **payload-only** involvement: a special transaction
+/// (e.g. a ProRegTx) can match an account purely through its payload
+/// — a Provider Owner / Voting key address baked into the special-tx
+/// fields — while creating **no** TXO in that account. Such a tx is
+/// invisible to the TXO join yet is genuinely "this account's". The
+/// explicit `involvedAccounts` many-to-many below is the only place
+/// that involvement is representable; see it for the full semantics.
 @Model
 public final class PersistentTransaction {
     /// Index on `firstSeen` so per-wallet queries — which fetch
@@ -135,6 +144,34 @@ public final class PersistentTransaction {
     @Relationship(deleteRule: .cascade, inverse: \PersistentPendingInput.spendingTransaction)
     public var pendingInputs: [PersistentPendingInput] = []
 
+    /// Every account whose changeset bucket carried this tx record.
+    ///
+    /// This is a **superset** of the TXO-derived membership: it
+    /// includes payload-only involvement (special-tx payloads whose
+    /// Provider Owner / Voting key addresses matched an account) where
+    /// no `PersistentTxo` exists in the account, so the TXO join can
+    /// never surface it. The persistence handler appends the matched
+    /// account here for every record it upserts, mirroring how
+    /// `WalletChangeSetFFI::from_changeset` buckets `cs.records` by
+    /// `record.account_type` on the Rust side.
+    ///
+    /// The TXO join (`outputs` / `inputs` → `PersistentTxo.account`)
+    /// remains the canonical path for **funds** — balances, spend
+    /// tracking, per-address history all flow through it. This join
+    /// exists only so payload-only involvement is representable at
+    /// all; treat it as "account participation," not "account owns
+    /// value in this tx."
+    ///
+    /// Inverse of `PersistentAccount.involvedTransactions`, declared
+    /// on this side only (SwiftData needs the `inverse:` on exactly
+    /// one end of a many-to-many pair). Default `.nullify` delete rule
+    /// on both sides — deleting an account merely detaches it from the
+    /// tx (and vice versa); neither end cascades, since the tx row is
+    /// shared across accounts / wallets and the account outlives any
+    /// single tx.
+    @Relationship(inverse: \PersistentAccount.involvedTransactions)
+    public var involvedAccounts: [PersistentAccount] = []
+
     public init(
         txid: Data,
         transactionData: Data,
@@ -253,10 +290,33 @@ public final class PersistentTransaction {
         providerVotingKeyHash.map { $0.map { String(format: "%02x", $0) }.joined() }
     }
 
+    /// `true` for masternode provider special transactions (ProRegTx
+    /// and the three ProUp*Tx kinds). Like asset locks, these get
+    /// classified `Internal` by the wallet's direction logic (the
+    /// wallet only sees its own owner/voting/payout keys referenced
+    /// in the payload), so direction-derived labels like
+    /// "Self-Transfer" are misleading for them.
+    public var isProviderSpecial: Bool {
+        providerSpecialName != nil
+    }
+
+    /// Human-readable name for provider special transactions, `nil`
+    /// for every other kind.
+    public var providerSpecialName: String? {
+        switch typedKind {
+        case .providerRegistration: return "Provider Registration"
+        case .providerUpdateRegistrar: return "Provider Update Registrar"
+        case .providerUpdateService: return "Provider Update Service"
+        case .providerUpdateRevocation: return "Provider Update Revocation"
+        default: return nil
+        }
+    }
+
     /// Direction text for UI surfaces, overridden for asset-lock /
-    /// asset-unlock txs where the raw `Internal` direction is
-    /// misleading (the L1 DASH isn't going "to myself" — it's being
-    /// converted to / from L2 platform credits).
+    /// asset-unlock txs (the L1 DASH isn't going "to myself" — it's
+    /// being converted to / from L2 platform credits) and for
+    /// provider special txs (the payload references our keys but no
+    /// value moves "to myself").
     ///
     /// Use this anywhere a human-readable "what happened" label is
     /// needed; fall back to [`directionName`] only when the consumer
@@ -264,6 +324,7 @@ public final class PersistentTransaction {
     public var displayDirection: String {
         if isAssetLock { return "Asset Lock" }
         if isAssetUnlock { return "Asset Unlock" }
+        if let name = providerSpecialName { return name }
         return directionName
     }
 
