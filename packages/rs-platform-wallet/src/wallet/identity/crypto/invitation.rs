@@ -1,82 +1,115 @@
-//! DashPay invitation link (`dashpay://invite`) codec — DIP-13 sub-feature 3'.
+//! DashPay invitation link codec — DIP-13 sub-feature 3', legacy-compatible.
 //!
 //! An invitation packages a one-time ECDSA **voucher** private key together with
-//! the InstantSend asset-lock proof that funds it, so an invitee with no Dash can
-//! register their own identity from it. The inviter optionally includes their own
-//! identity id + username so the invitee can send a contact request back.
+//! a reference to the InstantSend-locked funding transaction, so an invitee with
+//! no Dash can register their own identity from it. The inviter optionally
+//! includes their own DPNS username so the invitee can send a contact request
+//! back.
 //!
-//! The link is a single versioned, self-contained blob:
-//! `dashpay://invite?data=<base58(payload)>`. Only the off-chain envelope is ours;
-//! the embedded `AssetLockProof` and the on-chain acts are consensus formats.
-//! See `docs/dashpay/DIP15_INVITATIONS_SPEC.md`.
+//! The link is the **legacy query form** shared with the reference wallets
+//! (`dash-wallet` Android, `dashwallet-ios`), so a link produced here is
+//! field-level cross-claimable with those wallets and vice versa:
 //!
-//! The payload uses a small hand-rolled little-endian binary format (rather than
-//! serde/bincode) so the codec has no dependency on the crate's optional `serde`
-//! feature — create/claim need it unconditionally.
+//! ```text
+//! dashpay://invite
+//!   ?du=<inviter DPNS username>
+//!   &assetlocktx=<funding txid, lowercase big-endian display hex>
+//!   &pk=<voucher credit-burn key, WIF, compressed, network-correct>
+//!   &islock=<InstantSend lock, lowercase hex>   # or omitted / "null"
+//!   [&display-name=<inviter display name>]
+//!   [&avatar-url=<inviter avatar url, single %-encoded>]
+//! ```
+//!
+//! The interop contract is **emit strict/canonical, parse lenient** — exactly as
+//! tolerantly as the live wallets:
+//! - Parse accepts both the `dashpay://invite` scheme and the
+//!   `https://invitations.dashpay.io/applink` host, by field name and
+//!   order-independent (the two legacy wallets differ in param order).
+//! - `islock` is optional: a missing param **and** the literal string `"null"`
+//!   (which Android emits for chainlock-confirmed invites) both mean "no instant
+//!   lock" — the claim reconstructs a ChainLock proof instead.
+//! - `assetlocktx` is kept as the raw hex string; the claim tries it as-given
+//!   then byte-reversed on a fetch miss, mirroring the legacy endianness retry.
 //!
 //! # Security
 //!
 //! The `voucher_key` is **bearer money** — whoever holds the link can claim the
 //! funded identity. The URI is a secret: callers MUST NOT log or persist it, and
 //! the voucher key is never stored (it is HD-derived and re-derivable from the
-//! funding index). Parsing is bounded before decode (base58 length cap) so a
-//! hostile link can't force a large allocation, and [`validate_claimable`] fails
-//! fast on a stale, wrong-type, or mismatched link before any network call.
+//! funding index). Parsing is bounded (URI length cap) so a hostile link can't
+//! force a large allocation, and the WIF is network- and compression-checked so
+//! a malformed key is rejected before any network call.
 
 use dashcore::secp256k1::{PublicKey, Secp256k1, SecretKey};
-use dashcore::ScriptBuf;
-use dpp::bincode::config;
+use dashcore::transaction::special_transaction::TransactionPayload;
+use dashcore::{Network, PrivateKey, ScriptBuf, Transaction};
 use dpp::prelude::AssetLockProof;
-use zeroize::Zeroizing;
 
 use crate::error::PlatformWalletError;
 
-/// URI prefix for an invitation deep link. The `dashpay://invite` scheme matches
-/// the reference wallets for familiarity; the payload is our own.
-const INVITATION_URI_PREFIX: &str = "dashpay://invite?data=";
+/// The `dashpay://invite` custom scheme — the canonical form we emit and the
+/// primary form we parse (QR / in-person / deep link).
+const INVITATION_SCHEME_PREFIX: &str = "dashpay://invite";
 
-/// Max base58 chars of the `data=` value accepted **before** decoding (anti-DoS).
-/// A real payload — voucher key (32 B) + an InstantSend proof (funding tx + islock,
-/// ~0.5–1 KB) + small metadata — base58-encodes to roughly 1.5–2 K chars; 8192 is
-/// comfortable headroom while still bounding the base58 allocation a hostile link
-/// can force. Mirrors the `dapk` cap in `auto_accept::parse_dashpay_contact_uri`.
-const MAX_INVITATION_DATA_B58_LEN: usize = 8192;
+/// The AppsFlyer OneLink applink host the iOS reference wallet emits. Parsed as
+/// a first-class alternative to the custom scheme (field-level interop).
+const INVITATION_APPLINK_HOST: &str = "invitations.dashpay.io/applink";
 
-/// Hard byte cap on the decoded payload (defense in depth alongside the b58 cap).
-const MAX_INVITATION_PAYLOAD_BYTES: usize = 64 * 1024;
+/// Query parameter names — identical to the legacy wallets' contract.
+const PARAM_USER: &str = "du";
+const PARAM_ASSET_LOCK_TX: &str = "assetlocktx";
+const PARAM_PRIVATE_KEY: &str = "pk";
+const PARAM_IS_LOCK: &str = "islock";
+const PARAM_DISPLAY_NAME: &str = "display-name";
+const PARAM_AVATAR_URL: &str = "avatar-url";
 
-/// Max length (bytes) of a UTF-8 string field (username / display name). DPNS
-/// labels are short; this only bounds a hostile link.
-const MAX_STR_BYTES: usize = 256;
+/// Android emits this literal for the `islock` value when the funding was
+/// confirmed by a ChainLock rather than an InstantSend lock; treat it as "no
+/// instant lock" (reconstruct a ChainLock proof at claim), NOT as hex to decode.
+const IS_LOCK_NULL_SENTINEL: &str = "null";
 
-/// Current invitation payload version.
-const INVITATION_PAYLOAD_VERSION: u8 = 0;
+/// Max chars of the whole URI accepted before parsing (anti-DoS). A real link —
+/// username + txid (64) + WIF (~52) + islock hex (~400) + optional avatar url —
+/// is well under 2 KB; 8192 is comfortable headroom while bounding the
+/// allocation a hostile link can force.
+const MAX_INVITATION_URI_LEN: usize = 8192;
 
-/// Inviter contact-bootstrap info — present iff the inviter opted in to "send a
-/// contact request back to me". Absent ⇒ the invitation is a pure funding voucher.
+/// Max length (bytes) of a UTF-8 string field (username / display name / avatar
+/// url). DPNS labels are short; this only bounds a hostile link.
+const MAX_STR_BYTES: usize = 2048;
+
+/// Inviter contact-bootstrap info — present iff the link carries a `du`
+/// (username). Absent ⇒ the invitation is a pure funding voucher. The link does
+/// not carry the inviter's identity id (the legacy format has no such field);
+/// the invitee resolves it from `username` via DPNS at contact-bootstrap time.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct InviterInfo {
-    /// The inviter's identity id (32 bytes) — the target of the invitee's
-    /// contact request.
-    pub identity_id: [u8; 32],
-    /// The inviter's DPNS username, shown to the invitee and used to label the
-    /// contact.
+    /// The inviter's DPNS username (`du`), shown to the invitee and used to
+    /// resolve the inviter's identity for the contact request.
     pub username: String,
-    /// Optional display name for the claim UI.
+    /// Optional display name (`display-name`) for the claim UI.
     pub display_name: Option<String>,
+    /// Optional avatar url (`avatar-url`) for the claim UI.
+    pub avatar_url: Option<String>,
 }
 
-/// A decoded invitation, ready for [`validate_claimable`] + claim.
+/// A decoded invitation, ready for claim.
+///
+/// Unlike the funding proof (which is fetched at claim), everything here comes
+/// straight from the link: the bearer voucher key, the funding txid to fetch,
+/// and the optional InstantSend lock hex.
 pub struct ParsedInvitation {
     /// One-time ECDSA voucher private key that funds the invitee's identity
     /// create (signs the asset-lock's outer state-transition signature).
     pub voucher_key: SecretKey,
-    /// The InstantSend asset-lock proof funding the voucher (embeds tx + islock).
-    pub asset_lock: AssetLockProof,
-    /// Advisory expiry (unix seconds). Not consensus-enforced; the claim path
-    /// refuses a past-expiry link so a stale IS proof is never submitted.
-    pub expiry_unix: u32,
-    /// Inviter contact-bootstrap info; `None` ⇒ pure funding voucher.
+    /// The funding transaction id as carried in the link (`assetlocktx`),
+    /// lowercased. Kept as the raw hex string so the claim can try it as-given
+    /// and byte-reversed on a fetch miss (old iOS links are little-endian).
+    pub funding_txid: String,
+    /// The InstantSend lock, lowercase consensus hex — `None` when the link
+    /// omitted `islock` or set it to `"null"` (a ChainLock-confirmed invite).
+    pub islock_hex: Option<String>,
+    /// Inviter contact-bootstrap info; `None` ⇒ pure funding voucher (no `du`).
     pub inviter: Option<InviterInfo>,
 }
 
@@ -89,12 +122,13 @@ impl Drop for ParsedInvitation {
 }
 
 impl std::fmt::Debug for ParsedInvitation {
-    /// Redacts the voucher key — the whole point of the type is to carry a
-    /// bearer secret, which must never reach a log.
+    /// Redacts the voucher key and the funding txid — the whole point of the
+    /// type is to carry a bearer secret, which must never reach a log.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ParsedInvitation")
             .field("voucher_key", &"<redacted>")
-            .field("expiry_unix", &self.expiry_unix)
+            .field("funding_txid", &"<redacted>")
+            .field("has_islock", &self.islock_hex.is_some())
             .field("inviter", &self.inviter)
             .finish_non_exhaustive()
     }
@@ -104,7 +138,8 @@ fn invalid(msg: impl Into<String>) -> PlatformWalletError {
     PlatformWalletError::InvalidIdentityData(msg.into())
 }
 
-/// The P2PKH script the voucher key controls (compressed-pubkey hash160).
+/// The P2PKH script the voucher key controls (compressed-pubkey hash160). This
+/// is the selector that binds the voucher key to its funded credit output.
 fn voucher_credit_script(voucher_key: &SecretKey) -> ScriptBuf {
     let secp = Secp256k1::new();
     let pubkey = PublicKey::from_secret_key(&secp, voucher_key);
@@ -113,244 +148,252 @@ fn voucher_credit_script(voucher_key: &SecretKey) -> ScriptBuf {
 }
 
 // ---------------------------------------------------------------------------
-// Wire encoding (little-endian, length-prefixed)
+// Percent-encoding (URI query values). Only %XX escapes — never `+` for space
+// (that is form encoding; `Uri.getQueryParameter` on the legacy wallets does
+// not treat `+` as space, so neither do we).
 // ---------------------------------------------------------------------------
 
-fn put_len_prefixed(buf: &mut Vec<u8>, bytes: &[u8]) {
-    buf.extend_from_slice(&(bytes.len() as u32).to_le_bytes());
-    buf.extend_from_slice(bytes);
+/// Percent-encode a query value, passing the RFC 3986 unreserved set through
+/// untouched (which covers hex, base58 WIF, and DPNS labels) and `%`-escaping
+/// everything else. Encoding an already-safe value is a no-op.
+fn percent_encode(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for &b in s.as_bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(b as char)
+            }
+            _ => out.push_str(&format!("%{b:02X}")),
+        }
+    }
+    out
 }
 
-/// Cursor over the payload bytes with bounds-checked, non-panicking reads.
-struct Reader<'a> {
-    buf: &'a [u8],
-    pos: usize,
+/// Decode a percent-encoded query value (`%XX` → byte). Leaves `+` literal.
+/// Errors on a malformed escape or non-UTF-8 result.
+fn percent_decode(s: &str) -> Result<String, PlatformWalletError> {
+    let bytes = s.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' {
+            let hi = bytes
+                .get(i + 1)
+                .and_then(|c| (*c as char).to_digit(16))
+                .ok_or_else(|| invalid("malformed percent-escape in invitation link"))?;
+            let lo = bytes
+                .get(i + 2)
+                .and_then(|c| (*c as char).to_digit(16))
+                .ok_or_else(|| invalid("malformed percent-escape in invitation link"))?;
+            out.push((hi * 16 + lo) as u8);
+            i += 3;
+        } else {
+            out.push(bytes[i]);
+            i += 1;
+        }
+    }
+    String::from_utf8(out).map_err(|_| invalid("invitation link field is not valid UTF-8"))
 }
 
-impl<'a> Reader<'a> {
-    fn new(buf: &'a [u8]) -> Self {
-        Self { buf, pos: 0 }
-    }
-
-    fn take(&mut self, n: usize) -> Result<&'a [u8], PlatformWalletError> {
-        let end = self
-            .pos
-            .checked_add(n)
-            .ok_or_else(|| invalid("invitation payload length overflow"))?;
-        if end > self.buf.len() {
-            return Err(invalid("invitation payload truncated"));
+/// Split a query string (`k1=v1&k2=v2`) into percent-decoded key/value pairs,
+/// order-independent. A blank segment or a segment without `=` is skipped.
+fn parse_query(query: &str) -> Result<Vec<(String, String)>, PlatformWalletError> {
+    let mut pairs = Vec::new();
+    for segment in query.split('&') {
+        if segment.is_empty() {
+            continue;
         }
-        let out = &self.buf[self.pos..end];
-        self.pos = end;
-        Ok(out)
+        let Some((raw_key, raw_val)) = segment.split_once('=') else {
+            continue;
+        };
+        pairs.push((percent_decode(raw_key)?, percent_decode(raw_val)?));
     }
-
-    fn u8(&mut self) -> Result<u8, PlatformWalletError> {
-        Ok(self.take(1)?[0])
-    }
-
-    fn u32(&mut self) -> Result<u32, PlatformWalletError> {
-        let b = self.take(4)?;
-        Ok(u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
-    }
-
-    fn arr32(&mut self) -> Result<[u8; 32], PlatformWalletError> {
-        let mut out = [0u8; 32];
-        out.copy_from_slice(self.take(32)?);
-        Ok(out)
-    }
-
-    fn len_prefixed(&mut self, max: usize) -> Result<&'a [u8], PlatformWalletError> {
-        let len = self.u32()? as usize;
-        if len > max {
-            return Err(invalid("invitation payload field exceeds size cap"));
-        }
-        self.take(len)
-    }
-
-    fn string(&mut self) -> Result<String, PlatformWalletError> {
-        let bytes = self.len_prefixed(MAX_STR_BYTES)?;
-        String::from_utf8(bytes.to_vec())
-            .map_err(|_| invalid("invitation payload string is not valid UTF-8"))
-    }
-
-    fn finish(self) -> Result<(), PlatformWalletError> {
-        if self.pos != self.buf.len() {
-            return Err(invalid("unexpected trailing bytes in invitation payload"));
-        }
-        Ok(())
-    }
+    Ok(pairs)
 }
 
-/// Encode an invitation into a `dashpay://invite?data=<base58>` link.
+/// Look up a field by name (first match wins), returning it trimmed. `None` for
+/// a missing or blank value.
+fn field<'a>(pairs: &'a [(String, String)], name: &str) -> Option<&'a str> {
+    pairs
+        .iter()
+        .find(|(k, _)| k == name)
+        .map(|(_, v)| v.trim())
+        .filter(|v| !v.is_empty())
+}
+
+/// Encode an invitation into a legacy-compatible `dashpay://invite?…` link.
 ///
-/// The returned URI **contains the plaintext voucher key** — treat it as a
-/// secret (do not log or persist it).
+/// The returned URI **contains the plaintext voucher key** (WIF) — treat it as a
+/// secret (do not log or persist it). `network` sets the WIF network byte
+/// (`0xCC` mainnet / `0xEF` testnet) and the key is emitted **compressed** (the
+/// credit-output hash160 uses the compressed pubkey). The funding txid and
+/// InstantSend lock are read from `asset_lock`; a ChainLock proof emits no
+/// `islock`. `inviter` is `Some` only when the inviter opted into the
+/// contact-bootstrap (the link then carries `du`/`display-name`/`avatar-url`).
 pub fn encode_invitation_uri(
     voucher_key: &SecretKey,
+    network: Network,
     asset_lock: &AssetLockProof,
-    expiry_unix: u32,
     inviter: Option<&InviterInfo>,
 ) -> Result<String, PlatformWalletError> {
-    let asset_lock_bytes = dpp::bincode::encode_to_vec(asset_lock, config::standard())
-        .map_err(|e| invalid(format!("failed to encode asset-lock proof: {e}")))?;
-
-    // Zeroized: `buf` holds the plaintext voucher scalar until it is base58'd
-    // into the (secret) URI; scrub the intermediate on drop.
-    let mut buf = Zeroizing::new(Vec::with_capacity(64 + asset_lock_bytes.len()));
-    buf.push(INVITATION_PAYLOAD_VERSION);
-    buf.extend_from_slice(&voucher_key.secret_bytes());
-    buf.extend_from_slice(&expiry_unix.to_le_bytes());
-    match inviter {
-        Some(info) => {
-            if info.username.len() > MAX_STR_BYTES
-                || info
-                    .display_name
-                    .as_ref()
-                    .is_some_and(|d| d.len() > MAX_STR_BYTES)
-            {
-                return Err(invalid("inviter username/display name too long"));
-            }
-            buf.push(1);
-            buf.extend_from_slice(&info.identity_id);
-            put_len_prefixed(&mut buf, info.username.as_bytes());
-            match &info.display_name {
-                Some(d) => {
-                    buf.push(1);
-                    put_len_prefixed(&mut buf, d.as_bytes());
-                }
-                None => buf.push(0),
-            }
+    // txid (big-endian display hex) + optional islock hex from the proof.
+    let (funding_txid, islock_hex) = match asset_lock {
+        AssetLockProof::Instant(instant) => {
+            let txid = instant.transaction().txid().to_string();
+            let islock = hex::encode(dashcore::consensus::serialize(instant.instant_lock()));
+            (txid, Some(islock))
         }
-        None => buf.push(0),
-    }
-    put_len_prefixed(&mut buf, &asset_lock_bytes);
+        AssetLockProof::Chain(chain) => (chain.out_point.txid.to_string(), None),
+    };
 
-    Ok(format!(
-        "{INVITATION_URI_PREFIX}{}",
-        bs58::encode(buf.as_slice()).into_string()
-    ))
+    // WIF, compressed (the default for `PrivateKey::new`), network-correct.
+    let wif = PrivateKey::new(*voucher_key, network).to_wif();
+
+    let mut query = String::new();
+    let mut push = |key: &str, val: &str| {
+        if !query.is_empty() {
+            query.push('&');
+        }
+        query.push_str(key);
+        query.push('=');
+        query.push_str(&percent_encode(val));
+    };
+
+    // `du` is emitted first (canonical) when the inviter opted in; a pure
+    // funding voucher emits a `du`-less link (still parseable — iOS accepts it).
+    if let Some(info) = inviter {
+        if info.username.len() > MAX_STR_BYTES {
+            return Err(invalid("inviter username too long"));
+        }
+        push(PARAM_USER, &info.username);
+    }
+    push(PARAM_ASSET_LOCK_TX, &funding_txid);
+    push(PARAM_PRIVATE_KEY, &wif);
+    if let Some(islock) = &islock_hex {
+        push(PARAM_IS_LOCK, islock);
+    }
+    if let Some(info) = inviter {
+        if let Some(display_name) = &info.display_name {
+            if display_name.len() > MAX_STR_BYTES {
+                return Err(invalid("inviter display name too long"));
+            }
+            push(PARAM_DISPLAY_NAME, display_name);
+        }
+        if let Some(avatar_url) = &info.avatar_url {
+            if avatar_url.len() > MAX_STR_BYTES {
+                return Err(invalid("inviter avatar url too long"));
+            }
+            push(PARAM_AVATAR_URL, avatar_url);
+        }
+    }
+
+    Ok(format!("{INVITATION_SCHEME_PREFIX}?{query}"))
 }
 
-/// Parse a `dashpay://invite?data=<base58>` link into a [`ParsedInvitation`].
+/// Parse a legacy-compatible invitation link into a [`ParsedInvitation`].
 ///
-/// Bounds the base58 input before decoding and rejects trailing bytes, an
-/// unsupported version, and malformed keys/proofs. Does **not** check expiry or
-/// the credit-output binding — call [`validate_claimable`] for that before use.
+/// Accepts both the `dashpay://invite` scheme and the
+/// `https://invitations.dashpay.io/applink` host, by field name and
+/// order-independent. Requires `assetlocktx` + `pk` (non-blank); `du` and
+/// `islock` are optional (a missing/`"null"` `islock` is a ChainLock invite).
+/// The WIF is network- and compression-checked. Does **not** fetch or validate
+/// the funding tx — that happens at claim.
 pub fn parse_invitation_uri(uri: &str) -> Result<ParsedInvitation, PlatformWalletError> {
-    let data = uri
-        .strip_prefix(INVITATION_URI_PREFIX)
-        .ok_or_else(|| invalid("not a dashpay://invite?data= URI"))?;
-    // Tolerate trailing query params after the payload (`…?data=X&foo=Y`).
-    let data = data.split('&').next().unwrap_or(data);
-    if data.len() > MAX_INVITATION_DATA_B58_LEN {
+    if uri.len() > MAX_INVITATION_URI_LEN {
         return Err(invalid(format!(
-            "invitation data too long ({} chars; max {MAX_INVITATION_DATA_B58_LEN})",
-            data.len()
-        )));
-    }
-    // Zeroized: the decoded payload carries the plaintext voucher scalar (at
-    // offset 1..33); scrub it once parsed.
-    let bytes = Zeroizing::new(
-        bs58::decode(data)
-            .into_vec()
-            .map_err(|e| invalid(format!("invitation data is not valid base58: {e}")))?,
-    );
-    if bytes.len() > MAX_INVITATION_PAYLOAD_BYTES {
-        return Err(invalid(format!(
-            "invitation payload too large ({} bytes; max {MAX_INVITATION_PAYLOAD_BYTES})",
-            bytes.len()
+            "invitation link too long ({} chars; max {MAX_INVITATION_URI_LEN})",
+            uri.len()
         )));
     }
 
-    let mut r = Reader::new(bytes.as_slice());
-    let version = r.u8()?;
-    if version != INVITATION_PAYLOAD_VERSION {
-        return Err(invalid(format!(
-            "unsupported invitation version {version} (expected {INVITATION_PAYLOAD_VERSION})"
-        )));
+    // Accept the custom scheme or the applink host; the transport differs but
+    // the query contract is identical (field-level, not byte-level, parity).
+    let is_scheme = uri.starts_with(INVITATION_SCHEME_PREFIX);
+    let is_applink = uri.contains(INVITATION_APPLINK_HOST);
+    if !is_scheme && !is_applink {
+        return Err(invalid(
+            "not a dashpay://invite or invitations.dashpay.io/applink link",
+        ));
     }
-    let voucher_key = SecretKey::from_slice(r.take(32)?)
-        .map_err(|e| invalid(format!("invalid voucher private key: {e}")))?;
-    let expiry_unix = r.u32()?;
-    let inviter = match r.u8()? {
-        0 => None,
-        1 => {
-            let identity_id = r.arr32()?;
-            let username = r.string()?;
-            let display_name = match r.u8()? {
-                0 => None,
-                1 => Some(r.string()?),
-                other => return Err(invalid(format!("invalid display-name flag {other}"))),
-            };
-            Some(InviterInfo {
-                identity_id,
-                username,
-                display_name,
-            })
-        }
-        other => return Err(invalid(format!("invalid inviter-present flag {other}"))),
-    };
-    let asset_lock_bytes = r.len_prefixed(MAX_INVITATION_PAYLOAD_BYTES)?;
-    let (asset_lock, consumed): (AssetLockProof, usize) =
-        dpp::bincode::decode_from_slice(asset_lock_bytes, config::standard())
-            .map_err(|e| invalid(format!("failed to decode asset-lock proof: {e}")))?;
-    if consumed != asset_lock_bytes.len() {
-        return Err(invalid("trailing bytes in embedded asset-lock proof"));
+
+    // Everything after the first `?`, up to an optional fragment.
+    let query = uri
+        .split_once('?')
+        .map(|(_, q)| q)
+        .ok_or_else(|| invalid("invitation link has no query parameters"))?;
+    let query = query.split('#').next().unwrap_or(query);
+    let pairs = parse_query(query)?;
+
+    // iOS minimum: `assetlocktx` + `pk` present and non-blank. Never reject on a
+    // missing/`"null"` `islock` or a missing `du`.
+    let assetlocktx = field(&pairs, PARAM_ASSET_LOCK_TX)
+        .ok_or_else(|| invalid("invitation link is missing the assetlocktx field"))?;
+    let pk = field(&pairs, PARAM_PRIVATE_KEY)
+        .ok_or_else(|| invalid("invitation link is missing the pk field"))?;
+
+    // WIF: network-checked decode (`from_wif` rejects a foreign network byte),
+    // compression required (the credit-output hash uses the compressed pubkey —
+    // an uncompressed key would produce a mismatching hash160 and a dead claim).
+    let private_key = PrivateKey::from_wif(pk)
+        .map_err(|e| invalid(format!("invitation pk is not a valid WIF key: {e}")))?;
+    if !private_key.compressed {
+        return Err(invalid("invitation pk must be a compressed WIF key"));
     }
-    r.finish()?;
+    let voucher_key = private_key.inner;
+
+    let funding_txid = assetlocktx.to_lowercase();
+
+    // `islock`: a missing param and the literal `"null"` both mean no instant
+    // lock. Kept as lowercase hex; decoded to an `InstantLock` only at claim.
+    let islock_hex = field(&pairs, PARAM_IS_LOCK)
+        .filter(|v| *v != IS_LOCK_NULL_SENTINEL)
+        .map(|v| v.to_lowercase());
+
+    // Inviter present iff `du` is present. The identity id is not in the link;
+    // it is resolved from the username at contact-bootstrap time.
+    let inviter = field(&pairs, PARAM_USER).map(|username| InviterInfo {
+        username: username.to_string(),
+        display_name: field(&pairs, PARAM_DISPLAY_NAME).map(str::to_string),
+        avatar_url: field(&pairs, PARAM_AVATAR_URL).map(str::to_string),
+    });
 
     Ok(ParsedInvitation {
         voucher_key,
-        asset_lock,
-        expiry_unix,
+        funding_txid,
+        islock_hex,
         inviter,
     })
 }
 
-/// Fail-fast validation before any network call.
+/// Select the funded credit output the voucher key controls.
 ///
-/// Rejects a link with a zero clock read, whose advisory expiry has passed,
-/// whose proof is not an InstantSend proof (per the owner's proof-type
-/// decision), or whose voucher key does not control the funded credit output —
-/// turning an otherwise opaque consensus rejection into a clear, local error.
-/// The credit-output binding is itself consensus-enforced, so this is a UX
-/// guard, not a security boundary.
-pub fn validate_claimable(
-    invitation: &ParsedInvitation,
-    now_unix: u32,
-) -> Result<(), PlatformWalletError> {
-    // A zero `now` would make the `now > expiry` test below pass for any
-    // positive expiry, silently treating an expired link as fresh. Reject it up
-    // front, mirroring the create side's non-zero timestamp guard.
-    if now_unix == 0 {
+/// The link carries the voucher key but not the output index; scan the fetched
+/// asset-lock transaction's credit outputs for the one whose `script_pubkey`
+/// matches the voucher key's P2PKH (compressed pubkey), and return its index.
+/// Rejects a transaction with no matching credit output. The pk↔output binding
+/// is itself consensus-enforced, so this is a fail-fast + correct-index guard,
+/// not a security boundary — but selecting (rather than hard-coding index 0) is
+/// required: a legacy invite's credit output need not be at index 0.
+pub fn voucher_output_index(
+    transaction: &Transaction,
+    voucher_key: &SecretKey,
+) -> Result<u32, PlatformWalletError> {
+    let Some(TransactionPayload::AssetLockPayloadType(payload)) =
+        &transaction.special_transaction_payload
+    else {
         return Err(invalid(
-            "invitation claim requires a valid clock (now_unix is zero)",
+            "funding transaction is not an asset-lock special transaction",
         ));
-    }
-    if now_unix > invitation.expiry_unix {
-        return Err(invalid(format!(
-            "invitation expired (expiry {}, now {now_unix}) — ask the sender for a new one",
-            invitation.expiry_unix
-        )));
-    }
-    let instant = match &invitation.asset_lock {
-        AssetLockProof::Instant(instant) => instant,
-        AssetLockProof::Chain(_) => {
-            return Err(invalid(
-                "invitation asset-lock proof must be an InstantSend proof",
-            ))
-        }
     };
-    let output = instant
-        .output()
-        .ok_or_else(|| invalid("asset-lock proof has no credit output at its output index"))?;
-    if output.script_pubkey != voucher_credit_script(&invitation.voucher_key) {
-        return Err(invalid(
-            "voucher key does not control the funded credit output",
-        ));
-    }
-    Ok(())
+    let expected = voucher_credit_script(voucher_key);
+    payload
+        .credit_outputs
+        .iter()
+        .position(|out| out.script_pubkey == expected)
+        .map(|idx| idx as u32)
+        .ok_or_else(|| {
+            invalid("voucher key does not control any credit output of the funding transaction")
+        })
 }
 
 #[cfg(test)]
@@ -358,9 +401,7 @@ mod tests {
     use super::*;
     use dashcore::ephemerealdata::instant_lock::InstantLock;
     use dashcore::transaction::special_transaction::asset_lock::AssetLockPayload;
-    use dashcore::transaction::special_transaction::TransactionPayload;
     use dashcore::{Transaction, TxOut};
-    use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
     use dpp::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
 
     fn voucher() -> SecretKey {
@@ -369,212 +410,241 @@ mod tests {
 
     fn inviter_info() -> InviterInfo {
         InviterInfo {
-            identity_id: [0xAB; 32],
             username: "alice".to_string(),
-            display_name: Some("Alice".to_string()),
+            display_name: Some("Alice Example".to_string()),
+            avatar_url: Some("https://example.com/a b.png?x=1".to_string()),
         }
     }
 
-    /// An InstantSend proof whose single credit output pays to `key`'s P2PKH.
-    fn instant_proof_paying_to(key: &SecretKey) -> AssetLockProof {
-        let credit = TxOut {
+    /// Build an asset-lock tx whose credit output at `index` pays the voucher
+    /// key (and `index` decoy outputs before it that do not).
+    fn asset_lock_tx_paying_voucher_at(key: &SecretKey, index: usize) -> Transaction {
+        let decoy = SecretKey::from_slice(&[0x22u8; 32]).unwrap();
+        let mut credit_outputs = Vec::new();
+        for _ in 0..index {
+            credit_outputs.push(TxOut {
+                value: 50_000,
+                script_pubkey: voucher_credit_script(&decoy),
+            });
+        }
+        credit_outputs.push(TxOut {
             value: 100_000,
             script_pubkey: voucher_credit_script(key),
-        };
+        });
         let payload = AssetLockPayload {
             version: 1,
-            credit_outputs: vec![credit],
+            credit_outputs,
         };
-        let tx = Transaction {
+        Transaction {
             version: 3,
             lock_time: 0,
             input: vec![],
             output: vec![],
             special_transaction_payload: Some(TransactionPayload::AssetLockPayloadType(payload)),
-        };
+        }
+    }
+
+    fn instant_proof_paying_voucher() -> AssetLockProof {
+        let key = voucher();
+        let tx = asset_lock_tx_paying_voucher_at(&key, 0);
         AssetLockProof::Instant(InstantAssetLockProof::new(InstantLock::default(), tx, 0))
     }
 
-    fn proof_bytes(proof: &AssetLockProof) -> Vec<u8> {
-        dpp::bincode::encode_to_vec(proof, config::standard()).unwrap()
+    #[test]
+    fn wif_round_trip_preserves_compression_and_network() {
+        for (network, first_byte) in [(Network::Mainnet, 204u8), (Network::Testnet, 239u8)] {
+            let wif = PrivateKey::new(voucher(), network).to_wif();
+            let decoded = PrivateKey::from_wif(&wif).expect("wif decodes");
+            assert!(decoded.compressed, "voucher WIF must be compressed");
+            assert_eq!(decoded.network, network, "network preserved");
+            assert_eq!(decoded.inner.secret_bytes(), voucher().secret_bytes());
+            // Network byte matches bitcoinj/legacy (0xCC mainnet, 0xEF testnet).
+            let raw = bs58::decode(&wif).into_vec().unwrap();
+            assert_eq!(raw[0], first_byte);
+        }
     }
 
     #[test]
-    fn round_trip_with_inviter() {
-        let key = voucher();
-        let proof = instant_proof_paying_to(&key);
-        let uri = encode_invitation_uri(&key, &proof, 1_800_000_000, Some(&inviter_info()))
+    fn encode_parse_round_trip_with_inviter() {
+        let proof = instant_proof_paying_voucher();
+        let info = inviter_info();
+        let uri = encode_invitation_uri(&voucher(), Network::Testnet, &proof, Some(&info))
             .expect("encode");
-        assert!(uri.starts_with(INVITATION_URI_PREFIX));
+        assert!(uri.starts_with("dashpay://invite?"));
 
         let parsed = parse_invitation_uri(&uri).expect("parse");
-        assert_eq!(parsed.voucher_key.secret_bytes(), key.secret_bytes());
-        assert_eq!(parsed.expiry_unix, 1_800_000_000);
-        assert_eq!(parsed.inviter, Some(inviter_info()));
-        // Proof round-trips (compare re-encoded bytes — AssetLockProof is not Eq).
-        assert_eq!(proof_bytes(&parsed.asset_lock), proof_bytes(&proof));
+        assert_eq!(parsed.voucher_key.secret_bytes(), voucher().secret_bytes());
+        assert_eq!(parsed.inviter, Some(info));
+        assert!(parsed.islock_hex.is_some());
+        // The parsed txid matches the proof's transaction id (big-endian).
+        let expected_txid = match &proof {
+            AssetLockProof::Instant(i) => i.transaction().txid().to_string(),
+            _ => unreachable!(),
+        };
+        assert_eq!(parsed.funding_txid, expected_txid);
     }
 
     #[test]
-    fn round_trip_pure_voucher_no_inviter() {
-        let key = voucher();
-        let proof = instant_proof_paying_to(&key);
-        let uri = encode_invitation_uri(&key, &proof, 42, None).expect("encode");
+    fn encode_parse_round_trip_pure_voucher_no_inviter() {
+        let proof = instant_proof_paying_voucher();
+        let uri =
+            encode_invitation_uri(&voucher(), Network::Mainnet, &proof, None).expect("encode");
+        let parsed = parse_invitation_uri(&uri).expect("parse");
+        assert!(parsed.inviter.is_none(), "du-less link ⇒ no inviter");
+        assert!(!uri.contains("du="), "pure voucher emits no du");
+    }
+
+    /// Params in a non-canonical order must still parse (field-level, not
+    /// byte-level, interop — the two legacy wallets differ in order).
+    #[test]
+    fn parse_is_order_independent() {
+        let wif = PrivateKey::new(voucher(), Network::Testnet).to_wif();
+        let uri = format!("dashpay://invite?islock=deadbeef&pk={wif}&du=bob&assetlocktx=aabbcc");
+        let parsed = parse_invitation_uri(&uri).expect("parse");
+        assert_eq!(parsed.funding_txid, "aabbcc");
+        assert_eq!(parsed.islock_hex.as_deref(), Some("deadbeef"));
+        assert_eq!(parsed.inviter.as_ref().unwrap().username, "bob");
+    }
+
+    /// The `https://invitations.dashpay.io/applink` host is accepted as a
+    /// first-class alternative to the custom scheme (iOS emits it).
+    #[test]
+    fn parse_accepts_applink_host() {
+        let wif = PrivateKey::new(voucher(), Network::Testnet).to_wif();
+        let uri = format!(
+            "https://invitations.dashpay.io/applink?du=carol&assetlocktx=aabb&pk={wif}&islock=cc"
+        );
+        let parsed = parse_invitation_uri(&uri).expect("parse applink");
+        assert_eq!(parsed.inviter.as_ref().unwrap().username, "carol");
+        assert_eq!(parsed.funding_txid, "aabb");
+    }
+
+    /// `islock` present / absent / `"null"`: only a real hex value yields
+    /// `Some`; both a missing param and the literal `"null"` yield `None`
+    /// (a ChainLock-confirmed invite Android's own validator accepts).
+    #[test]
+    fn parse_islock_present_absent_and_null() {
+        let wif = PrivateKey::new(voucher(), Network::Testnet).to_wif();
+        let present = format!("dashpay://invite?assetlocktx=aa&pk={wif}&islock=00aa11");
+        assert_eq!(
+            parse_invitation_uri(&present)
+                .unwrap()
+                .islock_hex
+                .as_deref(),
+            Some("00aa11")
+        );
+
+        let absent = format!("dashpay://invite?assetlocktx=aa&pk={wif}");
+        assert!(parse_invitation_uri(&absent).unwrap().islock_hex.is_none());
+
+        let null = format!("dashpay://invite?assetlocktx=aa&pk={wif}&islock=null");
+        assert!(
+            parse_invitation_uri(&null).unwrap().islock_hex.is_none(),
+            "islock=null must be treated as no instant lock"
+        );
+    }
+
+    /// A `du`-less link still parses (iOS accepts du-less links).
+    #[test]
+    fn parse_accepts_du_less_link() {
+        let wif = PrivateKey::new(voucher(), Network::Testnet).to_wif();
+        let uri = format!("dashpay://invite?assetlocktx=aa&pk={wif}&islock=bb");
         let parsed = parse_invitation_uri(&uri).expect("parse");
         assert!(parsed.inviter.is_none());
-        assert_eq!(parsed.expiry_unix, 42);
     }
 
     #[test]
-    fn round_trip_inviter_without_display_name() {
-        let key = voucher();
-        let proof = instant_proof_paying_to(&key);
-        let info = InviterInfo {
-            identity_id: [0x01; 32],
-            username: "bob".to_string(),
-            display_name: None,
-        };
-        let uri = encode_invitation_uri(&key, &proof, 7, Some(&info)).expect("encode");
-        let parsed = parse_invitation_uri(&uri).expect("parse");
-        assert_eq!(parsed.inviter, Some(info));
+    fn parse_rejects_missing_pk_or_assetlocktx() {
+        let wif = PrivateKey::new(voucher(), Network::Testnet).to_wif();
+        // No pk.
+        assert!(parse_invitation_uri("dashpay://invite?assetlocktx=aa").is_err());
+        // No assetlocktx.
+        assert!(parse_invitation_uri(&format!("dashpay://invite?pk={wif}")).is_err());
+        // Blank assetlocktx is treated as missing.
+        assert!(parse_invitation_uri(&format!("dashpay://invite?assetlocktx=&pk={wif}")).is_err());
     }
 
     #[test]
-    fn rejects_wrong_scheme() {
-        assert!(parse_invitation_uri("https://invite?data=abc").is_err());
-        assert!(parse_invitation_uri("dashpay://contact?data=abc").is_err());
+    fn parse_rejects_wrong_scheme_and_host() {
+        assert!(parse_invitation_uri("https://example.com/foo?pk=x").is_err());
+        assert!(parse_invitation_uri("dashpay://contact?pk=x").is_err());
     }
 
     #[test]
-    fn rejects_bad_base58() {
-        // '0','O','I','l' are not in the base58 alphabet.
-        let err = parse_invitation_uri("dashpay://invite?data=0OIl").unwrap_err();
-        assert!(err.to_string().contains("base58"));
-    }
-
-    #[test]
-    fn rejects_oversized_data_before_decoding() {
-        let huge = "z".repeat(MAX_INVITATION_DATA_B58_LEN + 1);
-        let uri = format!("{INVITATION_URI_PREFIX}{huge}");
+    fn parse_rejects_uncompressed_wif() {
+        let uncompressed = PrivateKey::new_uncompressed(voucher(), Network::Testnet).to_wif();
+        let uri = format!("dashpay://invite?assetlocktx=aa&pk={uncompressed}");
         let err = parse_invitation_uri(&uri).unwrap_err();
+        assert!(err.to_string().contains("compressed"));
+    }
+
+    #[test]
+    fn parse_rejects_bad_wif() {
+        let err = parse_invitation_uri("dashpay://invite?assetlocktx=aa&pk=not-a-wif").unwrap_err();
+        assert!(err.to_string().contains("WIF"));
+    }
+
+    #[test]
+    fn parse_rejects_oversized_uri() {
+        let huge = format!("dashpay://invite?pk={}", "z".repeat(MAX_INVITATION_URI_LEN));
+        let err = parse_invitation_uri(&huge).unwrap_err();
         assert!(err.to_string().contains("too long"));
     }
 
+    /// A hand-crafted Android-style link (params in Android's emit order, with
+    /// display-name + avatar-url) parses to the right fields.
     #[test]
-    fn rejects_trailing_bytes() {
-        let key = voucher();
-        let proof = instant_proof_paying_to(&key);
-        let uri = encode_invitation_uri(&key, &proof, 1, None).expect("encode");
-        let data = uri.strip_prefix(INVITATION_URI_PREFIX).unwrap();
-        let mut bytes = bs58::decode(data).into_vec().unwrap();
-        bytes.push(0x00);
-        let tampered = format!(
-            "{INVITATION_URI_PREFIX}{}",
-            bs58::encode(&bytes).into_string()
+    fn parse_android_style_link() {
+        let wif = PrivateKey::new(voucher(), Network::Mainnet).to_wif();
+        // Android order: du, assetlocktx, pk, islock, display-name, avatar-url.
+        let uri = format!(
+            "dashpay://invite?du=satoshi&assetlocktx={txid}&pk={wif}&islock={islock}&display-name=Sat%20Oshi&avatar-url=https%3A%2F%2Fimg.example%2Fa.png",
+            txid = "e8b43025641eea4fd21190f01bd870ef90f1a8b199d8fc3376c5b62c0b1a179d",
+            islock = "01"
         );
-        let err = parse_invitation_uri(&tampered).unwrap_err();
-        assert!(err.to_string().contains("trailing"));
-    }
-
-    #[test]
-    fn rejects_unsupported_version() {
-        let key = voucher();
-        let proof = instant_proof_paying_to(&key);
-        let uri = encode_invitation_uri(&key, &proof, 1, None).expect("encode");
-        let data = uri.strip_prefix(INVITATION_URI_PREFIX).unwrap();
-        let mut bytes = bs58::decode(data).into_vec().unwrap();
-        bytes[0] = 99; // corrupt the version byte
-        let tampered = format!(
-            "{INVITATION_URI_PREFIX}{}",
-            bs58::encode(&bytes).into_string()
+        let parsed = parse_invitation_uri(&uri).expect("parse android link");
+        assert_eq!(
+            parsed.funding_txid,
+            "e8b43025641eea4fd21190f01bd870ef90f1a8b199d8fc3376c5b62c0b1a179d"
         );
-        let err = parse_invitation_uri(&tampered).unwrap_err();
-        assert!(err.to_string().contains("unsupported invitation version"));
-    }
-
-    #[test]
-    fn rejects_truncated_payload() {
-        let key = voucher();
-        let proof = instant_proof_paying_to(&key);
-        let uri = encode_invitation_uri(&key, &proof, 1, None).expect("encode");
-        let data = uri.strip_prefix(INVITATION_URI_PREFIX).unwrap();
-        let bytes = bs58::decode(data).into_vec().unwrap();
-        // Drop the tail so the embedded proof length prefix overruns.
-        let truncated = format!(
-            "{INVITATION_URI_PREFIX}{}",
-            bs58::encode(&bytes[..bytes.len() - 5]).into_string()
+        assert_eq!(parsed.islock_hex.as_deref(), Some("01"));
+        let inviter = parsed.inviter.as_ref().expect("inviter");
+        assert_eq!(inviter.username, "satoshi");
+        assert_eq!(inviter.display_name.as_deref(), Some("Sat Oshi"));
+        assert_eq!(
+            inviter.avatar_url.as_deref(),
+            Some("https://img.example/a.png")
         );
-        assert!(parse_invitation_uri(&truncated).is_err());
+    }
+
+    /// The voucher output is selected by pk↔script match, not hard-coded to 0.
+    #[test]
+    fn voucher_output_index_selects_matching_output() {
+        let key = voucher();
+        // Voucher output sits at index 2, behind two decoy outputs.
+        let tx = asset_lock_tx_paying_voucher_at(&key, 2);
+        assert_eq!(voucher_output_index(&tx, &key).unwrap(), 2);
     }
 
     #[test]
-    fn validate_ok_for_fresh_matching_instant_proof() {
+    fn voucher_output_index_rejects_no_match() {
         let key = voucher();
-        let parsed = ParsedInvitation {
-            voucher_key: key,
-            asset_lock: instant_proof_paying_to(&key),
-            expiry_unix: 2_000_000_000,
-            inviter: None,
-        };
-        assert!(validate_claimable(&parsed, 1_000_000_000).is_ok());
-    }
-
-    #[test]
-    fn validate_rejects_expired() {
-        let key = voucher();
-        let parsed = ParsedInvitation {
-            voucher_key: key,
-            asset_lock: instant_proof_paying_to(&key),
-            expiry_unix: 1_000,
-            inviter: None,
-        };
-        let err = validate_claimable(&parsed, 2_000).unwrap_err();
-        assert!(err.to_string().contains("expired"));
-    }
-
-    #[test]
-    fn validate_rejects_zero_clock() {
-        // A zero clock read must be rejected up front: otherwise `now(0) >
-        // expiry` is false and even a long-expired link looks claimable. Here
-        // the expiry is well in the past, so only the zero-clock guard can
-        // reject it — a regression that dropped the guard would return `Ok`.
-        let key = voucher();
-        let parsed = ParsedInvitation {
-            voucher_key: key,
-            asset_lock: instant_proof_paying_to(&key),
-            expiry_unix: 1_000,
-            inviter: None,
-        };
-        let err = validate_claimable(&parsed, 0).unwrap_err();
-        assert!(err.to_string().contains("clock"));
-    }
-
-    #[test]
-    fn validate_rejects_chain_proof() {
-        let key = voucher();
-        let chain = AssetLockProof::Chain(ChainAssetLockProof::new(42, [0x7u8; 36]));
-        let parsed = ParsedInvitation {
-            voucher_key: key,
-            asset_lock: chain,
-            expiry_unix: 2_000_000_000,
-            inviter: None,
-        };
-        let err = validate_claimable(&parsed, 1).unwrap_err();
-        assert!(err.to_string().contains("InstantSend"));
-    }
-
-    #[test]
-    fn validate_rejects_voucher_not_controlling_output() {
-        let key = voucher();
-        let other = SecretKey::from_slice(&[0x22u8; 32]).unwrap();
-        // Proof pays to `other`, but the parsed voucher key is `key`.
-        let parsed = ParsedInvitation {
-            voucher_key: key,
-            asset_lock: instant_proof_paying_to(&other),
-            expiry_unix: 2_000_000_000,
-            inviter: None,
-        };
-        let err = validate_claimable(&parsed, 1).unwrap_err();
+        let other = SecretKey::from_slice(&[0x33u8; 32]).unwrap();
+        let tx = asset_lock_tx_paying_voucher_at(&other, 0);
+        let err = voucher_output_index(&tx, &key).unwrap_err();
         assert!(err.to_string().contains("does not control"));
+    }
+
+    #[test]
+    fn voucher_output_index_rejects_non_asset_lock_tx() {
+        let key = voucher();
+        let tx = Transaction {
+            version: 2,
+            lock_time: 0,
+            input: vec![],
+            output: vec![],
+            special_transaction_payload: None,
+        };
+        assert!(voucher_output_index(&tx, &key).is_err());
     }
 }
