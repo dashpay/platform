@@ -129,6 +129,13 @@ fun DocumentActionsScreen(
         .orEmpty()
     val sortedProps = remember(properties) { properties.entries.sortedBy { it.key } }
     val isTransferable = (schema?.intField("transferable") ?: 0) == 1
+    // Same default-allow semantics as DocumentTypeDetailsScreen: only an
+    // explicit `false` disables (Drive treats a submit against a disabled
+    // capability as a PAID invalid transition — fees + a burned nonce for a
+    // guaranteed rejection, so the buttons must gate on these).
+    val documentsMutable = schema?.boolField("documentsMutable") != false
+    val canBeDeleted = schema?.boolField("canBeDeleted") != false ||
+        schema?.boolField("documentsCanBeDeleted") != false
 
     // Default acting identity to the on-chain owner when it's one of ours,
     // else the first identity — replace/delete/transfer require ownership.
@@ -318,10 +325,19 @@ fun DocumentActionsScreen(
                         modifier = Modifier.testTag("replaceDocument.success"),
                     )
                 }
+                if (!documentsMutable) {
+                    Text(
+                        "This document type is not mutable — a replace will be " +
+                            "rejected by consensus (fees are still charged).",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
                 SubmitButton(
                     text = "Replace Document",
                     isLoading = isSubmitting,
-                    enabled = !isSubmitting && isOwner && manager != null,
+                    enabled = !isSubmitting && isOwner && manager != null &&
+                        documentsMutable,
                     modifier = Modifier
                         .fillMaxWidth()
                         .testTag("replaceDocument.submitButton"),
@@ -330,8 +346,18 @@ fun DocumentActionsScreen(
                     val docIdBytes = Base58.decodeIdentifier(documentIdText.trim())
                         ?: return@SubmitButton
                     val propertiesJson = try {
-                        buildPropertiesJson(
-                            properties, required, textValues, boolValues, touchedBools,
+                        // Rust-side replace is a FULL overwrite
+                        // (`set_properties`), and the form can neither
+                        // render composite (object/array) values nor
+                        // distinguish "left blank" from "clear": overlay
+                        // the form's values on the document's current
+                        // fields so everything not re-entered keeps its
+                        // existing value instead of being silently dropped.
+                        mergeReplaceProperties(
+                            probed?.fields,
+                            buildPropertiesJson(
+                                properties, required, textValues, boolValues, touchedBools,
+                            ),
                         )
                     } catch (e: Exception) {
                         error = "Could not encode document fields: ${e.message}"
@@ -376,11 +402,19 @@ fun DocumentActionsScreen(
                         modifier = Modifier.testTag("deleteDocument.success"),
                     )
                 }
+                if (!canBeDeleted) {
+                    Text(
+                        "This document type cannot be deleted — a delete will be " +
+                            "rejected by consensus (fees are still charged).",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
                 SubmitButton(
                     text = "Delete Document…",
                     isLoading = false,
                     enabled = !isSubmitting && isOwner && manager != null &&
-                        deleteSuccess == null,
+                        deleteSuccess == null && canBeDeleted,
                     modifier = Modifier
                         .fillMaxWidth()
                         .testTag("deleteDocument.button"),
@@ -420,7 +454,7 @@ fun DocumentActionsScreen(
                     text = "Transfer Document",
                     isLoading = isSubmitting,
                     enabled = !isSubmitting && isOwner && manager != null &&
-                        recipient != null,
+                        recipient != null && isTransferable,
                     modifier = Modifier
                         .fillMaxWidth()
                         .testTag("transferDocument.submitButton"),
@@ -524,6 +558,19 @@ private fun parseActionDocument(json: String): ProbedActionDocument? = try {
     ProbedActionDocument(ownerBase58 = owner, fields = fields)
 } catch (_: Exception) {
     null
+}
+
+/**
+ * Overlay the replace form's encoded values on the document's existing
+ * (system-stripped) fields. `set_properties` on the Rust side replaces the
+ * whole property map, so any field absent from the form output — composite
+ * values the form can't represent, or fields left blank — must carry over
+ * from [existing] or it would be silently dropped on-chain.
+ */
+private fun mergeReplaceProperties(existing: JsonObject?, formJson: String): String {
+    if (existing == null) return formJson
+    val form = LenientJson.parseToJsonElement(formJson).jsonObject
+    return JsonObject(existing.toMutableMap().apply { putAll(form) }).toString()
 }
 
 /**

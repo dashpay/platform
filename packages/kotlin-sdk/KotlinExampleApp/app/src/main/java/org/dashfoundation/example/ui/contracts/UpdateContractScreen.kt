@@ -105,8 +105,14 @@ fun UpdateContractScreen(
     val hasDocuments = documentsJson.trim().let { it.isNotEmpty() && it != "{}" }
     val hasTokens = tokensJson.trim().isNotEmpty()
     val hasGroups = groupsJson.trim().isNotEmpty()
+    // Keywords/description are valid stand-alone updates (the FFI submits
+    // them independently of the schema overlays), so a metadata-only edit
+    // must be able to enable the button.
+    val hasKeywords = keywords.trim().isNotEmpty()
+    val hasDescription = description.trim().isNotEmpty()
     val canSubmit = owner != null && manager != null && contractIdBytes != null &&
-        (hasDocuments || hasTokens || hasGroups) && !isSubmitting
+        (hasDocuments || hasTokens || hasGroups || hasKeywords || hasDescription) &&
+        !isSubmitting
 
     Scaffold(
         topBar = {

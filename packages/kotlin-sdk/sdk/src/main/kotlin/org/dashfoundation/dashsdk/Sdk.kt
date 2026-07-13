@@ -110,17 +110,26 @@ class Sdk private constructor(
      * a query mid-JNI-call could keep dereferencing the freed pointer.
      */
     suspend fun closeSuspending() {
-        queryGate.closeAndAwait()
-        cleanable.clean()
+        // NonCancellable for the same reason as PlatformWalletManager's
+        // teardown: closeAndAwait is a cancellable suspension, and a caller
+        // cancelled mid-close would otherwise skip cleanable.clean() —
+        // stranding the native SDK until the GC-driven Cleaner backstop.
+        kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+            queryGate.closeAndAwait()
+            cleanable.clean()
+        }
     }
 
     /**
-     * Blocking close for non-suspend contexts (tests) and the [NativeCleaner]
-     * backstop. Does NOT await in-flight queries — production replacement
-     * goes through [closeSuspending].
+     * Blocking close for non-suspend contexts (tests, `use {}`). Delegates
+     * through [closeSuspending] so even this path awaits in-flight leased
+     * queries before the native free — mirroring
+     * `PlatformWalletManager.close()`. Never call on the main thread.
+     * (The [NativeCleaner] backstop still frees the raw handle directly
+     * when the instance is GC'd unreferenced.)
      */
     override fun close() {
-        cleanable.clean()
+        kotlinx.coroutines.runBlocking { closeSuspending() }
     }
 
     /** Runs on [NativeCleaner] or [close]; destroys the handle exactly once. */

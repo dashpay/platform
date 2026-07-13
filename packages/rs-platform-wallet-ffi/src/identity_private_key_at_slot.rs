@@ -48,8 +48,9 @@
 //!   errors with a hint that a resolver handle is required.
 //!
 //! All sensitive intermediates live in `Zeroizing` buffers; the resolved
-//! master's scalar is explicitly `non_secure_erase`d before return
-//! (`ExtendedPrivKey` has no `Drop`).
+//! master's scalar is explicitly `non_secure_erase`d before return as
+//! belt-and-braces (the pinned key-wallet rev zeroizes `ExtendedPrivKey`
+//! on `Drop`; the explicit erase is robust to an upstream regression).
 
 use std::ffi::CString;
 use std::os::raw::c_char;

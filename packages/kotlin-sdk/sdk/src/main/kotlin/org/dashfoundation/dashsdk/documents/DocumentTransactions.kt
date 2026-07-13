@@ -160,7 +160,7 @@ class DocumentTransactions internal constructor(
         propertiesJson: String,
         signingKeyId: Int,
         signerHandle: Long,
-    ): String = withContext(Dispatchers.IO) {
+    ): String = gate.op {
         require(ownerId.size == 32) { "ownerId must be 32 bytes" }
         require(contractId.size == 32) { "contractId must be 32 bytes" }
         require(documentId.size == 32) { "documentId must be 32 bytes" }
@@ -195,7 +195,7 @@ class DocumentTransactions internal constructor(
         documentId: ByteArray,
         signingKeyId: Int,
         signerHandle: Long,
-    ): ByteArray = withContext(Dispatchers.IO) {
+    ): ByteArray = gate.op {
         require(ownerId.size == 32) { "ownerId must be 32 bytes" }
         require(contractId.size == 32) { "contractId must be 32 bytes" }
         require(documentId.size == 32) { "documentId must be 32 bytes" }
@@ -232,7 +232,7 @@ class DocumentTransactions internal constructor(
         recipientId: ByteArray,
         signingKeyId: Int,
         signerHandle: Long,
-    ): String = withContext(Dispatchers.IO) {
+    ): String = gate.op {
         require(ownerId.size == 32) { "ownerId must be 32 bytes" }
         require(contractId.size == 32) { "contractId must be 32 bytes" }
         require(documentId.size == 32) { "documentId must be 32 bytes" }

@@ -288,7 +288,7 @@ fun ContestDetailScreen(
                 scope.launch {
                     try {
                         mgr.voteCasting.castVote(
-                            sdkHandle = currentSdk.handle,
+                            sdk = currentSdk,
                             dataContractId = DPNS_CONTRACT_ID_BASE58,
                             documentTypeName = DPNS_DOCUMENT_TYPE,
                             indexName = DPNS_INDEX_NAME,
