@@ -227,6 +227,9 @@ All token actions support single-signer **and** group (propose / co-sign) modes 
 | TOK-15 | Group action — propose | Platform | Uncommon | ✅ | group | Token action in `.propose` mode (`CoSignProposalScreen`). |
 | TOK-16 | Group action — co-sign existing | Platform | Uncommon | ✅ | group | `PendingGroupActionsScreen` / `CoSignProposalScreen`. Action executes when accumulated signer power ≥ required. |
 | TOK-17 | Token transfer between two on-device identities | Platform | Thorough | ✅ | multiwallet, regression | `TOK-02`, recipient = wallet B's identity. Switch to B; verify the token balance arrived. |
+| TOK-18 | View group info / members | Platform | Thorough | ✅ | group, read-only | `GroupDetailScreen` — from `DataContractDetailsScreen` Groups section, tap a group to see required power + members (drills into member identities). |
+| TOK-19 | Group queries (info / actions / signers) | Platform | Thorough | ✅ | group, read-only | `QueryRegistry` Group category (`Get Group Info` / `Get Group Actions` / `Get Group Action Signers`) → `sdk.groups.*`. |
+| TOK-20 | Standalone group lifecycle management | Platform | — | ➖ | group | Retired — no group-create/membership transition exists; groups are only a token access-control construct (read queries `TOK-18`/`TOK-19`; actions fold into `TOK-15`/`TOK-16`). Documents the absence; not seeded. |
 
 ### 4.9 Shielded Pool (Orchard) — `Domain=Shielded`
 
@@ -319,7 +322,7 @@ Membership of each feature category across **all** sections (primary section mem
 - **Voting** — `VOTE-01..07`, `DPNS-05`, `DPNS-08`
 - **Contract** — `DC-01..04`
 - **Document** — `DOC-01..15`
-- **Token** — `TOK-01..17`
+- **Token** — `TOK-01..20`
 - **Shielded** — `SH-01..17`
 - **DashPay** — `DP-01..11`
 - **System / Diagnostics** — `SYS-01..08`
@@ -329,9 +332,9 @@ Membership of each feature category across **all** sections (primary section mem
 Tags are cross-cutting modalities. A test may appear under multiple tags.
 
 - **multiwallet** — `CORE-14..23`, `ID-14`, `ID-15`, `TOK-17`, `DPNS-08`, `DP-11`, `DOC-15`, `SH-14`, `SH-15`, `SH-16`, `SYS-08`
-- **group** — `TOK-15`, `TOK-16`
+- **group** — `TOK-15`, `TOK-16`, `TOK-18`, `TOK-19`
 - **contested** — `DPNS-05`, `DPNS-08`, `VOTE-01..06`
 - **withdrawal** — `ID-10`, `ADDR-04`, `SH-08`, `SH-16`
 - **regression** — `TOK-17`, `DP-10`
-- **read-only** — `SH-13`, `SYS-05`, `SYS-06`, `VOTE-02..06`
+- **read-only** — `SH-13`, `SYS-05`, `SYS-06`, `VOTE-02..06`, `TOK-18`, `TOK-19`
 - **masternode** — `VOTE-01`
