@@ -241,8 +241,17 @@ fun TokenActionPermissionsScreen(
                         modifier = Modifier.padding(vertical = 8.dp),
                     )
                 } else {
-                    val rows = remember(currentToken, identity, contract) {
-                        TokenActionResolver.resolve(currentToken, identity, contract)
+                    // Resolve against the live paused status when the status
+                    // query succeeded — the persisted `isPaused` column lags a
+                    // pause/resume broadcast, which would otherwise leave Resume
+                    // locked ("Token is not paused") on a token that is in fact
+                    // paused. The banner already uses `livePaused`; keep the row
+                    // gates consistent with it.
+                    val resolvedToken = remember(currentToken, livePaused) {
+                        livePaused?.let { currentToken.copy(isPaused = it) } ?: currentToken
+                    }
+                    val rows = remember(resolvedToken, identity, contract) {
+                        TokenActionResolver.resolve(resolvedToken, identity, contract)
                             .filter { !it.permission.isHidden }
                     }
                     rows.forEach { row ->
