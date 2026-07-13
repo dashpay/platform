@@ -229,6 +229,10 @@ struct TransactionRowView: View {
         // "receive" applies cleanly.
         if transaction.isAssetLock { return "lock.fill" }
         if transaction.isAssetUnlock { return "lock.open.fill" }
+        // Provider special txs (ProRegTx / ProUp*Tx) also classify as
+        // `Internal` — the wallet just sees its own owner/voting/payout
+        // keys in the payload — so the self-transfer arrows would lie.
+        if transaction.isProviderSpecial { return "server.rack" }
         // direction: 0=incoming, 1=outgoing, 2=internal, 3=coinJoin
         switch transaction.direction {
         case 0: return "arrow.down.circle.fill"
@@ -248,6 +252,11 @@ struct TransactionRowView: View {
         // list and immediately spot identity-funding rows.
         if transaction.isAssetLock || transaction.isAssetUnlock {
             return .purple
+        }
+        // Provider special txs get their own axis too — orange, so a
+        // masternode registration doesn't scan as a red "sent" row.
+        if transaction.isProviderSpecial {
+            return .orange
         }
         switch transaction.direction {
         case 0: return .green
@@ -408,6 +417,14 @@ struct TransactionRowView: View {
                 return String(format: "-%.8f DASH", dash)
             }
             return "Asset Lock (amount unknown)"
+        }
+        // A payload-only provider special tx moves no wallet balance;
+        // `+0.00000000 DASH` reads as a broken zero-value receive, so
+        // put the tx kind in the amount slot instead. A provider tx
+        // that DOES move value (e.g. this wallet funded the collateral)
+        // falls through and shows the real signed amount.
+        if transaction.isProviderSpecial && transaction.netAmount == 0 {
+            return transaction.providerSpecialName ?? transaction.transactionType
         }
         return transaction.formattedAmount
     }

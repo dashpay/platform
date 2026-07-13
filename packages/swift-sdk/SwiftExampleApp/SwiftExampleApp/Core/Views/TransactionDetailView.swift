@@ -18,7 +18,10 @@ struct TransactionDetailView: View {
     /// have them, else an explicit "amount unknown" label for the
     /// historical-asset-lock case (rather than the misleading
     /// `+0.00000000 DASH` from `transaction.formattedAmount`).
-    private var displayAmount: String {
+    /// `nil` for a payload-only provider special tx — a ProRegTx
+    /// observed via the owner/voting keys moves no wallet balance,
+    /// and `+0.00000000 DASH` reads as a broken zero-value receive.
+    private var displayAmount: String? {
         if transaction.isAssetLock {
             if let duffs = assetLockAmountDuffs {
                 let dash = Double(duffs) / 100_000_000.0
@@ -26,12 +29,16 @@ struct TransactionDetailView: View {
             }
             return "Asset Lock (amount unknown)"
         }
+        if transaction.isProviderSpecial && transaction.netAmount == 0 {
+            return nil
+        }
         return transaction.formattedAmount
     }
 
     private var typeDescription: String {
         if transaction.isAssetLock { return "Asset Lock" }
         if transaction.isAssetUnlock { return "Asset Unlock" }
+        if let name = transaction.providerSpecialName { return name }
         switch transaction.netAmount {
         case let amount where amount > 0:
             return "Received"
@@ -45,6 +52,7 @@ struct TransactionDetailView: View {
     private var typeIcon: String {
         if transaction.isAssetLock { return "lock.fill" }
         if transaction.isAssetUnlock { return "lock.open.fill" }
+        if transaction.isProviderSpecial { return "server.rack" }
         switch transaction.netAmount {
         case let amount where amount > 0:
             return "arrow.down.circle.fill"
@@ -58,6 +66,9 @@ struct TransactionDetailView: View {
     private var typeColor: Color {
         if transaction.isAssetLock || transaction.isAssetUnlock {
             return .purple
+        }
+        if transaction.isProviderSpecial {
+            return .orange
         }
         switch transaction.netAmount {
         case let amount where amount > 0:
@@ -102,9 +113,11 @@ struct TransactionDetailView: View {
                             .font(.headline)
                             .foregroundColor(.secondary)
 
-                        Text(displayAmount)
-                            .font(.system(size: 32, weight: .bold, design: .rounded))
-                            .foregroundColor(typeColor)
+                        if let displayAmount {
+                            Text(displayAmount)
+                                .font(.system(size: 32, weight: .bold, design: .rounded))
+                                .foregroundColor(typeColor)
+                        }
                     }
                     .padding(.top, 20)
 
