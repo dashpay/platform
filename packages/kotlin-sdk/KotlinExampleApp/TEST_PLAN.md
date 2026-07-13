@@ -114,7 +114,6 @@ Most Platform actions have hard preconditions. Establish these fixtures before s
 | CORE-18 | Per-wallet isolation (identities / addresses / balances / shielded) | Core | Thorough | ✅ | multiwallet | Confirm wallet A's identities, addresses, Core/Platform balances and shielded state never surface under wallet B (Room queries filtered by `walletId`). |
 | CORE-19 | Send between two on-device wallets | Core | Thorough | ✅ | multiwallet | Normal send from wallet A to wallet B's receive address. B's balance increases after sync. |
 | CORE-20 | Concurrent SPV sync across all wallets | Core | Thorough | ✅ | multiwallet | One SPV runtime per network filters every wallet's addresses; `spvProgress` is manager-global. With 2+ wallets, confirm each reaches the tip. |
-| CORE-21 | Multiple wallets bound to the shielded pool concurrently | Shielded | Uncommon | ✅ | multiwallet | `platform_wallet_manager_bind_shielded` is per `wallet_id`; the manager syncs all bound wallets. EVERY loaded wallet is engine-bound automatically at rebind (`AppContainer.rebindWalletScopedServices` → `ShieldedService.bindEngine`); the global Sync tab still mirrors one wallet, but per-wallet Receive/Balance surfaces read per-wallet. |
 | CORE-22 | Re-add a previously deleted wallet (same network) | Core | Uncommon | ✅ | multiwallet | After `CORE-17`, re-import the same mnemonic on the same network. Re-derives the same `wallet_id`; must re-discover identities/addresses/balances cleanly. |
 | CORE-23 | Re-add a deleted wallet that also exists on another network | Core | Uncommon | ✅ | multiwallet | Same mnemonic on two networks → distinct network-scoped `wallet_id`s. Delete on X, verify Y untouched, re-add on X, confirm both coexist. |
 
@@ -251,6 +250,7 @@ Shielded notes/balance/activity have **no read-side FFI** by design — Rust pus
 | SH-14 | Shielded transfer between two on-device wallets | Shielded | Thorough | ✅ | multiwallet | Wallet A's pool → wallet B's shielded address (`SH-05`); copy B's address from Receive → Shielded tab (`SH-13`). Both wallets are engine-bound automatically at rebind (no wallet-swap needed); B's shielded balance rises on the next sync pass. |
 | SH-15 | Unshield from A to a Platform address owned by B | Shielded | Uncommon | ✅ | multiwallet | A unshields (`SH-06`) to a Platform address belonging to wallet B. Both wallets are engine-bound automatically at rebind, so A can spend from its own pool without a wallet-swap. |
 | SH-16 | Shielded withdraw from A to B's Core L1 address | Shielded | Uncommon | ✅ | multiwallet, withdrawal | Wallet A's pool → a Core L1 address owned by wallet B (`SH-08`). Verify B's Core balance rises after SPV sync. Both wallets are engine-bound automatically at rebind. |
+| SH-17 | Multiple wallets bound to the shielded pool concurrently | Shielded | Uncommon | ✅ | multiwallet | `platform_wallet_manager_bind_shielded` is per `wallet_id`; the manager syncs all bound wallets. EVERY loaded wallet is engine-bound automatically at rebind (`AppContainer.rebindWalletScopedServices` → `ShieldedService.bindEngine`); the global Sync tab still mirrors one wallet, but per-wallet Receive/Balance surfaces read per-wallet. |
 
 ### 4.10 DashPay — `Domain=DashPay`
 
@@ -320,7 +320,7 @@ Membership of each feature category across **all** sections (primary section mem
 - **Contract** — `DC-01..04`
 - **Document** — `DOC-01..15`
 - **Token** — `TOK-01..17`
-- **Shielded** — `SH-01..16`, `CORE-21`
+- **Shielded** — `SH-01..17`
 - **DashPay** — `DP-01..11`
 - **System / Diagnostics** — `SYS-01..08`
 
