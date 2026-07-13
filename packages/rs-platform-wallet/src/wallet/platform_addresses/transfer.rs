@@ -1,11 +1,10 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 use dpp::address_funds::{AddressFundsFeeStrategy, AddressFundsFeeStrategyStep, PlatformAddress};
 use dpp::fee::Credits;
 use dpp::identity::signer::Signer;
 use dpp::state_transition::address_funds_transfer_transition::AddressFundsTransferTransition;
 use dpp::version::PlatformVersion;
-use key_wallet::PlatformP2PKHAddress;
 
 use crate::error::promote_address_nonce_error_or_sdk;
 use crate::wallet::PlatformAddressWallet;
@@ -476,11 +475,9 @@ impl PlatformAddressWallet {
             .address_funds
             .min_input_amount;
 
-        // Enumerate the account's derived addresses to get the candidate SET.
-        // The account cache only tells us *which* addresses belong to this
-        // account; every candidate's BALANCE is read from the chain below, NOT
-        // from `account.address_credit_balance`. Sizing auto-selection from the
-        // cache was the ADDR-02 transfer bug: a freshly-loaded wallet whose
+        // Candidate SET only — every candidate's BALANCE is read fresh from the
+        // chain below, NOT from the account cache. Sizing auto-selection from
+        // the cache was the ADDR-02 transfer bug: a freshly-loaded wallet whose
         // in-memory account was never hydrated with per-address credit balances
         // reports 0 for every address, so auto-selection found no candidates and
         // failed with "available 0 credits" — even though the same addresses
@@ -489,48 +486,7 @@ impl PlatformAddressWallet {
         // on-chain balance here — the SAME `AddressInfo::fetch_many` proof query
         // the transfer spend path re-fetches and hard-checks — keeps the submit
         // gate and the spend path in lockstep and immune to a stale/zero cache.
-        // Drop the read lock before the network fetch so a concurrent sync /
-        // reconcile can't be blocked behind a proof round-trip.
-        //
-        // The candidate SET is the UNION of the transient derived pool
-        // (`addresses.addresses`) and the hydrated per-address balance map
-        // (`address_balances`). Immediately after a fresh app relaunch the
-        // derived pool is empty until a platform sync / navigation repopulates
-        // it, but `address_balances` is hydrated synchronously on wallet load
-        // by `initialize_from_persisted` from the persisted `platform_addresses`
-        // rows — the same source Platform Balance / the recipient list read.
-        // Enumerating only the pool made auto-selection find no candidates and
-        // fail with "available 0 credits" right after launch even though the
-        // balances were present on disk and on-chain; unioning the balance-map
-        // keys in lets selection work immediately (mirrors `plan_withdrawal`).
-        let candidate_addresses: BTreeSet<PlatformAddress> = {
-            let wm = self.wallet_manager.read().await;
-            let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
-                PlatformWalletError::WalletNotFound(format!(
-                    "Wallet {:?} not found in wallet manager",
-                    hex::encode(self.wallet_id)
-                ))
-            })?;
-
-            let account = info
-                .core_wallet
-                .platform_payment_managed_account_at_index(account_index)
-                .ok_or_else(|| {
-                    PlatformWalletError::AddressSync(format!(
-                        "No platform payment account at index {}",
-                        account_index
-                    ))
-                })?;
-
-            account
-                .addresses
-                .addresses
-                .values()
-                .filter_map(|addr_info| PlatformP2PKHAddress::from_address(&addr_info.address).ok())
-                .chain(account.address_balances.keys().copied())
-                .map(|p2pkh| PlatformAddress::P2pkh(p2pkh.to_bytes()))
-                .collect()
-        };
+        let candidate_addresses = self.candidate_address_set(account_index).await?;
 
         // Read the authoritative on-chain balance for each candidate. An
         // address the proof reports as absent / missing (`None`) has no on-chain

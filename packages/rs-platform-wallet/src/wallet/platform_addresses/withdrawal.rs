@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 use dpp::address_funds::{AddressFundsFeeStrategy, AddressFundsFeeStrategyStep, PlatformAddress};
 use dpp::fee::Credits;
@@ -7,7 +7,6 @@ use dpp::identity::signer::Signer;
 use dpp::state_transition::address_credit_withdrawal_transition::AddressCreditWithdrawalTransition;
 use dpp::version::PlatformVersion;
 use dpp::withdrawal::Pooling;
-use key_wallet::PlatformP2PKHAddress;
 
 use super::InputSelection;
 use crate::error::promote_address_nonce_error_or_sdk;
@@ -306,49 +305,11 @@ impl PlatformAddressWallet {
         account_index: u32,
         platform_version: &PlatformVersion,
     ) -> Result<WithdrawalPlan, PlatformWalletError> {
-        // Enumerate the account's derived addresses to get the candidate SET.
-        // Balances are read from the chain below, NOT from the account cache —
-        // the cache only tells us *which* addresses belong to this account.
-        // Drop the read lock before the network fetch so a concurrent sync /
-        // reconcile can't be blocked behind a proof round-trip.
-        let candidate_addresses: BTreeSet<PlatformAddress> = {
-            let wm = self.wallet_manager.read().await;
-            let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
-                PlatformWalletError::WalletNotFound(format!(
-                    "Wallet {:?} not found in wallet manager",
-                    hex::encode(self.wallet_id)
-                ))
-            })?;
-
-            let account = info
-                .core_wallet
-                .platform_payment_managed_account_at_index(account_index)
-                .ok_or_else(|| {
-                    PlatformWalletError::AddressSync(format!(
-                        "No platform payment account at index {}",
-                        account_index
-                    ))
-                })?;
-
-            // Union the transient derived pool with the hydrated
-            // `address_balances` map so the candidate SET survives a fresh
-            // relaunch: the pool (`addresses.addresses`) is empty until a
-            // sync repopulates it, but `address_balances` is hydrated on
-            // wallet load by `initialize_from_persisted` from the persisted
-            // `platform_addresses` rows — the same source Platform Balance
-            // reads. Without the union a withdraw right after launch failed
-            // with "No funded addresses available" even though the balances
-            // were on disk and on-chain. Balances are still read fresh from
-            // the chain below; this only decides which addresses to query.
-            account
-                .addresses
-                .addresses
-                .values()
-                .filter_map(|addr_info| PlatformP2PKHAddress::from_address(&addr_info.address).ok())
-                .chain(account.address_balances.keys().copied())
-                .map(|p2pkh| PlatformAddress::P2pkh(p2pkh.to_bytes()))
-                .collect()
-        };
+        // Candidate SET only — balances are read fresh from the chain below,
+        // NOT from the account cache. Drops the wallet-manager read lock before
+        // the network fetch so a concurrent sync/reconcile isn't blocked behind
+        // the proof round-trip.
+        let candidate_addresses = self.candidate_address_set(account_index).await?;
 
         if candidate_addresses.is_empty() {
             return Err(PlatformWalletError::AddressOperation(
