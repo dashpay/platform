@@ -227,6 +227,19 @@ pub enum WalletStorageError {
     )]
     ProviderKeyAccountConflict { account_type: &'static str },
 
+    /// One platform-node key index was offered two different keys — between
+    /// entries in a flush, or against the row already stored. Derivation is
+    /// deterministic, so one of them is wrong; the store refuses both rather
+    /// than overwrite a key that nothing can re-derive.
+    #[error(
+        "conflicting platform-node keys for {account_type} at index {key_index} \
+         (one index, two different keys)"
+    )]
+    ProviderNodeKeyConflict {
+        account_type: &'static str,
+        key_index: u32,
+    },
+
     /// Account was rejected by the wallet manager (e.g. `account_type` is unknown, or
     /// `account_index` is out of range). The `cause` is a static string describing the reason.
     #[error("account rejected by wallet manager: {cause}")]
@@ -435,6 +448,7 @@ impl WalletStorageError {
             | Self::AccountRegistrationEntryMismatch
             | Self::ProviderKeyAccountEntryMismatch
             | Self::ProviderKeyAccountConflict { .. }
+            | Self::ProviderNodeKeyConflict { .. }
             | Self::AccountRecordInvalid { .. }
             | Self::MissingAccount { .. }
             | Self::AccountRejected { .. }
@@ -522,6 +536,7 @@ impl WalletStorageError {
             Self::AccountRegistrationEntryMismatch => "account_registration_entry_mismatch",
             Self::ProviderKeyAccountEntryMismatch => "provider_key_account_entry_mismatch",
             Self::ProviderKeyAccountConflict { .. } => "provider_key_account_conflict",
+            Self::ProviderNodeKeyConflict { .. } => "provider_node_key_conflict",
             Self::AssetLockEntryMismatch { .. } => "asset_lock_entry_mismatch",
             Self::BlobTooLarge { .. } => "blob_too_large",
             Self::IntegerOverflow { .. } => "integer_overflow",

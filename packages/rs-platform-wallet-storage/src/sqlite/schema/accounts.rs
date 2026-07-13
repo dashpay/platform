@@ -214,6 +214,9 @@ fn upsert_account_row(
 ///
 /// [`WalletStorageError::ProviderKeyAccountConflict`] if two entries in one call
 /// claim the same account with **different** extended public keys.
+///
+/// [`WalletStorageError::ProviderNodeKeyConflict`] if one index carries two
+/// different node keys — between entries, or against an already-stored row.
 pub fn apply_provider_registrations(
     tx: &Transaction<'_>,
     wallet_id: &WalletId,
@@ -253,13 +256,53 @@ pub fn apply_provider_registrations(
         encoded.push((entry, label, payload));
     }
 
+    // A node key is fully determined by its account xpub and its index —
+    // derivation is a pure function, and `node_id` is `hash160(public_key)`. So
+    // two *different* values at one index, whether inside this batch or against
+    // what is already stored, are the same contradiction as a conflicting xpub
+    // one level up: one of them is wrong and the store cannot tell which.
+    // Refuse the flush rather than let write order pick the winner (an
+    // overwrite would destroy a key nothing can re-derive).
+    let mut incoming: BTreeMap<(&'static str, u32), &ProviderPlatformNodePubKey> = BTreeMap::new();
+    for (entry, label, _) in &encoded {
+        for key in &entry.derived_platform_node_keys {
+            if let Some(prior) = incoming.insert((label, key.index), key) {
+                if prior != key {
+                    return Err(WalletStorageError::ProviderNodeKeyConflict {
+                        account_type: label,
+                        key_index: key.index,
+                    });
+                }
+            }
+        }
+    }
+    for label in encoded
+        .iter()
+        .map(|(_, label, _)| *label)
+        .collect::<std::collections::BTreeSet<_>>()
+    {
+        for stored in load_platform_node_keys(tx, wallet_id, label)? {
+            if let Some(key) = incoming.get(&(label, stored.index)) {
+                if **key != stored {
+                    return Err(WalletStorageError::ProviderNodeKeyConflict {
+                        account_type: label,
+                        key_index: stored.index,
+                    });
+                }
+            }
+        }
+    }
+
     let mut account_stmt = tx.prepare_cached(UPSERT_ACCOUNT_SQL)?;
+    // `DO NOTHING`, not `DO UPDATE`: the checks above prove an already-stored
+    // index carries byte-identical bytes, so re-writing it is a no-op — and if
+    // they were ever bypassed, the SQL itself still cannot overwrite (and so
+    // cannot destroy) a derived key.
     let mut node_key_stmt = tx.prepare_cached(
         "INSERT INTO provider_platform_node_keys \
                 (wallet_id, account_type, key_index, public_key, node_id) \
              VALUES (?1, ?2, ?3, ?4, ?5) \
-             ON CONFLICT(wallet_id, account_type, key_index) DO UPDATE SET \
-                public_key = excluded.public_key, node_id = excluded.node_id",
+             ON CONFLICT(wallet_id, account_type, key_index) DO NOTHING",
     )?;
     for (entry, account_type, payload) in encoded {
         upsert_account_row(&mut account_stmt, wallet_id, &entry.account_type, payload)?;

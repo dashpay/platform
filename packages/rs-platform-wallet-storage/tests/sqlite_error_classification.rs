@@ -162,6 +162,10 @@ fn samples() -> Vec<WalletStorageError> {
         WalletStorageError::ProviderKeyAccountConflict {
             account_type: "provider_platform",
         },
+        WalletStorageError::ProviderNodeKeyConflict {
+            account_type: "provider_platform",
+            key_index: 7,
+        },
         // BincodeEncode / BincodeDecode / HashDecode / ConsensusCodec
         // need real upstream errors; omitted but covered by their arms.
         WalletStorageError::BlobDecode {
@@ -281,6 +285,9 @@ fn tc_p2_005_is_transient_table() {
             }
             WalletStorageError::ProviderKeyAccountConflict { .. } => {
                 (false, "provider_key_account_conflict")
+            }
+            WalletStorageError::ProviderNodeKeyConflict { .. } => {
+                (false, "provider_node_key_conflict")
             }
             WalletStorageError::MissingAccount { .. } => {
                 (false, "missing_account_registration_entry")

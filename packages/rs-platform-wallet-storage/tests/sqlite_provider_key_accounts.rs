@@ -946,18 +946,17 @@ fn marvin_adversarial_reordered_but_equal_node_keys_is_not_a_conflict() {
     );
 }
 
-/// MARVIN adversarial #4 (the sharp one) — two entries share account_type AND
-/// xpub (so the parent-level payload comparison sees no conflict and skips
-/// the fail-closed path), but disagree about the VALUE at the SAME node-key
-/// index. The account-level conflict check only compares the encoded
-/// `ProviderKeyRegistrationBlob` (account_type + xpub) — it has no visibility
-/// into node-key contents, so this collision reaches the
-/// `ON CONFLICT ... DO UPDATE` upsert with no arbitration. Confirms whether
-/// this is silent last-write-wins on signing-relevant node-key material,
-/// which the same "cannot tell which is right, fail closed" argument used for
-/// `ProviderKeyAccountConflict` would also seem to demand.
+/// SEC-007 / QA-005 (found by Smythe and Marvin independently) — two entries
+/// share `account_type` AND xpub, so the account-level payload comparison sees
+/// no conflict, yet they disagree about the VALUE at the same node-key index.
+///
+/// Derivation is a pure function of (xpub, index) and `node_id` is
+/// `hash160(public_key)`, so two different values at one index mean one is
+/// wrong — the same contradiction `ProviderKeyAccountConflict` fails closed on
+/// one level up. Silently upserting the loser over the winner would destroy a
+/// key nothing can re-derive.
 #[test]
-fn marvin_adversarial_same_index_conflicting_node_key_value_is_silently_overwritten() {
+fn sec_007_same_index_conflicting_node_keys_are_rejected() {
     let (persister, _tmp, _path) = fresh_persister();
     let w: WalletId = wid(0xF4);
     ensure_wallet_meta(&persister, &w);
@@ -971,44 +970,66 @@ fn marvin_adversarial_same_index_conflicting_node_key_value_is_silently_overwrit
         "test fixture sanity: these must be genuinely different keys at the same index"
     );
 
-    let result = persister.store(
-        w,
-        PlatformWalletChangeSet {
-            provider_key_account_registrations: vec![
-                platform_entry(0x44, vec![first]),
-                platform_entry(0x44, vec![second]),
-            ],
-            ..Default::default()
-        },
+    let err = persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                provider_key_account_registrations: vec![
+                    platform_entry(0x44, vec![first]),
+                    platform_entry(0x44, vec![second]),
+                ],
+                ..Default::default()
+            },
+        )
+        .expect_err("one index carrying two different keys must be rejected");
+    assert!(
+        format!("{err:?}").contains("ProviderNodeKeyConflict"),
+        "expected ProviderNodeKeyConflict, got {err:?}"
     );
 
     let conn = persister.lock_conn_for_test();
-    match result {
-        Err(e) => {
-            // If the implementation DOES arbitrate this, it must be a typed,
-            // documented rejection — not a panic or a generic error.
-            panic!(
-                "if same-index/different-value node keys are meant to be \
-                 rejected, that contract isn't visible from the account-level \
-                 conflict check alone: got Err({e:?}) instead of a silent \
-                 upsert. Update this test's expectation once the intended \
-                 contract is confirmed."
-            );
-        }
-        Ok(()) => {
-            let provider = accounts::load_state(&conn, &w)
-                .expect("load_state")
-                .provider;
-            let stored = provider[0]
-                .derived_platform_node_keys
-                .iter()
-                .find(|k| k.index == 7)
-                .expect("index 7 must be present");
-            eprintln!(
-                "MARVIN FINDING: same-index node-key collision resolved silently \
-                 to {stored:?} (last-write-wins) with no error, no diagnostic, \
-                 no way for the caller to know a collision happened at all."
-            );
-        }
-    }
+    assert_eq!(
+        node_key_row_count(&conn, &w),
+        0,
+        "the contradictory flush must write neither key"
+    );
+}
+
+/// SEC-007, across flushes — the same contradiction, but the loser arrives in a
+/// LATER `store()` against an already-persisted row. The in-batch check cannot
+/// see this one: it is caught against what the store already holds, so a stale
+/// or corrupted re-registration cannot overwrite a good key.
+#[test]
+fn sec_007_conflicting_node_key_against_persisted_row_is_rejected() {
+    let (persister, _tmp, _path) = fresh_persister();
+    let w: WalletId = wid(0xF5);
+    ensure_wallet_meta(&persister, &w);
+
+    store_platform_entry(&persister, w, 0x45, vec![node_key(3)]);
+
+    let mut tampered = node_key(3);
+    tampered.public_key = [0xAAu8; 32];
+    let err = persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                provider_key_account_registrations: vec![platform_entry(0x45, vec![tampered])],
+                ..Default::default()
+            },
+        )
+        .expect_err("a different key at an already-stored index must be rejected");
+    assert!(
+        format!("{err:?}").contains("ProviderNodeKeyConflict"),
+        "expected ProviderNodeKeyConflict, got {err:?}"
+    );
+
+    let conn = persister.lock_conn_for_test();
+    let provider = accounts::load_state(&conn, &w)
+        .expect("load_state")
+        .provider;
+    assert_eq!(
+        provider[0].derived_platform_node_keys,
+        vec![node_key(3)],
+        "the originally-derived key must survive untouched"
+    );
 }
