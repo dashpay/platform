@@ -215,6 +215,27 @@ internal object WalletManagerNative {
     external fun platformWalletGetCore(walletHandle: Long): Long
 
     /**
+     * `core_wallet_build_signed_payment` — build + sign a standard L1 payment
+     * funded from the UNION of the wallet's signable funds accounts (watch-only
+     * DashPay external accounts excluded), WITHOUT broadcasting.
+     *
+     * [coreHandle] is a core-wallet handle from [platformWalletGetCore].
+     * [outputsBlob] encodes the recipients big-endian as `u32 count` then per
+     * row `u32 addrLen, addr utf8, u64 amount`. [feePerKb] is duffs/kB (0 =
+     * default). [coreSignerHandle] is the manager's `MnemonicResolverHandle`.
+     *
+     * Returns a `byte[]` packed big-endian as `u64 fee, u64 change,` then the
+     * consensus-serialized signed transaction bytes (0-length / null after
+     * throwing). Does NOT broadcast and does NOT persist a debit.
+     */
+    external fun coreWalletBuildSignedPayment(
+        coreHandle: Long,
+        outputsBlob: ByteArray,
+        feePerKb: Long,
+        coreSignerHandle: Long,
+    ): ByteArray
+
+    /**
      * `core_wallet_broadcast_transaction` — broadcast a transaction built by
      * [coreTxBuilderBuildSigned]. [accountType]/[accountIndex] identify the
      * funding account so a definitive rejection releases its UTXO
