@@ -97,8 +97,13 @@ on_persist_invitations_fn: Option<unsafe extern "C" fn(
   Swift values before returning** (Rust frees the buffers on return), build
   `[InvitationEntrySnapshot]` + `[Data]` removals, call `handler.persistInvitations(...)`.
   **Consume the cbindgen-regenerated `InvitationEntryFFI`** from the header — never a hand-written
-  Swift mirror. Mirror the template's error discipline: wrap in `try?`, **always return 0** (see
-  §4 T3 — the return is round-global; a failed invitation write must NOT abort the whole round).
+  Swift mirror. **Signal persistence failure, do not swallow it:** `persistInvitations` returns a
+  success `Bool` and the shim returns `1` when any upsert/removal was skipped (fetch error), `0`
+  otherwise. Because SwiftData is the sole UI source (no Rust→Swift rehydrate), a silently dropped
+  upsert would make a *funded* voucher vanish; the nonzero return makes `store()` return `Err`, and
+  `create_invitation` (which persists the record before its own fallible export/encode steps)
+  surfaces that as a hard failure instead of reporting success. The invitation round is
+  invitation-only, so this rollback only ever discards an invitation round.
 - **Outpoint key (T1 — the critical seam):** compute `outPointHex =
   PersistentAssetLock.encodeOutPoint(rawBytes:)` **once** in the shim for each upsert snapshot,
   and store that exact display string (`<reversed-txid-hex>:<vout>`) as
@@ -272,7 +277,7 @@ right helper and returns the resulting `Identity`. No new *core* mechanic.
 
 | Risk | Mitigation |
 |---|---|
-| **Consume race** — invitee claims the same voucher at the same moment | No L1 double-spend (no shared UTXO). Platform records consumed outpoints and deterministically rejects the second consume with `IdentityAssetLockTransactionOutPointAlreadyConsumed` (`verify_is_not_spent/v0/mod.rs:37-55`). Loser wastes a small ST fee, no funds lost. On that error the Swift side sets the row to `Claimed` (someone claimed it) and shows a benign "already claimed by your friend" message. |
+| **Consume race** — invitee claims the same voucher at the same moment | No L1 double-spend (no shared UTXO). Platform records consumed outpoints and deterministically rejects the second consume with `IdentityAssetLockTransactionOutPointAlreadyConsumed` (`verify_is_not_spent/v0/mod.rs:37-55`). Loser wastes a small ST fee, no funds lost. On that error the Swift side disambiguates via the persisted `reclaimInFlight` marker (set only immediately before our own on-chain consume): marker set ⇒ our own crash-interrupted reclaim (row → `Reclaimed`); marker unset ⇒ the invitee claimed first (row → `Claimed`), shown with a neutral "already claimed" message (the claimant is intentionally not named). The decision is the pure `classifyReclaimFailure(error:hadPriorReclaimInFlight:)` seam, unit-tested for all three outcomes. |
 | **User expects L1 DASH back** | UI copy says "recover as identity credits"; the reclaim sheet states the value returns as credits, not spendable DASH. |
 | **Reclaim after app restart** (the common case — inviter reclaims days later) | Works: `FromExistingAssetLock` resumes the tracked lock; if the in-memory IS proof was lost on restart it falls back to SPV re-derivation (slower, still correct). **Verify** the SQLite `asset_locks` load re-attaches the proof (spike open-item #1) — perf only, not correctness. |
 | **No expiry gate** | Reclaim is allowed anytime (protocol has no timelock; expiry is advisory). Product choice whether to nudge "wait until expiry"; default: allow immediately, since an invitee can claim past expiry anyway. |

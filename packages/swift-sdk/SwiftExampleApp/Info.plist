@@ -31,8 +31,18 @@
 	<string>The camera is used to scan Dash address QR codes.</string>
 
 	<!-- Custom URL scheme for DashPay invitation deep links
-	     (dashpay://invite?data=…). Opening such a link routes to the DashPay
-	     tab and pre-fills the claim sheet. -->
+	     (dashpay://invite?du=…&assetlocktx=…&pk=…&islock=…). Opening such a link
+	     routes to the DashPay tab and pre-fills the claim sheet.
+
+	     KNOWN LIMITATION (example-app posture): an invitation link carries a
+	     one-time bearer voucher key, and iOS does NOT grant a custom URL scheme
+	     exclusive ownership — a co-installed app registering "dashpay" could
+	     intercept the link and steal the voucher (blast radius capped by the
+	     Rust-side MAX_INVITATION_DUFFS = 0.05 DASH). The safer transport is the
+	     HTTPS universal link (invitations.dashpay.io/applink, already parsed by
+	     the codec), which requires an AASA-verified domain. Adopting it is tracked
+	     for the infra team in dashpay/platform#4096; until then this example app
+	     uses the custom scheme and integrators should prefer the universal link. -->
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
