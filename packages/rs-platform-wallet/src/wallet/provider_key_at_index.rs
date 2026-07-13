@@ -183,10 +183,20 @@ impl ProviderKeyKind {
 pub struct ProviderDerivedKey {
     /// The key index within the provider pool (`#0..`).
     pub index: u32,
-    /// Raw curve public key bytes: 48 for a BLS operator key (this is
-    /// exactly the bytes a ProRegTx `operator_public_key` field
-    /// carries), 32 for an Ed25519 platform-node key.
+    /// Raw curve public key bytes in the MODERN (IETF) serialization: 48
+    /// for a BLS operator key (this is exactly the bytes a ProRegTx
+    /// `operator_public_key` field carries), 32 for an Ed25519
+    /// platform-node key.
     pub public_key_bytes: Vec<u8>,
+    /// The SAME BLS G1 point serialized in the Dash **legacy** scheme (48
+    /// bytes; same point, legacy flag bits in `byte[0]`) — the form
+    /// dashbls/DashSync use across the BLS HD chain. `Some` only for
+    /// operator (BLS) keys; `None` for Ed25519 platform-node keys, which
+    /// have no legacy variant. Produced Rust-side via
+    /// `ExtendedBLSPubKey::to_bytes_legacy` / `ExtendedBLSPrivKey::
+    /// public_key_bytes_legacy` (key-wallet #879) — never transformed in
+    /// Swift.
+    pub legacy_public_key_bytes: Option<Vec<u8>>,
     /// The 20-byte platform node id — `hash160` of the Ed25519 public
     /// key, the value a ProRegTx `platform_node_id` field carries and
     /// the [`Payload::PubkeyHash`](dashcore::address::Payload) the pool
@@ -327,6 +337,10 @@ impl PlatformWallet {
                             ))
                         })?;
                         let public_key_bytes = derived.public_key_bytes().to_vec();
+                        // Same G1 point, Dash legacy serialization (key-wallet
+                        // #879) — for the "BLS Public Key (Legacy)" display row.
+                        let legacy_public_key_bytes =
+                            Some(derived.public_key_bytes_legacy().to_vec());
 
                         // The private-path public key must equal the
                         // watch-only `ckd_pub` derivation the pool /
@@ -348,6 +362,7 @@ impl PlatformWallet {
                         Ok(ProviderDerivedKey {
                             index,
                             public_key_bytes,
+                            legacy_public_key_bytes,
                             node_id: None,
                             private_key,
                         })
@@ -355,20 +370,20 @@ impl PlatformWallet {
                     // Public-only: non-hardened `ckd_pub` off the account
                     // xpub — no seed / resolver needed for BLS.
                     None => {
-                        let public_key_bytes = account
-                            .bls_public_key
-                            .derive_pub(child)
-                            .map_err(|e| {
+                        let derived_pub =
+                            account.bls_public_key.derive_pub(child).map_err(|e| {
                                 PlatformWalletError::KeyDerivation(format!(
-                                    "failed to derive BLS operator public key at index \
-                                     {index}: {e}"
-                                ))
-                            })?
-                            .to_bytes()
-                            .to_vec();
+                                "failed to derive BLS operator public key at index {index}: {e}"
+                            ))
+                            })?;
+                        // Serialize the same G1 point both ways: modern/IETF
+                        // and Dash legacy (key-wallet #879).
+                        let public_key_bytes = derived_pub.to_bytes().to_vec();
+                        let legacy_public_key_bytes = Some(derived_pub.to_bytes_legacy().to_vec());
                         Ok(ProviderDerivedKey {
                             index,
                             public_key_bytes,
+                            legacy_public_key_bytes,
                             node_id: None,
                             private_key: None,
                         })
@@ -448,6 +463,8 @@ impl PlatformWallet {
                 Ok(ProviderDerivedKey {
                     index,
                     public_key_bytes,
+                    // Ed25519 platform-node keys have no BLS legacy variant.
+                    legacy_public_key_bytes: None,
                     node_id: Some(node_id),
                     private_key,
                 })

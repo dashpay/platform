@@ -63,10 +63,16 @@ pub const PROVIDER_KEY_KIND_PLATFORM_NODE: u8 = 11;
 pub struct ProviderKeyAtIndexFFI {
     /// The key index that was derived (`#0..`).
     pub index: u32,
-    /// Null-terminated lowercase hex of the raw curve public key — 96
-    /// hex chars for a BLS-48 operator key, 64 for an Ed25519-32
-    /// platform-node key. Null on the pre-cleared / freed state.
+    /// Null-terminated lowercase hex of the raw curve public key in the
+    /// MODERN (IETF) serialization — 96 hex chars for a BLS-48 operator
+    /// key, 64 for an Ed25519-32 platform-node key. Null on the
+    /// pre-cleared / freed state.
     pub public_key_hex: *mut c_char,
+    /// Null-terminated lowercase hex of the SAME BLS G1 point in the Dash
+    /// LEGACY serialization (96 chars). Non-null only for operator (BLS)
+    /// keys; null for Ed25519 platform-node keys (no legacy variant) and
+    /// on the empty state.
+    pub legacy_public_key_hex: *mut c_char,
     /// Null-terminated lowercase hex of the 20-byte platform node id
     /// (40 chars) — `hash160` of the Ed25519 public key. Null for
     /// operator keys (no node id) and on the empty state.
@@ -85,6 +91,7 @@ impl ProviderKeyAtIndexFFI {
         Self {
             index: 0,
             public_key_hex: std::ptr::null_mut(),
+            legacy_public_key_hex: std::ptr::null_mut(),
             node_id_hex: std::ptr::null_mut(),
             private_key_hex: std::ptr::null_mut(),
         }
@@ -228,11 +235,18 @@ pub unsafe extern "C" fn platform_wallet_provider_key_at_index(
     let ProviderDerivedKey {
         index,
         public_key_bytes,
+        legacy_public_key_bytes,
         node_id,
         private_key,
     } = derived;
 
     let public_key_hex = unwrap_result_or_return!(CString::new(hex::encode(public_key_bytes)));
+    // Legacy BLS form (operator keys only; `None` for Ed25519). Public
+    // material, so a plain `CString::new` is fine.
+    let legacy_public_key_hex = match legacy_public_key_bytes {
+        Some(bytes) => unwrap_result_or_return!(CString::new(hex::encode(bytes))).into_raw(),
+        None => std::ptr::null_mut(),
+    };
     let node_id_hex = match node_id {
         Some(id) => unwrap_result_or_return!(CString::new(hex::encode(id))).into_raw(),
         None => std::ptr::null_mut(),
@@ -252,6 +266,7 @@ pub unsafe extern "C" fn platform_wallet_provider_key_at_index(
         *out = ProviderKeyAtIndexFFI {
             index,
             public_key_hex: public_key_hex.into_raw(),
+            legacy_public_key_hex,
             node_id_hex,
             private_key_hex,
         };
@@ -280,6 +295,10 @@ pub unsafe extern "C" fn platform_wallet_provider_key_at_index_free(
     if !out.public_key_hex.is_null() {
         let _ = unsafe { CString::from_raw(out.public_key_hex) };
         out.public_key_hex = std::ptr::null_mut();
+    }
+    if !out.legacy_public_key_hex.is_null() {
+        let _ = unsafe { CString::from_raw(out.legacy_public_key_hex) };
+        out.legacy_public_key_hex = std::ptr::null_mut();
     }
     if !out.node_id_hex.is_null() {
         let _ = unsafe { CString::from_raw(out.node_id_hex) };

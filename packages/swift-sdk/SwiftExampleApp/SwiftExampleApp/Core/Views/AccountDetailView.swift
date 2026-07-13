@@ -816,6 +816,8 @@ struct AccountDetailView: View {
                 ManagedPlatformWallet.ProviderDerivedKey(
                     index: key.index,
                     publicKeyHex: hexString(key.publicKey),
+                    // Platform-node keys are Ed25519 — no legacy BLS form.
+                    legacyPublicKeyHex: nil,
                     nodeIdHex: hexString(key.nodeId),
                     privateKeyHex: nil
                 )
@@ -843,6 +845,18 @@ struct AccountDetailView: View {
                 value: key.publicKeyHex,
                 copyKey: "\(key.index)-pub"
             )
+
+            // The same BLS G1 point in Dash's legacy serialization, shown
+            // only for operator (BLS) keys. Ed25519 platform-node keys have
+            // no legacy form, so `legacyPublicKeyHex` is `nil` there and the
+            // row is skipped. Rust emits both encodings — never derived here.
+            if let legacy = key.legacyPublicKeyHex {
+                derivedValueRow(
+                    label: "BLS Public Key (Legacy)",
+                    value: legacy,
+                    copyKey: "\(key.index)-pub-legacy"
+                )
+            }
 
             if let nodeId = key.nodeIdHex {
                 derivedValueRow(
