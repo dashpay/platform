@@ -52,8 +52,9 @@
 //!   [`derive_ecdsa_identity_auth_keypair_from_master`] — the same
 //!   derive the rescan-via-resolver and the registration paths use.
 //!   The mnemonic / seed / master scalar live in `Zeroizing` buffers
-//!   (the master's `private_key` is explicitly `non_secure_erase`d —
-//!   `ExtendedPrivKey` has no `Drop`) and are scrubbed before this
+//!   (the master's `private_key` is explicitly `non_secure_erase`d as
+//!   belt-and-braces — the pinned key-wallet rev zeroizes
+//!   `ExtendedPrivKey` on `Drop`) and are scrubbed before this
 //!   function returns. This is the path the iOS app takes. If the
 //!   resolver is null for such a wallet, the call returns an error
 //!   hinting that a mnemonic resolver handle is required for this
@@ -609,7 +610,7 @@ unsafe fn preview_identity_registration_keys_inner(
                 // free to mutate it.
             };
 
-            // TODO(upstream): `ExtendedPrivKey` has no `Drop` / `Zeroize`;
+            // Belt-and-braces (the pinned key-wallet rev zeroizes on Drop);
             // wipe the resolved master's inner secp256k1 scalar
             // explicitly. Same hygiene as the discovery resolver path.
             // No-op on the resident path (no master was resolved).

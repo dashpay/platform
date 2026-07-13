@@ -95,7 +95,7 @@ class DataContracts internal constructor(private val walletHandle: Long,
         description: String? = null,
         configJson: String? = null,
         signerHandle: Long,
-    ): ByteArray = withContext(Dispatchers.IO) {
+    ): ByteArray = gate.op {
         require(ownerIdentityId.size == 32) { "ownerIdentityId must be 32 bytes" }
         require(contractId.size == 32) { "contractId must be 32 bytes" }
         mapNativeErrors {

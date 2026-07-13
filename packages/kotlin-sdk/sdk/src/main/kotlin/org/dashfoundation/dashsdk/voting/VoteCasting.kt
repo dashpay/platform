@@ -1,5 +1,7 @@
 package org.dashfoundation.dashsdk.voting
 
+import org.dashfoundation.dashsdk.wallet.op
+
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.dashfoundation.dashsdk.errors.mapNativeErrors
@@ -53,7 +55,7 @@ class VoteCasting internal constructor() {
      *   3 Regtest).
      */
     suspend fun castVote(
-        sdkHandle: Long,
+        sdk: org.dashfoundation.dashsdk.Sdk,
         dataContractId: String,
         documentTypeName: String,
         indexName: String,
@@ -62,7 +64,7 @@ class VoteCasting internal constructor() {
         proTxHash: ByteArray,
         votingPrivateKey: ByteArray,
         networkOrd: Int,
-    ) = withContext(Dispatchers.IO) {
+    ) = sdk.queryGate.op {
         require(proTxHash.size == 32) { "proTxHash must be 32 bytes, got ${proTxHash.size}" }
         require(votingPrivateKey.size == 32) {
             "votingPrivateKey must be 32 bytes, got ${votingPrivateKey.size}"
@@ -70,7 +72,7 @@ class VoteCasting internal constructor() {
         val contender = (choice as? VoteChoice.TowardsIdentity)?.contenderIdentityId
         mapNativeErrors {
             TransactionsNative.castContestedResourceVote(
-                sdkHandle,
+                sdk.handle,
                 dataContractId,
                 documentTypeName,
                 indexName,

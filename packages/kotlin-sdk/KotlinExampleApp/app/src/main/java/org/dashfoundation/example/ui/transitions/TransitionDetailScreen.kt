@@ -243,7 +243,7 @@ fun TransitionDetailScreen(transitionKey: String, navController: NavHostControll
         scope.launch {
             try {
                 mgr.voteCasting.castVote(
-                    sdkHandle = currentSdk.handle,
+                    sdk = currentSdk,
                     dataContractId = contractBase58,
                     documentTypeName = textInputs["documentType"].orEmpty().trim(),
                     indexName = textInputs["indexName"].orEmpty().trim(),
