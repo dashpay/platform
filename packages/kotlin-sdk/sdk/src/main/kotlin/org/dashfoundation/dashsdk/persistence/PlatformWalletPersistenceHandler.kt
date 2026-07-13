@@ -3,6 +3,7 @@ package org.dashfoundation.dashsdk.persistence
 import android.util.Log
 import androidx.room.withTransaction
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.ExecutorCoroutineDispatcher
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -84,7 +85,9 @@ import java.util.concurrent.Executors
  *
  * @param database the Room database to persist into.
  * @param dispatcher single-thread dispatcher confining all callback work;
- *   defaults to a dedicated executor (override in tests).
+ *   `null` (the production default) creates a dedicated owned executor
+ *   that [close] shuts down. Tests inject their own dispatcher, which the
+ *   handler never closes.
  * @param privateKeyDeriver derives + persists the 32-byte private half of
  *   an identity key when the persist callback carries a derivation
  *   breadcrumb. `null` (the default) keeps every key watch-only — the
@@ -94,9 +97,7 @@ import java.util.concurrent.Executors
  */
 class PlatformWalletPersistenceHandler(
     private val database: DashDatabase,
-    private val dispatcher: CoroutineDispatcher =
-        Executors.newSingleThreadExecutor { r -> Thread(r, "dash-persistence") }
-            .asCoroutineDispatcher(),
+    dispatcher: CoroutineDispatcher? = null,
     private val privateKeyDeriver: PrivateKeyDeriver? = null,
     /**
      * Network the owning manager is locked to. Load callbacks that hydrate
@@ -108,7 +109,34 @@ class PlatformWalletPersistenceHandler(
      * Null = unscoped (unit tests exercising raw persistence only).
      */
     private val network: org.dashfoundation.dashsdk.Network? = null,
-) : NativePersistenceBridge() {
+) : NativePersistenceBridge(), AutoCloseable {
+
+    /**
+     * The single-thread executor created when no [dispatcher] is injected.
+     * Owned by this handler and released by [close] — its "dash-persistence"
+     * thread is non-daemon, so a manager retired on network switch would
+     * otherwise leak one live OS thread per switch, unbounded.
+     */
+    private val ownedDispatcher: ExecutorCoroutineDispatcher? =
+        if (dispatcher == null) {
+            Executors.newSingleThreadExecutor { r -> Thread(r, "dash-persistence") }
+                .asCoroutineDispatcher()
+        } else {
+            null
+        }
+
+    /** All callback work is confined to this single-thread dispatcher. */
+    private val dispatcher: CoroutineDispatcher = dispatcher ?: ownedDispatcher!!
+
+    /**
+     * Shut down the owned executor (no-op for an injected dispatcher).
+     * Callers must quiesce native callbacks first — the manager invokes
+     * this only after `nativeDestroy` has freed the callback contexts, so
+     * nothing can dispatch onto the executor afterwards.
+     */
+    override fun close() {
+        ownedDispatcher?.close()
+    }
 
     /**
      * One in-flight store() round. Holds the ordered list of Room

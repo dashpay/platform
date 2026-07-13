@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import org.dashfoundation.dashsdk.Network
 import org.dashfoundation.dashsdk.Sdk
@@ -1509,16 +1510,18 @@ class PlatformWalletManager(
         // Drain in the background — it re-fetches and decrypts over the
         // network, so it must not block the caller. The drain gets its OWN
         // resolver + signer, owned by this coroutine (the Swift
-        // Task.detached + withExtendedLifetime shape): the manager's shared
-        // children are freed by close() without waiting for an in-flight
-        // blocking JNI call, so borrowing them would be a use-after-free
-        // when a manager swap races a slow drain. The raw wallet handle is
-        // captured, not the wrapper: a wallet destroyed before the drain
-        // runs just misses Rust-side (NotFound) — wallet handles are
-        // storage-keyed, unlike the resolver/signer boxes. An auth-gated
-        // signing failure inside the drain (Android-only: identity keys
-        // are biometric-gated here, unlike iOS) leaves the entry queued —
-        // the sweep self-heals — and surfaces like any other drain error.
+        // Task.detached + withExtendedLifetime shape), so a manager swap
+        // never races their teardown. Launched on the manager scope so
+        // close() can JOIN it before nativeDestroy — the drain's store()
+        // path reaches the manager-owned PersistenceCallbacks context, so
+        // it must have returned before that context is freed. The raw
+        // wallet handle is captured, not the wrapper: a wallet destroyed
+        // before the drain runs just misses Rust-side (NotFound) — wallet
+        // handles are storage-keyed, unlike the resolver/signer boxes. An
+        // auth-gated signing failure inside the drain (Android-only:
+        // identity keys are biometric-gated here, unlike iOS) leaves the
+        // entry queued — the sweep self-heals — and surfaces like any
+        // other drain error.
         val walletHandle = managed.handle
         scope.launch(Dispatchers.IO) {
             val drainResolver = MnemonicResolverAndPersister(walletStorage)
@@ -1620,6 +1623,16 @@ class PlatformWalletManager(
         progressPollJob?.cancel()
         dashPayPollJob?.cancel()
         scope.cancel()
+        // Cancellation is cooperative: a coroutine already inside a
+        // synchronous JNI call — the DashPay contact-crypto drain, or a
+        // poll mid-call — keeps running until that call returns, and the
+        // drain can still reach persister.store(), whose
+        // PersistenceCallbacks context nativeDestroy() below frees. Join
+        // the scope so every in-flight native call has returned before the
+        // contexts it can reach are torn down (polls exit at their next
+        // suspension; the drain when its JNI call returns, bounded by the
+        // FFI's own network timeouts).
+        runBlocking { scope.coroutineContext[Job]?.join() }
 
         // Best-effort stop; ignore failures (destroy shuts everything down).
         runCatching { DashpayNative.dashPaySyncStop(managerHandle) }
@@ -1634,6 +1647,13 @@ class PlatformWalletManager(
         // Now safe to release the resolver / signer bridges.
         runCatching { mnemonicResolver.close() }
         runCatching { signer.close() }
+
+        // The persistence handler's owned single-thread executor is only
+        // safe to shut down once the native manager can no longer fire
+        // callbacks into it (a network switch replaces the manager; without
+        // this, every switch leaks a live non-daemon "dash-persistence"
+        // thread).
+        runCatching { persistenceHandler.close() }
 
         // Drop wallet wrappers we handed out; each still self-destructs via
         // its own Cleaner, but clearing avoids surfacing stale handles.

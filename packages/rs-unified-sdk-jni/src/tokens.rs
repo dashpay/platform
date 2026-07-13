@@ -1348,8 +1348,11 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TokensNative_establis
 /// `amountDuffs` is in duffs (satoshi-equivalent), `memo` may be null.
 /// `coreSignerHandle` is the manager's `MnemonicResolverHandle` — the
 /// funding inputs are signed through it (the wallet seed is never made
-/// resident; mirror of the Swift `sendPayment` wrapper). Returns the
-/// 32-byte transaction id as a `byte[]`, or null on error.
+/// resident; mirror of the Swift `sendPayment` wrapper, which returns
+/// `(txid, feeDuffs)`). Returns a 40-byte packed `byte[]` —
+/// `txid[32] || fee_duffs(u64 LE)` — or null on error. The fee is the
+/// exact network fee (Σin − Σout) reported by the builder since
+/// upstream #4095.
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
 pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TokensNative_sendDashPayPayment(
@@ -1379,10 +1382,6 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TokensNative_sendDash
             return ptr::null_mut();
         };
         let mut txid = [0u8; 32];
-        // Exact network fee (Σin − Σout) reported by the builder since
-        // upstream #4095. Captured to satisfy the FFI contract; not yet
-        // surfaced to Kotlin (the send flow reads the fee from the
-        // persisted payment entry, as iOS does).
         let mut fee_duffs: u64 = 0;
         let result = unsafe {
             platform_wallet_ffi::platform_wallet_send_dashpay_payment(
@@ -1399,7 +1398,12 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TokensNative_sendDash
         if take_pwffi_error(env, result) {
             return ptr::null_mut();
         }
-        env.byte_array_from_slice(&txid)
+        // Pack txid[32] || fee(u64 LE) — the Kotlin wrapper splits it into
+        // (txid, feeDuffs), mirroring Swift's (txid, feeDuffs) tuple.
+        let mut packed = [0u8; 40];
+        packed[..32].copy_from_slice(&txid);
+        packed[32..].copy_from_slice(&fee_duffs.to_le_bytes());
+        env.byte_array_from_slice(&packed)
             .map(|a| a.into_raw())
             .unwrap_or(ptr::null_mut())
     })

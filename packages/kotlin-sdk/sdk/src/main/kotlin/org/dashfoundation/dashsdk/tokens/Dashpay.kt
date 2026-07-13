@@ -116,7 +116,8 @@ class Dashpay internal constructor(private val walletHandle: Long) {
      * signing the funding inputs through [coreSignerHandle] (the manager's
      * `MnemonicResolverHandle` — the seed never becomes resident).
      * [amountDuffs] is in duffs (not DASH). Returns the 32-byte transaction
-     * id, or null.
+     * id plus the exact network fee (Σin − Σout, sub-dust change folded in)
+     * — the Swift `sendPayment` `(txid, feeDuffs)` shape — or null.
      */
     suspend fun sendPayment(
         fromIdentityId: ByteArray,
@@ -124,14 +125,30 @@ class Dashpay internal constructor(private val walletHandle: Long) {
         amountDuffs: Long,
         coreSignerHandle: Long,
         memo: String? = null,
-    ): ByteArray? = withContext(Dispatchers.IO) {
+    ): SendPaymentResult? = withContext(Dispatchers.IO) {
         require(amountDuffs > 0) { "amountDuffs must be positive, got $amountDuffs" }
-        mapNativeErrors {
+        val packed = mapNativeErrors {
             TokensNative.sendDashPayPayment(
                 walletHandle, fromIdentityId, toContactIdentityId, amountDuffs, memo,
                 coreSignerHandle,
             )
-        }
+        } ?: return@withContext null
+        check(packed.size == 40) { "expected 40-byte txid||fee, got ${packed.size}" }
+        var fee = 0L
+        for (i in 0 until 8) fee = fee or ((packed[32 + i].toLong() and 0xFF) shl (8 * i))
+        SendPaymentResult(txid = packed.copyOfRange(0, 32), feeDuffs = fee)
+    }
+
+    /**
+     * A broadcast DashPay payment: the transaction id and the exact network
+     * fee the transaction pays (mirror of Swift's `(txid, feeDuffs)`).
+     */
+    data class SendPaymentResult(val txid: ByteArray, val feeDuffs: Long) {
+        override fun equals(other: Any?): Boolean =
+            other is SendPaymentResult && txid.contentEquals(other.txid) &&
+                feeDuffs == other.feeDuffs
+
+        override fun hashCode(): Int = 31 * txid.contentHashCode() + feeDuffs.hashCode()
     }
 
     /** Sync DashPay profiles for every managed identity. Returns the synced count. */
