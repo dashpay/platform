@@ -51,8 +51,8 @@ use crate::wallet_registration_persistence::AccountAddressPoolFFI;
 use crate::wallet_restore_types::{
     AccountSpecFFI, AccountTypeTagFFI, ContactProfileRestoreEntryFFI, IdentityKeyRestoreFFI,
     IdentityRestoreEntryFFI, LoadWalletListFreeFn, PaymentRestoreEntryFFI,
-    ProviderPlatformNodeKeyFFI, StandardAccountTypeTagFFI, UnresolvedAssetLockTxRecordFFI,
-    UtxoRestoreEntryFFI, WalletRestoreEntryFFI,
+    ProviderPlatformNodeKeyFFI, ProviderSpecialTxRestoreEntryFFI, StandardAccountTypeTagFFI,
+    UnresolvedAssetLockTxRecordFFI, UtxoRestoreEntryFFI, WalletRestoreEntryFFI,
 };
 use dpp::address_funds::PlatformAddress;
 use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
@@ -3557,6 +3557,30 @@ fn build_wallet_start_state(
         }
     }
 
+    // Re-stage provider special transactions onto the provider-key
+    // accounts so #876 retention keeps them and the masternode list
+    // survives a restart (mirrors the asset-lock tx-record restore above).
+    let provider_special_recs: &[ProviderSpecialTxRestoreEntryFFI] =
+        if entry.provider_special_txs.is_null() || entry.provider_special_txs_count == 0 {
+            &[]
+        } else {
+            unsafe {
+                slice::from_raw_parts(entry.provider_special_txs, entry.provider_special_txs_count)
+            }
+        };
+    if !provider_special_recs.is_empty() {
+        let stats = restore_provider_special_txs(&mut wallet_info, provider_special_recs)?;
+        if stats.restored > 0 || stats.dropped() > 0 {
+            tracing::info!(
+                wallet_id = %hex::encode(entry.wallet_id),
+                restored = stats.restored,
+                dropped_decode = stats.dropped_decode,
+                dropped_no_account = stats.dropped_no_account,
+                "load: provider special-tx restore complete"
+            );
+        }
+    }
+
     // TODO: this per-account reconstruction mirrors the SQLite backend's
     // `platform_addrs::build_per_account`. Deferred dedup — once a shared
     // helper crate hosts the reconstruction, both backends should call it
@@ -4680,6 +4704,121 @@ fn restore_unresolved_asset_lock_tx_records(
         );
         account.transactions_mut().insert(record.txid, record);
         stats.restored += 1;
+    }
+    Ok(stats)
+}
+
+/// Re-stage persisted provider special transactions onto the wallet's
+/// provider-key accounts at load, so rust-dashcore #876 retention keeps
+/// them resident and the masternode-list aggregation survives a restart.
+///
+/// Mirrors [`restore_unresolved_asset_lock_tx_records`] (decode bytes →
+/// rebuild `TransactionContext` from scalars → build a `TransactionRecord`
+/// → raw `transactions_mut().insert`) but routes by provider-key account
+/// TYPE rather than a BIP44 index: provider involvement is payload-based,
+/// so the record is inserted onto EVERY present provider-key account. That
+/// is retention-safe (#876 retention is evaluated at drop time by
+/// account-is-provider-keys + payload-is-provider, both true on any
+/// provider-key account) and the masternode aggregation dedups by txid, so
+/// over-placement can't inflate counts — this avoids trusting a persisted
+/// routing tag or re-running the `check_transaction` matcher at load.
+fn restore_provider_special_txs(
+    wallet_info: &mut ManagedWalletInfo,
+    records: &[ProviderSpecialTxRestoreEntryFFI],
+) -> Result<UnresolvedRestoreStats, PersistenceError> {
+    use dashcore::hashes::Hash;
+    use dashcore::transaction::TransactionPayload;
+    use key_wallet::account::AccountType;
+    use key_wallet::managed_account::transaction_record::{
+        TransactionDirection, TransactionRecord,
+    };
+    use key_wallet::transaction_checking::{BlockInfo, TransactionContext, TransactionType};
+
+    let mut stats = UnresolvedRestoreStats::default();
+    for rec in records {
+        let tx_bytes = unsafe { slice_from_raw(rec.tx_bytes, rec.tx_bytes_len) };
+        let tx: dashcore::Transaction = match dashcore::consensus::encode::deserialize(tx_bytes) {
+            Ok(t) => t,
+            Err(e) => {
+                stats.dropped_decode += 1;
+                tracing::warn!(error = %e, "load: skipping provider special tx with undecodable bytes");
+                continue;
+            }
+        };
+
+        // Tag the rebuilt record with the payload's provider type. A
+        // non-provider payload here means the row was mis-staged; skip it.
+        let tx_type = match &tx.special_transaction_payload {
+            Some(TransactionPayload::ProviderRegistrationPayloadType(_)) => {
+                TransactionType::ProviderRegistration
+            }
+            Some(TransactionPayload::ProviderUpdateServicePayloadType(_)) => {
+                TransactionType::ProviderUpdateService
+            }
+            Some(TransactionPayload::ProviderUpdateRegistrarPayloadType(_)) => {
+                TransactionType::ProviderUpdateRegistrar
+            }
+            Some(TransactionPayload::ProviderUpdateRevocationPayloadType(_)) => {
+                TransactionType::ProviderUpdateRevocation
+            }
+            _ => {
+                stats.dropped_no_account += 1;
+                continue;
+            }
+        };
+
+        let context = match rec.context_raw {
+            ctx @ (2 | 3) => {
+                let block_hash = dashcore::BlockHash::from_slice(&rec.block_hash).map_err(|e| {
+                    PersistenceError::backend(format!(
+                        "load: malformed block_hash on provider special tx record: {}",
+                        e
+                    ))
+                })?;
+                let info = BlockInfo::new(rec.block_height, block_hash, rec.block_timestamp as u32);
+                if ctx == 2 {
+                    TransactionContext::InBlock(info)
+                } else {
+                    TransactionContext::InChainLockedBlock(info)
+                }
+            }
+            _ => TransactionContext::Mempool,
+        };
+
+        let mut inserted = false;
+        for mut account in wallet_info.accounts.all_accounts_mut() {
+            let account_type = account.managed_account_type().to_account_type();
+            let is_provider = matches!(
+                account_type,
+                AccountType::ProviderVotingKeys
+                    | AccountType::ProviderOwnerKeys
+                    | AccountType::ProviderOperatorKeys
+                    | AccountType::ProviderPlatformKeys
+            );
+            if !is_provider {
+                continue;
+            }
+            let record = TransactionRecord::new(
+                tx.clone(),
+                account_type,
+                context.clone(),
+                tx_type,
+                TransactionDirection::Internal,
+                Vec::new(),
+                Vec::new(),
+                0,
+            );
+            account.transactions_mut().insert(record.txid, record);
+            inserted = true;
+        }
+
+        if inserted {
+            stats.restored += 1;
+        } else {
+            // No provider-key accounts on this wallet (shouldn't happen if
+            // provider txs were staged) — count as dropped for diagnostics.
+            stats.dropped_no_account += 1;
+        }
     }
     Ok(stats)
 }

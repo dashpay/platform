@@ -783,6 +783,70 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         iter.take(take).map(tx_record_snapshot).collect()
     }
 
+    /// Provider special transactions (ProRegTx / ProUpServTx / ProUpRegTx
+    /// / ProUpRevTx) across all of a wallet's accounts, deduplicated by
+    /// txid, each paired with its confirmation height (0 when
+    /// unconfirmed). The source for masternode aggregation.
+    ///
+    /// rust-dashcore #876 retains provider-payload records on the
+    /// provider-key accounts (owner / voting / operator / platform) past
+    /// chainlock finalization even with `keep-finalized-transactions` off
+    /// (the mobile default), so — unlike `account_transactions_blocking`
+    /// above — this is populated in every feature configuration. Deduped
+    /// by txid because one ProRegTx matches both the owner- and
+    /// voting-key accounts, so its record is retained on each.
+    ///
+    /// Caveat: records evicted *before* the #876 bump aren't resident
+    /// until a filter rescan re-matches them, so on an existing install
+    /// the set fills in after a Rescan.
+    ///
+    /// Returns `None` only when the wallet id isn't managed (an empty vec
+    /// means "no provider txs yet"). The wallet's `Network` rides along so
+    /// the FFI can encode owner / voting key hashes to base58 addresses,
+    /// plus a DML snapshot (`proTxHash -> is_valid`, `None` when the list
+    /// isn't available yet) so the FFI can derive Active / Inactive /
+    /// Retired / Unknown status.
+    pub fn provider_masternode_txs_blocking(
+        &self,
+        wallet_id: &WalletId,
+    ) -> Option<(
+        dashcore::Network,
+        Vec<(u32, dashcore::Transaction)>,
+        Option<std::collections::HashMap<[u8; 32], bool>>,
+    )> {
+        // Scope the wallet-manager read lock so it's released before we
+        // acquire the SPV client / engine locks for the DML snapshot — the
+        // two never nest.
+        let (network, txs) = {
+            let wm = self.wallet_manager.blocking_read();
+            let info = wm.get_wallet_info(wallet_id)?;
+            let network = info.core_wallet.network();
+
+            let mut by_txid: std::collections::BTreeMap<
+                dashcore::Txid,
+                (u32, dashcore::Transaction),
+            > = std::collections::BTreeMap::new();
+
+            for account in info.core_wallet.accounts.all_accounts().iter() {
+                for record in account.transactions().values() {
+                    if record.transaction.special_transaction_payload.is_none() {
+                        continue;
+                    }
+                    let height = record.context.block_info().map(|b| b.height()).unwrap_or(0);
+                    by_txid
+                        .entry(record.txid)
+                        .or_insert_with(|| (height, record.transaction.clone()));
+                }
+            }
+
+            (network, by_txid.into_values().collect::<Vec<_>>())
+        };
+
+        let dml = self.spv().masternode_validity_snapshot_blocking();
+
+        Some((network, txs, dml))
+    }
+
     // -----------------------------------------------------------------
     // Phase 7 — Identity manager structure
     // -----------------------------------------------------------------

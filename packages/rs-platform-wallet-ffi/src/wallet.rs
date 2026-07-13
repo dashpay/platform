@@ -195,6 +195,104 @@ pub unsafe extern "C" fn platform_wallet_manager_free_account_balances(
     }
 }
 
+/// Aggregate the wallet's masternodes from its retained provider special
+/// transactions (ProRegTx / ProUpServTx / ProUpRegTx / ProUpRevTx),
+/// grouped by proTxHash. Returns an array of
+/// [`MasternodeEntryFFI`](crate::core_wallet_types::MasternodeEntryFFI),
+/// one per masternode, sorted by registration order. The caller owns the
+/// array and must free it via
+/// [`platform_wallet_manager_free_masternodes`].
+///
+/// The record source (rust-dashcore #876 provider-payload retention) is
+/// populated in every feature configuration; see
+/// `PlatformWalletManager::provider_masternode_txs_blocking`. `out_*` are
+/// set to null / 0 when the wallet has no masternodes or isn't found.
+///
+/// Reads the wallet manager lock via `blocking_read` — must not be called
+/// from within a tokio async context.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_manager_list_masternodes(
+    manager_handle: Handle,
+    wallet_id: *const u8,
+    out_entries: *mut *const crate::core_wallet_types::MasternodeEntryFFI,
+    out_count: *mut usize,
+) -> PlatformWalletFFIResult {
+    check_ptr!(wallet_id);
+    check_ptr!(out_entries);
+    check_ptr!(out_count);
+
+    let wid: [u8; 32] = std::ptr::read(wallet_id as *const [u8; 32]);
+
+    let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(manager_handle, |manager| {
+        manager.provider_masternode_txs_blocking(&wid)
+    });
+    // Outer Option: handle resolved. Inner Option: wallet found.
+    let inner = unwrap_option_or_return!(option);
+    let (network, txs, dml) = unwrap_option_or_return!(inner);
+
+    // Derive DML membership from the owned snapshot (`None` ⇒ list not
+    // available ⇒ Unknown status ⇒ persist layer keeps the prior value).
+    use crate::core_wallet_types::ListMembership;
+    let membership = |pro_tx_hash: &[u8; 32]| -> ListMembership {
+        match &dml {
+            None => ListMembership::ListUnavailable,
+            Some(map) => match map.get(pro_tx_hash) {
+                Some(true) => ListMembership::ValidEntry,
+                Some(false) => ListMembership::InvalidEntry,
+                None => ListMembership::Absent,
+            },
+        }
+    };
+
+    let aggregates = crate::core_wallet_types::aggregate_masternodes(
+        txs.iter().map(|(h, tx)| (*h, tx)),
+        membership,
+    );
+
+    let entries: Vec<crate::core_wallet_types::MasternodeEntryFFI> = aggregates
+        .iter()
+        .enumerate()
+        .map(|(idx, mn)| crate::core_wallet_types::masternode_entry_ffi(mn, idx as u32, network))
+        .collect();
+    let count = entries.len();
+
+    if count == 0 {
+        *out_entries = std::ptr::null();
+        *out_count = 0;
+        return PlatformWalletFFIResult::ok();
+    }
+
+    let boxed = entries.into_boxed_slice();
+    *out_entries = Box::into_raw(boxed) as *const _;
+    *out_count = count;
+    PlatformWalletFFIResult::ok()
+}
+
+/// Free an array returned by [`platform_wallet_manager_list_masternodes`],
+/// including each entry's heap C strings.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_manager_free_masternodes(
+    entries: *mut crate::core_wallet_types::MasternodeEntryFFI,
+    count: usize,
+) {
+    if entries.is_null() || count == 0 {
+        return;
+    }
+    let slice = std::slice::from_raw_parts_mut(entries, count);
+    for entry in slice.iter() {
+        for ptr in [
+            entry.service_address,
+            entry.owner_address,
+            entry.voting_address,
+        ] {
+            if !ptr.is_null() {
+                let _ = std::ffi::CString::from_raw(ptr);
+            }
+        }
+    }
+    let _ = Box::from_raw(std::ptr::slice_from_raw_parts_mut(entries, count));
+}
+
 /// Destroy a PlatformWallet handle.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_destroy(handle: Handle) -> PlatformWalletFFIResult {
