@@ -179,7 +179,10 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_previe
             return ptr::null_mut();
         }
 
-        let blob = unsafe { encode_preview_rows(&previews) };
+        // Zeroizing: the encoded blob interleaves every row's raw private
+        // scalar; wipe it once the payload has been copied into the JVM
+        // array (matching the single-slot path's zeroize discipline).
+        let blob = zeroize::Zeroizing::new(unsafe { encode_preview_rows(&previews) });
         // Free (and zeroize) the Rust-owned preview buffer now that the
         // payload lives in `blob`.
         unsafe {
@@ -243,7 +246,9 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_previe
             return ptr::null_mut();
         }
 
-        let blob = unsafe { encode_preview_rows(&previews) };
+        // Zeroizing: interleaves raw private scalars (see the discovery
+        // preview above).
+        let blob = zeroize::Zeroizing::new(unsafe { encode_preview_rows(&previews) });
         // Free (and zeroize) the Rust-owned preview buffer now that the
         // payload lives in `blob`. Same row layout as the discovery
         // preview, so the same `_free` reclaims it.

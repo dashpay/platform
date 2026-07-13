@@ -2,6 +2,7 @@ package org.dashfoundation.dashsdk.wallet
 
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -51,9 +52,15 @@ class TeardownGate {
         try {
             return withContext(Dispatchers.IO) { block() }
         } finally {
-            lock.withLock {
-                active--
-                if (active == 0) idle?.complete(Unit)
+            // The decrement MUST run even when the operation's coroutine is
+            // cancelled: Mutex.lock is a cancellable suspension point when
+            // contended, and a skipped decrement over-counts `active`
+            // forever — closeAndAwait() would then hang teardown.
+            withContext(NonCancellable) {
+                lock.withLock {
+                    active--
+                    if (active == 0) idle?.complete(Unit)
+                }
             }
         }
     }

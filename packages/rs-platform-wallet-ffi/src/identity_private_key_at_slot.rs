@@ -233,9 +233,18 @@ pub unsafe extern "C" fn platform_wallet_derive_identity_private_key_at_slot(
                             }
                         };
                         derive_identity_auth_keypair(key_wallet, network, identity_index, key_index)
-                            .map(|(path, ext_priv, _public_key)| SlotMaterial {
-                                path: path.to_string(),
-                                private_key: Zeroizing::new(ext_priv.private_key.secret_bytes()),
+                            .map(|(path, mut ext_priv, _public_key)| {
+                                let private_key =
+                                    Zeroizing::new(ext_priv.private_key.secret_bytes());
+                                // `ExtendedPrivKey` has no zeroizing Drop
+                                // (module invariant, see the header doc):
+                                // erase the resident-path intermediate too,
+                                // matching the resolver-branch erase below.
+                                ext_priv.private_key.non_secure_erase();
+                                SlotMaterial {
+                                    path: path.to_string(),
+                                    private_key,
+                                }
                             })
                     }
                 };

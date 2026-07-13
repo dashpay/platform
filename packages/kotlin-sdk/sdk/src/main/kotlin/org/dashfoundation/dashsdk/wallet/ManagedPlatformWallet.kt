@@ -80,7 +80,9 @@ class ManagedPlatformWallet internal constructor(
      * analog of the Swift `TokenGroupActionQueries.swift` extension.
      */
     val groups: org.dashfoundation.dashsdk.tokens.Groups
-        get() = org.dashfoundation.dashsdk.tokens.Groups(handle, gate)
+        // Ungated on purpose: Groups' queries are Arc-based wallet-handle
+        // reads (no signer/resolver borrow), safe concurrent with teardown.
+        get() = org.dashfoundation.dashsdk.tokens.Groups(handle)
 
     /**
      * DashPay contact/payment surface bound to this wallet's handle —

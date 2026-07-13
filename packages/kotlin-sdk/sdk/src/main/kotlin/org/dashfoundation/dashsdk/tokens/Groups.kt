@@ -18,9 +18,7 @@ import org.dashfoundation.dashsdk.ffi.TokensNative
  * [walletHandle] is a live `PlatformWallet` handle from
  * `WalletManagerNative.getWallet`.
  */
-class Groups internal constructor(private val walletHandle: Long,
-    private val gate: org.dashfoundation.dashsdk.wallet.TeardownGate? = null,
-) {
+class Groups internal constructor(private val walletHandle: Long) {
 
     /** Group-action proposal status filter — mirrors the FFI discriminant. */
     enum class Status(val value: Int) {

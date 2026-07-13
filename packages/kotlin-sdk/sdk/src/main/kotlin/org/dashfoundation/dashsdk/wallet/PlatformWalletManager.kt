@@ -3,6 +3,7 @@ package org.dashfoundation.dashsdk.wallet
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
@@ -820,7 +821,7 @@ class PlatformWalletManager(
     suspend fun bindShielded(
         walletId: ByteArray,
         accounts: List<Int> = listOf(0),
-    ) = withContext(Dispatchers.IO) {
+    ) = teardownGate.op {
         require(walletId.size == 32) {
             "walletId must be exactly 32 bytes, got ${walletId.size}"
         }
@@ -930,7 +931,7 @@ class PlatformWalletManager(
         amountDuffs: Long,
         fundingAccountIndex: Int = 0,
         surplusOutput: ByteArray? = null,
-    ): Unit = withContext(Dispatchers.IO) {
+    ): Unit = teardownGate.op {
         require(amountDuffs > 0) { "amountDuffs must be positive, got $amountDuffs" }
         require(fundingAccountIndex >= 0) {
             "fundingAccountIndex must be non-negative, got $fundingAccountIndex"
@@ -967,7 +968,7 @@ class PlatformWalletManager(
         amount: Long,
         shieldedAccount: Int = 0,
         paymentAccount: Int = 0,
-    ): Unit = withContext(Dispatchers.IO) {
+    ): Unit = teardownGate.op {
         require(amount > 0) { "amount must be positive, got $amount" }
         require(shieldedAccount >= 0) {
             "shieldedAccount must be non-negative, got $shieldedAccount"
@@ -1008,7 +1009,7 @@ class PlatformWalletManager(
         denomination: Long,
         fallbackAddress: ByteArray,
         account: Int = 0,
-    ): ByteArray = withContext(Dispatchers.IO) {
+    ): ByteArray = teardownGate.op {
         require(identityIndex >= 0) { "identityIndex must be non-negative, got $identityIndex" }
         require(denomination > 0) { "denomination must be positive, got $denomination" }
         require(fallbackAddress.size == 21) {
@@ -1041,7 +1042,7 @@ class PlatformWalletManager(
         outPointVout: Int,
         recipientRaw43: ByteArray,
         surplusOutput: ByteArray? = null,
-    ): Unit = withContext(Dispatchers.IO) {
+    ): Unit = teardownGate.op {
         require(outPointTxid.size == 32) {
             "outPointTxid must be exactly 32 bytes, got ${outPointTxid.size}"
         }
@@ -1077,7 +1078,7 @@ class PlatformWalletManager(
         account: Int = 0,
         fundingAccountIndex: Int = 0,
         onProgress: ((batchIndex: Long, batchesTotalEstimate: Long, poolNotesNow: Long, target: Long) -> Unit)? = null,
-    ): Unit = withContext(Dispatchers.IO) {
+    ): Unit = teardownGate.op {
         require(targetTotalNotes > 0) {
             "targetTotalNotes must be positive, got $targetTotalNotes"
         }
@@ -1636,7 +1637,16 @@ class PlatformWalletManager(
     suspend fun closeSuspending() {
         val bundle = bundleRef.getAndSet(0)
         if (bundle == 0L) return
+        // NonCancellable from the moment the bundle is claimed: bundleRef
+        // is already 0, so a caller cancelled mid-teardown could never
+        // retry (the guard above no-ops) — the native manager, its
+        // callback GlobalRefs, the signer/resolver boxes, and the
+        // persistence executor would all leak silently. Teardown must run
+        // to completion once started.
+        withContext(NonCancellable) { closeInternal(bundle) }
+    }
 
+    private suspend fun closeInternal(bundle: Long) {
         // Stop the progress poll loops + event fan-out scope before teardown
         // so no collector touches a destroyed handle.
         progressPollJob?.cancel()

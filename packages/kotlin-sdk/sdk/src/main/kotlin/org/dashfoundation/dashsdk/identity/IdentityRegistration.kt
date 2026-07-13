@@ -37,7 +37,7 @@ class IdentityRegistration internal constructor(
         mnemonicResolverHandle: Long,
         startIndex: Int,
         count: Int = -1,
-    ): List<IdentityKeyPreview> = withContext(Dispatchers.IO) {
+    ): List<IdentityKeyPreview> = gate.op {
         val blob = mapNativeErrors {
             IdentityNative.previewRegistrationKeys(
                 walletHandle,
@@ -76,7 +76,7 @@ class IdentityRegistration internal constructor(
         mnemonicResolverHandle: Long,
         identityIndex: Int,
         count: Int = -1,
-    ): List<IdentityKeyPreview> = withContext(Dispatchers.IO) {
+    ): List<IdentityKeyPreview> = gate.op {
         val blob = mapNativeErrors {
             IdentityNative.previewRegistrationKeySet(
                 walletHandle,
@@ -163,7 +163,7 @@ class IdentityRegistration internal constructor(
         mnemonicResolverHandle: Long,
         startIndex: Int = -1,
         gapLimit: Int = 5,
-    ): List<ByteArray> = withContext(Dispatchers.IO) {
+    ): List<ByteArray> = gate.op {
         val flat = mapNativeErrors {
             IdentityNative.discoverIdentities(
                 walletHandle,
