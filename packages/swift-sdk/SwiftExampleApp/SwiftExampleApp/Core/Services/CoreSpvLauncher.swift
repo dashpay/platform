@@ -18,12 +18,26 @@ enum CoreSpvLauncher {
     /// peer override is done off the main actor first: on devnet
     /// `peerOverride` blocks on a `DispatchSemaphore` up to ~6 s inside
     /// `SDK.discoverActiveMasternodes`, which would freeze the UI on a
-    /// cold launch. Rethrows whatever `startSpv` throws; the caller
-    /// decides whether to surface or log.
+    /// cold launch.
+    ///
+    /// `stillCurrent` is re-checked on the main actor **after** that
+    /// (multi-second) peer resolution and immediately before `startSpv`:
+    /// if the user switched networks while we were suspended, the
+    /// captured `walletManager` is no longer the active one (its network
+    /// was stopped and `WalletManagerStore` swapped in a different
+    /// per-network instance), and starting it here would revive sync on
+    /// an abandoned network with no UI to stop it. On a stale start we
+    /// throw `CancellationError` so callers can distinguish supersession
+    /// from a real `startSpv` failure. Otherwise rethrows whatever
+    /// `startSpv` throws; the caller decides whether to surface or log.
     static func start(
         network: Network,
-        on walletManager: PlatformWalletManager
+        on walletManager: PlatformWalletManager,
+        stillCurrent: @MainActor () -> Bool
     ) async throws {
+        // Network-derived; safe to compute pre-await because we bail on a
+        // `stillCurrent` mismatch below before touching `walletManager` —
+        // and creating the data dir alone starts nothing.
         let dataDirURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)
             .first!
             .appendingPathComponent("SPV")
@@ -35,6 +49,13 @@ enum CoreSpvLauncher {
         // `[String]`; nothing main-actor-bound (no `walletManager`) is
         // captured, so the detached hop is data-race-free.
         let peers = await Task.detached { Self.peerOverride(network: network) }.value
+
+        // Back on the main actor: bail if a network switch superseded this
+        // start during the peer lookup. Manager identity is the strongest
+        // signal — it also catches a devnet→devnet SDK rebuild where the
+        // network is unchanged but the manager instance was replaced.
+        guard stillCurrent() else { throw CancellationError() }
+
         let restrictToConfiguredPeers = !peers.isEmpty
 
         // Devnet requires a name so `DevnetConfig` can embed

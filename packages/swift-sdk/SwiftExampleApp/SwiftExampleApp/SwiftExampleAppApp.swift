@@ -325,22 +325,36 @@ struct SwiftExampleAppApp: App {
     /// propagate into `bootstrap`'s catch and trip the error UI.
     @MainActor
     private func autoStartCoreSpvIfNeeded() async {
+        let network = platformState.currentNetwork
+        let manager = walletManager
+        let store = walletManagerStore
         let decision = CoreSpvAutoStart.decision(
             alreadyLatched: didAutoStartCoreSpv,
-            hasWallets: !walletManager.wallets.isEmpty,
-            spvRunning: walletManager.spvIsRunning
+            hasWallets: !manager.wallets.isEmpty,
+            spvRunning: manager.spvIsRunning
         )
         if decision.shouldLatch { didAutoStartCoreSpv = true }
         guard decision.shouldStart else { return }
 
         do {
             try await CoreSpvLauncher.start(
-                network: platformState.currentNetwork,
-                on: walletManager
+                network: network,
+                on: manager,
+                stillCurrent: { store.activeManager === manager }
             )
             SDKLogger.log(
-                "🟢 Auto-started Core SPV sync for "
-                    + platformState.currentNetwork.displayName,
+                "🟢 Auto-started Core SPV sync for " + network.displayName,
+                minimumLevel: .medium
+            )
+        } catch is CancellationError {
+            // The user switched networks during the peer lookup, so the
+            // launch network's auto-start window is over. The latch stays
+            // set (set before the await) — we deliberately do NOT unlatch
+            // and re-fire for a network the user has left; the now-active
+            // network's `rebindWalletScopedServices` + its own auto-start
+            // own its sync.
+            SDKLogger.log(
+                "ℹ️ Core SPV auto-start superseded by a network switch",
                 minimumLevel: .medium
             )
         } catch {

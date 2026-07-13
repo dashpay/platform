@@ -4,6 +4,10 @@ import SwiftData
 
 struct CoreContentView: View {
     @EnvironmentObject var walletManager: PlatformWalletManager
+    /// Used only to revalidate that the Start we kicked off is still for
+    /// the active per-network manager after the async peer resolution —
+    /// see `startSync`.
+    @EnvironmentObject var walletManagerStore: WalletManagerStore
     @EnvironmentObject var platformState: AppState
     @EnvironmentObject var appUIState: AppUIState
     @EnvironmentObject var platformBalanceSyncService: PlatformBalanceSyncService
@@ -756,12 +760,24 @@ var body: some View {
         // `CoreSpvLauncher.start` resolves peers off the main actor (the
         // devnet branch can block for seconds), so it's async — drive it
         // from a main-actor `Task` so the button tap stays non-blocking.
+        //
+        // Capture the target manager/network/store up front. If the user
+        // switches networks during the peer lookup, `stillCurrent` reports
+        // the captured manager is no longer active and the start bails
+        // rather than reviving sync on the abandoned network.
+        let network = platformState.currentNetwork
+        let manager = walletManager
+        let store = walletManagerStore
         Task {
             do {
                 try await CoreSpvLauncher.start(
-                    network: platformState.currentNetwork,
-                    on: walletManager
+                    network: network,
+                    on: manager,
+                    stillCurrent: { store.activeManager === manager }
                 )
+            } catch is CancellationError {
+                // Superseded by a network switch during peer resolution —
+                // the now-active manager owns its own sync.
             } catch {
                 print("❌ Sync failed: \(error)")
             }
