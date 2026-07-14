@@ -82,15 +82,27 @@ enum MasternodeSync {
                 row.votingKeyIndex = voting.index
 
                 // Operator / platform key ownership comes from Rust's
-                // derive-and-compare (these keys have no on-chain address to
-                // join against). Platform is empty for watch-only wallets
-                // (needs the seed) — a documented follow-up.
+                // pool-based match (these keys have no on-chain address to
+                // join against). Operator keys derive from the account xpub
+                // seedlessly, so operator ownership is always computable and
+                // updates unconditionally.
                 row.operatorInWallet = mn.operatorInWallet
                 row.operatorAccountType = mn.operatorAccountType
                 row.operatorKeyIndex = mn.operatorKeyIndex
-                row.platformInWallet = mn.platformInWallet
-                row.platformAccountType = mn.platformAccountType
-                row.platformKeyIndex = mn.platformKeyIndex
+                // Platform-node ownership can be a transient false negative:
+                // on a seedless restore the platform pool is empty until the
+                // persisted key batch has rehydrated it, and the FFI bool
+                // can't distinguish "checked and absent" from "couldn't check
+                // yet". So never DOWNGRADE an already-established platform
+                // ownership to false on an existing row — mirror the
+                // no-prune-on-empty rule. It still upgrades to true and sets
+                // fresh true values (and new rows default to false, so they
+                // take the fresh value regardless).
+                if mn.platformInWallet || !row.platformInWallet {
+                    row.platformInWallet = mn.platformInWallet
+                    row.platformAccountType = mn.platformAccountType
+                    row.platformKeyIndex = mn.platformKeyIndex
+                }
 
                 row.collateralTxid = mn.collateralTxid
                 row.collateralVout = mn.collateralVout

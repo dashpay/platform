@@ -125,7 +125,7 @@ impl StandardAccountTypeTagFFI {
 /// its platform-node pool without the seed — the batch is pre-derived
 /// at registration (while the seed is in hand) and surfaced here so
 /// the host can persist + display it with no keychain prompt. Plain
-/// POD (no pointers): the `hash160` node id is precomputed on the Rust
+/// POD (no pointers): the Tenderdash node id (SHA256[..20], #884) is precomputed on the Rust
 /// side so the host needs no RIPEMD-160 of its own. The private scalar
 /// is never carried — a per-index reveal still routes through
 /// `platform_wallet_provider_key_at_index` with the resolver.
@@ -136,7 +136,7 @@ pub struct ProviderPlatformNodeKeyFFI {
     pub index: u32,
     /// Raw 32-byte Ed25519 public key at this index.
     pub public_key: [u8; 32],
-    /// 20-byte platform node id — `hash160` of the Ed25519 public key
+    /// 20-byte platform node id — `SHA256(ed25519 pubkey)[..20]` (#884)
     /// (the ProRegTx `platform_node_id`).
     pub node_id: [u8; 20],
 }

@@ -1056,7 +1056,7 @@ pub(crate) struct MasternodeAggregate {
     /// ProUpReg.
     pub operator_public_key: Option<[u8; 48]>,
     operator_height: u32,
-    /// Platform node id (hash160, 20 bytes) for evonodes — follows the
+    /// Platform node id (SHA256[..20] Tenderdash, #884, 20 bytes) for evonodes — follows the
     /// latest ProRegTx / ProUpServ.
     pub platform_node_id: Option<[u8; 20]>,
     platform_node_height: u32,
@@ -1172,8 +1172,11 @@ where
                 }
                 if agg.platform_node_id.is_none() || height >= agg.platform_node_height {
                     // Evonode-only; `None` on a regular masternode.
-                    if let Some(node_id) = p.platform_node_id.as_ref() {
-                        agg.platform_node_id = Some(provider_hash_to_20(node_id.as_ref()));
+                    // `platform_node_id` is a `PlatformNodeId` newtype
+                    // (rust-dashcore #885); the 20 raw bytes (SHA256[..20]
+                    // Tenderdash convention) come off `to_byte_array()`.
+                    if let Some(node_id) = p.platform_node_id {
+                        agg.platform_node_id = Some(node_id.to_byte_array());
                         agg.platform_node_height = height;
                     }
                 }
@@ -1187,10 +1190,11 @@ where
                     agg.service_address = Some(provider_ip_port(p.ip_address, p.port));
                     agg.service_height = height;
                 }
-                // ProUpServ's `platform_node_id` is a raw `Option<[u8; 20]>`.
+                // ProUpServ's `platform_node_id` is now `Option<PlatformNodeId>`
+                // (rust-dashcore #885, was `Option<[u8; 20]>`).
                 if let Some(node_id) = p.platform_node_id {
                     if agg.platform_node_id.is_none() || height >= agg.platform_node_height {
-                        agg.platform_node_id = Some(node_id);
+                        agg.platform_node_id = Some(node_id.to_byte_array());
                         agg.platform_node_height = height;
                     }
                 }
@@ -1306,7 +1310,7 @@ pub struct MasternodeEntryFFI {
     /// Operator BLS public key (48 bytes), gated by `has_operator_key`.
     pub operator_public_key: [u8; 48],
     pub has_operator_key: bool,
-    /// Platform node id (hash160, 20 bytes) — evonodes only — gated by
+    /// Platform node id (SHA256[..20] Tenderdash, #884, 20 bytes) — evonodes only — gated by
     /// `has_platform_node_id`.
     pub platform_node_id: [u8; 20],
     pub has_platform_node_id: bool,

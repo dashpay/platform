@@ -2756,9 +2756,28 @@ unsafe fn address_info_from_ffi(
 /// the same index, and the reverse-lookup maps + `highest_*`
 /// watermarks are extended to cover indices past that default
 /// gap window.
+///
+/// **Typed-key preservation:** a persisted row can lose its typed public
+/// key on the FFI round-trip — the [`CoreAddressEntryFFI`] key field is a
+/// bare 33-byte slot that only fits a compressed ECDSA key and carries no
+/// key-type discriminator, so BLS (48B) operator and Ed25519 (32B)
+/// platform-node entries come back with `public_key: None`. Overwriting a
+/// prederived typed entry (which `from_wallet` filled with
+/// `PublicKeyType::BLS`/`EdDSA`) with such a `None` row would break
+/// key-wallet's provider-key matching. So this MERGES: when the incoming
+/// row has no typed key but the existing entry at that index does, the
+/// existing typed key is kept. (Funds/ECDSA rows always carry their key,
+/// so the merge is a no-op for them.)
 fn restore_address_pool(pool: &mut AddressPool, infos: Vec<AddressInfo>) {
-    for info in infos {
+    for mut info in infos {
         let idx = info.index;
+        if info.public_key.is_none() {
+            if let Some(existing) = pool.addresses.get(&idx) {
+                if existing.public_key.is_some() {
+                    info.public_key = existing.public_key.clone();
+                }
+            }
+        }
         pool.address_index.insert(info.address.clone(), idx);
         pool.script_pubkey_index
             .insert(info.script_pubkey.clone(), idx);
@@ -2980,6 +2999,79 @@ unsafe fn restore_core_address_pools(
         routed: pools_routed,
         dropped: pools_dropped,
     })
+}
+
+/// Rehydrate the persisted platform-node (Ed25519) key `batch` into the
+/// managed `ProviderPlatformKeys` pool.
+///
+/// SLIP-10 Ed25519 is hardened-only, so `ManagedWalletInfo::from_wallet`
+/// can't re-derive these keys from the account xpub on an external-signable
+/// restore — the batch (persisted at registration, supplied by the host on
+/// load) is the only seedless source. Each entry is inserted as a typed
+/// [`PublicKeyType::EdDSA`] pool address, keyed by its hardened index, with
+/// the platform node id recomputed as `SHA256(pubkey)[..20]` (rust-dashcore
+/// #884) — **never** trusting any persisted hash160-era id. This lets the
+/// masternode-ownership scan match a ProRegTx `platform_node_id` to the
+/// wallet's own derivation index on a seedless wallet.
+fn restore_platform_node_pool(
+    wallet_info: &mut ManagedWalletInfo,
+    batch: &[(u32, [u8; 32])],
+    network: Network,
+) -> Result<(), PersistenceError> {
+    use dashcore::hashes::Hash;
+    use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+    if batch.is_empty() {
+        return Ok(());
+    }
+    let Some(account) = wallet_info.accounts.provider_platform_keys.as_mut() else {
+        return Ok(());
+    };
+    let account_path = AccountType::ProviderPlatformKeys
+        .derivation_path(network)
+        .map_err(|e| PersistenceError::backend(format!("platform-node account path: {:?}", e)))?;
+    let base_children: Vec<key_wallet::bip32::ChildNumber> = account_path.as_ref().to_vec();
+
+    let mut infos: Vec<AddressInfo> = Vec::with_capacity(batch.len());
+    for (index, pubkey) in batch {
+        // Recompute the node id from the pubkey (SHA256[..20], #884).
+        let node_id = dashcore::PlatformNodeId::from_ed25519_public_key(pubkey).to_byte_array();
+        let payload =
+            dashcore::address::Payload::PubkeyHash(dashcore::PubkeyHash::from_byte_array(node_id));
+        let address = dashcore::Address::new(network, payload);
+        let script_pubkey = address.script_pubkey();
+        let child = key_wallet::bip32::ChildNumber::from_hardened_idx(*index).map_err(|e| {
+            PersistenceError::backend(format!("platform-node child index {}: {:?}", index, e))
+        })?;
+        let mut children = base_children.clone();
+        children.push(child);
+        let path = DerivationPath::from(children);
+        infos.push(AddressInfo {
+            address,
+            script_pubkey,
+            public_key: Some(PublicKeyType::EdDSA(pubkey.to_vec())),
+            index: *index,
+            path,
+            used: false,
+            generated_at: 0,
+            used_at: None,
+            tx_count: 0,
+            total_received: 0,
+            total_sent: 0,
+            balance: 0,
+            label: None,
+            metadata: std::collections::BTreeMap::new(),
+        });
+    }
+    // The platform-node pool is `AbsentHardened` (SLIP-10 hardened-only).
+    if let Some(pool) = account
+        .managed_account_type_mut()
+        .address_pools_mut()
+        .into_iter()
+        .find(|p| p.pool_type == AddressPoolType::AbsentHardened)
+    {
+        restore_address_pool(pool, infos);
+    }
+    Ok(())
 }
 
 /// Bucket a slice of upstream-emitted `DerivedAddress` entries into the
@@ -3205,6 +3297,13 @@ fn build_wallet_start_state(
 
     // Build the per-account collection from the typed spec array.
     let mut accounts = AccountCollection::new();
+    // The persisted platform-node (Ed25519) key batch, captured from the
+    // `ProviderPlatformKeys` spec so it can be rehydrated into the managed
+    // pool once `ManagedWalletInfo::from_wallet` has created it. SLIP-10 is
+    // hardened-only, so from_wallet can't re-derive these seedlessly on the
+    // external-signable restore — the batch is the only source. Stored as
+    // (index, pubkey); node ids are recomputed SHA256[..20] at insert.
+    let mut platform_node_batch: Vec<(u32, [u8; 32])> = Vec::new();
     let specs: &[AccountSpecFFI] = if entry.accounts.is_null() || entry.accounts_count == 0 {
         &[]
     } else {
@@ -3305,6 +3404,21 @@ fn build_wallet_start_state(
                         e
                     ))
                 })?;
+                // Capture the persisted platform-node key batch (if the host
+                // supplied it on this load) for rehydration into the managed
+                // pool below. Only the pubkeys are trusted; node ids are
+                // recomputed under the #884 convention at insert time.
+                if !spec.derived_platform_node_keys.is_null()
+                    && spec.derived_platform_node_keys_count > 0
+                {
+                    let rows = unsafe {
+                        slice::from_raw_parts(
+                            spec.derived_platform_node_keys,
+                            spec.derived_platform_node_keys_count,
+                        )
+                    };
+                    platform_node_batch = rows.iter().map(|r| (r.index, r.public_key)).collect();
+                }
                 continue;
             }
             _ => {}
@@ -3414,6 +3528,14 @@ fn build_wallet_start_state(
             restore_core_address_pools(&mut wallet_info, pool_entries, network, &entry.wallet_id)?;
         }
     }
+
+    // Rehydrate the platform-node (Ed25519) key batch into its managed pool.
+    // Unlike the ECDSA/BLS pools this can't come from `core_address_pools`
+    // (SLIP-10 is hardened-only and the 33-byte pool ABI can't carry a typed
+    // 32-byte Ed25519 key), so it flows through the dedicated batch captured
+    // from the `ProviderPlatformKeys` spec above. Without it a seedless
+    // restore has no platform-node keys to match masternode ownership.
+    restore_platform_node_pool(&mut wallet_info, &platform_node_batch, network)?;
 
     // Persisted unspent UTXOs → funds-bearing accounts. Keys-only and
     // PlatformPayment variants are skipped: the former never carry
@@ -5239,6 +5361,97 @@ mod tests {
 
         drop(addr_c);
         drop(path_c);
+    }
+
+    /// Build a minimal `AddressInfo` for merge tests. The address/script/
+    /// path content is irrelevant — `restore_address_pool`'s merge only
+    /// inspects `public_key` — so a P2PKH keyed off `index` suffices.
+    fn merge_test_address_info(index: u32, public_key: Option<PublicKeyType>) -> AddressInfo {
+        use dashcore::hashes::Hash;
+        let mut h = [0u8; 20];
+        h[0] = index as u8;
+        let payload =
+            dashcore::address::Payload::PubkeyHash(dashcore::PubkeyHash::from_byte_array(h));
+        let address = dashcore::Address::new(Network::Testnet, payload);
+        let script_pubkey = address.script_pubkey();
+        AddressInfo {
+            address,
+            script_pubkey,
+            public_key,
+            index,
+            path: DerivationPath::from(Vec::<key_wallet::bip32::ChildNumber>::new()),
+            used: false,
+            generated_at: 0,
+            used_at: None,
+            tx_count: 0,
+            total_received: 0,
+            total_sent: 0,
+            balance: 0,
+            label: None,
+            metadata: std::collections::BTreeMap::new(),
+        }
+    }
+
+    /// Blocker #1: a prederived operator entry carrying a typed BLS (48B)
+    /// public key must NOT be clobbered by a persisted row that lost its
+    /// typed key on the 33-byte-slot FFI round-trip (`public_key: None`).
+    /// Pins the merge in `restore_address_pool` so key-wallet's provider-key
+    /// matching keeps a usable typed key after restore.
+    #[test]
+    fn restore_address_pool_merge_preserves_typed_bls_operator_key() {
+        use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+
+        // Any managed keys account gives a real `AddressPool` to exercise
+        // the (pool-type-agnostic) merge against.
+        let mut wallet_info = test_managed_wallet_info_with_provider_owner();
+        let owner = wallet_info
+            .accounts
+            .provider_owner_keys
+            .as_mut()
+            .expect("managed provider-owner account must exist");
+        let pool = owner
+            .managed_account_type_mut()
+            .address_pools_mut()
+            .into_iter()
+            .next()
+            .expect("the account must have at least one pool");
+
+        let bls = vec![0xABu8; 48];
+        // Seed a prederived typed BLS entry at index 0.
+        restore_address_pool(
+            pool,
+            vec![merge_test_address_info(
+                0,
+                Some(PublicKeyType::BLS(bls.clone())),
+            )],
+        );
+        // A persisted row that lost its typed key (None) at the SAME index
+        // must keep the existing BLS key, not overwrite it with None.
+        restore_address_pool(pool, vec![merge_test_address_info(0, None)]);
+        match pool
+            .addresses
+            .get(&0)
+            .expect("entry at index 0")
+            .public_key
+            .as_ref()
+        {
+            Some(PublicKeyType::BLS(bytes)) => {
+                assert_eq!(bytes, &bls, "the prederived BLS key must be preserved")
+            }
+            other => panic!("expected a preserved BLS key at index 0, got {:?}", other),
+        }
+
+        // Control: a `None` row at a fresh index with no existing entry
+        // stays `None` (merge only fills from an existing typed entry).
+        restore_address_pool(pool, vec![merge_test_address_info(7, None)]);
+        assert!(
+            pool.addresses
+                .get(&7)
+                .expect("entry at index 7")
+                .public_key
+                .is_none(),
+            "a None row with no prederived entry must remain None"
+        );
     }
 
     /// `account_xpub` must survive the persist→restore byte round-trip — it is

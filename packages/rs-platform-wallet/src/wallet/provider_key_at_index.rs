@@ -73,7 +73,6 @@
 //! The seed and any returned scalar are wrapped in [`Zeroizing`] so they
 //! are scrubbed when dropped.
 
-use dashcore::hashes::{hash160, Hash};
 use key_wallet::account::{AccountType, BLSAccount, EdDSAAccount};
 use zeroize::Zeroizing;
 
@@ -94,8 +93,8 @@ pub const PLATFORM_NODE_KEY_PREDERIVE_COUNT: u32 = 20;
 
 /// Derive the first `count` platform-node (Ed25519) public keys from a
 /// **seed-bearing** [`Wallet`](key_wallet::wallet::Wallet), returning
-/// the 32-byte public key + 20-byte `hash160` node id per hardened
-/// index.
+/// the 32-byte public key + 20-byte Tenderdash node id
+/// (`SHA256(pubkey)[..20]`, #884) per hardened index.
 ///
 /// Used at registration (`PlatformWalletManager::register_wallet`)
 /// to snapshot the pool while the seed is available, because the
@@ -153,9 +152,11 @@ pub fn derive_platform_node_public_keys(
                 ))
             })?;
         let public_key: [u8; 32] = signing_key.verifying_key().to_bytes();
-        // The 20-byte platform node id = hash160(ed25519 pubkey), the
-        // value a ProRegTx `platform_node_id` matcher compares against.
-        let node_id: [u8; 20] = hash160::Hash::hash(&public_key).to_byte_array();
+        // The 20-byte platform node id = SHA256(ed25519 pubkey)[..20] — the
+        // Tenderdash/CometBFT convention (rust-dashcore #884) that a ProRegTx
+        // `platform_node_id` field carries, NOT a hash160.
+        let node_id: [u8; 20] =
+            dashcore::PlatformNodeId::from_ed25519_public_key(&public_key).to_byte_array();
         out.push(ProviderPlatformNodePubKey {
             index,
             public_key,
@@ -204,10 +205,10 @@ pub struct ProviderDerivedKey {
     /// `ExtendedBLSPubKey::to_bytes_legacy` (key-wallet #879) — never
     /// transformed in Swift.
     pub legacy_public_key_bytes: Option<Vec<u8>>,
-    /// The 20-byte platform node id — `hash160` of the Ed25519 public
-    /// key, the value a ProRegTx `platform_node_id` field carries and
-    /// the [`Payload::PubkeyHash`](dashcore::address::Payload) the pool
-    /// matcher compares against. `Some` for [`ProviderKeyKind::PlatformNode`];
+    /// The 20-byte platform node id — `SHA256(ed25519 pubkey)[..20]`, the
+    /// Tenderdash/CometBFT convention (rust-dashcore #884), which the
+    /// ProRegTx `platform_node_id` field carries and the pool matcher
+    /// compares against. `Some` for [`ProviderKeyKind::PlatformNode`];
     /// `None` for [`ProviderKeyKind::Operator`] (whose on-chain field is
     /// the raw 48-byte BLS public key, not a hash).
     pub node_id: Option<[u8; 20]>,
@@ -415,12 +416,15 @@ impl PlatformWallet {
                             "failed to derive Ed25519 platform-node key at index {index}: {e}"
                         ))
                     })?;
-                let public_key_bytes = signing_key.verifying_key().to_bytes().to_vec();
+                let verifying_bytes: [u8; 32] = signing_key.verifying_key().to_bytes();
+                let public_key_bytes = verifying_bytes.to_vec();
 
-                // The 20-byte platform node id = hash160(ed25519 pubkey),
-                // exactly what the ProRegTx `platform_node_id` matcher
-                // compares against (`Payload::PubkeyHash`).
-                let node_id: [u8; 20] = hash160::Hash::hash(&public_key_bytes).to_byte_array();
+                // The 20-byte platform node id = SHA256(ed25519 pubkey)[..20]
+                // — the Tenderdash/CometBFT convention (rust-dashcore #884)
+                // the ProRegTx `platform_node_id` field carries, NOT a hash160.
+                let node_id: [u8; 20] =
+                    dashcore::PlatformNodeId::from_ed25519_public_key(&verifying_bytes)
+                        .to_byte_array();
 
                 let private_key =
                     include_private.then(|| Zeroizing::new(signing_key.to_bytes().to_vec()));
@@ -441,7 +445,6 @@ impl PlatformWallet {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dashcore::hashes::{hash160, Hash};
     use key_wallet::mnemonic::{Language, Mnemonic};
     use key_wallet::wallet::initialization::WalletAccountCreationOptions;
     use key_wallet::wallet::Wallet;
@@ -474,10 +477,10 @@ mod tests {
 
     /// The load-bearing invariants for platform-node keys, pinned so a
     /// derivation regression can't silently hand out wrong key material:
-    /// `node_id == hash160(pubkey)` at every index, all indices distinct,
-    /// the snapshot's per-index public key corresponds to the #881 seed
-    /// entry point, and a golden secret scalar pinned to the dashbls /
-    /// SLIP-10 reference vector from key-wallet's
+    /// `node_id == SHA256(pubkey)[..20]` (the Tenderdash convention,
+    /// rust-dashcore #884) at every index, all indices distinct, the
+    /// snapshot's per-index public key corresponds to the #881 seed entry
+    /// point, and golden secret / node-id vectors pinned to key-wallet's
     /// `provider_key_derivation_tests.rs`.
     #[test]
     fn platform_node_keys_are_consistent_and_pinned() {
@@ -490,10 +493,11 @@ mod tests {
         assert_eq!(keys.len(), 20, "requested 20 keys");
         for (i, k) in keys.iter().enumerate() {
             assert_eq!(k.index, i as u32, "index ordering");
-            let expected_node_id: [u8; 20] = hash160::Hash::hash(&k.public_key).to_byte_array();
+            let expected_node_id: [u8; 20] =
+                dashcore::PlatformNodeId::from_ed25519_public_key(&k.public_key).to_byte_array();
             assert_eq!(
                 k.node_id, expected_node_id,
-                "node_id must be hash160(ed25519 pubkey) at index {i}"
+                "node_id must be SHA256(ed25519 pubkey)[..20] at index {i}"
             );
 
             // The snapshot's per-index public key must be the public key of
@@ -531,6 +535,19 @@ mod tests {
             keys[0].public_key,
             sk0.verifying_key().to_bytes(),
             "snapshot index-0 pubkey must match the golden secret's public key"
+        );
+        // Golden pubkey + Tenderdash node-id (SHA256[..20]) for mainnet
+        // index 0, pinned to key-wallet's post-#884
+        // `provider_key_derivation_tests.rs` reference vectors.
+        assert_eq!(
+            hex::encode(keys[0].public_key),
+            "3130c14339391cf26a68d86879e180ee9a16b660f5aa91f560f67c0abe8cf789",
+            "mainnet platform-node index-0 pubkey golden"
+        );
+        assert_eq!(
+            hex::encode(keys[0].node_id),
+            "302f2615e6955cce8ed3cff81e8011bfd3a2991f",
+            "mainnet platform-node index-0 node-id golden (Tenderdash SHA256[..20], #884)"
         );
     }
 
