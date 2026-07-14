@@ -653,13 +653,29 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_createO
         let Some(id) = read_id32(env, &identity_id, "identityId") else {
             return ptr::null_mut();
         };
-        let display = opt_jstring_to_cstring(env, &display_name);
-        let message = opt_jstring_to_cstring(env, &public_message);
-        let url = opt_jstring_to_cstring(env, &avatar_url);
+        let Ok(display) = opt_jstring_to_cstring(env, "displayName", &display_name) else {
+            return ptr::null_mut();
+        };
+        let Ok(message) = opt_jstring_to_cstring(env, "publicMessage", &public_message) else {
+            return ptr::null_mut();
+        };
+        let Ok(url) = opt_jstring_to_cstring(env, "avatarUrl", &avatar_url) else {
+            return ptr::null_mut();
+        };
         let avatar: Option<Vec<u8>> = if avatar_bytes.is_null() {
             None
         } else {
-            env.convert_byte_array(&avatar_bytes).ok()
+            match env.convert_byte_array(&avatar_bytes) {
+                Ok(bytes) => Some(bytes),
+                Err(e) => {
+                    crate::support::throw_sdk_exception(
+                        env,
+                        1,
+                        &format!("avatarBytes is not readable: {e}"),
+                    );
+                    return ptr::null_mut();
+                }
+            }
         };
 
         let mut profile = DashPayProfileFFI::empty();
@@ -717,8 +733,12 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_setCont
         let Some(contact) = read_id32(env, &contact_id, "contactId") else {
             return -1;
         };
-        let alias_c = opt_jstring_to_cstring(env, &alias);
-        let note_c = opt_jstring_to_cstring(env, &note);
+        let Ok(alias_c) = opt_jstring_to_cstring(env, "alias", &alias) else {
+            return -1;
+        };
+        let Ok(note_c) = opt_jstring_to_cstring(env, "note", &note) else {
+            return -1;
+        };
 
         let mut outcome: u8 = 0;
         let result = unsafe {
@@ -741,16 +761,43 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_setCont
     })
 }
 
-/// Convert a nullable JString into an owned CString; None on null /
-/// conversion failure (treated as "field absent"). NOTE: an interior NUL
-/// therefore CLEARS the field on Android (Swift truncates at the NUL
-/// instead) — a deliberate divergence for pathological input.
-fn opt_jstring_to_cstring(env: &mut JNIEnv, s: &JString) -> Option<std::ffi::CString> {
+/// Convert a nullable JString into an owned CString, distinguishing a
+/// genuine Kotlin `null` (`Ok(None)` — the caller's "field absent / clear"
+/// contract) from a conversion failure (`Err(())`).
+///
+/// A non-null string that fails to read, or that contains an interior NUL,
+/// throws a `DashSDKException` and returns `Err(())` so the caller aborts
+/// BEFORE the C boundary. This is deliberate: several contact/profile
+/// exports treat a null field as "clear it", so silently coercing
+/// pathological non-null input into a null pointer would wipe (contact
+/// info) or drop (profile merge) existing metadata instead of failing the
+/// write. `field` names the argument in the thrown message.
+fn opt_jstring_to_cstring(
+    env: &mut JNIEnv,
+    field: &str,
+    s: &JString,
+) -> Result<Option<std::ffi::CString>, ()> {
     if s.is_null() {
-        return None;
+        return Ok(None);
     }
-    let value: String = env.get_string(s).ok()?.into();
-    std::ffi::CString::new(value).ok()
+    let value: String = match env.get_string(s) {
+        Ok(v) => v.into(),
+        Err(e) => {
+            crate::support::throw_sdk_exception(
+                env,
+                1,
+                &format!("{field} is not a readable string: {e}"),
+            );
+            return Err(());
+        }
+    };
+    std::ffi::CString::new(value).map(Some).map_err(|_| {
+        crate::support::throw_sdk_exception(
+            env,
+            1,
+            &format!("{field} must not contain a NUL character"),
+        );
+    })
 }
 
 // ── DIP-15 auto-accept QR ─────────────────────────────────────────────
@@ -776,7 +823,9 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_buildAu
         let Some(id) = read_id32(env, &identity_id, "identityId") else {
             return ptr::null_mut();
         };
-        let username_c = opt_jstring_to_cstring(env, &username);
+        let Ok(username_c) = opt_jstring_to_cstring(env, "username", &username) else {
+            return ptr::null_mut();
+        };
         let mut uri: *mut c_char = ptr::null_mut();
         let result = unsafe {
             platform_wallet_ffi::platform_wallet_build_auto_accept_qr(
@@ -816,9 +865,13 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_sendCon
         let Some(id) = read_id32(env, &sender_identity_id, "senderIdentityId") else {
             return 0;
         };
-        let Some(uri_c) = opt_jstring_to_cstring(env, &uri) else {
-            crate::support::throw_sdk_exception(env, 1, "uri must not be null");
-            return 0;
+        let uri_c = match opt_jstring_to_cstring(env, "uri", &uri) {
+            Ok(Some(c)) => c,
+            Ok(None) => {
+                crate::support::throw_sdk_exception(env, 1, "uri must not be null");
+                return 0;
+            }
+            Err(()) => return 0,
         };
         let mut request_handle: Handle = 0;
         let result = unsafe {
