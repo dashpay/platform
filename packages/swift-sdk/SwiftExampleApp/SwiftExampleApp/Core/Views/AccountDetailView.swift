@@ -803,22 +803,30 @@ struct AccountDetailView: View {
         }
     }
 
-    /// The persisted, pre-derived platform-node keys mapped into the
-    /// `ProviderDerivedKey` display shape (public key + node id as hex).
-    /// Empty for non-platform-node accounts and for wallets created
-    /// before the batch was persisted (those use the resolver-based
-    /// "Load Keys" fallback). Private keys stay `nil` here — a reveal
-    /// re-derives per index through `providerKeyAtIndex`.
+    /// The persisted platform-node keys mapped into the
+    /// `ProviderDerivedKey` display shape (public key + node id as hex),
+    /// read straight from this account's typed `PersistentCoreAddress`
+    /// rows — the Ed25519 entries (`keyType == 2`) populated at wallet
+    /// registration. Empty for non-platform-node accounts and for wallets
+    /// created before those rows were persisted (those use the
+    /// resolver-based "Load Keys" fallback). The node id is recomputed
+    /// from the public key via the pure Rust bridge; private keys stay
+    /// `nil` here — a reveal re-derives per index through
+    /// `providerKeyAtIndex`.
     private var persistedPlatformNodeKeys: [ManagedPlatformWallet.ProviderDerivedKey] {
-        account.derivedPlatformNodeKeys
-            .sorted { $0.index < $1.index }
-            .map { key in
-                ManagedPlatformWallet.ProviderDerivedKey(
-                    index: key.index,
-                    publicKeyHex: hexString(key.publicKey),
+        account.coreAddresses
+            .filter { $0.keyType == 2 && !$0.publicKey.isEmpty }
+            .sorted { $0.addressIndex < $1.addressIndex }
+            .map { addr in
+                let nodeIdHex = ManagedPlatformWallet
+                    .platformNodeId(fromEd25519PublicKey: addr.publicKey)
+                    .map { hexString($0) }
+                return ManagedPlatformWallet.ProviderDerivedKey(
+                    index: addr.addressIndex,
+                    publicKeyHex: hexString(addr.publicKey),
                     // Platform-node keys are Ed25519 — no legacy BLS form.
                     legacyPublicKeyHex: nil,
-                    nodeIdHex: hexString(key.nodeId),
+                    nodeIdHex: nodeIdHex,
                     privateKeyHex: nil
                 )
             }

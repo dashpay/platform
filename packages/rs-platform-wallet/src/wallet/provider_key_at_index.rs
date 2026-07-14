@@ -166,6 +166,118 @@ pub fn derive_platform_node_public_keys(
     Ok(out)
 }
 
+/// Insert a pre-derived platform-node (Ed25519) key batch into the
+/// managed `ProviderPlatformKeys` pool of a `ManagedWalletInfo` so those
+/// keys flow out as ordinary typed [`PublicKeyType::EdDSA`] address rows.
+///
+/// Called at registration (`PlatformWalletManager::register_wallet`),
+/// AFTER `ManagedWalletInfo::from_wallet` has created the (empty)
+/// platform-node account but BEFORE the address-pool snapshot is taken,
+/// so the EdDSA keys ride the normal address-persistence pipeline (they
+/// are persisted as typed core-address rows, restored by
+/// `restore_core_address_pools`) and the in-memory pool matches what a
+/// restore reconstructs. SLIP-10 Ed25519 is hardened-only, so this pool
+/// can never be extended later from the account xpub — this one-time
+/// registration-side population is the only source of these keys.
+///
+/// Each entry becomes a pool address keyed by its hardened index: the
+/// address is the P2PKH payload of the entry's 20-byte platform node id
+/// (`SHA256(pubkey)[..20]`, rust-dashcore #884), the path is the
+/// `ProviderPlatformKeys` account path plus the hardened index, and the
+/// typed key is `PublicKeyType::EdDSA(pubkey)`. The `node_id` field is
+/// trusted here — it was just computed by
+/// [`derive_platform_node_public_keys`] from the same pubkey. Mirrors the
+/// `AddressInfo` shape key-wallet's own EdDSA pool derivation produces, so
+/// a freshly-registered wallet and a restored one carry byte-identical
+/// pool entries.
+///
+/// A no-op when the wallet has no managed platform-node account or no
+/// `AbsentHardened` pool on it.
+///
+/// # Errors
+/// [`PlatformWalletError::KeyDerivation`] if the `ProviderPlatformKeys`
+/// account derivation path or a hardened child index cannot be built.
+#[cfg(feature = "eddsa")]
+pub fn populate_platform_node_pool(
+    wallet_info: &mut key_wallet::wallet::managed_wallet_info::ManagedWalletInfo,
+    keys: &[ProviderPlatformNodePubKey],
+    network: key_wallet::Network,
+) -> Result<(), PlatformWalletError> {
+    use dashcore::hashes::Hash;
+    use key_wallet::managed_account::address_pool::{AddressPoolType, PublicKeyType};
+    use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+    use key_wallet::AddressInfo;
+
+    if keys.is_empty() {
+        return Ok(());
+    }
+    let Some(account) = wallet_info.accounts.provider_platform_keys.as_mut() else {
+        return Ok(());
+    };
+
+    let account_path = AccountType::ProviderPlatformKeys
+        .derivation_path(network)
+        .map_err(|e| {
+            PlatformWalletError::KeyDerivation(format!(
+                "failed to build ProviderPlatformKeys account path: {e:?}"
+            ))
+        })?;
+    let base_children: Vec<key_wallet::bip32::ChildNumber> = account_path.as_ref().to_vec();
+
+    let mut infos: Vec<AddressInfo> = Vec::with_capacity(keys.len());
+    for key in keys {
+        // Trust the entry's node id — it was just derived from `public_key`.
+        let payload = dashcore::address::Payload::PubkeyHash(
+            dashcore::PubkeyHash::from_byte_array(key.node_id),
+        );
+        let address = dashcore::Address::new(network, payload);
+        let script_pubkey = address.script_pubkey();
+        let child = key_wallet::bip32::ChildNumber::from_hardened_idx(key.index).map_err(|e| {
+            PlatformWalletError::KeyDerivation(format!(
+                "failed to build hardened child index {}: {e:?}",
+                key.index
+            ))
+        })?;
+        let mut children = base_children.clone();
+        children.push(child);
+        let path = key_wallet::bip32::DerivationPath::from(children);
+        infos.push(AddressInfo {
+            address,
+            script_pubkey,
+            public_key: Some(PublicKeyType::EdDSA(key.public_key.to_vec())),
+            index: key.index,
+            path,
+            used: false,
+            generated_at: 0,
+            used_at: None,
+            tx_count: 0,
+            total_received: 0,
+            total_sent: 0,
+            balance: 0,
+            label: None,
+            metadata: std::collections::BTreeMap::new(),
+        });
+    }
+
+    // The platform-node pool is `AbsentHardened` (SLIP-10 hardened-only).
+    if let Some(pool) = account
+        .managed_account_type_mut()
+        .address_pools_mut()
+        .into_iter()
+        .find(|p| p.pool_type == AddressPoolType::AbsentHardened)
+    {
+        for info in infos {
+            let idx = info.index;
+            pool.address_index.insert(info.address.clone(), idx);
+            pool.script_pubkey_index
+                .insert(info.script_pubkey.clone(), idx);
+            pool.highest_generated = Some(pool.highest_generated.map_or(idx, |h| h.max(idx)));
+            pool.addresses.insert(idx, info);
+        }
+    }
+    Ok(())
+}
+
 /// Which provider key-material account to derive from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProviderKeyKind {
@@ -707,6 +819,71 @@ mod tests {
         assert_ne!(
             mainnet[0].public_key, testnet[0].public_key,
             "same mnemonic must yield different platform-node keys per network"
+        );
+    }
+
+    /// Registration-side: populating the managed platform-node pool from a
+    /// derived batch must land typed [`PublicKeyType::EdDSA`] rows in the
+    /// account's `AbsentHardened` pool — the source the address-persistence
+    /// pipeline snapshots and the masternode-ownership scan reads. Pins the
+    /// pool shape (typed key + node-id-derived address + advancing
+    /// watermark) independent of any FFI plumbing.
+    #[cfg(feature = "eddsa")]
+    #[test]
+    fn populate_platform_node_pool_lands_typed_eddsa_rows() {
+        use key_wallet::managed_account::address_pool::{AddressPoolType, PublicKeyType};
+        use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+        use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
+
+        let wallet = seed_bearing_wallet(Network::Mainnet);
+        let keys = derive_platform_node_public_keys(&wallet, Network::Mainnet, 5)
+            .expect("platform-node derivation");
+
+        let mut info = ManagedWalletInfo::from_wallet(&wallet, 0);
+        populate_platform_node_pool(&mut info, &keys, Network::Mainnet)
+            .expect("populate must succeed");
+
+        let account = info
+            .accounts
+            .provider_platform_keys
+            .as_ref()
+            .expect("managed platform-node account must exist");
+        let pool = account
+            .managed_account_type()
+            .address_pools()
+            .iter()
+            .find(|p| p.pool_type == AddressPoolType::AbsentHardened)
+            .cloned()
+            .expect("AbsentHardened pool must exist");
+
+        assert_eq!(pool.addresses.len(), keys.len(), "one row per derived key");
+        for k in &keys {
+            let entry = pool
+                .addresses
+                .get(&k.index)
+                .expect("row present at derived index");
+            match &entry.public_key {
+                Some(PublicKeyType::EdDSA(bytes)) => assert_eq!(
+                    bytes.as_slice(),
+                    &k.public_key,
+                    "typed Ed25519 key must be stored byte-for-byte"
+                ),
+                other => panic!("expected a typed EdDSA row, got {other:?}"),
+            }
+            // The row address is the P2PKH payload of the node id, so a
+            // scan recomputing SHA256[..20] from the pubkey maps back to
+            // this index.
+            let expected_node_id =
+                dashcore::PlatformNodeId::from_ed25519_public_key(&k.public_key).to_byte_array();
+            assert_eq!(
+                k.node_id, expected_node_id,
+                "node id must be the Tenderdash SHA256[..20]"
+            );
+        }
+        assert_eq!(
+            pool.highest_generated,
+            Some(keys.len() as u32 - 1),
+            "highest_generated must advance to the last populated index"
         );
     }
 }

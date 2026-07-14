@@ -1283,6 +1283,7 @@ struct CreateIdentityView: View {
                 // app's shielded default.
                 let identityId = try await manager.shieldedIdentityCreateFromPool(
                     walletId: walletId,
+                    resolver: MnemonicResolver(),
                     account: 0,
                     identityIndex: identityIndex,
                     identityPubkeys: identityPubkeys,

@@ -252,24 +252,30 @@ pub unsafe extern "C" fn platform_wallet_resume_identity_with_existing_asset_loc
     PlatformWalletFFIResult::ok()
 }
 
-/// Top up an EXISTING identity from an already-tracked asset lock — the
-/// inviter's "reclaim into an existing identity" path.
+/// Top up an EXISTING identity from an already-tracked Core asset lock.
 ///
-/// Sister to [`platform_wallet_resume_identity_with_existing_asset_lock_signer`]
-/// (which registers a NEW identity from the lock): this consumes the lock as an
-/// IdentityTopUp against `identity_id` instead. Used to reclaim an unclaimed
-/// DashPay invitation voucher — the value comes back as Platform **credits** on
-/// the inviter's own identity (the on-chain DASH is an OP_RETURN burn, so there
-/// is nothing to spend back on L1). No per-identity-key signer is needed (a
-/// top-up creates no keys); only the Core-side asset-lock signature, produced by
-/// the inviter's own resolver, which re-derives the voucher key at the invitation
-/// funding path. The `FromExistingAssetLock` resume + IS→CL fallback logic lives
-/// in `top_up_identity_with_funding`; this FFI is a thin marshaler.
+/// The crash-recovery counterpart to
+/// [`crate::platform_wallet_top_up_identity_with_funding_signer`] (which
+/// builds a *new* lock from wallet balance): this consumes a lock that
+/// already confirmed on Core but whose `IdentityTopUp` never reached
+/// Platform (app killed / network drop between broadcast and submit),
+/// completing the top-up against `identity_id` from the stored outpoint.
+/// Sister to
+/// [`platform_wallet_resume_identity_with_existing_asset_lock_signer`],
+/// which resumes the lock as a NEW-identity registration instead. Also the
+/// DashPay invitation "reclaim into an existing identity" path (see
+/// `consume_invitation_voucher` below).
+///
+/// The `FromExistingAssetLock` resume + IS→CL fallback logic lives in
+/// `top_up_identity_with_funding`; this FFI is a thin marshaler. No
+/// per-identity-key signer is needed (a top-up creates no keys); only the
+/// Core-side asset-lock signature, produced by the wallet's own resolver.
 ///
 /// `consume_invitation_voucher` is the explicit authorization to consume an
-/// `IdentityInvitation`-typed lock — the reclaim flow passes `true`; any
-/// generic top-up surface must pass `false` and is refused invitation locks
-/// by the resolver.
+/// `IdentityInvitation`-typed lock (a DashPay bearer voucher whose key is
+/// shared in the invitation link) — the invitation reclaim flow passes
+/// `true`; every generic top-up/crash-recovery surface must pass `false`
+/// and is refused invitation locks by the funding resolver.
 ///
 /// # Safety
 /// - `out_point` must be a valid, non-null `*const OutPointFFI`; the caller
@@ -334,4 +340,92 @@ pub unsafe extern "C" fn platform_wallet_topup_identity_with_existing_asset_lock
     let new_balance = unwrap_result_or_return!(result);
     *out_new_balance = new_balance;
     PlatformWalletFFIResult::ok()
+}
+
+#[cfg(test)]
+mod topup_existing_lock_guard_tests {
+    use super::*;
+    use crate::error::PlatformWalletFFIResultCode;
+
+    /// Non-null but never-dereferenced core-signer pointer: the null guards
+    /// under test return before the handle is used.
+    fn dangling_core_signer() -> *mut MnemonicResolverHandle {
+        std::ptr::NonNull::<MnemonicResolverHandle>::dangling().as_ptr()
+    }
+
+    fn zero_out_point() -> OutPointFFI {
+        OutPointFFI {
+            txid: [0u8; 32],
+            vout: 0,
+        }
+    }
+
+    #[test]
+    fn rejects_null_out_point() {
+        let id = [0u8; 32];
+        let mut balance = 0u64;
+        let res = unsafe {
+            platform_wallet_topup_identity_with_existing_asset_lock_signer(
+                0,
+                std::ptr::null(),
+                &id,
+                dangling_core_signer(),
+                false,
+                &mut balance,
+            )
+        };
+        assert_eq!(res.code, PlatformWalletFFIResultCode::ErrorNullPointer);
+    }
+
+    #[test]
+    fn rejects_null_identity_id() {
+        let op = zero_out_point();
+        let mut balance = 0u64;
+        let res = unsafe {
+            platform_wallet_topup_identity_with_existing_asset_lock_signer(
+                0,
+                &op,
+                std::ptr::null(),
+                dangling_core_signer(),
+                false,
+                &mut balance,
+            )
+        };
+        assert_eq!(res.code, PlatformWalletFFIResultCode::ErrorNullPointer);
+    }
+
+    #[test]
+    fn rejects_null_core_signer() {
+        let op = zero_out_point();
+        let id = [0u8; 32];
+        let mut balance = 0u64;
+        let res = unsafe {
+            platform_wallet_topup_identity_with_existing_asset_lock_signer(
+                0,
+                &op,
+                &id,
+                std::ptr::null_mut(),
+                false,
+                &mut balance,
+            )
+        };
+        assert_eq!(res.code, PlatformWalletFFIResultCode::ErrorNullPointer);
+    }
+
+    #[test]
+    fn rejects_null_out_balance() {
+        let op = zero_out_point();
+        let id = [0u8; 32];
+        let res = unsafe {
+            platform_wallet_topup_identity_with_existing_asset_lock_signer(
+                0,
+                &op,
+                &id,
+                dangling_core_signer(),
+                false,
+                std::ptr::null_mut(),
+            )
+        };
+        assert_eq!(res.code, PlatformWalletFFIResultCode::ErrorNullPointer);
+    }
 }

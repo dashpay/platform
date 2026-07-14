@@ -179,7 +179,9 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             }
         };
 
-        let wallet_info = ManagedWalletInfo::from_wallet(&wallet, birth_height);
+        // `mut` so the platform-node (Ed25519) pool can be populated in
+        // place below, BEFORE the address-pool snapshot is taken.
+        let mut wallet_info = ManagedWalletInfo::from_wallet(&wallet, birth_height);
 
         let balance = Arc::new(WalletBalance::new());
 
@@ -213,10 +215,6 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             provider_key_account_registrations.push(ProviderKeyAccountEntry {
                 account_type: key_wallet::account::AccountType::ProviderOperatorKeys,
                 extended_public_key: ProviderKeyExtendedPubKey::Bls(bls.bls_public_key.clone()),
-                // The BLS operator pool extends on demand from the
-                // account xpub (non-hardened `ckd_pub`, no seed), so it
-                // needs no pre-derived batch.
-                derived_platform_node_keys: Vec::new(),
             });
         }
         #[cfg(feature = "eddsa")]
@@ -228,7 +226,10 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             // the wallet is still seed-bearing (`downgrade_to_external_signable`
             // hasn't run yet). Ed25519/SLIP-10 is hardened-only, so this
             // pool can never be extended later from the watch-only restore —
-            // capturing the public parts now lets the Node Keys screen list
+            // populating the managed pool now lets those keys ride the
+            // normal typed-address persistence pipeline (persisted as
+            // `PublicKeyType::EdDSA` core-address rows, rehydrated on load
+            // by `restore_core_address_pools`) so the Node Keys screen lists
             // them from persistence with no keychain prompt. A derivation
             // failure here is non-fatal: fall back to an empty batch (the UI
             // then uses its resolver-based "Load Keys" path) rather than
@@ -247,12 +248,27 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                     );
                     Vec::new()
                 });
+            // Populate the managed platform-node pool in place, BEFORE the
+            // address-pool snapshot below reads `all_managed_accounts()`, so
+            // the EdDSA keys are captured as typed core-address rows. A
+            // population failure is non-fatal for the same reason the
+            // derivation failure above is.
+            if let Err(e) = crate::wallet::provider_key_at_index::populate_platform_node_pool(
+                &mut wallet_info,
+                &derived_platform_node_keys,
+                wallet.network,
+            ) {
+                tracing::warn!(
+                    error = %e,
+                    "failed to populate the managed platform-node pool at registration; \
+                     the Node Keys screen will fall back to the resolver path"
+                );
+            }
             provider_key_account_registrations.push(ProviderKeyAccountEntry {
                 account_type: key_wallet::account::AccountType::ProviderPlatformKeys,
                 extended_public_key: ProviderKeyExtendedPubKey::EdDSA(
                     eddsa.ed25519_public_key.clone(),
                 ),
-                derived_platform_node_keys,
             });
         }
         // Snapshot core (BIP44/CoinJoin/identity/provider/DashPay)

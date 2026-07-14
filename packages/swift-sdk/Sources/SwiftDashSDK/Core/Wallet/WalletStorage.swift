@@ -153,6 +153,43 @@ public class WalletStorage {
         return status == errSecSuccess
     }
 
+    /// Attribute-only identity stamp of the wallet's mnemonic Keychain
+    /// item, or `nil` when no item exists (or attributes are unreadable).
+    ///
+    /// Built from the item's creation + modification dates, which change
+    /// whenever the item is written: `storeMnemonic` is delete-then-add
+    /// (fresh dates every call) and any in-place `SecItemUpdate` bumps
+    /// the modification date. The seed-binding verification cache binds
+    /// its marker to this stamp so a rewritten or re-created mnemonic
+    /// item invalidates the cached verification and forces a full
+    /// re-verify — without this, a marker verified against an older
+    /// mnemonic would keep passing after the item changed.
+    ///
+    /// Like `hasMnemonic`, this queries attributes only — the secret is
+    /// never materialized.
+    public func mnemonicKeychainStamp(for walletId: Data) -> String? {
+        let account = perWalletMnemonicAccount(for: walletId)
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: keychainService,
+            kSecAttrAccount as String: account,
+            kSecMatchLimit as String: kSecMatchLimitOne,
+            kSecReturnAttributes as String: true
+        ]
+        var result: AnyObject?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        guard status == errSecSuccess,
+              let attrs = result as? [String: Any],
+              let modified = attrs[kSecAttrModificationDate as String] as? Date else {
+            return nil
+        }
+        let created = attrs[kSecAttrCreationDate as String] as? Date ?? modified
+        // Millisecond precision; both dates so delete-then-add and in-place
+        // update are each guaranteed to change the stamp.
+        return "c\(Int64(created.timeIntervalSince1970 * 1000))"
+            + "-m\(Int64(modified.timeIntervalSince1970 * 1000))"
+    }
+
     /// Delete a mnemonic keyed by wallet id. Idempotent.
     public func deleteMnemonic(for walletId: Data) throws {
         let account = perWalletMnemonicAccount(for: walletId)

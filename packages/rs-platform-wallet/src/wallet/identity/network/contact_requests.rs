@@ -1817,6 +1817,26 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             .unwrap_or(0)
     }
 
+    /// Total number of queued contact-crypto entries for this wallet — every
+    /// op kind, **including** the `ContactInfoDecrypt` refreshes that
+    /// [`Self::pending_contact_crypto_count`] deliberately excludes. This is
+    /// the "does a signer-present drain have any work at all" probe: unlike
+    /// the banner count (which reports an actionable *backlog* to a user),
+    /// a scheduler should run the drain whenever anything is queued, or
+    /// ContactInfoDecrypt-only queues would never be applied. Signerless /
+    /// public read; no persistence.
+    pub async fn drainable_contact_crypto_count(&self) -> usize {
+        let wm = self.wallet_manager.read().await;
+        wm.get_wallet_info(&self.wallet_id)
+            .map(|info| {
+                info.identity_manager
+                    .managed_identities()
+                    .map(|m| m.dashpay().pending_contact_crypto.len())
+                    .sum::<usize>()
+            })
+            .unwrap_or(0)
+    }
+
     /// Drain the persisted deferred-crypto queue using `provider` for the
     /// Keychain-derived key material. Call when a signer is available (Keychain
     /// unlock, or any signer-present DashPay action). Returns the number of

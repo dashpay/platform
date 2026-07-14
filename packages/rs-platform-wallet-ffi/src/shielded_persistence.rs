@@ -172,6 +172,26 @@ pub struct ShieldedActivityFFI {
     pub spent_nullifiers_count: usize,
 }
 
+/// One per-subwallet Orchard viewing key for the host to persist.
+///
+/// The 96 bytes are the raw `FullViewingKey` encoding (`ak ‖ nk ‖
+/// rivk`); IVK / OVK / default address are all pure functions of it,
+/// so this row alone lets a later launch rebind the shielded
+/// sub-wallet without resolving the mnemonic. Viewing-grade only —
+/// it can decrypt and recognize notes but cannot authorize a spend.
+/// The host upserts one row keyed by `(wallet_id, account_index)`;
+/// the FVK for a subwallet never legitimately changes on a network,
+/// so a re-emit is byte-identical.
+#[repr(C)]
+pub struct ShieldedViewingKeyFFI {
+    /// 32-byte wallet identifier.
+    pub wallet_id: [u8; 32],
+    /// ZIP-32 account index.
+    pub account_index: u32,
+    /// Raw 96-byte Orchard `FullViewingKey` encoding.
+    pub fvk_bytes: [u8; 96],
+}
+
 // ── Restore (load) ──────────────────────────────────────────────────────
 
 /// One persisted note as the host hands it back at boot. Mirrors
@@ -216,6 +236,17 @@ pub struct ShieldedSubwalletSyncStateFFI {
     pub wallet_id: [u8; 32],
     pub account_index: u32,
     pub last_synced_index: u64,
+}
+
+/// One persisted Orchard viewing key as the host hands it back at
+/// boot. Mirrors [`ShieldedViewingKeyFFI`] but lives in a
+/// Swift-allocated array, so the buffer ownership / free contract
+/// differs (see the matching `on_load_shielded_viewing_keys_free_fn`).
+#[repr(C)]
+pub struct ShieldedViewingKeyRestoreFFI {
+    pub wallet_id: [u8; 32],
+    pub account_index: u32,
+    pub fvk_bytes: [u8; 96],
 }
 
 /// One persisted activity entry as the host hands it back at boot.

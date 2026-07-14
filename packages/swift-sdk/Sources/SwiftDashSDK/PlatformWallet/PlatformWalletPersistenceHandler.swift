@@ -1208,6 +1208,9 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         cb.on_load_shielded_sync_states_free_fn = loadShieldedSyncStatesFreeCallback
         cb.on_load_shielded_activity_fn = loadShieldedActivityCallback
         cb.on_load_shielded_activity_free_fn = loadShieldedActivityFreeCallback
+        cb.on_persist_shielded_viewing_keys_fn = persistShieldedViewingKeysCallback
+        cb.on_load_shielded_viewing_keys_fn = loadShieldedViewingKeysCallback
+        cb.on_load_shielded_viewing_keys_free_fn = loadShieldedViewingKeysFreeCallback
         cb.on_persist_asset_locks_fn = persistAssetLocksCallback
         cb.on_persist_invitations_fn = persistInvitationsCallback
         cb.on_get_core_tx_record_fn = getCoreTxRecordCallback
@@ -2729,6 +2732,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 row = PersistentCoreAddress(
                     address: entry.address,
                     publicKey: entry.publicKey,
+                    keyType: entry.keyType,
                     poolTypeTag: entry.poolTypeTag,
                     addressIndex: entry.addressIndex,
                     derivationPath: entry.derivationPath,
@@ -2739,6 +2743,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             }
             // Mutation path for both insert + update.
             row.publicKey = entry.publicKey
+            row.keyType = entry.keyType
             row.poolTypeTag = entry.poolTypeTag
             row.addressIndex = entry.addressIndex
             row.derivationPath = entry.derivationPath
@@ -2891,6 +2896,9 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     struct CoreAddressEntrySnapshot {
         let address: String
         let publicKey: Data
+        /// `KeyTypeTagFFI` raw value (0 ECDSA / 1 BLS / 2 EdDSA);
+        /// meaningful only when `publicKey` is non-empty.
+        let keyType: UInt8
         let poolTypeTag: UInt8
         let addressIndex: UInt32
         let isUsed: Bool
@@ -3157,6 +3165,45 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     row.lastSyncedIndex = entry.lastSyncedIndex
                 }
                 row.lastUpdated = Date()
+            }
+            if !self.inChangeset { try? backgroundContext.save() }
+        }
+    }
+
+    /// Upsert per-subwallet Orchard viewing keys (raw 96-byte FVK
+    /// encodings). Fired once per seed-backed bind; the FVK for a
+    /// subwallet never changes on a network, so re-persists are
+    /// byte-identical upserts.
+    func persistShieldedViewingKeys(
+        walletId: Data,
+        entries: [(walletId: Data, accountIndex: UInt32, fvkBytes: Data)]
+    ) {
+        onQueue {
+            for entry in entries {
+                guard entry.fvkBytes.count == 96 else { continue }
+                let rowWalletId = entry.walletId
+                let rowAccountIndex = entry.accountIndex
+                let predicate = #Predicate<PersistentShieldedViewingKey> { row in
+                    row.walletId == rowWalletId && row.accountIndex == rowAccountIndex
+                }
+                var descriptor = FetchDescriptor<PersistentShieldedViewingKey>(
+                    predicate: predicate
+                )
+                descriptor.fetchLimit = 1
+                if let row = try? backgroundContext.fetch(descriptor).first {
+                    if row.fvkBytes != entry.fvkBytes {
+                        row.fvkBytes = entry.fvkBytes
+                        row.lastUpdated = Date()
+                    }
+                } else {
+                    backgroundContext.insert(
+                        PersistentShieldedViewingKey(
+                            walletId: rowWalletId,
+                            accountIndex: rowAccountIndex,
+                            fvkBytes: entry.fvkBytes
+                        )
+                    )
+                }
             }
             if !self.inChangeset { try? backgroundContext.save() }
         }
@@ -3612,6 +3659,94 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         }
     }
 
+    /// Build the host-allocated `ShieldedViewingKeyRestoreFFI` array
+    /// Rust reads at boot so `bind_shielded_from_persisted` can rebind
+    /// without a mnemonic resolve. Same allocation pattern (and
+    /// network scoping) as `loadShieldedSyncStates`.
+    func loadShieldedViewingKeys() -> (
+        entries: UnsafePointer<ShieldedViewingKeyRestoreFFI>?,
+        count: Int,
+        errored: Bool
+    ) {
+        var resultEntries: UnsafePointer<ShieldedViewingKeyRestoreFFI>?
+        var resultCount: Int = 0
+        var resultErrored = false
+        onQueue {
+            let descriptor = FetchDescriptor<PersistentShieldedViewingKey>()
+            var rows: [PersistentShieldedViewingKey]
+            do {
+                rows = try backgroundContext.fetch(descriptor)
+            } catch {
+                resultErrored = true
+                return
+            }
+            // Same network scoping as the other shielded loaders — the
+            // FVK embeds the coin type, so serving another network's
+            // rows would fail the Rust-side bind, not corrupt it, but
+            // the loaders stay consistent regardless.
+            if let inNetworkIds = self.inNetworkWalletIds() {
+                rows = rows.filter { inNetworkIds.contains($0.walletId) }
+            }
+            if rows.isEmpty {
+                return
+            }
+            // Fail closed on a present-but-malformed row, BEFORE any
+            // allocation: silently skipping it (the sync-state
+            // loader's pattern) would make Rust see the account as
+            // "no persisted key" and fall back to a mnemonic resolve,
+            // masking persistence corruption — the exact opposite of
+            // `bind_shielded_from_persisted`'s documented contract,
+            // which surfaces a malformed row as an error.
+            if let bad = rows.first(where: {
+                $0.walletId.count != 32 || $0.fvkBytes.count != 96
+            }) {
+                SDKLogger.error(
+                    "loadShieldedViewingKeys: corrupt row "
+                        + "(walletId \(bad.walletId.count)B, fvk \(bad.fvkBytes.count)B) — "
+                        + "failing the load rather than masking it as a missing key"
+                )
+                resultErrored = true
+                return
+            }
+            let allocation = ShieldedViewingKeyLoadAllocation()
+            let buf = UnsafeMutablePointer<ShieldedViewingKeyRestoreFFI>.allocate(
+                capacity: rows.count
+            )
+            allocation.entries = buf
+            allocation.entriesCount = rows.count
+            var written = 0
+            for row in rows {
+                var entry = ShieldedViewingKeyRestoreFFI()
+                Swift.withUnsafeMutableBytes(of: &entry.wallet_id) { dst in
+                    row.walletId.withUnsafeBytes { dst.copyMemory(from: $0) }
+                }
+                entry.account_index = row.accountIndex
+                Swift.withUnsafeMutableBytes(of: &entry.fvk_bytes) { dst in
+                    row.fvkBytes.withUnsafeBytes { dst.copyMemory(from: $0) }
+                }
+                buf[written] = entry
+                written += 1
+                allocation.entriesInitialized = written
+            }
+            let entriesPtr = UnsafePointer(buf)
+            shieldedViewingKeyLoadAllocations[UnsafeRawPointer(entriesPtr)] = allocation
+            resultEntries = entriesPtr
+            resultCount = written
+        }
+        return (resultEntries, resultCount, resultErrored)
+    }
+
+    func loadShieldedViewingKeysFree(entries: UnsafeRawPointer?) {
+        onQueue {
+            guard let entries = entries,
+                  let allocation = shieldedViewingKeyLoadAllocations.removeValue(forKey: entries)
+            else {
+                return
+            }
+            allocation.release()
+        }
+    }
+
     /// Outstanding shielded-load allocations keyed by the entries
     /// pointer we handed Rust. Drained by `loadShieldedNotesFree`.
     private var shieldedLoadAllocations: [UnsafeRawPointer: ShieldedLoadAllocation] = [:]
@@ -3621,6 +3756,8 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         [UnsafeRawPointer: ShieldedSyncStateLoadAllocation] = [:]
     private var shieldedActivityLoadAllocations:
         [UnsafeRawPointer: ShieldedActivityLoadAllocation] = [:]
+    private var shieldedViewingKeyLoadAllocations:
+        [UnsafeRawPointer: ShieldedViewingKeyLoadAllocation] = [:]
 
     /// Set network, group id + birth height on the `PersistentWallet`
     /// row. Fires once at wallet registration with values the Rust side
@@ -3657,6 +3794,30 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         onQueue {
             guard let wallet = findWalletRecord(walletId: walletId) else { return }
             wallet.name = name
+            wallet.lastUpdated = Date()
+            try? backgroundContext.save()
+        }
+    }
+
+    /// Load the persisted seed-binding marker for `walletId`, or `nil`
+    /// if none was ever written (first launch, pre-column row). The
+    /// marker is opaque to Swift — it round-trips into
+    /// `platform_wallet_verify_seed_binds_to_wallet_cached`, where Rust
+    /// decides whether it still proves the binding.
+    public func seedBindingMarker(walletId: Data) -> String? {
+        onQueue {
+            findWalletRecord(walletId: walletId)?.seedBindingVerifiedMarker
+        }
+    }
+
+    /// Persist the seed-binding marker the cached verify FFI handed
+    /// back (it returns one only when a full verification ran and
+    /// bound). Silently skips if the row is missing, mirroring
+    /// `setWalletName`.
+    public func setSeedBindingMarker(walletId: Data, marker: String) {
+        onQueue {
+            guard let wallet = findWalletRecord(walletId: walletId) else { return }
+            wallet.seedBindingVerifiedMarker = marker
             wallet.lastUpdated = Date()
             try? backgroundContext.save()
         }
@@ -3792,62 +3953,42 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 }
 
                 // The txo / pending-input / asset-lock tables are keyed
-                // by the network-independent walletId (same mnemonic →
-                // same id on every network) and carry no network column,
-                // so their rows are shared by every network this wallet
-                // lives on. Only wipe them when this is the wallet's LAST
-                // remaining per-network row — otherwise deleting the
-                // wallet from one network would erase a sibling network's
-                // cached UTXOs / pending inputs / asset-lock state.
-                // (The walletRow itself, deleted below, IS network-scoped
-                // via `walletRecordPredicate`.) Counted before walletRow
-                // is removed, so `<= 1` means "this is the last one".
-                // Guard on `walletRow != nil`: if this handler doesn't
-                // own a row for `walletId` (asked to delete a wallet it
-                // doesn't have), a sibling network's row can still make
-                // the cross-network count 1 — which would wrongly read
-                // as "last row" and wipe the shared child tables out
-                // from under that other network. No owned row → never
-                // treat it as the last one.
-                let isLastNetworkRow: Bool
-                if walletRow != nil {
-                    let siblingDescriptor = FetchDescriptor<PersistentWallet>(
-                        predicate: #Predicate<PersistentWallet> { $0.walletId == walletId }
-                    )
-                    isLastNetworkRow =
-                        ((try? backgroundContext.fetchCount(siblingDescriptor)) ?? 0) <= 1
-                } else {
-                    isLastNetworkRow = false
+                // by raw `walletId` with no relationship to
+                // `PersistentWallet`, so the wallet-row delete below
+                // does not cascade them — purge them explicitly.
+                // `walletId` is network-scoped (key-wallet folds a
+                // domain tag + network discriminant into the digest),
+                // so every row under this id belongs to this wallet on
+                // this network alone and the purge can't touch a
+                // sibling network's cached state; a mnemonic's rows on
+                // other networks live under different walletIds, tied
+                // together only by `walletGroupId`.
+                let txoDescriptor = FetchDescriptor<PersistentTxo>(
+                    predicate: #Predicate<PersistentTxo> { $0.walletId == walletId }
+                )
+                for row in try backgroundContext.fetch(txoDescriptor) {
+                    backgroundContext.delete(row)
                 }
 
-                if isLastNetworkRow {
-                    let txoDescriptor = FetchDescriptor<PersistentTxo>(
-                        predicate: #Predicate<PersistentTxo> { $0.walletId == walletId }
-                    )
-                    for row in try backgroundContext.fetch(txoDescriptor) {
-                        backgroundContext.delete(row)
-                    }
+                let pendingDescriptor = FetchDescriptor<PersistentPendingInput>(
+                    predicate: #Predicate<PersistentPendingInput> { $0.walletId == walletId }
+                )
+                for row in try backgroundContext.fetch(pendingDescriptor) {
+                    backgroundContext.delete(row)
+                }
 
-                    let pendingDescriptor = FetchDescriptor<PersistentPendingInput>(
-                        predicate: #Predicate<PersistentPendingInput> { $0.walletId == walletId }
-                    )
-                    for row in try backgroundContext.fetch(pendingDescriptor) {
-                        backgroundContext.delete(row)
-                    }
-
-                    // `loadCachedAssetLocksOnQueue` rehydrates these rows on
-                    // the wallet-load path back into the Rust-side
-                    // `unused_asset_locks` map so an in-flight registration
-                    // can resume across an app kill. Without this cleanup,
-                    // delete-then-reimport of the same wallet would
-                    // resurrect stale Pending / Resumable asset-lock state
-                    // that the user thought they had wiped.
-                    let assetLockDescriptor = FetchDescriptor<PersistentAssetLock>(
-                        predicate: #Predicate<PersistentAssetLock> { $0.walletId == walletId }
-                    )
-                    for row in try backgroundContext.fetch(assetLockDescriptor) {
-                        backgroundContext.delete(row)
-                    }
+                // `loadCachedAssetLocksOnQueue` rehydrates these rows on
+                // the wallet-load path back into the Rust-side
+                // `unused_asset_locks` map so an in-flight registration
+                // can resume across an app kill. Without this cleanup,
+                // delete-then-reimport of the same wallet would
+                // resurrect stale Pending / Resumable asset-lock state
+                // that the user thought they had wiped.
+                let assetLockDescriptor = FetchDescriptor<PersistentAssetLock>(
+                    predicate: #Predicate<PersistentAssetLock> { $0.walletId == walletId }
+                )
+                for row in try backgroundContext.fetch(assetLockDescriptor) {
+                    backgroundContext.delete(row)
                 }
 
                 // Shielded (Orchard) per-wallet state. These four
@@ -3884,6 +4025,13 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     predicate: #Predicate<PersistentShieldedActivity> { $0.walletId == walletId }
                 )
                 for row in try backgroundContext.fetch(shieldedActivityDescriptor) {
+                    backgroundContext.delete(row)
+                }
+
+                let shieldedViewingKeyDescriptor = FetchDescriptor<PersistentShieldedViewingKey>(
+                    predicate: #Predicate<PersistentShieldedViewingKey> { $0.walletId == walletId }
+                )
+                for row in try backgroundContext.fetch(shieldedViewingKeyDescriptor) {
                     backgroundContext.delete(row)
                 }
 
@@ -3984,31 +4132,6 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 xpubBytes = Data()
             }
 
-            // Pre-derived platform-node (Ed25519) keys for the
-            // ProviderPlatformKeys account. Rust-owned + valid only for
-            // the callback window, so copy each row's bytes out now.
-            var derivedPlatformNodeKeys: [DerivedPlatformNodeKey] = []
-            if let dkPtr = spec.derived_platform_node_keys,
-               spec.derived_platform_node_keys_count > 0 {
-                let rows = UnsafeBufferPointer(
-                    start: dkPtr,
-                    count: Int(spec.derived_platform_node_keys_count)
-                )
-                for row in rows {
-                    var pub = Data(count: 32)
-                    withUnsafeBytes(of: row.public_key) { src in
-                        pub.withUnsafeMutableBytes { dst in dst.copyMemory(from: src) }
-                    }
-                    var node = Data(count: 20)
-                    withUnsafeBytes(of: row.node_id) { src in
-                        node.withUnsafeMutableBytes { dst in dst.copyMemory(from: src) }
-                    }
-                    derivedPlatformNodeKeys.append(
-                        DerivedPlatformNodeKey(index: row.index, publicKey: pub, nodeId: node)
-                    )
-                }
-            }
-
             // Upsert keyed by the full account identity. We can't easily
             // express the identity tuple in a #Predicate with local `Data`
             // captures, so fetch by (walletId, accountType, accountIndex)
@@ -4054,15 +4177,6 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             account.userIdentityId = userIdentityId
             account.friendIdentityId = friendIdentityId
             account.accountExtendedPubKeyBytes = xpubBytes
-            // Only overwrite the batch when this callback actually
-            // carries one (i.e. the registration-time ProviderPlatformKeys
-            // spec). Any other emitter passes an empty array, so a
-            // balance-only re-persist never wipes the registration batch —
-            // Swift is the sole source of truth for it (Rust never echoes
-            // it back on the load path).
-            if !derivedPlatformNodeKeys.isEmpty {
-                account.derivedPlatformNodeKeys = derivedPlatformNodeKeys
-            }
             account.lastUpdated = Date()
             if !self.inChangeset { try? backgroundContext.save() }
         }
@@ -4246,50 +4360,9 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     copyBytes(acc.friendIdentityId, into: &spec.friend_identity_id)
                     spec.account_xpub_bytes = UnsafePointer(xpubBuffer)
                     spec.account_xpub_bytes_len = UInt(xpub.count)
-                    // Rehydrate the platform-node (Ed25519) key batch on the
-                    // ProviderPlatformKeys account so the Rust restore can
-                    // repopulate its managed pool. SLIP-10 is hardened-only,
-                    // so these keys can't be re-derived seedlessly, and the
-                    // 33-byte core-address-pool ABI can't carry a typed 32B
-                    // Ed25519 key — the batch is the only path. Only the
-                    // platform account has a non-empty batch, so that alone
-                    // gates this. Pure load-side marshalling of persisted
-                    // rows (the Rust side recomputes node ids under #884).
-                    if !acc.derivedPlatformNodeKeys.isEmpty {
-                        let batch = acc.derivedPlatformNodeKeys
-                        let nkBuf = UnsafeMutablePointer<ProviderPlatformNodeKeyFFI>.allocate(
-                            capacity: batch.count
-                        )
-                        var nkWritten = 0
-                        for dk in batch where dk.publicKey.count == 32 && dk.nodeId.count == 20 {
-                            var row = ProviderPlatformNodeKeyFFI()
-                            row.index = dk.index
-                            dk.publicKey.withUnsafeBytes { src in
-                                withUnsafeMutableBytes(of: &row.public_key) { dst in
-                                    dst.copyMemory(from: src)
-                                }
-                            }
-                            dk.nodeId.withUnsafeBytes { src in
-                                withUnsafeMutableBytes(of: &row.node_id) { dst in
-                                    dst.copyMemory(from: src)
-                                }
-                            }
-                            nkBuf[nkWritten] = row
-                            nkWritten += 1
-                        }
-                        if nkWritten > 0 {
-                            spec.derived_platform_node_keys = UnsafePointer(nkBuf)
-                            spec.derived_platform_node_keys_count = UInt(nkWritten)
-                            allocation.providerPlatformNodeKeyArrays.append((nkBuf, nkWritten))
-                        } else {
-                            nkBuf.deallocate()
-                            spec.derived_platform_node_keys = nil
-                            spec.derived_platform_node_keys_count = 0
-                        }
-                    } else {
-                        spec.derived_platform_node_keys = nil
-                        spec.derived_platform_node_keys_count = 0
-                    }
+                    // The platform-node (Ed25519) pool now rehydrates from
+                    // this account's persisted typed core-address rows like
+                    // every other pool — no dedicated batch on the spec.
                     buf[written] = spec
                     written += 1
                 }
@@ -4700,8 +4773,18 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             )
             for (j, row) in group.rows.enumerated() {
                 var e = CoreAddressEntryFFI()
-                copyBytes(row.publicKey, into: &e.public_key)
-                e.has_public_key = (row.publicKey.count == 33)
+                // Copy the typed key bytes (<= 48) into the fixed slot and
+                // record their length + curve tag. A row whose stored key
+                // somehow exceeds the slot is emitted with no key rather
+                // than truncated. Pure marshalling — the Rust side decides.
+                if row.publicKey.count <= MemoryLayout.size(ofValue: e.public_key) {
+                    copyBytes(row.publicKey, into: &e.public_key)
+                    e.public_key_len = UInt8(row.publicKey.count)
+                    e.key_type_tag = row.keyType
+                } else {
+                    e.public_key_len = 0
+                    e.key_type_tag = 0
+                }
                 e.pool_type_tag = group.poolTypeTag
                 e.address_index = row.addressIndex
                 e.is_used = row.isUsed
@@ -4726,8 +4809,6 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             copyBytes(account.friendIdentityId, into: &spec.friend_identity_id)
             spec.account_xpub_bytes = nil
             spec.account_xpub_bytes_len = 0
-            spec.derived_platform_node_keys = nil
-            spec.derived_platform_node_keys_count = 0
 
             var pool = AccountAddressPoolFFI()
             pool.account = spec
@@ -5723,11 +5804,6 @@ private final class LoadAllocation {
     var coreAddressPoolArrays: [(UnsafeMutablePointer<AccountAddressPoolFFI>, Int)] = []
     /// Inner `CoreAddressEntryFFI` arrays, one per pool entry above.
     var coreAddressEntryArrays: [(UnsafeMutablePointer<CoreAddressEntryFFI>, Int)] = []
-    /// Per-`ProviderPlatformKeys`-account `ProviderPlatformNodeKeyFFI`
-    /// arrays — the persisted platform-node key batch marshalled back so
-    /// the Rust restore can repopulate the managed pool. Flat POD (no owned
-    /// pointers), so nothing extra rides `scalarBuffers`.
-    var providerPlatformNodeKeyArrays: [(UnsafeMutablePointer<ProviderPlatformNodeKeyFFI>, Int)] = []
 
     func release() {
         if let entries = entries {
@@ -5810,10 +5886,6 @@ private final class LoadAllocation {
             ptr.deinitialize(count: count)
             ptr.deallocate()
         }
-        for (ptr, count) in providerPlatformNodeKeyArrays {
-            ptr.deinitialize(count: count)
-            ptr.deallocate()
-        }
     }
 }
 
@@ -5870,6 +5942,25 @@ private final class ShieldedOutgoingNoteLoadAllocation {
 /// entries buffer.
 private final class ShieldedSyncStateLoadAllocation {
     var entries: UnsafeMutablePointer<ShieldedSubwalletSyncStateFFI>?
+    var entriesCount: Int = 0
+    var entriesInitialized: Int = 0
+
+    func release() {
+        if let entries = entries {
+            if entriesInitialized > 0 {
+                entries.deinitialize(count: entriesInitialized)
+            }
+            entries.deallocate()
+        }
+    }
+}
+
+/// Allocation tracker for `loadShieldedViewingKeys` — a flat entries
+/// buffer with no per-row pointer fields (the FVK is a fixed 96-byte
+/// inline array), so the same shape as
+/// `ShieldedSyncStateLoadAllocation`.
+private final class ShieldedViewingKeyLoadAllocation {
+    var entries: UnsafeMutablePointer<ShieldedViewingKeyRestoreFFI>?
     var entriesCount: Int = 0
     var entriesInitialized: Int = 0
 
@@ -6169,20 +6260,18 @@ private func persistAccountAddressPoolsCallback(
                 let entry = addressesPtr[j]
                 let address = entry.address_base58.map { String(cString: $0) } ?? ""
                 let derivationPath = entry.derivation_path.map { String(cString: $0) } ?? ""
-                let publicKey: Data
-                if entry.has_public_key {
-                    var pk = Data(count: 33)
-                    withUnsafeBytes(of: entry.public_key) { src in
-                        pk.withUnsafeMutableBytes { dst in dst.copyMemory(from: src) }
-                    }
-                    publicKey = pk
-                } else {
-                    publicKey = Data()
-                }
+                // Copy exactly `public_key_len` leading bytes out of the
+                // 48-byte slot; `key_type_tag` records the curve. Pure
+                // marshalling — the Rust side already validated the pair.
+                let keyLen = Int(entry.public_key_len)
+                let publicKey = keyLen > 0
+                    ? withUnsafeBytes(of: entry.public_key) { Data($0.prefix(keyLen)) }
+                    : Data()
                 if address.isEmpty { continue }
                 snapshots.append(.init(
                     address: address,
                     publicKey: publicKey,
+                    keyType: entry.key_type_tag,
                     poolTypeTag: entry.pool_type_tag,
                     addressIndex: entry.address_index,
                     isUsed: entry.is_used,
@@ -7156,6 +7245,64 @@ private func loadShieldedSyncStatesFreeCallback(
         .fromOpaque(context)
         .takeUnretainedValue()
     handler.loadShieldedSyncStatesFree(entries: entries.map(UnsafeRawPointer.init))
+}
+
+private func persistShieldedViewingKeysCallback(
+    context: UnsafeMutableRawPointer?,
+    walletIdPtr: UnsafePointer<UInt8>?,
+    entriesPtr: UnsafePointer<ShieldedViewingKeyFFI>?,
+    count: UInt
+) -> Int32 {
+    guard let context = context, let walletIdPtr = walletIdPtr else { return 0 }
+    let handler = Unmanaged<PlatformWalletPersistenceHandler>
+        .fromOpaque(context)
+        .takeUnretainedValue()
+    let walletId = Data(bytes: walletIdPtr, count: 32)
+
+    var entries: [(walletId: Data, accountIndex: UInt32, fvkBytes: Data)] = []
+    if count > 0, let entriesPtr = entriesPtr {
+        entries.reserveCapacity(Int(count))
+        for i in 0..<Int(count) {
+            let e = entriesPtr[i]
+            let fvkBytes = Swift.withUnsafeBytes(of: e.fvk_bytes) { Data($0) }
+            entries.append((
+                walletId: dataFromTuple32(e.wallet_id),
+                accountIndex: e.account_index,
+                fvkBytes: fvkBytes
+            ))
+        }
+    }
+    handler.persistShieldedViewingKeys(walletId: walletId, entries: entries)
+    return 0
+}
+
+private func loadShieldedViewingKeysCallback(
+    context: UnsafeMutableRawPointer?,
+    outEntries: UnsafeMutablePointer<UnsafePointer<ShieldedViewingKeyRestoreFFI>?>?,
+    outCount: UnsafeMutablePointer<UInt>?
+) -> Int32 {
+    guard let context = context, let outEntries = outEntries, let outCount = outCount else {
+        return 1
+    }
+    let handler = Unmanaged<PlatformWalletPersistenceHandler>
+        .fromOpaque(context)
+        .takeUnretainedValue()
+    let (entries, count, errored) = handler.loadShieldedViewingKeys()
+    outEntries.pointee = entries
+    outCount.pointee = UInt(count)
+    return errored ? 1 : 0
+}
+
+private func loadShieldedViewingKeysFreeCallback(
+    context: UnsafeMutableRawPointer?,
+    entries: UnsafePointer<ShieldedViewingKeyRestoreFFI>?,
+    _ count: UInt
+) {
+    guard let context = context else { return }
+    let handler = Unmanaged<PlatformWalletPersistenceHandler>
+        .fromOpaque(context)
+        .takeUnretainedValue()
+    handler.loadShieldedViewingKeysFree(entries: entries.map(UnsafeRawPointer.init))
 }
 
 // MARK: - Core tx-record persister fallback

@@ -231,10 +231,10 @@ struct ReclaimInvitationSheet: View {
                         return
                     }
                     try markInFlight()
-                    _ = try await wallet.topUpIdentityWithExistingAssetLock(
+                    _ = try await wallet.resumeTopUpWithAssetLock(
+                        identityId: identityId,
                         outPointTxid: txid,
                         outPointVout: vout,
-                        identityId: identityId,
                         // Reclaim IS the explicitly authorized voucher-consume
                         // path; generic resume/top-up flows are refused
                         // invitation locks by the Rust funding resolver.

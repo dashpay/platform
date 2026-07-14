@@ -22,6 +22,18 @@ private func hexString(_ data: Data) -> String {
     data.map { String(format: "%02x", $0) }.joined()
 }
 
+/// Human label for a stored public key, keyed on its byte length — the
+/// curve is fixed by the width (ECDSA 33 / BLS 48 / Ed25519 32),
+/// matching the Rust-side `KeyTypeTagFFI` discriminant.
+private func publicKeyTypeLabel(byteCount: Int) -> String {
+    switch byteCount {
+    case 33: return "ECDSA Public Key"
+    case 48: return "BLS Public Key"
+    case 32: return "Ed25519 Public Key"
+    default: return "Public Key"
+    }
+}
+
 /// Render an owning `PersistentWallet` for one-line display on
 /// the storage-record detail screens. Priority: explicit wallet
 /// name → `"<short hex>…"` of the `walletId` → "None" for
@@ -1367,7 +1379,7 @@ struct PlatformAddressDetailView: View {
             }
             Section("Public Key") {
                 FieldRow(
-                    label: "Bytes (hex)",
+                    label: publicKeyTypeLabel(byteCount: record.publicKey.count),
                     value: record.publicKey.isEmpty
                         ? "—"
                         : record.publicKey.map { String(format: "%02x", $0) }.joined()
@@ -1639,7 +1651,7 @@ struct CoreAddressDetailView: View {
             }
             Section("Public Key") {
                 FieldRow(
-                    label: "Bytes (hex)",
+                    label: publicKeyTypeLabel(byteCount: record.publicKey.count),
                     value: record.publicKey.isEmpty
                         ? "—"
                         : record.publicKey.map { String(format: "%02x", $0) }.joined()
@@ -2722,5 +2734,33 @@ private extension AssetLockStorageDetailView {
         case 2, 3: return "Pending (unused)"
         default: return "Pending"
         }
+    }
+}
+
+// MARK: - PersistentShieldedViewingKey
+
+struct ShieldedViewingKeyStorageDetailView: View {
+    let record: PersistentShieldedViewingKey
+
+    var body: some View {
+        Form {
+            Section("Identity") {
+                FieldRow(label: "Wallet ID", value: hexString(record.walletId))
+                FieldRow(label: "Account Index", value: "\(record.accountIndex)")
+            }
+            Section("Viewing Key") {
+                // Viewing-grade only (cannot spend), but still key
+                // material — the full 96-byte FVK is intentionally
+                // rendered for QA inspection, matching how the
+                // explorer shows other derived public-key batches.
+                FieldRow(label: "FVK Length", value: "\(record.fvkBytes.count) bytes")
+                FieldRow(label: "FVK (hex)", value: hexString(record.fvkBytes))
+            }
+            Section("Timestamps") {
+                FieldRow(label: "Updated", value: dateString(record.lastUpdated))
+            }
+        }
+        .navigationTitle("Shielded Viewing Key")
+        .navigationBarTitleDisplayMode(.inline)
     }
 }

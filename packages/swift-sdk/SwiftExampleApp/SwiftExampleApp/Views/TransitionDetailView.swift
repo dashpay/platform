@@ -27,6 +27,11 @@ struct TransitionDetailView: View {
   @State private var showResult = false
   @State private var resultText = ""
   @State private var isError = false
+  /// Gates the resume-from-tracked-lock confirmation. A tracked asset lock
+  /// isn't bound to an identity — resume directs it at whatever identity is
+  /// selected, and a stray lock landing on the wrong (self-owned) identity
+  /// is not undoable — so this flow requires an explicit confirm.
+  @State private var showResumeConfirm = false
 
   // Dynamic form inputs
   @State private var formInputs: [String: String] = [:]
@@ -200,6 +205,23 @@ struct TransitionDetailView: View {
     .foregroundColor(.white)
     .cornerRadius(10)
     .disabled(!enabled)
+    .confirmationDialog(
+      "Resume top-up?",
+      isPresented: $showResumeConfirm,
+      titleVisibility: .visible
+    ) {
+      Button("Top Up") {
+        Task { await performTransition() }
+      }
+      Button("Cancel", role: .cancel) {}
+    } message: {
+      let txid = (formInputs["outPointTxid"] ?? "").trimmingCharacters(in: .whitespaces)
+      let vout = (formInputs["outPointVout"] ?? "0").trimmingCharacters(in: .whitespaces)
+      Text(
+        "Consume asset lock \(txid.isEmpty ? "?" : txid):\(vout) into identity "
+          + "\(selectedIdentityId)? This credits the selected identity and cannot be undone."
+      )
+    }
   }
 
   private var resultView: some View {
@@ -456,6 +478,13 @@ struct TransitionDetailView: View {
   // MARK: - Transition Execution
 
   private func executeTransition() {
+    // Resume directs a tracked asset lock at whatever identity is selected;
+    // a stray lock landing on the wrong (self-owned) identity is not
+    // undoable, so require explicit confirmation before firing.
+    if transitionKey == "identityTopUpResume" {
+      showResumeConfirm = true
+      return
+    }
     Task {
       await performTransition()
     }
@@ -492,6 +521,9 @@ struct TransitionDetailView: View {
 
     case "identityTopUp":
       return try await executeIdentityTopUp(sdk: sdk)
+
+    case "identityTopUpResume":
+      return try await executeIdentityTopUpResume(sdk: sdk)
 
     case "identityUpdate":
       return try await executeIdentityUpdate(sdk: sdk)
@@ -608,13 +640,116 @@ struct TransitionDetailView: View {
     ]
   }
 
+  /// Minimum Core-side funding for a managed top-up, in duffs. Mirrors the
+  /// Rust `MIN_TOP_UP_DUFFS` guard so the UI blocks a sub-floor amount
+  /// *before* any asset lock is broadcast — a lock below Platform's minimum
+  /// required fee (active v1 calc: 500-duff base cost + 50_000-duff asset-lock
+  /// floor = 50_500 duffs) is accepted by Core but rejected by Platform,
+  /// stranding the funds in a lock that can't complete the top-up.
+  private static let minTopUpDuffs: UInt64 = 50_500
+
+  /// Top up the selected identity by building a new Core asset lock from
+  /// the owning wallet's balance (managed path — the credit-output key
+  /// stays behind the Keychain resolver and never crosses FFI as bytes).
+  /// Mirrors `executeIdentityUpdate`'s wallet resolution and
+  /// `executeIdentityCreditTransfer`'s local balance update.
+  @MainActor
   private func executeIdentityTopUp(sdk: SDK) async throws -> Any {
     guard !selectedIdentityId.isEmpty,
-          identities.contains(where: { $0.identityIdBase58 == selectedIdentityId }) else {
+          let ownerIdentity = identities.first(where: { $0.identityIdBase58 == selectedIdentityId }) else {
       throw SDKError.invalidParameter("No identity selected")
     }
+    guard let walletId = ownerIdentity.wallet?.walletId,
+          let wallet = walletManager.wallet(for: walletId) else {
+      throw SDKError.invalidParameter(
+        "Identity has no wallet linkage; cannot fund the top-up"
+      )
+    }
+    guard let amountString = formInputs["amount"],
+          let amountDuffs = UInt64(amountString.trimmingCharacters(in: .whitespaces)) else {
+      throw SDKError.invalidParameter("Invalid amount (duffs)")
+    }
+    guard amountDuffs >= Self.minTopUpDuffs else {
+      throw SDKError.invalidParameter(
+        "Amount must be at least \(Self.minTopUpDuffs) duffs; a smaller top-up would be rejected by Platform and strand the funds"
+      )
+    }
+    let accountIndex = UInt32(
+      formInputs["accountIndex"]?.trimmingCharacters(in: .whitespaces) ?? "0"
+    ) ?? 0
 
-    throw SDKError.notImplemented("Identity top-up requires proper Identity handle conversion")
+    let newBalance = try await wallet.topUpIdentityWithFunding(
+      identityId: ownerIdentity.identityId,
+      amountDuffs: amountDuffs,
+      accountIndex: accountIndex
+    )
+
+    PersistentIdentity.updateBalance(
+      in: modelContext, identityId: ownerIdentity.identityId, balance: newBalance
+    )
+    try? modelContext.save()
+
+    return [
+      "identityId": ownerIdentity.identityIdBase58,
+      "newBalance": newBalance,
+      "fundedDuffs": amountDuffs,
+      "accountIndex": accountIndex,
+      "message": "Identity topped up successfully",
+    ]
+  }
+
+  /// Recover a stuck top-up by consuming an already-tracked Core asset lock
+  /// by outpoint (crash-recovery path). Same managed signing as
+  /// `executeIdentityTopUp`. The txid is entered in display order and
+  /// reversed to raw wire order here, matching `OutPointFFI.txid` (same
+  /// convention as `CreateIdentityView.parseOutPointHex`).
+  @MainActor
+  private func executeIdentityTopUpResume(sdk: SDK) async throws -> Any {
+    guard !selectedIdentityId.isEmpty,
+          let ownerIdentity = identities.first(where: { $0.identityIdBase58 == selectedIdentityId }) else {
+      throw SDKError.invalidParameter("No identity selected")
+    }
+    guard let walletId = ownerIdentity.wallet?.walletId,
+          let wallet = walletManager.wallet(for: walletId) else {
+      throw SDKError.invalidParameter(
+        "Identity has no wallet linkage; cannot resume the top-up"
+      )
+    }
+    let txidHex = (formInputs["outPointTxid"] ?? "").trimmingCharacters(in: .whitespaces)
+    guard txidHex.count == 64, let txidForward = Data(hexString: txidHex) else {
+      throw SDKError.invalidParameter("Asset lock txid must be 64 hex characters (32 bytes)")
+    }
+    let txidRaw = Data(txidForward.reversed())
+    let vout = UInt32(
+      formInputs["outPointVout"]?.trimmingCharacters(in: .whitespaces) ?? "0"
+    ) ?? 0
+
+    do {
+      let newBalance = try await wallet.resumeTopUpWithAssetLock(
+        identityId: ownerIdentity.identityId,
+        outPointTxid: txidRaw,
+        outPointVout: vout
+      )
+      PersistentIdentity.updateBalance(
+        in: modelContext, identityId: ownerIdentity.identityId, balance: newBalance
+      )
+      try? modelContext.save()
+      return [
+        "identityId": ownerIdentity.identityIdBase58,
+        "newBalance": newBalance,
+        "message": "Stuck top-up recovered successfully",
+      ]
+    } catch {
+      // Classify the opaque "already consumed" consensus rejection into a
+      // friendly message (mirrors the DIP-15 reclaim classifier) rather
+      // than surfacing the raw SDK error.
+      let desc = String(describing: error).lowercased()
+      if (desc.contains("already") && desc.contains("consumed"))
+        || desc.contains("already completely used") {
+        throw SDKError.invalidParameter("Asset lock already consumed — nothing to resume")
+      }
+      throw error
+    }
   }
 
   /// Generic-builder IdentityUpdate handler.
