@@ -3902,12 +3902,19 @@ extension ManagedPlatformWallet {
     ///
     /// Returns `(identityId, ManagedIdentity)` for the freshly
     /// registered identity.
+    ///
+    /// `consumeInvitationVoucher` is the explicit authorization to consume an
+    /// `IdentityInvitation`-typed lock (a DashPay bearer voucher whose key is
+    /// shared in the invitation link). Defaults to `false`: generic resume
+    /// surfaces are refused invitation locks by the Rust funding resolver.
+    /// Only the invitation reclaim flow passes `true`.
     public func resumeIdentityWithAssetLock(
         outPointTxid: Data,
         outPointVout: UInt32,
         identityIndex: UInt32,
         identityPubkeys: [ManagedPlatformWallet.IdentityPubkey],
-        signer: KeychainSigner
+        signer: KeychainSigner,
+        consumeInvitationVoucher: Bool = false
     ) async throws -> (Identifier, ManagedIdentity) {
         guard outPointTxid.count == 32 else {
             throw PlatformWalletError.invalidParameter(
@@ -3974,6 +3981,7 @@ extension ManagedPlatformWallet {
                         UInt(ffiRowsCount),
                         signerHandle,
                         coreSigner.handle,
+                        consumeInvitationVoucher,
                         &idTuple,
                         &outManagedHandle
                     )
@@ -4003,10 +4011,16 @@ extension ManagedPlatformWallet {
     /// which re-derives the voucher key at the invitation funding path.
     ///
     /// - Returns: the identity's new credit balance reported by the FFI.
+    ///
+    /// `consumeInvitationVoucher` is the explicit authorization to consume an
+    /// `IdentityInvitation`-typed lock. Defaults to `false`: a generic top-up
+    /// is refused invitation locks by the Rust funding resolver. Only the
+    /// invitation reclaim flow passes `true`.
     public func topUpIdentityWithExistingAssetLock(
         outPointTxid: Data,
         outPointVout: UInt32,
-        identityId: Data
+        identityId: Data,
+        consumeInvitationVoucher: Bool = false
     ) async throws -> UInt64 {
         guard outPointTxid.count == 32 else {
             throw PlatformWalletError.invalidParameter(
@@ -4064,6 +4078,7 @@ extension ManagedPlatformWallet {
                     &outPoint,
                     &idTuple,
                     coreSigner.handle,
+                    consumeInvitationVoucher,
                     &newBalance
                 )
             }

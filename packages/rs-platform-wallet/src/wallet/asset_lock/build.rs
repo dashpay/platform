@@ -430,6 +430,23 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         // dropped before the broadcast (only snapshot ordering needs
         // serializing; the UI's own single-flight guard is NOT sufficient —
         // a dismissed sheet's unstructured task keeps running).
+        // Test-only occupancy gauge for the serialization gate (see
+        // `build_serial_gate`). RAII so every exit path — including the
+        // pre-broadcast aborts below — decrements.
+        #[cfg(test)]
+        struct GateGauge<'a>(&'a std::sync::atomic::AtomicUsize);
+        #[cfg(test)]
+        impl Drop for GateGauge<'_> {
+            fn drop(&mut self) {
+                self.0.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+            }
+        }
+        #[cfg(test)]
+        let _gate_gauge = {
+            self.build_serial_gate
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            GateGauge(&self.build_serial_gate)
+        };
         let build_persist_guard = self.build_persist_serial.lock().await;
 
         // 1. Build the asset lock transaction.
@@ -978,6 +995,14 @@ mod tests {
         stored: Mutex<Vec<PlatformWalletChangeSet>>,
         first_pool_store: std::sync::Barrier,
         gate_used: std::sync::atomic::AtomicBool,
+        /// Total pool-bearing `store` calls seen (counted before parking or
+        /// pushing). Reaching 2 while the first store is parked proves the
+        /// second build persisted concurrently — the exact regression.
+        pool_stores_seen: std::sync::atomic::AtomicUsize,
+        /// Set just before the first pool store parks at the barrier, so the
+        /// test can spawn the second build only once the first is provably
+        /// inside its persist.
+        first_parked: std::sync::atomic::AtomicBool,
     }
 
     impl PlatformWalletPersistence for GatedPoolPersistence {
@@ -986,12 +1011,17 @@ mod tests {
             _wallet_id: WalletId,
             changeset: PlatformWalletChangeSet,
         ) -> Result<(), PersistenceError> {
-            if !changeset.account_address_pools.is_empty()
-                && !self
+            if !changeset.account_address_pools.is_empty() {
+                self.pool_stores_seen
+                    .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                if !self
                     .gate_used
                     .swap(true, std::sync::atomic::Ordering::SeqCst)
-            {
-                self.first_pool_store.wait();
+                {
+                    self.first_parked
+                        .store(true, std::sync::atomic::Ordering::SeqCst);
+                    self.first_pool_store.wait();
+                }
             }
             self.stored
                 .lock()
@@ -1035,6 +1065,8 @@ mod tests {
             stored: Mutex::new(Vec::new()),
             first_pool_store: std::sync::Barrier::new(2),
             gate_used: std::sync::atomic::AtomicBool::new(false),
+            pool_stores_seen: std::sync::atomic::AtomicUsize::new(0),
+            first_parked: std::sync::atomic::AtomicBool::new(false),
         });
         let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
         let manager = Arc::new(AssetLockManager::new(
@@ -1063,6 +1095,16 @@ mod tests {
                 .await
         });
 
+        // Spawn B only once A is provably parked inside its pool persist
+        // (holding `build_persist_serial`), so the interleaving is staged,
+        // not scheduled.
+        while !persistence
+            .first_parked
+            .load(std::sync::atomic::Ordering::SeqCst)
+        {
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+
         let manager_b = Arc::clone(&manager);
         let b = tokio::spawn(async move {
             manager_b
@@ -1076,12 +1118,30 @@ mod tests {
                 .await
         });
 
-        // Whichever build stores its pool first is now parked at the barrier
-        // (inside the serialized section). Give the other build time to
-        // (wrongly) run its own build + persist meanwhile — with the
-        // serialization it parks on the mutex instead — then join the barrier
-        // to release the held build.
-        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+        // Release A only after B has provably reached the relevant stage —
+        // no scheduling assumption. Exactly one of two states must occur:
+        // - `pool_stores_seen >= 2`: B built and persisted its own (fuller)
+        //   snapshot while A was parked — the regression manifested (an
+        //   unserialized implementation always reaches this state, however
+        //   slowly, so the rollback assertion below fires deterministically);
+        // - `build_serial_gate >= 2`: B is queued at the build→persist
+        //   serialization gate while A still holds it, so B cannot have
+        //   collected a snapshot yet — the fixed behavior, verified
+        //   positively rather than by the absence of a store within a delay.
+        loop {
+            let regressed = persistence
+                .pool_stores_seen
+                .load(std::sync::atomic::Ordering::SeqCst)
+                >= 2;
+            let serialized = manager
+                .build_serial_gate
+                .load(std::sync::atomic::Ordering::SeqCst)
+                >= 2;
+            if regressed || serialized {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
         persistence.first_pool_store.wait();
 
         a.await.expect("join A").expect("build A succeeds");
@@ -1235,5 +1295,87 @@ mod tests {
                 >= 1,
             "the invitation funding pool must be flushed before broadcast"
         );
+    }
+
+    /// An `IdentityInvitation`-typed lock is a shared bearer voucher: the
+    /// funding resolver must refuse to consume it through the generic
+    /// `FromExistingAssetLock` path (no explicit authorization), and must
+    /// let the explicitly-authorized reclaim variant past the gate. Consuming
+    /// a voucher generically would both misdirect the funds into an unrelated
+    /// local identity and invalidate the invitee's already-shared claim.
+    #[tokio::test]
+    async fn generic_resume_refuses_invitation_voucher_locks() {
+        use crate::wallet::asset_lock::orchestration::AssetLockFunding;
+
+        let persistence = Arc::new(CapturingPersistence::default());
+        let (manager, signer) = funded_asset_lock_manager_with_persistence(
+            Arc::new(AlwaysOkBroadcaster),
+            Arc::clone(&persistence),
+        )
+        .await;
+
+        // A real tracked invitation voucher, stopped at Broadcast (the
+        // broadcast half never attaches a proof).
+        let (_path, out_point) = manager
+            .broadcast_funded_asset_lock(
+                1_000_000,
+                0,
+                AssetLockFundingType::IdentityInvitation,
+                0,
+                &signer,
+            )
+            .await
+            .expect("invitation broadcast half succeeds");
+
+        // Unauthorized (generic) consume: refused by the gate, immediately.
+        let refused = manager
+            .resolve_funding_with_is_timeout_fallback(
+                AssetLockFunding::FromExistingAssetLock {
+                    out_point,
+                    consume_invitation_voucher: false,
+                },
+                AssetLockFundingType::IdentityRegistration,
+                0,
+                &signer,
+            )
+            .await;
+        match refused {
+            Err(PlatformWalletError::AssetLockTransaction(msg)) => assert!(
+                msg.contains("invitation voucher"),
+                "expected the voucher-refusal error, got: {msg}"
+            ),
+            Err(e) => panic!("expected the voucher-refusal error, got {e:?}"),
+            Ok(_) => panic!("expected the voucher-refusal error, got Ok(..)"),
+        }
+
+        // Authorized (reclaim) consume: passes the gate. The lock has no
+        // proof yet, so the resolver proceeds into the proof wait — getting
+        // parked there (rather than an immediate refusal) is the positive
+        // signal that the gate admitted the call.
+        let authorized = tokio::time::timeout(
+            std::time::Duration::from_millis(500),
+            manager.resolve_funding_with_is_timeout_fallback(
+                AssetLockFunding::FromExistingAssetLock {
+                    out_point,
+                    consume_invitation_voucher: true,
+                },
+                AssetLockFundingType::IdentityRegistration,
+                0,
+                &signer,
+            ),
+        )
+        .await;
+        match authorized {
+            Err(_elapsed) => {} // parked in the proof wait — past the gate
+            Ok(Err(PlatformWalletError::AssetLockTransaction(msg)))
+                if msg.contains("invitation voucher") =>
+            {
+                panic!("authorized reclaim consume must pass the voucher gate: {msg}")
+            }
+            Ok(other) => {
+                // Any other outcome also proves the gate admitted the call.
+                drop(other);
+            }
+        }
     }
 }

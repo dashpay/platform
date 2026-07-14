@@ -10,6 +10,24 @@ use super::super::manager::AssetLockManager;
 use super::super::tracked::{AssetLockStatus, TrackedAssetLock};
 
 impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
+    /// The recorded [`AssetLockFundingType`] of a tracked lock, or `None`
+    /// when the outpoint is not tracked. Used by the funding resolver to
+    /// refuse consuming `IdentityInvitation` (bearer voucher) locks through
+    /// generic resume/top-up paths.
+    ///
+    /// [`AssetLockFundingType`]:
+    /// key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType
+    pub(crate) async fn tracked_funding_type(
+        &self,
+        out_point: &OutPoint,
+    ) -> Option<key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType>
+    {
+        let wm = self.wallet_manager.read().await;
+        wm.get_wallet_info(&self.wallet_id)
+            .and_then(|info| info.tracked_asset_locks.get(out_point))
+            .map(|lock| lock.funding_type)
+    }
+
     /// Track a new asset lock in memory, returning a changeset describing
     /// the inserted entry.
     ///

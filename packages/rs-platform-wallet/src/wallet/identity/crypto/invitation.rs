@@ -435,13 +435,19 @@ pub fn parse_invitation_uri(uri: &str) -> Result<ParsedInvitation, PlatformWalle
     // hash160 and a dead claim). `from_wif` rejects a non-Dash network byte but
     // cannot tell mainnet from testnet against *this* wallet; the claim path does
     // that (see `voucher_key_network`).
-    let private_key = PrivateKey::from_wif(pk)
+    // `PrivateKey`/`SecretKey` are `Copy`, so the decoded binding is a second
+    // bearer-scalar copy alongside `voucher_key` — erase it on every exit
+    // (rejection included; `ParsedInvitation`'s wipe-on-drop guard doesn't
+    // exist yet on that path) to keep the parser's wiping policy airtight.
+    let mut private_key = PrivateKey::from_wif(pk)
         .map_err(|e| invalid(format!("invitation pk is not a valid WIF key: {e}")))?;
     if !private_key.compressed {
+        private_key.inner.non_secure_erase();
         return Err(invalid("invitation pk must be a compressed WIF key"));
     }
     let voucher_key = private_key.inner;
     let voucher_key_network = private_key.network;
+    private_key.inner.non_secure_erase();
 
     let funding_txid = assetlocktx.to_lowercase();
 

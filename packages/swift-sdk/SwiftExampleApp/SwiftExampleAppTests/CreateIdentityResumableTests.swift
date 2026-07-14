@@ -38,6 +38,10 @@ final class CreateIdentityResumableTests: XCTestCase {
         let walletId: Data
         let statusRaw: Int
         let identityIndexRaw: Int32
+        /// Defaults to 0 (IdentityRegistration) so the pre-existing cases
+        /// exercise the non-invitation path unchanged; the invitation
+        /// exclusion tests pass 3 (IdentityInvitation) explicitly.
+        var fundingTypeRaw: Int = 0
     }
 
     private let walletA = Data(repeating: 0xA1, count: 8)
@@ -103,6 +107,52 @@ final class CreateIdentityResumableTests: XCTestCase {
             usedSlots: []
         )
         XCTAssertEqual(result, [])
+    }
+
+    // MARK: - invitation-voucher exclusion
+
+    /// An `IdentityInvitation` (fundingTypeRaw 3) lock is a shared bearer
+    /// voucher — it must NEVER surface as a resumable registration, even at
+    /// a fully actionable status with its nominal slot 0 unused (the exact
+    /// state of every unclaimed voucher). Resuming it would consume the
+    /// voucher into an unrelated local identity and kill the invitee's claim;
+    /// vouchers are recovered only via the Invitations screen's reclaim flow.
+    func testInvitationVouchersAreExcludedFromResumableList() {
+        for status in 1...3 {
+            let voucher = FakeAssetLockRow(
+                walletId: walletA,
+                statusRaw: status,
+                identityIndexRaw: 0,
+                fundingTypeRaw: 3
+            )
+            let result = IdentitiesContentView.crossWalletResumableLocks(
+                in: [voucher],
+                usedSlots: []
+            )
+            XCTAssertEqual(
+                result, [],
+                "unclaimed invitation voucher at status \(status) must not be resumable"
+            )
+        }
+    }
+
+    /// The exclusion is invitation-specific: the other identity funding
+    /// types (0 registration / 1 top-up / 2 top-up-not-bound) keep
+    /// surfacing exactly as before.
+    func testNonInvitationFundingTypesStillSurface() {
+        let locks = (0...2).map { fundingType in
+            FakeAssetLockRow(
+                walletId: walletA,
+                statusRaw: 2,
+                identityIndexRaw: Int32(fundingType), // distinct free slots
+                fundingTypeRaw: fundingType
+            )
+        }
+        let result = IdentitiesContentView.crossWalletResumableLocks(
+            in: locks,
+            usedSlots: []
+        )
+        XCTAssertEqual(result, locks)
     }
 
     // MARK: - anti-join

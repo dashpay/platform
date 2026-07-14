@@ -52,8 +52,11 @@ Tracked as the "NEXT" item in the DashPay backlog (dashpay/platform#4020); calle
 6. **Reclaim shipped (extends §1 scope):** an unclaimed voucher is recovered as identity
    **credits** (top-up an existing identity or register a new one; the L1 amount was
    OP_RETURN-burned). Already-consumed handling is classified via the persisted
-   `reclaimInFlight` marker (self-reclaim crash recovery vs neutral "already claimed") —
-   see `AI_QA/QA004` step 6 for the exact classifier arms.
+   `reclaimInFlight` marker: marker unset ⇒ provably a foreign claim (neutral "already
+   claimed"); marker set ⇒ **explicitly ambiguous** (the marker proves only that a local
+   consume attempt started, not that it landed — a racing claim is indistinguishable, so the
+   row resolves to the conservative terminal `Claimed` with an ambiguity message, never an
+   inferred `Reclaimed`) — see `AI_QA/QA004` step 6 for the exact classifier arms.
 7. **QA contract as-built:** TEST_PLAN §4.10 rows **DP-12..DP-19** (not just DP-12..15) +
    `AI_QA/QA004_invitation_reclaim.md`; funded e2e evidence recorded there.
 
@@ -168,18 +171,28 @@ exists only in the tx payload as a Platform-side authorization, never as an L1 U
 of their own, recovering the value as credits** (mechanically, claiming your own invitation).
 UI copy always says "recovered as identity credits", never "DASH returned".
 
-- **Primitive:** consume the tracked lock via `FromExistingAssetLock { out_point }` — the
-  inviter's own signer re-derives the voucher key at `9'/coin'/5'/3'/funding_index'`
-  internally (no key export). Two user-picked targets: **top-up an existing identity** or
-  **register a new one**.
+- **Primitive:** consume the tracked lock via
+  `FromExistingAssetLock { out_point, consume_invitation_voucher: true }` — the inviter's own
+  signer re-derives the voucher key at `9'/coin'/5'/3'/funding_index'` internally (no key
+  export). Two user-picked targets: **top-up an existing identity** or **register a new
+  one**. The `consume_invitation_voucher` flag is the reclaim flow's **explicit
+  authorization**: every generic resume/top-up path passes `false` and the funding resolver
+  refuses `IdentityInvitation`-typed locks, so a shared voucher can never be silently
+  consumed into an unrelated local identity (the Swift resumable-registrations surface also
+  excludes `fundingTypeRaw == 3` rows).
 - **Race / already-consumed:** no L1 double-spend exists (no shared UTXO); Platform
   deterministically rejects the second consume
   (`IdentityAssetLockTransactionOutPointAlreadyConsumed` — the loser wastes only an ST fee).
-  The Swift side disambiguates via the persisted `reclaimInFlight` marker, which is saved
+  The Swift side classifies via the persisted `reclaimInFlight` marker, which is saved
   (required — the consume may not run on a failed save) only immediately before the on-chain
-  consume: marker set ⇒ our own crash-interrupted reclaim (row → `Reclaimed`, also recovered
-  from the local "is not tracked" resume guard); marker unset ⇒ the invitee claimed first
-  (row → `Claimed`, neutral "This invitation was already claimed." — claimant not named).
+  consume: marker unset ⇒ provably the invitee claimed first (row → `Claimed`, neutral
+  "This invitation was already claimed." — claimant not named); marker set ⇒ **explicitly
+  ambiguous** — the marker proves only that a local consume attempt started, not that it
+  landed (a racing claim between crash and retry is indistinguishable), so the row resolves
+  to the conservative terminal `Claimed` with an ambiguity message, never an inferred
+  `Reclaimed` (`Reclaimed` is written only by a success observed in-flow). The local
+  "is not tracked" resume-guard failure with the marker set is surfaced as an explicit
+  ambiguity error (status unchanged — there is no on-chain proof of consumption at all).
   The decision is the pure, unit-tested `classifyReclaimFailure(error:hadPriorReclaimInFlight:)`
   seam; see `AI_QA/QA004` step 6 for the verified classifier arms.
 - **Status lifecycle:** `Reclaimed`/`Claimed` are written by the Swift UI on the local row

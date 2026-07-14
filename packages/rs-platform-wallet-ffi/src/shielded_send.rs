@@ -1065,6 +1065,7 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_resume_fund_from_asset
                 &coordinator,
                 AssetLockFunding::FromExistingAssetLock {
                     out_point: resume_outpoint,
+                    consume_invitation_voucher: false,
                 },
                 vec![(recipient, None)],
                 &asset_lock_signer,

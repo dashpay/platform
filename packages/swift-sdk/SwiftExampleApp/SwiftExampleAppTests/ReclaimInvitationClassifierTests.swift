@@ -72,12 +72,15 @@ final class ReclaimInvitationClassifierTests: XCTestCase {
             + "output 0 already completely used"
     )
 
-    /// Already-consumed + our own reclaim was in flight ⇒ recover as Reclaimed.
-    func test_classify_alreadyConsumed_priorInFlight_isReclaimed() {
+    /// Already-consumed + our own reclaim was in flight ⇒ explicitly ambiguous,
+    /// NEVER `.reclaimed`: the marker only proves a local attempt started a
+    /// consume, not that it landed — the invitee can claim between our crash
+    /// and the retry, and a Reclaimed recovery would misattribute that claim.
+    func test_classify_alreadyConsumed_priorInFlight_isAmbiguous() {
         XCTAssertEqual(
             ReclaimInvitationSheet.classifyReclaimFailure(
                 error: Self.alreadyConsumed, hadPriorReclaimInFlight: true),
-            .reclaimed
+            .consumedAmbiguous
         )
     }
 
@@ -113,15 +116,15 @@ final class ReclaimInvitationClassifierTests: XCTestCase {
             + "3ff8e26d02e53f97a5f06b12327f40fc10cb859077e2788362c5d93032850ff0:0 is not tracked"
     )
 
-    /// Crash-recovery: our own prior reclaim consumed the lock on-chain but the
-    /// terminal save was interrupted; a retry resumes an untracked lock and fails
-    /// LOCALLY ("…is not tracked"). With the marker set, that is our completed
-    /// reclaim → `.reclaimed` (not stuck at Created forever).
-    func test_classify_lockNotTracked_priorInFlight_isReclaimed() {
+    /// A retry after our own crash-interrupted consume can fail LOCALLY
+    /// ("…is not tracked"). With the marker set that is consistent with our
+    /// consume having landed, but it is NOT on-chain proof — so it resolves to
+    /// the explicitly ambiguous `.untrackedAfterOwnAttempt`, never `.reclaimed`.
+    func test_classify_lockNotTracked_priorInFlight_isUntrackedAmbiguous() {
         XCTAssertEqual(
             ReclaimInvitationSheet.classifyReclaimFailure(
                 error: Self.lockNotTracked, hadPriorReclaimInFlight: true),
-            .reclaimed
+            .untrackedAfterOwnAttempt
         )
     }
 
@@ -147,8 +150,9 @@ final class ReclaimInvitationClassifierTests: XCTestCase {
         )
     }
 
-    /// With a PRIOR in-flight marker the same error is the crash-recovery
-    /// signal (classified `.reclaimed` above) — never a clear.
+    /// With a PRIOR in-flight marker the same error is the ambiguous
+    /// crash-recovery signal (classified `.untrackedAfterOwnAttempt` above)
+    /// — never a clear.
     func test_shouldClear_lockNotTracked_prior_isFalse() {
         XCTAssertFalse(
             ReclaimInvitationSheet.shouldClearInFlightMarker(
@@ -157,7 +161,8 @@ final class ReclaimInvitationClassifierTests: XCTestCase {
     }
 
     /// Errors that may have reached the network keep the marker regardless —
-    /// a later "already consumed" must stay disambiguable as our own reclaim.
+    /// a later "already consumed" must stay classified as ambiguous rather
+    /// than a provable foreign claim.
     func test_shouldClear_networkishErrors_isFalse() {
         let transport = StubError(message: "SDK error: Transport error: connection refused")
         XCTAssertFalse(
@@ -173,9 +178,9 @@ final class ReclaimInvitationClassifierTests: XCTestCase {
     /// The two-attempt regression the clearing exists for: attempt 1 sets the
     /// marker and fails locally ("not tracked", no prior) → `.error` + clear;
     /// an identical retry therefore STILL sees no prior marker and stays
-    /// `.error` — it can never escalate a purely-local failure to `.reclaimed`.
+    /// `.error` — a purely-local failure can never escalate past `.error`.
     /// (Without the clear, the retry would capture `hadPriorReclaimInFlight ==
-    /// true` and misreport a successful self-reclaim.)
+    /// true` and degrade into the ambiguous outcome for no reason.)
     func test_twoAttempt_localFailure_neverBecomesReclaimed() {
         // Attempt 1: marker freshly set by this attempt (prior == false).
         var persistedMarker = false // durable value BEFORE the attempt

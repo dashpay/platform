@@ -73,6 +73,16 @@ pub struct AssetLockManager<B: TransactionBroadcaster + ?Sized> {
     /// span. Deliberately NOT held across the broadcast/proof-wait — only the
     /// snapshot ordering needs serialization.
     pub(super) build_persist_serial: tokio::sync::Mutex<()>,
+    /// Test-only gauge of builds currently at or past the
+    /// `build_persist_serial` gate within `broadcast_funded_asset_lock`
+    /// (incremented before the `lock().await`, RAII-decremented on every
+    /// exit from the call). Lets the concurrency regression test
+    /// synchronize on "the second build has reached the serialization
+    /// gate" instead of assuming a scheduling delay — while the first
+    /// build holds the lock, a gauge of 2 proves the second build cannot
+    /// yet have collected its pool snapshot.
+    #[cfg(test)]
+    pub(super) build_serial_gate: std::sync::atomic::AtomicUsize,
 }
 
 impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
@@ -93,6 +103,8 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             broadcaster,
             persister,
             build_persist_serial: tokio::sync::Mutex::new(()),
+            #[cfg(test)]
+            build_serial_gate: std::sync::atomic::AtomicUsize::new(0),
         }
     }
 

@@ -14,6 +14,14 @@ import SwiftUI
 /// UI source of truth here (no Rust re-emit). If the voucher was already consumed
 /// (the invitee claimed it), the reclaim is rejected deterministically and the
 /// row flips to Claimed with a neutral message instead.
+///
+/// Reclaimed is asserted ONLY on a successful consume observed by this attempt.
+/// The persisted `reclaimInFlight` marker proves just that a local attempt saved
+/// it before starting a consume — it is not tied to a submitted transition or
+/// target, so it can never upgrade an "already consumed" rejection to Reclaimed
+/// (the invitee may have claimed between the crash and the retry). Marker-set
+/// failures therefore resolve to a conservative terminal Claimed with an
+/// explicitly ambiguous message, or to an explanatory error — never Reclaimed.
 struct ReclaimInvitationSheet: View {
     let invitation: PersistentInvitation
     let walletId: Data
@@ -95,6 +103,11 @@ struct ReclaimInvitationSheet: View {
                 }
             }
         }
+        // Swipe-dismissal must be gated like the Cancel button: dismissing
+        // mid-consume leaves the unstructured task mutating the row after the
+        // sheet is gone, and re-opening the still-Created row would permit a
+        // second overlapping consume attempt against one irreversible voucher.
+        .interactiveDismissDisabled(isReclaiming)
     }
 
     // MARK: - Sections
@@ -184,11 +197,12 @@ struct ReclaimInvitationSheet: View {
 
                 // Persist the in-flight marker ONLY immediately before the on-chain
                 // consume — never before pre-broadcast local work (e.g. register's
-                // key pre-persist). A crash between the consume and the terminal
-                // save is then recoverable: a later "already consumed" that finds
-                // this marker set was *our own* reclaim, not a foreign claim. Setting
-                // it earlier would let a purely local failure leave the marker set,
-                // misclassifying a subsequent genuine foreign claim as self-reclaim.
+                // key pre-persist). The marker does NOT attribute a later "already
+                // consumed" rejection (the invitee can race our crash-interrupted
+                // consume); it only downgrades the classification from "provably a
+                // foreign claim" to "explicitly ambiguous". Setting it earlier
+                // would let a purely local failure leave the marker set, degrading
+                // a subsequent genuine foreign claim into the ambiguous message.
                 // `hadPriorReclaimInFlight` captures the PERSISTED prior value first.
                 // The save must SUCCEED before the consume may run: an unpersisted
                 // marker followed by a consume + crash would strand the row (a local
@@ -220,7 +234,11 @@ struct ReclaimInvitationSheet: View {
                     _ = try await wallet.topUpIdentityWithExistingAssetLock(
                         outPointTxid: txid,
                         outPointVout: vout,
-                        identityId: identityId
+                        identityId: identityId,
+                        // Reclaim IS the explicitly authorized voucher-consume
+                        // path; generic resume/top-up flows are refused
+                        // invitation locks by the Rust funding resolver.
+                        consumeInvitationVoucher: true
                     )
                 case .register:
                     let signer = KeychainSigner(modelContainer: modelContext.container)
@@ -238,7 +256,10 @@ struct ReclaimInvitationSheet: View {
                         outPointVout: vout,
                         identityIndex: identityIndex,
                         identityPubkeys: keys,
-                        signer: signer
+                        signer: signer,
+                        // Reclaim IS the explicitly authorized voucher-consume
+                        // path (see topUp arm above).
+                        consumeInvitationVoucher: true
                     )
                 }
 
@@ -253,23 +274,42 @@ struct ReclaimInvitationSheet: View {
                     error: error,
                     hadPriorReclaimInFlight: hadPriorReclaimInFlight
                 ) {
-                case .reclaimed:
-                    // Our own earlier reclaim landed on-chain but crashed before
-                    // saving the terminal status. Recover it as Reclaimed and clear
-                    // the marker.
-                    invitation.statusRaw = 2
-                    invitation.reclaimInFlight = false
-                    invitation.updatedAt = Date()
-                    try? modelContext.save()
-                    infoMessage = "This invitation was already reclaimed."
                 case .claimed:
                     // Someone else claimed the voucher first. Reflect the terminal
                     // state with a neutral message (the claimant is intentionally
                     // not named).
                     invitation.statusRaw = 1
+                    invitation.reclaimInFlight = false
                     invitation.updatedAt = Date()
                     try? modelContext.save()
                     infoMessage = "This invitation was already claimed."
+                case .consumedAmbiguous:
+                    // The voucher is provably consumed (Platform's deterministic
+                    // rejection), but with our own earlier attempt in flight the
+                    // consumer could be EITHER that attempt or a racing claim —
+                    // the marker is not evidence tied to a submitted transition,
+                    // so never upgrade to Reclaimed. Terminal-Claimed is the
+                    // conservative resolution; the message states the ambiguity.
+                    invitation.statusRaw = 1
+                    invitation.reclaimInFlight = false
+                    invitation.updatedAt = Date()
+                    try? modelContext.save()
+                    infoMessage =
+                        "This invitation was already consumed — by the invitee's "
+                        + "claim, or possibly by your own earlier interrupted "
+                        + "reclaim. If that reclaim went through, the credits were "
+                        + "delivered to the target you selected then."
+                case .untrackedAfterOwnAttempt:
+                    // The wallet no longer tracks the voucher lock and our own
+                    // attempt was in flight — consistent with that attempt's
+                    // consume having landed, but there is no on-chain proof the
+                    // voucher was consumed at all, so neither the status nor the
+                    // marker moves. Explicitly ambiguous by design.
+                    errorMessage =
+                        "This voucher is no longer tracked by the wallet after an "
+                        + "earlier interrupted reclaim attempt. It may already have "
+                        + "been consumed by that attempt — check the balance of the "
+                        + "identity you targeted then before retrying."
                 case .error:
                     if Self.shouldClearInFlightMarker(
                         error: error,
@@ -287,7 +327,7 @@ struct ReclaimInvitationSheet: View {
                     // Otherwise leave the marker as-is: with a prior in-flight
                     // (or any error that may have reached the network) a later
                     // retry that hits "already consumed" must still classify as
-                    // our own reclaim rather than a foreign claim.
+                    // ambiguous rather than a provable foreign claim.
                     errorMessage = error.localizedDescription
                 }
             }
@@ -319,39 +359,55 @@ struct ReclaimInvitationSheet: View {
     }
 
     /// The terminal state a reclaim attempt resolves to.
+    ///
+    /// There is deliberately NO `.reclaimed` recovery outcome: the persisted
+    /// `reclaimInFlight` marker proves only that a local attempt saved it
+    /// before starting a consume. It is not tied to a submitted transition or
+    /// target, so it cannot attribute an "already consumed" rejection — the
+    /// invitee may have claimed the voucher between our crash and the retry.
+    /// Reclaimed is asserted only by the success path's own observed consume.
     enum ReclaimOutcome: Equatable {
-        /// The voucher was consumed by our own earlier (crash-interrupted) reclaim.
-        case reclaimed
-        /// The voucher was consumed by the invitee's claim.
+        /// The voucher was consumed and no local attempt was in flight — a
+        /// foreign claim, unambiguously.
         case claimed
-        /// An uncertain, non-"already-consumed" failure — leave state as-is.
+        /// The voucher is provably consumed (deterministic Platform
+        /// rejection), but our own in-flight attempt makes the consumer
+        /// ambiguous: it could be that attempt or a racing foreign claim.
+        case consumedAmbiguous
+        /// The wallet no longer tracks the voucher lock and our own attempt
+        /// was in flight — consistent with that attempt's consume having
+        /// landed, but with no on-chain proof of consumption at all. Leave
+        /// status and marker untouched; surface the ambiguity.
+        case untrackedAfterOwnAttempt
+        /// An uncertain, unrelated failure — leave state as-is.
         case error
     }
 
     /// Pure decision for the reclaim `catch`: an "already consumed" rejection is
-    /// disambiguated by whether *our own* reclaim was already in flight when this
-    /// attempt started (persisted `reclaimInFlight` marker). Kept side-effect-free
-    /// and `nonisolated` so it is the unit-tested seam for all outcomes; the view
-    /// maps the outcome to `statusRaw`/message/save.
+    /// split by whether *our own* reclaim was already in flight when this
+    /// attempt started (persisted `reclaimInFlight` marker) — into a provable
+    /// foreign claim vs an explicitly ambiguous consumption. Kept
+    /// side-effect-free and `nonisolated` so it is the unit-tested seam for all
+    /// outcomes; the view maps the outcome to `statusRaw`/message/save.
     nonisolated static func classifyReclaimFailure(
         error: Error,
         hadPriorReclaimInFlight: Bool
     ) -> ReclaimOutcome {
         if isAlreadyConsumed(error) {
             // Platform deterministically rejected the consume as already-spent.
-            return hadPriorReclaimInFlight ? .reclaimed : .claimed
+            // With no local attempt in flight that is a foreign claim; with one
+            // in flight, attribution is unknowable from the marker alone.
+            return hadPriorReclaimInFlight ? .consumedAmbiguous : .claimed
         }
-        // Crash-recovery for our OWN reclaim: if a prior attempt's consume landed
-        // on-chain but the app crashed before saving the terminal status, a retry
-        // resumes a lock the wallet no longer tracks and fails LOCALLY ("…is not
-        // tracked") — before Platform, so `isAlreadyConsumed` never sees it. With
-        // our in-flight marker set (a prior attempt started a consume), that
-        // untracked lock is our own completed reclaim; recover it rather than
-        // leaving the row stuck at Created with the marker set forever. The marker
-        // gate makes this safe: a first attempt has `hadPriorReclaimInFlight ==
-        // false`, so an unrelated "not tracked" failure still resolves to `.error`.
+        // A retry after our own crash-interrupted consume can also fail
+        // LOCALLY ("…is not tracked") — before Platform, so `isAlreadyConsumed`
+        // never sees it. That is consistent with our consume having landed, but
+        // is not proof (local tracking state is not an on-chain observation),
+        // so it gets its own explicitly ambiguous outcome instead of a
+        // Reclaimed recovery. A first attempt (`hadPriorReclaimInFlight ==
+        // false`) hitting "not tracked" still resolves to `.error`.
         if hadPriorReclaimInFlight && isLockNoLongerTracked(error) {
-            return .reclaimed
+            return .untrackedAfterOwnAttempt
         }
         return .error
     }
@@ -361,11 +417,12 @@ struct ReclaimInvitationSheet: View {
     /// itself (`hadPriorReclaimInFlight == false`) and then failed the LOCAL
     /// pre-broadcast "is not tracked" resume guard — proof the consume never
     /// started, so the freshly-set marker is stale. Without clearing it, an
-    /// identical retry captures the marker as a prior in-flight and
-    /// misclassifies the same purely-local failure as a completed self-reclaim
-    /// (two-attempt false positive). Every other error keeps the marker: a
-    /// failure that may have reached the network must stay disambiguable as
-    /// our own reclaim on retry.
+    /// identical retry captures the marker as a prior in-flight and degrades
+    /// the same purely-local failure into the ambiguous
+    /// `.untrackedAfterOwnAttempt` outcome (two-attempt false ambiguity).
+    /// Every other error keeps the marker: a failure that may have reached
+    /// the network must keep a later "already consumed" classified as
+    /// ambiguous rather than a provable foreign claim.
     nonisolated static func shouldClearInFlightMarker(
         error: Error,
         hadPriorReclaimInFlight: Bool

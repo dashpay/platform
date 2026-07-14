@@ -239,12 +239,18 @@ struct CreateInvitationSheet: View {
         }
     }
 
-    /// Copy the link to a **local-only** pasteboard so the bearer key isn't
-    /// mirrored to the user's other devices via Universal Clipboard.
+    /// Copy the link to a **local-only, expiring** pasteboard: the link embeds
+    /// a non-expiring bearer WIF, so it must neither mirror to other devices
+    /// via Universal Clipboard nor linger on the device-wide pasteboard where
+    /// a later-granted app could read it. 60s matches the app's existing
+    /// copied-WIF handling (StorageRecordDetailViews).
     private func copyLink(_ uri: String) {
         UIPasteboard.general.setItems(
             [[UTType.plainText.identifier: uri]],
-            options: [.localOnly: true]
+            options: [
+                .localOnly: true,
+                .expirationDate: Date().addingTimeInterval(60),
+            ]
         )
         didCopy = true
         DispatchQueue.main.asyncAfter(deadline: .now() + 2) { didCopy = false }

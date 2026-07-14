@@ -147,6 +147,13 @@ pub unsafe extern "C" fn platform_wallet_register_identity_with_funding_signer(
 /// wallet-balance path — the resume logic and IS→CL fallback live
 /// there, not here. This FFI is a thin marshaler.
 ///
+/// `consume_invitation_voucher` is the explicit authorization to consume an
+/// `IdentityInvitation`-typed lock (a DashPay bearer voucher whose key is
+/// shared in the invitation link). Pass `false` for every generic resume
+/// surface — the resolver then refuses invitation locks, so a shared voucher
+/// can never be silently consumed into an unrelated local identity. Only the
+/// invitation reclaim flow passes `true`.
+///
 /// # Safety
 /// - `out_point` must be a valid, non-null pointer to an
 ///   `OutPointFFI` (32-byte raw txid + u32 vout). The caller retains
@@ -168,6 +175,7 @@ pub unsafe extern "C" fn platform_wallet_resume_identity_with_existing_asset_loc
     identity_pubkeys_count: usize,
     signer_handle: *mut SignerHandle,
     core_signer_handle: *mut MnemonicResolverHandle,
+    consume_invitation_voucher: bool,
     out_identity_id: *mut [u8; 32],
     out_identity_handle: *mut Handle,
 ) -> PlatformWalletFFIResult {
@@ -223,6 +231,7 @@ pub unsafe extern "C" fn platform_wallet_resume_identity_with_existing_asset_loc
                 .register_identity_with_funding(
                     AssetLockFunding::FromExistingAssetLock {
                         out_point: resume_outpoint,
+                        consume_invitation_voucher,
                     },
                     identity_index,
                     keys_map,
@@ -257,6 +266,11 @@ pub unsafe extern "C" fn platform_wallet_resume_identity_with_existing_asset_loc
 /// funding path. The `FromExistingAssetLock` resume + IS→CL fallback logic lives
 /// in `top_up_identity_with_funding`; this FFI is a thin marshaler.
 ///
+/// `consume_invitation_voucher` is the explicit authorization to consume an
+/// `IdentityInvitation`-typed lock — the reclaim flow passes `true`; any
+/// generic top-up surface must pass `false` and is refused invitation locks
+/// by the resolver.
+///
 /// # Safety
 /// - `out_point` must be a valid, non-null `*const OutPointFFI`; the caller
 ///   retains ownership.
@@ -270,6 +284,7 @@ pub unsafe extern "C" fn platform_wallet_topup_identity_with_existing_asset_lock
     out_point: *const OutPointFFI,
     identity_id: *const [u8; 32],
     core_signer_handle: *mut MnemonicResolverHandle,
+    consume_invitation_voucher: bool,
     out_new_balance: *mut u64,
 ) -> PlatformWalletFFIResult {
     check_ptr!(out_point);
@@ -307,6 +322,7 @@ pub unsafe extern "C" fn platform_wallet_topup_identity_with_existing_asset_lock
                     &identity_id,
                     AssetLockFunding::FromExistingAssetLock {
                         out_point: reclaim_outpoint,
+                        consume_invitation_voucher,
                     },
                     &asset_lock_signer,
                     None,

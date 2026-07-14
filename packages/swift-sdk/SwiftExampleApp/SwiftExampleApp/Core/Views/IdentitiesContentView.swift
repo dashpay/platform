@@ -435,6 +435,15 @@ struct IdentitiesContentView: View {
     ) -> [R] {
         locks.filter { lock in
             guard lock.statusRaw >= 1 && lock.statusRaw <= 3 else { return false }
+            // Invitation vouchers (fundingTypeRaw 3, IdentityInvitation) are
+            // bearer locks whose key is shared in the invitation link — they
+            // are reclaimed via the Invitations screen, never resumed as a
+            // local registration (which would consume the voucher into an
+            // unrelated identity and kill the invitee's claim). Their nominal
+            // identity slot is 0, so without this exclusion an unclaimed
+            // voucher surfaces here whenever slot 0 is free. The Rust funding
+            // resolver refuses them too; this keeps the row from rendering.
+            guard lock.fundingTypeRaw != 3 else { return false }
             let slot = UInt32(bitPattern: lock.identityIndexRaw)
             return !usedSlots.contains(
                 UsedSlot(walletId: lock.walletId, slot: slot)
