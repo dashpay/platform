@@ -983,18 +983,24 @@ pub unsafe extern "C" fn platform_wallet_verify_seed_binds_to_wallet(
 
 /// Marker-aware variant of [`platform_wallet_verify_seed_binds_to_wallet`].
 /// The binding check is a pure function of (mnemonic, network) against the
-/// wallet's persisted account-0 xpub, so one successful verify holds for every
-/// later launch until the xpub changes (wallet re-import). The host persists
-/// the marker this call hands back and passes it in on the next launch;
-/// when it still matches, Rust skips the resolver entirely — no Keychain
-/// mnemonic fetch, no derivation.
+/// wallet's persisted account-0 xpub, so one successful verify holds for
+/// every later launch **as long as the mnemonic Keychain item is untouched**.
+/// The host passes `keychain_stamp` — an opaque identity/generation stamp of
+/// that item (e.g. its creation+modification dates) that changes on every
+/// write to it — and Rust binds the marker to BOTH the xpub and the stamp.
+/// A marker that still matches proves the previously verified item is the
+/// one in the Keychain and skips the resolver entirely — no mnemonic fetch,
+/// no derivation. A rewritten mnemonic item, a re-imported wallet, or a
+/// missing stamp all fall through to the full resolver check.
 ///
 /// Contract: `*out_marker` is set to a heap C string (free with
 /// [`platform_wallet_string_free`](crate::platform_wallet_string_free)) ONLY
-/// when the full check ran and bound — that is the host's signal to persist
-/// the new marker. It stays null when the supplied marker matched (nothing to
-/// persist). A mismatched derivation fails with `ErrorInvalidParameter`
-/// exactly like the non-cached variant, leaving `*out_marker` null.
+/// when the full check ran, bound, and a stamp was supplied — that is the
+/// host's signal to persist the new marker. It stays null when the supplied
+/// marker matched (nothing to persist) and when no stamp was supplied
+/// (nothing safe to cache; the host keeps verifying every launch). A
+/// mismatched derivation fails with `ErrorInvalidParameter` exactly like the
+/// non-cached variant, leaving `*out_marker` null.
 ///
 /// # Safety
 /// - `core_signer_handle` must be a valid, non-destroyed
@@ -1002,12 +1008,16 @@ pub unsafe extern "C" fn platform_wallet_verify_seed_binds_to_wallet(
 /// - `verified_marker` is **optional**: null means "no marker persisted yet"
 ///   (first launch); otherwise it must be a valid NUL-terminated UTF-8 C
 ///   string.
+/// - `keychain_stamp` is **optional**: null means "stamp unavailable" and
+///   disables the cache for this call; otherwise it must be a valid
+///   NUL-terminated UTF-8 C string.
 /// - `out_marker` must be a valid `*mut *mut c_char`.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_verify_seed_binds_to_wallet_cached(
     wallet_handle: Handle,
     core_signer_handle: *mut MnemonicResolverHandle,
     verified_marker: *const c_char,
+    keychain_stamp: *const c_char,
     out_marker: *mut *mut c_char,
 ) -> PlatformWalletFFIResult {
     check_ptr!(core_signer_handle);
@@ -1020,7 +1030,18 @@ pub unsafe extern "C" fn platform_wallet_verify_seed_binds_to_wallet_cached(
     let marker: Option<String> = if verified_marker.is_null() {
         None
     } else {
-        Some(unwrap_result_or_return!(CStr::from_ptr(verified_marker).to_str()).to_string())
+        Some(
+            unwrap_result_or_return!(unsafe { CStr::from_ptr(verified_marker) }.to_str())
+                .to_string(),
+        )
+    };
+    let stamp: Option<String> = if keychain_stamp.is_null() {
+        None
+    } else {
+        Some(
+            unwrap_result_or_return!(unsafe { CStr::from_ptr(keychain_stamp) }.to_str())
+                .to_string(),
+        )
     };
     let signer_addr = core_signer_handle as usize;
 
@@ -1039,7 +1060,7 @@ pub unsafe extern "C" fn platform_wallet_verify_seed_binds_to_wallet_cached(
         let wallet = wallet.clone();
         block_on_worker(async move {
             wallet
-                .verify_seed_binds_with_marker(&provider, marker.as_deref())
+                .verify_seed_binds_with_marker(&provider, marker.as_deref(), stamp.as_deref())
                 .await
         })
     });
@@ -1049,16 +1070,18 @@ pub unsafe extern "C" fn platform_wallet_verify_seed_binds_to_wallet_cached(
             PlatformWalletFFIResult::ok()
         }
         Ok((platform_wallet::SeedBindingVerification::Verified, new_marker)) => {
-            let c_marker = match std::ffi::CString::new(new_marker) {
-                Ok(c) => c,
-                Err(_) => {
-                    return PlatformWalletFFIResult::from(
-                        "seed-binding marker contained an interior NUL".to_string(),
-                    )
+            if let Some(new_marker) = new_marker {
+                let c_marker = match std::ffi::CString::new(new_marker) {
+                    Ok(c) => c,
+                    Err(_) => {
+                        return PlatformWalletFFIResult::from(
+                            "seed-binding marker contained an interior NUL".to_string(),
+                        )
+                    }
+                };
+                unsafe {
+                    *out_marker = c_marker.into_raw();
                 }
-            };
-            unsafe {
-                *out_marker = c_marker.into_raw();
             }
             PlatformWalletFFIResult::ok()
         }
@@ -1073,6 +1096,35 @@ pub unsafe extern "C" fn platform_wallet_verify_seed_binds_to_wallet_cached(
             e.to_string(),
         ),
     }
+}
+
+/// Total number of queued contact-crypto entries for this wallet — every op
+/// kind, **including** the `ContactInfoDecrypt` refreshes that
+/// [`platform_wallet_pending_contact_crypto_count`] deliberately excludes.
+/// This is the drain scheduler's probe: a signer-present drain should run
+/// whenever anything at all is queued, or ContactInfoDecrypt-only queues
+/// (cross-device contact metadata) would never be applied. Keep using the
+/// filtered count for user-facing "waiting to finish setup" surfaces. Writes
+/// the count to `out_count`. Signerless read; safe to poll.
+///
+/// # Safety
+/// - `out_count` must be a valid `*mut u32`.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_drainable_contact_crypto_count(
+    wallet_handle: Handle,
+    out_count: *mut u32,
+) -> PlatformWalletFFIResult {
+    check_ptr!(out_count);
+
+    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
+        let identity = wallet.identity().clone();
+        block_on_worker(async move { identity.dashpay().drainable_contact_crypto_count().await })
+    });
+    let count = unwrap_option_or_return!(option);
+    unsafe {
+        *out_count = count as u32;
+    }
+    PlatformWalletFFIResult::ok()
 }
 
 #[cfg(test)]
@@ -1113,6 +1165,7 @@ mod tests {
                 1,
                 std::ptr::null_mut(),
                 std::ptr::null(),
+                std::ptr::null(),
                 &mut out_marker,
             )
         };
@@ -1128,6 +1181,7 @@ mod tests {
             platform_wallet_verify_seed_binds_to_wallet_cached(
                 1,
                 dummy_signer,
+                std::ptr::null(),
                 std::ptr::null(),
                 std::ptr::null_mut(),
             )
@@ -1148,6 +1202,7 @@ mod tests {
             platform_wallet_verify_seed_binds_to_wallet_cached(
                 0xDEAD_BEEF,
                 dummy_signer,
+                std::ptr::null(),
                 std::ptr::null(),
                 &mut out_marker,
             )

@@ -558,10 +558,12 @@ public class PlatformWalletManager: ObservableObject {
     ///    BIP44 account-0 xpub through the resolver and compares it to the
     ///    persisted one. A mis-mapped Keychain slot derives a different xpub
     ///    and the call throws, so a wrong seed never signs for this wallet.
-    ///    The outcome is launch-invariant, so the first success persists a
-    ///    marker on the wallet row and later launches skip the resolver
-    ///    (Rust re-runs the full check only when the marker no longer
-    ///    matches the wallet's xpub, e.g. after a re-import).
+    ///    The outcome is launch-invariant while the mnemonic Keychain item
+    ///    is untouched, so the first success persists a marker (the xpub
+    ///    bound to the item's identity stamp) on the wallet row and later
+    ///    launches skip the resolver. Rust re-runs the full check when the
+    ///    marker no longer matches — wallet re-import, or any rewrite of
+    ///    the mnemonic Keychain item (which changes the stamp).
     /// 2. **Drain** (in the background) any contact-crypto deferred while
     ///    the wallet was seedless — `platform_wallet_drain_pending_contact_crypto`.
     ///    The drain re-fetches + decrypts over the network, so it runs in a
@@ -594,7 +596,8 @@ public class PlatformWalletManager: ObservableObject {
         // A genuine watch-only wallet (imported by xpub, never holding a
         // seed) has no Keychain mnemonic — stays watch-only. Existence-only
         // check; the plaintext is never materialized in Swift.
-        guard WalletStorage().hasMnemonic(for: walletId) else {
+        let walletStorage = WalletStorage()
+        guard walletStorage.hasMnemonic(for: walletId) else {
             return false
         }
 
@@ -606,14 +609,17 @@ public class PlatformWalletManager: ObservableObject {
         // Wrong-seed / wrong-wallet gate, marker-cached: the check is a pure
         // function of (mnemonic, network) against the wallet's persisted
         // account-0 xpub, so after one successful verify Rust hands back a
-        // marker (the verified xpub) that Swift persists on the wallet row.
-        // Later launches pass it back and Rust skips the resolver entirely
-        // while it still matches — zero mnemonic touches on the warm unlock
-        // path. Swift only loads/stores the marker; match-vs-verify is
-        // decided in Rust. `withExtendedLifetime` keeps the resolver alive
-        // across the synchronous FFI call (its vtable callback fires during
-        // it, when a full verify runs). Throws if the resolved seed derives
-        // a different BIP44 account-0 xpub than the wallet's persisted one.
+        // marker — the verified xpub bound to the mnemonic Keychain item's
+        // identity stamp — that Swift persists on the wallet row. Later
+        // launches pass both back and Rust skips the resolver entirely while
+        // the marker still matches; any rewrite of the Keychain item changes
+        // the stamp and forces the full check again, so a replaced mnemonic
+        // can never coast on an old verification. Swift only loads/stores
+        // the marker and reads the stamp; match-vs-verify is decided in
+        // Rust. `withExtendedLifetime` keeps the resolver alive across the
+        // synchronous FFI call (its vtable callback fires during it, when a
+        // full verify runs). Throws if the resolved seed derives a different
+        // BIP44 account-0 xpub than the wallet's persisted one.
         //
         // Publish the per-wallet `seedMismatch` from the verify result itself,
         // scoped to JUST this call: the verify FFI maps Rust `SeedMismatch` →
@@ -623,6 +629,12 @@ public class PlatformWalletManager: ObservableObject {
         // (loadFromPersistor's log-and-continue) is unchanged.
         do {
             let storedMarker = persistenceHandler?.seedBindingMarker(walletId: walletId)
+            // Attribute-only stamp of the mnemonic Keychain item (secret never
+            // materialized). Rust binds the marker to it, so any rewrite of
+            // the item invalidates the cached verification. `nil` (attributes
+            // unreadable) disables the cache for this launch — Rust then
+            // always runs the full check and hands back no marker.
+            let keychainStamp = walletStorage.mnemonicKeychainStamp(for: walletId)
             // Set only when a full verification ran and bound — the signal to
             // persist the fresh marker. Freed unconditionally below.
             var newMarkerPtr: UnsafeMutablePointer<CChar>? = nil
@@ -630,23 +642,32 @@ public class PlatformWalletManager: ObservableObject {
                 if let ptr = newMarkerPtr { platform_wallet_string_free(ptr) }
             }
             try withExtendedLifetime(coreSigner) {
-                let result: PlatformWalletFFIResult
-                if let storedMarker {
-                    result = storedMarker.withCString { markerPtr in
-                        platform_wallet_verify_seed_binds_to_wallet_cached(
-                            walletHandle,
-                            coreSigner.handle,
-                            markerPtr,
-                            &newMarkerPtr
-                        )
-                    }
-                } else {
-                    result = platform_wallet_verify_seed_binds_to_wallet_cached(
+                // Nested withCString over the two optional inputs; nil maps to
+                // a null pointer (the FFI treats both as "absent").
+                func callVerify(
+                    _ markerPtr: UnsafePointer<CChar>?,
+                    _ stampPtr: UnsafePointer<CChar>?
+                ) -> PlatformWalletFFIResult {
+                    platform_wallet_verify_seed_binds_to_wallet_cached(
                         walletHandle,
                         coreSigner.handle,
-                        nil,
+                        markerPtr,
+                        stampPtr,
                         &newMarkerPtr
                     )
+                }
+                let result: PlatformWalletFFIResult
+                switch (storedMarker, keychainStamp) {
+                case let (marker?, stamp?):
+                    result = marker.withCString { m in
+                        stamp.withCString { s in callVerify(m, s) }
+                    }
+                case let (marker?, nil):
+                    result = marker.withCString { m in callVerify(m, nil) }
+                case let (nil, stamp?):
+                    result = stamp.withCString { s in callVerify(nil, s) }
+                case (nil, nil):
+                    result = callVerify(nil, nil)
                 }
                 try result.check()
             }
@@ -677,17 +698,17 @@ public class PlatformWalletManager: ObservableObject {
         // scalar until this heals, so it never needs to block unlock.
         persistenceHandler?.scheduleBackfillIdentityKeyBreadcrumbs(walletId: walletId)
 
-        // Only schedule the background drain when the signerless count probe
-        // reports actionable work (account-build + auto-accept ops). Rust
-        // deliberately excludes ContactInfoDecrypt from the count — it
-        // re-enqueues on every sync sweep, so it is structurally always
-        // present and would defeat the gate; skipping it here defers the
-        // contactInfo refresh (a resolver → Keychain touch) to the next
-        // signer-present DashPay action's own drain, which is where it
-        // drains anyway. On a probe failure fall through and schedule the
-        // drain (old behavior): it is always safe to run.
+        // Only schedule the background drain when the signerless probe
+        // reports queued work. This is the TOTAL drainable count — every op
+        // kind, including the ContactInfoDecrypt refreshes that the
+        // user-facing banner count excludes — because the unlock drain is
+        // the launch-time application point for cross-device contact
+        // metadata; gating on the filtered count would strand
+        // ContactInfoDecrypt-only queues until some other signer-present
+        // action ran a drain. On a probe failure fall through and schedule
+        // the drain (old behavior): it is always safe to run.
         var pendingOps: UInt32 = 0
-        let countResult = platform_wallet_pending_contact_crypto_count(
+        let countResult = platform_wallet_drainable_contact_crypto_count(
             walletHandle, &pendingOps
         )
         if PlatformWalletResultCode(ffi: countResult.code) == .success && pendingOps == 0 {
