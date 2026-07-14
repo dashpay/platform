@@ -840,36 +840,40 @@ struct AccountDetailView: View {
                 .font(.subheadline)
                 .fontWeight(.semibold)
 
-            derivedValueRow(
+            // Public key in BOTH encodings (hex + base64) so it can be
+            // cross-checked against tools like dashwallet-ios that render
+            // Ed25519 / BLS keys in base64. Base64 is a second rendering of
+            // the same Rust-emitted bytes — never re-derived here.
+            derivedValueRowBothEncodings(
                 label: account.accountType == 10 ? "BLS Public Key" : "Ed25519 Public Key",
-                value: key.publicKeyHex,
+                hex: key.publicKeyHex,
                 copyKey: "\(key.index)-pub"
             )
 
             // The same BLS G1 point in Dash's legacy serialization, shown
             // only for operator (BLS) keys. Ed25519 platform-node keys have
             // no legacy form, so `legacyPublicKeyHex` is `nil` there and the
-            // row is skipped. Rust emits both encodings — never derived here.
+            // rows are skipped. Rust emits both encodings — never derived here.
             if let legacy = key.legacyPublicKeyHex {
-                derivedValueRow(
+                derivedValueRowBothEncodings(
                     label: "BLS Public Key (Legacy)",
-                    value: legacy,
+                    hex: legacy,
                     copyKey: "\(key.index)-pub-legacy"
                 )
             }
 
             if let nodeId = key.nodeIdHex {
-                derivedValueRow(
+                derivedValueRowBothEncodings(
                     label: "Platform Node ID",
-                    value: nodeId,
+                    hex: nodeId,
                     copyKey: "\(key.index)-node"
                 )
             }
 
             if let priv = revealedPrivateKeys[key.index] {
-                derivedValueRow(
+                derivedValueRowBothEncodings(
                     label: "Private Key",
-                    value: priv,
+                    hex: priv,
                     copyKey: "\(key.index)-priv"
                 )
             } else {
@@ -899,8 +903,31 @@ struct AccountDetailView: View {
         }
     }
 
+    /// Render `hex` in BOTH encodings: a "… (Hex)" row and, when the hex
+    /// decodes, a "… (Base64)" sibling — the same bytes rendered a second
+    /// way, so a value can be cross-checked against tools (e.g.
+    /// dashwallet-ios) that display Ed25519 / BLS keys in base64. Both use
+    /// the standard tap-to-copy value-row styling; the base64 row's copy
+    /// key / accessibility id gets a `-b64` suffix.
+    @ViewBuilder
+    private func derivedValueRowBothEncodings(label: String, hex: String, copyKey: String) -> some View {
+        derivedValueRow(label: "\(label) (Hex)", value: hex, copyKey: copyKey)
+        if let b64 = base64(fromHex: hex) {
+            derivedValueRow(label: "\(label) (Base64)", value: b64, copyKey: "\(copyKey)-b64")
+        }
+    }
+
+    /// Re-render a lowercase-hex string as base64 — the same bytes in a
+    /// second display encoding only (no crypto, no byte reinterpretation).
+    /// `nil` only when `hex` isn't valid hex.
+    private func base64(fromHex hex: String) -> String? {
+        Data(hexString: hex)?.base64EncodedString()
+    }
+
     /// One monospaced, middle-truncated value row with tap-to-copy and a
-    /// transient "Copied" confirmation keyed by `copyKey`.
+    /// transient "Copied" confirmation keyed by `copyKey`. The `copyKey`
+    /// doubles as the row's accessibility identifier (unique per row —
+    /// e.g. `"0-pub"`, `"0-pub-b64"`).
     @ViewBuilder
     private func derivedValueRow(label: String, value: String, copyKey: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
@@ -928,6 +955,7 @@ struct AccountDetailView: View {
         }
         .contentShape(Rectangle())
         .onTapGesture { copyDerived(value, copyKey: copyKey) }
+        .accessibilityIdentifier(copyKey)
     }
 
     private func revealDialogBinding(for index: UInt32) -> Binding<Bool> {
