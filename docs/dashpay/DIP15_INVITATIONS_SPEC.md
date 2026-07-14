@@ -14,8 +14,7 @@ Tracked as the "NEXT" item in the DashPay backlog (dashpay/platform#4020); calle
 ## 0. As-built delta (supersedes the marked sections below)
 
 1. **Link envelope = the LEGACY query format, not the §6 binary blob (supersedes §6, §7).**
-   The 2026-07-13 legacy-compat rework (owner decision; full spec:
-   `INVITATIONS_LEGACY_COMPAT_SPEC.md`) replaced the hand-rolled versioned payload with the
+   The 2026-07-13 legacy-compat rework (owner decision; contract in §0A) replaced the hand-rolled versioned payload with the
    query form shared with dash-wallet Android / dashwallet-iOS, so links are field-level
    cross-claimable: `dashpay://invite?du=<username>&assetlocktx=<txid>&pk=<WIF>&islock=<hex|null>`
    `[&display-name=…][&avatar-url=…]` (also parses `https://invitations.dashpay.io/applink?…`).
@@ -42,11 +41,10 @@ Tracked as the "NEXT" item in the DashPay backlog (dashpay/platform#4020); calle
 4. **Persistence as-built (amends §4.2):** the `InvitationChangeSet` flows through
    `PlatformWalletPersistence::store()` to each backend — the SQLite backend's
    `V003__invitations` table, and on iOS the FFI `on_persist_invitations_fn` bridge into the
-   SwiftData `PersistentInvitation` model (SwiftData is the UI source; no Rust rehydrate;
-   spec: `INVITATIONS_PERSISTENCE_SWIFT_SPEC.md`). Persist failures are signaled end-to-end
+   SwiftData `PersistentInvitation` model (SwiftData is the UI source; no Rust rehydrate; §0B). Persist failures are signaled end-to-end
    (nonzero callback → rolled-back round → `create_invitation` errors), not best-effort.
-5. **Durability + ordering hardening (review rounds 1–3, spec:
-   `INVITATIONS_REVIEW_FIX_SPEC.md`):** the pre-broadcast gate persists **and flushes** the
+5. **Durability + ordering hardening (review rounds 1–3; the per-finding log lives in the
+   PR #4041 review threads + commit messages):** the pre-broadcast gate persists **and flushes** the
    invitation funding-index pool (aborting before broadcast on failure); creation refuses
    non-durable backends (`PlatformWalletPersistence::persists_durably()`); the funded-asset-lock
    flow is split so the invitation record is persisted immediately **after broadcast, before the
@@ -58,6 +56,134 @@ Tracked as the "NEXT" item in the DashPay backlog (dashpay/platform#4020); calle
    see `AI_QA/QA004` step 6 for the exact classifier arms.
 7. **QA contract as-built:** TEST_PLAN §4.10 rows **DP-12..DP-19** (not just DP-12..15) +
    `AI_QA/QA004_invitation_reclaim.md`; funded e2e evidence recorded there.
+
+---
+
+## 0A. As-built link envelope & legacy interop (absorbs the legacy-compat spec)
+
+The interop contract is **field-level parity with the live legacy wallets, emit
+strict/canonical, parse leniently** — exactly as tolerantly as the live Android wallet.
+Byte-for-byte parity is NOT the contract (the two legacy wallets differ in param order and in
+scheme/host). The on-chain primitive and derivation path (`m/9'/coin'/5'/3'/idx'`) are
+identical across all three wallets — no consensus change.
+
+### 0A.1 Wire format
+
+**Emit (canonical, what we produce):**
+```text
+dashpay://invite
+  ?du=<inviter DPNS username>                 # required to emit; optional on parse
+  &assetlocktx=<funding txid, lowercase BIG-ENDIAN display hex>
+  &pk=<voucher credit-burn key, WIF, COMPRESSED, network-correct>
+  &islock=<InstantSend lock, lowercase hex>   # or omit (see below)
+  [&display-name=<inviter display name>]
+  [&avatar-url=<inviter avatar url, single %-encoded>]
+```
+- Parse **by field name, order-independent**; accept **both** the `dashpay://invite` scheme
+  and the `https://invitations.dashpay.io/applink` host (iOS legacy links use the latter).
+- **`pk`**: WIF, **compressed** flag set (the credit-output hash uses the *compressed*
+  pubkey — wrong compression ⇒ wrong `hash160` ⇒ claim fails), network byte `0xCC` mainnet /
+  `0xEF` testnet-family.
+- **`assetlocktx`**: emit lowercase big-endian display hex; on claim parse leniently — try
+  as-given, then **retry byte-reversed** on a fetch miss (old iOS links are little-endian).
+- **`islock`**: OPTIONAL, with two absence forms — param missing **and the literal string
+  `"null"`** (Android emits `"null"` for a chainlock-confirmed invite). Absent/`"null"` ⇒
+  reconstruct a **`ChainAssetLockProof`** at claim, never reject. The hex is not
+  self-describing: decode as the modern deterministic **ISDLOCK**; the ancient
+  non-deterministic ISLOCK is unrepresentable in rust-dashcore and fails closed (documented
+  limitation — no live producer exists).
+- **Validity (lenient superset of both wallets):** require `assetlocktx` + `pk`
+  present/non-blank; never reject solely on a missing `du` or missing/`"null"` `islock`.
+
+### 0A.2 Claim-by-fetch
+
+The link carries the funding **txid**, not a proof, so claim reconstructs it (mirrors Android
+`TopUpRepository.obtainAssetLockTransaction`):
+1. Fetch the tx by `assetlocktx` via `Sdk::get_transaction` (bounded retry/backoff for DAPI
+   propagation lag; reversed-retry per §0A.1).
+2. Fail-fast guards: fetched txid matches `assetlocktx` (either byte order); when an islock is
+   present, `islock.txid == fetched tx.txid`.
+3. **Derive `output_index` by script match** — scan the fetched tx's `credit_outputs` for the
+   output whose `script_pubkey` == `voucher_credit_script(pk)`; never hard-code index 0.
+4. Build `InstantAssetLockProof` (islock present) or `ChainAssetLockProof` (absent/`"null"`;
+   requires the tx to be chain-locked), then submit through the **unchanged**
+   `put_to_platform_and_wait_for_response_with_private_key`.
+
+Consensus enforces pk↔output, islock↔tx, and identity_id↔outpoint — all fail closed; the
+local guards are fast-fail UX + correct index selection, not theft prevention.
+
+### 0A.3 Consequences of the legacy format
+
+- **No inviter identity id on the wire** — only `du`. `InviterInfo = {username?, display_name?,
+  avatar_url?}` and the invitee resolves the inviter's id from `du` via DPNS at
+  contact-bootstrap. A `du`-less link is metadata-only (`has_inviter == true`,
+  `inviter_username == nil`, no bootstrap possible).
+- **No expiry on the wire** — the pre-network staleness gate is gone; the real bounds are the
+  amount caps + reclaim. The inviter-side local record keeps expiry for display only.
+- **Amount is not on the wire** — the claim preview shows "—" pre-fetch.
+
+### 0A.4 Amounts (onboarding tiers)
+
+`MIN_INVITATION_DUFFS = 300_000` (0.003 DASH, == Android `DASH_PAY_INVITE_MIN`; a smaller
+voucher can fund neither a claim nor a register-reclaim — found by funded e2e).
+`MAX_INVITATION_DUFFS = 5_000_000` (0.05 DASH). Swift create default **0.03 DASH** = identity
++ a normal DPNS name (Android `DASH_PAY_FEE`). The contested-name tier (0.25) is **deferred**
+until contested registration is wired into the claim flow.
+
+### 0A.5 Transport
+
+The custom `dashpay://` scheme is the shipped, first-class transport (QR / share sheet /
+in-person). The legacy wallets' AppsFlyer OneLink wrapper is **externally blocked** (Android
+team creds; brand domain + template) and tracked separately (#4096-adjacent); note that
+OneLink discloses the plaintext `pk` to AppsFlyer server-side — an accepted, documented
+regression vs a self-contained link, bounded by the amount cap + reclaim. The custom scheme's
+same-device interception limitation is documented in `Info.plist` + §6.1.
+
+---
+
+## 0B. As-built persistence & reclaim (absorbs the Swift-persistence spec)
+
+### 0B.1 Persistence bridge
+
+`InvitationChangeSet` (structurally an `asset_locks`-style `BTreeMap` upserts +
+`BTreeSet` removals) flows through `PlatformWalletPersistence::store()` to each backend: the
+SQLite backend's `V003__invitations` table, and on iOS the **push-callback FFI bridge**
+(`on_persist_invitations_fn` → `persistInvitationsCallback` → SwiftData
+`PersistentInvitation`), mirroring the asset-lock wiring. Key properties:
+- **SwiftData is the UI source; push-only, no Rust→Swift rehydrate.** A SwiftData wipe loses
+  only list *visibility* — never funds or key re-derivability (`funding_index` re-derives the
+  voucher key).
+- **Persist failures are signaled, never swallowed:** a skipped write returns nonzero from the
+  callback, failing the (invitation-only) `store()` round and surfacing an error from
+  `create_invitation` instead of reporting a voucher that never reached SwiftData.
+- **Outpoint key seam:** both the upsert and the removal path derive the unique
+  `outPointHex` via `PersistentAssetLock.encodeOutPoint` verbatim (key-form drift is pinned by
+  `InvitationPersistenceTests`).
+
+### 0B.2 Reclaim
+
+The invitation's DASH is **burned into an `OP_RETURN`** at create time — the credit output
+exists only in the tx payload as a Platform-side authorization, never as an L1 UTXO — so
+"reclaim" means: **the inviter consumes the still-unclaimed voucher into a Platform identity
+of their own, recovering the value as credits** (mechanically, claiming your own invitation).
+UI copy always says "recovered as identity credits", never "DASH returned".
+
+- **Primitive:** consume the tracked lock via `FromExistingAssetLock { out_point }` — the
+  inviter's own signer re-derives the voucher key at `9'/coin'/5'/3'/funding_index'`
+  internally (no key export). Two user-picked targets: **top-up an existing identity** or
+  **register a new one**.
+- **Race / already-consumed:** no L1 double-spend exists (no shared UTXO); Platform
+  deterministically rejects the second consume
+  (`IdentityAssetLockTransactionOutPointAlreadyConsumed` — the loser wastes only an ST fee).
+  The Swift side disambiguates via the persisted `reclaimInFlight` marker, which is saved
+  (required — the consume may not run on a failed save) only immediately before the on-chain
+  consume: marker set ⇒ our own crash-interrupted reclaim (row → `Reclaimed`, also recovered
+  from the local "is not tracked" resume guard); marker unset ⇒ the invitee claimed first
+  (row → `Claimed`, neutral "This invitation was already claimed." — claimant not named).
+  The decision is the pure, unit-tested `classifyReclaimFailure(error:hadPriorReclaimInFlight:)`
+  seam; see `AI_QA/QA004` step 6 for the verified classifier arms.
+- **Status lifecycle:** `Reclaimed`/`Claimed` are written by the Swift UI on the local row
+  (SwiftData is the UI source; create is the only Rust emitter).
 
 ---
 
@@ -421,7 +547,7 @@ no analytics, sensitive-pasteboard flag on the Swift side (§8 Finding 3).
 ## 6. The `dashpay://invite` link envelope — a single versioned blob
 
 > **SUPERSEDED (2026-07-13, §0.1):** the shipped envelope is the legacy query format
-> (`du`/`assetlocktx`/`pk`/`islock` — see `INVITATIONS_LEGACY_COMPAT_SPEC.md`), not this blob.
+> (`du`/`assetlocktx`/`pk`/`islock` — see §0A), not this blob.
 > Kept for the design rationale it records (secret handling, caps, transport notes still apply).
 
 **Decision: one opaque, versioned payload** behind a `dashpay://invite?data=<base58(payload)>`
