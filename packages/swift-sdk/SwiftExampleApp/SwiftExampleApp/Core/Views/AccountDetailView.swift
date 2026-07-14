@@ -863,9 +863,11 @@ struct AccountDetailView: View {
             }
 
             if let nodeId = key.nodeIdHex {
-                derivedValueRowBothEncodings(
+                // Node ids are conventionally rendered in hex — no base64
+                // sibling.
+                derivedValueRow(
                     label: "Platform Node ID",
-                    hex: nodeId,
+                    value: nodeId,
                     copyKey: "\(key.index)-node"
                 )
             }
@@ -876,6 +878,26 @@ struct AccountDetailView: View {
                     hex: priv,
                     copyKey: "\(key.index)-priv"
                 )
+                // Ed25519 platform-node key in dashmate's "Enter Ed25519
+                // node key" format: base64 of the 64-byte `priv(32) ‖
+                // pub(32)` blob its validator accepts (base64-decode →
+                // length 64 → split at 32 → pub matches priv). Built purely
+                // by decoding the two hex strings the FFI already displays
+                // and concatenating the bytes — no crypto, no byte
+                // reinterpretation. Only for the Ed25519 platform-node
+                // account, and only when both halves are present.
+                if account.accountType == 11,
+                    let tenderdash = tenderdashNodeKeyBase64(
+                        privateHex: priv,
+                        publicHex: key.publicKeyHex
+                    )
+                {
+                    derivedValueRow(
+                        label: "Tenderdash Node Key (Base64)",
+                        value: tenderdash,
+                        copyKey: "\(key.index)-tenderdash"
+                    )
+                }
             } else {
                 Button {
                     revealConfirmIndex = key.index
@@ -922,6 +944,20 @@ struct AccountDetailView: View {
     /// `nil` only when `hex` isn't valid hex.
     private func base64(fromHex hex: String) -> String? {
         Data(hexString: hex)?.base64EncodedString()
+    }
+
+    /// The Ed25519 platform-node key in dashmate's "Enter Ed25519 node key"
+    /// format: base64 of the 64-byte `priv(32) ‖ pub(32)` concatenation.
+    /// dashmate's validator base64-decodes, requires length 64, splits at
+    /// 32, and checks the public half matches the private. Built purely by
+    /// decoding the two hex strings the FFI already displays and joining the
+    /// bytes — no crypto, no byte reinterpretation. `nil` unless both halves
+    /// decode to exactly 32 bytes.
+    private func tenderdashNodeKeyBase64(privateHex: String, publicHex: String) -> String? {
+        guard let priv = Data(hexString: privateHex), priv.count == 32,
+            let pub = Data(hexString: publicHex), pub.count == 32
+        else { return nil }
+        return (priv + pub).base64EncodedString()
     }
 
     /// One monospaced, middle-truncated value row with tap-to-copy and a
