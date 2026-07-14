@@ -23,7 +23,8 @@ use crate::wallet::PlatformWallet;
 /// Result of [`PlatformWalletManager::provider_masternode_txs_blocking`]:
 /// the wallet's network (for base58 address encoding on the FFI side),
 /// its retained provider special transactions with their confirmation
-/// heights, a DML snapshot (`proTxHash -> is_valid`, `None` when the
+/// height and in-block position (for same-block ordering), a DML snapshot
+/// (`proTxHash -> is_valid`, `None` when the
 /// deterministic masternode list isn't available yet), and two
 /// derive-and-compare ownership maps for the key kinds that live ONLY in
 /// payloads (never as on-chain addresses):
@@ -40,7 +41,12 @@ use crate::wallet::PlatformWallet;
 /// yields an empty map, a documented follow-up).
 pub type ProviderMasternodeTxs = (
     dashcore::Network,
-    Vec<(u32, dashcore::Transaction)>,
+    // Each tuple is `(block_height, in_block_position, tx)`. The position
+    // orders same-block provider updates for the aggregation's latest-wins
+    // (Core applies them in `block.vtx` order). Upstream retained records
+    // carry no in-block index yet (rust-dashcore#890), so `position` is
+    // currently always 0 (see the note where these are built).
+    Vec<(u32, u32, dashcore::Transaction)>,
     Option<std::collections::HashMap<[u8; 32], bool>>,
     std::collections::HashMap<[u8; 48], u32>,
     std::collections::HashMap<[u8; 20], u32>,
@@ -852,7 +858,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
 
             let mut by_txid: std::collections::BTreeMap<
                 dashcore::Txid,
-                (u32, dashcore::Transaction),
+                (u32, u32, dashcore::Transaction),
             > = std::collections::BTreeMap::new();
 
             for account in info.core_wallet.accounts.all_accounts().iter() {
@@ -861,9 +867,20 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                         continue;
                     }
                     let height = record.context.block_info().map(|b| b.height()).unwrap_or(0);
+                    // In-block position for same-height tie-breaking in the
+                    // aggregation (Core resolves same-block provider updates in
+                    // `block.vtx` order). The retained `TransactionContext` /
+                    // `BlockInfo` expose only height/hash/timestamp — NO in-block
+                    // index — and `account.transactions()` is a `BTreeMap<Txid>`
+                    // (txid-ordered, not processing order), so no real position is
+                    // recoverable here. Pass 0 for now; a correct fix needs an
+                    // upstream in-block tx index on `BlockInfo`, set during block
+                    // processing (rust-dashcore#890). Until then two same-block
+                    // updates to one field fall back to feed order.
+                    let position = 0u32;
                     by_txid
                         .entry(record.txid)
-                        .or_insert_with(|| (height, record.transaction.clone()));
+                        .or_insert_with(|| (height, position, record.transaction.clone()));
                 }
             }
 

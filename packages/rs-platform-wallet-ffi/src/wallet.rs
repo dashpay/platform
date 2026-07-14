@@ -250,7 +250,7 @@ pub unsafe extern "C" fn platform_wallet_manager_list_masternodes(
     };
 
     let aggregates = crate::core_wallet_types::aggregate_masternodes(
-        txs.iter().map(|(h, tx)| (*h, tx)),
+        txs.iter().map(|(h, p, tx)| (*h, *p, tx)),
         membership,
     );
 

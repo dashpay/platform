@@ -1105,7 +1105,7 @@ pub(crate) struct MasternodeAggregate {
 /// record source (which txs to feed) is the caller's concern (see the
 /// query fn), which is why this is decoupled and unit-testable.
 pub(crate) fn aggregate_masternodes<'a, F>(
-    txs: impl Iterator<Item = (u32, &'a dashcore::Transaction)>,
+    txs: impl Iterator<Item = (u32, u32, &'a dashcore::Transaction)>,
     list_lookup: F,
 ) -> Vec<MasternodeAggregate>
 where
@@ -1114,11 +1114,31 @@ where
     use dashcore::blockdata::transaction::special_transaction::provider_registration::ProviderMasternodeType;
     use dashcore::transaction::TransactionPayload;
 
+    // Each input item is `(height, in_block_position, tx)`. Core's
+    // `RebuildListFromBlock` applies same-block provider updates in
+    // `block.vtx` order, so the per-field latest-wins below must resolve
+    // ties by `(height, position)`, not by the arbitrary txid order the
+    // caller's `BTreeMap<Txid, _>` dedup produces. Process ascending
+    // `(height, position)` so the block-latest write for each field lands
+    // last and wins under the `>= *_height` guards. Stable so equal keys
+    // keep their incoming order.
+    //
+    // NOTE: upstream `TransactionRecord`/`TransactionContext`/`BlockInfo`
+    // carry no in-block index (only height/hash/timestamp), so the live
+    // caller currently passes `position = 0` for every tx (see
+    // `provider_masternode_txs_blocking`); until an in-block tx index is
+    // threaded from block processing (rust-dashcore#890), same-block same-field ties still fall
+    // back to feed order. The ordering below is the mechanism that makes it
+    // correct once that field exists, and is exercised by the crafted-position
+    // test.
+    let mut ordered: Vec<(u32, u32, &'a dashcore::Transaction)> = txs.collect();
+    ordered.sort_by_key(|(height, position, _)| (*height, *position));
+
     let mut order: Vec<[u8; 32]> = Vec::new();
     let mut by_hash: std::collections::HashMap<[u8; 32], MasternodeAggregate> =
         std::collections::HashMap::new();
 
-    for (height, tx) in txs {
+    for (height, _position, tx) in ordered {
         // proTxHash key: a ProRegTx's own txid, else the update's link.
         let key = match &tx.special_transaction_payload {
             Some(TransactionPayload::ProviderRegistrationPayloadType(_)) => {
@@ -1173,8 +1193,15 @@ where
                 if agg.platform_node_id.is_none() || height >= agg.platform_node_height {
                     // Evonode-only; `None` on a regular masternode.
                     // `platform_node_id` is a `PlatformNodeId` newtype
-                    // (rust-dashcore #885); the 20 raw bytes (SHA256[..20]
-                    // Tenderdash convention) come off `to_byte_array()`.
+                    // (rust-dashcore #885). These stored bytes are currently the
+                    // raw WIRE order (reversed uint160-internal), NOT the
+                    // canonical Tenderdash `SHA256(pubkey)[..20]` form the
+                    // derived ownership index (`accessors.rs`) uses — so display
+                    // and payload-sourced ownership matching of the node id are
+                    // pending rust-dashcore#887, which normalizes the wire bytes
+                    // to canonical inside `PlatformNodeId::consensus_decode`.
+                    // Keep `to_byte_array()` as-is here: reversing platform-side
+                    // would double-reverse once #887 lands via a pin bump.
                     if let Some(node_id) = p.platform_node_id {
                         agg.platform_node_id = Some(node_id.to_byte_array());
                         agg.platform_node_height = height;
@@ -1191,7 +1218,11 @@ where
                     agg.service_height = height;
                 }
                 // ProUpServ's `platform_node_id` is now `Option<PlatformNodeId>`
-                // (rust-dashcore #885, was `Option<[u8; 20]>`).
+                // (rust-dashcore #885, was `Option<[u8; 20]>`). Stored as raw
+                // WIRE bytes here (see the ProRegTx arm above); canonical
+                // display/ownership matching of the node id is pending
+                // rust-dashcore#887 — don't reverse platform-side or it will
+                // double-reverse once that lands via a pin bump.
                 if let Some(node_id) = p.platform_node_id {
                     if agg.platform_node_id.is_none() || height >= agg.platform_node_height {
                         agg.platform_node_id = Some(node_id.to_byte_array());
@@ -1338,6 +1369,15 @@ pub struct MasternodeEntryFFI {
     pub platform_in_wallet: bool,
     pub platform_account_type: u8,
     pub platform_key_index: u32,
+    /// Whether the platform-node ownership check was actually *possible* for
+    /// this query: `true` when the wallet's derived platform-node index had
+    /// entries to compare against, `false` when it was empty/unavailable (no
+    /// platform pool, or a seedless restore before the persisted key batch
+    /// rehydrated it). Lets the persister distinguish a definitive
+    /// `platform_in_wallet == false` (checked, not ours — e.g. an on-chain
+    /// key rotation to an external node) from "couldn't check yet", so it
+    /// never leaves stale ownership set. See `MasternodeSync`.
+    pub platform_ownership_checked: bool,
 }
 
 /// Encode a hash160 as a network-specific base58 P2PKH address string
@@ -1473,6 +1513,11 @@ pub(crate) fn masternode_entry_ffi(
         platform_in_wallet,
         platform_account_type,
         platform_key_index,
+        // The check was possible iff the wallet's derived platform-node index
+        // had entries to compare against. Empty index ⇒ no platform pool / not
+        // yet rehydrated ⇒ ownership is "unchecked", and the persister must
+        // retain any prior value rather than clobber it to false.
+        platform_ownership_checked: !platform_index.is_empty(),
     }
 }
 
@@ -1901,7 +1946,7 @@ mod tests {
         let reg = decode_tx(PROREG_HEX);
         let expected_pro_tx = provider_hash_to_32(reg.txid().as_ref());
 
-        let mns = aggregate_masternodes([(100u32, &reg)].into_iter(), unavailable_dml);
+        let mns = aggregate_masternodes([(100u32, 0u32, &reg)].into_iter(), unavailable_dml);
         assert_eq!(mns.len(), 1);
         let mn = &mns[0];
         assert_eq!(mn.pro_tx_hash, expected_pro_tx);
@@ -1937,7 +1982,7 @@ mod tests {
     #[test]
     fn aggregate_update_only_masternode() {
         let ups = decode_tx(PROUPSERV_HEX);
-        let mns = aggregate_masternodes([(50u32, &ups)].into_iter(), unavailable_dml);
+        let mns = aggregate_masternodes([(50u32, 0u32, &ups)].into_iter(), unavailable_dml);
         assert_eq!(mns.len(), 1);
         let mn = &mns[0];
         assert!(!mn.has_registration);
@@ -1953,7 +1998,7 @@ mod tests {
         let reg = decode_tx(PROREG_HEX);
         let ups = decode_tx(PROUPSERV_HEX);
         let mns = aggregate_masternodes(
-            [(100u32, &reg), (200u32, &ups)].into_iter(),
+            [(100u32, 0u32, &reg), (200u32, 0u32, &ups)].into_iter(),
             unavailable_dml,
         );
         assert_eq!(mns.len(), 2, "distinct proTxHashes ⇒ two masternodes");
@@ -1999,7 +2044,10 @@ mod tests {
         };
 
         // Revocation feed order shouldn't matter (height drives merges).
-        let mns = aggregate_masternodes([(300u32, &rev), (100u32, &reg)].into_iter(), lookup);
+        let mns = aggregate_masternodes(
+            [(300u32, 0u32, &rev), (100u32, 0u32, &reg)].into_iter(),
+            lookup,
+        );
         assert_eq!(mns.len(), 1);
         let mn = &mns[0];
         assert_eq!(mn.pro_tx_hash, revoked_pro_tx);
@@ -2033,7 +2081,7 @@ mod tests {
                 assert_eq!(*pt, pro_tx);
                 membership
             };
-            let mns = aggregate_masternodes([(100u32, &reg)].into_iter(), lookup);
+            let mns = aggregate_masternodes([(100u32, 0u32, &reg)].into_iter(), lookup);
             assert_eq!(mns.len(), 1);
             assert_eq!(mns[0].status, expected);
             assert!(!mns[0].revoked, "no ProUpRevTx ⇒ revoked flag stays false");
@@ -2061,7 +2109,7 @@ mod tests {
         }
 
         let mns = aggregate_masternodes(
-            [(100u32, &regular), (200u32, &evonode)].into_iter(),
+            [(100u32, 0u32, &regular), (200u32, 0u32, &evonode)].into_iter(),
             unavailable_dml,
         );
         assert_eq!(mns.len(), 2, "distinct proTxHashes ⇒ two masternodes");
@@ -2070,5 +2118,73 @@ mod tests {
         let reg = mns.iter().find(|m| !m.is_evonode).expect("regular present");
         assert_eq!(evo.type_index, 1, "first (only) evonode ⇒ Evonode 1");
         assert_eq!(reg.type_index, 1, "first (only) regular ⇒ Masternode 1");
+    }
+
+    /// Two provider updates for one masternode in the SAME block must resolve
+    /// the per-field latest-wins by in-block `position`, matching Core's
+    /// `block.vtx` order — NOT by the arbitrary txid order the caller's
+    /// `BTreeMap<Txid>` dedup would otherwise impose. Feed the same pair in
+    /// both orders; the higher-positioned (block-latest) update wins each time,
+    /// proving position — not feed/txid order — decides the outcome.
+    #[test]
+    fn same_block_updates_resolve_by_position_not_txid() {
+        use dashcore::blockdata::transaction::special_transaction::provider_update_service::ProviderUpdateServicePayload;
+        use dashcore::transaction::TransactionPayload;
+
+        // Shared registration linkage ⇒ both updates land in one bucket.
+        let pro_tx_hash = decode_tx(PROREG_HEX).txid();
+        let group_key = provider_hash_to_32(pro_tx_hash.as_ref());
+
+        // Build a ProUpServTx directly (no raw-hex vector needed); `port`
+        // distinguishes the resulting service address, `inputs` perturbs the
+        // txid so the two txs are genuinely distinct.
+        let make_upserv = |port: u16, inputs: u8| -> dashcore::Transaction {
+            let payload = ProviderUpdateServicePayload {
+                version: 1,
+                mn_type: None,
+                pro_tx_hash,
+                ip_address: 42,
+                port,
+                script_payout: dashcore::ScriptBuf::new(),
+                inputs_hash: [inputs; 32].into(),
+                platform_node_id: None,
+                platform_p2p_port: None,
+                platform_http_port: None,
+                payload_sig: [0u8; 96].into(),
+            };
+            dashcore::Transaction {
+                version: 3,
+                lock_time: 0,
+                input: vec![],
+                output: vec![],
+                special_transaction_payload: Some(
+                    TransactionPayload::ProviderUpdateServicePayloadType(payload),
+                ),
+            }
+        };
+
+        let low = make_upserv(19000, 3); // in-block position 0
+        let high = make_upserv(19999, 4); // in-block position 1 (block-latest)
+
+        for feed in [
+            [(500u32, 0u32, &low), (500u32, 1u32, &high)],
+            // Reversed feed order (block-latest fed first): position, not feed
+            // order, must still pick the winner.
+            [(500u32, 1u32, &high), (500u32, 0u32, &low)],
+        ] {
+            let mns = aggregate_masternodes(feed.into_iter(), unavailable_dml);
+            assert_eq!(mns.len(), 1, "same proTxHash ⇒ one bucket");
+            assert_eq!(mns[0].pro_tx_hash, group_key);
+            assert!(
+                mns[0]
+                    .service_address
+                    .as_deref()
+                    .unwrap_or_default()
+                    .ends_with(":19999"),
+                "higher in-block position (block-latest) must win; got {:?}",
+                mns[0].service_address
+            );
+            assert_eq!(mns[0].tx_count, 2, "both updates counted");
+        }
     }
 }
