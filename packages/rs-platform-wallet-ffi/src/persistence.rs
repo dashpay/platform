@@ -5001,7 +5001,14 @@ fn restore_provider_special_txs(
                         e
                     ))
                 })?;
-                let info = BlockInfo::new(rec.block_height, block_hash, rec.block_timestamp as u32);
+                let mut info =
+                    BlockInfo::new(rec.block_height, block_hash, rec.block_timestamp as u32);
+                // Restore the in-block position (rust-dashcore#891) so the
+                // masternode aggregation keeps Core's same-block apply order
+                // across restarts. Absent on pre-field rows.
+                if rec.has_block_position {
+                    info = info.with_position(rec.block_position);
+                }
                 if ctx == 2 {
                     TransactionContext::InBlock(info)
                 } else {
@@ -5361,6 +5368,79 @@ mod tests {
 
         drop(addr_c);
         drop(path_c);
+    }
+
+    /// A staged provider special tx must round-trip its persisted in-block
+    /// position (rust-dashcore#891) onto the rebuilt record's `BlockInfo`,
+    /// so the masternode aggregation keeps Core's same-block apply order
+    /// across restarts — and a pre-field row (`has_block_position: false`)
+    /// must restore with `position() == None`.
+    #[test]
+    fn provider_special_tx_restore_round_trips_block_position() {
+        use dashcore::blockdata::transaction::special_transaction::provider_update_service::ProviderUpdateServicePayload;
+        use dashcore::hashes::Hash;
+        use dashcore::transaction::TransactionPayload;
+
+        let payload = ProviderUpdateServicePayload {
+            version: 1,
+            mn_type: None,
+            pro_tx_hash: dashcore::Txid::from_byte_array([7u8; 32]),
+            ip_address: 42,
+            port: 19999,
+            script_payout: ScriptBuf::new(),
+            inputs_hash: [3u8; 32].into(),
+            platform_node_id: None,
+            platform_p2p_port: None,
+            platform_http_port: None,
+            payload_sig: [0u8; 96].into(),
+        };
+        let tx = Transaction {
+            version: 3,
+            lock_time: 0,
+            input: vec![],
+            output: vec![],
+            special_transaction_payload: Some(
+                TransactionPayload::ProviderUpdateServicePayloadType(payload),
+            ),
+        };
+        let mut tx_bytes = serialize(&tx);
+
+        for (has_position, expected) in [(true, Some(5u32)), (false, None)] {
+            let entry = ProviderSpecialTxRestoreEntryFFI {
+                tx_bytes: tx_bytes.as_mut_ptr(),
+                tx_bytes_len: tx_bytes.len(),
+                context_raw: 2,
+                block_height: 900,
+                block_hash: [9u8; 32],
+                block_timestamp: 1_700_000_000,
+                block_position: 5,
+                has_block_position: has_position,
+                first_seen: 0,
+            };
+
+            let mut wallet_info = test_managed_wallet_info_with_provider_owner();
+            let stats = restore_provider_special_txs(&mut wallet_info, &[entry])
+                .expect("staged provider tx must restore");
+            assert_eq!(
+                stats.restored, 1,
+                "the record must land on a provider account"
+            );
+
+            let record = wallet_info
+                .accounts
+                .provider_owner_keys
+                .as_ref()
+                .expect("provider-owner account must exist")
+                .transactions()
+                .get(&tx.txid())
+                .expect("restored record must be resident");
+            assert_eq!(
+                record.context.block_info().and_then(|b| b.position()),
+                expected,
+                "restored BlockInfo position must mirror the persisted row \
+                 (has_block_position = {has_position})"
+            );
+        }
     }
 
     /// Build a minimal `AddressInfo` for merge tests. The address/script/

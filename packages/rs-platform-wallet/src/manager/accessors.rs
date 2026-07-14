@@ -43,9 +43,9 @@ pub type ProviderMasternodeTxs = (
     dashcore::Network,
     // Each tuple is `(block_height, in_block_position, tx)`. The position
     // orders same-block provider updates for the aggregation's latest-wins
-    // (Core applies them in `block.vtx` order). Upstream retained records
-    // carry no in-block index yet (rust-dashcore#890), so `position` is
-    // currently always 0 (see the note where these are built).
+    // (Core applies them in `block.vtx` order). Stamped during block
+    // processing (rust-dashcore#891); 0 for legacy rows persisted before
+    // the field existed.
     Vec<(u32, u32, dashcore::Transaction)>,
     Option<std::collections::HashMap<[u8; 32], bool>>,
     std::collections::HashMap<[u8; 48], u32>,
@@ -869,15 +869,15 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                     let height = record.context.block_info().map(|b| b.height()).unwrap_or(0);
                     // In-block position for same-height tie-breaking in the
                     // aggregation (Core resolves same-block provider updates in
-                    // `block.vtx` order). The retained `TransactionContext` /
-                    // `BlockInfo` expose only height/hash/timestamp — NO in-block
-                    // index — and `account.transactions()` is a `BTreeMap<Txid>`
-                    // (txid-ordered, not processing order), so no real position is
-                    // recoverable here. Pass 0 for now; a correct fix needs an
-                    // upstream in-block tx index on `BlockInfo`, set during block
-                    // processing (rust-dashcore#890). Until then two same-block
-                    // updates to one field fall back to feed order.
-                    let position = 0u32;
+                    // `block.vtx` order). Stamped by block processing since
+                    // rust-dashcore#891 and round-tripped through persistence;
+                    // `None` only for legacy rows persisted before the field
+                    // existed, which fall back to 0 (feed order).
+                    let position = record
+                        .context
+                        .block_info()
+                        .and_then(|b| b.position())
+                        .unwrap_or(0);
                     by_txid
                         .entry(record.txid)
                         .or_insert_with(|| (height, position, record.transaction.clone()));

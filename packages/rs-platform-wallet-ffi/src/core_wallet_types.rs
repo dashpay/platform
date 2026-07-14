@@ -83,6 +83,14 @@ pub struct TransactionRecordFFI {
     pub block_height: u32,
     pub block_hash: [u8; 32],
     pub block_timestamp: u32,
+    /// The transaction's index within its block (`block.vtx` order),
+    /// meaningful only when `has_block_position` (stamped by block
+    /// processing since rust-dashcore#891; absent on records confirmed
+    /// before the field existed and on unconfirmed contexts). Persisted
+    /// so restored provider special transactions keep Core's same-block
+    /// apply order in the masternode aggregation.
+    pub block_position: u32,
+    pub has_block_position: bool,
     /// 0=incoming, 1=outgoing, 2=internal, 3=coinJoin.
     pub direction: u32,
     /// `transaction_type` rendered as a `Debug`-formatted string for
@@ -1123,14 +1131,10 @@ where
     // last and wins under the `>= *_height` guards. Stable so equal keys
     // keep their incoming order.
     //
-    // NOTE: upstream `TransactionRecord`/`TransactionContext`/`BlockInfo`
-    // carry no in-block index (only height/hash/timestamp), so the live
-    // caller currently passes `position = 0` for every tx (see
-    // `provider_masternode_txs_blocking`); until an in-block tx index is
-    // threaded from block processing (rust-dashcore#890), same-block same-field ties still fall
-    // back to feed order. The ordering below is the mechanism that makes it
-    // correct once that field exists, and is exercised by the crafted-position
-    // test.
+    // The position is stamped onto `BlockInfo` during block processing
+    // (rust-dashcore#891) and round-tripped through persistence; legacy
+    // rows confirmed before the field existed come back as 0 and fall
+    // back to feed order among themselves.
     let mut ordered: Vec<(u32, u32, &'a dashcore::Transaction)> = txs.collect();
     ordered.sort_by_key(|(height, position, _)| (*height, *position));
 
@@ -1529,21 +1533,36 @@ fn tx_record_to_ffi(
     let mut txid = [0u8; 32];
     txid.copy_from_slice(tr.txid.as_ref());
 
-    let (ctx_val, blk_height, blk_hash, blk_ts) = match &tr.context {
-        TransactionContext::Mempool => (0u32, 0u32, [0u8; 32], 0u32),
+    let (ctx_val, blk_height, blk_hash, blk_ts, blk_position, has_blk_position) = match &tr.context
+    {
+        TransactionContext::Mempool => (0u32, 0u32, [0u8; 32], 0u32, 0u32, false),
         TransactionContext::InstantSend(_is_lock) => {
             // InstantSend has no block info — treat as mempool-level with flag
-            (1u32, 0u32, [0u8; 32], 0u32)
+            (1u32, 0u32, [0u8; 32], 0u32, 0u32, false)
         }
         TransactionContext::InBlock(bi) => {
             let mut h = [0u8; 32];
             h.copy_from_slice(bi.block_hash().as_ref());
-            (2u32, bi.height(), h, bi.timestamp())
+            (
+                2u32,
+                bi.height(),
+                h,
+                bi.timestamp(),
+                bi.position().unwrap_or(0),
+                bi.position().is_some(),
+            )
         }
         TransactionContext::InChainLockedBlock(bi) => {
             let mut h = [0u8; 32];
             h.copy_from_slice(bi.block_hash().as_ref());
-            (3u32, bi.height(), h, bi.timestamp())
+            (
+                3u32,
+                bi.height(),
+                h,
+                bi.timestamp(),
+                bi.position().unwrap_or(0),
+                bi.position().is_some(),
+            )
         }
     };
 
@@ -1614,6 +1633,8 @@ fn tx_record_to_ffi(
         block_height: blk_height,
         block_hash: blk_hash,
         block_timestamp: blk_ts,
+        block_position: blk_position,
+        has_block_position: has_blk_position,
         direction: dir_val,
         transaction_type: type_str.into_raw(),
         transaction_type_kind: type_kind,

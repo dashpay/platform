@@ -655,6 +655,8 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         record.context = tx.context
         record.blockHeight = tx.block_height
         record.blockTimestamp = tx.block_timestamp
+        record.blockPosition = tx.block_position
+        record.hasBlockPosition = tx.has_block_position
         let blockHashBytes = hashData(tx.block_hash)
         record.blockHash = blockHashBytes.allSatisfy { $0 == 0 } ? nil : blockHashBytes
         record.direction = tx.direction
@@ -4910,6 +4912,8 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 }
             }
             entry.block_timestamp = UInt64(txRow.blockTimestamp)
+            entry.block_position = txRow.blockPosition
+            entry.has_block_position = txRow.hasBlockPosition
             entry.first_seen = txRow.firstSeen
             buf[written] = entry
             written += 1

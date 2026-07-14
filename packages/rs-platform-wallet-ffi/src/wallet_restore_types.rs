@@ -583,6 +583,13 @@ pub struct ProviderSpecialTxRestoreEntryFFI {
     pub block_hash: [u8; 32],
     /// Block timestamp (Unix seconds; same meaningfulness rule).
     pub block_timestamp: u64,
+    /// The transaction's index within its block (`block.vtx` order),
+    /// meaningful only when `has_block_position`. Restored onto the
+    /// rebuilt record's `BlockInfo` so the masternode aggregation keeps
+    /// Core's same-block apply order across restarts (rust-dashcore#891).
+    /// `false` for rows persisted before the field existed.
+    pub block_position: u32,
+    pub has_block_position: bool,
     /// Persisted "first seen" Unix-second timestamp (mirrors on-disk).
     pub first_seen: u64,
 }
