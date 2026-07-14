@@ -1193,15 +1193,13 @@ where
                 if agg.platform_node_id.is_none() || height >= agg.platform_node_height {
                     // Evonode-only; `None` on a regular masternode.
                     // `platform_node_id` is a `PlatformNodeId` newtype
-                    // (rust-dashcore #885). These stored bytes are currently the
-                    // raw WIRE order (reversed uint160-internal), NOT the
-                    // canonical Tenderdash `SHA256(pubkey)[..20]` form the
-                    // derived ownership index (`accessors.rs`) uses — so display
-                    // and payload-sourced ownership matching of the node id are
-                    // pending rust-dashcore#887, which normalizes the wire bytes
-                    // to canonical inside `PlatformNodeId::consensus_decode`.
-                    // Keep `to_byte_array()` as-is here: reversing platform-side
-                    // would double-reverse once #887 lands via a pin bump.
+                    // (rust-dashcore #885) whose `consensus_decode` normalizes
+                    // the wire's reversed uint160-internal bytes to the
+                    // canonical Tenderdash `SHA256(pubkey)[..20]` order
+                    // (rust-dashcore #887/#889), so `to_byte_array()` here is
+                    // already canonical and matches the derived ownership
+                    // index (`accessors.rs`) and dashmate display directly —
+                    // do NOT reverse platform-side.
                     if let Some(node_id) = p.platform_node_id {
                         agg.platform_node_id = Some(node_id.to_byte_array());
                         agg.platform_node_height = height;
@@ -1218,11 +1216,8 @@ where
                     agg.service_height = height;
                 }
                 // ProUpServ's `platform_node_id` is now `Option<PlatformNodeId>`
-                // (rust-dashcore #885, was `Option<[u8; 20]>`). Stored as raw
-                // WIRE bytes here (see the ProRegTx arm above); canonical
-                // display/ownership matching of the node id is pending
-                // rust-dashcore#887 — don't reverse platform-side or it will
-                // double-reverse once that lands via a pin bump.
+                // (rust-dashcore #885, was `Option<[u8; 20]>`); decoded bytes
+                // are canonical forward order (see the ProRegTx arm above).
                 if let Some(node_id) = p.platform_node_id {
                     if agg.platform_node_id.is_none() || height >= agg.platform_node_height {
                         agg.platform_node_id = Some(node_id.to_byte_array());
