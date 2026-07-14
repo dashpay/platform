@@ -22,6 +22,18 @@ private func hexString(_ data: Data) -> String {
     data.map { String(format: "%02x", $0) }.joined()
 }
 
+/// Human label for a stored public key, keyed on its byte length — the
+/// curve is fixed by the width (ECDSA 33 / BLS 48 / Ed25519 32),
+/// matching the Rust-side `KeyTypeTagFFI` discriminant.
+private func publicKeyTypeLabel(byteCount: Int) -> String {
+    switch byteCount {
+    case 33: return "ECDSA Public Key"
+    case 48: return "BLS Public Key"
+    case 32: return "Ed25519 Public Key"
+    default: return "Public Key"
+    }
+}
+
 /// Render an owning `PersistentWallet` for one-line display on
 /// the storage-record detail screens. Priority: explicit wallet
 /// name → `"<short hex>…"` of the `walletId` → "None" for
@@ -1309,7 +1321,7 @@ struct PlatformAddressDetailView: View {
             }
             Section("Public Key") {
                 FieldRow(
-                    label: "Bytes (hex)",
+                    label: publicKeyTypeLabel(byteCount: record.publicKey.count),
                     value: record.publicKey.isEmpty
                         ? "—"
                         : record.publicKey.map { String(format: "%02x", $0) }.joined()
@@ -1581,7 +1593,7 @@ struct CoreAddressDetailView: View {
             }
             Section("Public Key") {
                 FieldRow(
-                    label: "Bytes (hex)",
+                    label: publicKeyTypeLabel(byteCount: record.publicKey.count),
                     value: record.publicKey.isEmpty
                         ? "—"
                         : record.publicKey.map { String(format: "%02x", $0) }.joined()

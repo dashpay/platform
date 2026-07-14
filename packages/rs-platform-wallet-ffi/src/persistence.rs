@@ -39,7 +39,7 @@ use crate::asset_lock_persistence::{
 use crate::contact_persistence::{
     free_contact_requests_ffi, ContactIgnoredSenderFFI, ContactRequestFFI, ContactRequestRemovalFFI,
 };
-use crate::core_address_types::{AddressPoolTypeTagFFI, CoreAddressEntryFFI};
+use crate::core_address_types::{AddressPoolTypeTagFFI, CoreAddressEntryFFI, KeyTypeTagFFI};
 use crate::core_wallet_types::{free_wallet_changeset_ffi, WalletChangeSetFFI};
 use crate::identity_persistence::{
     free_identity_entry_ffi, free_identity_key_entry_ffi, IdentityEntryFFI, IdentityKeyEntryFFI,
@@ -51,8 +51,8 @@ use crate::wallet_registration_persistence::AccountAddressPoolFFI;
 use crate::wallet_restore_types::{
     AccountSpecFFI, AccountTypeTagFFI, ContactProfileRestoreEntryFFI, IdentityKeyRestoreFFI,
     IdentityRestoreEntryFFI, LoadWalletListFreeFn, PaymentRestoreEntryFFI,
-    ProviderPlatformNodeKeyFFI, ProviderSpecialTxRestoreEntryFFI, StandardAccountTypeTagFFI,
-    UnresolvedAssetLockTxRecordFFI, UtxoRestoreEntryFFI, WalletRestoreEntryFFI,
+    ProviderSpecialTxRestoreEntryFFI, StandardAccountTypeTagFFI, UnresolvedAssetLockTxRecordFFI,
+    UtxoRestoreEntryFFI, WalletRestoreEntryFFI,
 };
 use dpp::address_funds::PlatformAddress;
 use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
@@ -727,7 +727,7 @@ impl PlatformWalletPersistence for FFIPersister {
                     &changeset.account_registrations,
                     &changeset.provider_key_account_registrations,
                 ) {
-                    Ok((specs, _xpub_bytes_storage, _derived_keys_storage)) => {
+                    Ok((specs, _xpub_bytes_storage)) => {
                         let result = unsafe {
                             cb(
                                 self.callbacks.context,
@@ -736,12 +736,11 @@ impl PlatformWalletPersistence for FFIPersister {
                                 specs.len(),
                             )
                         };
-                        // Force the spec / byte buffers / derived-key
-                        // buffers to live until after the callback even
-                        // though their drop happens on scope exit anyway.
+                        // Force the spec / byte buffers to live until after
+                        // the callback even though their drop happens on
+                        // scope exit anyway.
                         drop(specs);
                         drop(_xpub_bytes_storage);
-                        drop(_derived_keys_storage);
                         if result != 0 {
                             eprintln!(
                                 "Account registrations persistence callback returned error code {}",
@@ -2490,10 +2489,6 @@ fn build_account_spec_ffi(account_type: &AccountType, xpub_bytes: &[u8]) -> Acco
         friend_identity_id: [0u8; 32],
         account_xpub_bytes: xpub_bytes.as_ptr(),
         account_xpub_bytes_len: xpub_bytes.len(),
-        // Set by `build_account_specs_for_callback` for the
-        // `ProviderPlatformKeys` entry; null/0 for every other account.
-        derived_platform_node_keys: std::ptr::null(),
-        derived_platform_node_keys_count: 0,
     };
     // The producer side casts each `AccountTypeTagFFI` /
     // `StandardAccountTypeTagFFI` variant to `u8` because both fields
@@ -2587,29 +2582,16 @@ fn build_account_spec_ffi(account_type: &AccountType, xpub_bytes: &[u8]) -> Acco
 }
 
 /// Build the `Vec<AccountSpecFFI>` array for
-/// `on_persist_account_registrations_fn` plus the parallel storage each
-/// spec borrows into:
-/// 1. `Vec<Vec<u8>>` — bincoded xpub byte buffers
-///    (`account_xpub_bytes`).
-/// 2. `Vec<Vec<ProviderPlatformNodeKeyFFI>>` — one inner Vec per
-///    provider entry holding its pre-derived platform-node keys
-///    (`derived_platform_node_keys`); empty for the BLS operator entry
-///    and for every ECDSA account.
+/// `on_persist_account_registrations_fn` plus the parallel `Vec<Vec<u8>>`
+/// of bincoded xpub byte buffers each spec's `account_xpub_bytes` borrows
+/// into.
 ///
-/// All three share lifetime — the caller must keep them alive until
-/// after the callback returns.
-#[allow(clippy::type_complexity)]
+/// Both share lifetime — the caller must keep them alive until after the
+/// callback returns.
 fn build_account_specs_for_callback(
     entries: &[AccountRegistrationEntry],
     provider_entries: &[ProviderKeyAccountEntry],
-) -> Result<
-    (
-        Vec<AccountSpecFFI>,
-        Vec<Vec<u8>>,
-        Vec<Vec<ProviderPlatformNodeKeyFFI>>,
-    ),
-    String,
-> {
+) -> Result<(Vec<AccountSpecFFI>, Vec<Vec<u8>>), String> {
     // Pre-encode every extended public key once so each spec slot can
     // borrow the pointer + length without a self-referential lifetime
     // trick. ECDSA accounts encode their secp256k1 `ExtendedPubKey`;
@@ -2634,24 +2616,6 @@ fn build_account_specs_for_callback(
         xpub_buffers.push(bytes);
     }
 
-    // Pre-derived platform-node key storage, index-aligned to
-    // `provider_entries`. Built to completion BEFORE any spec borrows a
-    // pointer into it so the inner Vecs never move under a live pointer.
-    let derived_storage: Vec<Vec<ProviderPlatformNodeKeyFFI>> = provider_entries
-        .iter()
-        .map(|entry| {
-            entry
-                .derived_platform_node_keys
-                .iter()
-                .map(|k| ProviderPlatformNodeKeyFFI {
-                    index: k.index,
-                    public_key: k.public_key,
-                    node_id: k.node_id,
-                })
-                .collect()
-        })
-        .collect();
-
     let mut specs: Vec<AccountSpecFFI> = Vec::with_capacity(xpub_buffers.len());
     let mut idx = 0;
     for entry in entries {
@@ -2661,20 +2625,14 @@ fn build_account_specs_for_callback(
         ));
         idx += 1;
     }
-    for (p_idx, entry) in provider_entries.iter().enumerate() {
-        let mut spec = build_account_spec_ffi(&entry.account_type, &xpub_buffers[idx]);
-        // Point at the pre-built (stable) derived-key storage for this
-        // provider entry. Empty for the BLS operator account, so its
-        // spec keeps the null/0 default from `build_account_spec_ffi`.
-        let rows = &derived_storage[p_idx];
-        if !rows.is_empty() {
-            spec.derived_platform_node_keys = rows.as_ptr();
-            spec.derived_platform_node_keys_count = rows.len();
-        }
-        specs.push(spec);
+    for entry in provider_entries {
+        specs.push(build_account_spec_ffi(
+            &entry.account_type,
+            &xpub_buffers[idx],
+        ));
         idx += 1;
     }
-    Ok((specs, xpub_buffers, derived_storage))
+    Ok((specs, xpub_buffers))
 }
 
 /// Build the `Vec<AccountAddressPoolFFI>` array for
@@ -2806,18 +2764,42 @@ fn build_core_address_entry_ffi(
     owned_strings.push(address_c);
     owned_strings.push(path_c);
 
-    let mut public_key = [0u8; 33];
-    let has_public_key = match &info.public_key {
+    // Marshal whichever typed key the pool entry carries into the fixed
+    // 48-byte slot. Each variant is length-validated against its curve's
+    // fixed width (ECDSA 33 / BLS 48 / EdDSA 32); a wrong-length key is
+    // emitted as "no key" (`public_key_len == 0`) rather than aborting the
+    // row — the address + derivation-path still surface for the Storage
+    // Explorer, and a malformed key would only mislead the provider-key
+    // matcher on restore.
+    let mut public_key = [0u8; 48];
+    let (public_key_len, key_type_tag) = match &info.public_key {
+        None => (0u8, 0u8),
         Some(PublicKeyType::ECDSA(bytes)) if bytes.len() == 33 => {
-            public_key.copy_from_slice(bytes);
-            true
+            public_key[..33].copy_from_slice(bytes);
+            (33u8, KeyTypeTagFFI::ECDSA as u8)
         }
-        _ => false,
+        Some(PublicKeyType::BLS(bytes)) if bytes.len() == 48 => {
+            public_key[..48].copy_from_slice(bytes);
+            (48u8, KeyTypeTagFFI::BLS as u8)
+        }
+        Some(PublicKeyType::EdDSA(bytes)) if bytes.len() == 32 => {
+            public_key[..32].copy_from_slice(bytes);
+            (32u8, KeyTypeTagFFI::EdDSA as u8)
+        }
+        Some(_) => {
+            tracing::warn!(
+                index = info.index,
+                "persist: address pool entry carries a typed public key with an \
+                 unexpected length for its curve; emitting the row with no key"
+            );
+            (0u8, 0u8)
+        }
     };
 
     Ok(CoreAddressEntryFFI {
         public_key,
-        has_public_key,
+        public_key_len,
+        key_type_tag,
         pool_type_tag,
         address_index: info.index,
         is_used: info.used,
@@ -2876,10 +2858,39 @@ unsafe fn address_info_from_ffi(
         .map_err(|e| format!("derivation_path not UTF-8: {}", e))?;
     let path = DerivationPath::from_str(path_str)
         .map_err(|e| format!("failed to parse derivation path '{}': {}", path_str, e))?;
-    let public_key = if entry.has_public_key {
-        Some(PublicKeyType::ECDSA(entry.public_key.to_vec()))
-    } else {
+    // Rebuild the typed key from the (len, tag) pair. A tag that doesn't
+    // validate, or a len that disagrees with its curve's fixed width (or
+    // overruns the 48-byte slot), yields `None` + a warn rather than an
+    // error — forgiving, matching the rest of this row's decode posture:
+    // the address still restores, only its provider-key match is lost.
+    let public_key = if entry.public_key_len == 0 {
         None
+    } else {
+        let len = entry.public_key_len as usize;
+        if len > entry.public_key.len() {
+            tracing::warn!(
+                len,
+                "load: persisted address row public_key_len exceeds the key slot; \
+                 dropping the key"
+            );
+            None
+        } else {
+            let bytes = entry.public_key[..len].to_vec();
+            match (KeyTypeTagFFI::try_from_u8(entry.key_type_tag), len) {
+                (Some(KeyTypeTagFFI::ECDSA), 33) => Some(PublicKeyType::ECDSA(bytes)),
+                (Some(KeyTypeTagFFI::BLS), 48) => Some(PublicKeyType::BLS(bytes)),
+                (Some(KeyTypeTagFFI::EdDSA), 32) => Some(PublicKeyType::EdDSA(bytes)),
+                _ => {
+                    tracing::warn!(
+                        key_type_tag = entry.key_type_tag,
+                        len,
+                        "load: persisted address row has an invalid key-type/length \
+                         combination; dropping the key"
+                    );
+                    None
+                }
+            }
+        }
     };
     Ok(AddressInfo {
         address,
@@ -2899,34 +2910,21 @@ unsafe fn address_info_from_ffi(
     })
 }
 
-/// Merge persisted `AddressInfo` rows into a managed account's
-/// `AddressPool`. Upsert semantics: a persisted row overwrites the
-/// gap-limit default `ManagedWalletInfo::from_wallet` pre-derived at
-/// the same index, and the reverse-lookup maps + `highest_*`
-/// watermarks are extended to cover indices past that default
-/// gap window.
+/// Restore persisted `AddressInfo` rows into a managed account's
+/// `AddressPool`. Plain upsert: a persisted row overwrites the gap-limit
+/// default `ManagedWalletInfo::from_wallet` pre-derived at the same
+/// index, and the reverse-lookup maps + `highest_*` watermarks are
+/// extended to cover indices past that default gap window.
 ///
-/// **Typed-key preservation:** a persisted row can lose its typed public
-/// key on the FFI round-trip — the [`CoreAddressEntryFFI`] key field is a
-/// bare 33-byte slot that only fits a compressed ECDSA key and carries no
-/// key-type discriminator, so BLS (48B) operator and Ed25519 (32B)
-/// platform-node entries come back with `public_key: None`. Overwriting a
-/// prederived typed entry (which `from_wallet` filled with
-/// `PublicKeyType::BLS`/`EdDSA`) with such a `None` row would break
-/// key-wallet's provider-key matching. So this MERGES: when the incoming
-/// row has no typed key but the existing entry at that index does, the
-/// existing typed key is kept. (Funds/ECDSA rows always carry their key,
-/// so the merge is a no-op for them.)
+/// The persisted row is authoritative for its typed public key — the
+/// [`CoreAddressEntryFFI`] row now carries the full typed key (ECDSA-33 /
+/// BLS-48 / EdDSA-32) with a [`KeyTypeTagFFI`] discriminator, so BLS
+/// operator and Ed25519 platform-node keys survive the round-trip in the
+/// row itself. No merge against the pre-derived entry is needed or
+/// wanted.
 fn restore_address_pool(pool: &mut AddressPool, infos: Vec<AddressInfo>) {
-    for mut info in infos {
+    for info in infos {
         let idx = info.index;
-        if info.public_key.is_none() {
-            if let Some(existing) = pool.addresses.get(&idx) {
-                if existing.public_key.is_some() {
-                    info.public_key = existing.public_key.clone();
-                }
-            }
-        }
         pool.address_index.insert(info.address.clone(), idx);
         pool.script_pubkey_index
             .insert(info.script_pubkey.clone(), idx);
@@ -3150,79 +3148,6 @@ unsafe fn restore_core_address_pools(
     })
 }
 
-/// Rehydrate the persisted platform-node (Ed25519) key `batch` into the
-/// managed `ProviderPlatformKeys` pool.
-///
-/// SLIP-10 Ed25519 is hardened-only, so `ManagedWalletInfo::from_wallet`
-/// can't re-derive these keys from the account xpub on an external-signable
-/// restore — the batch (persisted at registration, supplied by the host on
-/// load) is the only seedless source. Each entry is inserted as a typed
-/// [`PublicKeyType::EdDSA`] pool address, keyed by its hardened index, with
-/// the platform node id recomputed as `SHA256(pubkey)[..20]` (rust-dashcore
-/// #884) — **never** trusting any persisted hash160-era id. This lets the
-/// masternode-ownership scan match a ProRegTx `platform_node_id` to the
-/// wallet's own derivation index on a seedless wallet.
-fn restore_platform_node_pool(
-    wallet_info: &mut ManagedWalletInfo,
-    batch: &[(u32, [u8; 32])],
-    network: Network,
-) -> Result<(), PersistenceError> {
-    use dashcore::hashes::Hash;
-    use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
-    if batch.is_empty() {
-        return Ok(());
-    }
-    let Some(account) = wallet_info.accounts.provider_platform_keys.as_mut() else {
-        return Ok(());
-    };
-    let account_path = AccountType::ProviderPlatformKeys
-        .derivation_path(network)
-        .map_err(|e| PersistenceError::backend(format!("platform-node account path: {:?}", e)))?;
-    let base_children: Vec<key_wallet::bip32::ChildNumber> = account_path.as_ref().to_vec();
-
-    let mut infos: Vec<AddressInfo> = Vec::with_capacity(batch.len());
-    for (index, pubkey) in batch {
-        // Recompute the node id from the pubkey (SHA256[..20], #884).
-        let node_id = dashcore::PlatformNodeId::from_ed25519_public_key(pubkey).to_byte_array();
-        let payload =
-            dashcore::address::Payload::PubkeyHash(dashcore::PubkeyHash::from_byte_array(node_id));
-        let address = dashcore::Address::new(network, payload);
-        let script_pubkey = address.script_pubkey();
-        let child = key_wallet::bip32::ChildNumber::from_hardened_idx(*index).map_err(|e| {
-            PersistenceError::backend(format!("platform-node child index {}: {:?}", index, e))
-        })?;
-        let mut children = base_children.clone();
-        children.push(child);
-        let path = DerivationPath::from(children);
-        infos.push(AddressInfo {
-            address,
-            script_pubkey,
-            public_key: Some(PublicKeyType::EdDSA(pubkey.to_vec())),
-            index: *index,
-            path,
-            used: false,
-            generated_at: 0,
-            used_at: None,
-            tx_count: 0,
-            total_received: 0,
-            total_sent: 0,
-            balance: 0,
-            label: None,
-            metadata: std::collections::BTreeMap::new(),
-        });
-    }
-    // The platform-node pool is `AbsentHardened` (SLIP-10 hardened-only).
-    if let Some(pool) = account
-        .managed_account_type_mut()
-        .address_pools_mut()
-        .into_iter()
-        .find(|p| p.pool_type == AddressPoolType::AbsentHardened)
-    {
-        restore_address_pool(pool, infos);
-    }
-    Ok(())
-}
-
 /// Bucket a slice of upstream-emitted `DerivedAddress` entries into the
 /// same `AccountAddressPoolFFI` shape `build_address_pools_for_callback`
 /// produces, so the event-driven gap-limit-extension flow can fan out
@@ -3334,12 +3259,15 @@ fn build_address_pools_from_derived(
             owned_strings.push(address_c);
             owned_strings.push(path_c);
 
+            // Upstream `DerivedAddress::public_key` is a
+            // `dashcore::PublicKey`; its compressed serialization is the
+            // 33-byte ECDSA form, left-aligned in the 48-byte slot.
+            let mut public_key = [0u8; 48];
+            public_key[..33].copy_from_slice(&d.public_key.inner.serialize());
             pool_entries.push(CoreAddressEntryFFI {
-                // Upstream `DerivedAddress::public_key` is now a
-                // `dashcore::PublicKey`; compressed serialization
-                // is the 33-byte form our FFI expects.
-                public_key: d.public_key.inner.serialize(),
-                has_public_key: true,
+                public_key,
+                public_key_len: 33,
+                key_type_tag: KeyTypeTagFFI::ECDSA as u8,
                 pool_type_tag: pool_tag,
                 address_index: d.derivation_index,
                 // Newly-derived addresses haven't been seen in any
@@ -3446,13 +3374,6 @@ fn build_wallet_start_state(
 
     // Build the per-account collection from the typed spec array.
     let mut accounts = AccountCollection::new();
-    // The persisted platform-node (Ed25519) key batch, captured from the
-    // `ProviderPlatformKeys` spec so it can be rehydrated into the managed
-    // pool once `ManagedWalletInfo::from_wallet` has created it. SLIP-10 is
-    // hardened-only, so from_wallet can't re-derive these seedlessly on the
-    // external-signable restore — the batch is the only source. Stored as
-    // (index, pubkey); node ids are recomputed SHA256[..20] at insert.
-    let mut platform_node_batch: Vec<(u32, [u8; 32])> = Vec::new();
     let specs: &[AccountSpecFFI] = if entry.accounts.is_null() || entry.accounts_count == 0 {
         &[]
     } else {
@@ -3553,21 +3474,11 @@ fn build_wallet_start_state(
                         e
                     ))
                 })?;
-                // Capture the persisted platform-node key batch (if the host
-                // supplied it on this load) for rehydration into the managed
-                // pool below. Only the pubkeys are trusted; node ids are
-                // recomputed under the #884 convention at insert time.
-                if !spec.derived_platform_node_keys.is_null()
-                    && spec.derived_platform_node_keys_count > 0
-                {
-                    let rows = unsafe {
-                        slice::from_raw_parts(
-                            spec.derived_platform_node_keys,
-                            spec.derived_platform_node_keys_count,
-                        )
-                    };
-                    platform_node_batch = rows.iter().map(|r| (r.index, r.public_key)).collect();
-                }
+                // The platform-node (Ed25519) pool is rehydrated from the
+                // persisted core-address rows like every other pool — see
+                // `restore_core_address_pools`. Those rows now carry the
+                // typed EdDSA key + `KeyTypeTagFFI::EdDSA`, so no dedicated
+                // batch side-channel is needed here.
                 continue;
             }
             _ => {}
@@ -3678,13 +3589,11 @@ fn build_wallet_start_state(
         }
     }
 
-    // Rehydrate the platform-node (Ed25519) key batch into its managed pool.
-    // Unlike the ECDSA/BLS pools this can't come from `core_address_pools`
-    // (SLIP-10 is hardened-only and the 33-byte pool ABI can't carry a typed
-    // 32-byte Ed25519 key), so it flows through the dedicated batch captured
-    // from the `ProviderPlatformKeys` spec above. Without it a seedless
-    // restore has no platform-node keys to match masternode ownership.
-    restore_platform_node_pool(&mut wallet_info, &platform_node_batch, network)?;
+    // The platform-node (Ed25519) pool rehydrates through the same
+    // `restore_core_address_pools` path above as every other pool: its
+    // rows now carry the typed 32-byte Ed25519 key + `KeyTypeTagFFI::EdDSA`
+    // in the widened `CoreAddressEntryFFI`, so the masternode-ownership
+    // scan finds the wallet's platform-node keys with no dedicated batch.
 
     // Persisted unspent UTXOs → funds-bearing accounts. Keys-only and
     // PlatformPayment variants are skipped: the former never carry
@@ -3727,9 +3636,6 @@ fn build_wallet_start_state(
             friend_identity_id: u.friend_identity_id,
             account_xpub_bytes: std::ptr::null(),
             account_xpub_bytes_len: 0,
-            // Irrelevant to `account_type_from_spec` routing.
-            derived_platform_node_keys: std::ptr::null(),
-            derived_platform_node_keys_count: 0,
         };
         // Skip-and-continue is correct ONLY for the legacy
         // `IdentityAuthentication{Ecdsa,Bls}` tag bytes (15 / 16)
@@ -5244,8 +5150,9 @@ mod tests {
         let addr_c = CString::new(addr).unwrap();
         let path_c = CString::new("m/44'/1'/0'/1/0").unwrap();
         let entry = CoreAddressEntryFFI {
-            public_key: [0u8; 33],
-            has_public_key: false,
+            public_key: [0u8; 48],
+            public_key_len: 0,
+            key_type_tag: 0,
             pool_type_tag: AddressPoolTypeTagFFI::Internal as u8,
             address_index: 0,
             is_used: false,
@@ -5456,8 +5363,9 @@ mod tests {
         let addr_c = CString::new("yMqShkrgjTRuReBGFpQr7FozEF1QcNBBYA").unwrap();
         let path_c = CString::new("m/9'/1'/2'/50").unwrap();
         let row = CoreAddressEntryFFI {
-            public_key: [0u8; 33],
-            has_public_key: false,
+            public_key: [0u8; 48],
+            public_key_len: 0,
+            key_type_tag: 0,
             pool_type_tag,
             address_index: RESTORED_INDEX,
             is_used: true,
@@ -5592,13 +5500,17 @@ mod tests {
         }
     }
 
-    /// Build a minimal `AddressInfo` for merge tests. The address/script/
-    /// path content is irrelevant — `restore_address_pool`'s merge only
-    /// inspects `public_key` — so a P2PKH keyed off `index` suffices.
-    fn merge_test_address_info(index: u32, public_key: Option<PublicKeyType>) -> AddressInfo {
+    /// Build a minimal P2PKH `AddressInfo` carrying `public_key`, keyed
+    /// off `index`. The address is the P2PKH payload of a 20-byte hash
+    /// seeded from `index` (exactly how the pools build platform-node /
+    /// provider-key entries) so it base58-round-trips through
+    /// [`address_info_from_ffi`], which re-parses the rendered string and
+    /// rebuilds the address from its script.
+    fn typed_key_test_address_info(index: u32, public_key: Option<PublicKeyType>) -> AddressInfo {
         use dashcore::hashes::Hash;
         let mut h = [0u8; 20];
         h[0] = index as u8;
+        h[1] = (index >> 8) as u8;
         let payload =
             dashcore::address::Payload::PubkeyHash(dashcore::PubkeyHash::from_byte_array(h));
         let address = dashcore::Address::new(Network::Testnet, payload);
@@ -5608,7 +5520,8 @@ mod tests {
             script_pubkey,
             public_key,
             index,
-            path: DerivationPath::from(Vec::<key_wallet::bip32::ChildNumber>::new()),
+            path: DerivationPath::from_str(&format!("m/9'/1'/2'/{}", index))
+                .expect("static derivation path must parse"),
             used: false,
             generated_at: 0,
             used_at: None,
@@ -5621,17 +5534,52 @@ mod tests {
         }
     }
 
-    /// Blocker #1: a prederived operator entry carrying a typed BLS (48B)
-    /// public key must NOT be clobbered by a persisted row that lost its
-    /// typed key on the 33-byte-slot FFI round-trip (`public_key: None`).
-    /// Pins the merge in `restore_address_pool` so key-wallet's provider-key
-    /// matching keeps a usable typed key after restore.
+    /// Push `key` at `index` through the full FFI row round-trip
+    /// (`build_core_address_entry_ffi` → `address_info_from_ffi` →
+    /// `restore_address_pool`) into `pool`, returning the restored entry's
+    /// typed key. No pre-seeded entry is needed — the widened row carries
+    /// the typed key itself.
+    fn round_trip_typed_key_into_pool(
+        pool: &mut AddressPool,
+        index: u32,
+        key: PublicKeyType,
+    ) -> Option<PublicKeyType> {
+        let info = typed_key_test_address_info(index, Some(key));
+        let mut owned: Vec<CString> = Vec::new();
+        let entry = build_core_address_entry_ffi(
+            &info,
+            AddressPoolTypeTagFFI::AbsentHardened as u8,
+            false,
+            &mut owned,
+        )
+        .expect("build_core_address_entry_ffi must succeed");
+        // SAFETY: the address / path c-strings live in `owned`, kept alive
+        // until after this decode.
+        let restored = unsafe { address_info_from_ffi(&entry, Network::Testnet) }
+            .expect("address_info_from_ffi must decode the row");
+        restore_address_pool(pool, vec![restored]);
+        drop(owned);
+        pool.addresses
+            .get(&index)
+            .expect("restored entry must be present")
+            .public_key
+            .clone()
+    }
+
+    /// A BLS (48B) operator key, an Ed25519 (32B) platform-node key, and an
+    /// ECDSA (33B) control must each survive the widened
+    /// [`CoreAddressEntryFFI`] round-trip byte-for-byte and land in the
+    /// managed pool typed correctly — no pre-seeded entry and no merge.
+    /// This is what lets the seedless masternode-ownership scan match a
+    /// ProRegTx `platform_node_id` after restore (replacing the old
+    /// 33-byte-slot merge that only preserved a pre-derived key).
     #[test]
-    fn restore_address_pool_merge_preserves_typed_bls_operator_key() {
+    fn typed_public_key_survives_ffi_round_trip_into_fresh_pool() {
         use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
 
-        // Any managed keys account gives a real `AddressPool` to exercise
-        // the (pool-type-agnostic) merge against.
+        // Any managed keys account gives a real `AddressPool`; we restore at
+        // indices well beyond any pre-derived gap window so the pool has no
+        // pre-seeded entry at them.
         let mut wallet_info = test_managed_wallet_info_with_provider_owner();
         let owner = wallet_info
             .accounts
@@ -5645,42 +5593,55 @@ mod tests {
             .next()
             .expect("the account must have at least one pool");
 
-        let bls = vec![0xABu8; 48];
-        // Seed a prederived typed BLS entry at index 0.
-        restore_address_pool(
-            pool,
-            vec![merge_test_address_info(
-                0,
-                Some(PublicKeyType::BLS(bls.clone())),
-            )],
-        );
-        // A persisted row that lost its typed key (None) at the SAME index
-        // must keep the existing BLS key, not overwrite it with None.
-        restore_address_pool(pool, vec![merge_test_address_info(0, None)]);
-        match pool
-            .addresses
-            .get(&0)
-            .expect("entry at index 0")
-            .public_key
-            .as_ref()
-        {
-            Some(PublicKeyType::BLS(bytes)) => {
-                assert_eq!(bytes, &bls, "the prederived BLS key must be preserved")
-            }
-            other => panic!("expected a preserved BLS key at index 0, got {:?}", other),
+        const BLS_IDX: u32 = 500;
+        const EDDSA_IDX: u32 = 501;
+        const ECDSA_IDX: u32 = 502;
+        for idx in [BLS_IDX, EDDSA_IDX, ECDSA_IDX] {
+            assert!(
+                pool.addresses.get(&idx).is_none(),
+                "index {idx} must start with no pre-seeded entry"
+            );
         }
 
-        // Control: a `None` row at a fresh index with no existing entry
-        // stays `None` (merge only fills from an existing typed entry).
-        restore_address_pool(pool, vec![merge_test_address_info(7, None)]);
-        assert!(
-            pool.addresses
-                .get(&7)
-                .expect("entry at index 7")
-                .public_key
-                .is_none(),
-            "a None row with no prederived entry must remain None"
-        );
+        let bls = vec![0xABu8; 48];
+        let eddsa = vec![0xCDu8; 32];
+        let ecdsa = vec![0x02u8; 33];
+
+        let out_bls =
+            round_trip_typed_key_into_pool(pool, BLS_IDX, PublicKeyType::BLS(bls.clone()));
+        match out_bls {
+            Some(PublicKeyType::BLS(bytes)) => {
+                assert_eq!(bytes, bls, "BLS operator key must survive byte-for-byte")
+            }
+            other => panic!("expected a typed BLS key after round-trip, got {:?}", other),
+        }
+
+        let out_ed =
+            round_trip_typed_key_into_pool(pool, EDDSA_IDX, PublicKeyType::EdDSA(eddsa.clone()));
+        match out_ed {
+            Some(PublicKeyType::EdDSA(bytes)) => {
+                assert_eq!(
+                    bytes, eddsa,
+                    "Ed25519 platform-node key must survive byte-for-byte"
+                )
+            }
+            other => panic!(
+                "expected a typed EdDSA key after round-trip, got {:?}",
+                other
+            ),
+        }
+
+        let out_ec =
+            round_trip_typed_key_into_pool(pool, ECDSA_IDX, PublicKeyType::ECDSA(ecdsa.clone()));
+        match out_ec {
+            Some(PublicKeyType::ECDSA(bytes)) => {
+                assert_eq!(bytes, ecdsa, "ECDSA control key must survive byte-for-byte")
+            }
+            other => panic!(
+                "expected a typed ECDSA key after round-trip, got {:?}",
+                other
+            ),
+        }
     }
 
     /// `account_xpub` must survive the persist→restore byte round-trip — it is

@@ -304,3 +304,35 @@ pub unsafe extern "C" fn platform_wallet_provider_key_at_index_free(
         out.private_key_hex = std::ptr::null_mut();
     }
 }
+
+/// Compute the 20-byte Tenderdash platform node id
+/// (`SHA256(ed25519 pubkey)[..20]`, rust-dashcore #884) for a raw 32-byte
+/// Ed25519 public key. Pure helper — no wallet handle, no key material
+/// beyond the public key.
+///
+/// Wraps `dashcore::PlatformNodeId::from_ed25519_public_key` so the host
+/// can render the node id of a persisted platform-node public key (which
+/// carries only the pubkey) without re-implementing the SHA-256 digest.
+///
+/// Returns `true` on success, having written 20 bytes into
+/// `out_node_id_20`; `false` (and no write) when `pubkey_ptr` is null,
+/// `pubkey_len != 32`, or `out_node_id_20` is null.
+///
+/// # Safety
+/// `pubkey_ptr` must point to `pubkey_len` readable bytes; `out_node_id_20`,
+/// when non-null, must point to at least 20 writable bytes.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_platform_node_id_from_ed25519_pubkey(
+    pubkey_ptr: *const u8,
+    pubkey_len: usize,
+    out_node_id_20: *mut u8,
+) -> bool {
+    if pubkey_ptr.is_null() || out_node_id_20.is_null() || pubkey_len != 32 {
+        return false;
+    }
+    let mut pk32 = [0u8; 32];
+    pk32.copy_from_slice(unsafe { std::slice::from_raw_parts(pubkey_ptr, 32) });
+    let node_id = dashcore::PlatformNodeId::from_ed25519_public_key(&pk32).to_byte_array();
+    unsafe { std::ptr::copy_nonoverlapping(node_id.as_ptr(), out_node_id_20, 20) };
+    true
+}
