@@ -1591,15 +1591,17 @@ struct AccountStorageDetailView: View {
     }
 
     /// Group the account's addresses by pool-type tag and present in
-    /// a stable order: External, Internal, Absent, Absent (Hardened).
-    /// Empty sections are skipped.
+    /// a stable order: External, Internal, Additional, Additional
+    /// (Hardened). Empty sections are skipped. Matches
+    /// `PersistentCoreAddress.poolTypeName` (tags 2/3 are the on-demand
+    /// "Additional" pools; no Rust "Absent" jargon).
     private func addressSections() -> [(String, [PersistentCoreAddress])] {
         let grouped = Dictionary(grouping: record.coreAddresses) { $0.poolTypeTag }
         let order: [(UInt8, String)] = [
             (0, "External"),
             (1, "Internal"),
-            (2, "Absent"),
-            (3, "Absent (Hardened)"),
+            (2, "Additional"),
+            (3, "Additional (Hardened)"),
         ]
         return order.compactMap { tag, name in
             guard let bucket = grouped[tag], !bucket.isEmpty else { return nil }
@@ -2111,6 +2113,64 @@ struct WalletManagerMetadataStorageDetailView: View {
             }
         }
         .navigationTitle("Manager Metadata")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+// MARK: - PersistentMasternode
+
+struct MasternodeStorageDetailView: View {
+    let record: PersistentMasternode
+
+    var body: some View {
+        Form {
+            Section("Identity") {
+                FieldRow(label: "Wallet ID", value: hexString(record.walletId))
+                FieldRow(label: "proTxHash", value: record.proTxHashHex)
+                FieldRow(label: "Registration Txid", value: hexString(record.registrationTxid))
+                FieldRow(label: "Type", value: record.typeName)
+                FieldRow(label: "Status", value: record.statusName)
+            }
+            Section("Service") {
+                FieldRow(label: "Service Address", value: record.serviceAddress ?? "—")
+            }
+            Section("Keys") {
+                FieldRow(
+                    label: "Owner Key Hash",
+                    value: record.ownerKeyHash.map(hexString) ?? "—"
+                )
+                FieldRow(
+                    label: "Voting Key Hash",
+                    value: record.votingKeyHash.map(hexString) ?? "—"
+                )
+                FieldRow(label: "Owner Address", value: record.ownerAddress ?? "—")
+                FieldRow(label: "Voting Address", value: record.votingAddress ?? "—")
+            }
+            Section("Collateral") {
+                FieldRow(
+                    label: "Collateral Txid",
+                    value: record.collateralTxid.map(hexString) ?? "—"
+                )
+                FieldRow(label: "Collateral Vout", value: "\(record.collateralVout)")
+            }
+            Section("Aggregation") {
+                FieldRow(label: "Has Registration", value: record.hasRegistration ? "Yes" : "No")
+                FieldRow(label: "Registration Height", value: "\(record.registrationHeight)")
+                FieldRow(label: "Tx Count", value: "\(record.txCount)")
+                FieldRow(label: "Order Index", value: "\(record.orderIndex)")
+                FieldRow(label: "Type Index", value: "\(record.typeIndex)")
+            }
+            Section("Revocation") {
+                FieldRow(label: "Revoked", value: record.revoked ? "Yes" : "No")
+                FieldRow(label: "Revocation Reason", value: "\(record.revocationReason)")
+                FieldRow(label: "Status Raw", value: "\(record.statusRaw)")
+            }
+            Section("Timestamps") {
+                FieldRow(label: "Created", value: dateString(record.createdAt))
+                FieldRow(label: "Updated", value: dateString(record.lastUpdated))
+            }
+        }
+        .navigationTitle(record.displayTitle)
         .navigationBarTitleDisplayMode(.inline)
     }
 }

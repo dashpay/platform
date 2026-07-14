@@ -185,6 +185,12 @@ public class PlatformWalletManager: ObservableObject {
     /// Last error from a wallet operation, if any. Cleared on successful op.
     @Published public private(set) var lastError: Error?
 
+    /// Internal seam so manager extensions in other files can record a
+    /// failure (`lastError`'s setter is file-private).
+    func recordLastError(_ error: Error) {
+        lastError = error
+    }
+
     // MARK: - Internals
 
     /// FFI handle; `NULL_HANDLE` until [`configure`] is called.

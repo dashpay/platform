@@ -10,6 +10,11 @@ struct AccountDetailView: View {
     let wallet: PersistentWallet
     let account: PersistentAccount
 
+    /// Masternodes for the provider-key-address usage subtitle. Matched
+    /// by base58 address (Rust-encoded owner/voting address ↔ the
+    /// account's persisted address), so no key hashing happens in Swift.
+    @Query private var allMasternodes: [PersistentMasternode]
+
     @State private var errorMessage: String?
     @State private var copiedText: String?
     @State private var showingPrivateKey: String?
@@ -476,15 +481,18 @@ struct AccountDetailView: View {
     }
 
     /// Group this account's persisted addresses by pool tag, in a
-    /// stable display order (External → Internal → Absent → Absent
-    /// Hardened). Empty pools are skipped.
+    /// stable display order (External → Internal → Additional →
+    /// Additional Hardened). Empty pools are skipped. Names come from
+    /// `PersistentCoreAddress.poolTypeName` so all address lists share
+    /// one taxonomy (tags 2/3 are the on-demand "Additional" pools where
+    /// provider keys live — no Rust "Absent" jargon).
     private func addressSections() -> [(String, [PersistentCoreAddress])] {
         let grouped = Dictionary(grouping: account.coreAddresses) { $0.poolTypeTag }
         let order: [(UInt8, String)] = [
             (0, "External"),
             (1, "Internal"),
-            (2, "Absent"),
-            (3, "Absent (Hardened)"),
+            (2, "Additional"),
+            (3, "Additional (Hardened)"),
         ]
         return order.compactMap { tag, name in
             guard let bucket = grouped[tag], !bucket.isEmpty else { return nil }
@@ -591,7 +599,11 @@ struct AccountDetailView: View {
                     .foregroundColor(.primary)
                 HStack(spacing: 6) {
                     Text("#\(addr.addressIndex)")
-                    if addr.isUsed { Text("• used") }
+                    if let usage = masternodeUsage(for: addr) {
+                        Text("• \(usage)")
+                    } else if addr.isUsed {
+                        Text("• used")
+                    }
                     if addr.balance > 0 {
                         Text("• \(formatBalance(addr.balance))")
                     }
@@ -606,6 +618,47 @@ struct AccountDetailView: View {
         }
         .padding(.vertical, 4)
         .contentShape(Rectangle())
+    }
+
+    /// Masternode-usage subtitle for a provider key address. Joins the
+    /// address (base58) to the matching masternode field — the "join by key
+    /// hash" without any Swift key hashing:
+    ///   * owner / voting (accountType 9 / 8) ↔ `owner/votingAddress`
+    ///     (real on-chain addresses), and
+    ///   * operator / platform-node (accountType 10 / 11) ↔
+    ///     `operator/platformNodeAddress` (base58 pseudo-addresses Rust
+    ///     encoded from the payload key — these keys have no on-chain
+    ///     address, so this is the only way to surface their usage).
+    /// `nil` for non-provider-key accounts or unmatched addresses, so the
+    /// caller falls back to "used".
+    private func masternodeUsage(for addr: PersistentCoreAddress) -> String? {
+        // 8 ProviderVotingKeys, 9 ProviderOwnerKeys, 10 ProviderOperatorKeys,
+        // 11 ProviderPlatformKeys.
+        let addressMatches: (PersistentMasternode) -> Bool
+        switch account.accountType {
+        case 8, 9:
+            addressMatches = {
+                $0.ownerAddress == addr.address || $0.votingAddress == addr.address
+            }
+        case 10:
+            addressMatches = { $0.operatorPseudoAddress == addr.address }
+        case 11:
+            addressMatches = { $0.platformNodeAddress == addr.address }
+        default:
+            return nil
+        }
+
+        let wid = wallet.walletId
+        let matches = allMasternodes.filter { $0.walletId == wid && addressMatches($0) }
+        guard let first = matches.min(by: { $0.orderIndex < $1.orderIndex }) else {
+            return nil
+        }
+        let count = matches.count
+        let times = count == 1 ? "once" : (count == 2 ? "twice" : "\(count) times")
+        if let ip = first.serviceAddress {
+            return "used \(times) at \(ip) · \(first.displayTitle)"
+        }
+        return "used \(times) on \(first.displayTitle)"
     }
 
     private func emptyAddressesCard() -> some View {

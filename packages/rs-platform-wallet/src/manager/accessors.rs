@@ -20,6 +20,32 @@ use crate::spv::SpvRuntime;
 use crate::wallet::platform_wallet::WalletId;
 use crate::wallet::PlatformWallet;
 
+/// Result of [`PlatformWalletManager::provider_masternode_txs_blocking`]:
+/// the wallet's network (for base58 address encoding on the FFI side),
+/// its retained provider special transactions with their confirmation
+/// heights, a DML snapshot (`proTxHash -> is_valid`, `None` when the
+/// deterministic masternode list isn't available yet), and two
+/// derive-and-compare ownership maps for the key kinds that live ONLY in
+/// payloads (never as on-chain addresses):
+///
+///   * operator BLS public key (48 bytes) ⇒ derivation index, and
+///   * platform node id (hash160, 20 bytes) ⇒ derivation index.
+///
+/// Owner / voting keys ARE on-chain addresses, so their ownership is
+/// resolved app-side against the persisted `PersistentCoreAddress` rows;
+/// operator / platform keys can't be, so they're derived here from the
+/// wallet's provider accounts and matched against each masternode's
+/// payload key. Operator keys derive from the account xpub with no seed;
+/// platform-node keys need the seed (resident wallets only — watch-only
+/// yields an empty map, a documented follow-up).
+pub type ProviderMasternodeTxs = (
+    dashcore::Network,
+    Vec<(u32, dashcore::Transaction)>,
+    Option<std::collections::HashMap<[u8; 32], bool>>,
+    std::collections::HashMap<[u8; 48], u32>,
+    std::collections::HashMap<[u8; 20], u32>,
+);
+
 use super::PlatformWalletManager;
 
 /// Snapshot of [`PlatformAddressSyncManager`] tunables and last-event
@@ -781,6 +807,121 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             page_limit
         };
         iter.take(take).map(tx_record_snapshot).collect()
+    }
+
+    /// Provider special transactions (ProRegTx / ProUpServTx / ProUpRegTx
+    /// / ProUpRevTx) across all of a wallet's accounts, deduplicated by
+    /// txid, each paired with its confirmation height (0 when
+    /// unconfirmed). The source for masternode aggregation.
+    ///
+    /// rust-dashcore #876 retains provider-payload records on the
+    /// provider-key accounts (owner / voting / operator / platform) past
+    /// chainlock finalization even with `keep-finalized-transactions` off
+    /// (the mobile default), so — unlike `account_transactions_blocking`
+    /// above — this is populated in every feature configuration. Deduped
+    /// by txid because one ProRegTx matches both the owner- and
+    /// voting-key accounts, so its record is retained on each.
+    ///
+    /// Caveat: records evicted *before* the #876 bump aren't resident
+    /// until a filter rescan re-matches them, so on an existing install
+    /// the set fills in after a Rescan.
+    ///
+    /// Returns `None` only when the wallet id isn't managed (an empty vec
+    /// means "no provider txs yet"). The wallet's `Network` rides along so
+    /// the FFI can encode owner / voting key hashes to base58 addresses,
+    /// plus a DML snapshot (`proTxHash -> is_valid`, `None` when the list
+    /// isn't available yet) so the FFI can derive Active / Inactive /
+    /// Retired / Unknown status.
+    pub fn provider_masternode_txs_blocking(
+        &self,
+        wallet_id: &WalletId,
+    ) -> Option<ProviderMasternodeTxs> {
+        // Scope the wallet-manager read lock so it's released before we
+        // acquire the SPV client / engine locks for the DML snapshot — the
+        // two never nest.
+        let (network, txs) = {
+            let wm = self.wallet_manager.blocking_read();
+            let info = wm.get_wallet_info(wallet_id)?;
+            let network = info.core_wallet.network();
+
+            let mut by_txid: std::collections::BTreeMap<
+                dashcore::Txid,
+                (u32, dashcore::Transaction),
+            > = std::collections::BTreeMap::new();
+
+            for account in info.core_wallet.accounts.all_accounts().iter() {
+                for record in account.transactions().values() {
+                    if record.transaction.special_transaction_payload.is_none() {
+                        continue;
+                    }
+                    let height = record.context.block_info().map(|b| b.height()).unwrap_or(0);
+                    by_txid
+                        .entry(record.txid)
+                        .or_insert_with(|| (height, record.transaction.clone()));
+                }
+            }
+
+            (network, by_txid.into_values().collect::<Vec<_>>())
+        };
+
+        let dml = self.spv().masternode_validity_snapshot_blocking();
+
+        // Derive-and-compare ownership for the payload-only key kinds
+        // (operator BLS key / platform node id). These never appear as
+        // on-chain addresses, so — unlike owner/voting — they can't be
+        // resolved by the app's persisted-address join; we derive the
+        // wallet's own over the prederive window and let the FFI match each
+        // masternode's payload key. Operator public keys derive from the
+        // account xpub (no seed); platform-node keys use the resident root
+        // (watch-only wallets simply yield no matches — a follow-up that
+        // would thread the mnemonic resolver like the signing paths do).
+        let mut operator_index: std::collections::HashMap<[u8; 48], u32> =
+            std::collections::HashMap::new();
+        let mut platform_index: std::collections::HashMap<[u8; 20], u32> =
+            std::collections::HashMap::new();
+        // Clone the `Arc<PlatformWallet>` out and drop the `wallets` read
+        // guard before deriving (the derive calls take the wallet's own
+        // state lock — don't hold `wallets` across them).
+        let platform_wallet = self.wallets.blocking_read().get(wallet_id).cloned();
+        if let Some(platform_wallet) = platform_wallet {
+            use crate::wallet::provider_key_at_index::ProviderKeyKind;
+            // Provider-key pools pre-derive 20 keys; scan that window.
+            const PROVIDER_KEY_WINDOW: u32 = 20;
+            for index in 0..PROVIDER_KEY_WINDOW {
+                match platform_wallet.derive_provider_key_at_index(
+                    ProviderKeyKind::Operator,
+                    index,
+                    None,
+                    false,
+                ) {
+                    Ok(key) => {
+                        if let Ok(bytes) = <[u8; 48]>::try_from(key.public_key_bytes.as_slice()) {
+                            operator_index.insert(bytes, index);
+                        }
+                    }
+                    // First failure ⇒ no operator account (or unavailable) ⇒ stop.
+                    Err(_) => break,
+                }
+            }
+            for index in 0..PROVIDER_KEY_WINDOW {
+                match platform_wallet.derive_provider_key_at_index(
+                    ProviderKeyKind::PlatformNode,
+                    index,
+                    None,
+                    false,
+                ) {
+                    Ok(key) => {
+                        if let Some(node_id) = key.node_id {
+                            platform_index.insert(node_id, index);
+                        }
+                    }
+                    // No platform account, or watch-only (needs the seed). Stop.
+                    Err(_) => break,
+                }
+            }
+        }
+
+        Some((network, txs, dml, operator_index, platform_index))
     }
 
     // -----------------------------------------------------------------

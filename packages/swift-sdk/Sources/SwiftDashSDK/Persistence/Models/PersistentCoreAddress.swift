@@ -80,12 +80,22 @@ public final class PersistentCoreAddress {
 }
 
 extension PersistentCoreAddress {
+    /// User-facing name for the address pool this row belongs to.
+    ///
+    /// Pool tags 2/3 are key-wallet's "Absent" / "AbsentHardened"
+    /// pools — keys derived on demand *outside* the BIP44
+    /// external-receive / internal-change chains (this is where
+    /// provider owner / voting / operator keys and other special-purpose
+    /// keys live). "Absent" is Rust-enum jargon, so it's surfaced here as
+    /// "Additional" / "Additional (Hardened)" — the source of truth the
+    /// app-layer address lists reuse (AccountDetailView,
+    /// StorageRecordDetailViews, WalletMemoryExplorerView).
     public var poolTypeName: String {
         switch poolTypeTag {
         case 0: return "External"
         case 1: return "Internal"
-        case 2: return "Absent"
-        case 3: return "Absent (Hardened)"
+        case 2: return "Additional"
+        case 3: return "Additional (Hardened)"
         default: return "Unknown(\(poolTypeTag))"
         }
     }

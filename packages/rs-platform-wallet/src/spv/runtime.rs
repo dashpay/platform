@@ -292,6 +292,45 @@ impl SpvRuntime {
         }
     }
 
+    /// Snapshot of the current deterministic masternode list (DML) keyed
+    /// by proTxHash in internal/wire byte order (matching a registration
+    /// txid), mapping to each entry's `is_valid` flag — the authoritative
+    /// input for masternode status (Active / Inactive / Retired).
+    ///
+    /// Returns `None` when the DML isn't available (the SPV client isn't
+    /// running, its masternode-list engine isn't initialized, or the list
+    /// hasn't synced yet), so the caller renders "Unknown" and keeps any
+    /// previously persisted status. Blocking: acquires the client + engine
+    /// `tokio::RwLock`s via `blocking_read`, so it must run off the async
+    /// runtime (FFI blocking thread), mirroring the other `*_blocking`
+    /// accessors.
+    pub fn masternode_validity_snapshot_blocking(
+        &self,
+    ) -> Option<std::collections::HashMap<[u8; 32], bool>> {
+        // Clone the engine `Arc` out while holding the client lock, then
+        // drop it before reading the engine — same ordering as
+        // `connected_peers`.
+        let engine = {
+            let client_guard = self.client.blocking_read();
+            let client = client_guard.as_ref()?;
+            client.masternode_list_engine().ok()?
+        };
+
+        let engine_guard = engine.blocking_read();
+        let list = engine_guard.latest_masternode_list()?;
+
+        let mut map = std::collections::HashMap::with_capacity(list.masternodes.len());
+        for qualified in list.masternodes.values() {
+            let entry = &qualified.masternode_list_entry;
+            // `pro_reg_tx_hash` is internal order (the DML map itself keys
+            // by the reversed/display form, so read it off the entry).
+            let mut pro_tx = [0u8; 32];
+            pro_tx.copy_from_slice(entry.pro_reg_tx_hash.as_ref());
+            map.insert(pro_tx, entry.is_valid);
+        }
+        Some(map)
+    }
+
     /// Get the current sync progress.
     ///
     /// Returns `None` if the SPV client is not running.
