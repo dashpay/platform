@@ -222,6 +222,11 @@ struct DashPayTabView: View {
                                     network: network,
                                     identity: activeIdentity
                                 )
+                                // Re-inject explicitly: toolbar-hosted destinations
+                                // don't reliably inherit environment objects (see
+                                // IgnoredContactsView above), and InvitationsView
+                                // requires the manager for its loaded-wallet filter.
+                                .environmentObject(walletManager)
                             } label: {
                                 Image(systemName: "paperplane")
                             }
