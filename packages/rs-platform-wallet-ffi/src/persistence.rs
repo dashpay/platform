@@ -3226,48 +3226,102 @@ fn build_wallet_start_state(
                     continue;
                 }
             };
-            let funds = match account_type {
+            // Resolve the persisted pool's target account to its
+            // `&mut ManagedAccountType` (where the address pools live).
+            // Funds-bearing accounts (`ManagedCoreFundsAccount`) live in the
+            // keyed maps; the four masternode key-material provider accounts
+            // (`ManagedCoreKeysAccount`) live in dedicated `Option` fields.
+            // Both implement `ManagedAccountTrait`, so `managed_account_type_mut()`
+            // unifies them to a single `&mut ManagedAccountType` and the
+            // pool-population below is identical. (A single match — rather
+            // than a funds-match-then-provider-fallback — is required: the
+            // borrow checker won't let a `None` fallback re-borrow
+            // `wallet_info.accounts` after the funds `get_mut`.)
+            let managed_type = match account_type {
                 AccountType::Standard {
                     index,
                     standard_account_type: StandardAccountType::BIP44Account,
-                } => wallet_info.accounts.standard_bip44_accounts.get_mut(&index),
+                } => wallet_info
+                    .accounts
+                    .standard_bip44_accounts
+                    .get_mut(&index)
+                    .map(|a| a.managed_account_type_mut()),
                 AccountType::Standard {
                     index,
                     standard_account_type: StandardAccountType::BIP32Account,
-                } => wallet_info.accounts.standard_bip32_accounts.get_mut(&index),
-                AccountType::CoinJoin { index } => {
-                    wallet_info.accounts.coinjoin_accounts.get_mut(&index)
-                }
+                } => wallet_info
+                    .accounts
+                    .standard_bip32_accounts
+                    .get_mut(&index)
+                    .map(|a| a.managed_account_type_mut()),
+                AccountType::CoinJoin { index } => wallet_info
+                    .accounts
+                    .coinjoin_accounts
+                    .get_mut(&index)
+                    .map(|a| a.managed_account_type_mut()),
                 AccountType::DashpayReceivingFunds {
                     index,
                     user_identity_id,
                     friend_identity_id,
-                } => wallet_info.accounts.dashpay_receival_accounts.get_mut(
-                    &key_wallet::account::account_collection::DashpayAccountKey {
-                        index,
-                        user_identity_id,
-                        friend_identity_id,
-                    },
-                ),
+                } => wallet_info
+                    .accounts
+                    .dashpay_receival_accounts
+                    .get_mut(
+                        &key_wallet::account::account_collection::DashpayAccountKey {
+                            index,
+                            user_identity_id,
+                            friend_identity_id,
+                        },
+                    )
+                    .map(|a| a.managed_account_type_mut()),
                 AccountType::DashpayExternalAccount {
                     index,
                     user_identity_id,
                     friend_identity_id,
-                } => wallet_info.accounts.dashpay_external_accounts.get_mut(
-                    &key_wallet::account::account_collection::DashpayAccountKey {
-                        index,
-                        user_identity_id,
-                        friend_identity_id,
-                    },
-                ),
+                } => wallet_info
+                    .accounts
+                    .dashpay_external_accounts
+                    .get_mut(
+                        &key_wallet::account::account_collection::DashpayAccountKey {
+                            index,
+                            user_identity_id,
+                            friend_identity_id,
+                        },
+                    )
+                    .map(|a| a.managed_account_type_mut()),
+                // Masternode provider key-material accounts — dedicated
+                // `Option<ManagedCoreKeysAccount>` fields. Restoring these
+                // rehydrates the used-flags + beyond-gap indices of the
+                // owner / voting / operator / platform-node pools.
+                AccountType::ProviderOwnerKeys => wallet_info
+                    .accounts
+                    .provider_owner_keys
+                    .as_mut()
+                    .map(|a| a.managed_account_type_mut()),
+                AccountType::ProviderVotingKeys => wallet_info
+                    .accounts
+                    .provider_voting_keys
+                    .as_mut()
+                    .map(|a| a.managed_account_type_mut()),
+                AccountType::ProviderOperatorKeys => wallet_info
+                    .accounts
+                    .provider_operator_keys
+                    .as_mut()
+                    .map(|a| a.managed_account_type_mut()),
+                AccountType::ProviderPlatformKeys => wallet_info
+                    .accounts
+                    .provider_platform_keys
+                    .as_mut()
+                    .map(|a| a.managed_account_type_mut()),
                 _ => None,
             };
-            let Some(funds_account) = funds else {
+            let Some(managed_type) = managed_type else {
                 pools_dropped += 1;
                 tracing::warn!(
                     wallet_id = %hex::encode(entry.wallet_id),
                     ?account_type,
-                    "load: skipping persisted address pool with no matching funds account"
+                    "load: skipping persisted address pool with no matching funds or \
+                     provider account"
                 );
                 continue;
             };
@@ -3292,7 +3346,7 @@ fn build_wallet_start_state(
                     }
                 }
             }
-            let mut managed_pools = funds_account.managed_account_type_mut().address_pools_mut();
+            let mut managed_pools = managed_type.address_pools_mut();
             match managed_pools.iter_mut().find(|p| p.pool_type == pool_type) {
                 Some(pool) => {
                     pools_routed += infos.len();
