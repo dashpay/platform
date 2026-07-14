@@ -271,9 +271,23 @@ struct ReclaimInvitationSheet: View {
                     try? modelContext.save()
                     infoMessage = "This invitation was already claimed."
                 case .error:
-                    // Uncertain outcome: leave the in-flight marker as-is so a later
-                    // retry that hits "already consumed" classifies it as our own
-                    // reclaim rather than a foreign claim.
+                    if Self.shouldClearInFlightMarker(
+                        error: error,
+                        hadPriorReclaimInFlight: hadPriorReclaimInFlight
+                    ) {
+                        // This attempt set the marker itself and then failed the
+                        // LOCAL pre-broadcast resume guard — the consume never
+                        // started, so the marker is demonstrably stale. Clear it,
+                        // or an identical retry would capture it as "prior in
+                        // flight" and misreport the same local failure as a
+                        // completed self-reclaim.
+                        invitation.reclaimInFlight = false
+                        try? modelContext.save()
+                    }
+                    // Otherwise leave the marker as-is: with a prior in-flight
+                    // (or any error that may have reached the network) a later
+                    // retry that hits "already consumed" must still classify as
+                    // our own reclaim rather than a foreign claim.
                     errorMessage = error.localizedDescription
                 }
             }
@@ -340,6 +354,23 @@ struct ReclaimInvitationSheet: View {
             return .reclaimed
         }
         return .error
+    }
+
+    /// Whether the `.error` outcome should also CLEAR the persisted
+    /// `reclaimInFlight` marker. True only when this attempt set the marker
+    /// itself (`hadPriorReclaimInFlight == false`) and then failed the LOCAL
+    /// pre-broadcast "is not tracked" resume guard — proof the consume never
+    /// started, so the freshly-set marker is stale. Without clearing it, an
+    /// identical retry captures the marker as a prior in-flight and
+    /// misclassifies the same purely-local failure as a completed self-reclaim
+    /// (two-attempt false positive). Every other error keeps the marker: a
+    /// failure that may have reached the network must stay disambiguable as
+    /// our own reclaim on retry.
+    nonisolated static func shouldClearInFlightMarker(
+        error: Error,
+        hadPriorReclaimInFlight: Bool
+    ) -> Bool {
+        !hadPriorReclaimInFlight && isLockNoLongerTracked(error)
     }
 
     /// Whether an error is the wallet's LOCAL "asset lock is no longer tracked"

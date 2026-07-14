@@ -529,43 +529,18 @@ impl IdentityWallet {
         &self,
         invitation: &ParsedInvitation,
     ) -> Result<AssetLockProof, PlatformWalletError> {
-        // Fetch the funding tx. Two independent concerns are layered here:
-        //   1. Byte order — old iOS links carry the txid little-endian, so a
-        //      canonical miss is retried byte-reversed (a compatibility fallback,
-        //      not a temporal retry). A transient transport error is NOT masked as
-        //      a miss — it propagates immediately (it is not a "not indexed yet"
-        //      signal, so retrying it would only hide it).
-        //   2. Propagation lag — InstantSend/ChainLock finality does not guarantee
-        //      the invitee's DAPI node has indexed the tx yet, so a freshly shared
-        //      invitation can miss on both byte orders purely from propagation
-        //      delay. Retry a bounded number of times with a fixed backoff before
-        //      giving up.
-        let mut fetched = None;
-        for attempt in 0..CLAIM_FETCH_MAX_ATTEMPTS {
-            let hit = match self
-                .sdk
-                .get_transaction(&invitation.funding_txid)
-                .await
-                .map_err(PlatformWalletError::Sdk)?
-            {
-                Some(tx) => Some(tx),
-                None => {
-                    let reversed = reverse_txid_hex(&invitation.funding_txid)?;
-                    self.sdk
-                        .get_transaction(&reversed)
-                        .await
-                        .map_err(PlatformWalletError::Sdk)?
-                }
-            };
-            if let Some(tx) = hit {
-                fetched = Some(tx);
-                break;
-            }
-            if attempt + 1 < CLAIM_FETCH_MAX_ATTEMPTS {
-                tokio::time::sleep(CLAIM_FETCH_RETRY_DELAY).await;
-            }
-        }
-        let fetched = fetched.ok_or_else(|| {
+        let sdk = &self.sdk;
+        let fetched = fetch_funding_tx_with_retry(
+            &invitation.funding_txid,
+            |txid| async move {
+                sdk.get_transaction(&txid)
+                    .await
+                    .map_err(PlatformWalletError::Sdk)
+            },
+            || tokio::time::sleep(CLAIM_FETCH_RETRY_DELAY),
+        )
+        .await?
+        .ok_or_else(|| {
             PlatformWalletError::InvalidIdentityData(
                 "invitation funding transaction not found (tried both byte orders across \
                  repeated attempts); it may not have propagated to the queried DAPI node yet — \
@@ -580,6 +555,53 @@ impl IdentityWallet {
             invitation,
         )
     }
+}
+
+/// Fetch the claim's funding transaction with the bounded propagation retry —
+/// the injectable orchestration seam of `reconstruct_asset_lock_proof` (tests
+/// script `fetch`/`delay`; production passes `Sdk::get_transaction` and a
+/// `tokio::time::sleep`).
+///
+/// Two independent concerns are layered here:
+///   1. Byte order — old iOS links carry the txid little-endian, so a
+///      canonical miss is retried byte-reversed **within the same attempt**
+///      (a compatibility fallback, not a temporal retry). A transport error is
+///      NOT masked as a miss — it propagates immediately (it is not a "not
+///      indexed yet" signal, so retrying it would only hide it).
+///   2. Propagation lag — InstantSend/ChainLock finality does not guarantee
+///      the queried DAPI node has indexed the tx yet, so a fresh invitation
+///      can miss on both byte orders purely from propagation delay. Retry up
+///      to [`CLAIM_FETCH_MAX_ATTEMPTS`] attempts with one `delay` between
+///      attempts — and none after the last (the caller surfaces the miss
+///      immediately).
+///
+/// Returns `Ok(None)` only after every attempt missed on both byte orders.
+async fn fetch_funding_tx_with_retry<T, F, FFut, D, DFut>(
+    funding_txid: &str,
+    mut fetch: F,
+    mut delay: D,
+) -> Result<Option<T>, PlatformWalletError>
+where
+    F: FnMut(String) -> FFut,
+    FFut: std::future::Future<Output = Result<Option<T>, PlatformWalletError>>,
+    D: FnMut() -> DFut,
+    DFut: std::future::Future<Output = ()>,
+{
+    for attempt in 0..CLAIM_FETCH_MAX_ATTEMPTS {
+        if let Some(tx) = fetch(funding_txid.to_string()).await? {
+            return Ok(Some(tx));
+        }
+        // Reversed lookup is computed lazily on a canonical miss, so a hit
+        // never depends on the txid being reversible hex.
+        let reversed = reverse_txid_hex(funding_txid)?;
+        if let Some(tx) = fetch(reversed).await? {
+            return Ok(Some(tx));
+        }
+        if attempt + 1 < CLAIM_FETCH_MAX_ATTEMPTS {
+            delay().await;
+        }
+    }
+    Ok(None)
 }
 
 /// Assemble the asset-lock proof from an already-fetched funding transaction — the
@@ -802,6 +824,148 @@ mod tests {
         let inv = parsed(key, txid, Some(hex::encode(islock_bytes)));
         let err = assemble_asset_lock_proof(tx, true, 100, &inv).unwrap_err();
         assert!(format!("{err}").contains("does not lock the funding transaction"));
+    }
+
+    // --- fetch_funding_tx_with_retry: the claim propagation-retry seam ---
+
+    mod fetch_retry {
+        use std::collections::VecDeque;
+        use std::sync::atomic::{AtomicU32, Ordering};
+        use std::sync::{Arc, Mutex};
+
+        use super::super::{
+            fetch_funding_tx_with_retry, reverse_txid_hex, CLAIM_FETCH_MAX_ATTEMPTS,
+        };
+        use crate::PlatformWalletError;
+
+        /// A canonical 64-hex txid whose byte-reversed form differs from it.
+        fn canonical_txid() -> String {
+            format!("{}{}", "11".repeat(31), "22")
+        }
+
+        /// Scripted fetch: pops the next result per call and records the txid
+        /// each call asked for; plus a counter-only delay.
+        #[allow(clippy::type_complexity)]
+        fn harness(
+            script: Vec<Result<Option<u32>, PlatformWalletError>>,
+        ) -> (
+            Arc<Mutex<VecDeque<Result<Option<u32>, PlatformWalletError>>>>,
+            Arc<Mutex<Vec<String>>>,
+            Arc<AtomicU32>,
+        ) {
+            (
+                Arc::new(Mutex::new(script.into_iter().collect())),
+                Arc::new(Mutex::new(Vec::new())),
+                Arc::new(AtomicU32::new(0)),
+            )
+        }
+
+        async fn run(
+            script: Vec<Result<Option<u32>, PlatformWalletError>>,
+        ) -> (Result<Option<u32>, PlatformWalletError>, Vec<String>, u32) {
+            let canonical = canonical_txid();
+            let (queue, calls, delays) = harness(script);
+            let (queue_f, calls_f, delays_f) =
+                (Arc::clone(&queue), Arc::clone(&calls), Arc::clone(&delays));
+            let result = fetch_funding_tx_with_retry(
+                &canonical,
+                move |txid| {
+                    let queue = Arc::clone(&queue_f);
+                    let calls = Arc::clone(&calls_f);
+                    async move {
+                        calls.lock().expect("calls").push(txid);
+                        queue
+                            .lock()
+                            .expect("script")
+                            .pop_front()
+                            .expect("script exhausted — the loop fetched more than scripted")
+                    }
+                },
+                move || {
+                    let delays = Arc::clone(&delays_f);
+                    async move {
+                        delays.fetch_add(1, Ordering::SeqCst);
+                    }
+                },
+            )
+            .await;
+            let recorded = calls.lock().expect("calls").clone();
+            (result, recorded, delays.load(Ordering::SeqCst))
+        }
+
+        /// A first-call canonical hit returns immediately: one lookup, no
+        /// reversed fallback, no delay.
+        #[tokio::test]
+        async fn canonical_hit_returns_immediately() {
+            let (result, calls, delays) = run(vec![Ok(Some(7))]).await;
+            assert_eq!(result.expect("no error"), Some(7));
+            assert_eq!(calls, vec![canonical_txid()]);
+            assert_eq!(delays, 0);
+        }
+
+        /// A canonical miss falls back to the byte-reversed lookup WITHIN the
+        /// same attempt (the legacy-iOS little-endian compatibility path) — no
+        /// delay is spent on the byte-order fallback.
+        #[tokio::test]
+        async fn reversed_hit_within_same_attempt_no_delay() {
+            let (result, calls, delays) = run(vec![Ok(None), Ok(Some(9))]).await;
+            assert_eq!(result.expect("no error"), Some(9));
+            assert_eq!(
+                calls,
+                vec![
+                    canonical_txid(),
+                    reverse_txid_hex(&canonical_txid()).expect("reversible")
+                ]
+            );
+            assert_eq!(delays, 0);
+        }
+
+        /// A hit on a later attempt (propagation lag) succeeds after exactly
+        /// one delay per fully-missed attempt.
+        #[tokio::test]
+        async fn hit_after_missed_attempts_counts_one_delay_per_miss() {
+            // Attempts 1 and 2 miss on both orders; attempt 3 hits canonically.
+            let (result, calls, delays) =
+                run(vec![Ok(None), Ok(None), Ok(None), Ok(None), Ok(Some(3))]).await;
+            assert_eq!(result.expect("no error"), Some(3));
+            assert_eq!(calls.len(), 5);
+            assert_eq!(delays, 2);
+        }
+
+        /// Exhausting every attempt returns Ok(None) — a miss, not an error —
+        /// after 2 lookups per attempt, with NO delay after the final attempt.
+        #[tokio::test]
+        async fn exhausts_attempts_without_trailing_delay() {
+            let script = (0..CLAIM_FETCH_MAX_ATTEMPTS * 2)
+                .map(|_| Ok(None))
+                .collect();
+            let (result, calls, delays) = run(script).await;
+            assert_eq!(result.expect("misses are not errors"), None);
+            assert_eq!(calls.len(), (CLAIM_FETCH_MAX_ATTEMPTS * 2) as usize);
+            assert_eq!(delays, CLAIM_FETCH_MAX_ATTEMPTS - 1);
+        }
+
+        /// A transport error is NOT masked as a miss: it propagates
+        /// immediately, with no further lookups and no extra delay.
+        #[tokio::test]
+        async fn transport_error_propagates_immediately() {
+            // Attempt 1 misses both orders (1 delay); attempt 2's canonical
+            // lookup errors.
+            let (result, calls, delays) = run(vec![
+                Ok(None),
+                Ok(None),
+                Err(PlatformWalletError::InvalidIdentityData(
+                    "simulated transport failure".to_string(),
+                )),
+            ])
+            .await;
+            assert!(
+                matches!(result, Err(PlatformWalletError::InvalidIdentityData(_))),
+                "transport error must propagate, got {result:?}"
+            );
+            assert_eq!(calls.len(), 3, "no lookup may follow the error");
+            assert_eq!(delays, 1);
+        }
     }
 
     // --- create_invitation: the durable-persistence precondition ---

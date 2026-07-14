@@ -134,4 +134,71 @@ final class ReclaimInvitationClassifierTests: XCTestCase {
             .error
         )
     }
+
+    // MARK: - Stale-marker clearing (shouldClearInFlightMarker)
+
+    /// A first attempt that set the marker itself and then failed the LOCAL
+    /// pre-broadcast "not tracked" guard must clear the marker: the consume
+    /// never started, so the marker is demonstrably stale.
+    func test_shouldClear_lockNotTracked_noPrior_isTrue() {
+        XCTAssertTrue(
+            ReclaimInvitationSheet.shouldClearInFlightMarker(
+                error: Self.lockNotTracked, hadPriorReclaimInFlight: false)
+        )
+    }
+
+    /// With a PRIOR in-flight marker the same error is the crash-recovery
+    /// signal (classified `.reclaimed` above) — never a clear.
+    func test_shouldClear_lockNotTracked_prior_isFalse() {
+        XCTAssertFalse(
+            ReclaimInvitationSheet.shouldClearInFlightMarker(
+                error: Self.lockNotTracked, hadPriorReclaimInFlight: true)
+        )
+    }
+
+    /// Errors that may have reached the network keep the marker regardless —
+    /// a later "already consumed" must stay disambiguable as our own reclaim.
+    func test_shouldClear_networkishErrors_isFalse() {
+        let transport = StubError(message: "SDK error: Transport error: connection refused")
+        XCTAssertFalse(
+            ReclaimInvitationSheet.shouldClearInFlightMarker(
+                error: transport, hadPriorReclaimInFlight: false)
+        )
+        XCTAssertFalse(
+            ReclaimInvitationSheet.shouldClearInFlightMarker(
+                error: Self.alreadyConsumed, hadPriorReclaimInFlight: false)
+        )
+    }
+
+    /// The two-attempt regression the clearing exists for: attempt 1 sets the
+    /// marker and fails locally ("not tracked", no prior) → `.error` + clear;
+    /// an identical retry therefore STILL sees no prior marker and stays
+    /// `.error` — it can never escalate a purely-local failure to `.reclaimed`.
+    /// (Without the clear, the retry would capture `hadPriorReclaimInFlight ==
+    /// true` and misreport a successful self-reclaim.)
+    func test_twoAttempt_localFailure_neverBecomesReclaimed() {
+        // Attempt 1: marker freshly set by this attempt (prior == false).
+        var persistedMarker = false // durable value BEFORE the attempt
+        let attempt1Prior = persistedMarker
+        persistedMarker = true // markInFlight()
+        XCTAssertEqual(
+            ReclaimInvitationSheet.classifyReclaimFailure(
+                error: Self.lockNotTracked, hadPriorReclaimInFlight: attempt1Prior),
+            .error
+        )
+        if ReclaimInvitationSheet.shouldClearInFlightMarker(
+            error: Self.lockNotTracked, hadPriorReclaimInFlight: attempt1Prior
+        ) {
+            persistedMarker = false // the fix under test
+        }
+
+        // Attempt 2 (identical retry): captures the durable marker as prior.
+        let attempt2Prior = persistedMarker
+        XCTAssertEqual(
+            ReclaimInvitationSheet.classifyReclaimFailure(
+                error: Self.lockNotTracked, hadPriorReclaimInFlight: attempt2Prior),
+            .error,
+            "a repeated purely-local failure must stay an error, not become Reclaimed"
+        )
+    }
 }
