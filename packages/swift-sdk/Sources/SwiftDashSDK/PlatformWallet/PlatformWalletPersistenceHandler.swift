@@ -655,6 +655,8 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         record.context = tx.context
         record.blockHeight = tx.block_height
         record.blockTimestamp = tx.block_timestamp
+        record.blockPosition = tx.block_position
+        record.hasBlockPosition = tx.has_block_position
         let blockHashBytes = hashData(tx.block_hash)
         record.blockHash = blockHashBytes.allSatisfy { $0 == 0 } ? nil : blockHashBytes
         record.direction = tx.direction
@@ -3767,6 +3769,20 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     backgroundContext.delete(row)
                 }
 
+                // Masternode aggregation rows, keyed by raw `walletId` (no
+                // relationship to `PersistentWallet`), so the wallet-row
+                // delete below does not cascade them. `MasternodeSync` never
+                // prunes on an empty aggregation (its no-prune-on-empty
+                // rule), so without an explicit purge a delete-then-reimport
+                // of the same wallet resurrects stale masternode rows
+                // indefinitely.
+                let masternodeDescriptor = FetchDescriptor<PersistentMasternode>(
+                    predicate: #Predicate<PersistentMasternode> { $0.walletId == walletId }
+                )
+                for row in try backgroundContext.fetch(masternodeDescriptor) {
+                    backgroundContext.delete(row)
+                }
+
                 if let walletRow = walletRow {
                     backgroundContext.delete(walletRow)
                 }
@@ -4112,12 +4128,50 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     copyBytes(acc.friendIdentityId, into: &spec.friend_identity_id)
                     spec.account_xpub_bytes = UnsafePointer(xpubBuffer)
                     spec.account_xpub_bytes_len = UInt(xpub.count)
-                    // Display-only data the Rust load path ignores. The
-                    // persisted account row keeps the batch on the Swift
-                    // side (never rewritten after registration), so it is
-                    // not round-tripped back through the restore entry.
-                    spec.derived_platform_node_keys = nil
-                    spec.derived_platform_node_keys_count = 0
+                    // Rehydrate the platform-node (Ed25519) key batch on the
+                    // ProviderPlatformKeys account so the Rust restore can
+                    // repopulate its managed pool. SLIP-10 is hardened-only,
+                    // so these keys can't be re-derived seedlessly, and the
+                    // 33-byte core-address-pool ABI can't carry a typed 32B
+                    // Ed25519 key — the batch is the only path. Only the
+                    // platform account has a non-empty batch, so that alone
+                    // gates this. Pure load-side marshalling of persisted
+                    // rows (the Rust side recomputes node ids under #884).
+                    if !acc.derivedPlatformNodeKeys.isEmpty {
+                        let batch = acc.derivedPlatformNodeKeys
+                        let nkBuf = UnsafeMutablePointer<ProviderPlatformNodeKeyFFI>.allocate(
+                            capacity: batch.count
+                        )
+                        var nkWritten = 0
+                        for dk in batch where dk.publicKey.count == 32 && dk.nodeId.count == 20 {
+                            var row = ProviderPlatformNodeKeyFFI()
+                            row.index = dk.index
+                            dk.publicKey.withUnsafeBytes { src in
+                                withUnsafeMutableBytes(of: &row.public_key) { dst in
+                                    dst.copyMemory(from: src)
+                                }
+                            }
+                            dk.nodeId.withUnsafeBytes { src in
+                                withUnsafeMutableBytes(of: &row.node_id) { dst in
+                                    dst.copyMemory(from: src)
+                                }
+                            }
+                            nkBuf[nkWritten] = row
+                            nkWritten += 1
+                        }
+                        if nkWritten > 0 {
+                            spec.derived_platform_node_keys = UnsafePointer(nkBuf)
+                            spec.derived_platform_node_keys_count = UInt(nkWritten)
+                            allocation.providerPlatformNodeKeyArrays.append((nkBuf, nkWritten))
+                        } else {
+                            nkBuf.deallocate()
+                            spec.derived_platform_node_keys = nil
+                            spec.derived_platform_node_keys_count = 0
+                        }
+                    } else {
+                        spec.derived_platform_node_keys = nil
+                        spec.derived_platform_node_keys_count = 0
+                    }
                     buf[written] = spec
                     written += 1
                 }
@@ -4858,6 +4912,8 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 }
             }
             entry.block_timestamp = UInt64(txRow.blockTimestamp)
+            entry.block_position = txRow.blockPosition
+            entry.has_block_position = txRow.hasBlockPosition
             entry.first_seen = txRow.firstSeen
             buf[written] = entry
             written += 1
@@ -5549,6 +5605,11 @@ private final class LoadAllocation {
     var coreAddressPoolArrays: [(UnsafeMutablePointer<AccountAddressPoolFFI>, Int)] = []
     /// Inner `CoreAddressEntryFFI` arrays, one per pool entry above.
     var coreAddressEntryArrays: [(UnsafeMutablePointer<CoreAddressEntryFFI>, Int)] = []
+    /// Per-`ProviderPlatformKeys`-account `ProviderPlatformNodeKeyFFI`
+    /// arrays — the persisted platform-node key batch marshalled back so
+    /// the Rust restore can repopulate the managed pool. Flat POD (no owned
+    /// pointers), so nothing extra rides `scalarBuffers`.
+    var providerPlatformNodeKeyArrays: [(UnsafeMutablePointer<ProviderPlatformNodeKeyFFI>, Int)] = []
 
     func release() {
         if let entries = entries {
@@ -5628,6 +5689,10 @@ private final class LoadAllocation {
             ptr.deallocate()
         }
         for (ptr, count) in coreAddressPoolArrays {
+            ptr.deinitialize(count: count)
+            ptr.deallocate()
+        }
+        for (ptr, count) in providerPlatformNodeKeyArrays {
             ptr.deinitialize(count: count)
             ptr.deallocate()
         }

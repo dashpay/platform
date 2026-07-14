@@ -2756,9 +2756,28 @@ unsafe fn address_info_from_ffi(
 /// the same index, and the reverse-lookup maps + `highest_*`
 /// watermarks are extended to cover indices past that default
 /// gap window.
+///
+/// **Typed-key preservation:** a persisted row can lose its typed public
+/// key on the FFI round-trip — the [`CoreAddressEntryFFI`] key field is a
+/// bare 33-byte slot that only fits a compressed ECDSA key and carries no
+/// key-type discriminator, so BLS (48B) operator and Ed25519 (32B)
+/// platform-node entries come back with `public_key: None`. Overwriting a
+/// prederived typed entry (which `from_wallet` filled with
+/// `PublicKeyType::BLS`/`EdDSA`) with such a `None` row would break
+/// key-wallet's provider-key matching. So this MERGES: when the incoming
+/// row has no typed key but the existing entry at that index does, the
+/// existing typed key is kept. (Funds/ECDSA rows always carry their key,
+/// so the merge is a no-op for them.)
 fn restore_address_pool(pool: &mut AddressPool, infos: Vec<AddressInfo>) {
-    for info in infos {
+    for mut info in infos {
         let idx = info.index;
+        if info.public_key.is_none() {
+            if let Some(existing) = pool.addresses.get(&idx) {
+                if existing.public_key.is_some() {
+                    info.public_key = existing.public_key.clone();
+                }
+            }
+        }
         pool.address_index.insert(info.address.clone(), idx);
         pool.script_pubkey_index
             .insert(info.script_pubkey.clone(), idx);
@@ -2769,6 +2788,290 @@ fn restore_address_pool(pool: &mut AddressPool, infos: Vec<AddressInfo>) {
         }
         pool.addresses.insert(idx, info);
     }
+}
+
+/// Outcome of [`restore_core_address_pools`]: how many persisted address
+/// rows were routed into a managed pool and how many were skipped
+/// (invalid pool-type tag, no matching account/pool, or un-decodable row).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct PoolRestoreStats {
+    routed: usize,
+    dropped: usize,
+}
+
+/// Restore persisted core address pools onto the matching managed
+/// accounts. Covers the funds-bearing accounts (keyed maps) AND the four
+/// masternode key-material provider accounts (dedicated `Option` fields);
+/// both unify to `&mut ManagedAccountType` via `ManagedAccountTrait`, so
+/// the used-flags + beyond-gap indices in the snapshot rehydrate the
+/// in-memory pools. Extracted from [`build_wallet_start_state`] so the
+/// routing — including the provider arms — is unit-testable.
+///
+/// A single match (rather than a funds-match-then-provider-fallback) is
+/// required: the borrow checker won't let a `None` fallback re-borrow
+/// `wallet_info.accounts` after the funds `get_mut`.
+///
+/// # Safety
+/// Each `AccountAddressPoolFFI`'s `addresses_ptr` must point to
+/// `addresses_count` valid `CoreAddressEntryFFI` rows (Swift-owned, valid
+/// for the call), matching the load-callback contract.
+///
+/// # Errors
+/// Propagates a real (non-legacy-tag) `account_type_from_spec` decode
+/// failure — a corrupt persisted row — so it surfaces rather than
+/// silently under-restoring.
+unsafe fn restore_core_address_pools(
+    wallet_info: &mut ManagedWalletInfo,
+    pool_entries: &[AccountAddressPoolFFI],
+    network: Network,
+    wallet_id: &[u8; 32],
+) -> Result<PoolRestoreStats, PersistenceError> {
+    use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+    let mut pools_routed = 0usize;
+    let mut pools_dropped = 0usize;
+    for pool_ffi in pool_entries {
+        let account_type = match account_type_from_spec(&pool_ffi.account) {
+            Ok(t) => t,
+            Err(e) => {
+                if is_legacy_removed_account_tag(pool_ffi.account.type_tag) {
+                    pools_dropped += 1;
+                    continue;
+                }
+                return Err(e);
+            }
+        };
+        let pool_type = match pool_ffi.pool_type_tag {
+            0 => AddressPoolType::External,
+            1 => AddressPoolType::Internal,
+            2 => AddressPoolType::Absent,
+            3 => AddressPoolType::AbsentHardened,
+            other => {
+                pools_dropped += 1;
+                tracing::warn!(
+                    wallet_id = %hex::encode(wallet_id),
+                    pool_type_tag = other,
+                    "load: skipping persisted address pool with invalid pool_type_tag"
+                );
+                continue;
+            }
+        };
+        // Resolve the persisted pool's target account to its
+        // `&mut ManagedAccountType` (where the address pools live).
+        // Funds-bearing accounts (`ManagedCoreFundsAccount`) live in the
+        // keyed maps; the four masternode key-material provider accounts
+        // (`ManagedCoreKeysAccount`) live in dedicated `Option` fields.
+        // Both implement `ManagedAccountTrait`, so `managed_account_type_mut()`
+        // unifies them to a single `&mut ManagedAccountType` and the
+        // pool-population below is identical.
+        let managed_type = match account_type {
+            AccountType::Standard {
+                index,
+                standard_account_type: StandardAccountType::BIP44Account,
+            } => wallet_info
+                .accounts
+                .standard_bip44_accounts
+                .get_mut(&index)
+                .map(|a| a.managed_account_type_mut()),
+            AccountType::Standard {
+                index,
+                standard_account_type: StandardAccountType::BIP32Account,
+            } => wallet_info
+                .accounts
+                .standard_bip32_accounts
+                .get_mut(&index)
+                .map(|a| a.managed_account_type_mut()),
+            AccountType::CoinJoin { index } => wallet_info
+                .accounts
+                .coinjoin_accounts
+                .get_mut(&index)
+                .map(|a| a.managed_account_type_mut()),
+            AccountType::DashpayReceivingFunds {
+                index,
+                user_identity_id,
+                friend_identity_id,
+            } => wallet_info
+                .accounts
+                .dashpay_receival_accounts
+                .get_mut(
+                    &key_wallet::account::account_collection::DashpayAccountKey {
+                        index,
+                        user_identity_id,
+                        friend_identity_id,
+                    },
+                )
+                .map(|a| a.managed_account_type_mut()),
+            AccountType::DashpayExternalAccount {
+                index,
+                user_identity_id,
+                friend_identity_id,
+            } => wallet_info
+                .accounts
+                .dashpay_external_accounts
+                .get_mut(
+                    &key_wallet::account::account_collection::DashpayAccountKey {
+                        index,
+                        user_identity_id,
+                        friend_identity_id,
+                    },
+                )
+                .map(|a| a.managed_account_type_mut()),
+            // Masternode provider key-material accounts — dedicated
+            // `Option<ManagedCoreKeysAccount>` fields. Restoring these
+            // rehydrates the used-flags + beyond-gap indices of the
+            // owner / voting / operator / platform-node pools.
+            AccountType::ProviderOwnerKeys => wallet_info
+                .accounts
+                .provider_owner_keys
+                .as_mut()
+                .map(|a| a.managed_account_type_mut()),
+            AccountType::ProviderVotingKeys => wallet_info
+                .accounts
+                .provider_voting_keys
+                .as_mut()
+                .map(|a| a.managed_account_type_mut()),
+            AccountType::ProviderOperatorKeys => wallet_info
+                .accounts
+                .provider_operator_keys
+                .as_mut()
+                .map(|a| a.managed_account_type_mut()),
+            AccountType::ProviderPlatformKeys => wallet_info
+                .accounts
+                .provider_platform_keys
+                .as_mut()
+                .map(|a| a.managed_account_type_mut()),
+            _ => None,
+        };
+        let Some(managed_type) = managed_type else {
+            pools_dropped += 1;
+            tracing::warn!(
+                wallet_id = %hex::encode(wallet_id),
+                ?account_type,
+                "load: skipping persisted address pool with no matching funds or \
+                 provider account"
+            );
+            continue;
+        };
+        let rows: &[CoreAddressEntryFFI] =
+            if pool_ffi.addresses_ptr.is_null() || pool_ffi.addresses_count == 0 {
+                &[]
+            } else {
+                unsafe { slice::from_raw_parts(pool_ffi.addresses_ptr, pool_ffi.addresses_count) }
+            };
+        let mut infos: Vec<AddressInfo> = Vec::with_capacity(rows.len());
+        for row in rows {
+            match unsafe { address_info_from_ffi(row, network) } {
+                Ok(info) => infos.push(info),
+                Err(e) => {
+                    pools_dropped += 1;
+                    tracing::warn!(
+                        wallet_id = %hex::encode(wallet_id),
+                        error = %e,
+                        "load: skipping un-decodable persisted address row"
+                    );
+                }
+            }
+        }
+        let mut managed_pools = managed_type.address_pools_mut();
+        match managed_pools.iter_mut().find(|p| p.pool_type == pool_type) {
+            Some(pool) => {
+                pools_routed += infos.len();
+                restore_address_pool(pool, infos);
+            }
+            None => {
+                pools_dropped += 1;
+                tracing::warn!(
+                    wallet_id = %hex::encode(wallet_id),
+                    ?pool_type,
+                    "load: persisted address pool has no matching managed pool"
+                );
+            }
+        }
+    }
+    if pools_dropped > 0 {
+        tracing::warn!(
+            wallet_id = %hex::encode(wallet_id),
+            pools_routed,
+            pools_dropped,
+            "load: persisted address-pool restore completed with skipped rows"
+        );
+    }
+    Ok(PoolRestoreStats {
+        routed: pools_routed,
+        dropped: pools_dropped,
+    })
+}
+
+/// Rehydrate the persisted platform-node (Ed25519) key `batch` into the
+/// managed `ProviderPlatformKeys` pool.
+///
+/// SLIP-10 Ed25519 is hardened-only, so `ManagedWalletInfo::from_wallet`
+/// can't re-derive these keys from the account xpub on an external-signable
+/// restore — the batch (persisted at registration, supplied by the host on
+/// load) is the only seedless source. Each entry is inserted as a typed
+/// [`PublicKeyType::EdDSA`] pool address, keyed by its hardened index, with
+/// the platform node id recomputed as `SHA256(pubkey)[..20]` (rust-dashcore
+/// #884) — **never** trusting any persisted hash160-era id. This lets the
+/// masternode-ownership scan match a ProRegTx `platform_node_id` to the
+/// wallet's own derivation index on a seedless wallet.
+fn restore_platform_node_pool(
+    wallet_info: &mut ManagedWalletInfo,
+    batch: &[(u32, [u8; 32])],
+    network: Network,
+) -> Result<(), PersistenceError> {
+    use dashcore::hashes::Hash;
+    use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+    if batch.is_empty() {
+        return Ok(());
+    }
+    let Some(account) = wallet_info.accounts.provider_platform_keys.as_mut() else {
+        return Ok(());
+    };
+    let account_path = AccountType::ProviderPlatformKeys
+        .derivation_path(network)
+        .map_err(|e| PersistenceError::backend(format!("platform-node account path: {:?}", e)))?;
+    let base_children: Vec<key_wallet::bip32::ChildNumber> = account_path.as_ref().to_vec();
+
+    let mut infos: Vec<AddressInfo> = Vec::with_capacity(batch.len());
+    for (index, pubkey) in batch {
+        // Recompute the node id from the pubkey (SHA256[..20], #884).
+        let node_id = dashcore::PlatformNodeId::from_ed25519_public_key(pubkey).to_byte_array();
+        let payload =
+            dashcore::address::Payload::PubkeyHash(dashcore::PubkeyHash::from_byte_array(node_id));
+        let address = dashcore::Address::new(network, payload);
+        let script_pubkey = address.script_pubkey();
+        let child = key_wallet::bip32::ChildNumber::from_hardened_idx(*index).map_err(|e| {
+            PersistenceError::backend(format!("platform-node child index {}: {:?}", index, e))
+        })?;
+        let mut children = base_children.clone();
+        children.push(child);
+        let path = DerivationPath::from(children);
+        infos.push(AddressInfo {
+            address,
+            script_pubkey,
+            public_key: Some(PublicKeyType::EdDSA(pubkey.to_vec())),
+            index: *index,
+            path,
+            used: false,
+            generated_at: 0,
+            used_at: None,
+            tx_count: 0,
+            total_received: 0,
+            total_sent: 0,
+            balance: 0,
+            label: None,
+            metadata: std::collections::BTreeMap::new(),
+        });
+    }
+    // The platform-node pool is `AbsentHardened` (SLIP-10 hardened-only).
+    if let Some(pool) = account
+        .managed_account_type_mut()
+        .address_pools_mut()
+        .into_iter()
+        .find(|p| p.pool_type == AddressPoolType::AbsentHardened)
+    {
+        restore_address_pool(pool, infos);
+    }
+    Ok(())
 }
 
 /// Bucket a slice of upstream-emitted `DerivedAddress` entries into the
@@ -2994,6 +3297,13 @@ fn build_wallet_start_state(
 
     // Build the per-account collection from the typed spec array.
     let mut accounts = AccountCollection::new();
+    // The persisted platform-node (Ed25519) key batch, captured from the
+    // `ProviderPlatformKeys` spec so it can be rehydrated into the managed
+    // pool once `ManagedWalletInfo::from_wallet` has created it. SLIP-10 is
+    // hardened-only, so from_wallet can't re-derive these seedlessly on the
+    // external-signable restore — the batch is the only source. Stored as
+    // (index, pubkey); node ids are recomputed SHA256[..20] at insert.
+    let mut platform_node_batch: Vec<(u32, [u8; 32])> = Vec::new();
     let specs: &[AccountSpecFFI] = if entry.accounts.is_null() || entry.accounts_count == 0 {
         &[]
     } else {
@@ -3038,6 +3348,13 @@ fn build_wallet_start_state(
         // via the type-specific `new` + insert methods rather than the
         // ECDSA `Account::from_xpub` / `insert` path (which would fail
         // to decode the bytes and reject the provider `AccountType`).
+        // Provider xpubs are stored raw (`bincode(xpub)`), exactly like the
+        // ECDSA accounts. The derivation scheme is NOT versioned here: this
+        // app is pre-release and the pre-#879 (secp256k1-hybrid) derivation
+        // never shipped to production. A wallet whose provider accounts were
+        // persisted by a pre-#879 dev build will restore those (stale) xpubs
+        // and show stale operator / platform-node keys until it's deleted
+        // and re-imported — an accepted, transient dev-only state.
         match account_type {
             AccountType::ProviderOperatorKeys => {
                 let (bls_pubkey, _): (ExtendedBLSPubKey, usize) =
@@ -3087,6 +3404,21 @@ fn build_wallet_start_state(
                         e
                     ))
                 })?;
+                // Capture the persisted platform-node key batch (if the host
+                // supplied it on this load) for rehydration into the managed
+                // pool below. Only the pubkeys are trusted; node ids are
+                // recomputed under the #884 convention at insert time.
+                if !spec.derived_platform_node_keys.is_null()
+                    && spec.derived_platform_node_keys_count > 0
+                {
+                    let rows = unsafe {
+                        slice::from_raw_parts(
+                            spec.derived_platform_node_keys,
+                            spec.derived_platform_node_keys_count,
+                        )
+                    };
+                    platform_node_batch = rows.iter().map(|r| (r.index, r.public_key)).collect();
+                }
                 continue;
             }
             _ => {}
@@ -3182,7 +3514,6 @@ fn build_wallet_start_state(
     // restored wallet can hold a UTXO whose address the signer can't
     // map back to a derivation path, breaking core-to-core spends.
     {
-        use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
         let pool_entries: &[AccountAddressPoolFFI] =
             if entry.core_address_pools.is_null() || entry.core_address_pools_count == 0 {
                 &[]
@@ -3191,125 +3522,20 @@ fn build_wallet_start_state(
                     slice::from_raw_parts(entry.core_address_pools, entry.core_address_pools_count)
                 }
             };
-        let mut pools_routed = 0usize;
-        let mut pools_dropped = 0usize;
-        for pool_ffi in pool_entries {
-            let account_type = match account_type_from_spec(&pool_ffi.account) {
-                Ok(t) => t,
-                Err(e) => {
-                    if is_legacy_removed_account_tag(pool_ffi.account.type_tag) {
-                        pools_dropped += 1;
-                        continue;
-                    }
-                    return Err(e);
-                }
-            };
-            let pool_type = match pool_ffi.pool_type_tag {
-                0 => AddressPoolType::External,
-                1 => AddressPoolType::Internal,
-                2 => AddressPoolType::Absent,
-                3 => AddressPoolType::AbsentHardened,
-                other => {
-                    pools_dropped += 1;
-                    tracing::warn!(
-                        wallet_id = %hex::encode(entry.wallet_id),
-                        pool_type_tag = other,
-                        "load: skipping persisted address pool with invalid pool_type_tag"
-                    );
-                    continue;
-                }
-            };
-            let funds = match account_type {
-                AccountType::Standard {
-                    index,
-                    standard_account_type: StandardAccountType::BIP44Account,
-                } => wallet_info.accounts.standard_bip44_accounts.get_mut(&index),
-                AccountType::Standard {
-                    index,
-                    standard_account_type: StandardAccountType::BIP32Account,
-                } => wallet_info.accounts.standard_bip32_accounts.get_mut(&index),
-                AccountType::CoinJoin { index } => {
-                    wallet_info.accounts.coinjoin_accounts.get_mut(&index)
-                }
-                AccountType::DashpayReceivingFunds {
-                    index,
-                    user_identity_id,
-                    friend_identity_id,
-                } => wallet_info.accounts.dashpay_receival_accounts.get_mut(
-                    &key_wallet::account::account_collection::DashpayAccountKey {
-                        index,
-                        user_identity_id,
-                        friend_identity_id,
-                    },
-                ),
-                AccountType::DashpayExternalAccount {
-                    index,
-                    user_identity_id,
-                    friend_identity_id,
-                } => wallet_info.accounts.dashpay_external_accounts.get_mut(
-                    &key_wallet::account::account_collection::DashpayAccountKey {
-                        index,
-                        user_identity_id,
-                        friend_identity_id,
-                    },
-                ),
-                _ => None,
-            };
-            let Some(funds_account) = funds else {
-                pools_dropped += 1;
-                tracing::warn!(
-                    wallet_id = %hex::encode(entry.wallet_id),
-                    ?account_type,
-                    "load: skipping persisted address pool with no matching funds account"
-                );
-                continue;
-            };
-            let rows: &[CoreAddressEntryFFI] = if pool_ffi.addresses_ptr.is_null()
-                || pool_ffi.addresses_count == 0
-            {
-                &[]
-            } else {
-                unsafe { slice::from_raw_parts(pool_ffi.addresses_ptr, pool_ffi.addresses_count) }
-            };
-            let mut infos: Vec<AddressInfo> = Vec::with_capacity(rows.len());
-            for row in rows {
-                match unsafe { address_info_from_ffi(row, network) } {
-                    Ok(info) => infos.push(info),
-                    Err(e) => {
-                        pools_dropped += 1;
-                        tracing::warn!(
-                            wallet_id = %hex::encode(entry.wallet_id),
-                            error = %e,
-                            "load: skipping un-decodable persisted address row"
-                        );
-                    }
-                }
-            }
-            let mut managed_pools = funds_account.managed_account_type_mut().address_pools_mut();
-            match managed_pools.iter_mut().find(|p| p.pool_type == pool_type) {
-                Some(pool) => {
-                    pools_routed += infos.len();
-                    restore_address_pool(pool, infos);
-                }
-                None => {
-                    pools_dropped += 1;
-                    tracing::warn!(
-                        wallet_id = %hex::encode(entry.wallet_id),
-                        ?pool_type,
-                        "load: persisted address pool has no matching managed pool"
-                    );
-                }
-            }
-        }
-        if pools_dropped > 0 {
-            tracing::warn!(
-                wallet_id = %hex::encode(entry.wallet_id),
-                pools_routed,
-                pools_dropped,
-                "load: persisted address-pool restore completed with skipped rows"
-            );
+        // SAFETY: `pool_entries` is a valid slice (checked above) and each
+        // row's `addresses_ptr` follows the load-callback contract.
+        unsafe {
+            restore_core_address_pools(&mut wallet_info, pool_entries, network, &entry.wallet_id)?;
         }
     }
+
+    // Rehydrate the platform-node (Ed25519) key batch into its managed pool.
+    // Unlike the ECDSA/BLS pools this can't come from `core_address_pools`
+    // (SLIP-10 is hardened-only and the 33-byte pool ABI can't carry a typed
+    // 32-byte Ed25519 key), so it flows through the dedicated batch captured
+    // from the `ProviderPlatformKeys` spec above. Without it a seedless
+    // restore has no platform-node keys to match masternode ownership.
+    restore_platform_node_pool(&mut wallet_info, &platform_node_batch, network)?;
 
     // Persisted unspent UTXOs → funds-bearing accounts. Keys-only and
     // PlatformPayment variants are skipped: the former never carry
@@ -4775,7 +5001,14 @@ fn restore_provider_special_txs(
                         e
                     ))
                 })?;
-                let info = BlockInfo::new(rec.block_height, block_hash, rec.block_timestamp as u32);
+                let mut info =
+                    BlockInfo::new(rec.block_height, block_hash, rec.block_timestamp as u32);
+                // Restore the in-block position (rust-dashcore#891) so the
+                // masternode aggregation keeps Core's same-block apply order
+                // across restarts. Absent on pre-field rows.
+                if rec.has_block_position {
+                    info = info.with_position(rec.block_position);
+                }
                 if ctx == 2 {
                     TransactionContext::InBlock(info)
                 } else {
@@ -5011,6 +5244,294 @@ mod tests {
             .expect("inserting the single account must succeed");
         let wallet = Wallet::new_external_signable(Network::Testnet, [0u8; 32], accounts);
         ManagedWalletInfo::from_wallet(&wallet, 0)
+    }
+
+    /// Same reproducible testnet xpub as `test_managed_wallet_info_with_bip44`,
+    /// wrapped as a `ProviderOwnerKeys` account so the managed collection
+    /// ends up with a `provider_owner_keys` account carrying its address
+    /// pool — the restore target the provider arms route into.
+    fn test_managed_wallet_info_with_provider_owner() -> ManagedWalletInfo {
+        let mnemonic = Mnemonic::from_phrase(
+            "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+            Language::English,
+        )
+        .expect("static BIP-39 vector must parse");
+        let seed = mnemonic.to_seed("");
+        let master = ExtendedPrivKey::new_master(Network::Testnet, &seed)
+            .expect("master derivation must succeed");
+        let secp = Secp256k1::new();
+        let xpub = ExtendedPubKey::from_priv(&secp, &master);
+        let account =
+            Account::from_xpub(None, AccountType::ProviderOwnerKeys, xpub, Network::Testnet)
+                .expect("Account::from_xpub on a valid xpub must succeed");
+        let mut accounts = key_wallet::AccountCollection::new();
+        accounts
+            .insert(account)
+            .expect("inserting the provider-owner account must succeed");
+        let wallet = Wallet::new_external_signable(Network::Testnet, [0u8; 32], accounts);
+        ManagedWalletInfo::from_wallet(&wallet, 0)
+    }
+
+    /// Restore-arm coverage (PR #4120): a persisted core-address-pool row
+    /// targeting a PROVIDER account (`ProviderOwnerKeys`) must rehydrate
+    /// its used-flag + beyond-gap index into
+    /// `wallet_info.accounts.provider_owner_keys`'s pool. Pins the provider
+    /// arms so a regression back to the funds-only match — which dropped
+    /// these rows with a "no matching funds account" warn — is caught.
+    #[test]
+    fn provider_owner_address_pool_round_trips_used_and_highest_index() {
+        use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+        use std::ffi::CString;
+
+        let mut wallet_info = test_managed_wallet_info_with_provider_owner();
+
+        // Read the managed provider-owner pool's actual type so the staged
+        // FFI pool routes to it regardless of the pool-type convention.
+        let pool_type = {
+            let owner = wallet_info
+                .accounts
+                .provider_owner_keys
+                .as_mut()
+                .expect("managed provider-owner account must exist");
+            owner.managed_account_type_mut().address_pools_mut()[0].pool_type
+        };
+        let pool_type_tag: u8 = match pool_type {
+            AddressPoolType::External => 0,
+            AddressPoolType::Internal => 1,
+            AddressPoolType::Absent => 2,
+            AddressPoolType::AbsentHardened => 3,
+        };
+
+        // A used address at an index beyond the pre-derived gap window.
+        const RESTORED_INDEX: u32 = 50;
+        let addr_c = CString::new("yMqShkrgjTRuReBGFpQr7FozEF1QcNBBYA").unwrap();
+        let path_c = CString::new("m/9'/1'/2'/50").unwrap();
+        let row = CoreAddressEntryFFI {
+            public_key: [0u8; 33],
+            has_public_key: false,
+            pool_type_tag,
+            address_index: RESTORED_INDEX,
+            is_used: true,
+            balance: 0,
+            address_base58: addr_c.as_ptr(),
+            derivation_path: path_c.as_ptr(),
+        };
+        let no_xpub: &[u8] = &[];
+        let pool = AccountAddressPoolFFI {
+            account: build_account_spec_ffi(&AccountType::ProviderOwnerKeys, no_xpub),
+            pool_type_tag,
+            addresses_ptr: &row,
+            addresses_count: 1,
+        };
+        let pools = [pool];
+
+        // SAFETY: `row` / `addr_c` / `path_c` outlive the call below.
+        let stats = unsafe {
+            restore_core_address_pools(&mut wallet_info, &pools, Network::Testnet, &[0u8; 32])
+        }
+        .expect("restore must succeed for a well-formed provider pool");
+        assert_eq!(
+            stats,
+            PoolRestoreStats {
+                routed: 1,
+                dropped: 0
+            },
+            "the single provider-owner row must route into the managed pool, not drop"
+        );
+
+        // The used-flag + beyond-gap index must now live on the managed pool.
+        let owner = wallet_info
+            .accounts
+            .provider_owner_keys
+            .as_mut()
+            .expect("managed provider-owner account must exist");
+        let mut pools_mut = owner.managed_account_type_mut().address_pools_mut();
+        let restored = pools_mut
+            .iter_mut()
+            .find(|p| p.pool_type == pool_type)
+            .expect("the provider-owner pool must exist");
+        assert!(
+            restored.used_indices.contains(&RESTORED_INDEX),
+            "the used index must be restored into the pool"
+        );
+        assert_eq!(
+            restored.highest_used,
+            Some(RESTORED_INDEX),
+            "highest_used must reflect the restored used index"
+        );
+        assert!(
+            restored
+                .highest_generated
+                .map_or(false, |h| h >= RESTORED_INDEX),
+            "highest_generated must advance past the pre-derived gap window"
+        );
+
+        drop(addr_c);
+        drop(path_c);
+    }
+
+    /// A staged provider special tx must round-trip its persisted in-block
+    /// position (rust-dashcore#891) onto the rebuilt record's `BlockInfo`,
+    /// so the masternode aggregation keeps Core's same-block apply order
+    /// across restarts — and a pre-field row (`has_block_position: false`)
+    /// must restore with `position() == None`.
+    #[test]
+    fn provider_special_tx_restore_round_trips_block_position() {
+        use dashcore::blockdata::transaction::special_transaction::provider_update_service::ProviderUpdateServicePayload;
+        use dashcore::hashes::Hash;
+        use dashcore::transaction::TransactionPayload;
+
+        let payload = ProviderUpdateServicePayload {
+            version: 1,
+            mn_type: None,
+            pro_tx_hash: dashcore::Txid::from_byte_array([7u8; 32]),
+            ip_address: 42,
+            port: 19999,
+            script_payout: ScriptBuf::new(),
+            inputs_hash: [3u8; 32].into(),
+            platform_node_id: None,
+            platform_p2p_port: None,
+            platform_http_port: None,
+            payload_sig: [0u8; 96].into(),
+        };
+        let tx = Transaction {
+            version: 3,
+            lock_time: 0,
+            input: vec![],
+            output: vec![],
+            special_transaction_payload: Some(
+                TransactionPayload::ProviderUpdateServicePayloadType(payload),
+            ),
+        };
+        let mut tx_bytes = serialize(&tx);
+
+        for (has_position, expected) in [(true, Some(5u32)), (false, None)] {
+            let entry = ProviderSpecialTxRestoreEntryFFI {
+                tx_bytes: tx_bytes.as_mut_ptr(),
+                tx_bytes_len: tx_bytes.len(),
+                context_raw: 2,
+                block_height: 900,
+                block_hash: [9u8; 32],
+                block_timestamp: 1_700_000_000,
+                block_position: 5,
+                has_block_position: has_position,
+                first_seen: 0,
+            };
+
+            let mut wallet_info = test_managed_wallet_info_with_provider_owner();
+            let stats = restore_provider_special_txs(&mut wallet_info, &[entry])
+                .expect("staged provider tx must restore");
+            assert_eq!(
+                stats.restored, 1,
+                "the record must land on a provider account"
+            );
+
+            let record = wallet_info
+                .accounts
+                .provider_owner_keys
+                .as_ref()
+                .expect("provider-owner account must exist")
+                .transactions()
+                .get(&tx.txid())
+                .expect("restored record must be resident");
+            assert_eq!(
+                record.context.block_info().and_then(|b| b.position()),
+                expected,
+                "restored BlockInfo position must mirror the persisted row \
+                 (has_block_position = {has_position})"
+            );
+        }
+    }
+
+    /// Build a minimal `AddressInfo` for merge tests. The address/script/
+    /// path content is irrelevant — `restore_address_pool`'s merge only
+    /// inspects `public_key` — so a P2PKH keyed off `index` suffices.
+    fn merge_test_address_info(index: u32, public_key: Option<PublicKeyType>) -> AddressInfo {
+        use dashcore::hashes::Hash;
+        let mut h = [0u8; 20];
+        h[0] = index as u8;
+        let payload =
+            dashcore::address::Payload::PubkeyHash(dashcore::PubkeyHash::from_byte_array(h));
+        let address = dashcore::Address::new(Network::Testnet, payload);
+        let script_pubkey = address.script_pubkey();
+        AddressInfo {
+            address,
+            script_pubkey,
+            public_key,
+            index,
+            path: DerivationPath::from(Vec::<key_wallet::bip32::ChildNumber>::new()),
+            used: false,
+            generated_at: 0,
+            used_at: None,
+            tx_count: 0,
+            total_received: 0,
+            total_sent: 0,
+            balance: 0,
+            label: None,
+            metadata: std::collections::BTreeMap::new(),
+        }
+    }
+
+    /// Blocker #1: a prederived operator entry carrying a typed BLS (48B)
+    /// public key must NOT be clobbered by a persisted row that lost its
+    /// typed key on the 33-byte-slot FFI round-trip (`public_key: None`).
+    /// Pins the merge in `restore_address_pool` so key-wallet's provider-key
+    /// matching keeps a usable typed key after restore.
+    #[test]
+    fn restore_address_pool_merge_preserves_typed_bls_operator_key() {
+        use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+
+        // Any managed keys account gives a real `AddressPool` to exercise
+        // the (pool-type-agnostic) merge against.
+        let mut wallet_info = test_managed_wallet_info_with_provider_owner();
+        let owner = wallet_info
+            .accounts
+            .provider_owner_keys
+            .as_mut()
+            .expect("managed provider-owner account must exist");
+        let pool = owner
+            .managed_account_type_mut()
+            .address_pools_mut()
+            .into_iter()
+            .next()
+            .expect("the account must have at least one pool");
+
+        let bls = vec![0xABu8; 48];
+        // Seed a prederived typed BLS entry at index 0.
+        restore_address_pool(
+            pool,
+            vec![merge_test_address_info(
+                0,
+                Some(PublicKeyType::BLS(bls.clone())),
+            )],
+        );
+        // A persisted row that lost its typed key (None) at the SAME index
+        // must keep the existing BLS key, not overwrite it with None.
+        restore_address_pool(pool, vec![merge_test_address_info(0, None)]);
+        match pool
+            .addresses
+            .get(&0)
+            .expect("entry at index 0")
+            .public_key
+            .as_ref()
+        {
+            Some(PublicKeyType::BLS(bytes)) => {
+                assert_eq!(bytes, &bls, "the prederived BLS key must be preserved")
+            }
+            other => panic!("expected a preserved BLS key at index 0, got {:?}", other),
+        }
+
+        // Control: a `None` row at a fresh index with no existing entry
+        // stays `None` (merge only fills from an existing typed entry).
+        restore_address_pool(pool, vec![merge_test_address_info(7, None)]);
+        assert!(
+            pool.addresses
+                .get(&7)
+                .expect("entry at index 7")
+                .public_key
+                .is_none(),
+            "a None row with no prederived entry must remain None"
+        );
     }
 
     /// `account_xpub` must survive the persist→restore byte round-trip — it is

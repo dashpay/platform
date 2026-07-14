@@ -54,6 +54,14 @@ public final class PersistentTransaction {
     public var blockHash: Data?
     /// Block timestamp.
     public var blockTimestamp: UInt32
+    /// The transaction's index within its block (`block.vtx` order),
+    /// meaningful only when [`hasBlockPosition`]. Pure storage of the
+    /// Rust-stamped value (rust-dashcore#891): restored provider special
+    /// transactions hand it back so the masternode aggregation keeps
+    /// Core's same-block apply order across restarts. `false` on rows
+    /// persisted before the field existed and on unconfirmed contexts.
+    public var blockPosition: UInt32 = 0
+    public var hasBlockPosition: Bool = false
     /// Direction: 0=incoming, 1=outgoing, 2=internal, 3=coinJoin.
     public var direction: UInt32
     /// Transaction type name (Standard, CoinJoin, etc.). Sourced

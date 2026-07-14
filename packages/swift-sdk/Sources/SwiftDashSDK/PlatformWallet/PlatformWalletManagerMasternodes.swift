@@ -56,6 +56,13 @@ public struct PlatformMasternode: Sendable {
     public let platformInWallet: Bool
     public let platformAccountType: UInt8
     public let platformKeyIndex: UInt32
+    /// Whether Rust could actually check platform-node ownership for this
+    /// query (the wallet's derived platform-node index had entries). When
+    /// false, `platformInWallet` is "unchecked" (empty/not-yet-rehydrated
+    /// pool) and the persister must retain the prior value instead of
+    /// clobbering it. When true, `platformInWallet` is definitive (true OR
+    /// false), so an on-chain rotation to an external key correctly clears it.
+    public let platformOwnershipChecked: Bool
 }
 
 extension PlatformWalletManager {
@@ -141,7 +148,8 @@ extension PlatformWalletManager {
                 operatorKeyIndex: entry.operator_key_index,
                 platformInWallet: entry.platform_in_wallet,
                 platformAccountType: entry.platform_account_type,
-                platformKeyIndex: entry.platform_key_index
+                platformKeyIndex: entry.platform_key_index,
+                platformOwnershipChecked: entry.platform_ownership_checked
             )
         }
     }
