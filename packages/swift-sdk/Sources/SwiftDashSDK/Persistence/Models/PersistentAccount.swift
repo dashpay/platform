@@ -1,31 +1,6 @@
 import Foundation
 import SwiftData
 
-/// One pre-derived platform-node (Ed25519) public key persisted on a
-/// `ProviderPlatformKeys` account (`accountType == 11`).
-///
-/// Ed25519/SLIP-10 is hardened-only, so the wallet can never extend
-/// its platform-node pool without the seed — the batch is derived once
-/// at wallet registration (while the seed is available) and stored here
-/// so the Node Keys detail screen lists it with no keychain prompt. The
-/// 20-byte `nodeId` is `hash160(publicKey)`, precomputed on the Rust
-/// side (the host needs no RIPEMD-160). The private scalar is never
-/// stored — a per-index reveal re-derives it through the resolver.
-public struct DerivedPlatformNodeKey: Codable, Equatable, Hashable, Sendable {
-    /// Hardened key index within the platform-node pool (`#0..`).
-    public var index: UInt32
-    /// Raw 32-byte Ed25519 public key.
-    public var publicKey: Data
-    /// 20-byte platform node id (`hash160` of `publicKey`).
-    public var nodeId: Data
-
-    public init(index: UInt32, publicKey: Data, nodeId: Data) {
-        self.index = index
-        self.publicKey = publicKey
-        self.nodeId = nodeId
-    }
-}
-
 /// SwiftData model for persisting a wallet account.
 ///
 /// Each account represents an HD derivation path (BIP44, CoinJoin,
@@ -119,22 +94,6 @@ public final class PersistentAccount {
     /// `nil` values, so freshly-inserted unhydrated rows don't
     /// conflict.
     @Attribute(.unique) public var accountExtendedPubKeyBytes: Data?
-    /// Pre-derived platform-node (Ed25519) public keys for the
-    /// `ProviderPlatformKeys` account (`accountType == 11`), captured
-    /// at wallet registration while the seed was available. Empty for
-    /// every other account type, and for wallets created before this
-    /// field existed (the Node Keys screen then falls back to the
-    /// resolver-based "Load Keys" path). Populated once by
-    /// `on_persist_account_registrations_fn` and read directly by the
-    /// UI — never rewritten on the restore / re-persist cycle, so the
-    /// batch is durable across relaunches with no keychain prompt. See
-    /// [`DerivedPlatformNodeKey`].
-    ///
-    /// Declared with an inline default so SwiftData's lightweight
-    /// migration can add the column to stores created before this
-    /// field existed — without it, `ModelContainer` creation fatals
-    /// with `loadIssueModelContainer` on first launch after upgrade.
-    public var derivedPlatformNodeKeys: [DerivedPlatformNodeKey] = []
     /// Record timestamps.
     public var createdAt: Date
     public var lastUpdated: Date
@@ -216,7 +175,6 @@ public final class PersistentAccount {
         self.userIdentityId = Data()
         self.friendIdentityId = Data()
         self.accountExtendedPubKeyBytes = nil
-        self.derivedPlatformNodeKeys = []
         self.createdAt = Date()
         self.lastUpdated = Date()
         self.coreAddresses = []

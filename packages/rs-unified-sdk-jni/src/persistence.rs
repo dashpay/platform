@@ -140,6 +140,16 @@ pub(crate) fn build_vtable(context: *mut c_void) -> PersistenceCallbacks {
         on_persist_shielded_synced_indices_fn: Some(tramp_persist_shielded_synced_indices),
         #[cfg(feature = "shielded")]
         on_persist_shielded_activity_fn: Some(tramp_persist_shielded_activity),
+        // Orchard viewing keys (#4126, seedless shielded bind): Android
+        // has no viewing-key persistence yet — None keeps the documented
+        // fall-back (bind resolves the seed via the mnemonic resolver, the
+        // pre-#4126 behavior). Parity port tracked as a follow-up.
+        #[cfg(feature = "shielded")]
+        on_persist_shielded_viewing_keys_fn: None,
+        #[cfg(feature = "shielded")]
+        on_load_shielded_viewing_keys_fn: None,
+        #[cfg(feature = "shielded")]
+        on_load_shielded_viewing_keys_free_fn: None,
         #[cfg(feature = "shielded")]
         on_load_shielded_notes_fn: Some(tramp_load_shielded_notes),
         #[cfg(feature = "shielded")]
@@ -484,7 +494,12 @@ unsafe extern "C" fn tramp_persist_account_address_pools(
                 let code = env.with_local_frame(32, |env| {
                     let user = env.byte_array_from_slice(&spec.user_identity_id)?;
                     let friend = env.byte_array_from_slice(&spec.friend_identity_id)?;
-                    let pubkey = env.byte_array_from_slice(&a.public_key)?;
+                    // Typed key (#4127): exactly `public_key_len` leading
+                    // bytes are meaningful (33 ECDSA / 48 BLS / 32 EdDSA;
+                    // 0 = none). Forward only the meaningful bytes — the
+                    // Kotlin blob stays self-describing by length.
+                    let pk_len = (a.public_key_len as usize).min(a.public_key.len());
+                    let pubkey = env.byte_array_from_slice(&a.public_key[..pk_len])?;
                     let base58 = cstr(env, a.address_base58)?;
                     let path = cstr(env, a.derivation_path)?;
                     env.call_method(
@@ -502,7 +517,7 @@ unsafe extern "C" fn tramp_persist_account_address_pools(
                             (&friend).into(),
                             JValue::Byte(pool.pool_type_tag as i8),
                             (&pubkey).into(),
-                            JValue::Bool(a.has_public_key as u8),
+                            JValue::Bool(u8::from(a.public_key_len > 0)),
                             JValue::Byte(a.pool_type_tag as i8),
                             JValue::Int(a.address_index as i32),
                             JValue::Bool(a.is_used as u8),
@@ -2255,13 +2270,20 @@ fn build_core_address_pools(
                         |env| -> Result<CoreAddressRowStaged, jni::errors::Error> {
                             let r = env.get_object_array_element(&rows_arr, j as i32)?;
                             let pk_bytes = read_bytes_field_vec(env, &r, "publicKey")?;
-                            // `has_public_key` is implied by the exact
-                            // 33-byte length (Swift `publicKey.count == 33`);
-                            // zero-fill the fixed field when absent / short.
-                            let mut public_key = [0u8; 33];
-                            let has_public_key = pk_bytes.len() == 33;
-                            if has_public_key {
-                                public_key.copy_from_slice(&pk_bytes);
+                            // Typed key (#4127): the stored blob length is
+                            // self-describing — 33 ECDSA / 48 BLS / 32
+                            // EdDSA; anything else is treated as "no key"
+                            // (matching the FFI decode contract that a
+                            // (len, tag) mismatch means no key).
+                            let mut public_key = [0u8; 48];
+                            let (public_key_len, key_type_tag): (u8, u8) = match pk_bytes.len() {
+                                33 => (33, 0), // ECDSA
+                                48 => (48, 1), // BLS
+                                32 => (32, 2), // EdDSA
+                                _ => (0, 0),
+                            };
+                            if public_key_len > 0 {
+                                public_key[..pk_bytes.len()].copy_from_slice(&pk_bytes);
                             }
                             let address_index = env.get_field(&r, "addressIndex", "I")?.i()? as u32;
                             let is_used = env.get_field(&r, "isUsed", "Z")?.z()?;
@@ -2274,7 +2296,8 @@ fn build_core_address_pools(
                             Ok(CoreAddressRowStaged {
                                 entry: CoreAddressEntryFFI {
                                     public_key,
-                                    has_public_key,
+                                    public_key_len,
+                                    key_type_tag,
                                     pool_type_tag,
                                     address_index,
                                     is_used,
@@ -2893,11 +2916,6 @@ fn build_account_spec(
             friend_identity_id,
             account_xpub_bytes: ptr::null(),
             account_xpub_bytes_len: 0,
-            // Load-callback contract (see AccountSpecFFI): hosts leave the
-            // pre-derived platform-node keys null/0 on restore — the Rust
-            // load path never consumes them (write-callback display data).
-            derived_platform_node_keys: ptr::null(),
-            derived_platform_node_keys_count: 0,
         },
         xpub,
     })

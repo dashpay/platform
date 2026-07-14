@@ -325,80 +325,6 @@ extension SDK {
         }
     }
 
-    /// Top up an identity with instant lock
-    public func identityTopUp(
-        identity: OpaquePointer,
-        instantLock: Data,
-        transaction: Data,
-        outputIndex: UInt32,
-        privateKey: Data
-    ) async throws -> UInt64 {
-        let idBox = SendableOpaque(identity)
-        return try await withCheckedThrowingContinuation { continuation in
-            DispatchQueue.global().async { [weak self] in
-                guard let self = self, let handle = self.handle else {
-                    continuation.resume(throwing: SDKError.invalidState("SDK not initialized"))
-                    return
-                }
-
-                guard privateKey.count == 32 else {
-                    continuation.resume(throwing: SDKError.invalidParameter("Private key must be 32 bytes"))
-                    return
-                }
-
-                let result = instantLock.withUnsafeBytes { instantLockBytes in
-                    transaction.withUnsafeBytes { txBytes in
-                        privateKey.withUnsafeBytes { keyBytes in
-                            dash_sdk_identity_topup_with_instant_lock(
-                                handle,
-                                idBox.p,
-                                instantLockBytes.bindMemory(to: UInt8.self).baseAddress!,
-                                UInt(instantLock.count),
-                                txBytes.bindMemory(to: UInt8.self).baseAddress!,
-                                UInt(transaction.count),
-                                outputIndex,
-                                keyBytes.bindMemory(to: UInt8.self).baseAddress!.withMemoryRebound(to: (UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8).self, capacity: 1) { $0 },
-                                nil // Default put settings
-                            )
-                        }
-                    }
-                }
-
-
-                if result.error == nil {
-                    if result.data_type.rawValue == 3, // ResultIdentityHandle
-                       let toppedUpIdentityHandle = result.data {
-                        // Get identity info from the handle to retrieve the new balance
-                        let idPtr = OpaquePointer(toppedUpIdentityHandle)
-                        let infoPtr = dash_sdk_identity_get_info(idPtr)
-
-                        if let info = infoPtr {
-                            let balance = info.pointee.balance
-
-                            // Free the identity info structure
-                            dash_sdk_identity_info_free(info)
-
-                            // Destroy the topped up identity handle
-                            dash_sdk_identity_destroy(idPtr)
-
-                            continuation.resume(returning: balance)
-                        } else {
-                            // Destroy the identity handle
-                            dash_sdk_identity_destroy(idPtr)
-                            continuation.resume(throwing: SDKError.internalError("Failed to get identity info after topup"))
-                        }
-                    } else {
-                        continuation.resume(throwing: SDKError.internalError("Invalid result type"))
-                    }
-                } else {
-                    let errorString = result.error?.pointee.message != nil ?
-                        String(cString: result.error!.pointee.message) : "Unknown error"
-                    continuation.resume(throwing: SDKError.internalError(errorString))
-                }
-            }
-        }
-    }
-
     /// Transfer credits between identities
     public func identityTransferCredits(
         fromIdentity: OpaquePointer,
@@ -2589,31 +2515,6 @@ extension SDK {
             amount: amount,
             publicKeyId: 0, // Auto-select TRANSFER key
             signer: signer
-        )
-    }
-
-    /// Top up identity with instant lock (convenience method with DPPIdentity)
-    public func topUpIdentity(
-        _ identity: DPPIdentity,
-        instantLock: Data,
-        transaction: Data,
-        outputIndex: UInt32,
-        privateKey: Data
-    ) async throws -> UInt64 {
-        // Convert DPPIdentity to handle
-        let identityHandle = try identityToHandle(identity)
-        defer {
-            // Clean up the handle when done
-            dash_sdk_identity_destroy(identityHandle)
-        }
-
-        // Call the lower-level method
-        return try await identityTopUp(
-            identity: identityHandle,
-            instantLock: instantLock,
-            transaction: transaction,
-            outputIndex: outputIndex,
-            privateKey: privateKey
         )
     }
 

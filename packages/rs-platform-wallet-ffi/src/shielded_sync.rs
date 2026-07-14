@@ -15,17 +15,12 @@ use std::time::Duration;
 
 use platform_wallet::wallet::shielded::ShieldedSyncSummary;
 
-use zeroize::Zeroizing;
-
 use crate::error::*;
 use crate::handle::*;
-use crate::identity_keys_from_mnemonic::parse_mnemonic_any_language;
 use crate::runtime::{block_on_worker, runtime};
 use crate::shielded_types::ShieldedSyncWalletResultFFI;
 use crate::{check_ptr, unwrap_option_or_return};
-use rs_sdk_ffi::{
-    mnemonic_resolver_result, MnemonicResolverHandle, MNEMONIC_RESOLVER_BUFFER_CAPACITY,
-};
+use rs_sdk_ffi::MnemonicResolverHandle;
 
 impl ShieldedSyncWalletResultFFI {
     pub(crate) fn ok(wallet_id: [u8; 32], summary: &ShieldedSyncSummary) -> Self {
@@ -188,22 +183,31 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_sync_sync_now(
 // Bind shielded
 // ---------------------------------------------------------------------------
 
-/// Derive Orchard keys for the given wallet from the host-supplied
-/// mnemonic resolver and register the resulting accounts on the
-/// network-scoped shielded coordinator.
+/// Bind the given wallet's Orchard accounts on the network-scoped
+/// shielded coordinator — from persisted viewing keys when the host
+/// persister has them, falling back to a mnemonic-resolver seed
+/// derivation only when it doesn't.
 ///
 /// `accounts_ptr` / `accounts_len` describe the ZIP-32 account
-/// indices to derive. The slice must be non-empty and at most
+/// indices to bind. The slice must be non-empty and at most
 /// `64` entries; pass a one-element `[0]` array for the
 /// single-account default. Each entry produces an independent
-/// [`OrchardKeySet`] and bookkeeping `SubwalletId` inside the
-/// store; the same commitment tree backs every account on the
+/// viewing-key registration and bookkeeping `SubwalletId` inside
+/// the store; the same commitment tree backs every account on the
 /// network.
 ///
-/// The resolver fires exactly once per call. The mnemonic and the
-/// derived seed live in `Zeroizing` buffers and are scrubbed
-/// before this function returns; only the per-account FVK / IVK /
-/// OVK / default payment addresses survive on the wallet.
+/// **The resolver does NOT fire on the common path.** When every
+/// requested account has a persisted viewing key (written by the
+/// first seed-backed bind via
+/// `on_persist_shielded_viewing_keys_fn`), the bind completes from
+/// those rows and the mnemonic is never touched. The resolver fires
+/// exactly once only on the fallback (first bind after create /
+/// import, or persistence predating viewing-key rows); the mnemonic
+/// and the derived seed then live in `Zeroizing` buffers and are
+/// scrubbed before this function returns. In every case only the
+/// per-account FVK / IVK / OVK / default payment addresses survive
+/// on the wallet — no `SpendAuthorizingKey` stays resident; spends
+/// re-derive it per operation.
 ///
 /// **Prerequisite**: the host must have already called
 /// [`platform_wallet_manager_configure_shielded`] with the
@@ -220,8 +224,6 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_sync_sync_now(
 /// - `accounts_ptr` must point at `accounts_len` readable `u32`s.
 /// - `mnemonic_resolver_handle` must come from
 ///   [`crate::dash_sdk_mnemonic_resolver_create`].
-///
-/// [`OrchardKeySet`]: platform_wallet::wallet::shielded::OrchardKeySet
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_manager_bind_shielded(
     handle: Handle,
@@ -244,76 +246,10 @@ pub unsafe extern "C" fn platform_wallet_manager_bind_shielded(
     let mut wallet_id = [0u8; 32];
     std::ptr::copy_nonoverlapping(wallet_id_bytes, wallet_id.as_mut_ptr(), 32);
 
-    // Resolve mnemonic via the host callback.
-    let mut mnemonic_buf: Zeroizing<[u8; MNEMONIC_RESOLVER_BUFFER_CAPACITY]> =
-        Zeroizing::new([0u8; MNEMONIC_RESOLVER_BUFFER_CAPACITY]);
-    let mut mnemonic_len: usize = 0;
-
-    let resolver = &*mnemonic_resolver_handle;
-    let resolver_vtable = &*resolver.vtable;
-    let rc = (resolver_vtable.resolve)(
-        resolver.ctx as *const std::os::raw::c_void,
-        wallet_id_bytes,
-        mnemonic_buf.as_mut_ptr() as *mut c_char,
-        MNEMONIC_RESOLVER_BUFFER_CAPACITY,
-        &mut mnemonic_len,
-    );
-
-    match rc {
-        x if x == mnemonic_resolver_result::SUCCESS => {}
-        x if x == mnemonic_resolver_result::NOT_FOUND => {
-            return PlatformWalletFFIResult::err(
-                PlatformWalletFFIResultCode::ErrorWalletOperation,
-                "mnemonic missing for wallet",
-            );
-        }
-        x if x == mnemonic_resolver_result::BUFFER_TOO_SMALL => {
-            return PlatformWalletFFIResult::err(
-                PlatformWalletFFIResultCode::ErrorWalletOperation,
-                "mnemonic resolver buffer too small",
-            );
-        }
-        _ => {
-            return PlatformWalletFFIResult::err(
-                PlatformWalletFFIResultCode::ErrorWalletOperation,
-                "mnemonic resolver failed",
-            );
-        }
-    }
-    if mnemonic_len == 0 || mnemonic_len > MNEMONIC_RESOLVER_BUFFER_CAPACITY {
-        return PlatformWalletFFIResult::err(
-            PlatformWalletFFIResultCode::ErrorWalletOperation,
-            "mnemonic resolver returned empty buffer",
-        );
-    }
-
-    // Parse and derive seed. Both intermediate forms live in
-    // `Zeroizing` so they're scrubbed when this function exits.
-    let mnemonic_str = match std::str::from_utf8(&mnemonic_buf[..mnemonic_len]) {
-        Ok(s) => s,
-        Err(e) => {
-            return PlatformWalletFFIResult::err(
-                PlatformWalletFFIResultCode::ErrorUtf8Conversion,
-                format!("mnemonic is not valid UTF-8: {e}"),
-            );
-        }
-    };
-    let mnemonic = match parse_mnemonic_any_language(mnemonic_str) {
-        Ok(m) => m,
-        Err(e) => {
-            return PlatformWalletFFIResult::err(
-                PlatformWalletFFIResultCode::ErrorWalletOperation,
-                format!("invalid mnemonic: {e}"),
-            );
-        }
-    };
-    let seed: Zeroizing<[u8; 64]> = Zeroizing::new(mnemonic.to_seed(""));
-    drop(mnemonic);
-
     // Look up the wallet + the network-scoped shielded coordinator
     // on the manager. The coordinator owns the single SQLite handle
     // *and* the per-network sync-coordination registry; we hand it
-    // to `bind_shielded` so the wallet reuses the shared store and
+    // to the bind so the wallet reuses the shared store and
     // self-registers its viewing keys for the coordinator-driven
     // sync loop.
     let lookup = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
@@ -341,6 +277,34 @@ pub unsafe extern "C" fn platform_wallet_manager_bind_shielded(
                 "shielded support not configured — call platform_wallet_manager_configure_shielded first",
             );
         }
+    };
+
+    // Seedless path first: rebind from viewing keys persisted by a
+    // prior seed-backed bind. `Ok(false)` means at least one
+    // requested account has no persisted row — only then is the
+    // mnemonic resolved.
+    match runtime()
+        .block_on(wallet_arc.bind_shielded_from_persisted(accounts.as_slice(), &coordinator))
+    {
+        Ok(true) => return PlatformWalletFFIResult::ok(),
+        Ok(false) => {}
+        Err(e) => {
+            return PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorWalletOperation,
+                format!("bind_shielded_from_persisted failed: {e}"),
+            );
+        }
+    }
+
+    // Fallback: resolve the mnemonic via the host callback and
+    // derive from seed (which also persists the viewing keys so the
+    // next launch takes the seedless path above).
+    let seed = match crate::identity_keys_from_mnemonic::resolve_seed_from_resolver(
+        mnemonic_resolver_handle,
+        &wallet_id,
+    ) {
+        Ok(seed) => seed,
+        Err(result) => return result,
     };
 
     if let Err(e) = runtime().block_on(wallet_arc.bind_shielded(

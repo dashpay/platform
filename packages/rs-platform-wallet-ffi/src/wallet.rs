@@ -220,6 +220,11 @@ pub unsafe extern "C" fn platform_wallet_manager_list_masternodes(
     check_ptr!(wallet_id);
     check_ptr!(out_entries);
     check_ptr!(out_count);
+    // Initialise outputs immediately so the invalid-handle / unknown-wallet
+    // early returns below leave the caller looking at valid empty state
+    // rather than uninitialised / stale pointers.
+    *out_entries = std::ptr::null();
+    *out_count = 0;
 
     let wid: [u8; 32] = std::ptr::read(wallet_id as *const [u8; 32]);
 
@@ -245,7 +250,7 @@ pub unsafe extern "C" fn platform_wallet_manager_list_masternodes(
     };
 
     let aggregates = crate::core_wallet_types::aggregate_masternodes(
-        txs.iter().map(|(h, tx)| (*h, tx)),
+        txs.iter().map(|(h, p, tx)| (*h, *p, tx)),
         membership,
     );
 

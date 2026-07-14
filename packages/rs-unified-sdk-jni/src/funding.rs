@@ -671,6 +671,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shielde
     _class: JClass,
     manager_handle: jlong,
     wallet_id: JByteArray,
+    resolver_handle: jlong,
     account: jint,
     identity_index: jint,
     pubkeys_blob: JByteArray,
@@ -751,6 +752,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shielde
             platform_wallet_ffi::platform_wallet_manager_shielded_identity_create_from_pool(
                 manager_handle as Handle,
                 wid.as_ptr(),
+                resolver_handle as *mut MnemonicResolverHandle,
                 account as u32,
                 identity_index as u32,
                 ffi_rows.as_ptr(),
@@ -816,6 +818,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shielde
     _class: JClass,
     manager_handle: jlong,
     wallet_id: JByteArray,
+    resolver_handle: jlong,
     account: jint,
     recipient_raw43: JByteArray,
     amount: jlong,
@@ -849,6 +852,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shielde
             platform_wallet_ffi::platform_wallet_manager_shielded_transfer(
                 manager_handle as Handle,
                 wid.as_ptr(),
+                resolver_handle as *mut MnemonicResolverHandle,
                 account as u32,
                 recipient.as_ptr(),
                 amount as u64,
@@ -874,6 +878,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shielde
     _class: JClass,
     manager_handle: jlong,
     wallet_id: JByteArray,
+    resolver_handle: jlong,
     account: jint,
     to_platform_address: JString,
     amount: jlong,
@@ -898,6 +903,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shielde
             platform_wallet_ffi::platform_wallet_manager_shielded_unshield(
                 manager_handle as Handle,
                 wid.as_ptr(),
+                resolver_handle as *mut MnemonicResolverHandle,
                 account as u32,
                 to_addr.as_ptr(),
                 amount as u64,
@@ -923,6 +929,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shielde
     _class: JClass,
     manager_handle: jlong,
     wallet_id: JByteArray,
+    resolver_handle: jlong,
     account: jint,
     to_core_address: JString,
     amount: jlong,
@@ -953,6 +960,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shielde
             platform_wallet_ffi::platform_wallet_manager_shielded_withdraw(
                 manager_handle as Handle,
                 wid.as_ptr(),
+                resolver_handle as *mut MnemonicResolverHandle,
                 account as u32,
                 to_addr.as_ptr(),
                 amount as u64,

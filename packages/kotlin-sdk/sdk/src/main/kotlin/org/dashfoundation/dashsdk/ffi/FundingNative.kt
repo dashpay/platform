@@ -131,6 +131,7 @@ internal object FundingNative {
     external fun shieldedIdentityCreateFromPool(
         managerHandle: Long,
         walletId: ByteArray,
+        resolverHandle: Long,
         account: Int,
         identityIndex: Int,
         pubkeysBlob: ByteArray,
@@ -156,6 +157,7 @@ internal object FundingNative {
     external fun shieldedTransfer(
         managerHandle: Long,
         walletId: ByteArray,
+        resolverHandle: Long,
         account: Int,
         recipientRaw43: ByteArray,
         amount: Long,
@@ -171,6 +173,7 @@ internal object FundingNative {
     external fun shieldedUnshield(
         managerHandle: Long,
         walletId: ByteArray,
+        resolverHandle: Long,
         account: Int,
         toPlatformAddress: String,
         amount: Long,
@@ -186,6 +189,7 @@ internal object FundingNative {
     external fun shieldedWithdraw(
         managerHandle: Long,
         walletId: ByteArray,
+        resolverHandle: Long,
         account: Int,
         toCoreAddress: String,
         amount: Long,

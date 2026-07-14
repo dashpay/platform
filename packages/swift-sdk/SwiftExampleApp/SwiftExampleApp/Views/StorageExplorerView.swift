@@ -164,6 +164,13 @@ struct StorageExplorerView: View {
             ) {
                 ShieldedActivityStorageListView(network: network)
             }
+            modelRow(
+                "Shielded Viewing Keys",
+                icon: "eye",
+                type: PersistentShieldedViewingKey.self
+            ) {
+                ShieldedViewingKeyStorageListView(network: network)
+            }
         }
         .navigationTitle("Storage Explorer")
         .toolbar {
@@ -313,6 +320,9 @@ struct StorageExplorerView: View {
             walletsOnNetwork.contains($0.walletId)
         }
         filteredCount(PersistentShieldedActivity.self) {
+            walletsOnNetwork.contains($0.walletId)
+        }
+        filteredCount(PersistentShieldedViewingKey.self) {
             walletsOnNetwork.contains($0.walletId)
         }
         filteredCount(PersistentAssetLock.self) {

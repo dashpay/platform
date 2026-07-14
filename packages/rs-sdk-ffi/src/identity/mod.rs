@@ -13,7 +13,6 @@ mod put;
 mod queries;
 mod test_transfer;
 mod top_up_from_addresses;
-mod topup;
 mod transfer;
 mod transfer_to_addresses;
 mod withdraw;
@@ -43,9 +42,6 @@ pub use test_transfer::dash_sdk_test_identity_transfer_crash;
 pub use top_up_from_addresses::{
     dash_sdk_identity_top_up_from_addresses, dash_sdk_identity_top_up_from_addresses_result_free,
     DashSDKIdentityTopUpFromAddressesResult,
-};
-pub use topup::{
-    dash_sdk_identity_topup_with_instant_lock, dash_sdk_identity_topup_with_instant_lock_and_wait,
 };
 pub use transfer::{
     dash_sdk_identity_transfer_credits, dash_sdk_transfer_credits_result_free,

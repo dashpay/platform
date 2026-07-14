@@ -1023,6 +1023,7 @@ class PlatformWalletManager(
             FundingNative.shieldedIdentityCreateFromPool(
                 managerHandle,
                 walletId,
+                mnemonicResolver.nativeHandle,
                 account,
                 identityIndex,
                 org.dashfoundation.dashsdk.identity.IdentityKeyPreview.encodeForRegistration(keys),
@@ -1165,7 +1166,7 @@ class PlatformWalletManager(
         amount: Long,
         account: Int = 0,
         memo: String? = null,
-    ): Unit = withContext(Dispatchers.IO) {
+    ): Unit = teardownGate.op {
         require(amount > 0) { "amount must be positive, got $amount" }
         require(account >= 0) { "account must be non-negative, got $account" }
         require(recipientRaw43.size == 43) {
@@ -1175,6 +1176,7 @@ class PlatformWalletManager(
             FundingNative.shieldedTransfer(
                 managerHandle,
                 walletId,
+                mnemonicResolver.nativeHandle,
                 account,
                 recipientRaw43,
                 amount,
@@ -1200,7 +1202,7 @@ class PlatformWalletManager(
         toPlatformAddress: String,
         amount: Long,
         account: Int = 0,
-    ): Unit = withContext(Dispatchers.IO) {
+    ): Unit = teardownGate.op {
         require(amount > 0) { "amount must be positive, got $amount" }
         require(account >= 0) { "account must be non-negative, got $account" }
         require(toPlatformAddress.isNotBlank()) { "toPlatformAddress is empty" }
@@ -1208,6 +1210,7 @@ class PlatformWalletManager(
             FundingNative.shieldedUnshield(
                 managerHandle,
                 walletId,
+                mnemonicResolver.nativeHandle,
                 account,
                 toPlatformAddress,
                 amount,
@@ -1235,7 +1238,7 @@ class PlatformWalletManager(
         amount: Long,
         coreFeePerByte: Int = 1,
         account: Int = 0,
-    ): Unit = withContext(Dispatchers.IO) {
+    ): Unit = teardownGate.op {
         require(amount > 0) { "amount must be positive, got $amount" }
         require(account >= 0) { "account must be non-negative, got $account" }
         require(coreFeePerByte > 0) {
@@ -1246,6 +1249,7 @@ class PlatformWalletManager(
             FundingNative.shieldedWithdraw(
                 managerHandle,
                 walletId,
+                mnemonicResolver.nativeHandle,
                 account,
                 toCoreAddress,
                 amount,

@@ -12,12 +12,13 @@
 //!   broadcasting a **new Core asset lock** (same mechanism as identity
 //!   registration), driven by a Core-side `MnemonicResolverHandle`.
 //!
-//! Top-up state-transitions are signed entirely with the Platform
-//! address inputs' private keys (the SDK uses `BalanceTransfer` to
-//! credit the existing identity), so this FFI takes a single
-//! `SignerHandle` — `signer_address_handle` — used as
-//! `Signer<PlatformAddress>`. No identity-key signer is needed
-//! (existing identity, no IdentityCreate to sign).
+//! The address path's top-up state-transitions are signed entirely with
+//! the Platform address inputs' private keys (the SDK uses
+//! `BalanceTransfer` to credit the existing identity), so that FFI takes a
+//! single `SignerHandle` — `signer_address_handle` — used as
+//! `Signer<PlatformAddress>`. Neither path needs an identity-key signer
+//! (existing identity, no IdentityCreate to sign); the asset-lock path is
+//! signed by the lock's Core-side key via the `MnemonicResolver`.
 //!
 //! On success the function writes the post-transition credit balance
 //! back through `out_new_balance`. The local `ManagedIdentity`
@@ -65,6 +66,7 @@ use crate::{unwrap_option_or_return, unwrap_result_or_return};
 ///   The caller retains ownership; this function does NOT destroy it.
 /// - `out_new_balance` must be writable for the duration of the call.
 #[no_mangle]
+#[allow(clippy::too_many_arguments)]
 pub unsafe extern "C" fn platform_wallet_top_up_from_addresses_with_signer(
     wallet_handle: Handle,
     identity_id: *const [u8; 32],
@@ -85,7 +87,7 @@ pub unsafe extern "C" fn platform_wallet_top_up_from_addresses_with_signer(
     }
 
     let identity_id_bytes: [u8; 32] = *identity_id;
-    let identity_id = Identifier::from(identity_id_bytes);
+    let identity_id = Identifier::from_bytes(&identity_id_bytes).unwrap_or_default();
 
     let entries = slice::from_raw_parts(inputs, inputs_count);
     let mut input_map: BTreeMap<PlatformAddress, Credits> = BTreeMap::new();
@@ -140,6 +142,23 @@ pub unsafe extern "C" fn platform_wallet_top_up_from_addresses_with_signer(
     PlatformWalletFFIResult::ok()
 }
 
+/// Minimum asset-lock funding for a Core-funded identity top-up, in duffs.
+///
+/// Platform rejects an `IdentityTopUp` whose asset-lock output value (in
+/// credits) is below `IdentityTopUpTransition::calculate_min_required_fee`.
+/// Under the active fee version (v1) that minimum is
+/// `identity_topup_base_cost` (500_000 credits = 500 duffs) **plus**
+/// `required_asset_lock_duff_balance_for_processing_start_for_identity_top_up`
+/// (50_000 duffs) — i.e. 50_500 duffs. Below that, a lock built and broadcast
+/// here is accepted by Core (spending real UTXOs) but rejected by Platform,
+/// stranding the funds in a lock that can never complete the top-up. Reject
+/// sub-floor amounts up front so no such lock is ever broadcast.
+///
+/// (The bare 50_000 asset-lock floor alone was the fee-v0 minimum; the active
+/// v1 calc — `STATE_TRANSITION_VERSIONS_V3`, protocol v11+ — adds the base
+/// cost, so this constant must include it.)
+const MIN_TOP_UP_DUFFS: u64 = 50_500;
+
 /// Top up an existing identity's credit balance by building and
 /// broadcasting a **new Core asset lock** (the same funding mechanism as
 /// identity registration), distinct from
@@ -163,6 +182,9 @@ pub unsafe extern "C" fn platform_wallet_top_up_from_addresses_with_signer(
 /// credit balance Platform returns; the local `ManagedIdentity` balance is
 /// updated + queued for persistence inside the library call.
 ///
+/// `amount_duffs` must be at least [`MIN_TOP_UP_DUFFS`]; a smaller amount is
+/// rejected with `ErrorInvalidParameter` before any lock is broadcast.
+///
 /// # Safety
 /// - `wallet_handle` must come from the platform-wallet handle registry.
 /// - `identity_id` must point at a 32-byte identity id buffer for the
@@ -173,6 +195,7 @@ pub unsafe extern "C" fn platform_wallet_top_up_from_addresses_with_signer(
 ///   ownership; this function does NOT destroy it.
 /// - `out_new_balance` must be writable for the duration of the call.
 #[no_mangle]
+#[allow(clippy::too_many_arguments)]
 pub unsafe extern "C" fn platform_wallet_top_up_identity_with_funding_signer(
     wallet_handle: Handle,
     identity_id: *const [u8; 32],
@@ -184,15 +207,18 @@ pub unsafe extern "C" fn platform_wallet_top_up_identity_with_funding_signer(
     check_ptr!(identity_id);
     check_ptr!(core_signer_handle);
     check_ptr!(out_new_balance);
-    if amount_duffs == 0 {
+    // FFI-safe sentinel before any fallible work, matching the sibling
+    // `platform_wallet_topup_identity_with_existing_asset_lock_signer`.
+    *out_new_balance = 0;
+    if amount_duffs < MIN_TOP_UP_DUFFS {
         return PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorInvalidParameter,
-            "`amount_duffs` is zero",
+            "`amount_duffs` is below the minimum top-up asset-lock balance",
         );
     }
 
     let identity_id_bytes: [u8; 32] = *identity_id;
-    let identity_id = Identifier::from(identity_id_bytes);
+    let identity_id = Identifier::from_bytes(&identity_id_bytes).unwrap_or_default();
 
     // Round-trip the handle through `usize` so the spawned future's
     // capture is `Send + 'static` — same pattern as the registration
@@ -232,4 +258,89 @@ pub unsafe extern "C" fn platform_wallet_top_up_identity_with_funding_signer(
     let new_balance = unwrap_result_or_return!(result);
     *out_new_balance = new_balance;
     PlatformWalletFFIResult::ok()
+}
+
+#[cfg(test)]
+mod top_up_with_funding_guard_tests {
+    use super::*;
+    use crate::error::PlatformWalletFFIResultCode;
+
+    /// A non-null but never-dereferenced core-signer pointer. Every guard
+    /// under test returns before the handle is used, so a dangling pointer
+    /// is sufficient (and never unsound here).
+    fn dangling_core_signer() -> *mut MnemonicResolverHandle {
+        std::ptr::NonNull::<MnemonicResolverHandle>::dangling().as_ptr()
+    }
+
+    #[test]
+    fn rejects_null_identity_id() {
+        let mut balance = 0u64;
+        let res = unsafe {
+            platform_wallet_top_up_identity_with_funding_signer(
+                0,
+                std::ptr::null(),
+                MIN_TOP_UP_DUFFS,
+                0,
+                dangling_core_signer(),
+                &mut balance,
+            )
+        };
+        assert_eq!(res.code, PlatformWalletFFIResultCode::ErrorNullPointer);
+    }
+
+    #[test]
+    fn rejects_null_core_signer() {
+        let id = [0u8; 32];
+        let mut balance = 0u64;
+        let res = unsafe {
+            platform_wallet_top_up_identity_with_funding_signer(
+                0,
+                &id,
+                MIN_TOP_UP_DUFFS,
+                0,
+                std::ptr::null_mut(),
+                &mut balance,
+            )
+        };
+        assert_eq!(res.code, PlatformWalletFFIResultCode::ErrorNullPointer);
+    }
+
+    #[test]
+    fn rejects_null_out_balance() {
+        let id = [0u8; 32];
+        let res = unsafe {
+            platform_wallet_top_up_identity_with_funding_signer(
+                0,
+                &id,
+                MIN_TOP_UP_DUFFS,
+                0,
+                dangling_core_signer(),
+                std::ptr::null_mut(),
+            )
+        };
+        assert_eq!(res.code, PlatformWalletFFIResultCode::ErrorNullPointer);
+    }
+
+    #[test]
+    fn rejects_sub_floor_amount() {
+        let id = [0u8; 32];
+        let mut balance = 0u64;
+        for amount in [0u64, MIN_TOP_UP_DUFFS - 1] {
+            let res = unsafe {
+                platform_wallet_top_up_identity_with_funding_signer(
+                    0,
+                    &id,
+                    amount,
+                    0,
+                    dangling_core_signer(),
+                    &mut balance,
+                )
+            };
+            assert_eq!(
+                res.code,
+                PlatformWalletFFIResultCode::ErrorInvalidParameter,
+                "amount {amount} below MIN_TOP_UP_DUFFS should be rejected"
+            );
+        }
+    }
 }
