@@ -23,8 +23,15 @@ public final class PersistentCoreAddress {
     public var publicKey: Data
     /// `KeyTypeTagFFI` raw value identifying the curve of `publicKey`:
     /// 0 ECDSA / 1 BLS / 2 EdDSA. Meaningful only when `publicKey` is
-    /// non-empty.
-    public var keyType: UInt8
+    /// non-empty. The stored default (NOT just the init-parameter
+    /// default, which SwiftData migration never consults) keeps
+    /// pre-column stores openable: without it, lightweight migration
+    /// fails with "missing attribute values on mandatory destination
+    /// attribute" and the container refuses to load — a launch crash on
+    /// every device that has existing rows. Defaulted rows read as
+    /// ECDSA until the next Rust address-pool persist pulse re-tags
+    /// typed entries, which it does on every load.
+    public var keyType: UInt8 = 0
     /// `AddressPoolTypeTagFFI` raw value — 0 External, 1 Internal,
     /// 2 Absent, 3 AbsentHardened.
     public var poolTypeTag: UInt8
