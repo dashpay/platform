@@ -58,6 +58,21 @@ pub struct AssetLockManager<B: TransactionBroadcaster + ?Sized> {
     /// `let _cs = ...`. Every emitted changeset now flows straight
     /// into `queue_persist` here.
     pub(super) persister: WalletPersister,
+    /// Serializes the funding-index-critical section of
+    /// [`broadcast_funded_asset_lock`](Self::broadcast_funded_asset_lock) —
+    /// build (index allocation + in-memory mark-used) through the address-pool
+    /// persist/flush. Without it, two concurrent builds can interleave so that
+    /// the FIRST build's pool snapshot (collected before the second build
+    /// marked its index) is persisted LAST, rolling the durable snapshot back
+    /// to a state where the second index reads unused — after a restart the
+    /// next invitation re-selects that index and re-exports the same bearer
+    /// voucher key. A dedicated mutex (never held while awaiting
+    /// `wallet_manager`'s lock from outside this section, and never acquired
+    /// by code that already holds it) avoids the self-deadlock a
+    /// `wallet_manager.write()` guard would cause across the build→persist
+    /// span. Deliberately NOT held across the broadcast/proof-wait — only the
+    /// snapshot ordering needs serialization.
+    pub(super) build_persist_serial: tokio::sync::Mutex<()>,
 }
 
 impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
@@ -77,6 +92,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             lock_notify,
             broadcaster,
             persister,
+            build_persist_serial: tokio::sync::Mutex::new(()),
         }
     }
 

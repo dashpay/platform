@@ -139,14 +139,21 @@ struct DashPayTabView: View {
     /// (`.onChange`) and the cold-launch path (`.onAppear`); the nil guard makes
     /// the second call after the first clears it a no-op (no double-present).
     private func consumePendingInviteURL() {
+        guard appUIState.pendingInviteURL != nil else { return }
+        // NEVER replace the sheet mid-claim: re-seeding recreates the view,
+        // orphaning the in-flight claim task, and a second claim would race
+        // the first for the same unused identity index. Leave the URL pending;
+        // the `.onChange(of: invitationClaimInFlight)` below re-consumes it
+        // once the claim reaches a terminal state.
+        guard !appUIState.invitationClaimInFlight else { return }
         guard let urlString = appUIState.pendingInviteURL else { return }
         // Clear the bearer URL immediately so it can't linger in @Published; the
         // nil-write re-fires this via .onChange, where the guard above no-ops.
         appUIState.pendingInviteURL = nil
         guard let walletId = claimWalletId else { return }
-        // A fresh ClaimInvite (new id) presents the sheet — and RE-presents it if
-        // one is already open, so a second invite link arriving mid-claim
-        // re-seeds it with the new URI instead of being dropped.
+        // A fresh ClaimInvite (new id) presents the sheet — and RE-presents it
+        // if one is already open IDLE, so a second invite link re-seeds it with
+        // the new URI instead of being dropped (mid-claim it defers above).
         claimInvite = ClaimInvite(walletId: walletId, initialURI: urlString)
     }
 
@@ -248,6 +255,14 @@ struct DashPayTabView: View {
                         initialURI: invite.initialURI
                     )
                     .environmentObject(walletManager)
+                    .environmentObject(appUIState)
+                }
+                .onChange(of: appUIState.invitationClaimInFlight) { _, inFlight in
+                    // A link that arrived mid-claim was deferred (left in
+                    // pendingInviteURL); consume it now that the claim ended.
+                    if !inFlight {
+                        consumePendingInviteURL()
+                    }
                 }
                 .onChange(of: appUIState.pendingInviteURL) { _, _ in
                     // Warm path: the app is already running, so the tab observes

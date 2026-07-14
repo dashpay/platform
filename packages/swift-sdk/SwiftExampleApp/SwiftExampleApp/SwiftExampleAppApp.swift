@@ -29,6 +29,14 @@ final class AppUIState: ObservableObject {
     /// by the tab once consumed. (The URL embeds a one-time voucher key — treat
     /// it as a secret; never log it.)
     @Published var pendingInviteURL: String?
+
+    /// Whether an invitation claim is currently in flight. Set by
+    /// `ClaimInvitationSheet` around its claim task; observed by
+    /// `DashPayTabView` so a second invite link arriving mid-claim DEFERS
+    /// (stays in `pendingInviteURL`) instead of re-presenting the sheet —
+    /// replacing the sheet would orphan the running claim task and let a
+    /// second claim race the first for the same unused identity index.
+    @Published var invitationClaimInFlight = false
 }
 
 @main

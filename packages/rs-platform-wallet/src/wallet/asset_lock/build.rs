@@ -420,6 +420,18 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         identity_index: u32,
         signer: &S,
     ) -> Result<(DerivationPath, OutPoint), PlatformWalletError> {
+        // Serialize build→persist so a concurrent build cannot interleave its
+        // pool snapshot with ours. The snapshot is collected from live wallet
+        // state at persist time; without this guard, build A's snapshot
+        // (missing B's just-marked index) can be persisted AFTER B's,
+        // rolling the durable used-index state back — after a restart the
+        // next invitation would re-select B's index and re-export the same
+        // bearer voucher key. Held through the persist/flush gate below and
+        // dropped before the broadcast (only snapshot ordering needs
+        // serializing; the UI's own single-flight guard is NOT sufficient —
+        // a dismissed sheet's unstructured task keeps running).
+        let build_persist_guard = self.build_persist_serial.lock().await;
+
         // 1. Build the asset lock transaction.
         let (tx, path) = self
             .build_asset_lock_transaction(
@@ -463,6 +475,10 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 )));
             }
         }
+
+        // The durable snapshot now includes this build's index; broadcast and
+        // everything after it can safely run concurrently with the next build.
+        drop(build_persist_guard);
 
         // 2. Track as Built and queue the changeset onto the persister
         //    so a crash after broadcast leaves a row we can recover from.
@@ -952,6 +968,146 @@ mod tests {
             matches!(rebuild, Err(PlatformWalletError::AssetLockTransaction(_))),
             "rebuild must fail at input selection while the reservation is \
              kept for the advanced row, got {rebuild:?}"
+        );
+    }
+
+    /// Persistence stub whose FIRST address-pool store blocks on a 2-party
+    /// barrier until the test arrives, holding that build inside its persist
+    /// while the other build runs. Later stores pass straight through.
+    struct GatedPoolPersistence {
+        stored: Mutex<Vec<PlatformWalletChangeSet>>,
+        first_pool_store: std::sync::Barrier,
+        gate_used: std::sync::atomic::AtomicBool,
+    }
+
+    impl PlatformWalletPersistence for GatedPoolPersistence {
+        fn store(
+            &self,
+            _wallet_id: WalletId,
+            changeset: PlatformWalletChangeSet,
+        ) -> Result<(), PersistenceError> {
+            if !changeset.account_address_pools.is_empty()
+                && !self
+                    .gate_used
+                    .swap(true, std::sync::atomic::Ordering::SeqCst)
+            {
+                self.first_pool_store.wait();
+            }
+            self.stored
+                .lock()
+                .expect("gated persistence mutex")
+                .push(changeset);
+            Ok(())
+        }
+
+        fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+
+        fn load(&self) -> Result<ClientStartState, PersistenceError> {
+            Ok(ClientStartState::default())
+        }
+    }
+
+    /// Two concurrent invitation builds must not be able to roll the durable
+    /// used-index snapshot backwards. The pool snapshot is collected from live
+    /// wallet state at persist time; unserialized, build A's snapshot
+    /// (collected before B marked its index) can be persisted AFTER B's, so
+    /// the last durable snapshot loses B's index — after a restart the next
+    /// invitation re-selects it and re-exports the same bearer voucher key.
+    /// The barrier holds the first-persisting build inside its store while
+    /// the other runs: without the
+    /// build→persist serialization, B's fuller snapshot lands first and A's
+    /// stale one overwrites it (this test is red); with it, B parks until A's
+    /// persist completes, so snapshots are monotonic.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn concurrent_invitation_builds_cannot_roll_back_the_used_index_snapshot() {
+        use key_wallet::account::AccountType;
+
+        let (wallet_manager, wallet_id, _balance, signer) =
+            crate::test_support::funded_wallet_manager_with_outputs(
+                StandardAccountType::BIP44Account,
+                &[10_000_000, 10_000_000],
+            )
+            .await;
+
+        let persistence = Arc::new(GatedPoolPersistence {
+            stored: Mutex::new(Vec::new()),
+            first_pool_store: std::sync::Barrier::new(2),
+            gate_used: std::sync::atomic::AtomicBool::new(false),
+        });
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let manager = Arc::new(AssetLockManager::new(
+            sdk,
+            wallet_manager,
+            wallet_id,
+            Arc::new(Notify::new()),
+            Arc::new(AlwaysOkBroadcaster),
+            WalletPersister::new(
+                wallet_id,
+                Arc::clone(&persistence) as Arc<dyn PlatformWalletPersistence>,
+            ),
+        ));
+
+        let manager_a = Arc::clone(&manager);
+        let signer_a = signer.clone();
+        let a = tokio::spawn(async move {
+            manager_a
+                .broadcast_funded_asset_lock(
+                    1_000_000,
+                    0,
+                    AssetLockFundingType::IdentityInvitation,
+                    0,
+                    &signer_a,
+                )
+                .await
+        });
+
+        let manager_b = Arc::clone(&manager);
+        let b = tokio::spawn(async move {
+            manager_b
+                .broadcast_funded_asset_lock(
+                    1_000_000,
+                    0,
+                    AssetLockFundingType::IdentityInvitation,
+                    0,
+                    &signer,
+                )
+                .await
+        });
+
+        // Whichever build stores its pool first is now parked at the barrier
+        // (inside the serialized section). Give the other build time to
+        // (wrongly) run its own build + persist meanwhile — with the
+        // serialization it parks on the mutex instead — then join the barrier
+        // to release the held build.
+        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+        persistence.first_pool_store.wait();
+
+        a.await.expect("join A").expect("build A succeeds");
+        b.await.expect("join B").expect("build B succeeds");
+
+        // Successive persisted invitation-pool snapshots must never lose a
+        // used index, and both builds' indices must end up durably used.
+        let stored = persistence.stored.lock().expect("gated persistence mutex");
+        let mut last_used = 0usize;
+        for cs in stored.iter() {
+            for entry in cs
+                .account_address_pools
+                .iter()
+                .filter(|e| matches!(e.account_type, AccountType::IdentityInvitation))
+            {
+                let used = entry.addresses.iter().filter(|a| a.used).count();
+                assert!(
+                    used >= last_used,
+                    "invitation pool snapshot rolled back: {used} used after {last_used}"
+                );
+                last_used = used;
+            }
+        }
+        assert!(
+            last_used >= 2,
+            "both builds' funding indices must be durably marked used, got {last_used}"
         );
     }
 

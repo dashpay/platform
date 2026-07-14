@@ -21,6 +21,7 @@ struct ClaimInvitationSheet: View {
     let network: Network
 
     @EnvironmentObject private var walletManager: PlatformWalletManager
+    @EnvironmentObject private var appUIState: AppUIState
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
 
@@ -74,7 +75,13 @@ struct ClaimInvitationSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
+                    // Gated while a claim is in flight: dismissing mid-claim
+                    // would leave the unstructured task to finish (and show its
+                    // contact prompt) behind a gone sheet, and a re-open could
+                    // start an overlapping claim racing the same unused
+                    // identity index. Mirrors ReclaimInvitationSheet.
                     Button("Cancel") { dismiss() }
+                        .disabled(isClaiming)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     if isClaiming {
@@ -88,6 +95,8 @@ struct ClaimInvitationSheet: View {
             }
             .onChange(of: uri) { _, _ in refreshPreview() }
             .onAppear { refreshPreview() }
+            // Swipe-to-dismiss is gated for the same reason as Cancel above.
+            .interactiveDismissDisabled(isClaiming)
             .alert(
                 contactPrompt.map { "Add \($0.username)?" } ?? "",
                 isPresented: Binding(
@@ -176,9 +185,15 @@ struct ClaimInvitationSheet: View {
         // claiming, so this is belt-and-suspenders coherence).
         let submittedURI = trimmedURI
         isClaiming = true
+        // Published so DashPayTabView defers a second invite link instead of
+        // re-presenting (and thereby recreating) this sheet mid-claim.
+        appUIState.invitationClaimInFlight = true
         errorMessage = nil
         Task { @MainActor in
-            defer { isClaiming = false }
+            defer {
+                isClaiming = false
+                appUIState.invitationClaimInFlight = false
+            }
             do {
                 guard let wallet = walletManager.wallet(for: walletId) else {
                     errorMessage = "No wallet loaded."

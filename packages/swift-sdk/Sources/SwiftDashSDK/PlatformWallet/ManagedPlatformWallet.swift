@@ -2193,9 +2193,11 @@ extension ManagedPlatformWallet {
                 platform_wallet_string_free(out.inviter_username)
             }
         }
-        let inviterId: Data? = out.has_inviter
-            ? withUnsafeBytes(of: out.inviter_id) { Data($0) }
-            : nil
+        // Always nil, matching the documented contract: the legacy link
+        // carries no inviter identity id (the ABI's `inviter_id` is
+        // deliberately all-zero), and surfacing a zero sentinel here would let
+        // a consumer skip the required DPNS username resolution.
+        let inviterId: Data? = nil
         let inviterUsername: String? = out.inviter_username.map { String(cString: $0) }
         return InvitationPreview(
             structurallyValid: out.structurally_valid,
