@@ -33,6 +33,18 @@ use dpp::version::PlatformVersion;
 
 use crate::spv::SpvRuntime;
 
+/// Hex-encode the first 8 bytes of a quorum hash for correlation in logs.
+///
+/// A prefix is enough to line a served key up with the proof that requested it
+/// without dumping the full 32 bytes on every lookup.
+fn hex_prefix(bytes: &[u8; 32]) -> String {
+    use std::fmt::Write;
+    bytes[..8].iter().fold(String::new(), |mut s, b| {
+        let _ = write!(s, "{b:02x}");
+        s
+    })
+}
+
 /// Context provider backed by an SPV client's synced masternode data.
 ///
 /// Delegates quorum-key lookups to the shared [`SpvRuntime`]; the same runtime
@@ -73,14 +85,36 @@ impl ContextProvider for SpvContextProvider {
                 "SPV quorum lookup called outside a Tokio runtime".to_string(),
             )
         })?;
-        tokio::task::block_in_place(|| {
+        let result = tokio::task::block_in_place(|| {
             handle.block_on(self.spv.get_quorum_public_key(
                 quorum_type,
                 quorum_hash,
                 core_chain_locked_height,
             ))
         })
-        .map_err(|e| ContextProviderError::InvalidQuorum(e.to_string()))
+        .map_err(|e| ContextProviderError::InvalidQuorum(e.to_string()));
+
+        // The quorum public key is the trust root of every Platform proof this
+        // SDK verifies; tracing which provider served it lets an operator
+        // confirm proofs are validated against SPV-synced state rather than the
+        // trusted HTTP fallback. Hash prefix only, to correlate without noise.
+        match &result {
+            Ok(_) => tracing::debug!(
+                quorum_type,
+                height = core_chain_locked_height,
+                quorum_hash = %hex_prefix(&quorum_hash),
+                "SPV context provider served quorum public key",
+            ),
+            Err(e) => tracing::debug!(
+                quorum_type,
+                height = core_chain_locked_height,
+                quorum_hash = %hex_prefix(&quorum_hash),
+                error = %e,
+                "SPV context provider quorum lookup missed",
+            ),
+        }
+
+        result
     }
 
     fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {

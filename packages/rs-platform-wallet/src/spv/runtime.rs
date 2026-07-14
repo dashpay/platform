@@ -165,12 +165,16 @@ impl SpvRuntime {
         ))?;
 
         let llmq_type = LLMQType::from(quorum_type as u8);
-        // `quorum_hash` arrives in internal byte order (drive-abci sends it via
-        // `to_byte_array()`, verified by the consensus equality check in
-        // finalize_block_proposal), and the masternode engine keys its quorum
-        // map in that same internal order. So the lookup key must NOT be
-        // reversed — reversing guarantees a miss on every real quorum.
-        let qh = QuorumHash::from_byte_array(quorum_hash);
+        // The masternode engine keys its quorum map in internal byte order, but
+        // the SDK's proof verifier supplies `quorum_hash` in display (reversed)
+        // order — the same order the trusted HTTP provider matches against. The
+        // bytes must therefore be reversed before building the lookup key;
+        // without this every real quorum misses. Verified against a synced
+        // testnet node: the engine stores the reversed form of each requested
+        // hash (e.g. requested `0000…7f`, stored `…000000`).
+        let mut internal_order = quorum_hash;
+        internal_order.reverse();
+        let qh = QuorumHash::from_byte_array(internal_order);
 
         let quorum = client
             .get_quorum_at_height(height, llmq_type, qh)
@@ -469,44 +473,47 @@ mod tests {
     /// Regression guard for the quorum-hash byte order in
     /// [`SpvRuntime::get_quorum_public_key`].
     ///
-    /// A Platform proof carries `quorum_hash` in internal byte order
-    /// (drive-abci emits it via `to_byte_array()`), and the masternode engine
-    /// keys its quorum map — `quorum_entry_of_type_for_quorum_hash`, i.e. a
-    /// `BTreeMap<QuorumHash, _>::get` — in that same internal order. So the
-    /// lookup key must be `QuorumHash::from_byte_array(quorum_hash)` with **no**
-    /// reversal, which is what `get_quorum_public_key` now uses.
+    /// The masternode engine keys its quorum map — `quorum_entry_of_type_for_quorum_hash`,
+    /// a `BTreeMap<QuorumHash, _>::get` — in internal byte order, but the SDK
+    /// proof verifier supplies `quorum_hash` in display (reversed) order (the
+    /// same order the trusted HTTP provider matches against). So the lookup key
+    /// must reverse the bytes first, which is what `get_quorum_public_key` does.
     ///
-    /// A previous version reversed it (`.reverse()`); this test pins why that
-    /// was wrong: the reversed key is absent from the map, so every real lookup
-    /// missed and fell through to fail-closed rejection (silently masked by the
-    /// trusted-quorum fallback). Re-introducing the reversal fails this test.
+    /// Verified end-to-end against a synced testnet node: the engine stores the
+    /// reversed form of each requested hash (requested `0000…`, stored `…0000`),
+    /// so a non-reversed lookup misses every real quorum and falls through to
+    /// fail-closed rejection (previously masked by the trusted-quorum fallback).
+    /// Dropping the reversal fails this test.
     #[test]
-    fn quorum_hash_lookup_uses_internal_order_not_reversed() {
+    fn quorum_hash_reversed_to_internal_order_before_lookup() {
         use dashcore::hashes::Hash;
         use dashcore::QuorumHash;
         use std::collections::BTreeMap;
 
-        // 32 distinct bytes so internal order differs from reversed order.
-        let wire_bytes: [u8; 32] = std::array::from_fn(|i| (i as u8) + 1);
+        // The hash as the proof verifier supplies it (display order).
+        let display_bytes: [u8; 32] = std::array::from_fn(|i| (i as u8) + 1);
+        // The engine keys the quorum under the internal (reversed) order.
+        let mut internal_bytes = display_bytes;
+        internal_bytes.reverse();
 
-        // Model the engine's quorum map, keyed exactly as the engine keys it:
-        // by the `QuorumHash` in internal byte order.
         let pubkey = [0xABu8; 48];
         let mut quorums: BTreeMap<QuorumHash, [u8; 48]> = BTreeMap::new();
-        quorums.insert(QuorumHash::from_byte_array(wire_bytes), pubkey);
+        quorums.insert(QuorumHash::from_byte_array(internal_bytes), pubkey);
 
-        // What `get_quorum_public_key` does now (no reverse): the key matches.
+        // What `get_quorum_public_key` does: reverse display -> internal order.
+        let mut looked_up = display_bytes;
+        looked_up.reverse();
         assert_eq!(
-            quorums.get(&QuorumHash::from_byte_array(wire_bytes)),
+            quorums.get(&QuorumHash::from_byte_array(looked_up)),
             Some(&pubkey),
-            "internal-order hash must find the quorum"
+            "reversing the display-order hash must find the internally-keyed quorum"
         );
 
-        // The old buggy `.reverse()`: flipped key is absent → miss (the bug).
+        // The regression (no reversal): display-order key is absent → miss.
         assert_eq!(
-            quorums.get(&QuorumHash::from_byte_array(wire_bytes).reverse()),
+            quorums.get(&QuorumHash::from_byte_array(display_bytes)),
             None,
-            "reversed hash must NOT find the quorum — this was the bug"
+            "using the hash without reversal must miss — this was the regression"
         );
     }
 }
