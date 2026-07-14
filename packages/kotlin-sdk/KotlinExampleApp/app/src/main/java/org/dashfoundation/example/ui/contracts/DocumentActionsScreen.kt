@@ -362,17 +362,30 @@ fun DocumentActionsScreen(
                         // the form's values on the document's current
                         // fields so everything not re-entered keeps its
                         // existing value instead of being silently dropped.
-                        mergeReplaceProperties(
-                            probed?.fields,
-                            buildPropertiesJson(
-                                properties, required, textValues, boolValues, touchedBools,
-                            ),
+                        run {
                             // Explicit removals: seeded non-blank, now blank.
-                            clearedKeys = seededTexts.keys.filter { key ->
+                            val clearedKeys = seededTexts.keys.filter { key ->
                                 seededTexts[key].orEmpty().isNotBlank() &&
                                     textValues[key].orEmpty().isBlank()
-                            }.toSet(),
-                        )
+                            }.toSet()
+                            // Drive validates required properties AFTER
+                            // broadcast and treats their absence as a
+                            // paid-invalid transition — reject here so the
+                            // user can't pay fees + burn a nonce for a
+                            // guaranteed rejection.
+                            val clearedRequired = clearedKeys.intersect(required)
+                            require(clearedRequired.isEmpty()) {
+                                "Required fields cannot be cleared: " +
+                                    clearedRequired.sorted().joinToString()
+                            }
+                            mergeReplaceProperties(
+                                probed?.fields,
+                                buildPropertiesJson(
+                                    properties, required, textValues, boolValues, touchedBools,
+                                ),
+                                clearedKeys = clearedKeys,
+                            )
+                        }
                     } catch (e: Exception) {
                         error = "Could not encode document fields: ${e.message}"
                         return@SubmitButton

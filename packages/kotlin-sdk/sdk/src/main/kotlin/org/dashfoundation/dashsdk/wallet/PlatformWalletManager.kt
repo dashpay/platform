@@ -1031,16 +1031,22 @@ class PlatformWalletManager(
                 signerHandle,
             )
         }
-        check(packed.size == 33) { "expected 33-byte tagged identity id, got ${packed.size}" }
+        check(packed.size >= 33) { "expected >=33-byte tagged identity id, got ${packed.size}" }
         val identityId = packed.copyOfRange(1, 33)
         if (packed[0].toInt() != 0) {
             // The C ABI wrote the id even though the broadcast outcome is
             // ambiguous: surface a TYPED unconfirmed error so the caller
             // holds the derivation slot instead of retrying into a
-            // possibly-live identity.
+            // possibly-live identity. Bytes 33.. carry the native
+            // diagnostic (the underlying confirmation failure).
+            val diagnostic = if (packed.size > 33) {
+                packed.copyOfRange(33, packed.size).decodeToString()
+            } else {
+                "shielded identity create broadcast unconfirmed"
+            }
             throw DashSdkError.PlatformWallet.ShieldedCreateUnconfirmed(
                 identityId = identityId,
-                message = "shielded identity create broadcast unconfirmed",
+                message = diagnostic,
             )
         }
         identityId

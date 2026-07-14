@@ -773,15 +773,26 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shielde
         // unconfirmed result instead of a generic error that loses the id.
         let unconfirmed = result.code
             == platform_wallet_ffi::error::PlatformWalletFFIResultCode::ErrorShieldedBroadcastUnconfirmed;
+        let mut diagnostic = Vec::new();
         if unconfirmed {
+            // Preserve the native diagnostic (the underlying DAPI /
+            // result-proof confirmation failure) before freeing — the
+            // registration controller surfaces it, and Swift keeps both
+            // fields.
             let mut result = result;
+            if !result.message.is_null() {
+                diagnostic = unsafe { std::ffi::CStr::from_ptr(result.message) }
+                    .to_bytes()
+                    .to_vec();
+            }
             unsafe { platform_wallet_ffi::error::platform_wallet_ffi_result_free(&mut result) };
         } else if take_pwffi_error(env, result) {
             return ptr::null_mut();
         }
-        let mut packed = [0u8; 33];
-        packed[0] = u8::from(unconfirmed);
-        packed[1..].copy_from_slice(&out_id);
+        let mut packed = Vec::with_capacity(33 + diagnostic.len());
+        packed.push(u8::from(unconfirmed));
+        packed.extend_from_slice(&out_id);
+        packed.extend_from_slice(&diagnostic);
         env.byte_array_from_slice(&packed)
             .map(|a| a.into_raw())
             .unwrap_or(ptr::null_mut())
