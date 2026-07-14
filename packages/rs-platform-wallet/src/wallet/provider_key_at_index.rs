@@ -96,6 +96,56 @@ use crate::error::PlatformWalletError;
 /// screen has a full first page to show from persistence alone.
 pub const PLATFORM_NODE_KEY_PREDERIVE_COUNT: u32 = 20;
 
+/// Derive the platform-node (Ed25519) extended private key at `index`
+/// from the raw BIP39 `seed`: SLIP-10 master → DIP-3
+/// `ProviderPlatformKeys` account path → hardened child `index'`.
+///
+/// The single canonical platform-node private derivation, shared by
+/// [`derive_platform_node_public_keys`] (the registration snapshot) and
+/// [`PlatformWallet::derive_provider_key_at_index`] (the per-index
+/// reveal) so the two can never diverge — the same anti-duplication
+/// rationale as the rest of this module. Composed from the upstream
+/// extended-key primitives directly (gate-free; see the module docs on
+/// why the account's `is_watch_only`-gated `derive_from_seed_*` wrapper
+/// is avoided).
+///
+/// # Errors
+/// [`PlatformWalletError::KeyDerivation`] if the account path can't be
+/// built, the SLIP-10 master / account key can't be derived, or the
+/// per-index child derivation fails.
+fn platform_node_xpriv_at(
+    seed: &[u8],
+    network: key_wallet::Network,
+    index: u32,
+) -> Result<ExtendedEd25519PrivKey, PlatformWalletError> {
+    let account_path = AccountType::ProviderPlatformKeys
+        .derivation_path(network)
+        .map_err(|e| {
+            PlatformWalletError::KeyDerivation(format!(
+                "failed to build provider platform-node account path: {e}"
+            ))
+        })?;
+    let master = ExtendedEd25519PrivKey::new_master(network, seed).map_err(|e| {
+        PlatformWalletError::KeyDerivation(format!(
+            "failed to build Ed25519 master from platform-node seed: {e}"
+        ))
+    })?;
+    let account_xpriv = master.derive_priv(&account_path).map_err(|e| {
+        PlatformWalletError::KeyDerivation(format!(
+            "failed to derive Ed25519 platform-node account key at {account_path}: {e}"
+        ))
+    })?;
+    // SLIP-10 Ed25519 is hardened-only — hardened child `index'`.
+    let child = ChildNumber::from_hardened_idx(index).map_err(|e| {
+        PlatformWalletError::KeyDerivation(format!("invalid platform-node key index {index}: {e}"))
+    })?;
+    account_xpriv.derive_priv(&[child]).map_err(|e| {
+        PlatformWalletError::KeyDerivation(format!(
+            "failed to derive Ed25519 platform-node key at index {index}: {e}"
+        ))
+    })
+}
+
 /// Derive the first `count` platform-node (Ed25519) public keys from a
 /// **seed-bearing** [`Wallet`](key_wallet::wallet::Wallet), returning
 /// the 32-byte public key + 20-byte `hash160` node id per hardened
@@ -151,36 +201,9 @@ pub fn derive_platform_node_public_keys(
             )
         })?);
 
-    // Raw seed → SLIP-10 master → DIP-3 account path (computed once).
-    let account_path = account_type.derivation_path(network).map_err(|e| {
-        PlatformWalletError::KeyDerivation(format!(
-            "failed to build provider platform-node account path: {e}"
-        ))
-    })?;
-    let master = ExtendedEd25519PrivKey::new_master(network, seed.as_ref()).map_err(|e| {
-        PlatformWalletError::KeyDerivation(format!(
-            "failed to build Ed25519 master from platform-node seed: {e}"
-        ))
-    })?;
-    let account_xpriv = master.derive_priv(&account_path).map_err(|e| {
-        PlatformWalletError::KeyDerivation(format!(
-            "failed to derive Ed25519 platform-node account key at {account_path}: {e}"
-        ))
-    })?;
-
     let mut out = Vec::with_capacity(count as usize);
     for index in 0..count {
-        // SLIP-10 Ed25519 is hardened-only — hardened child `i'`.
-        let child = ChildNumber::from_hardened_idx(index).map_err(|e| {
-            PlatformWalletError::KeyDerivation(format!(
-                "invalid platform-node key index {index}: {e}"
-            ))
-        })?;
-        let xpriv = account_xpriv.derive_priv(&[child]).map_err(|e| {
-            PlatformWalletError::KeyDerivation(format!(
-                "failed to derive Ed25519 platform-node key at index {index}: {e}"
-            ))
-        })?;
+        let xpriv = platform_node_xpriv_at(seed.as_ref(), network, index)?;
         let verifying = ExtendedEd25519PubKey::from_priv(&xpriv).map_err(|e| {
             PlatformWalletError::KeyDerivation(format!(
                 "failed to obtain Ed25519 public key at index {index}: {e}"
@@ -390,17 +413,40 @@ impl PlatformWallet {
                         let legacy_public_key_bytes =
                             Some(xpriv.public_key_bytes_legacy().to_vec());
 
-                        // The seed-derived public key must equal the public
-                        // (xpub, legacy `ckd_pub`) derivation — proves the
-                        // seed and the stored account xpub agree.
-                        #[cfg(debug_assertions)]
-                        if let Ok(xpub) = account.bls_public_key.derive_pub_legacy(child) {
-                            debug_assert_eq!(
-                                xpub.to_bytes(),
-                                xpriv.public_key_bytes(),
-                                "BLS operator seed-derived pubkey diverged from account-xpub \
-                                 derivation"
-                            );
+                        // Always-on guard: the seed-derived public key MUST
+                        // equal the account xpub's non-hardened legacy
+                        // `ckd_pub` child. A mismatch means the wallet seed
+                        // and its stored operator account xpub disagree
+                        // (wrong seed / stale xpub) — exactly the failure
+                        // this PR fixed — so refuse to hand out a mismatched
+                        // key. `derive_pub_legacy` is a gate-free pure public
+                        // operation (works for resident and watch-only
+                        // accounts alike), and the extra derivation on the
+                        // private-reveal path is negligible. If that public
+                        // derivation itself can't be performed we log and
+                        // proceed rather than fail: the private derivation
+                        // already succeeded, so a valid key is in hand and
+                        // failing here would only turn a working path into a
+                        // spurious error.
+                        match account.bls_public_key.derive_pub_legacy(child) {
+                            Ok(xpub) => {
+                                if xpub.to_bytes() != xpriv.public_key_bytes() {
+                                    return Err(PlatformWalletError::KeyDerivation(format!(
+                                        "BLS operator key at index {index}: seed-derived public \
+                                         key does not match the account xpub derivation — the \
+                                         wallet seed and its stored operator account xpub \
+                                         disagree; refusing to return a mismatched key"
+                                    )));
+                                }
+                            }
+                            Err(e) => {
+                                tracing::warn!(
+                                    index,
+                                    error = %e,
+                                    "BLS operator seed/xpub cross-check skipped: account xpub \
+                                     public derivation failed"
+                                );
+                            }
                         }
 
                         let private_key = include_private
@@ -464,39 +510,13 @@ impl PlatformWallet {
                     .as_ref()
                     .expect("platform-node derivation always seeds");
 
-                // Canonical raw-seed derivation via the upstream primitives
-                // directly (the account's `derive_from_seed_*` wrapper
-                // rejects a watch-only account even with a seed — see module
-                // docs): raw seed → SLIP-10 master → DIP-3 account path →
-                // hardened child `index`. Byte-identical to what
-                // `Wallet::from_mnemonic` account creation and
-                // `derive_platform_node_public_keys` produce.
-                let account_path = account_type.derivation_path(network).map_err(|e| {
-                    PlatformWalletError::KeyDerivation(format!(
-                        "failed to build provider platform-node account path: {e}"
-                    ))
-                })?;
-                let master =
-                    ExtendedEd25519PrivKey::new_master(network, seed.as_ref()).map_err(|e| {
-                        PlatformWalletError::KeyDerivation(format!(
-                            "failed to build Ed25519 master from platform-node seed: {e}"
-                        ))
-                    })?;
-                let account_xpriv = master.derive_priv(&account_path).map_err(|e| {
-                    PlatformWalletError::KeyDerivation(format!(
-                        "failed to derive Ed25519 platform-node account key at {account_path}: {e}"
-                    ))
-                })?;
-                let child = ChildNumber::from_hardened_idx(index).map_err(|e| {
-                    PlatformWalletError::KeyDerivation(format!(
-                        "invalid platform-node key index {index}: {e}"
-                    ))
-                })?;
-                let xpriv = account_xpriv.derive_priv(&[child]).map_err(|e| {
-                    PlatformWalletError::KeyDerivation(format!(
-                        "failed to derive Ed25519 platform-node key at index {index}: {e}"
-                    ))
-                })?;
+                // Canonical raw-seed derivation via the shared helper (the
+                // exact routine `derive_platform_node_public_keys` uses, so
+                // the per-index reveal can never diverge from the persisted
+                // batch). Composed from the upstream primitives directly —
+                // the account's `derive_from_seed_*` wrapper rejects a
+                // watch-only account even with a seed (see module docs).
+                let xpriv = platform_node_xpriv_at(seed.as_ref(), network, index)?;
                 let verifying = ExtendedEd25519PubKey::from_priv(&xpriv).map_err(|e| {
                     PlatformWalletError::KeyDerivation(format!(
                         "failed to obtain Ed25519 public key at index {index}: {e}"
