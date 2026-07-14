@@ -2437,35 +2437,6 @@ fn build_account_spec_ffi(account_type: &AccountType, xpub_bytes: &[u8]) -> Acco
     spec
 }
 
-/// Magic prefix stamped onto a persisted **provider key-material**
-/// account's extended-public-key blob (`account_xpub_bytes`) by the
-/// current derivation scheme (rust-dashcore #879: BLS operator /
-/// Ed25519 platform-node keys derived from the raw BIP39 seed).
-///
-/// The restore path requires this prefix on the two provider accounts:
-/// a blob WITHOUT it was written by the pre-#879 secp256k1-hybrid scheme
-/// and is stale. Because an external-signable wallet keeps no seed, the
-/// stale point can't be recomputed at load, so such an account is
-/// skipped (never reinstalled) — the wallet comes back with no provider
-/// key-material accounts instead of ones that display / match the wrong
-/// operator + platform-node keys, and a re-import repopulates them under
-/// the current scheme. The 4th byte is a scheme version, bumpable if the
-/// derivation ever changes again.
-///
-/// This cannot collide with a bare `bincode(ExtendedBLSPubKey)` /
-/// `bincode(ExtendedEd25519PubKey)` payload: those begin with a small
-/// `Network` discriminant byte, never `0x50` (`'P'`). Only the two
-/// provider accounts carry it — ECDSA `account_xpub` blobs stay raw.
-const PROVIDER_KEY_SCHEME_MAGIC: [u8; 4] = *b"PKV\x01";
-
-/// Strip [`PROVIDER_KEY_SCHEME_MAGIC`] from a persisted provider xpub
-/// blob, returning the inner bincode bytes. `None` when the prefix is
-/// absent — i.e. a stale pre-#879 provider account that must be skipped
-/// on restore.
-fn strip_provider_scheme_magic(bytes: &[u8]) -> Option<&[u8]> {
-    bytes.strip_prefix(&PROVIDER_KEY_SCHEME_MAGIC[..])
-}
-
 /// Build the `Vec<AccountSpecFFI>` array for
 /// `on_persist_account_registrations_fn` plus the parallel storage each
 /// spec borrows into:
@@ -2478,16 +2449,6 @@ fn strip_provider_scheme_magic(bytes: &[u8]) -> Option<&[u8]> {
 ///
 /// All three share lifetime — the caller must keep them alive until
 /// after the callback returns.
-///
-/// # Provider-key derivation-scheme versioning
-///
-/// The two provider key-material accounts' extended-public-key blobs are
-/// stamped with [`PROVIDER_KEY_SCHEME_MAGIC`] so the restore path can
-/// tell a current-scheme (rust-dashcore #879, raw-seed) account apart
-/// from a stale pre-#879 (secp256k1-hybrid) one — the point can't be
-/// recomputed at load (external-signable wallets keep no seed), so a
-/// magic-less provider account is skipped rather than reinstalled with a
-/// wrong key. See [`PROVIDER_KEY_SCHEME_MAGIC`] and the load path.
 #[allow(clippy::type_complexity)]
 fn build_account_specs_for_callback(
     entries: &[AccountRegistrationEntry],
@@ -2513,7 +2474,7 @@ fn build_account_specs_for_callback(
         xpub_buffers.push(bytes);
     }
     for entry in provider_entries {
-        let encoded = match &entry.extended_public_key {
+        let bytes = match &entry.extended_public_key {
             ProviderKeyExtendedPubKey::Bls(key) => bincode::encode_to_vec(key, config::standard())
                 .map_err(|e| format!("failed to encode provider BLS xpub: {}", e))?,
             ProviderKeyExtendedPubKey::EdDSA(key) => {
@@ -2521,11 +2482,6 @@ fn build_account_specs_for_callback(
                     .map_err(|e| format!("failed to encode provider EdDSA xpub: {}", e))?
             }
         };
-        // Stamp the current-scheme magic so the restore path can reject a
-        // stale pre-#879 provider account (see `PROVIDER_KEY_SCHEME_MAGIC`).
-        let mut bytes = Vec::with_capacity(PROVIDER_KEY_SCHEME_MAGIC.len() + encoded.len());
-        bytes.extend_from_slice(&PROVIDER_KEY_SCHEME_MAGIC);
-        bytes.extend_from_slice(&encoded);
         xpub_buffers.push(bytes);
     }
 
@@ -3082,25 +3038,17 @@ fn build_wallet_start_state(
         // via the type-specific `new` + insert methods rather than the
         // ECDSA `Account::from_xpub` / `insert` path (which would fail
         // to decode the bytes and reject the provider `AccountType`).
+        // Provider xpubs are stored raw (`bincode(xpub)`), exactly like the
+        // ECDSA accounts. The derivation scheme is NOT versioned here: this
+        // app is pre-release and the pre-#879 (secp256k1-hybrid) derivation
+        // never shipped to production. A wallet whose provider accounts were
+        // persisted by a pre-#879 dev build will restore those (stale) xpubs
+        // and show stale operator / platform-node keys until it's deleted
+        // and re-imported — an accepted, transient dev-only state.
         match account_type {
             AccountType::ProviderOperatorKeys => {
-                // Require the current derivation-scheme magic. A magic-less
-                // blob is a stale pre-#879 (secp256k1-hybrid) operator
-                // account: its point can't be recomputed here (no seed at
-                // load), so skip it rather than reinstall a wrong operator
-                // key — a re-import repopulates it. Skip-and-continue,
-                // mirroring the legacy-tag handling above.
-                let Some(inner) = strip_provider_scheme_magic(xpub_bytes) else {
-                    tracing::warn!(
-                        wallet_id = %hex::encode(entry.wallet_id),
-                        "load: skipping stale pre-#879 provider operator-keys account \
-                         (obsolete derivation scheme); re-import the wallet to repopulate \
-                         operator keys"
-                    );
-                    continue;
-                };
                 let (bls_pubkey, _): (ExtendedBLSPubKey, usize) =
-                    bincode::decode_from_slice(inner, config::standard()).map_err(|e| {
+                    bincode::decode_from_slice(xpub_bytes, config::standard()).map_err(|e| {
                         PersistenceError::backend(format!(
                             "failed to decode provider BLS xpub: {}",
                             e
@@ -3124,18 +3072,8 @@ fn build_wallet_start_state(
                 continue;
             }
             AccountType::ProviderPlatformKeys => {
-                // Same stale-scheme guard as the operator account above.
-                let Some(inner) = strip_provider_scheme_magic(xpub_bytes) else {
-                    tracing::warn!(
-                        wallet_id = %hex::encode(entry.wallet_id),
-                        "load: skipping stale pre-#879 provider platform-keys account \
-                         (obsolete derivation scheme); re-import the wallet to repopulate \
-                         platform-node keys"
-                    );
-                    continue;
-                };
                 let (ed_pubkey, _): (ExtendedEd25519PubKey, usize) =
-                    bincode::decode_from_slice(inner, config::standard()).map_err(|e| {
+                    bincode::decode_from_slice(xpub_bytes, config::standard()).map_err(|e| {
                         PersistenceError::backend(format!(
                             "failed to decode provider EdDSA xpub: {}",
                             e
@@ -5142,39 +5080,6 @@ mod tests {
             restored.account_xpub, expected_xpub,
             "the restored account's xpub must equal the original — the key verify_seed_binds binds against"
         );
-    }
-
-    /// The provider-key derivation-scheme guard (blocker #3): a
-    /// current-scheme provider blob carries [`PROVIDER_KEY_SCHEME_MAGIC`]
-    /// and strips back to its inner bincode bytes, while a bare (pre-#879)
-    /// bincode blob is rejected so the restore path skips a stale provider
-    /// account instead of reinstalling a wrong operator / platform-node key.
-    #[test]
-    fn provider_scheme_magic_strips_and_rejects_stale() {
-        // A stamped blob (as `build_account_specs_for_callback` produces)
-        // strips back to exactly the inner payload.
-        let inner: Vec<u8> = vec![0x01, 0x02, 0x03, 0xaa, 0xbb, 0xcc];
-        let mut stamped = PROVIDER_KEY_SCHEME_MAGIC.to_vec();
-        stamped.extend_from_slice(&inner);
-        assert_eq!(
-            strip_provider_scheme_magic(&stamped),
-            Some(inner.as_slice()),
-            "stamped provider blob must strip to its inner bincode bytes"
-        );
-
-        // A bare bincode payload (pre-#879 stale account) has no magic and
-        // must be rejected. A real `bincode(ExtendedBLSPubKey)` begins with
-        // a small `Network` discriminant byte — modelled here by 0x00.
-        let bare: Vec<u8> = vec![0x00, 0x01, 0x02, 0x03, 0x04];
-        assert!(
-            strip_provider_scheme_magic(&bare).is_none(),
-            "a magic-less (pre-#879) provider blob must be rejected as stale"
-        );
-
-        // The magic's leading byte is 'P' (0x50), which a bincode `Network`
-        // discriminant never is — so the prefix cannot collide with a real
-        // provider xpub payload.
-        assert_eq!(PROVIDER_KEY_SCHEME_MAGIC[0], b'P');
     }
 
     /// Helper: a minimum valid consensus-encodable transaction —
