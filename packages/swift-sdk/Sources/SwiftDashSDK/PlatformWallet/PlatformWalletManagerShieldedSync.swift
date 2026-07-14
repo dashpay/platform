@@ -539,37 +539,40 @@ extension PlatformWalletManager {
 
         let handle = self.handle
         try await Task.detached(priority: .userInitiated) {
-            // Keepalive — the trampoline ctx pointer inside the
-            // resolver dangles unless the Swift owner outlives this
-            // detached work.
-            _ = resolver
-
-            try walletId.withUnsafeBytes { widRaw in
-                guard let widPtr = widRaw.baseAddress?.assumingMemoryBound(to: UInt8.self)
-                else {
-                    throw PlatformWalletError.invalidParameter("walletId baseAddress is nil")
-                }
-                try recipientRaw43.withUnsafeBytes { recipientRaw in
-                    guard let recipientPtr = recipientRaw.baseAddress?
-                        .assumingMemoryBound(to: UInt8.self)
+            // MnemonicResolver is passed to Rust via `passUnretained`,
+            // so the Rust ctx pointer dangles unless the Swift owner
+            // stays alive across the whole FFI call. A bare
+            // `_ = resolver` is folklore the optimizer may elide in -O
+            // builds; `withExtendedLifetime` is the guaranteed
+            // keepalive (same as the identity-create sibling).
+            try withExtendedLifetime(resolver) {
+                try walletId.withUnsafeBytes { widRaw in
+                    guard let widPtr = widRaw.baseAddress?.assumingMemoryBound(to: UInt8.self)
                     else {
-                        throw PlatformWalletError.invalidParameter(
-                            "recipient baseAddress is nil"
-                        )
+                        throw PlatformWalletError.invalidParameter("walletId baseAddress is nil")
                     }
-                    // `nil` / empty → null pointer (no memo); otherwise
-                    // pass the text as a C string. Rust validates the
-                    // 32-byte limit and does the 36-byte encoding.
-                    let send: (UnsafePointer<CChar>?) throws -> Void = { memoCStr in
-                        try platform_wallet_manager_shielded_transfer(
-                            handle, widPtr, resolverHandle, account, recipientPtr, amount,
-                            memoCStr
-                        ).check()
-                    }
-                    if let memo, !memo.isEmpty {
-                        try memo.withCString { try send($0) }
-                    } else {
-                        try send(nil)
+                    try recipientRaw43.withUnsafeBytes { recipientRaw in
+                        guard let recipientPtr = recipientRaw.baseAddress?
+                            .assumingMemoryBound(to: UInt8.self)
+                        else {
+                            throw PlatformWalletError.invalidParameter(
+                                "recipient baseAddress is nil"
+                            )
+                        }
+                        // `nil` / empty → null pointer (no memo); otherwise
+                        // pass the text as a C string. Rust validates the
+                        // 32-byte limit and does the 36-byte encoding.
+                        let send: (UnsafePointer<CChar>?) throws -> Void = { memoCStr in
+                            try platform_wallet_manager_shielded_transfer(
+                                handle, widPtr, resolverHandle, account, recipientPtr, amount,
+                                memoCStr
+                            ).check()
+                        }
+                        if let memo, !memo.isEmpty {
+                            try memo.withCString { try send($0) }
+                        } else {
+                            try send(nil)
+                        }
                     }
                 }
             }
@@ -682,18 +685,19 @@ extension PlatformWalletManager {
 
         let handle = self.handle
         try await Task.detached(priority: .userInitiated) {
-            // Keepalive — same rationale as `shieldedTransfer`.
-            _ = resolver
-
-            try walletId.withUnsafeBytes { widRaw in
-                guard let widPtr = widRaw.baseAddress?.assumingMemoryBound(to: UInt8.self)
-                else {
-                    throw PlatformWalletError.invalidParameter("walletId baseAddress is nil")
-                }
-                try toPlatformAddress.withCString { addrCStr in
-                    try platform_wallet_manager_shielded_unshield(
-                        handle, widPtr, resolverHandle, account, addrCStr, amount
-                    ).check()
+            // Guaranteed resolver keepalive across the FFI call —
+            // same rationale as `shieldedTransfer`.
+            try withExtendedLifetime(resolver) {
+                try walletId.withUnsafeBytes { widRaw in
+                    guard let widPtr = widRaw.baseAddress?.assumingMemoryBound(to: UInt8.self)
+                    else {
+                        throw PlatformWalletError.invalidParameter("walletId baseAddress is nil")
+                    }
+                    try toPlatformAddress.withCString { addrCStr in
+                        try platform_wallet_manager_shielded_unshield(
+                            handle, widPtr, resolverHandle, account, addrCStr, amount
+                        ).check()
+                    }
                 }
             }
         }.value
@@ -738,19 +742,20 @@ extension PlatformWalletManager {
 
         let handle = self.handle
         try await Task.detached(priority: .userInitiated) {
-            // Keepalive — same rationale as `shieldedTransfer`.
-            _ = resolver
-
-            try walletId.withUnsafeBytes { widRaw in
-                guard let widPtr = widRaw.baseAddress?.assumingMemoryBound(to: UInt8.self)
-                else {
-                    throw PlatformWalletError.invalidParameter("walletId baseAddress is nil")
-                }
-                try toCoreAddress.withCString { addrCStr in
-                    try platform_wallet_manager_shielded_withdraw(
-                        handle, widPtr, resolverHandle, account, addrCStr, amount,
-                        coreFeePerByte
-                    ).check()
+            // Guaranteed resolver keepalive across the FFI call —
+            // same rationale as `shieldedTransfer`.
+            try withExtendedLifetime(resolver) {
+                try walletId.withUnsafeBytes { widRaw in
+                    guard let widPtr = widRaw.baseAddress?.assumingMemoryBound(to: UInt8.self)
+                    else {
+                        throw PlatformWalletError.invalidParameter("walletId baseAddress is nil")
+                    }
+                    try toCoreAddress.withCString { addrCStr in
+                        try platform_wallet_manager_shielded_withdraw(
+                            handle, widPtr, resolverHandle, account, addrCStr, amount,
+                            coreFeePerByte
+                        ).check()
+                    }
                 }
             }
         }.value

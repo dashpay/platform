@@ -3567,18 +3567,32 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             if rows.isEmpty {
                 return
             }
+            // Fail closed on a present-but-malformed row, BEFORE any
+            // allocation: silently skipping it (the sync-state
+            // loader's pattern) would make Rust see the account as
+            // "no persisted key" and fall back to a mnemonic resolve,
+            // masking persistence corruption — the exact opposite of
+            // `bind_shielded_from_persisted`'s documented contract,
+            // which surfaces a malformed row as an error.
+            if let bad = rows.first(where: {
+                $0.walletId.count != 32 || $0.fvkBytes.count != 96
+            }) {
+                SDKLogger.error(
+                    "loadShieldedViewingKeys: corrupt row "
+                        + "(walletId \(bad.walletId.count)B, fvk \(bad.fvkBytes.count)B) — "
+                        + "failing the load rather than masking it as a missing key"
+                )
+                resultErrored = true
+                return
+            }
             let allocation = ShieldedViewingKeyLoadAllocation()
             let buf = UnsafeMutablePointer<ShieldedViewingKeyRestoreFFI>.allocate(
                 capacity: rows.count
             )
             allocation.entries = buf
             allocation.entriesCount = rows.count
-            // Same `written`-counter pattern as `loadShieldedSyncStates`:
-            // skip malformed rows without leaving holes in the
-            // contiguous prefix Rust will read.
             var written = 0
             for row in rows {
-                guard row.walletId.count == 32, row.fvkBytes.count == 96 else { continue }
                 var entry = ShieldedViewingKeyRestoreFFI()
                 Swift.withUnsafeMutableBytes(of: &entry.wallet_id) { dst in
                     row.walletId.withUnsafeBytes { dst.copyMemory(from: $0) }
