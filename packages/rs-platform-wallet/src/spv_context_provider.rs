@@ -26,6 +26,7 @@ use std::sync::Arc;
 
 use dash_context_provider::ContextProvider;
 use dash_context_provider::ContextProviderError;
+use dashcore::sml::llmq_type::network::NetworkLLMQExt;
 use dashcore::Network;
 use dpp::data_contract::TokenConfiguration;
 use dpp::prelude::{CoreBlockHeight, DataContract, Identifier};
@@ -74,6 +75,21 @@ impl ContextProvider for SpvContextProvider {
         quorum_hash: [u8; 32],
         core_chain_locked_height: u32,
     ) -> Result<[u8; 48], ContextProviderError> {
+        // Reject any quorum type other than this network's Platform quorum. The
+        // proof's `quorum_type` is attacker-controlled and is folded into the
+        // signature digest, so without this check a malicious DAPI endpoint plus
+        // a compromised threshold of a lower-threshold quorum (e.g. LLMQ 50/60,
+        // which needs only 30 signers, vs Platform's 100/67) could authenticate
+        // forged Platform state. Pin the lookup to `network.platform_type()`.
+        let platform_type = self.network.platform_type();
+        if quorum_type != u32::from(u8::from(platform_type)) {
+            return Err(ContextProviderError::InvalidQuorum(format!(
+                "quorum type {quorum_type} is not the Platform quorum for {:?} \
+                 (expected {platform_type:?})",
+                self.network
+            )));
+        }
+
         // Bridge the sync trait method to the async runtime lookup. Proof
         // verification always runs inside the SDK's multi-threaded runtime, so
         // the ambient handle is present; a call from outside a runtime returns

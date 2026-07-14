@@ -24,6 +24,24 @@ use crate::wallet::platform_wallet::PlatformWalletInfo;
 type SpvClient =
     DashSpvClient<WalletManager<PlatformWalletInfo>, PeerNetworkManager, DiskStorageManager>;
 
+/// Build the masternode-engine lookup key from a proof-supplied quorum hash.
+///
+/// The SDK's proof verifier supplies the quorum hash in display (big-endian)
+/// byte order — the same order the trusted HTTP provider matches against — but
+/// the masternode engine keys its quorum map in internal (little-endian) order.
+/// The bytes must therefore be reversed before building the [`QuorumHash`] key;
+/// without this every real quorum misses. Verified against a synced testnet
+/// node: the engine stores the reversed form of each requested hash (e.g.
+/// requested `0000…7f`, stored `…000000`).
+///
+/// [`SpvRuntime::get_quorum_public_key`] calls this so the byte-order regression
+/// test exercises the exact transform the production lookup uses.
+fn quorum_lookup_key(display_order: [u8; 32]) -> QuorumHash {
+    let mut internal_order = display_order;
+    internal_order.reverse();
+    QuorumHash::from_byte_array(internal_order)
+}
+
 /// SPV client runtime — owns the `DashSpvClient` and drives sync.
 ///
 /// Events are dispatched through [`PlatformEventManager`] to all registered
@@ -165,16 +183,7 @@ impl SpvRuntime {
         ))?;
 
         let llmq_type = LLMQType::from(quorum_type as u8);
-        // The masternode engine keys its quorum map in internal byte order, but
-        // the SDK's proof verifier supplies `quorum_hash` in display (reversed)
-        // order — the same order the trusted HTTP provider matches against. The
-        // bytes must therefore be reversed before building the lookup key;
-        // without this every real quorum misses. Verified against a synced
-        // testnet node: the engine stores the reversed form of each requested
-        // hash (e.g. requested `0000…7f`, stored `…000000`).
-        let mut internal_order = quorum_hash;
-        internal_order.reverse();
-        let qh = QuorumHash::from_byte_array(internal_order);
+        let qh = quorum_lookup_key(quorum_hash);
 
         let quorum = client
             .get_quorum_at_height(height, llmq_type, qh)
@@ -402,7 +411,7 @@ mod tests {
     use key_wallet_manager::WalletManager;
     use tokio::sync::RwLock;
 
-    use super::{classify_spv_broadcast_error, SpvRuntime};
+    use super::{classify_spv_broadcast_error, quorum_lookup_key, SpvRuntime};
     use crate::broadcaster::BroadcastError;
     use crate::events::PlatformEventManager;
     use crate::wallet::platform_wallet::PlatformWalletInfo;
@@ -470,20 +479,22 @@ mod tests {
         }
     }
 
-    /// Regression guard for the quorum-hash byte order in
+    /// Regression guard for the quorum-hash byte order used by
     /// [`SpvRuntime::get_quorum_public_key`].
+    ///
+    /// This exercises the production transform directly — [`quorum_lookup_key`]
+    /// is the exact function `get_quorum_public_key` calls to build its engine
+    /// lookup key — so dropping (or re-introducing a spurious) reversal there
+    /// fails this test, rather than the test asserting standalone `BTreeMap`
+    /// semantics that can't detect a change in the real code.
     ///
     /// The masternode engine keys its quorum map — `quorum_entry_of_type_for_quorum_hash`,
     /// a `BTreeMap<QuorumHash, _>::get` — in internal byte order, but the SDK
-    /// proof verifier supplies `quorum_hash` in display (reversed) order (the
-    /// same order the trusted HTTP provider matches against). So the lookup key
-    /// must reverse the bytes first, which is what `get_quorum_public_key` does.
-    ///
-    /// Verified end-to-end against a synced testnet node: the engine stores the
-    /// reversed form of each requested hash (requested `0000…`, stored `…0000`),
-    /// so a non-reversed lookup misses every real quorum and falls through to
+    /// proof verifier supplies the hash in display (reversed) order. Verified
+    /// end-to-end against a synced testnet node: the engine stores the reversed
+    /// form of each requested hash (requested `0000…`, stored `…0000`), so a
+    /// non-reversed lookup misses every real quorum and falls through to
     /// fail-closed rejection (previously masked by the trusted-quorum fallback).
-    /// Dropping the reversal fails this test.
     #[test]
     fn quorum_hash_reversed_to_internal_order_before_lookup() {
         use dashcore::hashes::Hash;
@@ -500,16 +511,16 @@ mod tests {
         let mut quorums: BTreeMap<QuorumHash, [u8; 48]> = BTreeMap::new();
         quorums.insert(QuorumHash::from_byte_array(internal_bytes), pubkey);
 
-        // What `get_quorum_public_key` does: reverse display -> internal order.
-        let mut looked_up = display_bytes;
-        looked_up.reverse();
+        // The production key builder must land on the internally-keyed quorum.
         assert_eq!(
-            quorums.get(&QuorumHash::from_byte_array(looked_up)),
+            quorums.get(&quorum_lookup_key(display_bytes)),
             Some(&pubkey),
-            "reversing the display-order hash must find the internally-keyed quorum"
+            "quorum_lookup_key must reverse display order to the engine's internal key"
         );
 
-        // The regression (no reversal): display-order key is absent → miss.
+        // Sanity: the un-reversed display-order key is absent — this is exactly
+        // the miss that `quorum_lookup_key`'s reversal exists to prevent, so if
+        // the reversal is removed the assertion above fails.
         assert_eq!(
             quorums.get(&QuorumHash::from_byte_array(display_bytes)),
             None,
