@@ -384,6 +384,20 @@ pub struct PersistenceCallbacks {
             count: usize,
         ) -> i32,
     >,
+    /// Per-subwallet Orchard viewing-key upserts (raw 96-byte FVK
+    /// encoding). Emitted once per seed-backed `bind_shielded` /
+    /// `shielded_add_account`; the host upserts by
+    /// `(wallet_id, account_index)` so later launches can rebind
+    /// the shielded sub-wallet without a mnemonic resolve.
+    #[cfg(feature = "shielded")]
+    pub on_persist_shielded_viewing_keys_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            wallet_id: *const u8,
+            entries: *const crate::shielded_persistence::ShieldedViewingKeyFFI,
+            count: usize,
+        ) -> i32,
+    >,
     /// Restore-on-load: every persisted shielded note. Host
     /// allocates the array; Rust calls the matching free
     /// callback after copying. Same lifetime contract as
@@ -461,6 +475,26 @@ pub struct PersistenceCallbacks {
         unsafe extern "C" fn(
             context: *mut c_void,
             entries: *const crate::shielded_persistence::ShieldedActivityRestoreFFI,
+            count: usize,
+        ),
+    >,
+    /// Restore-on-load: every persisted Orchard viewing key. Same
+    /// host-allocates / Rust-frees lifetime contract as
+    /// `on_load_shielded_notes_fn`. Inlined so cbindgen emits the
+    /// referenced struct in the header.
+    #[cfg(feature = "shielded")]
+    pub on_load_shielded_viewing_keys_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            out_entries: *mut *const crate::shielded_persistence::ShieldedViewingKeyRestoreFFI,
+            out_count: *mut usize,
+        ) -> i32,
+    >,
+    #[cfg(feature = "shielded")]
+    pub on_load_shielded_viewing_keys_free_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            entries: *const crate::shielded_persistence::ShieldedViewingKeyRestoreFFI,
             count: usize,
         ),
     >,
@@ -594,6 +628,8 @@ impl Default for PersistenceCallbacks {
             #[cfg(feature = "shielded")]
             on_persist_shielded_activity_fn: None,
             #[cfg(feature = "shielded")]
+            on_persist_shielded_viewing_keys_fn: None,
+            #[cfg(feature = "shielded")]
             on_load_shielded_notes_fn: None,
             #[cfg(feature = "shielded")]
             on_load_shielded_notes_free_fn: None,
@@ -609,6 +645,10 @@ impl Default for PersistenceCallbacks {
             on_load_shielded_activity_fn: None,
             #[cfg(feature = "shielded")]
             on_load_shielded_activity_free_fn: None,
+            #[cfg(feature = "shielded")]
+            on_load_shielded_viewing_keys_fn: None,
+            #[cfg(feature = "shielded")]
+            on_load_shielded_viewing_keys_free_fn: None,
         }
     }
 }
@@ -1432,7 +1472,53 @@ impl PlatformWalletPersistence for FFIPersister {
                 }
             }
 
-            // 5) activity entries (derived activity log). The variable-
+            // 5) viewing keys (raw 96-byte FVK encodings). Fixed-size
+            //    rows, no borrowed pointers. A malformed length can
+            //    only come from a corrupted changeset; skip + warn so
+            //    one bad row doesn't sink the flush.
+            if !shielded_cs.viewing_keys.is_empty() {
+                if let Some(cb) = self.callbacks.on_persist_shielded_viewing_keys_fn {
+                    let entries: Vec<ShieldedViewingKeyFFI> = shielded_cs
+                        .viewing_keys
+                        .iter()
+                        .filter_map(|(id, fvk)| {
+                            let fvk_bytes: [u8; 96] = match fvk.as_slice().try_into() {
+                                Ok(b) => b,
+                                Err(_) => {
+                                    tracing::warn!(
+                                        fvk_len = fvk.len(),
+                                        "skipping viewing-key persist row: \
+                                             FVK is not the expected 96 bytes"
+                                    );
+                                    return None;
+                                }
+                            };
+                            Some(ShieldedViewingKeyFFI {
+                                wallet_id: id.wallet_id,
+                                account_index: id.account_index,
+                                fvk_bytes,
+                            })
+                        })
+                        .collect();
+                    let result = unsafe {
+                        cb(
+                            self.callbacks.context,
+                            wallet_id.as_ptr(),
+                            entries.as_ptr(),
+                            entries.len(),
+                        )
+                    };
+                    if result != 0 {
+                        eprintln!(
+                            "Shielded viewing-key persistence callback returned error code {}",
+                            result
+                        );
+                        round_success = false;
+                    }
+                }
+            }
+
+            // 6) activity entries (derived activity log). The variable-
             //    length fields (counterparty / memo / cmx + nullifier
             //    arrays) borrow into `backing`, a Vec of owned byte
             //    buffers that outlives the callback — same pointer-validity
@@ -2048,6 +2134,69 @@ impl PlatformWalletPersistence for FFIPersister {
                             note_cmxs,
                             spent_nullifiers,
                         });
+                    }
+                }
+            }
+
+            // 5) persisted Orchard viewing keys (raw 96-byte FVK
+            //    encodings), consumed by
+            //    `PlatformWallet::bind_shielded_from_persisted` so a
+            //    launch-time rebind needs no mnemonic resolve.
+            if self.callbacks.on_load_shielded_viewing_keys_fn.is_some()
+                != self
+                    .callbacks
+                    .on_load_shielded_viewing_keys_free_fn
+                    .is_some()
+            {
+                return Err(PersistenceError::backend(
+                    "on_load_shielded_viewing_keys_fn and \
+                     on_load_shielded_viewing_keys_free_fn must be provided together",
+                ));
+            }
+            if let Some(load_viewing_keys) = self.callbacks.on_load_shielded_viewing_keys_fn {
+                let mut vk_ptr: *const ShieldedViewingKeyRestoreFFI = std::ptr::null();
+                let mut vk_count: usize = 0;
+                let rc = unsafe {
+                    load_viewing_keys(self.callbacks.context, &mut vk_ptr, &mut vk_count)
+                };
+                if rc != 0 {
+                    return Err(PersistenceError::backend(format!(
+                        "on_load_shielded_viewing_keys_fn returned error code {}",
+                        rc
+                    )));
+                }
+                struct ViewingKeysGuard {
+                    context: *mut c_void,
+                    free_fn: Option<
+                        unsafe extern "C" fn(
+                            context: *mut c_void,
+                            entries: *const ShieldedViewingKeyRestoreFFI,
+                            count: usize,
+                        ),
+                    >,
+                    entries: *const ShieldedViewingKeyRestoreFFI,
+                    count: usize,
+                }
+                impl Drop for ViewingKeysGuard {
+                    fn drop(&mut self) {
+                        if let Some(free_fn) = self.free_fn {
+                            unsafe { free_fn(self.context, self.entries, self.count) };
+                        }
+                    }
+                }
+                let _viewing_keys_guard = ViewingKeysGuard {
+                    context: self.callbacks.context,
+                    free_fn: self.callbacks.on_load_shielded_viewing_keys_free_fn,
+                    entries: vk_ptr,
+                    count: vk_count,
+                };
+                if !vk_ptr.is_null() && vk_count > 0 {
+                    let slice = unsafe { slice::from_raw_parts(vk_ptr, vk_count) };
+                    for ffi in slice {
+                        let id = SubwalletId::new(ffi.wallet_id, ffi.account_index);
+                        shielded_state
+                            .viewing_keys
+                            .insert(id, ffi.fvk_bytes.to_vec());
                     }
                 }
             }

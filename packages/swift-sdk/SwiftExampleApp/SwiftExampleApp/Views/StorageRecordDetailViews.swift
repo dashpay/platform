@@ -2678,3 +2678,31 @@ private extension AssetLockStorageDetailView {
         }
     }
 }
+
+// MARK: - PersistentShieldedViewingKey
+
+struct ShieldedViewingKeyStorageDetailView: View {
+    let record: PersistentShieldedViewingKey
+
+    var body: some View {
+        Form {
+            Section("Identity") {
+                FieldRow(label: "Wallet ID", value: hexString(record.walletId))
+                FieldRow(label: "Account Index", value: "\(record.accountIndex)")
+            }
+            Section("Viewing Key") {
+                // Viewing-grade only (cannot spend), but still key
+                // material — the full 96-byte FVK is intentionally
+                // rendered for QA inspection, matching how the
+                // explorer shows other derived public-key batches.
+                FieldRow(label: "FVK Length", value: "\(record.fvkBytes.count) bytes")
+                FieldRow(label: "FVK (hex)", value: hexString(record.fvkBytes))
+            }
+            Section("Timestamps") {
+                FieldRow(label: "Updated", value: dateString(record.lastUpdated))
+            }
+        }
+        .navigationTitle("Shielded Viewing Key")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
