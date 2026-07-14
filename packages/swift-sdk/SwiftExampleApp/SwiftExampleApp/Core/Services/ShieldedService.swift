@@ -763,6 +763,10 @@ class ShieldedService: ObservableObject {
             try modelContext.delete(model: PersistentShieldedOutgoingNote.self)
             try modelContext.delete(model: PersistentShieldedSyncState.self)
             try modelContext.delete(model: PersistentShieldedActivity.self)
+            // Viewing keys are included in the wipe so a corrupted
+            // row can't outlive Clear; the next bind falls back to
+            // the mnemonic resolver once and re-persists them.
+            try modelContext.delete(model: PersistentShieldedViewingKey.self)
             try modelContext.save()
         } catch {
             lastError = "Failed to wipe persisted shielded state: \(error.localizedDescription)"

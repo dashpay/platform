@@ -154,21 +154,26 @@ extension PlatformWalletManager {
         currentShieldedTreeTotal = total
     }
 
-    /// Derive Orchard keys for `walletId` from the host-side mnemonic
-    /// resolver, open or create the per-network commitment tree at
-    /// `dbPath`, and bind the resulting multi-account shielded
-    /// sub-wallet to the `PlatformWallet`.
+    /// Bind `walletId`'s multi-account shielded sub-wallet to the
+    /// `PlatformWallet` — from viewing keys the persister already
+    /// holds when possible, deriving from the mnemonic only when it
+    /// doesn't.
     ///
-    /// `accounts` is the list of ZIP-32 account indices to derive.
+    /// `accounts` is the list of ZIP-32 account indices to bind.
     /// Pass `[0]` for the single-account default; pass
     /// `[0, 1, …]` to bind multiple accounts up front. Each entry
     /// produces an independent FVK / IVK / OVK / default address;
     /// notes are scoped per-`(walletId, accountIndex)` inside the
     /// store. Must be non-empty and at most 64 entries.
     ///
-    /// The resolver is fired exactly once. The mnemonic and the
-    /// derived seed live in zeroized buffers on the Rust side and
-    /// are scrubbed before this call returns.
+    /// The resolver does NOT fire on the common path: when every
+    /// requested account has a persisted viewing key (written by the
+    /// first seed-backed bind into `PersistentShieldedViewingKey`
+    /// rows), Rust rebinds from those rows and the mnemonic is never
+    /// read. Only when a row is missing (first bind after create /
+    /// import) does the resolver fire — exactly once, with the
+    /// mnemonic and derived seed in zeroized Rust-side buffers,
+    /// scrubbed before this call returns.
     ///
     /// Idempotent: calling again replaces the previously-bound
     /// shielded wallet.
@@ -492,6 +497,12 @@ extension PlatformWalletManager {
     /// Rust rejects it. The 36-byte on-chain encoding is done on the
     /// Rust side.
     ///
+    /// `resolver` supplies the Orchard spend authority for this one
+    /// operation: Rust resolves the mnemonic, derives the spend key,
+    /// signs, and scrubs everything before returning — no spend key
+    /// stays resident between spends (the launch-time bind is
+    /// viewing-grade only).
+    ///
     /// Throws `PlatformWalletError.shieldedSpendUnconfirmed` when the
     /// broadcast was accepted but its execution result couldn't be
     /// confirmed — the spend may already be on chain, so the caller
@@ -499,6 +510,7 @@ extension PlatformWalletManager {
     /// next shielded sync reconciles them).
     public func shieldedTransfer(
         walletId: Data,
+        resolver: MnemonicResolver,
         account: UInt32 = 0,
         recipientRaw43: Data,
         amount: UInt64,
@@ -519,9 +531,19 @@ extension PlatformWalletManager {
                 "recipient must be exactly 43 raw Orchard bytes"
             )
         }
+        guard let resolverHandle = resolver.handle else {
+            throw PlatformWalletError.invalidParameter(
+                "MnemonicResolver has no handle"
+            )
+        }
 
         let handle = self.handle
         try await Task.detached(priority: .userInitiated) {
+            // Keepalive — the trampoline ctx pointer inside the
+            // resolver dangles unless the Swift owner outlives this
+            // detached work.
+            _ = resolver
+
             try walletId.withUnsafeBytes { widRaw in
                 guard let widPtr = widRaw.baseAddress?.assumingMemoryBound(to: UInt8.self)
                 else {
@@ -540,7 +562,8 @@ extension PlatformWalletManager {
                     // 32-byte limit and does the 36-byte encoding.
                     let send: (UnsafePointer<CChar>?) throws -> Void = { memoCStr in
                         try platform_wallet_manager_shielded_transfer(
-                            handle, widPtr, account, recipientPtr, amount, memoCStr
+                            handle, widPtr, resolverHandle, account, recipientPtr, amount,
+                            memoCStr
                         ).check()
                     }
                     if let memo, !memo.isEmpty {
@@ -621,6 +644,9 @@ extension PlatformWalletManager {
     /// parses and network-checks the address; hosts don't have to
     /// hand-roll the bincode storage variant tag.
     ///
+    /// `resolver` supplies the per-operation Orchard spend authority
+    /// (see [`shieldedTransfer`]).
+    ///
     /// Throws `PlatformWalletError.shieldedSpendUnconfirmed` when the
     /// broadcast was accepted but its execution result couldn't be
     /// confirmed — the spend may already be on chain, so the caller
@@ -628,6 +654,7 @@ extension PlatformWalletManager {
     /// next shielded sync reconciles them).
     public func shieldedUnshield(
         walletId: Data,
+        resolver: MnemonicResolver,
         account: UInt32 = 0,
         toPlatformAddress: String,
         amount: UInt64
@@ -647,9 +674,17 @@ extension PlatformWalletManager {
                 "toPlatformAddress is empty"
             )
         }
+        guard let resolverHandle = resolver.handle else {
+            throw PlatformWalletError.invalidParameter(
+                "MnemonicResolver has no handle"
+            )
+        }
 
         let handle = self.handle
         try await Task.detached(priority: .userInitiated) {
+            // Keepalive — same rationale as `shieldedTransfer`.
+            _ = resolver
+
             try walletId.withUnsafeBytes { widRaw in
                 guard let widPtr = widRaw.baseAddress?.assumingMemoryBound(to: UInt8.self)
                 else {
@@ -657,7 +692,7 @@ extension PlatformWalletManager {
                 }
                 try toPlatformAddress.withCString { addrCStr in
                     try platform_wallet_manager_shielded_unshield(
-                        handle, widPtr, account, addrCStr, amount
+                        handle, widPtr, resolverHandle, account, addrCStr, amount
                     ).check()
                 }
             }
@@ -669,6 +704,9 @@ extension PlatformWalletManager {
     /// `toCoreAddress` (Base58Check string). `coreFeePerByte` is
     /// the L1 fee rate in duffs/byte (`1` is the dashmate default).
     ///
+    /// `resolver` supplies the per-operation Orchard spend authority
+    /// (see [`shieldedTransfer`]).
+    ///
     /// Throws `PlatformWalletError.shieldedSpendUnconfirmed` when the
     /// broadcast was accepted but its execution result couldn't be
     /// confirmed — the spend may already be on chain, so the caller
@@ -676,6 +714,7 @@ extension PlatformWalletManager {
     /// next shielded sync reconciles them).
     public func shieldedWithdraw(
         walletId: Data,
+        resolver: MnemonicResolver,
         account: UInt32 = 0,
         toCoreAddress: String,
         amount: UInt64,
@@ -691,9 +730,17 @@ extension PlatformWalletManager {
                 "walletId must be exactly 32 bytes"
             )
         }
+        guard let resolverHandle = resolver.handle else {
+            throw PlatformWalletError.invalidParameter(
+                "MnemonicResolver has no handle"
+            )
+        }
 
         let handle = self.handle
         try await Task.detached(priority: .userInitiated) {
+            // Keepalive — same rationale as `shieldedTransfer`.
+            _ = resolver
+
             try walletId.withUnsafeBytes { widRaw in
                 guard let widPtr = widRaw.baseAddress?.assumingMemoryBound(to: UInt8.self)
                 else {
@@ -701,7 +748,8 @@ extension PlatformWalletManager {
                 }
                 try toCoreAddress.withCString { addrCStr in
                     try platform_wallet_manager_shielded_withdraw(
-                        handle, widPtr, account, addrCStr, amount, coreFeePerByte
+                        handle, widPtr, resolverHandle, account, addrCStr, amount,
+                        coreFeePerByte
                     ).check()
                 }
             }
@@ -720,7 +768,8 @@ extension PlatformWalletManager {
     /// should be the MASTER key). `identitySigner` is the host-side
     /// `KeychainSigner` whose `.handle` produces each key's
     /// proof-of-possession signature; the Orchard spend authority is
-    /// the bound wallet's own key. Returns the 32-byte new identity id
+    /// re-derived per operation via `resolver` (see
+    /// [`shieldedTransfer`]). Returns the 32-byte new identity id
     /// (`double_sha256(sorted nullifiers)`).
     ///
     /// `identityIndex` is the DIP-9 identity-registration slot the new
@@ -743,6 +792,7 @@ extension PlatformWalletManager {
     /// detached task so the caller's actor isn't blocked.
     public func shieldedIdentityCreateFromPool(
         walletId: Data,
+        resolver: MnemonicResolver,
         account: UInt32 = 0,
         identityIndex: UInt32,
         identityPubkeys: [ManagedPlatformWallet.IdentityPubkey],
@@ -770,6 +820,11 @@ extension PlatformWalletManager {
                 "sendToAddressOnCreationFailure must be exactly 21 PlatformAddress bytes"
             )
         }
+        guard let resolverHandle = resolver.handle else {
+            throw PlatformWalletError.invalidParameter(
+                "MnemonicResolver has no handle"
+            )
+        }
 
         let handle = self.handle
         let identitySignerHandle = identitySigner.handle
@@ -794,11 +849,12 @@ extension PlatformWalletManager {
             // Reuses the same marshalling helper the address-funded
             // registration path uses so the two can't drift.
             let pubkeyBuffers: [Data] = identityPubkeys.map { $0.pubkeyBytes }
-            // KeychainSigner is passed to Rust via `passUnretained`, so the Rust ctx pointer dangles
-            // unless the Swift owner is kept alive across the FFI call. `_ = identitySigner` is
-            // folklore that the optimizer may elide in -O builds; `withExtendedLifetime` is the
-            // guaranteed keepalive (matches this module's signer-lifetime guidance).
-            let result = try withExtendedLifetime(identitySigner) {
+            // KeychainSigner and MnemonicResolver are passed to Rust via `passUnretained`, so the
+            // Rust ctx pointers dangle unless the Swift owners are kept alive across the FFI call.
+            // `_ = identitySigner` is folklore that the optimizer may elide in -O builds;
+            // `withExtendedLifetime` is the guaranteed keepalive (matches this module's
+            // signer-lifetime guidance).
+            let result = try withExtendedLifetime((identitySigner, resolver)) {
                 try walletId.withUnsafeBytes { widRaw -> PlatformWalletFFIResult in
                     guard let widPtr = widRaw.baseAddress?.assumingMemoryBound(to: UInt8.self)
                     else {
@@ -822,6 +878,7 @@ extension PlatformWalletManager {
                             platform_wallet_manager_shielded_identity_create_from_pool(
                                 handle,
                                 widPtr,
+                                resolverHandle,
                                 account,
                                 identityIndex,
                                 ffiRowsPtr,

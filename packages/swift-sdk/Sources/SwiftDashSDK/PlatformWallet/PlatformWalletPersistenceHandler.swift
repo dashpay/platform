@@ -1108,6 +1108,9 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         cb.on_load_shielded_sync_states_free_fn = loadShieldedSyncStatesFreeCallback
         cb.on_load_shielded_activity_fn = loadShieldedActivityCallback
         cb.on_load_shielded_activity_free_fn = loadShieldedActivityFreeCallback
+        cb.on_persist_shielded_viewing_keys_fn = persistShieldedViewingKeysCallback
+        cb.on_load_shielded_viewing_keys_fn = loadShieldedViewingKeysCallback
+        cb.on_load_shielded_viewing_keys_free_fn = loadShieldedViewingKeysFreeCallback
         cb.on_persist_asset_locks_fn = persistAssetLocksCallback
         cb.on_get_core_tx_record_fn = getCoreTxRecordCallback
         cb.on_get_core_tx_record_free_fn = getCoreTxRecordFreeCallback
@@ -3044,6 +3047,45 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         }
     }
 
+    /// Upsert per-subwallet Orchard viewing keys (raw 96-byte FVK
+    /// encodings). Fired once per seed-backed bind; the FVK for a
+    /// subwallet never changes on a network, so re-persists are
+    /// byte-identical upserts.
+    func persistShieldedViewingKeys(
+        walletId: Data,
+        entries: [(walletId: Data, accountIndex: UInt32, fvkBytes: Data)]
+    ) {
+        onQueue {
+            for entry in entries {
+                guard entry.fvkBytes.count == 96 else { continue }
+                let rowWalletId = entry.walletId
+                let rowAccountIndex = entry.accountIndex
+                let predicate = #Predicate<PersistentShieldedViewingKey> { row in
+                    row.walletId == rowWalletId && row.accountIndex == rowAccountIndex
+                }
+                var descriptor = FetchDescriptor<PersistentShieldedViewingKey>(
+                    predicate: predicate
+                )
+                descriptor.fetchLimit = 1
+                if let row = try? backgroundContext.fetch(descriptor).first {
+                    if row.fvkBytes != entry.fvkBytes {
+                        row.fvkBytes = entry.fvkBytes
+                        row.lastUpdated = Date()
+                    }
+                } else {
+                    backgroundContext.insert(
+                        PersistentShieldedViewingKey(
+                            walletId: rowWalletId,
+                            accountIndex: rowAccountIndex,
+                            fvkBytes: entry.fvkBytes
+                        )
+                    )
+                }
+            }
+            if !self.inChangeset { try? backgroundContext.save() }
+        }
+    }
+
     /// Fetch-or-create a `PersistentShieldedSyncState` row for
     /// `(walletId, accountIndex)`. Caller must be on `onQueue`.
     private func ensureShieldedSyncStateRow(
@@ -3494,6 +3536,80 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         }
     }
 
+    /// Build the host-allocated `ShieldedViewingKeyRestoreFFI` array
+    /// Rust reads at boot so `bind_shielded_from_persisted` can rebind
+    /// without a mnemonic resolve. Same allocation pattern (and
+    /// network scoping) as `loadShieldedSyncStates`.
+    func loadShieldedViewingKeys() -> (
+        entries: UnsafePointer<ShieldedViewingKeyRestoreFFI>?,
+        count: Int,
+        errored: Bool
+    ) {
+        var resultEntries: UnsafePointer<ShieldedViewingKeyRestoreFFI>?
+        var resultCount: Int = 0
+        var resultErrored = false
+        onQueue {
+            let descriptor = FetchDescriptor<PersistentShieldedViewingKey>()
+            var rows: [PersistentShieldedViewingKey]
+            do {
+                rows = try backgroundContext.fetch(descriptor)
+            } catch {
+                resultErrored = true
+                return
+            }
+            // Same network scoping as the other shielded loaders — the
+            // FVK embeds the coin type, so serving another network's
+            // rows would fail the Rust-side bind, not corrupt it, but
+            // the loaders stay consistent regardless.
+            if let inNetworkIds = self.inNetworkWalletIds() {
+                rows = rows.filter { inNetworkIds.contains($0.walletId) }
+            }
+            if rows.isEmpty {
+                return
+            }
+            let allocation = ShieldedViewingKeyLoadAllocation()
+            let buf = UnsafeMutablePointer<ShieldedViewingKeyRestoreFFI>.allocate(
+                capacity: rows.count
+            )
+            allocation.entries = buf
+            allocation.entriesCount = rows.count
+            // Same `written`-counter pattern as `loadShieldedSyncStates`:
+            // skip malformed rows without leaving holes in the
+            // contiguous prefix Rust will read.
+            var written = 0
+            for row in rows {
+                guard row.walletId.count == 32, row.fvkBytes.count == 96 else { continue }
+                var entry = ShieldedViewingKeyRestoreFFI()
+                Swift.withUnsafeMutableBytes(of: &entry.wallet_id) { dst in
+                    row.walletId.withUnsafeBytes { dst.copyMemory(from: $0) }
+                }
+                entry.account_index = row.accountIndex
+                Swift.withUnsafeMutableBytes(of: &entry.fvk_bytes) { dst in
+                    row.fvkBytes.withUnsafeBytes { dst.copyMemory(from: $0) }
+                }
+                buf[written] = entry
+                written += 1
+                allocation.entriesInitialized = written
+            }
+            let entriesPtr = UnsafePointer(buf)
+            shieldedViewingKeyLoadAllocations[UnsafeRawPointer(entriesPtr)] = allocation
+            resultEntries = entriesPtr
+            resultCount = written
+        }
+        return (resultEntries, resultCount, resultErrored)
+    }
+
+    func loadShieldedViewingKeysFree(entries: UnsafeRawPointer?) {
+        onQueue {
+            guard let entries = entries,
+                  let allocation = shieldedViewingKeyLoadAllocations.removeValue(forKey: entries)
+            else {
+                return
+            }
+            allocation.release()
+        }
+    }
+
     /// Outstanding shielded-load allocations keyed by the entries
     /// pointer we handed Rust. Drained by `loadShieldedNotesFree`.
     private var shieldedLoadAllocations: [UnsafeRawPointer: ShieldedLoadAllocation] = [:]
@@ -3503,6 +3619,8 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         [UnsafeRawPointer: ShieldedSyncStateLoadAllocation] = [:]
     private var shieldedActivityLoadAllocations:
         [UnsafeRawPointer: ShieldedActivityLoadAllocation] = [:]
+    private var shieldedViewingKeyLoadAllocations:
+        [UnsafeRawPointer: ShieldedViewingKeyLoadAllocation] = [:]
 
     /// Set network, group id + birth height on the `PersistentWallet`
     /// row. Fires once at wallet registration with values the Rust side
@@ -3766,6 +3884,13 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     predicate: #Predicate<PersistentShieldedActivity> { $0.walletId == walletId }
                 )
                 for row in try backgroundContext.fetch(shieldedActivityDescriptor) {
+                    backgroundContext.delete(row)
+                }
+
+                let shieldedViewingKeyDescriptor = FetchDescriptor<PersistentShieldedViewingKey>(
+                    predicate: #Predicate<PersistentShieldedViewingKey> { $0.walletId == walletId }
+                )
+                for row in try backgroundContext.fetch(shieldedViewingKeyDescriptor) {
                     backgroundContext.delete(row)
                 }
 
@@ -5765,6 +5890,25 @@ private final class ShieldedSyncStateLoadAllocation {
     }
 }
 
+/// Allocation tracker for `loadShieldedViewingKeys` — a flat entries
+/// buffer with no per-row pointer fields (the FVK is a fixed 96-byte
+/// inline array), so the same shape as
+/// `ShieldedSyncStateLoadAllocation`.
+private final class ShieldedViewingKeyLoadAllocation {
+    var entries: UnsafeMutablePointer<ShieldedViewingKeyRestoreFFI>?
+    var entriesCount: Int = 0
+    var entriesInitialized: Int = 0
+
+    func release() {
+        if let entries = entries {
+            if entriesInitialized > 0 {
+                entries.deinitialize(count: entriesInitialized)
+            }
+            entries.deallocate()
+        }
+    }
+}
+
 /// Allocation tracker for `loadShieldedActivity` — the entries buffer
 /// plus per-row byte buffers for the four pointer-backed fields
 /// (counterparty / memo / note-cmx array / spent-nullifier array). Each
@@ -6966,6 +7110,64 @@ private func loadShieldedSyncStatesFreeCallback(
         .fromOpaque(context)
         .takeUnretainedValue()
     handler.loadShieldedSyncStatesFree(entries: entries.map(UnsafeRawPointer.init))
+}
+
+private func persistShieldedViewingKeysCallback(
+    context: UnsafeMutableRawPointer?,
+    walletIdPtr: UnsafePointer<UInt8>?,
+    entriesPtr: UnsafePointer<ShieldedViewingKeyFFI>?,
+    count: UInt
+) -> Int32 {
+    guard let context = context, let walletIdPtr = walletIdPtr else { return 0 }
+    let handler = Unmanaged<PlatformWalletPersistenceHandler>
+        .fromOpaque(context)
+        .takeUnretainedValue()
+    let walletId = Data(bytes: walletIdPtr, count: 32)
+
+    var entries: [(walletId: Data, accountIndex: UInt32, fvkBytes: Data)] = []
+    if count > 0, let entriesPtr = entriesPtr {
+        entries.reserveCapacity(Int(count))
+        for i in 0..<Int(count) {
+            let e = entriesPtr[i]
+            let fvkBytes = Swift.withUnsafeBytes(of: e.fvk_bytes) { Data($0) }
+            entries.append((
+                walletId: dataFromTuple32(e.wallet_id),
+                accountIndex: e.account_index,
+                fvkBytes: fvkBytes
+            ))
+        }
+    }
+    handler.persistShieldedViewingKeys(walletId: walletId, entries: entries)
+    return 0
+}
+
+private func loadShieldedViewingKeysCallback(
+    context: UnsafeMutableRawPointer?,
+    outEntries: UnsafeMutablePointer<UnsafePointer<ShieldedViewingKeyRestoreFFI>?>?,
+    outCount: UnsafeMutablePointer<UInt>?
+) -> Int32 {
+    guard let context = context, let outEntries = outEntries, let outCount = outCount else {
+        return 1
+    }
+    let handler = Unmanaged<PlatformWalletPersistenceHandler>
+        .fromOpaque(context)
+        .takeUnretainedValue()
+    let (entries, count, errored) = handler.loadShieldedViewingKeys()
+    outEntries.pointee = entries
+    outCount.pointee = UInt(count)
+    return errored ? 1 : 0
+}
+
+private func loadShieldedViewingKeysFreeCallback(
+    context: UnsafeMutableRawPointer?,
+    entries: UnsafePointer<ShieldedViewingKeyRestoreFFI>?,
+    _ count: UInt
+) {
+    guard let context = context else { return }
+    let handler = Unmanaged<PlatformWalletPersistenceHandler>
+        .fromOpaque(context)
+        .takeUnretainedValue()
+    handler.loadShieldedViewingKeysFree(entries: entries.map(UnsafeRawPointer.init))
 }
 
 // MARK: - Core tx-record persister fallback
