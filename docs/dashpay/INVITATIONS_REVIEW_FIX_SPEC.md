@@ -310,3 +310,76 @@ link transport is externally blocked (Android team creds) and tracked separately
 - **S1/N1:** targeted unit tests (S1: custom `expiry_unix` no longer poisons `created_at`).
 - **Full regression:** 24 platform-wallet + 10 ffi invitation tests + the funded sim e2e
   stay green; `fmt --all` + `clippy --workspace --all-features` clean; iOS build.
+
+---
+
+# Round 2 — the 2026-07-14 review (6 findings, all accepted)
+
+## R1 — `store()` success is not durability 🔴
+
+The pre-broadcast voucher-index gate treated `persist_asset_lock_account_pools()`
+(`store()`) as proof of durability, but the trait contract explicitly allows `store`
+to buffer until `flush` ("treat any store → flush sequence as potentially performing
+I/O at either point"), and `NoPlatformPersistence` returns `Ok` while writing nothing.
+**Fix (two halves):**
+1. The `IdentityInvitation` gate in `broadcast_funded_asset_lock` drives
+   `persister.flush()` — the contract's durability boundary — after the pool store,
+   aborting before broadcast when either fails (buffering backends covered).
+2. New trait capability `PlatformWalletPersistence::persists_durably()` (default
+   `true`; `NoPlatformPersistence` overrides `false`); `create_invitation` refuses a
+   non-durable backend up-front, before any funds move (no-op backends covered).
+   Non-invitation funding types stay best-effort (their keys never leave the device).
+
+## R2 — invitation row created only after proof acquisition 🔴
+
+The B3 reorder persisted the row after `create_funded_asset_lock_proof` returned —
+but that call itself broadcasts, then waits up to 300 s for InstantSend (unbounded
+ChainLock fallback), so a termination in that window left a funded lock invisible to
+the reclaim UI. **Fix:** split `create_funded_asset_lock_proof` into a
+`broadcast_funded_asset_lock` half (build → pool gate → track → broadcast) and a
+`wait_for_funded_asset_lock_proof` half (proof wait → upgrade → attach);
+`create_invitation` persists + flushes the `InvitationEntry` between them —
+immediately after broadcast, before any proof wait. The public composed API is
+unchanged. Residual (accepted): a definitive `MaybeSent` broadcast ambiguity still
+returns before the row exists; the typed `Broadcast` asset-lock row remains the
+recovery source there, as before.
+
+## R3 — all-wallet invitation list shows unloaded/foreign-network rows 🟡
+
+`InvitationsView`'s unfiltered `@Query` surfaced rows whose wallet is not loaded in
+the ACTIVE network's manager (no network discriminator on `PersistentInvitation`;
+deleted wallets keep their rows), and reclaim on those dead rows can only fail with
+"No wallet loaded". **Fix:** keep the all-wallet query (multi-wallet reclaim stays)
+but filter displayed rows to `walletManager.wallet(for:) != nil`.
+
+## R4 — reclaim marker save must precede the consume 🟡
+
+`markInFlight` suppressed `modelContext.save()` failure with `try?` and both reclaim
+arms immediately entered the irreversible consume; a failed save + consume + crash
+strands the row (local "is not tracked" → error; Platform "already consumed" →
+misclassified foreign claim). **Fix:** `markInFlight` is throwing; a failed save
+rolls the in-memory flag back and aborts the reclaim before the consume.
+
+## R5 — `has_inviter` documented as bootstrap availability 💬
+
+The ABI/Swift docs promised "contact-bootstrap available", but the parser
+intentionally sets `has_inviter = true` for display-name/avatar-only links with a
+null username (bootstrap impossible). **Fix (docs only):** define the flag as
+inviter-METADATA presence; a non-null `inviter_username` is the bootstrap condition.
+
+## R6 — stale invitation-callback contract comment 💬
+
+`persistInvitationsCallback`'s doc still said "always returns 0 / silently skipped"
+— describing the exact data-loss behavior B1 removed. **Fix (docs only):** restate
+the real contract (0 = all staged; nonzero fails the round and rolls back the
+invitation-only changeset). Also re-homed the `persistAssetLocksCallback` doc block
+that was stranded on top of the invitations shim.
+
+## Round-2 test additions
+
+- `invitation_gate_aborts_before_broadcast_when_flush_fails` (red on old code: the
+  old gate never flushed, so the flow reached the rejecting broadcaster).
+- `flush_failure_does_not_gate_non_invitation_funding` (scoping guard).
+- `broadcast_half_leaves_broadcast_row_and_flushed_pool` (the split's contract).
+- `durability_gate::create_invitation_requires_durable_persistence` (red on old
+  code: it proceeded into signing — the test signer panics on any use).
