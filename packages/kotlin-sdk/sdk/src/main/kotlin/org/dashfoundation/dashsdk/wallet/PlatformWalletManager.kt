@@ -1032,25 +1032,7 @@ class PlatformWalletManager(
                 signerHandle,
             )
         }
-        check(packed.size >= 33) { "expected >=33-byte tagged identity id, got ${packed.size}" }
-        val identityId = packed.copyOfRange(1, 33)
-        if (packed[0].toInt() != 0) {
-            // The C ABI wrote the id even though the broadcast outcome is
-            // ambiguous: surface a TYPED unconfirmed error so the caller
-            // holds the derivation slot instead of retrying into a
-            // possibly-live identity. Bytes 33.. carry the native
-            // diagnostic (the underlying confirmation failure).
-            val diagnostic = if (packed.size > 33) {
-                packed.copyOfRange(33, packed.size).decodeToString()
-            } else {
-                "shielded identity create broadcast unconfirmed"
-            }
-            throw DashSdkError.PlatformWallet.ShieldedCreateUnconfirmed(
-                identityId = identityId,
-                message = diagnostic,
-            )
-        }
-        identityId
+        decodeShieldedCreatePayload(packed)
     }
 
     /**
@@ -1778,3 +1760,37 @@ data class DashPaySyncSummary(
     val errors: Int,
     val syncUnixSeconds: Long,
 )
+
+/**
+ * Decode the tagged shielded-create payload the JNI returns:
+ * `[tag || identity_id[32] || diagnostic_utf8...]`.
+ *
+ * - tag 0 → returns the 32-byte identity id (success).
+ * - tag != 0 → throws [DashSdkError.PlatformWallet.ShieldedCreateUnconfirmed]
+ *   carrying the id AND the native diagnostic from bytes 33.. (the
+ *   underlying DAPI / result-proof confirmation failure); an empty
+ *   diagnostic falls back to a generic message. The C ABI writes the id
+ *   on the unconfirmed outcome too — the identity may already be live,
+ *   so the caller must hold the derivation slot instead of retrying.
+ *
+ * Extracted from [PlatformWalletManager.shieldedIdentityCreateFromPool]
+ * so the codec boundary is unit-testable without the native library
+ * (Rust encodes, Kotlin decodes — a silent drift would lose the id or
+ * diagnostic on an ambiguous broadcast).
+ */
+internal fun decodeShieldedCreatePayload(packed: ByteArray): ByteArray {
+    check(packed.size >= 33) { "expected >=33-byte tagged identity id, got ${packed.size}" }
+    val identityId = packed.copyOfRange(1, 33)
+    if (packed[0].toInt() != 0) {
+        val diagnostic = if (packed.size > 33) {
+            packed.copyOfRange(33, packed.size).decodeToString()
+        } else {
+            "shielded identity create broadcast unconfirmed"
+        }
+        throw DashSdkError.PlatformWallet.ShieldedCreateUnconfirmed(
+            identityId = identityId,
+            message = diagnostic,
+        )
+    }
+    return identityId
+}
