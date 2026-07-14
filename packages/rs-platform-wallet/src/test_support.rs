@@ -54,6 +54,17 @@ impl TransactionBroadcaster for RejectFirstBroadcaster {
     }
 }
 
+/// Broadcaster that always succeeds, for flows that must run past the
+/// broadcast step (e.g. the broadcast half of the funded asset-lock flow).
+pub(crate) struct AlwaysOkBroadcaster;
+
+#[async_trait]
+impl TransactionBroadcaster for AlwaysOkBroadcaster {
+    async fn broadcast(&self, transaction: &Transaction) -> Result<Txid, BroadcastError> {
+        Ok(transaction.txid())
+    }
+}
+
 /// Broadcaster that always fails with a definitive pre-send rejection.
 pub(crate) struct AlwaysRejectedBroadcaster;
 

@@ -389,6 +389,37 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         identity_index: u32,
         signer: &S,
     ) -> Result<(dpp::prelude::AssetLockProof, DerivationPath, OutPoint), PlatformWalletError> {
+        let (path, out_point) = self
+            .broadcast_funded_asset_lock(
+                amount_duffs,
+                account_index,
+                funding_type,
+                identity_index,
+                signer,
+            )
+            .await?;
+        let proof = self
+            .wait_for_funded_asset_lock_proof(&out_point, account_index)
+            .await?;
+        Ok((proof, path, out_point))
+    }
+
+    /// Broadcast half of [`Self::create_funded_asset_lock_proof`] — steps 1–4:
+    /// build + fund the asset-lock transaction, persist the funding account's
+    /// address pool, track the lifecycle row, and broadcast. Returns as soon as
+    /// the transaction is on the wire (status `Broadcast`), BEFORE any proof
+    /// wait, so a caller can durably record its own bookkeeping for the funded
+    /// lock (e.g. the inviter-side invitation row) between the broadcast and
+    /// the potentially long proof wait in
+    /// [`Self::wait_for_funded_asset_lock_proof`].
+    pub(crate) async fn broadcast_funded_asset_lock<S: Signer>(
+        &self,
+        amount_duffs: u64,
+        account_index: u32,
+        funding_type: AssetLockFundingType,
+        identity_index: u32,
+        signer: &S,
+    ) -> Result<(DerivationPath, OutPoint), PlatformWalletError> {
         // 1. Build the asset lock transaction.
         let (tx, path) = self
             .build_asset_lock_transaction(
@@ -410,9 +441,19 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         // carries `funding_index` across a restart. For an INVITATION this write
         // is a security gate: the voucher key is exported into a bearer link, so
         // a failed persist would let the next restart reuse this index/key.
+        // `store()` alone is only a buffer hint under the persistence contract
+        // (backends may defer I/O until `flush`), so the invitation gate also
+        // drives `flush()` — the contract's durability boundary — before
+        // anything hits the wire.
         // Aborting BEFORE broadcast is harmless (no tx on the wire); the other
         // asset-lock accounts keep their keys on-device, so they stay best-effort.
-        if let Err(e) = self.persist_asset_lock_account_pools().await {
+        let pool_durability = match self.persist_asset_lock_account_pools().await {
+            Ok(()) if funding_type == AssetLockFundingType::IdentityInvitation => {
+                self.persister.flush()
+            }
+            other => other,
+        };
+        if let Err(e) = pool_durability {
             tracing::error!(error = %e, "failed to persist asset-lock funding index");
             if funding_type == AssetLockFundingType::IdentityInvitation {
                 return Err(PlatformWalletError::AssetLockTransaction(format!(
@@ -485,20 +526,32 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             .await?;
         self.queue_asset_lock_changeset(cs_broadcast);
 
+        Ok((path, out_point))
+    }
+
+    /// Proof half of [`Self::create_funded_asset_lock_proof`] — steps 5–6:
+    /// wait for the InstantSend/ChainLock proof of an already-broadcast asset
+    /// lock, upgrade it when Platform would reject it, and attach it to the
+    /// tracked row.
+    pub(crate) async fn wait_for_funded_asset_lock_proof(
+        &self,
+        out_point: &OutPoint,
+        account_index: u32,
+    ) -> Result<dpp::prelude::AssetLockProof, PlatformWalletError> {
         // 5. Wait for proof via SPV events. The 300s bound is an
         //    InstantSend-preference window, NOT a finality timeout: on
         //    expiry the resolver falls back to an unbounded ChainLock wait
         //    (`upgrade_to_chain_lock_proof(None)`), so a broadcast lock is
         //    never surfaced as "failed" just because IS was slow.
         let proof = self
-            .wait_for_proof(&out_point, Some(Duration::from_secs(300)))
+            .wait_for_proof(out_point, Some(Duration::from_secs(300)))
             .await?;
 
         // 5b. If we got an IS-lock proof, check whether the transaction is
         // old enough that Platform might reject it. If so, upgrade to a
         // ChainLock proof proactively.
         let proof = self
-            .validate_or_upgrade_proof(proof, account_index, &out_point)
+            .validate_or_upgrade_proof(proof, account_index, out_point)
             .await?;
 
         // 6. Attach proof — status matches the proof type received —
@@ -508,11 +561,11 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             dpp::prelude::AssetLockProof::Chain(_) => AssetLockStatus::ChainLocked,
         };
         let cs_final = self
-            .advance_asset_lock_status(&out_point, status, Some(proof.clone()))
+            .advance_asset_lock_status(out_point, status, Some(proof.clone()))
             .await?;
         self.queue_asset_lock_changeset(cs_final);
 
-        Ok((proof, path, out_point))
+        Ok(proof)
     }
 }
 
@@ -534,7 +587,8 @@ mod tests {
         ClientStartState, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
     };
     use crate::test_support::{
-        funded_wallet_manager, AlwaysMaybeSentBroadcaster, AlwaysRejectedBroadcaster, WalletSigner,
+        funded_wallet_manager, AlwaysMaybeSentBroadcaster, AlwaysOkBroadcaster,
+        AlwaysRejectedBroadcaster, WalletSigner,
     };
     use crate::wallet::asset_lock::manager::AssetLockManager;
     use crate::wallet::asset_lock::tracked::AssetLockStatus;
@@ -544,10 +598,14 @@ mod tests {
     use crate::{AssetLockFundingType, PlatformWalletError};
 
     /// Persistence stub that records every stored changeset so tests can
-    /// assert what the asset-lock flow queued.
+    /// assert what the asset-lock flow queued. `fail_flush` simulates a
+    /// backend whose durability boundary fails; `flushes` counts `flush`
+    /// calls so tests can assert the invitation gate drove one.
     #[derive(Default)]
     struct CapturingPersistence {
         stored: Mutex<Vec<PlatformWalletChangeSet>>,
+        flushes: std::sync::atomic::AtomicUsize,
+        fail_flush: bool,
     }
 
     impl CapturingPersistence {
@@ -578,6 +636,11 @@ mod tests {
         }
 
         fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+            self.flushes
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            if self.fail_flush {
+                return Err(PersistenceError::backend("simulated flush failure"));
+            }
             Ok(())
         }
 
@@ -594,10 +657,21 @@ mod tests {
         WalletSigner,
         Arc<CapturingPersistence>,
     ) {
+        let persistence = Arc::new(CapturingPersistence::default());
+        let (manager, signer) =
+            funded_asset_lock_manager_with_persistence(broadcaster, Arc::clone(&persistence)).await;
+        (manager, signer, persistence)
+    }
+
+    /// Like [`funded_asset_lock_manager`] but over a caller-built persistence
+    /// stub (e.g. one with `fail_flush` set).
+    async fn funded_asset_lock_manager_with_persistence<B: TransactionBroadcaster>(
+        broadcaster: Arc<B>,
+        persistence: Arc<CapturingPersistence>,
+    ) -> (Arc<AssetLockManager<B>>, WalletSigner) {
         let (wallet_manager, wallet_id, _balance, signer) =
             funded_wallet_manager(StandardAccountType::BIP44Account).await;
 
-        let persistence = Arc::new(CapturingPersistence::default());
         let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
         let manager = Arc::new(AssetLockManager::new(
             sdk,
@@ -605,13 +679,10 @@ mod tests {
             wallet_id,
             Arc::new(Notify::new()),
             broadcaster,
-            WalletPersister::new(
-                wallet_id,
-                Arc::clone(&persistence) as Arc<dyn PlatformWalletPersistence>,
-            ),
+            WalletPersister::new(wallet_id, persistence as Arc<dyn PlatformWalletPersistence>),
         ));
 
-        (manager, signer, persistence)
+        (manager, signer)
     }
 
     /// Regression: a build must persist the funding account's address-pool
@@ -881,6 +952,132 @@ mod tests {
             matches!(rebuild, Err(PlatformWalletError::AssetLockTransaction(_))),
             "rebuild must fail at input selection while the reservation is \
              kept for the advanced row, got {rebuild:?}"
+        );
+    }
+
+    /// The invitation pre-broadcast gate must treat `flush()` — the
+    /// persistence contract's durability boundary — as part of recording the
+    /// funding index, and abort BEFORE broadcast when it fails. `store()`
+    /// alone may only buffer; an unflushed funding index can be re-selected
+    /// after a restart, re-exporting the same bearer voucher key.
+    #[tokio::test]
+    async fn invitation_gate_aborts_before_broadcast_when_flush_fails() {
+        let persistence = Arc::new(CapturingPersistence {
+            fail_flush: true,
+            ..Default::default()
+        });
+        // The broadcaster rejects loudly: reaching it at all would surface as
+        // a `TransactionBroadcast` error, so the gate's own "aborted before
+        // broadcast" message proves nothing hit the wire.
+        let (manager, signer) = funded_asset_lock_manager_with_persistence(
+            Arc::new(AlwaysRejectedBroadcaster),
+            Arc::clone(&persistence),
+        )
+        .await;
+
+        let result = manager
+            .create_funded_asset_lock_proof(
+                1_000_000,
+                0,
+                AssetLockFundingType::IdentityInvitation,
+                0,
+                &signer,
+            )
+            .await;
+        match result {
+            Err(PlatformWalletError::AssetLockTransaction(msg)) => assert!(
+                msg.contains("aborted before broadcast"),
+                "expected the pre-broadcast durability abort, got: {msg}"
+            ),
+            other => panic!("expected the pre-broadcast durability abort, got {other:?}"),
+        }
+        assert!(
+            persistence
+                .flushes
+                .load(std::sync::atomic::Ordering::SeqCst)
+                >= 1,
+            "the invitation gate must have driven flush()"
+        );
+    }
+
+    /// Non-invitation funding types stay best-effort: their one-time keys
+    /// never leave the device, so a failing durability boundary must NOT gate
+    /// them — the flow proceeds to broadcast.
+    #[tokio::test]
+    async fn flush_failure_does_not_gate_non_invitation_funding() {
+        let persistence = Arc::new(CapturingPersistence {
+            fail_flush: true,
+            ..Default::default()
+        });
+        let (manager, signer) = funded_asset_lock_manager_with_persistence(
+            Arc::new(AlwaysRejectedBroadcaster),
+            Arc::clone(&persistence),
+        )
+        .await;
+
+        let result = manager
+            .create_funded_asset_lock_proof(
+                1_000_000,
+                0,
+                AssetLockFundingType::IdentityRegistration,
+                0,
+                &signer,
+            )
+            .await;
+        assert!(
+            matches!(result, Err(PlatformWalletError::TransactionBroadcast(_))),
+            "a registration build must reach the broadcaster despite the flush \
+             failure (best-effort persistence), got {result:?}"
+        );
+    }
+
+    /// The broadcast half returns as soon as the transaction is on the wire:
+    /// the tracked row is `Broadcast` (recoverable/resumable) and the
+    /// invitation funding pool was persisted AND flushed — all BEFORE any
+    /// proof wait (the test completing at all proves no SPV wait ran), so a
+    /// caller can durably record its own bookkeeping for the funded lock
+    /// between the broadcast and the proof wait.
+    #[tokio::test]
+    async fn broadcast_half_leaves_broadcast_row_and_flushed_pool() {
+        let persistence = Arc::new(CapturingPersistence::default());
+        let (manager, signer) = funded_asset_lock_manager_with_persistence(
+            Arc::new(AlwaysOkBroadcaster),
+            Arc::clone(&persistence),
+        )
+        .await;
+
+        let (_path, out_point) = manager
+            .broadcast_funded_asset_lock(
+                1_000_000,
+                0,
+                AssetLockFundingType::IdentityInvitation,
+                0,
+                &signer,
+            )
+            .await
+            .expect("broadcast half should succeed");
+
+        {
+            let wm = manager.wallet_manager.read().await;
+            let (_, info) = wm
+                .get_wallet_and_info(&manager.wallet_id)
+                .expect("wallet still present");
+            let lock = info
+                .tracked_asset_locks
+                .get(&out_point)
+                .expect("broadcast lock must stay tracked");
+            assert_eq!(
+                lock.status,
+                AssetLockStatus::Broadcast,
+                "the broadcast half must stop at Broadcast (no proof attached)"
+            );
+        }
+        assert!(
+            persistence
+                .flushes
+                .load(std::sync::atomic::Ordering::SeqCst)
+                >= 1,
+            "the invitation funding pool must be flushed before broadcast"
         );
     }
 }

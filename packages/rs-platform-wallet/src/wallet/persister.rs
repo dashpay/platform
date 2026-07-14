@@ -38,6 +38,11 @@ impl WalletPersister {
         self.inner.flush(self.wallet_id)
     }
 
+    /// See [`PlatformWalletPersistence::persists_durably`].
+    pub(crate) fn persists_durably(&self) -> bool {
+        self.inner.persists_durably()
+    }
+
     pub(crate) fn load(&self) -> Result<ClientStartState, PersistenceError> {
         self.inner.load()
     }
@@ -58,6 +63,11 @@ impl WalletPersister {
 pub struct NoPlatformPersistence;
 
 impl PlatformWalletPersistence for NoPlatformPersistence {
+    /// Nothing is ever written, so nothing survives a restart.
+    fn persists_durably(&self) -> bool {
+        false
+    }
+
     fn store(
         &self,
         _wallet_id: WalletId,

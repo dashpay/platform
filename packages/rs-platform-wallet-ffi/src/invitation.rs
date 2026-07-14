@@ -326,7 +326,12 @@ pub struct InvitationPreviewFFI {
     /// The link carried an `islock`, so the claim will build an InstantSend
     /// proof; `false` ⇒ a ChainLock-confirmed invite (islock absent / `"null"`).
     pub is_instant: bool,
-    /// The link carries inviter info (the contact-bootstrap is available).
+    /// The link carried inviter METADATA (a `du` username, display name, or
+    /// avatar). Presence does NOT mean the contact bootstrap is available: a
+    /// metadata-only link (display-name/avatar without `du`) still sets this
+    /// flag while `inviter_username` stays null, and the bootstrap needs the
+    /// username. Gate contact features on a non-null `inviter_username`, not
+    /// on this flag.
     pub has_inviter: bool,
     /// Inviter identity id (32 bytes) — always zeroed: the legacy link carries
     /// only the username (`du`), from which the id is resolved via DPNS.
@@ -370,8 +375,9 @@ impl InvitationPreviewFFI {
 /// the UI can render a clean "invalid invitation" state; only a null / non-UTF-8
 /// `uri` argument returns an error result.
 ///
-/// When `has_inviter` is set, `*out_preview.inviter_username` is a heap C string
-/// the caller frees with [`crate::platform_wallet_string_free`].
+/// When `out_preview.inviter_username` is non-null it is a heap C string the
+/// caller frees with [`crate::platform_wallet_string_free`]. It can be null
+/// even when `has_inviter` is set (a metadata-only link) — see the field docs.
 ///
 /// # Safety
 /// - `uri` must be a valid NUL-terminated UTF-8 C string.

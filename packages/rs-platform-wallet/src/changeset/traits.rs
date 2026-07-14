@@ -188,6 +188,25 @@ impl PersistenceError {
 /// to guarantee a batch flush, it should call `flush` explicitly after all
 /// `store` calls and treat `store` as a best-effort buffer hint.
 pub trait PlatformWalletPersistence: Send + Sync {
+    /// Whether stored state survives a process restart once `store` + `flush`
+    /// return `Ok`.
+    ///
+    /// Defaults to `true` — the contract every real backend (SQLite, the FFI
+    /// SwiftData bridge) meets. Backends that only buffer in memory or drop
+    /// writes (e.g. [`NoPlatformPersistence`](crate::wallet::persister::NoPlatformPersistence))
+    /// MUST override this to return `false`.
+    ///
+    /// Security-sensitive flows gate on this. Creating a DashPay invitation
+    /// exports a one-time bearer voucher key derived from a persisted funding
+    /// index; on a backend that cannot guarantee the index survives a restart,
+    /// the same key could be re-derived and re-exported after a relaunch,
+    /// letting the holder of an earlier link consume a later voucher. Such
+    /// flows refuse to run on a non-durable backend rather than silently
+    /// producing a reusable bearer secret.
+    fn persists_durably(&self) -> bool {
+        true
+    }
+
     /// Buffer a changeset for later persistence.
     ///
     /// Implementations should merge into an internal per-wallet accumulator so

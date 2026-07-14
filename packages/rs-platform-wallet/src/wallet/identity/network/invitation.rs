@@ -203,6 +203,12 @@ impl IdentityWallet {
     /// The proof is kept as an **InstantSend** proof (owner decision) — fast, and
     /// the embedded tx + islock make the link self-contained; staleness is
     /// bounded by the short advisory expiry, not a CL upgrade.
+    ///
+    /// Requires a durably-persisting backend
+    /// ([`PlatformWalletPersistence::persists_durably`](crate::changeset::PlatformWalletPersistence::persists_durably)):
+    /// the exported voucher key is derived from the persisted funding index, so a
+    /// backend that drops writes would re-export the same bearer key after a
+    /// restart. A non-durable backend is refused before any funds move.
     #[allow(clippy::too_many_arguments)]
     pub async fn create_invitation<AS, CP>(
         &self,
@@ -236,13 +242,32 @@ impl IdentityWallet {
             ));
         }
 
+        // Refuse to run on a backend that cannot durably persist. The one-time
+        // voucher key is derived from a persisted funding index and exported
+        // into a bearer link; on a backend that drops writes (e.g.
+        // `NoPlatformPersistence`) the index resets on restart, so the SAME key
+        // would be re-exported to a later invitation — the holder of the earlier
+        // link could then consume the later voucher. Checked before any funds
+        // move.
+        if !self.persister.persists_durably() {
+            return Err(PlatformWalletError::Persistence(
+                "invitation creation requires a durable persistence backend (see \
+                 PlatformWalletPersistence::persists_durably): a non-durable backend \
+                 would re-export the same bearer voucher key after a restart"
+                    .to_string(),
+            ));
+        }
+
         // Build + broadcast the voucher asset lock at the invitation funding
         // account (the builder auto-selects the next unused funding index and
         // returns its derivation path). `identity_index` is unused for the
-        // `IdentityInvitation` funding type.
-        let (proof, path, out_point) = self
+        // `IdentityInvitation` funding type. Only the broadcast half runs here —
+        // the proof wait is deferred until AFTER the invitation record below is
+        // durably persisted, so an interruption during the (potentially long)
+        // proof wait can no longer orphan the funded lock from the reclaim UI.
+        let (path, out_point) = self
             .asset_locks
-            .create_funded_asset_lock_proof(
+            .broadcast_funded_asset_lock(
                 amount_duffs,
                 funding_account_index,
                 AssetLockFundingType::IdentityInvitation,
@@ -252,20 +277,21 @@ impl IdentityWallet {
             .await?;
 
         // Persist the inviter-side invitation record NOW — immediately after the
-        // funding succeeds, BEFORE any fallible step (the InstantSend check below,
-        // the voucher-key export, the URI encode). `create_funded_asset_lock_proof`
-        // has already spent the DASH into the OP_RETURN, so any voucher that fails a
-        // later step is still a *funded, reclaimable* lock; recording it first is
-        // what keeps it visible in the "Sent invitations"/reclaim UI. This is why
-        // the persist precedes the InstantSend check: a ChainLock-confirmed voucher
-        // is rejected below as a usable *link* (the invitee needs an InstantSend
-        // proof), but it remains a funded, reclaimable lock and must be recorded
-        // rather than orphaned. The store is REQUIRED, not best-effort: a funded
-        // voucher we cannot record is a hard failure to surface, not a silent
-        // success. No secret is stored — only the funding index (display metadata;
-        // reclaim resumes by outpoint). If the funding path carries no u32 index
-        // tail (a structural can't-happen for the invitation account), warn-skip:
-        // an untrackable row can't be reclaimed either way.
+        // broadcast succeeds, BEFORE every later fallible or slow step (the proof
+        // wait, the InstantSend check, the voucher-key export, the URI encode).
+        // The broadcast has already spent the DASH into the OP_RETURN, so any
+        // voucher that fails a later step is still a *funded, reclaimable* lock;
+        // recording it first is what keeps it visible in the "Sent
+        // invitations"/reclaim UI. A ChainLock-confirmed voucher is rejected
+        // further below as a usable *link* (the invitee needs an InstantSend
+        // proof), but it remains a funded, reclaimable lock and is already
+        // recorded here rather than orphaned. The store + flush are REQUIRED,
+        // not best-effort: a funded voucher we cannot durably record is a hard
+        // failure to surface, not a silent success. No secret is stored — only
+        // the funding index (display metadata; reclaim resumes by outpoint). If
+        // the funding path carries no u32 index tail (a structural can't-happen
+        // for the invitation account), warn-skip: an untrackable row can't be
+        // reclaimed either way.
         if let Some(funding_index) = funding_index_from_path(&path) {
             let mut inv_cs = InvitationChangeSet::default();
             inv_cs.invitations.insert(
@@ -285,6 +311,7 @@ impl IdentityWallet {
                     invitations: Some(inv_cs),
                     ..Default::default()
                 })
+                .and_then(|_| self.persister.flush())
                 .map_err(|e| {
                     PlatformWalletError::AssetLockTransaction(format!(
                         "the invitation voucher is funded but its record could not be \
@@ -299,11 +326,19 @@ impl IdentityWallet {
             );
         }
 
+        // Wait for the funding proof. The row above is already durable, so a
+        // termination or failure inside this wait leaves a reclaimable, visible
+        // invitation rather than an orphaned lock.
+        let proof = self
+            .asset_locks
+            .wait_for_funded_asset_lock_proof(&out_point, funding_account_index)
+            .await?;
+
         // The invitee's `validate_claimable` accepts only an InstantSend proof.
-        // `create_funded_asset_lock_proof` falls back to a ChainLock proof if the
-        // IS lock doesn't propagate within its 300s preference window — reject
-        // emitting a link the invitee would silently reject (a dead voucher: funds
-        // locked, no signal). The funding lock was recorded just above, so it stays
+        // The proof wait falls back to a ChainLock proof if the IS lock doesn't
+        // propagate within its 300s preference window — reject emitting a link
+        // the invitee would silently reject (a dead voucher: funds locked, no
+        // signal). The funding lock was recorded before the wait, so it stays
         // tracked/reclaimable; the inviter retries.
         if !matches!(proof, AssetLockProof::Instant(_)) {
             return Err(PlatformWalletError::AssetLockTransaction(
@@ -767,5 +802,114 @@ mod tests {
         let inv = parsed(key, txid, Some(hex::encode(islock_bytes)));
         let err = assemble_asset_lock_proof(tx, true, 100, &inv).unwrap_err();
         assert!(format!("{err}").contains("does not lock the funding transaction"));
+    }
+
+    // --- create_invitation: the durable-persistence precondition ---
+
+    mod durability_gate {
+        use std::sync::Arc;
+
+        use crate::events::{EventHandler, PlatformEventHandler};
+        use crate::wallet::identity::network::contact_requests::SeedCryptoProvider;
+        use crate::wallet::persister::NoPlatformPersistence;
+        use crate::PlatformWalletError;
+        use key_wallet::mnemonic::{Language, Mnemonic};
+        use key_wallet::signer::{Signer, SignerMethod};
+        use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+        use key_wallet::Network;
+
+        const TEST_MNEMONIC: &str = "abandon abandon abandon abandon abandon abandon \
+             abandon abandon abandon abandon abandon about";
+
+        struct NoopEventHandler;
+        impl EventHandler for NoopEventHandler {}
+        impl PlatformEventHandler for NoopEventHandler {}
+
+        /// Signer that must never be reached — the durability gate fires
+        /// before any key material is touched or funds move.
+        struct UnreachableSigner;
+
+        #[async_trait::async_trait]
+        impl Signer for UnreachableSigner {
+            type Error = String;
+
+            fn supported_methods(&self) -> &[SignerMethod] {
+                &[SignerMethod::Digest]
+            }
+
+            async fn sign_ecdsa(
+                &self,
+                _path: &key_wallet::DerivationPath,
+                _sighash: [u8; 32],
+            ) -> Result<
+                (
+                    dashcore::secp256k1::ecdsa::Signature,
+                    dashcore::secp256k1::PublicKey,
+                ),
+                Self::Error,
+            > {
+                unreachable!("the durability gate must fire before any signing")
+            }
+
+            async fn public_key(
+                &self,
+                _path: &key_wallet::DerivationPath,
+            ) -> Result<key_wallet::bip32::PublicKey, Self::Error> {
+                unreachable!("the durability gate must fire before any key derivation")
+            }
+        }
+
+        /// A bearer voucher key must never be produced by a wallet whose
+        /// backend cannot durably persist the funding index: on a restart the
+        /// index resets and the SAME key would be re-exported to a later
+        /// invitation. `create_invitation` refuses up-front — before any
+        /// funds move or keys derive.
+        #[tokio::test]
+        async fn create_invitation_requires_durable_persistence() {
+            let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+            let persister = Arc::new(NoPlatformPersistence);
+            let handler: Arc<dyn PlatformEventHandler> = Arc::new(NoopEventHandler);
+            let manager = Arc::new(crate::PlatformWalletManager::new(
+                sdk,
+                Arc::clone(&persister),
+                handler,
+            ));
+            let mnemonic =
+                Mnemonic::from_phrase(TEST_MNEMONIC, Language::English).expect("valid mnemonic");
+            let seed = mnemonic.to_seed("");
+            let wallet = manager
+                .create_wallet_from_seed_bytes(
+                    Network::Testnet,
+                    &seed,
+                    WalletAccountCreationOptions::None,
+                    Some(0),
+                )
+                .await
+                .expect("wallet creation");
+            let iw = wallet.identity();
+
+            let crypto_provider = SeedCryptoProvider::from_seed(seed, Network::Testnet);
+            let err = iw
+                .create_invitation(
+                    1_000_000,
+                    0,
+                    None,
+                    1,
+                    1,
+                    &UnreachableSigner,
+                    &crypto_provider,
+                )
+                .await
+                .expect_err("a non-durable backend must be refused");
+
+            assert!(
+                matches!(err, PlatformWalletError::Persistence(_)),
+                "expected the durability refusal, got {err:?}"
+            );
+            assert!(
+                format!("{err}").contains("durable persistence backend"),
+                "the error must explain the durable-backend requirement, got: {err}"
+            );
+        }
     }
 }
