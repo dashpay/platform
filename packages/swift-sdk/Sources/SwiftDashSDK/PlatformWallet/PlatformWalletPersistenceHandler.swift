@@ -4679,7 +4679,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 // record their length + curve tag. A row whose stored key
                 // somehow exceeds the slot is emitted with no key rather
                 // than truncated. Pure marshalling — the Rust side decides.
-                if row.publicKey.count <= 48 {
+                if row.publicKey.count <= MemoryLayout.size(ofValue: e.public_key) {
                     copyBytes(row.publicKey, into: &e.public_key)
                     e.public_key_len = UInt8(row.publicKey.count)
                     e.key_type_tag = row.keyType
@@ -6165,18 +6165,9 @@ private func persistAccountAddressPoolsCallback(
                 // 48-byte slot; `key_type_tag` records the curve. Pure
                 // marshalling — the Rust side already validated the pair.
                 let keyLen = Int(entry.public_key_len)
-                let publicKey: Data
-                if keyLen > 0 {
-                    var pk = Data(count: keyLen)
-                    withUnsafeBytes(of: entry.public_key) { src in
-                        pk.withUnsafeMutableBytes { dst in
-                            dst.copyMemory(from: UnsafeRawBufferPointer(rebasing: src[0..<keyLen]))
-                        }
-                    }
-                    publicKey = pk
-                } else {
-                    publicKey = Data()
-                }
+                let publicKey = keyLen > 0
+                    ? withUnsafeBytes(of: entry.public_key) { Data($0.prefix(keyLen)) }
+                    : Data()
                 if address.isEmpty { continue }
                 snapshots.append(.init(
                     address: address,
