@@ -597,6 +597,58 @@ struct DashpayPaymentStorageListView: View {
     }
 }
 
+// MARK: - PersistentInvitation
+
+struct InvitationStorageListView: View {
+    let network: Network
+    @Query(sort: [SortDescriptor(\PersistentInvitation.createdAtSecs, order: .reverse)])
+    private var records: [PersistentInvitation]
+
+    @Query private var allWallets: [PersistentWallet]
+
+    private var walletIdsOnNetwork: Set<Data> {
+        Set(allWallets.lazy
+            .filter { $0.networkRaw == network.rawValue }
+            .map(\.walletId))
+    }
+
+    private var scopedRecords: [PersistentInvitation] {
+        let ids = walletIdsOnNetwork
+        return records.filter { ids.contains($0.walletId) }
+    }
+
+    var body: some View {
+        let visible = scopedRecords
+        List(visible) { record in
+            NavigationLink(destination: InvitationStorageDetailView(record: record)) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(record.outPointHex)
+                        .font(.system(.caption, design: .monospaced))
+                        .lineLimit(1).truncationMode(.middle)
+                    HStack(spacing: 8) {
+                        Text(invitationStatusLabel(record.statusRaw))
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                        Spacer()
+                        Text(String(format: "%.8f DASH", Double(record.amountDuffs) / 100_000_000))
+                            .font(.system(.caption2, design: .monospaced))
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+        }
+        .navigationTitle("Sent Invitations (\(visible.count))")
+        .overlay {
+            if visible.isEmpty {
+                ContentUnavailableView(
+                    "No Invitations",
+                    systemImage: "paperplane"
+                )
+            }
+        }
+    }
+}
+
 // MARK: - PersistentDashpayIgnoredSender
 
 struct DashpayIgnoredSenderStorageListView: View {

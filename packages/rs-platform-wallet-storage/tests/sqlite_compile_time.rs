@@ -72,6 +72,10 @@ const READ_ONLY_PREPARE_ALLOWED: &[(&str, &str)] = &[
         "pending_contact_crypto.rs",
         "SELECT wallet_id, payload FROM pending_contact_crypto",
     ),
+    (
+        "invitations.rs",
+        "SELECT outpoint, status, funding_index, amount_duffs",
+    ),
 ];
 
 /// TC-P1-003: writer paths in `src/sqlite/schema/*.rs` must not call

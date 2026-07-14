@@ -966,6 +966,78 @@ impl Merge for AssetLockChangeSet {
 }
 
 // ---------------------------------------------------------------------------
+// DashPay Invitations (DIP-13)
+// ---------------------------------------------------------------------------
+
+/// Lifecycle status of an inviter-side invitation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum InvitationStatus {
+    /// Created and shared; the funding asset lock is unspent.
+    Created,
+    /// The voucher was consumed — an identity was registered from it.
+    Claimed,
+    /// The inviter reclaimed the unspent voucher back into their wallet.
+    Reclaimed,
+}
+
+/// A single inviter-side invitation record (DIP-13).
+///
+/// **No secret is stored.** The one-time voucher private key is HD-derived and
+/// re-derivable from `funding_index` on demand (for re-packaging or reclaiming an
+/// unclaimed invitation); it is never persisted.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct InvitationEntry {
+    /// The funding asset lock's outpoint (this record's identity).
+    pub out_point: OutPoint,
+    /// DIP-13 invitation funding index (`m/9'/coin'/5'/3'/<funding_index>'`);
+    /// re-derives the voucher key.
+    pub funding_index: u32,
+    /// Amount locked in the voucher (duffs).
+    pub amount_duffs: u64,
+    /// Advisory expiry (unix seconds).
+    pub expiry_unix: u32,
+    /// Unix seconds when the invitation was created.
+    pub created_at_secs: u32,
+    /// Whether the inviter opted into the contact-bootstrap ("send a request
+    /// back to me").
+    pub has_inviter: bool,
+    /// Current lifecycle status.
+    pub status: InvitationStatus,
+}
+
+/// Inviter-side invitation records emitted by `create_invitation` (and, later,
+/// reclaim + a status sync that flips `Created → Claimed`).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct InvitationChangeSet {
+    /// Invitation records keyed by funding outpoint. Last write wins on merge.
+    pub invitations: BTreeMap<OutPoint, InvitationEntry>,
+    /// Invitations removed from tracking.
+    pub removed: BTreeSet<OutPoint>,
+}
+
+impl Merge for InvitationChangeSet {
+    fn merge(&mut self, other: Self) {
+        // Last write wins — later status is higher finality. `invitations` and
+        // `removed` merge independently with no per-key reconciliation, and the
+        // sqlite writer applies inserts before deletes, so an outpoint present
+        // in both a merged round's insert and remove sets resolves to "removed"
+        // (same hazard/mitigation as `IdentityChangeSet`: emit at most one
+        // action per key per mutation). The only current emitter,
+        // `create_invitation`, is insert-only, so this is latent until reclaim /
+        // status-sync emitters land.
+        self.invitations.extend(other.invitations);
+        self.removed.extend(other.removed);
+    }
+
+    fn is_empty(&self) -> bool {
+        self.invitations.is_empty() && self.removed.is_empty()
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Token Balances
 // ---------------------------------------------------------------------------
 
@@ -1336,6 +1408,8 @@ pub struct PlatformWalletChangeSet {
     pub platform_addresses: Option<PlatformAddressChangeSet>,
     /// Asset lock lifecycle changes (created, locked, used).
     pub asset_locks: Option<AssetLockChangeSet>,
+    /// DashPay invitation (DIP-13) records — inviter-side create/reclaim.
+    pub invitations: Option<InvitationChangeSet>,
     /// Platform token balance / watch changes.
     pub token_balances: Option<TokenBalanceChangeSet>,
     /// DashPay profile overlays keyed by identity ID. Applied AFTER
@@ -1448,6 +1522,7 @@ impl Merge for PlatformWalletChangeSet {
         self.contacts.merge(other.contacts);
         self.platform_addresses.merge(other.platform_addresses);
         self.asset_locks.merge(other.asset_locks);
+        self.invitations.merge(other.invitations);
         self.token_balances.merge(other.token_balances);
         // DashPay overlays: LWW per identity_id.
         if let Some(other_profiles) = other.dashpay_profiles {
@@ -1499,6 +1574,7 @@ impl Merge for PlatformWalletChangeSet {
             && self.contacts.is_empty()
             && self.platform_addresses.is_empty()
             && self.asset_locks.is_empty()
+            && self.invitations.is_empty()
             && self.token_balances.is_empty()
             && self.dashpay_profiles.as_ref().is_none_or(|m| m.is_empty())
             && self

@@ -17,7 +17,7 @@ use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoIn
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::Wallet;
 use key_wallet::AddressInfo;
-use parking_lot::RwLock;
+use parking_lot::{Mutex, RwLock};
 use std::str::FromStr;
 
 use crate::types::{FFINetwork, Network};
@@ -45,6 +45,7 @@ use crate::identity_persistence::{
     free_identity_entry_ffi, free_identity_key_entry_ffi, IdentityEntryFFI, IdentityKeyEntryFFI,
     IdentityKeyRemovalFFI,
 };
+use crate::invitation_persistence::{build_invitation_entries, InvitationEntryFFI};
 use crate::platform_address_types::AddressBalanceEntryFFI;
 use crate::token_persistence::{TokenBalanceRemovalFFI, TokenBalanceUpsertFFI};
 use crate::wallet_registration_persistence::AccountAddressPoolFFI;
@@ -587,6 +588,20 @@ pub struct PersistenceCallbacks {
             removed_count: usize,
         ) -> i32,
     >,
+    /// Forwards `InvitationChangeSet` (DIP-13 sent-invitation records) to the
+    /// host. Appended at the END so the struct layout stays stable. Same
+    /// upserts + `[u8;36]` removal shape as `on_persist_asset_locks_fn`; the
+    /// entries are all-POD so there is no owned-buffer lifetime to manage.
+    pub on_persist_invitations_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            wallet_id: *const u8,
+            upserts_ptr: *const InvitationEntryFFI,
+            upserts_count: usize,
+            removed_ptr: *const [u8; 36],
+            removed_count: usize,
+        ) -> i32,
+    >,
 }
 
 // SAFETY: The context pointer is managed by the FFI caller who must ensure
@@ -605,6 +620,7 @@ impl Default for PersistenceCallbacks {
             on_persist_address_balances_fn: None,
             on_persist_wallet_changeset_fn: None,
             on_persist_asset_locks_fn: None,
+            on_persist_invitations_fn: None,
             on_persist_sync_state_fn: None,
             on_persist_account_registrations_fn: None,
             on_load_wallet_list_fn: None,
@@ -657,6 +673,13 @@ impl Default for PersistenceCallbacks {
 pub struct FFIPersister {
     callbacks: PersistenceCallbacks,
     pending: RwLock<BTreeMap<WalletId, PlatformWalletChangeSet>>,
+    /// Serializes complete `store()` callback rounds. The host stages all
+    /// per-kind callbacks of a round into shared transaction state (Swift: one
+    /// `ModelContext` + `inChangeset` flag) that is only committed/rolled back
+    /// by the end callback — two concurrently interleaved rounds could commit
+    /// or roll back each other's staged writes, so the entire
+    /// begin → per-kind → end bracket must be exclusive.
+    store_round: Mutex<()>,
 }
 
 impl FFIPersister {
@@ -664,16 +687,41 @@ impl FFIPersister {
         Self {
             callbacks,
             pending: RwLock::new(BTreeMap::new()),
+            store_round: Mutex::new(()),
         }
     }
 }
 
 impl PlatformWalletPersistence for FFIPersister {
+    /// Durable only when the host actually wired the persistence callbacks.
+    ///
+    /// Every per-kind block in [`Self::store`] is `if let Some(cb)` — with the
+    /// callbacks absent (e.g. a manager configured without a persistence
+    /// container), non-empty changesets are silently skipped while `store()`
+    /// still returns `Ok`, which is exactly the write-dropping shape the
+    /// fail-closed trait default exists to catch. Attest durability only when
+    /// the transaction bracket (begin/end) AND the callbacks the
+    /// bearer-key-sensitive invitation flow writes through (invitations +
+    /// account address pools) are all present; the Swift bridge wires all of
+    /// its callbacks together, so a partially-wired vtable stays non-durable.
+    fn persists_durably(&self) -> bool {
+        self.callbacks.on_changeset_begin_fn.is_some()
+            && self.callbacks.on_changeset_end_fn.is_some()
+            && self.callbacks.on_persist_invitations_fn.is_some()
+            && self.callbacks.on_persist_account_address_pools_fn.is_some()
+    }
+
     fn store(
         &self,
         wallet_id: WalletId,
         changeset: PlatformWalletChangeSet,
     ) -> Result<(), PersistenceError> {
+        // One round at a time: the host's transaction state (Swift's shared
+        // ModelContext / inChangeset flag) cannot distinguish interleaved
+        // rounds, so hold the round lock across the entire
+        // begin → per-kind → end bracket.
+        let _round_guard = self.store_round.lock();
+
         // Bracket the whole per-kind callback sequence with a
         // begin/end pair so clients (Swift, etc.) can treat the
         // round as a single atomic transaction: begin opens a
@@ -1109,6 +1157,47 @@ impl PlatformWalletPersistence for FFIPersister {
                     if result != 0 {
                         eprintln!(
                             "Asset lock persistence callback returned error code {}",
+                            result
+                        );
+                        round_success = false;
+                    }
+                }
+            }
+        }
+
+        // Send invitation changeset — DIP-13 sent-invitation records, one
+        // upsert row per funded voucher (keyed by outpoint) plus outpoint
+        // tombstones. All-POD entries, so no owned-buffer storage to pin.
+        // Maps onto Swift's `PersistentInvitation` rows.
+        if let Some(ref inv_cs) = changeset.invitations {
+            if let Some(cb) = self.callbacks.on_persist_invitations_fn {
+                let upsert_refs: Vec<&platform_wallet::changeset::InvitationEntry> =
+                    inv_cs.invitations.values().collect();
+                let upserts = build_invitation_entries(&upsert_refs);
+                let removed: Vec<[u8; 36]> = inv_cs.removed.iter().map(outpoint_to_bytes).collect();
+                if !upserts.is_empty() || !removed.is_empty() {
+                    let result = unsafe {
+                        cb(
+                            self.callbacks.context,
+                            wallet_id.as_ptr(),
+                            if upserts.is_empty() {
+                                std::ptr::null()
+                            } else {
+                                upserts.as_ptr()
+                            },
+                            upserts.len(),
+                            if removed.is_empty() {
+                                std::ptr::null()
+                            } else {
+                                removed.as_ptr()
+                            },
+                            removed.len(),
+                        )
+                    };
+                    drop(upserts);
+                    if result != 0 {
+                        eprintln!(
+                            "Invitation persistence callback returned error code {}",
                             result
                         );
                         round_success = false;
@@ -3062,6 +3151,46 @@ unsafe fn restore_core_address_pools(
                     },
                 )
                 .map(|a| a.managed_account_type_mut()),
+            // Asset-lock funding key-accounts (identity registration / top-up
+            // / invitation / address top-up). These MUST be restored: their
+            // credit outputs are OP_RETURN-payload outputs that never appear
+            // as on-chain UTXOs, so SPV can never rediscover their used
+            // indices — the persisted pool is the ONLY thing that carries the
+            // next-unused index across a restart. Dropping them (an
+            // unmatched `_ => None`) resets the pool to index 0 every launch;
+            // for `IdentityInvitation` that reused the EXPORTED one-time
+            // voucher key across invitations (a bearer-key reuse: one leaked
+            // link could then claim every same-key invite).
+            AccountType::IdentityRegistration => wallet_info
+                .accounts
+                .identity_registration
+                .as_mut()
+                .map(|a| a.managed_account_type_mut()),
+            AccountType::IdentityTopUp { registration_index } => wallet_info
+                .accounts
+                .identity_topup
+                .get_mut(&registration_index)
+                .map(|a| a.managed_account_type_mut()),
+            AccountType::IdentityTopUpNotBoundToIdentity => wallet_info
+                .accounts
+                .identity_topup_not_bound
+                .as_mut()
+                .map(|a| a.managed_account_type_mut()),
+            AccountType::IdentityInvitation => wallet_info
+                .accounts
+                .identity_invitation
+                .as_mut()
+                .map(|a| a.managed_account_type_mut()),
+            AccountType::AssetLockAddressTopUp => wallet_info
+                .accounts
+                .asset_lock_address_topup
+                .as_mut()
+                .map(|a| a.managed_account_type_mut()),
+            AccountType::AssetLockShieldedAddressTopUp => wallet_info
+                .accounts
+                .asset_lock_shielded_address_topup
+                .as_mut()
+                .map(|a| a.managed_account_type_mut()),
             // Masternode provider key-material accounts — dedicated
             // `Option<ManagedCoreKeysAccount>` fields. Restoring these
             // rehydrates the used-flags + beyond-gap indices of the
@@ -3093,8 +3222,8 @@ unsafe fn restore_core_address_pools(
             tracing::warn!(
                 wallet_id = %hex::encode(wallet_id),
                 ?account_type,
-                "load: skipping persisted address pool with no matching funds or \
-                 provider account"
+                "load: skipping persisted address pool with no matching funds, \
+                 asset-lock funding, or provider account"
             );
             continue;
         };
@@ -5118,6 +5247,153 @@ mod tests {
     //! exercising the in-memory mutation against synthetic input.
 
     use super::*;
+
+    // --- persists_durably: the fail-closed durability attestation ---
+
+    unsafe extern "C" fn noop_begin(_ctx: *mut c_void, _wallet_id: *const u8) -> i32 {
+        0
+    }
+    unsafe extern "C" fn noop_end(_ctx: *mut c_void, _wallet_id: *const u8, _success: bool) -> i32 {
+        0
+    }
+    unsafe extern "C" fn noop_pools(
+        _ctx: *mut c_void,
+        _wallet_id: *const u8,
+        _pools: *const AccountAddressPoolFFI,
+        _count: usize,
+    ) -> i32 {
+        0
+    }
+    unsafe extern "C" fn noop_invitations(
+        _ctx: *mut c_void,
+        _wallet_id: *const u8,
+        _upserts_ptr: *const InvitationEntryFFI,
+        _upserts_count: usize,
+        _removed_ptr: *const [u8; 36],
+        _removed_count: usize,
+    ) -> i32 {
+        0
+    }
+
+    /// A callback-free persister (the `configure(modelContainer: nil)` shape)
+    /// silently drops every write, so it must NOT attest durability — this is
+    /// the concrete fail-open hole the fail-closed default exists to catch:
+    /// an unpersisted invitation funding index re-exports the same bearer
+    /// voucher key after a restart.
+    #[test]
+    fn callback_free_persister_is_not_durable() {
+        let persister = FFIPersister::new(PersistenceCallbacks::default());
+        assert!(!persister.persists_durably());
+    }
+
+    /// A partially-wired vtable (commit bracket present, invitation-critical
+    /// callbacks absent — or vice versa) stays non-durable.
+    #[test]
+    fn partially_wired_persister_is_not_durable() {
+        let mut cb = PersistenceCallbacks::default();
+        cb.on_changeset_begin_fn = Some(noop_begin);
+        cb.on_changeset_end_fn = Some(noop_end);
+        assert!(!FFIPersister::new(cb).persists_durably());
+
+        let mut cb = PersistenceCallbacks::default();
+        cb.on_persist_invitations_fn = Some(noop_invitations);
+        cb.on_persist_account_address_pools_fn = Some(noop_pools);
+        assert!(!FFIPersister::new(cb).persists_durably());
+    }
+
+    /// With the transaction bracket + the invitation-critical callbacks all
+    /// wired (the shape the Swift bridge always produces), the persister
+    /// attests durability.
+    #[test]
+    fn fully_wired_persister_attests_durability() {
+        let mut cb = PersistenceCallbacks::default();
+        cb.on_changeset_begin_fn = Some(noop_begin);
+        cb.on_changeset_end_fn = Some(noop_end);
+        cb.on_persist_account_address_pools_fn = Some(noop_pools);
+        cb.on_persist_invitations_fn = Some(noop_invitations);
+        assert!(FFIPersister::new(cb).persists_durably());
+    }
+
+    // --- store(): one callback round at a time ---
+
+    /// Shared state for [`concurrent_stores_never_interleave_rounds`]:
+    /// `active` counts rounds currently inside their begin→end bracket;
+    /// `overlap` latches if a second round ever enters while one is open.
+    struct RoundProbe {
+        active: std::sync::atomic::AtomicUsize,
+        overlap: std::sync::atomic::AtomicBool,
+    }
+
+    unsafe extern "C" fn probing_begin(ctx: *mut c_void, _wallet_id: *const u8) -> i32 {
+        let probe = &*(ctx as *const RoundProbe);
+        if probe
+            .active
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+            != 0
+        {
+            probe
+                .overlap
+                .store(true, std::sync::atomic::Ordering::SeqCst);
+        }
+        // Hold the round open long enough that an unserialized second
+        // store would enter its own begin inside this bracket. The sleep
+        // only widens the detection window on a broken implementation —
+        // on the serialized one, overlap is structurally impossible and
+        // the invariant assert below can never flake.
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        0
+    }
+
+    unsafe extern "C" fn probing_end(ctx: *mut c_void, _wallet_id: *const u8, _ok: bool) -> i32 {
+        let probe = &*(ctx as *const RoundProbe);
+        probe
+            .active
+            .fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+        0
+    }
+
+    /// Two concurrent `store()` calls must not interleave their callback
+    /// rounds: the host stages every per-kind callback of a round into
+    /// shared transaction state (Swift: one ModelContext + `inChangeset`
+    /// flag) that the end callback commits or rolls back, so an
+    /// interleaved round B could be committed/rolled back by round A's
+    /// outcome — e.g. losing a durable invitation funding index while
+    /// reporting success. The `store_round` mutex serializes the whole
+    /// begin → per-kind → end bracket.
+    #[test]
+    fn concurrent_stores_never_interleave_rounds() {
+        let probe = Box::leak(Box::new(RoundProbe {
+            active: std::sync::atomic::AtomicUsize::new(0),
+            overlap: std::sync::atomic::AtomicBool::new(false),
+        }));
+
+        let mut cb = PersistenceCallbacks::default();
+        cb.context = probe as *const RoundProbe as *mut c_void;
+        cb.on_changeset_begin_fn = Some(probing_begin);
+        cb.on_changeset_end_fn = Some(probing_end);
+        let persister = std::sync::Arc::new(FFIPersister::new(cb));
+
+        let wallet_id: WalletId = [0x42u8; 32];
+        std::thread::scope(|s| {
+            for _ in 0..2 {
+                let p = std::sync::Arc::clone(&persister);
+                s.spawn(move || {
+                    p.store(wallet_id, PlatformWalletChangeSet::default())
+                        .expect("store must succeed");
+                });
+            }
+        });
+
+        assert!(
+            !probe.overlap.load(std::sync::atomic::Ordering::SeqCst),
+            "a second store() entered its callback round while another was open"
+        );
+        assert_eq!(
+            probe.active.load(std::sync::atomic::Ordering::SeqCst),
+            0,
+            "every begun round must have ended"
+        );
+    }
     use dashcore::blockdata::transaction::txin::TxIn;
     use dashcore::blockdata::transaction::txout::TxOut;
     use dashcore::blockdata::transaction::Transaction;

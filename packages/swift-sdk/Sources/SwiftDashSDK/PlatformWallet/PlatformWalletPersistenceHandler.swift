@@ -215,6 +215,90 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         }
     }
 
+    /// Persist created/updated invitations (Sent-invitations bridge). Mirrors
+    /// `persistAssetLocks`, simpler — POD entries, no owned buffers. Runs
+    /// entirely on `onQueue`, body **inline** (never re-enter `onQueue` — a
+    /// recursive `serialQueue.sync` deadlocks); **no `save()` here**
+    /// (`endChangeset` commits the round). Sets `walletId` on BOTH the insert
+    /// and update branch (the view's `@Query` filters on it). The removal path
+    /// keys via the same `encodeOutPoint` display form the upsert stores (the
+    /// T1 seam), so an upsert and a later removal of the same outpoint match.
+    /// Returns `true` iff every upsert/removal was applied. A `false` return
+    /// drives the callback to signal `store()` failure so the Rust caller
+    /// (`create_invitation`) surfaces a funded-but-unrecorded voucher instead of
+    /// reporting success — SwiftData is the sole UI source (no Rust→Swift
+    /// rehydrate), so a silently skipped upsert would make a funded invitation
+    /// vanish from the Sent list with no trace.
+    func persistInvitations(
+        walletId: Data,
+        upserts: [InvitationEntrySnapshot],
+        removed: [Data]
+    ) -> Bool {
+        onQueue {
+            // A fetch failure on any row drops that mutation; report it so the
+            // round rolls back rather than half-committing. The commit itself is
+            // the shared changeset `save()` in `endChangeset`; the file-wide
+            // `try?`-on-save convention (asset locks, identities, txs, …) is
+            // intentionally left unchanged here — repo-wide persistence-error
+            // telemetry is a separate follow-up.
+            var allPersisted = true
+            for entry in upserts {
+                let outPointHex = entry.outPointHex
+                let descriptor = FetchDescriptor<PersistentInvitation>(
+                    predicate: #Predicate { $0.outPointHex == outPointHex }
+                )
+                let existing: PersistentInvitation?
+                do {
+                    existing = try backgroundContext.fetch(descriptor).first
+                } catch {
+                    print("⚠️ persistInvitations: fetch failed for outpoint \(outPointHex) — skipping upsert; this invitation may be missing from the Sent list: \(error)")
+                    allPersisted = false
+                    continue
+                }
+                if let existing {
+                    existing.walletId = walletId
+                    existing.rawOutPoint = entry.rawOutPoint
+                    existing.fundingIndexRaw = entry.fundingIndexRaw
+                    existing.amountDuffs = entry.amountDuffs
+                    existing.expiryUnix = entry.expiryUnix
+                    existing.createdAtSecs = entry.createdAtSecs
+                    existing.hasInviter = entry.hasInviter
+                    existing.statusRaw = entry.statusRaw
+                    existing.updatedAt = Date()
+                } else {
+                    let record = PersistentInvitation(
+                        outPointHex: outPointHex,
+                        rawOutPoint: entry.rawOutPoint,
+                        walletId: walletId,
+                        fundingIndexRaw: entry.fundingIndexRaw,
+                        amountDuffs: entry.amountDuffs,
+                        expiryUnix: entry.expiryUnix,
+                        createdAtSecs: entry.createdAtSecs,
+                        hasInviter: entry.hasInviter,
+                        statusRaw: entry.statusRaw
+                    )
+                    backgroundContext.insert(record)
+                }
+            }
+
+            for rawOutPoint in removed {
+                let hex = PersistentAssetLock.encodeOutPoint(rawBytes: rawOutPoint)
+                let descriptor = FetchDescriptor<PersistentInvitation>(
+                    predicate: #Predicate { $0.outPointHex == hex }
+                )
+                do {
+                    if let existing = try backgroundContext.fetch(descriptor).first {
+                        backgroundContext.delete(existing)
+                    }
+                } catch {
+                    print("⚠️ persistInvitations: fetch failed for removal of outpoint \(hex) — stale invitation may linger in the Sent list: \(error)")
+                    allPersisted = false
+                }
+            }
+            return allPersisted
+        }
+    }
+
     /// Load all persisted tracked asset locks for a wallet — used by
     /// the wallet load path to rebuild `unused_asset_locks` on the
     /// Rust side so an in-flight registration that was interrupted by
@@ -261,6 +345,22 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         public let amountDuffs: Int64
         public let statusRaw: Int
         public let proofBytes: Data?
+    }
+
+    /// Owned snapshot of an `InvitationEntryFFI` row. All-POD — the callback
+    /// copies the outpoint bytes into owned `Data` (`rawOutPoint`) and
+    /// precomputes the display-form key (`outPointHex`) before invoking the
+    /// handler, so the handler runs against pure-Swift values regardless of when
+    /// the Rust-side buffer is reclaimed.
+    public struct InvitationEntrySnapshot {
+        public let outPointHex: String
+        public let rawOutPoint: Data
+        public let fundingIndexRaw: Int
+        public let amountDuffs: Int64
+        public let expiryUnix: Int
+        public let createdAtSecs: Int
+        public let hasInviter: Bool
+        public let statusRaw: Int
     }
 
     /// Load all cached platform-address balances for a wallet. Tuple
@@ -1112,6 +1212,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         cb.on_load_shielded_viewing_keys_fn = loadShieldedViewingKeysCallback
         cb.on_load_shielded_viewing_keys_free_fn = loadShieldedViewingKeysFreeCallback
         cb.on_persist_asset_locks_fn = persistAssetLocksCallback
+        cb.on_persist_invitations_fn = persistInvitationsCallback
         cb.on_get_core_tx_record_fn = getCoreTxRecordCallback
         cb.on_get_core_tx_record_free_fn = getCoreTxRecordFreeCallback
         return cb
@@ -2585,14 +2686,24 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// Parent linkage uses the same lookup key as
     /// `persistAccount(walletId:spec:)` so the row reliably maps to
     /// the right `PersistentAccount`.
+    /// Returns `true` iff the addresses were durably staged (or the account is a
+    /// non-security-critical type whose transient misses stay tolerant). Returns
+    /// `false` ONLY when an `IdentityInvitation` (type tag 5) account is missing —
+    /// that account is registered at wallet-setup and its funding-index pool is the
+    /// only durable record of the one-time voucher key's derivation index, so a
+    /// miss is a genuine anomaly. Signaling it drives `store() -> Err`, which makes
+    /// the pre-broadcast gate abort (preventing voucher-key reuse). For every other
+    /// account type the tolerant skip is kept: a transient miss during ordinary
+    /// address sync (e.g. a same-round, not-yet-committed first registration) must
+    /// NOT roll back and wedge the whole persistence round.
     func persistAccountAddresses(
         walletId: Data,
         accountKey: AccountLookupKey,
         entries: [CoreAddressEntrySnapshot]
-    ) {
+    ) -> Bool {
         onQueue {
         guard let account = fetchAccount(walletId: walletId, key: accountKey) else {
-            return
+            return accountKey.typeTag != Self.identityInvitationTypeTag
         }
 
         // DIP-17 PlatformPayment pool addresses land in
@@ -2605,7 +2716,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 walletId: walletId,
                 entries: entries
             )
-            return
+            return true
         }
 
         for entry in entries {
@@ -2662,8 +2773,15 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         }
 
         if !self.inChangeset { try? backgroundContext.save() }
+        return true
         }  // onQueue
     }
+
+    /// The `AccountTypeTagFFI::IdentityInvitation` discriminant. The invitation
+    /// funding pool is the only durable record of the one-time voucher key's
+    /// derivation index, so its persistence is treated as a hard gate (see
+    /// `persistAccountAddresses`), unlike every other account type.
+    private static let identityInvitationTypeTag: UInt32 = 5
 
     /// Upsert PlatformPayment entries into `PersistentPlatformAddress`.
     /// Called only when the address-emit target account is a DIP-17
@@ -6111,6 +6229,7 @@ private func persistAccountAddressPoolsCallback(
         return 0
     }
 
+    var allOk = true
     for i in 0..<Int(count) {
         let pool = poolsPtr[i]
         let spec = pool.account
@@ -6162,10 +6281,16 @@ private func persistAccountAddressPoolsCallback(
             }
         }
 
-        handler.persistAccountAddresses(walletId: walletId, accountKey: key, entries: snapshots)
+        // Accumulate across ALL pools (do not early-return) so every pool is
+        // persisted; then signal failure iff any pool's persist failed. Only an
+        // `IdentityInvitation` pool ever returns false (see persistAccountAddresses),
+        // so ordinary address-sync pools never wedge the round.
+        if !handler.persistAccountAddresses(walletId: walletId, accountKey: key, entries: snapshots) {
+            allOk = false
+        }
     }
 
-    return 0
+    return allOk ? 0 : 1
 }
 
 /// C shim for `on_persist_identities_fn`. Copies every
@@ -6474,6 +6599,71 @@ private func persistTokenBalancesCallback(
 
     handler.persistTokenBalances(walletId: walletId, upserts: upserts, removals: removals)
     return 0
+}
+
+/// C shim for `on_persist_invitations_fn`. Deep-copies every all-POD
+/// `InvitationEntryFFI` row into an owned `InvitationEntrySnapshot` (precomputing
+/// `rawOutPoint` + the `encodeOutPoint` display key) and every removed-outpoint
+/// tuple into owned `Data` before invoking the handler, so the Rust side can
+/// reclaim its buffers the moment we return. Mirrors `persistAssetLocksCallback`.
+/// Returns 0 when every invitation mutation was staged successfully. Returns
+/// nonzero when any write was skipped, which fails the Rust persistence round
+/// and rolls back the changeset — safe here because the invitation round is
+/// invitation-only, so no unrelated writes are discarded — and lets
+/// `create_invitation` surface the failure instead of reporting a voucher that
+/// never reached SwiftData.
+private func persistInvitationsCallback(
+    context: UnsafeMutableRawPointer?,
+    walletIdPtr: UnsafePointer<UInt8>?,
+    upsertsPtr: UnsafePointer<InvitationEntryFFI>?,
+    upsertsCount: UInt,
+    removedPtr: UnsafePointer<FFIByteTuple36>?,
+    removedCount: UInt
+) -> Int32 {
+    guard let context = context,
+          let walletIdPtr = walletIdPtr else {
+        return 0
+    }
+    let handler = Unmanaged<PlatformWalletPersistenceHandler>
+        .fromOpaque(context)
+        .takeUnretainedValue()
+    let walletId = Data(bytes: walletIdPtr, count: 32)
+
+    var upserts: [PlatformWalletPersistenceHandler.InvitationEntrySnapshot] = []
+    if upsertsCount > 0, let upsertsPtr = upsertsPtr {
+        upserts.reserveCapacity(Int(upsertsCount))
+        for i in 0..<Int(upsertsCount) {
+            let e = upsertsPtr[i]
+            // Outpoint tuple → 36-byte raw Data → display-order hex key.
+            let outPointRaw = Swift.withUnsafeBytes(of: e.out_point) { Data($0) }
+            let outPointHex = PersistentAssetLock.encodeOutPoint(rawBytes: outPointRaw)
+            upserts.append(.init(
+                outPointHex: outPointHex,
+                rawOutPoint: outPointRaw,
+                fundingIndexRaw: Int(e.funding_index),
+                amountDuffs: Int64(bitPattern: e.amount_duffs),
+                expiryUnix: Int(e.expiry_unix),
+                createdAtSecs: Int(e.created_at_secs),
+                hasInviter: e.has_inviter != 0,
+                statusRaw: Int(e.status)
+            ))
+        }
+    }
+
+    var removed: [Data] = []
+    if removedCount > 0, let removedPtr = removedPtr {
+        removed.reserveCapacity(Int(removedCount))
+        for i in 0..<Int(removedCount) {
+            var tuple = removedPtr[i]
+            let bytes = Swift.withUnsafeBytes(of: &tuple) { Data($0) }
+            removed.append(bytes)
+        }
+    }
+
+    // Signal failure (nonzero) so the Rust `store()` returns Err and
+    // `create_invitation` surfaces a funded-but-unrecorded voucher instead of
+    // reporting success.
+    return handler.persistInvitations(walletId: walletId, upserts: upserts, removed: removed) ? 0 : 1
 }
 
 /// C shim for `on_persist_asset_locks_fn`. Copies every
