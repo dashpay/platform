@@ -137,6 +137,19 @@ afterEvaluate {
                 url = uri(layout.buildDirectory.dir("staging-deploy"))
             }
         }
+
+        // The staging dir is reused across runs and maven-publish never removes
+        // other versions' directories — a release deploy after an earlier
+        // snapshot/release staging run would hand JReleaser stale coordinates.
+        // Wipe it before every staging publish so each deploy starts clean.
+        val cleanStagingDeploy = tasks.register<Delete>("cleanStagingDeploy") {
+            delete(layout.buildDirectory.dir("staging-deploy"))
+        }
+        tasks.withType<PublishToMavenRepository>().configureEach {
+            if (name.endsWith("ToStagingRepository")) {
+                dependsOn(cleanStagingDeploy)
+            }
+        }
         publications {
             create<MavenPublication>("release") {
                 from(components["release"])
