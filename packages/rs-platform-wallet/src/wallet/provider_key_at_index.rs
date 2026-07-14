@@ -217,6 +217,43 @@ pub struct ProviderDerivedKey {
     pub private_key: Option<Zeroizing<Vec<u8>>>,
 }
 
+/// The operator seed↔xpub cross-check guard, factored out so it can be
+/// unit-tested without a full [`PlatformWallet`].
+///
+/// Derives the operator secret at `index` from the raw `seed` via the
+/// gate-free #881 entry point, then verifies its public key equals
+/// `xpub_modern` (the modern serialization the account xpub produced).
+/// The two #881 entry points derive independently and do **not** verify
+/// against each other, so this refuses to return a mismatched
+/// `(public, private)` pair — a stale / corrupt persisted xpub would
+/// otherwise let one escape (signing would then produce a signature that
+/// doesn't verify against the displayed public key).
+///
+/// Returns the secret's big-endian scalar bytes when `include_private`,
+/// `None` otherwise; [`PlatformWalletError::KeyDerivation`] on mismatch or
+/// derivation failure.
+fn checked_operator_private_bytes_at(
+    xpub_modern: &[u8],
+    seed: &[u8],
+    network: key_wallet::Network,
+    index: u32,
+    include_private: bool,
+) -> Result<Option<Zeroizing<Vec<u8>>>, PlatformWalletError> {
+    let secret = BLSAccount::operator_private_key_at(seed, network, index).map_err(|e| {
+        PlatformWalletError::KeyDerivation(format!(
+            "failed to derive BLS operator key at index {index}: {e}"
+        ))
+    })?;
+    if secret.public_key().to_bytes().as_slice() != xpub_modern {
+        return Err(PlatformWalletError::KeyDerivation(format!(
+            "BLS operator key at index {index}: seed-derived public key does not match the \
+             account xpub derivation — the wallet seed and its stored operator account xpub \
+             disagree; refusing to return a mismatched key"
+        )));
+    }
+    Ok(include_private.then(|| Zeroizing::new(secret.to_be_bytes().to_vec())))
+}
+
 impl PlatformWallet {
     /// Derive this wallet's provider key of `kind` at `index`.
     ///
@@ -325,37 +362,16 @@ impl PlatformWallet {
                 let legacy_public_key_bytes = Some(xpub.to_bytes_legacy().to_vec());
 
                 let private_key = match &seed {
-                    // Private reveal: the operator secret scalar derived
-                    // straight from the raw seed via the #881 entry point
-                    // (no account state, no `is_watch_only` gate).
-                    Some(seed) => {
-                        let secret =
-                            BLSAccount::operator_private_key_at(seed.as_ref(), network, index)
-                                .map_err(|e| {
-                                    PlatformWalletError::KeyDerivation(format!(
-                                        "failed to derive BLS operator key at index {index}: {e}"
-                                    ))
-                                })?;
-
-                        // Always-on guard: the public branch derives from
-                        // the stored account xpub while this derives from
-                        // the raw seed, and the two #881 entry points do
-                        // NOT verify against each other — so a stale /
-                        // corrupt persisted xpub would otherwise let a
-                        // mismatched (public, private) pair escape. Refuse
-                        // to hand one out. The extra public derivation is
-                        // negligible.
-                        if secret.public_key().to_bytes() != xpub.public_key.to_bytes() {
-                            return Err(PlatformWalletError::KeyDerivation(format!(
-                                "BLS operator key at index {index}: seed-derived public key \
-                                 does not match the account xpub derivation — the wallet seed \
-                                 and its stored operator account xpub disagree; refusing to \
-                                 return a mismatched key"
-                            )));
-                        }
-
-                        include_private.then(|| Zeroizing::new(secret.to_be_bytes().to_vec()))
-                    }
+                    // Private reveal: the operator secret scalar from the
+                    // raw seed (#881 entry point), gated by the always-on
+                    // seed↔xpub cross-check (`checked_operator_private_bytes_at`).
+                    Some(seed) => checked_operator_private_bytes_at(
+                        &public_key_bytes,
+                        seed.as_ref(),
+                        network,
+                        index,
+                        include_private,
+                    )?,
                     // Public-only: no seed, no private scalar.
                     None => None,
                 };
@@ -436,11 +452,24 @@ mod tests {
     const TEST_MNEMONIC: &str = "abandon abandon abandon abandon abandon abandon \
          abandon abandon abandon abandon abandon about";
 
+    // A second, distinct BIP-39 vector (the standard `0x7f7f…` entropy
+    // test mnemonic) whose seed does NOT correspond to `TEST_MNEMONIC`'s
+    // account xpub — used for the operator cross-check negative path.
+    const TEST_MNEMONIC_B: &str =
+        "legal winner thank year wave sausage worth useful legal winner thank yellow";
+
     fn seed_bearing_wallet(network: Network) -> Wallet {
         let mnemonic =
             Mnemonic::from_phrase(TEST_MNEMONIC, Language::English).expect("valid test mnemonic");
         Wallet::from_mnemonic(mnemonic, network, WalletAccountCreationOptions::Default)
             .expect("wallet construction")
+    }
+
+    fn second_seed_bearing_wallet(network: Network) -> Wallet {
+        let mnemonic = Mnemonic::from_phrase(TEST_MNEMONIC_B, Language::English)
+            .expect("valid test mnemonic B");
+        Wallet::from_mnemonic(mnemonic, network, WalletAccountCreationOptions::Default)
+            .expect("wallet B construction")
     }
 
     /// The load-bearing invariants for platform-node keys, pinned so a
@@ -578,6 +607,53 @@ mod tests {
             sk0_t.public_key().to_bytes(),
             xpub0_t.public_key.to_bytes(),
             "testnet seed-derived operator pubkey must equal the account-xpub derivation"
+        );
+    }
+
+    /// Negative path for the operator seed↔xpub cross-check that
+    /// `derive_provider_key_at_index` runs on every private reveal (via
+    /// `checked_operator_private_bytes_at`): an operator private key
+    /// derived from a seed that does NOT correspond to the account xpub
+    /// must be REJECTED with `KeyDerivation`, never returned as a
+    /// mismatched (public, private) pair. Pins the guard so it can't be
+    /// silently weakened.
+    #[test]
+    fn operator_cross_check_rejects_mismatched_seed() {
+        // Account xpub from mnemonic A.
+        let wallet_a = seed_bearing_wallet(Network::Mainnet);
+        let account_a = wallet_a
+            .accounts
+            .bls_account_of_type(AccountType::ProviderOperatorKeys)
+            .expect("operator account");
+        let xpub_a_modern = account_a
+            .operator_public_key_at(0)
+            .expect("operator public")
+            .to_bytes()
+            .to_vec();
+        let seed_a = wallet_a.wallet_seed_bytes().expect("seed A");
+
+        // A distinct wallet whose seed does not match A's xpub.
+        let wallet_b = second_seed_bearing_wallet(Network::Mainnet);
+        let seed_b = wallet_b.wallet_seed_bytes().expect("seed B");
+        assert_ne!(seed_a, seed_b, "the two fixtures must differ");
+
+        // Mismatch: A's xpub, B's seed → the guard must reject.
+        let err =
+            checked_operator_private_bytes_at(&xpub_a_modern, &seed_b, Network::Mainnet, 0, true)
+                .expect_err("a seed not matching the account xpub must be rejected");
+        assert!(
+            matches!(err, PlatformWalletError::KeyDerivation(_)),
+            "cross-check mismatch must surface as KeyDerivation, got {err:?}"
+        );
+
+        // Control: A's own seed passes and yields the golden secret.
+        let ok =
+            checked_operator_private_bytes_at(&xpub_a_modern, &seed_a, Network::Mainnet, 0, true)
+                .expect("the matching seed must pass the cross-check");
+        assert_eq!(
+            hex::encode(&*ok.expect("private scalar returned when include_private")),
+            "11122e1ad656d0610ce0f80d40da874d67ea656a3e66ed371c915ec3a488a43a",
+            "the matching seed returns the golden operator secret"
         );
     }
 
