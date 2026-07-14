@@ -164,8 +164,9 @@ class AppState: ObservableObject {
     ///
     /// - `.auto`: SPV once the header + masternode lists are fully synced,
     ///   trusted until then.
-    /// - `.spv`: SPV as soon as the SPV client is running (proofs fail closed
-    ///   until synced; no trusted fallback). Stays trusted if SPV isn't running.
+    /// - `.spv`: SPV unconditionally — installed even before the SPV client
+    ///   starts. The lookup fails closed ("SPV Client not started" / proofs
+    ///   fail until synced) rather than falling back to trusted.
     /// - `.trusted`: always the trusted HTTP quorum provider.
     ///
     /// `quorumSource` tracks what is *actually* installed, which may lag the
@@ -175,15 +176,13 @@ class AppState: ObservableObject {
         guard let sdk else { return }
 
         let progress = manager.spvProgress
-        let running =
-            progress.overallState == .syncing || progress.overallState == .synced
         let fullySynced =
             progress.headers?.state == .synced && progress.masternodes?.state == .synced
 
         let wantSpv: Bool
         switch quorumMode {
         case .auto: wantSpv = fullySynced
-        case .spv: wantSpv = running
+        case .spv: wantSpv = true
         case .trusted: wantSpv = false
         }
 
