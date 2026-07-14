@@ -1,13 +1,63 @@
 # DashPay Invitations (DIP-13 sub-feature 3') — Implementation Spec
 
-> **Status:** REVIEWED DRAFT (2026-07-08). Four research streams + three adversarial spec reviews
-> (feasibility / security / scope) folded — see §14. Core mechanic CONFIRMED against code; two
-> blockers resolved (seedless voucher export → v1 slice 2; auto-accept dapk dropped for a plain
-> contactRequest). **Next: sync gate with Ivan → spikes → code.** No code yet.
+> **Status:** SHIPPED on PR #4041 (2026-07-14) — create + claim + reclaim + persistence + UI,
+> three review-fix rounds folded, funded testnet e2e green (TEST_PLAN DP-12..19, `AI_QA/QA004`).
+> The original design pass (2026-07-08, §1–§14 below) is kept as rationale; **§0 records where
+> the as-built implementation deliberately diverged.** Where §0 and a later section disagree,
+> §0 wins.
 
 Tracked as the "NEXT" item in the DashPay backlog (dashpay/platform#4020); called out in
-`SPEC.md` Milestone 5 and `DIP_CONFORMANCE_GAPS.md` (Invitations = ❌ NOT STARTED). This is
-the "own design pass" Milestone 5 asks for.
+`SPEC.md` Milestone 5 and `DIP_CONFORMANCE_GAPS.md`.
+
+---
+
+## 0. As-built delta (supersedes the marked sections below)
+
+1. **Link envelope = the LEGACY query format, not the §6 binary blob (supersedes §6, §7).**
+   The 2026-07-13 legacy-compat rework (owner decision; full spec:
+   `INVITATIONS_LEGACY_COMPAT_SPEC.md`) replaced the hand-rolled versioned payload with the
+   query form shared with dash-wallet Android / dashwallet-iOS, so links are field-level
+   cross-claimable: `dashpay://invite?du=<username>&assetlocktx=<txid>&pk=<WIF>&islock=<hex|null>`
+   `[&display-name=…][&avatar-url=…]` (also parses `https://invitations.dashpay.io/applink?…`).
+   Emit strict / parse lenient. Consequences:
+   - The link carries the funding **txid**, not the embedded proof → **claim-by-fetch**: the
+     invitee refetches the funding tx by txid (bounded retry for DAPI propagation lag, both
+     byte orders), reconstructs the proof, and selects the credit output by matching
+     `voucher_credit_script(pk)`.
+   - **No expiry field on the wire** — the §5.1/§8/§10 "claim refuses a past-expiry link"
+     mechanism does not exist in the as-built claim; `expiry_unix` survives only as inviter-side
+     local display metadata. The economic bounds are the amount caps.
+   - **No inviter identity id on the wire** (`inviter_id` always zeroed) — the contact bootstrap
+     resolves the id from the `du` username via DPNS at claim time. `InviterInfo.username` is
+     `Option`: a display-name/avatar-only link is metadata-only (`has_inviter == true`,
+     `inviter_username == nil`, no bootstrap).
+   - Amount is not on the wire (claim preview shows "—").
+2. **Claim accepts ChainLock invites too (amends §5.1).** `islock` absent or literal `"null"`
+   ⇒ a `ChainAssetLockProof` is reconstructed (requires the funding tx to be chain-locked).
+   Create still emits only InstantSend links — a slow-IS ChainLock fallback at create is
+   rejected as a *link* but the funded lock is recorded first and stays reclaimable.
+3. **Amounts (amends §5/§8/§9):** `MIN_INVITATION_DUFFS = 300_000` (0.003 DASH — a smaller
+   voucher can fund neither a claim nor a register-reclaim, discovered by funded e2e),
+   `MAX_INVITATION_DUFFS = 5_000_000` (0.05 DASH), Swift default **0.03 DASH**.
+4. **Persistence as-built (amends §4.2):** the `InvitationChangeSet` flows through
+   `PlatformWalletPersistence::store()` to each backend — the SQLite backend's
+   `V003__invitations` table, and on iOS the FFI `on_persist_invitations_fn` bridge into the
+   SwiftData `PersistentInvitation` model (SwiftData is the UI source; no Rust rehydrate;
+   spec: `INVITATIONS_PERSISTENCE_SWIFT_SPEC.md`). Persist failures are signaled end-to-end
+   (nonzero callback → rolled-back round → `create_invitation` errors), not best-effort.
+5. **Durability + ordering hardening (review rounds 1–3, spec:
+   `INVITATIONS_REVIEW_FIX_SPEC.md`):** the pre-broadcast gate persists **and flushes** the
+   invitation funding-index pool (aborting before broadcast on failure); creation refuses
+   non-durable backends (`PlatformWalletPersistence::persists_durably()`); the funded-asset-lock
+   flow is split so the invitation record is persisted immediately **after broadcast, before the
+   proof wait** — an interrupted create can no longer orphan a funded voucher.
+6. **Reclaim shipped (extends §1 scope):** an unclaimed voucher is recovered as identity
+   **credits** (top-up an existing identity or register a new one; the L1 amount was
+   OP_RETURN-burned). Already-consumed handling is classified via the persisted
+   `reclaimInFlight` marker (self-reclaim crash recovery vs neutral "already claimed") —
+   see `AI_QA/QA004` step 6 for the exact classifier arms.
+7. **QA contract as-built:** TEST_PLAN §4.10 rows **DP-12..DP-19** (not just DP-12..15) +
+   `AI_QA/QA004_invitation_reclaim.md`; funded e2e evidence recorded there.
 
 ---
 
@@ -370,6 +420,10 @@ no analytics, sensitive-pasteboard flag on the Swift side (§8 Finding 3).
 
 ## 6. The `dashpay://invite` link envelope — a single versioned blob
 
+> **SUPERSEDED (2026-07-13, §0.1):** the shipped envelope is the legacy query format
+> (`du`/`assetlocktx`/`pk`/`islock` — see `INVITATIONS_LEGACY_COMPAT_SPEC.md`), not this blob.
+> Kept for the design rationale it records (secret handling, caps, transport notes still apply).
+
 **Decision: one opaque, versioned payload** behind a `dashpay://invite?data=<base58(payload)>`
 deep link (keeping the reference's `dashpay://invite` scheme name for familiarity), **not** the
 reference's six loose query params. Rationale in §7. The payload is a small versioned blob in a
@@ -425,7 +479,12 @@ routing change, not an envelope change.
 
 ---
 
-## 7. Interop decision — **RESOLVED: ship our own self-contained envelope**
+## 7. Interop decision — ~~RESOLVED: ship our own self-contained envelope~~
+
+> **REVERSED (2026-07-13, §0.1):** the as-built codec adopts the reference wallets' legacy
+> query format for field-level cross-claimability with dash-wallet iOS/Android. The analysis
+> below (dead FDL delivery, JS SDK never had invitations) remains accurate — only the
+> conclusion changed, by owner decision, once cross-wallet claimability was prioritized.
 Research (research-reference, primary sources) settled this:
 - The production iOS (DashSync) + Android (dash-wallet) wallets use an **identical plaintext
   URL-query payload**: `du` (username), `display-name`, `avatar-url`, `assetlocktx` (**txid
