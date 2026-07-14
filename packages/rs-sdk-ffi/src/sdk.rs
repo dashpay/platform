@@ -10,7 +10,9 @@ use dash_sdk::{Sdk, SdkBuilder};
 use std::ffi::CStr;
 use std::str::FromStr;
 
-use crate::context_provider::{ContextProviderHandle, ContextProviderWrapper, CoreSDKHandle};
+use crate::context_provider::{
+    CompositeContextProvider, ContextProviderHandle, ContextProviderWrapper, CoreSDKHandle,
+};
 use crate::runtime::BigStackRuntime;
 use crate::types::{DashSDKConfig, FFINetwork, Network, SDKHandle};
 use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
@@ -593,10 +595,25 @@ pub unsafe extern "C" fn dash_sdk_install_context_provider(
     }
 
     let sdk_wrapper = &*(sdk_handle as *const SDKWrapper);
-    // Swaps the SDK's `ArcSwapOption` provider slot in place; the SDK keeps its
-    // own `Arc` clone. `wrapper` drops at end of scope, releasing this
-    // function's refcount on the provider.
-    sdk_wrapper.sdk.set_context_provider(wrapper.provider());
+    let spv_provider = wrapper.provider();
+    // Install the SPV provider for quorum-key resolution, but keep contract and
+    // token lookups on the SDK's retained trusted provider. Replacing the whole
+    // provider would make `get_data_contract`/`get_token_configuration` return
+    // `None` and break every proof that references a contract or token config
+    // (e.g. token perpetual-distribution verification). If no trusted provider
+    // was retained (the SDK was not created trusted), install SPV alone — such
+    // an SDK can only verify proofs that need neither. `wrapper` drops at end of
+    // scope, releasing this function's refcount on the provider.
+    match sdk_wrapper.trusted_provider.as_ref() {
+        Some(trusted) => {
+            let composite = CompositeContextProvider::new(
+                spv_provider,
+                Arc::clone(trusted) as Arc<dyn drive_proof_verifier::ContextProvider>,
+            );
+            sdk_wrapper.sdk.set_context_provider(composite);
+        }
+        None => sdk_wrapper.sdk.set_context_provider(spv_provider),
+    }
 
     DashSDKResult::success(std::ptr::null_mut())
 }

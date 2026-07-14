@@ -5,6 +5,10 @@
 
 use std::sync::Arc;
 
+use dash_sdk::dpp::data_contract::TokenConfiguration;
+use dash_sdk::dpp::prelude::{CoreBlockHeight, DataContract, Identifier};
+use dash_sdk::dpp::version::PlatformVersion;
+use dash_sdk::error::ContextProviderError;
 use drive_proof_verifier::ContextProvider;
 
 use crate::context_callbacks::{CallbackContextProvider, ContextProviderCallbacks};
@@ -39,6 +43,58 @@ impl ContextProviderWrapper {
 
     pub fn provider(&self) -> Arc<dyn ContextProvider> {
         Arc::clone(&self.provider)
+    }
+}
+
+/// Context provider that serves the security-critical quorum public key (and
+/// platform activation height) from `quorum`, while delegating data-contract
+/// and token-configuration lookups to `aux`.
+///
+/// Installing an SPV quorum provider must not lose the SDK's ability to resolve
+/// contracts and token configurations: those feed proof verification (e.g.
+/// token perpetual-distribution verification calls `get_token_configuration`
+/// before checking the Tenderdash signature) and the SPV provider cannot supply
+/// them. This composite keeps quorum verification on SPV-synced state while
+/// contract/token resolution stays on the retained trusted provider.
+pub struct CompositeContextProvider {
+    quorum: Arc<dyn ContextProvider>,
+    aux: Arc<dyn ContextProvider>,
+}
+
+impl CompositeContextProvider {
+    pub fn new(quorum: Arc<dyn ContextProvider>, aux: Arc<dyn ContextProvider>) -> Self {
+        Self { quorum, aux }
+    }
+}
+
+impl ContextProvider for CompositeContextProvider {
+    fn get_quorum_public_key(
+        &self,
+        quorum_type: u32,
+        quorum_hash: [u8; 32],
+        core_chain_locked_height: u32,
+    ) -> Result<[u8; 48], ContextProviderError> {
+        self.quorum
+            .get_quorum_public_key(quorum_type, quorum_hash, core_chain_locked_height)
+    }
+
+    fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
+        self.quorum.get_platform_activation_height()
+    }
+
+    fn get_data_contract(
+        &self,
+        id: &Identifier,
+        platform_version: &PlatformVersion,
+    ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
+        self.aux.get_data_contract(id, platform_version)
+    }
+
+    fn get_token_configuration(
+        &self,
+        token_id: &Identifier,
+    ) -> Result<Option<TokenConfiguration>, ContextProviderError> {
+        self.aux.get_token_configuration(token_id)
     }
 }
 
