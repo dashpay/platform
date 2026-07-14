@@ -48,6 +48,9 @@ export JRELEASER_GPG_PASSPHRASE="…"
 
 # 2. Stage the signed release AAR + sources/javadoc jars into sdk/build/staging-deploy.
 ./gradlew :sdk:publishReleasePublicationToStagingRepository -PsdkVersion=0.1.0
+# (the staging dir sdk/build/staging-deploy is wiped automatically before every
+#  staging publish — cleanStagingDeploy — so stale versions from earlier runs
+#  can never reach JReleaser)
 
 # 3. Upload the staged artifacts. Release versions -> Maven Central;
 #    -SNAPSHOT versions -> Sonatype snapshots.
