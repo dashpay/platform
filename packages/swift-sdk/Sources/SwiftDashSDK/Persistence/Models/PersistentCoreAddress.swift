@@ -16,11 +16,15 @@ public final class PersistentCoreAddress {
     /// because the same address can't validly exist under two accounts
     /// (collision would imply a wallet-id hash collision).
     @Attribute(.unique) public var address: String
-    /// 33-byte compressed secp256k1 public key, or empty Data when the
-    /// Rust side couldn't produce one (e.g. BLS accounts, or pool
-    /// entries that stored only a script). Watch-only-restored
-    /// accounts currently always populate this.
+    /// Typed public key bytes, or empty Data when the Rust side couldn't
+    /// produce one (e.g. a pool entry that stored only a script). The
+    /// curve is given by `keyType`: 33-byte compressed secp256k1 (ECDSA),
+    /// 48-byte BLS operator key, or 32-byte Ed25519 platform-node key.
     public var publicKey: Data
+    /// `KeyTypeTagFFI` raw value identifying the curve of `publicKey`:
+    /// 0 ECDSA / 1 BLS / 2 EdDSA. Meaningful only when `publicKey` is
+    /// non-empty.
+    public var keyType: UInt8
     /// `AddressPoolTypeTagFFI` raw value — 0 External, 1 Internal,
     /// 2 Absent, 3 AbsentHardened.
     public var poolTypeTag: UInt8
@@ -59,6 +63,7 @@ public final class PersistentCoreAddress {
     public init(
         address: String,
         publicKey: Data = Data(),
+        keyType: UInt8 = 0,
         poolTypeTag: UInt8,
         addressIndex: UInt32,
         derivationPath: String,
@@ -67,6 +72,7 @@ public final class PersistentCoreAddress {
     ) {
         self.address = address
         self.publicKey = publicKey
+        self.keyType = keyType
         self.poolTypeTag = poolTypeTag
         self.addressIndex = addressIndex
         self.derivationPath = derivationPath

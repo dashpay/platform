@@ -2618,6 +2618,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 row = PersistentCoreAddress(
                     address: entry.address,
                     publicKey: entry.publicKey,
+                    keyType: entry.keyType,
                     poolTypeTag: entry.poolTypeTag,
                     addressIndex: entry.addressIndex,
                     derivationPath: entry.derivationPath,
@@ -2628,6 +2629,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             }
             // Mutation path for both insert + update.
             row.publicKey = entry.publicKey
+            row.keyType = entry.keyType
             row.poolTypeTag = entry.poolTypeTag
             row.addressIndex = entry.addressIndex
             row.derivationPath = entry.derivationPath
@@ -2773,6 +2775,9 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     struct CoreAddressEntrySnapshot {
         let address: String
         let publicKey: Data
+        /// `KeyTypeTagFFI` raw value (0 ECDSA / 1 BLS / 2 EdDSA);
+        /// meaningful only when `publicKey` is non-empty.
+        let keyType: UInt8
         let poolTypeTag: UInt8
         let addressIndex: UInt32
         let isUsed: Bool
@@ -3866,31 +3871,6 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 xpubBytes = Data()
             }
 
-            // Pre-derived platform-node (Ed25519) keys for the
-            // ProviderPlatformKeys account. Rust-owned + valid only for
-            // the callback window, so copy each row's bytes out now.
-            var derivedPlatformNodeKeys: [DerivedPlatformNodeKey] = []
-            if let dkPtr = spec.derived_platform_node_keys,
-               spec.derived_platform_node_keys_count > 0 {
-                let rows = UnsafeBufferPointer(
-                    start: dkPtr,
-                    count: Int(spec.derived_platform_node_keys_count)
-                )
-                for row in rows {
-                    var pub = Data(count: 32)
-                    withUnsafeBytes(of: row.public_key) { src in
-                        pub.withUnsafeMutableBytes { dst in dst.copyMemory(from: src) }
-                    }
-                    var node = Data(count: 20)
-                    withUnsafeBytes(of: row.node_id) { src in
-                        node.withUnsafeMutableBytes { dst in dst.copyMemory(from: src) }
-                    }
-                    derivedPlatformNodeKeys.append(
-                        DerivedPlatformNodeKey(index: row.index, publicKey: pub, nodeId: node)
-                    )
-                }
-            }
-
             // Upsert keyed by the full account identity. We can't easily
             // express the identity tuple in a #Predicate with local `Data`
             // captures, so fetch by (walletId, accountType, accountIndex)
@@ -3936,15 +3916,6 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             account.userIdentityId = userIdentityId
             account.friendIdentityId = friendIdentityId
             account.accountExtendedPubKeyBytes = xpubBytes
-            // Only overwrite the batch when this callback actually
-            // carries one (i.e. the registration-time ProviderPlatformKeys
-            // spec). Any other emitter passes an empty array, so a
-            // balance-only re-persist never wipes the registration batch —
-            // Swift is the sole source of truth for it (Rust never echoes
-            // it back on the load path).
-            if !derivedPlatformNodeKeys.isEmpty {
-                account.derivedPlatformNodeKeys = derivedPlatformNodeKeys
-            }
             account.lastUpdated = Date()
             if !self.inChangeset { try? backgroundContext.save() }
         }
@@ -4128,50 +4099,9 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     copyBytes(acc.friendIdentityId, into: &spec.friend_identity_id)
                     spec.account_xpub_bytes = UnsafePointer(xpubBuffer)
                     spec.account_xpub_bytes_len = UInt(xpub.count)
-                    // Rehydrate the platform-node (Ed25519) key batch on the
-                    // ProviderPlatformKeys account so the Rust restore can
-                    // repopulate its managed pool. SLIP-10 is hardened-only,
-                    // so these keys can't be re-derived seedlessly, and the
-                    // 33-byte core-address-pool ABI can't carry a typed 32B
-                    // Ed25519 key — the batch is the only path. Only the
-                    // platform account has a non-empty batch, so that alone
-                    // gates this. Pure load-side marshalling of persisted
-                    // rows (the Rust side recomputes node ids under #884).
-                    if !acc.derivedPlatformNodeKeys.isEmpty {
-                        let batch = acc.derivedPlatformNodeKeys
-                        let nkBuf = UnsafeMutablePointer<ProviderPlatformNodeKeyFFI>.allocate(
-                            capacity: batch.count
-                        )
-                        var nkWritten = 0
-                        for dk in batch where dk.publicKey.count == 32 && dk.nodeId.count == 20 {
-                            var row = ProviderPlatformNodeKeyFFI()
-                            row.index = dk.index
-                            dk.publicKey.withUnsafeBytes { src in
-                                withUnsafeMutableBytes(of: &row.public_key) { dst in
-                                    dst.copyMemory(from: src)
-                                }
-                            }
-                            dk.nodeId.withUnsafeBytes { src in
-                                withUnsafeMutableBytes(of: &row.node_id) { dst in
-                                    dst.copyMemory(from: src)
-                                }
-                            }
-                            nkBuf[nkWritten] = row
-                            nkWritten += 1
-                        }
-                        if nkWritten > 0 {
-                            spec.derived_platform_node_keys = UnsafePointer(nkBuf)
-                            spec.derived_platform_node_keys_count = UInt(nkWritten)
-                            allocation.providerPlatformNodeKeyArrays.append((nkBuf, nkWritten))
-                        } else {
-                            nkBuf.deallocate()
-                            spec.derived_platform_node_keys = nil
-                            spec.derived_platform_node_keys_count = 0
-                        }
-                    } else {
-                        spec.derived_platform_node_keys = nil
-                        spec.derived_platform_node_keys_count = 0
-                    }
+                    // The platform-node (Ed25519) pool now rehydrates from
+                    // this account's persisted typed core-address rows like
+                    // every other pool — no dedicated batch on the spec.
                     buf[written] = spec
                     written += 1
                 }
@@ -4582,8 +4512,18 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             )
             for (j, row) in group.rows.enumerated() {
                 var e = CoreAddressEntryFFI()
-                copyBytes(row.publicKey, into: &e.public_key)
-                e.has_public_key = (row.publicKey.count == 33)
+                // Copy the typed key bytes (<= 48) into the fixed slot and
+                // record their length + curve tag. A row whose stored key
+                // somehow exceeds the slot is emitted with no key rather
+                // than truncated. Pure marshalling — the Rust side decides.
+                if row.publicKey.count <= 48 {
+                    copyBytes(row.publicKey, into: &e.public_key)
+                    e.public_key_len = UInt8(row.publicKey.count)
+                    e.key_type_tag = row.keyType
+                } else {
+                    e.public_key_len = 0
+                    e.key_type_tag = 0
+                }
                 e.pool_type_tag = group.poolTypeTag
                 e.address_index = row.addressIndex
                 e.is_used = row.isUsed
@@ -4608,8 +4548,6 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             copyBytes(account.friendIdentityId, into: &spec.friend_identity_id)
             spec.account_xpub_bytes = nil
             spec.account_xpub_bytes_len = 0
-            spec.derived_platform_node_keys = nil
-            spec.derived_platform_node_keys_count = 0
 
             var pool = AccountAddressPoolFFI()
             pool.account = spec
@@ -5605,11 +5543,6 @@ private final class LoadAllocation {
     var coreAddressPoolArrays: [(UnsafeMutablePointer<AccountAddressPoolFFI>, Int)] = []
     /// Inner `CoreAddressEntryFFI` arrays, one per pool entry above.
     var coreAddressEntryArrays: [(UnsafeMutablePointer<CoreAddressEntryFFI>, Int)] = []
-    /// Per-`ProviderPlatformKeys`-account `ProviderPlatformNodeKeyFFI`
-    /// arrays — the persisted platform-node key batch marshalled back so
-    /// the Rust restore can repopulate the managed pool. Flat POD (no owned
-    /// pointers), so nothing extra rides `scalarBuffers`.
-    var providerPlatformNodeKeyArrays: [(UnsafeMutablePointer<ProviderPlatformNodeKeyFFI>, Int)] = []
 
     func release() {
         if let entries = entries {
@@ -5689,10 +5622,6 @@ private final class LoadAllocation {
             ptr.deallocate()
         }
         for (ptr, count) in coreAddressPoolArrays {
-            ptr.deinitialize(count: count)
-            ptr.deallocate()
-        }
-        for (ptr, count) in providerPlatformNodeKeyArrays {
             ptr.deinitialize(count: count)
             ptr.deallocate()
         }
@@ -6050,11 +5979,17 @@ private func persistAccountAddressPoolsCallback(
                 let entry = addressesPtr[j]
                 let address = entry.address_base58.map { String(cString: $0) } ?? ""
                 let derivationPath = entry.derivation_path.map { String(cString: $0) } ?? ""
+                // Copy exactly `public_key_len` leading bytes out of the
+                // 48-byte slot; `key_type_tag` records the curve. Pure
+                // marshalling — the Rust side already validated the pair.
+                let keyLen = Int(entry.public_key_len)
                 let publicKey: Data
-                if entry.has_public_key {
-                    var pk = Data(count: 33)
+                if keyLen > 0 {
+                    var pk = Data(count: keyLen)
                     withUnsafeBytes(of: entry.public_key) { src in
-                        pk.withUnsafeMutableBytes { dst in dst.copyMemory(from: src) }
+                        pk.withUnsafeMutableBytes { dst in
+                            dst.copyMemory(from: UnsafeRawBufferPointer(rebasing: src[0..<keyLen]))
+                        }
                     }
                     publicKey = pk
                 } else {
@@ -6064,6 +5999,7 @@ private func persistAccountAddressPoolsCallback(
                 snapshots.append(.init(
                     address: address,
                     publicKey: publicKey,
+                    keyType: entry.key_type_tag,
                     poolTypeTag: entry.pool_type_tag,
                     addressIndex: entry.address_index,
                     isUsed: entry.is_used,

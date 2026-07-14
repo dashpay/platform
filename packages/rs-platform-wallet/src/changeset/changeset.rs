@@ -1095,6 +1095,11 @@ pub enum ProviderKeyExtendedPubKey {
 /// list these keys later from an external-signable / watch-only
 /// wallet without re-prompting for the mnemonic. Only the public parts
 /// are carried — the private scalar stays resolver-gated per index.
+///
+/// Produced by [`derive_platform_node_public_keys`](crate::wallet::provider_key_at_index::derive_platform_node_public_keys)
+/// and fed straight into the managed platform-node pool at registration
+/// via [`populate_platform_node_pool`](crate::wallet::provider_key_at_index::populate_platform_node_pool),
+/// from which the keys persist as ordinary typed core-address rows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ProviderPlatformNodePubKey {
@@ -1133,15 +1138,6 @@ pub struct ProviderKeyAccountEntry {
     pub account_type: AccountType,
     /// The account's extended public key.
     pub extended_public_key: ProviderKeyExtendedPubKey,
-    /// Pre-derived platform-node (Ed25519) public keys, captured at
-    /// registration while the seed was in hand. Only populated for the
-    /// `ProviderPlatformKeys` (EdDSA) entry — always empty for the BLS
-    /// operator entry, whose pool the wallet can re-derive on demand
-    /// from the account xpub (non-hardened `ckd_pub`, no seed). The FFI
-    /// layer surfaces these to the host as a flat display array so the
-    /// Node Keys screen can list them from persistence with no keychain
-    /// prompt. See [`ProviderPlatformNodePubKey`].
-    pub derived_platform_node_keys: Vec<ProviderPlatformNodePubKey>,
 }
 
 /// Address-pool snapshot for one `(account_type, pool_type)` pair.

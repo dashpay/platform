@@ -958,11 +958,11 @@ extension ManagedPlatformWallet {
         /// so this is the only private form.
         public let privateKeyHex: String?
 
-        /// Public memberwise init so hosts can build display rows from a
-        /// persisted platform-node batch (see
-        /// `PersistentAccount.derivedPlatformNodeKeys`) without a fresh
-        /// FFI derivation — the synthesized memberwise init is internal
-        /// and unreachable from the app module.
+        /// Public memberwise init so hosts can build display rows from the
+        /// persisted platform-node core-address rows (typed
+        /// `PersistentCoreAddress` entries with `keyType == 2`) without a
+        /// fresh FFI derivation — the synthesized memberwise init is
+        /// internal and unreachable from the app module.
         public init(
             index: UInt32,
             publicKeyHex: String,
@@ -1043,6 +1043,34 @@ extension ManagedPlatformWallet {
                 privateKeyHex: privateKeyHex
             )
         }
+    }
+
+    /// Compute the 20-byte Tenderdash platform node id
+    /// (`SHA256(ed25519 pubkey)[..20]`, rust-dashcore #884) for a raw
+    /// 32-byte Ed25519 public key, via the pure Rust helper
+    /// `platform_wallet_platform_node_id_from_ed25519_pubkey`.
+    ///
+    /// The node id is exactly what a ProRegTx `platform_node_id` field
+    /// carries; hosts use this to render the node id of a persisted
+    /// platform-node public key (which stores only the pubkey) without
+    /// re-implementing the SHA-256 digest. Pure bridge — no wallet handle,
+    /// no key material beyond the public key.
+    ///
+    /// - Returns: the 20-byte node id, or `nil` when `publicKey` is not
+    ///   exactly 32 bytes or the FFI rejects it.
+    public static func platformNodeId(fromEd25519PublicKey publicKey: Data) -> Data? {
+        guard publicKey.count == 32 else { return nil }
+        var out = Data(count: 20)
+        let ok = out.withUnsafeMutableBytes { outRaw -> Bool in
+            publicKey.withUnsafeBytes { pkRaw -> Bool in
+                platform_wallet_platform_node_id_from_ed25519_pubkey(
+                    pkRaw.bindMemory(to: UInt8.self).baseAddress,
+                    UInt(pkRaw.count),
+                    outRaw.bindMemory(to: UInt8.self).baseAddress
+                )
+            }
+        }
+        return ok ? out : nil
     }
 
     /// Derive a single ECDSA identity-authentication keypair at an
