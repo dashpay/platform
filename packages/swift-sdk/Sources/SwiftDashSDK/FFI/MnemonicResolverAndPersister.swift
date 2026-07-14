@@ -142,6 +142,13 @@ public final class MnemonicResolver: @unchecked Sendable {
         outCapacity: UInt,
         outLen: UnsafeMutablePointer<UInt>
     ) -> MnemonicResolverResult {
+        // Every mnemonic materialization funnels through here, so this one
+        // line is the audit trail for "what touched the seed": expect it
+        // during signing and on a first-launch seed-bind verify, and expect
+        // its absence on later launches' unlock path (the persisted binding
+        // marker short-circuits before the resolver runs). NSLog rather than
+        // print so the line is observable off-Xcode (system log / console-pty).
+        NSLog("🔑 MnemonicResolver.resolve for wallet %@", String(walletId.toHexString().prefix(8)))
         let mnemonicUTF8Bytes: Data
         do {
             mnemonicUTF8Bytes = try storage.retrieveMnemonicUTF8Bytes(for: walletId)

@@ -14,6 +14,20 @@ use crate::error::PlatformWalletError;
 use crate::wallet::identity::network::contact_requests::ContactCryptoProvider;
 use crate::wallet::platform_wallet::PlatformWallet;
 
+/// How [`PlatformWallet::verify_seed_binds_with_marker`] established the
+/// seed binding.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SeedBindingVerification {
+    /// The host's persisted verified-binding marker equals the wallet's
+    /// current account-0 xpub — the binding was proven on an earlier launch
+    /// and the xpub hasn't changed since, so the signer was not consulted.
+    MarkerMatched,
+    /// The full check ran: the account-0 xpub was derived through the signer
+    /// and matched the persisted one. The host should persist the returned
+    /// marker so later launches can skip the derivation.
+    Verified,
+}
+
 impl PlatformWallet {
     /// Verify the signer behind `crypto` resolves the seed that owns this wallet.
     ///
@@ -31,6 +45,27 @@ impl PlatformWallet {
         &self,
         crypto: &C,
     ) -> Result<(), PlatformWalletError> {
+        self.verify_seed_binds_with_marker(crypto, None)
+            .await
+            .map(|_| ())
+    }
+
+    /// Marker-aware variant of [`Self::verify_seed_binds`]: the derivation is a
+    /// pure function of (seed, network) against a fixed persisted xpub, so its
+    /// outcome cannot change between launches. After one successful verify the
+    /// host persists the returned marker (the verified account-0 xpub,
+    /// serialized) and passes it back on later launches; when it still equals
+    /// the wallet's current account-0 xpub the signer is skipped entirely — no
+    /// mnemonic resolution, no derivation. A differing or absent marker (first
+    /// launch, wallet re-import) falls through to the full signer check.
+    ///
+    /// Returns the outcome plus the marker to persist. Errors exactly like
+    /// [`Self::verify_seed_binds`] when the full check runs and fails.
+    pub async fn verify_seed_binds_with_marker<C: ContactCryptoProvider + Sync>(
+        &self,
+        crypto: &C,
+        marker: Option<&str>,
+    ) -> Result<(SeedBindingVerification, String), PlatformWalletError> {
         // Read the binding xpub and its exact derivation path from the same
         // account, so the two can never drift. Drop the lock before awaiting the
         // signer — the guard is not held across `.await`.
@@ -49,9 +84,14 @@ impl PlatformWallet {
             (path, account.account_xpub)
         };
 
+        let expected_marker = expected.to_string();
+        if marker == Some(expected_marker.as_str()) {
+            return Ok((SeedBindingVerification::MarkerMatched, expected_marker));
+        }
+
         let derived = crypto.receiving_xpub(&path).await?;
         if derived == expected {
-            Ok(())
+            Ok((SeedBindingVerification::Verified, expected_marker))
         } else {
             Err(PlatformWalletError::SeedMismatch {
                 wallet_id: hex::encode(self.wallet_id()),
@@ -62,6 +102,7 @@ impl PlatformWallet {
 
 #[cfg(test)]
 mod tests {
+    use super::SeedBindingVerification;
     use std::sync::Arc;
 
     use key_wallet::mnemonic::{Language, Mnemonic};
@@ -174,6 +215,133 @@ mod tests {
             .verify_seed_binds(&wrong_crypto)
             .await
             .expect_err("a signer for a different seed must be rejected");
+        assert!(
+            matches!(err, PlatformWalletError::SeedMismatch { .. }),
+            "expected SeedMismatch, got: {err:?}"
+        );
+    }
+
+    /// First launch (no marker): the full signer check runs, binds, and
+    /// returns `Verified` plus the marker for the host to persist — which is
+    /// the wallet's account-0 xpub serialization.
+    #[tokio::test]
+    async fn verify_with_no_marker_runs_full_check_and_returns_marker() {
+        let manager = make_manager();
+        let network = Network::Testnet;
+        let seed = seed_for(TEST_MNEMONIC);
+
+        let wallet = manager
+            .create_wallet_from_seed_bytes(
+                network,
+                &seed,
+                WalletAccountCreationOptions::Default,
+                Some(0),
+            )
+            .await
+            .expect("wallet creation");
+
+        let crypto = SeedCryptoProvider::from_seed(seed, network);
+        let (outcome, marker) = wallet
+            .verify_seed_binds_with_marker(&crypto, None)
+            .await
+            .expect("the wallet's own seed must bind");
+        assert_eq!(outcome, SeedBindingVerification::Verified);
+
+        let expected_xpub = wallet
+            .state()
+            .await
+            .wallet()
+            .get_bip44_account(0)
+            .expect("account 0")
+            .account_xpub
+            .to_string();
+        assert_eq!(marker, expected_xpub, "marker is the account-0 xpub");
+    }
+
+    /// Later launch (marker matches the wallet's current xpub): the signer is
+    /// not consulted at all — proven by passing a signer for the WRONG seed,
+    /// which would fail the full check, and still getting `MarkerMatched`.
+    #[tokio::test]
+    async fn verify_with_matching_marker_skips_signer() {
+        let manager = make_manager();
+        let network = Network::Testnet;
+        let seed = seed_for(TEST_MNEMONIC);
+
+        let wallet = manager
+            .create_wallet_from_seed_bytes(
+                network,
+                &seed,
+                WalletAccountCreationOptions::Default,
+                Some(0),
+            )
+            .await
+            .expect("wallet creation");
+        let marker = wallet
+            .state()
+            .await
+            .wallet()
+            .get_bip44_account(0)
+            .expect("account 0")
+            .account_xpub
+            .to_string();
+
+        let wrong_seed =
+            seed_for("legal winner thank year wave sausage worth useful legal winner thank yellow");
+        let wrong_crypto = SeedCryptoProvider::from_seed(wrong_seed, network);
+
+        let (outcome, returned) = wallet
+            .verify_seed_binds_with_marker(&wrong_crypto, Some(&marker))
+            .await
+            .expect("a matching marker must short-circuit before the signer runs");
+        assert_eq!(outcome, SeedBindingVerification::MarkerMatched);
+        assert_eq!(returned, marker, "marker round-trips unchanged");
+    }
+
+    /// A stale marker (wallet re-imported / xpub changed since it was written)
+    /// falls through to the full signer check: the right signer re-verifies
+    /// and hands back the fresh marker; the wrong signer is still rejected.
+    #[tokio::test]
+    async fn verify_with_stale_marker_falls_through_to_full_check() {
+        let manager = make_manager();
+        let network = Network::Testnet;
+        let seed = seed_for(TEST_MNEMONIC);
+
+        let wallet = manager
+            .create_wallet_from_seed_bytes(
+                network,
+                &seed,
+                WalletAccountCreationOptions::Default,
+                Some(0),
+            )
+            .await
+            .expect("wallet creation");
+        let current_xpub = wallet
+            .state()
+            .await
+            .wallet()
+            .get_bip44_account(0)
+            .expect("account 0")
+            .account_xpub
+            .to_string();
+
+        let crypto = SeedCryptoProvider::from_seed(seed, network);
+        let (outcome, marker) = wallet
+            .verify_seed_binds_with_marker(&crypto, Some("stale-marker-from-a-previous-import"))
+            .await
+            .expect("the wallet's own seed must bind after a stale marker");
+        assert_eq!(outcome, SeedBindingVerification::Verified);
+        assert_eq!(marker, current_xpub);
+
+        let wrong_seed =
+            seed_for("legal winner thank year wave sausage worth useful legal winner thank yellow");
+        let wrong_crypto = SeedCryptoProvider::from_seed(wrong_seed, network);
+        let err = wallet
+            .verify_seed_binds_with_marker(
+                &wrong_crypto,
+                Some("stale-marker-from-a-previous-import"),
+            )
+            .await
+            .expect_err("a stale marker must not let a wrong signer through");
         assert!(
             matches!(err, PlatformWalletError::SeedMismatch { .. }),
             "expected SeedMismatch, got: {err:?}"
