@@ -187,7 +187,7 @@ mod tests {
                 evo,
                 EntryMasternodeType::HighPerformance {
                     platform_http_port: 443,
-                    platform_node_id: PubkeyHash::from_byte_array([0u8; 20]),
+                    platform_node_id: dashcore::PlatformNodeId::from_byte_array([0u8; 20]),
                 },
             ),
         ]);

@@ -1187,10 +1187,11 @@ where
                     agg.service_address = Some(provider_ip_port(p.ip_address, p.port));
                     agg.service_height = height;
                 }
-                // ProUpServ's `platform_node_id` is a raw `Option<[u8; 20]>`.
+                // ProUpServ's `platform_node_id` is an `Option<PlatformNodeId>`
+                // (a 20-byte newtype); the aggregate stores the raw bytes.
                 if let Some(node_id) = p.platform_node_id {
                     if agg.platform_node_id.is_none() || height >= agg.platform_node_height {
-                        agg.platform_node_id = Some(node_id);
+                        agg.platform_node_id = Some(node_id.to_byte_array());
                         agg.platform_node_height = height;
                     }
                 }

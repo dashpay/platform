@@ -69,19 +69,14 @@ use async_trait::async_trait;
 use key_wallet::bip32::{ChildNumber, DerivationPath, ExtendedPrivKey, ExtendedPubKey};
 use key_wallet::dashcore::secp256k1::{self, Secp256k1};
 use key_wallet::dip9::{
-    FEATURE_PURPOSE, FEATURE_PURPOSE_IDENTITIES, FEATURE_PURPOSE_IDENTITIES_SUBFEATURE_INVITATIONS,
+    DASHPAY_CONTACT_INFO_ENC_TO_USER_ID_CHILD, DASHPAY_CONTACT_INFO_PRIVATE_DATA_CHILD,
+    FEATURE_PURPOSE, FEATURE_PURPOSE_DASHPAY_AUTO_ACCEPT, FEATURE_PURPOSE_IDENTITIES,
+    FEATURE_PURPOSE_IDENTITIES_SUBFEATURE_INVITATIONS,
 };
 use key_wallet::signer::{ExtendedPubKeySigner, Signer, SignerMethod};
 use key_wallet::Network;
 use thiserror::Error;
 use zeroize::Zeroizing;
-
-/// DIP-15 auto-accept feature index (`m/9'/coin'/16'/expiry'`). Not yet a
-/// `key_wallet::dip9` constant (unlike the DIP-9/DIP-13 features used below) —
-/// it mirrors `DASHPAY_AUTO_ACCEPT_FEATURE` in `rs-platform-wallet`'s
-/// `crypto/auto_accept.rs`, which this crate cannot depend on. Upstreaming a
-/// shared constant into `key_wallet::dip9` is the proper long-term home.
-const DASHPAY_AUTO_ACCEPT_FEATURE: u32 = 16;
 
 use crate::mnemonic_resolver::{
     mnemonic_resolver_result, MnemonicResolverHandle, MNEMONIC_RESOLVER_BUFFER_CAPACITY,
@@ -366,7 +361,7 @@ impl MnemonicResolverCoreSigner {
     ) -> Result<Zeroizing<[u8; 32]>, MnemonicResolverSignerError> {
         let purpose9 = ChildNumber::from_hardened_idx(FEATURE_PURPOSE)
             .map_err(|e| MnemonicResolverSignerError::DerivationFailed(e.to_string()))?;
-        let feature16 = ChildNumber::from_hardened_idx(DASHPAY_AUTO_ACCEPT_FEATURE)
+        let feature16 = ChildNumber::from_hardened_idx(FEATURE_PURPOSE_DASHPAY_AUTO_ACCEPT)
             .map_err(|e| MnemonicResolverSignerError::DerivationFailed(e.to_string()))?;
         let comps: &[ChildNumber] = path.as_ref();
         if comps.len() != 4 || comps[0] != purpose9 || comps[2] != feature16 {
@@ -528,8 +523,16 @@ impl MnemonicResolverCoreSigner {
         private_data_plaintext: &[u8],
         private_data_iv: &[u8; 16],
     ) -> Result<ContactInfoSealed, MnemonicResolverSignerError> {
-        let enc_key = self.derive_contact_info_aes_key(root_path, 65536, derivation_index)?;
-        let priv_key = self.derive_contact_info_aes_key(root_path, 65537, derivation_index)?;
+        let enc_key = self.derive_contact_info_aes_key(
+            root_path,
+            DASHPAY_CONTACT_INFO_ENC_TO_USER_ID_CHILD,
+            derivation_index,
+        )?;
+        let priv_key = self.derive_contact_info_aes_key(
+            root_path,
+            DASHPAY_CONTACT_INFO_PRIVATE_DATA_CHILD,
+            derivation_index,
+        )?;
         Ok(ContactInfoSealed {
             enc_to_user_id: platform_encryption::encrypt_enc_to_user_id(&enc_key, contact_id),
             private_data: platform_encryption::encrypt_private_data(
@@ -549,8 +552,16 @@ impl MnemonicResolverCoreSigner {
         enc_to_user_id: &[u8; 32],
         private_data_blob: &[u8],
     ) -> Result<ContactInfoOpened, MnemonicResolverSignerError> {
-        let enc_key = self.derive_contact_info_aes_key(root_path, 65536, derivation_index)?;
-        let priv_key = self.derive_contact_info_aes_key(root_path, 65537, derivation_index)?;
+        let enc_key = self.derive_contact_info_aes_key(
+            root_path,
+            DASHPAY_CONTACT_INFO_ENC_TO_USER_ID_CHILD,
+            derivation_index,
+        )?;
+        let priv_key = self.derive_contact_info_aes_key(
+            root_path,
+            DASHPAY_CONTACT_INFO_PRIVATE_DATA_CHILD,
+            derivation_index,
+        )?;
         let private_data = platform_encryption::decrypt_private_data(&priv_key, private_data_blob)
             .map_err(|e| {
                 MnemonicResolverSignerError::DerivationFailed(format!("contactInfo decrypt: {e}"))
