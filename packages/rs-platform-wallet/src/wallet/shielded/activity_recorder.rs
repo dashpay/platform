@@ -32,7 +32,7 @@ use super::activity::{
     compute_activity_id, ShieldedActivityEntry, ShieldedActivityKind, ShieldedActivityStatus,
     ShieldedDirection,
 };
-use super::keys::OrchardKeySet;
+use super::keys::AccountViewingKeys;
 use super::store::{ShieldedNote, SubwalletId};
 use crate::changeset::ShieldedChangeSet;
 
@@ -52,8 +52,10 @@ use dpp::shielded::SerializedAction;
 /// recoverable output plaintext for this wallet) contribute nothing —
 /// exactly the outputs the scan can't see either. Order-independent: the
 /// caller hashes via [`compute_activity_id`], which sorts + dedups.
-pub fn visible_output_cmxs(actions: &[SerializedAction], keys: &OrchardKeySet) -> Vec<[u8; 32]> {
-    let prepared_ivk = keys.prepared_ivk();
+pub fn visible_output_cmxs(
+    actions: &[SerializedAction],
+    keys: &AccountViewingKeys,
+) -> Vec<[u8; 32]> {
     let mut cmxs: Vec<[u8; 32]> = Vec::new();
     for a in actions {
         let wire = ShieldedEncryptedNote {
@@ -63,7 +65,7 @@ pub fn visible_output_cmxs(actions: &[SerializedAction], keys: &OrchardKeySet) -
             encrypted_note: a.encrypted_note.clone(),
         };
         // Own output (change / self-send) via IVK.
-        if let Some((note, _addr)) = try_decrypt_note(&prepared_ivk, &wire) {
+        if let Some((note, _addr)) = try_decrypt_note(&keys.prepared_ivk, &wire) {
             cmxs.push(ExtractedNoteCommitment::from(note.commitment()).to_bytes());
             continue;
         }
@@ -108,7 +110,7 @@ pub struct LiveEntryParams<'a> {
 /// wallet-visible output cmx (a degenerate all-dummy bundle), so the
 /// caller skips recording rather than persisting a degenerate id.
 pub fn build_pending_entry(
-    keys: &OrchardKeySet,
+    keys: &AccountViewingKeys,
     params: LiveEntryParams<'_>,
 ) -> Option<ShieldedActivityEntry> {
     let note_cmxs = visible_output_cmxs(params.actions, keys);

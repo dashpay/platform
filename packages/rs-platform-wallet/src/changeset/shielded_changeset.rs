@@ -51,6 +51,14 @@ pub struct ShieldedChangeSet {
     /// Defaults empty so every pre-activity flow rides the existing
     /// changeset path unchanged.
     pub activity_entries: BTreeMap<SubwalletId, Vec<ShieldedActivityEntry>>,
+    /// Per-subwallet Orchard viewing keys to persist, as the raw
+    /// 96-byte FVK encoding (stored as `Vec<u8>` — serde-derive only
+    /// covers arrays ≤ 32). Emitted once per seed-backed
+    /// `bind_shielded` so later launches can rebind viewing-grade
+    /// state without resolving the mnemonic. Last write wins on
+    /// merge (the FVK for a `(wallet, account, network)` never
+    /// legitimately changes).
+    pub viewing_keys: BTreeMap<SubwalletId, Vec<u8>>,
 }
 
 impl ShieldedChangeSet {
@@ -61,6 +69,7 @@ impl ShieldedChangeSet {
             && self.outgoing_notes.is_empty()
             && self.synced_indices.is_empty()
             && self.activity_entries.is_empty()
+            && self.viewing_keys.is_empty()
     }
 
     /// Accumulator helper: record a saved note for `id`.
@@ -93,6 +102,12 @@ impl ShieldedChangeSet {
         }
     }
 
+    /// Accumulator helper: record a subwallet's Orchard viewing key
+    /// (raw 96-byte FVK encoding). Last write wins.
+    pub fn record_viewing_key(&mut self, id: SubwalletId, fvk_bytes: [u8; 96]) {
+        self.viewing_keys.insert(id, fvk_bytes.to_vec());
+    }
+
     /// Split a consolidated shielded changeset into one
     /// `ShieldedChangeSet` per `WalletId`. Used by the
     /// network-scoped coordinator's sync path: the free
@@ -111,6 +126,7 @@ impl ShieldedChangeSet {
             outgoing_notes,
             synced_indices,
             activity_entries,
+            viewing_keys,
         } = self;
         let mut out: BTreeMap<crate::wallet::platform_wallet::WalletId, ShieldedChangeSet> =
             BTreeMap::new();
@@ -143,6 +159,12 @@ impl ShieldedChangeSet {
                 .or_default()
                 .activity_entries
                 .insert(id, entries);
+        }
+        for (id, fvk) in viewing_keys {
+            out.entry(id.wallet_id)
+                .or_default()
+                .viewing_keys
+                .insert(id, fvk);
         }
         // Defensive: drop empty entries so the persister doesn't
         // see noise. `split_by_wallet_id` is called on the result
@@ -177,6 +199,11 @@ impl Merge for ShieldedChangeSet {
         // original) wins at persist time without needing to dedupe here.
         for (id, entries) in other.activity_entries {
             self.activity_entries.entry(id).or_default().extend(entries);
+        }
+        // Viewing keys: last write wins (the FVK for a subwallet is
+        // stable on a given network, so any re-emit is identical).
+        for (id, fvk) in other.viewing_keys {
+            self.viewing_keys.insert(id, fvk);
         }
     }
 
