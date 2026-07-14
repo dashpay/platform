@@ -10,6 +10,11 @@ struct AccountDetailView: View {
     let wallet: PersistentWallet
     let account: PersistentAccount
 
+    /// Masternodes for the provider-key-address usage subtitle. Matched
+    /// by base58 address (Rust-encoded owner/voting address ↔ the
+    /// account's persisted address), so no key hashing happens in Swift.
+    @Query private var allMasternodes: [PersistentMasternode]
+
     @State private var errorMessage: String?
     @State private var copiedText: String?
     @State private var showingPrivateKey: String?
@@ -38,23 +43,49 @@ struct AccountDetailView: View {
     /// "Copied" confirmation.
     @State private var derivedCopiedKey: String?
 
-    /// Distinct on-chain transactions this account participates in:
-    /// the union of every TXO's creating tx and spending tx. Lives
-    /// here rather than on the model because `PersistentTransaction`
-    /// is no longer account-scoped (a single tx can produce outputs
-    /// into multiple accounts), so the per-account set has to be
-    /// derived on demand. Walks the address pool — the canonical
-    /// account → TXO path is `coreAddresses.flatMap(\.txos)` now
-    /// that `PersistentAccount.outputs` is gone.
-    private var distinctTransactionCount: Int {
+    /// The transaction sheet currently presented from the Transactions
+    /// card (`nil` = none). Mirrors `TransactionListView`'s pattern.
+    @State private var selectedTransaction: PersistentTransaction?
+
+    /// Distinct transactions this account participates in, as display
+    /// rows: the **union** of the TXO-derived set (every TXO's creating
+    /// tx + spending tx) and the payload-only `involvedTransactions`
+    /// join. Lives here rather than on the model because
+    /// `PersistentTransaction` is not account-scoped (a single tx can
+    /// produce outputs into multiple accounts), so the per-account set
+    /// is derived on demand.
+    ///
+    /// The TXO walk covers funded involvement (canonical path:
+    /// `coreAddresses.flatMap(\.txos)`); `involvedTransactions` adds the
+    /// payload-only special txs that produced no TXO here and are
+    /// therefore invisible to that walk. De-dup is by `txid` so a tx
+    /// that is both funded and payload-linked appears once.
+    ///
+    /// Sorted to match `TransactionListView`: unconfirmed (context 0)
+    /// first, then by `firstSeen` descending.
+    private var distinctTransactions: [PersistentTransaction] {
         var seen: Set<Data> = []
+        var result: [PersistentTransaction] = []
+        func add(_ tx: PersistentTransaction) {
+            if seen.insert(tx.txid).inserted { result.append(tx) }
+        }
         for address in account.coreAddresses {
             for txo in address.txos {
-                if let tx = txo.transaction { seen.insert(tx.txid) }
-                if let spending = txo.spendingTransaction { seen.insert(spending.txid) }
+                if let tx = txo.transaction { add(tx) }
+                if let spending = txo.spendingTransaction { add(spending) }
             }
         }
-        return seen.count
+        for tx in account.involvedTransactions { add(tx) }
+        return result.sorted { lhs, rhs in
+            if (lhs.context == 0) != (rhs.context == 0) {
+                return lhs.context == 0
+            }
+            return lhs.firstSeen > rhs.firstSeen
+        }
+    }
+
+    private var distinctTransactionCount: Int {
+        distinctTransactions.count
     }
 
     /// Total TXO count for the account, summed across address
@@ -86,6 +117,11 @@ struct AccountDetailView: View {
                         // ...and the per-index keys derived from it (the
                         // actual operator / platform-node keys).
                         derivedKeysCard()
+                        // Operator-key accounts hold no TXOs, but a
+                        // ProRegTx can still match them payload-only
+                        // (provider owner / voting key address), so
+                        // surface those txs here too.
+                        transactionsCard()
                     } else {
                         if shouldShowBalance {
                             balanceCard()
@@ -118,6 +154,8 @@ struct AccountDetailView: View {
                                 emptyAddressesCard()
                             }
                         }
+
+                        transactionsCard()
                     }
                 }
                 .padding()
@@ -125,6 +163,9 @@ struct AccountDetailView: View {
         }
         .navigationTitle(account.accountTypeName)
         .navigationBarTitleDisplayMode(.large)
+        .sheet(item: $selectedTransaction) { transaction in
+            TransactionDetailView(transaction: transaction)
+        }
         .sheet(isPresented: $showingPINPrompt) {
             PINPromptView(
                 pinInput: $pinInput,
@@ -402,16 +443,56 @@ struct AccountDetailView: View {
         .shadow(color: Color.black.opacity(0.05), radius: 5, x: 0, y: 2)
     }
 
+    /// Lists this account's distinct transactions (see
+    /// `distinctTransactions`) — the union of TXO-derived and
+    /// payload-only involvement — each tappable to open its detail
+    /// sheet. Rendered in both the provider-key and address-pool
+    /// branches since operator-key accounts can be payload-matched
+    /// too; skipped for PlatformPayment (tag 14), which has no core
+    /// txs, and hidden entirely when the list is empty.
+    @ViewBuilder
+    private func transactionsCard() -> some View {
+        let txs = distinctTransactions
+        if account.accountType != 14, !txs.isEmpty {
+            VStack(alignment: .leading, spacing: 12) {
+                Label("Transactions (\(txs.count))", systemImage: "list.bullet.rectangle")
+                    .font(.headline)
+                    .foregroundColor(.primary)
+
+                Divider()
+
+                ForEach(Array(txs.enumerated()), id: \.element.txid) { idx, tx in
+                    Button {
+                        selectedTransaction = tx
+                    } label: {
+                        TransactionRowView(transaction: tx)
+                    }
+                    .buttonStyle(.plain)
+                    if idx < txs.count - 1 {
+                        Divider()
+                    }
+                }
+            }
+            .padding()
+            .background(Color(.systemBackground))
+            .cornerRadius(12)
+            .shadow(color: Color.black.opacity(0.05), radius: 5, x: 0, y: 2)
+        }
+    }
+
     /// Group this account's persisted addresses by pool tag, in a
-    /// stable display order (External → Internal → Absent → Absent
-    /// Hardened). Empty pools are skipped.
+    /// stable display order (External → Internal → Additional →
+    /// Additional Hardened). Empty pools are skipped. Names come from
+    /// `PersistentCoreAddress.poolTypeName` so all address lists share
+    /// one taxonomy (tags 2/3 are the on-demand "Additional" pools where
+    /// provider keys live — no Rust "Absent" jargon).
     private func addressSections() -> [(String, [PersistentCoreAddress])] {
         let grouped = Dictionary(grouping: account.coreAddresses) { $0.poolTypeTag }
         let order: [(UInt8, String)] = [
             (0, "External"),
             (1, "Internal"),
-            (2, "Absent"),
-            (3, "Absent (Hardened)"),
+            (2, "Additional"),
+            (3, "Additional (Hardened)"),
         ]
         return order.compactMap { tag, name in
             guard let bucket = grouped[tag], !bucket.isEmpty else { return nil }
@@ -518,7 +599,11 @@ struct AccountDetailView: View {
                     .foregroundColor(.primary)
                 HStack(spacing: 6) {
                     Text("#\(addr.addressIndex)")
-                    if addr.isUsed { Text("• used") }
+                    if let usage = masternodeUsage(for: addr) {
+                        Text("• \(usage)")
+                    } else if addr.isUsed {
+                        Text("• used")
+                    }
                     if addr.balance > 0 {
                         Text("• \(formatBalance(addr.balance))")
                     }
@@ -533,6 +618,47 @@ struct AccountDetailView: View {
         }
         .padding(.vertical, 4)
         .contentShape(Rectangle())
+    }
+
+    /// Masternode-usage subtitle for a provider key address. Joins the
+    /// address (base58) to the matching masternode field — the "join by key
+    /// hash" without any Swift key hashing:
+    ///   * owner / voting (accountType 9 / 8) ↔ `owner/votingAddress`
+    ///     (real on-chain addresses), and
+    ///   * operator / platform-node (accountType 10 / 11) ↔
+    ///     `operator/platformNodeAddress` (base58 pseudo-addresses Rust
+    ///     encoded from the payload key — these keys have no on-chain
+    ///     address, so this is the only way to surface their usage).
+    /// `nil` for non-provider-key accounts or unmatched addresses, so the
+    /// caller falls back to "used".
+    private func masternodeUsage(for addr: PersistentCoreAddress) -> String? {
+        // 8 ProviderVotingKeys, 9 ProviderOwnerKeys, 10 ProviderOperatorKeys,
+        // 11 ProviderPlatformKeys.
+        let addressMatches: (PersistentMasternode) -> Bool
+        switch account.accountType {
+        case 8, 9:
+            addressMatches = {
+                $0.ownerAddress == addr.address || $0.votingAddress == addr.address
+            }
+        case 10:
+            addressMatches = { $0.operatorPseudoAddress == addr.address }
+        case 11:
+            addressMatches = { $0.platformNodeAddress == addr.address }
+        default:
+            return nil
+        }
+
+        let wid = wallet.walletId
+        let matches = allMasternodes.filter { $0.walletId == wid && addressMatches($0) }
+        guard let first = matches.min(by: { $0.orderIndex < $1.orderIndex }) else {
+            return nil
+        }
+        let count = matches.count
+        let times = count == 1 ? "once" : (count == 2 ? "twice" : "\(count) times")
+        if let ip = first.serviceAddress {
+            return "used \(times) at \(ip) · \(first.displayTitle)"
+        }
+        return "used \(times) on \(first.displayTitle)"
     }
 
     private func emptyAddressesCard() -> some View {

@@ -618,6 +618,9 @@ struct GlobalSyncIndicatorOverlay: View {
 
 struct GlobalSyncIndicator: View {
     @EnvironmentObject var walletManager: PlatformWalletManager
+    /// Used so the stop button cancels any in-flight SPV start before
+    /// stopping — see `stopSpvCancellingPendingStarts`.
+    @EnvironmentObject var walletManagerStore: WalletManagerStore
     let showDetails: Bool
 
     // Helpers
@@ -648,7 +651,7 @@ struct GlobalSyncIndicator: View {
                         .font(.caption)
                     Spacer()
                     Button(action: {
-                        try? walletManager.stopSpv()
+                        walletManagerStore.stopSpvCancellingPendingStarts(walletManager)
                     }) {
                         Image(systemName: "xmark.circle.fill")
                             .font(.caption)

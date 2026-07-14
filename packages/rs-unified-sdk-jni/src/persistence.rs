@@ -2081,6 +2081,12 @@ fn build_wallet_restore_entry(
         core_address_pools_count: 0,
         last_applied_chain_lock_bytes: ptr::null(),
         last_applied_chain_lock_bytes_len: 0,
+        // Android has no provider-special-tx persistence yet (the
+        // masternode-list feature is iOS-only so far — tracked as a
+        // parity follow-up); null/0 is the documented "wallet has no
+        // provider special txs" load value, and the free fn skips null.
+        provider_special_txs: ptr::null(),
+        provider_special_txs_count: 0,
     };
     Ok(WalletRestoreStaged {
         entry,

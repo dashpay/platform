@@ -31,6 +31,7 @@ class Sdk private constructor(
 ) : AutoCloseable {
 
     private val handleRef = AtomicLong(handle)
+
     private val cleanable = NativeCleaner.register(this, HandleCleanup(handleRef))
 
     /** Identity queries — mirrors Swift's `sdk.identities`. */
@@ -170,6 +171,13 @@ class Sdk private constructor(
     data class ActiveMasternode(val spvPeer: String, val dapiUrl: String)
 
     companion object {
+        /**
+         * Native-free instance for JVM lifecycle tests: handle 0 makes
+         * [HandleCleanup] skip `SdkNative.destroy`, so the queryGate /
+         * closeSuspending semantics are testable without the .so loaded.
+         */
+        internal fun forLifecycleTest(): Sdk = Sdk(0L, Network.TESTNET)
+
         private val json = Json { ignoreUnknownKeys = true }
 
         /** One-time native library load + `dash_sdk_init`. Idempotent. */
