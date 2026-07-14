@@ -939,10 +939,16 @@ extension ManagedPlatformWallet {
     public struct ProviderDerivedKey: Sendable {
         /// The key index that was derived (`#0..`).
         public let index: UInt32
-        /// Lowercase hex of the raw curve public key — 96 chars for a
-        /// BLS-48 operator key (the bytes a ProRegTx operator field
-        /// carries), 64 for an Ed25519-32 platform-node key.
+        /// Lowercase hex of the raw curve public key in MODERN (IETF)
+        /// serialization — 96 chars for a BLS-48 operator key (the bytes a
+        /// ProRegTx operator field carries), 64 for an Ed25519-32
+        /// platform-node key.
         public let publicKeyHex: String
+        /// Lowercase hex of the SAME BLS G1 point in the Dash LEGACY
+        /// serialization (96 chars). `nil` for Ed25519 platform-node keys
+        /// (no legacy variant). Serialized on the Rust side — never
+        /// transformed in Swift.
+        public let legacyPublicKeyHex: String?
         /// Lowercase hex of the 20-byte platform node id (`hash160` of
         /// the Ed25519 public key, the ProRegTx `platform_node_id`).
         /// `nil` for operator keys, which have no node id.
@@ -960,11 +966,13 @@ extension ManagedPlatformWallet {
         public init(
             index: UInt32,
             publicKeyHex: String,
+            legacyPublicKeyHex: String?,
             nodeIdHex: String?,
             privateKeyHex: String?
         ) {
             self.index = index
             self.publicKeyHex = publicKeyHex
+            self.legacyPublicKeyHex = legacyPublicKeyHex
             self.nodeIdHex = nodeIdHex
             self.privateKeyHex = privateKeyHex
         }
@@ -1024,11 +1032,13 @@ extension ManagedPlatformWallet {
             try result.check()
 
             let publicKeyHex = out.public_key_hex.map { String(cString: $0) } ?? ""
+            let legacyPublicKeyHex = out.legacy_public_key_hex.map { String(cString: $0) }
             let nodeIdHex = out.node_id_hex.map { String(cString: $0) }
             let privateKeyHex = out.private_key_hex.map { String(cString: $0) }
             return ProviderDerivedKey(
                 index: out.index,
                 publicKeyHex: publicKeyHex,
+                legacyPublicKeyHex: legacyPublicKeyHex,
                 nodeIdHex: nodeIdHex,
                 privateKeyHex: privateKeyHex
             )

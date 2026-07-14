@@ -61,6 +61,10 @@ enum MasternodeSync {
                 row.ownerAddress = mn.ownerAddress
                 row.votingAddress = mn.votingAddress
                 row.operatorPublicKey = mn.operatorPublicKey
+                // Capture the prior platform node id BEFORE overwriting so a
+                // rotation (id changed on-chain) can drive the ownership guard
+                // below even when Rust couldn't check the pool this round.
+                let priorPlatformNodeId = row.platformNodeId
                 row.platformNodeId = mn.platformNodeId
                 row.payoutAddress = mn.payoutAddress
                 row.operatorPseudoAddress = mn.operatorPseudoAddress
@@ -82,15 +86,33 @@ enum MasternodeSync {
                 row.votingKeyIndex = voting.index
 
                 // Operator / platform key ownership comes from Rust's
-                // derive-and-compare (these keys have no on-chain address to
-                // join against). Platform is empty for watch-only wallets
-                // (needs the seed) — a documented follow-up.
+                // pool-based match (these keys have no on-chain address to
+                // join against). Operator keys derive from the account xpub
+                // seedlessly, so operator ownership is always computable and
+                // updates unconditionally.
                 row.operatorInWallet = mn.operatorInWallet
                 row.operatorAccountType = mn.operatorAccountType
                 row.operatorKeyIndex = mn.operatorKeyIndex
-                row.platformInWallet = mn.platformInWallet
-                row.platformAccountType = mn.platformAccountType
-                row.platformKeyIndex = mn.platformKeyIndex
+                // Platform-node ownership is a tri-state driven by Rust's
+                // `platformOwnershipChecked`, which reports whether the derived
+                // platform-node index actually had entries to compare against:
+                //  - checked   ⇒ `platformInWallet` is definitive (true OR
+                //    false); write it verbatim so an on-chain rotation to an
+                //    external key CLEARS stale ownership. (The old height-only
+                //    guard could never clear an established true, leaving a
+                //    wrong "in wallet" claim and wrong Claim gating.)
+                //  - unchecked ⇒ the platform pool was empty / not yet
+                //    rehydrated on a seedless restore, so a false is only
+                //    "couldn't check yet" — retain the prior value.
+                // Belt-and-suspenders: a CHANGED platform node id is definitive
+                // on-chain evidence of a rotation regardless of checked-ness, so
+                // overwrite (clearing stale ownership) in that case too.
+                let platformNodeIdChanged = priorPlatformNodeId != mn.platformNodeId
+                if mn.platformOwnershipChecked || platformNodeIdChanged {
+                    row.platformInWallet = mn.platformInWallet
+                    row.platformAccountType = mn.platformAccountType
+                    row.platformKeyIndex = mn.platformKeyIndex
+                }
 
                 row.collateralTxid = mn.collateralTxid
                 row.collateralVout = mn.collateralVout

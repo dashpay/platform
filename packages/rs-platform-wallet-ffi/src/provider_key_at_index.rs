@@ -34,14 +34,12 @@
 use std::ffi::CString;
 use std::os::raw::c_char;
 
-use key_wallet::bip32::ExtendedPrivKey;
 use platform_wallet::{ProviderDerivedKey, ProviderKeyKind};
 use zeroize::{Zeroize, Zeroizing};
 
 use crate::error::*;
 use crate::handle::*;
-use crate::identity_keys_from_mnemonic::resolve_master_from_resolver;
-use crate::types::Network;
+use crate::identity_keys_from_mnemonic::resolve_seed_from_resolver;
 use crate::{check_ptr, unwrap_option_or_return, unwrap_result_or_return};
 use rs_sdk_ffi::MnemonicResolverHandle;
 
@@ -63,10 +61,16 @@ pub const PROVIDER_KEY_KIND_PLATFORM_NODE: u8 = 11;
 pub struct ProviderKeyAtIndexFFI {
     /// The key index that was derived (`#0..`).
     pub index: u32,
-    /// Null-terminated lowercase hex of the raw curve public key — 96
-    /// hex chars for a BLS-48 operator key, 64 for an Ed25519-32
-    /// platform-node key. Null on the pre-cleared / freed state.
+    /// Null-terminated lowercase hex of the raw curve public key in the
+    /// MODERN (IETF) serialization — 96 hex chars for a BLS-48 operator
+    /// key, 64 for an Ed25519-32 platform-node key. Null on the
+    /// pre-cleared / freed state.
     pub public_key_hex: *mut c_char,
+    /// Null-terminated lowercase hex of the SAME BLS G1 point in the Dash
+    /// LEGACY serialization (96 chars). Non-null only for operator (BLS)
+    /// keys; null for Ed25519 platform-node keys (no legacy variant) and
+    /// on the empty state.
+    pub legacy_public_key_hex: *mut c_char,
     /// Null-terminated lowercase hex of the 20-byte platform node id
     /// (40 chars) — `hash160` of the Ed25519 public key. Null for
     /// operator keys (no node id) and on the empty state.
@@ -85,6 +89,7 @@ impl ProviderKeyAtIndexFFI {
         Self {
             index: 0,
             public_key_hex: std::ptr::null_mut(),
+            legacy_public_key_hex: std::ptr::null_mut(),
             node_id_hex: std::ptr::null_mut(),
             private_key_hex: std::ptr::null_mut(),
         }
@@ -153,8 +158,6 @@ pub unsafe extern "C" fn platform_wallet_provider_key_at_index(
     let option = PLATFORM_WALLET_STORAGE.with_item(
         wallet_handle,
         |wallet| -> Result<ProviderDerivedKey, PlatformWalletFFIResult> {
-            let network: Network = wallet.network();
-
             // Phase 1 — capability probe under a SHORT read guard,
             // dropped before any resolver interaction. Only relevant when
             // a seed is required at all.
@@ -177,11 +180,13 @@ pub unsafe extern "C" fn platform_wallet_provider_key_at_index(
                 true
             };
 
-            // Phase 2 — resolve the master xpriv for external-signable /
+            // Phase 2 — resolve the raw BIP39 seed for external-signable /
             // watch-only wallets that need a seed. NEVER under the guard
             // above: the resolver synchronously re-enters Swift and reads
-            // the iOS Keychain (which can stall on biometric unlock).
-            let mut master_opt: Option<ExtendedPrivKey> = None;
+            // the iOS Keychain (which can stall on biometric unlock). The
+            // raw seed (not a secp256k1 master) is what the BLS/Ed25519
+            // provider derivation consumes (rust-dashcore #879).
+            let mut seed_opt: Option<Zeroizing<[u8; 64]>> = None;
             if need_seed && !is_resident {
                 if mnemonic_resolver_handle.is_null() {
                     return Err(PlatformWalletFFIResult::err(
@@ -195,27 +200,22 @@ pub unsafe extern "C" fn platform_wallet_provider_key_at_index(
                 // SAFETY: handle is non-null (checked) and the caller's
                 // safety contract guarantees it came from
                 // `dash_sdk_mnemonic_resolver_create`.
-                master_opt = Some(unsafe {
-                    resolve_master_from_resolver(mnemonic_resolver_handle, &wallet_id, network)?
+                seed_opt = Some(unsafe {
+                    resolve_seed_from_resolver(mnemonic_resolver_handle, &wallet_id)?
                 });
             }
 
             // Phase 3 — library derive (re-acquires the guard internally;
-            // the resolver, if any, has already run).
-            let result = wallet.derive_provider_key_at_index(
-                kind,
-                index,
-                master_opt.as_ref(),
-                include_private,
-            );
-
-            // Wipe the resolved master's inner scalar — `ExtendedPrivKey`
-            // has no `Drop` / `Zeroize`. No-op on the seedless path.
-            if let Some(mut master) = master_opt {
-                master.private_key.non_secure_erase();
-            }
-
-            result.map_err(PlatformWalletFFIResult::from)
+            // the resolver, if any, has already run). `seed_opt` (Zeroizing)
+            // scrubs the raw seed on drop — no manual wipe needed.
+            wallet
+                .derive_provider_key_at_index(
+                    kind,
+                    index,
+                    seed_opt.as_deref().map(|s| &s[..]),
+                    include_private,
+                )
+                .map_err(PlatformWalletFFIResult::from)
         },
     );
     let result = unwrap_option_or_return!(option);
@@ -228,11 +228,18 @@ pub unsafe extern "C" fn platform_wallet_provider_key_at_index(
     let ProviderDerivedKey {
         index,
         public_key_bytes,
+        legacy_public_key_bytes,
         node_id,
         private_key,
     } = derived;
 
     let public_key_hex = unwrap_result_or_return!(CString::new(hex::encode(public_key_bytes)));
+    // Legacy BLS form (operator keys only; `None` for Ed25519). Public
+    // material, so a plain `CString::new` is fine.
+    let legacy_public_key_hex = match legacy_public_key_bytes {
+        Some(bytes) => unwrap_result_or_return!(CString::new(hex::encode(bytes))).into_raw(),
+        None => std::ptr::null_mut(),
+    };
     let node_id_hex = match node_id {
         Some(id) => unwrap_result_or_return!(CString::new(hex::encode(id))).into_raw(),
         None => std::ptr::null_mut(),
@@ -252,6 +259,7 @@ pub unsafe extern "C" fn platform_wallet_provider_key_at_index(
         *out = ProviderKeyAtIndexFFI {
             index,
             public_key_hex: public_key_hex.into_raw(),
+            legacy_public_key_hex,
             node_id_hex,
             private_key_hex,
         };
@@ -280,6 +288,10 @@ pub unsafe extern "C" fn platform_wallet_provider_key_at_index_free(
     if !out.public_key_hex.is_null() {
         let _ = unsafe { CString::from_raw(out.public_key_hex) };
         out.public_key_hex = std::ptr::null_mut();
+    }
+    if !out.legacy_public_key_hex.is_null() {
+        let _ = unsafe { CString::from_raw(out.legacy_public_key_hex) };
+        out.legacy_public_key_hex = std::ptr::null_mut();
     }
     if !out.node_id_hex.is_null() {
         let _ = unsafe { CString::from_raw(out.node_id_hex) };

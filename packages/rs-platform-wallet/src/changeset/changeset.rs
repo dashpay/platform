@@ -1174,7 +1174,8 @@ pub struct ProviderPlatformNodePubKey {
     pub index: u32,
     /// Raw 32-byte Ed25519 public key at this index.
     pub public_key: [u8; 32],
-    /// The 20-byte platform node id — `hash160` of the Ed25519 public
+    /// The 20-byte platform node id — `SHA256(ed25519 pubkey)[..20]`
+    /// (Tenderdash convention, rust-dashcore #884) of the Ed25519 public
     /// key, exactly what a ProRegTx `platform_node_id` field carries.
     /// Precomputed on the Rust side so the host renders it without a
     /// RIPEMD-160 implementation of its own.

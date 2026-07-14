@@ -130,7 +130,7 @@ mod tests {
     use dashcore::bls_sig_utils::BLSPublicKey;
     use dashcore::hashes::Hash;
     use dashcore::sml::masternode_list_entry::{MasternodeListEntry, MasternodeNetInfo};
-    use dashcore::{BlockHash, ProTxHash, PubkeyHash};
+    use dashcore::{BlockHash, PlatformNodeId, ProTxHash, PubkeyHash};
 
     use super::*;
 
@@ -187,7 +187,7 @@ mod tests {
                 evo,
                 EntryMasternodeType::HighPerformance {
                     platform_http_port: 443,
-                    platform_node_id: dashcore::PlatformNodeId::from_byte_array([0u8; 20]),
+                    platform_node_id: PlatformNodeId::from_byte_array([0u8; 20]),
                 },
             ),
         ]);
