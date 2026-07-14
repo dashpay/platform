@@ -6447,19 +6447,17 @@ private func persistTokenBalancesCallback(
     return 0
 }
 
-/// C shim for `on_persist_asset_locks_fn`. Copies every
-/// `AssetLockEntryFFI` row + every removed-outpoint tuple into
-/// Swift-owned `Data` snapshots before invoking the handler so the
-/// Rust-side `_storage` Vec can release the byte buffers as soon as
-/// this trampoline returns.
 /// C shim for `on_persist_invitations_fn`. Deep-copies every all-POD
 /// `InvitationEntryFFI` row into an owned `InvitationEntrySnapshot` (precomputing
 /// `rawOutPoint` + the `encodeOutPoint` display key) and every removed-outpoint
 /// tuple into owned `Data` before invoking the handler, so the Rust side can
 /// reclaim its buffers the moment we return. Mirrors `persistAssetLocksCallback`.
-/// **Always returns 0** — the return is round-global (a non-zero rolls back the
-/// WHOLE `store()` round, discarding unrelated writes), so a failed invitation
-/// write is silently skipped rather than aborting the round.
+/// Returns 0 when every invitation mutation was staged successfully. Returns
+/// nonzero when any write was skipped, which fails the Rust persistence round
+/// and rolls back the changeset — safe here because the invitation round is
+/// invitation-only, so no unrelated writes are discarded — and lets
+/// `create_invitation` surface the failure instead of reporting a voucher that
+/// never reached SwiftData.
 private func persistInvitationsCallback(
     context: UnsafeMutableRawPointer?,
     walletIdPtr: UnsafePointer<UInt8>?,
@@ -6514,6 +6512,11 @@ private func persistInvitationsCallback(
     return handler.persistInvitations(walletId: walletId, upserts: upserts, removed: removed) ? 0 : 1
 }
 
+/// C shim for `on_persist_asset_locks_fn`. Copies every
+/// `AssetLockEntryFFI` row + every removed-outpoint tuple into
+/// Swift-owned `Data` snapshots before invoking the handler so the
+/// Rust-side `_storage` Vec can release the byte buffers as soon as
+/// this trampoline returns.
 private func persistAssetLocksCallback(
     context: UnsafeMutableRawPointer?,
     walletIdPtr: UnsafePointer<UInt8>?,

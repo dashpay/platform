@@ -1981,12 +1981,18 @@ extension ManagedPlatformWallet {
         /// proof; `false` is a ChainLock-confirmed invite (still claimable). Not a
         /// claimability gate — the proof is reconstructed at claim time.
         public let isInstant: Bool
-        /// The link carries inviter info (the contact-bootstrap is available).
+        /// The link carried inviter METADATA (a username, display name, or
+        /// avatar). Presence does NOT mean the contact bootstrap is available:
+        /// a metadata-only link (display-name/avatar without a `du` username)
+        /// still sets this flag while `inviterUsername` stays nil, and the
+        /// bootstrap needs the username. Gate contact features on a non-nil
+        /// `inviterUsername`, not on this flag.
         public let hasInviter: Bool
         /// Always nil: the legacy link carries only the inviter's username, not an
         /// identity id (resolve it via `resolveDpnsName` at contact-bootstrap).
         public let inviterId: Data?
-        /// Inviter DPNS username when `hasInviter`, else nil.
+        /// Inviter DPNS username when the link carried `du`, else nil — the
+        /// contact-bootstrap precondition (may be nil even when `hasInviter`).
         public let inviterUsername: String?
         /// Always 0: the amount isn't in the link (it carries the funding txid,
         /// not the proof) and is only known after the tx is fetched at claim time.

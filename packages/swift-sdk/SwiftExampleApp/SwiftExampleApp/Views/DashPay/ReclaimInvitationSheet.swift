@@ -190,12 +190,24 @@ struct ReclaimInvitationSheet: View {
                 // it earlier would let a purely local failure leave the marker set,
                 // misclassifying a subsequent genuine foreign claim as self-reclaim.
                 // `hadPriorReclaimInFlight` captures the PERSISTED prior value first.
+                // The save must SUCCEED before the consume may run: an unpersisted
+                // marker followed by a consume + crash would strand the row (a local
+                // "is not tracked" retry classifies as an error, and a Platform
+                // "already consumed" as a foreign claim). On a failed save the
+                // in-memory flag is rolled back so an unrelated later save can't
+                // leak a marker that never reached disk, and the throw aborts the
+                // reclaim before anything irreversible.
                 // `@MainActor` because a nested func is nonisolated by default in
                 // Swift 6 and this touches main-actor `invitation`/`modelContext`.
-                @MainActor func markInFlight() {
+                @MainActor func markInFlight() throws {
                     hadPriorReclaimInFlight = invitation.reclaimInFlight
                     invitation.reclaimInFlight = true
-                    try? modelContext.save()
+                    do {
+                        try modelContext.save()
+                    } catch {
+                        invitation.reclaimInFlight = hadPriorReclaimInFlight
+                        throw error
+                    }
                 }
 
                 switch target {
@@ -204,7 +216,7 @@ struct ReclaimInvitationSheet: View {
                         errorMessage = "Pick an identity to top up."
                         return
                     }
-                    markInFlight()
+                    try markInFlight()
                     _ = try await wallet.topUpIdentityWithExistingAssetLock(
                         outPointTxid: txid,
                         outPointVout: vout,
@@ -220,7 +232,7 @@ struct ReclaimInvitationSheet: View {
                         keyCount: Self.authKeyCount,
                         network: network
                     )
-                    markInFlight()
+                    try markInFlight()
                     _ = try await wallet.resumeIdentityWithAssetLock(
                         outPointTxid: txid,
                         outPointVout: vout,

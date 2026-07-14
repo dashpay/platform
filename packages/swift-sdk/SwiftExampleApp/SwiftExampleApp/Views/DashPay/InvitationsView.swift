@@ -15,13 +15,24 @@ struct InvitationsView: View {
     /// can still reclaim its funded invitations, only the "+" create is hidden.
     let identity: PersistentIdentity?
 
-    // ALL sent invitations across every loaded wallet, newest first. Not scoped to
-    // one wallet: the paperplane is reached from a single-wallet context, but a
-    // device may have several wallets loaded and each invitation is reclaimed via
-    // its OWN `walletId` (below), so scoping the list to one wallet would strand
-    // the others' funded, reclaimable invitations with no way to reach them.
+    // ALL sent invitations, newest first, then filtered below to wallets the
+    // ACTIVE manager has loaded. Not scoped to one wallet: the paperplane is
+    // reached from a single-wallet context, but a device may have several
+    // wallets loaded and each invitation is reclaimed via its OWN `walletId`
+    // (below), so scoping the list to one wallet would strand the others'
+    // funded, reclaimable invitations with no way to reach them.
     @Query(sort: [SortDescriptor(\PersistentInvitation.createdAtSecs, order: .reverse)])
-    private var invitations: [PersistentInvitation]
+    private var allInvitations: [PersistentInvitation]
+
+    // Reclaim resolves each row's wallet through the active network's manager,
+    // so rows whose wallet is NOT loaded there (another network's wallet — the
+    // row carries no network discriminator — or a deleted wallet) would only
+    // render a dead "No wallet loaded" reclaim. Hide them instead.
+    private var invitations: [PersistentInvitation] {
+        allInvitations.filter { walletManager.wallet(for: $0.walletId) != nil }
+    }
+
+    @EnvironmentObject private var walletManager: PlatformWalletManager
 
     @State private var reclaimTarget: PersistentInvitation?
     @State private var showCreateInvitation = false
