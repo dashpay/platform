@@ -68,10 +68,20 @@ use std::os::raw::c_char;
 use async_trait::async_trait;
 use key_wallet::bip32::{ChildNumber, DerivationPath, ExtendedPrivKey, ExtendedPubKey};
 use key_wallet::dashcore::secp256k1::{self, Secp256k1};
+use key_wallet::dip9::{
+    FEATURE_PURPOSE, FEATURE_PURPOSE_IDENTITIES, FEATURE_PURPOSE_IDENTITIES_SUBFEATURE_INVITATIONS,
+};
 use key_wallet::signer::{ExtendedPubKeySigner, Signer, SignerMethod};
 use key_wallet::Network;
 use thiserror::Error;
 use zeroize::Zeroizing;
+
+/// DIP-15 auto-accept feature index (`m/9'/coin'/16'/expiry'`). Not yet a
+/// `key_wallet::dip9` constant (unlike the DIP-9/DIP-13 features used below) —
+/// it mirrors `DASHPAY_AUTO_ACCEPT_FEATURE` in `rs-platform-wallet`'s
+/// `crypto/auto_accept.rs`, which this crate cannot depend on. Upstreaming a
+/// shared constant into `key_wallet::dip9` is the proper long-term home.
+const DASHPAY_AUTO_ACCEPT_FEATURE: u32 = 16;
 
 use crate::mnemonic_resolver::{
     mnemonic_resolver_result, MnemonicResolverHandle, MNEMONIC_RESOLVER_BUFFER_CAPACITY,
@@ -354,9 +364,9 @@ impl MnemonicResolverCoreSigner {
         &self,
         path: &DerivationPath,
     ) -> Result<Zeroizing<[u8; 32]>, MnemonicResolverSignerError> {
-        let purpose9 = ChildNumber::from_hardened_idx(9)
+        let purpose9 = ChildNumber::from_hardened_idx(FEATURE_PURPOSE)
             .map_err(|e| MnemonicResolverSignerError::DerivationFailed(e.to_string()))?;
-        let feature16 = ChildNumber::from_hardened_idx(16)
+        let feature16 = ChildNumber::from_hardened_idx(DASHPAY_AUTO_ACCEPT_FEATURE)
             .map_err(|e| MnemonicResolverSignerError::DerivationFailed(e.to_string()))?;
         let comps: &[ChildNumber] = path.as_ref();
         if comps.len() != 4 || comps[0] != purpose9 || comps[2] != feature16 {
@@ -385,12 +395,13 @@ impl MnemonicResolverCoreSigner {
         &self,
         path: &DerivationPath,
     ) -> Result<Zeroizing<[u8; 32]>, MnemonicResolverSignerError> {
-        let purpose9 = ChildNumber::from_hardened_idx(9)
+        let purpose9 = ChildNumber::from_hardened_idx(FEATURE_PURPOSE)
             .map_err(|e| MnemonicResolverSignerError::DerivationFailed(e.to_string()))?;
-        let feature5 = ChildNumber::from_hardened_idx(5)
+        let feature5 = ChildNumber::from_hardened_idx(FEATURE_PURPOSE_IDENTITIES)
             .map_err(|e| MnemonicResolverSignerError::DerivationFailed(e.to_string()))?;
-        let subfeature3 = ChildNumber::from_hardened_idx(3)
-            .map_err(|e| MnemonicResolverSignerError::DerivationFailed(e.to_string()))?;
+        let subfeature3 =
+            ChildNumber::from_hardened_idx(FEATURE_PURPOSE_IDENTITIES_SUBFEATURE_INVITATIONS)
+                .map_err(|e| MnemonicResolverSignerError::DerivationFailed(e.to_string()))?;
         let comps: &[ChildNumber] = path.as_ref();
         // Bind the fixed purpose / feature / sub-feature only. `coin_type`
         // (comps[1]) and `funding_index` (comps[4]) are deliberately left
