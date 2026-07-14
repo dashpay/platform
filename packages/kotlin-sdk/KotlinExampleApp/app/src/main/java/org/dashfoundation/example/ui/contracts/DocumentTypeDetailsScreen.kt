@@ -87,6 +87,11 @@ fun DocumentTypeDetailsScreen(
             ParsedContract.from(current)?.documentTypes?.get(typeName)
         } ?: return@Scaffold
 
+        val contractConfig = remember(current.lastUpdated) {
+            ParsedContract.from(current)?.root?.objectField("config")
+        }
+        val capabilities = documentTypeCapabilities(schema, contractConfig)
+
         val properties = schema.objectField("properties") ?: JsonObject(emptyMap())
         val indices = schema.arrayField("indices")?.mapNotNull { it as? JsonObject }.orEmpty()
         val required = schema.arrayField("required")
@@ -145,13 +150,11 @@ fun DocumentTypeDetailsScreen(
                 )
                 LabeledContent(
                     "Mutable",
-                    if (schema.boolField("documentsMutable") != false) "Yes" else "No",
+                    if (capabilities.documentsMutable) "Yes" else "No",
                 )
                 LabeledContent(
                     "Can Be Deleted",
-                    if (schema.boolField("canBeDeleted") != false ||
-                        schema.boolField("documentsCanBeDeleted") != false
-                    ) "Yes" else "No",
+                    if (capabilities.canBeDeleted) "Yes" else "No",
                 )
                 LabeledContent(
                     "Transferable",

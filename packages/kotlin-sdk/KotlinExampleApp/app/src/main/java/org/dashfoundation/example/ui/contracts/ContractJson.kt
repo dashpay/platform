@@ -58,3 +58,33 @@ internal fun JsonObject.boolField(key: String): Boolean? =
 internal fun JsonObject.arrayField(key: String): JsonArray? = this[key] as? JsonArray
 
 internal fun JsonObject.objectField(key: String): JsonObject? = this[key] as? JsonObject
+
+/** Effective DPP capability flags for a document type. */
+internal data class DocumentTypeCapabilities(
+    val documentsMutable: Boolean,
+    val canBeDeleted: Boolean,
+)
+
+/**
+ * Reproduce DPP's effective document-type capability flags: the per-type
+ * [schema] value when present, else the contract [config] default, else
+ * DPP's ultimate default of `true`.
+ *
+ * `DocumentType::try_from_schema` reads `documentsMutable` / `canBeDeleted`
+ * from the document schema and, when absent, falls back to the contract
+ * config's `documentsMutableContractDefault` /
+ * `documentsCanBeDeletedContractDefault` (both defaulting to `true`). There
+ * is no `documentsCanBeDeleted` schema key. UI capability gates must match
+ * this — Drive treats a submit against a disabled capability as a PAID
+ * invalid transition (fees + a burned nonce for a guaranteed rejection).
+ */
+internal fun documentTypeCapabilities(
+    schema: JsonObject?,
+    config: JsonObject?,
+): DocumentTypeCapabilities =
+    DocumentTypeCapabilities(
+        documentsMutable = schema?.boolField("documentsMutable")
+            ?: config?.boolField("documentsMutableContractDefault") ?: true,
+        canBeDeleted = schema?.boolField("canBeDeleted")
+            ?: config?.boolField("documentsCanBeDeletedContractDefault") ?: true,
+    )

@@ -129,13 +129,16 @@ fun DocumentActionsScreen(
         .orEmpty()
     val sortedProps = remember(properties) { properties.entries.sortedBy { it.key } }
     val isTransferable = (schema?.intField("transferable") ?: 0) == 1
-    // Same default-allow semantics as DocumentTypeDetailsScreen: only an
-    // explicit `false` disables (Drive treats a submit against a disabled
-    // capability as a PAID invalid transition — fees + a burned nonce for a
-    // guaranteed rejection, so the buttons must gate on these).
-    val documentsMutable = schema?.boolField("documentsMutable") != false
-    val canBeDeleted = schema?.boolField("canBeDeleted") != false ||
-        schema?.boolField("documentsCanBeDeleted") != false
+    // Reproduce DPP's effective capability flags (see
+    // `documentTypeCapabilities`): the per-type schema value, else the
+    // contract config default, else `true`. Gating anything looser leaves
+    // Replace/Delete enabled for transitions Drive rejects as paid-invalid.
+    val contractConfig = remember(contract?.lastUpdated) {
+        contract?.let { ParsedContract.from(it)?.root?.objectField("config") }
+    }
+    val capabilities = documentTypeCapabilities(schema, contractConfig)
+    val documentsMutable = capabilities.documentsMutable
+    val canBeDeleted = capabilities.canBeDeleted
 
     // Default acting identity to the on-chain owner when it's one of ours,
     // else the first identity — replace/delete/transfer require ownership.
