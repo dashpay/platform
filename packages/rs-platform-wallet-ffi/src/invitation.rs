@@ -213,14 +213,14 @@ pub unsafe extern "C" fn platform_wallet_create_invitation(
 /// by the imported voucher carried in `uri`.
 ///
 /// `uri` is the `dashpay://invite?…` link; it is parsed into a
-/// `ParsedInvitation` and validated (fail-fast on a stale / wrong-type /
-/// mismatched link) before any network act. `identity_pubkeys` are the
-/// invitee's own new-identity keys (derived from the invitee's seed), signed by
+/// `ParsedInvitation` and validated (fail-fast on a wrong-type / mismatched
+/// link) before any network act. `identity_pubkeys` are the invitee's own
+/// new-identity keys (derived from the invitee's seed), signed by
 /// `signer_handle` (the Platform-side per-identity-key signer). The asset-lock's
 /// outer signature is produced from the imported raw voucher key, so **no
-/// Core-side resolver signer is needed**. `now_unix` is the current unix time
-/// used for the advisory-expiry check (passed in from Swift — the FFI can't read
-/// the clock deterministically).
+/// Core-side resolver signer is needed**. `now_unix` is retained for C ABI
+/// compatibility but currently ignored: the legacy link carries no expiry
+/// field, so claim has no time gate.
 ///
 /// The contact-bootstrap ("establish contact with the sender?") is **not** done
 /// here — the UI asks the invitee and, on confirm, calls the existing

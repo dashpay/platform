@@ -191,20 +191,26 @@ pub trait PlatformWalletPersistence: Send + Sync {
     /// Whether stored state survives a process restart once `store` + `flush`
     /// return `Ok`.
     ///
-    /// Defaults to `true` — the contract every real backend (SQLite, the FFI
-    /// SwiftData bridge) meets. Backends that only buffer in memory or drop
-    /// writes (e.g. [`NoPlatformPersistence`](crate::wallet::persister::NoPlatformPersistence))
-    /// MUST override this to return `false`.
+    /// **Fail-closed: defaults to `false`.** This capability gates
+    /// security-sensitive flows, so a backend must explicitly ATTEST
+    /// durability by overriding this to `true` — an implementation that
+    /// forgets is refused those flows with a clear error instead of being
+    /// silently trusted. Backends that genuinely write through on
+    /// `store`/`flush` (the SQLite persister, a fully-wired FFI bridge)
+    /// override to `true`; buffer-only or write-dropping backends (e.g.
+    /// [`NoPlatformPersistence`](crate::wallet::persister::NoPlatformPersistence),
+    /// an FFI persister constructed without persistence callbacks) stay
+    /// `false`.
     ///
-    /// Security-sensitive flows gate on this. Creating a DashPay invitation
-    /// exports a one-time bearer voucher key derived from a persisted funding
-    /// index; on a backend that cannot guarantee the index survives a restart,
-    /// the same key could be re-derived and re-exported after a relaunch,
-    /// letting the holder of an earlier link consume a later voucher. Such
-    /// flows refuse to run on a non-durable backend rather than silently
-    /// producing a reusable bearer secret.
+    /// Why security-sensitive flows gate on this: creating a DashPay
+    /// invitation exports a one-time bearer voucher key derived from a
+    /// persisted funding index; on a backend that cannot guarantee the index
+    /// survives a restart, the same key could be re-derived and re-exported
+    /// after a relaunch, letting the holder of an earlier link consume a
+    /// later voucher. Such flows refuse a non-durable backend rather than
+    /// silently producing a reusable bearer secret.
     fn persists_durably(&self) -> bool {
-        true
+        false
     }
 
     /// Buffer a changeset for later persistence.

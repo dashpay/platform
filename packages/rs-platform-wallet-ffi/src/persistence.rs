@@ -646,6 +646,24 @@ impl FFIPersister {
 }
 
 impl PlatformWalletPersistence for FFIPersister {
+    /// Durable only when the host actually wired the persistence callbacks.
+    ///
+    /// Every per-kind block in [`Self::store`] is `if let Some(cb)` — with the
+    /// callbacks absent (e.g. a manager configured without a persistence
+    /// container), non-empty changesets are silently skipped while `store()`
+    /// still returns `Ok`, which is exactly the write-dropping shape the
+    /// fail-closed trait default exists to catch. Attest durability only when
+    /// the transaction bracket (begin/end) AND the callbacks the
+    /// bearer-key-sensitive invitation flow writes through (invitations +
+    /// account address pools) are all present; the Swift bridge wires all of
+    /// its callbacks together, so a partially-wired vtable stays non-durable.
+    fn persists_durably(&self) -> bool {
+        self.callbacks.on_changeset_begin_fn.is_some()
+            && self.callbacks.on_changeset_end_fn.is_some()
+            && self.callbacks.on_persist_invitations_fn.is_some()
+            && self.callbacks.on_persist_account_address_pools_fn.is_some()
+    }
+
     fn store(
         &self,
         wallet_id: WalletId,
@@ -4948,6 +4966,72 @@ mod tests {
     //! exercising the in-memory mutation against synthetic input.
 
     use super::*;
+
+    // --- persists_durably: the fail-closed durability attestation ---
+
+    unsafe extern "C" fn noop_begin(_ctx: *mut c_void, _wallet_id: *const u8) -> i32 {
+        0
+    }
+    unsafe extern "C" fn noop_end(_ctx: *mut c_void, _wallet_id: *const u8, _success: bool) -> i32 {
+        0
+    }
+    unsafe extern "C" fn noop_pools(
+        _ctx: *mut c_void,
+        _wallet_id: *const u8,
+        _pools: *const AccountAddressPoolFFI,
+        _count: usize,
+    ) -> i32 {
+        0
+    }
+    unsafe extern "C" fn noop_invitations(
+        _ctx: *mut c_void,
+        _wallet_id: *const u8,
+        _upserts_ptr: *const InvitationEntryFFI,
+        _upserts_count: usize,
+        _removed_ptr: *const [u8; 36],
+        _removed_count: usize,
+    ) -> i32 {
+        0
+    }
+
+    /// A callback-free persister (the `configure(modelContainer: nil)` shape)
+    /// silently drops every write, so it must NOT attest durability — this is
+    /// the concrete fail-open hole the fail-closed default exists to catch:
+    /// an unpersisted invitation funding index re-exports the same bearer
+    /// voucher key after a restart.
+    #[test]
+    fn callback_free_persister_is_not_durable() {
+        let persister = FFIPersister::new(PersistenceCallbacks::default());
+        assert!(!persister.persists_durably());
+    }
+
+    /// A partially-wired vtable (commit bracket present, invitation-critical
+    /// callbacks absent — or vice versa) stays non-durable.
+    #[test]
+    fn partially_wired_persister_is_not_durable() {
+        let mut cb = PersistenceCallbacks::default();
+        cb.on_changeset_begin_fn = Some(noop_begin);
+        cb.on_changeset_end_fn = Some(noop_end);
+        assert!(!FFIPersister::new(cb).persists_durably());
+
+        let mut cb = PersistenceCallbacks::default();
+        cb.on_persist_invitations_fn = Some(noop_invitations);
+        cb.on_persist_account_address_pools_fn = Some(noop_pools);
+        assert!(!FFIPersister::new(cb).persists_durably());
+    }
+
+    /// With the transaction bracket + the invitation-critical callbacks all
+    /// wired (the shape the Swift bridge always produces), the persister
+    /// attests durability.
+    #[test]
+    fn fully_wired_persister_attests_durability() {
+        let mut cb = PersistenceCallbacks::default();
+        cb.on_changeset_begin_fn = Some(noop_begin);
+        cb.on_changeset_end_fn = Some(noop_end);
+        cb.on_persist_account_address_pools_fn = Some(noop_pools);
+        cb.on_persist_invitations_fn = Some(noop_invitations);
+        assert!(FFIPersister::new(cb).persists_durably());
+    }
     use dashcore::blockdata::transaction::txin::TxIn;
     use dashcore::blockdata::transaction::txout::TxOut;
     use dashcore::blockdata::transaction::Transaction;

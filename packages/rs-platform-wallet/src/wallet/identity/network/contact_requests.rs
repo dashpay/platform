@@ -74,10 +74,21 @@ pub trait ContactCryptoProvider {
     /// gates on the full shape (feature `5'` is shared with the user's own
     /// identity keys — see `export_invitation_private_key` on the resolver
     /// signer). The only caller is [`IdentityWallet::create_invitation`].
+    ///
+    /// Defaulted to an "unsupported" error so adding this method is not a
+    /// source-breaking change for existing provider implementations:
+    /// providers that never create invitations need no override, and a
+    /// create attempted through one fails loudly (the invitation cannot be
+    /// packaged without the exported key) rather than at compile time.
+    /// Invitation-capable providers override with the path-gated export.
     async fn export_invitation_private_key(
         &self,
-        path: &key_wallet::bip32::DerivationPath,
-    ) -> Result<dashcore::secp256k1::SecretKey, PlatformWalletError>;
+        _path: &key_wallet::bip32::DerivationPath,
+    ) -> Result<dashcore::secp256k1::SecretKey, PlatformWalletError> {
+        Err(PlatformWalletError::InvalidIdentityData(
+            "invitation private-key export is not supported by this crypto provider".to_string(),
+        ))
+    }
 
     /// DIP-15 `accountReference` for a send: the scalar at `path` (the sender's
     /// encryption key) keys the HMAC+mask over `compact_xpub`. Computed in the

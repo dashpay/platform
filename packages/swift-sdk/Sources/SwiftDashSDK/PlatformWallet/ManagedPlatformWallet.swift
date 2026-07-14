@@ -2097,10 +2097,11 @@ extension ManagedPlatformWallet {
     /// the per-identity-key witnesses. The asset-lock's outer signature uses the
     /// imported raw voucher key, so no Core-side resolver signer is needed here.
     ///
-    /// `nowUnix` is the current unix time, used for the link's advisory-expiry
-    /// check. The contact-bootstrap ("establish contact with the sender?") is
-    /// NOT done here — after a successful claim the UI asks the invitee and, on
-    /// confirm, calls `sendContactRequest` for the reciprocal.
+    /// `nowUnix` is retained for C ABI compatibility but currently ignored:
+    /// the legacy invitation link carries no expiry field, so claim has no
+    /// time gate. The contact-bootstrap ("establish contact with the
+    /// sender?") is NOT done here — after a successful claim the UI asks the
+    /// invitee and, on confirm, calls `sendContactRequest` for the reciprocal.
     ///
     /// Returns the freshly-registered invitee `ManagedIdentity`.
     public func claimInvitation(
