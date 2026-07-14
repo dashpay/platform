@@ -184,8 +184,13 @@ pub struct AccountSpecFFI {
     /// accounts. For the two provider key-material accounts the bytes
     /// are instead a bincode-encoded extended BLS
     /// (`ProviderOperatorKeys`) or Ed25519 (`ProviderPlatformKeys`)
-    /// public key — the `type_tag` selects the decode. Valid for
-    /// callback duration only; Swift owns the allocation.
+    /// public key, **prefixed with a 4-byte derivation-scheme magic**
+    /// (`crate::persistence::PROVIDER_KEY_SCHEME_MAGIC`) so the restore
+    /// path can reject a stale pre-#879 provider account; the `type_tag`
+    /// selects the decode. Swift treats this whole slot as an opaque blob
+    /// (store on persist, hand back verbatim on restore) — the prefix is
+    /// transparent to the host. Valid for callback duration only; Swift
+    /// owns the allocation.
     pub account_xpub_bytes: *const u8,
     pub account_xpub_bytes_len: usize,
     /// Pre-derived platform-node (Ed25519) public keys — only populated

@@ -33,21 +33,52 @@
 //!
 //! # Key source
 //!
-//! The account seed (the 32 secret bytes at the account's DIP-3 path,
-//! the exact input [`Wallet::add_bls_account`] / `add_eddsa_account`
-//! feed to `new_master`) is obtained two ways, matching
+//! The BLS operator and Ed25519 platform-node accounts are derived from
+//! the wallet's **raw BIP39 seed** in each curve's own HD scheme — the
+//! exact input [`Wallet::add_bls_account`] / `add_eddsa_account` feed to
+//! `BLSAccount::from_seed` / `EdDSAAccount::from_seed` (rust-dashcore
+//! #879). Concretely:
+//!
+//! - **Operator public** at index `i` = the account xpub's non-hardened
+//!   **legacy** `ckd_pub` child, `ExtendedBLSPubKey::derive_pub_legacy(i)`
+//!   — no seed.
+//! - **Operator private** at `i` = raw seed → `ExtendedBLSPrivKey`
+//!   master → **legacy** DIP-3 account path → non-hardened legacy child
+//!   `i`.
+//! - **Platform node** at `i` = raw seed → `ExtendedEd25519PrivKey`
+//!   master → DIP-3 account path → **hardened** child `i'` (SLIP-10 is
+//!   hardened-only).
+//!
+//! This composes the upstream **extended-key primitives directly** rather
+//! than the account's `derive_bls_key_at_index` / `derive_from_seed_*`
+//! convenience wrappers, because those gate on the account's
+//! `is_watch_only` flag *asymmetrically*: the public wrapper requires a
+//! watch-only account, while `derive_from_seed_*` (via
+//! `derive_xpriv_from_master_xpriv`) requires a **non**-watch-only one.
+//! A resident wallet's provider account is non-watch-only and a restored
+//! external-signable wallet's is watch-only, so no single wrapper works
+//! for both. The primitives don't consult `is_watch_only`, so they derive
+//! correctly regardless — and are byte-identical to what
+//! `Wallet::from_mnemonic` account creation produces (pinned to the
+//! dashbls reference vectors in the module tests).
+//!
+//! **Never** derive a secp256k1 child scalar at the DIP-3 path and feed
+//! it to `new_master`: that pre-#879 hybrid yields a different point and
+//! is exactly the bug that made these keys disagree with DashSync/dashbls.
+//!
+//! The raw 64-byte seed is obtained two ways, matching
 //! [`derive_core_address_private_key`](PlatformWallet::derive_core_address_private_key):
-//! `Some(master)` for external-signable / watch-only wallets whose
-//! mnemonic the caller resolved on demand; `None` to derive from a
-//! resident key-bearing wallet. The seed and any returned scalar are
-//! wrapped in [`Zeroizing`] so they are scrubbed when dropped.
+//! `Some(seed)` for external-signable / watch-only wallets whose mnemonic
+//! the caller resolved on demand; `None` to take a resident key-bearing
+//! wallet's own [`wallet_seed_bytes`](key_wallet::wallet::Wallet::wallet_seed_bytes).
+//! The seed and any returned scalar are wrapped in [`Zeroizing`] so they
+//! are scrubbed when dropped.
 
 use dashcore::hashes::{hash160, Hash};
-use dashcore::secp256k1::Secp256k1;
 use key_wallet::account::AccountType;
-use key_wallet::bip32::{ChildNumber, ExtendedPrivKey};
+use key_wallet::bip32::ChildNumber;
 use key_wallet::derivation_bls_bip32::ExtendedBLSPrivKey;
-use key_wallet::derivation_slip10::ExtendedEd25519PrivKey;
+use key_wallet::derivation_slip10::{ExtendedEd25519PrivKey, ExtendedEd25519PubKey};
 use zeroize::Zeroizing;
 
 use super::platform_wallet::PlatformWallet;
@@ -74,18 +105,21 @@ pub const PLATFORM_NODE_KEY_PREDERIVE_COUNT: u32 = 20;
 /// to snapshot the pool while the seed is available, because the
 /// platform-node curve is hardened-only and the pool can never be
 /// extended later from an external-signable / watch-only wallet. The
-/// derivation mirrors the private path in
-/// [`PlatformWallet::derive_provider_key_at_index`] exactly: account
-/// seed at the DIP-3 `ProviderPlatformKeys` path →
-/// [`ExtendedEd25519PrivKey::new_master`] → hardened child `i` → public
-/// key. Only the public parts leave this function — the account seed
-/// is wrapped in [`Zeroizing`] and scrubbed on drop.
+/// derivation is the canonical rust-dashcore #879 scheme — the wallet's
+/// **raw BIP39 seed** → [`ExtendedEd25519PrivKey`] master → DIP-3
+/// `ProviderPlatformKeys` account path → hardened child `i` → public key
+/// — composed from the upstream extended-key primitives directly (see the
+/// module docs on why the account's `is_watch_only`-gated
+/// `derive_from_seed_*` wrapper is avoided). It is byte-identical to what
+/// [`PlatformWallet::derive_provider_key_at_index`] and account creation
+/// produce. Only the public parts leave this function — the raw seed is
+/// wrapped in [`Zeroizing`] and scrubbed on drop.
 ///
 /// # Errors
-/// [`PlatformWalletError::KeyDerivation`] if the account path can't be
-/// built, the wallet has no resident private key to derive the account
-/// seed (i.e. it's already watch-only), or any per-index derivation
-/// fails.
+/// [`PlatformWalletError::AddressNotFound`] if the wallet has no
+/// platform-node account, or [`PlatformWalletError::KeyDerivation`] if
+/// there's no resident seed to derive from (i.e. it's already
+/// external-signable / watch-only) or any per-index derivation fails.
 pub fn derive_platform_node_public_keys(
     wallet: &key_wallet::wallet::Wallet,
     network: key_wallet::Network,
@@ -93,61 +127,69 @@ pub fn derive_platform_node_public_keys(
 ) -> Result<Vec<ProviderPlatformNodePubKey>, PlatformWalletError> {
     let account_type = AccountType::ProviderPlatformKeys;
 
-    // Account-level seed: the same secp256k1 secret bytes at the DIP-3
-    // `ProviderPlatformKeys` path that `Wallet::add_eddsa_account` feeds
-    // to `new_master`. Errors for a watch-only wallet with no resident
-    // private key — but at registration the wallet is still seed-bearing.
+    // Existence check — a missing platform-node account is a caller error,
+    // not a derivation failure (the account object itself isn't needed for
+    // the gate-free direct derivation below).
+    if wallet
+        .accounts
+        .eddsa_account_of_type(account_type)
+        .is_none()
+    {
+        return Err(PlatformWalletError::AddressNotFound(
+            "wallet has no Ed25519 provider-platform-keys account".to_string(),
+        ));
+    }
+
+    // Raw 64-byte BIP39 seed — the exact input `add_eddsa_account` feeds
+    // to `EdDSAAccount::from_seed`. `None` once the wallet has been
+    // downgraded to external-signable, but registration snapshots this
+    // while the wallet is still seed-bearing.
+    let seed: Zeroizing<[u8; 64]> =
+        Zeroizing::new(wallet.wallet_seed_bytes().ok_or_else(|| {
+            PlatformWalletError::KeyDerivation(
+                "wallet has no resident seed to pre-derive platform-node keys".to_string(),
+            )
+        })?);
+
+    // Raw seed → SLIP-10 master → DIP-3 account path (computed once).
     let account_path = account_type.derivation_path(network).map_err(|e| {
         PlatformWalletError::KeyDerivation(format!(
             "failed to build provider platform-node account path: {e}"
         ))
     })?;
-    let secret = wallet.derive_private_key(&account_path).map_err(|e| {
+    let master = ExtendedEd25519PrivKey::new_master(network, seed.as_ref()).map_err(|e| {
         PlatformWalletError::KeyDerivation(format!(
-            "failed to derive provider platform-node account seed at {account_path}: {e}"
+            "failed to build Ed25519 master from platform-node seed: {e}"
         ))
     })?;
-    let account_seed: Zeroizing<[u8; 32]> = Zeroizing::new(secret.secret_bytes());
-
-    let ed_master =
-        ExtendedEd25519PrivKey::new_master(network, account_seed.as_ref()).map_err(|e| {
-            PlatformWalletError::KeyDerivation(format!(
-                "failed to build Ed25519 master from platform-node seed: {e}"
-            ))
-        })?;
+    let account_xpriv = master.derive_priv(&account_path).map_err(|e| {
+        PlatformWalletError::KeyDerivation(format!(
+            "failed to derive Ed25519 platform-node account key at {account_path}: {e}"
+        ))
+    })?;
 
     let mut out = Vec::with_capacity(count as usize);
     for index in 0..count {
-        // SLIP-10 Ed25519 is hardened-only — the pool derives
-        // platform-node keys at a single hardened index
-        // (`AddressPoolType::AbsentHardened`).
+        // SLIP-10 Ed25519 is hardened-only — hardened child `i'`.
         let child = ChildNumber::from_hardened_idx(index).map_err(|e| {
             PlatformWalletError::KeyDerivation(format!(
                 "invalid platform-node key index {index}: {e}"
             ))
         })?;
-        let derived = ed_master.derive_priv(&[child]).map_err(|e| {
+        let xpriv = account_xpriv.derive_priv(&[child]).map_err(|e| {
             PlatformWalletError::KeyDerivation(format!(
                 "failed to derive Ed25519 platform-node key at index {index}: {e}"
             ))
         })?;
-        let verifying = derived.public_key().map_err(|e| {
+        let verifying = ExtendedEd25519PubKey::from_priv(&xpriv).map_err(|e| {
             PlatformWalletError::KeyDerivation(format!(
                 "failed to obtain Ed25519 public key at index {index}: {e}"
             ))
         })?;
-        // `to_bytes().to_vec()` is exactly how
-        // `derive_provider_key_at_index` materialises the 32-byte Ed25519
-        // public key; normalise into a fixed array for the display struct.
-        let public_key_bytes = verifying.to_bytes().to_vec();
-        let public_key: [u8; 32] = public_key_bytes.as_slice().try_into().map_err(|_| {
-            PlatformWalletError::KeyDerivation(format!(
-                "Ed25519 public key at index {index} was not 32 bytes"
-            ))
-        })?;
+        let public_key: [u8; 32] = verifying.public_key.to_bytes();
         // The 20-byte platform node id = hash160(ed25519 pubkey), the
         // value a ProRegTx `platform_node_id` matcher compares against.
-        let node_id: [u8; 20] = hash160::Hash::hash(&public_key_bytes).to_byte_array();
+        let node_id: [u8; 20] = hash160::Hash::hash(&public_key).to_byte_array();
         out.push(ProviderPlatformNodePubKey {
             index,
             public_key,
@@ -213,90 +255,79 @@ pub struct ProviderDerivedKey {
 impl PlatformWallet {
     /// Derive this wallet's provider key of `kind` at `index`.
     ///
-    /// Public-only when `resolved_master` is `None` and
-    /// `include_private` is `false` — but note the curve asymmetry
-    /// documented at the module level: a [`ProviderKeyKind::Operator`]
-    /// public key derives straight from the account xpub with no seed,
-    /// whereas a [`ProviderKeyKind::PlatformNode`] key (Ed25519, SLIP-10
-    /// hardened-only) always needs the account seed even for its public
-    /// key, so a watch-only wallet must supply `resolved_master` to list
-    /// platform-node keys at all.
+    /// Public-only when `resolved_seed` is `None` and `include_private`
+    /// is `false` — but note the curve asymmetry documented at the module
+    /// level: a [`ProviderKeyKind::Operator`] public key derives straight
+    /// from the account xpub with no seed, whereas a
+    /// [`ProviderKeyKind::PlatformNode`] key (Ed25519, SLIP-10
+    /// hardened-only) always needs the seed even for its public key, so a
+    /// watch-only wallet must supply `resolved_seed` to list platform-node
+    /// keys at all.
     ///
-    /// `resolved_master` selects the key source: `Some(master)` for
-    /// external-signable / watch-only wallets whose mnemonic the caller
-    /// resolved on demand; `None` to derive from a resident key-bearing
-    /// wallet. `include_private` additionally requests the raw private
-    /// scalar.
+    /// `resolved_seed` selects the key source: `Some(seed)` — the wallet's
+    /// **raw BIP39 seed** — for external-signable / watch-only wallets
+    /// whose mnemonic the caller resolved on demand; `None` to take a
+    /// resident key-bearing wallet's own
+    /// [`wallet_seed_bytes`](key_wallet::wallet::Wallet::wallet_seed_bytes).
+    /// `include_private` additionally requests the raw private scalar.
+    ///
+    /// The derivation delegates to the account's own
+    /// [`AccountDerivation`] routines (rust-dashcore #879) so every
+    /// per-index key is byte-identical to what `Wallet::from_mnemonic`
+    /// account creation produces; it never feeds a secp256k1 child scalar
+    /// into a BLS/Ed25519 master (the pre-#879 hybrid).
     ///
     /// # Errors
     /// - [`PlatformWalletError::AddressNotFound`] if this wallet has no
     ///   account of the requested kind.
     /// - [`PlatformWalletError::KeyDerivation`] if key derivation fails —
-    ///   including passing `None` for a watch-only wallet that has no
-    ///   resident private keys when a seed is required.
+    ///   including passing `None` for an external-signable / watch-only
+    ///   wallet that has no resident seed when one is required.
     pub fn derive_provider_key_at_index(
         &self,
         kind: ProviderKeyKind,
         index: u32,
-        resolved_master: Option<&ExtendedPrivKey>,
+        resolved_seed: Option<&[u8]>,
         include_private: bool,
     ) -> Result<ProviderDerivedKey, PlatformWalletError> {
         let network = self.network();
         let account_type = kind.account_type();
 
-        // Single read-lock: the account xpub read and the resident-key
-        // derive both borrow the in-process wallet from the same guard.
-        // No Swift callback runs under this guard — the mnemonic
-        // resolver (if any) already ran on the FFI side and produced
-        // `resolved_master` before we were called.
+        // Single read-lock: the account read and the resident-seed read
+        // both borrow the in-process wallet from the same guard. No Swift
+        // callback runs under this guard — the mnemonic resolver (if any)
+        // already ran on the FFI side and produced `resolved_seed` before
+        // we were called.
         let state = self.state_blocking();
 
-        // The account-level seed (32 secret bytes at the account's DIP-3
-        // path) is the input both curves' `new_master` consumes. Only
-        // compute it when a curve master is actually needed: an operator
-        // public listing derives straight from the account xpub, but an
-        // operator private reveal and *all* platform-node derivations
-        // (Ed25519/SLIP-10 is hardened-only) require it.
+        // Raw 64-byte BIP39 seed — the exact input the account's curve
+        // master consumes (#879). Only obtained when a seed-bearing path
+        // is actually needed: an operator public listing derives straight
+        // from the account xpub, but an operator private reveal and *all*
+        // platform-node derivations (Ed25519/SLIP-10 is hardened-only)
+        // require it.
         let need_seed = include_private || matches!(kind, ProviderKeyKind::PlatformNode);
 
-        let account_seed: Option<Zeroizing<[u8; 32]>> = if need_seed {
-            let account_path = account_type.derivation_path(network).map_err(|e| {
-                PlatformWalletError::KeyDerivation(format!(
-                    "failed to build provider account path for {account_type:?}: {e}"
-                ))
-            })?;
-            let seed = match resolved_master {
-                Some(master) => {
-                    // Same seed `Wallet::add_bls_account` /
-                    // `add_eddsa_account` derive: the account-level
-                    // secp256k1 private-key bytes at the DIP-3 path.
-                    let secp = Secp256k1::new();
-                    let derived = master.derive_priv(&secp, &account_path).map_err(|e| {
-                        PlatformWalletError::KeyDerivation(format!(
-                            "failed to derive provider account xpriv at {account_path}: {e}"
-                        ))
-                    })?;
-                    Zeroizing::new(derived.private_key.secret_bytes())
-                }
+        let seed: Option<Zeroizing<Vec<u8>>> = if need_seed {
+            let raw = match resolved_seed {
+                // Caller-resolved raw seed (external-signable / watch-only).
+                Some(seed) => Zeroizing::new(seed.to_vec()),
                 None => {
-                    // Resident key-bearing wallet — derive the account
-                    // seed from its own root. Errors here for a watch-only
-                    // / external-signable wallet (no resident private
-                    // key), which the caller must instead service with a
-                    // `resolved_master`.
-                    let secret = state
-                        .wallet()
-                        .derive_private_key(&account_path)
-                        .map_err(|e| {
-                            PlatformWalletError::KeyDerivation(format!(
-                                "failed to derive provider account key at {account_path} from \
-                                 resident wallet: {e}"
-                            ))
-                        })?;
-                    Zeroizing::new(secret.secret_bytes())
+                    // Resident key-bearing wallet — take its own raw BIP39
+                    // seed. `None` for a watch-only / external-signable
+                    // wallet (no resident seed), which the caller must
+                    // instead service with a `resolved_seed`.
+                    let raw = state.wallet().wallet_seed_bytes().ok_or_else(|| {
+                        PlatformWalletError::KeyDerivation(
+                            "wallet has no resident seed (external-signable / watch-only); a \
+                             resolved seed is required to derive this provider key"
+                                .to_string(),
+                        )
+                    })?;
+                    Zeroizing::new(raw.to_vec())
                 }
             };
-            Some(seed)
+            Some(raw)
         } else {
             None
         };
@@ -313,51 +344,67 @@ impl PlatformWallet {
                         )
                     })?;
 
-                // Non-hardened index — the pool's `AddressPoolType::Absent`.
+                // Non-hardened index — the operator pool's single
+                // `AddressPoolType::Absent` chain (`account/i`).
                 let child = ChildNumber::from_normal_idx(index).map_err(|e| {
                     PlatformWalletError::KeyDerivation(format!(
                         "invalid operator key index {index}: {e}"
                     ))
                 })?;
 
-                match account_seed {
-                    // Private reveal: rebuild the BLS master from the
-                    // account seed exactly as `Wallet::add_bls_account`
-                    // does, then derive the child.
+                match &seed {
+                    // Private reveal (or a caller that supplied a seed):
+                    // raw seed → BLS master → **legacy** DIP-3 account path →
+                    // non-hardened legacy child `index`. Composed from the
+                    // upstream primitives directly (the account's
+                    // `derive_from_seed_*` wrapper rejects a watch-only
+                    // account even with a seed in hand — see module docs),
+                    // yet byte-identical to it for a resident account.
                     Some(seed) => {
-                        let bls_master = ExtendedBLSPrivKey::new_master(network, seed.as_ref())
+                        let master = ExtendedBLSPrivKey::new_master(network, seed.as_ref())
                             .map_err(|e| {
                                 PlatformWalletError::KeyDerivation(format!(
                                     "failed to build BLS master from operator seed: {e}"
                                 ))
                             })?;
-                        let derived = bls_master.derive_priv(child).map_err(|e| {
+                        let account_path = account_type.derivation_path(network).map_err(|e| {
+                            PlatformWalletError::KeyDerivation(format!(
+                                "failed to build BLS operator account path: {e}"
+                            ))
+                        })?;
+                        let account_xpriv =
+                            master.derive_path_legacy(&account_path).map_err(|e| {
+                                PlatformWalletError::KeyDerivation(format!(
+                                    "failed to derive BLS operator account key at \
+                                     {account_path}: {e}"
+                                ))
+                            })?;
+                        let xpriv = account_xpriv.derive_priv_legacy(child).map_err(|e| {
                             PlatformWalletError::KeyDerivation(format!(
                                 "failed to derive BLS operator key at index {index}: {e}"
                             ))
                         })?;
-                        let public_key_bytes = derived.public_key_bytes().to_vec();
+                        let public_key_bytes = xpriv.public_key_bytes().to_vec();
                         // Same G1 point, Dash legacy serialization (key-wallet
                         // #879) — for the "BLS Public Key (Legacy)" display row.
                         let legacy_public_key_bytes =
-                            Some(derived.public_key_bytes_legacy().to_vec());
+                            Some(xpriv.public_key_bytes_legacy().to_vec());
 
-                        // The private-path public key must equal the
-                        // watch-only `ckd_pub` derivation the pool /
-                        // ProRegTx matcher use — proves the seed and the
-                        // BLS ckd are consistent.
-                        debug_assert_eq!(
-                            account
-                                .bls_public_key
-                                .derive_pub(child)
-                                .map(|p| p.to_bytes())
-                                .ok(),
-                            Some(derived.public_key_bytes()),
-                            "BLS priv-derived operator pubkey diverged from ckd_pub"
-                        );
+                        // The seed-derived public key must equal the public
+                        // (xpub, legacy `ckd_pub`) derivation — proves the
+                        // seed and the stored account xpub agree.
+                        #[cfg(debug_assertions)]
+                        if let Ok(xpub) = account.bls_public_key.derive_pub_legacy(child) {
+                            debug_assert_eq!(
+                                xpub.to_bytes(),
+                                xpriv.public_key_bytes(),
+                                "BLS operator seed-derived pubkey diverged from account-xpub \
+                                 derivation"
+                            );
+                        }
 
                         let private_key = include_private
-                            .then(|| Zeroizing::new(derived.private_key.to_be_bytes().to_vec()));
+                            .then(|| Zeroizing::new(xpriv.private_key.to_be_bytes().to_vec()));
 
                         Ok(ProviderDerivedKey {
                             index,
@@ -367,19 +414,26 @@ impl PlatformWallet {
                             private_key,
                         })
                     }
-                    // Public-only: non-hardened `ckd_pub` off the account
-                    // xpub — no seed / resolver needed for BLS.
+                    // Public-only: the account xpub's non-hardened **legacy**
+                    // `ckd_pub` child — no seed / resolver needed for BLS.
+                    // `derive_pub_legacy` is a pure public-key operation
+                    // (no `is_watch_only` gate), so it works for both
+                    // resident and restored (watch-only) accounts.
                     None => {
-                        let derived_pub =
-                            account.bls_public_key.derive_pub(child).map_err(|e| {
-                                PlatformWalletError::KeyDerivation(format!(
-                                "failed to derive BLS operator public key at index {index}: {e}"
-                            ))
-                            })?;
+                        let xpub =
+                            account
+                                .bls_public_key
+                                .derive_pub_legacy(child)
+                                .map_err(|e| {
+                                    PlatformWalletError::KeyDerivation(format!(
+                                        "failed to derive BLS operator public key at index \
+                                     {index}: {e}"
+                                    ))
+                                })?;
                         // Serialize the same G1 point both ways: modern/IETF
                         // and Dash legacy (key-wallet #879).
-                        let public_key_bytes = derived_pub.to_bytes().to_vec();
-                        let legacy_public_key_bytes = Some(derived_pub.to_bytes_legacy().to_vec());
+                        let public_key_bytes = xpub.to_bytes().to_vec();
+                        let legacy_public_key_bytes = Some(xpub.to_bytes_legacy().to_vec());
                         Ok(ProviderDerivedKey {
                             index,
                             public_key_bytes,
@@ -392,8 +446,8 @@ impl PlatformWallet {
             }
             ProviderKeyKind::PlatformNode => {
                 // Existence check — a missing account is a caller error,
-                // not a derivation failure. (The stored xpub itself is
-                // only needed for the debug cross-check below.)
+                // not a derivation failure (the account object itself isn't
+                // needed for the gate-free direct derivation below).
                 if state
                     .wallet()
                     .accounts
@@ -406,51 +460,49 @@ impl PlatformWallet {
                 }
 
                 // `need_seed` is always true for this kind.
-                let seed = account_seed.expect("platform-node derivation always seeds");
+                let seed = seed
+                    .as_ref()
+                    .expect("platform-node derivation always seeds");
 
-                let ed_master = ExtendedEd25519PrivKey::new_master(network, seed.as_ref())
-                    .map_err(|e| {
+                // Canonical raw-seed derivation via the upstream primitives
+                // directly (the account's `derive_from_seed_*` wrapper
+                // rejects a watch-only account even with a seed — see module
+                // docs): raw seed → SLIP-10 master → DIP-3 account path →
+                // hardened child `index`. Byte-identical to what
+                // `Wallet::from_mnemonic` account creation and
+                // `derive_platform_node_public_keys` produce.
+                let account_path = account_type.derivation_path(network).map_err(|e| {
+                    PlatformWalletError::KeyDerivation(format!(
+                        "failed to build provider platform-node account path: {e}"
+                    ))
+                })?;
+                let master =
+                    ExtendedEd25519PrivKey::new_master(network, seed.as_ref()).map_err(|e| {
                         PlatformWalletError::KeyDerivation(format!(
                             "failed to build Ed25519 master from platform-node seed: {e}"
                         ))
                     })?;
-
-                // In debug, confirm the seed reproduces the stored
-                // account xpub (proves the DIP-3 account path is right).
-                #[cfg(debug_assertions)]
-                {
-                    use key_wallet::derivation_slip10::ExtendedEd25519PubKey;
-                    if let (Ok(acct_pub), Some(account)) = (
-                        ExtendedEd25519PubKey::from_priv(&ed_master),
-                        state.wallet().accounts.eddsa_account_of_type(account_type),
-                    ) {
-                        debug_assert_eq!(
-                            acct_pub.public_key.to_bytes(),
-                            account.ed25519_public_key.public_key.to_bytes(),
-                            "Ed25519 account seed diverged from stored account xpub"
-                        );
-                    }
-                }
-
-                // SLIP-10 Ed25519 is hardened-only; the pool derives
-                // platform-node keys at a single hardened index
-                // (`AddressPoolType::AbsentHardened`).
+                let account_xpriv = master.derive_priv(&account_path).map_err(|e| {
+                    PlatformWalletError::KeyDerivation(format!(
+                        "failed to derive Ed25519 platform-node account key at {account_path}: {e}"
+                    ))
+                })?;
                 let child = ChildNumber::from_hardened_idx(index).map_err(|e| {
                     PlatformWalletError::KeyDerivation(format!(
                         "invalid platform-node key index {index}: {e}"
                     ))
                 })?;
-                let derived = ed_master.derive_priv(&[child]).map_err(|e| {
+                let xpriv = account_xpriv.derive_priv(&[child]).map_err(|e| {
                     PlatformWalletError::KeyDerivation(format!(
                         "failed to derive Ed25519 platform-node key at index {index}: {e}"
                     ))
                 })?;
-                let verifying = derived.public_key().map_err(|e| {
+                let verifying = ExtendedEd25519PubKey::from_priv(&xpriv).map_err(|e| {
                     PlatformWalletError::KeyDerivation(format!(
                         "failed to obtain Ed25519 public key at index {index}: {e}"
                     ))
                 })?;
-                let public_key_bytes = verifying.to_bytes().to_vec();
+                let public_key_bytes = verifying.public_key.to_bytes().to_vec();
 
                 // The 20-byte platform node id = hash160(ed25519 pubkey),
                 // exactly what the ProRegTx `platform_node_id` matcher
@@ -458,7 +510,7 @@ impl PlatformWallet {
                 let node_id: [u8; 20] = hash160::Hash::hash(&public_key_bytes).to_byte_array();
 
                 let private_key =
-                    include_private.then(|| Zeroizing::new(derived.private_key.to_vec()));
+                    include_private.then(|| Zeroizing::new(xpriv.private_key.to_vec()));
 
                 Ok(ProviderDerivedKey {
                     index,
@@ -476,7 +528,11 @@ impl PlatformWallet {
 #[cfg(test)]
 mod tests {
     use super::*;
+    // The upstream account wrappers (`derive_from_seed_*`) are used ONLY in
+    // tests, as an independent cross-check that the module's gate-free
+    // primitives match upstream for a resident (non-watch-only) account.
     use dashcore::hashes::{hash160, Hash};
+    use key_wallet::account::derivation::AccountDerivation;
     use key_wallet::mnemonic::{Language, Mnemonic};
     use key_wallet::wallet::initialization::WalletAccountCreationOptions;
     use key_wallet::wallet::Wallet;
@@ -494,14 +550,23 @@ mod tests {
             .expect("wallet construction")
     }
 
-    /// The two load-bearing invariants for platform-node keys, pinned so an
-    /// upstream SLIP-10 / DIP-9 derivation regression can't silently hand
-    /// out wrong key material: `node_id == hash160(pubkey)` at every index,
-    /// and a stable golden pubkey/node-id for index 0 on testnet.
+    /// The load-bearing invariants for platform-node keys, pinned so a
+    /// derivation regression (like the pre-#879 secp256k1 hybrid) can't
+    /// silently hand out wrong key material: `node_id == hash160(pubkey)`
+    /// at every index, all indices distinct, our wrapper's per-index key
+    /// equals the account's own canonical seed derivation, and a golden
+    /// secret scalar pinned to the dashbls/SLIP-10 reference vector from
+    /// key-wallet's `provider_key_derivation_tests.rs`.
     #[test]
     fn platform_node_keys_are_consistent_and_pinned() {
-        let wallet = seed_bearing_wallet(Network::Testnet);
-        let keys = derive_platform_node_public_keys(&wallet, Network::Testnet, 20)
+        let wallet = seed_bearing_wallet(Network::Mainnet);
+        let seed = wallet.wallet_seed_bytes().expect("resident seed");
+        let account = wallet
+            .accounts
+            .eddsa_account_of_type(AccountType::ProviderPlatformKeys)
+            .expect("platform-node account");
+
+        let keys = derive_platform_node_public_keys(&wallet, Network::Mainnet, 20)
             .expect("platform-node derivation");
 
         assert_eq!(keys.len(), 20, "requested 20 keys");
@@ -512,6 +577,22 @@ mod tests {
                 k.node_id, expected_node_id,
                 "node_id must be hash160(ed25519 pubkey) at index {i}"
             );
+
+            // Cross-path: the registration wrapper's per-index key must be
+            // byte-identical to the account's own canonical raw-seed
+            // derivation — the same routine `derive_provider_key_at_index`
+            // and `Wallet::from_mnemonic` account creation use.
+            let up_xpriv = account
+                .derive_from_seed_extended_xpriv_at(&seed, i as u32)
+                .expect("account seed derivation");
+            let up_pub = ExtendedEd25519PubKey::from_priv(&up_xpriv)
+                .expect("ed25519 pub")
+                .public_key
+                .to_bytes();
+            assert_eq!(
+                k.public_key, up_pub,
+                "wrapper pubkey must equal the account's canonical derivation at {i}"
+            );
         }
 
         // All indices produce distinct keys (hardened SLIP-10 children).
@@ -520,18 +601,138 @@ mod tests {
         pubs.dedup();
         assert_eq!(pubs.len(), 20, "all 20 platform-node keys must be distinct");
 
-        // Golden vector — regenerating the same mnemonic must reproduce
-        // these exact bytes. A break here means the derivation path or an
-        // upstream crate changed.
+        // Golden vector — mainnet platform-node key 0 secret scalar
+        // (`m/9'/5'/3'/4'/0'`), pinned to the SLIP-10 reference in
+        // key-wallet `provider_key_derivation_tests.rs`. This is the value
+        // DashSync/dashwallet-ios produce; a break means our derivation
+        // diverged from the reference.
+        let sk0 = account
+            .derive_from_seed_private_key_at(&seed, 0)
+            .expect("platform-node sk derivation");
         assert_eq!(
-            hex::encode(keys[0].public_key),
-            "fb91ae39aba2a1b8f68016833bfcfcec8516d634237f5842a21b03c225e2b092",
-            "platform-node index-0 pubkey golden vector"
+            hex::encode(sk0.to_bytes()),
+            "5fa238b12be77347abf9b5957bd902d16c6aaca28d25c4267ffacbd7458dceb1",
+            "mainnet platform-node index-0 secret golden (dashbls/SLIP-10 reference)"
+        );
+    }
+
+    /// Operator (BLS) keys pinned to the dashbls reference vectors from
+    /// key-wallet `provider_key_derivation_tests.rs` — the values
+    /// DashSync/dashwallet-ios produce — on both networks. Exercises BOTH
+    /// derivation paths this module actually uses: the public branch's
+    /// `ExtendedBLSPubKey::derive_pub_legacy` (gate-free) and the private
+    /// branch's gate-free primitive composition, cross-checked against
+    /// each other, the account's own wrapper, and the golden vectors. This
+    /// is the exact key the user reported as mismatched; the pre-#879
+    /// secp256k1 hybrid produced a different point here, and the account's
+    /// `derive_bls_key_at_index` wrapper can't derive it from a resident
+    /// (non-watch-only) account at all.
+    #[test]
+    fn operator_keys_match_dashbls_reference_and_cross_check() {
+        // --- Mainnet (`m/9'/5'/3'/3'/0`) ---
+        let wallet = seed_bearing_wallet(Network::Mainnet);
+        let seed = wallet.wallet_seed_bytes().expect("resident seed");
+        let account = wallet
+            .accounts
+            .bls_account_of_type(AccountType::ProviderOperatorKeys)
+            .expect("operator account");
+
+        // Public-only path (exactly what `derive_provider_key_at_index`
+        // does for the seedless branch): the account xpub's non-hardened
+        // **legacy** `ckd_pub`. `derive_pub_legacy` is gate-free, so it
+        // works on this resident (non-watch-only) account too.
+        let child0 = ChildNumber::from_normal_idx(0).expect("child 0");
+        let xpub0 = account
+            .bls_public_key
+            .derive_pub_legacy(child0)
+            .expect("operator public derivation");
+        assert_eq!(
+            hex::encode(xpub0.to_bytes_legacy()),
+            "078cad04aae29eb76171937eb7101452b401b026efbc27db840f130374e6a9ec8443d917277f8921e0ba6678a7709875",
+            "operator key0 legacy pubkey golden (dashbls reference)"
+        );
+        // Modern/IETF (basic-scheme) serialization, verbatim from the
+        // upstream reference test.
+        assert_eq!(
+            hex::encode(xpub0.to_bytes()),
+            "878cad04aae29eb76171937eb7101452b401b026efbc27db840f130374e6a9ec8443d917277f8921e0ba6678a7709875",
+            "operator key0 modern pubkey golden (dashbls reference)"
+        );
+
+        // Private (seed) path composed from the SAME gate-free primitives
+        // `derive_provider_key_at_index` uses: raw seed → BLS master →
+        // legacy account path → non-hardened legacy child.
+        let account_path = AccountType::ProviderOperatorKeys
+            .derivation_path(Network::Mainnet)
+            .expect("account path");
+        let master = ExtendedBLSPrivKey::new_master(Network::Mainnet, &seed).expect("bls master");
+        let xpriv0 = master
+            .derive_path_legacy(&account_path)
+            .expect("account xpriv")
+            .derive_priv_legacy(child0)
+            .expect("child xpriv");
+        assert_eq!(
+            xpriv0.public_key_bytes(),
+            xpub0.to_bytes(),
+            "gate-free seed-derived operator pubkey must equal the public derivation"
         );
         assert_eq!(
-            hex::encode(keys[0].node_id),
-            "bb241cb734e78cfc8c537226322b1492d0458678",
-            "platform-node index-0 node-id golden vector"
+            xpriv0.public_key_bytes_legacy(),
+            xpub0.to_bytes_legacy(),
+            "gate-free seed-derived operator legacy pubkey must equal the public derivation"
+        );
+        assert_eq!(
+            hex::encode(xpriv0.private_key.to_be_bytes()),
+            "11122e1ad656d0610ce0f80d40da874d67ea656a3e66ed371c915ec3a488a43a",
+            "operator key0 secret golden (dashbls reference)"
+        );
+
+        // The gate-free composition must equal the account's own wrapper
+        // for this resident (non-watch-only) account — proving they agree
+        // where the wrapper is usable.
+        let via_wrapper = account
+            .derive_from_seed_extended_xpriv_at(&seed, 0)
+            .expect("wrapper seed derivation");
+        assert_eq!(
+            via_wrapper.public_key_bytes(),
+            xpriv0.public_key_bytes(),
+            "gate-free primitives must match the account's derive_from_seed_* wrapper"
+        );
+
+        // --- Testnet (`m/9'/1'/3'/3'/0`) ---
+        let wallet_t = seed_bearing_wallet(Network::Testnet);
+        let account_t = wallet_t
+            .accounts
+            .bls_account_of_type(AccountType::ProviderOperatorKeys)
+            .expect("operator account");
+        let xpub0_t = account_t
+            .bls_public_key
+            .derive_pub_legacy(child0)
+            .expect("operator public derivation");
+        assert_eq!(
+            hex::encode(xpub0_t.to_bytes_legacy()),
+            "09d8beabae708de1638487f1aff44b38e8c07d9b09f22d76329d6c8ec01e2ad4d030b660bca40ddbd222373a72c5bcef",
+            "testnet operator key0 legacy pubkey golden (dashbls reference)"
+        );
+        let seed_t = wallet_t.wallet_seed_bytes().expect("resident seed");
+        let account_path_t = AccountType::ProviderOperatorKeys
+            .derivation_path(Network::Testnet)
+            .expect("account path");
+        let xpriv0_t = ExtendedBLSPrivKey::new_master(Network::Testnet, &seed_t)
+            .expect("bls master")
+            .derive_path_legacy(&account_path_t)
+            .expect("account xpriv")
+            .derive_priv_legacy(child0)
+            .expect("child xpriv");
+        assert_eq!(
+            xpriv0_t.public_key_bytes_legacy(),
+            xpub0_t.to_bytes_legacy(),
+            "testnet gate-free operator legacy pubkey must equal the public derivation"
+        );
+        assert_eq!(
+            hex::encode(xpriv0_t.private_key.to_be_bytes()),
+            "3346dfd71627f9f31cad3ee66fe7b673c32cb077b2eb38c621d7e61c30e46dbd",
+            "testnet operator key0 secret golden (dashbls reference)"
         );
     }
 

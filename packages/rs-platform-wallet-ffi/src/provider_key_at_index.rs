@@ -34,14 +34,12 @@
 use std::ffi::CString;
 use std::os::raw::c_char;
 
-use key_wallet::bip32::ExtendedPrivKey;
 use platform_wallet::{ProviderDerivedKey, ProviderKeyKind};
 use zeroize::{Zeroize, Zeroizing};
 
 use crate::error::*;
 use crate::handle::*;
-use crate::identity_keys_from_mnemonic::resolve_master_from_resolver;
-use crate::types::Network;
+use crate::identity_keys_from_mnemonic::resolve_seed_from_resolver;
 use crate::{check_ptr, unwrap_option_or_return, unwrap_result_or_return};
 use rs_sdk_ffi::MnemonicResolverHandle;
 
@@ -160,8 +158,6 @@ pub unsafe extern "C" fn platform_wallet_provider_key_at_index(
     let option = PLATFORM_WALLET_STORAGE.with_item(
         wallet_handle,
         |wallet| -> Result<ProviderDerivedKey, PlatformWalletFFIResult> {
-            let network: Network = wallet.network();
-
             // Phase 1 — capability probe under a SHORT read guard,
             // dropped before any resolver interaction. Only relevant when
             // a seed is required at all.
@@ -184,11 +180,13 @@ pub unsafe extern "C" fn platform_wallet_provider_key_at_index(
                 true
             };
 
-            // Phase 2 — resolve the master xpriv for external-signable /
+            // Phase 2 — resolve the raw BIP39 seed for external-signable /
             // watch-only wallets that need a seed. NEVER under the guard
             // above: the resolver synchronously re-enters Swift and reads
-            // the iOS Keychain (which can stall on biometric unlock).
-            let mut master_opt: Option<ExtendedPrivKey> = None;
+            // the iOS Keychain (which can stall on biometric unlock). The
+            // raw seed (not a secp256k1 master) is what the BLS/Ed25519
+            // provider derivation consumes (rust-dashcore #879).
+            let mut seed_opt: Option<Zeroizing<[u8; 64]>> = None;
             if need_seed && !is_resident {
                 if mnemonic_resolver_handle.is_null() {
                     return Err(PlatformWalletFFIResult::err(
@@ -202,27 +200,22 @@ pub unsafe extern "C" fn platform_wallet_provider_key_at_index(
                 // SAFETY: handle is non-null (checked) and the caller's
                 // safety contract guarantees it came from
                 // `dash_sdk_mnemonic_resolver_create`.
-                master_opt = Some(unsafe {
-                    resolve_master_from_resolver(mnemonic_resolver_handle, &wallet_id, network)?
+                seed_opt = Some(unsafe {
+                    resolve_seed_from_resolver(mnemonic_resolver_handle, &wallet_id)?
                 });
             }
 
             // Phase 3 — library derive (re-acquires the guard internally;
-            // the resolver, if any, has already run).
-            let result = wallet.derive_provider_key_at_index(
-                kind,
-                index,
-                master_opt.as_ref(),
-                include_private,
-            );
-
-            // Wipe the resolved master's inner scalar — `ExtendedPrivKey`
-            // has no `Drop` / `Zeroize`. No-op on the seedless path.
-            if let Some(mut master) = master_opt {
-                master.private_key.non_secure_erase();
-            }
-
-            result.map_err(PlatformWalletFFIResult::from)
+            // the resolver, if any, has already run). `seed_opt` (Zeroizing)
+            // scrubs the raw seed on drop — no manual wipe needed.
+            wallet
+                .derive_provider_key_at_index(
+                    kind,
+                    index,
+                    seed_opt.as_deref().map(|s| &s[..]),
+                    include_private,
+                )
+                .map_err(PlatformWalletFFIResult::from)
         },
     );
     let result = unwrap_option_or_return!(option);

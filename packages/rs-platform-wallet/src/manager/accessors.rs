@@ -895,8 +895,24 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                     false,
                 ) {
                     Ok(key) => {
+                        // Index BOTH serializations under the same index.
+                        // `aggregate_masternodes` preserves the exact
+                        // on-chain payload bytes, and a v1 ProRegTx carries
+                        // the operator key in LEGACY serialization while a
+                        // v2 ProRegTx carries MODERN — so matching only the
+                        // modern form would miss every wallet-owned v1
+                        // masternode. The two forms are distinct byte
+                        // strings for the same G1 point, so inserting both
+                        // can't collide.
                         if let Ok(bytes) = <[u8; 48]>::try_from(key.public_key_bytes.as_slice()) {
                             operator_index.insert(bytes, index);
+                        }
+                        if let Some(legacy) = key
+                            .legacy_public_key_bytes
+                            .as_deref()
+                            .and_then(|b| <[u8; 48]>::try_from(b).ok())
+                        {
+                            operator_index.insert(legacy, index);
                         }
                     }
                     // First failure ⇒ no operator account (or unavailable) ⇒ stop.
