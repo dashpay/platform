@@ -3676,6 +3676,30 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         }
     }
 
+    /// Load the persisted seed-binding marker for `walletId`, or `nil`
+    /// if none was ever written (first launch, pre-column row). The
+    /// marker is opaque to Swift — it round-trips into
+    /// `platform_wallet_verify_seed_binds_to_wallet_cached`, where Rust
+    /// decides whether it still proves the binding.
+    public func seedBindingMarker(walletId: Data) -> String? {
+        onQueue {
+            findWalletRecord(walletId: walletId)?.seedBindingVerifiedMarker
+        }
+    }
+
+    /// Persist the seed-binding marker the cached verify FFI handed
+    /// back (it returns one only when a full verification ran and
+    /// bound). Silently skips if the row is missing, mirroring
+    /// `setWalletName`.
+    public func setSeedBindingMarker(walletId: Data, marker: String) {
+        onQueue {
+            guard let wallet = findWalletRecord(walletId: walletId) else { return }
+            wallet.seedBindingVerifiedMarker = marker
+            wallet.lastUpdated = Date()
+            try? backgroundContext.save()
+        }
+    }
+
     /// Count `PersistentWallet` rows for `walletId` across ALL
     /// networks (deliberately ignores `self.network`). The mnemonic /
     /// metadata in the Keychain are shared by every network's row, so

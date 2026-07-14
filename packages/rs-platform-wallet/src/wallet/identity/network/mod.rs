@@ -54,6 +54,7 @@ pub(crate) use payments::{
 mod profile;
 pub(crate) mod sdk_writer;
 mod seed_binding;
+pub use seed_binding::SeedBindingVerification;
 
 // Token state-transition operations (same `IdentityWallet` impl blocks).
 // Bookkeeping (watch / sync / balance) lives on
