@@ -305,14 +305,41 @@ struct ReclaimInvitationSheet: View {
     /// Pure decision for the reclaim `catch`: an "already consumed" rejection is
     /// disambiguated by whether *our own* reclaim was already in flight when this
     /// attempt started (persisted `reclaimInFlight` marker). Kept side-effect-free
-    /// and `nonisolated` so it is the unit-tested seam for all three outcomes; the
-    /// view maps the outcome to `statusRaw`/message/save.
+    /// and `nonisolated` so it is the unit-tested seam for all outcomes; the view
+    /// maps the outcome to `statusRaw`/message/save.
     nonisolated static func classifyReclaimFailure(
         error: Error,
         hadPriorReclaimInFlight: Bool
     ) -> ReclaimOutcome {
-        guard isAlreadyConsumed(error) else { return .error }
-        return hadPriorReclaimInFlight ? .reclaimed : .claimed
+        if isAlreadyConsumed(error) {
+            // Platform deterministically rejected the consume as already-spent.
+            return hadPriorReclaimInFlight ? .reclaimed : .claimed
+        }
+        // Crash-recovery for our OWN reclaim: if a prior attempt's consume landed
+        // on-chain but the app crashed before saving the terminal status, a retry
+        // resumes a lock the wallet no longer tracks and fails LOCALLY ("…is not
+        // tracked") — before Platform, so `isAlreadyConsumed` never sees it. With
+        // our in-flight marker set (a prior attempt started a consume), that
+        // untracked lock is our own completed reclaim; recover it rather than
+        // leaving the row stuck at Created with the marker set forever. The marker
+        // gate makes this safe: a first attempt has `hadPriorReclaimInFlight ==
+        // false`, so an unrelated "not tracked" failure still resolves to `.error`.
+        if hadPriorReclaimInFlight && isLockNoLongerTracked(error) {
+            return .reclaimed
+        }
+        return .error
+    }
+
+    /// Whether an error is the wallet's LOCAL "asset lock is no longer tracked"
+    /// resume-guard failure (`rs-platform-wallet` `resume_asset_lock`, Display
+    /// "Asset lock … is not tracked"). Distinct from the network's already-consumed
+    /// rejection; used only for our-own-reclaim crash recovery above.
+    nonisolated static func isLockNoLongerTracked(_ error: Error) -> Bool {
+        isLockNoLongerTracked(message: error.localizedDescription)
+    }
+
+    nonisolated static func isLockNoLongerTracked(message: String) -> Bool {
+        message.lowercased().contains("is not tracked")
     }
 
     /// Whether an error is the deterministic "asset lock outpoint already

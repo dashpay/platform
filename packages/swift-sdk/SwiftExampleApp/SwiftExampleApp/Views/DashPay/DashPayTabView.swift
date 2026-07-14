@@ -211,14 +211,14 @@ struct DashPayTabView: View {
                         }
                     }
                     ToolbarItem(placement: .navigationBarLeading) {
-                        // Gate on the wallet, not the active identity: invitations
-                        // are wallet-scoped and reclaiming needs no identity, so
-                        // deleting the last identity must not hide the reclaim UI for
-                        // a wallet that still holds funded (reclaimable) invitations.
-                        if let walletId = claimWalletId {
+                        // Gate on a loaded wallet, not the active identity:
+                        // reclaiming needs no identity, so deleting the last identity
+                        // must not hide the reclaim UI while funded (reclaimable)
+                        // invitations remain. The list itself spans all wallets and
+                        // reclaims each by its own walletId.
+                        if claimWalletId != nil {
                             NavigationLink {
                                 InvitationsView(
-                                    walletId: walletId,
                                     network: network,
                                     identity: activeIdentity
                                 )

@@ -107,4 +107,31 @@ final class ReclaimInvitationClassifierTests: XCTestCase {
             .error
         )
     }
+
+    private static let lockNotTracked = StubError(
+        message: "PlatformWalletError: Asset lock "
+            + "3ff8e26d02e53f97a5f06b12327f40fc10cb859077e2788362c5d93032850ff0:0 is not tracked"
+    )
+
+    /// Crash-recovery: our own prior reclaim consumed the lock on-chain but the
+    /// terminal save was interrupted; a retry resumes an untracked lock and fails
+    /// LOCALLY ("…is not tracked"). With the marker set, that is our completed
+    /// reclaim → `.reclaimed` (not stuck at Created forever).
+    func test_classify_lockNotTracked_priorInFlight_isReclaimed() {
+        XCTAssertEqual(
+            ReclaimInvitationSheet.classifyReclaimFailure(
+                error: Self.lockNotTracked, hadPriorReclaimInFlight: true),
+            .reclaimed
+        )
+    }
+
+    /// The same local error WITHOUT a prior in-flight marker is `.error` — a first
+    /// attempt that hits "not tracked" is a genuine anomaly, not a self-reclaim.
+    func test_classify_lockNotTracked_noPrior_isError() {
+        XCTAssertEqual(
+            ReclaimInvitationSheet.classifyReclaimFailure(
+                error: Self.lockNotTracked, hadPriorReclaimInFlight: false),
+            .error
+        )
+    }
 }

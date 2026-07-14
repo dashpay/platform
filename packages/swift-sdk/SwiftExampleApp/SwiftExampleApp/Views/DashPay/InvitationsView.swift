@@ -8,27 +8,27 @@ import SwiftUI
 /// changeset. A still-unclaimed (`Created`) row can be reclaimed — recovering the
 /// voucher's value as identity credits — via a swipe action.
 struct InvitationsView: View {
-    let walletId: Data
     let network: Network
-    /// The active identity, if any. The reclaim list needs only `walletId`;
-    /// `identity` is required solely to *create* a new invitation, so it is
-    /// optional — a wallet whose last identity was deleted can still reclaim its
-    /// funded invitations, only the "+" create action is hidden.
+    /// The active identity, if any. Reclaim needs no identity (it uses each
+    /// invitation's own `walletId`); `identity` is required solely to *create* a
+    /// new invitation, so it is optional — a wallet whose last identity was deleted
+    /// can still reclaim its funded invitations, only the "+" create is hidden.
     let identity: PersistentIdentity?
 
-    @Query private var invitations: [PersistentInvitation]
+    // ALL sent invitations across every loaded wallet, newest first. Not scoped to
+    // one wallet: the paperplane is reached from a single-wallet context, but a
+    // device may have several wallets loaded and each invitation is reclaimed via
+    // its OWN `walletId` (below), so scoping the list to one wallet would strand
+    // the others' funded, reclaimable invitations with no way to reach them.
+    @Query(sort: [SortDescriptor(\PersistentInvitation.createdAtSecs, order: .reverse)])
+    private var invitations: [PersistentInvitation]
 
     @State private var reclaimTarget: PersistentInvitation?
     @State private var showCreateInvitation = false
 
-    init(walletId: Data, network: Network, identity: PersistentIdentity?) {
-        self.walletId = walletId
+    init(network: Network, identity: PersistentIdentity?) {
         self.network = network
         self.identity = identity
-        _invitations = Query(
-            filter: PersistentInvitation.predicate(walletId: walletId),
-            sort: [SortDescriptor(\PersistentInvitation.createdAtSecs, order: .reverse)]
-        )
     }
 
     var body: some View {
@@ -78,7 +78,9 @@ struct InvitationsView: View {
         .sheet(item: $reclaimTarget) { invitation in
             ReclaimInvitationSheet(
                 invitation: invitation,
-                walletId: walletId,
+                // Reclaim targets the invitation's OWN wallet, so a multi-wallet
+                // list reclaims each row against the correct wallet.
+                walletId: invitation.walletId,
                 network: network
             )
         }
