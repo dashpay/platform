@@ -17,7 +17,7 @@
 use std::collections::BTreeMap;
 
 use dpp::dashcore::consensus::Decodable;
-use dpp::dashcore::{InstantLock, OutPoint, PrivateKey};
+use dpp::dashcore::{InstantLock, OutPoint, PrivateKey, Transaction};
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::signer::Signer;
@@ -70,6 +70,17 @@ pub const MIN_INVITATION_DUFFS: u64 = 300_000;
 /// the honest UI (don't submit an about-to-go-stale IS proof) and the reclaim
 /// signal, NOT a leaked-link window. The real leak bound is `MAX_INVITATION_DUFFS`.
 pub const MAX_INVITATION_TTL_SECS: u32 = 24 * 60 * 60;
+
+/// Claim-by-fetch bound: how many times to look up the funding tx (each attempt
+/// tries both byte orders) before giving up. InstantSend/ChainLock finality does
+/// not guarantee the invitee's DAPI node has indexed the tx yet, so a freshly
+/// shared invitation can miss purely from propagation lag; retrying bounds that.
+const CLAIM_FETCH_MAX_ATTEMPTS: u32 = 5;
+
+/// Fixed backoff between claim-by-fetch attempts (matches the identity-create
+/// fetch-retry cadence elsewhere in the wallet). 5 attempts × 3s ≈ 12s of
+/// tolerance for propagation delay before surfacing a "not found" error.
+const CLAIM_FETCH_RETRY_DELAY: std::time::Duration = std::time::Duration::from_secs(3);
 
 /// RAII scrub for the voucher `PrivateKey` copy used on the claim path.
 /// `dashcore::PrivateKey` wraps a `secp256k1::SecretKey` that has no
@@ -240,32 +251,21 @@ impl IdentityWallet {
             )
             .await?;
 
-        // The invitee's `validate_claimable` accepts only an InstantSend proof.
-        // `create_funded_asset_lock_proof` falls back to a ChainLock proof if the
-        // IS lock doesn't propagate within its 300s preference window — reject
-        // that here rather than emit a link the invitee would silently reject (a
-        // dead voucher: funds locked, no signal). The funding lock stays
-        // tracked/reclaimable; the inviter retries.
-        if !matches!(proof, AssetLockProof::Instant(_)) {
-            return Err(PlatformWalletError::AssetLockTransaction(
-                "InstantSend lock did not confirm in time (a ChainLock proof was produced); \
-                 the funding lock is reclaimable — please retry the invitation"
-                    .to_string(),
-            ));
-        }
-
-        // Persist the inviter-side invitation record NOW — after the funding is
-        // confirmed valid (IS-locked) but BEFORE the fallible voucher-key export
-        // and URI encode below. Ordering matters: those later steps can fail on an
-        // already-funded voucher (a too-long username rejected by the encoder, an
-        // export error), and the "Sent invitations"/reclaim UI lists only persisted
-        // records — so recording the row first is what keeps a funded-but-not-yet-
-        // linked voucher reclaimable. The store is REQUIRED, not best-effort: a
-        // funded voucher we cannot record is a hard failure to surface, not a silent
+        // Persist the inviter-side invitation record NOW — immediately after the
+        // funding succeeds, BEFORE any fallible step (the InstantSend check below,
+        // the voucher-key export, the URI encode). `create_funded_asset_lock_proof`
+        // has already spent the DASH into the OP_RETURN, so any voucher that fails a
+        // later step is still a *funded, reclaimable* lock; recording it first is
+        // what keeps it visible in the "Sent invitations"/reclaim UI. This is why
+        // the persist precedes the InstantSend check: a ChainLock-confirmed voucher
+        // is rejected below as a usable *link* (the invitee needs an InstantSend
+        // proof), but it remains a funded, reclaimable lock and must be recorded
+        // rather than orphaned. The store is REQUIRED, not best-effort: a funded
+        // voucher we cannot record is a hard failure to surface, not a silent
         // success. No secret is stored — only the funding index (display metadata;
         // reclaim resumes by outpoint). If the funding path carries no u32 index
         // tail (a structural can't-happen for the invitation account), warn-skip:
-        // an untrackable row can't be reclaimed either way, and the link is valid.
+        // an untrackable row can't be reclaimed either way.
         if let Some(funding_index) = funding_index_from_path(&path) {
             let mut inv_cs = InvitationChangeSet::default();
             inv_cs.invitations.insert(
@@ -297,6 +297,20 @@ impl IdentityWallet {
                 "invitation funding path has no u32 index tail; \
                  skipping the local invitation record"
             );
+        }
+
+        // The invitee's `validate_claimable` accepts only an InstantSend proof.
+        // `create_funded_asset_lock_proof` falls back to a ChainLock proof if the
+        // IS lock doesn't propagate within its 300s preference window — reject
+        // emitting a link the invitee would silently reject (a dead voucher: funds
+        // locked, no signal). The funding lock was recorded just above, so it stays
+        // tracked/reclaimable; the inviter retries.
+        if !matches!(proof, AssetLockProof::Instant(_)) {
+            return Err(PlatformWalletError::AssetLockTransaction(
+                "InstantSend lock did not confirm in time (a ChainLock proof was produced); \
+                 the funding lock is reclaimable — please retry the invitation"
+                    .to_string(),
+            ));
         }
 
         // Export the one-time voucher private key at the funding path. This is
@@ -480,98 +494,133 @@ impl IdentityWallet {
         &self,
         invitation: &ParsedInvitation,
     ) -> Result<AssetLockProof, PlatformWalletError> {
-        // Fetch the funding tx; on a miss retry with the txid byte-reversed
-        // (old iOS links are little-endian). Propagate the reversed attempt's
-        // error if both fail.
-        let fetched = match self
-            .sdk
-            .get_transaction(&invitation.funding_txid)
-            .await
-            .map_err(PlatformWalletError::Sdk)?
-        {
-            Some(tx) => tx,
-            // Not found as-given: retry with the txid byte-reversed (old iOS
-            // links are little-endian). A transient error is NOT retried — it
-            // propagated above — so the reversed lookup never masks it.
-            None => {
-                let reversed = reverse_txid_hex(&invitation.funding_txid)?;
-                self.sdk
-                    .get_transaction(&reversed)
-                    .await
-                    .map_err(PlatformWalletError::Sdk)?
-                    .ok_or_else(|| {
-                        PlatformWalletError::InvalidIdentityData(
-                            "invitation funding transaction not found (tried both byte orders)"
-                                .to_string(),
-                        )
-                    })?
+        // Fetch the funding tx. Two independent concerns are layered here:
+        //   1. Byte order — old iOS links carry the txid little-endian, so a
+        //      canonical miss is retried byte-reversed (a compatibility fallback,
+        //      not a temporal retry). A transient transport error is NOT masked as
+        //      a miss — it propagates immediately (it is not a "not indexed yet"
+        //      signal, so retrying it would only hide it).
+        //   2. Propagation lag — InstantSend/ChainLock finality does not guarantee
+        //      the invitee's DAPI node has indexed the tx yet, so a freshly shared
+        //      invitation can miss on both byte orders purely from propagation
+        //      delay. Retry a bounded number of times with a fixed backoff before
+        //      giving up.
+        let mut fetched = None;
+        for attempt in 0..CLAIM_FETCH_MAX_ATTEMPTS {
+            let hit = match self
+                .sdk
+                .get_transaction(&invitation.funding_txid)
+                .await
+                .map_err(PlatformWalletError::Sdk)?
+            {
+                Some(tx) => Some(tx),
+                None => {
+                    let reversed = reverse_txid_hex(&invitation.funding_txid)?;
+                    self.sdk
+                        .get_transaction(&reversed)
+                        .await
+                        .map_err(PlatformWalletError::Sdk)?
+                }
+            };
+            if let Some(tx) = hit {
+                fetched = Some(tx);
+                break;
             }
-        };
-        let transaction = fetched.transaction;
-
-        // Fail-fast: the fetched tx must actually be the funding tx (either byte
-        // order). DAPI returns whatever tx matches the id we asked for, so this
-        // guards a backend that answers with an unrelated tx.
-        let fetched_txid = transaction.txid().to_string();
-        let reversed_txid = reverse_txid_hex(&invitation.funding_txid).ok();
-        if fetched_txid != invitation.funding_txid
-            && reversed_txid.as_deref() != Some(fetched_txid.as_str())
-        {
-            return Err(PlatformWalletError::InvalidIdentityData(
-                "fetched transaction id does not match the invitation funding txid".to_string(),
-            ));
+            if attempt + 1 < CLAIM_FETCH_MAX_ATTEMPTS {
+                tokio::time::sleep(CLAIM_FETCH_RETRY_DELAY).await;
+            }
         }
+        let fetched = fetched.ok_or_else(|| {
+            PlatformWalletError::InvalidIdentityData(
+                "invitation funding transaction not found (tried both byte orders across \
+                 repeated attempts); it may not have propagated to the queried DAPI node yet — \
+                 retry shortly"
+                    .to_string(),
+            )
+        })?;
+        assemble_asset_lock_proof(
+            fetched.transaction,
+            fetched.is_chain_locked,
+            fetched.height,
+            invitation,
+        )
+    }
+}
 
-        // Select the funded credit output the voucher key controls (not index 0
-        // — a legacy invite's credit output need not be first).
-        let output_index = voucher_output_index(&transaction, &invitation.voucher_key)?;
+/// Assemble the asset-lock proof from an already-fetched funding transaction — the
+/// pure, testable core of the claim reconstruction (the fetch/retry lives in
+/// `reconstruct_asset_lock_proof`). Validates the tx is the funding tx (either byte
+/// order), selects the voucher's credit output, and builds an InstantSend proof
+/// (link carried an islock) or a ChainLock proof (islock absent), requiring
+/// chain-lock finality for the latter.
+fn assemble_asset_lock_proof(
+    transaction: Transaction,
+    is_chain_locked: bool,
+    height: u32,
+    invitation: &ParsedInvitation,
+) -> Result<AssetLockProof, PlatformWalletError> {
+    // Fail-fast: the fetched tx must actually be the funding tx (either byte
+    // order). DAPI returns whatever tx matches the id we asked for, so this
+    // guards a backend that answers with an unrelated tx.
+    let fetched_txid = transaction.txid().to_string();
+    let reversed_txid = reverse_txid_hex(&invitation.funding_txid).ok();
+    if fetched_txid != invitation.funding_txid
+        && reversed_txid.as_deref() != Some(fetched_txid.as_str())
+    {
+        return Err(PlatformWalletError::InvalidIdentityData(
+            "fetched transaction id does not match the invitation funding txid".to_string(),
+        ));
+    }
 
-        match &invitation.islock_hex {
-            Some(islock_hex) => {
-                let islock_bytes = hex::decode(islock_hex).map_err(|e| {
+    // Select the funded credit output the voucher key controls (not index 0
+    // — a legacy invite's credit output need not be first).
+    let output_index = voucher_output_index(&transaction, &invitation.voucher_key)?;
+
+    match &invitation.islock_hex {
+        Some(islock_hex) => {
+            let islock_bytes = hex::decode(islock_hex).map_err(|e| {
+                PlatformWalletError::InvalidIdentityData(format!(
+                    "invitation islock is not valid hex: {e}"
+                ))
+            })?;
+            // The hex is not self-describing; the modern deterministic islock
+            // (ISDLOCK) carries its version byte, which is exactly what the
+            // consensus decoder reads first.
+            let instant_lock = InstantLock::consensus_decode(&mut islock_bytes.as_slice())
+                .map_err(|e| {
                     PlatformWalletError::InvalidIdentityData(format!(
-                        "invitation islock is not valid hex: {e}"
+                        "invitation islock could not be decoded: {e}"
                     ))
                 })?;
-                // The hex is not self-describing; the modern deterministic islock
-                // (ISDLOCK) carries its version byte, which is exactly what the
-                // consensus decoder reads first.
-                let instant_lock = InstantLock::consensus_decode(&mut islock_bytes.as_slice())
-                    .map_err(|e| {
-                        PlatformWalletError::InvalidIdentityData(format!(
-                            "invitation islock could not be decoded: {e}"
-                        ))
-                    })?;
-                if instant_lock.txid != transaction.txid() {
-                    return Err(PlatformWalletError::InvalidIdentityData(
-                        "invitation islock does not lock the funding transaction".to_string(),
-                    ));
-                }
-                Ok(AssetLockProof::Instant(InstantAssetLockProof::new(
-                    instant_lock,
-                    transaction,
-                    output_index,
-                )))
+            if instant_lock.txid != transaction.txid() {
+                return Err(PlatformWalletError::InvalidIdentityData(
+                    "invitation islock does not lock the funding transaction".to_string(),
+                ));
             }
-            None => {
-                // ChainLock invite: the proof references the outpoint + a
-                // chain-locked core height. Require the funding tx to be
-                // chain-locked so the proof proves finality; the inviter/invitee
-                // retries once the block is chain-locked otherwise.
-                if !fetched.is_chain_locked {
-                    return Err(PlatformWalletError::InvalidIdentityData(
-                        "chainlock invitation funding transaction is not yet chain-locked; \
-                         retry once it confirms"
-                            .to_string(),
-                    ));
-                }
-                let out_point = OutPoint::new(transaction.txid(), output_index);
-                let out_point_bytes: [u8; 36] = out_point.into();
-                Ok(AssetLockProof::Chain(ChainAssetLockProof::new(
-                    fetched.height,
-                    out_point_bytes,
-                )))
+            Ok(AssetLockProof::Instant(InstantAssetLockProof::new(
+                instant_lock,
+                transaction,
+                output_index,
+            )))
+        }
+        None => {
+            // ChainLock invite: the proof references the outpoint + a chain-locked
+            // core height. Require the funding tx to be chain-locked so the proof
+            // proves finality; the inviter/invitee retries once the block is
+            // chain-locked otherwise.
+            if !is_chain_locked {
+                return Err(PlatformWalletError::InvalidIdentityData(
+                    "chainlock invitation funding transaction is not yet chain-locked; \
+                     retry once it confirms"
+                        .to_string(),
+                ));
             }
+            let out_point = OutPoint::new(transaction.txid(), output_index);
+            let out_point_bytes: [u8; 36] = out_point.into();
+            Ok(AssetLockProof::Chain(ChainAssetLockProof::new(
+                height,
+                out_point_bytes,
+            )))
         }
     }
 }
@@ -621,5 +670,102 @@ mod tests {
     fn funding_index_none_for_empty_path() {
         let path = DerivationPath::from(Vec::<ChildNumber>::new());
         assert_eq!(funding_index_from_path(&path), None);
+    }
+
+    // --- assemble_asset_lock_proof: the claim-time proof reconstruction guards ---
+
+    use crate::wallet::identity::crypto::invitation::{voucher_credit_script, ParsedInvitation};
+    use dpp::dashcore::consensus::Encodable;
+    use dpp::dashcore::secp256k1::SecretKey;
+    use dpp::dashcore::transaction::special_transaction::asset_lock::AssetLockPayload;
+    use dpp::dashcore::transaction::special_transaction::TransactionPayload;
+    use dpp::dashcore::{Network, TxOut};
+
+    fn voucher_secret() -> SecretKey {
+        SecretKey::from_slice(&[0x11u8; 32]).unwrap()
+    }
+
+    /// An asset-lock tx whose single credit output pays the voucher key.
+    fn funding_tx(key: &SecretKey) -> Transaction {
+        let payload = AssetLockPayload {
+            version: 1,
+            credit_outputs: vec![TxOut {
+                value: 100_000,
+                script_pubkey: voucher_credit_script(key),
+            }],
+        };
+        Transaction {
+            version: 3,
+            lock_time: 0,
+            input: vec![],
+            output: vec![],
+            special_transaction_payload: Some(TransactionPayload::AssetLockPayloadType(payload)),
+        }
+    }
+
+    fn parsed(
+        key: SecretKey,
+        funding_txid: String,
+        islock_hex: Option<String>,
+    ) -> ParsedInvitation {
+        ParsedInvitation {
+            voucher_key: key,
+            voucher_key_network: Network::Testnet,
+            funding_txid,
+            islock_hex,
+            inviter: None,
+        }
+    }
+
+    /// A backend answering with an unrelated tx (id matches neither byte order) is
+    /// rejected before any proof is built.
+    #[test]
+    fn assemble_rejects_txid_mismatch() {
+        let key = voucher_secret();
+        let tx = funding_tx(&key);
+        let inv = parsed(key, "00".repeat(32), None);
+        let err = assemble_asset_lock_proof(tx, true, 100, &inv).unwrap_err();
+        assert!(format!("{err}").contains("does not match"));
+    }
+
+    /// A ChainLock invite (no islock) whose funding tx is not yet chain-locked is
+    /// rejected — the proof must prove finality.
+    #[test]
+    fn assemble_chainlock_requires_chain_lock() {
+        let key = voucher_secret();
+        let tx = funding_tx(&key);
+        let txid = tx.txid().to_string();
+        let inv = parsed(key, txid, None);
+        let err = assemble_asset_lock_proof(tx, false, 100, &inv).unwrap_err();
+        assert!(format!("{err}").contains("not yet chain-locked"));
+    }
+
+    /// A chain-locked ChainLock invite assembles a ChainLock proof at the tx's
+    /// voucher output.
+    #[test]
+    fn assemble_chainlock_ok_when_locked() {
+        let key = voucher_secret();
+        let tx = funding_tx(&key);
+        let txid = tx.txid().to_string();
+        let inv = parsed(key, txid, None);
+        let proof = assemble_asset_lock_proof(tx, true, 100, &inv).unwrap();
+        assert!(matches!(proof, AssetLockProof::Chain(_)));
+    }
+
+    /// An islock that locks a DIFFERENT tx than the funding tx is rejected (the
+    /// txid-binding guard), so a link can't pair a valid islock with a foreign tx.
+    #[test]
+    fn assemble_rejects_islock_for_wrong_tx() {
+        let key = voucher_secret();
+        let tx = funding_tx(&key);
+        let txid = tx.txid().to_string();
+        // A default islock carries a zeroed txid, which won't equal the funding tx.
+        let mut islock_bytes = Vec::new();
+        InstantLock::default()
+            .consensus_encode(&mut islock_bytes)
+            .unwrap();
+        let inv = parsed(key, txid, Some(hex::encode(islock_bytes)));
+        let err = assemble_asset_lock_proof(tx, true, 100, &inv).unwrap_err();
+        assert!(format!("{err}").contains("does not lock the funding transaction"));
     }
 }

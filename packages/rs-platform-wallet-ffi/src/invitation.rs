@@ -331,8 +331,12 @@ pub struct InvitationPreviewFFI {
     /// Inviter identity id (32 bytes) — always zeroed: the legacy link carries
     /// only the username (`du`), from which the id is resolved via DPNS.
     pub inviter_id: [u8; 32],
-    /// Inviter DPNS username — heap C string, or null when `has_inviter` is
-    /// false. Free with [`crate::platform_wallet_string_free`].
+    /// Inviter DPNS username — heap C string, or null when the link carried no
+    /// `du` username. A null username does **not** imply `has_inviter == false`:
+    /// a metadata-only link (display-name/avatar but no `du`) sets
+    /// `has_inviter = true` with a null username. Consumers must check this
+    /// pointer, not `has_inviter`, before using the username. Free with
+    /// [`crate::platform_wallet_string_free`].
     pub inviter_username: *mut c_char,
     /// Amount locked in the voucher (duffs) — always 0: unknown pre-fetch (the
     /// link carries the funding txid, not the proof), resolved at claim time.

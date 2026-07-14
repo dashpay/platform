@@ -158,7 +158,8 @@ fn invalid(msg: impl Into<String>) -> PlatformWalletError {
 
 /// The P2PKH script the voucher key controls (compressed-pubkey hash160). This
 /// is the selector that binds the voucher key to its funded credit output.
-fn voucher_credit_script(voucher_key: &SecretKey) -> ScriptBuf {
+/// `pub(crate)` so the claim-side proof-assembly tests can build a funding tx.
+pub(crate) fn voucher_credit_script(voucher_key: &SecretKey) -> ScriptBuf {
     let secp = Secp256k1::new();
     let pubkey = PublicKey::from_secret_key(&secp, voucher_key);
     let hash = dashcore::PublicKey::new(pubkey).pubkey_hash();
@@ -348,7 +349,21 @@ pub fn encode_invitation_uri(
         }
     }
 
-    Ok(format!("{INVITATION_SCHEME_PREFIX}?{query}"))
+    let uri = format!("{INVITATION_SCHEME_PREFIX}?{query}");
+    // Reject a link the parser itself would reject. `MAX_STR_BYTES` bounds each
+    // field's RAW bytes, but percent-encoding can expand a field up to 3×, so
+    // several near-cap fields can push the formatted URI past
+    // `MAX_INVITATION_URI_LEN` (the exact cap `parse_invitation_uri` enforces).
+    // Fail here rather than emit a self-unparseable link — the create path
+    // surfaces this as a hard error *after* the funded voucher is recorded, so it
+    // stays reclaimable.
+    if uri.len() > MAX_INVITATION_URI_LEN {
+        return Err(invalid(format!(
+            "invitation link too long ({} chars; max {MAX_INVITATION_URI_LEN})",
+            uri.len()
+        )));
+    }
+    Ok(uri)
 }
 
 /// Parse a legacy-compatible invitation link into a [`ParsedInvitation`].
