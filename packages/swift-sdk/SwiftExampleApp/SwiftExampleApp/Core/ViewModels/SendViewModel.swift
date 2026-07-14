@@ -660,8 +660,12 @@ class SendViewModel: ObservableObject {
                     return
                 }
                 let trimmedMemo = memoText.trimmingCharacters(in: .whitespacesAndNewlines)
+                // Per-operation spend authority: the resolver fires
+                // exactly for this spend (launch binds are
+                // viewing-key only and never read the mnemonic).
                 try await walletManager.shieldedTransfer(
                     walletId: wallet.walletId,
+                    resolver: MnemonicResolver(),
                     account: 0,
                     recipientRaw43: recipientRaw,
                     amount: amountCredits,
@@ -682,6 +686,7 @@ class SendViewModel: ObservableObject {
                 let trimmed = recipientAddress.trimmingCharacters(in: .whitespacesAndNewlines)
                 try await walletManager.shieldedUnshield(
                     walletId: wallet.walletId,
+                    resolver: MnemonicResolver(),
                     account: 0,
                     toPlatformAddress: trimmed,
                     amount: amountCredits
@@ -700,6 +705,7 @@ class SendViewModel: ObservableObject {
                 let trimmed = recipientAddress.trimmingCharacters(in: .whitespacesAndNewlines)
                 try await walletManager.shieldedWithdraw(
                     walletId: wallet.walletId,
+                    resolver: MnemonicResolver(),
                     account: 0,
                     toCoreAddress: trimmed,
                     amount: amountCredits,

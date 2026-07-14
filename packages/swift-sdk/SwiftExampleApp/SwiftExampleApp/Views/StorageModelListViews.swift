@@ -2208,3 +2208,59 @@ struct ShieldedSyncStateStorageListView: View {
         }
     }
 }
+
+// MARK: - PersistentShieldedViewingKey
+
+struct ShieldedViewingKeyStorageListView: View {
+    let network: Network
+
+    // Same Data-isn't-Comparable constraint as the sync-state list:
+    // sort by `accountIndex` only, wallet grouping falls out of
+    // insertion order (one row per subwallet).
+    @Query(sort: [SortDescriptor(\PersistentShieldedViewingKey.accountIndex)])
+    private var records: [PersistentShieldedViewingKey]
+
+    @Query private var allWallets: [PersistentWallet]
+
+    private var walletIdsOnNetwork: Set<Data> {
+        Set(allWallets.lazy
+            .filter { $0.networkRaw == network.rawValue }
+            .map(\.walletId))
+    }
+
+    private var scopedRecords: [PersistentShieldedViewingKey] {
+        let ids = walletIdsOnNetwork
+        return records.filter { ids.contains($0.walletId) }
+    }
+
+    var body: some View {
+        let visible = scopedRecords
+        List {
+            ForEach(visible) { record in
+                NavigationLink(destination: ShieldedViewingKeyStorageDetailView(record: record)) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Text(
+                                record.walletId.prefix(4)
+                                    .map { String(format: "%02x", $0) }.joined()
+                            )
+                            .font(.system(.caption2, design: .monospaced))
+                            Text("acct \(record.accountIndex)")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                            Spacer()
+                        }
+                        Text("FVK: \(record.fvkBytes.count) bytes")
+                            .font(.caption)
+                    }
+                }
+            }
+        }
+        .navigationTitle("Shielded Viewing Keys (\(visible.count))")
+        .overlay {
+            if visible.isEmpty {
+                ContentUnavailableView("No Viewing Keys", systemImage: "eye")
+            }
+        }
+    }
+}
