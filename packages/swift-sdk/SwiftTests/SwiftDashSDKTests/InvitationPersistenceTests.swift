@@ -78,7 +78,7 @@ final class InvitationPersistenceTests: XCTestCase {
         //    `encodeOutPoint(rawBytes:)`, which must equal the upsert's stored
         //    `outPointHex` for the delete to match.
         handler.beginChangeset(walletId: walletId)
-        handler.persistInvitations(walletId: walletId, upserts: [], removed: [rawOutPoint])
+        _ = handler.persistInvitations(walletId: walletId, upserts: [], removed: [rawOutPoint])
         _ = handler.endChangeset(walletId: walletId, success: true)
 
         rows = try fetchRows(container)
@@ -119,6 +119,7 @@ final class InvitationPersistenceTests: XCTestCase {
         .init(
             address: "yTestAddress0000000000000000000000000",
             publicKey: Data(count: 33),
+            keyType: 0,
             poolTypeTag: 0,
             addressIndex: 0,
             isUsed: false,
