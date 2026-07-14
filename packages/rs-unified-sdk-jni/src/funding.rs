@@ -763,10 +763,26 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shielde
         };
         // `decoded` / `ffi_rows` / `fallback` own the pointed-to buffers
         // through the blocking FFI call above.
-        if take_pwffi_error(env, result) {
+        //
+        // ErrorShieldedBroadcastUnconfirmed (17) is NOT routed through
+        // take_pwffi_error: the C ABI writes `out_id` on that outcome too —
+        // the identity may already be live on-chain, so the host must
+        // retain the id and hold its derivation slot instead of retrying
+        // into a duplicate. Return a tagged 33-byte payload
+        // (`[0|1] || identity_id`) so Kotlin can surface a typed
+        // unconfirmed result instead of a generic error that loses the id.
+        let unconfirmed = result.code
+            == platform_wallet_ffi::error::PlatformWalletFFIResultCode::ErrorShieldedBroadcastUnconfirmed;
+        if unconfirmed {
+            let mut result = result;
+            unsafe { platform_wallet_ffi::error::platform_wallet_ffi_result_free(&mut result) };
+        } else if take_pwffi_error(env, result) {
             return ptr::null_mut();
         }
-        env.byte_array_from_slice(&out_id)
+        let mut packed = [0u8; 33];
+        packed[0] = u8::from(unconfirmed);
+        packed[1..].copy_from_slice(&out_id);
+        env.byte_array_from_slice(&packed)
             .map(|a| a.into_raw())
             .unwrap_or(ptr::null_mut())
     })

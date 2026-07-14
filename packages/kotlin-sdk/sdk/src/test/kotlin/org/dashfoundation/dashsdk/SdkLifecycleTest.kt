@@ -73,7 +73,8 @@ class SdkLifecycleTest {
 
     @Test
     fun cancellingTheCloserDoesNotStrandCleanup() = runBlocking {
-        val sdk = Sdk.forLifecycleTest()
+        val cleanupRuns = java.util.concurrent.atomic.AtomicInteger(0)
+        val sdk = Sdk.forLifecycleTest(onCleanup = { cleanupRuns.incrementAndGet() })
         val entered = CompletableDeferred<Unit>()
         val release = CompletableDeferred<Unit>()
 
@@ -97,7 +98,10 @@ class SdkLifecycleTest {
             lease.join()
             closer.join()
         }
-        // Close completed despite the cancellation: new ops are rejected.
+        // Close completed despite the cancellation: cleanup ran exactly
+        // once (the regression was cancellation skipping cleanable.clean())
+        // and new ops are rejected.
+        org.junit.Assert.assertEquals(1, cleanupRuns.get())
         val rejected = runCatching { sdk.queryGate.op { 1 } }
         assertTrue(rejected.exceptionOrNull() is IllegalStateException)
     }

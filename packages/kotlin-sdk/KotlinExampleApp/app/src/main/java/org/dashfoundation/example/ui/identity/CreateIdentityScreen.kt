@@ -272,6 +272,13 @@ fun CreateIdentityScreen(navController: NavHostController) {
                                             fallbackAddress = fallbackAddress,
                                         )
                                     },
+                                    // Ambiguous broadcast: the identity may
+                                    // already be live — record Unconfirmed
+                                    // (slot held) instead of retryable Failed.
+                                    isUnconfirmed = {
+                                        (it as? org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.ShieldedCreateUnconfirmed)
+                                            ?.identityId
+                                    },
                                 )
                             }
                             CreateIdentityFundingSource.AssetLockResume -> {

@@ -1019,7 +1019,7 @@ class PlatformWalletManager(
             "fallbackAddress must be 21 bytes, got ${fallbackAddress.size}"
         }
         require(keys.isNotEmpty()) { "keys must not be empty" }
-        mapNativeErrors {
+        val packed = mapNativeErrors {
             FundingNative.shieldedIdentityCreateFromPool(
                 managerHandle,
                 walletId,
@@ -1031,6 +1031,19 @@ class PlatformWalletManager(
                 signerHandle,
             )
         }
+        check(packed.size == 33) { "expected 33-byte tagged identity id, got ${packed.size}" }
+        val identityId = packed.copyOfRange(1, 33)
+        if (packed[0].toInt() != 0) {
+            // The C ABI wrote the id even though the broadcast outcome is
+            // ambiguous: surface a TYPED unconfirmed error so the caller
+            // holds the derivation slot instead of retrying into a
+            // possibly-live identity.
+            throw DashSdkError.PlatformWallet.ShieldedCreateUnconfirmed(
+                identityId = identityId,
+                message = "shielded identity create broadcast unconfirmed",
+            )
+        }
+        identityId
     }
 
     /**

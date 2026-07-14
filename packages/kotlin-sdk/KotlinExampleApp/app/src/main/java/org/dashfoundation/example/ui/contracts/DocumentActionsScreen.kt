@@ -108,6 +108,10 @@ fun DocumentActionsScreen(
     val textValues = remember { mutableStateMapOf<String, String>() }
     val boolValues = remember { mutableStateMapOf<String, Boolean>() }
     val touchedBools = remember { mutableStateSetOf<String>() }
+    // What the replace prefill seeded per key — a field that was seeded
+    // non-blank and is blank at submit is an explicit REMOVE; a field that
+    // was never seeded and stays blank is ABSENT (preserved by the merge).
+    val seededTexts = remember { mutableStateMapOf<String, String>() }
     var seededForId by remember { mutableStateOf<String?>(null) }
 
     var recipient by remember { mutableStateOf<RecipientSelection?>(null) }
@@ -191,6 +195,8 @@ fun DocumentActionsScreen(
         boolValues.clear()
         touchedBools.clear()
         seedReplaceFields(doc.fields, properties, textValues, boolValues, touchedBools)
+        seededTexts.clear()
+        seededTexts.putAll(textValues)
         seededForId = trimmed
     }
 
@@ -361,6 +367,11 @@ fun DocumentActionsScreen(
                             buildPropertiesJson(
                                 properties, required, textValues, boolValues, touchedBools,
                             ),
+                            // Explicit removals: seeded non-blank, now blank.
+                            clearedKeys = seededTexts.keys.filter { key ->
+                                seededTexts[key].orEmpty().isNotBlank() &&
+                                    textValues[key].orEmpty().isBlank()
+                            }.toSet(),
                         )
                     } catch (e: Exception) {
                         error = "Could not encode document fields: ${e.message}"
@@ -566,14 +577,29 @@ private fun parseActionDocument(json: String): ProbedActionDocument? = try {
 /**
  * Overlay the replace form's encoded values on the document's existing
  * (system-stripped) fields. `set_properties` on the Rust side replaces the
- * whole property map, so any field absent from the form output — composite
- * values the form can't represent, or fields left blank — must carry over
- * from [existing] or it would be silently dropped on-chain.
+ * whole property map, so a field absent from the form output — composite
+ * values the form can't represent, or a field that was never populated —
+ * carries over from [existing]; a field the user explicitly cleared
+ * ([clearedKeys]) is dropped, making preserve / replace / remove three
+ * distinct outcomes.
  */
-private fun mergeReplaceProperties(existing: JsonObject?, formJson: String): String {
+private fun mergeReplaceProperties(
+    existing: JsonObject?,
+    formJson: String,
+    clearedKeys: Set<String> = emptySet(),
+): String {
     if (existing == null) return formJson
     val form = LenientJson.parseToJsonElement(formJson).jsonObject
-    return JsonObject(existing.toMutableMap().apply { putAll(form) }).toString()
+    return JsonObject(
+        existing.toMutableMap().apply {
+            // Tri-state: a key the user explicitly CLEARED (seeded
+            // non-blank → blank) is removed from the replacement; a key the
+            // form simply can't represent (composites) or never seeded
+            // stays preserved; a filled key is overwritten below.
+            clearedKeys.forEach { remove(it) }
+            putAll(form)
+        },
+    ).toString()
 }
 
 /**

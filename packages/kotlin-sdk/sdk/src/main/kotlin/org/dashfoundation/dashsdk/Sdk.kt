@@ -28,11 +28,15 @@ import java.util.concurrent.atomic.AtomicLong
 class Sdk private constructor(
     handle: Long,
     val network: Network,
+    // Test-only observability: runs exactly once when the cleanup fires
+    // (lifecycle tests assert cleanup executed despite cancellation).
+    onCleanup: (() -> Unit)? = null,
 ) : AutoCloseable {
 
     private val handleRef = AtomicLong(handle)
 
-    private val cleanable = NativeCleaner.register(this, HandleCleanup(handleRef))
+    private val cleanable =
+        NativeCleaner.register(this, HandleCleanup(handleRef, onCleanup))
 
     /** Identity queries — mirrors Swift's `sdk.identities`. */
     val identities: org.dashfoundation.dashsdk.queries.Identities by lazy {
@@ -134,12 +138,16 @@ class Sdk private constructor(
     }
 
     /** Runs on [NativeCleaner] or [close]; destroys the handle exactly once. */
-    private class HandleCleanup(private val handleRef: AtomicLong) : Runnable {
+    private class HandleCleanup(
+        private val handleRef: AtomicLong,
+        private val onCleanup: (() -> Unit)? = null,
+    ) : Runnable {
         override fun run() {
             val handle = handleRef.getAndSet(0)
             if (handle != 0L) {
                 SdkNative.destroy(handle)
             }
+            onCleanup?.invoke()
         }
     }
 
@@ -176,7 +184,8 @@ class Sdk private constructor(
          * [HandleCleanup] skip `SdkNative.destroy`, so the queryGate /
          * closeSuspending semantics are testable without the .so loaded.
          */
-        internal fun forLifecycleTest(): Sdk = Sdk(0L, Network.TESTNET)
+        internal fun forLifecycleTest(onCleanup: (() -> Unit)? = null): Sdk =
+            Sdk(0L, Network.TESTNET, onCleanup)
 
         private val json = Json { ignoreUnknownKeys = true }
 

@@ -131,6 +131,25 @@ sealed class DashSdkError(
         }
 
         /**
+         * `ErrorShieldedBroadcastUnconfirmed` (native code 17) on the
+         * shielded identity-create path. The broadcast outcome is AMBIGUOUS
+         * — the identity may already be live on-chain — so [identityId]
+         * (written by the C ABI even on this outcome) MUST be retained and
+         * its derivation slot held (the coordinator's `Unconfirmed` phase).
+         * Retrying would reuse keys for a possibly-live identity. Thrown by
+         * `PlatformWalletManager.shieldedIdentityCreateFromPool` from the
+         * tagged JNI payload (the id never rides in the message text).
+         */
+        class ShieldedCreateUnconfirmed(
+            val identityId: ByteArray,
+            message: String,
+            cause: Throwable? = null,
+        ) : PlatformWallet(
+            "$message (identity may already exist on-chain; hold the slot — do NOT retry)",
+            cause,
+        )
+
+        /**
          * `ErrorTransactionBroadcastUnconfirmed` (native code 20). A core
          * transaction broadcast had an AMBIGUOUS outcome — it may already be
          * on the network. The wallet keeps the spent inputs reserved so a

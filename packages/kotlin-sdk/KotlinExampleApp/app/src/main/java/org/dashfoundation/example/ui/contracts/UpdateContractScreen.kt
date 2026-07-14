@@ -108,7 +108,9 @@ fun UpdateContractScreen(
     // Keywords/description are valid stand-alone updates (the FFI submits
     // them independently of the schema overlays), so a metadata-only edit
     // must be able to enable the button.
-    val hasKeywords = keywords.trim().isNotEmpty()
+    // Derived from the SAME normalized conversion the submit uses:
+    // separator-only input (",", ", ,") must not enable a paid no-op update.
+    val hasKeywords = keywordsAsJsonArray(keywords) != null
     val hasDescription = description.trim().isNotEmpty()
     val canSubmit = owner != null && manager != null && contractIdBytes != null &&
         (hasDocuments || hasTokens || hasGroups || hasKeywords || hasDescription) &&

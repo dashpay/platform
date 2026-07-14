@@ -94,7 +94,7 @@ class Dashpay internal constructor(private val walletHandle: Long,
     suspend fun ignoreContactSender(
         ourIdentityId: ByteArray,
         contactIdentityId: ByteArray,
-    ): Unit = withContext(Dispatchers.IO) {
+    ): Unit = gate.op {
         mapNativeErrors {
             TokensNative.ignoreContactSender(walletHandle, ourIdentityId, contactIdentityId)
         }
@@ -109,7 +109,7 @@ class Dashpay internal constructor(private val walletHandle: Long,
     suspend fun unignoreContactSender(
         ourIdentityId: ByteArray,
         contactIdentityId: ByteArray,
-    ): Unit = withContext(Dispatchers.IO) {
+    ): Unit = gate.op {
         mapNativeErrors {
             TokensNative.unignoreContactSender(walletHandle, ourIdentityId, contactIdentityId)
         }
@@ -156,7 +156,7 @@ class Dashpay internal constructor(private val walletHandle: Long,
     }
 
     /** Sync DashPay profiles for every managed identity. Returns the synced count. */
-    suspend fun syncProfiles(): Int = withContext(Dispatchers.IO) {
+    suspend fun syncProfiles(): Int = gate.op {
         mapNativeErrors { TokensNative.syncDashPayProfiles(walletHandle) }
     }
 
@@ -183,7 +183,7 @@ class Dashpay internal constructor(private val walletHandle: Long,
      * [contacts] call observes the result). Blocking; runs on IO. ← Swift
      * `wallet.syncContactRequests()`.
      */
-    suspend fun syncContactRequests(): Unit = withContext(Dispatchers.IO) {
+    suspend fun syncContactRequests(): Unit = gate.op {
         mapNativeErrors { TokensNative.syncContactRequests(walletHandle) }
     }
 
