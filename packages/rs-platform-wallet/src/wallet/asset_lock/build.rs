@@ -19,9 +19,7 @@ use key_wallet::wallet::managed_wallet_info::managed_account_operations::Managed
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::Wallet;
 
-use crate::changeset::{
-    AccountAddressPoolEntry, AccountRegistrationEntry, PlatformWalletChangeSet,
-};
+use crate::changeset::{AccountRegistrationEntry, PlatformWalletChangeSet};
 use crate::error::PlatformWalletError;
 use crate::wallet::platform_wallet::PlatformWalletInfo;
 
@@ -439,18 +437,10 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             .identity_topup
             .get(&identity_index)
         {
-            for pool in managed.managed_account_type().address_pools() {
-                let addresses: Vec<key_wallet::AddressInfo> =
-                    pool.addresses.values().cloned().collect();
-                if addresses.is_empty() {
-                    continue;
-                }
-                cs.account_address_pools.push(AccountAddressPoolEntry {
-                    account_type,
-                    pool_type: pool.pool_type,
-                    addresses,
-                });
-            }
+            cs.account_address_pools = crate::changeset::account_address_pool_entries(
+                account_type,
+                managed.managed_account_type().address_pools(),
+            );
         }
         if let Err(e) = self.persister.store(cs) {
             // Roll back whichever sides this call inserted: a resident
@@ -523,23 +513,10 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 })
                 .flat_map(|managed| {
                     let account_type = managed.managed_account_type().to_account_type();
-                    managed
-                        .managed_account_type()
-                        .address_pools()
-                        .into_iter()
-                        .filter_map(move |pool| {
-                            let addresses: Vec<key_wallet::AddressInfo> =
-                                pool.addresses.values().cloned().collect();
-                            if addresses.is_empty() {
-                                return None;
-                            }
-                            Some(AccountAddressPoolEntry {
-                                account_type,
-                                pool_type: pool.pool_type,
-                                addresses,
-                            })
-                        })
-                        .collect::<Vec<_>>()
+                    crate::changeset::account_address_pool_entries(
+                        account_type,
+                        managed.managed_account_type().address_pools(),
+                    )
                 })
                 .collect()
         };

@@ -671,9 +671,9 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             };
             self.persister
                 .store(crate::changeset::PlatformWalletChangeSet {
-                    account_address_pools: super::contacts::dashpay_account_pool_entries(
+                    account_address_pools: crate::changeset::account_address_pool_entries(
                         external_account_type,
-                        external_account,
+                        external_account.managed_account_type().address_pools(),
                     ),
                     ..Default::default()
                 })

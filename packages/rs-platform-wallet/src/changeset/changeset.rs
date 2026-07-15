@@ -31,7 +31,7 @@ use dash_sdk::platform::address_sync::AddressFunds;
 use dpp::prelude::AssetLockProof;
 use key_wallet::account::AccountType;
 use key_wallet::bip32::ExtendedPubKey;
-use key_wallet::managed_account::address_pool::AddressPoolType;
+use key_wallet::managed_account::address_pool::{AddressPool, AddressPoolType};
 use key_wallet::managed_account::transaction_record::TransactionRecord;
 use key_wallet::{AddressInfo, Network, PlatformP2PKHAddress, Utxo};
 
@@ -1246,6 +1246,38 @@ pub struct AccountAddressPoolEntry {
     pub pool_type: AddressPoolType,
     /// Snapshot of every `AddressInfo` entry in the pool at emit time.
     pub addresses: Vec<AddressInfo>,
+}
+
+/// Snapshot the non-empty address pools of one account into
+/// [`AccountAddressPoolEntry`] rows.
+///
+/// Pool snapshots are whole-pool and last-write-wins on the persistence
+/// side, so each emission carries the full pool state; empty pools are
+/// dropped so the FFI receiver keeps its "skip empty pools" semantics.
+/// Callers pass `account.managed_account_type().address_pools()` — this
+/// works for any account shape (`ManagedCoreFundsAccount`,
+/// `ManagedAccountRef`, …) since only the resolved pools are needed.
+/// Shared by wallet registration, the DashPay registration/payment-rotation
+/// path, the identity-top-up account deriver, and the asset-lock
+/// funding-index persistence.
+pub(crate) fn account_address_pool_entries<'a>(
+    account_type: AccountType,
+    pools: impl IntoIterator<Item = &'a AddressPool>,
+) -> Vec<AccountAddressPoolEntry> {
+    pools
+        .into_iter()
+        .filter_map(|pool| {
+            let addresses: Vec<AddressInfo> = pool.addresses.values().cloned().collect();
+            if addresses.is_empty() {
+                return None;
+            }
+            Some(AccountAddressPoolEntry {
+                account_type,
+                pool_type: pool.pool_type,
+                addresses,
+            })
+        })
+        .collect()
 }
 
 // ---------------------------------------------------------------------------
