@@ -116,6 +116,20 @@ class WalletStorage(
         store.edit { it.remove(privateKeyKey(pubkeyHex)) }
     }
 
+    /**
+     * Remove every `privkey.<pubkeyHex>` entry in [pubkeyHexes] in ONE
+     * DataStore `edit` — a single atomic commit, so either every alias is
+     * removed or none are. The wallet-deletion sweep depends on this:
+     * per-key deletes commit independently, and a failure between them
+     * would leave a live wallet missing some of its signing keys.
+     */
+    suspend fun deletePrivateKeys(pubkeyHexes: Collection<String>) {
+        if (pubkeyHexes.isEmpty()) return
+        store.edit { prefs ->
+            for (pubkeyHex in pubkeyHexes) prefs.remove(privateKeyKey(pubkeyHex))
+        }
+    }
+
     suspend fun hasPrivateKey(pubkeyHex: String): Boolean =
         store.data.first().contains(privateKeyKey(pubkeyHex))
 

@@ -47,9 +47,16 @@ internal object WalletManagerNative {
     /**
      * Create a wallet from a BIP39 mnemonic.
      *
+     * Both out-buffers are caller-allocated and validated by the native
+     * side BEFORE the wallet is created: creation synchronously commits
+     * Room rows through the persistence callbacks, so no fallible JNI
+     * allocation may sit between that commit and the handle/id reaching
+     * Kotlin (a post-commit publish failure would strand rows Kotlin has
+     * no id to clean up).
+     *
      * @param outWalletHandle a `LongArray(1)` receiving the created
      *   `PlatformWallet` handle.
-     * @return the 32-byte wallet id.
+     * @param outWalletId a `ByteArray(32)` receiving the wallet id.
      */
     external fun createWalletFromMnemonic(
         managerHandle: Long,
@@ -57,7 +64,8 @@ internal object WalletManagerNative {
         network: Int,
         createDefaultAccounts: Boolean,
         outWalletHandle: LongArray,
-    ): ByteArray
+        outWalletId: ByteArray,
+    )
 
     /**
      * Create a wallet from a BIP39 mnemonic with an explicit SPV
@@ -70,7 +78,9 @@ internal object WalletManagerNative {
      *   when [hasBirthHeightOverride] is `true` (reinterpreted as `u32`);
      *   imported/restored mnemonics pass `0` for a full historical scan.
      * @param outWalletHandle a `LongArray(1)` receiving the created handle.
-     * @return the 32-byte wallet id.
+     * @param outWalletId a `ByteArray(32)` receiving the wallet id —
+     *   caller-allocated and pre-validated for the same reason as
+     *   [createWalletFromMnemonic].
      */
     external fun createWalletFromMnemonicWithBirthHeight(
         managerHandle: Long,
@@ -80,7 +90,8 @@ internal object WalletManagerNative {
         hasBirthHeightOverride: Boolean,
         birthHeightOverride: Int,
         outWalletHandle: LongArray,
-    ): ByteArray
+        outWalletId: ByteArray,
+    )
 
     /** Rehydrate the manager from its persister (fires `onLoadWalletList`). */
     external fun loadFromPersistor(managerHandle: Long)
