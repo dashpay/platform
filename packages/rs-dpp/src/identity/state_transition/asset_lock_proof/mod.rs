@@ -34,6 +34,19 @@ pub mod validate_asset_lock_transaction_structure;
 // unions exposed to JS (see `AddressWitness`, `AddressFundsFeeStrategyStep`).
 // Bincode `Encode`/`Decode` derives are independent of serde, so consensus
 // binary format is unaffected.
+/// Proof that a Core asset-lock transaction is final, used to fund identities.
+///
+/// **Internally-tagged** serde enum (`#[serde(tag = "$type")]`) that **also**
+/// derives native bincode `Encode`/`Decode`. Through bincode, use only the
+/// **native** codec (`bincode::encode_to_vec` / `bincode::decode_from_slice`),
+/// never `bincode::serde`: the serde bridge is non-self-describing, so it writes
+/// a silently-unreadable blob and then fails to decode with `AnyNotSupported`
+/// (finding the `$type` tag needs `deserialize_any`, which bincode's serde
+/// deserializer does not support). The self-describing serde paths —
+/// `platform_value` value-conversion and JSON — are fine. This exact class bit
+/// the wallet-storage blob codec (#4133, fixed with `AssetLockEntryWire`) and,
+/// earlier, `IdentityPublicKey` (fixed with `IdentityKeyWire`). The three-way
+/// contract is pinned by `bincode_serde_hazard` in this module's tests.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Encode, Decode)]
 #[serde(tag = "$type", rename_all = "camelCase")]
 #[allow(clippy::large_enum_variant)]
@@ -551,4 +564,86 @@ mod tests {
     // The `try_into_value` module previously exercised the now-deleted
     // `TryInto<Value>` impls (which produced untagged `Value`). Canonical
     // `ValueConvertible::to_object` is exercised in `try_from_value` above.
+
+    /// Characterization guard for #4133: pins the three-way serde/bincode
+    /// contract of this internally-tagged enum (see the type-level doc
+    /// comment). If any leg flips — native round-trip breaks, the
+    /// self-describing value path breaks, or the `bincode::serde` bridge
+    /// starts (or stops) failing at decode — this module fires, flagging that
+    /// the enum's codec discipline regressed.
+    mod bincode_serde_hazard {
+        use super::*;
+        use crate::identity::state_transition::asset_lock_proof::instant::InstantAssetLockProof;
+
+        fn chain_proof() -> AssetLockProof {
+            AssetLockProof::Chain(ChainAssetLockProof::new(12_345, [0x07u8; 36]))
+        }
+
+        /// A fully-populated `Instant` variant (non-default inner fields) so the
+        /// round-trip legs would catch a silent variant flip or inner-zeroing,
+        /// not just the trivially-empty default.
+        fn instant_proof() -> AssetLockProof {
+            let mut inner = InstantAssetLockProof::default();
+            inner.transaction.version = 3;
+            inner.transaction.lock_time = 111;
+            inner.output_index = 2;
+            AssetLockProof::Instant(inner)
+        }
+
+        /// Native bincode `Encode`/`Decode` — the sanctioned codec — round-trips
+        /// both variants and consumes the whole buffer.
+        #[test]
+        fn native_bincode_round_trips_both_variants() {
+            let cfg = bincode::config::standard();
+            for original in [chain_proof(), instant_proof()] {
+                let bytes = bincode::encode_to_vec(&original, cfg).expect("native encode");
+                let (decoded, consumed): (AssetLockProof, usize) =
+                    bincode::decode_from_slice(&bytes, cfg).expect("native decode");
+                assert_eq!(decoded, original, "native bincode must round-trip");
+                assert_eq!(
+                    consumed,
+                    bytes.len(),
+                    "native decode must consume the whole buffer"
+                );
+            }
+        }
+
+        /// The self-describing `platform_value` value-conversion path round-trips
+        /// both variants — the `$type` tag is safe there because the format is
+        /// self-describing, unlike the `bincode::serde` bridge below.
+        #[cfg(feature = "value-conversion")]
+        #[test]
+        fn platform_value_round_trips_both_variants() {
+            use crate::serialization::ValueConvertible;
+            for original in [chain_proof(), instant_proof()] {
+                let value = original.to_object().expect("to_object");
+                let recovered = AssetLockProof::from_object(value).expect("from_object");
+                assert_eq!(recovered, original, "platform_value must round-trip");
+            }
+        }
+
+        /// The trap this whole guard exists for: the `bincode::serde` bridge
+        /// *encodes* the internally-tagged enum without complaint (write-once)
+        /// but can never *decode* it — resolving the `$type` tag needs
+        /// `deserialize_any`, which bincode's non-self-describing serde
+        /// deserializer rejects. Decode fails deterministically with
+        /// `AnyNotSupported`, never silently. This is exactly the corruption
+        /// that bit the wallet-storage blob codec in #4133.
+        #[test]
+        fn bincode_serde_encodes_but_decode_fails_with_any_not_supported() {
+            let cfg = bincode::config::standard();
+            // Encoding "succeeds" — that is the silent write-once corruption.
+            let bytes = bincode::serde::encode_to_vec(chain_proof(), cfg)
+                .expect("bincode::serde encode writes a read-never blob");
+            let result = bincode::serde::decode_from_slice::<AssetLockProof, _>(&bytes, cfg);
+            match result {
+                Err(bincode::error::DecodeError::Serde(
+                    bincode::serde::DecodeError::AnyNotSupported,
+                )) => {}
+                other => {
+                    panic!("bincode::serde decode must fail with AnyNotSupported, got: {other:?}")
+                }
+            }
+        }
+    }
 }

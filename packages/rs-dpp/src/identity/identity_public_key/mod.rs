@@ -35,6 +35,19 @@ pub type KeyID = u32;
 pub type KeyCount = KeyID;
 pub type TimestampMillis = u64;
 
+/// A public key belonging to an identity, with its purpose, security level, and
+/// key material.
+///
+/// **Internally-tagged** serde enum (`#[serde(tag = "$formatVersion")]`) that
+/// **also** derives native bincode `Encode`/`Decode`. Through bincode, use only
+/// the **native** codec (`bincode::encode_to_vec` / `bincode::decode_from_slice`),
+/// never `bincode::serde`: the serde bridge is non-self-describing, so it writes
+/// a silently-unreadable blob and then fails to decode with `AnyNotSupported`
+/// (finding the `$formatVersion` tag needs `deserialize_any`, unsupported by
+/// bincode's serde deserializer). The self-describing serde paths
+/// (`platform_value` value-conversion, JSON) are fine. This exact class bit the
+/// wallet-storage `identity_keys` blob codec, fixed with `IdentityKeyWire`; the
+/// same shape later recurred for `AssetLockProof` (#4133, `AssetLockEntryWire`).
 #[derive(
     Debug,
     Clone,
