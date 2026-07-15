@@ -21,6 +21,12 @@ pub trait Signable {
     fn signable_bytes(&self) -> Result<Vec<u8>, ProtocolError>;
 }
 
+/// Canonical whole-value binary codec for a dpp type. If you're persisting
+/// or wire-encoding a dpp type in a downstream crate (wallet storage,
+/// caches, IPC), prefer this — or native bincode `Encode`/`Decode` where the
+/// type derives them — over a generic serde bridge such as `bincode::serde`,
+/// which cannot decode this crate's internally-tagged enums. See
+/// `docs/dpp-serialization-convention.md` at the repo root.
 pub trait PlatformSerializable {
     type Error;
     fn serialize_to_bytes(&self) -> Result<Vec<u8>, Self::Error>;
@@ -60,6 +66,9 @@ pub trait PlatformSerializableWithPlatformVersion {
     }
 }
 
+/// Read half of [`PlatformSerializable`]. See its docs and
+/// `docs/dpp-serialization-convention.md` for downstream persistence
+/// guidance.
 pub trait PlatformDeserializable {
     fn deserialize_from_bytes(data: &[u8]) -> Result<Self, ProtocolError>
     where

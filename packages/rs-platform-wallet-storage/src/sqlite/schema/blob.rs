@@ -5,6 +5,13 @@
 //! evolution is gated by the refinery migration version on the
 //! database as a whole — there is no per-blob revision tag.
 //!
+//! **Persisting a value that embeds an `rs-dpp` type through [`encode`] /
+//! [`decode`]?** `bincode::serde` cannot service `deserialize_any`, so any
+//! dpp type (or transitive field) that is internally-tagged, `untagged`, or
+//! `flatten`-shaped will encode fine here and then never decode again. See
+//! `docs/dpp-serialization-convention.md` at the repo root for the required
+//! wire-type pattern and round-trip test before adding one.
+//!
 //! [`encode_outpoint`] / [`decode_outpoint`] encode a `dashcore::OutPoint`
 //! the same way — via bincode-serde — for the `outpoint` PRIMARY KEY
 //! columns (`core_utxos`, `asset_locks`). The bytes are a stable but not
