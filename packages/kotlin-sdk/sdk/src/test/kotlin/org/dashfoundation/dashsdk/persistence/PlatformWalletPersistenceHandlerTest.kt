@@ -410,6 +410,13 @@ class PlatformWalletPersistenceHandlerTest {
         val calls = mutableListOf<Triple<ByteArray, Int, Int>>()
         var lastPublicKey: ByteArray? = null
         val deletedAliases = mutableListOf<String>()
+
+        /** Aliases that existed BEFORE the round (app-stored, re-derives). */
+        val preExisting = mutableSetOf<String>()
+
+        /** Simulate an atomic DataStore deletion failure. */
+        var failDeletions = false
+
         override fun deriveAndStore(
             walletId: ByteArray,
             publicKeyData: ByteArray,
@@ -422,8 +429,11 @@ class PlatformWalletPersistenceHandlerTest {
         }
 
         override fun deleteStored(pubkeyHexes: Collection<String>) {
+            if (failDeletions) throw IllegalStateException("simulated DataStore edit failure")
             deletedAliases.addAll(pubkeyHexes)
         }
+
+        override fun hasStored(pubkeyHex: String): Boolean = pubkeyHex in preExisting
     }
 
     /** Seed the wallet + identity rows a public-key row FKs onto. */
@@ -552,6 +562,64 @@ class PlatformWalletPersistenceHandlerTest {
         assertEquals(listOf(pubkey.toHex()), deriver.deletedAliases)
         assertTrue(handler.pendingAliasesFor(walletId).isEmpty())
         assertNull(db.publicKeyDao().getByIdentityAndKeyId(identityId.toBase58String(), 0))
+    }
+
+    @Test
+    fun rolledBackRoundDoesNotScrubPreExistingAliases() = runTest {
+        val deriver = FakeDeriver()
+        handler = PlatformWalletPersistenceHandler(db, Dispatchers.Unconfined, deriver)
+
+        val identityId = ByteArray(32) { 17 }
+        seedIdentity(identityId)
+        val pubkey = ByteArray(33) { 12 }
+        // The alias predates the round (add-key flows store the scalar
+        // before Rust persistence begins; disable_keys re-emits
+        // breadcrumbs for existing keys) — a re-derive overwrite must not
+        // become a rollback-deletion candidate.
+        deriver.preExisting.add(pubkey.toHex())
+
+        handler.onChangesetBegin(walletId)
+        handler.onPersistIdentityKeyUpsert(
+            walletId, identityId, 0, 0, 0, 0, false, false, 0,
+            pubkey, ByteArray(20), true, walletId,
+            true, 0, 0, 0, ByteArray(32), null,
+        )
+        assertTrue(handler.pendingAliasesFor(walletId).isEmpty())
+        handler.onChangesetEnd(walletId, success = false)
+
+        assertTrue(deriver.deletedAliases.isEmpty())
+    }
+
+    @Test
+    fun failedAliasDeletionRetainsCleanupStateUntilRetrySucceeds() = runTest {
+        val deriver = FakeDeriver()
+        handler = PlatformWalletPersistenceHandler(db, Dispatchers.Unconfined, deriver)
+
+        val identityId = ByteArray(32) { 18 }
+        seedIdentity(identityId)
+        val pubkey = ByteArray(33) { 13 }
+
+        deriver.failDeletions = true
+        handler.onChangesetBegin(walletId)
+        handler.onPersistIdentityKeyUpsert(
+            walletId, identityId, 0, 0, 0, 0, false, false, 0,
+            pubkey, ByteArray(20), true, walletId,
+            true, 0, 0, 0, ByteArray(32), null,
+        )
+        handler.onChangesetEnd(walletId, success = false)
+
+        // Deletion failed atomically: nothing was deleted, and the cleanup
+        // record survives so the wallet-deletion sweep (or a retry) can
+        // still find the orphan — never silently dropped.
+        assertTrue(deriver.deletedAliases.isEmpty())
+        assertEquals(setOf(pubkey.toHex()), handler.pendingAliasesFor(walletId))
+
+        // The next round retries the orphan cleanup and succeeds.
+        deriver.failDeletions = false
+        handler.onChangesetBegin(walletId)
+        assertEquals(listOf(pubkey.toHex()), deriver.deletedAliases)
+        assertTrue(handler.pendingAliasesFor(walletId).isEmpty())
+        handler.onChangesetEnd(walletId, success = true)
     }
 
     @Test

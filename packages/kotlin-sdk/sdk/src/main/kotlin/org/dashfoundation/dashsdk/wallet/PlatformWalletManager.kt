@@ -510,6 +510,15 @@ class PlatformWalletManager(
                     mnemonicStored =
                         runCatching { walletStorage.storeMnemonic(walletId, mnemonic) }.isSuccess
                 }
+                if (!mnemonicStored) {
+                    // Neither copy of the phrase is durable. Seedless rows
+                    // must not survive if they can possibly be removed —
+                    // retry the cascade once before reporting.
+                    if (runCatching { persistenceHandler.deleteWalletData(walletId) }.isSuccess) {
+                        managed.close()
+                        throw t
+                    }
+                }
                 managed.close()
                 val disposition = if (mnemonicStored) {
                     "the mnemonic is stored, so the wallet stays recoverable — " +

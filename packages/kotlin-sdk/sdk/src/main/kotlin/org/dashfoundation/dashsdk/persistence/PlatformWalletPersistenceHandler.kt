@@ -153,13 +153,21 @@ class PlatformWalletPersistenceHandler(
     private val buffers = HashMap<String, ChangesetBuffer>()
 
     /**
-     * `privkey.*` alias hexes written by [PrivateKeyDeriver.deriveAndStore]
-     * during the currently-OPEN round, per walletId hex. The alias write
-     * happens immediately (the identifier must be baked into the staged
-     * row) while the row itself is buffered until [onChangesetEnd] — so
-     * between those points the alias exists with no committed row to
-     * discover it by. This map is the fence over that gap:
-     *  - a FAILED round deletes its recorded aliases (their rows never
+     * `privkey.*` alias hexes NEWLY CREATED by
+     * [PrivateKeyDeriver.deriveAndStore] during the currently-OPEN round,
+     * per walletId hex. Only aliases that did NOT exist before the write
+     * are recorded ([PrivateKeyDeriver.hasStored] checked first) —
+     * re-derives that overwrite an already-valid scalar (add-key flows
+     * that store before Rust persistence begins, `disable_keys`
+     * re-emitting breadcrumbs on existing keys) must never become
+     * rollback-deletion candidates.
+     *
+     * The alias write happens immediately (the identifier must be baked
+     * into the staged row) while the row itself is buffered until
+     * [onChangesetEnd] — so between those points the alias exists with no
+     * committed row to discover it by. This map is the fence over that
+     * gap:
+     *  - a FAILED round deletes the aliases it created (their rows never
      *    commit — without this they'd be stranded ciphertext forever);
      *  - the wallet-deletion sweep unions [pendingAliasesFor] into its
      *    Room enumeration so a mid-round wipe still reaches them;
@@ -170,12 +178,75 @@ class PlatformWalletPersistenceHandler(
     private val pendingRoundAliases = HashMap<String, MutableSet<String>>()
 
     /**
-     * Alias hexes written during the wallet's open round (empty when no
-     * round is open). Caller must hold [callbackExclusion] (the
-     * wallet-deletion sweep does, via [withCallbackExclusion]).
+     * Round-created aliases whose rollback deletion FAILED, per walletId
+     * hex. Cleanup state is never dropped until an atomic deletion
+     * succeeds: entries are retried at the next [onChangesetBegin] and
+     * remain discoverable by the wallet-deletion sweep via
+     * [pendingAliasesFor]. All access under [callbackExclusion].
      */
-    internal fun pendingAliasesFor(walletId: ByteArray): Set<String> =
-        pendingRoundAliases[walletId.toHex()]?.toSet() ?: emptySet()
+    private val orphanedAliases = HashMap<String, MutableSet<String>>()
+
+    /**
+     * Aliases created during the wallet's open round plus any orphans
+     * whose earlier cleanup failed (empty when neither exists). Caller
+     * must hold [callbackExclusion] (the wallet-deletion sweep does, via
+     * [withCallbackExclusion]).
+     */
+    internal fun pendingAliasesFor(walletId: ByteArray): Set<String> {
+        val key = walletId.toHex()
+        return (pendingRoundAliases[key].orEmpty() + orphanedAliases[key].orEmpty()).toSet()
+    }
+
+    /**
+     * Delete round-created aliases whose rows never committed, returning
+     * the hexes that could NOT be deleted (never silently dropped).
+     * Aliases that a row committed by ANOTHER round now references (same
+     * pubkey persisted concurrently — its identifier points at the same
+     * `privkey.*` entry) are RETAINED and leave tracking: they are
+     * legitimately discoverable through that committed row, and deleting
+     * them would break its signing. The batch delete is one atomic
+     * DataStore edit, so a failure deletes nothing. Caller must hold
+     * [callbackExclusion].
+     */
+    private fun scrubAliases(hexes: Set<String>): MutableSet<String> {
+        if (hexes.isEmpty()) return mutableSetOf()
+        val toDelete = hexes.filterTo(mutableSetOf()) { hex ->
+            runBlockingResult {
+                database.publicKeyDao().getByPublicKeyData(hex.hexToByteArray())
+                    .none { it.privateKeyKeychainIdentifier != null }
+            }
+        }
+        if (toDelete.isEmpty()) return mutableSetOf()
+        return try {
+            privateKeyDeriver?.deleteStored(toDelete)
+            mutableSetOf()
+        } catch (t: Throwable) {
+            Log.w(
+                TAG,
+                "failed to delete ${toDelete.size} rolled-back alias(es); retained for retry",
+                t,
+            )
+            toDelete
+        }
+    }
+
+    /** Scrub the wallet's round-created aliases; keep failures as orphans. */
+    private fun scrubPendingAliases(walletIdHex: String) {
+        val pending = pendingRoundAliases.remove(walletIdHex) ?: return
+        val remaining = scrubAliases(pending)
+        if (remaining.isNotEmpty()) {
+            orphanedAliases.getOrPut(walletIdHex) { mutableSetOf() }.addAll(remaining)
+        }
+    }
+
+    /** Retry any earlier failed cleanup for this wallet. */
+    private fun retryOrphanedAliases(walletIdHex: String) {
+        val orphans = orphanedAliases.remove(walletIdHex) ?: return
+        val remaining = scrubAliases(orphans)
+        if (remaining.isNotEmpty()) {
+            orphanedAliases[walletIdHex] = remaining
+        }
+    }
 
     /**
      * Serializes every persistence callback against compound external
@@ -220,11 +291,13 @@ class PlatformWalletPersistenceHandler(
 
     override fun onChangesetBegin(walletId: ByteArray): Int = guarded {
         val key = walletId.toHex()
-        buffers[key] = ChangesetBuffer()
-        // A leftover here means the previous round never reached its end
-        // callback (abandoned mid-round) — its rows never committed, so
-        // its aliases are orphans; scrub them like a rolled-back round.
+        // A pending leftover here means the previous round never reached
+        // its end callback (abandoned mid-round) — its rows never
+        // committed, so its aliases are orphans; scrub them like a
+        // rolled-back round. Then retry any earlier failed cleanup.
         scrubPendingAliases(key)
+        retryOrphanedAliases(key)
+        buffers[key] = ChangesetBuffer()
         0
     }
 
@@ -259,14 +332,6 @@ class PlatformWalletPersistenceHandler(
         0
     }
 
-    /** Delete + forget the open round's deriver-written aliases. */
-    private fun scrubPendingAliases(walletIdHex: String) {
-        val pending = pendingRoundAliases.remove(walletIdHex)
-        if (!pending.isNullOrEmpty()) {
-            runCatching { privateKeyDeriver?.deleteStored(pending) }
-                .onFailure { Log.w(TAG, "failed to scrub rolled-back round's aliases", it) }
-        }
-    }
 
     // on_store_fn / on_flush_fn have no Swift analog — they are
     // FFIPersister-level notifications. The begin/end bracket is the only
@@ -898,6 +963,16 @@ class PlatformWalletPersistenceHandler(
         val walletStillPersisted = buffers.containsKey(roundKey) ||
             runBlockingResult { database.walletDao().getByWalletId(walletId) != null }
         val deriver = privateKeyDeriver
+        // Whether the alias already exists BEFORE this (re-)derive: add-key
+        // flows store the scalar before Rust persistence begins, and
+        // existing-key operations (disable_keys) re-emit breadcrumbs — an
+        // overwrite of an already-valid scalar must never become a
+        // rollback-deletion candidate. On a failed check, assume it
+        // existed (never wrongly delete; at worst the wallet-deletion
+        // sweep still reaches it through the committed row).
+        val pubkeyHex = publicKeyData.toHex()
+        val existedBefore = deriver == null ||
+            runCatching { deriver.hasStored(pubkeyHex) }.getOrDefault(true)
         val derivedKeychainId: String? =
             if (derivationIndicesIsSome && deriver != null && !readOnly && walletStillPersisted) {
                 runCatching {
@@ -915,11 +990,11 @@ class PlatformWalletPersistenceHandler(
                 null
             }
         // While a round is open the row carrying this identifier is only
-        // BUFFERED — record the alias so a rolled-back round (or a wallet
-        // wipe racing the round) can still find and delete it.
-        if (derivedKeychainId != null && buffers.containsKey(roundKey)) {
+        // BUFFERED — record a NEWLY-CREATED alias so a rolled-back round
+        // (or a wallet wipe racing the round) can still find and delete it.
+        if (derivedKeychainId != null && !existedBefore && buffers.containsKey(roundKey)) {
             pendingRoundAliases.getOrPut(roundKey) { mutableSetOf() }
-                .add(publicKeyData.toHex())
+                .add(pubkeyHex)
         }
 
         stage(walletId) { db ->
@@ -2149,11 +2224,12 @@ class PlatformWalletPersistenceHandler(
     internal suspend fun deleteWalletDataLocked(walletId: ByteArray) = runBlockingCatching {
         // Discard any open changeset round for this wallet: its staged ops
         // would otherwise commit AFTER the cascade below and resurrect
-        // rows for the deleted wallet. The round's pending-alias record is
-        // dropped too — the wallet-deletion sweep has already consumed it
-        // (unioned into its enumeration) before calling this.
+        // rows for the deleted wallet. The pending/orphaned alias records
+        // are dropped too — the wallet-deletion sweep has already consumed
+        // them (unioned into its enumeration) before calling this.
         buffers.remove(walletId.toHex())
         pendingRoundAliases.remove(walletId.toHex())
+        orphanedAliases.remove(walletId.toHex())
         database.withTransaction {
             val walletRow = database.walletDao().getByWalletId(walletId)
             val walletNetwork = walletRow?.networkRaw
@@ -2291,8 +2367,18 @@ interface PrivateKeyDeriver {
      * keys — the rollback counterpart of [deriveAndStore], used when a
      * changeset round that wrote aliases fails (their rows never commit,
      * so the ciphertext would otherwise be stranded undiscoverably).
+     * Must be atomic (all-or-nothing) and must THROW on failure — the
+     * caller keeps the cleanup record alive until a deletion succeeds.
      */
     fun deleteStored(pubkeyHexes: Collection<String>)
+
+    /**
+     * Whether a scalar is already stored under [pubkeyHex]. Used to
+     * distinguish a round that CREATES an alias (rollback must delete it)
+     * from one that overwrites an already-valid scalar (rollback must
+     * leave it alone).
+     */
+    fun hasStored(pubkeyHex: String): Boolean
 }
 
 // ── Free functions (unit-testable, no `this`) ─────────────────────────
