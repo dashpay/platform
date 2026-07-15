@@ -10,6 +10,11 @@ struct AccountDetailView: View {
     let wallet: PersistentWallet
     let account: PersistentAccount
 
+    /// Masternodes for the provider-key-address usage subtitle. Matched
+    /// by base58 address (Rust-encoded owner/voting address ↔ the
+    /// account's persisted address), so no key hashing happens in Swift.
+    @Query private var allMasternodes: [PersistentMasternode]
+
     @State private var errorMessage: String?
     @State private var copiedText: String?
     @State private var showingPrivateKey: String?
@@ -476,15 +481,18 @@ struct AccountDetailView: View {
     }
 
     /// Group this account's persisted addresses by pool tag, in a
-    /// stable display order (External → Internal → Absent → Absent
-    /// Hardened). Empty pools are skipped.
+    /// stable display order (External → Internal → Additional →
+    /// Additional Hardened). Empty pools are skipped. Names come from
+    /// `PersistentCoreAddress.poolTypeName` so all address lists share
+    /// one taxonomy (tags 2/3 are the on-demand "Additional" pools where
+    /// provider keys live — no Rust "Absent" jargon).
     private func addressSections() -> [(String, [PersistentCoreAddress])] {
         let grouped = Dictionary(grouping: account.coreAddresses) { $0.poolTypeTag }
         let order: [(UInt8, String)] = [
             (0, "External"),
             (1, "Internal"),
-            (2, "Absent"),
-            (3, "Absent (Hardened)"),
+            (2, "Additional"),
+            (3, "Additional (Hardened)"),
         ]
         return order.compactMap { tag, name in
             guard let bucket = grouped[tag], !bucket.isEmpty else { return nil }
@@ -591,7 +599,11 @@ struct AccountDetailView: View {
                     .foregroundColor(.primary)
                 HStack(spacing: 6) {
                     Text("#\(addr.addressIndex)")
-                    if addr.isUsed { Text("• used") }
+                    if let usage = masternodeUsage(for: addr) {
+                        Text("• \(usage)")
+                    } else if addr.isUsed {
+                        Text("• used")
+                    }
                     if addr.balance > 0 {
                         Text("• \(formatBalance(addr.balance))")
                     }
@@ -606,6 +618,47 @@ struct AccountDetailView: View {
         }
         .padding(.vertical, 4)
         .contentShape(Rectangle())
+    }
+
+    /// Masternode-usage subtitle for a provider key address. Joins the
+    /// address (base58) to the matching masternode field — the "join by key
+    /// hash" without any Swift key hashing:
+    ///   * owner / voting (accountType 9 / 8) ↔ `owner/votingAddress`
+    ///     (real on-chain addresses), and
+    ///   * operator / platform-node (accountType 10 / 11) ↔
+    ///     `operator/platformNodeAddress` (base58 pseudo-addresses Rust
+    ///     encoded from the payload key — these keys have no on-chain
+    ///     address, so this is the only way to surface their usage).
+    /// `nil` for non-provider-key accounts or unmatched addresses, so the
+    /// caller falls back to "used".
+    private func masternodeUsage(for addr: PersistentCoreAddress) -> String? {
+        // 8 ProviderVotingKeys, 9 ProviderOwnerKeys, 10 ProviderOperatorKeys,
+        // 11 ProviderPlatformKeys.
+        let addressMatches: (PersistentMasternode) -> Bool
+        switch account.accountType {
+        case 8, 9:
+            addressMatches = {
+                $0.ownerAddress == addr.address || $0.votingAddress == addr.address
+            }
+        case 10:
+            addressMatches = { $0.operatorPseudoAddress == addr.address }
+        case 11:
+            addressMatches = { $0.platformNodeAddress == addr.address }
+        default:
+            return nil
+        }
+
+        let wid = wallet.walletId
+        let matches = allMasternodes.filter { $0.walletId == wid && addressMatches($0) }
+        guard let first = matches.min(by: { $0.orderIndex < $1.orderIndex }) else {
+            return nil
+        }
+        let count = matches.count
+        let times = count == 1 ? "once" : (count == 2 ? "twice" : "\(count) times")
+        if let ip = first.serviceAddress {
+            return "used \(times) at \(ip) · \(first.displayTitle)"
+        }
+        return "used \(times) on \(first.displayTitle)"
     }
 
     private func emptyAddressesCard() -> some View {
@@ -750,20 +803,30 @@ struct AccountDetailView: View {
         }
     }
 
-    /// The persisted, pre-derived platform-node keys mapped into the
-    /// `ProviderDerivedKey` display shape (public key + node id as hex).
-    /// Empty for non-platform-node accounts and for wallets created
-    /// before the batch was persisted (those use the resolver-based
-    /// "Load Keys" fallback). Private keys stay `nil` here — a reveal
-    /// re-derives per index through `providerKeyAtIndex`.
+    /// The persisted platform-node keys mapped into the
+    /// `ProviderDerivedKey` display shape (public key + node id as hex),
+    /// read straight from this account's typed `PersistentCoreAddress`
+    /// rows — the Ed25519 entries (`keyType == 2`) populated at wallet
+    /// registration. Empty for non-platform-node accounts and for wallets
+    /// created before those rows were persisted (those use the
+    /// resolver-based "Load Keys" fallback). The node id is recomputed
+    /// from the public key via the pure Rust bridge; private keys stay
+    /// `nil` here — a reveal re-derives per index through
+    /// `providerKeyAtIndex`.
     private var persistedPlatformNodeKeys: [ManagedPlatformWallet.ProviderDerivedKey] {
-        account.derivedPlatformNodeKeys
-            .sorted { $0.index < $1.index }
-            .map { key in
-                ManagedPlatformWallet.ProviderDerivedKey(
-                    index: key.index,
-                    publicKeyHex: hexString(key.publicKey),
-                    nodeIdHex: hexString(key.nodeId),
+        account.coreAddresses
+            .filter { $0.keyType == 2 && !$0.publicKey.isEmpty }
+            .sorted { $0.addressIndex < $1.addressIndex }
+            .map { addr in
+                let nodeIdHex = ManagedPlatformWallet
+                    .platformNodeId(fromEd25519PublicKey: addr.publicKey)
+                    .map { hexString($0) }
+                return ManagedPlatformWallet.ProviderDerivedKey(
+                    index: addr.addressIndex,
+                    publicKeyHex: hexString(addr.publicKey),
+                    // Platform-node keys are Ed25519 — no legacy BLS form.
+                    legacyPublicKeyHex: nil,
+                    nodeIdHex: nodeIdHex,
                     privateKeyHex: nil
                 )
             }
@@ -785,13 +848,31 @@ struct AccountDetailView: View {
                 .font(.subheadline)
                 .fontWeight(.semibold)
 
-            derivedValueRow(
+            // Public key in BOTH encodings (hex + base64) so it can be
+            // cross-checked against tools like dashwallet-ios that render
+            // Ed25519 / BLS keys in base64. Base64 is a second rendering of
+            // the same Rust-emitted bytes — never re-derived here.
+            derivedValueRowBothEncodings(
                 label: account.accountType == 10 ? "BLS Public Key" : "Ed25519 Public Key",
-                value: key.publicKeyHex,
+                hex: key.publicKeyHex,
                 copyKey: "\(key.index)-pub"
             )
 
+            // The same BLS G1 point in Dash's legacy serialization, shown
+            // only for operator (BLS) keys. Ed25519 platform-node keys have
+            // no legacy form, so `legacyPublicKeyHex` is `nil` there and the
+            // rows are skipped. Rust emits both encodings — never derived here.
+            if let legacy = key.legacyPublicKeyHex {
+                derivedValueRowBothEncodings(
+                    label: "BLS Public Key (Legacy)",
+                    hex: legacy,
+                    copyKey: "\(key.index)-pub-legacy"
+                )
+            }
+
             if let nodeId = key.nodeIdHex {
+                // Node ids are conventionally rendered in hex — no base64
+                // sibling.
                 derivedValueRow(
                     label: "Platform Node ID",
                     value: nodeId,
@@ -800,11 +881,31 @@ struct AccountDetailView: View {
             }
 
             if let priv = revealedPrivateKeys[key.index] {
-                derivedValueRow(
+                derivedValueRowBothEncodings(
                     label: "Private Key",
-                    value: priv,
+                    hex: priv,
                     copyKey: "\(key.index)-priv"
                 )
+                // Ed25519 platform-node key in dashmate's "Enter Ed25519
+                // node key" format: base64 of the 64-byte `priv(32) ‖
+                // pub(32)` blob its validator accepts (base64-decode →
+                // length 64 → split at 32 → pub matches priv). Built purely
+                // by decoding the two hex strings the FFI already displays
+                // and concatenating the bytes — no crypto, no byte
+                // reinterpretation. Only for the Ed25519 platform-node
+                // account, and only when both halves are present.
+                if account.accountType == 11,
+                    let tenderdash = tenderdashNodeKeyBase64(
+                        privateHex: priv,
+                        publicHex: key.publicKeyHex
+                    )
+                {
+                    derivedValueRow(
+                        label: "Tenderdash Node Key (Base64)",
+                        value: tenderdash,
+                        copyKey: "\(key.index)-tenderdash"
+                    )
+                }
             } else {
                 Button {
                     revealConfirmIndex = key.index
@@ -832,8 +933,45 @@ struct AccountDetailView: View {
         }
     }
 
+    /// Render `hex` in BOTH encodings: a "… (Hex)" row and, when the hex
+    /// decodes, a "… (Base64)" sibling — the same bytes rendered a second
+    /// way, so a value can be cross-checked against tools (e.g.
+    /// dashwallet-ios) that display Ed25519 / BLS keys in base64. Both use
+    /// the standard tap-to-copy value-row styling; the base64 row's copy
+    /// key / accessibility id gets a `-b64` suffix.
+    @ViewBuilder
+    private func derivedValueRowBothEncodings(label: String, hex: String, copyKey: String) -> some View {
+        derivedValueRow(label: "\(label) (Hex)", value: hex, copyKey: copyKey)
+        if let b64 = base64(fromHex: hex) {
+            derivedValueRow(label: "\(label) (Base64)", value: b64, copyKey: "\(copyKey)-b64")
+        }
+    }
+
+    /// Re-render a lowercase-hex string as base64 — the same bytes in a
+    /// second display encoding only (no crypto, no byte reinterpretation).
+    /// `nil` only when `hex` isn't valid hex.
+    private func base64(fromHex hex: String) -> String? {
+        Data(hexString: hex)?.base64EncodedString()
+    }
+
+    /// The Ed25519 platform-node key in dashmate's "Enter Ed25519 node key"
+    /// format: base64 of the 64-byte `priv(32) ‖ pub(32)` concatenation.
+    /// dashmate's validator base64-decodes, requires length 64, splits at
+    /// 32, and checks the public half matches the private. Built purely by
+    /// decoding the two hex strings the FFI already displays and joining the
+    /// bytes — no crypto, no byte reinterpretation. `nil` unless both halves
+    /// decode to exactly 32 bytes.
+    private func tenderdashNodeKeyBase64(privateHex: String, publicHex: String) -> String? {
+        guard let priv = Data(hexString: privateHex), priv.count == 32,
+            let pub = Data(hexString: publicHex), pub.count == 32
+        else { return nil }
+        return (priv + pub).base64EncodedString()
+    }
+
     /// One monospaced, middle-truncated value row with tap-to-copy and a
-    /// transient "Copied" confirmation keyed by `copyKey`.
+    /// transient "Copied" confirmation keyed by `copyKey`. The `copyKey`
+    /// doubles as the row's accessibility identifier (unique per row —
+    /// e.g. `"0-pub"`, `"0-pub-b64"`).
     @ViewBuilder
     private func derivedValueRow(label: String, value: String, copyKey: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
@@ -861,6 +999,7 @@ struct AccountDetailView: View {
         }
         .contentShape(Rectangle())
         .onTapGesture { copyDerived(value, copyKey: copyKey) }
+        .accessibilityIdentifier(copyKey)
     }
 
     private func revealDialogBinding(for index: UInt32) -> Binding<Bool> {

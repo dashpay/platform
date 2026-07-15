@@ -22,6 +22,18 @@ private func hexString(_ data: Data) -> String {
     data.map { String(format: "%02x", $0) }.joined()
 }
 
+/// Human label for a stored public key, keyed on its byte length — the
+/// curve is fixed by the width (ECDSA 33 / BLS 48 / Ed25519 32),
+/// matching the Rust-side `KeyTypeTagFFI` discriminant.
+private func publicKeyTypeLabel(byteCount: Int) -> String {
+    switch byteCount {
+    case 33: return "ECDSA Public Key"
+    case 48: return "BLS Public Key"
+    case 32: return "Ed25519 Public Key"
+    default: return "Public Key"
+    }
+}
+
 /// Render an owning `PersistentWallet` for one-line display on
 /// the storage-record detail screens. Priority: explicit wallet
 /// name → `"<short hex>…"` of the `walletId` → "None" for
@@ -344,6 +356,64 @@ struct DashpayPaymentStorageDetailView: View {
         case .confirmed: return "Confirmed"
         case .failed: return "Failed"
         }
+    }
+}
+
+// MARK: - PersistentInvitation
+
+/// Human label for a `PersistentInvitation.statusRaw` discriminant
+/// (0 = Created, 1 = Claimed, 2 = Reclaimed). Shared with the list view;
+/// an unmapped value renders as "Unknown (n)" rather than being hidden.
+func invitationStatusLabel(_ raw: Int) -> String {
+    switch raw {
+    case 0: return "Created"
+    case 1: return "Claimed"
+    case 2: return "Reclaimed"
+    default: return "Unknown (\(raw))"
+    }
+}
+
+/// Detail view for one created DashPay invitation (DIP-13). Read-only dump
+/// of every column the persister bridge writes, mirroring the other storage
+/// detail views. Note there is no secret column — the one-time voucher key
+/// is never stored.
+struct InvitationStorageDetailView: View {
+    let record: PersistentInvitation
+
+    var body: some View {
+        Form {
+            Section("Core") {
+                FieldRow(label: "Status", value: invitationStatusLabel(record.statusRaw))
+                FieldRow(
+                    label: "Amount",
+                    value: String(format: "%.8f DASH", Double(record.amountDuffs) / 100_000_000)
+                )
+                FieldRow(label: "Amount (duffs)", value: "\(record.amountDuffs)")
+                FieldRow(label: "Funding index", value: "\(record.fundingIndexRaw)")
+                FieldRow(label: "Has inviter", value: record.hasInviter ? "Yes" : "No")
+            }
+            Section("Outpoint") {
+                FieldRow(label: "Outpoint", value: record.outPointHex)
+                FieldRow(
+                    label: "Raw outpoint",
+                    value: record.rawOutPoint.map { String(format: "%02x", $0) }.joined()
+                )
+            }
+            Section("Wallet") {
+                FieldRow(
+                    label: "Wallet id",
+                    value: record.walletId.map { String(format: "%02x", $0) }.joined()
+                )
+            }
+            Section("Timestamps") {
+                FieldRow(label: "Expiry (unix)", value: "\(record.expiryUnix)")
+                FieldRow(label: "Created (unix)", value: "\(record.createdAtSecs)")
+                FieldRow(label: "Created", value: AppDate.formatted(record.createdAt, dateStyle: .abbreviated, timeStyle: .standard))
+                FieldRow(label: "Updated", value: AppDate.formatted(record.updatedAt, dateStyle: .abbreviated, timeStyle: .standard))
+            }
+        }
+        .navigationTitle("Invitation")
+        .navigationBarTitleDisplayMode(.inline)
     }
 }
 
@@ -1309,7 +1379,7 @@ struct PlatformAddressDetailView: View {
             }
             Section("Public Key") {
                 FieldRow(
-                    label: "Bytes (hex)",
+                    label: publicKeyTypeLabel(byteCount: record.publicKey.count),
                     value: record.publicKey.isEmpty
                         ? "—"
                         : record.publicKey.map { String(format: "%02x", $0) }.joined()
@@ -1533,15 +1603,17 @@ struct AccountStorageDetailView: View {
     }
 
     /// Group the account's addresses by pool-type tag and present in
-    /// a stable order: External, Internal, Absent, Absent (Hardened).
-    /// Empty sections are skipped.
+    /// a stable order: External, Internal, Additional, Additional
+    /// (Hardened). Empty sections are skipped. Matches
+    /// `PersistentCoreAddress.poolTypeName` (tags 2/3 are the on-demand
+    /// "Additional" pools; no Rust "Absent" jargon).
     private func addressSections() -> [(String, [PersistentCoreAddress])] {
         let grouped = Dictionary(grouping: record.coreAddresses) { $0.poolTypeTag }
         let order: [(UInt8, String)] = [
             (0, "External"),
             (1, "Internal"),
-            (2, "Absent"),
-            (3, "Absent (Hardened)"),
+            (2, "Additional"),
+            (3, "Additional (Hardened)"),
         ]
         return order.compactMap { tag, name in
             guard let bucket = grouped[tag], !bucket.isEmpty else { return nil }
@@ -1579,7 +1651,7 @@ struct CoreAddressDetailView: View {
             }
             Section("Public Key") {
                 FieldRow(
-                    label: "Bytes (hex)",
+                    label: publicKeyTypeLabel(byteCount: record.publicKey.count),
                     value: record.publicKey.isEmpty
                         ? "—"
                         : record.publicKey.map { String(format: "%02x", $0) }.joined()
@@ -2053,6 +2125,64 @@ struct WalletManagerMetadataStorageDetailView: View {
             }
         }
         .navigationTitle("Manager Metadata")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+// MARK: - PersistentMasternode
+
+struct MasternodeStorageDetailView: View {
+    let record: PersistentMasternode
+
+    var body: some View {
+        Form {
+            Section("Identity") {
+                FieldRow(label: "Wallet ID", value: hexString(record.walletId))
+                FieldRow(label: "proTxHash", value: record.proTxHashHex)
+                FieldRow(label: "Registration Txid", value: hexString(record.registrationTxid))
+                FieldRow(label: "Type", value: record.typeName)
+                FieldRow(label: "Status", value: record.statusName)
+            }
+            Section("Service") {
+                FieldRow(label: "Service Address", value: record.serviceAddress ?? "—")
+            }
+            Section("Keys") {
+                FieldRow(
+                    label: "Owner Key Hash",
+                    value: record.ownerKeyHash.map(hexString) ?? "—"
+                )
+                FieldRow(
+                    label: "Voting Key Hash",
+                    value: record.votingKeyHash.map(hexString) ?? "—"
+                )
+                FieldRow(label: "Owner Address", value: record.ownerAddress ?? "—")
+                FieldRow(label: "Voting Address", value: record.votingAddress ?? "—")
+            }
+            Section("Collateral") {
+                FieldRow(
+                    label: "Collateral Txid",
+                    value: record.collateralTxid.map(hexString) ?? "—"
+                )
+                FieldRow(label: "Collateral Vout", value: "\(record.collateralVout)")
+            }
+            Section("Aggregation") {
+                FieldRow(label: "Has Registration", value: record.hasRegistration ? "Yes" : "No")
+                FieldRow(label: "Registration Height", value: "\(record.registrationHeight)")
+                FieldRow(label: "Tx Count", value: "\(record.txCount)")
+                FieldRow(label: "Order Index", value: "\(record.orderIndex)")
+                FieldRow(label: "Type Index", value: "\(record.typeIndex)")
+            }
+            Section("Revocation") {
+                FieldRow(label: "Revoked", value: record.revoked ? "Yes" : "No")
+                FieldRow(label: "Revocation Reason", value: "\(record.revocationReason)")
+                FieldRow(label: "Status Raw", value: "\(record.statusRaw)")
+            }
+            Section("Timestamps") {
+                FieldRow(label: "Created", value: dateString(record.createdAt))
+                FieldRow(label: "Updated", value: dateString(record.lastUpdated))
+            }
+        }
+        .navigationTitle(record.displayTitle)
         .navigationBarTitleDisplayMode(.inline)
     }
 }
@@ -2604,5 +2734,33 @@ private extension AssetLockStorageDetailView {
         case 2, 3: return "Pending (unused)"
         default: return "Pending"
         }
+    }
+}
+
+// MARK: - PersistentShieldedViewingKey
+
+struct ShieldedViewingKeyStorageDetailView: View {
+    let record: PersistentShieldedViewingKey
+
+    var body: some View {
+        Form {
+            Section("Identity") {
+                FieldRow(label: "Wallet ID", value: hexString(record.walletId))
+                FieldRow(label: "Account Index", value: "\(record.accountIndex)")
+            }
+            Section("Viewing Key") {
+                // Viewing-grade only (cannot spend), but still key
+                // material — the full 96-byte FVK is intentionally
+                // rendered for QA inspection, matching how the
+                // explorer shows other derived public-key batches.
+                FieldRow(label: "FVK Length", value: "\(record.fvkBytes.count) bytes")
+                FieldRow(label: "FVK (hex)", value: hexString(record.fvkBytes))
+            }
+            Section("Timestamps") {
+                FieldRow(label: "Updated", value: dateString(record.lastUpdated))
+            }
+        }
+        .navigationTitle("Shielded Viewing Key")
+        .navigationBarTitleDisplayMode(.inline)
     }
 }

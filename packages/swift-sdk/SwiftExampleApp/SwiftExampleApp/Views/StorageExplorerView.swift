@@ -69,6 +69,13 @@ struct StorageExplorerView: View {
             ) {
                 DashpayIgnoredSenderStorageListView(network: network)
             }
+            modelRow(
+                "Sent Invitations",
+                icon: "paperplane",
+                type: PersistentInvitation.self
+            ) {
+                InvitationStorageListView(network: network)
+            }
             modelRow("Documents", icon: "doc.text", type: PersistentDocument.self) {
                 DocumentStorageListView(network: network)
             }
@@ -134,6 +141,9 @@ struct StorageExplorerView: View {
             modelRow("Asset Locks", icon: "lock.shield", type: PersistentAssetLock.self) {
                 AssetLockStorageListView(network: network)
             }
+            modelRow("Masternodes", icon: "server.rack", type: PersistentMasternode.self) {
+                MasternodeStorageListView(network: network)
+            }
             modelRow("Manager Metadata", icon: "gearshape.2", type: PersistentWalletManagerMetadata.self) {
                 WalletManagerMetadataStorageListView(network: network)
             }
@@ -160,6 +170,13 @@ struct StorageExplorerView: View {
                 type: PersistentShieldedActivity.self
             ) {
                 ShieldedActivityStorageListView(network: network)
+            }
+            modelRow(
+                "Shielded Viewing Keys",
+                icon: "eye",
+                type: PersistentShieldedViewingKey.self
+            ) {
+                ShieldedViewingKeyStorageListView(network: network)
             }
         }
         .navigationTitle("Storage Explorer")
@@ -312,7 +329,16 @@ struct StorageExplorerView: View {
         filteredCount(PersistentShieldedActivity.self) {
             walletsOnNetwork.contains($0.walletId)
         }
+        filteredCount(PersistentShieldedViewingKey.self) {
+            walletsOnNetwork.contains($0.walletId)
+        }
         filteredCount(PersistentAssetLock.self) {
+            walletsOnNetwork.contains($0.walletId)
+        }
+        filteredCount(PersistentInvitation.self) {
+            walletsOnNetwork.contains($0.walletId)
+        }
+        filteredCount(PersistentMasternode.self) {
             walletsOnNetwork.contains($0.walletId)
         }
 

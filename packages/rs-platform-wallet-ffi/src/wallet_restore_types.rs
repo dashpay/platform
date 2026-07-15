@@ -117,30 +117,6 @@ impl StandardAccountTypeTagFFI {
     }
 }
 
-/// One pre-derived platform-node (Ed25519) key carried on
-/// [`AccountSpecFFI::derived_platform_node_keys`] for the
-/// `ProviderPlatformKeys` account (`type_tag == 11`).
-///
-/// Ed25519/SLIP-10 is hardened-only, so the wallet can never extend
-/// its platform-node pool without the seed — the batch is pre-derived
-/// at registration (while the seed is in hand) and surfaced here so
-/// the host can persist + display it with no keychain prompt. Plain
-/// POD (no pointers): the `hash160` node id is precomputed on the Rust
-/// side so the host needs no RIPEMD-160 of its own. The private scalar
-/// is never carried — a per-index reveal still routes through
-/// `platform_wallet_provider_key_at_index` with the resolver.
-#[repr(C)]
-#[derive(Debug, Clone, Copy)]
-pub struct ProviderPlatformNodeKeyFFI {
-    /// Hardened key index within the platform-node pool (`#0..`).
-    pub index: u32,
-    /// Raw 32-byte Ed25519 public key at this index.
-    pub public_key: [u8; 32],
-    /// 20-byte platform node id — `hash160` of the Ed25519 public key
-    /// (the ProRegTx `platform_node_id`).
-    pub node_id: [u8; 20],
-}
-
 /// Flat account spec carried in `WalletRestoreEntryFFI.accounts`.
 ///
 /// Field relevance per `type_tag`:
@@ -188,21 +164,6 @@ pub struct AccountSpecFFI {
     /// callback duration only; Swift owns the allocation.
     pub account_xpub_bytes: *const u8,
     pub account_xpub_bytes_len: usize,
-    /// Pre-derived platform-node (Ed25519) public keys — only populated
-    /// on the **write** callback for the `ProviderPlatformKeys` account
-    /// (`type_tag == 11`); `null` / `0` for every other account type.
-    ///
-    /// On the write callback (`on_persist_account_registrations_fn`)
-    /// this is Rust-owned and valid for the callback window only — the
-    /// host copies the rows into its account row so the Node Keys
-    /// screen can list them from persistence without re-deriving. On
-    /// the **load** callback the host leaves this `null` / `0`: the
-    /// Rust load path does not consume it (it is display data the host
-    /// is the sole source of truth for), and the persisted account row
-    /// is never rewritten after registration, so the batch survives the
-    /// SwiftData → restore → re-persist cycle untouched.
-    pub derived_platform_node_keys: *const ProviderPlatformNodeKeyFFI,
-    pub derived_platform_node_keys_count: usize,
 }
 
 /// Per-identity public-key row carried on
@@ -552,6 +513,48 @@ pub struct UnresolvedAssetLockTxRecordFFI {
     pub first_seen: u64,
 }
 
+/// A persisted provider special transaction (ProRegTx / ProUpServTx /
+/// ProUpRegTx / ProUpRevTx) staged back into the wallet at load so its
+/// DIP-3 payload record is resident on the provider-key accounts again.
+///
+/// Without this, key-wallet's rust-dashcore #876 retention has nothing to
+/// retain after a restart (the wallet is rebuilt from staging, which
+/// otherwise stages only UTXOs + asset-lock funding txs), so the
+/// masternode-list aggregation comes back empty until a rescan
+/// re-processes the blocks.
+///
+/// Same raw-tx / height shape as [`UnresolvedAssetLockTxRecordFFI`] but
+/// with NO `account_index`: provider involvement is payload-based (owner
+/// / voting key hashes), not a known BIP44 index, so the load path routes
+/// the record onto the wallet's provider-key accounts directly. `tx_bytes`
+/// is Swift-owned for the callback window and freed by the load
+/// allocation's `release()`.
+#[repr(C)]
+pub struct ProviderSpecialTxRestoreEntryFFI {
+    /// Consensus-encoded transaction body (`Transaction::consensus_decode`
+    /// round-trips). Carries the DIP-3 special-transaction payload.
+    pub tx_bytes: *mut u8,
+    pub tx_bytes_len: usize,
+    /// `TransactionContext` discriminant: `2` = InBlock, `3` =
+    /// InChainLockedBlock; anything else is treated as `Mempool`.
+    pub context_raw: u32,
+    /// Block height (meaningful only when `context_raw` is `2` / `3`).
+    pub block_height: u32,
+    /// Block hash (wire-orientation; meaningful with `context_raw` `2`/`3`).
+    pub block_hash: [u8; 32],
+    /// Block timestamp (Unix seconds; same meaningfulness rule).
+    pub block_timestamp: u64,
+    /// The transaction's index within its block (`block.vtx` order),
+    /// meaningful only when `has_block_position`. Restored onto the
+    /// rebuilt record's `BlockInfo` so the masternode aggregation keeps
+    /// Core's same-block apply order across restarts (rust-dashcore#891).
+    /// `false` for rows persisted before the field existed.
+    pub block_position: u32,
+    pub has_block_position: bool,
+    /// Persisted "first seen" Unix-second timestamp (mirrors on-disk).
+    pub first_seen: u64,
+}
+
 /// Per-wallet entry returned by `on_load_wallet_list_fn`.
 ///
 /// `accounts` points to a contiguous array of length `accounts_count`.
@@ -619,6 +622,14 @@ pub struct WalletRestoreEntryFFI {
     /// unresolved asset locks.
     pub unresolved_asset_lock_tx_records: *const UnresolvedAssetLockTxRecordFFI,
     pub unresolved_asset_lock_tx_records_count: usize,
+    /// Persisted provider special transactions (ProRegTx / ProUpServTx /
+    /// ProUpRegTx / ProUpRevTx) re-staged onto the wallet's provider-key
+    /// accounts so rust-dashcore #876 retention keeps them resident and
+    /// the masternode-list aggregation survives a restart. `null` / `0`
+    /// when the wallet has no provider special txs. Each entry's
+    /// `tx_bytes` buffer is Swift-owned and freed by `LoadWalletListFreeFn`.
+    pub provider_special_txs: *const ProviderSpecialTxRestoreEntryFFI,
+    pub provider_special_txs_count: usize,
     /// Persisted core address pools for this wallet
     pub core_address_pools: *const AccountAddressPoolFFI,
     pub core_address_pools_count: usize,
@@ -652,6 +663,10 @@ unsafe impl Send for WalletRestoreEntryFFI {}
 unsafe impl Sync for WalletRestoreEntryFFI {}
 unsafe impl Send for UtxoRestoreEntryFFI {}
 unsafe impl Sync for UtxoRestoreEntryFFI {}
+// SAFETY: `tx_bytes` is Swift-owned and lifetime-scoped to the load
+// callback, same contract as the other restore entries above.
+unsafe impl Send for ProviderSpecialTxRestoreEntryFFI {}
+unsafe impl Sync for ProviderSpecialTxRestoreEntryFFI {}
 
 /// Paired free callback for the wallet-list load callback. Releases
 /// any memory Swift allocated for the entries array, the per-wallet

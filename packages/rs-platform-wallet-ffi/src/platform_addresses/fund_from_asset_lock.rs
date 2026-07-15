@@ -200,6 +200,7 @@ pub unsafe extern "C" fn platform_address_wallet_resume_fund_from_asset_lock_sig
                 .fund_from_asset_lock(
                     AssetLockFunding::FromExistingAssetLock {
                         out_point: resume_outpoint,
+                        consume_invitation_voucher: false,
                     },
                     platform_account_index,
                     address_map,

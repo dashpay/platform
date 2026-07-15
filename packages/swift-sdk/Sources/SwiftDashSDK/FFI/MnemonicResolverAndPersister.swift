@@ -142,6 +142,19 @@ public final class MnemonicResolver: @unchecked Sendable {
         outCapacity: UInt,
         outLen: UnsafeMutablePointer<UInt>
     ) -> MnemonicResolverResult {
+        // Secret-free audit line: every mnemonic pull through a resolver
+        // handle is observable, so "the launch path never touches the
+        // mnemonic" is checkable from the unified log alone. Shielded
+        // binds rehydrate persisted viewing keys and warm unlocks
+        // short-circuit on the persisted seed-binding marker, so neither
+        // may appear here; spends, signing, first binds, and first-launch
+        // seed-bind verifies legitimately do. NSLog rather than
+        // SDKLogger.log so the audit trail is emitted regardless of the
+        // user's logging preset.
+        NSLog(
+            "MnemonicResolver.resolve fired for wallet %@…",
+            walletId.prefix(4).map { String(format: "%02x", $0) }.joined()
+        )
         let mnemonicUTF8Bytes: Data
         do {
             mnemonicUTF8Bytes = try storage.retrieveMnemonicUTF8Bytes(for: walletId)

@@ -248,6 +248,13 @@ fn encode_memo_text(memo_text: Option<&str>) -> Result<[u8; 36], PlatformWalletF
 /// shielded sub-wallet, no spendable notes, or insufficient
 /// shielded balance to cover `amount + estimated_fee`.
 ///
+/// `mnemonic_resolver_handle` supplies the Orchard spend authority:
+/// the resolver fires exactly once, the seed is derived in a
+/// `Zeroizing` buffer, the account's `SpendAuthorizingKey` is
+/// re-derived for this call only, and everything is dropped before
+/// this function returns. No spend key is resident between spends
+/// (mirror of the transparent `MnemonicResolverCoreSigner` flow).
+///
 /// `memo_text` is an optional NUL-terminated UTF-8 string attached
 /// to the recipient's note. `null` or an empty string means no memo
 /// (the all-zero 36-byte memo). A non-empty memo's UTF-8 byte length
@@ -257,6 +264,9 @@ fn encode_memo_text(memo_text: Option<&str>) -> Result<[u8; 36], PlatformWalletF
 ///
 /// # Safety
 /// - `wallet_id_bytes` must point to 32 readable bytes.
+/// - `mnemonic_resolver_handle` must come from
+///   `dash_sdk_mnemonic_resolver_create` and outlive this call; the
+///   caller retains ownership.
 /// - `recipient_raw_43` must point to 43 readable bytes (the
 ///   recipient's raw Orchard payment address — same shape
 ///   `platform_wallet_manager_shielded_default_address` returns).
@@ -266,12 +276,14 @@ fn encode_memo_text(memo_text: Option<&str>) -> Result<[u8; 36], PlatformWalletF
 pub unsafe extern "C" fn platform_wallet_manager_shielded_transfer(
     handle: Handle,
     wallet_id_bytes: *const u8,
+    mnemonic_resolver_handle: *mut MnemonicResolverHandle,
     account: u32,
     recipient_raw_43: *const u8,
     amount: u64,
     memo_text: *const c_char,
 ) -> PlatformWalletFFIResult {
     check_ptr!(wallet_id_bytes);
+    check_ptr!(mnemonic_resolver_handle);
     check_ptr!(recipient_raw_43);
 
     let mut wallet_id = [0u8; 32];
@@ -304,6 +316,16 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_transfer(
         Err(result) => return result,
     };
 
+    // Resolve the spend authority per-operation: mnemonic → seed in
+    // `Zeroizing` buffers, scrubbed when the worker task drops them.
+    let seed = match crate::identity_keys_from_mnemonic::resolve_seed_from_resolver(
+        mnemonic_resolver_handle,
+        &wallet_id,
+    ) {
+        Ok(seed) => seed,
+        Err(result) => return result,
+    };
+
     // Run the proof on a worker thread (8 MB stack). Halo 2 circuit
     // synthesis recurses past the ~512 KB iOS dispatch-thread stack
     // and crashes with EXC_BAD_ACCESS at the first
@@ -312,7 +334,15 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_transfer(
     let result = block_on_worker(async move {
         let prover = CachedOrchardProver::new();
         let r = wallet
-            .shielded_transfer_to(&coordinator, account, &recipient, amount, memo, &prover)
+            .shielded_transfer_to(
+                &coordinator,
+                seed.as_ref(),
+                account,
+                &recipient,
+                amount,
+                memo,
+                &prover,
+            )
             .await;
         poke_sync_on_unconfirmed(&r, handle);
         r
@@ -331,19 +361,27 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_transfer(
 /// which differs from the bech32m payload's type byte
 /// (`0xb0`/`0x80`).
 ///
+/// `mnemonic_resolver_handle` supplies the per-operation Orchard
+/// spend authority (see `platform_wallet_manager_shielded_transfer`).
+///
 /// # Safety
 /// - `wallet_id_bytes` must point to 32 readable bytes.
+/// - `mnemonic_resolver_handle` must come from
+///   `dash_sdk_mnemonic_resolver_create` and outlive this call; the
+///   caller retains ownership.
 /// - `to_platform_addr_cstr` must be a valid NUL-terminated UTF-8
 ///   C string for the duration of the call.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_manager_shielded_unshield(
     handle: Handle,
     wallet_id_bytes: *const u8,
+    mnemonic_resolver_handle: *mut MnemonicResolverHandle,
     account: u32,
     to_platform_addr_cstr: *const c_char,
     amount: u64,
 ) -> PlatformWalletFFIResult {
     check_ptr!(wallet_id_bytes);
+    check_ptr!(mnemonic_resolver_handle);
     check_ptr!(to_platform_addr_cstr);
 
     let mut wallet_id = [0u8; 32];
@@ -363,10 +401,25 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_unshield(
         Err(result) => return result,
     };
 
+    let seed = match crate::identity_keys_from_mnemonic::resolve_seed_from_resolver(
+        mnemonic_resolver_handle,
+        &wallet_id,
+    ) {
+        Ok(seed) => seed,
+        Err(result) => return result,
+    };
+
     let result = block_on_worker(async move {
         let prover = CachedOrchardProver::new();
         let r = wallet
-            .shielded_unshield_to(&coordinator, account, &to_addr_str, amount, &prover)
+            .shielded_unshield_to(
+                &coordinator,
+                seed.as_ref(),
+                account,
+                &to_addr_str,
+                amount,
+                &prover,
+            )
             .await;
         poke_sync_on_unconfirmed(&r, handle);
         r
@@ -381,20 +434,28 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_unshield(
 /// the network matches the wallet's. `core_fee_per_byte` is the
 /// L1 fee rate in duffs/byte (`1` is the dashmate default).
 ///
+/// `mnemonic_resolver_handle` supplies the per-operation Orchard
+/// spend authority (see `platform_wallet_manager_shielded_transfer`).
+///
 /// # Safety
 /// - `wallet_id_bytes` must point to 32 readable bytes.
+/// - `mnemonic_resolver_handle` must come from
+///   `dash_sdk_mnemonic_resolver_create` and outlive this call; the
+///   caller retains ownership.
 /// - `to_core_address_cstr` must be a valid NUL-terminated UTF-8
 ///   C string for the duration of the call.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_manager_shielded_withdraw(
     handle: Handle,
     wallet_id_bytes: *const u8,
+    mnemonic_resolver_handle: *mut MnemonicResolverHandle,
     account: u32,
     to_core_address_cstr: *const c_char,
     amount: u64,
     core_fee_per_byte: u32,
 ) -> PlatformWalletFFIResult {
     check_ptr!(wallet_id_bytes);
+    check_ptr!(mnemonic_resolver_handle);
     check_ptr!(to_core_address_cstr);
 
     let mut wallet_id = [0u8; 32];
@@ -414,11 +475,20 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_withdraw(
         Err(result) => return result,
     };
 
+    let seed = match crate::identity_keys_from_mnemonic::resolve_seed_from_resolver(
+        mnemonic_resolver_handle,
+        &wallet_id,
+    ) {
+        Ok(seed) => seed,
+        Err(result) => return result,
+    };
+
     let result = block_on_worker(async move {
         let prover = CachedOrchardProver::new();
         let r = wallet
             .shielded_withdraw_to(
                 &coordinator,
+                seed.as_ref(),
                 account,
                 &to_core,
                 amount,
@@ -571,8 +641,13 @@ fn map_spend_result(
 /// penalty, exactly like the asset-lock / address-funded identity-create penalties. It is bound into
 /// the transition sighash, so it cannot be redirected after signing.
 ///
+/// `mnemonic_resolver_handle` supplies the per-operation Orchard spend authority (see
+/// `platform_wallet_manager_shielded_transfer`).
+///
 /// # Safety
 /// - `wallet_id_bytes` must point to 32 readable bytes.
+/// - `mnemonic_resolver_handle` must come from `dash_sdk_mnemonic_resolver_create` and outlive
+///   this call; the caller retains ownership.
 /// - `identity_pubkeys` must point to `identity_pubkeys_count` contiguous [`IdentityPubkeyFFI`]
 ///   rows that outlive this call (each row's pointers per the [`IdentityPubkeyFFI`] contract).
 /// - `send_to_address_on_creation_failure_bytes` must point to exactly 21 readable bytes for the
@@ -588,6 +663,7 @@ fn map_spend_result(
 pub unsafe extern "C" fn platform_wallet_manager_shielded_identity_create_from_pool(
     handle: Handle,
     wallet_id_bytes: *const u8,
+    mnemonic_resolver_handle: *mut MnemonicResolverHandle,
     account: u32,
     identity_index: u32,
     identity_pubkeys: *const IdentityPubkeyFFI,
@@ -598,6 +674,7 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_identity_create_from_p
     out_identity_id: *mut [u8; 32],
 ) -> PlatformWalletFFIResult {
     check_ptr!(wallet_id_bytes);
+    check_ptr!(mnemonic_resolver_handle);
     check_ptr!(identity_pubkeys);
     check_ptr!(send_to_address_on_creation_failure_bytes);
     check_ptr!(signer_identity_handle);
@@ -647,6 +724,16 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_identity_create_from_p
         Err(result) => return result,
     };
 
+    // Resolve the per-operation Orchard spend authority before entering the worker; the seed
+    // rides into the task in its `Zeroizing` buffer and is scrubbed when the task drops it.
+    let seed = match crate::identity_keys_from_mnemonic::resolve_seed_from_resolver(
+        mnemonic_resolver_handle,
+        &wallet_id,
+    ) {
+        Ok(seed) => seed,
+        Err(result) => return result,
+    };
+
     // Round-trip the signer pointer through `usize` so the worker future captures only plain
     // `Send + 'static` data and re-materializes the borrow INSIDE the task — never a fabricated
     // `&'static` borrow of a host-owned vtable across the FFI boundary. The caller's contract is
@@ -666,6 +753,7 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_identity_create_from_p
         let r = wallet
             .shielded_identity_create_from_pool(
                 &coordinator,
+                seed.as_ref(),
                 account,
                 identity_index,
                 public_keys,
@@ -1065,6 +1153,7 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_resume_fund_from_asset
                 &coordinator,
                 AssetLockFunding::FromExistingAssetLock {
                     out_point: resume_outpoint,
+                    consume_invitation_voucher: false,
                 },
                 vec![(recipient, None)],
                 &asset_lock_signer,

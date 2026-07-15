@@ -939,10 +939,16 @@ extension ManagedPlatformWallet {
     public struct ProviderDerivedKey: Sendable {
         /// The key index that was derived (`#0..`).
         public let index: UInt32
-        /// Lowercase hex of the raw curve public key — 96 chars for a
-        /// BLS-48 operator key (the bytes a ProRegTx operator field
-        /// carries), 64 for an Ed25519-32 platform-node key.
+        /// Lowercase hex of the raw curve public key in MODERN (IETF)
+        /// serialization — 96 chars for a BLS-48 operator key (the bytes a
+        /// ProRegTx operator field carries), 64 for an Ed25519-32
+        /// platform-node key.
         public let publicKeyHex: String
+        /// Lowercase hex of the SAME BLS G1 point in the Dash LEGACY
+        /// serialization (96 chars). `nil` for Ed25519 platform-node keys
+        /// (no legacy variant). Serialized on the Rust side — never
+        /// transformed in Swift.
+        public let legacyPublicKeyHex: String?
         /// Lowercase hex of the 20-byte platform node id (`hash160` of
         /// the Ed25519 public key, the ProRegTx `platform_node_id`).
         /// `nil` for operator keys, which have no node id.
@@ -952,19 +958,21 @@ extension ManagedPlatformWallet {
         /// so this is the only private form.
         public let privateKeyHex: String?
 
-        /// Public memberwise init so hosts can build display rows from a
-        /// persisted platform-node batch (see
-        /// `PersistentAccount.derivedPlatformNodeKeys`) without a fresh
-        /// FFI derivation — the synthesized memberwise init is internal
-        /// and unreachable from the app module.
+        /// Public memberwise init so hosts can build display rows from the
+        /// persisted platform-node core-address rows (typed
+        /// `PersistentCoreAddress` entries with `keyType == 2`) without a
+        /// fresh FFI derivation — the synthesized memberwise init is
+        /// internal and unreachable from the app module.
         public init(
             index: UInt32,
             publicKeyHex: String,
+            legacyPublicKeyHex: String?,
             nodeIdHex: String?,
             privateKeyHex: String?
         ) {
             self.index = index
             self.publicKeyHex = publicKeyHex
+            self.legacyPublicKeyHex = legacyPublicKeyHex
             self.nodeIdHex = nodeIdHex
             self.privateKeyHex = privateKeyHex
         }
@@ -1024,15 +1032,45 @@ extension ManagedPlatformWallet {
             try result.check()
 
             let publicKeyHex = out.public_key_hex.map { String(cString: $0) } ?? ""
+            let legacyPublicKeyHex = out.legacy_public_key_hex.map { String(cString: $0) }
             let nodeIdHex = out.node_id_hex.map { String(cString: $0) }
             let privateKeyHex = out.private_key_hex.map { String(cString: $0) }
             return ProviderDerivedKey(
                 index: out.index,
                 publicKeyHex: publicKeyHex,
+                legacyPublicKeyHex: legacyPublicKeyHex,
                 nodeIdHex: nodeIdHex,
                 privateKeyHex: privateKeyHex
             )
         }
+    }
+
+    /// Compute the 20-byte Tenderdash platform node id
+    /// (`SHA256(ed25519 pubkey)[..20]`, rust-dashcore #884) for a raw
+    /// 32-byte Ed25519 public key, via the pure Rust helper
+    /// `platform_wallet_platform_node_id_from_ed25519_pubkey`.
+    ///
+    /// The node id is exactly what a ProRegTx `platform_node_id` field
+    /// carries; hosts use this to render the node id of a persisted
+    /// platform-node public key (which stores only the pubkey) without
+    /// re-implementing the SHA-256 digest. Pure bridge — no wallet handle,
+    /// no key material beyond the public key.
+    ///
+    /// - Returns: the 20-byte node id, or `nil` when `publicKey` is not
+    ///   exactly 32 bytes or the FFI rejects it.
+    public static func platformNodeId(fromEd25519PublicKey publicKey: Data) -> Data? {
+        guard publicKey.count == 32 else { return nil }
+        var out = Data(count: 20)
+        let ok = out.withUnsafeMutableBytes { outRaw -> Bool in
+            publicKey.withUnsafeBytes { pkRaw -> Bool in
+                platform_wallet_platform_node_id_from_ed25519_pubkey(
+                    pkRaw.bindMemory(to: UInt8.self).baseAddress,
+                    UInt(pkRaw.count),
+                    outRaw.bindMemory(to: UInt8.self).baseAddress
+                )
+            }
+        }
+        return ok ? out : nil
     }
 
     /// Derive a single ECDSA identity-authentication keypair at an
@@ -1966,6 +2004,238 @@ extension ManagedPlatformWallet {
         }.value
 
         return ContactRequest(handle: requestHandle)
+    }
+
+    // MARK: - DashPay invitations (DIP-13)
+
+    /// Read-only preview of a `dashpay://invite` link, decoded via
+    /// `parseInvitation(uri:)` without claiming it. Drives the claim sheet's
+    /// pre-claim summary + the contact-bootstrap decision.
+    public struct InvitationPreview: Sendable {
+        /// The link decoded structurally. When false, every other field is unset
+        /// and the link is malformed / unreadable.
+        public let structurallyValid: Bool
+        /// The link carried an `islock`, so the claim will build an InstantSend
+        /// proof; `false` is a ChainLock-confirmed invite (still claimable). Not a
+        /// claimability gate — the proof is reconstructed at claim time.
+        public let isInstant: Bool
+        /// The link carried inviter METADATA (a username, display name, or
+        /// avatar). Presence does NOT mean the contact bootstrap is available:
+        /// a metadata-only link (display-name/avatar without a `du` username)
+        /// still sets this flag while `inviterUsername` stays nil, and the
+        /// bootstrap needs the username. Gate contact features on a non-nil
+        /// `inviterUsername`, not on this flag.
+        public let hasInviter: Bool
+        /// Always nil: the legacy link carries only the inviter's username, not an
+        /// identity id (resolve it via `resolveDpnsName` at contact-bootstrap).
+        public let inviterId: Data?
+        /// Inviter DPNS username when the link carried `du`, else nil — the
+        /// contact-bootstrap precondition (may be nil even when `hasInviter`).
+        public let inviterUsername: String?
+        /// Always 0: the amount isn't in the link (it carries the funding txid,
+        /// not the proof) and is only known after the tx is fetched at claim time.
+        public let amountDuffs: UInt64
+        /// Always 0: the legacy link carries no expiry field.
+        public let expiryUnix: UInt32
+    }
+
+    /// Create a DashPay invitation (DIP-13): fund a one-time asset-lock voucher
+    /// at the invitation derivation path and return a shareable
+    /// `dashpay://invite` link.
+    ///
+    /// **The returned link contains the voucher private key — it is a bearer
+    /// credential.** Do NOT log it, and copy it with a sensitive-pasteboard flag
+    /// so it isn't synced across devices.
+    ///
+    /// Pass `inviterIdentityId` + `inviterUsername` to opt into the
+    /// contact-bootstrap (the link then carries the inviter so the invitee can
+    /// send a contact request back); pass `nil` for both for a pure funding
+    /// voucher. `nowUnix` is the current unix time in seconds (e.g.
+    /// `UInt32(Date().timeIntervalSince1970)`); the advisory expiry is derived
+    /// Rust-side as `nowUnix + MAX_INVITATION_TTL_SECS` (~24h). A zero `nowUnix`
+    /// is rejected.
+    ///
+    /// Builds an L1 asset-lock transaction Rust-side from the `fundingAccount`
+    /// (which must have spendable Core UTXOs), so this is a long-running call.
+    /// Only the Core-side `MnemonicResolver` is used (no identity signer): pure
+    /// voucher creation registers no identity.
+    public func createInvitation(
+        amountDuffs: UInt64,
+        fundingAccount: UInt32,
+        inviterIdentityId: Identifier?,
+        inviterUsername: String?,
+        nowUnix: UInt32
+    ) async throws -> String {
+        if inviterIdentityId != nil && inviterUsername == nil {
+            throw PlatformWalletError.invalidParameter(
+                "inviterUsername is required when inviterIdentityId is provided"
+            )
+        }
+        let handle = self.handle
+        let coreSigner = MnemonicResolver()
+        // Pre-extract the inviter id bytes (nil ⇒ pure funding voucher). The FFI
+        // takes the `*const u8` 32-byte identity-id shape shared with
+        // `buildAutoAcceptQR` / `read_identifier`.
+        let inviterBytes: [UInt8]? = inviterIdentityId.map { id in
+            id.withFFIBytes { ptr in Array(UnsafeBufferPointer(start: ptr, count: 32)) }
+        }
+        let username = inviterUsername
+        return try await Task.detached(priority: .userInitiated) { () -> String in
+            var outURI: UnsafeMutablePointer<CChar>?
+            // `out_outpoint` is required by the FFI but the funding outpoint is
+            // not surfaced through this wrapper (the persistence layer tracks it
+            // via the asset-lock manager); pass a scratch struct.
+            var outOutpoint = OutPointFFI()
+            let result: PlatformWalletFFIResult = withExtendedLifetime(coreSigner) {
+                () -> PlatformWalletFFIResult in
+                // Pin the optional inviter-id buffer + username CString, then call.
+                func callWithInviter(
+                    _ idPtr: UnsafePointer<UInt8>?
+                ) -> PlatformWalletFFIResult {
+                    ManagedPlatformWallet.withOptionalCString(username) { usernamePtr in
+                        platform_wallet_create_invitation(
+                            handle,
+                            amountDuffs,
+                            fundingAccount,
+                            idPtr,
+                            usernamePtr,
+                            nowUnix,
+                            coreSigner.handle,
+                            &outURI,
+                            &outOutpoint
+                        )
+                    }
+                }
+                if let inviterBytes {
+                    return inviterBytes.withUnsafeBufferPointer { bp in
+                        callWithInviter(bp.baseAddress)
+                    }
+                } else {
+                    return callWithInviter(nil)
+                }
+            }
+            try result.check()
+            guard let outURI else {
+                throw PlatformWalletError.nullPointer("createInvitation returned a null URI")
+            }
+            let uri = String(cString: outURI)
+            platform_wallet_string_free(outURI)
+            return uri
+        }.value
+    }
+
+    /// Claim a DashPay invitation (DIP-13): register a NEW identity for the
+    /// invitee, funded by the imported voucher carried in `uri`.
+    ///
+    /// This is ordinary identity registration whose *funding* is imported from
+    /// the link — so, exactly like `registerIdentityWithFunding`, the caller
+    /// MUST pre-derive `identityPubkeys` (the invitee's own new-identity keys)
+    /// AND pre-persist each key's private material to the Keychain (via
+    /// `prePersistIdentityKeysForRegistration`) BEFORE calling; `signer` produces
+    /// the per-identity-key witnesses. The asset-lock's outer signature uses the
+    /// imported raw voucher key, so no Core-side resolver signer is needed here.
+    ///
+    /// `nowUnix` is retained for C ABI compatibility but currently ignored:
+    /// the legacy invitation link carries no expiry field, so claim has no
+    /// time gate. The contact-bootstrap ("establish contact with the
+    /// sender?") is NOT done here — after a successful claim the UI asks the
+    /// invitee and, on confirm, calls `sendContactRequest` for the reciprocal.
+    ///
+    /// Returns the freshly-registered invitee `ManagedIdentity`.
+    public func claimInvitation(
+        uri: String,
+        identityIndex: UInt32,
+        identityPubkeys: [ManagedPlatformWallet.IdentityPubkey],
+        signer: KeychainSigner,
+        nowUnix: UInt32
+    ) async throws -> ManagedIdentity {
+        guard !identityPubkeys.isEmpty else {
+            throw PlatformWalletError.invalidParameter("identityPubkeys is empty")
+        }
+        let handle = self.handle
+        let signerHandle = signer.handle
+        let pubkeys = identityPubkeys
+        return try await Task.detached(priority: .userInitiated) { () -> ManagedIdentity in
+            var idTuple: (
+                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8
+            ) = (
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+            )
+            var outManagedHandle: Handle = NULL_HANDLE
+            let pubkeyBuffers: [Data] = pubkeys.map { $0.pubkeyBytes }
+            let result = withExtendedLifetime(signer) {
+                () -> PlatformWalletFFIResult in
+                uri.withCString { uriPtr in
+                    ManagedPlatformWallet.withPubkeyFFIArray(
+                        pubkeys,
+                        buffers: pubkeyBuffers
+                    ) { ffiRowsPtr, ffiRowsCount in
+                        platform_wallet_claim_invitation(
+                            handle,
+                            uriPtr,
+                            identityIndex,
+                            ffiRowsPtr,
+                            UInt(ffiRowsCount),
+                            signerHandle,
+                            nowUnix,
+                            &idTuple,
+                            &outManagedHandle
+                        )
+                    }
+                }
+            }
+            try result.check()
+            // On Success the managed-identity handle must be non-NULL; wrapping
+            // NULL_HANDLE would defer the failure to a harder-to-debug point.
+            guard outManagedHandle != NULL_HANDLE else {
+                throw PlatformWalletError.walletOperation(
+                    "FFI returned success but managed-identity handle was NULL"
+                )
+            }
+            return ManagedIdentity(handle: outManagedHandle)
+        }.value
+    }
+
+    /// Read-only preview of a DashPay invitation link (DIP-13): decode a
+    /// `dashpay://invite` URI and surface its metadata WITHOUT claiming it — no
+    /// network, no identity registered. The claim UI uses this to show the
+    /// amount, sender, and expiry before the user commits, and to decide whether
+    /// to offer the "establish contact with <sender>?" bootstrap.
+    ///
+    /// A malformed link is reported as `structurallyValid == false` rather than
+    /// throwing, so the UI can render a clean "invalid link" state.
+    public func parseInvitation(uri: String) throws -> InvitationPreview {
+        var out = InvitationPreviewFFI()
+        let result = uri.withCString { uriPtr in
+            platform_wallet_parse_invitation(uriPtr, &out)
+        }
+        try result.check()
+        // The Rust side heap-allocates the username C string when the link
+        // carries an inviter; free it once we've copied it into Swift.
+        defer {
+            if out.inviter_username != nil {
+                platform_wallet_string_free(out.inviter_username)
+            }
+        }
+        // Always nil, matching the documented contract: the legacy link
+        // carries no inviter identity id (the ABI's `inviter_id` is
+        // deliberately all-zero), and surfacing a zero sentinel here would let
+        // a consumer skip the required DPNS username resolution.
+        let inviterId: Data? = nil
+        let inviterUsername: String? = out.inviter_username.map { String(cString: $0) }
+        return InvitationPreview(
+            structurallyValid: out.structurally_valid,
+            isInstant: out.is_instant,
+            hasInviter: out.has_inviter,
+            inviterId: inviterId,
+            inviterUsername: inviterUsername,
+            amountDuffs: out.amount_duffs,
+            expiryUnix: out.expiry_unix
+        )
     }
 
     /// Accept an incoming contact request using an externally-supplied
@@ -3660,12 +3930,19 @@ extension ManagedPlatformWallet {
     ///
     /// Returns `(identityId, ManagedIdentity)` for the freshly
     /// registered identity.
+    ///
+    /// `consumeInvitationVoucher` is the explicit authorization to consume an
+    /// `IdentityInvitation`-typed lock (a DashPay bearer voucher whose key is
+    /// shared in the invitation link). Defaults to `false`: generic resume
+    /// surfaces are refused invitation locks by the Rust funding resolver.
+    /// Only the invitation reclaim flow passes `true`.
     public func resumeIdentityWithAssetLock(
         outPointTxid: Data,
         outPointVout: UInt32,
         identityIndex: UInt32,
         identityPubkeys: [ManagedPlatformWallet.IdentityPubkey],
-        signer: KeychainSigner
+        signer: KeychainSigner,
+        consumeInvitationVoucher: Bool = false
     ) async throws -> (Identifier, ManagedIdentity) {
         guard outPointTxid.count == 32 else {
             throw PlatformWalletError.invalidParameter(
@@ -3732,6 +4009,7 @@ extension ManagedPlatformWallet {
                         UInt(ffiRowsCount),
                         signerHandle,
                         coreSigner.handle,
+                        consumeInvitationVoucher,
                         &idTuple,
                         &outManagedHandle
                     )
@@ -3747,6 +4025,171 @@ extension ManagedPlatformWallet {
             }
             let identityId = Swift.withUnsafeBytes(of: idTuple) { Data($0) }
             return (identityId, ManagedIdentity(handle: outManagedHandle))
+        }.value
+    }
+
+    /// Top up an existing identity by building and broadcasting a **new
+    /// Core asset lock** from the wallet's own balance — the top-up twin of
+    /// [`registerIdentityWithFunding(amountDuffs:accountIndex:identityIndex:identityPubkeys:signer:)`].
+    ///
+    /// Simpler than registration: an `IdentityTopUp` creates no identity
+    /// keys, so there is no per-identity-key `KeychainSigner` and no pubkey
+    /// array — the transition is signed entirely by the asset lock's
+    /// Core-side key via a `MnemonicResolver`. `accountIndex` selects which
+    /// BIP44 *standard* account supplies the funding UTXOs (same constraint
+    /// as registration).
+    ///
+    /// `amountDuffs` must meet the Rust-side minimum top-up asset-lock
+    /// balance; a smaller amount is rejected before any lock is broadcast
+    /// (callers should also gate on the minimum in the UI so a sub-floor
+    /// amount never reaches here). Returns the identity's post-transition
+    /// credit balance; the local `ManagedIdentity` balance is updated inside
+    /// the FFI call.
+    public func topUpIdentityWithFunding(
+        identityId: Data,
+        amountDuffs: UInt64,
+        accountIndex: UInt32
+    ) async throws -> UInt64 {
+        guard identityId.count == 32 else {
+            throw PlatformWalletError.invalidParameter(
+                "identityId must be 32 bytes, got \(identityId.count)"
+            )
+        }
+        let handle = self.handle
+        // Core-side asset-lock signer. Same `MnemonicResolver` lifetime +
+        // vtable rationale as `registerIdentityWithFunding`: the
+        // credit-output private key is fetched per-call from Keychain,
+        // signed, and zeroed — no private key ever lives in Rust memory
+        // across operations.
+        let coreSigner = MnemonicResolver()
+        return try await Task.detached(priority: .userInitiated) { () -> UInt64 in
+            var idTuple: (
+                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8
+            ) = (
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+            )
+            withUnsafeMutableBytes(of: &idTuple) { raw in
+                for (i, byte) in identityId.prefix(32).enumerated() {
+                    raw[i] = byte
+                }
+            }
+
+            var newBalance: UInt64 = 0
+            // `withExtendedLifetime` pins `coreSigner` across the
+            // synchronous FFI call (Rust uses `block_on_worker`). Keep the
+            // call inline — an unawaited Task inside would let the resolver
+            // drop mid-flight and dangle its trampoline ctx pointer.
+            let result = withExtendedLifetime(coreSigner) {
+                withUnsafePointer(to: &idTuple) { idPtr in
+                    platform_wallet_top_up_identity_with_funding_signer(
+                        handle,
+                        idPtr,
+                        amountDuffs,
+                        accountIndex,
+                        coreSigner.handle,
+                        &newBalance
+                    )
+                }
+            }
+            try result.check()
+            return newBalance
+        }.value
+    }
+
+    /// Recover a stuck top-up by consuming an already-tracked Core asset
+    /// lock — the top-up twin of
+    /// [`resumeIdentityWithAssetLock(outPointTxid:outPointVout:identityIndex:identityPubkeys:signer:)`].
+    ///
+    /// Use case is crash recovery: a prior `topUpIdentityWithFunding`
+    /// confirmed its lock on Core but the `IdentityTopUp` never reached
+    /// Platform (app killed / network drop). This picks up that lock by
+    /// outpoint and completes the top-up against `identityId`. It is also
+    /// the DashPay invitation "reclaim into an existing identity" path —
+    /// see `consumeInvitationVoucher`.
+    ///
+    /// `outPointTxid` is the 32-byte raw txid (little-endian wire order,
+    /// same shape as `OutPointFFI.txid`; the caller decodes from
+    /// display-order hex first). Returns the post-transition credit balance.
+    ///
+    /// If the lock was already consumed on Platform (double-resume), the FFI
+    /// surfaces an opaque consensus rejection — the caller should classify
+    /// and message it ("asset lock already consumed") rather than showing
+    /// the raw error.
+    ///
+    /// `consumeInvitationVoucher` is the explicit authorization to consume an
+    /// `IdentityInvitation`-typed lock (a DashPay bearer voucher whose key is
+    /// shared in the invitation link). Defaults to `false`: generic top-up
+    /// crash-recovery surfaces are refused invitation locks by the Rust
+    /// funding resolver. Only the invitation reclaim flow passes `true`.
+    public func resumeTopUpWithAssetLock(
+        identityId: Data,
+        outPointTxid: Data,
+        outPointVout: UInt32,
+        consumeInvitationVoucher: Bool = false
+    ) async throws -> UInt64 {
+        guard identityId.count == 32 else {
+            throw PlatformWalletError.invalidParameter(
+                "identityId must be 32 bytes, got \(identityId.count)"
+            )
+        }
+        guard outPointTxid.count == 32 else {
+            throw PlatformWalletError.invalidParameter(
+                "outPointTxid must be exactly 32 bytes (was \(outPointTxid.count))"
+            )
+        }
+        let handle = self.handle
+        // Same `MnemonicResolver` rationale as `topUpIdentityWithFunding`.
+        let coreSigner = MnemonicResolver()
+        return try await Task.detached(priority: .userInitiated) { () -> UInt64 in
+            var idTuple: (
+                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8
+            ) = (
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+            )
+            withUnsafeMutableBytes(of: &idTuple) { raw in
+                for (i, byte) in identityId.prefix(32).enumerated() {
+                    raw[i] = byte
+                }
+            }
+            var txidTuple: (
+                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8
+            ) = (
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+            )
+            outPointTxid.withUnsafeBytes { src in
+                Swift.withUnsafeMutableBytes(of: &txidTuple) { dst in
+                    dst.copyMemory(from: src)
+                }
+            }
+            var outPoint = OutPointFFI(txid: txidTuple, vout: outPointVout)
+
+            var newBalance: UInt64 = 0
+            let result = withExtendedLifetime(coreSigner) {
+                withUnsafePointer(to: &idTuple) { idPtr in
+                    platform_wallet_topup_identity_with_existing_asset_lock_signer(
+                        handle,
+                        &outPoint,
+                        idPtr,
+                        coreSigner.handle,
+                        consumeInvitationVoucher,
+                        &newBalance
+                    )
+                }
+            }
+            try result.check()
+            return newBalance
         }.value
     }
 }

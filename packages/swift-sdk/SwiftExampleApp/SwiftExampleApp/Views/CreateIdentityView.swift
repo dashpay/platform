@@ -43,6 +43,11 @@ protocol AssetLockResumeRow {
     var walletId: Data { get }
     var statusRaw: Int { get }
     var identityIndexRaw: Int32 { get }
+    /// Funding-type discriminant (mirrors the Rust `AssetLockFundingType`).
+    /// Carried through the row contract so the resumable-registrations
+    /// anti-join can exclude `IdentityInvitation` (3) vouchers — a shared
+    /// bearer lock that generic resume must never consume.
+    var fundingTypeRaw: Int { get }
 }
 
 extension PersistentAssetLock: AssetLockResumeRow {}
@@ -1278,6 +1283,7 @@ struct CreateIdentityView: View {
                 // app's shielded default.
                 let identityId = try await manager.shieldedIdentityCreateFromPool(
                     walletId: walletId,
+                    resolver: MnemonicResolver(),
                     account: 0,
                     identityIndex: identityIndex,
                     identityPubkeys: identityPubkeys,
