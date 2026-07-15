@@ -491,8 +491,7 @@ pub fn load_used_addresses(
     for raw in scripts {
         let owner = owning_account_for_script(conn, wallet_id, &raw)?;
         let script = dashcore::ScriptBuf::from_bytes(raw);
-        let address = dashcore::Address::from_script(&script, network)
-            .map_err(|_| WalletStorageError::blob_decode("core_utxos.script not an address"))?;
+        let address = dashcore::Address::from_script(&script, network)?;
         out.push((address, owner));
     }
     Ok(out)
@@ -631,6 +630,39 @@ mod tests {
         assert!(
             matches!(err, WalletStorageError::BlobTooLarge { .. }),
             "expected BlobTooLarge from the pre-materialization gate, got {err:?}"
+        );
+    }
+
+    /// `load_used_addresses` (the address-reuse-guard rehydration path called
+    /// from `persister.rs`) must surface `AddressDecode` — carrying the
+    /// upstream `dashcore::address::Error` — when a stored `core_utxos.script`
+    /// parses as bytes but not as an address, not the context-free `BlobDecode`.
+    #[test]
+    fn load_used_addresses_wraps_address_error_as_address_decode() {
+        let mut conn = rusqlite::Connection::open_in_memory().unwrap();
+        crate::sqlite::migrations::run(&mut conn).unwrap();
+        let w = [0x99u8; 32];
+        conn.execute(
+            "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
+            params![&w[..]],
+        )
+        .unwrap();
+        // A bare OP_RETURN script is well-formed bytes but not any address
+        // type, so `Address::from_script` returns `UnrecognizedScript`.
+        let bad_script = [0x6au8];
+        conn.execute(
+            "INSERT INTO core_utxos \
+                (wallet_id, outpoint, value, script, height, account_index, spent) \
+             VALUES (?1, ?2, 0, ?3, NULL, 0, 0)",
+            params![&w[..], &[0u8; 36][..], &bad_script[..]],
+        )
+        .unwrap();
+
+        let err = load_used_addresses(&conn, &w, dashcore::Network::Testnet)
+            .expect_err("an unparseable script must be a hard error");
+        assert!(
+            matches!(err, WalletStorageError::AddressDecode { .. }),
+            "expected AddressDecode carrying the upstream error, got {err:?}"
         );
     }
 
