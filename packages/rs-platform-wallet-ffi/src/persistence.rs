@@ -3084,20 +3084,38 @@ unsafe fn address_info_from_ffi(
 }
 
 /// Restore persisted `AddressInfo` rows into a managed account's
-/// `AddressPool`. Plain upsert: a persisted row overwrites the gap-limit
+/// `AddressPool`. Upsert: a persisted row overwrites the gap-limit
 /// default `ManagedWalletInfo::from_wallet` pre-derived at the same
 /// index, and the reverse-lookup maps + `highest_*` watermarks are
 /// extended to cover indices past that default gap window.
 ///
 /// The persisted row is authoritative for its typed public key — the
-/// [`CoreAddressEntryFFI`] row now carries the full typed key (ECDSA-33 /
+/// [`CoreAddressEntryFFI`] row carries the full typed key (ECDSA-33 /
 /// BLS-48 / EdDSA-32) with a [`KeyTypeTagFFI`] discriminator, so BLS
 /// operator and Ed25519 platform-node keys survive the round-trip in the
-/// row itself. No merge against the pre-derived entry is needed or
-/// wanted.
+/// row itself — with ONE legacy exception: rows persisted before the
+/// typed-key column existed carry an empty key (`public_key: None`).
+/// Overwriting a pre-derived typed entry with such a row would strip the
+/// in-memory BLS operator pubkeys that `from_wallet` derived from the
+/// account xpub, silently breaking operator-ownership matching for every
+/// pre-typed-key store. So when the incoming row has no key but the
+/// pre-derived entry at that index does, the existing typed key is kept
+/// (post-migration rows always carry their key, making this a no-op for
+/// them). Legacy Ed25519 platform-node rows cannot be recovered this way
+/// (hardened-only — no public derivation) nor migrated from the removed
+/// account-level batch (its data was dropped by the schema migration);
+/// per the pre-release convention those stores re-derive on
+/// delete+re-import.
 fn restore_address_pool(pool: &mut AddressPool, infos: Vec<AddressInfo>) {
-    for info in infos {
+    for mut info in infos {
         let idx = info.index;
+        if info.public_key.is_none() {
+            if let Some(existing) = pool.addresses.get(&idx) {
+                if existing.public_key.is_some() {
+                    info.public_key = existing.public_key.clone();
+                }
+            }
+        }
         pool.address_index.insert(info.address.clone(), idx);
         pool.script_pubkey_index
             .insert(info.script_pubkey.clone(), idx);
@@ -5922,6 +5940,57 @@ mod tests {
                 other
             ),
         }
+    }
+
+    /// A LEGACY row (persisted before the typed-key column: empty key,
+    /// `public_key: None` after decode) must NOT strip the typed key the
+    /// gap-limit prederivation put at the same index — pre-typed-key
+    /// stores otherwise lose their in-memory BLS operator pubkeys at
+    /// load and masternode operator-ownership matching silently breaks
+    /// (post-migration rows always carry their key, so the preservation
+    /// is a no-op for them). Also pins the inverse: a legacy row at an
+    /// index with no prederived entry restores key-less rather than
+    /// inventing anything.
+    #[test]
+    fn legacy_keyless_row_keeps_prederived_typed_key() {
+        let mut pool = AddressPool::new_without_generation(
+            DerivationPath::from_str("m/9'/1'/3'").expect("static path must parse"),
+            AddressPoolType::AbsentHardened,
+            5,
+            Network::Testnet,
+        );
+
+        // Prederived typed entry, as `ManagedWalletInfo::from_wallet`
+        // seeds BLS operator pools from the account xpub.
+        let bls = vec![0xE7u8; 48];
+        let prederived = typed_key_test_address_info(7, Some(PublicKeyType::BLS(bls.clone())));
+        pool.addresses.insert(7, prederived);
+
+        // Legacy rows: same index key-less, plus one at a fresh index.
+        let legacy_same_idx = typed_key_test_address_info(7, None);
+        let legacy_fresh_idx = typed_key_test_address_info(9, None);
+        restore_address_pool(&mut pool, vec![legacy_same_idx, legacy_fresh_idx]);
+
+        match &pool
+            .addresses
+            .get(&7)
+            .expect("entry 7 must exist")
+            .public_key
+        {
+            Some(PublicKeyType::BLS(bytes)) => assert_eq!(
+                bytes, &bls,
+                "legacy key-less row must keep the prederived BLS key"
+            ),
+            other => panic!("prederived BLS key was stripped, got {:?}", other),
+        }
+        assert!(
+            pool.addresses
+                .get(&9)
+                .expect("entry 9 must exist")
+                .public_key
+                .is_none(),
+            "a legacy row with no prederived counterpart stays key-less"
+        );
     }
 
     /// `account_xpub` must survive the persist→restore byte round-trip — it is
