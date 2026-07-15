@@ -2059,6 +2059,17 @@ impl PlatformWalletPersistence for FFIPersister {
         Ok(out)
     }
 
+    /// Provider node keys live in the host's separate persistence path, which has no read-back callback.
+    fn provider_node_keys(
+        &self,
+        _wallet_id: WalletId,
+    ) -> Result<Vec<platform_wallet::changeset::ProviderPlatformNodePubKey>, PersistenceError> {
+        Err(PersistenceError::backend(
+            "the FFI backend does not yet support reading back persisted provider node keys; \
+             the host owns this data through its own separate persistence path",
+        ))
+    }
+
     /// Look up a transaction record by `txid` via the
     /// `on_get_core_tx_record_fn` callback and reconstruct the
     /// [`TransactionRecord`] for the asset-lock proof flow.

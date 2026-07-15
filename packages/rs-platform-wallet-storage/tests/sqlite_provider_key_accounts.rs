@@ -767,7 +767,7 @@ fn conflicting_provider_xpub_against_persisted_row_is_rejected() {
 }
 
 #[test]
-fn conflicting_provider_account_rolls_back_new_sibling_account() {
+fn conflicting_provider_account_rejects_whole_batch_before_any_write() {
     let (persister, _tmp, _path) = fresh_persister();
     let w: WalletId = wid(0xD8);
     ensure_wallet_meta(&persister, &w);

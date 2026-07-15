@@ -205,13 +205,15 @@ pub enum WalletStorageError {
     )]
     AccountRegistrationEntryMismatch,
 
-    /// A provider key-material entry uses the ECDSA writer, pairs an account
-    /// type with the wrong key curve, or has persisted typed columns that
-    /// contradict its decoded `ProviderKeyRegistrationBlob`. The guards reject
-    /// it on write or decode so cross-curve-confused data never enters a wallet.
+    /// A provider key-material entry uses an incompatible account-registration
+    /// path, pairs an account type with the wrong key curve, or has persisted
+    /// typed columns that contradict its decoded `ProviderKeyRegistrationBlob`.
+    /// The guards reject it on write or decode so cross-curve-confused data
+    /// never enters a wallet.
     #[error(
-        "provider key account entry uses the ECDSA writer, disagrees with its \
-         typed columns, or carries the wrong curve for its account type"
+        "provider key-material account was submitted through an incompatible \
+         account-registration path, paired with the wrong key curve, or has \
+         corrupted persisted data"
     )]
     ProviderKeyAccountEntryMismatch,
 
