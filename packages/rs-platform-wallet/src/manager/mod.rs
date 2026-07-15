@@ -395,7 +395,14 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
 /// `Arc<P>` clone — which keeps the persister "open" and turns a later re-open
 /// on the same path into a spurious `WalletStorageError::AlreadyOpen` that
 /// masks the real error (issue #4133). Cancelling the token and aborting the
-/// task here releases that reference on every drop path.
+/// task here starts that release — but note it is *eventual*, not synchronous:
+/// `abort()` only requests cancellation, so the runtime drops the task (and its
+/// `Arc<P>` clone) at the task's next poll, not inside this `drop`. In practice
+/// the adapter loop parks on an `.await` almost every iteration, so the clone is
+/// reclaimed promptly. Only the graceful
+/// [`shutdown`](PlatformWalletManager::shutdown) path *guarantees* the reference
+/// is gone before it returns (it awaits the join); this backstop guarantees
+/// eventual reclamation, not synchronous.
 impl<P: PlatformWalletPersistence + 'static> Drop for PlatformWalletManager<P> {
     fn drop(&mut self) {
         self.event_adapter_cancel.cancel();

@@ -438,6 +438,11 @@ mod tests {
             p.transaction.version = 3;
             p.transaction.lock_time = 111;
             p.output_index = 2;
+            // `default()` leaves the nested `InstantLock.inputs` empty; a real
+            // IS-lock always carries at least one input, so populate it to
+            // exercise the length-prefixed-vec encoding path a genuine proof
+            // hits (QA-004).
+            p.instant_lock.inputs = vec![sample_outpoint(0xA1), sample_outpoint(0xA2)];
             p
         };
         let proof = AssetLockProof::Instant(inner);

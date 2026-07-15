@@ -579,14 +579,26 @@ mod tests {
             AssetLockProof::Chain(ChainAssetLockProof::new(12_345, [0x07u8; 36]))
         }
 
-        /// A fully-populated `Instant` variant (non-default inner fields) so the
-        /// round-trip legs would catch a silent variant flip or inner-zeroing,
-        /// not just the trivially-empty default.
+        /// A fully-populated `Instant` variant (non-default inner fields,
+        /// including a non-empty nested `InstantLock.inputs` — the
+        /// length-prefixed-vec path a real IS-lock hits) so the round-trip legs
+        /// catch a silent variant flip or inner-zeroing, not just the
+        /// trivially-empty default.
         fn instant_proof() -> AssetLockProof {
             let mut inner = InstantAssetLockProof::default();
             inner.transaction.version = 3;
             inner.transaction.lock_time = 111;
             inner.output_index = 2;
+            inner.instant_lock.inputs = vec![
+                OutPoint::from_str(
+                    "0000000000000000000000000000000000000000000000000000000000000002:0",
+                )
+                .expect("outpoint a"),
+                OutPoint::from_str(
+                    "0000000000000000000000000000000000000000000000000000000000000003:1",
+                )
+                .expect("outpoint b"),
+            ];
             AssetLockProof::Instant(inner)
         }
 
