@@ -78,6 +78,10 @@ fn proof_bearing_asset_locks_round_trip_through_persister() {
         p.transaction.version = 3;
         p.transaction.lock_time = 111;
         p.output_index = 2;
+        // `default()` leaves the nested `InstantLock.inputs` empty; a real
+        // IS-lock always carries at least one input, so populate it to exercise
+        // the length-prefixed-vec encoding path a genuine proof hits (QA-004).
+        p.instant_lock.inputs = vec![op(0xA1), op(0xA2)];
         p
     });
 

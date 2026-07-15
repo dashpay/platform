@@ -248,9 +248,17 @@ mod tests {
     /// error preserving the source chain, and (b) release the wallet-event
     /// adapter's `Arc<persister>` clone so a reconstruct on the same path
     /// doesn't hit `WalletStorageError::AlreadyOpen` masking the real error
-    /// (issue #4133). Proven by the persister's strong count returning to 1
-    /// (the test's own probe) after teardown — a lingering adapter would keep
-    /// it above 1.
+    /// (issue #4133).
+    ///
+    /// This is a **manager-side proxy**, not a full end-to-end proof: it asserts
+    /// the persister's strong count returns to 1 (the test's own probe) after a
+    /// failed load + teardown — a lingering adapter clone would keep it above 1
+    /// — which is the necessary precondition for a clean re-open. It does not
+    /// itself open a real `SqlitePersister`, fail, and re-open on the same path;
+    /// the platform-wallet ⇄ platform-wallet-storage dev-dependency cycle
+    /// precludes using the concrete persister here. That end-to-end
+    /// open → fail → reopen is covered by the storage crate's own round-trip
+    /// coverage test.
     #[tokio::test]
     async fn failed_load_releases_persister_for_reconstruct() {
         let persister = Arc::new(FailingLoadPersister);
@@ -278,6 +286,50 @@ mod tests {
             Arc::strong_count(&probe),
             1,
             "after a failed load + teardown nothing may still hold the persister"
+        );
+    }
+
+    /// The `Drop` backstop alone (no `shutdown` first) must *eventually* release
+    /// the adapter's `Arc<persister>` clone. Unlike the graceful path this is
+    /// not synchronous: `Drop::drop` calls `abort()`, which only *requests*
+    /// cancellation — the runtime drops the aborted task (and its clone) at its
+    /// next poll. So the strong count is polled, not asserted immediately, which
+    /// is exactly the "eventual, not synchronous" contract the `Drop` impl's
+    /// doc-comment describes. This is the branch the graceful-path test above
+    /// never exercises (there `shutdown` has already taken the join handle, so
+    /// `Drop`'s `abort` sees `None`).
+    #[tokio::test]
+    async fn drop_backstop_eventually_releases_persister_without_shutdown() {
+        let persister = Arc::new(FailingLoadPersister);
+        let probe = Arc::clone(&persister);
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let handler: Arc<dyn PlatformEventHandler> = Arc::new(NoopEventHandler);
+
+        let manager = PlatformWalletManager::new(sdk, persister, handler);
+        // The adapter task spawned in `new()` holds a clone, so the count is
+        // above the probe before any teardown.
+        assert!(
+            Arc::strong_count(&probe) > 1,
+            "the spawned adapter task must hold an Arc<persister> clone"
+        );
+
+        // Dirty drop: never call `shutdown`, so `Drop`'s `abort` is the only
+        // thing that can reclaim the adapter's clone.
+        drop(manager);
+
+        // Release is eventual: poll until the aborted task is dropped by the
+        // runtime rather than asserting immediately.
+        let mut count = Arc::strong_count(&probe);
+        for _ in 0..1_000 {
+            if count == 1 {
+                break;
+            }
+            tokio::task::yield_now().await;
+            count = Arc::strong_count(&probe);
+        }
+        assert_eq!(
+            count, 1,
+            "the Drop backstop must eventually release the persister after aborting the adapter"
         );
     }
 }
