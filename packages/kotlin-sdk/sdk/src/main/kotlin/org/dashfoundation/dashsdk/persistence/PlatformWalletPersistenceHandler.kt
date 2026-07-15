@@ -7,6 +7,8 @@ import kotlinx.coroutines.ExecutorCoroutineDispatcher
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import org.dashfoundation.dashsdk.ffi.AccountSpecData
 import org.dashfoundation.dashsdk.ffi.ContactProfileRestoreData
 import org.dashfoundation.dashsdk.ffi.ContactRequestRestoreData
@@ -149,6 +151,28 @@ class PlatformWalletPersistenceHandler(
 
     /** Open rounds keyed by walletId hex (a round is per-walletId). */
     private val buffers = HashMap<String, ChangesetBuffer>()
+
+    /**
+     * Serializes every persistence callback against compound external
+     * sequences (wallet deletion's snapshot → secret delete → cascade).
+     * Each [guarded]/[guardedLoad] callback acquires it AT ENTRY on the
+     * JNI caller thread — before any hop onto [dispatcher] — so a parked
+     * callback never holds the persistence thread, and an exclusion
+     * holder may safely run dispatcher-confined work. Callbacks fire
+     * while Rust holds the wallet-manager write lock, so an exclusion
+     * holder must NEVER call into native code (ABBA deadlock); it must
+     * also never re-enter a public locking entry point (non-reentrant).
+     */
+    private val callbackExclusion = Mutex()
+
+    /**
+     * Run [block] with persistence callbacks excluded: no callback (and
+     * so no [PrivateKeyDeriver] alias write and no changeset commit) can
+     * interleave with it. See [callbackExclusion] for the rules the block
+     * must obey (no native calls, no re-entrant locking).
+     */
+    suspend fun <T> withCallbackExclusion(block: suspend () -> T): T =
+        callbackExclusion.withLock { block() }
 
     /**
      * Stage a write. If a round is open for [walletId] the op is buffered
@@ -2040,8 +2064,24 @@ class PlatformWalletPersistenceHandler(
      * when no sibling wallet remains on this network — mirroring Swift's
      * sibling check. Idempotent: deleting an already-removed wallet is a
      * no-op.
+     *
+     * Runs under [withCallbackExclusion] so no persistence callback (and
+     * so no changeset commit) can interleave with the cascade. A caller
+     * already inside the exclusion (the wallet-deletion sequence) must
+     * use [deleteWalletDataLocked] instead — the mutex is not reentrant.
      */
-    suspend fun deleteWalletData(walletId: ByteArray) = runBlockingCatching {
+    suspend fun deleteWalletData(walletId: ByteArray) =
+        withCallbackExclusion { deleteWalletDataLocked(walletId) }
+
+    /**
+     * [deleteWalletData] body; the caller must hold [callbackExclusion]
+     * (via [withCallbackExclusion]).
+     */
+    internal suspend fun deleteWalletDataLocked(walletId: ByteArray) = runBlockingCatching {
+        // Discard any open changeset round for this wallet: its staged ops
+        // would otherwise commit AFTER the cascade below and resurrect
+        // rows for the deleted wallet.
+        buffers.remove(walletId.toHex())
         database.withTransaction {
             val walletRow = database.walletDao().getByWalletId(walletId)
             val walletNetwork = walletRow?.networkRaw
@@ -2092,20 +2132,28 @@ class PlatformWalletPersistenceHandler(
     /**
      * Wrap a persist-callback body so no exception ever crosses the JNI
      * boundary — catch, log, and return non-zero (which flips the round's
-     * success flag so [onChangesetEnd] rolls back).
+     * success flag so [onChangesetEnd] rolls back). The body runs under
+     * [callbackExclusion], acquired here on the JNI caller thread before
+     * any [dispatcher] hop, so callbacks serialize against compound
+     * external sequences (wallet deletion) without ever parking the
+     * persistence thread.
      */
-    private inline fun guarded(body: () -> Int): Int =
+    private fun guarded(body: () -> Int): Int =
         try {
-            body()
+            runBlocking { callbackExclusion.withLock { body() } }
         } catch (t: Throwable) {
             Log.e(TAG, "persistence callback failed", t)
             1
         }
 
-    /** Load-callback variant: on failure log and return [fallback]. */
-    private inline fun <T> guardedLoad(fallback: T, body: () -> T): T =
+    /**
+     * Load-callback variant: on failure log and return [fallback]. Takes
+     * [callbackExclusion] like [guarded] — loads read the same state the
+     * deletion sequence mutates.
+     */
+    private fun <T> guardedLoad(fallback: T, body: () -> T): T =
         try {
-            body()
+            runBlocking { callbackExclusion.withLock { body() } }
         } catch (t: Throwable) {
             Log.e(TAG, "persistence load callback failed", t)
             fallback

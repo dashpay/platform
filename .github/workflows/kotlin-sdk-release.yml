@@ -22,6 +22,11 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          # A manual dispatch runs on the branch/tag selected in the UI, not
+          # on the `tag` input it will publish under — without this ref the
+          # released AAR could be built from a different commit than the tag.
+          ref: ${{ github.event.inputs.tag || github.ref }}
 
       - name: Free disk space
         run: |

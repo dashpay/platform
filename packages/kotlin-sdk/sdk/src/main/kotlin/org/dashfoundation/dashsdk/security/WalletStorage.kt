@@ -7,6 +7,8 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.util.Base64
 
 private val Context.secretsStore: DataStore<Preferences> by preferencesDataStore(
@@ -30,6 +32,42 @@ class WalletStorage(
     private val keystore: KeystoreManager = KeystoreManager(),
 ) {
     private val store = context.secretsStore
+
+    /**
+     * Serializes every `privkey.*` alias mutation. A single DataStore
+     * `edit` is already atomic, but compound sequences (wallet deletion's
+     * enumerate → refcount → batch-delete) must not interleave with a
+     * concurrent [storePrivateKey] — an alias written after the snapshot
+     * would survive deletion and lose its discoverable Room row to the
+     * cascade. Writers take this internally; compound readers-then-writers
+     * use [withPrivateKeyExclusion]. The mutex is NOT reentrant: code
+     * running inside [withPrivateKeyExclusion] must use the scope's own
+     * operations, never the public locking entry points.
+     */
+    private val privateKeyMutex = Mutex()
+
+    /** Operations available while the private-key exclusion is held. */
+    interface PrivateKeyExclusion {
+        /** [WalletStorage.deletePrivateKeys], lock already held. */
+        suspend fun deletePrivateKeys(pubkeyHexes: Collection<String>)
+    }
+
+    private val privateKeyExclusionScope = object : PrivateKeyExclusion {
+        override suspend fun deletePrivateKeys(pubkeyHexes: Collection<String>) =
+            deletePrivateKeysLocked(pubkeyHexes)
+    }
+
+    /**
+     * Run [block] with the private-key mutation lock held, so no
+     * [storePrivateKey] / [deletePrivateKey] can interleave with a
+     * compound snapshot-then-delete sequence. The block must not call
+     * the public locking entry points (non-reentrant); it must also never
+     * call into native code (a persistence callback parked on this lock
+     * inside [storePrivateKey] can be holding native locks).
+     */
+    suspend fun <T> withPrivateKeyExclusion(
+        block: suspend PrivateKeyExclusion.() -> T,
+    ): T = privateKeyMutex.withLock { privateKeyExclusionScope.block() }
 
     // ── Mnemonics ─────────────────────────────────────────────────────
 
@@ -97,8 +135,10 @@ class WalletStorage(
      * encrypt. Reads ([retrievePrivateKey]) still require auth.
      */
     suspend fun storePrivateKey(pubkeyHex: String, privateKey: ByteArray) {
-        val blob = keystore.encrypt(privateKey, alias = KeystoreManager.KEYS_ALIAS)
-        store.edit { it[privateKeyKey(pubkeyHex)] = encode(blob) }
+        privateKeyMutex.withLock {
+            val blob = keystore.encrypt(privateKey, alias = KeystoreManager.KEYS_ALIAS)
+            store.edit { it[privateKeyKey(pubkeyHex)] = encode(blob) }
+        }
     }
 
     /**
@@ -113,7 +153,9 @@ class WalletStorage(
     }
 
     suspend fun deletePrivateKey(pubkeyHex: String) {
-        store.edit { it.remove(privateKeyKey(pubkeyHex)) }
+        privateKeyMutex.withLock {
+            store.edit { it.remove(privateKeyKey(pubkeyHex)) }
+        }
     }
 
     /**
@@ -124,6 +166,10 @@ class WalletStorage(
      * would leave a live wallet missing some of its signing keys.
      */
     suspend fun deletePrivateKeys(pubkeyHexes: Collection<String>) {
+        privateKeyMutex.withLock { deletePrivateKeysLocked(pubkeyHexes) }
+    }
+
+    private suspend fun deletePrivateKeysLocked(pubkeyHexes: Collection<String>) {
         if (pubkeyHexes.isEmpty()) return
         store.edit { prefs ->
             for (pubkeyHex in pubkeyHexes) prefs.remove(privateKeyKey(pubkeyHex))
@@ -151,7 +197,11 @@ class WalletStorage(
         store.data.first().asMap().keys.map { it.name }.sorted()
 
     suspend fun deleteAll() {
-        store.edit { it.clear() }
+        // Clears privkey.* entries too — take the same exclusion as the
+        // targeted mutators so it can't interleave with a compound sweep.
+        privateKeyMutex.withLock {
+            store.edit { it.clear() }
+        }
     }
 
     private fun mnemonicKey(walletId: ByteArray) =
