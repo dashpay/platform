@@ -33,7 +33,6 @@ use dpp::prelude::{CoreBlockHeight, DataContract, Identifier};
 use dpp::version::PlatformVersion;
 use tokio::runtime::RuntimeFlavor;
 
-use crate::error::PlatformWalletError;
 use crate::spv::SpvRuntime;
 
 /// Hex-encode the first 8 bytes of a quorum hash for correlation in logs.
@@ -102,44 +101,26 @@ impl ContextProvider for SpvContextProvider {
                 "SPV quorum lookup called outside a Tokio runtime".to_string(),
             )
         })?;
-        let result = if handle.runtime_flavor() == RuntimeFlavor::CurrentThread {
-            // `block_in_place` panics on a current-thread runtime, so drive the
-            // lookup on a short-lived runtime on a dedicated thread instead. SPV
-            // state uses runtime-agnostic `tokio::sync` primitives, so this is
-            // safe. This is not the SDK's normal (multi-threaded) verify path.
-            let spv = Arc::clone(&self.spv);
-            std::thread::scope(|scope| {
-                scope
-                    .spawn(move || {
-                        tokio::runtime::Builder::new_current_thread()
-                            .build()
-                            .map_err(|e| PlatformWalletError::SpvError(e.to_string()))
-                            .and_then(|rt| {
-                                rt.block_on(spv.get_quorum_public_key(
-                                    quorum_type,
-                                    quorum_hash,
-                                    core_chain_locked_height,
-                                ))
-                            })
-                    })
-                    .join()
-                    .unwrap_or_else(|_| {
-                        Err(PlatformWalletError::SpvError(
-                            "SPV quorum lookup thread panicked".to_string(),
-                        ))
-                    })
-            })
-        } else {
-            // Multi-threaded runtime (the SDK's proof-verify runtime): block the
-            // current worker without stalling the whole runtime.
-            tokio::task::block_in_place(|| {
-                handle.block_on(self.spv.get_quorum_public_key(
-                    quorum_type,
-                    quorum_hash,
-                    core_chain_locked_height,
-                ))
-            })
+        // `block_in_place` panics on a current-thread runtime, and bridging via
+        // a helper thread can deadlock: proof verification would block this
+        // runtime's only executor in `join()` while the SPV masternode-engine
+        // write lock is held by a task on the same runtime, so that writer could
+        // never resume to release it. The SDK verifies proofs on a multi-threaded
+        // runtime, so fail closed here rather than risk a panic or a deadlock.
+        if handle.runtime_flavor() == RuntimeFlavor::CurrentThread {
+            return Err(ContextProviderError::Generic(
+                "SPV quorum lookup requires a multi-threaded Tokio runtime".to_string(),
+            ));
         }
+        // Multi-threaded runtime: block the current worker without stalling the
+        // whole runtime.
+        let result = tokio::task::block_in_place(|| {
+            handle.block_on(self.spv.get_quorum_public_key(
+                quorum_type,
+                quorum_hash,
+                core_chain_locked_height,
+            ))
+        })
         .map_err(|e| ContextProviderError::InvalidQuorum(e.to_string()));
 
         // The quorum public key is the trust root of every Platform proof this
