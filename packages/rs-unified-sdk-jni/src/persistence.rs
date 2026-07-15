@@ -169,6 +169,11 @@ pub(crate) fn build_vtable(context: *mut c_void) -> PersistenceCallbacks {
         on_get_core_tx_record_fn: Some(tramp_get_core_tx_record),
         on_get_core_tx_record_free_fn: Some(tramp_get_core_tx_record_free),
         on_persist_asset_locks_fn: Some(tramp_persist_asset_locks),
+        // Android hasn't wired DIP-13 invitation persistence yet. Leaving this
+        // `None` keeps `FFIPersister::persists_durably()` fail-closed, so the
+        // invitation flow refuses to run on Android rather than create a
+        // non-durable voucher whose one-time key could be reused on restart.
+        on_persist_invitations_fn: None,
     }
 }
 

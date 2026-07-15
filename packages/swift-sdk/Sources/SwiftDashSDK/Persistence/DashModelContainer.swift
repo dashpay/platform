@@ -38,6 +38,7 @@ public enum DashModelContainer {
             PersistentShieldedActivity.self,
             PersistentShieldedViewingKey.self,
             PersistentAssetLock.self,
+            PersistentInvitation.self,
             PersistentMasternode.self
         ]
     }

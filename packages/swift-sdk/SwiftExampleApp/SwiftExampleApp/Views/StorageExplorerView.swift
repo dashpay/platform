@@ -69,6 +69,13 @@ struct StorageExplorerView: View {
             ) {
                 DashpayIgnoredSenderStorageListView(network: network)
             }
+            modelRow(
+                "Sent Invitations",
+                icon: "paperplane",
+                type: PersistentInvitation.self
+            ) {
+                InvitationStorageListView(network: network)
+            }
             modelRow("Documents", icon: "doc.text", type: PersistentDocument.self) {
                 DocumentStorageListView(network: network)
             }
@@ -326,6 +333,9 @@ struct StorageExplorerView: View {
             walletsOnNetwork.contains($0.walletId)
         }
         filteredCount(PersistentAssetLock.self) {
+            walletsOnNetwork.contains($0.walletId)
+        }
+        filteredCount(PersistentInvitation.self) {
             walletsOnNetwork.contains($0.walletId)
         }
         filteredCount(PersistentMasternode.self) {

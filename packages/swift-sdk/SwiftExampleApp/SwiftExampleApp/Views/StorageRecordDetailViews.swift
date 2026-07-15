@@ -359,6 +359,64 @@ struct DashpayPaymentStorageDetailView: View {
     }
 }
 
+// MARK: - PersistentInvitation
+
+/// Human label for a `PersistentInvitation.statusRaw` discriminant
+/// (0 = Created, 1 = Claimed, 2 = Reclaimed). Shared with the list view;
+/// an unmapped value renders as "Unknown (n)" rather than being hidden.
+func invitationStatusLabel(_ raw: Int) -> String {
+    switch raw {
+    case 0: return "Created"
+    case 1: return "Claimed"
+    case 2: return "Reclaimed"
+    default: return "Unknown (\(raw))"
+    }
+}
+
+/// Detail view for one created DashPay invitation (DIP-13). Read-only dump
+/// of every column the persister bridge writes, mirroring the other storage
+/// detail views. Note there is no secret column — the one-time voucher key
+/// is never stored.
+struct InvitationStorageDetailView: View {
+    let record: PersistentInvitation
+
+    var body: some View {
+        Form {
+            Section("Core") {
+                FieldRow(label: "Status", value: invitationStatusLabel(record.statusRaw))
+                FieldRow(
+                    label: "Amount",
+                    value: String(format: "%.8f DASH", Double(record.amountDuffs) / 100_000_000)
+                )
+                FieldRow(label: "Amount (duffs)", value: "\(record.amountDuffs)")
+                FieldRow(label: "Funding index", value: "\(record.fundingIndexRaw)")
+                FieldRow(label: "Has inviter", value: record.hasInviter ? "Yes" : "No")
+            }
+            Section("Outpoint") {
+                FieldRow(label: "Outpoint", value: record.outPointHex)
+                FieldRow(
+                    label: "Raw outpoint",
+                    value: record.rawOutPoint.map { String(format: "%02x", $0) }.joined()
+                )
+            }
+            Section("Wallet") {
+                FieldRow(
+                    label: "Wallet id",
+                    value: record.walletId.map { String(format: "%02x", $0) }.joined()
+                )
+            }
+            Section("Timestamps") {
+                FieldRow(label: "Expiry (unix)", value: "\(record.expiryUnix)")
+                FieldRow(label: "Created (unix)", value: "\(record.createdAtSecs)")
+                FieldRow(label: "Created", value: AppDate.formatted(record.createdAt, dateStyle: .abbreviated, timeStyle: .standard))
+                FieldRow(label: "Updated", value: AppDate.formatted(record.updatedAt, dateStyle: .abbreviated, timeStyle: .standard))
+            }
+        }
+        .navigationTitle("Invitation")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
 // MARK: - PersistentDashpayIgnoredSender
 
 /// Detail view for one DashPay ignored sender (per-sender mute,
