@@ -213,7 +213,9 @@ fn single_domain_changeset(domain: Domain) -> PlatformWalletChangeSet {
         Domain::Invitations => {
             use dashcore::hashes::Hash;
             use dashcore::{OutPoint, Txid};
-            use platform_wallet::changeset::{InvitationChangeSet, InvitationEntry, InvitationStatus};
+            use platform_wallet::changeset::{
+                InvitationChangeSet, InvitationEntry, InvitationStatus,
+            };
             let op = OutPoint {
                 txid: Txid::from_byte_array([0x0C; 32]),
                 vout: 0,

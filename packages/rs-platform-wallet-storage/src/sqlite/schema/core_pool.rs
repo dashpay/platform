@@ -16,7 +16,7 @@ use rusqlite::{params, Connection, OptionalExtension, Transaction};
 use platform_wallet::changeset::AccountAddressPoolEntry;
 use platform_wallet::wallet::platform_wallet::WalletId;
 
-use key_wallet::managed_account::address_pool::AddressPoolType;
+use key_wallet::managed_account::address_pool::{AddressPoolType, PublicKeyType};
 
 use crate::sqlite::error::WalletStorageError;
 use crate::sqlite::schema::accounts;
@@ -33,14 +33,24 @@ pub(crate) fn pool_type_to_i64(pool_type: AddressPoolType) -> i64 {
     }
 }
 
+// Stable `PublicKeyType` declaration-order discriminants and emitted lengths.
+const KEY_TYPE_ECDSA: i64 = 0;
+const KEY_TYPE_EDDSA: i64 = 1;
+const KEY_TYPE_BLS: i64 = 2;
+const ECDSA_PUBLIC_KEY_LEN: usize = 33;
+const EDDSA_PUBLIC_KEY_LEN: usize = 32;
+const BLS_PUBLIC_KEY_LEN: usize = 48;
+
 const UPSERT_POOL_SQL: &str = "INSERT INTO core_address_pool \
         (wallet_id, account_type, account_index, key_class, user_identity_id, friend_identity_id, \
-         pool_type, address_index, script, used) \
-     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10) \
+         pool_type, address_index, script, used, public_key, key_type) \
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12) \
      ON CONFLICT(wallet_id, account_type, account_index, key_class, user_identity_id, \
                  friend_identity_id, pool_type, address_index) \
      DO UPDATE SET \
         script = excluded.script, \
+        public_key = excluded.public_key, \
+        key_type = excluded.key_type, \
         used = MAX(used, excluded.used)";
 
 /// Expand `account_address_pools` snapshots into per-index
@@ -74,6 +84,15 @@ pub fn apply_pools(
             accounts::account_dashpay_ids(&entry.account_type);
         let pool_type = pool_type_to_i64(entry.pool_type);
         for info in &entry.addresses {
+            let (public_key, key_type): (Option<&[u8]>, Option<i64>) = match info
+                .public_key
+                .as_ref()
+            {
+                None => (None, None),
+                Some(PublicKeyType::ECDSA(bytes)) => (Some(bytes.as_slice()), Some(KEY_TYPE_ECDSA)),
+                Some(PublicKeyType::EdDSA(bytes)) => (Some(bytes.as_slice()), Some(KEY_TYPE_EDDSA)),
+                Some(PublicKeyType::BLS(bytes)) => (Some(bytes.as_slice()), Some(KEY_TYPE_BLS)),
+            };
             stmt.execute(params![
                 wallet_id.as_slice(),
                 account_type,
@@ -85,10 +104,100 @@ pub fn apply_pools(
                 i64::from(info.index),
                 info.script_pubkey.as_bytes(),
                 info.used,
+                public_key,
+                key_type,
             ])?;
         }
     }
     Ok(())
+}
+
+/// One restored typed-pool row: `(address_index, script_bytes, public_key, used)`.
+pub type TypedPoolEntry = (u32, Vec<u8>, PublicKeyType, bool);
+
+/// Load typed public-key rows for one account pool, ordered by address index.
+///
+/// These rows carry pre-derived hardened-only batches, such as platform-node
+/// EdDSA keys, that cannot be regenerated from a watch-only account xpub.
+/// Invalid key discriminants, missing keys, and wrong key widths are errors.
+pub fn load_typed_pool_entries(
+    conn: &Connection,
+    wallet_id: &WalletId,
+    account_type: &key_wallet::account::AccountType,
+    pool_type: AddressPoolType,
+) -> Result<Vec<TypedPoolEntry>, WalletStorageError> {
+    let account_type = accounts::account_type_db_label(account_type);
+    let pool_type = pool_type_to_i64(pool_type);
+    let (max_script_len, max_public_key_len): (Option<i64>, Option<i64>) = conn.query_row(
+        "SELECT MAX(length(script)), MAX(length(public_key)) FROM core_address_pool \
+         WHERE wallet_id = ?1 AND account_type = ?2 AND pool_type = ?3 \
+           AND key_type IS NOT NULL",
+        params![wallet_id.as_slice(), account_type, pool_type],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    )?;
+    if let Some(len) = max_script_len {
+        blob::check_size(len)?;
+    }
+    if let Some(len) = max_public_key_len {
+        blob::check_size(len)?;
+    }
+
+    let mut stmt = conn.prepare(
+        "SELECT address_index, length(script), script, length(public_key), public_key, \
+                key_type, used FROM core_address_pool \
+         WHERE wallet_id = ?1 AND account_type = ?2 AND pool_type = ?3 \
+           AND key_type IS NOT NULL \
+         ORDER BY address_index",
+    )?;
+    let mut rows = stmt.query(params![wallet_id.as_slice(), account_type, pool_type,])?;
+    let mut out = Vec::new();
+    while let Some(row) = rows.next()? {
+        let address_index = crate::sqlite::util::safe_cast::i64_to_u32(
+            "core_address_pool.address_index",
+            row.get::<_, i64>(0)?,
+        )?;
+        blob::check_size(row.get::<_, i64>(1)?)?;
+        let script = row.get::<_, Vec<u8>>(2)?;
+        let public_key_len = row.get::<_, Option<i64>>(3)?;
+        let key_type = row.get::<_, i64>(5)?;
+        let expected_key_len = match key_type {
+            KEY_TYPE_ECDSA => ECDSA_PUBLIC_KEY_LEN,
+            KEY_TYPE_EDDSA => EDDSA_PUBLIC_KEY_LEN,
+            KEY_TYPE_BLS => BLS_PUBLIC_KEY_LEN,
+            _ => {
+                return Err(WalletStorageError::blob_decode(
+                    "core_address_pool.key_type is outside 0..=2",
+                ));
+            }
+        };
+        let Some(public_key_len) = public_key_len else {
+            return Err(WalletStorageError::blob_decode(
+                "core_address_pool.public_key is NULL for a typed row",
+            ));
+        };
+        blob::check_fixed_width(
+            public_key_len,
+            expected_key_len,
+            "core_address_pool.public_key has the wrong length for key_type",
+        )?;
+        let Some(public_key) = row.get::<_, Option<Vec<u8>>>(4)? else {
+            return Err(WalletStorageError::blob_decode(
+                "core_address_pool.public_key is NULL for a typed row",
+            ));
+        };
+        let public_key = match key_type {
+            KEY_TYPE_ECDSA => PublicKeyType::ECDSA(public_key),
+            KEY_TYPE_EDDSA => PublicKeyType::EdDSA(public_key),
+            KEY_TYPE_BLS => PublicKeyType::BLS(public_key),
+            _ => {
+                return Err(WalletStorageError::blob_decode(
+                    "core_address_pool.key_type is outside 0..=2",
+                ));
+            }
+        };
+        out.push((address_index, script, public_key, row.get(6)?));
+    }
+    Ok(out)
 }
 
 /// Identity of the funds account that owns an address, matched against a

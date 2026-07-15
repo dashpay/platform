@@ -9,15 +9,17 @@ mod common;
 
 use common::{ensure_wallet_meta, fresh_persister, wid};
 use key_wallet::account::{AccountType, StandardAccountType};
-use key_wallet::managed_account::address_pool::AddressPoolType;
+use key_wallet::managed_account::address_pool::{AddressPoolType, PublicKeyType};
 use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::Wallet;
 use key_wallet::{AddressInfo, Network, Utxo};
 use platform_wallet::changeset::{
     AccountAddressPoolEntry, CoreChangeSet, PlatformWalletChangeSet, PlatformWalletPersistence,
+    ProviderKeyAccountEntry, ProviderKeyExtendedPubKey, WalletMetadataEntry,
 };
 use platform_wallet::wallet::platform_wallet::WalletId;
+use platform_wallet_storage::{SqlitePersister, SqlitePersisterConfig};
 
 /// Real external-pool `AddressInfo`s for a wallet's Standard BIP44 account 0,
 /// sorted by derivation index — genuine scripts that round-trip.
@@ -582,4 +584,136 @@ fn distinct_dashpay_friends_do_not_collide_in_pool() {
         )
         .unwrap();
     assert_eq!(total, 2, "both contacts must persist as separate rows");
+}
+
+/// Repro for a real gap found while merging PR #4117 with upstream PR #4127.
+/// PR #4127 replaced the removed `derived_platform_node_keys` persistence with
+/// generic `account_address_pools` snapshots, but SQLite's `core_pool.rs` and
+/// `persister.rs` do not carry or restore the raw platform-node public key.
+/// Reference: dashpay/platform#4113.
+#[test]
+fn platform_node_key_public_keys_survive_sqlite_store_and_load() {
+    let wallet = Wallet::from_seed_bytes(
+        [0x33u8; 64],
+        Network::Testnet,
+        WalletAccountCreationOptions::Default,
+    )
+    .unwrap();
+    let keys = platform_wallet::wallet::provider_key_at_index::derive_platform_node_public_keys(
+        &wallet,
+        Network::Testnet,
+        3,
+    )
+    .expect("derive");
+    let mut wallet_info = ManagedWalletInfo::from_wallet(&wallet, 0);
+    platform_wallet::wallet::provider_key_at_index::populate_platform_node_pool(
+        &mut wallet_info,
+        &keys,
+        Network::Testnet,
+    )
+    .expect("populate");
+
+    let platform_node_account = wallet_info
+        .all_managed_accounts()
+        .into_iter()
+        .find(|managed| {
+            managed.managed_account_type().to_account_type() == AccountType::ProviderPlatformKeys
+        })
+        .expect("platform-node managed account");
+    let platform_node_pool = platform_node_account
+        .managed_account_type()
+        .address_pools()
+        .into_iter()
+        .find(|pool| pool.pool_type == AddressPoolType::AbsentHardened)
+        .expect("platform-node hardened pool");
+    let addresses = platform_node_pool
+        .addresses
+        .values()
+        .cloned()
+        .collect::<Vec<AddressInfo>>();
+    assert_eq!(
+        addresses.len(),
+        3,
+        "the in-memory platform-node pool must contain all three derived keys"
+    );
+    assert!(
+        addresses.iter().all(|info| info.public_key.is_some()),
+        "the in-memory platform-node pool must carry every derived public key"
+    );
+    let pool_entry = AccountAddressPoolEntry {
+        account_type: AccountType::ProviderPlatformKeys,
+        pool_type: AddressPoolType::AbsentHardened,
+        addresses,
+    };
+    let provider_registration = ProviderKeyAccountEntry {
+        account_type: AccountType::ProviderPlatformKeys,
+        extended_public_key: ProviderKeyExtendedPubKey::EdDSA(
+            wallet
+                .accounts
+                .eddsa_account_of_type(AccountType::ProviderPlatformKeys)
+                .expect("eddsa account")
+                .ed25519_public_key
+                .clone(),
+        ),
+    };
+
+    let (persister, _tmp, path) = fresh_persister();
+    let w: WalletId = wid(0x99);
+    persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                wallet_metadata: Some(WalletMetadataEntry {
+                    network: Network::Testnet,
+                    wallet_group_id: [0; 32],
+                    birth_height: 1,
+                }),
+                provider_key_account_registrations: vec![provider_registration],
+                account_address_pools: vec![pool_entry],
+                ..Default::default()
+            },
+        )
+        .expect("store");
+    drop(persister);
+
+    let persister =
+        SqlitePersister::open(SqlitePersisterConfig::new(&path)).expect("reopen persister");
+    let state = persister.load().expect("load");
+    let restored = &state
+        .wallets
+        .get(&w)
+        .expect("wallet rehydrated")
+        .wallet_info;
+    let restored_platform_node_account = restored
+        .all_managed_accounts()
+        .into_iter()
+        .find(|managed| {
+            managed.managed_account_type().to_account_type() == AccountType::ProviderPlatformKeys
+        })
+        .expect("restored platform-node managed account");
+    let restored_platform_node_pool = restored_platform_node_account
+        .managed_account_type()
+        .address_pools()
+        .into_iter()
+        .find(|pool| pool.pool_type == AddressPoolType::AbsentHardened)
+        .expect("restored platform-node hardened pool");
+
+    assert_eq!(
+        restored_platform_node_pool.addresses.len(),
+        3,
+        "all three platform-node indices must survive SQLite store()->load()"
+    );
+    for key in &keys {
+        let restored_info = restored_platform_node_pool
+            .addresses
+            .get(&key.index)
+            .unwrap_or_else(|| panic!("platform-node index {} did not survive SQLite", key.index));
+        let expected = Some(PublicKeyType::EdDSA(key.public_key.to_vec()));
+        assert_eq!(
+            restored_info.public_key, expected,
+            "platform-node public key at index {} did not survive SQLite store()->load() \
+             — see doc comment: core_pool.rs never persists AddressInfo.public_key",
+            key.index
+        );
+    }
 }

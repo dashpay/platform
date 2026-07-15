@@ -84,6 +84,12 @@ const READ_ONLY_PREPARE_ALLOWED: &[(&str, &str)] = &[
         "core_pool.rs",
         "SELECT script, account_type, account_index, user_identity_id, friend_identity_id",
     ),
+    // Typed-pool reader: one-shot read-only scan of pre-derived platform-node
+    // keys per wallet, during `load()` rehydration.
+    (
+        "core_pool.rs",
+        "SELECT address_index, length(script), script, length(public_key), public_key",
+    ),
     // Full-rehydration readers — one-shot SELECTs in `load_state`.
     (
         "accounts.rs",

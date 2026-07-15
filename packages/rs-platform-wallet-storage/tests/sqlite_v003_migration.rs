@@ -78,9 +78,11 @@ fn tc_b_030_fresh_store_migrates_to_version_three() {
         .unwrap();
     assert_eq!(applied, 1, "a fresh store must apply V003");
     let max: i64 = conn
-        .query_row("SELECT MAX(version) FROM refinery_schema_history", [], |r| {
-            r.get(0)
-        })
+        .query_row(
+            "SELECT MAX(version) FROM refinery_schema_history",
+            [],
+            |r| r.get(0),
+        )
         .unwrap();
     assert_eq!(
         max,

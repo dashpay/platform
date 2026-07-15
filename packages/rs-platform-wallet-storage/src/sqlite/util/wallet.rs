@@ -5,10 +5,12 @@
 //! runs here; that gate lives in the resolver-backed signing entrypoints.
 
 use key_wallet::account::account_collection::AccountCollection;
-use key_wallet::account::Account;
+use key_wallet::account::{Account, AccountType};
+use key_wallet::managed_account::address_pool::{AddressPoolType, PublicKeyType};
+use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::Wallet;
-use key_wallet::Network;
+use key_wallet::{AddressInfo, Network};
 
 use platform_wallet::changeset::{
     rebuild_provider_key_account, AccountRegistrationEntry, CoreChangeSet,
@@ -16,7 +18,7 @@ use platform_wallet::changeset::{
 };
 
 use crate::sqlite::schema::accounts::{self, AccountManifest};
-use crate::sqlite::schema::core_pool::OwningAccount;
+use crate::sqlite::schema::core_pool::{self, OwningAccount};
 use crate::WalletStorageError;
 
 /// Build a [`Wallet`] that will be provided to the platform-wallet during rehydration.
@@ -69,6 +71,91 @@ pub(crate) fn build_wallet(
         expected_wallet_id,
         accounts,
     ))
+}
+
+/// Restore pre-derived platform-node public keys from typed address-pool rows.
+///
+/// The account's `AbsentHardened` EdDSA entries cannot be regenerated from a
+/// watch-only xpub, so they round-trip verbatim through
+/// [`core_pool::load_typed_pool_entries`].
+pub(crate) fn restore_provider_platform_node_pool(
+    wallet_info: &mut ManagedWalletInfo,
+    conn: &rusqlite::Connection,
+    wallet_id: &platform_wallet::wallet::platform_wallet::WalletId,
+    network: Network,
+) -> Result<(), WalletStorageError> {
+    if wallet_info.accounts.provider_platform_keys.is_none() {
+        return Ok(());
+    }
+
+    let entries = core_pool::load_typed_pool_entries(
+        conn,
+        wallet_id,
+        &AccountType::ProviderPlatformKeys,
+        AddressPoolType::AbsentHardened,
+    )?;
+    if entries.is_empty() {
+        return Ok(());
+    }
+
+    let account_path = AccountType::ProviderPlatformKeys
+        .derivation_path(network)
+        .map_err(|e| WalletStorageError::AccountRecordInvalid { e })?;
+    let base_children: Vec<key_wallet::bip32::ChildNumber> = account_path.as_ref().to_vec();
+
+    let Some(account) = wallet_info.accounts.provider_platform_keys.as_mut() else {
+        return Ok(());
+    };
+    let Some(pool) = account
+        .managed_account_type_mut()
+        .address_pools_mut()
+        .into_iter()
+        .find(|pool| pool.pool_type == AddressPoolType::AbsentHardened)
+    else {
+        return Err(WalletStorageError::blob_decode(
+            "provider platform account has no AbsentHardened pool",
+        ));
+    };
+
+    for (index, script_bytes, public_key, used) in entries {
+        if !matches!(&public_key, PublicKeyType::EdDSA(_)) {
+            return Err(WalletStorageError::blob_decode(
+                "provider platform pool row does not carry an EdDSA public key",
+            ));
+        }
+        let script_pubkey = dashcore::ScriptBuf::from_bytes(script_bytes);
+        let address = dashcore::Address::from_script(&script_pubkey, network)?;
+        let child = key_wallet::bip32::ChildNumber::from_hardened_idx(index)
+            .map_err(key_wallet::error::Error::Bip32)
+            .map_err(|e| WalletStorageError::AccountRecordInvalid { e })?;
+        let mut children = base_children.clone();
+        children.push(child);
+        let path = key_wallet::bip32::DerivationPath::from(children);
+        let info = AddressInfo {
+            address,
+            script_pubkey,
+            public_key: Some(public_key),
+            index,
+            path,
+            used,
+            generated_at: 0,
+            used_at: None,
+            tx_count: 0,
+            total_received: 0,
+            total_sent: 0,
+            balance: 0,
+            label: None,
+            metadata: Default::default(),
+        };
+
+        let idx = info.index;
+        pool.address_index.insert(info.address.clone(), idx);
+        pool.script_pubkey_index
+            .insert(info.script_pubkey.clone(), idx);
+        pool.highest_generated = Some(pool.highest_generated.map_or(idx, |h| h.max(idx)));
+        pool.addresses.insert(idx, info);
+    }
+    Ok(())
 }
 
 /// Apply the keyless persisted core-state projection onto a

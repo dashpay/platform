@@ -19,7 +19,9 @@ use crate::sqlite::reports::{CommitReport, DeleteWalletReport};
 use crate::sqlite::schema;
 use crate::sqlite::util::permissions::{apply_secure_permissions, precreate_secure};
 use crate::sqlite::util::safe_cast;
-use crate::sqlite::util::wallet::{apply_persisted_core_state, build_wallet};
+use crate::sqlite::util::wallet::{
+    apply_persisted_core_state, build_wallet, restore_provider_platform_node_pool,
+};
 
 /// Persisted-but-not-rehydrated areas, surfaced in the structured
 /// `tracing::info!` summary on every `load()`.
@@ -1091,8 +1093,9 @@ impl PlatformWalletPersistence for SqlitePersister {
                     &wallet,
                     birth_height,
                 );
-            // Provider key-material accounts hold no funds and have no address
-            // pools, so only the ECDSA half feeds the core-state projection.
+            // Provider key-material accounts hold no funds, so only the ECDSA
+            // half feeds the UTXO/balance projection here. The platform-node
+            // pre-derived-key pool is restored separately below.
             apply_persisted_core_state(
                 &mut wallet_info,
                 &account_manifest.ecdsa,
@@ -1106,6 +1109,17 @@ impl PlatformWalletPersistence for SqlitePersister {
                     hex::encode(wallet_id)
                 ))
             })?;
+            if account_manifest.provider.iter().any(|entry| {
+                entry.account_type == key_wallet::account::AccountType::ProviderPlatformKeys
+            }) {
+                restore_provider_platform_node_pool(&mut wallet_info, &conn, &wallet_id, network)
+                    .map_err(|e| {
+                    PersistenceError::backend(format!(
+                        "platform-node pool rehydration failed for {}: {e}",
+                        hex::encode(wallet_id)
+                    ))
+                })?;
+            }
 
             state.wallets.insert(
                 wallet_id,
