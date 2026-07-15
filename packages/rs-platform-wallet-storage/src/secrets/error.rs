@@ -74,6 +74,17 @@ pub enum SecretStoreError {
     #[error("key derivation failed")]
     KdfFailure,
 
+    /// The OS CSPRNG (`getrandom`) could not supply entropy for a salt,
+    /// nonce, or key draw. The upstream error carries no useful non-secret
+    /// diagnostic, so it is not embedded. Kept distinct from
+    /// [`KdfFailure`] so an exhausted/blocked entropy source is not
+    /// misdiagnosed as an Argon2 parameter problem — the CSPRNG backs the
+    /// nonce and salt draws too, not just key derivation.
+    ///
+    /// [`KdfFailure`]: SecretStoreError::KdfFailure
+    #[error("system entropy source unavailable")]
+    EntropyUnavailable,
+
     /// The vault header declared a `format_version` this build does not
     /// understand.
     #[error("unsupported vault format version {found}")]
@@ -219,6 +230,76 @@ impl SecretStoreError {
             source,
         })
     }
+
+    /// `true` when the failure clears on a retry after the caller acts on
+    /// it. Mirrors `WalletStorageError::is_transient` on this crate's
+    /// SQLite arm so the two typed errors read as one family.
+    ///
+    /// Only [`AlreadyLocked`](Self::AlreadyLocked) qualifies: drop the
+    /// other store handle and re-`open`. Every other variant is a
+    /// wrong-credential, malformed-input, crypto, permission, size, or I/O
+    /// failure a bare retry cannot fix (a failing CSPRNG or disk may
+    /// recover, but not through this store's own retry contract).
+    ///
+    /// The match is wildcard-free so a new variant forces an explicit
+    /// classification here.
+    pub fn is_recoverable(&self) -> bool {
+        match self {
+            Self::AlreadyLocked => true,
+            Self::WrongPassphrase
+            | Self::ExpectedProtectedButUnsealed
+            | Self::NeedsPassword
+            | Self::WrongPassword
+            | Self::BlankPassphrase
+            | Self::Corruption
+            | Self::KdfFailure
+            | Self::EntropyUnavailable
+            | Self::VersionUnsupported { .. }
+            | Self::UnsupportedEnvelopeVersion { .. }
+            | Self::MalformedVault
+            | Self::InvalidLabel
+            | Self::NoEntry
+            | Self::InsecurePermissions { .. }
+            | Self::InsecureParentDir { .. }
+            | Self::SecretTooLarge { .. }
+            | Self::VaultTooLarge { .. }
+            | Self::Decrypt
+            | Self::Encrypt
+            | Self::Io(_)
+            | Self::OsKeyring { .. } => false,
+        }
+    }
+
+    /// Short, lowercase, snake_case tag per variant for tracing fields —
+    /// stable and greppable, mirroring `WalletStorageError::error_kind_str`
+    /// on this crate's SQLite arm. Match on this, never on the
+    /// human-facing `Display`/`Debug` text (documented unstable).
+    pub fn error_kind_str(&self) -> &'static str {
+        match self {
+            Self::WrongPassphrase => "wrong_passphrase",
+            Self::ExpectedProtectedButUnsealed => "expected_protected_but_unsealed",
+            Self::NeedsPassword => "needs_password",
+            Self::WrongPassword => "wrong_password",
+            Self::BlankPassphrase => "blank_passphrase",
+            Self::Corruption => "corruption",
+            Self::KdfFailure => "kdf_failure",
+            Self::EntropyUnavailable => "entropy_unavailable",
+            Self::VersionUnsupported { .. } => "version_unsupported",
+            Self::UnsupportedEnvelopeVersion { .. } => "unsupported_envelope_version",
+            Self::MalformedVault => "malformed_vault",
+            Self::InvalidLabel => "invalid_label",
+            Self::NoEntry => "no_entry",
+            Self::InsecurePermissions { .. } => "insecure_permissions",
+            Self::InsecureParentDir { .. } => "insecure_parent_dir",
+            Self::SecretTooLarge { .. } => "secret_too_large",
+            Self::AlreadyLocked => "already_locked",
+            Self::VaultTooLarge { .. } => "vault_too_large",
+            Self::Decrypt => "decrypt",
+            Self::Encrypt => "encrypt",
+            Self::Io(_) => "io",
+            Self::OsKeyring { .. } => "os_keyring",
+        }
+    }
 }
 
 /// Filesystem-error payload for [`SecretStoreError::Io`]. Wraps the OS
@@ -336,6 +417,7 @@ impl From<SecretStoreError> for KeyringError {
             | E::BlankPassphrase => KeyringError::NoStorageAccess(Box::new(e)),
             E::Corruption
             | E::KdfFailure
+            | E::EntropyUnavailable
             | E::VersionUnsupported { .. }
             | E::UnsupportedEnvelopeVersion { .. }
             | E::MalformedVault
@@ -575,5 +657,103 @@ mod tests {
         }
         .into();
         assert!(matches!(k, KeyringError::BadStoreFormat(_)));
+    }
+
+    /// `EntropyUnavailable` is a distinct, secret-free CSPRNG-failure
+    /// variant — NOT aliased to `KdfFailure` — and projects to the
+    /// secret-free `BadStoreFormat` group like the rest of the crypto family.
+    #[test]
+    fn entropy_unavailable_is_distinct_and_secret_free() {
+        use SecretStoreError as E;
+        assert_ne!(
+            E::EntropyUnavailable.to_string(),
+            E::KdfFailure.to_string(),
+            "entropy failure must not read as a key-derivation failure"
+        );
+        assert_eq!(
+            E::EntropyUnavailable.to_string(),
+            "system entropy source unavailable"
+        );
+        let k: KeyringError = E::EntropyUnavailable.into();
+        assert!(matches!(k, KeyringError::BadStoreFormat(_)));
+        assert!(!format!("{k}").contains("plaintext"));
+    }
+
+    /// `AlreadyLocked` is the only recoverable-by-retry variant (drop the
+    /// other handle and re-`open`); a representative spread of the rest is
+    /// non-recoverable.
+    #[test]
+    fn only_already_locked_is_recoverable() {
+        use SecretStoreError as E;
+        assert!(E::AlreadyLocked.is_recoverable());
+        for e in [
+            E::WrongPassphrase,
+            E::Corruption,
+            E::KdfFailure,
+            E::EntropyUnavailable,
+            E::MalformedVault,
+            E::InvalidLabel,
+            E::NoEntry,
+            E::Decrypt,
+            E::Encrypt,
+            E::from(std::io::Error::other("boom")),
+            E::OsKeyring {
+                kind: OsKeyringErrorKind::Backend,
+            },
+        ] {
+            assert!(
+                !e.is_recoverable(),
+                "{e} must not be classified recoverable"
+            );
+        }
+    }
+
+    /// `error_kind_str` returns a stable snake_case tag; the sampled tags
+    /// are pinned and the full variant set produces no duplicate tag.
+    #[test]
+    fn error_kind_str_tags_are_stable_and_unique() {
+        use SecretStoreError as E;
+        assert_eq!(E::AlreadyLocked.error_kind_str(), "already_locked");
+        assert_eq!(E::WrongPassphrase.error_kind_str(), "wrong_passphrase");
+        assert_eq!(
+            E::EntropyUnavailable.error_kind_str(),
+            "entropy_unavailable"
+        );
+        assert_eq!(
+            E::Io(std::io::Error::other("x").into()).error_kind_str(),
+            "io"
+        );
+
+        let tags: Vec<&str> = [
+            E::WrongPassphrase,
+            E::ExpectedProtectedButUnsealed,
+            E::NeedsPassword,
+            E::WrongPassword,
+            E::BlankPassphrase,
+            E::Corruption,
+            E::KdfFailure,
+            E::EntropyUnavailable,
+            E::VersionUnsupported { found: 1 },
+            E::UnsupportedEnvelopeVersion { found: 1 },
+            E::MalformedVault,
+            E::InvalidLabel,
+            E::NoEntry,
+            E::InsecurePermissions { mode: 0 },
+            E::InsecureParentDir { mode: 0 },
+            E::SecretTooLarge { found: 1, max: 0 },
+            E::AlreadyLocked,
+            E::VaultTooLarge { found: 1, max: 0 },
+            E::Decrypt,
+            E::Encrypt,
+            E::from(std::io::Error::other("x")),
+            E::OsKeyring {
+                kind: OsKeyringErrorKind::Backend,
+            },
+        ]
+        .iter()
+        .map(SecretStoreError::error_kind_str)
+        .collect();
+        let unique: std::collections::HashSet<&str> = tags.iter().copied().collect();
+        assert_eq!(unique.len(), tags.len(), "every variant needs a unique tag");
     }
 }
