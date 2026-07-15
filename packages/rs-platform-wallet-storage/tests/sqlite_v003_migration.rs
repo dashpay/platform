@@ -62,8 +62,9 @@ fn max_supported_version_is_at_least_three() {
     );
 }
 
-/// TC-B-030 — a fresh store migrates clean to the new target version and
-/// every new table exists.
+/// TC-B-030 — a fresh store migrates clean through the unified V003 target
+/// (and beyond, to V004's DIP-13 invitations table) and every V003 table
+/// exists.
 #[test]
 fn tc_b_030_fresh_store_migrates_to_version_three() {
     let (persister, _tmp, _path) = fresh_persister();
@@ -75,7 +76,7 @@ fn tc_b_030_fresh_store_migrates_to_version_three() {
             |r| r.get(0),
         )
         .unwrap();
-    assert_eq!(max, 3, "fresh store must land at schema version 3");
+    assert_eq!(max, 4, "fresh store must land at schema version 4");
     for table in [
         "core_address_pool",
         "meta_data_versions",

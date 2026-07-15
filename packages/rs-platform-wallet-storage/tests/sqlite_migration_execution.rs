@@ -269,7 +269,7 @@ fn tc_b_033_backup_restorable_and_remigration_deterministic() {
         .find(|p| {
             p.file_name()
                 .and_then(|n| n.to_str())
-                .is_some_and(|n| n.starts_with("pre-migration-1-to-3-"))
+                .is_some_and(|n| n.starts_with("pre-migration-1-to-4-"))
         })
         .expect("backup exists");
 
