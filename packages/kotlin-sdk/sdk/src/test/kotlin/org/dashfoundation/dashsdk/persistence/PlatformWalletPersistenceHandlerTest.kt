@@ -409,6 +409,7 @@ class PlatformWalletPersistenceHandlerTest {
     private class FakeDeriver(private val id: String? = "privkey.deadbeef") : PrivateKeyDeriver {
         val calls = mutableListOf<Triple<ByteArray, Int, Int>>()
         var lastPublicKey: ByteArray? = null
+        val deletedAliases = mutableListOf<String>()
         override fun deriveAndStore(
             walletId: ByteArray,
             publicKeyData: ByteArray,
@@ -418,6 +419,10 @@ class PlatformWalletPersistenceHandlerTest {
             calls.add(Triple(walletId, identityIndex, keyIndex))
             lastPublicKey = publicKeyData
             return id
+        }
+
+        override fun deleteStored(pubkeyHexes: Collection<String>) {
+            deletedAliases.addAll(pubkeyHexes)
         }
     }
 
@@ -519,6 +524,59 @@ class PlatformWalletPersistenceHandlerTest {
         assertTrue(deriver.calls.isEmpty())
         val row = db.publicKeyDao().getByIdentityAndKeyId(identityId.toBase58String(), 0)
         assertNull(row!!.privateKeyKeychainIdentifier)
+    }
+
+    @Test
+    fun rolledBackRoundScrubsDeriverWrittenAliases() = runTest {
+        val deriver = FakeDeriver()
+        handler = PlatformWalletPersistenceHandler(db, Dispatchers.Unconfined, deriver)
+
+        val identityId = ByteArray(32) { 15 }
+        seedIdentity(identityId)
+        val pubkey = ByteArray(33) { 10 }
+
+        handler.onChangesetBegin(walletId)
+        handler.onPersistIdentityKeyUpsert(
+            walletId, identityId, 0, 0, 0, 0, false, false, 0,
+            pubkey, ByteArray(20), true, walletId,
+            true, 0, 0, 0, ByteArray(32), null,
+        )
+        // The alias write happened immediately; the row is only buffered —
+        // this is the gap the pending-alias fence covers.
+        assertEquals(setOf(pubkey.toHex()), handler.pendingAliasesFor(walletId))
+
+        handler.onChangesetEnd(walletId, success = false)
+
+        // The rolled-back round deleted the alias it wrote (its row never
+        // committed) and dropped the tracking record.
+        assertEquals(listOf(pubkey.toHex()), deriver.deletedAliases)
+        assertTrue(handler.pendingAliasesFor(walletId).isEmpty())
+        assertNull(db.publicKeyDao().getByIdentityAndKeyId(identityId.toBase58String(), 0))
+    }
+
+    @Test
+    fun committedRoundKeepsDeriverWrittenAliases() = runTest {
+        val deriver = FakeDeriver()
+        handler = PlatformWalletPersistenceHandler(db, Dispatchers.Unconfined, deriver)
+
+        val identityId = ByteArray(32) { 16 }
+        seedIdentity(identityId)
+        val pubkey = ByteArray(33) { 11 }
+
+        handler.onChangesetBegin(walletId)
+        handler.onPersistIdentityKeyUpsert(
+            walletId, identityId, 0, 0, 0, 0, false, false, 0,
+            pubkey, ByteArray(20), true, walletId,
+            true, 0, 0, 0, ByteArray(32), null,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        // Committed rows make the alias discoverable — nothing scrubbed,
+        // tracking dropped, identifier recorded on the row.
+        assertTrue(deriver.deletedAliases.isEmpty())
+        assertTrue(handler.pendingAliasesFor(walletId).isEmpty())
+        val row = db.publicKeyDao().getByIdentityAndKeyId(identityId.toBase58String(), 0)
+        assertEquals("privkey.deadbeef", row!!.privateKeyKeychainIdentifier)
     }
 
     // ── Shielded load round-trip ──────────────────────────────────────

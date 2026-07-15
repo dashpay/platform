@@ -76,6 +76,14 @@ class IdentityKeyPrivateKeyDeriver(
         }
     }
 
+    override fun deleteStored(pubkeyHexes: Collection<String>) {
+        // Rollback counterpart of the store above — a failed changeset
+        // round deletes the aliases it wrote (their rows never commit).
+        // Same nested-runBlocking rationale as deriveAndStore; the batch
+        // delete is one atomic DataStore edit.
+        runBlocking { walletStorage.deletePrivateKeys(pubkeyHexes) }
+    }
+
     private companion object {
         /** Matches `WalletStorage`'s private `PRIVKEY_PREFIX`. */
         const val PRIVKEY_IDENTIFIER_PREFIX = "privkey."

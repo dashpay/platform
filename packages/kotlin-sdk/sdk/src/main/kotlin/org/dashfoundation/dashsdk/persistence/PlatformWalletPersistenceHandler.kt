@@ -153,6 +153,31 @@ class PlatformWalletPersistenceHandler(
     private val buffers = HashMap<String, ChangesetBuffer>()
 
     /**
+     * `privkey.*` alias hexes written by [PrivateKeyDeriver.deriveAndStore]
+     * during the currently-OPEN round, per walletId hex. The alias write
+     * happens immediately (the identifier must be baked into the staged
+     * row) while the row itself is buffered until [onChangesetEnd] — so
+     * between those points the alias exists with no committed row to
+     * discover it by. This map is the fence over that gap:
+     *  - a FAILED round deletes its recorded aliases (their rows never
+     *    commit — without this they'd be stranded ciphertext forever);
+     *  - the wallet-deletion sweep unions [pendingAliasesFor] into its
+     *    Room enumeration so a mid-round wipe still reaches them;
+     *  - a SUCCESSFUL round just drops the record (the committed rows
+     *    make the aliases discoverable the normal way).
+     * All access happens under [callbackExclusion].
+     */
+    private val pendingRoundAliases = HashMap<String, MutableSet<String>>()
+
+    /**
+     * Alias hexes written during the wallet's open round (empty when no
+     * round is open). Caller must hold [callbackExclusion] (the
+     * wallet-deletion sweep does, via [withCallbackExclusion]).
+     */
+    internal fun pendingAliasesFor(walletId: ByteArray): Set<String> =
+        pendingRoundAliases[walletId.toHex()]?.toSet() ?: emptySet()
+
+    /**
      * Serializes every persistence callback against compound external
      * sequences (wallet deletion's snapshot → secret delete → cascade).
      * Each [guarded]/[guardedLoad] callback acquires it AT ENTRY on the
@@ -194,7 +219,12 @@ class PlatformWalletPersistenceHandler(
     // ── Bracketing ────────────────────────────────────────────────────
 
     override fun onChangesetBegin(walletId: ByteArray): Int = guarded {
-        buffers[walletId.toHex()] = ChangesetBuffer()
+        val key = walletId.toHex()
+        buffers[key] = ChangesetBuffer()
+        // A leftover here means the previous round never reached its end
+        // callback (abandoned mid-round) — its rows never committed, so
+        // its aliases are orphans; scrub them like a rolled-back round.
+        scrubPendingAliases(key)
         0
     }
 
@@ -203,17 +233,39 @@ class PlatformWalletPersistenceHandler(
         val buffer = buffers.remove(key) ?: return@guarded 0
         if (!success) {
             // Rollback: discard every staged write, mirroring
-            // `backgroundContext.rollback()`.
+            // `backgroundContext.rollback()` — and delete the aliases the
+            // deriver already wrote for this round: their rows will never
+            // commit, so leaving them would strand undiscoverable
+            // identity-key ciphertext in the DataStore forever.
+            scrubPendingAliases(key)
             return@guarded 0
         }
-        runBlockingCatching {
-            database.withTransaction {
-                for (op in buffer.ops) {
-                    op(database)
+        try {
+            runBlockingCatching {
+                database.withTransaction {
+                    for (op in buffer.ops) {
+                        op(database)
+                    }
                 }
             }
+            // Rows committed — the aliases are discoverable the normal way.
+            pendingRoundAliases.remove(key)
+        } catch (t: Throwable) {
+            // Commit failed: the staged rows never landed, so the round's
+            // aliases are orphans exactly like the !success branch.
+            scrubPendingAliases(key)
+            throw t
         }
         0
+    }
+
+    /** Delete + forget the open round's deriver-written aliases. */
+    private fun scrubPendingAliases(walletIdHex: String) {
+        val pending = pendingRoundAliases.remove(walletIdHex)
+        if (!pending.isNullOrEmpty()) {
+            runCatching { privateKeyDeriver?.deleteStored(pending) }
+                .onFailure { Log.w(TAG, "failed to scrub rolled-back round's aliases", it) }
+        }
     }
 
     // on_store_fn / on_flush_fn have no Swift analog — they are
@@ -835,9 +887,19 @@ class PlatformWalletPersistenceHandler(
         // derive: this callback fires while platform-wallet holds the
         // wallet-manager write lock, so any derive that re-locks it would
         // deadlock (see IdentityNative.deriveIdentityPrivateKeyWithResolver).
+        // Skip the derive entirely when the wallet is gone from Room and
+        // has no round open — the state after a wallet wipe. This check
+        // and the wipe both run under [callbackExclusion], so it's
+        // race-free: a late upsert from an operation that survived the
+        // wallet's unregistration would otherwise re-write a `privkey.*`
+        // alias whose row can never commit (the identity rows are gone),
+        // stranding identity-key ciphertext behind a "successful" wipe.
+        val roundKey = walletId.toHex()
+        val walletStillPersisted = buffers.containsKey(roundKey) ||
+            runBlockingResult { database.walletDao().getByWalletId(walletId) != null }
         val deriver = privateKeyDeriver
         val derivedKeychainId: String? =
-            if (derivationIndicesIsSome && deriver != null && !readOnly) {
+            if (derivationIndicesIsSome && deriver != null && !readOnly && walletStillPersisted) {
                 runCatching {
                     deriver.deriveAndStore(
                         walletId = if (walletIdIsSome) keyWalletId else walletId,
@@ -852,6 +914,13 @@ class PlatformWalletPersistenceHandler(
             } else {
                 null
             }
+        // While a round is open the row carrying this identifier is only
+        // BUFFERED — record the alias so a rolled-back round (or a wallet
+        // wipe racing the round) can still find and delete it.
+        if (derivedKeychainId != null && buffers.containsKey(roundKey)) {
+            pendingRoundAliases.getOrPut(roundKey) { mutableSetOf() }
+                .add(publicKeyData.toHex())
+        }
 
         stage(walletId) { db ->
             val identityBase58 = identityId.toBase58String()
@@ -2080,8 +2149,11 @@ class PlatformWalletPersistenceHandler(
     internal suspend fun deleteWalletDataLocked(walletId: ByteArray) = runBlockingCatching {
         // Discard any open changeset round for this wallet: its staged ops
         // would otherwise commit AFTER the cascade below and resurrect
-        // rows for the deleted wallet.
+        // rows for the deleted wallet. The round's pending-alias record is
+        // dropped too — the wallet-deletion sweep has already consumed it
+        // (unioned into its enumeration) before calling this.
         buffers.remove(walletId.toHex())
+        pendingRoundAliases.remove(walletId.toHex())
         database.withTransaction {
             val walletRow = database.walletDao().getByWalletId(walletId)
             val walletNetwork = walletRow?.networkRaw
@@ -2213,6 +2285,14 @@ interface PrivateKeyDeriver {
         identityIndex: Int,
         keyIndex: Int,
     ): String?
+
+    /**
+     * Delete previously stored scalars by their public-key hex storage
+     * keys — the rollback counterpart of [deriveAndStore], used when a
+     * changeset round that wrote aliases fails (their rows never commit,
+     * so the ciphertext would otherwise be stranded undiscoverably).
+     */
+    fun deleteStored(pubkeyHexes: Collection<String>)
 }
 
 // ── Free functions (unit-testable, no `this`) ─────────────────────────
@@ -2247,6 +2327,21 @@ internal fun ByteArray.toHex(): String {
         out[i * 2 + 1] = hex[v and 0x0F]
     }
     return String(out)
+}
+
+/** Inverse of [toHex]; requires an even-length lowercase/uppercase hex string. */
+internal fun String.hexToByteArray(): ByteArray {
+    require(length % 2 == 0) { "hex string must have even length, got $length" }
+    return ByteArray(length / 2) { i ->
+        ((digitToInt(this[i * 2]) shl 4) or digitToInt(this[i * 2 + 1])).toByte()
+    }
+}
+
+private fun digitToInt(c: Char): Int = when (c) {
+    in '0'..'9' -> c - '0'
+    in 'a'..'f' -> c - 'a' + 10
+    in 'A'..'F' -> c - 'A' + 10
+    else -> throw IllegalArgumentException("invalid hex digit '$c'")
 }
 
 /**

@@ -29,6 +29,7 @@ import org.dashfoundation.dashsdk.ffi.WalletManagerNative
 import org.dashfoundation.dashsdk.persistence.DashDatabase
 import org.dashfoundation.dashsdk.persistence.PlatformWalletPersistenceHandler
 import org.dashfoundation.dashsdk.persistence.entities.DashpayPaymentEntity
+import org.dashfoundation.dashsdk.persistence.hexToByteArray
 import org.dashfoundation.dashsdk.persistence.toBase58String
 import org.dashfoundation.dashsdk.persistence.toHex
 import org.json.JSONArray
@@ -527,13 +528,14 @@ class PlatformWalletManager(
                     nativeRollback.exceptionOrNull()?.let(::addSuppressed)
                 }
             }
-            // The Room rows are gone; scrub the stored mnemonic so the
-            // Keystore doesn't drift (a leftover would resurface through
-            // the orphan-mnemonic recovery flow). Nothing to scrub when
-            // the store itself was what failed.
-            if (mnemonicStored) {
-                runCatching { walletStorage.deleteMnemonic(walletId) }
-            }
+            // The Room rows are gone. INTENTIONALLY keep the stored
+            // mnemonic: deleting it here could destroy the only durable
+            // copy of the phrase — the UI holds it in a local the failure
+            // path discards, and on a re-import/orphan-recovery create
+            // the entry predates this call entirely, so scrubbing it
+            // would erase a healthy wallet's seed. A wallet-less entry is
+            // exactly what the orphan-mnemonic recovery flow surfaces on
+            // next launch (recover / keep / delete — the user decides).
             managed.close()
             throw t
         }
@@ -585,12 +587,14 @@ class PlatformWalletManager(
      *     silently reporting success would leave the seed behind without
      *     any signal to the caller.
      *
-     * Residual (documented, accepted): an operation already in flight on
-     * the removed wallet can complete a `deriveAndStore` after step 3
-     * releases the locks; its Room row can no longer commit (the identity
-     * rows are gone and the open round was discarded), so at worst an
-     * orphaned encrypted alias blob remains in the DataStore — no
-     * plaintext exposure and no effect on other wallets.
+     * The derive/store lifecycle is fenced end to end: the sweep's
+     * enumeration unions [PlatformWalletPersistenceHandler.pendingAliasesFor]
+     * (aliases whose rows are still buffered in an open round), a late
+     * `onPersistIdentityKeyUpsert` from an operation that survived the
+     * unregistration skips its derive+store when the wallet row is gone
+     * (checked under the same callback gate this section holds), and a
+     * rolled-back round deletes the aliases it wrote — so a successful
+     * wipe leaves no identity-key ciphertext behind.
      *
      * Deleting an already-removed wallet succeeds (each step is a no-op).
      *
@@ -625,6 +629,14 @@ class PlatformWalletManager(
                             dbKey.publicKeyData,
                         )
                     }
+                }
+                // Union the aliases the deriver wrote during a still-open
+                // changeset round: their rows are only buffered (invisible
+                // to the Room enumeration above) and the cascade below
+                // discards that buffer, so without this they would survive
+                // as stranded ciphertext.
+                for (pendingHex in persistenceHandler.pendingAliasesFor(walletId)) {
+                    keysByPubkeyHex.putIfAbsent(pendingHex, pendingHex.hexToByteArray())
                 }
                 val aliasesToDelete = buildList {
                     for ((pubkeyHex, publicKeyData) in keysByPubkeyHex) {
