@@ -161,6 +161,29 @@ impl SqlitePersister {
     ///   [`WalletStorageError::AutoBackupDisabled`] — the
     ///   pre-migration auto-backup couldn't materialise.
     pub fn open(config: SqlitePersisterConfig) -> Result<Self, WalletStorageError> {
+        // Log every open failure where it surfaces — this is the crate's
+        // highest-stakes boundary (on-disk corruption, forward-incompatible
+        // schema, mid-run migration failure, in-process double-open) and the
+        // caller only sees the returned `Err`, not why it happened.
+        // `AlreadyOpen` is the one benign race (the loser retries once the
+        // winner drops), so it warns rather than errors.
+        let path = config.path.clone();
+        Self::open_inner(config).inspect_err(|e| match e {
+            WalletStorageError::AlreadyOpen { .. } => tracing::warn!(
+                path = %path.display(),
+                error_kind = e.error_kind_str(),
+                "SqlitePersister open refused: database already open in this process"
+            ),
+            _ => tracing::error!(
+                path = %path.display(),
+                error_kind = e.error_kind_str(),
+                error = %e,
+                "SqlitePersister failed to open database"
+            ),
+        })
+    }
+
+    fn open_inner(config: SqlitePersisterConfig) -> Result<Self, WalletStorageError> {
         validate_config(&config)?;
         if let Some(parent) = config.path.parent() {
             if !parent.as_os_str().is_empty() && !parent.exists() {
@@ -516,11 +539,21 @@ impl SqlitePersister {
             drop(drained_slot.take());
             // Discard any changeset a Manual-mode store buffered during the
             // delete window — the wallet is gone.
-            if let Ok(Some(_late)) = self.buffer.take_for_flush(&wallet_id) {
-                tracing::warn!(
+            match self.buffer.take_for_flush(&wallet_id) {
+                Ok(Some(_late)) => tracing::warn!(
                     wallet_id = %hex::encode(wallet_id),
                     "discarded racing buffered changeset after delete_wallet commit"
-                );
+                ),
+                Ok(None) => {}
+                // The delete itself already committed, so this still returns
+                // Ok — but a poisoned buffer mutex here is a signal every
+                // later store/flush on this persister will hit, so log it at
+                // the same level as the file's other LockPoisoned sites.
+                Err(e) => tracing::error!(
+                    wallet_id = %hex::encode(wallet_id),
+                    error_kind = e.error_kind_str(),
+                    "buffer mutex poisoned draining racing changeset after delete_wallet commit"
+                ),
             }
             Ok(DeleteWalletReport {
                 wallet_id,
