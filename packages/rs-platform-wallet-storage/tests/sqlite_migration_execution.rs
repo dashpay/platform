@@ -91,7 +91,7 @@ fn count(conn: &Connection, sql: &str, wallet: &[u8; 32]) -> i64 {
 /// Assert the post-migration store carries the full fixture data intact.
 fn assert_full_data_preserved(conn: &Connection) {
     let full = wid(FULL_WALLET);
-    assert_eq!(schema_version(conn), 3, "must be migrated to V003");
+    assert_eq!(schema_version(conn), 4, "must be migrated to V004");
     assert_eq!(
         conn.query_row("SELECT COUNT(*) FROM wallets", [], |r| r.get::<_, i64>(0))
             .unwrap(),
@@ -224,7 +224,7 @@ fn tc_b_032_pre_migration_backup_created() {
         .find(|p| {
             p.file_name()
                 .and_then(|n| n.to_str())
-                .is_some_and(|n| n.starts_with("pre-migration-1-to-3-") && n.ends_with(".db"))
+                .is_some_and(|n| n.starts_with("pre-migration-1-to-4-") && n.ends_with(".db"))
         })
         .expect("pre-migration backup must exist");
 
@@ -285,8 +285,8 @@ fn tc_b_033_backup_restorable_and_remigration_deterministic() {
     assert_full_data_preserved(&conn);
 }
 
-/// TC-B-034 — the forward-version gate now rejects at the NEW max (3); a
-/// forged version-4 row is refused.
+/// TC-B-034 — the forward-version gate now rejects at the NEW max (4); a
+/// forged version-5 row is refused.
 #[test]
 fn tc_b_034_forward_version_rejected_at_new_max() {
     let tmp = tempfile::tempdir().unwrap();
@@ -298,7 +298,7 @@ fn tc_b_034_forward_version_rejected_at_new_max() {
         let conn = Connection::open(&path).unwrap();
         conn.execute(
             "INSERT INTO refinery_schema_history (version, name, applied_on, checksum) \
-             VALUES (4, 'future', '', '0')",
+             VALUES (5, 'future', '', '0')",
             [],
         )
         .unwrap();
@@ -308,8 +308,8 @@ fn tc_b_034_forward_version_rejected_at_new_max() {
             found,
             max_supported,
         }) => {
-            assert_eq!(found, 4);
-            assert_eq!(max_supported, 3, "max must reflect the post-redirect V003");
+            assert_eq!(found, 5);
+            assert_eq!(max_supported, 4, "max must reflect the post-redirect V004");
         }
         Err(other) => panic!("expected SchemaVersionUnsupported, got {other:?}"),
         Ok(_) => panic!("forward-version DB must be refused"),
@@ -371,7 +371,7 @@ fn tc_b_035_interrupted_migration_recovers_to_clean_state() {
         let conn = p.lock_conn_for_test();
         migration_snapshot(&conn)
     };
-    assert_eq!(clean_snapshot[0], 3, "clean migration reaches V003");
+    assert_eq!(clean_snapshot[0], 4, "clean migration reaches V004");
 
     // Crash simulation: apply part of V003's DDL inside a transaction that is
     // rolled back before commit — exactly what a crash before the migration's
@@ -440,6 +440,6 @@ fn reopen_of_migrated_store_is_idempotent() {
         let conn = p.lock_conn_for_test();
         read(&conn)
     };
-    assert_eq!(first.0[0], 3, "first open migrates to V003");
+    assert_eq!(first.0[0], 4, "first open migrates to V004");
     assert_eq!(first, second, "reopen is a byte-stable no-op");
 }

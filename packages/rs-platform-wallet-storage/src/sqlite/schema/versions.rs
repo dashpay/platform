@@ -32,6 +32,7 @@ pub enum Domain {
     AccountRegistrations,
     AccountAddressPools,
     PendingContactCrypto,
+    Invitations,
 }
 
 impl Domain {
@@ -52,12 +53,13 @@ impl Domain {
             Domain::AccountRegistrations => "account_registrations",
             Domain::AccountAddressPools => "account_address_pools",
             Domain::PendingContactCrypto => "pending_contact_crypto",
+            Domain::Invitations => "invitations",
         }
     }
 
     /// Every domain, for coverage tests.
     #[cfg(any(test, feature = "__test-helpers"))]
-    pub const ALL: [Domain; 13] = [
+    pub const ALL: [Domain; 14] = [
         Domain::Core,
         Domain::Identities,
         Domain::IdentityKeys,
@@ -71,6 +73,7 @@ impl Domain {
         Domain::AccountRegistrations,
         Domain::AccountAddressPools,
         Domain::PendingContactCrypto,
+        Domain::Invitations,
     ];
 }
 
@@ -99,6 +102,7 @@ pub fn touched_domains(cs: &PlatformWalletChangeSet) -> Vec<Domain> {
         account_address_pools,
         pending_contact_crypto_added,
         pending_contact_crypto_cleared,
+        invitations,
         #[cfg(feature = "shielded")]
         shielded,
     } = cs;
@@ -166,6 +170,9 @@ pub fn touched_domains(cs: &PlatformWalletChangeSet) -> Vec<Domain> {
     }
     if !pending_contact_crypto_added.is_empty() || !pending_contact_crypto_cleared.is_empty() {
         out.push(Domain::PendingContactCrypto);
+    }
+    if present(invitations) {
+        out.push(Domain::Invitations);
     }
     out
 }

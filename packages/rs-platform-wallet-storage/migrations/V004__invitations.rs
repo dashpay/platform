@@ -19,7 +19,7 @@ pub fn migration() -> String {
         created_at_secs INTEGER NOT NULL,
         has_inviter INTEGER NOT NULL,
         PRIMARY KEY (wallet_id, outpoint),
-        FOREIGN KEY (wallet_id) REFERENCES wallet_metadata(wallet_id) ON DELETE CASCADE
+        FOREIGN KEY (wallet_id) REFERENCES wallets(wallet_id) ON DELETE CASCADE
     );"
     .to_string()
 }

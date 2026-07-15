@@ -51,13 +51,14 @@ impl OptionalExists for rusqlite::Result<()> {
     }
 }
 
-/// The unified migration lifts the supported schema version to 3.
+/// The unified migration lifts the supported schema version to (at least) 3;
+/// V004 (DIP-13 invitations) has since raised the crate's actual max to 4.
 #[test]
-fn max_supported_version_is_three() {
-    assert_eq!(
-        mig::max_supported_version(),
-        3,
-        "V003 must raise max_supported_version to 3"
+fn max_supported_version_is_at_least_three() {
+    assert!(
+        mig::max_supported_version() >= 3,
+        "V003 must raise max_supported_version to at least 3, got {}",
+        mig::max_supported_version()
     );
 }
 

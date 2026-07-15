@@ -184,6 +184,32 @@ fn single_domain_changeset(domain: Domain) -> PlatformWalletChangeSet {
                 enqueued_at_ms: 0,
             }];
         }
+        Domain::Invitations => {
+            use dashcore::hashes::Hash;
+            use dashcore::{OutPoint, Txid};
+            use platform_wallet::changeset::{InvitationChangeSet, InvitationEntry, InvitationStatus};
+            let op = OutPoint {
+                txid: Txid::from_byte_array([0x0C; 32]),
+                vout: 0,
+            };
+            let mut invitations = BTreeMap::new();
+            invitations.insert(
+                op,
+                InvitationEntry {
+                    out_point: op,
+                    funding_index: 0,
+                    amount_duffs: 1,
+                    expiry_unix: 0,
+                    created_at_secs: 0,
+                    has_inviter: false,
+                    status: InvitationStatus::Created,
+                },
+            );
+            cs.invitations = Some(InvitationChangeSet {
+                invitations,
+                removed: Default::default(),
+            });
+        }
     }
     cs
 }
