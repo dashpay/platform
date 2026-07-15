@@ -386,3 +386,23 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         }
     }
 }
+
+/// Drop backstop for the wallet-event adapter task.
+///
+/// The graceful teardown is [`shutdown`](PlatformWalletManager::shutdown)
+/// (cancel + await the join). A dirty drop that skips it would otherwise merely
+/// detach the `JoinHandle`, leaving the adapter task running and holding its
+/// `Arc<P>` clone — which keeps the persister "open" and turns a later re-open
+/// on the same path into a spurious `WalletStorageError::AlreadyOpen` that
+/// masks the real error (issue #4133). Cancelling the token and aborting the
+/// task here releases that reference on every drop path.
+impl<P: PlatformWalletPersistence + 'static> Drop for PlatformWalletManager<P> {
+    fn drop(&mut self) {
+        self.event_adapter_cancel.cancel();
+        // `get_mut` needs no runtime (we hold `&mut self`); `abort` is
+        // non-blocking. `None` when `shutdown` already took the handle.
+        if let Some(handle) = self.event_adapter_join.get_mut().take() {
+            handle.abort();
+        }
+    }
+}
