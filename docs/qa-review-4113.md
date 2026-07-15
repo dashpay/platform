@@ -1,5 +1,18 @@
 # QA Adversarial Review — GH #4113 provider-key persistence (Marvin)
 
+> **Superseded.** This review was conducted against the pre-#4127 dedicated
+> node-key-batch mechanism (`V004__provider_key_accounts.rs`,
+> `ProviderKeyRegistrationBlob`, `provider_platform_node_keys` table,
+> `derived_platform_node_keys`). Upstream PR #4127 retired that whole
+> mechanism in favor of the generic `account_address_pools` pipeline;
+> commits `b361e11b13`/`a536a26cba` on this branch removed the code these
+> findings reference and closed the equivalent gap in the replacement
+> pipeline instead. **None of the findings or test-count claims below
+> describe the current implementation** — `tests/sqlite_v004_migration.rs`
+> no longer exists, and `apply_provider_registrations` no longer touches a
+> `provider_platform_node_keys` table. Retained as a historical record of
+> the pre-pivot review only.
+
 Scope: `git diff bc9680e53e..HEAD -- packages/rs-platform-wallet packages/rs-platform-wallet-storage`
 (commits `7ac50c9a89`, `31b0aa25fc`, spec `ba03c9e575`). Worktree
 `/data/git-worktrees/home-ubuntu-git-platform-4113`, branch
