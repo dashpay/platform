@@ -196,6 +196,19 @@ pub trait PlatformWalletPersistence: Send + Sync {
     /// Returns an error if the internal accumulator cannot be accessed
     /// (e.g. mutex poisoning). Callers that use fire-and-forget
     /// semantics should log the error rather than propagating.
+    ///
+    /// # Transient-failure retry contract
+    ///
+    /// An implementation that returns a [`PersistenceError`] classified
+    /// [`PersistenceErrorKind::Transient`] from `store` **MUST** have already
+    /// buffered/preserved the changeset so that a subsequent bare
+    /// [`flush`](Self::flush) — with no re-supplied changeset — completes the
+    /// write (mirroring `flush`'s own transient contract). This is what lets a
+    /// caller retry a transient `store` failure via `flush` alone; re-calling
+    /// `store` with the same changeset would double-merge it. An
+    /// implementation that cannot preserve the changeset on failure MUST
+    /// classify that failure [`PersistenceErrorKind::Fatal`] (or
+    /// [`Constraint`](PersistenceErrorKind::Constraint)), never `Transient`.
     fn store(
         &self,
         wallet_id: WalletId,
