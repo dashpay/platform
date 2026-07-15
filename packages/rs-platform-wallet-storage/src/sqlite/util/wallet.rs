@@ -7,14 +7,16 @@
 use key_wallet::account::account_collection::AccountCollection;
 use key_wallet::account::{Account, AccountType};
 use key_wallet::managed_account::address_pool::{AddressPoolType, PublicKeyType};
-use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::Wallet;
-use key_wallet::{AddressInfo, Network};
+use key_wallet::Network;
 
 use platform_wallet::changeset::{
     rebuild_provider_key_account, AccountRegistrationEntry, CoreChangeSet,
     ProviderAccountRebuildError,
+};
+use platform_wallet::wallet::provider_key_at_index::{
+    insert_platform_node_pool_entry, PlatformNodePoolError,
 };
 
 use crate::sqlite::schema::accounts::{self, AccountManifest};
@@ -98,62 +100,39 @@ pub(crate) fn restore_provider_platform_node_pool(
         return Ok(());
     }
 
-    let account_path = AccountType::ProviderPlatformKeys
-        .derivation_path(network)
-        .map_err(|e| WalletStorageError::AccountRecordInvalid { e })?;
-    let base_children: Vec<key_wallet::bip32::ChildNumber> = account_path.as_ref().to_vec();
-
-    let Some(account) = wallet_info.accounts.provider_platform_keys.as_mut() else {
-        return Ok(());
-    };
-    let Some(pool) = account
-        .managed_account_type_mut()
-        .address_pools_mut()
-        .into_iter()
-        .find(|pool| pool.pool_type == AddressPoolType::AbsentHardened)
-    else {
-        return Err(WalletStorageError::blob_decode(
-            "provider platform account has no AbsentHardened pool",
-        ));
-    };
-
     for (index, script_bytes, public_key, used) in entries {
-        if !matches!(&public_key, PublicKeyType::EdDSA(_)) {
+        let PublicKeyType::EdDSA(public_key) = public_key else {
             return Err(WalletStorageError::blob_decode(
                 "provider platform pool row does not carry an EdDSA public key",
             ));
-        }
+        };
+        let public_key = public_key.try_into().map_err(|_| {
+            WalletStorageError::blob_decode(
+                "provider platform pool row has the wrong EdDSA public-key length",
+            )
+        })?;
         let script_pubkey = dashcore::ScriptBuf::from_bytes(script_bytes);
         let address = dashcore::Address::from_script(&script_pubkey, network)?;
-        let child = key_wallet::bip32::ChildNumber::from_hardened_idx(index)
-            .map_err(key_wallet::error::Error::Bip32)
-            .map_err(|e| WalletStorageError::AccountRecordInvalid { e })?;
-        let mut children = base_children.clone();
-        children.push(child);
-        let path = key_wallet::bip32::DerivationPath::from(children);
-        let info = AddressInfo {
+        insert_platform_node_pool_entry(
+            wallet_info,
+            network,
+            index,
             address,
             script_pubkey,
-            public_key: Some(public_key),
-            index,
-            path,
+            public_key,
             used,
-            generated_at: 0,
-            used_at: None,
-            tx_count: 0,
-            total_received: 0,
-            total_sent: 0,
-            balance: 0,
-            label: None,
-            metadata: Default::default(),
-        };
-
-        let idx = info.index;
-        pool.address_index.insert(info.address.clone(), idx);
-        pool.script_pubkey_index
-            .insert(info.script_pubkey.clone(), idx);
-        pool.highest_generated = Some(pool.highest_generated.map_or(idx, |h| h.max(idx)));
-        pool.addresses.insert(idx, info);
+        )
+        .map_err(|error| match error {
+            PlatformNodePoolError::InvalidAccountPath { source } => {
+                WalletStorageError::AccountRecordInvalid { e: source }
+            }
+            PlatformNodePoolError::MissingHardenedPool => WalletStorageError::blob_decode(
+                "provider platform account has no AbsentHardened pool",
+            ),
+            PlatformNodePoolError::InvalidChildIndex { source, .. } => {
+                WalletStorageError::AccountRecordInvalid { e: source }
+            }
+        })?;
     }
     Ok(())
 }

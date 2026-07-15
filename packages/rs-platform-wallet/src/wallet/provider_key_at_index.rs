@@ -191,12 +191,12 @@ pub fn derive_platform_node_public_keys(
 /// a freshly-registered wallet and a restored one carry byte-identical
 /// pool entries.
 ///
-/// A no-op when the wallet has no managed platform-node account or no
-/// `AbsentHardened` pool on it.
+/// A no-op when the wallet has no managed platform-node account.
 ///
 /// # Errors
 /// [`PlatformWalletError::KeyDerivation`] if the `ProviderPlatformKeys`
-/// account derivation path or a hardened child index cannot be built.
+/// account has no `AbsentHardened` pool or a hardened child index cannot be
+/// built.
 #[cfg(feature = "eddsa")]
 pub fn populate_platform_node_pool(
     wallet_info: &mut key_wallet::wallet::managed_wallet_info::ManagedWalletInfo,
@@ -204,27 +204,14 @@ pub fn populate_platform_node_pool(
     network: key_wallet::Network,
 ) -> Result<(), PlatformWalletError> {
     use dashcore::hashes::Hash;
-    use key_wallet::managed_account::address_pool::{AddressPoolType, PublicKeyType};
-    use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
-    use key_wallet::AddressInfo;
 
     if keys.is_empty() {
         return Ok(());
     }
-    let Some(account) = wallet_info.accounts.provider_platform_keys.as_mut() else {
+    if wallet_info.accounts.provider_platform_keys.is_none() {
         return Ok(());
-    };
+    }
 
-    let account_path = AccountType::ProviderPlatformKeys
-        .derivation_path(network)
-        .map_err(|e| {
-            PlatformWalletError::KeyDerivation(format!(
-                "failed to build ProviderPlatformKeys account path: {e:?}"
-            ))
-        })?;
-    let base_children: Vec<key_wallet::bip32::ChildNumber> = account_path.as_ref().to_vec();
-
-    let mut infos: Vec<AddressInfo> = Vec::with_capacity(keys.len());
     for key in keys {
         // Trust the entry's node id — it was just derived from `public_key`.
         let payload = dashcore::address::Payload::PubkeyHash(
@@ -232,49 +219,110 @@ pub fn populate_platform_node_pool(
         );
         let address = dashcore::Address::new(network, payload);
         let script_pubkey = address.script_pubkey();
-        let child = key_wallet::bip32::ChildNumber::from_hardened_idx(key.index).map_err(|e| {
-            PlatformWalletError::KeyDerivation(format!(
-                "failed to build hardened child index {}: {e:?}",
-                key.index
-            ))
-        })?;
-        let mut children = base_children.clone();
-        children.push(child);
-        let path = key_wallet::bip32::DerivationPath::from(children);
-        infos.push(AddressInfo {
+        insert_platform_node_pool_entry(
+            wallet_info,
+            network,
+            key.index,
             address,
             script_pubkey,
-            public_key: Some(PublicKeyType::EdDSA(key.public_key.to_vec())),
-            index: key.index,
-            path,
-            used: false,
-            generated_at: 0,
-            used_at: None,
-            tx_count: 0,
-            total_received: 0,
-            total_sent: 0,
-            balance: 0,
-            label: None,
-            metadata: std::collections::BTreeMap::new(),
-        });
+            key.public_key,
+            false,
+        )
+        .map_err(|e| PlatformWalletError::KeyDerivation(e.to_string()))?;
     }
+    Ok(())
+}
 
-    // The platform-node pool is `AbsentHardened` (SLIP-10 hardened-only).
-    if let Some(pool) = account
+/// Errors while inserting a pre-derived platform-node key into its managed pool.
+#[cfg(feature = "eddsa")]
+#[derive(Debug, thiserror::Error)]
+pub enum PlatformNodePoolError {
+    /// The provider-platform account path cannot be constructed for the network.
+    #[error("provider platform account derivation path is invalid")]
+    InvalidAccountPath {
+        #[source]
+        source: key_wallet::error::Error,
+    },
+    /// The managed provider-platform account lacks its hardened-only pool.
+    #[error("provider platform account has no AbsentHardened pool")]
+    MissingHardenedPool,
+    /// The persisted or derived index cannot form a hardened child number.
+    #[error("platform-node index {index} cannot form a hardened child number")]
+    InvalidChildIndex {
+        index: u32,
+        #[source]
+        source: key_wallet::error::Error,
+    },
+}
+
+/// Insert one pre-derived Ed25519 key into the managed platform-node pool.
+///
+/// A wallet without a managed provider-platform account is left unchanged.
+///
+/// # Errors
+///
+/// Returns [`PlatformNodePoolError::MissingHardenedPool`] when the account
+/// exists without its required `AbsentHardened` pool,
+/// [`PlatformNodePoolError::InvalidAccountPath`] when its network-scoped path
+/// cannot be constructed, or
+/// [`PlatformNodePoolError::InvalidChildIndex`] when `index` is not a valid
+/// hardened child number.
+#[cfg(feature = "eddsa")]
+pub fn insert_platform_node_pool_entry(
+    wallet_info: &mut key_wallet::wallet::managed_wallet_info::ManagedWalletInfo,
+    network: key_wallet::Network,
+    index: u32,
+    address: dashcore::Address,
+    script_pubkey: dashcore::ScriptBuf,
+    public_key: [u8; 32],
+    used: bool,
+) -> Result<(), PlatformNodePoolError> {
+    use key_wallet::managed_account::address_pool::{AddressPoolType, PublicKeyType};
+    use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+    use key_wallet::AddressInfo;
+
+    let Some(account) = wallet_info.accounts.provider_platform_keys.as_mut() else {
+        return Ok(());
+    };
+    let account_path = AccountType::ProviderPlatformKeys
+        .derivation_path(network)
+        .map_err(|source| PlatformNodePoolError::InvalidAccountPath { source })?;
+    let pool = account
         .managed_account_type_mut()
         .address_pools_mut()
         .into_iter()
-        .find(|p| p.pool_type == AddressPoolType::AbsentHardened)
-    {
-        for info in infos {
-            let idx = info.index;
-            pool.address_index.insert(info.address.clone(), idx);
-            pool.script_pubkey_index
-                .insert(info.script_pubkey.clone(), idx);
-            pool.highest_generated = Some(pool.highest_generated.map_or(idx, |h| h.max(idx)));
-            pool.addresses.insert(idx, info);
-        }
-    }
+        .find(|pool| pool.pool_type == AddressPoolType::AbsentHardened)
+        .ok_or(PlatformNodePoolError::MissingHardenedPool)?;
+    let child = key_wallet::bip32::ChildNumber::from_hardened_idx(index)
+        .map_err(key_wallet::error::Error::Bip32)
+        .map_err(|source| PlatformNodePoolError::InvalidChildIndex { index, source })?;
+    let mut children: Vec<key_wallet::bip32::ChildNumber> = account_path.as_ref().to_vec();
+    children.push(child);
+    let info = AddressInfo {
+        address,
+        script_pubkey,
+        public_key: Some(PublicKeyType::EdDSA(public_key.to_vec())),
+        index,
+        path: key_wallet::bip32::DerivationPath::from(children),
+        used,
+        generated_at: 0,
+        used_at: None,
+        tx_count: 0,
+        total_received: 0,
+        total_sent: 0,
+        balance: 0,
+        label: None,
+        metadata: Default::default(),
+    };
+
+    pool.address_index.insert(info.address.clone(), index);
+    pool.script_pubkey_index
+        .insert(info.script_pubkey.clone(), index);
+    pool.highest_generated = Some(
+        pool.highest_generated
+            .map_or(index, |highest| highest.max(index)),
+    );
+    pool.addresses.insert(index, info);
     Ok(())
 }
 
@@ -884,6 +932,33 @@ mod tests {
             pool.highest_generated,
             Some(keys.len() as u32 - 1),
             "highest_generated must advance to the last populated index"
+        );
+    }
+
+    #[cfg(feature = "eddsa")]
+    #[test]
+    fn populate_platform_node_pool_rejects_missing_hardened_pool() {
+        use key_wallet::managed_account::address_pool::AddressPoolType;
+        use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+        use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
+
+        let wallet = seed_bearing_wallet(Network::Mainnet);
+        let keys = derive_platform_node_public_keys(&wallet, Network::Mainnet, 1)
+            .expect("platform-node derivation");
+        let mut info = ManagedWalletInfo::from_wallet(&wallet, 0);
+        let account = info
+            .accounts
+            .provider_platform_keys
+            .as_mut()
+            .expect("managed platform-node account must exist");
+        for pool in account.managed_account_type_mut().address_pools_mut() {
+            pool.pool_type = AddressPoolType::Absent;
+        }
+
+        let result = populate_platform_node_pool(&mut info, &keys, Network::Mainnet);
+        assert!(
+            result.is_err(),
+            "a platform-node account without its hardened pool must be rejected"
         );
     }
 }
