@@ -30,6 +30,19 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     ///
     /// [`WalletManager`]: key_wallet_manager::WalletManager
     pub async fn load_from_persistor(&self) -> Result<(), PlatformWalletError> {
+        let start_state = match self.persister.load() {
+            Ok(state) => state,
+            Err(e) => {
+                // Preserve the typed source chain (Debug carries the real
+                // cause — e.g. a bincode decode failure) instead of flattening
+                // it to a Display string, and release the wallet-event adapter
+                // so a reconstruct on the same path doesn't hit `AlreadyOpen`
+                // masking this error.
+                tracing::debug!(error = ?e, "persister load failed during rehydration");
+                self.shutdown().await;
+                return Err(PlatformWalletError::PersisterLoad(e));
+            }
+        };
         let ClientStartState {
             mut platform_addresses,
             wallets,
@@ -37,12 +50,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             // not here — drop the snapshot at this entry point.
             #[cfg(feature = "shielded")]
                 shielded: _,
-        } = self.persister.load().map_err(|e| {
-            PlatformWalletError::WalletCreation(format!(
-                "Failed to load persisted client state: {}",
-                e
-            ))
-        })?;
+        } = start_state;
 
         let persister_dyn: Arc<dyn PlatformWalletPersistence> = Arc::clone(&self.persister) as _;
 
@@ -192,9 +200,84 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                     }
                 }
             }
+            // Release the wallet-event adapter so a reconstruct on the same
+            // persister path doesn't hit `AlreadyOpen` (see the early-return
+            // path above).
+            self.shutdown().await;
             return Err(err);
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use super::*;
+    use crate::changeset::{PersistenceError, PlatformWalletChangeSet};
+    use crate::events::{EventHandler, PlatformEventHandler};
+
+    /// Persister whose `load()` always fails — the failure path under test.
+    struct FailingLoadPersister;
+
+    impl PlatformWalletPersistence for FailingLoadPersister {
+        fn store(
+            &self,
+            _wallet_id: WalletId,
+            _changeset: PlatformWalletChangeSet,
+        ) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+
+        fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+
+        fn load(&self) -> Result<ClientStartState, PersistenceError> {
+            Err(PersistenceError::backend("simulated load failure"))
+        }
+    }
+
+    struct NoopEventHandler;
+    impl EventHandler for NoopEventHandler {}
+    impl PlatformEventHandler for NoopEventHandler {}
+
+    /// A failed `load_from_persistor` must (a) surface the typed `PersisterLoad`
+    /// error preserving the source chain, and (b) release the wallet-event
+    /// adapter's `Arc<persister>` clone so a reconstruct on the same path
+    /// doesn't hit `WalletStorageError::AlreadyOpen` masking the real error
+    /// (issue #4133). Proven by the persister's strong count returning to 1
+    /// (the test's own probe) after teardown — a lingering adapter would keep
+    /// it above 1.
+    #[tokio::test]
+    async fn failed_load_releases_persister_for_reconstruct() {
+        let persister = Arc::new(FailingLoadPersister);
+        let probe = Arc::clone(&persister);
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let handler: Arc<dyn PlatformEventHandler> = Arc::new(NoopEventHandler);
+
+        let manager = PlatformWalletManager::new(sdk, persister, handler);
+
+        let err = manager
+            .load_from_persistor()
+            .await
+            .expect_err("load must fail");
+        assert!(
+            matches!(err, PlatformWalletError::PersisterLoad(_)),
+            "load failure must surface as the typed PersisterLoad variant, got {err:?}"
+        );
+
+        drop(manager);
+        // The failure path already joined the adapter via `shutdown`; a yield
+        // also covers the `Drop` backstop's `abort` reclamation.
+        tokio::task::yield_now().await;
+
+        assert_eq!(
+            Arc::strong_count(&probe),
+            1,
+            "after a failed load + teardown nothing may still hold the persister"
+        );
     }
 }
