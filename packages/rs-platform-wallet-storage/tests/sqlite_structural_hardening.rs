@@ -391,7 +391,7 @@ fn asset_lock_typed_vs_blob_mismatch_rejected() {
         status: AssetLockStatus::Built,
         proof: None,
     };
-    let lifecycle_blob = blob::encode(&entry).unwrap();
+    let lifecycle_blob = asset_locks::encode_entry_for_test(&entry).unwrap();
     let op_bytes = blob::encode_outpoint(&outpoint).unwrap();
 
     {

@@ -5,6 +5,25 @@
 //! [`encode_outpoint`] / [`decode_outpoint`] encode `dashcore::OutPoint`
 //! the same way for the `outpoint` PK columns. The key is variable-width,
 //! which is fine for the exact-match PK lookups (no range scans).
+//!
+//! # `deserialize_any` hazard — pre-encode offending fields natively
+//!
+//! This codec cannot decode a serde shape that requires `deserialize_any`:
+//! an internally-tagged enum (`#[serde(tag = ...)]`), `#[serde(untagged)]`,
+//! `#[serde(flatten)]`, or any manual `Deserialize` that calls
+//! `deserialize_any`. Such a value **encodes** fine but is **read-never** —
+//! the bincode-serde deserializer returns `AnyNotSupported`. The hazard is
+//! transitive: the offending shape can be a nested field of an otherwise
+//! plain blob type (this is exactly how `AssetLockProof` in `AssetLockEntry`
+//! and `IdentityPublicKey` in `IdentityKeyEntry` slipped in). A `T: Serialize`
+//! bound cannot prevent it — the break surfaces only at decode time.
+//!
+//! When a blob type has (or transitively contains) such a field, pre-encode
+//! that field with bincode's native `Encode`/`Decode` and carry it as an
+//! `Option<Vec<u8>>` / `Vec<u8>` on a wire type — see `AssetLockEntryWire`
+//! (`asset_locks.rs`) and `IdentityKeyWire` (`identity_keys.rs`). A
+//! round-trip test over a **non-empty** value is the only guard that catches
+//! the transitive case (`tests/sqlite_blob_roundtrip_coverage.rs`).
 
 use serde::de::DeserializeOwned;
 use serde::Serialize;
