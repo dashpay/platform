@@ -14,7 +14,7 @@ use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 use key_wallet::wallet::Wallet;
 use key_wallet::Network;
 use platform_wallet::changeset::{
-    AccountRegistrationEntry, PlatformWalletChangeSet, PlatformWalletPersistence,
+    AccountRegistrationEntry, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
     ProviderKeyAccountEntry, ProviderKeyExtendedPubKey, ProviderKeyRegistrationBlob,
     ProviderPlatformNodePubKey, WalletMetadataEntry,
 };
@@ -116,6 +116,16 @@ fn bls_bytes(key: &ProviderKeyExtendedPubKey) -> Vec<u8> {
     }
 }
 
+fn wallet_storage_error(err: PersistenceError) -> Box<WalletStorageError> {
+    let source = match err {
+        PersistenceError::Backend { source, .. } => source,
+        other => panic!("expected Backend {{ .. }}, got {other:?}"),
+    };
+    source
+        .downcast::<WalletStorageError>()
+        .unwrap_or_else(|source| panic!("expected WalletStorageError, got {source}"))
+}
+
 /// TC-PKA-001 — a reloaded wallet gets its BLS operator and EdDSA
 /// platform-node accounts back. The end-to-end contract #4113 exists for:
 /// a seedless/external-signable wallet can list its provider key accounts
@@ -124,6 +134,7 @@ fn bls_bytes(key: &ProviderKeyExtendedPubKey) -> Vec<u8> {
 fn tc_pka_001_provider_accounts_survive_store_load() {
     let (persister, _tmp, path) = fresh_persister();
     let w: WalletId = wid(0xC1);
+    let node_keys = vec![node_key(3), node_key(0)];
 
     persister
         .store(
@@ -132,7 +143,7 @@ fn tc_pka_001_provider_accounts_survive_store_load() {
                 wallet_metadata: Some(metadata()),
                 provider_key_account_registrations: vec![
                     operator_entry(0x21),
-                    platform_entry(0x21, vec![node_key(0)]),
+                    platform_entry(0x21, node_keys.clone()),
                 ],
                 ..Default::default()
             },
@@ -140,7 +151,8 @@ fn tc_pka_001_provider_accounts_survive_store_load() {
         .expect("store");
     drop(persister);
 
-    let state = reopen(&path).load().expect("load");
+    let persister = reopen(&path);
+    let state = persister.load().expect("load");
     let restored = &state.wallets.get(&w).expect("wallet rehydrated").wallet;
 
     let bls = restored
@@ -164,6 +176,16 @@ fn tc_pka_001_provider_accounts_survive_store_load() {
         "the restored EdDSA account must carry the persisted platform-node xpub"
     );
     assert!(eddsa.is_watch_only, "a rehydrated account is watch-only");
+
+    let mut expected_node_keys = node_keys;
+    expected_node_keys.sort_by_key(|key| key.index);
+    assert_eq!(
+        persister
+            .list_provider_node_keys(w)
+            .expect("list provider node keys after load"),
+        expected_node_keys,
+        "load must leave every persisted hardened node key reachable through the public API"
+    );
 }
 
 /// TC-PKA-008 — a changeset carrying only provider-key registrations bumps
@@ -662,6 +684,101 @@ fn conflicting_duplicate_provider_entries_are_rejected() {
         "neither entry may be written"
     );
     assert_eq!(node_key_row_count(&conn, &w), 0);
+}
+
+/// A BLS provider account cannot change xpub across flushes; because it carries
+/// no node-key rows, this isolates the parent guard from child-key conflicts.
+#[test]
+fn conflicting_provider_xpub_against_persisted_row_is_rejected() {
+    let (persister, _tmp, _path) = fresh_persister();
+    let w: WalletId = wid(0xD6);
+    ensure_wallet_meta(&persister, &w);
+
+    persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                provider_key_account_registrations: vec![operator_entry(0x36)],
+                ..Default::default()
+            },
+        )
+        .expect("store original provider account");
+
+    let err = persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                provider_key_account_registrations: vec![operator_entry(0x37)],
+                ..Default::default()
+            },
+        )
+        .expect_err("a persisted provider account must reject a different xpub");
+    let storage_error = wallet_storage_error(err);
+    assert!(matches!(
+        *storage_error,
+        WalletStorageError::ProviderKeyAccountConflict {
+            account_type: "provider_operator"
+        }
+    ));
+
+    let conn = persister.lock_conn_for_test();
+    let provider = accounts::load_state(&conn, &w).expect("load original provider account");
+    assert_eq!(provider.provider.len(), 1);
+    assert_eq!(
+        bls_bytes(&provider.provider[0].extended_public_key),
+        bls_bytes(&bls_xpub(0x36)),
+        "the rejected store must leave the original xpub untouched"
+    );
+}
+
+/// Provider-only labels cannot bypass the parent guard through the ordinary
+/// secp256k1 account-registration field.
+#[test]
+fn ecdsa_registration_path_rejects_provider_account_labels() {
+    let (persister, _tmp, _path) = fresh_persister();
+    let w: WalletId = wid(0xD7);
+    ensure_wallet_meta(&persister, &w);
+    persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                provider_key_account_registrations: vec![operator_entry(0x38)],
+                ..Default::default()
+            },
+        )
+        .expect("store original provider account");
+
+    let ecdsa_xpub = seed_wallet(0x39)
+        .accounts
+        .all_accounts()
+        .first()
+        .expect("an ECDSA account")
+        .account_xpub;
+    let err = persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                account_registrations: vec![AccountRegistrationEntry {
+                    account_type: AccountType::ProviderOperatorKeys,
+                    account_xpub: ecdsa_xpub,
+                }],
+                ..Default::default()
+            },
+        )
+        .expect_err("provider labels must be rejected by the ECDSA writer");
+    assert!(matches!(
+        *wallet_storage_error(err),
+        WalletStorageError::ProviderKeyAccountEntryMismatch
+    ));
+
+    let conn = persister.lock_conn_for_test();
+    let provider = accounts::load_state(&conn, &w).expect("load original provider account");
+    assert_eq!(provider.provider.len(), 1);
+    assert_eq!(
+        bls_bytes(&provider.provider[0].extended_public_key),
+        bls_bytes(&bls_xpub(0x38)),
+        "the rejected alternate-path store must leave the original xpub untouched"
+    );
 }
 
 /// QA-002 — the provider write path rides the flush transaction: when a later

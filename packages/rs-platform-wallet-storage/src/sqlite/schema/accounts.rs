@@ -144,6 +144,14 @@ pub fn apply_registrations(
     if entries.is_empty() {
         return Ok(());
     }
+    if entries.iter().any(|entry| {
+        matches!(
+            entry.account_type,
+            AccountType::ProviderOperatorKeys | AccountType::ProviderPlatformKeys
+        )
+    }) {
+        return Err(WalletStorageError::ProviderKeyAccountEntryMismatch);
+    }
     let mut stmt = tx.prepare_cached(UPSERT_ACCOUNT_SQL)?;
     for entry in entries {
         upsert_account_row(
@@ -213,7 +221,8 @@ fn upsert_account_row(
 /// ECDSA account sharing this table's PK space.
 ///
 /// [`WalletStorageError::ProviderKeyAccountConflict`] if two entries in one call
-/// claim the same account with **different** extended public keys.
+/// claim the same account with **different** extended public keys, or if an
+/// incoming key differs from the one already persisted for that account.
 ///
 /// [`WalletStorageError::ProviderNodeKeyConflict`] if one index carries two
 /// different node keys — between entries, or against an already-stored row.
@@ -256,6 +265,22 @@ pub fn apply_provider_registrations(
         encoded.push((entry, label, payload));
     }
 
+    let distinct_accounts: BTreeMap<&'static str, usize> = encoded
+        .iter()
+        .enumerate()
+        .map(|(index, (_, label, _))| (*label, index))
+        .collect();
+    for (&label, &index) in &distinct_accounts {
+        let (entry, _, payload) = &encoded[index];
+        let conflicts = load_provider_account_payload(tx, wallet_id, &entry.account_type)?
+            .is_some_and(|stored| stored.as_slice() != payload.as_slice());
+        if conflicts {
+            return Err(WalletStorageError::ProviderKeyAccountConflict {
+                account_type: label,
+            });
+        }
+    }
+
     // A node key is fully determined by its account xpub and its index —
     // derivation is a pure function, and `node_id` is `hash160(public_key)`. So
     // two *different* values at one index, whether inside this batch or against
@@ -276,11 +301,7 @@ pub fn apply_provider_registrations(
             }
         }
     }
-    for label in encoded
-        .iter()
-        .map(|(_, label, _)| *label)
-        .collect::<std::collections::BTreeSet<_>>()
-    {
+    for label in distinct_accounts.keys().copied() {
         for stored in load_platform_node_keys(tx, wallet_id, label)? {
             if let Some(key) = incoming.get(&(label, stored.index)) {
                 if **key != stored {
@@ -317,6 +338,34 @@ pub fn apply_provider_registrations(
         }
     }
     Ok(())
+}
+
+/// Return the encoded parent account payload for one provider account.
+fn load_provider_account_payload(
+    conn: &Connection,
+    wallet_id: &WalletId,
+    account_type: &AccountType,
+) -> Result<Option<Vec<u8>>, WalletStorageError> {
+    let (user_identity_id, friend_identity_id) = account_dashpay_ids(account_type);
+    let mut stmt = conn.prepare_cached(
+        "SELECT length(account_xpub_bytes), account_xpub_bytes \
+         FROM account_registrations \
+         WHERE wallet_id = ?1 AND account_type = ?2 AND account_index = ?3 \
+           AND key_class = ?4 AND user_identity_id = ?5 AND friend_identity_id = ?6",
+    )?;
+    let mut rows = stmt.query(params![
+        wallet_id.as_slice(),
+        account_type_db_label(account_type),
+        i64::from(account_index(account_type)),
+        i64::from(account_key_class(account_type)),
+        &user_identity_id[..],
+        &friend_identity_id[..],
+    ])?;
+    let Some(row) = rows.next()? else {
+        return Ok(None);
+    };
+    blob::check_size(row.get(0)?)?;
+    Ok(Some(row.get(1)?))
 }
 
 /// Every `provider_platform_node_keys` row of one provider account, ordered
@@ -395,7 +444,7 @@ fn provider_curve_matches_type(at: &AccountType, key: &ProviderKeyExtendedPubKey
 /// pre-derived platform-node keys. Ordered by `account_type`; a row that
 /// fails to decode, contradicts its typed columns, or carries the wrong
 /// curve for its account type is a hard [`WalletStorageError`].
-fn load_provider_state(
+pub(crate) fn load_provider_state(
     conn: &Connection,
     wallet_id: &WalletId,
 ) -> Result<Vec<ProviderKeyAccountEntry>, WalletStorageError> {

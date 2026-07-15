@@ -217,13 +217,13 @@ pub enum WalletStorageError {
     )]
     ProviderKeyAccountEntryMismatch,
 
-    /// One flush carried two provider key-material entries for the same account
-    /// with different extended public keys. One of them is wrong and the store
-    /// cannot tell which, so neither is written — letting write order decide
-    /// would silently pick a winner.
+    /// An incoming provider key-material entry conflicts with another entry in
+    /// the flush or with the account already persisted under the same label.
+    /// The store cannot tell which extended public key is correct, so it fails
+    /// closed instead of letting write order pick a winner.
     #[error(
-        "conflicting provider key accounts for {account_type} in one flush \
-         (two entries carry different extended public keys)"
+        "conflicting provider key account for {account_type} \
+         (extended public keys differ)"
     )]
     ProviderKeyAccountConflict { account_type: &'static str },
 
