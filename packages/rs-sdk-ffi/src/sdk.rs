@@ -11,7 +11,8 @@ use std::ffi::CStr;
 use std::str::FromStr;
 
 use crate::context_provider::{
-    CompositeContextProvider, ContextProviderHandle, ContextProviderWrapper, CoreSDKHandle,
+    AdaptiveContextProvider, ContextProviderHandle, ContextProviderMode, ContextProviderSource,
+    ContextProviderWrapper, CoreSDKHandle,
 };
 use crate::runtime::BigStackRuntime;
 use crate::types::{DashSDKConfig, FFINetwork, Network, SDKHandle};
@@ -46,6 +47,7 @@ pub(crate) struct SDKWrapper {
     pub sdk: Sdk,
     pub runtime: Arc<BigStackRuntime>,
     pub trusted_provider: Option<Arc<rs_sdk_trusted_context_provider::TrustedHttpContextProvider>>,
+    pub adaptive_provider: Option<Arc<AdaptiveContextProvider>>,
 }
 
 impl SDKWrapper {
@@ -54,6 +56,7 @@ impl SDKWrapper {
             sdk,
             runtime: Arc::new(BigStackRuntime::new(runtime)),
             trusted_provider: None,
+            adaptive_provider: None,
         }
     }
 
@@ -67,6 +70,7 @@ impl SDKWrapper {
             sdk,
             runtime: Arc::new(BigStackRuntime::new(runtime)),
             trusted_provider: Some(provider),
+            adaptive_provider: None,
         }
     }
 
@@ -81,6 +85,7 @@ impl SDKWrapper {
             sdk,
             runtime,
             trusted_provider: None,
+            adaptive_provider: None,
         }
     }
 }
@@ -175,6 +180,7 @@ pub unsafe extern "C" fn dash_sdk_create(config: *const DashSDKConfig) -> DashSD
                 sdk,
                 runtime,
                 trusted_provider: None,
+                adaptive_provider: None,
             });
             let handle = Box::into_raw(wrapper) as *mut SDKHandle;
             DashSDKResult::success(handle as *mut std::os::raw::c_void)
@@ -287,6 +293,7 @@ pub unsafe extern "C" fn dash_sdk_create_extended(
                 sdk,
                 runtime,
                 trusted_provider: None,
+                adaptive_provider: None,
             });
             let handle = Box::into_raw(wrapper) as *mut SDKHandle;
             DashSDKResult::success(handle as *mut std::os::raw::c_void)
@@ -474,10 +481,16 @@ pub unsafe extern "C" fn dash_sdk_create_trusted(config: *const DashSDKConfig) -
     // Clone trusted provider for prefetching quorums
     let provider_for_prefetch = Arc::clone(&trusted_provider);
     let provider_for_wrapper = Arc::clone(&trusted_provider);
+    let adaptive_provider = Arc::new(AdaptiveContextProvider::new(
+        Arc::clone(&trusted_provider) as Arc<dyn drive_proof_verifier::ContextProvider>,
+        network,
+    ));
 
-    // Add trusted context provider
-    info!("dash_sdk_create_trusted: adding trusted context provider to builder");
-    let builder = builder.with_context_provider(Arc::clone(&trusted_provider));
+    // Install one adaptive provider for the SDK's entire lifetime.
+    info!("dash_sdk_create_trusted: adding adaptive context provider to builder");
+    let builder = builder.with_context_provider_arc(
+        Arc::clone(&adaptive_provider) as Arc<dyn drive_proof_verifier::ContextProvider>
+    );
 
     let builder = match apply_version(builder, config.platform_version) {
         Ok(b) => b,
@@ -519,6 +532,7 @@ pub unsafe extern "C" fn dash_sdk_create_trusted(config: *const DashSDKConfig) -
                 sdk,
                 runtime,
                 trusted_provider: Some(provider_for_wrapper),
+                adaptive_provider: Some(adaptive_provider),
             });
             let handle = Box::into_raw(wrapper) as *mut SDKHandle;
             DashSDKResult::success(handle as *mut std::os::raw::c_void)
@@ -556,100 +570,84 @@ pub unsafe extern "C" fn dash_sdk_get_inner_sdk_ptr(
     &wrapper.sdk as *const dash_sdk::Sdk as *const std::os::raw::c_void
 }
 
-/// Install a native context provider onto an existing SDK, replacing whatever
-/// provider it currently uses. Subsequent proof-verified queries on this SDK
-/// handle resolve quorum keys through the new provider (the SDK loads the
-/// provider fresh per verification).
+/// Populate the fixed adaptive provider's SPV source.
 ///
-/// Ownership of `provider` is TAKEN: this function reclaims the
-/// `ContextProviderWrapper` box exactly once on every return path. Callers
-/// (e.g. `platform-wallet-ffi`) must build it via
-/// `Box::into_raw(Box::new(ContextProviderWrapper::new(..)))` and must NOT
-/// reclaim it themselves.
+/// This changes internal adaptive state only; the SDK context provider itself
+/// is never replaced.
 ///
 /// # Safety
-/// - `sdk_handle` must be a valid `SDKHandle` for the duration of the call (or
-///   null, which returns an error).
-/// - `provider` must be a `*mut ContextProviderHandle` produced as described
-///   above (or null, which returns an error).
-#[no_mangle]
-pub unsafe extern "C" fn dash_sdk_install_context_provider(
+/// `sdk_handle` must be a valid SDK handle for the duration of this call.
+pub unsafe fn dash_sdk_set_spv_source(
     sdk_handle: *mut SDKHandle,
-    provider: *mut ContextProviderHandle,
-) -> DashSDKResult {
-    if provider.is_null() {
-        return DashSDKResult::error(DashSDKError::new(
-            DashSDKErrorCode::InvalidParameter,
-            "Context provider handle is null".to_string(),
-        ));
-    }
-    // Take ownership immediately so the box is reclaimed exactly once on every
-    // path below (including the null-SDK error return).
-    let wrapper = Box::from_raw(provider as *mut ContextProviderWrapper);
-
+    provider: Arc<dyn drive_proof_verifier::ContextProvider>,
+    is_ready: Arc<dyn Fn() -> bool + Send + Sync>,
+) -> Result<(), String> {
     if sdk_handle.is_null() {
-        return DashSDKResult::error(DashSDKError::new(
-            DashSDKErrorCode::InvalidParameter,
-            "SDK handle is null".to_string(),
-        ));
-    }
-
-    let sdk_wrapper = &*(sdk_handle as *const SDKWrapper);
-    let spv_provider = wrapper.provider();
-    // Install the SPV provider for quorum-key resolution, but keep contract and
-    // token lookups on the SDK's retained trusted provider. Replacing the whole
-    // provider would make `get_data_contract`/`get_token_configuration` return
-    // `None` and break every proof that references a contract or token config
-    // (e.g. token perpetual-distribution verification). If no trusted provider
-    // was retained (the SDK was not created trusted), install SPV alone — such
-    // an SDK can only verify proofs that need neither. `wrapper` drops at end of
-    // scope, releasing this function's refcount on the provider.
-    match sdk_wrapper.trusted_provider.as_ref() {
-        Some(trusted) => {
-            let composite = CompositeContextProvider::new(
-                spv_provider,
-                Arc::clone(trusted) as Arc<dyn drive_proof_verifier::ContextProvider>,
-            );
-            sdk_wrapper.sdk.set_context_provider(composite);
-        }
-        None => sdk_wrapper.sdk.set_context_provider(spv_provider),
-    }
-
-    DashSDKResult::success(std::ptr::null_mut())
-}
-
-/// Restore the trusted HTTP quorum provider on an SDK that previously had an
-/// SPV provider installed via [`dash_sdk_install_context_provider`]. The
-/// trusted provider is the one captured at `dash_sdk_create_trusted` time, so
-/// this only works for SDKs created that way (returns an error otherwise).
-///
-/// Because the provider slot is shared across `Sdk` clones, this reverts both
-/// the app's SDK and any manager clone back to trusted proof verification.
-///
-/// # Safety
-/// - `sdk_handle` must be a valid `SDKHandle` for the duration of the call (or
-///   null, which returns an error).
-#[no_mangle]
-pub unsafe extern "C" fn dash_sdk_restore_trusted_context_provider(
-    sdk_handle: *mut SDKHandle,
-) -> DashSDKResult {
-    if sdk_handle.is_null() {
-        return DashSDKResult::error(DashSDKError::new(
-            DashSDKErrorCode::InvalidParameter,
-            "SDK handle is null".to_string(),
-        ));
+        return Err("SDK handle is null".to_string());
     }
     let wrapper = &*(sdk_handle as *const SDKWrapper);
-    match &wrapper.trusted_provider {
-        Some(tp) => {
-            wrapper.sdk.set_context_provider(Arc::clone(tp));
+    let adaptive = wrapper
+        .adaptive_provider
+        .as_ref()
+        .ok_or_else(|| "SDK does not use an adaptive context provider".to_string())?;
+    adaptive
+        .set_spv_source(provider, is_ready)
+        .map_err(str::to_string)
+}
+
+/// Set the adaptive quorum routing mode without replacing the SDK provider.
+///
+/// # Safety
+/// `sdk_handle` must be a valid SDK handle for the duration of this call.
+#[no_mangle]
+pub unsafe extern "C" fn dash_sdk_set_context_provider_mode(
+    sdk_handle: *mut SDKHandle,
+    mode: u8,
+) -> DashSDKResult {
+    if sdk_handle.is_null() {
+        return DashSDKResult::error(DashSDKError::new(
+            DashSDKErrorCode::InvalidParameter,
+            "SDK handle is null".to_string(),
+        ));
+    }
+    let mode = match ContextProviderMode::try_from(mode) {
+        Ok(mode) => mode,
+        Err(()) => {
+            return DashSDKResult::error(DashSDKError::new(
+                DashSDKErrorCode::InvalidParameter,
+                format!("Invalid context provider mode: {mode}"),
+            ));
+        }
+    };
+    let wrapper = &*(sdk_handle as *const SDKWrapper);
+    match &wrapper.adaptive_provider {
+        Some(provider) => {
+            provider.set_mode(mode);
             DashSDKResult::success(std::ptr::null_mut())
         }
         None => DashSDKResult::error(DashSDKError::new(
             DashSDKErrorCode::InvalidParameter,
-            "SDK has no stored trusted quorum provider to restore".to_string(),
+            "SDK does not use an adaptive context provider".to_string(),
         )),
     }
+}
+
+/// Return the currently selected quorum source for UI diagnostics.
+///
+/// # Safety
+/// `sdk_handle` must be a valid SDK handle for the duration of this call.
+#[no_mangle]
+pub unsafe extern "C" fn dash_sdk_get_context_provider_source(sdk_handle: *const SDKHandle) -> u8 {
+    if sdk_handle.is_null() {
+        return ContextProviderSource::Trusted as u8;
+    }
+    let wrapper = &*(sdk_handle as *const SDKWrapper);
+    wrapper
+        .adaptive_provider
+        .as_ref()
+        .map_or(ContextProviderSource::Trusted as u8, |provider| {
+            provider.active_source() as u8
+        })
 }
 
 /// Register global context provider callbacks
@@ -923,105 +921,6 @@ pub unsafe extern "C" fn dash_sdk_create_handle_with_mock(
                 e
             );
             std::ptr::null_mut()
-        }
-    }
-}
-
-#[cfg(test)]
-mod context_provider_install_tests {
-    use super::*;
-    use crate::test_utils::test_utils::{create_mock_sdk_handle, destroy_mock_sdk_handle};
-    use dash_sdk::dpp::data_contract::TokenConfiguration;
-    use dash_sdk::dpp::prelude::{CoreBlockHeight, DataContract, Identifier};
-    use dash_sdk::dpp::version::PlatformVersion;
-    use drive_proof_verifier::{ContextProvider, ContextProviderError};
-
-    /// Provider whose activation height is a distinctive sentinel, so a swap can
-    /// be observed by reading it back off the SDK.
-    struct SentinelProvider(CoreBlockHeight);
-    impl ContextProvider for SentinelProvider {
-        fn get_quorum_public_key(
-            &self,
-            _quorum_type: u32,
-            _quorum_hash: [u8; 32],
-            _height: u32,
-        ) -> Result<[u8; 48], ContextProviderError> {
-            Ok([0u8; 48])
-        }
-        fn get_data_contract(
-            &self,
-            _id: &Identifier,
-            _pv: &PlatformVersion,
-        ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
-            Ok(None)
-        }
-        fn get_token_configuration(
-            &self,
-            _id: &Identifier,
-        ) -> Result<Option<TokenConfiguration>, ContextProviderError> {
-            Ok(None)
-        }
-        fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
-            Ok(self.0)
-        }
-    }
-
-    fn provider_handle(p: impl ContextProvider + 'static) -> *mut ContextProviderHandle {
-        Box::into_raw(Box::new(ContextProviderWrapper::new(p))) as *mut ContextProviderHandle
-    }
-
-    #[test]
-    fn install_swaps_provider_and_guards_nulls() {
-        unsafe {
-            let sdk = create_mock_sdk_handle();
-
-            // Null provider handle -> error, nothing installed.
-            let r = dash_sdk_install_context_provider(sdk, std::ptr::null_mut());
-            assert!(!r.error.is_null(), "null provider must error");
-            crate::error::dash_sdk_error_free(r.error);
-
-            // Null SDK handle -> error, but the provider box is still reclaimed
-            // exactly once (no leak / no UB).
-            let ph = provider_handle(SentinelProvider(111));
-            let r = dash_sdk_install_context_provider(std::ptr::null_mut(), ph);
-            assert!(!r.error.is_null(), "null sdk handle must error");
-            crate::error::dash_sdk_error_free(r.error);
-
-            // Success: the swap is observable on the SDK.
-            const SENTINEL: CoreBlockHeight = 7_777_777;
-            let ph = provider_handle(SentinelProvider(SENTINEL));
-            let r = dash_sdk_install_context_provider(sdk, ph);
-            assert!(r.error.is_null(), "install should succeed");
-            let wrapper = &*(sdk as *const SDKWrapper);
-            let height = wrapper
-                .sdk
-                .context_provider()
-                .expect("provider present")
-                .get_platform_activation_height()
-                .expect("activation height");
-            assert_eq!(height, SENTINEL);
-
-            destroy_mock_sdk_handle(sdk);
-        }
-    }
-
-    #[test]
-    fn restore_errors_without_stored_trusted_provider() {
-        unsafe {
-            // Null handle -> error.
-            let r = dash_sdk_restore_trusted_context_provider(std::ptr::null_mut());
-            assert!(!r.error.is_null(), "null handle must error");
-            crate::error::dash_sdk_error_free(r.error);
-
-            // A mock SDK wrapper stores no trusted provider, so restore errors.
-            let sdk = create_mock_sdk_handle();
-            let r = dash_sdk_restore_trusted_context_provider(sdk);
-            assert!(
-                !r.error.is_null(),
-                "restore without a stored trusted provider must error"
-            );
-            crate::error::dash_sdk_error_free(r.error);
-            destroy_mock_sdk_handle(sdk);
         }
     }
 }

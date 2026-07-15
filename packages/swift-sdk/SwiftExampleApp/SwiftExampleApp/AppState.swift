@@ -10,8 +10,8 @@ class AppState: ObservableObject {
     @Published var errorMessage = ""
 
     /// The quorum-key source the current SDK uses for proof verification.
-    /// Starts `.trusted` on every SDK build and flips to `.spv` once
-    /// `applyQuorumMode` installs the SPV provider. Drives the app's indicator;
+    /// Starts `.trusted` on every SDK build and tracks the adaptive provider's
+    /// current routing choice. Drives the app's indicator;
     /// intentionally mirrors `SDK.quorumSource` (this one is the observable the
     /// UI binds to).
     @Published private(set) var quorumSource: SDK.QuorumSource = .trusted
@@ -70,8 +70,8 @@ class AppState: ObservableObject {
     }
 
     /// Which quorum source the user wants. Applied live on change (see
-    /// `applyQuorumMode`); `quorumSource` reflects what is *actually* installed
-    /// (SPV may not be ready yet).
+    /// `applyQuorumMode`); `quorumSource` reflects the adaptive provider's
+    /// current routing choice (SPV may not be ready yet).
     @Published var quorumMode: QuorumMode {
         didSet {
             UserDefaults.standard.set(quorumMode.rawValue, forKey: "quorumMode")
@@ -130,11 +130,9 @@ class AppState: ObservableObject {
                 SDK.enableLogging(level: .debug)
 
                 NSLog("🔵 AppState: Creating SDK for network=\(currentNetwork), docker=\(useDockerSetup)")
-                // Build with the trusted quorum provider. Proof verification is
-                // switched to SPV-synced quorums later via `applyQuorumMode`,
-                // once the active wallet manager's SPV masternode list is synced
-                // (the manager can only be created *from* an SDK, so the SDK
-                // must exist first — hence attach-after rather than build-from).
+                // Build with one adaptive provider backed initially by trusted
+                // quorum data. The wallet manager populates its SPV source when
+                // it is configured from this SDK.
                 let newSDK = try SDK(network: currentNetwork)
                 sdk = newSDK
                 quorumSource = .trusted
@@ -158,9 +156,9 @@ class AppState: ObservableObject {
         }
     }
 
-    /// Install the quorum source the current `quorumMode` calls for, via a live
-    /// provider swap on the shared slot (no SDK rebuild). Idempotent. Call
-    /// whenever `quorumMode` or the manager's `spvProgress` changes.
+    /// Apply the current policy to the SDK's fixed adaptive provider. Call when
+    /// `quorumMode` changes and when SPV progress changes so the active-source
+    /// indicator is refreshed as Auto becomes ready.
     ///
     /// - `.auto`: SPV once the header + masternode lists are fully synced,
     ///   trusted until then.
@@ -169,33 +167,21 @@ class AppState: ObservableObject {
     ///   fail until synced) rather than falling back to trusted.
     /// - `.trusted`: always the trusted HTTP quorum provider.
     ///
-    /// `quorumSource` tracks what is *actually* installed, which may lag the
-    /// requested mode while SPV isn't ready.
+    /// `quorumSource` tracks the provider's current routing choice, which may
+    /// lag the requested mode while SPV isn't ready.
     @MainActor
-    func applyQuorumMode(manager: PlatformWalletManager) {
+    func applyQuorumMode() {
         guard let sdk else { return }
 
-        let progress = manager.spvProgress
-        let fullySynced =
-            progress.headers?.state == .synced && progress.masternodes?.state == .synced
-
-        let wantSpv: Bool
-        switch quorumMode {
-        case .auto: wantSpv = fullySynced
-        case .spv: wantSpv = true
-        case .trusted: wantSpv = false
-        }
-
         do {
-            if wantSpv, quorumSource == .trusted {
-                try sdk.attachSpvQuorums(from: manager)
-                quorumSource = .spv
-                NSLog("✅ AppState: proof verification now uses SPV-synced quorums")
-            } else if !wantSpv, quorumSource == .spv {
-                try sdk.restoreTrustedQuorums()
-                quorumSource = .trusted
-                NSLog("↩️ AppState: proof verification reverted to trusted quorums")
+            let sdkMode: SDK.QuorumMode
+            switch quorumMode {
+            case .auto: sdkMode = .auto
+            case .spv: sdkMode = .spv
+            case .trusted: sdkMode = .trusted
             }
+            try sdk.setQuorumMode(sdkMode)
+            quorumSource = sdk.quorumSource
         } catch {
             NSLog("⚠️ AppState: failed to apply quorum mode: \(error.localizedDescription)")
         }
@@ -221,9 +207,8 @@ class AppState: ObservableObject {
         do {
             isLoading = true
 
-            // Create new SDK instance for the network (trusted provider; SPV is
-            // re-attached by `applyQuorumMode` once the new network's manager
-            // has synced).
+            // Create a new SDK instance for the network. Its manager populates
+            // the adaptive provider's SPV source during configuration.
             let newSDK = try SDK(network: network)
             sdk = newSDK
             quorumSource = .trusted

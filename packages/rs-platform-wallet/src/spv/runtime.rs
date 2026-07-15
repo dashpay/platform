@@ -1,5 +1,6 @@
 //! SPV client runtime — manages the DashSpvClient lifecycle.
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use tokio::sync::RwLock;
@@ -10,7 +11,7 @@ use dashcore::{QuorumHash, Transaction};
 
 use dash_spv::network::PeerNetworkManager;
 use dash_spv::storage::{DiskStorageManager, StorageManager};
-use dash_spv::sync::SyncProgress;
+use dash_spv::sync::{SyncProgress, SyncState};
 use dash_spv::{ClientConfig, DashSpvClient, EventHandler, Hash};
 
 use key_wallet_manager::WalletManager;
@@ -53,6 +54,35 @@ pub struct SpvRuntime {
     last_config: RwLock<Option<ClientConfig>>,
     task: Mutex<Option<JoinHandle<()>>>,
     peer_tracker: Arc<PeerTracker>,
+    readiness: Arc<SpvReadiness>,
+}
+
+#[derive(Default)]
+struct SpvReadiness {
+    ready: AtomicBool,
+}
+
+impl SpvReadiness {
+    fn clear(&self) {
+        self.ready.store(false, Ordering::Release);
+    }
+
+    fn is_ready(&self) -> bool {
+        self.ready.load(Ordering::Acquire)
+    }
+}
+
+impl EventHandler for SpvReadiness {
+    fn on_progress(&self, progress: &SyncProgress) {
+        let headers_ready = progress
+            .headers()
+            .is_ok_and(|headers| headers.state() == SyncState::Synced);
+        let masternodes_ready = progress
+            .masternodes()
+            .is_ok_and(|masternodes| masternodes.state() == SyncState::Synced);
+        self.ready
+            .store(headers_ready && masternodes_ready, Ordering::Release);
+    }
 }
 /// Classify a dash-spv broadcast failure per the
 /// [`TransactionBroadcaster::broadcast`] contract.
@@ -93,6 +123,7 @@ impl SpvRuntime {
             last_config: RwLock::new(None),
             task: Mutex::new(None),
             peer_tracker: Arc::new(PeerTracker::default()),
+            readiness: Arc::new(SpvReadiness::default()),
         }
     }
 
@@ -104,6 +135,7 @@ impl SpvRuntime {
                 return Err(PlatformWalletError::SpvAlreadyRunning);
             }
         }
+        self.readiness.clear();
 
         let network_manager = PeerNetworkManager::new(&config)
             .await
@@ -118,6 +150,7 @@ impl SpvRuntime {
         let event_handlers: Vec<Arc<dyn EventHandler>> = vec![
             Arc::clone(&self.event_manager) as Arc<dyn EventHandler>,
             Arc::clone(&self.peer_tracker) as Arc<dyn EventHandler>,
+            Arc::clone(&self.readiness) as Arc<dyn EventHandler>,
         ];
 
         let retained_config = config.clone();
@@ -142,6 +175,11 @@ impl SpvRuntime {
     /// Check whether the SPV client has been started.
     pub fn is_started(&self) -> bool {
         self.client.try_read().map(|c| c.is_some()).unwrap_or(false)
+    }
+
+    /// Whether header and masternode-list synchronization are both complete.
+    pub fn is_ready(&self) -> bool {
+        self.readiness.is_ready()
     }
 
     /// Broadcast a transaction to all connected SPV peers.
@@ -210,6 +248,7 @@ impl SpvRuntime {
             .await
             .map_err(|e| PlatformWalletError::SpvError(e.to_string()));
 
+        self.readiness.clear();
         let mut client = self.client.write().await;
         let _ = client.take();
         self.peer_tracker.clear();
@@ -219,6 +258,7 @@ impl SpvRuntime {
 
     /// Stop SPV sync gracefully. Unlocks the data dir safely
     pub async fn stop(&self) -> Result<(), PlatformWalletError> {
+        self.readiness.clear();
         let taken = {
             let mut client = self.client.write().await;
             client.take()

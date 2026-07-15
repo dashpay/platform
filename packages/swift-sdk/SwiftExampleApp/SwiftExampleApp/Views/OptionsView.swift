@@ -309,6 +309,7 @@ struct OptionsView: View {
                                         try? walletManagerStore.activate(
                                             network: .devnet, sdk: sdk
                                         )
+                                        appState.applyQuorumMode()
                                     }
                                     // Drive `rebindWalletScopedServices`
                                     // via the App scene's observer.

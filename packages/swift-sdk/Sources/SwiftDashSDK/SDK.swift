@@ -369,58 +369,33 @@ public final class SDK: @unchecked Sendable {
 
   /// Which quorum-key source this SDK's proof verification currently uses.
   public enum QuorumSource: Sendable {
-    /// Centralized trusted HTTP quorum service — how every `SDK` starts.
     case trusted
-    /// SPV-synced masternode quorum data, installed via `attachSpvQuorums`.
     case spv
   }
 
-  /// The quorum source proof verification currently uses. Starts `.trusted`
-  /// and flips to `.spv` after a successful `attachSpvQuorums(from:)`.
-  public private(set) var quorumSource: QuorumSource = .trusted
-
-  /// Swap this SDK's proof-verification context provider to use
-  /// `walletManager`'s SPV-synced quorum data instead of the trusted HTTP
-  /// service. After this returns, proof-verified queries on this SDK verify
-  /// quorum signatures against the locally synced masternode list.
-  ///
-  /// Call only once the manager's SPV client is started and its masternode
-  /// list is synced — before that, lookups fail closed (there is no per-lookup
-  /// fallback to trusted once SPV is installed).
-  ///
-  /// `@MainActor`: reads `walletManager.handle`, which is main-actor isolated.
-  @MainActor
-  public func attachSpvQuorums(from walletManager: PlatformWalletManager) throws {
-    guard let handle else {
-      throw SDKError.internalError("Cannot attach SPV quorums: SDK handle is nil")
-    }
-    let result = platform_wallet_manager_attach_spv_context(
-      walletManager.handle, handle, network.ffiValue)
-    if result.error != nil {
-      let error = result.error!.pointee
-      let message = error.message != nil ? String(cString: error.message!) : "Unknown error"
-      defer { dash_sdk_error_free(result.error) }
-      throw SDKError.internalError("Failed to attach SPV quorum provider: \(message)")
-    }
-    quorumSource = .spv
+  /// Policy used by the SDK's fixed adaptive context provider.
+  public enum QuorumMode: UInt8, Sendable {
+    case auto = 0
+    case spv = 1
+    case trusted = 2
   }
 
-  /// Revert this SDK's proof verification from SPV-synced quorums back to the
-  /// trusted HTTP quorum service it was created with. Because the provider slot
-  /// is shared across SDK clones, this also reverts a wallet manager's cloned
-  /// SDK. Requires the SDK to have been created via the trusted path.
-  public func restoreTrustedQuorums() throws {
+  /// The quorum source selected at the most recent mode application.
+  public private(set) var quorumSource: QuorumSource = .trusted
+
+  /// Update quorum routing policy without replacing the SDK context provider.
+  public func setQuorumMode(_ mode: QuorumMode) throws {
     guard let handle else {
-      throw SDKError.internalError("Cannot restore trusted quorums: SDK handle is nil")
+      throw SDKError.internalError("Cannot set quorum mode: SDK handle is nil")
     }
-    let result = dash_sdk_restore_trusted_context_provider(handle)
+    let result = dash_sdk_set_context_provider_mode(handle, mode.rawValue)
     if result.error != nil {
       let error = result.error!.pointee
       let message = error.message != nil ? String(cString: error.message!) : "Unknown error"
       defer { dash_sdk_error_free(result.error) }
-      throw SDKError.internalError("Failed to restore trusted quorum provider: \(message)")
+      throw SDKError.internalError("Failed to set quorum mode: \(message)")
     }
-    quorumSource = .trusted
+    quorumSource = dash_sdk_get_context_provider_source(handle) == 1 ? .spv : .trusted
   }
 
   /// Run `body` with two optional C-string pointers. Each input string,

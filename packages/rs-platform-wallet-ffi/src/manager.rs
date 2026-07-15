@@ -65,6 +65,59 @@ pub unsafe extern "C" fn platform_wallet_manager_create(
     PlatformWalletFFIResult::ok()
 }
 
+/// Create a manager from an owning SDK handle and populate that SDK's fixed
+/// adaptive provider with the manager's SPV source.
+///
+/// The SDK handle is borrowed only for this synchronous call. The manager
+/// retains an `Sdk` clone, never the raw handle.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_manager_create_with_sdk(
+    sdk_handle: *mut rs_sdk_ffi::SDKHandle,
+    persistence: *const PersistenceCallbacks,
+    event_handler: *const EventHandlerCallbacks,
+    out_handle: *mut Handle,
+) -> PlatformWalletFFIResult {
+    check_ptr!(sdk_handle);
+    check_ptr!(persistence);
+    check_ptr!(event_handler);
+    check_ptr!(out_handle);
+
+    let sdk_ptr = rs_sdk_ffi::dash_sdk_get_inner_sdk_ptr(sdk_handle);
+    if sdk_ptr.is_null() {
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
+            "SDK has no inner SDK".to_string(),
+        );
+    }
+
+    let sdk = Arc::new((*(sdk_ptr as *const Sdk)).clone());
+    let persister = Arc::new(FFIPersister::new(std::ptr::read(persistence)));
+    let handler: Arc<dyn platform_wallet::PlatformEventHandler> =
+        Arc::new(FFIEventHandler::new(std::ptr::read(event_handler)));
+
+    let _runtime_guard = runtime().enter();
+    let manager = PlatformWalletManager::new(Arc::clone(&sdk), persister, handler);
+    let spv = manager.spv_arc();
+    let provider = Arc::new(
+        platform_wallet::spv_context_provider::SpvContextProvider::new(
+            Arc::clone(&spv),
+            sdk.network,
+        ),
+    );
+    let readiness = Arc::new(move || spv.is_ready());
+    if let Err(message) = rs_sdk_ffi::dash_sdk_set_spv_source(sdk_handle, provider, readiness) {
+        drop(_runtime_guard);
+        runtime().block_on(manager.shutdown());
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
+            message,
+        );
+    }
+
+    *out_handle = PLATFORM_WALLET_MANAGER_STORAGE.insert(manager);
+    PlatformWalletFFIResult::ok()
+}
+
 /// Map the C `has_x: bool` + `x` companion-pair idiom to a Rust `Option<u32>`.
 ///
 /// `has == true` yields `Some(value)` — including `Some(0)`, kept distinct

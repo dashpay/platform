@@ -168,20 +168,14 @@ struct SwiftExampleAppApp: App {
                 .onChange(of: platformState.walletScopedServicesRebindTick) { _, _ in
                     rebindWalletScopedServices()
                 }
-                // Switch Platform proof verification from the trusted quorum
-                // service to the active manager's SPV-synced quorum data once
-                // SPV has synced. Driven off the manager's published sync
-                // progress (also powers the sync UI). Idempotent — a no-op once
-                // already on SPV, and re-evaluated for the new manager after a
-                // network switch (which resets `quorumSource` to `.trusted`).
+                // Refresh adaptive-provider policy and the active-source
+                // indicator as SPV readiness changes.
                 .onChange(of: walletManager.spvProgress) { _, _ in
-                    platformState.applyQuorumMode(manager: walletManager)
+                    platformState.applyQuorumMode()
                 }
-                // Apply the Quorum Source picker (Auto / SPV / Trusted) live via
-                // a provider swap on the shared slot — no SDK rebuild, so it
-                // stays consistent with the manager's shared context provider.
+                // Apply the Quorum Source picker to the fixed adaptive provider.
                 .onChange(of: platformState.quorumMode) { _, _ in
-                    platformState.applyQuorumMode(manager: walletManager)
+                    platformState.applyQuorumMode()
                 }
         }
     }
@@ -201,6 +195,7 @@ struct SwiftExampleAppApp: App {
         }
         do {
             try walletManagerStore.activate(network: network, sdk: sdk)
+            platformState.applyQuorumMode()
         } catch {
             SDKLogger.error(
                 "Failed to activate wallet manager for "
@@ -347,6 +342,7 @@ struct SwiftExampleAppApp: App {
                     network: platformState.currentNetwork,
                     sdk: sdk
                 )
+                platformState.applyQuorumMode()
                 let restoredCount = walletManager.wallets.count
                 if restoredCount > 0 {
                     SDKLogger.log(
