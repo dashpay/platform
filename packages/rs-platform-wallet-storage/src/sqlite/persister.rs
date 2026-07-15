@@ -367,28 +367,6 @@ impl SqlitePersister {
         backup::prune(dir, policy)
     }
 
-    /// List a wallet's persisted hardened platform-node public keys.
-    ///
-    /// The returned keys are ordered by derivation index and come directly
-    /// from storage; this method never attempts watch-only derivation.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`WalletStorageError`] if the database cannot be read or the
-    /// persisted provider account state is malformed.
-    pub fn list_provider_node_keys(
-        &self,
-        wallet_id: WalletId,
-    ) -> Result<Vec<ProviderPlatformNodePubKey>, WalletStorageError> {
-        let conn = self.conn()?;
-        for entry in schema::accounts::load_provider_state(&conn, &wallet_id)? {
-            if entry.account_type == key_wallet::account::AccountType::ProviderPlatformKeys {
-                return Ok(entry.derived_platform_node_keys);
-            }
-        }
-        Ok(Vec::new())
-    }
-
     /// Cascade-delete every row owned by `wallet_id`. Takes a
     /// pre-delete auto-backup before the cascade and refuses if
     /// `auto_backup_dir` is `None`. The library-API, safe-by-default
@@ -858,7 +836,7 @@ impl PlatformWalletPersistence for SqlitePersister {
     /// identities, `Consumed`-filtered asset locks). Carries **no** `Wallet`
     /// or key material — the manager rebuilds each wallet watch-only and
     /// signs later on demand. Persisted hardened platform-node public keys
-    /// remain available through [`list_provider_node_keys`](Self::list_provider_node_keys).
+    /// remain available through [`PlatformWalletPersistence::provider_node_keys`].
     /// The `tracing::info!` summary reports `wallets_rehydrated`.
     ///
     /// Fail-hard: any row that fails to decode (or has a malformed
@@ -1104,6 +1082,21 @@ impl PlatformWalletPersistence for SqlitePersister {
             "load() summary"
         );
         Ok(state)
+    }
+
+    fn provider_node_keys(
+        &self,
+        wallet_id: WalletId,
+    ) -> Result<Vec<ProviderPlatformNodePubKey>, PersistenceError> {
+        let conn = self.conn().map_err(PersistenceError::from)?;
+        for entry in schema::accounts::load_provider_state(&conn, &wallet_id)
+            .map_err(PersistenceError::from)?
+        {
+            if entry.account_type == key_wallet::account::AccountType::ProviderPlatformKeys {
+                return Ok(entry.derived_platform_node_keys);
+            }
+        }
+        Ok(Vec::new())
     }
 
     fn get_core_tx_record(

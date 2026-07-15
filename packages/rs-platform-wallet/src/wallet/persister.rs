@@ -11,6 +11,7 @@ use key_wallet::managed_account::transaction_record::TransactionRecord;
 
 use crate::changeset::{
     ClientStartState, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
+    ProviderPlatformNodePubKey,
 };
 use crate::wallet::platform_wallet::WalletId;
 
@@ -40,6 +41,16 @@ impl WalletPersister {
 
     pub(crate) fn load(&self) -> Result<ClientStartState, PersistenceError> {
         self.inner.load()
+    }
+
+    /// Return this wallet's persisted hardened platform-node public keys.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the persistence backend cannot read or decode the
+    /// provider-node key pool.
+    pub fn provider_node_keys(&self) -> Result<Vec<ProviderPlatformNodePubKey>, PersistenceError> {
+        self.inner.provider_node_keys(self.wallet_id)
     }
 
     /// Look up a single core transaction record by `txid`. Used by the

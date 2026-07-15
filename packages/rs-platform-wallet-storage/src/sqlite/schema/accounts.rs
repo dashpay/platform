@@ -136,6 +136,14 @@ pub(crate) fn all_platform_payment_registrations(
     Ok(out)
 }
 
+/// Persist ordinary secp256k1 account registrations for one wallet.
+///
+/// # Errors
+///
+/// Returns [`WalletStorageError::ProviderKeyAccountEntryMismatch`] if a
+/// provider key-material account is submitted through this ECDSA writer.
+/// Returns another [`WalletStorageError`] if an entry cannot be encoded or the
+/// database write fails.
 pub fn apply_registrations(
     tx: &Transaction<'_>,
     wallet_id: &WalletId,
@@ -144,12 +152,10 @@ pub fn apply_registrations(
     if entries.is_empty() {
         return Ok(());
     }
-    if entries.iter().any(|entry| {
-        matches!(
-            entry.account_type,
-            AccountType::ProviderOperatorKeys | AccountType::ProviderPlatformKeys
-        )
-    }) {
+    if entries
+        .iter()
+        .any(|entry| is_provider_key_material(&entry.account_type))
+    {
         return Err(WalletStorageError::ProviderKeyAccountEntryMismatch);
     }
     let mut stmt = tx.prepare_cached(UPSERT_ACCOUNT_SQL)?;
@@ -164,8 +170,27 @@ pub fn apply_registrations(
     Ok(())
 }
 
-/// Upsert for one `account_registrations` row, shared by both writers — they
-/// key on the same six-column PK and differ only in the encoded payload.
+fn is_provider_key_material(account_type: &AccountType) -> bool {
+    match account_type {
+        AccountType::ProviderOperatorKeys => true,
+        AccountType::ProviderPlatformKeys => true,
+        AccountType::Standard { .. } => false,
+        AccountType::CoinJoin { .. } => false,
+        AccountType::IdentityRegistration => false,
+        AccountType::IdentityTopUp { .. } => false,
+        AccountType::IdentityTopUpNotBoundToIdentity => false,
+        AccountType::IdentityInvitation => false,
+        AccountType::AssetLockAddressTopUp => false,
+        AccountType::AssetLockShieldedAddressTopUp => false,
+        AccountType::ProviderVotingKeys => false,
+        AccountType::ProviderOwnerKeys => false,
+        AccountType::DashpayReceivingFunds { .. } => false,
+        AccountType::DashpayExternalAccount { .. } => false,
+        AccountType::PlatformPayment { .. } => false,
+    }
+}
+
+/// Upsert for an ordinary secp256k1 `account_registrations` row.
 const UPSERT_ACCOUNT_SQL: &str = "INSERT INTO account_registrations \
         (wallet_id, account_type, account_index, key_class, \
          user_identity_id, friend_identity_id, account_xpub_bytes) \
@@ -174,9 +199,16 @@ const UPSERT_ACCOUNT_SQL: &str = "INSERT INTO account_registrations \
          user_identity_id, friend_identity_id) DO UPDATE SET \
         account_xpub_bytes = excluded.account_xpub_bytes";
 
-/// Bind and execute [`UPSERT_ACCOUNT_SQL`]. The typed PK columns are derived
-/// from `account_type` in this one place, so writer and reader cross-check
-/// cannot drift apart.
+/// Insert a provider key-material account without overwriting persisted bytes.
+const UPSERT_PROVIDER_ACCOUNT_SQL: &str = "INSERT INTO account_registrations \
+        (wallet_id, account_type, account_index, key_class, \
+         user_identity_id, friend_identity_id, account_xpub_bytes) \
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7) \
+     ON CONFLICT(wallet_id, account_type, account_index, key_class, \
+         user_identity_id, friend_identity_id) DO NOTHING";
+
+/// Bind and execute an account-registration statement. The typed PK columns
+/// derive from `account_type` here so writer and reader cross-checks stay aligned.
 fn upsert_account_row(
     stmt: &mut rusqlite::CachedStatement<'_>,
     wallet_id: &WalletId,
@@ -200,9 +232,9 @@ fn upsert_account_row(
 /// platform node) into `account_registrations`, and each account's
 /// pre-derived platform-node keys into `provider_platform_node_keys`.
 ///
-/// The account row upserts on the same PK as [`apply_registrations`]: a
-/// provider account is index-less, so `(wallet_id, account_type)` plus the
-/// sentinel columns is its natural key and a re-persist updates it.
+/// The account row uses the same PK as [`apply_registrations`]: a provider
+/// account is index-less, so `(wallet_id, account_type)` plus the sentinel
+/// columns is its natural key. Re-persisting an identical row is a no-op.
 ///
 /// Node keys are upserted per `key_index` and **never deleted**. The pool is
 /// hardened-only (Ed25519/SLIP-10), so a key this store forgets is one no
@@ -234,10 +266,8 @@ pub fn apply_provider_registrations(
     if entries.is_empty() {
         return Ok(());
     }
-    // Validate the whole batch before any SQL runs: a rejected entry must not
-    // leave a half-applied sibling behind (the tx would roll it back, but
-    // failing before the first write keeps that guarantee independent of the
-    // caller's tx discipline).
+    // Validate the batch before write SQL runs so rejection cannot leave a
+    // sibling half-applied independently of the caller's transaction discipline.
     let mut encoded: Vec<(&ProviderKeyAccountEntry, &'static str, Vec<u8>)> =
         Vec::with_capacity(entries.len());
     for entry in entries {
@@ -265,6 +295,8 @@ pub fn apply_provider_registrations(
         encoded.push((entry, label, payload));
     }
 
+    // Same-label payloads are byte-identical here, so either surviving index
+    // is equivalent.
     let distinct_accounts: BTreeMap<&'static str, usize> = encoded
         .iter()
         .enumerate()
@@ -314,11 +346,9 @@ pub fn apply_provider_registrations(
         }
     }
 
-    let mut account_stmt = tx.prepare_cached(UPSERT_ACCOUNT_SQL)?;
-    // `DO NOTHING`, not `DO UPDATE`: the checks above prove an already-stored
-    // index carries byte-identical bytes, so re-writing it is a no-op — and if
-    // they were ever bypassed, the SQL itself still cannot overwrite (and so
-    // cannot destroy) a derived key.
+    // The conflict checks and `DO NOTHING` jointly prevent parent or child key
+    // material from being overwritten.
+    let mut account_stmt = tx.prepare_cached(UPSERT_PROVIDER_ACCOUNT_SQL)?;
     let mut node_key_stmt = tx.prepare_cached(
         "INSERT INTO provider_platform_node_keys \
                 (wallet_id, account_type, key_index, public_key, node_id) \
@@ -364,8 +394,8 @@ fn load_provider_account_payload(
     let Some(row) = rows.next()? else {
         return Ok(None);
     };
-    blob::check_size(row.get(0)?)?;
-    Ok(Some(row.get(1)?))
+    blob::check_size(row.get::<_, i64>(0)?)?;
+    Ok(Some(row.get::<_, Vec<u8>>(1)?))
 }
 
 /// Every `provider_platform_node_keys` row of one provider account, ordered

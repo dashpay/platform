@@ -181,10 +181,45 @@ fn tc_pka_001_provider_accounts_survive_store_load() {
     expected_node_keys.sort_by_key(|key| key.index);
     assert_eq!(
         persister
-            .list_provider_node_keys(w)
-            .expect("list provider node keys after load"),
+            .provider_node_keys(w)
+            .expect("read provider node keys after load"),
         expected_node_keys,
-        "load must leave every persisted hardened node key reachable through the public API"
+        "provider_node_keys must return every persisted hardened node key after load"
+    );
+}
+
+#[test]
+fn provider_node_keys_returns_empty_for_unknown_wallet() {
+    let (persister, _tmp, _path) = fresh_persister();
+
+    assert_eq!(
+        persister
+            .provider_node_keys(wid(0xB1))
+            .expect("query an unknown wallet"),
+        Vec::new()
+    );
+}
+
+#[test]
+fn provider_node_keys_returns_empty_for_operator_only_wallet() {
+    let (persister, _tmp, _path) = fresh_persister();
+    let w = wid(0xB2);
+    ensure_wallet_meta(&persister, &w);
+    persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                provider_key_account_registrations: vec![operator_entry(0x12)],
+                ..Default::default()
+            },
+        )
+        .expect("store operator account");
+
+    assert_eq!(
+        persister
+            .provider_node_keys(w)
+            .expect("query an operator-only wallet"),
+        Vec::new()
     );
 }
 
@@ -728,6 +763,68 @@ fn conflicting_provider_xpub_against_persisted_row_is_rejected() {
         bls_bytes(&provider.provider[0].extended_public_key),
         bls_bytes(&bls_xpub(0x36)),
         "the rejected store must leave the original xpub untouched"
+    );
+}
+
+#[test]
+fn conflicting_provider_account_rolls_back_new_sibling_account() {
+    let (persister, _tmp, _path) = fresh_persister();
+    let w: WalletId = wid(0xD8);
+    ensure_wallet_meta(&persister, &w);
+    persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                provider_key_account_registrations: vec![operator_entry(0x3A)],
+                ..Default::default()
+            },
+        )
+        .expect("store original operator account");
+
+    let err = persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                provider_key_account_registrations: vec![
+                    operator_entry(0x3B),
+                    platform_entry(0x3C, vec![node_key(0)]),
+                ],
+                ..Default::default()
+            },
+        )
+        .expect_err("a conflicting account must reject the whole provider batch");
+    assert!(matches!(
+        *wallet_storage_error(err),
+        WalletStorageError::ProviderKeyAccountConflict {
+            account_type: "provider_operator"
+        }
+    ));
+
+    let conn = persister.lock_conn_for_test();
+    let platform_rows: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM account_registrations \
+             WHERE wallet_id = ?1 AND account_type = 'provider_platform'",
+            rusqlite::params![w.as_slice()],
+            |row| row.get(0),
+        )
+        .expect("count platform accounts");
+    assert_eq!(
+        platform_rows, 0,
+        "the rejected batch must not partially write its new platform account"
+    );
+    assert_eq!(
+        node_key_row_count(&conn, &w),
+        0,
+        "the rejected batch must not partially write platform node keys"
+    );
+
+    let provider = accounts::load_state(&conn, &w).expect("load original operator account");
+    assert_eq!(provider.provider.len(), 1);
+    assert_eq!(
+        bls_bytes(&provider.provider[0].extended_public_key),
+        bls_bytes(&bls_xpub(0x3A)),
+        "the rejected batch must leave the original operator xpub untouched"
     );
 }
 

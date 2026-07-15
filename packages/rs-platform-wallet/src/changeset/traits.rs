@@ -5,7 +5,7 @@
 
 use std::error::Error as StdError;
 
-use crate::changeset::changeset::PlatformWalletChangeSet;
+use crate::changeset::changeset::{PlatformWalletChangeSet, ProviderPlatformNodePubKey};
 use crate::changeset::client_start_state::ClientStartState;
 use crate::wallet::platform_wallet::WalletId;
 use dashcore::Txid;
@@ -256,6 +256,23 @@ pub trait PlatformWalletPersistence: Send + Sync {
     /// already keyed by wallet id and the sub-changesets carry their own
     /// wallet attribution where needed.
     fn load(&self) -> Result<ClientStartState, PersistenceError>;
+
+    /// Return the persisted hardened platform-node public keys for `wallet_id`.
+    ///
+    /// Results are ordered by derivation index and come directly from storage;
+    /// implementations never attempt watch-only derivation. This on-demand
+    /// lookup is separate from the eager [`ClientStartState`] snapshot. The
+    /// default returns an empty list for backends without provider-node pools.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the backend cannot read or decode the key pool.
+    fn provider_node_keys(
+        &self,
+        _wallet_id: WalletId,
+    ) -> Result<Vec<ProviderPlatformNodePubKey>, PersistenceError> {
+        Ok(Vec::new())
+    }
 
     /// Look up a single core transaction record by `txid` for `wallet_id`.
     ///
