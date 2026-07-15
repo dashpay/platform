@@ -31,7 +31,9 @@ use dashcore::Network;
 use dpp::data_contract::TokenConfiguration;
 use dpp::prelude::{CoreBlockHeight, DataContract, Identifier};
 use dpp::version::PlatformVersion;
+use tokio::runtime::RuntimeFlavor;
 
+use crate::error::PlatformWalletError;
 use crate::spv::SpvRuntime;
 
 /// Hex-encode the first 8 bytes of a quorum hash for correlation in logs.
@@ -91,23 +93,53 @@ impl ContextProvider for SpvContextProvider {
         }
 
         // Bridge the sync trait method to the async runtime lookup. Proof
-        // verification always runs inside the SDK's multi-threaded runtime, so
-        // the ambient handle is present; a call from outside a runtime returns
-        // an error rather than panicking. The lookup is pure in-memory (two
-        // brief RwLock reads, no network I/O); on write contention with SPV
+        // verification runs inside a Tokio runtime; a call from outside one
+        // returns an error rather than panicking. The lookup is pure in-memory
+        // (two brief RwLock reads, no network I/O); on write contention with SPV
         // sync it waits (fail-slow) rather than erroring.
         let handle = tokio::runtime::Handle::try_current().map_err(|_| {
             ContextProviderError::Generic(
                 "SPV quorum lookup called outside a Tokio runtime".to_string(),
             )
         })?;
-        let result = tokio::task::block_in_place(|| {
-            handle.block_on(self.spv.get_quorum_public_key(
-                quorum_type,
-                quorum_hash,
-                core_chain_locked_height,
-            ))
-        })
+        let result = if handle.runtime_flavor() == RuntimeFlavor::CurrentThread {
+            // `block_in_place` panics on a current-thread runtime, so drive the
+            // lookup on a short-lived runtime on a dedicated thread instead. SPV
+            // state uses runtime-agnostic `tokio::sync` primitives, so this is
+            // safe. This is not the SDK's normal (multi-threaded) verify path.
+            let spv = Arc::clone(&self.spv);
+            std::thread::scope(|scope| {
+                scope
+                    .spawn(move || {
+                        tokio::runtime::Builder::new_current_thread()
+                            .build()
+                            .map_err(|e| PlatformWalletError::SpvError(e.to_string()))
+                            .and_then(|rt| {
+                                rt.block_on(spv.get_quorum_public_key(
+                                    quorum_type,
+                                    quorum_hash,
+                                    core_chain_locked_height,
+                                ))
+                            })
+                    })
+                    .join()
+                    .unwrap_or_else(|_| {
+                        Err(PlatformWalletError::SpvError(
+                            "SPV quorum lookup thread panicked".to_string(),
+                        ))
+                    })
+            })
+        } else {
+            // Multi-threaded runtime (the SDK's proof-verify runtime): block the
+            // current worker without stalling the whole runtime.
+            tokio::task::block_in_place(|| {
+                handle.block_on(self.spv.get_quorum_public_key(
+                    quorum_type,
+                    quorum_hash,
+                    core_chain_locked_height,
+                ))
+            })
+        }
         .map_err(|e| ContextProviderError::InvalidQuorum(e.to_string()));
 
         // The quorum public key is the trust root of every Platform proof this
