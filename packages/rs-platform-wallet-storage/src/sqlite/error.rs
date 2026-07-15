@@ -175,6 +175,17 @@ pub enum WalletStorageError {
         source: dashcore::consensus::encode::Error,
     },
 
+    /// A stored `script` blob parsed as bytes but not as a
+    /// [`dashcore::Address`]. Carries the upstream
+    /// [`dashcore::address::Error`] (`UnrecognizedScript`,
+    /// `ExcessiveScriptSize`, `NetworkValidation`, …) so *why* the script
+    /// isn't an address survives instead of collapsing to a static reason.
+    #[error("stored script is not a valid address")]
+    AddressDecode {
+        #[source]
+        source: dashcore::address::Error,
+    },
+
     /// The CLI's `backup` subcommand refuses to overwrite an existing
     /// destination file.
     #[error("backup destination already exists: {}", path.display())]
@@ -193,6 +204,17 @@ pub enum WalletStorageError {
     /// identities.
     #[error("identity entry id disagrees with its map key")]
     IdentityEntryIdMismatch,
+
+    /// A rehydration merge (`load_prekeyed`) found an `identity_keys` /
+    /// `contacts` entry whose owner identity is neither loaded nor
+    /// tombstoned for this wallet — an orphaned row a logical delete does
+    /// not explain. Hard-error rather than silently drop live key / contact
+    /// state; only a known-tombstoned owner's orphaned rows are safe to skip.
+    #[error(
+        "rehydration merge found an orphaned entry: owner {} is neither loaded nor tombstoned",
+        hex::encode(owner)
+    )]
+    OrphanedIdentityEntry { owner: [u8; 32] },
 
     /// An `account_registrations` row's typed `(account_type, account_index)`
     /// columns disagreed with the decoded `AccountRegistrationEntry` blob.
@@ -402,6 +424,7 @@ impl WalletStorageError {
             | Self::BlobDecode { .. }
             | Self::HashDecode { .. }
             | Self::ConsensusCodec { .. }
+            | Self::AddressDecode { .. }
             | Self::BackupDestinationExists { .. }
             | Self::ForeignKeysNotEnforced
             | Self::JournalModeNotApplied { .. }
@@ -410,6 +433,7 @@ impl WalletStorageError {
             | Self::AlreadyOpen { .. }
             | Self::IdentityKeyEntryMismatch
             | Self::IdentityEntryIdMismatch
+            | Self::OrphanedIdentityEntry { .. }
             | Self::AccountRegistrationEntryMismatch
             | Self::AccountRecordInvalid { .. }
             | Self::MissingAccount { .. }
@@ -484,6 +508,7 @@ impl WalletStorageError {
             Self::BlobDecode { .. } => "blob_decode",
             Self::HashDecode { .. } => "hash_decode",
             Self::ConsensusCodec { .. } => "consensus_codec",
+            Self::AddressDecode { .. } => "address_decode",
             Self::BackupDestinationExists { .. } => "backup_destination_exists",
             Self::ForeignKeysNotEnforced => "foreign_keys_not_enforced",
             Self::JournalModeNotApplied { .. } => "journal_mode_not_applied",
@@ -492,6 +517,7 @@ impl WalletStorageError {
             Self::AlreadyOpen { .. } => "already_open",
             Self::IdentityKeyEntryMismatch => "identity_key_entry_mismatch",
             Self::IdentityEntryIdMismatch => "identity_entry_id_mismatch",
+            Self::OrphanedIdentityEntry { .. } => "orphaned_identity_entry",
             Self::AccountRecordInvalid { .. } => "account_record_invalid",
             Self::MissingAccount { .. } => "missing_account_registration_entry",
             Self::AccountRejected { .. } => "account_rejected",
@@ -526,5 +552,11 @@ impl From<dashcore::hashes::Error> for WalletStorageError {
 impl From<dashcore::consensus::encode::Error> for WalletStorageError {
     fn from(source: dashcore::consensus::encode::Error) -> Self {
         Self::ConsensusCodec { source }
+    }
+}
+
+impl From<dashcore::address::Error> for WalletStorageError {
+    fn from(source: dashcore::address::Error) -> Self {
+        Self::AddressDecode { source }
     }
 }

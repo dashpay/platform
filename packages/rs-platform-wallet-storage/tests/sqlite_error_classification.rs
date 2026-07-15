@@ -157,6 +157,10 @@ fn samples() -> Vec<WalletStorageError> {
         WalletStorageError::InvalidWalletIdLength { actual: 10 },
         WalletStorageError::ConfigInvalid { reason: "bad knob" },
         WalletStorageError::IdentityEntryIdMismatch,
+        WalletStorageError::OrphanedIdentityEntry { owner: [0x0E; 32] },
+        WalletStorageError::AddressDecode {
+            source: dashcore::address::Error::UnrecognizedScript,
+        },
         WalletStorageError::AccountRegistrationEntryMismatch,
         // BincodeEncode / BincodeDecode / HashDecode / ConsensusCodec
         // need real upstream errors; omitted but covered by their arms.
@@ -252,11 +256,13 @@ fn tc_p2_005_is_transient_table() {
             WalletStorageError::BlobDecode { .. } => (false, "blob_decode"),
             WalletStorageError::HashDecode { .. } => (false, "hash_decode"),
             WalletStorageError::ConsensusCodec { .. } => (false, "consensus_codec"),
+            WalletStorageError::AddressDecode { .. } => (false, "address_decode"),
             WalletStorageError::BackupDestinationExists { .. } => {
                 (false, "backup_destination_exists")
             }
             WalletStorageError::IdentityKeyEntryMismatch => (false, "identity_key_entry_mismatch"),
             WalletStorageError::IdentityEntryIdMismatch => (false, "identity_entry_id_mismatch"),
+            WalletStorageError::OrphanedIdentityEntry { .. } => (false, "orphaned_identity_entry"),
             WalletStorageError::AssetLockEntryMismatch { .. } => {
                 (false, "asset_lock_entry_mismatch")
             }

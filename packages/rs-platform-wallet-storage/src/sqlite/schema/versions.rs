@@ -77,10 +77,11 @@ impl Domain {
 /// Domains carrying data in `cs`. The destructure is exhaustive (no `..`), so
 /// adding a field to `PlatformWalletChangeSet` is a compile error here until
 /// it gains a `Domain` variant and an arm below — the R8 forgotten-domain
-/// guard. Two fields are bound and deliberately ignored rather than mapped:
-/// `shielded` (feature-gated; storage versions no shielded state here) and
-/// `provider_key_account_registrations` (deferred — see the comment on its
-/// binding below).
+/// guard. `shielded` (feature-gated; storage versions no shielded state here)
+/// is bound and deliberately ignored; `provider_key_account_registrations` is
+/// not yet mapped to a `Domain`, but a non-empty one is surfaced via a
+/// `tracing::warn` rather than dropped in silence (deferred — see its binding
+/// below).
 pub fn touched_domains(cs: &PlatformWalletChangeSet) -> Vec<Domain> {
     let PlatformWalletChangeSet {
         core,
@@ -109,7 +110,13 @@ pub fn touched_domains(cs: &PlatformWalletChangeSet) -> Vec<Domain> {
     // nothing ever persisted it (this persister is new, so there is no
     // regression), and no consumer reads it back yet. Tracked in
     // https://github.com/dashpay/platform/issues/4113.
-    let _ = provider_key_account_registrations;
+    if !provider_key_account_registrations.is_empty() {
+        tracing::warn!(
+            count = provider_key_account_registrations.len(),
+            "provider-key account registrations in this changeset are not persisted yet \
+             (deferred, tracked in dashpay/platform#4113) and will not survive a reload"
+        );
+    }
 
     // A sub-changeset carried but empty (`Some(default)`) is not a real
     // change; the `Merge::is_empty` bound is the shared emptiness contract.

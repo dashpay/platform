@@ -235,9 +235,7 @@ pub fn load_used_addresses(
             continue;
         }
         let script = dashcore::ScriptBuf::from_bytes(raw_script);
-        let address = dashcore::Address::from_script(&script, network).map_err(|_| {
-            WalletStorageError::blob_decode("core_address_pool.script not an address")
-        })?;
+        let address = dashcore::Address::from_script(&script, network)?;
         let account_index =
             crate::sqlite::util::safe_cast::i64_to_u32("core_address_pool.account_index", index)?;
         let user_identity_id = <[u8; 32]>::try_from(user.as_slice())
@@ -308,6 +306,39 @@ mod tests {
         let got = account_index_for_script(&tx, &w, &script).unwrap();
         assert_eq!(got, Some(4), "tie-break must pick the account_type-min row");
         tx.commit().unwrap();
+    }
+
+    /// A stored `script` that parses as bytes but not as an address must
+    /// surface `AddressDecode` — carrying the upstream
+    /// `dashcore::address::Error` — not the context-free `BlobDecode` that
+    /// discards *why* the script failed.
+    #[test]
+    fn load_used_addresses_wraps_address_error_as_address_decode() {
+        let conn = migrated_conn();
+        let w = [0x88u8; 32];
+        conn.execute(
+            "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
+            params![&w[..]],
+        )
+        .unwrap();
+        // A bare OP_RETURN script is well-formed bytes but not any address
+        // type, so `Address::from_script` returns `UnrecognizedScript`.
+        let bad_script = [0x6au8];
+        conn.execute(
+            "INSERT INTO core_address_pool \
+                (wallet_id, account_type, account_index, key_class, pool_type, \
+                 address_index, script, used) \
+             VALUES (?1, 'coinjoin', 0, 0, 0, 0, ?2, 1)",
+            params![&w[..], &bad_script[..]],
+        )
+        .unwrap();
+
+        let err = load_used_addresses(&conn, &w, dashcore::Network::Testnet)
+            .expect_err("an unparseable script must be a hard error");
+        assert!(
+            matches!(err, WalletStorageError::AddressDecode { .. }),
+            "expected AddressDecode carrying the upstream error, got {err:?}"
+        );
     }
 
     #[test]

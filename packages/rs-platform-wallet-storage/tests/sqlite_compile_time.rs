@@ -58,11 +58,11 @@ const READ_ONLY_PREPARE_ALLOWED: &[(&str, &str)] = &[
     // to reflect the new `length(<col>)` column in each SELECT.
     (
         "accounts.rs",
-        "SELECT account_index, length(account_xpub_bytes), account_xpub_bytes",
+        "SELECT account_index, key_class, length(account_xpub_bytes), account_xpub_bytes",
     ),
     (
         "accounts.rs",
-        "SELECT wallet_id, account_index, length(account_xpub_bytes), account_xpub_bytes",
+        "SELECT wallet_id, account_index, key_class, length(account_xpub_bytes), account_xpub_bytes",
     ),
     // list_unspent_utxos (test-helper reader, ungated — global SQLITE_LIMIT_LENGTH covers it).
     ("core_state.rs", "SELECT outpoint, value, script, height"),
@@ -105,6 +105,11 @@ const READ_ONLY_PREPARE_ALLOWED: &[(&str, &str)] = &[
     (
         "identities.rs",
         "length(entry_blob), entry_blob, tombstoned",
+    ),
+    // load_tombstoned_ids: the merge's positive tombstone signal (QA-002).
+    (
+        "identities.rs",
+        "SELECT identity_id FROM identities WHERE",
     ),
     ("contacts.rs", "SELECT owner_id, contact_id, state"),
     (

@@ -67,7 +67,10 @@ pub fn apply_pending_contact_crypto(
             let payload = blob::encode(entry)?;
             let owner = entry.owner_identity_id.to_buffer();
             let contact = entry.contact_id.to_buffer();
-            let enqueued = i64::try_from(entry.enqueued_at_ms).unwrap_or(i64::MAX);
+            let enqueued = crate::sqlite::util::safe_cast::u64_to_i64(
+                "pending_contact_crypto.enqueued_at_ms",
+                entry.enqueued_at_ms,
+            )?;
             stmt.execute(params![
                 wallet_id.as_slice(),
                 owner.as_slice(),
@@ -157,6 +160,44 @@ mod tests {
         assert_eq!(
             mapped, labels,
             "KIND_LABELS must equal the kind_db_label codomain"
+        );
+    }
+
+    /// `enqueued_at_ms` past `i64::MAX` must surface a typed
+    /// `IntegerOverflow` — consistent with every other durable u64→i64 cast
+    /// in this subtree — not silently clamp to `i64::MAX` and persist a
+    /// falsified timestamp.
+    #[test]
+    fn enqueued_at_ms_overflow_is_typed_error_not_silent_clamp() {
+        use crate::sqlite::migrations;
+        use crate::sqlite::schema::wallets;
+        use dpp::prelude::Identifier;
+        use platform_wallet::changeset::PendingContactCryptoOp;
+        use rusqlite::Connection;
+
+        let mut conn = Connection::open_in_memory().unwrap();
+        migrations::run(&mut conn).unwrap();
+        let wallet_id: WalletId = [8u8; 32];
+        wallets::ensure_exists(&conn, &wallet_id).unwrap();
+
+        let entry = PendingContactCrypto {
+            owner_identity_id: Identifier::from([0xAAu8; 32]),
+            contact_id: Identifier::from([0xBBu8; 32]),
+            op: PendingContactCryptoOp::RegisterReceiving,
+            enqueued_at_ms: u64::MAX,
+        };
+        let tx = conn.transaction().unwrap();
+        let err = apply_pending_contact_crypto(&tx, &wallet_id, std::slice::from_ref(&entry), &[])
+            .expect_err("enqueued_at_ms past i64::MAX must error, not clamp");
+        assert!(
+            matches!(
+                err,
+                WalletStorageError::IntegerOverflow {
+                    field: "pending_contact_crypto.enqueued_at_ms",
+                    ..
+                }
+            ),
+            "expected IntegerOverflow for enqueued_at_ms, got {err:?}"
         );
     }
 

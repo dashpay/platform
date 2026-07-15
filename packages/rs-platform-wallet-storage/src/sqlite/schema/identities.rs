@@ -1,6 +1,6 @@
 //! `identities` table writer.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::prelude::Identifier;
@@ -208,8 +208,11 @@ pub fn load_state(
 /// for one wallet: read the identities, then fold this wallet's persisted
 /// identity keys and contacts onto them so every `ManagedIdentity` carries
 /// its own `public_keys` and contact maps at load time — no separate
-/// changeset layered on afterwards. Fail-hard on a corrupt row, inherited
-/// from the three underlying readers.
+/// changeset layered on afterwards. Fail-hard on a corrupt row (inherited
+/// from the three underlying readers) and on any merged key / contact entry
+/// whose owner is absent for a reason other than a known tombstone; a
+/// tombstoned owner's orphaned rows are skipped with a summary log (see
+/// [`merge_contacts_and_keys`]).
 pub fn load_prekeyed(
     conn: &Connection,
     wallet_id: &WalletId,
@@ -226,8 +229,31 @@ pub fn load_prekeyed(
         established: records.established,
         ..Default::default()
     };
-    merge_contacts_and_keys(&mut state, contacts, identity_keys);
+    let tombstoned = load_tombstoned_ids(conn, wallet_id)?;
+    merge_contacts_and_keys(&mut state, contacts, identity_keys, &tombstoned)?;
     Ok(state)
+}
+
+/// The set of identity ids tombstoned (logically deleted) for this wallet.
+/// A rehydration-merge entry whose owner is in this set is an expected
+/// logical-delete orphan — safe to skip; an owner absent for any other
+/// reason is a hard error.
+fn load_tombstoned_ids(
+    conn: &Connection,
+    wallet_id: &WalletId,
+) -> Result<HashSet<Identifier>, WalletStorageError> {
+    let mut stmt =
+        conn.prepare("SELECT identity_id FROM identities WHERE wallet_id = ?1 AND tombstoned = 1")?;
+    let mut rows = stmt.query(params![wallet_id.as_slice()])?;
+    let mut out = HashSet::new();
+    while let Some(row) = rows.next()? {
+        let id_bytes: Vec<u8> = row.get(0)?;
+        let id32 = <[u8; 32]>::try_from(id_bytes.as_slice()).map_err(|_| {
+            WalletStorageError::blob_decode("identities.identity_id is not 32 bytes")
+        })?;
+        out.insert(Identifier::from(id32));
+    }
+    Ok(out)
 }
 
 /// Reconstruct a [`ManagedIdentity`] from a persisted [`IdentityEntry`]
@@ -331,9 +357,13 @@ pub fn ensure_exists(
 /// are populated at load time — the FFI persister's pre-keyed shape,
 /// with no separate changeset layered on afterwards.
 ///
-/// Entries route by owner `identity_id` across BOTH buckets; one whose
-/// owner is absent (e.g. a tombstoned identity's orphaned rows) is
-/// logged and skipped, never fatal. Only key `upserts` and the
+/// Entries route by owner `identity_id` across BOTH buckets. An owner
+/// absent from the loaded set is acceptable ONLY when it names a
+/// known-tombstoned identity (`tombstoned`) — its rows are logical-delete
+/// orphans, skipped and summarised once per collection. Any other miss is
+/// corruption or a wallet-scope mismatch and returns
+/// [`WalletStorageError::OrphanedIdentityEntry`] rather than silently
+/// dropping live key / contact state. Only key `upserts` and the
 /// `sent` / `incoming` / `established` maps are routed; `removed_*`
 /// (insert-only feed) and `ignored` / `unignored` (restored in the
 /// identity reader from the `ignored_senders` table) are skipped. No
@@ -342,7 +372,8 @@ pub fn merge_contacts_and_keys(
     state: &mut IdentityManagerStartState,
     contacts: ContactChangeSet,
     identity_keys: IdentityKeysChangeSet,
-) {
+    tombstoned: &HashSet<Identifier>,
+) -> Result<(), WalletStorageError> {
     // One transient id → &mut ManagedIdentity view over both buckets so
     // routing is O(1) per entry rather than a per-entry bucket scan. The
     // two buckets are disjoint fields, so their mutable borrows coexist.
@@ -356,43 +387,83 @@ pub fn merge_contacts_and_keys(
         }
     }
 
+    let mut skipped_keys = 0usize;
     for (_key, entry) in identity_keys.upserts {
         match by_id.get_mut(&entry.identity_id) {
             Some(managed) => managed.identity.add_public_key(entry.public_key),
-            None => tracing::warn!(
-                identity = %entry.identity_id,
-                key_id = entry.key_id,
-                "skipping identity key during rehydration merge: owner identity not loaded"
-            ),
+            None if tombstoned.contains(&entry.identity_id) => skipped_keys += 1,
+            None => {
+                return Err(WalletStorageError::OrphanedIdentityEntry {
+                    owner: entry.identity_id.to_buffer(),
+                })
+            }
         }
     }
+    if skipped_keys > 0 {
+        tracing::warn!(
+            count = skipped_keys,
+            "skipped identity keys of tombstoned identities during rehydration merge"
+        );
+    }
+
+    let mut skipped_sent = 0usize;
     for (key, entry) in contacts.sent_requests {
         match by_id.get_mut(&key.owner_id) {
             Some(managed) => managed.apply_sent_contact_request(entry.request),
-            None => tracing::warn!(
-                owner = %key.owner_id,
-                "skipping sent contact request during rehydration merge: owner identity not loaded"
-            ),
+            None if tombstoned.contains(&key.owner_id) => skipped_sent += 1,
+            None => {
+                return Err(WalletStorageError::OrphanedIdentityEntry {
+                    owner: key.owner_id.to_buffer(),
+                })
+            }
         }
     }
+    if skipped_sent > 0 {
+        tracing::warn!(
+            count = skipped_sent,
+            "skipped sent contact requests of tombstoned identities during rehydration merge"
+        );
+    }
+
+    let mut skipped_incoming = 0usize;
     for (key, entry) in contacts.incoming_requests {
         match by_id.get_mut(&key.owner_id) {
             Some(managed) => managed.apply_incoming_contact_request(entry.request),
-            None => tracing::warn!(
-                owner = %key.owner_id,
-                "skipping incoming contact request during rehydration merge: owner identity not loaded"
-            ),
+            None if tombstoned.contains(&key.owner_id) => skipped_incoming += 1,
+            None => {
+                return Err(WalletStorageError::OrphanedIdentityEntry {
+                    owner: key.owner_id.to_buffer(),
+                })
+            }
         }
     }
+    if skipped_incoming > 0 {
+        tracing::warn!(
+            count = skipped_incoming,
+            "skipped incoming contact requests of tombstoned identities during rehydration merge"
+        );
+    }
+
+    let mut skipped_established = 0usize;
     for (key, established) in contacts.established {
         match by_id.get_mut(&key.owner_id) {
             Some(managed) => managed.apply_established_contact(established),
-            None => tracing::warn!(
-                owner = %key.owner_id,
-                "skipping established contact during rehydration merge: owner identity not loaded"
-            ),
+            None if tombstoned.contains(&key.owner_id) => skipped_established += 1,
+            None => {
+                return Err(WalletStorageError::OrphanedIdentityEntry {
+                    owner: key.owner_id.to_buffer(),
+                })
+            }
         }
     }
+    if skipped_established > 0 {
+        tracing::warn!(
+            count = skipped_established,
+            "skipped established contacts of tombstoned identities during rehydration merge"
+        );
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]
@@ -581,6 +652,111 @@ mod tests {
             oow.identity.public_keys()[&0].data().as_slice(),
             &[0xB2; 33],
             "out-of-wallet identity carries its own key"
+        );
+    }
+
+    fn sample_key_entry(id: Identifier, byte: u8) -> platform_wallet::changeset::IdentityKeyEntry {
+        use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+        use dpp::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel};
+        use dpp::platform_value::BinaryData;
+        platform_wallet::changeset::IdentityKeyEntry {
+            identity_id: id,
+            key_id: 0,
+            public_key: IdentityPublicKey::V0(IdentityPublicKeyV0 {
+                id: 0,
+                purpose: Purpose::AUTHENTICATION,
+                security_level: SecurityLevel::HIGH,
+                contract_bounds: None,
+                key_type: KeyType::ECDSA_SECP256K1,
+                read_only: false,
+                data: BinaryData::new(vec![byte; 33]),
+                disabled_at: None,
+            }),
+            public_key_hash: [byte; 20],
+            wallet_id: None,
+            derivation_indices: None,
+        }
+    }
+
+    /// `load_prekeyed` hard-errors when a persisted `identity_keys` entry's
+    /// owner is absent from the load for a reason other than a tombstone
+    /// (here: the identity is parented to a different wallet). Live public
+    /// keys must never vanish silently — only a known-tombstoned owner's
+    /// orphaned rows are safe to skip.
+    #[test]
+    fn load_prekeyed_hard_errors_on_orphaned_non_tombstoned_owner() {
+        use platform_wallet::changeset::IdentityKeysChangeSet;
+
+        let mut conn = migrated_conn();
+        let a = [0xA1u8; 32];
+        let b = [0xB2u8; 32];
+        insert_wallet(&conn, &a);
+        insert_wallet(&conn, &b);
+
+        // Identity X exists but is parented to wallet B, so load_prekeyed(A)
+        // neither loads it nor sees it tombstoned in A's scope — a genuine
+        // orphan, not a logical delete.
+        let x = Identifier::from([0x33u8; 32]);
+        let mut ids_b = IdentityChangeSet::default();
+        ids_b
+            .identities
+            .insert(x, entry([0x33; 32], Some(b), 100, Some(0)));
+        apply_in_tx(&mut conn, &b, &ids_b);
+
+        // A public key for X is filed under wallet A (owner absent from A).
+        let mut keys = IdentityKeysChangeSet::default();
+        keys.upserts.insert((x, 0), sample_key_entry(x, 0xC3));
+        {
+            let tx = conn.transaction().unwrap();
+            crate::sqlite::schema::identity_keys::apply(&tx, &a, &keys).unwrap();
+            tx.commit().unwrap();
+        }
+
+        let err =
+            load_prekeyed(&conn, &a).expect_err("orphaned non-tombstoned owner must hard-error");
+        assert!(
+            matches!(err, WalletStorageError::OrphanedIdentityEntry { .. }),
+            "expected OrphanedIdentityEntry, got {err:?}"
+        );
+    }
+
+    /// `load_prekeyed` skips — never hard-errors on — an `identity_keys`
+    /// entry whose owner is a known-tombstoned identity: those orphaned rows
+    /// are the expected, self-explained fallout of a logical delete.
+    #[test]
+    fn load_prekeyed_skips_orphaned_keys_of_tombstoned_owner() {
+        use platform_wallet::changeset::IdentityKeysChangeSet;
+
+        let mut conn = migrated_conn();
+        let a = [0xA7u8; 32];
+        insert_wallet(&conn, &a);
+        let y = Identifier::from([0x44u8; 32]);
+
+        let mut ids = IdentityChangeSet::default();
+        ids.identities
+            .insert(y, entry([0x44; 32], Some(a), 50, Some(0)));
+        let mut keys = IdentityKeysChangeSet::default();
+        keys.upserts.insert((y, 0), sample_key_entry(y, 0xD4));
+        {
+            let tx = conn.transaction().unwrap();
+            apply(&tx, &a, &ids).unwrap();
+            crate::sqlite::schema::identity_keys::apply(&tx, &a, &keys).unwrap();
+            tx.commit().unwrap();
+        }
+        // Tombstone Y; its key row survives as a logical-delete orphan.
+        let mut removed = IdentityChangeSet::default();
+        removed.removed.insert(y);
+        apply_in_tx(&mut conn, &a, &removed);
+
+        let state =
+            load_prekeyed(&conn, &a).expect("tombstoned-owner orphan must be skipped, not fatal");
+        assert!(
+            state
+                .wallet_identities
+                .get(&a)
+                .map(|m| m.is_empty())
+                .unwrap_or(true),
+            "tombstoned identity must not surface in the loaded state"
         );
     }
 
