@@ -28,6 +28,14 @@ public enum LoggingPreferences {
     /// so growth must stay bounded without anyone thinking about it.
     private static let maxRetainedSessions = 20
 
+    /// Total-bytes quota across retained sessions. The Rust side
+    /// appends without rotation, so individual sessions can be
+    /// arbitrarily large — a count cap alone doesn't bound disk
+    /// use. Sessions are kept newest-first until the quota is hit;
+    /// the current session is always kept (its in-flight growth
+    /// can only be bounded by rotation on the Rust side).
+    private static let maxRetainedBytes: UInt64 = 100 * 1024 * 1024
+
     /// Root under which each launch creates one timestamped session
     /// directory of per-crate `run.log` files. Exposed so diagnostics
     /// features (log export) can enumerate sessions without
@@ -45,18 +53,31 @@ public enum LoggingPreferences {
     @MainActor
     public private(set) static var currentSessionDirectory: URL?
 
+    /// The tracing subscriber is process-global and first-init-wins,
+    /// so the install must run at most once per process. Without
+    /// this guard, every `configure()` call after the first (e.g.
+    /// a bootstrap retry) would make the Rust initializer lay out a
+    /// fresh session directory of empty log files before `try_init`
+    /// discovers the existing subscriber and bails — leaving decoy
+    /// "newest" sessions that logging never writes to.
+    @MainActor
+    private static var didInstallLogging = false
+
     @discardableResult
     @MainActor
     public static func configure() -> LoggingPreset {
         let preset = loadPreset()
         let enableSwiftVerbose: Bool
 
-        if let sessionRoot = launchLogPaths(),
-           SDK.enableFileLogging(level: .info, sessionRoot: sessionRoot.path) {
-            currentSessionDirectory = sessionRoot
-            pruneOldSessions(keeping: sessionRoot)
-        } else {
-            SDK.enableLogging(level: .info)
+        if !didInstallLogging {
+            didInstallLogging = true
+            if let sessionRoot = launchLogPaths(),
+               SDK.enableFileLogging(level: .info, sessionRoot: sessionRoot.path) {
+                currentSessionDirectory = sessionRoot
+                pruneOldSessions(keeping: sessionRoot)
+            } else {
+                SDK.enableLogging(level: .info)
+            }
         }
 
         switch preset {
@@ -85,11 +106,13 @@ public enum LoggingPreferences {
             .appendingPathComponent(formatter.string(from: Date()), isDirectory: true)
     }
 
-    /// Delete session directories beyond `maxRetainedSessions`,
-    /// oldest first. The current session is always kept regardless
-    /// of where its stamp sorts. Runs detached — deleting a few
-    /// multi-megabyte directories has no business on the main
-    /// actor during launch.
+    /// Delete session directories past either retention bound —
+    /// `maxRetainedSessions` count or `maxRetainedBytes` total —
+    /// walking newest-first so what survives is always the most
+    /// recent history. The current session is always kept
+    /// regardless of where its stamp sorts or how big it is.
+    /// Runs detached — deleting multi-megabyte directories has no
+    /// business on the main actor during launch.
     private static func pruneOldSessions(keeping current: URL) {
         guard let root = logsRootDirectory else { return }
         Task.detached(priority: .utility) {
@@ -107,11 +130,43 @@ public enum LoggingPreferences {
                 .sorted { $0.lastPathComponent > $1.lastPathComponent }
 
             let currentName = current.lastPathComponent
-            for stale in sessions.dropFirst(maxRetainedSessions)
-            where stale.lastPathComponent != currentName {
-                try? fm.removeItem(at: stale)
+            var keptCount = 0
+            var keptBytes: UInt64 = 0
+            for session in sessions {
+                if session.lastPathComponent == currentName {
+                    // Counted against the byte quota so a huge
+                    // just-finished-syncing session pushes old
+                    // history out, but never deleted itself.
+                    keptCount += 1
+                    keptBytes += directoryBytes(of: session)
+                    continue
+                }
+                let bytes = directoryBytes(of: session)
+                if keptCount >= maxRetainedSessions
+                    || keptBytes + bytes > maxRetainedBytes {
+                    try? fm.removeItem(at: session)
+                } else {
+                    keptCount += 1
+                    keptBytes += bytes
+                }
             }
         }
+    }
+
+    private static func directoryBytes(of directory: URL) -> UInt64 {
+        guard let enumerator = FileManager.default.enumerator(
+            at: directory,
+            includingPropertiesForKeys: [.totalFileAllocatedSizeKey, .fileSizeKey]
+        ) else { return 0 }
+
+        var total: UInt64 = 0
+        for case let file as URL in enumerator {
+            let values = try? file.resourceValues(
+                forKeys: [.totalFileAllocatedSizeKey, .fileSizeKey]
+            )
+            total += UInt64(values?.totalFileAllocatedSize ?? values?.fileSize ?? 0)
+        }
+        return total
     }
 
     public static var preset: LoggingPreset { loadPreset() }

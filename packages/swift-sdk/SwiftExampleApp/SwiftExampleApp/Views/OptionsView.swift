@@ -604,10 +604,18 @@ struct OptionsView: View {
         let short = bundle.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
         let build = bundle.infoDictionary?["CFBundleVersion"] as? String ?? "?"
         let appVersion = "\(short) (\(build))"
+        // Authoritative record of which directory this run is
+        // writing to — timestamp sorting alone can be fooled by a
+        // clock rollback or a stale future-dated directory.
+        let currentSession = LoggingPreferences.currentSessionDirectory
 
         Task.detached(priority: .userInitiated) {
             let result: Result<URL, Error> = Result {
-                try LogExporter.export(network: network, appVersion: appVersion)
+                try LogExporter.export(
+                    network: network,
+                    appVersion: appVersion,
+                    currentSession: currentSession
+                )
             }
             await MainActor.run {
                 isExportingLogs = false
