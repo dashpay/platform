@@ -163,11 +163,8 @@ pub fn load_state(
             WalletStorageError::blob_decode("identity_keys.identity_id is not 32 bytes")
         })?;
         let identity_id = Identifier::from(id32);
-        let key_id = KeyID::try_from(key_id).map_err(|_| WalletStorageError::IntegerOverflow {
-            field: "identity_keys.key_id",
-            value: key_id as u64,
-            target: crate::sqlite::util::safe_cast::SafeCastTarget::U64,
-        })?;
+        let key_id: KeyID =
+            crate::sqlite::util::safe_cast::i64_to_u32("identity_keys.key_id", key_id)?;
         let entry = decode_entry(&payload)?;
         // Cross-check the decoded blob against the typed columns it was
         // selected by (mirrors `accounts`/`asset_locks` readers): a row whose
@@ -271,6 +268,61 @@ mod tests {
             params![&wallet[..], &typed_identity[..], entry_blob, &[0u8; 20][..]],
         )
         .unwrap();
+    }
+
+    /// `load_state`'s `key_id` boundary cast is a `u32` conversion
+    /// (`KeyID = u32`), so an out-of-`u32`-range column must surface
+    /// `IntegerOverflow` stamped `SafeCastTarget::U32` — naming `u64` would
+    /// misdirect an operator to the wrong boundary.
+    #[test]
+    fn load_state_key_id_overflow_reports_u32_target() {
+        let conn = migrated_conn();
+        let wallet = [0x77u8; 32];
+        let typed_identity = [0x88u8; 32];
+        conn.execute(
+            "INSERT OR IGNORE INTO wallets (wallet_id, network, birth_height) \
+             VALUES (?1, 'testnet', 0)",
+            params![&wallet[..]],
+        )
+        .unwrap();
+        crate::sqlite::schema::identities::ensure_exists(&conn, &wallet, &typed_identity).unwrap();
+        let wire = IdentityKeyWire {
+            identity_id: Identifier::from(typed_identity),
+            key_id: 0,
+            public_key_bincode: bincode::encode_to_vec(sample_public_key(), blob::bounded_config())
+                .unwrap(),
+            public_key_hash: [0u8; 20],
+            wallet_id: None,
+            derivation_indices: None,
+        };
+        let entry_blob = blob::encode(&wire).unwrap();
+        // key_id column set beyond u32::MAX so the i64->u32 cast overflows.
+        conn.execute(
+            "INSERT INTO identity_keys \
+                (wallet_id, identity_id, key_id, public_key_blob, public_key_hash, derivation_blob) \
+             VALUES (?1, ?2, ?3, ?4, ?5, NULL)",
+            params![
+                &wallet[..],
+                &typed_identity[..],
+                i64::from(u32::MAX) + 1,
+                entry_blob,
+                &[0u8; 20][..]
+            ],
+        )
+        .unwrap();
+
+        let err = load_state(&conn, &wallet).expect_err("key_id overflow must fail");
+        assert!(
+            matches!(
+                err,
+                WalletStorageError::IntegerOverflow {
+                    field: "identity_keys.key_id",
+                    target: crate::sqlite::util::safe_cast::SafeCastTarget::U32,
+                    ..
+                }
+            ),
+            "expected IntegerOverflow with U32 target for key_id, got {err:?}"
+        );
     }
 
     /// `load_state` rejects a row whose decoded blob names a different

@@ -352,8 +352,7 @@ pub fn load_state(
             if let Some(owner) = owning_account_for_script(conn, wallet_id, script.as_bytes())? {
                 utxo_accounts.insert(outpoint, owner);
             }
-            let address = dashcore::Address::from_script(&script, network)
-                .map_err(|_| WalletStorageError::blob_decode("core_utxos.script not an address"))?;
+            let address = dashcore::Address::from_script(&script, network)?;
             let confirmed = height.map(|h| h > 0).unwrap_or(false);
             let utxo = Utxo {
                 outpoint,
@@ -405,8 +404,7 @@ pub fn load_state(
             let txid_bytes: Vec<u8> = row.get(1)?;
             blob::check_size(row.get::<_, i64>(2)?)?;
             let blob_bytes: Vec<u8> = row.get(3)?;
-            let txid = dashcore::Txid::from_slice(&txid_bytes)
-                .map_err(|_| WalletStorageError::blob_decode("core_instant_locks.txid"))?;
+            let txid = dashcore::Txid::from_slice(&txid_bytes)?;
             let islock: dashcore::ephemerealdata::instant_lock::InstantLock =
                 blob::decode(&blob_bytes)?;
             cs.instant_locks_for_non_final_records.insert(txid, islock);

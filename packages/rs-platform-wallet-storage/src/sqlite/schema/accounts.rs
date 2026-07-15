@@ -26,18 +26,27 @@ pub(crate) type PlatformPaymentRegistration = (u32, ExtendedPubKey);
 /// `(account_index, xpub)`.
 fn decode_platform_payment_row(
     typed_index: i64,
+    typed_key_class: i64,
     xpub_bytes: &[u8],
 ) -> Result<PlatformPaymentRegistration, WalletStorageError> {
     let typed_index = crate::sqlite::util::safe_cast::i64_to_u32(
         "account_registrations.account_index",
         typed_index,
     )?;
+    let typed_key_class = crate::sqlite::util::safe_cast::i64_to_u32(
+        "account_registrations.key_class",
+        typed_key_class,
+    )?;
     let entry: AccountRegistrationEntry = blob::decode(xpub_bytes)?;
     // Callers select `WHERE account_type = 'platform_payment'`, so the decoded
-    // blob must agree: a PlatformPayment account at the same index. A row whose
-    // blob disagrees is corrupt / mis-bucketed, never fed to the oracle.
+    // blob must agree: a PlatformPayment account at the same index AND key_class.
+    // key_class is a real discriminator — two PlatformPayment accounts can share
+    // `(account_type, account_index)` and differ only here (the widened PK exists
+    // for exactly that) — so cross-check it like `load_state` does, or the oracle
+    // could hand back a row keyed by a different key class than its blob names.
     if account_type_db_label(&entry.account_type) != "platform_payment"
         || account_index(&entry.account_type) != typed_index
+        || account_key_class(&entry.account_type) != typed_key_class
     {
         return Err(WalletStorageError::AccountRegistrationEntryMismatch);
     }
@@ -52,7 +61,7 @@ pub(crate) fn list_platform_payment_registrations(
     wallet_id: &WalletId,
 ) -> Result<Vec<PlatformPaymentRegistration>, WalletStorageError> {
     let mut stmt = conn.prepare(
-        "SELECT account_index, length(account_xpub_bytes), account_xpub_bytes \
+        "SELECT account_index, key_class, length(account_xpub_bytes), account_xpub_bytes \
          FROM account_registrations \
          WHERE wallet_id = ?1 AND account_type = 'platform_payment' \
          ORDER BY account_index",
@@ -61,9 +70,10 @@ pub(crate) fn list_platform_payment_registrations(
     let mut out = Vec::new();
     while let Some(row) = rows.next()? {
         let idx: i64 = row.get(0)?;
-        blob::check_size(row.get::<_, i64>(1)?)?;
-        let bytes: Vec<u8> = row.get(2)?;
-        out.push(decode_platform_payment_row(idx, &bytes)?);
+        let key_class: i64 = row.get(1)?;
+        blob::check_size(row.get::<_, i64>(2)?)?;
+        let bytes: Vec<u8> = row.get(3)?;
+        out.push(decode_platform_payment_row(idx, key_class, &bytes)?);
     }
     Ok(out)
 }
@@ -76,7 +86,7 @@ pub(crate) fn all_platform_payment_registrations(
     conn: &Connection,
 ) -> Result<BTreeMap<WalletId, Vec<PlatformPaymentRegistration>>, WalletStorageError> {
     let mut stmt = conn.prepare(
-        "SELECT wallet_id, account_index, length(account_xpub_bytes), account_xpub_bytes \
+        "SELECT wallet_id, account_index, key_class, length(account_xpub_bytes), account_xpub_bytes \
          FROM account_registrations \
          WHERE account_type = 'platform_payment' \
          ORDER BY wallet_id, account_index",
@@ -86,14 +96,15 @@ pub(crate) fn all_platform_payment_registrations(
     while let Some(row) = rows.next()? {
         let wid_bytes: Vec<u8> = row.get(0)?;
         let idx: i64 = row.get(1)?;
-        let len = usize::try_from(row.get::<_, i64>(2)?).unwrap_or(usize::MAX);
+        let key_class: i64 = row.get(2)?;
+        let len = usize::try_from(row.get::<_, i64>(3)?).unwrap_or(usize::MAX);
         if len > blob::BLOB_SIZE_LIMIT_BYTES {
             return Err(WalletStorageError::BlobTooLarge {
                 len_bytes: len,
                 limit_bytes: blob::BLOB_SIZE_LIMIT_BYTES,
             });
         }
-        let bytes: Vec<u8> = row.get(3)?;
+        let bytes: Vec<u8> = row.get(4)?;
         let wallet_id = <[u8; 32]>::try_from(wid_bytes.as_slice()).map_err(|_| {
             WalletStorageError::InvalidWalletIdLength {
                 actual: wid_bytes.len(),
@@ -101,7 +112,7 @@ pub(crate) fn all_platform_payment_registrations(
         })?;
         out.entry(wallet_id)
             .or_default()
-            .push(decode_platform_payment_row(idx, &bytes)?);
+            .push(decode_platform_payment_row(idx, key_class, &bytes)?);
     }
     Ok(out)
 }
@@ -428,6 +439,54 @@ mod tests {
         assert!(
             matches!(err, WalletStorageError::AccountRegistrationEntryMismatch),
             "expected AccountRegistrationEntryMismatch, got {err:?}"
+        );
+    }
+
+    /// The `platform_payment` readers (`all_platform_payment_registrations`,
+    /// the production `load()` oracle via `platform_addrs::load_all`, and its
+    /// per-wallet sibling `list_platform_payment_registrations`) must reject a
+    /// row whose typed `key_class` column disagrees with the blob's
+    /// `PlatformPayment.key_class` — the exact discriminator the widened PK
+    /// exists to protect — mirroring `load_state`'s full cross-check.
+    #[test]
+    fn platform_payment_readers_reject_key_class_column_mismatch() {
+        let conn = migrated_conn();
+        let w = [0x77u8; 32];
+        conn.execute(
+            "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
+            rusqlite::params![&w[..]],
+        )
+        .unwrap();
+        // Blob encodes key_class = 0 ...
+        let entry = AccountRegistrationEntry {
+            account_type: key_wallet::account::AccountType::PlatformPayment {
+                account: 0,
+                key_class: 0,
+            },
+            account_xpub: test_xpub(),
+        };
+        let blob = blob::encode(&entry).unwrap();
+        // ... but the typed key_class column says 1 — a mismatch on the very
+        // column that keeps distinct key classes from colliding.
+        conn.execute(
+            "INSERT INTO account_registrations \
+                (wallet_id, account_type, account_index, key_class, account_xpub_bytes) \
+             VALUES (?1, 'platform_payment', 0, 1, ?2)",
+            rusqlite::params![&w[..], blob],
+        )
+        .unwrap();
+
+        let err = all_platform_payment_registrations(&conn)
+            .expect_err("bulk reader must reject key_class mismatch");
+        assert!(
+            matches!(err, WalletStorageError::AccountRegistrationEntryMismatch),
+            "bulk reader: expected AccountRegistrationEntryMismatch, got {err:?}"
+        );
+        let err = list_platform_payment_registrations(&conn, &w)
+            .expect_err("per-wallet reader must reject key_class mismatch");
+        assert!(
+            matches!(err, WalletStorageError::AccountRegistrationEntryMismatch),
+            "per-wallet reader: expected AccountRegistrationEntryMismatch, got {err:?}"
         );
     }
 
