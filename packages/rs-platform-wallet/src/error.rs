@@ -24,6 +24,28 @@ pub enum PlatformWalletError {
     #[error("failed to load persisted client state: {0}")]
     PersisterLoad(#[from] crate::changeset::PersistenceError),
 
+    /// The persister failed to store the wallet-registration changeset.
+    /// Like [`Self::PersisterLoad`], it carries the typed
+    /// [`PersistenceError`] so the retry classification (`is_transient()`
+    /// / [`PersistenceErrorKind`]) survives the boundary — a transient
+    /// `SQLITE_BUSY` stays distinguishable from a permanent failure.
+    /// Distinct from [`Self::PersisterLoad`] so callers can tell a failed
+    /// registration write from a failed rehydration read; not `#[from]`
+    /// because that conversion is already claimed by [`Self::PersisterLoad`].
+    ///
+    /// [`PersistenceError`]: crate::changeset::PersistenceError
+    /// [`PersistenceErrorKind`]: crate::changeset::PersistenceErrorKind
+    #[error("failed to persist wallet registration changeset: {0}")]
+    PersisterStore(#[source] crate::changeset::PersistenceError),
+
+    /// Restoring the persisted platform-address state into the freshly
+    /// registered wallet failed. Wraps the underlying
+    /// [`PlatformWalletError`](Self) (boxed to break the recursive type) so
+    /// its concrete variant and `#[source]` chain survive instead of being
+    /// flattened into a string.
+    #[error("failed to restore persisted platform-address state: {0}")]
+    PersisterRestore(#[source] Box<PlatformWalletError>),
+
     #[error("Wallet not found: {0}")]
     WalletNotFound(String),
 
