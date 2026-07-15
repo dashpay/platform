@@ -28,9 +28,16 @@ public final class PersistentCoreAddress {
     /// pre-column stores openable: without it, lightweight migration
     /// fails with "missing attribute values on mandatory destination
     /// attribute" and the container refuses to load — a launch crash on
-    /// every device that has existing rows. Defaulted rows read as
-    /// ECDSA until the next Rust address-pool persist pulse re-tags
-    /// typed entries, which it does on every load.
+    /// every device that has existing rows. Defaulted legacy rows read
+    /// as ECDSA with an empty `publicKey` until the next Rust
+    /// address-pool persist pulse (pool extension / address-used /
+    /// registration — NOT plain load, which only reads the snapshot)
+    /// re-emits them with typed keys. On load, Rust's
+    /// `restore_address_pool` keeps the pre-derived typed key when a
+    /// legacy row arrives key-less, so in-memory BLS operator matching
+    /// is unaffected; legacy Ed25519 platform-node keys are hardened-only
+    /// and re-derivable only via delete+re-import (pre-release
+    /// convention).
     public var keyType: UInt8 = 0
     /// `AddressPoolTypeTagFFI` raw value — 0 External, 1 Internal,
     /// 2 Absent, 3 AbsentHardened.
