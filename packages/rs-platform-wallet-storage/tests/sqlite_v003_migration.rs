@@ -51,21 +51,20 @@ impl OptionalExists for rusqlite::Result<()> {
     }
 }
 
-/// The latest embedded migration sets the supported schema version. V004
-/// (`drop_undecodable_asset_locks`, #4133) lifted it from 3 to 4.
+/// The unified migration lifts the supported schema version to 3.
 #[test]
-fn max_supported_version_is_four() {
+fn max_supported_version_is_three() {
     assert_eq!(
         mig::max_supported_version(),
-        4,
-        "V004 must raise max_supported_version to 4"
+        3,
+        "V003 must raise max_supported_version to 3"
     );
 }
 
-/// TC-B-030 — a fresh store migrates clean to the latest target version and
-/// every V003 table exists.
+/// TC-B-030 — a fresh store migrates clean to the new target version and
+/// every new table exists.
 #[test]
-fn tc_b_030_fresh_store_migrates_to_version_four() {
+fn tc_b_030_fresh_store_migrates_to_version_three() {
     let (persister, _tmp, _path) = fresh_persister();
     let conn = persister.lock_conn_for_test();
     let max: i64 = conn
@@ -75,7 +74,7 @@ fn tc_b_030_fresh_store_migrates_to_version_four() {
             |r| r.get(0),
         )
         .unwrap();
-    assert_eq!(max, 4, "fresh store must land at schema version 4");
+    assert_eq!(max, 3, "fresh store must land at schema version 3");
     for table in [
         "core_address_pool",
         "meta_data_versions",
