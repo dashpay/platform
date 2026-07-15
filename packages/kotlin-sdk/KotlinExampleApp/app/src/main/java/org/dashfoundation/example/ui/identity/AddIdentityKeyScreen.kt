@@ -326,6 +326,7 @@ fun AddIdentityKeyScreen(identityIdHex: String, navController: NavHostController
                             existingKeyIds = keys.map { it.keyId },
                             identityIndex = ident.identityIndex,
                             walletStorage = container.walletStorage,
+                            walletId = w.walletId,
                             // Real slot derive: keypair (public half incl.)
                             // via the manager's resolver-keyed FFI.
                             deriver = { identityIndex, keyId ->

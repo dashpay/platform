@@ -177,6 +177,11 @@ fun CreateIdentityScreen(navController: NavHostController) {
                                 container.walletStorage.storePrivateKey(
                                     key.publicKeyHex,
                                     key.privateKey,
+                                    // Prestored BEFORE the registration
+                                    // broadcasts: only the owner index makes
+                                    // it reachable by wallet deletion until
+                                    // the public_keys row commits.
+                                    ownerWalletId = wallet.walletId,
                                 )
                             } finally {
                                 // Keystore is authoritative from here; the JVM

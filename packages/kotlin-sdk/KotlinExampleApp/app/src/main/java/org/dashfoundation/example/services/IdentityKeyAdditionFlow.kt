@@ -127,6 +127,7 @@ object IdentityKeyAdditionFlow {
         existingKeyIds: Collection<Int>,
         identityIndex: Int,
         walletStorage: WalletStorage,
+        walletId: ByteArray,
         deriver: SlotKeyDeriver = UnbridgedSlotDeriver,
     ): List<IdentityPubkey> {
         var freeKeyId = nextKeyId(existingKeyIds)
@@ -154,7 +155,14 @@ object IdentityKeyAdditionFlow {
             try {
                 // The one allowed Kotlin persist step (kotlin-sdk/CLAUDE.md):
                 // Rust derived; we only encrypt the scalar into the Keystore.
-                walletStorage.storePrivateKey(storageKeyHex, derived.privateKey)
+                // ownerWalletId: the key predates its public_keys row (the
+                // add-key transition hasn't broadcast yet) — the durable
+                // owner index is what lets wallet deletion find it.
+                walletStorage.storePrivateKey(
+                    storageKeyHex,
+                    derived.privateKey,
+                    ownerWalletId = walletId,
+                )
             } finally {
                 derived.privateKey.fill(0)
             }

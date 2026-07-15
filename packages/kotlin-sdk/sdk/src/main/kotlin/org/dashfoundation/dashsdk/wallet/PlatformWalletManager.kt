@@ -524,14 +524,22 @@ class PlatformWalletManager(
                     "the mnemonic is stored, so the wallet stays recoverable — " +
                         "retry cleanup via removeWallet"
                 } else {
-                    "the mnemonic could NOT be stored either, so the surviving rows " +
-                        "are seedless — back up the phrase now and re-import it, or " +
-                        "remove the wallet via removeWallet"
+                    "the mnemonic could NOT be stored either — this exception " +
+                        "carries the phrase as the last remaining copy; back it " +
+                        "up now, then re-import it or remove the wallet via " +
+                        "removeWallet"
                 }
-                throw IllegalStateException(
-                    "createWallet failed and its rollback could not delete the " +
+                // Typed, and — in the both-writes-and-both-deletes-failed
+                // corner — carrying the phrase itself: the caller's local is
+                // the only other copy and it dies with this failure, which
+                // would leave the surviving rows permanently seedless.
+                throw WalletCreateRollbackException(
+                    walletId = walletId,
+                    mnemonicStored = mnemonicStored,
+                    mnemonic = if (mnemonicStored) null else mnemonic,
+                    message = "createWallet failed and its rollback could not delete the " +
                         "persisted rows for wallet ${walletId.toHex()}; $disposition",
-                    t,
+                    cause = t,
                 ).apply {
                     roomRollback.exceptionOrNull()?.let(::addSuppressed)
                     nativeRollback.exceptionOrNull()?.let(::addSuppressed)
@@ -647,6 +655,14 @@ class PlatformWalletManager(
                 for (pendingHex in persistenceHandler.pendingAliasesFor(walletId)) {
                     keysByPubkeyHex.putIfAbsent(pendingHex, pendingHex.hexToByteArray())
                 }
+                // Union the DURABLE owner index: app-prestored keys whose
+                // registration hasn't broadcast (no public_keys row exists
+                // anywhere yet) and deriver writes orphaned by process
+                // death (the in-memory fence above doesn't survive it) are
+                // discoverable only here.
+                for (ownedHex in walletStorage.ownedPrivateKeyAliases(walletId)) {
+                    keysByPubkeyHex.putIfAbsent(ownedHex, ownedHex.hexToByteArray())
+                }
                 val aliasesToDelete = buildList {
                     for ((pubkeyHex, publicKeyData) in keysByPubkeyHex) {
                         val referencedElsewhere = database.publicKeyDao()
@@ -655,8 +671,13 @@ class PlatformWalletManager(
                     }
                 }
                 // ONE atomic DataStore commit; propagates on failure with
-                // nothing deleted and the cascade below not run.
+                // nothing deleted and the cascade below not run. The same
+                // commit drops the deleted hexes from every owner index;
+                // this wallet's index entry is then removed outright (any
+                // alias it retained as shared stays discoverable through
+                // the surviving wallet's own index / Room rows).
                 deletePrivateKeys(aliasesToDelete)
+                deleteOwnerIndex(walletId)
 
                 // Room cascade (explicit, matching Swift — the native
                 // remove fires no wallet-level persistence callback).

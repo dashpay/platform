@@ -64,7 +64,13 @@ class IdentityKeyPrivateKeyDeriver(
             // already runs everything under runBlocking on the persistence
             // dispatcher, so a nested runBlocking here is consistent with
             // the handler's own pattern (Room DAOs, resolver reads).
-            runBlocking { walletStorage.storePrivateKey(pubkeyHex, scalar) }
+            // ownerWalletId writes the durable owner index in the same
+            // atomic edit — the alias stays discoverable by wallet
+            // deletion even if the process dies before the row commits
+            // (the in-memory pending-alias fence does not survive that).
+            runBlocking {
+                walletStorage.storePrivateKey(pubkeyHex, scalar, ownerWalletId = walletId)
+            }
             // Recorded identifier on the persisted row — mirrors the
             // `WalletStorage` privkey storage-key prefix (`"privkey."`) and
             // Swift's keychain account string, so the explorer/signer can

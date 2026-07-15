@@ -5,6 +5,7 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
@@ -50,11 +51,22 @@ class WalletStorage(
     interface PrivateKeyExclusion {
         /** [WalletStorage.deletePrivateKeys], lock already held. */
         suspend fun deletePrivateKeys(pubkeyHexes: Collection<String>)
+
+        /**
+         * Drop a wallet's owner-index entry after its aliases were swept.
+         * Aliases retained by the sweep (shared with another wallet) stay
+         * discoverable through the OTHER wallet's index / Room rows.
+         */
+        suspend fun deleteOwnerIndex(walletId: ByteArray)
     }
 
     private val privateKeyExclusionScope = object : PrivateKeyExclusion {
         override suspend fun deletePrivateKeys(pubkeyHexes: Collection<String>) =
             deletePrivateKeysLocked(pubkeyHexes)
+
+        override suspend fun deleteOwnerIndex(walletId: ByteArray) {
+            store.edit { it.remove(ownerIndexKey(walletId.toHex())) }
+        }
     }
 
     /**
@@ -134,12 +146,41 @@ class WalletStorage(
      * allowed Kotlin-side persistence of key material: Rust derives, we
      * encrypt. Reads ([retrievePrivateKey]) still require auth.
      */
-    suspend fun storePrivateKey(pubkeyHex: String, privateKey: ByteArray) {
+    /**
+     * @param ownerWalletId when given, the alias is also recorded in the
+     *   wallet's DURABLE owner index (`privkeyowners.<walletIdHex>` — a
+     *   string-set entry written in the SAME atomic edit). The index is
+     *   what makes the alias discoverable by wallet deletion when no
+     *   committed `public_keys` row references it yet: app-prestored keys
+     *   for an in-flight registration, and deriver writes orphaned by
+     *   process death (the in-memory pending-alias fence does not survive
+     *   termination). Pass it whenever the owning wallet is known.
+     */
+    suspend fun storePrivateKey(
+        pubkeyHex: String,
+        privateKey: ByteArray,
+        ownerWalletId: ByteArray? = null,
+    ) {
         privateKeyMutex.withLock {
             val blob = keystore.encrypt(privateKey, alias = KeystoreManager.KEYS_ALIAS)
-            store.edit { it[privateKeyKey(pubkeyHex)] = encode(blob) }
+            store.edit {
+                it[privateKeyKey(pubkeyHex)] = encode(blob)
+                if (ownerWalletId != null) {
+                    val indexKey = ownerIndexKey(ownerWalletId.toHex())
+                    it[indexKey] = (it[indexKey] ?: emptySet()) + pubkeyHex.lowercase()
+                }
+            }
         }
     }
+
+    /**
+     * The wallet's durable owner-index entries — pubkey hexes of aliases
+     * stored on its behalf (see [storePrivateKey]). Read-only snapshot;
+     * call inside [withPrivateKeyExclusion] when it must be consistent
+     * with a following delete.
+     */
+    suspend fun ownedPrivateKeyAliases(walletId: ByteArray): Set<String> =
+        store.data.first()[ownerIndexKey(walletId.toHex())] ?: emptySet()
 
     /**
      * Decrypt the private key for [pubkeyHex]. Throws
@@ -171,8 +212,22 @@ class WalletStorage(
 
     private suspend fun deletePrivateKeysLocked(pubkeyHexes: Collection<String>) {
         if (pubkeyHexes.isEmpty()) return
+        val normalized = pubkeyHexes.map { it.lowercase() }.toSet()
         store.edit { prefs ->
-            for (pubkeyHex in pubkeyHexes) prefs.remove(privateKeyKey(pubkeyHex))
+            for (pubkeyHex in normalized) prefs.remove(privateKeyKey(pubkeyHex))
+            // Keep every owner index accurate in the same atomic commit:
+            // a deleted alias must leave all wallets' index sets, or a
+            // later wallet deletion would "discover" a ghost.
+            prefs.asMap().keys
+                .filter { it.name.startsWith(PRIVKEY_OWNERS_PREFIX) }
+                .forEach { prefKey ->
+                    val setKey = stringSetPreferencesKey(prefKey.name)
+                    val current = prefs[setKey] ?: return@forEach
+                    val next = current - normalized
+                    if (next.size != current.size) {
+                        if (next.isEmpty()) prefs.remove(setKey) else prefs[setKey] = next
+                    }
+                }
         }
     }
 
@@ -210,6 +265,9 @@ class WalletStorage(
     private fun privateKeyKey(pubkeyHex: String) =
         stringPreferencesKey(PRIVKEY_PREFIX + pubkeyHex.lowercase())
 
+    private fun ownerIndexKey(walletIdHex: String) =
+        stringSetPreferencesKey(PRIVKEY_OWNERS_PREFIX + walletIdHex.lowercase())
+
     private fun encode(blob: KeystoreManager.EncryptedBlob): String =
         Base64.getEncoder().encodeToString(blob.encode())
 
@@ -219,6 +277,9 @@ class WalletStorage(
     private companion object {
         const val MNEMONIC_PREFIX = "mnemonic."
         const val PRIVKEY_PREFIX = "privkey."
+
+        /** Durable wallet → alias-hex-set owner index (string-set entries). */
+        const val PRIVKEY_OWNERS_PREFIX = "privkeyowners."
 
         fun ByteArray.toHex(): String = joinToString("") { "%02x".format(it) }
     }

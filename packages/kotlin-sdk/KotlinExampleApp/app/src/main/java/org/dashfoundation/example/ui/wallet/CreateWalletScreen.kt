@@ -11,6 +11,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -18,21 +20,25 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import kotlinx.coroutines.launch
 import org.dashfoundation.dashsdk.keywallet.Mnemonic
+import org.dashfoundation.dashsdk.wallet.WalletCreateRollbackException
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.di.LocalAppState
 import org.dashfoundation.example.navigation.SeedBackup
@@ -71,6 +77,12 @@ fun CreateWalletScreen(navController: NavHostController) {
     var importMnemonic by rememberSaveable { mutableStateOf("") }
     var error by rememberSaveable { mutableStateOf<String?>(null) }
     var isCreating by rememberSaveable { mutableStateOf(false) }
+    // Last-resort phrase surface: when creation fails AND the SDK could not
+    // store the generated phrase durably, WalletCreateRollbackException
+    // carries the only remaining copy — it must be shown for manual backup
+    // before it is discarded. Plain remember (NOT rememberSaveable): the
+    // plaintext must never be written into the saved-state Bundle.
+    var unrecoverablePhrase by remember { mutableStateOf<String?>(null) }
 
     Scaffold(
         topBar = {
@@ -204,6 +216,17 @@ fun CreateWalletScreen(navController: NavHostController) {
                                 popUpTo(WalletsHome)
                             }
                         }
+                    } catch (e: WalletCreateRollbackException) {
+                        // The phrase reached neither the Keystore nor the
+                        // user (it lives only in the try-local above) —
+                        // surface it for manual backup instead of losing it
+                        // behind a plain error message.
+                        val phrase = e.mnemonic
+                        if (phrase != null) {
+                            unrecoverablePhrase = phrase
+                        } else {
+                            error = e.message ?: "Wallet creation failed"
+                        }
                     } catch (e: Exception) {
                         error = e.message ?: "Wallet creation failed"
                     } finally {
@@ -215,4 +238,37 @@ fun CreateWalletScreen(navController: NavHostController) {
     }
 
     ErrorAlertDialog(message = error, onDismiss = { error = null })
+
+    // Emergency backup dialog — the phrase shown here exists NOWHERE else.
+    // Not dismissable by tapping outside; the user must acknowledge.
+    unrecoverablePhrase?.let { phrase ->
+        AlertDialog(
+            onDismissRequest = { /* explicit acknowledgement required */ },
+            title = { Text("Back up this phrase now") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        "Wallet creation failed and the recovery phrase could not " +
+                            "be stored on this device. The phrase below is the ONLY " +
+                            "copy — write it down before dismissing this dialog.",
+                    )
+                    SelectionContainer {
+                        Text(
+                            phrase,
+                            fontFamily = FontFamily.Monospace,
+                            modifier = Modifier.testTag("createWallet.unrecoverablePhrase"),
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = { unrecoverablePhrase = null },
+                    modifier = Modifier.testTag("createWallet.unrecoverablePhrase.ack"),
+                ) {
+                    Text("I wrote it down")
+                }
+            },
+        )
+    }
 }
