@@ -770,9 +770,9 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shielde
         // take_pwffi_error: the C ABI writes `out_id` on that outcome too —
         // the identity may already be live on-chain, so the host must
         // retain the id and hold its derivation slot instead of retrying
-        // into a duplicate. Return a tagged 33-byte payload
-        // (`[0|1] || identity_id`) so Kotlin can surface a typed
-        // unconfirmed result instead of a generic error that loses the id.
+        // into a duplicate. Return a tagged variable-length payload
+        // (`[0|1] || identity_id || diagnostic_utf8`) so Kotlin can surface
+        // a typed unconfirmed result without losing the id or native error.
         let unconfirmed = result.code
             == platform_wallet_ffi::error::PlatformWalletFFIResultCode::ErrorShieldedBroadcastUnconfirmed;
         let mut diagnostic = Vec::new();

@@ -301,7 +301,7 @@ class PlatformWalletPersistenceHandlerTest {
         )
         handler.onChangesetEnd(walletId, success = true)
 
-        val row = db.platformAddressDao().getByAddressHash(hash)
+        val row = db.platformAddressDao().getByWalletAndAddressHash(walletId, hash)
         assertNotNull(row)
         assertEquals(12_345, row!!.balance)
         assertEquals(3, row.nonce)
@@ -324,7 +324,7 @@ class PlatformWalletPersistenceHandlerTest {
         )
         handler.onChangesetEnd(walletId, success = true)
 
-        assertNull(db.platformAddressDao().getByAddressHash(ByteArray(20) { 44 }))
+        assertTrue(db.platformAddressDao().getAllByAddressHash(ByteArray(20) { 44 }).isEmpty())
         assertEquals(0L, db.platformAddressDao().count().first())
     }
 

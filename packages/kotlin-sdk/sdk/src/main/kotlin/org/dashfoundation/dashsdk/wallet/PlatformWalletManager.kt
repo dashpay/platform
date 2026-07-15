@@ -477,15 +477,18 @@ class PlatformWalletManager(
             }
         } catch (t: Throwable) {
             // Full rollback, not just the wrapper's Arc clone: the wallet is
-            // already REGISTERED in the native manager (and its persistence
-            // callbacks may have written Room rows), so it must be
-            // unregistered — removeWallet runs the persistence cascade —
-            // or the next loadPersistedWallets resurrects it as an orphan
-            // with no Keystore mnemonic. Best-effort scrub of a partially
-            // written mnemonic keeps the Keystore from drifting.
+            // already REGISTERED in the native manager and its persistence
+            // callbacks may have written Room rows. The native remove only
+            // unregisters — it fires no Room-cascading persistence callback
+            // (same contract as removeWallet step 4) — so scrub the Room
+            // footprint explicitly too, or the next loadPersistedWallets
+            // resurrects the wallet as an orphan with no Keystore mnemonic.
+            // Best-effort scrub of a partially written mnemonic keeps the
+            // Keystore from drifting.
             runCatching {
                 mapNativeErrors { WalletManagerNative.removeWallet(managerHandle, walletId) }
             }
+            runCatching { persistenceHandler.deleteWalletData(walletId) }
             runCatching { walletStorage.deleteMnemonic(walletId) }
             managed.close()
             throw t
@@ -504,11 +507,15 @@ class PlatformWalletManager(
      * Ordering mirrors Swift and is chosen for retry-safety:
      *  1. Resolve the wallet's identity ids and purge each identity key's
      *     Keystore private half FIRST, while the `public_keys` rows still
-     *     exist to enumerate the pubkey hexes. If a later step throws and
-     *     the caller retries, the Room rows are still present so the
-     *     enumeration can run again; doing the Room wipe first would strand
-     *     the pubkey hexes and orphan the Keystore secrets. Every Keystore
-     *     delete is idempotent (no-op on "not found").
+     *     exist to enumerate the pubkey hexes. Deletion is STRICT: a
+     *     failure here aborts the removal before anything else is touched,
+     *     because the Room cascade in step 4 erases the very rows a retry
+     *     needs to re-enumerate the pubkey hexes — swallowing the failure
+     *     would strand undeletable secrets in the Keystore forever. Keys
+     *     still referenced by another wallet's identity (secrets are keyed
+     *     globally by pubkey hex, so sibling wallets sharing key material
+     *     share the alias) are retained. Every Keystore delete is
+     *     idempotent (no-op on "not found"), so a retry re-runs cleanly.
      *  2. `platform_wallet_manager_remove_wallet` unregisters the wallet in
      *     the Rust manager (same FFI the create-rollback path calls).
      *  3. Close + drop the [ManagedPlatformWallet] from [_wallets], and
@@ -518,7 +525,12 @@ class PlatformWalletManager(
      *     (the native remove does NOT fire a Room-cascading persistence
      *     callback — Swift likewise calls `deleteWalletData` explicitly).
      *  5. Delete the Keystore mnemonic last, so a mid-flight retry could
-     *     still re-derive any missed key before the phrase is gone.
+     *     still re-derive any missed key before the phrase is gone. A
+     *     failure here PROPAGATES (post-cascade state is still recoverable:
+     *     the orphan-mnemonic flow surfaces the leftover phrase on next
+     *     launch, and re-running this method is a no-op up to this step) —
+     *     silently reporting success would leave the seed behind without
+     *     any signal to the caller.
      *
      * Deleting an already-removed wallet succeeds (each step is a no-op).
      *
@@ -532,13 +544,35 @@ class PlatformWalletManager(
         // 1. Keystore identity-key sweep BEFORE the Room wipe. Android
         //    stores identity private keys keyed by pubkey hex (not per
         //    identity id / wallet id), so enumerate each identity's keys
-        //    from Room and drop their Keystore secrets.
-        val identityIds = persistenceHandler.identityIdsForWallet(walletId)
-        for (identityId in identityIds) {
-            val keys = database.publicKeyDao().getByIdentityId(identityId.toBase58String())
-            for (key in keys) {
-                runCatching { walletStorage.deletePrivateKey(key.publicKeyData.toHex()) }
+        //    from Room and drop their Keystore secrets — strictly, and
+        //    only when no other wallet's identity still references the
+        //    same pubkey (shared alias).
+        val ownedIdentityIds = persistenceHandler.identityIdsForWallet(walletId)
+            .map { it.toBase58String() }
+        val keysByPubkeyHex = LinkedHashMap<String, ByteArray>()
+        for (identityId in ownedIdentityIds) {
+            for (key in database.publicKeyDao().getByIdentityId(identityId)) {
+                keysByPubkeyHex.putIfAbsent(key.publicKeyData.toHex(), key.publicKeyData)
             }
+        }
+        val keystoreFailures = mutableListOf<Throwable>()
+        for ((pubkeyHex, publicKeyData) in keysByPubkeyHex) {
+            val referencedElsewhere = database.publicKeyDao()
+                .countReferencesOutsideIdentities(publicKeyData, ownedIdentityIds) > 0
+            if (referencedElsewhere) continue
+            runCatching { walletStorage.deletePrivateKey(pubkeyHex) }
+                .onFailure { keystoreFailures += it }
+        }
+        if (keystoreFailures.isNotEmpty()) {
+            // Abort with the wallet fully intact (nothing below has run):
+            // the enumeration rows survive, so the caller can simply retry.
+            val error = IllegalStateException(
+                "failed to delete ${keystoreFailures.size} identity private key(s) " +
+                    "from the Keystore; wallet left intact for retry",
+                keystoreFailures.first(),
+            )
+            keystoreFailures.drop(1).forEach(error::addSuppressed)
+            throw error
         }
 
         // 2. Unregister in the Rust manager (same FFI as the create
@@ -556,7 +590,10 @@ class PlatformWalletManager(
         persistenceHandler.deleteWalletData(walletId)
 
         // 5. Keystore mnemonic last (retry can still re-derive until now).
-        runCatching { walletStorage.deleteMnemonic(walletId) }
+        //    Propagates on failure — the orphan-mnemonic recovery flow can
+        //    still surface the leftover phrase, but the caller must not be
+        //    told the wallet was fully wiped when the seed is still stored.
+        walletStorage.deleteMnemonic(walletId)
     }
 
     // ── Watch-only restore ────────────────────────────────────────────

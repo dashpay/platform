@@ -131,8 +131,12 @@ class KeystoreSigner(
         completionToken: Long,
     ) {
         val hashHex = addressHash.joinToString("") { "%02x".format(it) }
-        val row = platformAddressDao.getByAddressHash(addressHash)
-        if (row == null) {
+        // The hash may live in several wallets' rows (per-wallet
+        // uniqueness); any row with a derivation path and a stored
+        // mnemonic derives the same private key — the hash pins the key —
+        // so scan for the first signable candidate.
+        val rows = platformAddressDao.getAllByAddressHash(addressHash)
+        if (rows.isEmpty()) {
             SignerNative.completeSign(
                 completionToken,
                 null,
@@ -140,11 +144,15 @@ class KeystoreSigner(
             )
             return
         }
-        if (row.derivationPath.isEmpty()) {
+        val row = rows.firstOrNull {
+            it.derivationPath.isNotEmpty() && storage.hasMnemonic(it.walletId)
+        }
+        if (row == null) {
             SignerNative.completeSign(
                 completionToken,
                 null,
-                "platform address $hashHex has no derivation path",
+                "no signable platform address row for $hashHex " +
+                    "(no candidate has both a derivation path and a stored mnemonic)",
             )
             return
         }
@@ -182,10 +190,9 @@ class KeystoreSigner(
             // Existence-only — hasMnemonic never decrypts, so no plaintext
             // is materialized for a mere capability check.
             runBlocking {
-                val row = platformAddressDao.getByAddressHash(pubkeyBytes)
-                row != null &&
-                    row.derivationPath.isNotEmpty() &&
-                    storage.hasMnemonic(row.walletId)
+                platformAddressDao.getAllByAddressHash(pubkeyBytes).any { row ->
+                    row.derivationPath.isNotEmpty() && storage.hasMnemonic(row.walletId)
+                }
             }
         } else {
             runBlocking { storage.hasPrivateKey(storageKeyFor(pubkeyBytes)) }

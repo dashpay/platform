@@ -355,7 +355,10 @@ class PlatformWalletPersistenceHandler(
                 // hash + address type here so BLAST balance updates (which
                 // arrive with `addressHash` only) can upsert the same row.
                 val components = decodePlatformAddress(addressBase58) ?: return@stage
-                val existing = db.platformAddressDao().getByAddress(addressBase58)
+                // Wallet-scoped upsert key — an address-only lookup could
+                // grab another wallet's row (same seed imported twice) and
+                // reassign its walletId/accountId on the copy() below.
+                val existing = db.platformAddressDao().getByWalletAndAddress(walletId, addressBase58)
                 val row = (existing ?: PlatformAddressEntity(
                     address = addressBase58,
                     addressType = components.first,

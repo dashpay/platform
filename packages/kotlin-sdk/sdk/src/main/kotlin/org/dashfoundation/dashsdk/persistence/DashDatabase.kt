@@ -79,9 +79,16 @@ import org.dashfoundation.dashsdk.persistence.entities.WalletManagerMetadataEnti
  * restored at load) and the `dashpay_payments` table (mirror of the Rust
  * `dashpay_payments` map — pull-persisted via `refreshDashPayPayments`,
  * restored at load).
+ *
+ * Version 4 (wallet-scoped platform addresses): rebuilds
+ * `platform_addresses` with the composite `(walletId, address)` primary
+ * key and per-wallet `addressHash` uniqueness, replacing the global
+ * `address` PK / global `addressHash` unique index that let one wallet's
+ * pool-emit steal another wallet's row (same seed imported twice derives
+ * identical addresses).
  */
 @Database(
-    version = 3,
+    version = 4,
     exportSchema = true,
     entities = [
         WalletEntity::class,
@@ -241,6 +248,72 @@ abstract class DashDatabase : RoomDatabase() {
         }
 
         /**
+         * v3 → v4: reshape `platform_addresses` from a global `address`
+         * primary key (+ globally unique `addressHash`) to the composite
+         * `(walletId, address)` identity with per-wallet `addressHash`
+         * uniqueness. SQLite can't alter a primary key in place, so this
+         * is the standard table rebuild: create-copy-drop-rename. The
+         * copy needs no dedup — the old constraints were strictly
+         * TIGHTER (globally-unique address/hash implies per-wallet
+         * unique), so every legacy row keeps its slot. The standalone
+         * `walletId` index is dropped: both new composite indexes lead
+         * with `walletId`, so prefix scans cover the wallet-scoped
+         * queries. SQL mirrors the exported `schemas/.../4.json`
+         * `createSql` exactly.
+         */
+        val MIGRATION_3_4: Migration = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `_new_platform_addresses` (" +
+                        "`address` TEXT NOT NULL, " +
+                        "`addressType` INTEGER NOT NULL, " +
+                        "`addressHash` BLOB NOT NULL, " +
+                        "`publicKey` BLOB NOT NULL, " +
+                        "`accountIndex` INTEGER NOT NULL, " +
+                        "`addressIndex` INTEGER NOT NULL, " +
+                        "`derivationPath` TEXT NOT NULL, " +
+                        "`isUsed` INTEGER NOT NULL, " +
+                        "`balance` INTEGER NOT NULL, " +
+                        "`nonce` INTEGER NOT NULL, " +
+                        "`firstSeenHeight` INTEGER NOT NULL, " +
+                        "`lastSeenHeight` INTEGER NOT NULL, " +
+                        "`walletId` BLOB NOT NULL, " +
+                        "`createdAt` INTEGER NOT NULL, " +
+                        "`lastUpdated` INTEGER NOT NULL, " +
+                        "`accountId` INTEGER, " +
+                        "PRIMARY KEY(`walletId`, `address`), " +
+                        "FOREIGN KEY(`accountId`) REFERENCES `accounts`(`id`) " +
+                        "ON UPDATE NO ACTION ON DELETE CASCADE )",
+                )
+                db.execSQL(
+                    "INSERT INTO `_new_platform_addresses` (" +
+                        "`address`, `addressType`, `addressHash`, `publicKey`, " +
+                        "`accountIndex`, `addressIndex`, `derivationPath`, `isUsed`, " +
+                        "`balance`, `nonce`, `firstSeenHeight`, `lastSeenHeight`, " +
+                        "`walletId`, `createdAt`, `lastUpdated`, `accountId`) " +
+                        "SELECT `address`, `addressType`, `addressHash`, `publicKey`, " +
+                        "`accountIndex`, `addressIndex`, `derivationPath`, `isUsed`, " +
+                        "`balance`, `nonce`, `firstSeenHeight`, `lastSeenHeight`, " +
+                        "`walletId`, `createdAt`, `lastUpdated`, `accountId` " +
+                        "FROM `platform_addresses`",
+                )
+                db.execSQL("DROP TABLE `platform_addresses`")
+                db.execSQL(
+                    "ALTER TABLE `_new_platform_addresses` RENAME TO `platform_addresses`",
+                )
+                db.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS " +
+                        "`index_platform_addresses_walletId_addressHash` " +
+                        "ON `platform_addresses` (`walletId`, `addressHash`)",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_platform_addresses_accountId` " +
+                        "ON `platform_addresses` (`accountId`)",
+                )
+            }
+        }
+
+        /**
          * Build the on-disk database. WAL is Room's default journal mode on
          * API 16+; writes go through the persistence handler inside
          * `withTransaction`, mirroring the changeset bracketing contract of
@@ -248,7 +321,7 @@ abstract class DashDatabase : RoomDatabase() {
          */
         fun create(context: Context): DashDatabase =
             Room.databaseBuilder(context, DashDatabase::class.java, DATABASE_NAME)
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                 .build()
 
         /** In-memory variant for tests. */

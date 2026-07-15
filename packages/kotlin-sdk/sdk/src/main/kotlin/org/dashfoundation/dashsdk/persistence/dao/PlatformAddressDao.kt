@@ -30,13 +30,33 @@ interface PlatformAddressDao {
     @Query("SELECT * FROM platform_addresses WHERE balance > 0")
     fun observeNonZeroBalances(): Flow<List<PlatformAddressEntity>>
 
-    /** Persister upsert key (`$0.address == address`). */
-    @Query("SELECT * FROM platform_addresses WHERE address = :address")
-    suspend fun getByAddress(address: String): PlatformAddressEntity?
+    /**
+     * Persister upsert key — the composite row identity `(walletId,
+     * address)`. An address-only lookup could return another wallet's row
+     * (same seed imported twice derives identical addresses) and the
+     * pool-emit upsert would then reassign that row's `walletId`/
+     * `accountId`, corrupting the other wallet's balances.
+     */
+    @Query(
+        "SELECT * FROM platform_addresses WHERE walletId = :walletId AND address = :address",
+    )
+    suspend fun getByWalletAndAddress(
+        walletId: ByteArray,
+        address: String,
+    ): PlatformAddressEntity?
 
-    /** BLAST balance callback / signer lookup (`$0.addressHash == hash`). */
-    @Query("SELECT * FROM platform_addresses WHERE addressHash = :addressHash")
-    suspend fun getByAddressHash(addressHash: ByteArray): PlatformAddressEntity?
+    /**
+     * Every row carrying [addressHash], across wallets, in deterministic
+     * order. The signer callback arrives with the 20-byte hash only (no
+     * wallet context), and with per-wallet uniqueness several wallets may
+     * hold the hash — the caller scans for a row it can actually sign
+     * with (non-empty derivation path + stored mnemonic; any such row
+     * derives the same private key, since the hash pins the key).
+     */
+    @Query(
+        "SELECT * FROM platform_addresses WHERE addressHash = :addressHash ORDER BY walletId",
+    )
+    suspend fun getAllByAddressHash(addressHash: ByteArray): List<PlatformAddressEntity>
 
     /**
      * Wallet-scoped BLAST balance lookup — the balance-callback upsert key

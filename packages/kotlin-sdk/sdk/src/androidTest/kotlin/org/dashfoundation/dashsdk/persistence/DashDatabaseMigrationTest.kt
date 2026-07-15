@@ -80,16 +80,77 @@ class DashDatabaseMigrationTest {
         db.close()
     }
 
-    /** The full chain from v1 must also land on a valid v3 schema. */
+    /**
+     * v3 → v4 rebuilds `platform_addresses` onto the composite
+     * `(walletId, address)` primary key with per-wallet `addressHash`
+     * uniqueness. Legacy rows must survive the create-copy-drop-rename
+     * verbatim, and the reshaped table must accept the previously
+     * impossible case: two wallets holding the SAME address/hash (same
+     * seed imported twice) — while still rejecting a duplicate within
+     * one wallet.
+     */
+    @Test
+    fun migrate3To4ScopesPlatformAddressesByWallet() {
+        helper.createDatabase(dbName, 3).apply {
+            execSQL(
+                "INSERT INTO platform_addresses (address, addressType, addressHash, " +
+                    "publicKey, accountIndex, addressIndex, derivationPath, isUsed, " +
+                    "balance, nonce, firstSeenHeight, lastSeenHeight, walletId, " +
+                    "createdAt, lastUpdated, accountId) " +
+                    "VALUES ('dash1a', 0, x'AA', x'', 0, 0, 'm/9h/1h/17h/0h/0h/0', 0, " +
+                    "42, 0, 0, 0, x'01', 0, 0, NULL)",
+            )
+            close()
+        }
+
+        val db = helper.runMigrationsAndValidate(dbName, 4, true, DashDatabase.MIGRATION_3_4)
+
+        // The legacy row survived the rebuild with its data intact.
+        db.query("SELECT balance FROM platform_addresses WHERE address = 'dash1a'").use { c ->
+            assertTrue(c.moveToFirst())
+            assertEquals(42, c.getInt(0))
+        }
+        // A second wallet may now hold the same address + hash…
+        db.execSQL(
+            "INSERT INTO platform_addresses (address, addressType, addressHash, " +
+                "publicKey, accountIndex, addressIndex, derivationPath, isUsed, " +
+                "balance, nonce, firstSeenHeight, lastSeenHeight, walletId, " +
+                "createdAt, lastUpdated, accountId) " +
+                "VALUES ('dash1a', 0, x'AA', x'', 0, 0, 'm/9h/1h/17h/0h/0h/0', 0, " +
+                "7, 0, 0, 0, x'02', 0, 0, NULL)",
+        )
+        db.query("SELECT COUNT(*) FROM platform_addresses WHERE address = 'dash1a'").use { c ->
+            assertTrue(c.moveToFirst())
+            assertEquals(2, c.getInt(0))
+        }
+        // …but the same wallet still can't hold the address twice.
+        try {
+            db.execSQL(
+                "INSERT INTO platform_addresses (address, addressType, addressHash, " +
+                    "publicKey, accountIndex, addressIndex, derivationPath, isUsed, " +
+                    "balance, nonce, firstSeenHeight, lastSeenHeight, walletId, " +
+                    "createdAt, lastUpdated, accountId) " +
+                    "VALUES ('dash1a', 0, x'BB', x'', 0, 0, '', 0, 0, 0, 0, 0, " +
+                    "x'01', 0, 0, NULL)",
+            )
+            org.junit.Assert.fail("expected a (walletId, address) PK violation")
+        } catch (_: android.database.sqlite.SQLiteConstraintException) {
+            // expected
+        }
+        db.close()
+    }
+
+    /** The full chain from v1 must also land on a valid v4 schema. */
     @Test
     fun migrateAllTheWayFrom1() {
         helper.createDatabase(dbName, 1).close()
         helper.runMigrationsAndValidate(
             dbName,
-            3,
+            4,
             true,
             DashDatabase.MIGRATION_1_2,
             DashDatabase.MIGRATION_2_3,
+            DashDatabase.MIGRATION_3_4,
         ).close()
     }
 }

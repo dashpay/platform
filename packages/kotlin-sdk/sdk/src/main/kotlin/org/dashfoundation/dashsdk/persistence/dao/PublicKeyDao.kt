@@ -38,6 +38,25 @@ interface PublicKeyDao {
     @Query("SELECT * FROM public_keys WHERE publicKeyData = :publicKeyData")
     suspend fun getByPublicKeyData(publicKeyData: ByteArray): List<PublicKeyEntity>
 
+    /**
+     * How many `public_keys` rows carry [publicKeyData] but belong to an
+     * identity OUTSIDE [ownedIdentityIds] (base58, the removed wallet's
+     * identities). Keystore private keys are aliased globally by pubkey
+     * hex, so the wallet-deletion sweep must retain any alias still
+     * referenced by another wallet's identity — deleting it would break
+     * signing for the surviving wallet. Identities not attributable to
+     * the removed wallet (including standalone loaded identities) count
+     * as external references, conservatively keeping the secret.
+     */
+    @Query(
+        "SELECT COUNT(*) FROM public_keys WHERE publicKeyData = :publicKeyData " +
+            "AND identityId NOT IN (:ownedIdentityIds)",
+    )
+    suspend fun countReferencesOutsideIdentities(
+        publicKeyData: ByteArray,
+        ownedIdentityIds: List<String>,
+    ): Int
+
     @Insert
     suspend fun insert(publicKey: PublicKeyEntity): Long
 
