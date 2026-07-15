@@ -1,17 +1,17 @@
 #![allow(clippy::field_reassign_with_default)]
 
-//! Recurrence guard for #4133: exercise a **non-empty** value of the
-//! enum-bearing `_blob` payload that regressed — an `AssetLockEntry` carrying
-//! `proof: Some(AssetLockProof::{Chain,Instant})` — end-to-end through the
-//! public `SqlitePersister::store` → reopen → `load_unconsumed` path.
+//! Recurrence guard for #4133: exercise **fully-populated** values of BOTH
+//! enum-bearing proof variants — an `AssetLockEntry` carrying
+//! `proof: Some(AssetLockProof::Chain(..))` and one carrying
+//! `proof: Some(AssetLockProof::Instant(..))` — end-to-end through the public
+//! `SqlitePersister::store` → reopen → `load_unconsumed` path, plus a
+//! `proof: None` control.
 //!
 //! The original defect escaped every test because all asset-lock fixtures used
 //! `proof: None`, so the internally-tagged proof enum was never round-tripped.
-//! A marker trait cannot catch this: the offending shape is a transitive field
-//! of the blob type, not the blob type itself. A round-trip over a non-empty
-//! value is the guard that can — see the advisory note in
-//! `src/sqlite/schema/blob.rs` and the `AssetLockEntryWire` /
-//! `IdentityKeyWire` wire-type pattern.
+//! Enumerating both variants with non-default field values (not a single
+//! variant, not a partial/empty one) is what makes this a guard that would
+//! actually have caught the bug.
 
 mod common;
 
@@ -71,7 +71,15 @@ fn proof_bearing_asset_locks_round_trip_through_persister() {
     let op_none = op(0x12);
 
     let chain = AssetLockProof::Chain(ChainAssetLockProof::new(99, [0x05u8; 36]));
-    let instant = AssetLockProof::Instant(InstantAssetLockProof::default());
+    // Distinct, non-default field values so the round-trip proves field
+    // fidelity, not merely that `default() == default()`.
+    let instant = AssetLockProof::Instant({
+        let mut p = InstantAssetLockProof::default();
+        p.transaction.version = 3;
+        p.transaction.lock_time = 111;
+        p.output_index = 2;
+        p
+    });
 
     let mut cs = AssetLockChangeSet::default();
     cs.asset_locks.insert(

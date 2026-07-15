@@ -431,7 +431,16 @@ mod tests {
     fn wire_round_trips_instant_proof() {
         use dpp::identity::state_transition::asset_lock_proof::instant::InstantAssetLockProof;
         let op = sample_outpoint(0x32);
-        let proof = AssetLockProof::Instant(InstantAssetLockProof::default());
+        // Distinct, non-default field values so the round-trip proves field
+        // fidelity, not merely that `default() == default()`.
+        let inner = {
+            let mut p = InstantAssetLockProof::default();
+            p.transaction.version = 3;
+            p.transaction.lock_time = 111;
+            p.output_index = 2;
+            p
+        };
+        let proof = AssetLockProof::Instant(inner);
         let entry = entry_with_proof(op, AssetLockStatus::InstantSendLocked, Some(proof));
         let restored = roundtrip_through_db(&entry);
         assert_eq!(restored, entry, "Instant proof must survive the round-trip");
