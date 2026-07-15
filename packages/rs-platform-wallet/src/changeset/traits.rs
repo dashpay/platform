@@ -5,7 +5,7 @@
 
 use std::error::Error as StdError;
 
-use crate::changeset::changeset::{PlatformWalletChangeSet, ProviderPlatformNodePubKey};
+use crate::changeset::changeset::PlatformWalletChangeSet;
 use crate::changeset::client_start_state::ClientStartState;
 use crate::wallet::platform_wallet::WalletId;
 use dashcore::Txid;
@@ -188,6 +188,31 @@ impl PersistenceError {
 /// to guarantee a batch flush, it should call `flush` explicitly after all
 /// `store` calls and treat `store` as a best-effort buffer hint.
 pub trait PlatformWalletPersistence: Send + Sync {
+    /// Whether stored state survives a process restart once `store` + `flush`
+    /// return `Ok`.
+    ///
+    /// **Fail-closed: defaults to `false`.** This capability gates
+    /// security-sensitive flows, so a backend must explicitly ATTEST
+    /// durability by overriding this to `true` — an implementation that
+    /// forgets is refused those flows with a clear error instead of being
+    /// silently trusted. Backends that genuinely write through on
+    /// `store`/`flush` (the SQLite persister, a fully-wired FFI bridge)
+    /// override to `true`; buffer-only or write-dropping backends (e.g.
+    /// [`NoPlatformPersistence`](crate::wallet::persister::NoPlatformPersistence),
+    /// an FFI persister constructed without persistence callbacks) stay
+    /// `false`.
+    ///
+    /// Why security-sensitive flows gate on this: creating a DashPay
+    /// invitation exports a one-time bearer voucher key derived from a
+    /// persisted funding index; on a backend that cannot guarantee the index
+    /// survives a restart, the same key could be re-derived and re-exported
+    /// after a relaunch, letting the holder of an earlier link consume a
+    /// later voucher. Such flows refuse a non-durable backend rather than
+    /// silently producing a reusable bearer secret.
+    fn persists_durably(&self) -> bool {
+        false
+    }
+
     /// Buffer a changeset for later persistence.
     ///
     /// Implementations should merge into an internal per-wallet accumulator so
@@ -196,6 +221,19 @@ pub trait PlatformWalletPersistence: Send + Sync {
     /// Returns an error if the internal accumulator cannot be accessed
     /// (e.g. mutex poisoning). Callers that use fire-and-forget
     /// semantics should log the error rather than propagating.
+    ///
+    /// # Transient-failure retry contract
+    ///
+    /// An implementation that returns a [`PersistenceError`] classified
+    /// [`PersistenceErrorKind::Transient`] from `store` **MUST** have already
+    /// buffered/preserved the changeset so that a subsequent bare
+    /// [`flush`](Self::flush) — with no re-supplied changeset — completes the
+    /// write (mirroring `flush`'s own transient contract). This is what lets a
+    /// caller retry a transient `store` failure via `flush` alone; re-calling
+    /// `store` with the same changeset would double-merge it. An
+    /// implementation that cannot preserve the changeset on failure MUST
+    /// classify that failure [`PersistenceErrorKind::Fatal`] (or
+    /// [`Constraint`](PersistenceErrorKind::Constraint)), never `Transient`.
     fn store(
         &self,
         wallet_id: WalletId,
@@ -256,23 +294,6 @@ pub trait PlatformWalletPersistence: Send + Sync {
     /// already keyed by wallet id and the sub-changesets carry their own
     /// wallet attribution where needed.
     fn load(&self) -> Result<ClientStartState, PersistenceError>;
-
-    /// Return the persisted hardened platform-node public keys for `wallet_id`.
-    ///
-    /// Results are ordered by derivation index and come directly from storage;
-    /// implementations never attempt watch-only derivation. This on-demand
-    /// lookup is separate from the eager [`ClientStartState`] snapshot. The
-    /// default returns an empty list for backends without provider-node pools.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the backend cannot read or decode the key pool.
-    fn provider_node_keys(
-        &self,
-        _wallet_id: WalletId,
-    ) -> Result<Vec<ProviderPlatformNodePubKey>, PersistenceError> {
-        Ok(Vec::new())
-    }
 
     /// Look up a single core transaction record by `txid` for `wallet_id`.
     ///

@@ -11,7 +11,6 @@ use key_wallet::managed_account::transaction_record::TransactionRecord;
 
 use crate::changeset::{
     ClientStartState, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
-    ProviderPlatformNodePubKey,
 };
 use crate::wallet::platform_wallet::WalletId;
 
@@ -39,18 +38,13 @@ impl WalletPersister {
         self.inner.flush(self.wallet_id)
     }
 
-    pub(crate) fn load(&self) -> Result<ClientStartState, PersistenceError> {
-        self.inner.load()
+    /// See [`PlatformWalletPersistence::persists_durably`].
+    pub(crate) fn persists_durably(&self) -> bool {
+        self.inner.persists_durably()
     }
 
-    /// Return this wallet's persisted hardened platform-node public keys.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the persistence backend cannot read or decode the
-    /// provider-node key pool.
-    pub fn provider_node_keys(&self) -> Result<Vec<ProviderPlatformNodePubKey>, PersistenceError> {
-        self.inner.provider_node_keys(self.wallet_id)
+    pub(crate) fn load(&self) -> Result<ClientStartState, PersistenceError> {
+        self.inner.load()
     }
 
     /// Look up a single core transaction record by `txid`. Used by the
@@ -69,6 +63,12 @@ impl WalletPersister {
 pub struct NoPlatformPersistence;
 
 impl PlatformWalletPersistence for NoPlatformPersistence {
+    /// Nothing is ever written, so nothing survives a restart. (Redundant
+    /// with the trait's fail-closed default — kept explicit as documentation.)
+    fn persists_durably(&self) -> bool {
+        false
+    }
+
     fn store(
         &self,
         _wallet_id: WalletId,
@@ -83,5 +83,37 @@ impl PlatformWalletPersistence for NoPlatformPersistence {
 
     fn load(&self) -> Result<ClientStartState, PersistenceError> {
         Ok(ClientStartState::default())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `persists_durably` is a fail-closed security capability: an
+    /// implementation that does NOT explicitly attest durability must read as
+    /// non-durable, so a backend author who forgets the override gets a loud
+    /// "requires durable persistence" refusal from the invitation flow
+    /// instead of being silently trusted with a re-exportable bearer key.
+    #[test]
+    fn durability_attestation_defaults_to_fail_closed() {
+        struct BareMinimum;
+        impl PlatformWalletPersistence for BareMinimum {
+            fn store(
+                &self,
+                _wallet_id: WalletId,
+                _changeset: PlatformWalletChangeSet,
+            ) -> Result<(), PersistenceError> {
+                Ok(())
+            }
+            fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+                Ok(())
+            }
+            fn load(&self) -> Result<ClientStartState, PersistenceError> {
+                Ok(ClientStartState::default())
+            }
+        }
+        assert!(!BareMinimum.persists_durably());
+        assert!(!NoPlatformPersistence.persists_durably());
     }
 }

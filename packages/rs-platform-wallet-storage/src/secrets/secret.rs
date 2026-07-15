@@ -122,8 +122,12 @@ impl Default for SecretString {
         let s = String::with_capacity(DEFAULT_CAPACITY);
         let lock = region::lock(s.as_ptr(), s.capacity())
             .map_err(|e| {
-                tracing::warn!(
-                    "mlock failed for SecretString; secret may be swappable to disk: {e}"
+                // Empty buffer — no secret at risk, so this is diagnostic
+                // noise, not a confidentiality event. `debug!` (not the
+                // `new()` path's `warn!`) and distinct wording keep the two
+                // call sites individually greppable.
+                tracing::debug!(
+                    "mlock failed for empty default SecretString buffer; no secret at risk: {e}"
                 );
                 e
             })

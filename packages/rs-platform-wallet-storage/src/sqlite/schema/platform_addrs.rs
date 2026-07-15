@@ -381,23 +381,9 @@ fn decode_address_row(
     hash160.copy_from_slice(address_bytes);
     let balance = safe_cast::i64_to_u64("platform_addresses.balance", balance)?;
     let as_of_height = safe_cast::i64_to_u64("platform_addresses.as_of_height", as_of_height)?;
-    let nonce = u32::try_from(nonce).map_err(|_| WalletStorageError::IntegerOverflow {
-        field: "platform_addresses.nonce",
-        value: nonce as u64,
-        target: safe_cast::SafeCastTarget::U64,
-    })?;
-    let account_index =
-        u32::try_from(account_index).map_err(|_| WalletStorageError::IntegerOverflow {
-            field: "platform_addresses.account_index",
-            value: account_index as u64,
-            target: safe_cast::SafeCastTarget::U64,
-        })?;
-    let address_index =
-        u32::try_from(address_index).map_err(|_| WalletStorageError::IntegerOverflow {
-            field: "platform_addresses.address_index",
-            value: address_index as u64,
-            target: safe_cast::SafeCastTarget::U64,
-        })?;
+    let nonce = safe_cast::i64_to_u32("platform_addresses.nonce", nonce)?;
+    let account_index = safe_cast::i64_to_u32("platform_addresses.account_index", account_index)?;
+    let address_index = safe_cast::i64_to_u32("platform_addresses.address_index", address_index)?;
     Ok(PlatformAddressRow {
         account_index,
         address_index,
@@ -414,4 +400,46 @@ fn wallet_id_from_bytes(bytes: &[u8]) -> Result<WalletId, WalletStorageError> {
     <[u8; 32]>::try_from(bytes).map_err(|_| WalletStorageError::InvalidWalletIdLength {
         actual: bytes.len(),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `decode_address_row`'s three `u32` boundary casts (nonce,
+    /// account_index, address_index) must stamp `SafeCastTarget::U32`: each
+    /// is a `u32::try_from`, so a corrupt row that overflows `u32` overflows
+    /// *that* type — the diagnostic must name it, not `u64`, or an operator
+    /// is misdirected to the wrong boundary.
+    #[test]
+    fn decode_address_row_overflow_reports_u32_target() {
+        let over = i64::from(u32::MAX) + 1;
+        let addr = [0u8; 20];
+        for (label, err) in [
+            (
+                "platform_addresses.nonce",
+                decode_address_row(0, 0, &addr, 0, over, 0).unwrap_err(),
+            ),
+            (
+                "platform_addresses.account_index",
+                decode_address_row(over, 0, &addr, 0, 0, 0).unwrap_err(),
+            ),
+            (
+                "platform_addresses.address_index",
+                decode_address_row(0, over, &addr, 0, 0, 0).unwrap_err(),
+            ),
+        ] {
+            match err {
+                WalletStorageError::IntegerOverflow { field, target, .. } => {
+                    assert_eq!(field, label, "field must name the overflowing column");
+                    assert_eq!(
+                        target,
+                        safe_cast::SafeCastTarget::U32,
+                        "{label} is a u32 cast; target must be U32, not U64"
+                    );
+                }
+                other => panic!("expected IntegerOverflow for {label}, got {other:?}"),
+            }
+        }
+    }
 }

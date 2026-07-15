@@ -681,12 +681,21 @@ public class Identities {
       throw SDKError.internalError("No balance data returned")
     }
 
-    // Parse the balance from result
-    let balancePtr = result.data.assumingMemoryBound(to: UInt64.self)
-    let balance = balancePtr.pointee
+    // `dash_sdk_identity_fetch_balance` returns the balance as a
+    // `success_string` — a NUL-terminated decimal C string (see
+    // rs-sdk-ffi `identity/queries/balance.rs`), NOT a binary `u64`.
+    // Read it as a C string and parse; a previous binary reinterpret
+    // read the ASCII digits as little-endian bytes (garbage balances).
+    let cStr = result.data.assumingMemoryBound(to: CChar.self)
+    let balanceStr = String(cString: cStr)
 
-    // Free the result data
-    dash_sdk_bytes_free(result.data)
+    // String-return results are freed with `dash_sdk_string_free`, like
+    // the other string-returning wrappers in this file.
+    dash_sdk_string_free(cStr)
+
+    guard let balance = UInt64(balanceStr) else {
+      throw SDKError.internalError("Unparseable balance string: \(balanceStr)")
+    }
 
     return balance
   }

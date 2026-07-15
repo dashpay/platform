@@ -3059,6 +3059,15 @@ mod tests {
             {
                 unimplemented!("auto-accept QR is a send-path method, not exercised by the drain")
             }
+            async fn export_invitation_private_key(
+                &self,
+                _path: &key_wallet::bip32::DerivationPath,
+            ) -> Result<dashcore::secp256k1::SecretKey, crate::error::PlatformWalletError>
+            {
+                unimplemented!(
+                    "invitation create is a send-path method, not exercised by the drain"
+                )
+            }
             async fn account_reference(
                 &self,
                 _path: &key_wallet::bip32::DerivationPath,

@@ -62,7 +62,9 @@ fn v003_is_embedded_and_supported() {
     assert!(mig::max_supported_version() >= 3, "V003 must be applicable");
 }
 
-/// TC-B-030 — a fresh store applies V003 and every table it creates exists.
+/// TC-B-030 — a fresh store applies V003 and migrates clean through to the
+/// newest embedded migration (e.g. V004's DIP-13 invitations table), and
+/// every V003 table exists.
 #[test]
 fn tc_b_030_fresh_store_migrates_to_version_three() {
     let (persister, _tmp, _path) = fresh_persister();
@@ -75,6 +77,16 @@ fn tc_b_030_fresh_store_migrates_to_version_three() {
         )
         .unwrap();
     assert_eq!(applied, 1, "a fresh store must apply V003");
+    let max: i64 = conn
+        .query_row("SELECT MAX(version) FROM refinery_schema_history", [], |r| {
+            r.get(0)
+        })
+        .unwrap();
+    assert_eq!(
+        max,
+        mig::max_supported_version(),
+        "fresh store must land at the newest embedded schema version"
+    );
     for table in [
         "core_address_pool",
         "meta_data_versions",

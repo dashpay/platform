@@ -85,7 +85,6 @@ fn provider_operator_entry() -> ProviderKeyAccountEntry {
                 .bls_public_key
                 .clone(),
         ),
-        derived_platform_node_keys: Vec::new(),
     }
 }
 
@@ -211,6 +210,32 @@ fn single_domain_changeset(domain: Domain) -> PlatformWalletChangeSet {
                 enqueued_at_ms: 0,
             }];
         }
+        Domain::Invitations => {
+            use dashcore::hashes::Hash;
+            use dashcore::{OutPoint, Txid};
+            use platform_wallet::changeset::{InvitationChangeSet, InvitationEntry, InvitationStatus};
+            let op = OutPoint {
+                txid: Txid::from_byte_array([0x0C; 32]),
+                vout: 0,
+            };
+            let mut invitations = BTreeMap::new();
+            invitations.insert(
+                op,
+                InvitationEntry {
+                    out_point: op,
+                    funding_index: 0,
+                    amount_duffs: 1,
+                    expiry_unix: 0,
+                    created_at_secs: 0,
+                    has_inviter: false,
+                    status: InvitationStatus::Created,
+                },
+            );
+            cs.invitations = Some(InvitationChangeSet {
+                invitations,
+                removed: Default::default(),
+            });
+        }
     }
     cs
 }
@@ -316,7 +341,7 @@ fn tc_b_013_every_domain_maps_and_isolates() {
     use std::collections::BTreeSet;
     assert_eq!(
         Domain::ALL.len(),
-        13,
+        14,
         "provider-key registrations ride the account-registrations domain — no new domain"
     );
     let mut covered = BTreeSet::new();

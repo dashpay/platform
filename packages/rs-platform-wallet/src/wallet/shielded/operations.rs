@@ -23,7 +23,7 @@ use super::activity::{ShieldedActivityKind, ShieldedActivityStatus, ShieldedDire
 use super::activity_recorder::{
     build_pending_entry, changeset_for_entry, non_zero_memo, with_status, LiveEntryParams,
 };
-use super::keys::OrchardKeySet;
+use super::keys::{AccountViewingKeys, OrchardKeySet};
 use super::note_selection::{
     select_notes_for_denomination, select_notes_with_fee, ShieldedFeeKind,
 };
@@ -242,7 +242,7 @@ async fn record_pending_activity<S: ShieldedStore>(
     persister: Option<&WalletPersister>,
     wallet_id: WalletId,
     id: SubwalletId,
-    keys: &OrchardKeySet,
+    keys: &AccountViewingKeys,
     params: LiveEntryParams<'_>,
 ) -> Option<super::activity::ShieldedActivityEntry> {
     let kind = params.kind.clone();
@@ -401,7 +401,7 @@ pub async fn shield<S: ShieldedStore, Sig: Signer<PlatformAddress>, P: OrchardPr
     store: &Arc<RwLock<S>>,
     persister: Option<&WalletPersister>,
     wallet_id: WalletId,
-    keys: &OrchardKeySet,
+    keys: &AccountViewingKeys,
     account: u32,
     inputs: BTreeMap<PlatformAddress, Credits>,
     amount: u64,
@@ -657,7 +657,8 @@ pub async fn unshield<S: ShieldedStore, P: OrchardProver>(
     amount: u64,
     prover: &P,
 ) -> Result<(), PlatformWalletError> {
-    let change_addr = default_orchard_address(keys)?;
+    let views = keys.viewing_keys();
+    let change_addr = default_orchard_address(&views)?;
     let id = SubwalletId::new(wallet_id, account);
 
     // Reserve against the 2-action floor: Orchard's BundleType::DEFAULT pads single-spend
@@ -727,7 +728,7 @@ pub async fn unshield<S: ShieldedStore, P: OrchardProver>(
             persister,
             wallet_id,
             id,
-            keys,
+            &views,
             LiveEntryParams {
                 kind: ShieldedActivityKind::Unshield,
                 direction: ShieldedDirection::Out,
@@ -849,7 +850,8 @@ pub async fn transfer<S: ShieldedStore, P: OrchardProver>(
     prover: &P,
 ) -> Result<(), PlatformWalletError> {
     let recipient_addr = payment_address_to_orchard(to_address)?;
-    let change_addr = default_orchard_address(keys)?;
+    let views = keys.viewing_keys();
+    let change_addr = default_orchard_address(&views)?;
     let id = SubwalletId::new(wallet_id, account);
 
     // ShieldedTransfer is carved with the base `compute_minimum_shielded_fee`, so reserve
@@ -904,7 +906,7 @@ pub async fn transfer<S: ShieldedStore, P: OrchardProver>(
             persister,
             wallet_id,
             id,
-            keys,
+            &views,
             LiveEntryParams {
                 kind: ShieldedActivityKind::Sent,
                 direction: ShieldedDirection::Out,
@@ -1002,7 +1004,8 @@ pub async fn withdraw<S: ShieldedStore, P: OrchardProver>(
     core_fee_per_byte: u32,
     prover: &P,
 ) -> Result<(), PlatformWalletError> {
-    let change_addr = default_orchard_address(keys)?;
+    let views = keys.viewing_keys();
+    let change_addr = default_orchard_address(&views)?;
     let id = SubwalletId::new(wallet_id, account);
     let output_script = CoreScript::from_bytes(to_address.script_pubkey().to_bytes());
 
@@ -1071,7 +1074,7 @@ pub async fn withdraw<S: ShieldedStore, P: OrchardProver>(
             persister,
             wallet_id,
             id,
-            keys,
+            &views,
             LiveEntryParams {
                 kind: ShieldedActivityKind::Withdrawal,
                 direction: ShieldedDirection::Out,
@@ -1197,7 +1200,8 @@ where
             "identity-create-from-shielded-pool requires at least one public key".to_string(),
         ));
     }
-    let change_addr = default_orchard_address(keys)?;
+    let views = keys.viewing_keys();
+    let change_addr = default_orchard_address(&views)?;
     let id = SubwalletId::new(wallet_id, account);
     let num_keys = public_keys.len();
 
@@ -1273,7 +1277,7 @@ where
             persister,
             wallet_id,
             id,
-            keys,
+            &views,
             LiveEntryParams {
                 kind: ShieldedActivityKind::IdentityCreate {
                     identity_id: identity_id.to_buffer(),
@@ -1598,7 +1602,9 @@ async fn fetch_identity_with_retries(
 // -------------------------------------------------------------------------
 
 /// Convert `keys`'s default `PaymentAddress` to an `OrchardAddress`.
-fn default_orchard_address(keys: &OrchardKeySet) -> Result<OrchardAddress, PlatformWalletError> {
+fn default_orchard_address(
+    keys: &AccountViewingKeys,
+) -> Result<OrchardAddress, PlatformWalletError> {
     payment_address_to_orchard(&keys.default_address)
 }
 

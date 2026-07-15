@@ -15,8 +15,7 @@ use key_wallet::wallet::Wallet;
 use key_wallet::Network;
 use platform_wallet::changeset::{
     AccountRegistrationEntry, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
-    ProviderKeyAccountEntry, ProviderKeyExtendedPubKey, ProviderKeyRegistrationBlob,
-    ProviderPlatformNodePubKey, WalletMetadataEntry,
+    ProviderKeyAccountEntry, ProviderKeyExtendedPubKey, WalletMetadataEntry,
 };
 use platform_wallet::wallet::platform_wallet::WalletId;
 use platform_wallet_storage::sqlite::schema::versions::{self, Domain};
@@ -59,31 +58,17 @@ fn eddsa_xpub(seed: u8) -> ProviderKeyExtendedPubKey {
     )
 }
 
-/// Pre-derived platform-node keys are carried public bytes; distinct per
-/// `index` so a round-trip cannot pass by accident.
-fn node_key(index: u32) -> ProviderPlatformNodePubKey {
-    let b = u8::try_from(index & 0xFF).expect("masked to a byte");
-    ProviderPlatformNodePubKey {
-        index,
-        public_key: [b.wrapping_add(1); 32],
-        node_id: [b.wrapping_add(2); 20],
-    }
-}
-
 fn operator_entry(seed: u8) -> ProviderKeyAccountEntry {
     ProviderKeyAccountEntry {
         account_type: AccountType::ProviderOperatorKeys,
         extended_public_key: bls_xpub(seed),
-        // The BLS operator pool re-derives on demand from the account xpub.
-        derived_platform_node_keys: Vec::new(),
     }
 }
 
-fn platform_entry(seed: u8, node_keys: Vec<ProviderPlatformNodePubKey>) -> ProviderKeyAccountEntry {
+fn platform_entry(seed: u8) -> ProviderKeyAccountEntry {
     ProviderKeyAccountEntry {
         account_type: AccountType::ProviderPlatformKeys,
         extended_public_key: eddsa_xpub(seed),
-        derived_platform_node_keys: node_keys,
     }
 }
 
@@ -134,8 +119,6 @@ fn wallet_storage_error(err: PersistenceError) -> Box<WalletStorageError> {
 fn tc_pka_001_provider_accounts_survive_store_load() {
     let (persister, _tmp, path) = fresh_persister();
     let w: WalletId = wid(0xC1);
-    let node_keys = vec![node_key(3), node_key(0)];
-
     persister
         .store(
             w,
@@ -143,7 +126,7 @@ fn tc_pka_001_provider_accounts_survive_store_load() {
                 wallet_metadata: Some(metadata()),
                 provider_key_account_registrations: vec![
                     operator_entry(0x21),
-                    platform_entry(0x21, node_keys.clone()),
+                    platform_entry(0x21),
                 ],
                 ..Default::default()
             },
@@ -176,51 +159,6 @@ fn tc_pka_001_provider_accounts_survive_store_load() {
         "the restored EdDSA account must carry the persisted platform-node xpub"
     );
     assert!(eddsa.is_watch_only, "a rehydrated account is watch-only");
-
-    let mut expected_node_keys = node_keys;
-    expected_node_keys.sort_by_key(|key| key.index);
-    assert_eq!(
-        persister
-            .provider_node_keys(w)
-            .expect("read provider node keys after load"),
-        expected_node_keys,
-        "provider_node_keys must return every persisted hardened node key after load"
-    );
-}
-
-#[test]
-fn provider_node_keys_returns_empty_for_unknown_wallet() {
-    let (persister, _tmp, _path) = fresh_persister();
-
-    assert_eq!(
-        persister
-            .provider_node_keys(wid(0xB1))
-            .expect("query an unknown wallet"),
-        Vec::new()
-    );
-}
-
-#[test]
-fn provider_node_keys_returns_empty_for_operator_only_wallet() {
-    let (persister, _tmp, _path) = fresh_persister();
-    let w = wid(0xB2);
-    ensure_wallet_meta(&persister, &w);
-    persister
-        .store(
-            w,
-            PlatformWalletChangeSet {
-                provider_key_account_registrations: vec![operator_entry(0x12)],
-                ..Default::default()
-            },
-        )
-        .expect("store operator account");
-
-    assert_eq!(
-        persister
-            .provider_node_keys(w)
-            .expect("query an operator-only wallet"),
-        Vec::new()
-    );
 }
 
 /// TC-PKA-008 — a changeset carrying only provider-key registrations bumps
@@ -290,7 +228,6 @@ fn tc_pka_002_bls_decodes_as_bls() {
         bls_bytes(&bls_xpub(0x23)),
         "BLS xpub must survive byte-for-byte"
     );
-    assert!(provider[0].derived_platform_node_keys.is_empty());
 }
 
 /// TC-PKA-003 — an EdDSA account decodes as EdDSA, and a row whose
@@ -306,7 +243,7 @@ fn tc_pka_003_eddsa_decodes_as_eddsa_and_cross_curve_row_is_rejected() {
         .store(
             w,
             PlatformWalletChangeSet {
-                provider_key_account_registrations: vec![platform_entry(0x24, vec![node_key(0)])],
+                provider_key_account_registrations: vec![platform_entry(0x24)],
                 ..Default::default()
             },
         )
@@ -332,9 +269,9 @@ fn tc_pka_003_eddsa_decodes_as_eddsa_and_cross_curve_row_is_rejected() {
 
     drop(conn);
 
-    // Negative half, on a BLS row (no node keys, so nothing to orphan). Two
-    // corruptions the writer cannot produce but a schema bug or a tampered DB
-    // can, each rejected by a different guard:
+    // Negative half, on a BLS row. Two corruptions the writer cannot produce
+    // but a schema bug or a tampered DB can, each rejected by a different
+    // guard:
     //   (a) the blob's account type contradicts the `account_type` column;
     //   (b) the column and the blob agree on the type, but the blob carries
     //       the other curve's key — only the curve check catches this one.
@@ -362,14 +299,14 @@ fn tc_pka_003_eddsa_decodes_as_eddsa_and_cross_curve_row_is_rejected() {
     for (case, payload) in [
         (
             "blob type contradicts the account_type column",
-            ProviderKeyRegistrationBlob {
+            ProviderKeyAccountEntry {
                 account_type: AccountType::ProviderPlatformKeys,
                 extended_public_key: eddsa_xpub(0x24),
             },
         ),
         (
             "blob carries the wrong curve for its account type",
-            ProviderKeyRegistrationBlob {
+            ProviderKeyAccountEntry {
                 account_type: AccountType::ProviderOperatorKeys,
                 extended_public_key: eddsa_xpub(0x24),
             },
@@ -382,42 +319,6 @@ fn tc_pka_003_eddsa_decodes_as_eddsa_and_cross_curve_row_is_rejected() {
             "{case}: expected ProviderKeyAccountEntryMismatch, got {err:?}"
         );
     }
-}
-
-/// TC-PKA-004 — every pre-derived platform-node key comes back, identity
-/// intact, ordered by index. This pool is hardened-only: a key dropped here
-/// is unrecoverable without the seed.
-#[test]
-fn tc_pka_004_node_keys_round_trip_ordered_and_complete() {
-    let (persister, _tmp, _path) = fresh_persister();
-    let w: WalletId = wid(0xC5);
-    ensure_wallet_meta(&persister, &w);
-
-    // Non-sequential, deliberately unsorted on the way in.
-    let keys: Vec<ProviderPlatformNodePubKey> =
-        [9u32, 0, 5, 2, 1].into_iter().map(node_key).collect();
-    persister
-        .store(
-            w,
-            PlatformWalletChangeSet {
-                provider_key_account_registrations: vec![platform_entry(0x25, keys.clone())],
-                ..Default::default()
-            },
-        )
-        .expect("store");
-
-    let conn = persister.lock_conn_for_test();
-    let provider = accounts::load_state(&conn, &w)
-        .expect("load_state")
-        .provider;
-    let loaded = &provider[0].derived_platform_node_keys;
-
-    let mut expected = keys;
-    expected.sort_by_key(|k| k.index);
-    assert_eq!(
-        loaded, &expected,
-        "node keys must come back whole, identity intact, ordered by index"
-    );
 }
 
 /// TC-PKA-005 — no provider accounts is a clean round-trip: no rows, no
@@ -452,7 +353,6 @@ fn tc_pka_005_empty_provider_set_round_trips() {
     let manifest = accounts::load_state(&conn, &w).expect("load_state");
     assert!(manifest.provider.is_empty(), "no provider accounts stored");
     assert_eq!(manifest.ecdsa.len(), 1, "the ECDSA entry is unaffected");
-    assert_eq!(node_key_row_count(&conn, &w), 0, "no child rows written");
 }
 
 /// TC-PKA-009 — a corrupt provider blob fails the whole load. Skipping the
@@ -511,40 +411,7 @@ fn tc_pka_010_oversize_provider_blob_is_rejected() {
     );
 }
 
-/// TC-PKA-011 — the child table's typed columns are cross-checked by width:
-/// a `public_key` that is not 32 bytes is a decode error, not a truncated or
-/// zero-padded key silently handed to the caller.
-#[test]
-fn tc_pka_011_malformed_node_key_column_is_rejected() {
-    let (persister, _tmp, _path) = fresh_persister();
-    let w: WalletId = wid(0xC9);
-    ensure_wallet_meta(&persister, &w);
-    persister
-        .store(
-            w,
-            PlatformWalletChangeSet {
-                provider_key_account_registrations: vec![platform_entry(0x29, vec![node_key(0)])],
-                ..Default::default()
-            },
-        )
-        .expect("store");
-
-    let conn = persister.lock_conn_for_test();
-    conn.execute(
-        "UPDATE provider_platform_node_keys SET public_key = X'DEADBEEF' WHERE wallet_id = ?1",
-        rusqlite::params![w.as_slice()],
-    )
-    .expect("plant a short public_key");
-
-    let err = accounts::load_state(&conn, &w).expect_err("a short public_key must hard-error");
-    assert!(
-        matches!(err, WalletStorageError::BlobDecode { .. }),
-        "expected BlobDecode, got {err:?}"
-    );
-}
-
-/// TC-PKA-015 — a retried `store()` updates in place. A bare INSERT would
-/// duplicate the account row (and every node key) on every flush.
+/// TC-PKA-015 — a retried `store()` updates the account row in place.
 #[test]
 fn tc_pka_015_idempotent_repersist_does_not_duplicate() {
     let (persister, _tmp, _path) = fresh_persister();
@@ -558,7 +425,7 @@ fn tc_pka_015_idempotent_repersist_does_not_duplicate() {
                 PlatformWalletChangeSet {
                     provider_key_account_registrations: vec![
                         operator_entry(0x2A),
-                        platform_entry(0x2A, vec![node_key(0), node_key(1)]),
+                        platform_entry(0x2A),
                     ],
                     ..Default::default()
                 },
@@ -569,80 +436,6 @@ fn tc_pka_015_idempotent_repersist_does_not_duplicate() {
     let conn = persister.lock_conn_for_test();
     let manifest = accounts::load_state(&conn, &w).expect("load_state");
     assert_eq!(manifest.provider.len(), 2, "re-persist must not duplicate");
-    assert_eq!(node_key_row_count(&conn, &w), 2, "nor duplicate node keys");
-}
-
-/// TC-PKA-016 — a re-persisted, extended node-key batch is observable whole,
-/// with no duplicate index.
-#[test]
-fn tc_pka_016_growing_node_key_batch_is_observable_whole() {
-    let (persister, _tmp, _path) = fresh_persister();
-    let w: WalletId = wid(0xCB);
-    ensure_wallet_meta(&persister, &w);
-
-    store_platform_entry(
-        &persister,
-        w,
-        0x2B,
-        vec![node_key(0), node_key(1), node_key(2)],
-    );
-    store_platform_entry(&persister, w, 0x2B, (0..5).map(node_key).collect());
-
-    let conn = persister.lock_conn_for_test();
-    assert_eq!(
-        persisted_node_key_indices(&conn, &w),
-        vec![0, 1, 2, 3, 4],
-        "the extended batch must be observable whole, with no duplicate index"
-    );
-    assert_eq!(node_key_row_count(&conn, &w), 5);
-}
-
-/// TC-PKA-016 (shrink) — a later, SHORTER batch must never retract keys the
-/// store already holds. The pool is hardened-only (Ed25519/SLIP-10): a key
-/// dropped here cannot be re-derived by any watch-only wallet, so the only
-/// safe reading of a shorter batch is "says nothing about the missing
-/// indices", never "delete them".
-#[test]
-fn tc_pka_016_shrinking_node_key_batch_never_drops_persisted_keys() {
-    let (persister, _tmp, _path) = fresh_persister();
-    let w: WalletId = wid(0xCD);
-    ensure_wallet_meta(&persister, &w);
-
-    store_platform_entry(&persister, w, 0x2D, (0..5).map(node_key).collect());
-    store_platform_entry(&persister, w, 0x2D, vec![node_key(0), node_key(1)]);
-
-    let conn = persister.lock_conn_for_test();
-    assert_eq!(
-        persisted_node_key_indices(&conn, &w),
-        vec![0, 1, 2, 3, 4],
-        "a shorter batch must not delete indices 2..4 — they are unrecoverable"
-    );
-}
-
-/// TC-PKA-016 (empty) — registration falls back to an EMPTY node-key batch
-/// when pre-derivation fails (`wallet_lifecycle::register_wallet` treats that
-/// as non-fatal), so an empty batch is a live input, not a hypothetical. It
-/// must never wipe a populated pool.
-#[test]
-fn tc_pka_016_empty_node_key_batch_never_wipes_a_populated_pool() {
-    let (persister, _tmp, _path) = fresh_persister();
-    let w: WalletId = wid(0xCE);
-    ensure_wallet_meta(&persister, &w);
-
-    store_platform_entry(
-        &persister,
-        w,
-        0x2E,
-        vec![node_key(0), node_key(1), node_key(2)],
-    );
-    store_platform_entry(&persister, w, 0x2E, Vec::new());
-
-    let conn = persister.lock_conn_for_test();
-    assert_eq!(
-        persisted_node_key_indices(&conn, &w),
-        vec![0, 1, 2],
-        "an empty batch must leave the persisted pool intact"
-    );
 }
 
 /// SEC-001 — the writer enforces the curve/type pairing the reader enforces.
@@ -661,7 +454,6 @@ fn sec_001_writer_rejects_mispaired_curve_and_account_type() {
     let mispaired = ProviderKeyAccountEntry {
         account_type: AccountType::ProviderOperatorKeys,
         extended_public_key: eddsa_xpub(0x31),
-        derived_platform_node_keys: Vec::new(),
     };
     let err = persister
         .store(
@@ -700,8 +492,8 @@ fn conflicting_duplicate_provider_entries_are_rejected() {
             w,
             PlatformWalletChangeSet {
                 provider_key_account_registrations: vec![
-                    platform_entry(0x32, vec![node_key(0)]),
-                    platform_entry(0x33, vec![node_key(1)]),
+                    platform_entry(0x32),
+                    platform_entry(0x33),
                 ],
                 ..Default::default()
             },
@@ -718,11 +510,9 @@ fn conflicting_duplicate_provider_entries_are_rejected() {
         0,
         "neither entry may be written"
     );
-    assert_eq!(node_key_row_count(&conn, &w), 0);
 }
 
-/// A BLS provider account cannot change xpub across flushes; because it carries
-/// no node-key rows, this isolates the parent guard from child-key conflicts.
+/// A BLS provider account cannot change xpub across flushes.
 #[test]
 fn conflicting_provider_xpub_against_persisted_row_is_rejected() {
     let (persister, _tmp, _path) = fresh_persister();
@@ -787,7 +577,7 @@ fn conflicting_provider_account_rejects_whole_batch_before_any_write() {
             PlatformWalletChangeSet {
                 provider_key_account_registrations: vec![
                     operator_entry(0x3B),
-                    platform_entry(0x3C, vec![node_key(0)]),
+                    platform_entry(0x3C),
                 ],
                 ..Default::default()
             },
@@ -813,12 +603,6 @@ fn conflicting_provider_account_rejects_whole_batch_before_any_write() {
         platform_rows, 0,
         "the rejected batch must not partially write its new platform account"
     );
-    assert_eq!(
-        node_key_row_count(&conn, &w),
-        0,
-        "the rejected batch must not partially write platform node keys"
-    );
-
     let provider = accounts::load_state(&conn, &w).expect("load original operator account");
     assert_eq!(provider.provider.len(), 1);
     assert_eq!(
@@ -879,9 +663,9 @@ fn ecdsa_registration_path_rejects_provider_account_labels() {
 }
 
 /// QA-002 — the provider write path rides the flush transaction: when a later
-/// writer in the same `store()` fails, the account row, its node keys, and the
-/// domain-seq bump all roll back together. Mirrors `tc_b_012`, which pins the
-/// same invariant for the pool writer.
+/// writer in the same `store()` fails, the account row and domain-seq bump roll
+/// back together. Mirrors `tc_b_012`, which pins the same invariant for the
+/// pool writer.
 #[test]
 fn qa_002_partial_failure_rolls_back_provider_rows_and_bump() {
     let (persister, _tmp, _path) = fresh_persister();
@@ -901,10 +685,7 @@ fn qa_002_partial_failure_rolls_back_provider_rows_and_bump() {
     let result = persister.store(
         w,
         PlatformWalletChangeSet {
-            provider_key_account_registrations: vec![platform_entry(
-                0x34,
-                vec![node_key(0), node_key(1)],
-            )],
+            provider_key_account_registrations: vec![platform_entry(0x34)],
             token_balances: Some(platform_wallet::changeset::TokenBalanceChangeSet {
                 balances,
                 ..Default::default()
@@ -921,130 +702,9 @@ fn qa_002_partial_failure_rolls_back_provider_rows_and_bump() {
         "the provider account row must roll back with the failed flush"
     );
     assert_eq!(
-        node_key_row_count(&conn, &w),
-        0,
-        "its node keys must roll back too — no orphan child rows"
-    );
-    assert_eq!(
         versions::read_seq(&conn, &w, Domain::AccountRegistrations).expect("read_seq"),
         0,
         "the domain bump must roll back with the data it marks"
-    );
-}
-
-/// A registered provider account with an EMPTY pre-derived batch is a real
-/// state (pre-derivation is allowed to fail at registration) and is distinct
-/// from having no account at all: the account must still come back, carrying
-/// zero node keys.
-#[test]
-fn present_provider_account_with_empty_node_key_batch_round_trips() {
-    let (persister, _tmp, _path) = fresh_persister();
-    let w: WalletId = wid(0xD5);
-    ensure_wallet_meta(&persister, &w);
-
-    store_platform_entry(&persister, w, 0x35, Vec::new());
-
-    let conn = persister.lock_conn_for_test();
-    let provider = accounts::load_state(&conn, &w)
-        .expect("load_state")
-        .provider;
-    assert_eq!(provider.len(), 1, "the account itself must be persisted");
-    assert!(
-        provider[0].derived_platform_node_keys.is_empty(),
-        "with no pre-derived keys, not with a missing account"
-    );
-    assert_eq!(node_key_row_count(&conn, &w), 0);
-}
-
-/// TC-PKA-016 (merged) — `Merge` is append-only `.extend()`, so ONE flush can
-/// carry two entries for the same account. Identical entries reconcile: the
-/// node keys union by index and neither retracts the other's.
-#[test]
-fn tc_pka_016_merged_duplicate_entries_keep_the_union() {
-    let (persister, _tmp, _path) = fresh_persister();
-    let w: WalletId = wid(0xCF);
-    ensure_wallet_meta(&persister, &w);
-
-    persister
-        .store(
-            w,
-            PlatformWalletChangeSet {
-                provider_key_account_registrations: vec![
-                    platform_entry(0x2F, (0..4).map(node_key).collect()),
-                    platform_entry(0x2F, vec![node_key(0)]),
-                ],
-                ..Default::default()
-            },
-        )
-        .expect("store");
-
-    let conn = persister.lock_conn_for_test();
-    assert_eq!(
-        persisted_node_key_indices(&conn, &w),
-        vec![0, 1, 2, 3],
-        "the shorter second entry of a merged round must not drop the first's keys"
-    );
-}
-
-/// Store one `ProviderPlatformKeys` entry with the given node-key batch.
-fn store_platform_entry(
-    persister: &SqlitePersister,
-    wallet_id: WalletId,
-    seed: u8,
-    keys: Vec<ProviderPlatformNodePubKey>,
-) {
-    persister
-        .store(
-            wallet_id,
-            PlatformWalletChangeSet {
-                provider_key_account_registrations: vec![platform_entry(seed, keys)],
-                ..Default::default()
-            },
-        )
-        .expect("store");
-}
-
-/// Node-key indices the reader hands back for the (single) provider account.
-fn persisted_node_key_indices(conn: &rusqlite::Connection, wallet_id: &WalletId) -> Vec<u32> {
-    accounts::load_state(conn, wallet_id)
-        .expect("load_state")
-        .provider
-        .first()
-        .expect("a provider account")
-        .derived_platform_node_keys
-        .iter()
-        .map(|k| k.index)
-        .collect()
-}
-
-/// Deleting the wallet reaps the node keys through the account row — the
-/// child table must not outlive its parent.
-#[test]
-fn wallet_delete_cascades_to_node_keys() {
-    let (persister, _tmp, _path) = fresh_persister();
-    let w: WalletId = wid(0xCC);
-    ensure_wallet_meta(&persister, &w);
-    persister
-        .store(
-            w,
-            PlatformWalletChangeSet {
-                provider_key_account_registrations: vec![platform_entry(0x2C, vec![node_key(0)])],
-                ..Default::default()
-            },
-        )
-        .expect("store");
-
-    let conn = persister.lock_conn_for_test();
-    assert_eq!(node_key_row_count(&conn, &w), 1);
-    conn.execute(
-        "DELETE FROM wallets WHERE wallet_id = ?1",
-        rusqlite::params![w.as_slice()],
-    )
-    .expect("delete wallet");
-    assert_eq!(
-        node_key_row_count(&conn, &w),
-        0,
-        "node keys must cascade away with their wallet"
     );
 }
 
@@ -1057,193 +717,4 @@ fn account_row_count(conn: &rusqlite::Connection, wallet_id: &WalletId) -> i64 {
         |row| row.get(0),
     )
     .expect("count provider account rows")
-}
-
-/// Node-key rows for one wallet, counted straight from SQL.
-fn node_key_row_count(conn: &rusqlite::Connection, wallet_id: &WalletId) -> i64 {
-    conn.query_row(
-        "SELECT COUNT(*) FROM provider_platform_node_keys WHERE wallet_id = ?1",
-        rusqlite::params![wallet_id.as_slice()],
-        |row| row.get(0),
-    )
-    .expect("count node keys")
-}
-
-/// MARVIN adversarial re-check #1 — original repro (two entries, same
-/// account_type, disjoint node-key batches, one `store()` call): must union,
-/// not last-write-wins.
-#[test]
-fn marvin_recheck_two_entries_disjoint_batches_union_not_overwrite() {
-    let (persister, _tmp, _path) = fresh_persister();
-    let w: WalletId = wid(0xF1);
-    ensure_wallet_meta(&persister, &w);
-
-    persister
-        .store(
-            w,
-            PlatformWalletChangeSet {
-                provider_key_account_registrations: vec![
-                    platform_entry(0x41, vec![node_key(10), node_key(11)]),
-                    platform_entry(0x41, vec![node_key(20), node_key(21)]),
-                ],
-                ..Default::default()
-            },
-        )
-        .expect("disjoint-batch duplicates must union, not conflict");
-
-    let conn = persister.lock_conn_for_test();
-    assert_eq!(
-        persisted_node_key_indices(&conn, &w),
-        vec![10, 11, 20, 21],
-        "both entries' node keys must survive, unioned"
-    );
-}
-
-/// MARVIN adversarial #2 — three-way duplicate in one changeset: same
-/// account_type/xpub, three batches, each contributing new indices. Union
-/// must not special-case "exactly two".
-#[test]
-fn marvin_adversarial_three_way_duplicate_unions_all_three() {
-    let (persister, _tmp, _path) = fresh_persister();
-    let w: WalletId = wid(0xF2);
-    ensure_wallet_meta(&persister, &w);
-
-    persister
-        .store(
-            w,
-            PlatformWalletChangeSet {
-                provider_key_account_registrations: vec![
-                    platform_entry(0x42, vec![node_key(0)]),
-                    platform_entry(0x42, vec![node_key(1)]),
-                    platform_entry(0x42, vec![node_key(2)]),
-                ],
-                ..Default::default()
-            },
-        )
-        .expect("three-way identical-account duplicates must union");
-
-    let conn = persister.lock_conn_for_test();
-    assert_eq!(
-        persisted_node_key_indices(&conn, &w),
-        vec![0, 1, 2],
-        "all three contributions must be present"
-    );
-}
-
-/// MARVIN adversarial #3 — duplicate entries with node-key batches that
-/// differ only in ORDER, not value (same set, reshuffled): must not be
-/// flagged as a conflict, and the union must still be exactly that set.
-#[test]
-fn marvin_adversarial_reordered_but_equal_node_keys_is_not_a_conflict() {
-    let (persister, _tmp, _path) = fresh_persister();
-    let w: WalletId = wid(0xF3);
-    ensure_wallet_meta(&persister, &w);
-
-    persister
-        .store(
-            w,
-            PlatformWalletChangeSet {
-                provider_key_account_registrations: vec![
-                    platform_entry(0x43, vec![node_key(0), node_key(1), node_key(2)]),
-                    platform_entry(0x43, vec![node_key(2), node_key(0), node_key(1)]),
-                ],
-                ..Default::default()
-            },
-        )
-        .expect("reordered-but-identical-value duplicates must not conflict");
-
-    let conn = persister.lock_conn_for_test();
-    assert_eq!(
-        persisted_node_key_indices(&conn, &w),
-        vec![0, 1, 2],
-        "same set, reshuffled, must reconcile to exactly that set"
-    );
-}
-
-/// SEC-007 / QA-005 (found by Smythe and Marvin independently) — two entries
-/// share `account_type` AND xpub, so the account-level payload comparison sees
-/// no conflict, yet they disagree about the VALUE at the same node-key index.
-///
-/// Derivation is a pure function of (xpub, index) and `node_id` is
-/// `hash160(public_key)`, so two different values at one index mean one is
-/// wrong — the same contradiction `ProviderKeyAccountConflict` fails closed on
-/// one level up. Silently upserting the loser over the winner would destroy a
-/// key nothing can re-derive.
-#[test]
-fn sec_007_same_index_conflicting_node_keys_are_rejected() {
-    let (persister, _tmp, _path) = fresh_persister();
-    let w: WalletId = wid(0xF4);
-    ensure_wallet_meta(&persister, &w);
-
-    let first = node_key(7);
-    let mut second = node_key(7);
-    second.public_key = [0xFFu8; 32];
-    second.node_id = [0xEEu8; 20];
-    assert_ne!(
-        first, second,
-        "test fixture sanity: these must be genuinely different keys at the same index"
-    );
-
-    let err = persister
-        .store(
-            w,
-            PlatformWalletChangeSet {
-                provider_key_account_registrations: vec![
-                    platform_entry(0x44, vec![first]),
-                    platform_entry(0x44, vec![second]),
-                ],
-                ..Default::default()
-            },
-        )
-        .expect_err("one index carrying two different keys must be rejected");
-    assert!(
-        format!("{err:?}").contains("ProviderNodeKeyConflict"),
-        "expected ProviderNodeKeyConflict, got {err:?}"
-    );
-
-    let conn = persister.lock_conn_for_test();
-    assert_eq!(
-        node_key_row_count(&conn, &w),
-        0,
-        "the contradictory flush must write neither key"
-    );
-}
-
-/// SEC-007, across flushes — the same contradiction, but the loser arrives in a
-/// LATER `store()` against an already-persisted row. The in-batch check cannot
-/// see this one: it is caught against what the store already holds, so a stale
-/// or corrupted re-registration cannot overwrite a good key.
-#[test]
-fn sec_007_conflicting_node_key_against_persisted_row_is_rejected() {
-    let (persister, _tmp, _path) = fresh_persister();
-    let w: WalletId = wid(0xF5);
-    ensure_wallet_meta(&persister, &w);
-
-    store_platform_entry(&persister, w, 0x45, vec![node_key(3)]);
-
-    let mut tampered = node_key(3);
-    tampered.public_key = [0xAAu8; 32];
-    let err = persister
-        .store(
-            w,
-            PlatformWalletChangeSet {
-                provider_key_account_registrations: vec![platform_entry(0x45, vec![tampered])],
-                ..Default::default()
-            },
-        )
-        .expect_err("a different key at an already-stored index must be rejected");
-    assert!(
-        format!("{err:?}").contains("ProviderNodeKeyConflict"),
-        "expected ProviderNodeKeyConflict, got {err:?}"
-    );
-
-    let conn = persister.lock_conn_for_test();
-    let provider = accounts::load_state(&conn, &w)
-        .expect("load_state")
-        .provider;
-    assert_eq!(
-        provider[0].derived_platform_node_keys,
-        vec![node_key(3)],
-        "the originally-derived key must survive untouched"
-    );
 }

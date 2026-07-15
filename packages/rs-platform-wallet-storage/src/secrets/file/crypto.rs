@@ -37,9 +37,12 @@ pub(crate) const NONCE_LEN: usize = 24;
 /// Derived AEAD key width.
 pub(crate) const KEY_LEN: usize = 32;
 
-/// Fill `buf` with CSPRNG bytes (`OsRng` via `getrandom`).
+/// Fill `buf` with CSPRNG bytes (`OsRng` via `getrandom`). Backs the salt,
+/// nonce, and key-material draws, so a failure is reported as
+/// [`SecretStoreError::EntropyUnavailable`] — never `KdfFailure`, which
+/// would misname the failing subsystem on the nonce/salt paths.
 pub(crate) fn random_bytes(buf: &mut [u8]) -> Result<(), SecretStoreError> {
-    getrandom(buf).map_err(|_| SecretStoreError::KdfFailure)
+    getrandom(buf).map_err(|_| SecretStoreError::EntropyUnavailable)
 }
 
 /// Argon2id parameters stored in the on-disk `kdf` object. `id`

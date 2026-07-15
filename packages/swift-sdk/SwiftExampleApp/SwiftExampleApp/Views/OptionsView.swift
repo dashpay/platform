@@ -10,6 +10,9 @@ struct OptionsView: View {
     @State private var showingDataManagement = false
     @State private var showingAbout = false
     @State private var isSwitchingNetwork = false
+    @State private var isExportingLogs = false
+    @State private var exportedLogs: ExportedLogsArchive?
+    @State private var logExportError: String?
     @State private var sdkStatus: SDKStatus?
     @State private var isLoadingStatus = false
 
@@ -445,6 +448,24 @@ struct OptionsView: View {
                     }
                 }
 
+                Section("Diagnostics") {
+                    Button(action: exportLogs) {
+                        HStack {
+                            Label("Export Logs", systemImage: "square.and.arrow.up")
+                            Spacer()
+                            if isExportingLogs {
+                                ProgressView()
+                                    .scaleEffect(0.8)
+                            }
+                        }
+                    }
+                    .disabled(isExportingLogs)
+
+                    Text("Bundles the SDK logs from this launch and the two before it (a crashed run is usually the previous session) into a zip you can AirDrop, mail, or save to Files.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+
                 Section(header: Text("Platform")) {
                     // Contracts moved here from its own root tab. Pushed
                     // without its own NavigationStack so it attaches to
@@ -554,6 +575,56 @@ struct OptionsView: View {
             }
             .sheet(isPresented: $showingAbout) {
                 AboutView()
+            }
+            .sheet(item: $exportedLogs) { archive in
+                ShareSheet(items: [archive.url])
+            }
+            .alert(
+                "Log Export Failed",
+                isPresented: Binding(
+                    get: { logExportError != nil },
+                    set: { if !$0 { logExportError = nil } }
+                )
+            ) {
+                Button("OK", role: .cancel) { logExportError = nil }
+            } message: {
+                Text(logExportError ?? "")
+            }
+        }
+    }
+
+    /// Zip the most recent SDK log sessions and hand the archive to a
+    /// share sheet. The staging + compression is file I/O, so it runs
+    /// detached; only the resulting URL (or error) comes back to the
+    /// main actor.
+    private func exportLogs() {
+        isExportingLogs = true
+        let network = appState.currentNetwork.displayName
+        let bundle = Bundle.main
+        let short = bundle.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
+        let build = bundle.infoDictionary?["CFBundleVersion"] as? String ?? "?"
+        let appVersion = "\(short) (\(build))"
+        // Authoritative record of which directory this run is
+        // writing to — timestamp sorting alone can be fooled by a
+        // clock rollback or a stale future-dated directory.
+        let currentSession = LoggingPreferences.currentSessionDirectory
+
+        Task.detached(priority: .userInitiated) {
+            let result: Result<URL, Error> = Result {
+                try LogExporter.export(
+                    network: network,
+                    appVersion: appVersion,
+                    currentSession: currentSession
+                )
+            }
+            await MainActor.run {
+                isExportingLogs = false
+                switch result {
+                case .success(let url):
+                    exportedLogs = ExportedLogsArchive(url: url)
+                case .failure(let error):
+                    logExportError = error.localizedDescription
+                }
             }
         }
     }
@@ -670,6 +741,14 @@ struct OptionsView: View {
             }
         }
     }
+}
+
+/// `Identifiable` wrapper so the exported zip can drive
+/// `.sheet(item:)` — presenting keyed on the value (not a separate
+/// bool) means the sheet can never race ahead of the URL being set.
+private struct ExportedLogsArchive: Identifiable {
+    let url: URL
+    var id: URL { url }
 }
 
 struct DataManagementView: View {

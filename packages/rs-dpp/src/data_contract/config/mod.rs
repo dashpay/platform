@@ -21,6 +21,19 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use v0::{DataContractConfigGettersV0, DataContractConfigSettersV0, DataContractConfigV0};
 
+/// Contract-level configuration (mutability, storage, and validation knobs).
+///
+/// **Internally-tagged** serde enum (`#[serde(tag = "$formatVersion")]`) that
+/// **also** derives native bincode `Encode`/`Decode`. Through bincode, use only
+/// the **native** codec (`bincode::encode_to_vec` / `bincode::decode_from_slice`),
+/// never `bincode::serde`: the serde bridge is non-self-describing, so it would
+/// write a silently-unreadable blob and fail to decode with `AnyNotSupported`
+/// (finding the `$formatVersion` tag needs `deserialize_any`). The
+/// self-describing serde paths (`platform_value` value-conversion, JSON) are
+/// fine. No such misuse exists today — this type reaches no non-self-describing
+/// binary serde path — but the shape is the one that bit `AssetLockProof`
+/// (#4133, `AssetLockEntryWire`) and `IdentityPublicKey` (`IdentityKeyWire`); if
+/// it ever needs a binary blob column, pre-encode it natively.
 #[cfg_attr(feature = "json-conversion", derive(JsonConvertible))]
 #[cfg_attr(feature = "value-conversion", derive(ValueConvertible))]
 #[derive(Serialize, Deserialize, Encode, Decode, Debug, Clone, Copy, PartialEq, Eq, From)]

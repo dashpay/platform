@@ -8,7 +8,6 @@ use rusqlite::{Connection, OptionalExtension};
 
 use platform_wallet::changeset::{
     ClientStartState, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
-    ProviderPlatformNodePubKey,
 };
 use platform_wallet::wallet::platform_wallet::WalletId;
 
@@ -162,6 +161,29 @@ impl SqlitePersister {
     ///   [`WalletStorageError::AutoBackupDisabled`] — the
     ///   pre-migration auto-backup couldn't materialise.
     pub fn open(config: SqlitePersisterConfig) -> Result<Self, WalletStorageError> {
+        // Log every open failure where it surfaces — this is the crate's
+        // highest-stakes boundary (on-disk corruption, forward-incompatible
+        // schema, mid-run migration failure, in-process double-open) and the
+        // caller only sees the returned `Err`, not why it happened.
+        // `AlreadyOpen` is the one benign race (the loser retries once the
+        // winner drops), so it warns rather than errors.
+        let path = config.path.clone();
+        Self::open_inner(config).inspect_err(|e| match e {
+            WalletStorageError::AlreadyOpen { .. } => tracing::warn!(
+                path = %path.display(),
+                error_kind = e.error_kind_str(),
+                "SqlitePersister open refused: database already open in this process"
+            ),
+            _ => tracing::error!(
+                path = %path.display(),
+                error_kind = e.error_kind_str(),
+                error = %e,
+                "SqlitePersister failed to open database"
+            ),
+        })
+    }
+
+    fn open_inner(config: SqlitePersisterConfig) -> Result<Self, WalletStorageError> {
         validate_config(&config)?;
         if let Some(parent) = config.path.parent() {
             if !parent.as_os_str().is_empty() && !parent.exists() {
@@ -517,11 +539,21 @@ impl SqlitePersister {
             drop(drained_slot.take());
             // Discard any changeset a Manual-mode store buffered during the
             // delete window — the wallet is gone.
-            if let Ok(Some(_late)) = self.buffer.take_for_flush(&wallet_id) {
-                tracing::warn!(
+            match self.buffer.take_for_flush(&wallet_id) {
+                Ok(Some(_late)) => tracing::warn!(
                     wallet_id = %hex::encode(wallet_id),
                     "discarded racing buffered changeset after delete_wallet commit"
-                );
+                ),
+                Ok(None) => {}
+                // The delete itself already committed, so this still returns
+                // Ok — but a poisoned buffer mutex here is a signal every
+                // later store/flush on this persister will hit, so log it at
+                // the same level as the file's other LockPoisoned sites.
+                Err(e) => tracing::error!(
+                    wallet_id = %hex::encode(wallet_id),
+                    error_kind = e.error_kind_str(),
+                    "buffer mutex poisoned draining racing changeset after delete_wallet commit"
+                ),
             }
             Ok(DeleteWalletReport {
                 wallet_id,
@@ -800,6 +832,21 @@ impl Drop for SqlitePersister {
 }
 
 impl PlatformWalletPersistence for SqlitePersister {
+    /// Durability attestation for the security-sensitive flows gated on
+    /// [`PlatformWalletPersistence::persists_durably`] (e.g. DashPay
+    /// invitation creation, which must never re-export a bearer voucher key
+    /// after a restart).
+    ///
+    /// `true` in both flush modes: the trait contract is "state survives a
+    /// process restart once `store` + `flush` return `Ok`", and `flush`
+    /// always writes through in one SQLite transaction —
+    /// [`FlushMode::Immediate`] is durable at `store`, [`FlushMode::Manual`]
+    /// at the explicit `flush` the gated flows already perform before
+    /// anything irreversible.
+    fn persists_durably(&self) -> bool {
+        true
+    }
+
     /// Merge `changeset` into the per-wallet buffer.
     ///
     /// Durability matrix:
@@ -835,8 +882,7 @@ impl PlatformWalletPersistence for SqlitePersister {
     /// payload (network, birth height, account manifest, core state,
     /// identities, `Consumed`-filtered asset locks). Carries **no** `Wallet`
     /// or key material — the manager rebuilds each wallet watch-only and
-    /// signs later on demand. Persisted hardened platform-node public keys
-    /// remain available through [`PlatformWalletPersistence::provider_node_keys`].
+    /// signs later on demand.
     /// The `tracing::info!` summary reports `wallets_rehydrated`.
     ///
     /// Fail-hard: any row that fails to decode (or has a malformed
@@ -1084,21 +1130,6 @@ impl PlatformWalletPersistence for SqlitePersister {
         Ok(state)
     }
 
-    fn provider_node_keys(
-        &self,
-        wallet_id: WalletId,
-    ) -> Result<Vec<ProviderPlatformNodePubKey>, PersistenceError> {
-        let conn = self.conn().map_err(PersistenceError::from)?;
-        for entry in schema::accounts::load_provider_state(&conn, &wallet_id)
-            .map_err(PersistenceError::from)?
-        {
-            if entry.account_type == key_wallet::account::AccountType::ProviderPlatformKeys {
-                return Ok(entry.derived_platform_node_keys);
-            }
-        }
-        Ok(Vec::new())
-    }
-
     fn get_core_tx_record(
         &self,
         wallet_id: WalletId,
@@ -1234,6 +1265,9 @@ fn apply_changeset_to_tx(
     }
     if let Some(locks) = cs.asset_locks.as_ref() {
         schema::asset_locks::apply(tx, wallet_id, locks)?;
+    }
+    if let Some(invitations) = cs.invitations.as_ref() {
+        schema::invitations::apply(tx, wallet_id, invitations)?;
     }
     if let Some(balances) = cs.token_balances.as_ref() {
         schema::token_balances::apply(tx, wallet_id, balances)?;

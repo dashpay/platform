@@ -1,7 +1,6 @@
 //! `account_registrations` writer + keyless reader (platform-payment
-//! registrations and the rehydration account-manifest oracle), plus the
-//! provider key-material accounts and their `provider_platform_node_keys`
-//! child rows.
+//! registrations and the rehydration account-manifest oracle), including
+//! provider key-material accounts.
 
 use std::collections::BTreeMap;
 
@@ -11,7 +10,6 @@ use rusqlite::{params, Connection, Transaction};
 
 use platform_wallet::changeset::{
     AccountRegistrationEntry, ProviderKeyAccountEntry, ProviderKeyExtendedPubKey,
-    ProviderKeyRegistrationBlob, ProviderPlatformNodePubKey,
 };
 use platform_wallet::wallet::platform_wallet::WalletId;
 
@@ -26,7 +24,7 @@ impl_persistable_blob!(AccountRegistrationEntry);
 // PUBLIC material only: the provider account's own-curve extended PUBLIC key
 // (BLS operator / EdDSA platform node) reaching the same blob column. The type
 // has no field that could carry signing material.
-impl_persistable_blob!(ProviderKeyRegistrationBlob);
+impl_persistable_blob!(ProviderKeyAccountEntry);
 
 /// The persisted account manifest of one wallet: the secp256k1 accounts and
 /// the provider key-material accounts, which carry a non-secp256k1 extended
@@ -56,18 +54,27 @@ pub(crate) type PlatformPaymentRegistration = (u32, ExtendedPubKey);
 /// `(account_index, xpub)`.
 fn decode_platform_payment_row(
     typed_index: i64,
+    typed_key_class: i64,
     xpub_bytes: &[u8],
 ) -> Result<PlatformPaymentRegistration, WalletStorageError> {
     let typed_index = crate::sqlite::util::safe_cast::i64_to_u32(
         "account_registrations.account_index",
         typed_index,
     )?;
+    let typed_key_class = crate::sqlite::util::safe_cast::i64_to_u32(
+        "account_registrations.key_class",
+        typed_key_class,
+    )?;
     let entry: AccountRegistrationEntry = blob::decode(xpub_bytes)?;
     // Callers select `WHERE account_type = 'platform_payment'`, so the decoded
-    // blob must agree: a PlatformPayment account at the same index. A row whose
-    // blob disagrees is corrupt / mis-bucketed, never fed to the oracle.
+    // blob must agree: a PlatformPayment account at the same index AND key_class.
+    // key_class is a real discriminator — two PlatformPayment accounts can share
+    // `(account_type, account_index)` and differ only here (the widened PK exists
+    // for exactly that) — so cross-check it like `load_state` does, or the oracle
+    // could hand back a row keyed by a different key class than its blob names.
     if account_type_db_label(&entry.account_type) != "platform_payment"
         || account_index(&entry.account_type) != typed_index
+        || account_key_class(&entry.account_type) != typed_key_class
     {
         return Err(WalletStorageError::AccountRegistrationEntryMismatch);
     }
@@ -82,7 +89,7 @@ pub(crate) fn list_platform_payment_registrations(
     wallet_id: &WalletId,
 ) -> Result<Vec<PlatformPaymentRegistration>, WalletStorageError> {
     let mut stmt = conn.prepare(
-        "SELECT account_index, length(account_xpub_bytes), account_xpub_bytes \
+        "SELECT account_index, key_class, length(account_xpub_bytes), account_xpub_bytes \
          FROM account_registrations \
          WHERE wallet_id = ?1 AND account_type = 'platform_payment' \
          ORDER BY account_index",
@@ -91,9 +98,10 @@ pub(crate) fn list_platform_payment_registrations(
     let mut out = Vec::new();
     while let Some(row) = rows.next()? {
         let idx: i64 = row.get(0)?;
-        blob::check_size(row.get::<_, i64>(1)?)?;
-        let bytes: Vec<u8> = row.get(2)?;
-        out.push(decode_platform_payment_row(idx, &bytes)?);
+        let key_class: i64 = row.get(1)?;
+        blob::check_size(row.get::<_, i64>(2)?)?;
+        let bytes: Vec<u8> = row.get(3)?;
+        out.push(decode_platform_payment_row(idx, key_class, &bytes)?);
     }
     Ok(out)
 }
@@ -106,7 +114,7 @@ pub(crate) fn all_platform_payment_registrations(
     conn: &Connection,
 ) -> Result<BTreeMap<WalletId, Vec<PlatformPaymentRegistration>>, WalletStorageError> {
     let mut stmt = conn.prepare(
-        "SELECT wallet_id, account_index, length(account_xpub_bytes), account_xpub_bytes \
+        "SELECT wallet_id, account_index, key_class, length(account_xpub_bytes), account_xpub_bytes \
          FROM account_registrations \
          WHERE account_type = 'platform_payment' \
          ORDER BY wallet_id, account_index",
@@ -116,14 +124,15 @@ pub(crate) fn all_platform_payment_registrations(
     while let Some(row) = rows.next()? {
         let wid_bytes: Vec<u8> = row.get(0)?;
         let idx: i64 = row.get(1)?;
-        let len = usize::try_from(row.get::<_, i64>(2)?).unwrap_or(usize::MAX);
+        let key_class: i64 = row.get(2)?;
+        let len = usize::try_from(row.get::<_, i64>(3)?).unwrap_or(usize::MAX);
         if len > blob::BLOB_SIZE_LIMIT_BYTES {
             return Err(WalletStorageError::BlobTooLarge {
                 len_bytes: len,
                 limit_bytes: blob::BLOB_SIZE_LIMIT_BYTES,
             });
         }
-        let bytes: Vec<u8> = row.get(3)?;
+        let bytes: Vec<u8> = row.get(4)?;
         let wallet_id = <[u8; 32]>::try_from(wid_bytes.as_slice()).map_err(|_| {
             WalletStorageError::InvalidWalletIdLength {
                 actual: wid_bytes.len(),
@@ -131,7 +140,7 @@ pub(crate) fn all_platform_payment_registrations(
         })?;
         out.entry(wallet_id)
             .or_default()
-            .push(decode_platform_payment_row(idx, &bytes)?);
+            .push(decode_platform_payment_row(idx, key_class, &bytes)?);
     }
     Ok(out)
 }
@@ -228,22 +237,11 @@ fn upsert_account_row(
     Ok(())
 }
 
-/// Persist the provider key-material accounts (BLS operator / EdDSA
-/// platform node) into `account_registrations`, and each account's
-/// pre-derived platform-node keys into `provider_platform_node_keys`.
+/// Persist provider key-material accounts into `account_registrations`.
 ///
 /// The account row uses the same PK as [`apply_registrations`]: a provider
 /// account is index-less, so `(wallet_id, account_type)` plus the sentinel
 /// columns is its natural key. Re-persisting an identical row is a no-op.
-///
-/// Node keys are upserted per `key_index` and **never deleted**. The pool is
-/// hardened-only (Ed25519/SLIP-10), so a key this store forgets is one no
-/// watch-only wallet can re-derive — a shorter or empty incoming batch is
-/// therefore treated as "nothing new to say" about the missing indices, not as
-/// a retraction. Two callers make that a live case: registration falls back to
-/// an empty batch when pre-derivation fails
-/// (`manager::wallet_lifecycle::register_wallet`), and `Merge` is append-only,
-/// so one flush can carry two entries for the same account.
 ///
 /// # Errors
 ///
@@ -255,9 +253,6 @@ fn upsert_account_row(
 /// [`WalletStorageError::ProviderKeyAccountConflict`] if two entries in one call
 /// claim the same account with **different** extended public keys, or if an
 /// incoming key differs from the one already persisted for that account.
-///
-/// [`WalletStorageError::ProviderNodeKeyConflict`] if one index carries two
-/// different node keys — between entries, or against an already-stored row.
 pub fn apply_provider_registrations(
     tx: &Transaction<'_>,
     wallet_id: &WalletId,
@@ -275,16 +270,16 @@ pub fn apply_provider_registrations(
             return Err(WalletStorageError::ProviderKeyAccountEntryMismatch);
         }
         let label = account_type_db_label(&entry.account_type);
-        let payload = blob::encode(&ProviderKeyRegistrationBlob {
+        let payload = blob::encode(&ProviderKeyAccountEntry {
             account_type: entry.account_type,
             extended_public_key: entry.extended_public_key.clone(),
         })?;
         // Two entries for one account are expected — `Merge` is append-only, so
         // a re-emitted registration can ride the same flush. Identical ones are
-        // reconciled below (node keys union by index, nothing is lost). Two that
-        // disagree about the account's own xpub are a contradiction no merge
-        // semantic can resolve — one of them is wrong and we cannot tell which,
-        // so fail closed rather than let write order decide.
+        // equivalent. Two that disagree about the account's own xpub are a
+        // contradiction no merge semantic can resolve — one of them is wrong
+        // and we cannot tell which, so fail closed rather than let write order
+        // decide.
         if let Some((_, _, prior)) = encoded.iter().find(|(_, l, _)| *l == label) {
             if prior != &payload {
                 return Err(WalletStorageError::ProviderKeyAccountConflict {
@@ -313,59 +308,11 @@ pub fn apply_provider_registrations(
         }
     }
 
-    // A node key is fully determined by its account xpub and its index —
-    // derivation is a pure function, and `node_id` is `hash160(public_key)`. So
-    // two *different* values at one index, whether inside this batch or against
-    // what is already stored, are the same contradiction as a conflicting xpub
-    // one level up: one of them is wrong and the store cannot tell which.
-    // Refuse the flush rather than let write order pick the winner (an
-    // overwrite would destroy a key nothing can re-derive).
-    let mut incoming: BTreeMap<(&'static str, u32), &ProviderPlatformNodePubKey> = BTreeMap::new();
-    for (entry, label, _) in &encoded {
-        for key in &entry.derived_platform_node_keys {
-            if let Some(prior) = incoming.insert((label, key.index), key) {
-                if prior != key {
-                    return Err(WalletStorageError::ProviderNodeKeyConflict {
-                        account_type: label,
-                        key_index: key.index,
-                    });
-                }
-            }
-        }
-    }
-    for label in distinct_accounts.keys().copied() {
-        for stored in load_platform_node_keys(tx, wallet_id, label)? {
-            if let Some(key) = incoming.get(&(label, stored.index)) {
-                if **key != stored {
-                    return Err(WalletStorageError::ProviderNodeKeyConflict {
-                        account_type: label,
-                        key_index: stored.index,
-                    });
-                }
-            }
-        }
-    }
-
-    // The conflict checks and `DO NOTHING` jointly prevent parent or child key
+    // The conflict checks and `DO NOTHING` jointly prevent account key
     // material from being overwritten.
     let mut account_stmt = tx.prepare_cached(UPSERT_PROVIDER_ACCOUNT_SQL)?;
-    let mut node_key_stmt = tx.prepare_cached(
-        "INSERT INTO provider_platform_node_keys \
-                (wallet_id, account_type, key_index, public_key, node_id) \
-             VALUES (?1, ?2, ?3, ?4, ?5) \
-             ON CONFLICT(wallet_id, account_type, key_index) DO NOTHING",
-    )?;
-    for (entry, account_type, payload) in encoded {
+    for (entry, _, payload) in encoded {
         upsert_account_row(&mut account_stmt, wallet_id, &entry.account_type, payload)?;
-        for key in &entry.derived_platform_node_keys {
-            node_key_stmt.execute(params![
-                wallet_id.as_slice(),
-                account_type,
-                i64::from(key.index),
-                &key.public_key[..],
-                &key.node_id[..],
-            ])?;
-        }
     }
     Ok(())
 }
@@ -398,54 +345,6 @@ fn load_provider_account_payload(
     Ok(Some(row.get::<_, Vec<u8>>(1)?))
 }
 
-/// Every `provider_platform_node_keys` row of one provider account, ordered
-/// by `key_index` — the order the reader contracts to return (the pool is a
-/// pre-derived batch, so index order is display order).
-fn load_platform_node_keys(
-    conn: &Connection,
-    wallet_id: &WalletId,
-    account_type: &str,
-) -> Result<Vec<ProviderPlatformNodePubKey>, WalletStorageError> {
-    // Both blob columns are fixed-width, so `length(<col>)` is read first
-    // (O(1) from the row header) and gated before the Vec is materialized.
-    let mut stmt = conn.prepare(
-        "SELECT key_index, length(public_key), public_key, length(node_id), node_id \
-         FROM provider_platform_node_keys \
-         WHERE wallet_id = ?1 AND account_type = ?2 \
-         ORDER BY key_index",
-    )?;
-    let mut rows = stmt.query(params![wallet_id.as_slice(), account_type])?;
-    let mut out = Vec::new();
-    while let Some(row) = rows.next()? {
-        let index = crate::sqlite::util::safe_cast::i64_to_u32(
-            "provider_platform_node_keys.key_index",
-            row.get(0)?,
-        )?;
-        blob::check_fixed_width(
-            row.get::<_, i64>(1)?,
-            32,
-            "provider_platform_node_keys.public_key",
-        )?;
-        let public_key: Vec<u8> = row.get(2)?;
-        blob::check_fixed_width(
-            row.get::<_, i64>(3)?,
-            20,
-            "provider_platform_node_keys.node_id",
-        )?;
-        let node_id: Vec<u8> = row.get(4)?;
-        out.push(ProviderPlatformNodePubKey {
-            index,
-            public_key: public_key.as_slice().try_into().map_err(|_| {
-                WalletStorageError::blob_decode("provider_platform_node_keys.public_key")
-            })?,
-            node_id: node_id.as_slice().try_into().map_err(|_| {
-                WalletStorageError::blob_decode("provider_platform_node_keys.node_id")
-            })?,
-        });
-    }
-    Ok(out)
-}
-
 /// True when the extended public key's curve is the one its account type
 /// mandates. Enforced on both the write and the read path.
 ///
@@ -453,10 +352,8 @@ fn load_platform_node_keys(
 /// byte inside the payload. The FFI backend's restore side picks the same
 /// discriminator (`platform-wallet-ffi::persistence`, which branches on
 /// `account_type` to choose its decode), so the two backends agree on *how* a
-/// provider account is identified even though their payload bytes differ (the
-/// FFI bincodes the bare key; this one wraps it in a
-/// [`ProviderKeyRegistrationBlob`]). A row whose payload carries the other
-/// curve is cross-curve confusion, not a decodable account.
+/// provider account is identified. A [`ProviderKeyAccountEntry`] whose payload
+/// carries the other curve is cross-curve confusion, not a decodable account.
 fn provider_curve_matches_type(at: &AccountType, key: &ProviderKeyExtendedPubKey) -> bool {
     matches!(
         (at, key),
@@ -470,10 +367,11 @@ fn provider_curve_matches_type(at: &AccountType, key: &ProviderKeyExtendedPubKey
     )
 }
 
-/// Read the provider key-material accounts of one wallet, each with its
-/// pre-derived platform-node keys. Ordered by `account_type`; a row that
-/// fails to decode, contradicts its typed columns, or carries the wrong
-/// curve for its account type is a hard [`WalletStorageError`].
+/// Read the provider key-material accounts of one wallet.
+///
+/// Entries are ordered by `account_type`; a row that fails to decode,
+/// contradicts its typed columns, or carries the wrong curve for its account
+/// type is a hard [`WalletStorageError`].
 pub(crate) fn load_provider_state(
     conn: &Connection,
     wallet_id: &WalletId,
@@ -494,7 +392,7 @@ pub(crate) fn load_provider_state(
         let typed_friend: Vec<u8> = row.get(4)?;
         blob::check_size(row.get::<_, i64>(5)?)?;
         let payload: Vec<u8> = row.get(6)?;
-        let entry = blob::decode::<ProviderKeyRegistrationBlob>(&payload)?;
+        let entry = blob::decode::<ProviderKeyAccountEntry>(&payload)?;
 
         // Same typed-column cross-check the ECDSA reader applies, plus the
         // curve↔account-type agreement the provider rows add.
@@ -520,7 +418,6 @@ pub(crate) fn load_provider_state(
         out.push(ProviderKeyAccountEntry {
             account_type: entry.account_type,
             extended_public_key: entry.extended_public_key,
-            derived_platform_node_keys: load_platform_node_keys(conn, wallet_id, &typed_type)?,
         });
     }
     Ok(out)
@@ -555,7 +452,7 @@ fn load_ecdsa_state(
     // `length(account_xpub_bytes)` is read first (O(1) from the row header) so
     // an oversize blob is caught before the Vec is allocated.
     // The provider key-material rows are excluded by `account_type`: their
-    // blob is a `ProviderKeyRegistrationBlob` over a non-secp256k1 curve and
+    // blob is a `ProviderKeyAccountEntry` over a non-secp256k1 curve and
     // would hard-error this decode.
     let mut stmt = conn.prepare(
         "SELECT account_type, account_index, key_class, user_identity_id, friend_identity_id, \
@@ -824,6 +721,54 @@ mod tests {
         assert!(
             matches!(err, WalletStorageError::AccountRegistrationEntryMismatch),
             "expected AccountRegistrationEntryMismatch, got {err:?}"
+        );
+    }
+
+    /// The `platform_payment` readers (`all_platform_payment_registrations`,
+    /// the production `load()` oracle via `platform_addrs::load_all`, and its
+    /// per-wallet sibling `list_platform_payment_registrations`) must reject a
+    /// row whose typed `key_class` column disagrees with the blob's
+    /// `PlatformPayment.key_class` — the exact discriminator the widened PK
+    /// exists to protect — mirroring `load_state`'s full cross-check.
+    #[test]
+    fn platform_payment_readers_reject_key_class_column_mismatch() {
+        let conn = migrated_conn();
+        let w = [0x77u8; 32];
+        conn.execute(
+            "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
+            rusqlite::params![&w[..]],
+        )
+        .unwrap();
+        // Blob encodes key_class = 0 ...
+        let entry = AccountRegistrationEntry {
+            account_type: key_wallet::account::AccountType::PlatformPayment {
+                account: 0,
+                key_class: 0,
+            },
+            account_xpub: test_xpub(),
+        };
+        let blob = blob::encode(&entry).unwrap();
+        // ... but the typed key_class column says 1 — a mismatch on the very
+        // column that keeps distinct key classes from colliding.
+        conn.execute(
+            "INSERT INTO account_registrations \
+                (wallet_id, account_type, account_index, key_class, account_xpub_bytes) \
+             VALUES (?1, 'platform_payment', 0, 1, ?2)",
+            rusqlite::params![&w[..], blob],
+        )
+        .unwrap();
+
+        let err = all_platform_payment_registrations(&conn)
+            .expect_err("bulk reader must reject key_class mismatch");
+        assert!(
+            matches!(err, WalletStorageError::AccountRegistrationEntryMismatch),
+            "bulk reader: expected AccountRegistrationEntryMismatch, got {err:?}"
+        );
+        let err = list_platform_payment_registrations(&conn, &w)
+            .expect_err("per-wallet reader must reject key_class mismatch");
+        assert!(
+            matches!(err, WalletStorageError::AccountRegistrationEntryMismatch),
+            "per-wallet reader: expected AccountRegistrationEntryMismatch, got {err:?}"
         );
     }
 

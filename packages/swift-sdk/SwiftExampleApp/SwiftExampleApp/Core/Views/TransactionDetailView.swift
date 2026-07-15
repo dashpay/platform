@@ -102,6 +102,71 @@ struct TransactionDetailView: View {
         return String(format: "%.8f DASH", dash)
     }
 
+    /// Masternode registration / service-update details, shown only for
+    /// ProRegTx / ProUpServTx rows. All fields come pre-parsed from the
+    /// Rust FFI (`PersistentTransaction.provider*`); this view only
+    /// renders them. Broken out so `body`'s type-check stays cheap.
+    @ViewBuilder
+    private var masternodeSection: some View {
+        if transaction.isProviderRegistration || transaction.isProviderUpdateService {
+            VStack(alignment: .leading, spacing: 16) {
+                Text(transaction.isProviderRegistration
+                    ? "Masternode Registration"
+                    : "Masternode Service Update")
+                    .font(.headline)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                if let service = transaction.providerServiceAddress {
+                    TransactionDetailRow(label: "Service", value: service)
+                }
+                if let proTxHash = transaction.providerProTxHashHex {
+                    copyableHashRow(title: "Pro Tx Hash", value: proTxHash)
+                }
+                if let collateral = transaction.providerCollateralDisplay {
+                    copyableHashRow(title: "Collateral Outpoint", value: collateral)
+                }
+                if let ownerKeyHash = transaction.providerOwnerKeyHashHex {
+                    copyableHashRow(title: "Owner Key Hash", value: ownerKeyHash)
+                }
+                if let votingKeyHash = transaction.providerVotingKeyHashHex {
+                    copyableHashRow(title: "Voting Key Hash", value: votingKeyHash)
+                }
+            }
+        }
+    }
+
+    /// Caption + monospaced, tap-to-copy value block — same styling as
+    /// the Transaction ID / Block Hash rows.
+    @ViewBuilder
+    private func copyableHashRow(title: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(.caption)
+                .foregroundColor(.secondary)
+
+            Button {
+                copyToClipboard(value)
+            } label: {
+                HStack {
+                    Text(value)
+                        .font(.system(.footnote, design: .monospaced))
+                        .foregroundColor(.primary)
+                        .lineLimit(nil)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    Spacer()
+
+                    Image(systemName: "doc.on.doc")
+                        .font(.caption)
+                        .foregroundColor(.blue)
+                }
+                .padding()
+                .background(Color(UIColor.secondarySystemBackground))
+                .cornerRadius(8)
+            }
+        }
+    }
+
     var body: some View {
         NavigationView {
             ScrollView {
@@ -150,62 +215,14 @@ struct TransactionDetailView: View {
                             )
                         }
 
+                        masternodeSection
+
                         // Transaction ID
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Transaction ID")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-
-                            Button {
-                                copyToClipboard(transaction.txidHex)
-                            } label: {
-                                HStack {
-                                    Text(transaction.txidHex)
-                                        .font(.system(.footnote, design: .monospaced))
-                                        .foregroundColor(.primary)
-                                        .lineLimit(nil)
-                                        .fixedSize(horizontal: false, vertical: true)
-
-                                    Spacer()
-
-                                    Image(systemName: "doc.on.doc")
-                                        .font(.caption)
-                                        .foregroundColor(.blue)
-                                }
-                                .padding()
-                                .background(Color(UIColor.secondarySystemBackground))
-                                .cornerRadius(8)
-                            }
-                        }
+                        copyableHashRow(title: "Transaction ID", value: transaction.txidHex)
 
                         // Block Hash (if available)
                         if let blockHash = blockHashHex {
-                            VStack(alignment: .leading, spacing: 8) {
-                                Text("Block Hash")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-
-                                Button {
-                                    copyToClipboard(blockHash)
-                                } label: {
-                                    HStack {
-                                        Text(blockHash)
-                                            .font(.system(.footnote, design: .monospaced))
-                                            .foregroundColor(.primary)
-                                            .lineLimit(nil)
-                                            .fixedSize(horizontal: false, vertical: true)
-
-                                        Spacer()
-
-                                        Image(systemName: "doc.on.doc")
-                                            .font(.caption)
-                                            .foregroundColor(.blue)
-                                    }
-                                    .padding()
-                                    .background(Color(UIColor.secondarySystemBackground))
-                                    .cornerRadius(8)
-                                }
-                            }
+                            copyableHashRow(title: "Block Hash", value: blockHash)
                         }
                     }
                     .padding(.horizontal)

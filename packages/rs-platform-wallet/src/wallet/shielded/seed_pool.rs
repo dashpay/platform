@@ -302,7 +302,10 @@ impl PlatformWallet {
                             "seed batch finality timed out; pausing for a core block then \
                              resuming the tracked lock"
                         );
-                        funding = AssetLockFunding::FromExistingAssetLock { out_point };
+                        funding = AssetLockFunding::FromExistingAssetLock {
+                            out_point,
+                            consume_invitation_voucher: false,
+                        };
                         tokio::time::sleep(SEED_BATCH_RETRY_PAUSE).await;
                     }
                     Err(e) => return Err(e),

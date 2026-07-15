@@ -255,13 +255,18 @@ impl EncryptedFileStore {
         // Lock first — every subsequent step assumes exclusive ownership.
         let lock = VaultLock::acquire(&lock_path_for(&path))?;
 
+        // Built before the create branch so the initial-create write bumps
+        // the same counter every later write does — keeping
+        // `durability_uncertain_count`'s "0 == all writes confirmed durable"
+        // contract honest for the create path too.
+        let durability_uncertain = Arc::new(AtomicU64::new(0));
+
         // NotFound → create fresh; anything else → load.
         let (vault, derived_key) = match Self::load_existing_vault(&path, &passphrase)? {
             Some(loaded) => loaded,
-            None => Self::create_new_vault(&path, &passphrase, kdf)?,
+            None => Self::create_new_vault(&path, &passphrase, kdf, &durability_uncertain)?,
         };
 
-        let durability_uncertain = Arc::new(AtomicU64::new(0));
         Ok(Self {
             inner: Arc::new(Mutex::new(EncryptedFileStoreInner {
                 path,
@@ -316,11 +321,10 @@ impl EncryptedFileStore {
         path: &Path,
         passphrase: &SecretString,
         kdf: KdfParams,
+        durability_uncertain: &AtomicU64,
     ) -> Result<(Vault, SecretBytes), SecretStoreError> {
         let (vault, key) = build_fresh_vault(passphrase, kdf)?;
-        // Initial create: the store isn't built yet, so no durability counter
-        // to bump — a brand-new store's count starts at 0.
-        write_vault_at(path, &vault, None)?;
+        write_vault_at(path, &vault, Some(durability_uncertain))?;
         Ok((vault, key))
     }
 
@@ -593,8 +597,12 @@ impl EncryptedFileStoreInner {
 impl Drop for EncryptedFileStoreInner {
     fn drop(&mut self) {
         // Best-effort final sync. Redundant in the success path (every
-        // mutation eager-syncs) but kept as a contract anchor.
-        if let Err(e) = self.sync_to_disk() {
+        // mutation eager-syncs) but kept as a contract anchor. Calls the
+        // non-logging `do_write_vault_at` so this drop-context `warn!` is the
+        // sole log line, not a second one behind `write_vault_at`'s own inner
+        // warn (which still fires for the put/delete/rekey paths).
+        if let Err(e) = do_write_vault_at(&self.path, &self.vault, Some(&self.durability_uncertain))
+        {
             tracing::warn!(error = %e, "drop-time vault sync failed");
         }
         // Re-assert 0600 on Unix in case a peer loosened it while we held
@@ -765,13 +773,15 @@ fn do_write_vault_at(
     // back in-memory state that already matches the on-disk vault — diverging the
     // live handle from disk. So this stays NON-FATAL: the write returns `Ok` and
     // the data is committed + visible. We surface the unconfirmed power-loss
-    // durability two ways instead of swallowing it — an `error!` log AND a bump
-    // of the pollable `durability_uncertain` counter
+    // durability two ways instead of swallowing it — a `warn!` log (the
+    // condition is degraded-but-recoverable, self-healing on the next
+    // confirmed write, NOT the fatal `error!` a propagated write failure
+    // gets) AND a bump of the pollable `durability_uncertain` counter
     // ([`EncryptedFileStore::durability_uncertain_count`]).
     #[cfg(unix)]
     {
         let signal_unconfirmed = |e: &std::io::Error| {
-            tracing::error!(
+            tracing::warn!(
                 error = %e,
                 parent = %parent.display(),
                 "parent-dir fsync unconfirmed after vault persist; data is committed on disk \
@@ -812,13 +822,14 @@ fn create_parent_dir(parent: &Path) -> Result<(), SecretStoreError> {
         fs::DirBuilder::new()
             .mode(0o700)
             .recursive(true)
-            .create(parent)?;
+            .create(parent)
+            .map_err(|e| SecretStoreError::io_at(parent, e))?;
     }
     // INTENTIONAL: Windows parent-dir ACL hardening deferred to
     // https://github.com/dashpay/platform/issues/3754 — tighten manually.
     #[cfg(not(unix))]
     {
-        fs::create_dir_all(parent)?;
+        fs::create_dir_all(parent).map_err(|e| SecretStoreError::io_at(parent, e))?;
     }
     Ok(())
 }
@@ -859,9 +870,15 @@ mod vault_lock {
     // member is a `File`/`RawFd`, both `Send + Sync`). The raw pointer
     // points at the heap-pinned `RwLock` this struct owns; sending the
     // struct moves ownership of the box address with it.
-    #[allow(unsafe_code)]
+    #[expect(
+        unsafe_code,
+        reason = "sole owner of the heap-pinned RwLock the raw pointer targets"
+    )]
     unsafe impl Send for VaultLock {}
-    #[allow(unsafe_code)]
+    #[expect(
+        unsafe_code,
+        reason = "sole owner of the heap-pinned RwLock the raw pointer targets"
+    )]
     unsafe impl Sync for VaultLock {}
 
     impl VaultLock {
@@ -894,7 +911,10 @@ mod vault_lock {
             // at a valid `RwLock<File>`. No other reference exists
             // yet, so promoting it to `&'static mut` is sound for the
             // borrow we hand to `try_write`.
-            #[allow(unsafe_code)]
+            #[expect(
+                unsafe_code,
+                reason = "sole reference to a fresh Box::into_raw allocation; no aliasing"
+            )]
             let static_ref: &'static mut fd_lock::RwLock<fs::File> = unsafe { &mut *raw };
 
             let guard = match static_ref.try_write() {
@@ -904,13 +924,16 @@ mod vault_lock {
                     // no live borrow points at the box; reclaiming
                     // here is sound and avoids leaking on the error
                     // path.
-                    #[allow(unsafe_code)]
+                    #[expect(
+                        unsafe_code,
+                        reason = "guard never created, so no live borrow; reclaim the box"
+                    )]
                     unsafe {
                         drop(Box::from_raw(raw))
                     };
                     return Err(match e.kind() {
                         std::io::ErrorKind::WouldBlock => SecretStoreError::AlreadyLocked,
-                        _ => SecretStoreError::from(e),
+                        _ => SecretStoreError::io_at(lock_path, e),
                     });
                 }
             };
@@ -931,7 +954,10 @@ mod vault_lock {
             // the guard has just been dropped (no live borrow), and we
             // are the only owner. Reclaiming the Box runs the
             // `RwLock`'s Drop, which closes the file fd.
-            #[allow(unsafe_code)]
+            #[expect(
+                unsafe_code,
+                reason = "guard dropped first; sole owner reclaims the box"
+            )]
             unsafe {
                 drop(Box::from_raw(self.rwlock))
             };
@@ -1018,7 +1044,7 @@ impl std::fmt::Debug for EncryptedFileCredential {
 
 impl CredentialApi for EncryptedFileCredential {
     fn set_secret(&self, secret: &[u8]) -> KeyringResult<()> {
-        let _ = validated_label(&self.label).map_err(SecretStoreError::from)?;
+        validated_label(&self.label).map_err(SecretStoreError::from)?;
         // Cap before wrapping so an oversized secret is never materialized.
         if secret.len() > MAX_SECRET_LEN {
             return Err(KeyringError::from(SecretStoreError::SecretTooLarge {
@@ -1036,7 +1062,7 @@ impl CredentialApi for EncryptedFileCredential {
     }
 
     fn get_secret(&self) -> KeyringResult<Vec<u8>> {
-        let _ = validated_label(&self.label).map_err(SecretStoreError::from)?;
+        validated_label(&self.label).map_err(SecretStoreError::from)?;
         match self.store.get_bytes(&self.wallet_id, &self.label) {
             // SPI contract forces a bare Vec; caller owns disposal —
             // prefer SecretStore::get for a zeroizing SecretBytes.
@@ -1047,7 +1073,7 @@ impl CredentialApi for EncryptedFileCredential {
     }
 
     fn delete_credential(&self) -> KeyringResult<()> {
-        let _ = validated_label(&self.label).map_err(SecretStoreError::from)?;
+        validated_label(&self.label).map_err(SecretStoreError::from)?;
         match self.store.delete_bytes(&self.wallet_id, &self.label) {
             Ok(true) => Ok(()),
             Ok(false) => Err(KeyringError::NoEntry),
