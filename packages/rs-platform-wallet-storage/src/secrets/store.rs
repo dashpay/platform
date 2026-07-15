@@ -413,7 +413,17 @@ fn map_spi(e: KeyringError) -> SecretStoreError {
         KeyringError::NoDefaultStore => SecretStoreError::OsKeyring {
             kind: OsKeyringErrorKind::NoDefaultStore,
         },
-        KeyringError::Invalid(_, _) => SecretStoreError::InvalidLabel,
+        // The label rides as the keyring `user` attribute (the reverse
+        // projection maps `InvalidLabel` back to `Invalid("user", _)`), so
+        // only a rejected `user` is an invalid label. A rejected service —
+        // `SERVICE_PREFIX` + 64 hex chars, longer than some backends' caps
+        // — or any other attribute is a backend constraint, not the
+        // caller's label; mislabelling it `InvalidLabel` sends the caller to
+        // "fix" a label that was never wrong.
+        KeyringError::Invalid(attr, _) if attr == "user" => SecretStoreError::InvalidLabel,
+        KeyringError::Invalid(_, _) => SecretStoreError::OsKeyring {
+            kind: OsKeyringErrorKind::Backend,
+        },
         KeyringError::BadStoreFormat(_)
         | KeyringError::BadEncoding(_)
         | KeyringError::BadDataFormat(_, _) => SecretStoreError::OsKeyring {
@@ -620,6 +630,34 @@ mod tests {
             assert!(
                 matches!(err, SecretStoreError::InvalidLabel),
                 "delete with label {bad:?} should reject as InvalidLabel, got {err:?}"
+            );
+        }
+    }
+
+    /// `map_spi` only collapses a rejected `user` (label) attribute to
+    /// `InvalidLabel`; a rejected `service` (or any other attribute) is a
+    /// backend constraint, not the caller's label.
+    #[test]
+    fn map_spi_only_user_invalid_is_label() {
+        let label = map_spi(KeyringError::Invalid(
+            "user".to_string(),
+            "allowlist".to_string(),
+        ));
+        assert!(matches!(label, SecretStoreError::InvalidLabel));
+
+        for attr in ["service", "target", "something-else"] {
+            let mapped = map_spi(KeyringError::Invalid(
+                attr.to_string(),
+                "too long".to_string(),
+            ));
+            assert!(
+                matches!(
+                    mapped,
+                    SecretStoreError::OsKeyring {
+                        kind: OsKeyringErrorKind::Backend
+                    }
+                ),
+                "Invalid({attr:?}, _) must map to a backend failure, got {mapped:?}"
             );
         }
     }
