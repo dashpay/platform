@@ -53,10 +53,20 @@ const UPSERT_POOL_SQL: &str = "INSERT INTO core_address_pool \
         key_type = excluded.key_type, \
         used = MAX(used, excluded.used)";
 
+const TYPED_POOL_CONFLICT_SQL: &str = "SELECT EXISTS( \
+        SELECT 1 FROM core_address_pool \
+        WHERE wallet_id = ?1 AND account_type = ?2 AND account_index = ?3 \
+          AND key_class = ?4 AND user_identity_id = ?5 AND friend_identity_id = ?6 \
+          AND pool_type = ?7 AND address_index = ?8 \
+          AND key_type IS NOT NULL AND public_key IS NOT NULL \
+          AND (public_key <> ?9 OR key_type <> ?10) \
+    )";
+
 /// Expand `account_address_pools` snapshots into per-index
 /// `core_address_pool` rows. Idempotent: `script` is derivation-stable and
 /// `used` is monotonic (`MAX`), so re-applying the same snapshot is a no-op
 /// and a used address can never revert to unused (the reuse-guard invariant).
+/// Typed rows reject conflicting key material already stored at the same key.
 pub fn apply_pools(
     tx: &Transaction<'_>,
     wallet_id: &WalletId,
@@ -65,7 +75,8 @@ pub fn apply_pools(
     if pools.is_empty() {
         return Ok(());
     }
-    let mut stmt = tx.prepare_cached(UPSERT_POOL_SQL)?;
+    let mut conflict_stmt = tx.prepare_cached(TYPED_POOL_CONFLICT_SQL)?;
+    let mut upsert_stmt = tx.prepare_cached(UPSERT_POOL_SQL)?;
     for entry in pools {
         // `account_type` discriminates accounts that collapse to the same
         // `(account_index, key_class)` sentinel (e.g. `IdentityRegistration`
@@ -93,7 +104,30 @@ pub fn apply_pools(
                 Some(PublicKeyType::EdDSA(bytes)) => (Some(bytes.as_slice()), Some(KEY_TYPE_EDDSA)),
                 Some(PublicKeyType::BLS(bytes)) => (Some(bytes.as_slice()), Some(KEY_TYPE_BLS)),
             };
-            stmt.execute(params![
+            if key_type.is_some() {
+                let conflicts = conflict_stmt.query_row(
+                    params![
+                        wallet_id.as_slice(),
+                        account_type,
+                        account_index,
+                        key_class,
+                        user_identity_id.as_slice(),
+                        friend_identity_id.as_slice(),
+                        pool_type,
+                        i64::from(info.index),
+                        public_key,
+                        key_type,
+                    ],
+                    |row| row.get::<_, bool>(0),
+                )?;
+                if conflicts {
+                    return Err(WalletStorageError::TypedPoolKeyConflict {
+                        account_type,
+                        address_index: info.index,
+                    });
+                }
+            }
+            upsert_stmt.execute(params![
                 wallet_id.as_slice(),
                 account_type,
                 account_index,

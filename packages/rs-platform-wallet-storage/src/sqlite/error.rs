@@ -249,6 +249,17 @@ pub enum WalletStorageError {
     )]
     ProviderKeyAccountConflict { account_type: &'static str },
 
+    /// An incoming typed address-pool row conflicts with key material already
+    /// persisted at the same account, pool, and address index.
+    #[error(
+        "conflicting typed pool key for {account_type} at address index {address_index} \
+         (public key or key type differs)"
+    )]
+    TypedPoolKeyConflict {
+        account_type: &'static str,
+        address_index: u32,
+    },
+
     /// Account was rejected by the wallet manager (e.g. `account_type` is unknown, or
     /// `account_index` is out of range). The `cause` is a static string describing the reason.
     #[error("account rejected by wallet manager: {cause}")]
@@ -459,6 +470,7 @@ impl WalletStorageError {
             | Self::AccountRegistrationEntryMismatch
             | Self::ProviderKeyAccountEntryMismatch
             | Self::ProviderKeyAccountConflict { .. }
+            | Self::TypedPoolKeyConflict { .. }
             | Self::AccountRecordInvalid { .. }
             | Self::MissingAccount { .. }
             | Self::AccountRejected { .. }
@@ -548,6 +560,7 @@ impl WalletStorageError {
             Self::AccountRegistrationEntryMismatch => "account_registration_entry_mismatch",
             Self::ProviderKeyAccountEntryMismatch => "provider_key_account_entry_mismatch",
             Self::ProviderKeyAccountConflict { .. } => "provider_key_account_conflict",
+            Self::TypedPoolKeyConflict { .. } => "typed_pool_key_conflict",
             Self::AssetLockEntryMismatch { .. } => "asset_lock_entry_mismatch",
             Self::BlobTooLarge { .. } => "blob_too_large",
             Self::IntegerOverflow { .. } => "integer_overflow",
