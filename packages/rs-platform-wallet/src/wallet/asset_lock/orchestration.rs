@@ -121,20 +121,27 @@ pub enum AssetLockFunding {
     /// - `AssetLockAddressTopUp` — for platform-address funding flows
     /// - others — see [`AssetLockFundingType`]
     ///
-    /// `account_index` selects which BIP44 *standard* account (by
-    /// BIP44 account index) supplies the UTXOs. Only BIP44 standard
-    /// accounts are supported today — CoinJoin / BIP32 funding for
-    /// any asset-lock-funded operation is out of scope and would
-    /// require additional plumbing in
-    /// [`AssetLockManager::create_funded_asset_lock_proof`].
+    /// `account_index` selects the PRIMARY BIP44 *standard* account (by
+    /// BIP44 account index) — it supplies the change address and its
+    /// reservation ledger gates concurrent primary-account builds.
+    ///
+    /// Input SELECTION scope depends on the funding type:
+    ///
+    /// - `AssetLockShieldedAddressTopUp` — funds from the UNION of every
+    ///   spendable funds account (BIP44 + BIP32 + CoinJoin + DashPay), so
+    ///   previously-mixed CoinJoin coins can be shielded
+    ///   (dashpay/platform#4073). See
+    ///   [`AssetLockManager::build_asset_lock_tx_from_all_funding_accounts`].
+    /// - every other funding type — funds from the single BIP44 account at
+    ///   `account_index` only (spending mixed CoinJoin coins into an
+    ///   identity registration would de-anonymize them). This is the pinned
+    ///   key-wallet `build_asset_lock_with_signer` behavior.
     FromWalletBalance {
         /// Amount to lock (in duffs).
         amount_duffs: u64,
-        /// BIP44 standard-account index to draw the funding UTXOs from.
-        ///
-        /// Only BIP44 standard accounts (`AccountType::Standard` with
-        /// `StandardAccountTypeTag::Bip44`) are supported today;
-        /// CoinJoin / BIP32 are not.
+        /// Primary BIP44 standard-account index. Supplies the change
+        /// address and reservation ledger; for shielded funding the input
+        /// set is widened to every spendable funds account (see above).
         account_index: u32,
     },
 
