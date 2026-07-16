@@ -55,12 +55,14 @@ public final class EstablishedContact: @unchecked Sendable {
     }
 
     /// Set the contact's alias
+    @available(*, deprecated, message: "Mutates a detached FFI clone — the change never reaches wallet state, is never persisted, and is silently lost when the handle is freed. Use ManagedPlatformWallet.setDashPayContactInfo(identityId:contactId:alias:note:hidden:signer:), which writes real state and publishes the encrypted contactInfo document.")
     public func setAlias(_ alias: String) throws {
         let aliasCStr = (alias as NSString).utf8String
         try established_contact_set_alias(handle, aliasCStr).check()
     }
 
     /// Clear the contact's alias
+    @available(*, deprecated, message: "Mutates a detached FFI clone — the change never reaches wallet state, is never persisted, and is silently lost when the handle is freed. Use ManagedPlatformWallet.setDashPayContactInfo(identityId:contactId:alias:note:hidden:signer:), which writes real state and publishes the encrypted contactInfo document.")
     public func clearAlias() throws {
         try established_contact_clear_alias(handle).check()
     }
@@ -92,12 +94,14 @@ public final class EstablishedContact: @unchecked Sendable {
     }
 
     /// Set the contact's note
+    @available(*, deprecated, message: "Mutates a detached FFI clone — the change never reaches wallet state, is never persisted, and is silently lost when the handle is freed. Use ManagedPlatformWallet.setDashPayContactInfo(identityId:contactId:alias:note:hidden:signer:), which writes real state and publishes the encrypted contactInfo document.")
     public func setNote(_ note: String) throws {
         let noteCStr = (note as NSString).utf8String
         try established_contact_set_note(handle, noteCStr).check()
     }
 
     /// Clear the contact's note
+    @available(*, deprecated, message: "Mutates a detached FFI clone — the change never reaches wallet state, is never persisted, and is silently lost when the handle is freed. Use ManagedPlatformWallet.setDashPayContactInfo(identityId:contactId:alias:note:hidden:signer:), which writes real state and publishes the encrypted contactInfo document.")
     public func clearNote() throws {
         try established_contact_clear_note(handle).check()
     }
@@ -110,11 +114,13 @@ public final class EstablishedContact: @unchecked Sendable {
     }
 
     /// Hide the contact
+    @available(*, deprecated, message: "Mutates a detached FFI clone — the change never reaches wallet state, is never persisted, and is silently lost when the handle is freed. Use ManagedPlatformWallet.setDashPayContactInfo(identityId:contactId:alias:note:hidden:signer:), which writes real state and publishes the encrypted contactInfo document.")
     public func hide() throws {
         try established_contact_hide(handle).check()
     }
 
     /// Unhide the contact
+    @available(*, deprecated, message: "Mutates a detached FFI clone — the change never reaches wallet state, is never persisted, and is silently lost when the handle is freed. Use ManagedPlatformWallet.setDashPayContactInfo(identityId:contactId:alias:note:hidden:signer:), which writes real state and publishes the encrypted contactInfo document.")
     public func unhide() throws {
         try established_contact_unhide(handle).check()
     }

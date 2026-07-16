@@ -118,6 +118,10 @@ pub unsafe extern "C" fn established_contact_get_alias(
 }
 
 /// Set the alias for an established contact
+/// **Handle-local only**: mutates the clone held by this handle, NOT the
+/// wallet manager's contact state — the change is never persisted and is
+/// lost when the handle is freed. Real writes go through
+/// `platform_wallet_set_dashpay_contact_info_with_signer`.
 #[no_mangle]
 pub unsafe extern "C" fn established_contact_set_alias(
     contact_handle: Handle,
@@ -141,6 +145,10 @@ pub unsafe extern "C" fn established_contact_set_alias(
 }
 
 /// Clear the alias for an established contact
+/// **Handle-local only**: mutates the clone held by this handle, NOT the
+/// wallet manager's contact state — the change is never persisted and is
+/// lost when the handle is freed. Real writes go through
+/// `platform_wallet_set_dashpay_contact_info_with_signer`.
 #[no_mangle]
 pub unsafe extern "C" fn established_contact_clear_alias(
     contact_handle: Handle,
@@ -175,6 +183,10 @@ pub unsafe extern "C" fn established_contact_get_note(
 }
 
 /// Set the note for an established contact
+/// **Handle-local only**: mutates the clone held by this handle, NOT the
+/// wallet manager's contact state — the change is never persisted and is
+/// lost when the handle is freed. Real writes go through
+/// `platform_wallet_set_dashpay_contact_info_with_signer`.
 #[no_mangle]
 pub unsafe extern "C" fn established_contact_set_note(
     contact_handle: Handle,
@@ -198,6 +210,10 @@ pub unsafe extern "C" fn established_contact_set_note(
 }
 
 /// Clear the note for an established contact
+/// **Handle-local only**: mutates the clone held by this handle, NOT the
+/// wallet manager's contact state — the change is never persisted and is
+/// lost when the handle is freed. Real writes go through
+/// `platform_wallet_set_dashpay_contact_info_with_signer`.
 #[no_mangle]
 pub unsafe extern "C" fn established_contact_clear_note(
     contact_handle: Handle,
@@ -245,6 +261,10 @@ pub unsafe extern "C" fn established_contact_is_payment_channel_broken(
 }
 
 /// Hide an established contact from the contact list
+/// **Handle-local only**: mutates the clone held by this handle, NOT the
+/// wallet manager's contact state — the change is never persisted and is
+/// lost when the handle is freed. Real writes go through
+/// `platform_wallet_set_dashpay_contact_info_with_signer`.
 #[no_mangle]
 pub unsafe extern "C" fn established_contact_hide(
     contact_handle: Handle,
@@ -257,6 +277,14 @@ pub unsafe extern "C" fn established_contact_hide(
 }
 
 /// Unhide an established contact
+/// **Handle-local only**: mutates the clone held by this handle, NOT the
+/// wallet manager's contact state — the change is never persisted and is
+/// lost when the handle is freed. Real writes go through
+/// `platform_wallet_set_dashpay_contact_info_with_signer`.
+/// **Handle-local only**: mutates the clone held by this handle, NOT the
+/// wallet manager's contact state — the change is never persisted and is
+/// lost when the handle is freed. Real writes go through
+/// `platform_wallet_set_dashpay_contact_info_with_signer`.
 #[no_mangle]
 pub unsafe extern "C" fn established_contact_unhide(
     contact_handle: Handle,
