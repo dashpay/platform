@@ -223,11 +223,12 @@ class ManagedPlatformWallet internal constructor(
      * The BIP70/BIP270 counterpart to [sendToAddresses]: those protocols sign,
      * POST the raw bytes to a merchant server, and broadcast only on ack, which
      * a single build-sign-broadcast call cannot express. The `new → addOutput* →
-     * setFunding → buildSigned` build runs under the same per-wallet
-     * [coreSendMutex] as [sendToAddresses] (closing the setFunding/buildSigned
-     * selection race); [buildSigned] reserves the selected UTXOs, so once this
-     * returns the reservation holds the inputs and [broadcastSigned] /
-     * [releaseReservation] operate on the token later WITHOUT the mutex.
+     * setFunding → buildSigned` build runs under the same per-wallet teardown
+     * gate ([gate]) as [sendToAddresses]; [buildSigned] atomically reserves the
+     * selected UTXOs in the Rust reservation layer (which closes the
+     * setFunding/buildSigned selection race), so once this returns the
+     * reservation holds the inputs and [broadcastSigned] / [releaseReservation]
+     * operate on the token later.
      *
      * Process-death note: the reservation is in-memory. An app crash between
      * this call and [broadcastSigned] drops the reservation on restart (the
@@ -243,7 +244,7 @@ class ManagedPlatformWallet internal constructor(
         coreSignerHandle: Long,
         accountType: AccountType = AccountType.BIP44,
         accountIndex: Int = 0,
-    ): SignedCoreTransaction = withContext(Dispatchers.IO) {
+    ): SignedCoreTransaction = gate.op {
         require(accountIndex >= 0) { "accountIndex must be non-negative, got $accountIndex" }
         require(recipients.isNotEmpty()) { "recipients must not be empty" }
         require(recipients.all { it.second > 0 }) {
@@ -253,28 +254,26 @@ class ManagedPlatformWallet internal constructor(
             AccountType.BIP44 -> CoreTransactionBuilder.AccountType.BIP44
             AccountType.BIP32 -> CoreTransactionBuilder.AccountType.BIP32
         }
-        coreSendMutex.withLock {
-            mapNativeErrors {
-                coreWallet().use { core ->
-                    val builder = CoreTransactionBuilder(network)
-                    // `buildSigned` consumes the builder; `use` still safely
-                    // destroys it on the pre-build failure paths.
-                    val signedTx = builder.use {
-                        for ((address, amount) in recipients) {
-                            it.addOutput(address, amount)
-                        }
-                        it.setFunding(this@ManagedPlatformWallet, builderAccountType, accountIndex)
-                        it.buildSigned(
-                            this@ManagedPlatformWallet,
-                            builderAccountType,
-                            accountIndex,
-                            coreSignerHandle,
-                        )
+        mapNativeErrors {
+            coreWallet().use { core ->
+                val builder = CoreTransactionBuilder(network)
+                // `buildSigned` consumes the builder; `use` still safely
+                // destroys it on the pre-build failure paths.
+                val signedTx = builder.use {
+                    for ((address, amount) in recipients) {
+                        it.addOutput(address, amount)
                     }
-                    // Register the signed tx (holding its reservation) before the
-                    // native transaction is freed; `use` frees it afterward.
-                    signedTx.use { tx -> core.registerSignedPayment(tx) }
+                    it.setFunding(this@ManagedPlatformWallet, builderAccountType, accountIndex)
+                    it.buildSigned(
+                        this@ManagedPlatformWallet,
+                        builderAccountType,
+                        accountIndex,
+                        coreSignerHandle,
+                    )
                 }
+                // Register the signed tx (holding its reservation) before the
+                // native transaction is freed; `use` frees it afterward.
+                signedTx.use { tx -> core.registerSignedPayment(tx) }
             }
         }
     }
@@ -285,8 +284,8 @@ class ManagedPlatformWallet internal constructor(
      * the token: a second [broadcastSigned] with the same token, or one for a
      * re-created wallet, throws
      * [org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.StaleReservationToken]
-     * rather than double-broadcasting. Operates on the token WITHOUT the
-     * [coreSendMutex] (the inputs are already reserved).
+     * rather than double-broadcasting. Operates on the token directly (the
+     * inputs are already reserved).
      */
     suspend fun broadcastSigned(token: Long): String = withContext(Dispatchers.IO) {
         mapNativeErrors {
