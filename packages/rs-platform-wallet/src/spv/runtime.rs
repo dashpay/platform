@@ -1,11 +1,11 @@
 //! SPV client runtime — manages the DashSpvClient lifecycle.
 
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use tokio::sync::RwLock;
 use tokio::task::JoinHandle;
 
+use dashcore::sml::llmq_entry_verification::LLMQEntryVerificationStatus;
 use dashcore::sml::llmq_type::LLMQType;
 use dashcore::{QuorumHash, Transaction};
 
@@ -43,6 +43,19 @@ fn quorum_lookup_key(display_order: [u8; 32]) -> QuorumHash {
     QuorumHash::from_byte_array(internal_order)
 }
 
+fn verified_quorum_public_key(
+    status: &LLMQEntryVerificationStatus,
+    public_key: [u8; 48],
+) -> Result<[u8; 48], PlatformWalletError> {
+    if matches!(status, LLMQEntryVerificationStatus::Verified) {
+        Ok(public_key)
+    } else {
+        Err(PlatformWalletError::SpvError(format!(
+            "quorum entry is not cryptographically verified: {status:?}"
+        )))
+    }
+}
+
 /// SPV client runtime — owns the `DashSpvClient` and drives sync.
 ///
 /// Events are dispatched through [`PlatformEventManager`] to all registered
@@ -54,35 +67,6 @@ pub struct SpvRuntime {
     last_config: RwLock<Option<ClientConfig>>,
     task: Mutex<Option<JoinHandle<()>>>,
     peer_tracker: Arc<PeerTracker>,
-    readiness: Arc<SpvReadiness>,
-}
-
-#[derive(Default)]
-struct SpvReadiness {
-    ready: AtomicBool,
-}
-
-impl SpvReadiness {
-    fn clear(&self) {
-        self.ready.store(false, Ordering::Release);
-    }
-
-    fn is_ready(&self) -> bool {
-        self.ready.load(Ordering::Acquire)
-    }
-}
-
-impl EventHandler for SpvReadiness {
-    fn on_progress(&self, progress: &SyncProgress) {
-        let headers_ready = progress
-            .headers()
-            .is_ok_and(|headers| headers.state() == SyncState::Synced);
-        let masternodes_ready = progress
-            .masternodes()
-            .is_ok_and(|masternodes| masternodes.state() == SyncState::Synced);
-        self.ready
-            .store(headers_ready && masternodes_ready, Ordering::Release);
-    }
 }
 /// Classify a dash-spv broadcast failure per the
 /// [`TransactionBroadcaster::broadcast`] contract.
@@ -123,7 +107,6 @@ impl SpvRuntime {
             last_config: RwLock::new(None),
             task: Mutex::new(None),
             peer_tracker: Arc::new(PeerTracker::default()),
-            readiness: Arc::new(SpvReadiness::default()),
         }
     }
 
@@ -135,8 +118,6 @@ impl SpvRuntime {
                 return Err(PlatformWalletError::SpvAlreadyRunning);
             }
         }
-        self.readiness.clear();
-
         let network_manager = PeerNetworkManager::new(&config)
             .await
             .map_err(|e| PlatformWalletError::SpvError(e.to_string()))?;
@@ -150,7 +131,6 @@ impl SpvRuntime {
         let event_handlers: Vec<Arc<dyn EventHandler>> = vec![
             Arc::clone(&self.event_manager) as Arc<dyn EventHandler>,
             Arc::clone(&self.peer_tracker) as Arc<dyn EventHandler>,
-            Arc::clone(&self.readiness) as Arc<dyn EventHandler>,
         ];
 
         let retained_config = config.clone();
@@ -177,9 +157,17 @@ impl SpvRuntime {
         self.client.try_read().map(|c| c.is_some()).unwrap_or(false)
     }
 
-    /// Whether header and masternode-list synchronization are both complete.
-    pub fn is_ready(&self) -> bool {
-        self.readiness.is_ready()
+    /// Whether dash-spv's current progress reports both header and
+    /// masternode-list synchronization complete.
+    pub async fn is_ready(&self) -> bool {
+        self.sync_progress().await.is_some_and(|progress| {
+            progress
+                .headers()
+                .is_ok_and(|headers| headers.state() == SyncState::Synced)
+                && progress
+                    .masternodes()
+                    .is_ok_and(|masternodes| masternodes.state() == SyncState::Synced)
+        })
     }
 
     /// Broadcast a transaction to all connected SPV peers.
@@ -228,7 +216,10 @@ impl SpvRuntime {
             .await
             .map_err(|e| PlatformWalletError::SpvError(e.to_string()))?;
 
-        Ok(*quorum.quorum_entry.quorum_public_key.as_ref())
+        verified_quorum_public_key(
+            &quorum.verified,
+            *quorum.quorum_entry.quorum_public_key.as_ref(),
+        )
     }
 
     /// Drive the sync loop of an already-[`start`]ed client until [`stop`]
@@ -248,7 +239,6 @@ impl SpvRuntime {
             .await
             .map_err(|e| PlatformWalletError::SpvError(e.to_string()));
 
-        self.readiness.clear();
         let mut client = self.client.write().await;
         let _ = client.take();
         self.peer_tracker.clear();
@@ -258,7 +248,6 @@ impl SpvRuntime {
 
     /// Stop SPV sync gracefully. Unlocks the data dir safely
     pub async fn stop(&self) -> Result<(), PlatformWalletError> {
-        self.readiness.clear();
         let taken = {
             let mut client = self.client.write().await;
             client.take()
@@ -447,11 +436,17 @@ mod tests {
     use std::sync::Arc;
 
     use dash_spv::error::{NetworkError, SpvError};
+    use dashcore::sml::llmq_entry_verification::{
+        LLMQEntryVerificationSkipStatus, LLMQEntryVerificationStatus,
+    };
+    use dashcore::sml::quorum_validation_error::QuorumValidationError;
     use dashcore::Network;
     use key_wallet_manager::WalletManager;
     use tokio::sync::RwLock;
 
-    use super::{classify_spv_broadcast_error, quorum_lookup_key, SpvRuntime};
+    use super::{
+        classify_spv_broadcast_error, quorum_lookup_key, verified_quorum_public_key, SpvRuntime,
+    };
     use crate::broadcaster::BroadcastError;
     use crate::events::PlatformEventManager;
     use crate::wallet::platform_wallet::PlatformWalletInfo;
@@ -566,5 +561,28 @@ mod tests {
             None,
             "using the hash without reversal must miss — this was the regression"
         );
+    }
+
+    #[test]
+    fn only_verified_quorums_can_supply_a_public_key() {
+        let public_key = [0xAB; 48];
+        assert_eq!(
+            verified_quorum_public_key(&LLMQEntryVerificationStatus::Verified, public_key).unwrap(),
+            public_key
+        );
+
+        for status in [
+            LLMQEntryVerificationStatus::Unknown,
+            LLMQEntryVerificationStatus::Skipped(
+                LLMQEntryVerificationSkipStatus::NotMarkedForVerification,
+            ),
+            LLMQEntryVerificationStatus::Invalid(QuorumValidationError::InvalidQuorumPublicKey),
+        ] {
+            let error = verified_quorum_public_key(&status, public_key)
+                .unwrap_err()
+                .to_string();
+            assert!(error.contains("not cryptographically verified"));
+            assert!(error.contains(&format!("{status:?}")));
+        }
     }
 }

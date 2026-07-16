@@ -2,7 +2,7 @@
 
 use std::sync::{Arc, OnceLock};
 use tokio::runtime::Runtime;
-use tracing::{debug, error, info, warn};
+use tracing::{error, info, warn};
 
 use dash_sdk::dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
 use dash_sdk::sdk::AddressList;
@@ -11,8 +11,9 @@ use std::ffi::CStr;
 use std::str::FromStr;
 
 use crate::context_provider::{
-    AdaptiveContextProvider, ContextProviderHandle, ContextProviderMode, ContextProviderSource,
-    ContextProviderWrapper, CoreSDKHandle,
+    AdaptiveContextProvider, AdaptiveContextProviderSource, AuxiliaryContextProvider,
+    ContextProviderHandle, ContextProviderMode, ContextProviderWrapper, CoreSDKHandle,
+    SpvContextProvider, SpvSourceController,
 };
 use crate::runtime::BigStackRuntime;
 use crate::types::{DashSDKConfig, FFINetwork, Network, SDKHandle};
@@ -48,6 +49,7 @@ pub(crate) struct SDKWrapper {
     pub runtime: Arc<BigStackRuntime>,
     pub trusted_provider: Option<Arc<rs_sdk_trusted_context_provider::TrustedHttpContextProvider>>,
     pub adaptive_provider: Option<Arc<AdaptiveContextProvider>>,
+    pub spv_source_controller: Option<Arc<SpvSourceController>>,
 }
 
 impl SDKWrapper {
@@ -57,6 +59,7 @@ impl SDKWrapper {
             runtime: Arc::new(BigStackRuntime::new(runtime)),
             trusted_provider: None,
             adaptive_provider: None,
+            spv_source_controller: None,
         }
     }
 
@@ -71,6 +74,7 @@ impl SDKWrapper {
             runtime: Arc::new(BigStackRuntime::new(runtime)),
             trusted_provider: Some(provider),
             adaptive_provider: None,
+            spv_source_controller: None,
         }
     }
 
@@ -86,6 +90,7 @@ impl SDKWrapper {
             runtime,
             trusted_provider: None,
             adaptive_provider: None,
+            spv_source_controller: None,
         }
     }
 }
@@ -181,6 +186,7 @@ pub unsafe extern "C" fn dash_sdk_create(config: *const DashSDKConfig) -> DashSD
                 runtime,
                 trusted_provider: None,
                 adaptive_provider: None,
+                spv_source_controller: None,
             });
             let handle = Box::into_raw(wrapper) as *mut SDKHandle;
             DashSDKResult::success(handle as *mut std::os::raw::c_void)
@@ -294,6 +300,7 @@ pub unsafe extern "C" fn dash_sdk_create_extended(
                 runtime,
                 trusted_provider: None,
                 adaptive_provider: None,
+                spv_source_controller: None,
             });
             let handle = Box::into_raw(wrapper) as *mut SDKHandle;
             DashSDKResult::success(handle as *mut std::os::raw::c_void)
@@ -302,18 +309,54 @@ pub unsafe extern "C" fn dash_sdk_create_extended(
     }
 }
 
-/// Create a new SDK instance with trusted setup
-///
-/// This creates an SDK with a trusted context provider that fetches quorum keys and
-/// data contracts from trusted endpoints instead of requiring proof verification.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum FixedContextProviderKind {
+    Trusted,
+    Spv,
+    Adaptive,
+}
+
+struct FixedProviderParts {
+    provider: Arc<dyn drive_proof_verifier::ContextProvider>,
+    adaptive: Option<Arc<AdaptiveContextProvider>>,
+    spv_source_controller: Option<Arc<SpvSourceController>>,
+}
+
+/// Create an SDK with a fixed trusted context provider.
 ///
 /// # Safety
-/// - `config` must be a valid pointer to a DashSDKConfig structure
-/// # Safety
-/// - `config` must be a valid pointer to a DashSDKConfig structure for the duration of the call.
-/// - The returned handle inside `DashSDKResult` must be destroyed using the SDK destroy function to avoid leaks.
+/// `config` must be valid for the duration of the call.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_create_trusted(config: *const DashSDKConfig) -> DashSDKResult {
+    dash_sdk_create_with_fixed_provider(config, FixedContextProviderKind::Trusted)
+}
+
+/// Create an SDK with a fixed production SPV context provider.
+///
+/// Quorum lookups fail closed until a running wallet manager leases its SPV
+/// source. Contracts and tokens use the local auxiliary cache and embedded
+/// system contracts.
+///
+/// # Safety
+/// `config` must be valid for the duration of the call.
+#[no_mangle]
+pub unsafe extern "C" fn dash_sdk_create_spv(config: *const DashSDKConfig) -> DashSDKResult {
+    dash_sdk_create_with_fixed_provider(config, FixedContextProviderKind::Spv)
+}
+
+/// Create an SDK with a fixed adaptive context provider.
+///
+/// # Safety
+/// `config` must be valid for the duration of the call.
+#[no_mangle]
+pub unsafe extern "C" fn dash_sdk_create_adaptive(config: *const DashSDKConfig) -> DashSDKResult {
+    dash_sdk_create_with_fixed_provider(config, FixedContextProviderKind::Adaptive)
+}
+
+unsafe fn dash_sdk_create_with_fixed_provider(
+    config: *const DashSDKConfig,
+    provider_kind: FixedContextProviderKind,
+) -> DashSDKResult {
     if config.is_null() {
         return DashSDKResult::error(DashSDKError::new(
             DashSDKErrorCode::InvalidParameter,
@@ -334,10 +377,7 @@ pub unsafe extern "C" fn dash_sdk_create_trusted(config: *const DashSDKConfig) -
         }
     };
 
-    info!(
-        ?network,
-        "dash_sdk_create_trusted: creating trusted context provider"
-    );
+    info!(?network, ?provider_kind, "creating SDK context provider");
 
     // Create trusted context provider. Resolution order for the quorum
     // lookup base URL:
@@ -363,7 +403,7 @@ pub unsafe extern "C" fn dash_sdk_create_trusted(config: *const DashSDKConfig) -
     let trusted_provider = if let Some(quorum_url) = explicit_quorum_url {
         info!(
             quorum_url = %quorum_url,
-            "dash_sdk_create_trusted: using caller-provided quorum URL"
+            "using caller-provided quorum URL"
         );
         match rs_sdk_trusted_context_provider::TrustedHttpContextProvider::new_with_url(
             network,
@@ -372,7 +412,7 @@ pub unsafe extern "C" fn dash_sdk_create_trusted(config: *const DashSDKConfig) -
         ) {
             Ok(provider) => Arc::new(provider),
             Err(e) => {
-                error!(error = %e, "dash_sdk_create_trusted: failed to create context provider from override URL");
+                error!(error = %e, "failed to create context provider from override URL");
                 return DashSDKResult::error(DashSDKError::new(
                     DashSDKErrorCode::InternalError,
                     format!("Failed to create context provider: {}", e),
@@ -380,18 +420,18 @@ pub unsafe extern "C" fn dash_sdk_create_trusted(config: *const DashSDKConfig) -
             }
         }
     } else if matches!(network, Network::Regtest) {
-        info!("dash_sdk_create_trusted: using local quorum sidecar for regtest");
+        info!("using local quorum sidecar for regtest");
         match rs_sdk_trusted_context_provider::TrustedHttpContextProvider::new_with_url(
             network,
             "http://127.0.0.1:22444".to_string(),
             std::num::NonZeroUsize::new(100).unwrap(),
         ) {
             Ok(provider) => {
-                info!("dash_sdk_create_trusted: local trusted context provider created");
+                info!("local context provider created");
                 Arc::new(provider)
             }
             Err(e) => {
-                error!(error = %e, "dash_sdk_create_trusted: failed to create local context provider");
+                error!(error = %e, "failed to create local context provider");
                 return DashSDKResult::error(DashSDKError::new(
                     DashSDKErrorCode::InternalError,
                     format!("Failed to create local context provider: {}", e),
@@ -405,11 +445,11 @@ pub unsafe extern "C" fn dash_sdk_create_trusted(config: *const DashSDKConfig) -
             std::num::NonZeroUsize::new(100).unwrap(), // Cache size
         ) {
             Ok(provider) => {
-                info!("dash_sdk_create_trusted: trusted context provider created");
+                info!("trusted context provider created");
                 Arc::new(provider)
             }
             Err(e) => {
-                error!(error = %e, "dash_sdk_create_trusted: failed to create trusted context provider");
+                error!(error = %e, "failed to create trusted context provider");
                 return DashSDKResult::error(DashSDKError::new(
                     DashSDKErrorCode::InternalError,
                     format!("Failed to create trusted context provider: {}", e),
@@ -418,19 +458,16 @@ pub unsafe extern "C" fn dash_sdk_create_trusted(config: *const DashSDKConfig) -
         }
     };
 
-    // Parse DAPI addresses - for trusted setup, we always need real addresses.
+    // Parse DAPI addresses. Every fixed-provider SDK needs real addresses.
     // Devnet/regtest have no built-in defaults; callers must supply
     // `dapi_addresses` (and typically `quorum_url`) for those networks.
     let builder = if config.dapi_addresses.is_null() {
-        info!("dash_sdk_create_trusted: no DAPI addresses provided, using defaults for network");
+        info!("no DAPI addresses provided, using defaults for network");
         match network {
             Network::Testnet => SdkBuilder::new_testnet(),
             Network::Mainnet => SdkBuilder::new_mainnet(),
             _ => {
-                error!(
-                    ?network,
-                    "dash_sdk_create_trusted: no DAPI addresses for network"
-                );
+                error!(?network, "no DAPI addresses for network");
                 return DashSDKResult::error(DashSDKError::new(
                     DashSDKErrorCode::InvalidParameter,
                     format!("DAPI addresses not available for network: {:?}", network),
@@ -449,24 +486,21 @@ pub unsafe extern "C" fn dash_sdk_create_trusted(config: *const DashSDKConfig) -
         };
 
         if addresses_str.is_empty() {
-            error!("dash_sdk_create_trusted: empty DAPI addresses provided");
+            error!("empty DAPI addresses provided");
             return DashSDKResult::error(DashSDKError::new(
                 DashSDKErrorCode::InvalidParameter,
-                "DAPI addresses cannot be empty for trusted setup".to_string(),
+                "DAPI addresses cannot be empty".to_string(),
             ));
         } else {
-            info!(
-                addresses = addresses_str,
-                "dash_sdk_create_trusted: using provided DAPI addresses"
-            );
+            info!(addresses = addresses_str, "using provided DAPI addresses");
             // Parse the address list
             let address_list = match AddressList::from_str(addresses_str) {
                 Ok(list) => {
-                    info!("dash_sdk_create_trusted: successfully parsed addresses");
+                    info!("successfully parsed DAPI addresses");
                     list
                 }
                 Err(e) => {
-                    error!(error = %e, "dash_sdk_create_trusted: failed to parse addresses");
+                    error!(error = %e, "failed to parse DAPI addresses");
                     return DashSDKResult::error(DashSDKError::new(
                         DashSDKErrorCode::InvalidParameter,
                         format!("Failed to parse DAPI addresses: {}", e),
@@ -478,19 +512,50 @@ pub unsafe extern "C" fn dash_sdk_create_trusted(config: *const DashSDKConfig) -
         }
     };
 
-    // Clone trusted provider for prefetching quorums
-    let provider_for_prefetch = Arc::clone(&trusted_provider);
     let provider_for_wrapper = Arc::clone(&trusted_provider);
-    let adaptive_provider = Arc::new(AdaptiveContextProvider::new(
-        Arc::clone(&trusted_provider) as Arc<dyn drive_proof_verifier::ContextProvider>,
-        network,
-    ));
+    let trusted_context =
+        Arc::clone(&trusted_provider) as Arc<dyn drive_proof_verifier::ContextProvider>;
+    let auxiliary = Arc::new(AuxiliaryContextProvider::new(Arc::clone(&trusted_context)));
+    let provider_parts = match provider_kind {
+        FixedContextProviderKind::Trusted => FixedProviderParts {
+            provider: trusted_context,
+            adaptive: None,
+            spv_source_controller: None,
+        },
+        FixedContextProviderKind::Spv => {
+            let controller = Arc::new(SpvSourceController::default());
+            let provider = Arc::new(SpvContextProvider::new(
+                Arc::clone(&controller),
+                auxiliary,
+                network,
+            ));
+            FixedProviderParts {
+                provider,
+                adaptive: None,
+                spv_source_controller: Some(controller),
+            }
+        }
+        FixedContextProviderKind::Adaptive => {
+            let controller = Arc::new(SpvSourceController::default());
+            let provider = Arc::new(AdaptiveContextProvider::new(
+                Arc::clone(&trusted_context),
+                Arc::clone(&controller),
+                auxiliary,
+                network,
+            ));
+            FixedProviderParts {
+                provider: Arc::clone(&provider) as Arc<dyn drive_proof_verifier::ContextProvider>,
+                adaptive: Some(provider),
+                spv_source_controller: Some(controller),
+            }
+        }
+    };
 
-    // Install one adaptive provider for the SDK's entire lifetime.
-    info!("dash_sdk_create_trusted: adding adaptive context provider to builder");
-    let builder = builder.with_context_provider_arc(
-        Arc::clone(&adaptive_provider) as Arc<dyn drive_proof_verifier::ContextProvider>
+    info!(
+        ?provider_kind,
+        "adding fixed context provider to SDK builder"
     );
+    let builder = builder.with_context_provider_arc(provider_parts.provider);
 
     let builder = match apply_version(builder, config.platform_version) {
         Ok(b) => b,
@@ -502,37 +567,28 @@ pub unsafe extern "C" fn dash_sdk_create_trusted(config: *const DashSDKConfig) -
 
     match sdk_result {
         Ok(sdk) => {
-            // Prefetch quorums for trusted setup
-            info!("dash_sdk_create_trusted: SDK built, prefetching quorums...");
-
-            let runtime_clone = runtime.handle().clone();
-            runtime_clone.spawn(async move {
-                // First, try a simple HTTP test
-                debug!("dash_sdk_create_trusted: testing basic HTTP connectivity");
-                match reqwest::get("https://www.google.com").await {
-                    Ok(_) => debug!("dash_sdk_create_trusted: basic HTTP test successful (Google)"),
-                    Err(e) => warn!(error = %e, "dash_sdk_create_trusted: basic HTTP test failed"),
-                }
-
-                // Try the quorums endpoint directly
-                debug!("dash_sdk_create_trusted: testing quorums endpoint directly");
-                match reqwest::get("https://quorums.testnet.networks.dash.org/quorums").await {
-                    Ok(resp) => debug!(status = %resp.status(), "dash_sdk_create_trusted: direct quorums endpoint test successful"),
-                    Err(e) => warn!(error = %e, "dash_sdk_create_trusted: direct quorums endpoint test failed"),
-                }
-
-                // Now try through the provider
-                match provider_for_prefetch.update_quorum_caches().await {
-                    Ok(_) => info!("dash_sdk_create_trusted: successfully prefetched quorums"),
-                    Err(e) => warn!(error = %e, "dash_sdk_create_trusted: failed to prefetch quorums; continuing"),
-                }
-            });
+            // A fixed SPV provider never contacts the trusted quorum endpoint.
+            // Trusted and Adaptive may use trusted quorum routing, so retain
+            // their existing asynchronous cache prefetch.
+            if provider_kind != FixedContextProviderKind::Spv {
+                let provider_for_prefetch = Arc::clone(&trusted_provider);
+                let runtime_clone = runtime.handle().clone();
+                runtime_clone.spawn(async move {
+                    match provider_for_prefetch.update_quorum_caches().await {
+                        Ok(_) => info!("successfully prefetched trusted quorums"),
+                        Err(e) => {
+                            warn!(error = %e, "failed to prefetch trusted quorums; continuing")
+                        }
+                    }
+                });
+            }
 
             let wrapper = Box::new(SDKWrapper {
                 sdk,
                 runtime,
                 trusted_provider: Some(provider_for_wrapper),
-                adaptive_provider: Some(adaptive_provider),
+                adaptive_provider: provider_parts.adaptive,
+                spv_source_controller: provider_parts.spv_source_controller,
             });
             let handle = Box::into_raw(wrapper) as *mut SDKHandle;
             DashSDKResult::success(handle as *mut std::os::raw::c_void)
@@ -570,29 +626,18 @@ pub unsafe extern "C" fn dash_sdk_get_inner_sdk_ptr(
     &wrapper.sdk as *const dash_sdk::Sdk as *const std::os::raw::c_void
 }
 
-/// Populate the fixed adaptive provider's SPV source.
-///
-/// This changes internal adaptive state only; the SDK context provider itself
-/// is never replaced.
+/// Borrow the source controller retained by a fixed SPV-capable provider.
 ///
 /// # Safety
 /// `sdk_handle` must be a valid SDK handle for the duration of this call.
-pub unsafe fn dash_sdk_set_spv_source(
+pub unsafe fn dash_sdk_spv_source_controller(
     sdk_handle: *mut SDKHandle,
-    provider: Arc<dyn drive_proof_verifier::ContextProvider>,
-    is_ready: Arc<dyn Fn() -> bool + Send + Sync>,
-) -> Result<(), String> {
+) -> Result<Option<Arc<SpvSourceController>>, String> {
     if sdk_handle.is_null() {
         return Err("SDK handle is null".to_string());
     }
     let wrapper = &*(sdk_handle as *const SDKWrapper);
-    let adaptive = wrapper
-        .adaptive_provider
-        .as_ref()
-        .ok_or_else(|| "SDK does not use an adaptive context provider".to_string())?;
-    adaptive
-        .set_spv_source(provider, is_ready)
-        .map_err(str::to_string)
+    Ok(wrapper.spv_source_controller.clone())
 }
 
 /// Set the adaptive quorum routing mode without replacing the SDK provider.
@@ -639,15 +684,18 @@ pub unsafe extern "C" fn dash_sdk_set_context_provider_mode(
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_get_context_provider_source(sdk_handle: *const SDKHandle) -> u8 {
     if sdk_handle.is_null() {
-        return ContextProviderSource::Trusted as u8;
+        return AdaptiveContextProviderSource::Trusted as u8;
     }
     let wrapper = &*(sdk_handle as *const SDKWrapper);
-    wrapper
-        .adaptive_provider
-        .as_ref()
-        .map_or(ContextProviderSource::Trusted as u8, |provider| {
-            provider.active_source() as u8
-        })
+    if let Some(provider) = &wrapper.adaptive_provider {
+        // Evaluate readiness inside the SDK's multi-thread runtime so callers
+        // outside Tokio (including Swift UI code) receive the live Auto source.
+        wrapper.runtime.block_on(async { provider.active_source() }) as u8
+    } else if wrapper.spv_source_controller.is_some() {
+        AdaptiveContextProviderSource::Spv as u8
+    } else {
+        AdaptiveContextProviderSource::Trusted as u8
+    }
 }
 
 /// Register global context provider callbacks

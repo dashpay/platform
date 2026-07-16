@@ -172,7 +172,7 @@ final class WalletManagerStore: ObservableObject {
         if let existing = managers[network] {
             return existing
         }
-        let sdk = try SDK(network: network)
+        let sdk = try SDK(network: network, contextProvider: .adaptive)
         try activate(network: network, sdk: sdk, makeActive: false)
         guard let manager = managers[network] else {
             throw PlatformWalletError.invalidParameter(

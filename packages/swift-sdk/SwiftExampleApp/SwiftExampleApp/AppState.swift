@@ -10,8 +10,8 @@ class AppState: ObservableObject {
     @Published var errorMessage = ""
 
     /// The quorum-key source the current SDK uses for proof verification.
-    /// Starts `.trusted` on every SDK build and tracks the adaptive provider's
-    /// current routing choice. Drives the app's indicator;
+    /// Tracks the adaptive provider's current routing choice after the saved
+    /// mode is applied. Drives the app's indicator;
     /// intentionally mirrors `SDK.quorumSource` (this one is the observable the
     /// UI binds to).
     @Published private(set) var quorumSource: SDK.QuorumSource = .trusted
@@ -131,11 +131,15 @@ class AppState: ObservableObject {
 
                 NSLog("🔵 AppState: Creating SDK for network=\(currentNetwork), docker=\(useDockerSetup)")
                 // Build with one adaptive provider backed initially by trusted
-                // quorum data. The wallet manager populates its SPV source when
-                // it is configured from this SDK.
-                let newSDK = try SDK(network: currentNetwork)
+                // quorum data. The wallet manager leases its SPV source after
+                // synchronization starts successfully.
+                let newSDK = try SDK(network: currentNetwork, contextProvider: .adaptive)
+                // Apply strict SPV before publishing the SDK or starting any
+                // proven query. With no active SPV source yet, strict mode
+                // fails closed until manager startup acquires its lease.
+                try newSDK.setQuorumMode(sdkQuorumMode)
                 sdk = newSDK
-                quorumSource = .trusted
+                quorumSource = newSDK.quorumSource
                 NSLog("✅ AppState: SDK created successfully")
 
                 // Eagerly learn the network's protocol version so
@@ -174,13 +178,7 @@ class AppState: ObservableObject {
         guard let sdk else { return }
 
         do {
-            let sdkMode: SDK.QuorumMode
-            switch quorumMode {
-            case .auto: sdkMode = .auto
-            case .spv: sdkMode = .spv
-            case .trusted: sdkMode = .trusted
-            }
-            try sdk.setQuorumMode(sdkMode)
+            try sdk.setQuorumMode(sdkQuorumMode)
             quorumSource = sdk.quorumSource
         } catch {
             NSLog("⚠️ AppState: failed to apply quorum mode: \(error.localizedDescription)")
@@ -207,11 +205,12 @@ class AppState: ObservableObject {
         do {
             isLoading = true
 
-            // Create a new SDK instance for the network. Its manager populates
-            // the adaptive provider's SPV source during configuration.
-            let newSDK = try SDK(network: network)
+            // Create a new SDK instance for the network. Its manager leases
+            // the adaptive provider's SPV source after SPV starts.
+            let newSDK = try SDK(network: network, contextProvider: .adaptive)
+            try newSDK.setQuorumMode(sdkQuorumMode)
             sdk = newSDK
-            quorumSource = .trusted
+            quorumSource = newSDK.quorumSource
 
             // Eagerly learn the new network's protocol version (see
             // `initializeSDK`). Non-fatal: the SDK still ratchets from
@@ -227,6 +226,14 @@ class AppState: ObservableObject {
             showError(message: "Failed to switch network: \(error.localizedDescription)")
             NSLog("❌ AppState.switchNetwork: \(error)")
             isLoading = false
+        }
+    }
+
+    private var sdkQuorumMode: SDK.QuorumMode {
+        switch quorumMode {
+        case .auto: return .auto
+        case .spv: return .spv
+        case .trusted: return .trusted
         }
     }
 

@@ -1,11 +1,11 @@
 //! SPV-based Context Provider
 //!
-//! Thin [`ContextProvider`] that resolves Platform proof quorum public keys
+//! Thin quorum source that resolves Platform proof quorum public keys
 //! from the SPV runtime owned by the [`PlatformWalletManager`].
 //!
 //! # Architecture
 //!
-//! [`SpvContextProvider`] holds a shared [`Arc<SpvRuntime>`] — a live reference
+//! [`SpvQuorumSource`] holds a shared [`Arc<SpvRuntime>`] — a live reference
 //! to the same runtime the SPV client writes to during sync — and delegates
 //! every lookup to [`SpvRuntime::get_quorum_public_key`], which reads the
 //! in-memory masternode list engine. No quorum data is stored here.
@@ -15,13 +15,14 @@
 //! runtime (`rs-sdk-ffi`'s `BigStackRuntime::block_on`), so the bridge uses
 //! [`tokio::task::block_in_place`] (avoids the nested-runtime panic) plus the
 //! ambient [`Handle::try_current`](tokio::runtime::Handle::try_current) of that
-//! verify runtime. The provider is constructed at the FFI SDK-create call,
-//! which runs off any runtime, so the handle is resolved at call time (and a
-//! call from outside a runtime returns an error rather than panicking).
+//! verify runtime. The source is constructed with the wallet manager, outside
+//! any runtime, so the handle is resolved at call time (and a call from outside
+//! a runtime returns an error rather than panicking).
 //!
 //! [`PlatformWalletManager`]: crate::manager::PlatformWalletManager
 //! [`SpvRuntime::get_quorum_public_key`]: crate::spv::SpvRuntime::get_quorum_public_key
 
+use std::future::Future;
 use std::sync::Arc;
 
 use dash_context_provider::ContextProvider;
@@ -51,13 +52,13 @@ fn hex_prefix(bytes: &[u8; 32]) -> String {
 ///
 /// Delegates quorum-key lookups to the shared [`SpvRuntime`]; the same runtime
 /// the SPV client populates during sync is read live for each proof.
-pub struct SpvContextProvider {
+pub struct SpvQuorumSource {
     spv: Arc<SpvRuntime>,
     network: Network,
 }
 
-impl SpvContextProvider {
-    /// Create a new SPV context provider.
+impl SpvQuorumSource {
+    /// Create a new SPV quorum source.
     ///
     /// # Arguments
     ///
@@ -67,9 +68,32 @@ impl SpvContextProvider {
     pub fn new(spv: Arc<SpvRuntime>, network: Network) -> Self {
         Self { spv, network }
     }
+
+    fn block_on_runtime<F, T>(&self, future: F) -> Result<T, ContextProviderError>
+    where
+        F: Future<Output = T>,
+    {
+        let handle = tokio::runtime::Handle::try_current().map_err(|_| {
+            ContextProviderError::Generic(
+                "SPV context provider called outside a Tokio runtime".to_string(),
+            )
+        })?;
+        if handle.runtime_flavor() == RuntimeFlavor::CurrentThread {
+            return Err(ContextProviderError::Generic(
+                "SPV context provider requires a multi-threaded Tokio runtime".to_string(),
+            ));
+        }
+        Ok(tokio::task::block_in_place(|| handle.block_on(future)))
+    }
+
+    /// Query dash-spv's existing progress snapshot without mirroring sync
+    /// state in a parallel readiness flag.
+    pub fn is_ready(&self) -> Result<bool, ContextProviderError> {
+        self.block_on_runtime(self.spv.is_ready())
+    }
 }
 
-impl ContextProvider for SpvContextProvider {
+impl ContextProvider for SpvQuorumSource {
     fn get_quorum_public_key(
         &self,
         quorum_type: u32,
@@ -96,32 +120,13 @@ impl ContextProvider for SpvContextProvider {
         // returns an error rather than panicking. The lookup is pure in-memory
         // (two brief RwLock reads, no network I/O); on write contention with SPV
         // sync it waits (fail-slow) rather than erroring.
-        let handle = tokio::runtime::Handle::try_current().map_err(|_| {
-            ContextProviderError::Generic(
-                "SPV quorum lookup called outside a Tokio runtime".to_string(),
-            )
-        })?;
-        // `block_in_place` panics on a current-thread runtime, and bridging via
-        // a helper thread can deadlock: proof verification would block this
-        // runtime's only executor in `join()` while the SPV masternode-engine
-        // write lock is held by a task on the same runtime, so that writer could
-        // never resume to release it. The SDK verifies proofs on a multi-threaded
-        // runtime, so fail closed here rather than risk a panic or a deadlock.
-        if handle.runtime_flavor() == RuntimeFlavor::CurrentThread {
-            return Err(ContextProviderError::Generic(
-                "SPV quorum lookup requires a multi-threaded Tokio runtime".to_string(),
-            ));
-        }
-        // Multi-threaded runtime: block the current worker without stalling the
-        // whole runtime.
-        let result = tokio::task::block_in_place(|| {
-            handle.block_on(self.spv.get_quorum_public_key(
+        let result = self
+            .block_on_runtime(self.spv.get_quorum_public_key(
                 quorum_type,
                 quorum_hash,
                 core_chain_locked_height,
-            ))
-        })
-        .map_err(|e| ContextProviderError::InvalidQuorum(e.to_string()));
+            ))?
+            .map_err(|e| ContextProviderError::InvalidQuorum(e.to_string()));
 
         // The quorum public key is the trust root of every Platform proof this
         // SDK verifies; tracing which provider served it lets an operator
@@ -163,8 +168,9 @@ impl ContextProvider for SpvContextProvider {
         _data_contract_id: &Identifier,
         _platform_version: &PlatformVersion,
     ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
-        // Data contract lookup is handled by the SDK's contract cache,
-        // not the SPV layer.
+        // This provider is a quorum-only SPV source. A full SDK provider must
+        // compose it with the local contract cache and embedded system
+        // contracts; installing this source alone cannot resolve contracts.
         Ok(None)
     }
 
@@ -172,8 +178,8 @@ impl ContextProvider for SpvContextProvider {
         &self,
         _token_id: &Identifier,
     ) -> Result<Option<TokenConfiguration>, ContextProviderError> {
-        // Token configuration lookup is handled by the SDK's contract cache,
-        // not the SPV layer.
+        // Token configuration is supplied by the same auxiliary local resolver
+        // as data contracts, never by the SPV quorum source itself.
         Ok(None)
     }
 }
