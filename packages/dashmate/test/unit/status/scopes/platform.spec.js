@@ -162,6 +162,67 @@ describe('getPlatformScopeFactory', () => {
       expect(scope).to.deep.equal(expectedScope);
     });
 
+    it('should fall back to node_info app protocol when application_info is absent', async () => {
+      mockDetermineDockerStatus.returns(DockerStatusEnum.running);
+      mockRpcClient.mnsync.withArgs('status').returns({ result: { IsSynced: true } });
+      mockRpcClient.getBlockchainInfo.returns({
+        result: {
+          softforks: {
+            mn_rr: { active: true, height: 1337 },
+          },
+        },
+      });
+      mockDockerCompose.isServiceRunning.returns(true);
+      mockDockerCompose.execCommand.withArgs(config, 'drive_abci', 'drive-abci status').resolves({ exitCode: 0, out: '' });
+      mockDockerCompose.execCommand.withArgs(config, 'drive_abci', 'drive-abci version').resolves({ exitCode: 0, out: '1.4.1' });
+      mockMNOWatchProvider.returns(Promise.resolve('OPEN'));
+
+      // When application_info is omitted (omitempty / unavailable), status must still
+      // report a numeric protocolVersion from node_info.protocol_version.app.
+      const mockStatus = {
+        node_info: {
+          protocol_version: {
+            p2p: '10',
+            block: '14',
+            app: '3',
+          },
+          version: '0',
+          network: 'test',
+          moniker: 'test',
+        },
+        sync_info: {
+          catching_up: false,
+          latest_app_hash: 'DEADBEEF',
+          latest_block_height: 1,
+          latest_block_hash: 'DEADBEEF',
+          latest_block_time: 1337,
+        },
+      };
+      const mockNetInfo = { n_peers: 6, listening: true };
+      const mockAbciInfo = {
+        response: {
+          version: '1.4.1',
+          app_version: 4,
+          last_block_height: 90,
+          last_block_app_hash: 's0CySQxgRg96DrnJ7HCsql+k/Sk4JiT3y0psCaUI3TI=',
+        },
+      };
+
+      mockFetch
+        .onFirstCall()
+        .returns(Promise.resolve({ json: () => Promise.resolve(mockStatus) }))
+        .onSecondCall()
+        .returns(Promise.resolve({ json: () => Promise.resolve(mockNetInfo) }))
+        .onThirdCall()
+        .resolves({ json: () => Promise.resolve(mockAbciInfo) });
+
+      const scope = await getPlatformScope(config);
+
+      expect(scope.tenderdash.serviceStatus).to.equal(ServiceStatusEnum.up);
+      expect(scope.tenderdash.protocolVersion).to.equal(3);
+      expect(scope.tenderdash.desiredProtocolVersion).to.equal(4);
+    });
+
     it('should return platform syncing when it is catching up', async () => {
       mockDetermineDockerStatus.returns(DockerStatusEnum.running);
       mockRpcClient.mnsync.withArgs('status').returns({ result: { IsSynced: true } });

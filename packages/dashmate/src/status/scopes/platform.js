@@ -144,10 +144,14 @@ export default function getPlatformScopeFactory(
         }
 
         info.version = version;
-        // node_info.protocol_version.app is snapshotted at Tenderdash process start and
-        // stays stale across in-process protocol upgrades. application_info.version is
-        // the live active/current app protocol version.
-        info.protocolVersion = parseInt(tenderdashStatus.application_info.version, 10);
+        // Prefer live application_info.version (current after in-process upgrades).
+        // Tenderdash may omit application_info entirely (json omitempty when ABCIInfo
+        // fails, or older builds without the field). Fall back to
+        // node_info.protocol_version.app only then — that snapshot can be stale, so it
+        // must not win when the live field is present.
+        const appProtocolVersion = tenderdashStatus.application_info?.version
+          ?? tenderdashStatus.node_info.protocol_version.app;
+        info.protocolVersion = parseInt(appProtocolVersion, 10);
         // abci_info app_version reflects the installed software's desired/supported version.
         info.desiredProtocolVersion = tenderdashAbciInfo.response.app_version;
         info.listening = listening;
