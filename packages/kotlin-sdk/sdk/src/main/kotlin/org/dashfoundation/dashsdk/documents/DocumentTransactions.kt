@@ -1,9 +1,6 @@
 package org.dashfoundation.dashsdk.documents
 
 import org.dashfoundation.dashsdk.wallet.op
-
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import org.dashfoundation.dashsdk.errors.mapNativeErrors
 import org.dashfoundation.dashsdk.ffi.TransactionsNative
 
@@ -290,7 +287,7 @@ class DocumentTransactions internal constructor(
         version: Int,
         payload: ByteArray,
         signerHandle: Long,
-    ): String = withContext(Dispatchers.IO) {
+    ): String = gate.op {
         require(ownerId.size == 32) { "ownerId must be 32 bytes" }
         require(contractId.size == 32) { "contractId must be 32 bytes" }
         require(encryptionKeyIndex >= 0) {
@@ -349,7 +346,7 @@ class DocumentTransactions internal constructor(
         contractId: ByteArray,
         documentType: String,
         sinceMs: Long,
-    ): String = withContext(Dispatchers.IO) {
+    ): String = gate.op {
         require(ownerId.size == 32) { "ownerId must be 32 bytes" }
         require(contractId.size == 32) { "contractId must be 32 bytes" }
         require(sinceMs >= 0) { "sinceMs must be non-negative, got $sinceMs" }
