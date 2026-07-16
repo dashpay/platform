@@ -42,9 +42,10 @@
 use crate::events::{build_event_vtable, KotlinEventCtx};
 use crate::persistence::{build_vtable, KotlinPersistenceCtx};
 use crate::support::{guard, take_pwffi_error, throw_sdk_exception, PWFFI_CODE_OFFSET};
-use jni::objects::{JByteArray, JClass, JObject, JObjectArray, JString};
+use jni::objects::{JByteArray, JClass, JObject, JObjectArray, JString, JValue};
 use jni::sys::{
-    jboolean, jbyteArray, jdoubleArray, jint, jlong, jlongArray, jstring, JNI_FALSE, JNI_TRUE,
+    jboolean, jbyteArray, jdoubleArray, jint, jlong, jlongArray, jobject, jstring, JNI_FALSE,
+    JNI_TRUE,
 };
 use jni::JNIEnv;
 use platform_wallet_ffi::error::{
@@ -825,6 +826,64 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_c
     })
 }
 
+/// Atomic V2 finalizer: consumes a configured builder, performs funding and
+/// ReservationSet insertion indivisibly in platform-wallet, drops the manager
+/// lock, then invokes the mnemonic resolver to sign.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_coreTxBuilderFinalize(
+    mut env: JNIEnv,
+    _class: JClass,
+    builder: jlong,
+    wallet_handle: jlong,
+    account_type: jint,
+    account_index: jint,
+    core_signer_handle: jlong,
+) -> jlong {
+    guard(&mut env, 0, |env| {
+        if builder == 0 {
+            throw_sdk_exception(env, 1, "builder handle must be non-zero");
+            return 0;
+        }
+        // From this point JNI owns the builder. Any boundary validation error
+        // must destroy it because Kotlin has already zeroed its owner token.
+        let destroy_builder = || unsafe {
+            platform_wallet_ffi::core_wallet_tx_builder_destroy(
+                builder as *mut platform_wallet_ffi::FFITransactionBuilder,
+            )
+        };
+        if wallet_handle == 0 || core_signer_handle == 0 {
+            destroy_builder();
+            throw_sdk_exception(env, 1, "wallet and signer handles must be non-zero");
+            return 0;
+        }
+        let Some(account_type) = core_account_type(account_type) else {
+            destroy_builder();
+            throw_sdk_exception(env, 1, "accountType out of range (expected 0..=2)");
+            return 0;
+        };
+        if account_index < 0 {
+            destroy_builder();
+            throw_sdk_exception(env, 1, "accountIndex must be non-negative");
+            return 0;
+        }
+        let mut transaction_handle: Handle = 0;
+        let result = unsafe {
+            platform_wallet_ffi::core_wallet_tx_builder_finalize(
+                builder as *mut platform_wallet_ffi::FFITransactionBuilder,
+                wallet_handle as Handle,
+                account_type,
+                account_index as u32,
+                core_signer_handle as *mut rs_sdk_ffi::MnemonicResolverHandle,
+                &mut transaction_handle,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return 0;
+        }
+        transaction_handle as jlong
+    })
+}
+
 /// `core_wallet_tx_builder_destroy` — free a builder created by
 /// [coreTxBuilderNew] that was NOT consumed by [coreTxBuilderBuildSigned].
 /// Safe on 0.
@@ -926,6 +985,101 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_c
         env.new_string(txid)
             .map(|s| s.into_raw())
             .unwrap_or(ptr::null_mut())
+    })
+}
+
+/// Consume and broadcast an atomically finalized V2 transaction handle.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_coreWalletBroadcastSignedTransactionV2(
+    mut env: JNIEnv,
+    _class: JClass,
+    core_handle: jlong,
+    transaction_handle: jlong,
+) -> jstring {
+    guard(&mut env, ptr::null_mut(), |env| {
+        if core_handle == 0 || transaction_handle == 0 {
+            throw_sdk_exception(env, 1, "core and transaction handles must be non-zero");
+            return ptr::null_mut();
+        }
+        let mut out_txid: *mut c_char = ptr::null_mut();
+        let result = unsafe {
+            platform_wallet_ffi::core_wallet_broadcast_signed_transaction_v2(
+                core_handle as Handle,
+                transaction_handle as Handle,
+                &mut out_txid,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return ptr::null_mut();
+        }
+        if out_txid.is_null() {
+            throw_sdk_exception(env, 1, "broadcast returned a NULL txid");
+            return ptr::null_mut();
+        }
+        let txid = unsafe { CStr::from_ptr(out_txid) }
+            .to_string_lossy()
+            .into_owned();
+        unsafe { platform_wallet_ffi::core_wallet_free_address(out_txid) };
+        env.new_string(txid)
+            .map(|s| s.into_raw())
+            .unwrap_or(ptr::null_mut())
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_coreWalletAbandonSignedTransactionV2(
+    mut env: JNIEnv,
+    _class: JClass,
+    core_handle: jlong,
+    transaction_handle: jlong,
+) {
+    guard(&mut env, (), |env| {
+        if transaction_handle == 0 {
+            return;
+        }
+        let result = unsafe {
+            platform_wallet_ffi::core_wallet_abandon_signed_transaction_v2(
+                core_handle as Handle,
+                transaction_handle as Handle,
+            )
+        };
+        let _ = take_pwffi_error(env, result);
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_coreSignedTransactionV2Free(
+    mut env: JNIEnv,
+    _class: JClass,
+    transaction_handle: jlong,
+) {
+    guard(&mut env, (), |_| {
+        if transaction_handle != 0 {
+            platform_wallet_ffi::core_wallet_signed_transaction_v2_free(
+                transaction_handle as Handle,
+            );
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_coreSignedTransactionV2Fee(
+    mut env: JNIEnv,
+    _class: JClass,
+    transaction_handle: jlong,
+) -> jlong {
+    guard(&mut env, 0, |env| {
+        let mut fee = 0u64;
+        let result = unsafe {
+            platform_wallet_ffi::core_wallet_signed_transaction_v2_fee(
+                transaction_handle as Handle,
+                &mut fee,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return 0;
+        }
+        fee as jlong
     })
 }
 
@@ -2394,6 +2548,36 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_s
     })
 }
 
+/// Rewind a loaded wallet's in-memory compact-filter checkpoint. Equal or
+/// forward heights are successful no-ops in the shared implementation; the
+/// rewind is non-durable and must be reissued after process death.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_spvRescanFilters(
+    mut env: JNIEnv,
+    _class: JClass,
+    manager_handle: jlong,
+    wallet_id: JByteArray,
+    from_height: jint,
+) {
+    guard(&mut env, (), |env| {
+        if from_height < 0 {
+            throw_sdk_exception(env, 1, "fromHeight must be non-negative");
+            return;
+        }
+        let Some(wallet_id) = read_id32(env, &wallet_id) else {
+            return;
+        };
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_manager_spv_rescan_filters(
+                manager_handle as Handle,
+                wallet_id.as_ptr(),
+                from_height as u32,
+            )
+        };
+        let _ = take_pwffi_error(env, result);
+    })
+}
+
 /// Clear all persisted SPV storage (headers, filters, state).
 #[no_mangle]
 pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_spvClearStorage(
@@ -2605,6 +2789,26 @@ fn read_cstring_array(
 // `ManagedPlatformWallet`). Wallet-handle-scoped, mirroring the existing
 // per-wallet accessors above.
 
+/// Owns the list allocation returned by
+/// `platform_wallet_tracked_asset_locks_list`. Keeping this guard alive while
+/// JVM objects are built makes every early-return/allocation-failure path call
+/// the paired native free function.
+struct TrackedAssetLockListGuard {
+    entries: *const platform_wallet_ffi::core_wallet_types::TrackedAssetLockEntryFFI,
+    count: usize,
+}
+
+impl Drop for TrackedAssetLockListGuard {
+    fn drop(&mut self) {
+        unsafe {
+            platform_wallet_ffi::platform_wallet_tracked_asset_locks_free(
+                self.entries as *mut _,
+                self.count,
+            )
+        }
+    }
+}
+
 /// Copy an `IdentifierArray` into a flat JVM `byte[]` (concatenated 32-byte
 /// ids) and free the Rust buffer. The Kotlin side splits into 32-byte rows.
 fn identifier_array_to_flat(env: &mut JNIEnv, mut arr: IdentifierArray) -> jbyteArray {
@@ -2662,6 +2866,110 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
             return ptr::null_mut();
         }
         arr.into_raw()
+    })
+}
+
+/// Copy the manager-owned tracked-asset-lock snapshot into Kotlin value
+/// objects. No Rust pointer escapes this call; the paired list allocation is
+/// freed by [`TrackedAssetLockListGuard`] on success and every failure path.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_trackedAssetLocks(
+    mut env: JNIEnv,
+    _class: JClass,
+    manager_handle: jlong,
+    wallet_id: JByteArray,
+) -> jobject {
+    guard(&mut env, ptr::null_mut(), |env| {
+        let Some(wallet_id) = read_id32(env, &wallet_id) else {
+            return ptr::null_mut();
+        };
+        let mut entries = ptr::null();
+        let mut count = 0usize;
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_tracked_asset_locks_list(
+                manager_handle as Handle,
+                wallet_id.as_ptr(),
+                &mut entries,
+                &mut count,
+            )
+        };
+        let _list_guard = TrackedAssetLockListGuard { entries, count };
+        if take_pwffi_error(env, result) {
+            return ptr::null_mut();
+        }
+        if count > 0 && entries.is_null() {
+            throw_sdk_exception(
+                env,
+                99,
+                "tracked asset-lock native list returned a null pointer with a non-zero count",
+            );
+            return ptr::null_mut();
+        }
+        if count > i32::MAX as usize {
+            throw_sdk_exception(env, 99, "tracked asset-lock snapshot is too large");
+            return ptr::null_mut();
+        }
+
+        let row_class =
+            match env.find_class("org/dashfoundation/dashsdk/ffi/TrackedAssetLockNativeData") {
+                Ok(class) => class,
+                Err(_) => {
+                    let _ = env.exception_clear();
+                    throw_sdk_exception(env, 99, "tracked asset-lock row class was not found");
+                    return ptr::null_mut();
+                }
+            };
+        let rows = match env.new_object_array(count as i32, &row_class, JObject::null()) {
+            Ok(rows) => rows,
+            Err(_) => {
+                let _ = env.exception_clear();
+                throw_sdk_exception(env, 99, "tracked asset-lock array allocation failed");
+                return ptr::null_mut();
+            }
+        };
+
+        let native_rows = if count == 0 {
+            &[][..]
+        } else {
+            unsafe { std::slice::from_raw_parts(entries, count) }
+        };
+        for (index, row) in native_rows.iter().enumerate() {
+            let built = env.with_local_frame(8, |env| -> Result<(), jni::errors::Error> {
+                let txid = env.byte_array_from_slice(&row.outpoint_txid)?;
+                let object = env.new_object(
+                    &row_class,
+                    "([BIIBIZI)V",
+                    &[
+                        JValue::Object(txid.as_ref()),
+                        JValue::Int(row.outpoint_vout as jint),
+                        JValue::Int(row.lock_type as jint),
+                        JValue::Byte(row.status as i8),
+                        JValue::Int(row.registration_index as jint),
+                        JValue::Bool(row.instant_lock_present as u8),
+                        JValue::Int(row.chain_lock_height as jint),
+                    ],
+                )?;
+                env.set_object_array_element(&rows, index as i32, object)
+            });
+            if built.is_err() {
+                let _ = env.exception_clear();
+                throw_sdk_exception(env, 99, "tracked asset-lock row allocation failed");
+                return ptr::null_mut();
+            }
+        }
+
+        match env.new_object(
+            "org/dashfoundation/dashsdk/ffi/TrackedAssetLocksNativeResult",
+            "([Lorg/dashfoundation/dashsdk/ffi/TrackedAssetLockNativeData;)V",
+            &[JValue::Object(rows.as_ref())],
+        ) {
+            Ok(result) => result.into_raw(),
+            Err(_) => {
+                let _ = env.exception_clear();
+                throw_sdk_exception(env, 99, "tracked asset-lock result allocation failed");
+                ptr::null_mut()
+            }
+        }
     })
 }
 

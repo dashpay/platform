@@ -95,7 +95,7 @@ impl TransactionBroadcaster for AlwaysMaybeSentBroadcaster {
 /// Soft signer that derives keys straight from a test wallet's seed. Stands
 /// in for the FFI keychain-backed signer used in production.
 #[derive(Clone)]
-pub(crate) struct WalletSigner {
+pub struct WalletSigner {
     wallet: Wallet,
 }
 
@@ -237,4 +237,25 @@ pub(crate) async fn funded_wallet_manager_with_outputs(
     let wallet_id = wm.insert_wallet(ctx.wallet, info).expect("insert wallet");
 
     (Arc::new(RwLock::new(wm)), wallet_id, balance, signer)
+}
+
+/// Funded SPV-backed Core wallet for downstream FFI lifecycle tests. The SPV
+/// runtime is intentionally not started; abandon/free only need wallet state.
+pub async fn funded_spv_core_wallet(
+    account_type: StandardAccountType,
+) -> (
+    crate::CoreWallet<crate::broadcaster::SpvBroadcaster>,
+    WalletSigner,
+) {
+    let (manager, wallet_id, balance, signer) = funded_wallet_manager(account_type).await;
+    let spv = Arc::new(crate::spv::SpvRuntime::new(
+        Arc::clone(&manager),
+        Arc::new(crate::events::PlatformEventManager::new(Vec::new())),
+    ));
+    let broadcaster = Arc::new(crate::broadcaster::SpvBroadcaster::new(spv));
+    let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+    (
+        crate::CoreWallet::new(sdk, manager, wallet_id, broadcaster, balance),
+        signer,
+    )
 }

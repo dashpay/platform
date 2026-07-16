@@ -58,6 +58,12 @@ class DashSdkErrorTest {
         // Distinct from the rs-sdk-ffi CryptoError that shares raw code 6.
         assertFalse(walletOp is DashSdkError.CryptoError)
 
+        listOf(7, 8, 98).forEach { code ->
+            val notFound = DashSdkError.fromNative(DashSDKException(offset + code, "missing"))
+            assertTrue("platform-wallet code $code must be typed NotFound", notFound is DashSdkError.NotFound)
+            assertEquals("missing", notFound.message)
+        }
+
         val noAnchor = DashSdkError.fromNative(DashSDKException(offset + 19, "mid-block tree"))
         assertTrue(noAnchor is DashSdkError.PlatformWallet.ShieldedNoRecordedAnchor)
         assertTrue("ShieldedNoRecordedAnchor is retryable", noAnchor.isRetryable)
@@ -77,6 +83,20 @@ class DashSdkErrorTest {
         assertTrue(
             broadcastUnconfirmed is DashSdkError.PlatformWallet.TransactionBroadcastUnconfirmed,
         )
+
+        val coreInsufficientFunds =
+            DashSdkError.fromNative(DashSDKException(offset + 22, "inputs reserved"))
+        assertTrue(coreInsufficientFunds is DashSdkError.PlatformWallet.CoreInsufficientFunds)
+
+        val recoveryCodes = mapOf(
+            23 to DashSdkError.PlatformWallet.AssetLockNotTracked::class,
+            24 to DashSdkError.PlatformWallet.AssetLockAlreadyConsumed::class,
+            25 to DashSdkError.PlatformWallet.AssetLockFundingMismatch::class,
+        )
+        recoveryCodes.forEach { (code, expected) ->
+            val mapped = DashSdkError.fromNative(DashSDKException(offset + code, "recovery"))
+            assertEquals("platform-wallet code $code", expected, mapped::class)
+        }
         assertFalse(
             "TransactionBroadcastUnconfirmed must NOT be retryable",
             broadcastUnconfirmed.isRetryable,
@@ -105,5 +125,20 @@ class DashSdkErrorTest {
             return
         }
         throw AssertionError("expected DashSdkError")
+    }
+
+    @Test
+    fun platformWalletNotFoundConvertsAtThePublicBoundary() {
+        val error = runCatching {
+            mapNativeErrors {
+                throw DashSDKException(
+                    DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 98,
+                    "wallet not found",
+                )
+            }
+        }.exceptionOrNull()
+
+        assertTrue(error is DashSdkError.NotFound)
+        assertEquals("wallet not found", error?.message)
     }
 }

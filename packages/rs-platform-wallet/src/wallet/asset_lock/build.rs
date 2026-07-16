@@ -1526,10 +1526,10 @@ mod tests {
             )
             .await;
         match refused {
-            Err(PlatformWalletError::AssetLockTransaction(msg)) => assert!(
-                msg.contains("invitation voucher"),
-                "expected the voucher-refusal error, got: {msg}"
-            ),
+            Err(PlatformWalletError::AssetLockFundingMismatch {
+                actual_funding_type: AssetLockFundingType::IdentityInvitation,
+                ..
+            }) => {}
             Err(e) => panic!("expected the voucher-refusal error, got {e:?}"),
             Ok(_) => panic!("expected the voucher-refusal error, got Ok(..)"),
         }
@@ -1538,29 +1538,32 @@ mod tests {
         // proof yet, so the resolver proceeds into the proof wait — getting
         // parked there (rather than an immediate refusal) is the positive
         // signal that the gate admitted the call.
-        let authorized = tokio::time::timeout(
-            std::time::Duration::from_millis(500),
-            manager.resolve_funding_with_is_timeout_fallback(
-                AssetLockFunding::FromExistingAssetLock {
-                    out_point,
-                    consume_invitation_voucher: true,
-                },
-                AssetLockFundingType::IdentityRegistration,
-                0,
-                &signer,
-            ),
-        )
-        .await;
-        match authorized {
-            Err(_elapsed) => {} // parked in the proof wait — past the gate
-            Ok(Err(PlatformWalletError::AssetLockTransaction(msg)))
-                if msg.contains("invitation voucher") =>
-            {
-                panic!("authorized reclaim consume must pass the voucher gate: {msg}")
-            }
-            Ok(other) => {
-                // Any other outcome also proves the gate admitted the call.
-                drop(other);
+        for reclaim_target in [
+            AssetLockFundingType::IdentityRegistration,
+            AssetLockFundingType::IdentityTopUp,
+        ] {
+            let authorized = tokio::time::timeout(
+                std::time::Duration::from_millis(500),
+                manager.resolve_funding_with_is_timeout_fallback(
+                    AssetLockFunding::FromExistingAssetLock {
+                        out_point,
+                        consume_invitation_voucher: true,
+                    },
+                    reclaim_target,
+                    0,
+                    &signer,
+                ),
+            )
+            .await;
+            match authorized {
+                Err(_elapsed) => {} // parked in the proof wait — past the gate
+                Ok(Err(PlatformWalletError::AssetLockFundingMismatch { .. })) => {
+                    panic!("authorized {reclaim_target:?} reclaim must pass the voucher gate")
+                }
+                Ok(other) => {
+                    // Any other outcome also proves the gate admitted the call.
+                    drop(other);
+                }
             }
         }
     }

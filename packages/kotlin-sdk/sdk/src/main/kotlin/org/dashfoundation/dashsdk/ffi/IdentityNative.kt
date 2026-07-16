@@ -18,6 +18,44 @@ package org.dashfoundation.dashsdk.ffi
 internal object IdentityNative {
 
     /**
+     * Perform one canonical contested-DPNS fetch and full-snapshot cache
+     * replacement. JNI symbol:
+     * `Java_org_dashfoundation_dashsdk_ffi_IdentityNative_syncContestedDpnsNames`;
+     * descriptor `(J[B)I`. Marshals
+     * `platform_wallet_sync_contested_dpns_names` and returns its count. The
+     * Android cache is currently process-local and must be refreshed after
+     * restart.
+     */
+    external fun syncContestedDpnsNames(
+        walletHandle: Long,
+        identityId: ByteArray,
+    ): Int
+
+    /**
+     * Resume registration from the exact tracked Core outpoint.
+     *
+     * JNI symbol:
+     * `Java_org_dashfoundation_dashsdk_ffi_IdentityNative_resumeIdentityWithExistingAssetLock`
+     * Descriptor:
+     * `(J[BII[BJJZ)Lorg/dashfoundation/dashsdk/ffi/IdentityRegistrationNativeResult;`
+     *
+     * Thinly marshals
+     * `platform_wallet_resume_identity_with_existing_asset_lock_signer`.
+     * Generic recovery always supplies `consumeInvitationVoucher=false`;
+     * invitation reclaim is a separate P2 surface.
+     */
+    external fun resumeIdentityWithExistingAssetLock(
+        walletHandle: Long,
+        outpointTxid: ByteArray,
+        outpointVout: Int,
+        identityIndex: Int,
+        pubkeysBlob: ByteArray,
+        signerHandle: Long,
+        coreSignerHandle: Long,
+        consumeInvitationVoucher: Boolean,
+    ): IdentityRegistrationNativeResult
+
+    /**
      * Derive the first [count] identity-authentication keypairs the wallet
      * would probe during a discovery scan, starting at [startIndex]. A
      * pure-compute view — no Platform RPCs.

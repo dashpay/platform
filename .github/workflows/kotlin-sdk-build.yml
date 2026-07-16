@@ -6,6 +6,7 @@ on:
   pull_request:
     paths:
       - 'packages/kotlin-sdk/**'
+      - 'packages/swift-sdk/**'
       - 'Cargo.toml'
       - 'Cargo.lock'
       - 'packages/rs-*/**'
@@ -16,6 +17,11 @@ on:
       - 'packages/data-contracts/**'
       - 'packages/*-contract/**'
       - 'packages/simple-signer/**'
+      - 'docs/sdk/sdk-parity-manifest.json'
+      - 'docs/sdk/KOTLIN_SWIFT_SHARED_PARITY_SPEC.md'
+      - 'packages/kotlin-sdk/PARITY_SUMMARY.md'
+      - 'scripts/check_sdk_parity_manifest.py'
+      - 'scripts/tests/**'
       - '.github/workflows/kotlin-sdk-build.yml'
 
 concurrency:
@@ -31,6 +37,11 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Validate executable SDK parity manifest
+        run: |
+          python3 scripts/check_sdk_parity_manifest.py
+          python3 -m unittest discover -s scripts/tests -p 'test_*.py'
 
       - name: Free disk space
         run: |

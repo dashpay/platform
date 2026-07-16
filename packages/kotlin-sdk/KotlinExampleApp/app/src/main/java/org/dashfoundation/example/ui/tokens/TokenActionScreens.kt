@@ -105,15 +105,14 @@ private val RecipientSaver = listSaver<RecipientSelection?, String>(
 
 /** The identity's held balance of this token (matched on the token relationship key). */
 @Composable
-private fun rememberHeldBalance(context: TokenActionContext): Long {
+private fun rememberHeldBalance(context: TokenActionContext): ULong {
     val container = LocalAppContainer.current
     val flow = remember(context.token.id, context.identity.identityId) {
         container.database.tokenDao().observeBalancesByIdentity(context.identity.identityId)
     }
     val balances by flow.collectAsStateWithLifecycle(initialValue = emptyList())
     val row = balances.firstOrNull { it.tokenRef?.contentEquals(context.token.id) == true }
-    // Stored as the u64 bit pattern; negative means > 2^63 (treat as max UI range).
-    return row?.balance?.let { if (it < 0) Long.MAX_VALUE else it } ?: 0L
+    return row?.balance?.value ?: 0uL
 }
 
 @Composable
@@ -165,7 +164,7 @@ private fun TransferForm(
     val balance = rememberHeldBalance(context)
     val amountRaw = TokenAmounts.parse(amountText, context.token.decimals)
     val exceedsBalance = amountRaw != null && amountRaw > balance
-    val canSubmit = recipient != null && amountRaw != null && amountRaw > 0 && !exceedsBalance
+    val canSubmit = recipient != null && amountRaw != null && amountRaw > 0u && !exceedsBalance
     val networkRaw = context.identity.networkRaw
 
     TokenActionScaffold(
@@ -244,8 +243,8 @@ private fun MintForm(
     val amountRaw = TokenAmounts.parse(amountText, token.decimals)
     val maxSupply = bigOrNull(token.maxSupply)
     val exceedsMaxSupply = amountRaw != null && maxSupply != null &&
-        BigInteger.valueOf(amountRaw) > maxSupply
-    val canSubmit = amountRaw != null && amountRaw > 0 && !exceedsMaxSupply &&
+        BigInteger(amountRaw.toString()) > maxSupply
+    val canSubmit = amountRaw != null && amountRaw > 0u && !exceedsMaxSupply &&
         (mintToSelf || recipient != null)
 
     TokenActionScaffold(
@@ -368,7 +367,7 @@ private fun BurnForm(
     val balance = rememberHeldBalance(context)
     val amountRaw = TokenAmounts.parse(amountText, token.decimals)
     val exceedsBalance = amountRaw != null && amountRaw > balance
-    val canSubmit = amountRaw != null && amountRaw > 0 && !exceedsBalance
+    val canSubmit = amountRaw != null && amountRaw > 0u && !exceedsBalance
 
     TokenActionScaffold(
         title = "Burn",
@@ -712,11 +711,9 @@ private fun PurchaseForm(
     val pricing = (priceState as? PurchasePriceState.Loaded)?.pricing
     // `costFor` applies the exact tier rule Drive uses to validate the
     // purchase, so this equals the chain's required price. Null means the
-    // amount isn't purchasable (below the minimum, free tier, or out of the
-    // Long range the FFI accepts).
+    // amount isn't purchasable (below the minimum or outside u64).
     val expectedTotalCost = amountRaw?.let { pricing?.costFor(it) }
-    val canSubmit = amountRaw != null && amountRaw > 0 &&
-        expectedTotalCost != null && expectedTotalCost > 0
+    val canSubmit = amountRaw != null && amountRaw > 0u && expectedTotalCost != null
 
     TokenActionScaffold(
         title = "Direct Purchase",
@@ -768,7 +765,7 @@ private fun PurchaseForm(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.testTag("tokenAction.purchase.status"),
                         )
-                        amountRaw == null || amountRaw <= 0 -> Text(
+                        amountRaw == null || amountRaw == 0uL -> Text(
                             "Enter an amount to see the total cost.",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -782,7 +779,7 @@ private fun PurchaseForm(
                         )
                         else -> LabeledContent(
                             "Total cost",
-                            "%,d credits".format(expectedTotalCost),
+                            "$expectedTotalCost credits",
                         )
                     }
                 }
@@ -794,15 +791,15 @@ private fun PurchaseForm(
 /**
  * Why an entered [amount] can't be purchased at [pricing] — an under-minimum
  * hint for a tiered schedule, otherwise a generic "not available at this
- * amount" (covers a free tier or a total beyond the FFI's Long range).
+ * amount" (covers a total beyond the protocol u64 range).
  */
 private fun purchaseUnavailableReason(
     pricing: TokenDirectPurchasePricing,
-    amount: Long,
+    amount: ULong,
     decimals: Int,
 ): String {
     val minimum = pricing.minimumPurchaseAmount
-    return if (BigInteger.valueOf(amount) < minimum) {
+    return if (BigInteger(amount.toString()) < minimum) {
         "The minimum direct purchase for this token is " +
             "${TokenAmounts.format(minimum.toString(), decimals)}."
     } else {
@@ -829,8 +826,8 @@ private fun SetPriceForm(
         pricingRule?.toJson(), token.mainControlGroupPosition,
     )
     // Flat credits-per-token price; 0 disables direct purchase.
-    val price = priceText.trim().toULongOrNull()?.toLong()
-    val canSubmit = price != null && price >= 0
+    val price = priceText.trim().toULongOrNull()
+    val canSubmit = price != null
 
     TokenActionScaffold(
         title = "Set Price",
@@ -909,7 +906,7 @@ private fun UpdateMaxSupplyForm(
         token.maxSupplyChangeRules, token.mainControlGroupPosition,
     )
     val amountRaw = TokenAmounts.parse(amountText, token.decimals)
-    val canSubmit = removeCap || (amountRaw != null && amountRaw > 0)
+    val canSubmit = removeCap || (amountRaw != null && amountRaw > 0u)
 
     TokenActionScaffold(
         title = "Update Max Supply",

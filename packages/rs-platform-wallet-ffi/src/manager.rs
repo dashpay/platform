@@ -4,7 +4,7 @@ use crate::check_ptr;
 use crate::error::*;
 use crate::event_handler::{EventHandlerCallbacks, FFIEventHandler};
 use crate::handle::*;
-use crate::persistence::{FFIPersister, PersistenceCallbacks};
+use crate::persistence::{FFIPersister, PersistenceCallbacks, PersistenceCapabilitiesFFI};
 use crate::runtime::runtime;
 use crate::types::{FFINetwork, Network};
 use crate::{unwrap_option_or_return, unwrap_result_or_return};
@@ -62,6 +62,25 @@ pub unsafe extern "C" fn platform_wallet_manager_create(
     let handle = PLATFORM_WALLET_MANAGER_STORAGE.insert(manager);
     *out_handle = handle;
 
+    PlatformWalletFFIResult::ok()
+}
+
+/// Query the versioned persistence capabilities of a live manager.
+///
+/// The returned mask is derived from the callback vtable copied at manager
+/// creation. Callers must check `version` before interpreting known bits and
+/// ignore unknown bits for forward compatibility.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_manager_persistence_capabilities(
+    manager_handle: Handle,
+    out_capabilities: *mut PersistenceCapabilitiesFFI,
+) -> PlatformWalletFFIResult {
+    check_ptr!(out_capabilities);
+
+    let capabilities = PLATFORM_WALLET_MANAGER_STORAGE
+        .with_item(manager_handle, |manager| manager.persistence_capabilities());
+    let capabilities = unwrap_option_or_return!(capabilities);
+    *out_capabilities = capabilities.into();
     PlatformWalletFFIResult::ok()
 }
 

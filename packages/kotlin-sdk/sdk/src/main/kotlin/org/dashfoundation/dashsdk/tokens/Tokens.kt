@@ -31,10 +31,21 @@ import org.dashfoundation.dashsdk.ffi.TokensNative
  * Return values are the raw JSON strings the FFI produces (balances maps for
  * mint/burn/transfer); the caller decodes them, mirroring how the Swift
  * wrappers hand JSON up to their callers.
+ *
+ * Amount, price, cost, and max-supply inputs are [ULong] because Platform
+ * defines them as `u64`. The SDK is unreleased, so no signed-`Long`
+ * compatibility overloads are provided; internally the existing JNI
+ * declarations remain `Long` and carry the same 64 raw bits.
  */
 class Tokens internal constructor(private val walletHandle: Long,
     private val gate: org.dashfoundation.dashsdk.wallet.TeardownGate? = null,
 ) {
+
+    /**
+     * Java-facing token actions whose numeric parameters are [java.math.BigInteger].
+     * Kotlin callers should use the idiomatic [ULong] methods directly.
+     */
+    fun javaAmounts(): JavaTokenActions = JavaTokenActions(this)
 
     /**
      * Mint [amount]; [issuedToIdentityId] null mints to [identityId].
@@ -44,7 +55,7 @@ class Tokens internal constructor(private val walletHandle: Long,
         identityId: ByteArray,
         tokenContractId: ByteArray,
         tokenPosition: Int,
-        amount: Long,
+        amount: ULong,
         issuedToIdentityId: ByteArray? = null,
         publicNote: String? = null,
         groupAction: GroupAction = GroupAction.None,
@@ -52,12 +63,12 @@ class Tokens internal constructor(private val walletHandle: Long,
         signerHandle: Long,
     ): String? = gate.op {
         validateSelectors(tokenPosition, signingKeyId)
-        require(amount > 0) { "amount must be positive, got $amount" }
+        require(amount > 0u) { "amount must be positive, got $amount" }
         val g = groupAction.flatten()
         mapNativeErrors {
             TokensNative.tokenMint(
                 walletHandle, identityId, tokenContractId, tokenPosition,
-                issuedToIdentityId, amount, publicNote,
+                issuedToIdentityId, amount.toNativeLongBits(), publicNote,
                 g.kind, g.position, g.actionId, g.actionIsProposer,
                 signingKeyId, signerHandle,
             )
@@ -69,19 +80,19 @@ class Tokens internal constructor(private val walletHandle: Long,
         identityId: ByteArray,
         tokenContractId: ByteArray,
         tokenPosition: Int,
-        amount: Long,
+        amount: ULong,
         publicNote: String? = null,
         groupAction: GroupAction = GroupAction.None,
         signingKeyId: Int,
         signerHandle: Long,
     ): String? = gate.op {
         validateSelectors(tokenPosition, signingKeyId)
-        require(amount > 0) { "amount must be positive, got $amount" }
+        require(amount > 0u) { "amount must be positive, got $amount" }
         val g = groupAction.flatten()
         mapNativeErrors {
             TokensNative.tokenBurn(
                 walletHandle, identityId, tokenContractId, tokenPosition,
-                amount, publicNote,
+                amount.toNativeLongBits(), publicNote,
                 g.kind, g.position, g.actionId, g.actionIsProposer,
                 signingKeyId, signerHandle,
             )
@@ -94,17 +105,17 @@ class Tokens internal constructor(private val walletHandle: Long,
         tokenContractId: ByteArray,
         tokenPosition: Int,
         recipientId: ByteArray,
-        amount: Long,
+        amount: ULong,
         publicNote: String? = null,
         signingKeyId: Int,
         signerHandle: Long,
     ): String? = gate.op {
         validateSelectors(tokenPosition, signingKeyId)
-        require(amount > 0) { "amount must be positive, got $amount" }
+        require(amount > 0u) { "amount must be positive, got $amount" }
         mapNativeErrors {
             TokensNative.tokenTransfer(
                 walletHandle, identityId, tokenContractId, tokenPosition,
-                recipientId, amount, publicNote, signingKeyId, signerHandle,
+                recipientId, amount.toNativeLongBits(), publicNote, signingKeyId, signerHandle,
             )
         }
     }
@@ -225,21 +236,18 @@ class Tokens internal constructor(private val walletHandle: Long,
         identityId: ByteArray,
         tokenContractId: ByteArray,
         tokenPosition: Int,
-        pricePerToken: Long,
+        pricePerToken: ULong,
         publicNote: String? = null,
         groupAction: GroupAction = GroupAction.None,
         signingKeyId: Int,
         signerHandle: Long,
     ): Unit = gate.op {
         validateSelectors(tokenPosition, signingKeyId)
-        require(pricePerToken >= 0) {
-            "pricePerToken must be non-negative (0 disables direct purchase), got $pricePerToken"
-        }
         val g = groupAction.flatten()
         mapNativeErrors {
             TokensNative.tokenSetPrice(
                 walletHandle, identityId, tokenContractId, tokenPosition,
-                pricePerToken, publicNote,
+                pricePerToken.toNativeLongBits(), publicNote,
                 g.kind, g.position, g.actionId, g.actionIsProposer,
                 signingKeyId, signerHandle,
             )
@@ -251,20 +259,18 @@ class Tokens internal constructor(private val walletHandle: Long,
         identityId: ByteArray,
         tokenContractId: ByteArray,
         tokenPosition: Int,
-        amount: Long,
-        expectedTotalCost: Long,
+        amount: ULong,
+        expectedTotalCost: ULong,
         signingKeyId: Int,
         signerHandle: Long,
     ): Unit = gate.op {
         validateSelectors(tokenPosition, signingKeyId)
-        require(amount > 0) { "amount must be positive, got $amount" }
-        require(expectedTotalCost > 0) {
-            "expectedTotalCost must be positive, got $expectedTotalCost"
-        }
+        require(amount > 0u) { "amount must be positive, got $amount" }
         mapNativeErrors {
             TokensNative.tokenPurchase(
                 walletHandle, identityId, tokenContractId, tokenPosition,
-                amount, expectedTotalCost, signingKeyId, signerHandle,
+                amount.toNativeLongBits(), expectedTotalCost.toNativeLongBits(),
+                signingKeyId, signerHandle,
             )
         }
     }
@@ -352,16 +358,15 @@ sealed class TokenConfigChange {
     /**
      * Set (or, with [newMaxSupply] null, remove) the token's max supply.
      * Renders `{"newMaxSupply":"<u64>"}` or `{"newMaxSupply":null}`; the
-     * value is a decimal string so the full u64 range survives (Long is
-     * signed, so a value is passed as its unsigned decimal rendering).
+     * value is a decimal string so the full u64 range survives JSON.
      */
-    data class MaxSupply(val newMaxSupply: Long?) : TokenConfigChange() {
+    data class MaxSupply(val newMaxSupply: ULong?) : TokenConfigChange() {
         override val tag: Int = 0
         override val payloadJson: String =
             if (newMaxSupply == null) {
                 "{\"newMaxSupply\":null}"
             } else {
-                "{\"newMaxSupply\":\"${newMaxSupply.toULong()}\"}"
+                "{\"newMaxSupply\":\"$newMaxSupply\"}"
             }
     }
 }

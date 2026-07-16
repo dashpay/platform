@@ -184,6 +184,15 @@ internal object WalletManagerNative {
         coreSignerHandle: Long,
     ): Long
 
+    /** Atomic V2 finalizer; consumes [builder] and returns an opaque registry handle. */
+    external fun coreTxBuilderFinalize(
+        builder: Long,
+        walletHandle: Long,
+        accountType: Int,
+        accountIndex: Int,
+        coreSignerHandle: Long,
+    ): Long
+
     /**
      * `core_wallet_tx_builder_destroy` — free a builder from [coreTxBuilderNew]
      * that was NOT consumed by [coreTxBuilderBuildSigned]. Safe on 0.
@@ -209,6 +218,18 @@ internal object WalletManagerNative {
         accountType: Int,
         accountIndex: Int,
     ): String
+
+    /** Consume and broadcast an atomically finalized V2 transaction. */
+    external fun coreWalletBroadcastSignedTransactionV2(coreHandle: Long, transaction: Long): String
+
+    /** Consume without sending and immediately release the reservation. */
+    external fun coreWalletAbandonSignedTransactionV2(coreHandle: Long, transaction: Long)
+
+    /** Idempotent cleaner fallback; abandons and releases the reservation. */
+    external fun coreSignedTransactionV2Free(transaction: Long)
+
+    /** Read the finalized transaction's fee before consumption. */
+    external fun coreSignedTransactionV2Fee(transaction: Long): Long
 
     /** `core_wallet_destroy` — release a core handle from [platformWalletGetCore]. Safe on 0. */
     external fun coreWalletDestroy(coreHandle: Long)
@@ -450,6 +471,19 @@ internal object WalletManagerNative {
     /** Unix seconds of the SPV header tip, or 0 if not running / no headers. */
     external fun spvTipUnixSeconds(managerHandle: Long): Long
 
+    /**
+     * Rewind one loaded wallet's in-memory compact-filter checkpoint.
+     * JNI symbol:
+     * `Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_spvRescanFilters`;
+     * descriptor `(J[BI)V`; marshals
+     * `platform_wallet_manager_spv_rescan_filters`.
+     */
+    external fun spvRescanFilters(
+        managerHandle: Long,
+        walletId: ByteArray,
+        fromHeight: Int,
+    )
+
     /** Clear all persisted SPV storage (headers, filters, state). */
     external fun spvClearStorage(managerHandle: Long)
 
@@ -479,6 +513,20 @@ internal object WalletManagerNative {
      * `byte[]`. Bridges `platform_wallet_list_in_memory_watched_identity_ids`.
      */
     external fun walletInMemoryWatchedIdentityIds(walletHandle: Long): ByteArray
+
+    /**
+     * Copy one manager-owned tracked-lock snapshot into a single Kotlin
+     * result. JNI symbol:
+     * `Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_trackedAssetLocks`;
+     * descriptor:
+     * `(J[B)Lorg/dashfoundation/dashsdk/ffi/TrackedAssetLocksNativeResult;`.
+     *
+     * JNI owns the C list/free pairing; see [TrackedAssetLocksNativeResult].
+     */
+    external fun trackedAssetLocks(
+        managerHandle: Long,
+        walletId: ByteArray,
+    ): TrackedAssetLocksNativeResult
 
     /**
      * The BIP-9 identity index recorded on a managed-identity snapshot

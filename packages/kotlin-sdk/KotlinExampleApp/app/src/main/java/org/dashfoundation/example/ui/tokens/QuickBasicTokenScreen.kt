@@ -39,6 +39,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.serialization.ExperimentalSerializationApi
+import kotlinx.serialization.json.JsonUnquotedLiteral
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
@@ -362,6 +364,7 @@ fun QuickBasicTokenScreen(navController: NavHostController) {
  * `$formatVersion: "0"` for serde's tagged-enum dispatch; supplies are
  * emitted as numbers, matching the Swift `JSONSerialization` output.
  */
+@OptIn(ExperimentalSerializationApi::class)
 internal fun synthesizeTokenSchemas(
     singular: String,
     plural: String,
@@ -384,7 +387,7 @@ internal fun synthesizeTokenSchemas(
                 }
             }
         }
-        put("baseSupply", baseSupply.toLong())
-        maxSupply?.let { put("maxSupply", it.toLong()) }
+        put("baseSupply", JsonUnquotedLiteral(baseSupply.toString()))
+        maxSupply?.let { put("maxSupply", JsonUnquotedLiteral(it.toString())) }
     }
 }.toString()

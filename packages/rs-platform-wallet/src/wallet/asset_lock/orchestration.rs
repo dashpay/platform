@@ -104,8 +104,8 @@ pub(crate) const CL_HEIGHT_RETRY_BUDGET: Duration = Duration::from_secs(210);
 /// and drive the wait. An earlier variant (`UseAssetLock`) accepted
 /// an externally-built proof and skipped tracking — it broke the
 /// IS→CL fallback unrecoverably because the lock was invisible to
-/// `upgrade_to_chain_lock_proof` (which short-circuits with
-/// `Asset lock {} is not tracked`). The variant was removed; future
+/// `upgrade_to_chain_lock_proof` (which short-circuits with the typed
+/// [`PlatformWalletError::AssetLockNotTracked`]). The variant was removed; future
 /// callers that hold an external proof should register it through
 /// `AssetLockManager` first, then use `FromExistingAssetLock`.
 #[derive(Debug, Clone)]
@@ -432,23 +432,32 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 out_point,
                 consume_invitation_voucher,
             } => {
+                let (actual_funding_type, actual_identity_index, status) = self
+                    .tracked_resume_metadata(&out_point)
+                    .await
+                    .ok_or(PlatformWalletError::AssetLockNotTracked(out_point))?;
+                if status == crate::wallet::asset_lock::tracked::AssetLockStatus::Consumed {
+                    return Err(PlatformWalletError::AssetLockAlreadyConsumed(out_point));
+                }
                 // Invitation vouchers are bearer instruments: the credit
                 // output's private key was exported into a shared link, so
                 // consuming the lock through a generic resume/top-up would
                 // both misdirect the funds into a local identity and kill
                 // the invitee's claim. Refuse unless the caller carries the
                 // reclaim flow's explicit authorization.
-                if !consume_invitation_voucher
-                    && self.tracked_funding_type(&out_point).await
-                        == Some(AssetLockFundingType::IdentityInvitation)
-                {
-                    return Err(PlatformWalletError::AssetLockTransaction(format!(
-                        "asset lock {out_point} is a DashPay invitation voucher; \
-                         generic resume/top-up refuses to consume it (its key is \
-                         shared in the invitation link, and consuming it would \
-                         invalidate the invitee's claim) — use the invitation \
-                         reclaim flow, which passes explicit authorization"
-                    )));
+                let invitation_reclaim = authorized_invitation_reclaim(
+                    actual_funding_type,
+                    funding_type,
+                    consume_invitation_voucher,
+                );
+                if !invitation_reclaim {
+                    validate_existing_asset_lock_role(
+                        out_point,
+                        funding_type,
+                        destination_index,
+                        actual_funding_type,
+                        actual_identity_index,
+                    )?;
                 }
                 // 300s is an InstantSend-preference window, not a finality
                 // timeout: on expiry the caller falls back to an unbounded
@@ -479,6 +488,58 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     }
 }
 
+/// The two dedicated invitation-reclaim destinations. Explicit authority is
+/// still mandatory; generic registration/top-up recovery always passes false.
+fn authorized_invitation_reclaim(
+    actual_funding_type: AssetLockFundingType,
+    expected_funding_type: AssetLockFundingType,
+    consume_invitation_voucher: bool,
+) -> bool {
+    actual_funding_type == AssetLockFundingType::IdentityInvitation
+        && consume_invitation_voucher
+        && matches!(
+            expected_funding_type,
+            AssetLockFundingType::IdentityRegistration | AssetLockFundingType::IdentityTopUp
+        )
+}
+
+/// Authorize a tracked one-shot output for the operation that is about to
+/// consume it. Identity registration and bound top-up paths must match their
+/// identity index; an unbound top-up is deliberately eligible for any target.
+/// Invitation vouchers never pass this generic validator—the explicit reclaim
+/// authorization above is the only bypass.
+fn validate_existing_asset_lock_role(
+    out_point: OutPoint,
+    expected_funding_type: AssetLockFundingType,
+    expected_identity_index: u32,
+    actual_funding_type: AssetLockFundingType,
+    actual_identity_index: u32,
+) -> Result<(), PlatformWalletError> {
+    let eligible = match expected_funding_type {
+        AssetLockFundingType::IdentityRegistration => {
+            actual_funding_type == AssetLockFundingType::IdentityRegistration
+                && actual_identity_index == expected_identity_index
+        }
+        AssetLockFundingType::IdentityTopUp => {
+            (actual_funding_type == AssetLockFundingType::IdentityTopUp
+                && actual_identity_index == expected_identity_index)
+                || actual_funding_type == AssetLockFundingType::IdentityTopUpNotBound
+        }
+        _ => actual_funding_type == expected_funding_type,
+    };
+    if eligible {
+        Ok(())
+    } else {
+        Err(PlatformWalletError::AssetLockFundingMismatch {
+            out_point,
+            expected_funding_type,
+            expected_identity_index,
+            actual_funding_type,
+            actual_identity_index,
+        })
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -486,6 +547,104 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn existing_lock_role_validation_binds_identity_funding() {
+        let out_point = OutPoint::null();
+
+        assert!(validate_existing_asset_lock_role(
+            out_point,
+            AssetLockFundingType::IdentityRegistration,
+            7,
+            AssetLockFundingType::IdentityRegistration,
+            7,
+        )
+        .is_ok());
+        for error in [
+            validate_existing_asset_lock_role(
+                out_point,
+                AssetLockFundingType::IdentityRegistration,
+                7,
+                AssetLockFundingType::IdentityRegistration,
+                8,
+            ),
+            validate_existing_asset_lock_role(
+                out_point,
+                AssetLockFundingType::IdentityRegistration,
+                7,
+                AssetLockFundingType::IdentityTopUp,
+                7,
+            ),
+            validate_existing_asset_lock_role(
+                out_point,
+                AssetLockFundingType::IdentityRegistration,
+                0,
+                AssetLockFundingType::IdentityInvitation,
+                0,
+            ),
+        ] {
+            assert!(matches!(
+                error,
+                Err(PlatformWalletError::AssetLockFundingMismatch { .. })
+            ));
+        }
+
+        assert!(validate_existing_asset_lock_role(
+            out_point,
+            AssetLockFundingType::IdentityTopUp,
+            11,
+            AssetLockFundingType::IdentityTopUp,
+            11,
+        )
+        .is_ok());
+        assert!(validate_existing_asset_lock_role(
+            out_point,
+            AssetLockFundingType::IdentityTopUp,
+            11,
+            AssetLockFundingType::IdentityTopUpNotBound,
+            999,
+        )
+        .is_ok());
+        assert!(matches!(
+            validate_existing_asset_lock_role(
+                out_point,
+                AssetLockFundingType::IdentityTopUp,
+                11,
+                AssetLockFundingType::IdentityTopUp,
+                12,
+            ),
+            Err(PlatformWalletError::AssetLockFundingMismatch { .. })
+        ));
+    }
+
+    #[test]
+    fn explicit_invitation_reclaim_allows_registration_and_topup_only() {
+        for expected in [
+            AssetLockFundingType::IdentityRegistration,
+            AssetLockFundingType::IdentityTopUp,
+        ] {
+            assert!(authorized_invitation_reclaim(
+                AssetLockFundingType::IdentityInvitation,
+                expected,
+                true,
+            ));
+            assert!(!authorized_invitation_reclaim(
+                AssetLockFundingType::IdentityInvitation,
+                expected,
+                false,
+            ));
+        }
+        assert!(!authorized_invitation_reclaim(
+            AssetLockFundingType::IdentityInvitation,
+            AssetLockFundingType::AssetLockAddressTopUp,
+            true,
+        ));
+        assert!(!authorized_invitation_reclaim(
+            AssetLockFundingType::IdentityRegistration,
+            AssetLockFundingType::IdentityRegistration,
+            true,
+        ));
+    }
 
     /// Fabricate the SDK-side 10506 error shape exactly as
     /// `as_asset_lock_proof_cl_height_too_low` recognizes it

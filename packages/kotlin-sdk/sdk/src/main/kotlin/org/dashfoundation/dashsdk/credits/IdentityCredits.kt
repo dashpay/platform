@@ -6,6 +6,18 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.dashfoundation.dashsdk.errors.mapNativeErrors
 import org.dashfoundation.dashsdk.ffi.CreditsNative
+import org.dashfoundation.dashsdk.wallet.TrackedAssetLock
+
+internal fun interface ResumeTopUpNativeCall {
+    fun call(
+        walletHandle: Long,
+        outpointTxid: ByteArray,
+        outpointVout: Int,
+        identityId: ByteArray,
+        coreSignerHandle: Long,
+        consumeInvitationVoucher: Boolean,
+    ): Long
+}
 
 /**
  * One Platform-address funding input for an identity top-up — port of the
@@ -67,7 +79,43 @@ data class FundingInput(
  */
 class IdentityCredits internal constructor(
     private val gate: org.dashfoundation.dashsdk.wallet.TeardownGate? = null,
+    private val resumeTopUpNative: ResumeTopUpNativeCall =
+        ResumeTopUpNativeCall(CreditsNative::topUpIdentityWithExistingAssetLock),
 ) {
+
+    /**
+     * Resume a top-up from [lock]'s exact persisted outpoint. Rust remains
+     * authoritative for rebroadcast, proof acquisition, and consumption;
+     * Kotlin never creates a second funding transaction. Invitation locks
+     * are rejected and generic recovery always passes `false` for voucher
+     * consumption.
+     */
+    suspend fun resumeTopUpWithExistingAssetLock(
+        walletHandle: Long,
+        identityId: ByteArray,
+        lock: TrackedAssetLock,
+        coreSignerHandle: Long,
+    ): Long = gate.op {
+        require(identityId.size == 32) {
+            "identityId must be exactly 32 bytes, got ${identityId.size}"
+        }
+        require(
+            lock.fundingType == TrackedAssetLock.FundingType.IDENTITY_TOP_UP ||
+                lock.fundingType == TrackedAssetLock.FundingType.IDENTITY_TOP_UP_NOT_BOUND,
+        ) {
+            "top-up recovery requires funding type 1 or 2, got ${lock.fundingType.raw}"
+        }
+        mapNativeErrors {
+            resumeTopUpNative.call(
+                walletHandle = walletHandle,
+                outpointTxid = lock.outpointTxid,
+                outpointVout = lock.outpointVout,
+                identityId = identityId,
+                coreSignerHandle = coreSignerHandle,
+                consumeInvitationVoucher = false,
+            )
+        }
+    }
 
     /**
      * Transfer [amount] credits from [fromIdentityId] to [toIdentityId]

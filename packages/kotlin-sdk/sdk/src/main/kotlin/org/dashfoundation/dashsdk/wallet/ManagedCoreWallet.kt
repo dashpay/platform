@@ -31,6 +31,7 @@ class ManagedCoreWallet internal constructor(handle: Long) : AutoCloseable {
      * broadcast rejection releases the UTXO reservation `buildSigned` took.
      * Returns the txid as a lowercase hex string.
      */
+    @Deprecated("Use the atomic FinalizedCoreTransaction send path")
     fun broadcastTransaction(tx: CoreTransaction): String =
         WalletManagerNative.coreWalletBroadcastTransaction(
             handle,
@@ -38,6 +39,21 @@ class ManagedCoreWallet internal constructor(handle: Long) : AutoCloseable {
             tx.accountType.ffiValue,
             tx.accountIndex,
         )
+
+    /** Consume and broadcast a V2 finalized transaction. */
+    fun broadcastTransaction(tx: FinalizedCoreTransaction): String =
+        WalletManagerNative.coreWalletBroadcastSignedTransactionV2(
+            handle,
+            tx.takeForBroadcast(),
+        )
+
+    /** Consume without sending and release the selected inputs immediately. */
+    fun abandonTransaction(tx: FinalizedCoreTransaction) {
+        WalletManagerNative.coreWalletAbandonSignedTransactionV2(
+            handle,
+            tx.takeForAbandon(),
+        )
+    }
 
     override fun close() {
         cleanable.clean()

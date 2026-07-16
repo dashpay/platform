@@ -55,9 +55,10 @@ use platform_wallet_ffi::{
     AssetLockEntryFFI, ContactIgnoredSenderFFI, ContactProfileRestoreEntryFFI, ContactRequestFFI,
     ContactRequestRemovalFFI, CoreAddressEntryFFI, IdentityEntryFFI, IdentityKeyEntryFFI,
     IdentityKeyRemovalFFI, IdentityKeyRestoreFFI, IdentityRestoreEntryFFI, PaymentRestoreEntryFFI,
-    PersistenceCallbacks, PlatformAddressFFI, SpentOutPointFFI, TokenBalanceRemovalFFI,
-    TokenBalanceUpsertFFI, TransactionRecordFFI, UnresolvedAssetLockTxRecordFFI, UtxoEntryFFI,
-    UtxoRestoreEntryFFI, WalletChangeSetFFI, WalletRestoreEntryFFI,
+    PersistenceCallbacks, PlatformAddressFFI, ProviderSpecialTxRestoreEntryFFI, SpentOutPointFFI,
+    TokenBalanceRemovalFFI, TokenBalanceUpsertFFI, TransactionRecordFFI,
+    UnresolvedAssetLockTxRecordFFI, UtxoEntryFFI, UtxoRestoreEntryFFI, WalletChangeSetFFI,
+    WalletRestoreEntryFFI,
 };
 use std::ffi::{c_void, CStr, CString};
 use std::os::raw::c_char;
@@ -68,7 +69,8 @@ use std::ptr;
 use platform_wallet_ffi::shielded_persistence::{
     ShieldedActivityFFI, ShieldedActivityRestoreFFI, ShieldedNoteFFI, ShieldedNoteRestoreFFI,
     ShieldedNullifierSpentFFI, ShieldedOutgoingNoteFFI, ShieldedOutgoingNoteRestoreFFI,
-    ShieldedSubwalletSyncStateFFI, ShieldedSyncedIndexFFI,
+    ShieldedSubwalletSyncStateFFI, ShieldedSyncedIndexFFI, ShieldedViewingKeyFFI,
+    ShieldedViewingKeyRestoreFFI,
 };
 
 // ── Context ───────────────────────────────────────────────────────────
@@ -140,16 +142,12 @@ pub(crate) fn build_vtable(context: *mut c_void) -> PersistenceCallbacks {
         on_persist_shielded_synced_indices_fn: Some(tramp_persist_shielded_synced_indices),
         #[cfg(feature = "shielded")]
         on_persist_shielded_activity_fn: Some(tramp_persist_shielded_activity),
-        // Orchard viewing keys (#4126, seedless shielded bind): Android
-        // has no viewing-key persistence yet — None keeps the documented
-        // fall-back (bind resolves the seed via the mnemonic resolver, the
-        // pre-#4126 behavior). Parity port tracked as a follow-up.
         #[cfg(feature = "shielded")]
-        on_persist_shielded_viewing_keys_fn: None,
+        on_persist_shielded_viewing_keys_fn: Some(tramp_persist_shielded_viewing_keys),
         #[cfg(feature = "shielded")]
-        on_load_shielded_viewing_keys_fn: None,
+        on_load_shielded_viewing_keys_fn: Some(tramp_load_shielded_viewing_keys),
         #[cfg(feature = "shielded")]
-        on_load_shielded_viewing_keys_free_fn: None,
+        on_load_shielded_viewing_keys_free_fn: Some(tramp_load_shielded_viewing_keys_free),
         #[cfg(feature = "shielded")]
         on_load_shielded_notes_fn: Some(tramp_load_shielded_notes),
         #[cfg(feature = "shielded")]
@@ -648,8 +646,9 @@ unsafe fn persist_changeset_account(
         }
     }
     for t in slice_or_empty(acc.transactions, acc.transactions_count) {
-        let code =
-            env.with_local_frame(32, |env| persist_changeset_transaction(env, bridge, wid, t))?;
+        let code = env.with_local_frame(40, |env| {
+            persist_changeset_transaction(env, bridge, wid, acc, t)
+        })?;
         if code != 0 {
             return Ok(code);
         }
@@ -716,10 +715,14 @@ unsafe fn persist_changeset_utxo_spent(
     .i()
 }
 
+const WALLET_CHANGESET_TRANSACTION_DESCRIPTOR: &str =
+    "([B[B[BII[BIILjava/lang/String;IJJZLjava/lang/String;J[BIBBIII[B[BIZ)I";
+
 unsafe fn persist_changeset_transaction(
     env: &mut JNIEnv,
     bridge: &JObject,
     wid: &JByteArray,
+    account: &AccountChangeSetFFI,
     t: &TransactionRecordFFI,
 ) -> Result<i32, jni::errors::Error> {
     let txid = env.byte_array_from_slice(&t.txid)?;
@@ -740,10 +743,12 @@ unsafe fn persist_changeset_transaction(
     }
     let input_outpoints = env.byte_array_from_slice(&packed)?;
     let input_outpoint_count = ops.len() as i32;
+    let user_identity_id = env.byte_array_from_slice(&account.user_identity_id)?;
+    let friend_identity_id = env.byte_array_from_slice(&account.friend_identity_id)?;
     env.call_method(
         bridge,
         "onWalletChangesetTransaction",
-        "([B[B[BII[BIILjava/lang/String;IJJZLjava/lang/String;J[BI)I",
+        WALLET_CHANGESET_TRANSACTION_DESCRIPTOR,
         &[
             wid.into(),
             (&txid).into(),
@@ -762,6 +767,15 @@ unsafe fn persist_changeset_transaction(
             JValue::Long(t.first_seen as i64),
             (&input_outpoints).into(),
             JValue::Int(input_outpoint_count),
+            JValue::Byte(account.type_tag as u8 as i8),
+            JValue::Byte(account.standard_tag as u8 as i8),
+            JValue::Int(account.account_index as i32),
+            JValue::Int(account.registration_index as i32),
+            JValue::Int(account.key_class as i32),
+            (&user_identity_id).into(),
+            (&friend_identity_id).into(),
+            JValue::Int(t.block_position as i32),
+            JValue::Bool(t.has_block_position as u8),
         ],
     )?
     .i()
@@ -1481,6 +1495,40 @@ unsafe extern "C" fn tramp_persist_shielded_activity(
     })
 }
 
+#[cfg(feature = "shielded")]
+unsafe extern "C" fn tramp_persist_shielded_viewing_keys(
+    context: *mut c_void,
+    wallet_id: *const u8,
+    entries: *const ShieldedViewingKeyFFI,
+    count: usize,
+) -> i32 {
+    with_bridge(context, |env, bridge| {
+        let wid = id32(env, wallet_id)?;
+        for entry in slice_or_empty(entries, count) {
+            let code = env.with_local_frame(16, |env| {
+                let key_wallet_id = env.byte_array_from_slice(&entry.wallet_id)?;
+                let fvk = env.byte_array_from_slice(&entry.fvk_bytes)?;
+                env.call_method(
+                    bridge,
+                    "onPersistShieldedViewingKey",
+                    "([B[BI[B)I",
+                    &[
+                        (&wid).into(),
+                        (&key_wallet_id).into(),
+                        JValue::Int(entry.account_index as i32),
+                        (&fvk).into(),
+                    ],
+                )?
+                .i()
+            })?;
+            if code != 0 {
+                return Ok(code);
+            }
+        }
+        Ok(0)
+    })
+}
+
 // ── Load: wallet list ─────────────────────────────────────────────────
 
 /// Staged wallet-list row: all JNI reads land in owned Rust memory, so a
@@ -1521,6 +1569,9 @@ struct WalletRestoreStaged {
     /// buffer (the FFI field is `*mut u8`); minted per row before the array
     /// and freed row-by-row before the array.
     unresolved_asset_lock_tx_records: Vec<UnresolvedTxRecordStaged>,
+    /// Provider special transactions. Each row owns consensus transaction
+    /// bytes; pointers are minted only after the complete wallet load stages.
+    provider_special_txs: Vec<ProviderSpecialTxStaged>,
     /// Bincode-encoded persisted `last_applied_chain_lock`. Empty vec →
     /// minted null / 0 at seal (no chainlock persisted). A single flat
     /// buffer, freed with one `free_raw_bytes`.
@@ -1591,6 +1642,43 @@ struct UnresolvedTxRecordStaged {
     /// FFI row with `tx_bytes` still null / 0 until sealed.
     entry: UnresolvedAssetLockTxRecordFFI,
     tx: Vec<u8>,
+}
+
+/// Staged provider-special transaction row with owned consensus bytes.
+struct ProviderSpecialTxStaged {
+    entry: ProviderSpecialTxRestoreEntryFFI,
+    tx: Vec<u8>,
+}
+
+fn seal_provider_special_txs(
+    staged: Vec<ProviderSpecialTxStaged>,
+) -> (*const ProviderSpecialTxRestoreEntryFFI, usize) {
+    let rows = staged
+        .into_iter()
+        .map(|ProviderSpecialTxStaged { mut entry, tx }| {
+            let (tx_ptr, tx_len) = vec_into_raw(tx);
+            entry.tx_bytes = tx_ptr as *mut u8;
+            entry.tx_bytes_len = tx_len;
+            entry
+        })
+        .collect();
+    vec_into_raw(rows)
+}
+
+unsafe fn free_provider_special_txs(
+    entries: *const ProviderSpecialTxRestoreEntryFFI,
+    count: usize,
+) {
+    if entries.is_null() || count == 0 {
+        return;
+    }
+    let rows: Box<[ProviderSpecialTxRestoreEntryFFI]> = Box::from_raw(
+        std::ptr::slice_from_raw_parts_mut(entries as *mut ProviderSpecialTxRestoreEntryFFI, count),
+    );
+    for row in rows.iter() {
+        free_raw_bytes(row.tx_bytes as *const u8, row.tx_bytes_len);
+    }
+    drop(rows);
 }
 
 /// Staged identity-restore row: FFI struct with `keys` / `contacts` /
@@ -1682,6 +1770,7 @@ fn seal_wallet_entries(staged: Vec<WalletRestoreStaged>) -> Vec<WalletRestoreEnt
                  core_address_pools,
                  tracked_asset_locks,
                  unresolved_asset_lock_tx_records,
+                 provider_special_txs,
                  last_applied_chain_lock,
              }| {
                 // Flat POD array — no nested owned buffers, so the whole
@@ -1791,6 +1880,12 @@ fn seal_wallet_entries(staged: Vec<WalletRestoreStaged>) -> Vec<WalletRestoreEnt
                     entry.unresolved_asset_lock_tx_records,
                     entry.unresolved_asset_lock_tx_records_count,
                 ) = vec_into_raw(unresolved_asset_lock_tx_records);
+
+                // Provider special transactions — mint each consensus-byte
+                // buffer before the outer POD array. The matching free path
+                // reclaims row buffers first, then the array.
+                (entry.provider_special_txs, entry.provider_special_txs_count) =
+                    seal_provider_special_txs(provider_special_txs);
 
                 // Persisted last-applied chainlock — a single flat buffer
                 // (empty → null / 0, no chainlock persisted).
@@ -2070,6 +2165,11 @@ fn build_wallet_restore_entry(
     // row's tx buffer stays owned until seal.
     let unresolved_asset_lock_tx_records = build_unresolved_asset_lock_tx_records(env, holder)?;
 
+    // Provider special transactions (ProRegTx / ProUpServTx / ProUpRegTx /
+    // ProUpRevTx). Consensus decoding and malformed-row skipping remain in
+    // platform-wallet; JNI only preserves the byte/context envelope.
+    let provider_special_txs = build_provider_special_txs(env, holder)?;
+
     // Persisted last-applied chainlock (bincode `ChainLock`) — stamped onto
     // the restored metadata so the asset-lock-resume CL-from-metadata
     // fallback can fire at launch. Empty → null / 0 at seal.
@@ -2101,10 +2201,6 @@ fn build_wallet_restore_entry(
         core_address_pools_count: 0,
         last_applied_chain_lock_bytes: ptr::null(),
         last_applied_chain_lock_bytes_len: 0,
-        // Android has no provider-special-tx persistence yet (the
-        // masternode-list feature is iOS-only so far — tracked as a
-        // parity follow-up); null/0 is the documented "wallet has no
-        // provider special txs" load value, and the free fn skips null.
         provider_special_txs: ptr::null(),
         provider_special_txs_count: 0,
     };
@@ -2117,6 +2213,7 @@ fn build_wallet_restore_entry(
         core_address_pools,
         tracked_asset_locks,
         unresolved_asset_lock_tx_records,
+        provider_special_txs,
         last_applied_chain_lock,
     })
 }
@@ -2454,6 +2551,60 @@ fn build_unresolved_asset_lock_tx_records(
                         block_height,
                         block_hash,
                         block_timestamp,
+                        first_seen,
+                    },
+                    tx,
+                })
+            },
+        )?;
+        out.push(staged);
+    }
+    Ok(out)
+}
+
+/// Read Kotlin provider-special restore rows into owned staging. The
+/// transaction bytes are not decoded here: the shared restore path remains
+/// the consensus authority and deliberately diagnoses/skips malformed rows.
+fn build_provider_special_txs(
+    env: &mut JNIEnv,
+    holder: &JObject,
+) -> Result<Vec<ProviderSpecialTxStaged>, jni::errors::Error> {
+    let arr_obj = env
+        .get_field(
+            holder,
+            "providerSpecialTxs",
+            "[Lorg/dashfoundation/dashsdk/ffi/ProviderSpecialTxRestoreData;",
+        )?
+        .l()?;
+    if arr_obj.is_null() {
+        return Ok(Vec::new());
+    }
+    let arr: jni::objects::JObjectArray = arr_obj.into();
+    let len = env.get_array_length(&arr)? as usize;
+    let mut out = Vec::with_capacity(len);
+    for i in 0..len {
+        let staged = env.with_local_frame(
+            24,
+            |env| -> Result<ProviderSpecialTxStaged, jni::errors::Error> {
+                let h = env.get_object_array_element(&arr, i as i32)?;
+                let tx = read_bytes_field_vec(env, &h, "txBytes")?;
+                let context_raw = env.get_field(&h, "contextRaw", "I")?.i()? as u32;
+                let block_height = env.get_field(&h, "blockHeight", "I")?.i()? as u32;
+                let block_hash = read_bytes_field_fixed_or_empty::<32>(env, &h, "blockHash")?;
+                let block_timestamp = env.get_field(&h, "blockTimestamp", "J")?.j()? as u64;
+                let block_position = env.get_field(&h, "blockPosition", "I")?.i()? as u32;
+                let has_block_position = env.get_field(&h, "hasBlockPosition", "Z")?.z()?;
+                let first_seen = env.get_field(&h, "firstSeen", "J")?.j()? as u64;
+                Ok(ProviderSpecialTxStaged {
+                    entry: ProviderSpecialTxRestoreEntryFFI {
+                        tx_bytes: ptr::null_mut(),
+                        tx_bytes_len: 0,
+                        context_raw,
+                        block_height,
+                        block_hash,
+                        block_timestamp,
+                        block_position,
+                        has_block_position,
                         first_seen,
                     },
                     tx,
@@ -3042,6 +3193,9 @@ unsafe extern "C" fn tramp_load_wallet_list_free(
                 drop(recs);
             }
 
+            // Provider special transactions + nested consensus-byte buffers.
+            free_provider_special_txs(e.provider_special_txs, e.provider_special_txs_count);
+
             // Persisted last-applied chainlock — a single flat buffer.
             free_raw_bytes(
                 e.last_applied_chain_lock_bytes,
@@ -3138,6 +3292,52 @@ unsafe extern "C" fn tramp_load_wallet_list_free(
 }
 
 // ── Load: shielded ────────────────────────────────────────────────────
+
+#[cfg(feature = "shielded")]
+unsafe extern "C" fn tramp_load_shielded_viewing_keys(
+    context: *mut c_void,
+    out_entries: *mut *const ShieldedViewingKeyRestoreFFI,
+    out_count: *mut usize,
+) -> i32 {
+    let built = with_bridge_load(context, |env, bridge| {
+        let arr: jni::objects::JObjectArray = env
+            .call_method(
+                bridge,
+                "onLoadShieldedViewingKeys",
+                "()[Lorg/dashfoundation/dashsdk/ffi/ShieldedViewingKeyData;",
+                &[],
+            )?
+            .l()?
+            .into();
+        let len = env.get_array_length(&arr)? as usize;
+        let mut out = Vec::with_capacity(len);
+        for i in 0..len {
+            let entry = env.with_local_frame(
+                16,
+                |env| -> Result<ShieldedViewingKeyRestoreFFI, jni::errors::Error> {
+                    let holder = env.get_object_array_element(&arr, i as i32)?;
+                    Ok(ShieldedViewingKeyRestoreFFI {
+                        wallet_id: read_id32_field(env, &holder, "walletId")?,
+                        account_index: env.get_field(&holder, "accountIndex", "I")?.i()? as u32,
+                        fvk_bytes: read_bytes_field_fixed::<96>(env, &holder, "fvkBytes")?,
+                    })
+                },
+            )?;
+            out.push(entry);
+        }
+        Ok(out)
+    });
+    finish_load(built, out_entries, out_count)
+}
+
+#[cfg(feature = "shielded")]
+unsafe extern "C" fn tramp_load_shielded_viewing_keys_free(
+    _context: *mut c_void,
+    entries: *const ShieldedViewingKeyRestoreFFI,
+    count: usize,
+) {
+    free_boxed_slice(entries, count, |_| {});
+}
 
 #[cfg(feature = "shielded")]
 unsafe extern "C" fn tramp_load_shielded_notes(
@@ -3865,4 +4065,111 @@ fn read_bytes_field_vec(
     let mut buf = vec![0i8; len];
     env.get_byte_array_region(&arr, 0, &mut buf)?;
     Ok(buf.into_iter().map(|b| b as u8).collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use dashcore::blockdata::transaction::special_transaction::provider_update_service::ProviderUpdateServicePayload;
+    use dashcore::consensus::{deserialize, serialize};
+    use dashcore::hashes::Hash;
+    use dashcore::transaction::TransactionPayload;
+    use dashcore::{ScriptBuf, Transaction, Txid};
+
+    use super::*;
+
+    fn valid_provider_transaction() -> Transaction {
+        let payload = ProviderUpdateServicePayload {
+            version: 1,
+            mn_type: None,
+            pro_tx_hash: Txid::from_byte_array([7u8; 32]),
+            ip_address: 42,
+            port: 19_999,
+            script_payout: ScriptBuf::new(),
+            inputs_hash: [3u8; 32].into(),
+            platform_node_id: None,
+            platform_p2p_port: None,
+            platform_http_port: None,
+            payload_sig: [0u8; 96].into(),
+        };
+        Transaction {
+            version: 3,
+            lock_time: 0,
+            input: Vec::new(),
+            output: Vec::new(),
+            special_transaction_payload: Some(
+                TransactionPayload::ProviderUpdateServicePayloadType(payload),
+            ),
+        }
+    }
+
+    fn staged(tx: Vec<u8>) -> ProviderSpecialTxStaged {
+        ProviderSpecialTxStaged {
+            entry: ProviderSpecialTxRestoreEntryFFI {
+                tx_bytes: ptr::null_mut(),
+                tx_bytes_len: 0,
+                context_raw: 2,
+                block_height: 900,
+                block_hash: [9u8; 32],
+                block_timestamp: 1_700_000_000,
+                block_position: 5,
+                has_block_position: true,
+                first_seen: 1_699_999_999,
+            },
+            tx,
+        }
+    }
+
+    #[test]
+    fn transaction_callback_descriptor_carries_account_and_block_position() {
+        assert_eq!(
+            WALLET_CHANGESET_TRANSACTION_DESCRIPTOR,
+            "([B[B[BII[BIILjava/lang/String;IJJZLjava/lang/String;J[BIBBIII[B[BIZ)I"
+        );
+    }
+
+    #[cfg(feature = "shielded")]
+    #[test]
+    fn viewing_key_callbacks_are_wired_as_a_paired_fixed_size_contract() {
+        let callbacks = build_vtable(ptr::null_mut());
+        assert!(callbacks.on_persist_shielded_viewing_keys_fn.is_some());
+        assert!(callbacks.on_load_shielded_viewing_keys_fn.is_some());
+        assert!(callbacks.on_load_shielded_viewing_keys_free_fn.is_some());
+
+        let rows = vec![ShieldedViewingKeyRestoreFFI {
+            wallet_id: [4u8; 32],
+            account_index: 7,
+            fvk_bytes: [9u8; 96],
+        }];
+        let (rows, count) = vec_into_raw(rows);
+        let restored = unsafe { &*rows };
+        assert_eq!(restored.wallet_id, [4u8; 32]);
+        assert_eq!(restored.account_index, 7);
+        assert_eq!(restored.fvk_bytes, [9u8; 96]);
+        unsafe { tramp_load_shielded_viewing_keys_free(ptr::null_mut(), rows, count) };
+    }
+
+    #[test]
+    fn provider_special_owned_seal_round_trips_valid_consensus_bytes_and_frees() {
+        let expected = valid_provider_transaction();
+        let (ptr, count) = seal_provider_special_txs(vec![staged(serialize(&expected))]);
+        assert_eq!(count, 1);
+        let row = unsafe { &*ptr };
+        let bytes = unsafe { std::slice::from_raw_parts(row.tx_bytes, row.tx_bytes_len) };
+        let decoded: Transaction = deserialize(bytes).expect("valid provider transaction");
+        assert_eq!(decoded, expected);
+        assert_eq!(row.block_position, 5);
+        assert!(row.has_block_position);
+        unsafe { free_provider_special_txs(ptr, count) };
+    }
+
+    #[test]
+    fn provider_special_owned_seal_preserves_malformed_bytes_for_shared_skip_logic() {
+        let malformed = vec![0x01, 0x02, 0x03];
+        let (ptr, count) = seal_provider_special_txs(vec![staged(malformed.clone())]);
+        let row = unsafe { &*ptr };
+        let bytes = unsafe { std::slice::from_raw_parts(row.tx_bytes, row.tx_bytes_len) };
+        assert_eq!(bytes, malformed);
+        assert!(deserialize::<Transaction>(bytes).is_err());
+        unsafe { free_provider_special_txs(ptr, count) };
+    }
 }

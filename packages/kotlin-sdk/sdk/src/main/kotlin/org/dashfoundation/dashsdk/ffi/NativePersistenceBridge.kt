@@ -14,7 +14,7 @@ package org.dashfoundation.dashsdk.ffi
  * only overrides the slots it cares about; the defaults are no-ops that
  * return the success sentinel.
  *
- * ## The 32 vtable slots
+ * ## Vtable slots
  *
  * Each method maps 1:1 onto a `PersistenceCallbacks` slot (names kept
  * verbatim modulo camelCase). The exact JNI descriptor the Rust side
@@ -72,6 +72,10 @@ abstract class NativePersistenceBridge {
      *
      * @param addressType 0 = P2PKH, 1 = P2SH
      * @param addressHash 20-byte platform-address hash
+     * @param accountIndex event context only; an address-balance callback does
+     *   not mutate the persisted address/index bijection. Conflict-removal
+     *   events may carry the competing address's index.
+     * @param addressIndex event context only; see [accountIndex].
      */
     open fun onPersistAddressBalance(
         walletId: ByteArray,
@@ -232,7 +236,7 @@ abstract class NativePersistenceBridge {
 
     /**
      * One `TransactionRecordFFI` on the current account. Descriptor
-     * `([B[B[BII[BIILjava/lang/String;IJJZLjava/lang/String;J[BI)I`.
+     * `([B[B[BII[BIILjava/lang/String;IJJZLjava/lang/String;J[BIBBIII[B[BIZ)I`.
      *
      * [inputOutpoints] is a flat `36 * inputOutpointCount` byte array — the
      * i-th input outpoint (vin order) is `copyOfRange(i*36, i*36+36)`, packed
@@ -240,6 +244,12 @@ abstract class NativePersistenceBridge {
      * for coinbase. Carries every spent outpoint even when the funding TXO is
      * not yet known to Rust, so hosts can reconcile spend-before-funding via
      * the pending-input table (see `PlatformWalletPersistenceHandler`).
+     *
+     * The final account tuple is copied from the enclosing
+     * `AccountChangeSetFFI`; it must be forwarded on every call rather than
+     * inferred from mutable callback state. [blockPosition] and
+     * [hasBlockPosition] already exist on `TransactionRecordFFI` and add no
+     * fields to the C POD.
      */
     @Suppress("LongParameterList")
     open fun onWalletChangesetTransaction(
@@ -260,6 +270,15 @@ abstract class NativePersistenceBridge {
         firstSeen: Long,
         inputOutpoints: ByteArray,
         inputOutpointCount: Int,
+        accountTypeTag: Byte = (-1).toByte(),
+        accountStandardTag: Byte = 0,
+        accountIndex: Int = -1,
+        accountRegistrationIndex: Int = 0,
+        accountKeyClass: Int = 0,
+        accountUserIdentityId: ByteArray = ByteArray(0),
+        accountFriendIdentityId: ByteArray = ByteArray(0),
+        blockPosition: Int = 0,
+        hasBlockPosition: Boolean = false,
     ): Int = 0
 
     /** Close the current account bucket. Descriptor `([BI)I`. */
@@ -527,6 +546,17 @@ abstract class NativePersistenceBridge {
         spentNullifiers: ByteArray,
     ): Int = 0
 
+    /**
+     * One `ShieldedViewingKeyFFI`. Descriptor `([B[BI[B)I`.
+     * [fvkBytes] must be the exact 96-byte Orchard full-viewing-key encoding.
+     */
+    open fun onPersistShieldedViewingKey(
+        walletId: ByteArray,
+        keyWalletId: ByteArray,
+        accountIndex: Int,
+        fvkBytes: ByteArray,
+    ): Int = 0
+
     // ── Load callbacks ────────────────────────────────────────────────
 
     /**
@@ -556,6 +586,14 @@ abstract class NativePersistenceBridge {
 
     /** `on_load_shielded_activity_fn`. Descriptor `()[Lorg/dashfoundation/dashsdk/ffi/ShieldedActivityData;`. */
     open fun onLoadShieldedActivity(): Array<ShieldedActivityData> = emptyArray()
+
+    /**
+     * `on_load_shielded_viewing_keys_fn`. The JNI trampoline copies these
+     * fixed-size holders into a native `ShieldedViewingKeyRestoreFFI` array;
+     * its paired C free callback owns and releases that native array, so no
+     * JVM-side free method is required.
+     */
+    open fun onLoadShieldedViewingKeys(): Array<ShieldedViewingKeyData> = emptyArray()
 
     /**
      * `on_get_core_tx_record_fn`. Returns the record for `txid` or `null`
@@ -685,6 +723,8 @@ class WalletRestoreData(
      * `buildUnresolvedAssetLockTxRecordBuffer` slice on `loadWalletList`.
      */
     @JvmField val unresolvedAssetLockTxRecords: Array<UnresolvedAssetLockTxRecordData>,
+    /** Provider kinds 2…5, scoped through explicit typed-account involvement. */
+    @JvmField val providerSpecialTxs: Array<ProviderSpecialTxRestoreData> = emptyArray(),
     /**
      * Bincode-serialised `dashcore::…::chain_lock::ChainLock` carrying the
      * wallet's persisted `WalletMetadata.last_applied_chain_lock` from the
@@ -700,6 +740,22 @@ class WalletRestoreData(
      * `loadWalletList`.
      */
     @JvmField val lastAppliedChainLockBytes: ByteArray,
+)
+
+/**
+ * Kotlin staging row for the unchanged `ProviderSpecialTxRestoreEntryFFI`.
+ * Consensus decoding remains Rust's authority; malformed non-empty bytes
+ * are diagnosed and skipped by the native restore path.
+ */
+class ProviderSpecialTxRestoreData(
+    @JvmField val txBytes: ByteArray,
+    @JvmField val contextRaw: Int,
+    @JvmField val blockHeight: Int,
+    @JvmField val blockHash: ByteArray,
+    @JvmField val blockTimestamp: Long,
+    @JvmField val blockPosition: Int,
+    @JvmField val hasBlockPosition: Boolean,
+    @JvmField val firstSeen: Long,
 )
 
 /**
@@ -1027,6 +1083,13 @@ class ShieldedSyncStateData(
     @JvmField val walletId: ByteArray,
     @JvmField val accountIndex: Int,
     @JvmField val lastSyncedIndex: Long,
+)
+
+/** Mirror of fixed-size `ShieldedViewingKeyRestoreFFI`. */
+class ShieldedViewingKeyData(
+    @JvmField val walletId: ByteArray,
+    @JvmField val accountIndex: Int,
+    @JvmField val fvkBytes: ByteArray,
 )
 
 /** Mirror of `ShieldedActivityRestoreFFI`. */

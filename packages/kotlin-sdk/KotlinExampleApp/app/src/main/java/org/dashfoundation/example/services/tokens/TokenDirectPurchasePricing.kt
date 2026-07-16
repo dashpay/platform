@@ -32,10 +32,10 @@ import java.math.BigInteger
  *    an empty schedule means the token isn't for direct sale.
  *
  * Prices are u64 credits on-chain, so parsing and multiplication go through
- * [BigInteger]; a product outside the positive signed-[Long] range the
- * purchase FFI accepts resolves to `null` (Buy stays disabled) rather than
- * wrapping. A resolved cost of `0` (a free tier) is likewise `null`: the
- * purchase FFI requires a positive `expectedTotalCost`.
+ * [BigInteger]. Drive saturates an overflowing [SinglePrice] multiplication,
+ * while a [SetPrices] multiplication uses checked arithmetic and rejects the
+ * purchase; this preview mirrors that distinction. A zero price is valid and
+ * produces a zero expected cost, matching the native purchase contract.
  */
 sealed interface TokenDirectPurchasePricing {
 
@@ -51,21 +51,26 @@ sealed interface TokenDirectPurchasePricing {
     /**
      * Required total cost in credits to buy [amount] raw token units, or
      * `null` when the amount isn't purchasable at this schedule (below the
-     * minimum sale amount, an empty schedule, a free tier, or a total
-     * outside the positive [Long] range the purchase FFI accepts).
+     * minimum sale amount, an empty schedule, or a tiered-price overflow.
+     * Single-price overflow saturates to u64 max, matching Drive.
      */
-    fun costFor(amount: Long): Long? {
-        if (amount <= 0) return null
-        val count = BigInteger.valueOf(amount)
-        val perToken = when (this) {
-            is SinglePrice -> price
-            is SetPrices -> tiers
-                .filter { it.amount <= count }
-                .maxByOrNull { it.amount }
-                ?.price ?: return null
+    fun costFor(amount: ULong): ULong? {
+        if (amount == 0uL) return null
+        val count = BigInteger(amount.toString())
+        if (count > MAX_TOKEN_COUNT) return null
+        val (perToken, saturatesOnOverflow) = when (this) {
+            is SinglePrice -> price to true
+            is SetPrices -> (
+                tiers
+                    .filter { it.amount <= count }
+                    .maxByOrNull { it.amount }
+                    ?.price ?: return null
+                ) to false
         }
         val total = perToken * count
-        return if (total.signum() > 0 && total.bitLength() < 63) total.toLong() else null
+        if (total.signum() < 0) return null
+        if (total > MAX_U64 && !saturatesOnOverflow) return null
+        return total.min(MAX_U64).toString().toULong()
     }
 
     /**
@@ -80,6 +85,11 @@ sealed interface TokenDirectPurchasePricing {
         }
 
     companion object {
+        private val MAX_U64 = BigInteger(ULong.MAX_VALUE.toString())
+        // DPP's MAX_DISTRIBUTION_PARAM: token transition amounts are u48,
+        // even though pricing and balance carriers use the full u64 domain.
+        private val MAX_TOKEN_COUNT = BigInteger("281474976710655")
+
         /**
          * Parse the pricing for [canonicalTokenId] out of a
          * `directPurchasePrices` response, or `null` when the token has no

@@ -85,6 +85,19 @@ sealed class DashSdkError(
         class WalletOperation(message: String, cause: Throwable? = null) :
             PlatformWallet(message, cause)
 
+        /** Atomic Core selection found no or insufficient unreserved UTXOs. */
+        class CoreInsufficientFunds(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause)
+
+        class AssetLockNotTracked(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause)
+
+        class AssetLockAlreadyConsumed(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause)
+
+        class AssetLockFundingMismatch(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause)
+
         /**
          * `ErrorShieldedNoRecordedAnchor` (native code 19). A shielded spend
          * could not be built against a Platform-recorded anchor because the
@@ -220,10 +233,18 @@ sealed class DashSdkError(
             // PlatformWalletFFIResultCode variants (platform-wallet-ffi/src/error.rs)
             1 -> PlatformWallet.InvalidHandle(message, cause) // ErrorInvalidHandle
             6 -> PlatformWallet.WalletOperation(message, cause) // ErrorWalletOperation
+            7, // ErrorIdentityNotFound
+            8, // ErrorContactNotFound
+            98, // NotFound (Option returned as an error)
+            -> NotFound(message, cause)
             16 -> PlatformWallet.ShieldedBroadcastFailed(message, cause) // ErrorShieldedBroadcastFailed
             18 -> PlatformWallet.ShieldedSpendUnconfirmed(message, cause) // ErrorShieldedSpendUnconfirmed
             19 -> PlatformWallet.ShieldedNoRecordedAnchor(message, cause) // ErrorShieldedNoRecordedAnchor
             20 -> PlatformWallet.TransactionBroadcastUnconfirmed(message, cause) // ErrorTransactionBroadcastUnconfirmed
+            22 -> PlatformWallet.CoreInsufficientFunds(message, cause) // ErrorCoreInsufficientFunds
+            23 -> PlatformWallet.AssetLockNotTracked(message, cause) // ErrorAssetLockNotTracked
+            24 -> PlatformWallet.AssetLockAlreadyConsumed(message, cause) // ErrorAssetLockAlreadyConsumed
+            25 -> PlatformWallet.AssetLockFundingMismatch(message, cause) // ErrorAssetLockFundingMismatch
             else -> PlatformWallet.Generic(code, message, cause)
         }
     }

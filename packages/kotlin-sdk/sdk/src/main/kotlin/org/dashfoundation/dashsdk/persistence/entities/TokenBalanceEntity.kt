@@ -4,6 +4,7 @@ import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
+import org.dashfoundation.dashsdk.persistence.UInt64Value
 import java.util.Date
 
 /**
@@ -54,8 +55,8 @@ data class TokenBalanceEntity(
     val tokenId: String,
     /** 32-byte identity id (denorm scalar, always set). */
     val identityId: ByteArray,
-    /** Swift `Int64` (bit-pattern of the u64 balance). */
-    val balance: Long = 0,
+    /** Full protocol u64; Room stores it as an order-preserving 8-byte BLOB. */
+    val balance: UInt64Value = UInt64Value.ZERO,
     val frozen: Boolean = false,
     val createdAt: Date = Date(),
     val lastUpdated: Date = Date(),

@@ -343,6 +343,17 @@ internal object TokensNative {
     external fun managedIdentityDestroy(handle: Long)
 
     /**
+     * Copy the cached contested-name `DpnsNameArray` and free it inside JNI.
+     * Symbol:
+     * `Java_org_dashfoundation_dashsdk_ffi_TokensNative_managedIdentityContestedDpnsNames`;
+     * descriptor:
+     * `(J)Lorg/dashfoundation/dashsdk/ffi/ContestedDpnsNamesNativeResult;`.
+     */
+    external fun managedIdentityContestedDpnsNames(
+        identityHandle: Long,
+    ): ContestedDpnsNamesNativeResult
+
+    /**
      * The 32-byte sender ids of the managed identity's incoming contact
      * requests, as a flat blob (`u32 count` big-endian + `count × 32`).
      */

@@ -49,6 +49,7 @@ import org.dashfoundation.example.navigation.ContestDetail
 import org.dashfoundation.example.navigation.CreateIdentity
 import org.dashfoundation.example.navigation.DocumentActions
 import org.dashfoundation.example.navigation.DocumentWithPrice
+import org.dashfoundation.example.navigation.NewDocument
 import org.dashfoundation.example.navigation.RegisterContractSource
 import org.dashfoundation.example.navigation.TokenAction
 import org.dashfoundation.example.navigation.TopUpIdentity
@@ -79,18 +80,15 @@ import org.dashfoundation.example.util.truncateMiddle
  * bridged surface):
  * - [DedicatedTransition] entries navigate to the fully wired dedicated
  *   screen with the picked context (credits flows, identity create,
- *   contract register / update, document price/purchase, the owned-document
- *   replace/delete/transfer actions, the eight token action forms, and the
- *   DPNS contest drill-in).
+ *   contract register / update, document create/price/purchase, the
+ *   owned-document replace/delete/transfer actions, the eight token action
+ *   forms, and the DPNS contest drill-in).
  * - `identityUpdate` executes inline via
  *   `PlatformWalletManager.identityUpdates` (disable path; the add-keys
  *   path names the pubkey-returning slot-derive gap, see
  *   [IdentityKeyAdditionFlow.UnbridgedSlotDeriver]).
  * - `masternodeVote` executes inline via
  *   `PlatformWalletManager.voteCasting.castVote`.
- * - The remaining definitions (document create) surface the
- *   named-missing-export dialog on submit — their platform-wallet FFIs are
- *   not bridged into `rs-unified-sdk-jni`.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -288,6 +286,19 @@ fun TransitionDetailScreen(transitionKey: String, navController: NavHostControll
                     ?.let { Base58.decodeIdentifier(it)?.toHex() }
                     ?: ""
                 navController.navigate(UpdateContract(contractIdHex = contractHex))
+            }
+            DedicatedTransition.CREATE_DOCUMENT -> {
+                val contractHex = Base58
+                    .decodeIdentifier(textInputs["contractId"].orEmpty())?.toHex()
+                    ?: run { report("Pick a data contract.", true); return }
+                val typeName = textInputs["documentType"].orEmpty().trim()
+                if (typeName.isEmpty()) {
+                    report("Pick a document type.", true)
+                    return
+                }
+                navController.navigate(
+                    NewDocument(contractIdHex = contractHex, typeName = typeName),
+                )
             }
             DedicatedTransition.DOCUMENT_WITH_PRICE -> {
                 val contractHex = Base58

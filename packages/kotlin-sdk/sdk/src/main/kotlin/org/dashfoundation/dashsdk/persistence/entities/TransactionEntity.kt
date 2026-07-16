@@ -9,8 +9,9 @@ import java.util.Date
  * Port of `PersistentTransaction.swift` — one wallet transaction record.
  *
  * Deliberately NOT scoped to a wallet or account (per the Swift doc): the
- * same on-chain tx can pay into several accounts/wallets; per-wallet
- * membership is recovered by joining through `txos.walletId`.
+ * same on-chain tx can pay into several accounts/wallets. Funds membership
+ * is recoverable through TXOs; payload-only provider membership is recorded
+ * explicitly by [TransactionAccountInvolvementEntity].
  *
  * Swift `@Attribute(.unique)` on `txid` → primary key.
  * Swift `#Index([\.firstSeen])` → index below.
@@ -31,6 +32,10 @@ data class TransactionEntity(
     val blockHash: ByteArray? = null,
     /** Swift `UInt32` → [Int]. */
     val blockTimestamp: Int = 0,
+    /** Transaction index within its block; meaningful iff [hasBlockPosition]. */
+    val blockPosition: Int = 0,
+    /** False for unconfirmed and pre-v7 rows. */
+    val hasBlockPosition: Boolean = false,
     /** 0=incoming, 1=outgoing, 2=internal, 3=coinJoin. Swift `UInt32`. */
     val direction: Int = 0,
     /** Human-readable only — NOT a stable discriminant (see Swift doc). */

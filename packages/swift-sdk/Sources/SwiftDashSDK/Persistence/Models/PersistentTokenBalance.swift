@@ -12,6 +12,9 @@ public final class PersistentTokenBalance {
     // MARK: - Core Properties
     public var tokenId: String
     public var identityId: Data
+    /// Schema-stable signed carrier for the protocol's unsigned balance.
+    /// SwiftData/SQLite keep the original `balance` Int64 column unchanged;
+    /// interpret its bits through `unsignedBalance` at every API boundary.
     public var balance: Int64
     public var frozen: Bool
 
@@ -45,7 +48,7 @@ public final class PersistentTokenBalance {
     public init(
         tokenId: String,
         identityId: Data,
-        balance: Int64 = 0,
+        balance: UInt64 = 0,
         frozen: Bool = false,
         tokenName: String? = nil,
         tokenSymbol: String? = nil,
@@ -54,7 +57,7 @@ public final class PersistentTokenBalance {
     ) {
         self.tokenId = tokenId
         self.identityId = identityId
-        self.balance = balance
+        self.balance = Int64(bitPattern: balance)
         self.frozen = frozen
         self.tokenName = tokenName
         self.tokenSymbol = tokenSymbol
@@ -66,26 +69,45 @@ public final class PersistentTokenBalance {
     }
 
     // MARK: - Computed Properties
+    /// Lossless full-domain view over the schema-stable signed carrier.
+    public var unsignedBalance: UInt64 {
+        get { UInt64(bitPattern: balance) }
+        set { balance = Int64(bitPattern: newValue) }
+    }
+
     public var formattedBalance: String {
-        guard let decimals = tokenDecimals else {
-            return "\(balance)"
+        let decimals: Int
+        if let tokenDecimals {
+            decimals = Int(tokenDecimals)
+        } else if let tokenDecimals = token?.decimals {
+            decimals = tokenDecimals
+        } else {
+            return "\(unsignedBalance)"
         }
 
-        let divisor = pow(10.0, Double(decimals))
-        let amount = Double(balance) / divisor
-        return String(format: "%.\(decimals)f", amount)
+        guard decimals > 0 else { return String(unsignedBalance) }
+
+        // Place the decimal point in the exact integer string. A Double
+        // conversion loses low digits well before UInt64.max.
+        let digits = String(unsignedBalance)
+        let scale = decimals
+        if digits.count <= scale {
+            return "0." + String(repeating: "0", count: scale - digits.count) + digits
+        }
+        let split = digits.index(digits.endIndex, offsetBy: -scale)
+        return String(digits[..<split]) + "." + String(digits[split...])
     }
 
     public var displayBalance: String {
-        if let symbol = tokenSymbol {
+        if let symbol = tokenSymbol ?? token?.name {
             return "\(formattedBalance) \(symbol)"
         }
         return formattedBalance
     }
 
     // MARK: - Methods
-    public func updateBalance(_ newBalance: Int64) {
-        self.balance = newBalance
+    public func updateBalance(_ newBalance: UInt64) {
+        self.unsignedBalance = newBalance
         self.lastUpdated = Date()
     }
 
@@ -122,7 +144,7 @@ public final class PersistentTokenBalance {
 extension PersistentTokenBalance {
     /// Create a simple token balance representation
     public func toTokenBalance() -> (tokenId: String, balance: UInt64, frozen: Bool) {
-        return (tokenId: tokenId, balance: UInt64(max(0, balance)), frozen: frozen)
+        return (tokenId: tokenId, balance: unsignedBalance, frozen: frozen)
     }
 }
 
@@ -149,7 +171,7 @@ extension PersistentTokenBalance {
 
     public static var nonZeroBalancesPredicate: Predicate<PersistentTokenBalance> {
         #Predicate<PersistentTokenBalance> { balance in
-            balance.balance > 0
+            balance.balance != 0
         }
     }
 

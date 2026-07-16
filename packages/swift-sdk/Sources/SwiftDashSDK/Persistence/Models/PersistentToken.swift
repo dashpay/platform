@@ -111,22 +111,39 @@ extension PersistentToken {
     }
 
     public var formattedBaseSupply: String {
-        guard let supplyValue = Double(baseSupply) else { return baseSupply }
+        Self.formatSupply(baseSupply, decimals: decimals)
+    }
 
-        if decimals == 0 {
-            return String(Int(supplyValue))
+    /// Exact formatter for protocol integer strings. It never passes through
+    /// `Double`/`Int`, so `UInt64.max` and decimals-zero supplies are safe.
+    public static func formatSupply(_ raw: String, decimals: Int) -> String {
+        guard !raw.isEmpty, raw.allSatisfy({ $0.isASCII && $0.isNumber }) else {
+            return raw
         }
+        let normalized = String(raw.drop(while: { $0 == "0" }))
+        let digits = normalized.isEmpty ? "0" : normalized
+        let scale = max(0, decimals)
+        let integer: String
+        var fraction = ""
+        if scale == 0 {
+            integer = digits
+        } else if digits.count <= scale {
+            integer = "0"
+            fraction = String(repeating: "0", count: scale - digits.count) + digits
+        } else {
+            let split = digits.index(digits.endIndex, offsetBy: -scale)
+            integer = String(digits[..<split])
+            fraction = String(digits[split...])
+        }
+        while fraction.last == "0" { fraction.removeLast() }
 
-        let divisor = pow(10.0, Double(decimals))
-        let actualSupply = supplyValue / divisor
-
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .decimal
-        formatter.maximumFractionDigits = decimals
-        formatter.minimumFractionDigits = 0
-        formatter.groupingSeparator = ","
-
-        return formatter.string(from: NSNumber(value: actualSupply)) ?? baseSupply
+        var grouped = ""
+        for (offset, character) in integer.reversed().enumerated() {
+            if offset > 0 && offset.isMultiple(of: 3) { grouped.append(",") }
+            grouped.append(character)
+        }
+        grouped = String(grouped.reversed())
+        return fraction.isEmpty ? grouped : "\(grouped).\(fraction)"
     }
 
     public var contractIdBase58: String {

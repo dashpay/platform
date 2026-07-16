@@ -7,12 +7,14 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -26,6 +28,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -38,6 +41,9 @@ import org.dashfoundation.example.ui.components.ErrorAlertDialog
 import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.LabeledContent
 import org.dashfoundation.example.ui.theme.appStatusColors
+import org.dashfoundation.example.services.sync.CompactFilterRescan
+import org.dashfoundation.example.services.sync.CompactFilterRescanResult
+import org.dashfoundation.example.services.sync.CompactFilterRescanWallet
 import org.dashfoundation.example.util.formatCredits
 import org.dashfoundation.example.util.formatRelative
 import java.io.File
@@ -101,6 +107,9 @@ fun SyncStatusScreen() {
                 // Liveness poll — `spvProgress` alone can't distinguish
                 // "synced and running" from "stopped".
                 var isRunning by remember { mutableStateOf(false) }
+                var rescanHeightText by remember { mutableStateOf("0") }
+                var rescanInFlight by remember { mutableStateOf(false) }
+                var rescanResult by remember { mutableStateOf<CompactFilterRescanResult?>(null) }
                 LaunchedEffect(currentManager) {
                     while (true) {
                         isRunning = runCatching { currentManager.isSpvRunning() }
@@ -173,6 +182,58 @@ fun SyncStatusScreen() {
                         enabled = !isRunning,
                         modifier = Modifier.testTag("sync.spvClear"),
                     ) { Text("Clear") }
+                }
+
+                OutlinedTextField(
+                    value = rescanHeightText,
+                    onValueChange = { rescanHeightText = it.filter(Char::isDigit) },
+                    label = { Text("Compact-filter rescan height") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth().testTag("sync.spvRescanHeight"),
+                )
+                Button(
+                    onClick = {
+                        val height = rescanHeightText.toIntOrNull() ?: return@Button
+                        rescanInFlight = true
+                        scope.launch {
+                            try {
+                                val targets = currentManager.wallets.value.values.map { wallet ->
+                                    CompactFilterRescanWallet(wallet.walletIdHex, wallet.walletId)
+                                }
+                                rescanResult = CompactFilterRescan.armAll(targets, height) { id, from ->
+                                    currentManager.rescanSpvFilters(id, from)
+                                }
+                            } catch (e: Exception) {
+                                error = e.message ?: "Failed to arm compact-filter rescan"
+                            } finally {
+                                rescanInFlight = false
+                            }
+                        }
+                    },
+                    enabled = !rescanInFlight && rescanHeightText.toIntOrNull() != null &&
+                        currentManager.wallets.value.isNotEmpty(),
+                    modifier = Modifier.testTag("sync.spvRescan"),
+                ) { Text(if (rescanInFlight) "Arming…" else "Arm Rescan") }
+
+                rescanResult?.let { result ->
+                    Text(
+                        "Accepted ${result.acceptedWalletIds.size} wallet rewind request(s) from height " +
+                            "${result.fromHeight}. A running SPV loop acts next tick; a stopped " +
+                            "loop acts on next start. Equal/forward heights are harmless no-ops. " +
+                            "This request is in-memory and must be " +
+                            "reissued after process death if not yet consumed.",
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.testTag("sync.spvRescanState"),
+                    )
+                    result.failures.forEach { failure ->
+                        Text(
+                            "${failure.walletIdHex.take(12)}…: ${failure.error.message}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.testTag("sync.spvRescanFailure.${failure.walletIdHex}"),
+                        )
+                    }
                 }
             }
         }

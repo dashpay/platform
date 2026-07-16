@@ -430,7 +430,7 @@ private suspend fun dispatchCoSign(
             identityId = identityId,
             tokenContractId = contractId,
             tokenPosition = tokenPosition,
-            pricePerToken = proposal.paramAmount("pricePerToken") ?: 0,
+            pricePerToken = proposal.paramAmount("pricePerToken") ?: 0u,
             publicNote = note,
             groupAction = mode,
             signingKeyId = TokenActionContext.SIGNING_KEY_ID,

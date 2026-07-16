@@ -9,11 +9,12 @@ import org.dashfoundation.dashsdk.persistence.entities.ShieldedActivityEntity
 import org.dashfoundation.dashsdk.persistence.entities.ShieldedNoteEntity
 import org.dashfoundation.dashsdk.persistence.entities.ShieldedOutgoingNoteEntity
 import org.dashfoundation.dashsdk.persistence.entities.ShieldedSyncStateEntity
+import org.dashfoundation.dashsdk.persistence.entities.ShieldedViewingKeyEntity
 
 /**
  * Queries over the shielded (Orchard) family — [ShieldedNoteEntity],
  * [ShieldedOutgoingNoteEntity], [ShieldedActivityEntity],
- * [ShieldedSyncStateEntity].
+ * [ShieldedSyncStateEntity], [ShieldedViewingKeyEntity].
  *
  * Reads mirror the Swift call sites: upsert by nullifier / `(walletId,
  * accountIndex, cmx)` / `(walletId, accountIndex, entryId)` /
@@ -198,4 +199,38 @@ interface ShieldedDao {
     /** StorageExplorer row count. */
     @Query("SELECT COUNT(*) FROM shielded_sync_states")
     fun countSyncStates(): Flow<Long>
+
+    // MARK: Orchard full viewing keys
+
+    @Query(
+        "SELECT * FROM shielded_viewing_keys WHERE walletId = :walletId " +
+            "AND accountIndex = :accountIndex"
+    )
+    suspend fun getViewingKey(
+        walletId: ByteArray,
+        accountIndex: Int,
+    ): ShieldedViewingKeyEntity?
+
+    @Query("SELECT * FROM shielded_viewing_keys WHERE walletId = :walletId ORDER BY accountIndex")
+    fun observeViewingKeysByWallet(walletId: ByteArray): Flow<List<ShieldedViewingKeyEntity>>
+
+    /** Network-scoped restore helper; filters in SQL before fixed-size entity validation. */
+    @Query("SELECT * FROM shielded_viewing_keys WHERE walletId = :walletId ORDER BY accountIndex")
+    suspend fun getViewingKeysByWallet(walletId: ByteArray): List<ShieldedViewingKeyEntity>
+
+    /** Restore snapshot. Entity construction validates every row is exactly 32/96 bytes. */
+    @Query("SELECT * FROM shielded_viewing_keys ORDER BY walletId, accountIndex")
+    suspend fun getAllViewingKeys(): List<ShieldedViewingKeyEntity>
+
+    @Upsert
+    suspend fun upsertViewingKey(viewingKey: ShieldedViewingKeyEntity)
+
+    @Query("DELETE FROM shielded_viewing_keys WHERE walletId = :walletId")
+    suspend fun deleteViewingKeysByWallet(walletId: ByteArray)
+
+    @Query("DELETE FROM shielded_viewing_keys")
+    suspend fun deleteAllViewingKeys()
+
+    @Query("SELECT COUNT(*) FROM shielded_viewing_keys")
+    fun countViewingKeys(): Flow<Long>
 }

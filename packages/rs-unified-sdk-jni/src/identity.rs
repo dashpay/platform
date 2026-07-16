@@ -31,10 +31,13 @@
 
 #![allow(clippy::missing_safety_doc)]
 
-use crate::support::{guard, take_pwffi_error, throw_sdk_exception};
-use jni::objects::{JByteArray, JClass, JString};
-use jni::sys::{jbyteArray, jint, jlong};
+use crate::support::{
+    generic_asset_lock_recovery_allowed, guard, take_pwffi_error, throw_sdk_exception,
+};
+use jni::objects::{JByteArray, JClass, JString, JValue};
+use jni::sys::{jboolean, jbyteArray, jint, jlong, jobject};
 use jni::JNIEnv;
+use platform_wallet_ffi::core_wallet_types::OutPointFFI;
 use platform_wallet_ffi::error::platform_wallet_ffi_result_free;
 use platform_wallet_ffi::handle::Handle;
 use platform_wallet_ffi::identity_discovery::DiscoveredIdentityIdsFFI;
@@ -46,6 +49,30 @@ use rs_sdk_ffi::{MnemonicResolverHandle, SignerHandle};
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 use std::ptr;
+
+/// Owns a managed-identity handle until it has been successfully embedded in
+/// the Java result object. This is established immediately after the FFI call,
+/// so native-error, JNI allocation failure, and unwinding paths all destroy it.
+struct ManagedIdentityHandleGuard(Handle);
+
+impl ManagedIdentityHandleGuard {
+    fn handle(&self) -> Handle {
+        self.0
+    }
+
+    fn disarm(&mut self) {
+        self.0 = 0;
+    }
+}
+
+impl Drop for ManagedIdentityHandleGuard {
+    fn drop(&mut self) {
+        if self.0 != 0 {
+            let mut result = unsafe { platform_wallet_ffi::managed_identity_destroy(self.0) };
+            unsafe { platform_wallet_ffi_result_free(&mut result) };
+        }
+    }
+}
 
 // ── Canonical registration key-role table ─────────────────────────────
 
@@ -128,6 +155,38 @@ fn read_id32(env: &mut JNIEnv, arr: &JByteArray, field: &str) -> Option<[u8; 32]
 }
 
 // ── Key preview ───────────────────────────────────────────────────────
+
+/// Refresh the complete contested-DPNS snapshot for an identity. The shared
+/// operation replaces rather than unions the cached labels.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_syncContestedDpnsNames(
+    mut env: JNIEnv,
+    _class: JClass,
+    wallet_handle: jlong,
+    identity_id: JByteArray,
+) -> jint {
+    guard(&mut env, 0, |env| {
+        let Some(identity_id) = read_id32(env, &identity_id, "identityId") else {
+            return 0;
+        };
+        let mut count = 0u32;
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_sync_contested_dpns_names(
+                wallet_handle as Handle,
+                identity_id.as_ptr(),
+                &mut count,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return 0;
+        }
+        if count > i32::MAX as u32 {
+            throw_sdk_exception(env, 99, "contested DPNS snapshot is too large");
+            return 0;
+        }
+        count as jint
+    })
+}
 
 /// Derive the first `count` MASTER identity-authentication keypairs the
 /// wallet would probe during a discovery scan, starting at
@@ -493,6 +552,128 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_derive
 }
 
 // ── Registration (wallet-balance funded) ──────────────────────────────
+
+/// Resume a previously interrupted identity registration from a tracked
+/// asset-lock outpoint. The returned managed-identity handle is transferred
+/// to Kotlin only after the result object is constructed successfully; every
+/// error path destroys it locally.
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_resumeIdentityWithExistingAssetLock(
+    mut env: JNIEnv,
+    _class: JClass,
+    wallet_handle: jlong,
+    outpoint_txid: JByteArray,
+    outpoint_vout: jint,
+    identity_index: jint,
+    pubkeys_blob: JByteArray,
+    signer_handle: jlong,
+    core_signer_handle: jlong,
+    consume_invitation_voucher: jboolean,
+) -> jobject {
+    guard(&mut env, ptr::null_mut(), |env| {
+        let Some(txid) = read_id32(env, &outpoint_txid, "outpointTxid") else {
+            return ptr::null_mut();
+        };
+        if outpoint_vout < 0 {
+            throw_sdk_exception(env, 1, "outpointVout must be non-negative");
+            return ptr::null_mut();
+        }
+        if identity_index < 0 {
+            throw_sdk_exception(env, 1, "identityIndex must be non-negative");
+            return ptr::null_mut();
+        }
+        if signer_handle == 0 || core_signer_handle == 0 {
+            throw_sdk_exception(env, 1, "signer handles must be non-zero");
+            return ptr::null_mut();
+        }
+        if !generic_asset_lock_recovery_allowed(consume_invitation_voucher != 0) {
+            throw_sdk_exception(
+                env,
+                1,
+                "generic identity recovery cannot consume invitation vouchers",
+            );
+            return ptr::null_mut();
+        }
+
+        let Some(decoded) = decode_pubkeys_blob(env, &pubkeys_blob) else {
+            return ptr::null_mut();
+        };
+        if decoded.is_empty() {
+            throw_sdk_exception(env, 1, "pubkeysBlob contained no keys");
+            return ptr::null_mut();
+        }
+        let ffi_rows: Vec<IdentityPubkeyFFI> = decoded
+            .iter()
+            .map(|(key_id, bytes)| {
+                let (key_type, purpose, security_level) = role_for_registration_key_id(*key_id);
+                IdentityPubkeyFFI {
+                    key_id: *key_id,
+                    key_type,
+                    purpose,
+                    security_level,
+                    pubkey_bytes: bytes.as_ptr(),
+                    pubkey_len: bytes.len(),
+                    read_only: false,
+                    contract_bounds_kind: 0,
+                    contract_bounds_id: ptr::null(),
+                    contract_bounds_document_type: ptr::null(),
+                }
+            })
+            .collect();
+        let outpoint = OutPointFFI {
+            txid,
+            vout: outpoint_vout as u32,
+        };
+        let mut out_id = [0u8; 32];
+        let mut out_managed: Handle = 0;
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_resume_identity_with_existing_asset_lock_signer(
+                wallet_handle as Handle,
+                &outpoint,
+                identity_index as u32,
+                ffi_rows.as_ptr(),
+                ffi_rows.len(),
+                signer_handle as *mut SignerHandle,
+                core_signer_handle as *mut MnemonicResolverHandle,
+                false,
+                &mut out_id,
+                &mut out_managed,
+            )
+        };
+        let mut managed_guard = ManagedIdentityHandleGuard(out_managed);
+        if take_pwffi_error(env, result) {
+            return ptr::null_mut();
+        }
+
+        let identity_id = match env.byte_array_from_slice(&out_id) {
+            Ok(value) => value,
+            Err(_) => {
+                throw_sdk_exception(env, 99, "identity result byte[] allocation failed");
+                return ptr::null_mut();
+            }
+        };
+        let result_object = env.new_object(
+            "org/dashfoundation/dashsdk/ffi/IdentityRegistrationNativeResult",
+            "([BJ)V",
+            &[
+                JValue::Object(identity_id.as_ref()),
+                JValue::Long(managed_guard.handle() as jlong),
+            ],
+        );
+        match result_object {
+            Ok(value) => {
+                managed_guard.disarm();
+                value.into_raw()
+            }
+            Err(_) => {
+                let _ = env.exception_clear();
+                throw_sdk_exception(env, 99, "identity result object allocation failed");
+                ptr::null_mut()
+            }
+        }
+    })
+}
 
 /// Register a new identity funded from the wallet's Core balance, driven
 /// by an external identity signer plus a mnemonic resolver for the

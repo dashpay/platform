@@ -34,6 +34,21 @@ class MasternodeDiscoveryTest {
             ]}
         """.trimIndent()
         assertEquals("https://1.2.3.4:443", Sdk.parseActiveMasternodes(body)!![0].dapiUrl)
+        assertEquals("https://1.2.3.4:1443", Sdk.parseActiveMasternodes(body, 1443)!![0].dapiUrl)
+    }
+
+    @Test
+    fun bracketedIpv6AddressPreservesTheWholeHost() {
+        val body = """
+            {"success": true, "data": [
+              {"address": "[2001:db8::1]:19999", "status": "ENABLED", "platformHTTPPort": 1443, "versionCheck": "success"}
+            ]}
+        """.trimIndent()
+
+        assertEquals(
+            "https://[2001:db8::1]:1443",
+            Sdk.parseActiveMasternodes(body)!![0].dapiUrl,
+        )
     }
 
     @Test

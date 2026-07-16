@@ -23,6 +23,9 @@ zeroize = "1"
 [target.'cfg(target_os = "android")'.dependencies]
 android_logger = "0.14"
 
+[dev-dependencies]
+dashcore = { workspace = true }
+
 [features]
 default = ["shielded"]
 # Forwards to `platform-wallet-ffi/shielded`. Pulls Orchard / ZK shielded

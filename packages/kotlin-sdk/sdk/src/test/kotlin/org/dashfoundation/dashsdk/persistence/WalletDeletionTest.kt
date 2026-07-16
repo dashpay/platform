@@ -5,12 +5,15 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.dashfoundation.dashsdk.persistence.entities.AssetLockEntity
+import org.dashfoundation.dashsdk.persistence.entities.AccountEntity
 import org.dashfoundation.dashsdk.persistence.entities.IdentityEntity
 import org.dashfoundation.dashsdk.persistence.entities.PendingInputEntity
 import org.dashfoundation.dashsdk.persistence.entities.PlatformAddressesSyncStateEntity
 import org.dashfoundation.dashsdk.persistence.entities.PublicKeyEntity
+import org.dashfoundation.dashsdk.persistence.entities.ShieldedViewingKeyEntity
 import org.dashfoundation.dashsdk.persistence.entities.TokenBalanceEntity
 import org.dashfoundation.dashsdk.persistence.entities.TransactionEntity
+import org.dashfoundation.dashsdk.persistence.entities.TransactionAccountInvolvementEntity
 import org.dashfoundation.dashsdk.persistence.entities.TxoEntity
 import org.dashfoundation.dashsdk.persistence.entities.WalletEntity
 import org.junit.After
@@ -68,7 +71,7 @@ class WalletDeletionTest {
             TokenBalanceEntity(
                 tokenId = "token-a",
                 identityId = identityId,
-                balance = 10,
+                balance = UInt64Value(10u),
                 networkRaw = testnet,
             ),
         )
@@ -189,6 +192,93 @@ class WalletDeletionTest {
         assertTrue(siblingId.contentEquals(remaining.single().walletId))
         assertEquals("cafebabe:1", remaining.single().outPointHex)
         assertTrue(db.assetLockDao().observeByWallet(walletId).first().isEmpty())
+    }
+
+    @Test
+    fun deleteWalletDataRemovesOnlyThatWalletsOrchardViewingKeys() = runTest {
+        val walletId = ByteArray(32) { 0x41 }
+        val siblingId = ByteArray(32) { 0x42 }
+        db.walletDao().upsert(WalletEntity(walletId = walletId, networkRaw = testnet))
+        db.walletDao().upsert(WalletEntity(walletId = siblingId, networkRaw = testnet))
+        db.shieldedDao().upsertViewingKey(
+            ShieldedViewingKeyEntity(walletId, 0, ByteArray(96) { 1 }),
+        )
+        db.shieldedDao().upsertViewingKey(
+            ShieldedViewingKeyEntity(siblingId, 0, ByteArray(96) { 2 }),
+        )
+
+        handler.deleteWalletData(walletId)
+
+        assertTrue(db.shieldedDao().observeViewingKeysByWallet(walletId).first().isEmpty())
+        val sibling = db.shieldedDao().observeViewingKeysByWallet(siblingId).first()
+        assertEquals(1, sibling.size)
+        assertEquals(2.toByte(), sibling.single().fvkBytes.first())
+    }
+
+    @Test
+    fun deleteWalletDataCascadesProviderMembershipAndSweepsOnlyItsTransaction() = runTest {
+        val walletId = ByteArray(32) { 0x71 }
+        val siblingId = ByteArray(32) { 0x72 }
+        db.walletDao().upsert(WalletEntity(walletId = walletId, networkRaw = testnet))
+        db.walletDao().upsert(WalletEntity(walletId = siblingId, networkRaw = testnet))
+        db.accountDao().insert(
+            AccountEntity(
+                walletId = walletId, accountType = 9, accountIndex = 0,
+                accountTypeName = "providerOwnerKeys",
+            ),
+        )
+        db.accountDao().insert(
+            AccountEntity(
+                walletId = siblingId, accountType = 9, accountIndex = 0,
+                accountTypeName = "providerOwnerKeys",
+            ),
+        )
+        val account = db.accountDao().observeByWallet(walletId).first().single()
+        val siblingAccount = db.accountDao().observeByWallet(siblingId).first().single()
+        val txid = ByteArray(32) { 0x73 }
+        val siblingTxid = ByteArray(32) { 0x74 }
+        val sharedTxid = ByteArray(32) { 0x75 }
+        db.transactionDao().upsert(
+            TransactionEntity(txid = txid, transactionData = byteArrayOf(1), transactionTypeKind = 2),
+        )
+        db.transactionDao().upsert(
+            TransactionEntity(
+                txid = siblingTxid,
+                transactionData = byteArrayOf(2),
+                transactionTypeKind = 3,
+            ),
+        )
+        db.transactionDao().upsert(
+            TransactionEntity(
+                txid = sharedTxid,
+                transactionData = byteArrayOf(3),
+                transactionTypeKind = 4,
+            ),
+        )
+        db.transactionDao().upsertInvolvement(TransactionAccountInvolvementEntity(txid, account.id))
+        db.transactionDao().upsertInvolvement(
+            TransactionAccountInvolvementEntity(siblingTxid, siblingAccount.id),
+        )
+        db.transactionDao().upsertInvolvement(
+            TransactionAccountInvolvementEntity(sharedTxid, account.id),
+        )
+        db.transactionDao().upsertInvolvement(
+            TransactionAccountInvolvementEntity(sharedTxid, siblingAccount.id),
+        )
+
+        handler.deleteWalletData(walletId)
+
+        assertNull(db.transactionDao().getByTxid(txid))
+        assertEquals(0, db.transactionDao().countInvolvements(txid))
+        assertTrue(db.transactionDao().getByTxid(siblingTxid) != null)
+        assertEquals(1, db.transactionDao().countInvolvements(siblingTxid))
+        assertTrue(db.transactionDao().getByTxid(sharedTxid) != null)
+        assertEquals(1, db.transactionDao().countInvolvements(sharedTxid))
+
+        handler.deleteWalletData(siblingId)
+
+        assertNull(db.transactionDao().getByTxid(sharedTxid))
+        assertEquals(0, db.transactionDao().countInvolvements(sharedTxid))
     }
 
     @Test

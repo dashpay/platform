@@ -91,6 +91,7 @@ enum class DedicatedTransition {
     CREATE_IDENTITY,
     REGISTER_CONTRACT,
     UPDATE_CONTRACT,
+    CREATE_DOCUMENT,
     DOCUMENT_WITH_PRICE,
     DOCUMENT_ACTIONS,
     TOKEN_ACTION,
@@ -103,7 +104,6 @@ object StateTransitionDefinitions {
     private val select = TransitionInputType.SELECT
     private val text = TransitionInputType.TEXT
     private val textarea = TransitionInputType.TEXTAREA
-    private val json = TransitionInputType.JSON
     private val identityPicker = TransitionInputType.IDENTITY_PICKER
     private val contractPicker = TransitionInputType.CONTRACT_PICKER
     private val docTypePicker = TransitionInputType.DOCUMENT_TYPE_PICKER
@@ -213,8 +213,9 @@ object StateTransitionDefinitions {
             inputs = listOf(
                 TransitionInput("contractId", contractPicker, "Data contract", true),
                 TransitionInput("documentType", docTypePicker, "Document type", true),
-                TransitionInput("documentFields", json, "Document fields (JSON)", true),
             ),
+            executable = true,
+            dedicatedRoute = DedicatedTransition.CREATE_DOCUMENT,
         ),
         TransitionDefinition(
             key = "documentReplace",

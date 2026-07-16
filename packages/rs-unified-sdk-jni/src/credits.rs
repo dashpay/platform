@@ -25,10 +25,13 @@
 
 #![allow(clippy::missing_safety_doc)]
 
-use crate::support::{guard, take_pwffi_error, throw_sdk_exception};
+use crate::support::{
+    generic_asset_lock_recovery_allowed, guard, take_pwffi_error, throw_sdk_exception,
+};
 use jni::objects::{JByteArray, JClass, JString};
-use jni::sys::{jint, jlong};
+use jni::sys::{jboolean, jint, jlong};
 use jni::JNIEnv;
+use platform_wallet_ffi::core_wallet_types::OutPointFFI;
 use platform_wallet_ffi::handle::Handle;
 use platform_wallet_ffi::identity_registration::IdentityFundingInputFFI;
 use platform_wallet_ffi::identity_transfer::PlatformAddressCreditOutputFFI;
@@ -275,6 +278,66 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_CreditsNative_transfe
 }
 
 // ── Top up (existing identity ← new Core asset lock) ───────────────────
+
+/// Resume an interrupted top-up from a tracked Core asset-lock outpoint.
+/// Generic recovery passes `consumeInvitationVoucher = false`; invitation
+/// reclaim is the only flow allowed to opt into type-3 consumption.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_CreditsNative_topUpIdentityWithExistingAssetLock(
+    mut env: JNIEnv,
+    _class: JClass,
+    wallet_handle: jlong,
+    outpoint_txid: JByteArray,
+    outpoint_vout: jint,
+    identity_id: JByteArray,
+    core_signer_handle: jlong,
+    consume_invitation_voucher: jboolean,
+) -> jlong {
+    guard(&mut env, 0i64, |env| {
+        let Some(txid) = read_id32(env, &outpoint_txid, "outpointTxid") else {
+            return 0;
+        };
+        if outpoint_vout < 0 {
+            throw_sdk_exception(env, 1, "outpointVout must be non-negative");
+            return 0;
+        }
+        let Some(id) = read_id32(env, &identity_id, "identityId") else {
+            return 0;
+        };
+        if core_signer_handle == 0 {
+            throw_sdk_exception(env, 1, "coreSignerHandle must be non-zero");
+            return 0;
+        }
+        if !generic_asset_lock_recovery_allowed(consume_invitation_voucher != 0) {
+            throw_sdk_exception(
+                env,
+                1,
+                "generic identity top-up recovery cannot consume invitation vouchers",
+            );
+            return 0;
+        }
+
+        let outpoint = OutPointFFI {
+            txid,
+            vout: outpoint_vout as u32,
+        };
+        let mut out_balance = 0u64;
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_topup_identity_with_existing_asset_lock_signer(
+                wallet_handle as Handle,
+                &outpoint,
+                &id,
+                core_signer_handle as *mut MnemonicResolverHandle,
+                false,
+                &mut out_balance,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return 0;
+        }
+        out_balance as i64
+    })
+}
 
 /// Top up an existing identity's credit balance by building and
 /// broadcasting a **new Core asset lock** — the same funding mechanism as

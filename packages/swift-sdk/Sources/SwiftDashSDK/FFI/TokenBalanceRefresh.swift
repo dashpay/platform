@@ -130,7 +130,7 @@ extension SDK {
                 context.insert(row)
             }
 
-            row.updateBalance(Int64(bitPattern: balance))
+            row.updateBalance(balance)
             row.markAsSynced()
 
             // Re-link on every upsert (cheap) so a row inserted before

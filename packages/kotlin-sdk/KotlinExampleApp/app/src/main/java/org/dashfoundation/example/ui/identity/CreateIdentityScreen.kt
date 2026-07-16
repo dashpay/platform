@@ -33,10 +33,12 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import org.dashfoundation.dashsdk.credits.FundingInput
 import org.dashfoundation.dashsdk.wallet.ManagedPlatformWallet
+import org.dashfoundation.dashsdk.wallet.TrackedAssetLock
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.di.LocalAppState
 import org.dashfoundation.example.navigation.RegistrationProgress
 import org.dashfoundation.example.services.IdentityRegistrationController
+import org.dashfoundation.example.services.assetlock.IdentityAssetLockRecovery
 import org.dashfoundation.example.ui.components.AccessiblePicker
 import org.dashfoundation.example.ui.components.ErrorAlertDialog
 import org.dashfoundation.example.ui.components.FormSection
@@ -47,10 +49,10 @@ import org.dashfoundation.example.ui.wallet.toHexString
  * Create-identity flow — port of `CreateIdentityView.swift`, split into the
  * source-wallet + [FundingSection] + [KeysSection] composables the Swift view
  * factors into. This milestone wires the **wallet-balance (Core-funded)**
- * path — `platform_wallet_register_identity_with_funding_signer` — which is
- * the single FFI entry the coordinator body invokes. The asset-lock-resume,
- * shielded-pool, and platform-address funding sources are deferred (see the
- * B-M3 deferrals); the walletless raw-proof path likewise.
+ * path plus Platform-address, shielded, and existing-asset-lock funding.
+ * Existing-lock recovery selects from Rust's tracked-lock snapshot and
+ * submits that exact outpoint; the walletless raw-proof path remains out of
+ * scope.
  *
  * Submit sequence (mirrors Swift): preview + persist the identity keys (the
  * `.preparingKeys` phase), then `coordinator.startRegistration` with a body
@@ -77,6 +79,29 @@ fun CreateIdentityScreen(navController: NavHostController) {
     var identityIndexText by remember { mutableStateOf("0") }
     var isSubmitting by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    var recoveryLocks by remember { mutableStateOf(emptyList<TrackedAssetLock>()) }
+    var selectedRecoveryLock by remember { mutableStateOf<TrackedAssetLock?>(null) }
+    var recoveryLoadError by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(manager, selectedWallet, fundingSource) {
+        recoveryLoadError = null
+        recoveryLocks = try {
+            val mgr = manager
+            val wallet = selectedWallet
+            if (mgr == null || wallet == null) emptyList() else {
+                IdentityAssetLockRecovery.registrations(
+                    mgr.trackedIdentityRecoveryAssetLocks(wallet.walletId),
+                )
+            }
+        } catch (e: Exception) {
+            recoveryLoadError = e.message ?: "Failed to load tracked registration locks"
+            emptyList()
+        }
+        selectedRecoveryLock = recoveryLocks.firstOrNull()
+        if (fundingSource == CreateIdentityFundingSource.AssetLockResume) {
+            selectedRecoveryLock?.let { identityIndexText = it.registrationIndex.toString() }
+        }
+    }
 
     val scope = androidx.compose.runtime.rememberCoroutineScope()
 
@@ -134,6 +159,13 @@ fun CreateIdentityScreen(navController: NavHostController) {
                 },
                 amountText = amountText,
                 onAmountChange = { amountText = it.filter(Char::isDigit) },
+                recoveryLocks = recoveryLocks,
+                recoveryLoadError = recoveryLoadError,
+                selectedRecoveryLock = selectedRecoveryLock,
+                onRecoveryLockChange = {
+                    selectedRecoveryLock = it
+                    identityIndexText = it.registrationIndex.toString()
+                },
             )
 
             KeysSection(
@@ -145,14 +177,24 @@ fun CreateIdentityScreen(navController: NavHostController) {
                 text = "Create Identity",
                 isLoading = isSubmitting,
                 enabled = selectedWallet != null &&
-                    fundingSource.wired &&
-                    amountText.toLongOrNull() != null &&
+                    (fundingSource == CreateIdentityFundingSource.AssetLockResume ||
+                        amountText.toLongOrNull() != null) &&
+                    (fundingSource != CreateIdentityFundingSource.AssetLockResume ||
+                        selectedRecoveryLock != null) &&
                     identityIndexText.toIntOrNull() != null,
                 modifier = Modifier.fillMaxWidth().testTag("createIdentity.submit"),
             ) {
                 val wallet = selectedWallet ?: return@SubmitButton
-                val amount = amountText.toLongOrNull() ?: return@SubmitButton
-                val identityIndex = identityIndexText.toIntOrNull() ?: return@SubmitButton
+                val amount = if (fundingSource == CreateIdentityFundingSource.AssetLockResume) {
+                    null
+                } else {
+                    amountText.toLongOrNull() ?: return@SubmitButton
+                }
+                val identityIndex = if (fundingSource == CreateIdentityFundingSource.AssetLockResume) {
+                    selectedRecoveryLock?.registrationIndex ?: return@SubmitButton
+                } else {
+                    identityIndexText.toIntOrNull() ?: return@SubmitButton
+                }
                 val mgr = manager ?: return@SubmitButton
                 isSubmitting = true
                 scope.launch {
@@ -204,7 +246,8 @@ fun CreateIdentityScreen(navController: NavHostController) {
                                     body = {
                                         mgr.identityRegistration.registerWithWalletFunding(
                                             walletHandle = wallet.handle,
-                                            amountDuffs = amount,
+                                            amountDuffs = amount
+                                                ?: error("A funding amount is required"),
                                             accountIndex = 0,
                                             identityIndex = identityIndex,
                                             keys = keys,
@@ -222,10 +265,12 @@ fun CreateIdentityScreen(navController: NavHostController) {
                                 // Rust-side by the register-from-addresses FFI.
                                 val candidates = wallet.addressesWithBalances()
                                     .sortedByDescending { it.credits }
-                                val inputs = packFundingInputs(candidates, amount)
+                                val requiredAmount = amount
+                                    ?: error("A funding amount is required")
+                                val inputs = packFundingInputs(candidates, requiredAmount)
                                 if (inputs.isEmpty()) {
                                     error = "Not enough Platform-address balance to fund " +
-                                        "$amount credits. Fund a Platform address first."
+                                        "$requiredAmount credits. Fund a Platform address first."
                                     return@launch
                                 }
                                 coordinator.startRegistration(
@@ -273,7 +318,8 @@ fun CreateIdentityScreen(navController: NavHostController) {
                                             walletId = wallet.walletId,
                                             identityIndex = identityIndex,
                                             keys = keys,
-                                            denomination = amount,
+                                            denomination = amount
+                                                ?: error("A shielded denomination is required"),
                                             fallbackAddress = fallbackAddress,
                                         )
                                     },
@@ -287,8 +333,25 @@ fun CreateIdentityScreen(navController: NavHostController) {
                                 )
                             }
                             CreateIdentityFundingSource.AssetLockResume -> {
-                                error = "\"${fundingSource.label}\" funding is not wired yet."
-                                return@launch
+                                val lock = selectedRecoveryLock
+                                    ?: error("No resumable registration asset lock is selected")
+                                coordinator.startRegistration(
+                                    walletId = wallet.walletId,
+                                    identityIndex = identityIndex,
+                                    fundingKind = IdentityRegistrationController.FundingKind.AssetLock,
+                                    body = {
+                                        IdentityAssetLockRecovery.submitRegistrationResume(lock) {
+                                            mgr.identityRegistration.resumeWithExistingAssetLock(
+                                                walletHandle = wallet.handle,
+                                                lock = it,
+                                                identityIndex = it.registrationIndex,
+                                                keys = keys,
+                                                signerHandle = mgr.signerHandle,
+                                                coreSignerHandle = mgr.mnemonicResolverHandle,
+                                            )
+                                        }
+                                    },
+                                )
                             }
                         }
                         navController.navigate(
@@ -311,9 +374,8 @@ fun CreateIdentityScreen(navController: NavHostController) {
  * The funding sources `CreateIdentityView` offers. [CoreBalance] (ID-01,
  * `platform_wallet_register_identity_with_funding_signer`) and
  * [PlatformAddress] (ID-08, `platform_wallet_register_identity_with_signer`)
- * both execute; [AssetLockResume]
- * (`platform_wallet_resume_identity_with_existing_asset_lock_signer`) is
- * still deferred.
+ * both execute; [AssetLockResume] reuses the selected Rust-tracked outpoint
+ * through `platform_wallet_resume_identity_with_existing_asset_lock_signer`.
  *
  * @property amountInCredits true when the amount field is denominated in
  *   credits (the Platform-address path spends existing Platform credits);
@@ -321,13 +383,12 @@ fun CreateIdentityScreen(navController: NavHostController) {
  */
 enum class CreateIdentityFundingSource(
     val label: String,
-    val wired: Boolean,
     val amountInCredits: Boolean,
 ) {
-    CoreBalance("Core balance", true, amountInCredits = false),
-    PlatformAddress("Platform address", true, amountInCredits = true),
-    ShieldedBalance("Shielded balance", true, amountInCredits = true),
-    AssetLockResume("Resume from asset lock", false, amountInCredits = false),
+    CoreBalance("Core balance", amountInCredits = false),
+    PlatformAddress("Platform address", amountInCredits = true),
+    ShieldedBalance("Shielded balance", amountInCredits = true),
+    AssetLockResume("Resume from asset lock", amountInCredits = false),
 }
 
 /**
@@ -346,8 +407,8 @@ private val SHIELDED_IDENTITY_DENOMINATIONS: List<Pair<Long, String>> = listOf(
 
 /**
  * Funding source + amount — the Swift `CreateIdentityView` funding/amount
- * sections. The source picker offers the three iOS options; only Core
- * balance executes (the other two carry the deferral note).
+ * sections, including an existing-lock picker sourced from Rust rather than
+ * inferred from Room rows.
  */
 @Composable
 private fun FundingSection(
@@ -355,6 +416,10 @@ private fun FundingSection(
     onSourceChange: (CreateIdentityFundingSource) -> Unit,
     amountText: String,
     onAmountChange: (String) -> Unit,
+    recoveryLocks: List<TrackedAssetLock>,
+    recoveryLoadError: String?,
+    selectedRecoveryLock: TrackedAssetLock?,
+    onRecoveryLockChange: (TrackedAssetLock) -> Unit,
 ) {
     FormSection(title = "Funding") {
         org.dashfoundation.example.ui.components.AccessiblePicker(
@@ -365,16 +430,38 @@ private fun FundingSection(
             testTag = "createIdentity.fundingSourcePicker",
             onSelected = onSourceChange,
         )
-        if (!source.wired) {
-            Text(
-                "\"${source.label}\" funding is not bridged yet (needs the " +
-                    "platform-address signer accessor). Core balance is the wired path.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.error,
-                modifier = Modifier.padding(top = 4.dp),
-            )
-        }
-        if (source == CreateIdentityFundingSource.ShieldedBalance) {
+        if (source == CreateIdentityFundingSource.AssetLockResume) {
+            if (recoveryLoadError != null) {
+                Text(
+                    recoveryLoadError,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.testTag("createIdentity.resume.error"),
+                )
+            } else if (recoveryLocks.isEmpty()) {
+                Text(
+                    "No Rust-tracked registration locks are currently resumable.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.testTag("createIdentity.resume.empty"),
+                )
+            } else {
+                AccessiblePicker(
+                    label = "Existing asset lock",
+                    options = recoveryLocks,
+                    selected = selectedRecoveryLock ?: recoveryLocks.first(),
+                    optionLabel = IdentityAssetLockRecovery::label,
+                    testTag = "createIdentity.resume.outpoint",
+                    onSelected = onRecoveryLockChange,
+                )
+                Text(
+                    "Resumes this exact outpoint. Built locks rebroadcast their existing " +
+                        "transaction; no replacement funding transaction is created.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        } else if (source == CreateIdentityFundingSource.ShieldedBalance) {
             // Type-20 spends a FIXED exit denomination, not a free-form amount
             // (← iOS's denomination Picker). The picked value flows back through
             // [amountText] (in credits) so the submit path reads it uniformly.

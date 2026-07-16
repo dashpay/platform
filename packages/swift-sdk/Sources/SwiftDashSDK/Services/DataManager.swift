@@ -34,7 +34,7 @@ public final class DataManager: ObservableObject {
 
         if let existingBalance = try modelContext.fetch(descriptor).first {
             // Update existing balance
-            existingBalance.updateBalance(Int64(balance))
+            existingBalance.updateBalance(balance)
             if frozen != existingBalance.frozen {
                 if frozen {
                     existingBalance.freeze()
@@ -50,7 +50,7 @@ public final class DataManager: ObservableObject {
             let persistentBalance = PersistentTokenBalance(
                 tokenId: tokenId,
                 identityId: identityId,
-                balance: Int64(balance),
+                balance: balance,
                 frozen: frozen,
                 tokenName: tokenInfo?.name,
                 tokenSymbol: tokenInfo?.symbol,
@@ -66,12 +66,11 @@ public final class DataManager: ObservableObject {
     /// Fetch token balances for an identity
     public func fetchTokenBalances(identityId: Data) throws -> [(tokenId: String, balance: UInt64, frozen: Bool)] {
         let predicate = PersistentTokenBalance.predicate(identityId: identityId)
-        let descriptor = FetchDescriptor<PersistentTokenBalance>(
-            predicate: predicate,
-            sortBy: [SortDescriptor(\.balance, order: .reverse)]
-        )
+        let descriptor = FetchDescriptor<PersistentTokenBalance>(predicate: predicate)
         let persistentBalances = try modelContext.fetch(descriptor)
-        return persistentBalances.map { $0.toTokenBalance() }
+        return persistentBalances
+            .sorted { $0.unsignedBalance > $1.unsignedBalance }
+            .map { $0.toTokenBalance() }
     }
 
     // MARK: - Utility Operations

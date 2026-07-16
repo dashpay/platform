@@ -93,6 +93,7 @@ object GroupActionRuleEvaluator {
         token.unfreezeRules,
         token.destroyFrozenFundsRules,
         token.emergencyActionRules,
+        token.maxSupplyChangeRules,
         TokenDistributionChangeRules.parse(token.distributionChangeRules)
             ?.changeDirectPurchasePricingRules?.toJson(),
     )

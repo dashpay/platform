@@ -96,7 +96,7 @@ Most Platform actions have hard preconditions. Establish these fixtures before s
 | CORE-02 | Restore wallet (existing mnemonic) | Core | Essential | ✅ | | `CreateWalletScreen` (Import Existing toggle). After sync, derived addresses + balance populate. |
 | CORE-03 | Backup / view recovery phrase | Core | Essential | ✅ | | `SeedBackupScreen`. Phrase matches creation; biometric-gated reveal on Android. |
 | CORE-04 | Receive (derive address + QR) | Core | Essential | ✅ | | `ReceiveAddressSheet` → `core_wallet_next_receive_address`. Fresh external address + scannable QR. |
-| CORE-05 | Send Core L1 transaction | Core | Essential | ✅ | | Send flow (`SendTransactionScreen`, mode Core→Core) → `ManagedPlatformWallet.sendToAddresses` → `CoreTransactionBuilder` (build+sign) → `core_wallet_broadcast_transaction`. Tx broadcasts; balance drops; appears in history. |
+| CORE-05 | Send Core L1 transaction | Core | Essential | ✅ | | Send flow (`SendTransactionScreen`, mode Core→Core) → `ManagedPlatformWallet.sendToAddresses` → `CoreTransactionBuilder.finalizeAtomic` → `core_wallet_broadcast_signed_transaction_v2`. Funding and reservation are atomic; tx broadcasts, balance drops, and it appears in history. |
 | CORE-06 | View balance / tx history / UTXOs | Core | Essential | ✅ | | `WalletDetailScreen`, `TransactionListScreen`, `AccountDetailScreen` (Room). |
 | CORE-07 | SPV sync (start / stop / progress) | Core | Essential | ✅ | | Global sync indicator (`GlobalSyncIndicator`) → `platform_wallet_manager_spv_*`. Headers/filters/masternodes advance to tip. |
 | CORE-08 | QR scan recipient | Core | Manual | ✅ | | `QrScannerScreen` (CameraX), reachable in the Send flow. Emulators can use a virtual camera scene but reliability varies — treat as `Tier=Manual`. |
@@ -136,6 +136,7 @@ Most Platform actions have hard preconditions. Establish these fixtures before s
 | ID-13 | Top up identity (builder path) | Cross | — | ➖ | | Retired — builder entry is a stub; covered by `ID-05`/`ID-06`. |
 | ID-14 | Credit transfer between two on-device identities (A → B) | Platform | Thorough | ✅ | multiwallet | `IdentityDetailScreen` → **Transfer Credits** (`ID-04`), recipient = wallet B's identity (via `RecipientPicker`). Switch to B; verify credit balance rose. |
 | ID-15 | Same identity restored into two wallets (duplicate seed) | Platform | Uncommon | ✅ | multiwallet | Importing the same mnemonic as a second wallet derives the **same** identity; verify consistency. |
+| ID-16 | Resume identity top-up from a tracked asset lock | Cross | Manual | 🚧 | | Source UI selects the Rust-tracked exact outpoint, excludes locks bound to another identity, and reaches the compiled tracked-lock list/free and existing-lock registration/top-up JNI bridges. Device gate: interrupt after Core broadcast, restart, resume the same Built transaction/outpoint, and verify foreign/untracked/consumed locks return typed failures without creating a replacement funding transaction. |
 
 ### 4.3 Platform Addresses (DIP-17 credit addresses) — `Domain=Address`
 

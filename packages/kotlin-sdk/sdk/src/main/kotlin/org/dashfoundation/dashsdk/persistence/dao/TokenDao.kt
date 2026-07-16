@@ -118,8 +118,12 @@ interface TokenDao {
     fun observeBalancesByToken(tokenId: String): Flow<List<TokenBalanceEntity>>
 
     /** Mirror of `nonZeroBalancesPredicate`. */
-    @Query("SELECT * FROM token_balances WHERE balance > 0")
+    @Query("SELECT * FROM token_balances WHERE balance != X'0000000000000000'")
     fun observeNonZeroBalances(): Flow<List<TokenBalanceEntity>>
+
+    /** BLOB byte order is deliberately the protocol's unsigned numeric order. */
+    @Query("SELECT * FROM token_balances ORDER BY balance ASC")
+    suspend fun getBalancesOrderedByAmount(): List<TokenBalanceEntity>
 
     /** Mirror of `frozenBalancesPredicate`. */
     @Query("SELECT * FROM token_balances WHERE frozen = 1")

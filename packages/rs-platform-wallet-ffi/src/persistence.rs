@@ -23,8 +23,9 @@ use std::str::FromStr;
 use crate::types::{FFINetwork, Network};
 use platform_wallet::changeset::{
     AccountAddressPoolEntry, AccountRegistrationEntry, ClientStartState, ClientWalletStartState,
-    Merge, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
-    ProviderKeyAccountEntry, ProviderKeyExtendedPubKey,
+    Merge, PersistenceCapabilities, PersistenceError, PlatformWalletChangeSet,
+    PlatformWalletPersistence, ProviderKeyAccountEntry, ProviderKeyExtendedPubKey,
+    PERSISTENCE_CAPABILITIES_VERSION,
 };
 use platform_wallet::wallet::platform_wallet::WalletId;
 use platform_wallet::wallet::{PerAccountPlatformAddressState, PerWalletPlatformAddressState};
@@ -63,6 +64,43 @@ use dpp::platform_value::BinaryData;
 use dpp::prelude::Identifier;
 use platform_wallet::{DpnsNameInfo, IdentityManagerStartState, IdentityStatus, ManagedIdentity};
 use std::ffi::CStr;
+
+/// Versioned C projection of [`PersistenceCapabilities`].
+///
+/// `version` identifies the stable bit assignment. `reserved` must be ignored
+/// and is zero in version 1. Unknown bits in `bits` must be preserved/ignored
+/// by callers rather than treated as an error.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(C)]
+pub struct PersistenceCapabilitiesFFI {
+    pub version: u32,
+    pub reserved: u32,
+    pub bits: u64,
+}
+
+impl From<PersistenceCapabilities> for PersistenceCapabilitiesFFI {
+    fn from(value: PersistenceCapabilities) -> Self {
+        Self {
+            version: PERSISTENCE_CAPABILITIES_VERSION,
+            reserved: 0,
+            bits: value.bits(),
+        }
+    }
+}
+
+/// Stable version-1 C bit values. These mirror
+/// [`PersistenceCapabilities`] and are append-only.
+// Keep these as C-bindgen-friendly literals. Rust tests pin them to the
+// shared `PersistenceCapabilities` values so neither projection can drift.
+pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITIES_VERSION: u32 = 1;
+pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_ATOMIC_CHANGESETS: u64 = 1 << 0;
+pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_INVITATIONS: u64 = 1 << 1;
+pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_ACCOUNT_ADDRESS_POOLS: u64 = 1 << 2;
+pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_SHIELDED_VIEWING_KEYS: u64 = 1 << 3;
+pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_PROVIDER_TRANSACTIONS: u64 = 1 << 4;
+pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_UNSIGNED_TOKEN_STORAGE: u64 = 1 << 5;
+pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_DEFERRED_CONTACT_CRYPTO: u64 = 1 << 6;
+pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_WALLET_RESTORE: u64 = 1 << 7;
 
 /// C callback vtable for wallet persistence.
 ///
@@ -735,6 +773,55 @@ impl FFIPersister {
             round_lock: Mutex::new(RoundGuardState::default()),
         }
     }
+
+    /// Compute capabilities solely from the callback contracts present in this
+    /// vtable. No feature bit is inferred from a context pointer or a generic
+    /// store/flush callback.
+    fn callback_capabilities(&self) -> PersistenceCapabilities {
+        let mut capabilities = PersistenceCapabilities::NONE;
+
+        if self.callbacks.on_changeset_begin_fn.is_some()
+            && self.callbacks.on_changeset_end_fn.is_some()
+        {
+            capabilities = capabilities.union(PersistenceCapabilities::ATOMIC_CHANGESETS);
+        }
+        if self.callbacks.on_persist_invitations_fn.is_some() {
+            capabilities = capabilities.union(PersistenceCapabilities::INVITATIONS);
+        }
+        if self.callbacks.on_persist_account_registrations_fn.is_some()
+            && self.callbacks.on_persist_account_address_pools_fn.is_some()
+        {
+            capabilities = capabilities.union(PersistenceCapabilities::ACCOUNT_ADDRESS_POOLS);
+        }
+        let wallet_restore = self.callbacks.on_load_wallet_list_fn.is_some()
+            && self.callbacks.on_load_wallet_list_free_fn.is_some();
+        if wallet_restore {
+            capabilities = capabilities.union(PersistenceCapabilities::WALLET_RESTORE);
+        }
+        if self.callbacks.on_persist_wallet_changeset_fn.is_some()
+            && wallet_restore
+            && capabilities.contains(PersistenceCapabilities::ACCOUNT_ADDRESS_POOLS)
+        {
+            capabilities = capabilities.union(PersistenceCapabilities::PROVIDER_TRANSACTIONS);
+        }
+        if self.callbacks.on_persist_token_balances_fn.is_some() {
+            capabilities = capabilities.union(PersistenceCapabilities::UNSIGNED_TOKEN_STORAGE);
+        }
+        #[cfg(feature = "shielded")]
+        if self.callbacks.on_persist_shielded_viewing_keys_fn.is_some()
+            && self.callbacks.on_load_shielded_viewing_keys_fn.is_some()
+            && self
+                .callbacks
+                .on_load_shielded_viewing_keys_free_fn
+                .is_some()
+        {
+            capabilities = capabilities.union(PersistenceCapabilities::SHIELDED_VIEWING_KEYS);
+        }
+
+        // Deliberately absent: PersistenceCallbacks has no deferred contact
+        // crypto add/clear callback pair, so FFI hosts cannot attest it.
+        capabilities
+    }
 }
 
 impl PlatformWalletPersistence for FFIPersister {
@@ -745,22 +832,8 @@ impl PlatformWalletPersistence for FFIPersister {
     // `PlatformWalletChangeSet`). Wire host callbacks before relying on
     // restart-immediate drains.
 
-    /// Durable only when the host actually wired the persistence callbacks.
-    ///
-    /// Every per-kind block in [`Self::store`] is `if let Some(cb)` — with the
-    /// callbacks absent (e.g. a manager configured without a persistence
-    /// container), non-empty changesets are silently skipped while `store()`
-    /// still returns `Ok`, which is exactly the write-dropping shape the
-    /// fail-closed trait default exists to catch. Attest durability only when
-    /// the transaction bracket (begin/end) AND the callbacks the
-    /// bearer-key-sensitive invitation flow writes through (invitations +
-    /// account address pools) are all present; the Swift bridge wires all of
-    /// its callbacks together, so a partially-wired vtable stays non-durable.
-    fn persists_durably(&self) -> bool {
-        self.callbacks.on_changeset_begin_fn.is_some()
-            && self.callbacks.on_changeset_end_fn.is_some()
-            && self.callbacks.on_persist_invitations_fn.is_some()
-            && self.callbacks.on_persist_account_address_pools_fn.is_some()
+    fn persistence_capabilities(&self) -> PersistenceCapabilities {
+        self.callback_capabilities()
     }
 
     fn store(
@@ -4264,7 +4337,9 @@ fn build_wallet_start_state(
 /// A malformed entry returns `Err(PersistenceError)` so the caller
 /// surfaces the load failure rather than dropping a partially-rebuilt
 /// state silently. Empty / null `tracked_asset_locks` yields an empty
-/// map (same as the legacy hardcoded path).
+/// map (same as the legacy hardcoded path). Terminal `Consumed` rows
+/// are restored as tombstones so an exact-outpoint retry remains
+/// distinguishable from a lock that was never tracked.
 fn build_unused_asset_locks(
     entry: &WalletRestoreEntryFFI,
 ) -> Result<
@@ -4344,16 +4419,6 @@ fn build_unused_asset_locks(
 
         let funding_type = funding_type_from_u8(spec.funding_type)?;
         let status = status_from_u8(spec.status)?;
-
-        // Skip `Consumed` rows. The Swift persister keeps them for
-        // historical UI lookups (transactions list → locked amount),
-        // but the in-memory `tracked_asset_locks` map is for
-        // still-actionable locks only — a consumed lock has no proof
-        // worth waiting on and adding it back to memory at every
-        // load would defeat the point of marking it terminal.
-        if matches!(status, platform_wallet::AssetLockStatus::Consumed) {
-            continue;
-        }
 
         let tracked = platform_wallet::TrackedAssetLock {
             out_point,
@@ -5366,6 +5431,14 @@ mod tests {
     ) -> i32 {
         0
     }
+    unsafe extern "C" fn noop_registrations(
+        _ctx: *mut c_void,
+        _wallet_id: *const u8,
+        _specs: *const AccountSpecFFI,
+        _count: usize,
+    ) -> i32 {
+        0
+    }
     unsafe extern "C" fn noop_invitations(
         _ctx: *mut c_void,
         _wallet_id: *const u8,
@@ -5376,6 +5449,64 @@ mod tests {
     ) -> i32 {
         0
     }
+    unsafe extern "C" fn noop_load_wallets(
+        _ctx: *mut c_void,
+        out_entries: *mut *const WalletRestoreEntryFFI,
+        out_count: *mut usize,
+    ) -> i32 {
+        *out_entries = std::ptr::null();
+        *out_count = 0;
+        0
+    }
+    unsafe extern "C" fn noop_free_wallets(
+        _ctx: *mut c_void,
+        _entries: *const WalletRestoreEntryFFI,
+        _count: usize,
+    ) {
+    }
+    unsafe extern "C" fn noop_wallet_changeset(
+        _ctx: *mut c_void,
+        _wallet_id: *const u8,
+        _changeset: *const WalletChangeSetFFI,
+    ) -> i32 {
+        0
+    }
+    unsafe extern "C" fn noop_token_balances(
+        _ctx: *mut c_void,
+        _wallet_id: *const u8,
+        _upserts: *const TokenBalanceUpsertFFI,
+        _upserts_count: usize,
+        _removed: *const TokenBalanceRemovalFFI,
+        _removed_count: usize,
+    ) -> i32 {
+        0
+    }
+    #[cfg(feature = "shielded")]
+    unsafe extern "C" fn noop_persist_viewing_keys(
+        _ctx: *mut c_void,
+        _wallet_id: *const u8,
+        _entries: *const crate::shielded_persistence::ShieldedViewingKeyFFI,
+        _count: usize,
+    ) -> i32 {
+        0
+    }
+    #[cfg(feature = "shielded")]
+    unsafe extern "C" fn noop_load_viewing_keys(
+        _ctx: *mut c_void,
+        out_entries: *mut *const crate::shielded_persistence::ShieldedViewingKeyRestoreFFI,
+        out_count: *mut usize,
+    ) -> i32 {
+        *out_entries = std::ptr::null();
+        *out_count = 0;
+        0
+    }
+    #[cfg(feature = "shielded")]
+    unsafe extern "C" fn noop_free_viewing_keys(
+        _ctx: *mut c_void,
+        _entries: *const crate::shielded_persistence::ShieldedViewingKeyRestoreFFI,
+        _count: usize,
+    ) {
+    }
 
     /// A callback-free persister (the `configure(modelContainer: nil)` shape)
     /// silently drops every write, so it must NOT attest durability — this is
@@ -5383,37 +5514,134 @@ mod tests {
     /// an unpersisted invitation funding index re-exports the same bearer
     /// voucher key after a restart.
     #[test]
-    fn callback_free_persister_is_not_durable() {
+    fn callback_free_persister_has_no_capabilities() {
         let persister = FFIPersister::new(PersistenceCallbacks::default());
+        assert_eq!(
+            persister.persistence_capabilities(),
+            PersistenceCapabilities::NONE
+        );
         assert!(!persister.persists_durably());
     }
 
-    /// A partially-wired vtable (commit bracket present, invitation-critical
-    /// callbacks absent — or vice versa) stays non-durable.
+    /// Partial callback pairs attest only complete, independently testable
+    /// contracts. Atomicity must not imply invitation support, and a pool
+    /// callback without its registration callback must not attest pools.
     #[test]
-    fn partially_wired_persister_is_not_durable() {
+    fn partially_wired_persister_attests_only_complete_pairs() {
+        let mut cb = PersistenceCallbacks::default();
+        cb.on_changeset_begin_fn = Some(noop_begin);
+        assert_eq!(
+            FFIPersister::new(cb).persistence_capabilities(),
+            PersistenceCapabilities::NONE
+        );
+
         let mut cb = PersistenceCallbacks::default();
         cb.on_changeset_begin_fn = Some(noop_begin);
         cb.on_changeset_end_fn = Some(noop_end);
-        assert!(!FFIPersister::new(cb).persists_durably());
+        let capabilities = FFIPersister::new(cb).persistence_capabilities();
+        assert_eq!(capabilities, PersistenceCapabilities::ATOMIC_CHANGESETS);
+        assert!(!capabilities.contains(PersistenceCapabilities::INVITATION_CREATION));
 
         let mut cb = PersistenceCallbacks::default();
         cb.on_persist_invitations_fn = Some(noop_invitations);
         cb.on_persist_account_address_pools_fn = Some(noop_pools);
-        assert!(!FFIPersister::new(cb).persists_durably());
+        let capabilities = FFIPersister::new(cb).persistence_capabilities();
+        assert_eq!(capabilities, PersistenceCapabilities::INVITATIONS);
     }
 
-    /// With the transaction bracket + the invitation-critical callbacks all
-    /// wired (the shape the Swift bridge always produces), the persister
-    /// attests durability.
+    /// A complete non-shielded vtable exposes every capability representable
+    /// by its callbacks. Deferred contact crypto remains absent because the
+    /// vtable has no callback contract for that queue.
     #[test]
-    fn fully_wired_persister_attests_durability() {
+    fn fully_wired_persister_attests_feature_specific_capabilities() {
         let mut cb = PersistenceCallbacks::default();
         cb.on_changeset_begin_fn = Some(noop_begin);
         cb.on_changeset_end_fn = Some(noop_end);
+        cb.on_persist_account_registrations_fn = Some(noop_registrations);
         cb.on_persist_account_address_pools_fn = Some(noop_pools);
         cb.on_persist_invitations_fn = Some(noop_invitations);
-        assert!(FFIPersister::new(cb).persists_durably());
+        cb.on_load_wallet_list_fn = Some(noop_load_wallets);
+        cb.on_load_wallet_list_free_fn = Some(noop_free_wallets);
+        cb.on_persist_wallet_changeset_fn = Some(noop_wallet_changeset);
+        cb.on_persist_token_balances_fn = Some(noop_token_balances);
+        let capabilities = FFIPersister::new(cb).persistence_capabilities();
+
+        let expected = PersistenceCapabilities::ATOMIC_CHANGESETS
+            .union(PersistenceCapabilities::INVITATIONS)
+            .union(PersistenceCapabilities::ACCOUNT_ADDRESS_POOLS)
+            .union(PersistenceCapabilities::PROVIDER_TRANSACTIONS)
+            .union(PersistenceCapabilities::UNSIGNED_TOKEN_STORAGE)
+            .union(PersistenceCapabilities::WALLET_RESTORE);
+        assert_eq!(capabilities, expected);
+        assert!(capabilities.contains(PersistenceCapabilities::INVITATION_CREATION));
+        assert!(!capabilities.contains(PersistenceCapabilities::DEFERRED_CONTACT_CRYPTO));
+    }
+
+    #[test]
+    fn ffi_capability_projection_has_stable_v1_layout_values() {
+        let ffi = PersistenceCapabilitiesFFI::from(
+            PersistenceCapabilities::ATOMIC_CHANGESETS
+                .union(PersistenceCapabilities::WALLET_RESTORE),
+        );
+        assert_eq!(ffi.version, 1);
+        assert_eq!(ffi.reserved, 0);
+        assert_eq!(ffi.bits, 0x81);
+        assert_eq!(std::mem::size_of::<PersistenceCapabilitiesFFI>(), 16);
+        assert_eq!(
+            PLATFORM_WALLET_PERSISTENCE_CAPABILITIES_VERSION,
+            PERSISTENCE_CAPABILITIES_VERSION
+        );
+        assert_eq!(
+            PLATFORM_WALLET_PERSISTENCE_CAPABILITY_ATOMIC_CHANGESETS,
+            PersistenceCapabilities::ATOMIC_CHANGESETS.bits()
+        );
+        assert_eq!(
+            PLATFORM_WALLET_PERSISTENCE_CAPABILITY_INVITATIONS,
+            PersistenceCapabilities::INVITATIONS.bits()
+        );
+        assert_eq!(
+            PLATFORM_WALLET_PERSISTENCE_CAPABILITY_ACCOUNT_ADDRESS_POOLS,
+            PersistenceCapabilities::ACCOUNT_ADDRESS_POOLS.bits()
+        );
+        assert_eq!(
+            PLATFORM_WALLET_PERSISTENCE_CAPABILITY_SHIELDED_VIEWING_KEYS,
+            PersistenceCapabilities::SHIELDED_VIEWING_KEYS.bits()
+        );
+        assert_eq!(
+            PLATFORM_WALLET_PERSISTENCE_CAPABILITY_PROVIDER_TRANSACTIONS,
+            PersistenceCapabilities::PROVIDER_TRANSACTIONS.bits()
+        );
+        assert_eq!(
+            PLATFORM_WALLET_PERSISTENCE_CAPABILITY_UNSIGNED_TOKEN_STORAGE,
+            PersistenceCapabilities::UNSIGNED_TOKEN_STORAGE.bits()
+        );
+        assert_eq!(
+            PLATFORM_WALLET_PERSISTENCE_CAPABILITY_DEFERRED_CONTACT_CRYPTO,
+            PersistenceCapabilities::DEFERRED_CONTACT_CRYPTO.bits()
+        );
+        assert_eq!(
+            PLATFORM_WALLET_PERSISTENCE_CAPABILITY_WALLET_RESTORE,
+            PersistenceCapabilities::WALLET_RESTORE.bits()
+        );
+    }
+
+    #[cfg(feature = "shielded")]
+    #[test]
+    fn shielded_viewing_key_capability_requires_complete_callback_triplet() {
+        let mut cb = PersistenceCallbacks::default();
+        cb.on_persist_shielded_viewing_keys_fn = Some(noop_persist_viewing_keys);
+        cb.on_load_shielded_viewing_keys_fn = Some(noop_load_viewing_keys);
+        assert!(!FFIPersister::new(cb)
+            .persistence_capabilities()
+            .contains(PersistenceCapabilities::SHIELDED_VIEWING_KEYS));
+
+        let mut cb = PersistenceCallbacks::default();
+        cb.on_persist_shielded_viewing_keys_fn = Some(noop_persist_viewing_keys);
+        cb.on_load_shielded_viewing_keys_fn = Some(noop_load_viewing_keys);
+        cb.on_load_shielded_viewing_keys_free_fn = Some(noop_free_viewing_keys);
+        assert!(FFIPersister::new(cb)
+            .persistence_capabilities()
+            .contains(PersistenceCapabilities::SHIELDED_VIEWING_KEYS));
     }
 
     use dashcore::blockdata::transaction::txin::TxIn;

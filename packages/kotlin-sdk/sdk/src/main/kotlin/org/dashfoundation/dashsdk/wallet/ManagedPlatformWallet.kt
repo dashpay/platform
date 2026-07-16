@@ -2,7 +2,6 @@ package org.dashfoundation.dashsdk.wallet
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.sync.withLock
 import org.dashfoundation.dashsdk.errors.mapNativeErrors
 import org.dashfoundation.dashsdk.ffi.NativeCleaner
 import org.dashfoundation.dashsdk.ffi.TokensNative
@@ -29,22 +28,6 @@ import java.util.concurrent.atomic.AtomicLong
 class ManagedPlatformWallet internal constructor(
     handle: Long,
     val walletId: ByteArray,
-    // Serializes this wallet's Core sends, and is SHARED across every wrapper
-    // for the same wallet id: the PlatformWalletManager owns it (keyed by
-    // wallet id) and hands the same instance to each wrapper it builds. The
-    // split TransactionBuilder selects UTXOs in setFunding but only reserves
-    // them in buildSigned, so two sends crossing that window could both select
-    // the same UTXO and build competing txs (double-spend / broadcast failure).
-    // A per-instance lock is NOT enough — loadPersistedWallets can hand out a
-    // fresh wrapper (new getWallet handle) for a wallet id whose earlier
-    // wrapper a caller still holds, and the two wrappers would hold distinct
-    // locks. Keying the shared lock by wallet id closes that: a same-account
-    // collision is necessarily same-wallet, and different wallets don't share
-    // UTXOs, so wallet-id granularity is a safe superset. The removed one-shot
-    // core_wallet_send_to_addresses held the wallet-manager write lock across
-    // select+sign+broadcast; this restores that atomicity at the orchestration
-    // layer.
-    private val coreSendMutex: kotlinx.coroutines.sync.Mutex,
     // Owning manager's teardown fence: ops that borrow the manager's raw
     // signer/resolver handles run on the CALLER's scope, so manager
     // teardown must await them through this gate before freeing the boxes.
@@ -142,18 +125,14 @@ class ManagedPlatformWallet internal constructor(
      *
      * Mirrors the `.coreToCore` flow in Swift's `SendViewModel.executeSend`
      * (SendViewModel.swift:515-533): drive a [CoreTransactionBuilder] step by
-     * step (`new → addOutput* → setFunding → buildSigned`), then broadcast the
-     * signed tx via the core wallet. `setFunding` sets inputs AND the change
-     * address, and the fee rate / selection strategy / current height come
-     * from the builder defaults — exactly as iOS's plain send does (it calls
-     * none of those setters). Coin selection, funding, and signing are all
-     * Rust-side; Kotlin only marshals the outputs. The signed tx carries its
-     * funding account, so a failed broadcast releases its UTXO reservation.
+     * step (`new → addOutput* → finalizeAtomic`), then consume the finalized
+     * handle through broadcast. Rust atomically selects and reserves inputs
+     * before signing; Kotlin only marshals outputs and owns the handle lifetime.
      *
      * @param network the wallet network — output/change addresses are
      *   validated against it Rust-side (Swift's `SendViewModel` likewise hands
-     *   the app network to the builder). `setFunding` / `buildSigned` re-check
-     *   it against the wallet's own network.
+     *   the app network to the builder). The atomic finalizer re-checks it
+     *   against the wallet's own network.
      * @param coreSignerHandle the manager's `MnemonicResolverHandle`
      *   (`PlatformWalletManager.mnemonicResolverHandle`) — used for the
      *   Core ECDSA signatures. No private key crosses the boundary.
@@ -174,7 +153,6 @@ class ManagedPlatformWallet internal constructor(
             AccountType.BIP44 -> CoreTransactionBuilder.AccountType.BIP44
             AccountType.BIP32 -> CoreTransactionBuilder.AccountType.BIP32
         }
-        coreSendMutex.withLock {
         mapNativeErrors {
             val builder = CoreTransactionBuilder(network)
             // `buildSigned` consumes the builder; `use` still safely destroys
@@ -183,18 +161,14 @@ class ManagedPlatformWallet internal constructor(
                 for ((address, amount) in recipients) {
                     it.addOutput(address, amount)
                 }
-                it.setFunding(this@ManagedPlatformWallet, builderAccountType, accountIndex)
-                it.buildSigned(
+                it.finalizeAtomic(
                     this@ManagedPlatformWallet,
                     builderAccountType,
                     accountIndex,
                     coreSignerHandle,
                 )
             }
-            signedTx.use { tx ->
-                coreWallet().use { core -> core.broadcastTransaction(tx) }
-            }
-        }
+            signedTx.use { tx -> coreWallet().use { core -> core.broadcastTransaction(tx) } }
         }
     }
 

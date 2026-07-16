@@ -15,6 +15,7 @@ pub mod client_wallet_start_state;
 pub mod core_bridge;
 pub mod identity_manager_start_state;
 pub mod merge;
+pub mod persistence_capabilities;
 pub mod platform_address_sync_start_state;
 #[cfg(feature = "serde")]
 pub mod serde_adapters;
@@ -41,6 +42,7 @@ pub use client_wallet_start_state::ClientWalletStartState;
 pub use core_bridge::spawn_wallet_event_adapter;
 pub use identity_manager_start_state::IdentityManagerStartState;
 pub use merge::Merge;
+pub use persistence_capabilities::{PersistenceCapabilities, PERSISTENCE_CAPABILITIES_VERSION};
 pub use platform_address_sync_start_state::PlatformAddressSyncStartState;
 #[cfg(feature = "shielded")]
 pub use shielded_changeset::ShieldedChangeSet;

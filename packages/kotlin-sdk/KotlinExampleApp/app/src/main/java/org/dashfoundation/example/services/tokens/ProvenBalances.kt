@@ -5,6 +5,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import org.dashfoundation.dashsdk.Sdk
 import org.dashfoundation.dashsdk.persistence.dao.TokenDao
+import org.dashfoundation.dashsdk.persistence.UInt64Value
 import org.dashfoundation.dashsdk.persistence.entities.TokenBalanceEntity
 import org.dashfoundation.dashsdk.persistence.entities.TokenEntity
 import org.dashfoundation.example.util.Base58
@@ -62,9 +63,9 @@ object ProvenBalances {
         val now = Date()
         for ((idBase58, amountElement) in entries) {
             val identityId = Base58.decodeIdentifier(idBase58) ?: continue
-            // u64 decimal string → Long bit pattern (the entity's storage shape).
+            // u64 decimal string → unsigned Room value.
             val balance = (amountElement as? JsonPrimitive)?.content
-                ?.toULongOrNull()?.toLong() ?: continue
+                ?.toULongOrNull()?.let(::UInt64Value) ?: continue
             val existing = dao.observeBalancesByIdentity(identityId).first()
                 .firstOrNull { it.tokenRef?.contentEquals(token.id) == true }
             if (existing != null) {

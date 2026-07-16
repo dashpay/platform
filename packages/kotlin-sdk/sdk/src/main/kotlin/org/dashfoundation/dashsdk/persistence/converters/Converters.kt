@@ -1,6 +1,7 @@
 package org.dashfoundation.dashsdk.persistence.converters
 
 import androidx.room.TypeConverter
+import org.dashfoundation.dashsdk.persistence.UInt64Value
 import java.util.Date
 
 /**
@@ -18,8 +19,9 @@ import java.util.Date
  * - Swift Codable token-rule structs → JSON [String] columns (UI-only
  *   payloads, see TokenEntity).
  *
- * The only Swift type with no native Room column is `Date`, converted here
- * to epoch milliseconds.
+ * `Date` is converted to epoch milliseconds. Protocol `u64` values use
+ * [UInt64Value]'s fixed-width big-endian BLOB representation so the complete
+ * unsigned domain round-trips and remains correctly ordered by SQLite.
  */
 class Converters {
 
@@ -30,4 +32,11 @@ class Converters {
     /** Epoch millis (`Long`) → `Date`. `null` round-trips as `null`. */
     @TypeConverter
     fun epochMillisToDate(millis: Long?): Date? = millis?.let { Date(it) }
+
+    @TypeConverter
+    fun uint64ToBigEndianBlob(value: UInt64Value?): ByteArray? = value?.toBigEndianBytes()
+
+    @TypeConverter
+    fun bigEndianBlobToUInt64(bytes: ByteArray?): UInt64Value? =
+        bytes?.let(UInt64Value::fromBigEndianBytes)
 }

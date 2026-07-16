@@ -20,11 +20,13 @@ import org.dashfoundation.dashsdk.ffi.IdentityRestoreData
 import org.dashfoundation.dashsdk.ffi.PaymentRestoreData
 import org.dashfoundation.dashsdk.ffi.NativePersistenceBridge
 import org.dashfoundation.dashsdk.ffi.PlatformAddressBalanceRestoreData
+import org.dashfoundation.dashsdk.ffi.ProviderSpecialTxRestoreData
 import org.dashfoundation.dashsdk.ffi.ShieldedActivityData
 import org.dashfoundation.dashsdk.ffi.ShieldedNoteData
 import org.dashfoundation.dashsdk.ffi.UtxoRestoreData
 import org.dashfoundation.dashsdk.ffi.ShieldedOutgoingNoteData
 import org.dashfoundation.dashsdk.ffi.ShieldedSyncStateData
+import org.dashfoundation.dashsdk.ffi.ShieldedViewingKeyData
 import org.dashfoundation.dashsdk.ffi.TrackedAssetLockRestoreData
 import org.dashfoundation.dashsdk.ffi.UnresolvedAssetLockTxRecordData
 import org.dashfoundation.dashsdk.ffi.WalletRestoreData
@@ -44,9 +46,12 @@ import org.dashfoundation.dashsdk.persistence.entities.ShieldedActivityEntity
 import org.dashfoundation.dashsdk.persistence.entities.ShieldedNoteEntity
 import org.dashfoundation.dashsdk.persistence.entities.ShieldedOutgoingNoteEntity
 import org.dashfoundation.dashsdk.persistence.entities.ShieldedSyncStateEntity
+import org.dashfoundation.dashsdk.persistence.entities.ShieldedViewingKeyEntity
 import org.dashfoundation.dashsdk.persistence.entities.TokenBalanceEntity
+import org.dashfoundation.dashsdk.persistence.UInt64Value
 import org.dashfoundation.dashsdk.persistence.entities.PendingInputEntity
 import org.dashfoundation.dashsdk.persistence.entities.TransactionEntity
+import org.dashfoundation.dashsdk.persistence.entities.TransactionAccountInvolvementEntity
 import org.dashfoundation.dashsdk.persistence.entities.TxoEntity
 import org.dashfoundation.dashsdk.persistence.entities.WalletEntity
 import java.util.concurrent.Executors
@@ -363,8 +368,6 @@ class PlatformWalletPersistenceHandler(
                 .getByWalletAndAddressHash(walletId, addressHash) ?: return@stage
             db.platformAddressDao().upsert(
                 row.copy(
-                    accountIndex = accountIndex,
-                    addressIndex = addressIndex,
                     balance = balance,
                     nonce = nonce,
                     isUsed = row.isUsed || balance > 0 || nonce > 0,
@@ -642,6 +645,15 @@ class PlatformWalletPersistenceHandler(
         firstSeen: Long,
         inputOutpoints: ByteArray,
         inputOutpointCount: Int,
+        accountTypeTag: Byte,
+        accountStandardTag: Byte,
+        accountIndex: Int,
+        accountRegistrationIndex: Int,
+        accountKeyClass: Int,
+        accountUserIdentityId: ByteArray,
+        accountFriendIdentityId: ByteArray,
+        blockPosition: Int,
+        hasBlockPosition: Boolean,
     ): Int = guarded {
         stage(walletId) { db ->
             val existing = db.transactionDao().getByTxid(txid)
@@ -660,6 +672,8 @@ class PlatformWalletPersistenceHandler(
                     blockHeight = blockHeight,
                     blockHash = blockHash.takeIf { it.any { b -> b.toInt() != 0 } },
                     blockTimestamp = blockTimestamp,
+                    blockPosition = blockPosition,
+                    hasBlockPosition = hasBlockPosition,
                     direction = direction,
                     transactionType = transactionType.ifEmpty { "Standard" },
                     transactionTypeKind = transactionTypeKind,
@@ -671,6 +685,30 @@ class PlatformWalletPersistenceHandler(
                     lastUpdated = now(),
                 ),
             )
+            // The JNI trampoline forwards the full enclosing account tuple.
+            // Only provider-key accounts (AccountTypeTagFFI 8…11) can own
+            // provider-special payload involvement. A provider-kind record
+            // merely observed by a Standard account must not leak into an
+            // unrelated provider account's restore set.
+            val accountType = accountTypeTag.toInt() and 0xFF
+            val isProviderAccount = accountType in 8..11
+            val isProviderTransaction = transactionTypeKind in 2..5
+            if (isProviderAccount && isProviderTransaction) {
+                val account = fetchAccount(
+                    db,
+                    walletId,
+                    accountType,
+                    accountIndex,
+                    accountStandardTag.toInt() and 0xFF,
+                    accountRegistrationIndex,
+                    accountKeyClass,
+                    accountUserIdentityId,
+                    accountFriendIdentityId,
+                ) ?: error("transaction callback account tuple was not persisted")
+                db.transactionDao().upsertInvolvement(
+                    TransactionAccountInvolvementEntity(txid, account.id),
+                )
+            }
             // Reconcile every spent input outpoint against our TXOs — a 1:1
             // port of Swift resolveInputOutpoint
             // (PlatformWalletPersistenceHandler.swift:688-785). `inputOutpoints`
@@ -1060,7 +1098,7 @@ class PlatformWalletPersistenceHandler(
                 id = existing?.id ?: 0,
                 tokenId = tokenBase58,
                 identityId = identityId,
-                balance = balance,
+                balance = UInt64Value.fromRawLongBits(balance),
                 frozen = existing?.frozen ?: false,
                 networkRaw = existing?.networkRaw ?: networkRaw,
                 identityRef = identityId,
@@ -1432,6 +1470,31 @@ class PlatformWalletPersistenceHandler(
         0
     }
 
+    override fun onPersistShieldedViewingKey(
+        walletId: ByteArray,
+        keyWalletId: ByteArray,
+        accountIndex: Int,
+        fvkBytes: ByteArray,
+    ): Int = guarded {
+        require(walletId.contentEquals(keyWalletId)) {
+            "viewing-key entry walletId does not match its persistence batch"
+        }
+        stage(walletId) { db ->
+            // Entity construction is the validation boundary. A malformed
+            // fixed-size field returns non-zero immediately (or rolls back
+            // the containing changeset) instead of persisting corruption.
+            db.shieldedDao().upsertViewingKey(
+                ShieldedViewingKeyEntity(
+                    walletId = keyWalletId,
+                    accountIndex = accountIndex,
+                    fvkBytes = fvkBytes,
+                    lastUpdated = now(),
+                ),
+            )
+        }
+        0
+    }
+
     // ── Load callbacks ────────────────────────────────────────────────
 
     override fun onLoadWalletList(): Array<WalletRestoreData> = guardedLoad(emptyArray()) {
@@ -1511,6 +1574,7 @@ class PlatformWalletPersistenceHandler(
                 // `buildUnresolvedAssetLockTxRecordBuffer` slice.
                 val unresolvedAssetLockTxRecords =
                     buildUnresolvedAssetLockTxRecordData(w.walletId)
+                val providerSpecialTxs = buildProviderSpecialTxRestoreData(w.walletId)
                 // Persisted last-applied chainlock — decoded + stamped onto
                 // the restored `WalletMetadata` so the asset-lock-resume
                 // CL-from-metadata fallback can fire at launch without
@@ -1538,6 +1602,7 @@ class PlatformWalletPersistenceHandler(
                         coreAddressPools = coreAddressPools,
                         trackedAssetLocks = trackedAssetLocks,
                         unresolvedAssetLockTxRecords = unresolvedAssetLockTxRecords,
+                        providerSpecialTxs = providerSpecialTxs,
                         lastAppliedChainLockBytes = lastAppliedChainLockBytes,
                     ),
                 )
@@ -1624,6 +1689,35 @@ class PlatformWalletPersistenceHandler(
             }.toTypedArray()
         }
     }
+
+    /**
+     * Unlike best-effort cache loaders, a malformed persisted viewing key
+     * must fail the native load. Returning an empty array would masquerade as
+     * "no persisted key" and silently fall back to mnemonic resolution.
+     * Therefore validation/Room exceptions deliberately cross this virtual
+     * method into the JNI trampoline, which returns a non-zero FFI load code.
+     * The trampoline owns and frees its copied native restore array.
+     */
+    override fun onLoadShieldedViewingKeys(): Array<ShieldedViewingKeyData> =
+        runBlocking {
+            callbackExclusion.withLock {
+                runBlockingResult {
+                    val keys = network?.let { lockedNetwork ->
+                        database.walletDao().getByNetwork(lockedNetwork.ffiValue)
+                            .flatMap { wallet ->
+                                database.shieldedDao().getViewingKeysByWallet(wallet.walletId)
+                            }
+                    } ?: database.shieldedDao().getAllViewingKeys()
+                    keys.map { key ->
+                        ShieldedViewingKeyData(
+                            walletId = key.walletId,
+                            accountIndex = key.accountIndex,
+                            fvkBytes = key.fvkBytes,
+                        )
+                    }.toTypedArray()
+                }
+            }
+        }
 
     override fun onGetCoreTxRecord(walletId: ByteArray, txid: ByteArray): CoreTxRecordData? =
         guardedLoad(null) {
@@ -1840,6 +1934,44 @@ class PlatformWalletPersistenceHandler(
                     asOfHeight = row.lastSeenHeight.toLong(),
                 )
             }.toTypedArray()
+
+    /**
+     * Build the unchanged provider-special restore POD inputs for one
+     * wallet. Membership comes only from the explicit typed-account join,
+     * so payload-only transactions require no TXO. Empty raw bodies and
+     * malformed block hashes are diagnosed and skipped here; non-empty
+     * consensus bytes remain opaque and Rust performs authoritative decode,
+     * diagnosing/skipping malformed payloads without crashing.
+     */
+    private suspend fun buildProviderSpecialTxRestoreData(
+        walletId: ByteArray,
+    ): Array<ProviderSpecialTxRestoreData> {
+        val out = ArrayList<ProviderSpecialTxRestoreData>()
+        for (tx in database.transactionDao().getProviderSpecialTransactionsByWallet(walletId)) {
+            if (tx.transactionData.isEmpty()) {
+                Log.w(TAG, "load: skipping provider transaction with empty consensus bytes")
+                continue
+            }
+            val hash = tx.blockHash ?: ByteArray(32)
+            if (hash.size != 32) {
+                Log.w(TAG, "load: skipping provider transaction with ${hash.size}-byte block hash")
+                continue
+            }
+            out.add(
+                ProviderSpecialTxRestoreData(
+                    txBytes = tx.transactionData,
+                    contextRaw = tx.context,
+                    blockHeight = tx.blockHeight,
+                    blockHash = hash,
+                    blockTimestamp = tx.blockTimestamp.toLong() and 0xFFFF_FFFFL,
+                    blockPosition = tx.blockPosition,
+                    hasBlockPosition = tx.hasBlockPosition,
+                    firstSeen = tx.firstSeen,
+                ),
+            )
+        }
+        return out.toTypedArray()
+    }
 
     /**
      * Assemble the [UtxoRestoreData] rows for one wallet: every unspent
@@ -2201,7 +2333,7 @@ class PlatformWalletPersistenceHandler(
      *    SET_NULL `token_balances`;
      *  - the walletId-keyed tables with no wallet FK: txos, pending
      *    inputs, asset locks, platform addresses + sync state, and the
-     *    four shielded (Orchard) tables.
+     *    five shielded (Orchard) tables.
      *
      * The platform-addresses network sync-state row is shared across a
      * network's wallets (keyed by [syncStateScopeId]); it is dropped only
@@ -2254,6 +2386,7 @@ class PlatformWalletPersistenceHandler(
             database.shieldedDao().deleteOutgoingNotesByWallet(walletId)
             database.shieldedDao().deleteActivityByWallet(walletId)
             database.shieldedDao().deleteSyncStatesByWallet(walletId)
+            database.shieldedDao().deleteViewingKeysByWallet(walletId)
 
             // The wallet row itself — cascades accounts → core / platform
             // addresses.

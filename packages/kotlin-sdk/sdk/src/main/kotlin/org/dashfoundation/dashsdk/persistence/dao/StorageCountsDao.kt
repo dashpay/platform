@@ -18,6 +18,9 @@ interface StorageCountsDao {
 
     @Query("SELECT COUNT(*) FROM transactions") fun countTransactions(): Flow<Long>
 
+    @Query("SELECT COUNT(*) FROM transaction_account_involvements")
+    fun countTransactionAccountInvolvements(): Flow<Long>
+
     @Query("SELECT COUNT(*) FROM txos") fun countTxos(): Flow<Long>
 
     @Query("SELECT COUNT(*) FROM core_addresses") fun countCoreAddresses(): Flow<Long>
@@ -69,6 +72,8 @@ interface StorageCountsDao {
     @Query("SELECT COUNT(*) FROM shielded_activities") fun countShieldedActivities(): Flow<Long>
 
     @Query("SELECT COUNT(*) FROM shielded_sync_states") fun countShieldedSyncStates(): Flow<Long>
+
+    @Query("SELECT COUNT(*) FROM shielded_viewing_keys") fun countShieldedViewingKeys(): Flow<Long>
 
     @Query("SELECT COUNT(*) FROM wallet_manager_metadata")
     fun countWalletManagerMetadata(): Flow<Long>

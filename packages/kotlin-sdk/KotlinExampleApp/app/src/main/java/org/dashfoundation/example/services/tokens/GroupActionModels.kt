@@ -65,7 +65,7 @@ data class GroupActionProposal(
     fun paramString(key: String): String? =
         (params[key] as? JsonPrimitive)?.takeIf { it !is JsonNull }?.content
 
-    fun paramAmount(key: String = "amount"): Long? = paramString(key)?.toULongOrNull()?.toLong()
+    fun paramAmount(key: String = "amount"): ULong? = paramString(key)?.toULongOrNull()
 
     /** One-line summary — mirror of `ProposalRow.summary`. */
     val summary: String

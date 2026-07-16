@@ -232,7 +232,7 @@ class Sdk private constructor(
 
             val dapiAddresses: String? = when {
                 network == Network.DEVNET ->
-                    quorumUrl?.let { discoverDapiAddresses(it) }
+                    quorumUrl?.let { discoverDapiAddresses(it, defaultDapiPort(network)) }
                 useOverrides ->
                     config.dapiAddresses?.takeIf { it.isNotEmpty() }
                         ?: SdkConfig.DEFAULT_LOCAL_DAPI
@@ -261,7 +261,10 @@ class Sdk private constructor(
          * trusted-context provider's active-node policy. Returns null on
          * any failure (timeout, JSON shape mismatch, no active nodes).
          */
-        fun discoverActiveMasternodes(quorumBase: String): List<ActiveMasternode>? {
+        fun discoverActiveMasternodes(
+            quorumBase: String,
+            defaultDapiPort: Int = 443,
+        ): List<ActiveMasternode>? {
             val base = quorumBase.trimEnd('/')
             val url = try {
                 URI("$base/masternodes").toURL()
@@ -277,7 +280,7 @@ class Sdk private constructor(
             } catch (_: Exception) {
                 return null
             }
-            return parseActiveMasternodes(body)
+            return parseActiveMasternodes(body, defaultDapiPort)
         }
 
         /**
@@ -285,7 +288,10 @@ class Sdk private constructor(
          * from the fetch for testability; filtering rules documented on
          * [discoverActiveMasternodes].
          */
-        internal fun parseActiveMasternodes(body: String): List<ActiveMasternode>? {
+        internal fun parseActiveMasternodes(
+            body: String,
+            defaultDapiPort: Int = 443,
+        ): List<ActiveMasternode>? {
             val envelope = try {
                 json.decodeFromString<MasternodesEnvelope>(body)
             } catch (_: Exception) {
@@ -293,21 +299,32 @@ class Sdk private constructor(
             }
             if (!envelope.success) return null
 
-            // Conservative default matching the Rust provider's fallback
-            // when an entry omits platformHTTPPort.
-            val defaultDapiPort = 443
             val active = envelope.data.mapNotNull { mn ->
                 if (mn.status != "ENABLED" || mn.versionCheck != "success") return@mapNotNull null
-                val host = mn.address.substringBefore(':')
+                val host = endpointHost(mn.address) ?: return@mapNotNull null
+                val urlHost = if (':' in host) "[$host]" else host
                 val dapiPort = mn.platformHTTPPort ?: defaultDapiPort
-                ActiveMasternode(spvPeer = mn.address, dapiUrl = "https://$host:$dapiPort")
+                ActiveMasternode(spvPeer = mn.address, dapiUrl = "https://$urlHost:$dapiPort")
             }
             return active.ifEmpty { null }
         }
 
-        private fun discoverDapiAddresses(quorumBase: String): String? =
-            discoverActiveMasternodes(quorumBase)
+        private fun discoverDapiAddresses(quorumBase: String, defaultDapiPort: Int): String? =
+            discoverActiveMasternodes(quorumBase, defaultDapiPort)
                 ?.joinToString(",") { it.dapiUrl }
+
+        private fun defaultDapiPort(network: Network): Int =
+            if (network == Network.MAINNET) 443 else 1443
+
+        private fun endpointHost(address: String): String? {
+            if (address.startsWith('[')) {
+                val closing = address.indexOf(']')
+                return address.substring(1, closing.takeIf { it > 1 } ?: return null)
+            }
+            val separator = address.lastIndexOf(':')
+            if (separator <= 0 || ':' in address.substring(0, separator)) return null
+            return address.substring(0, separator)
+        }
 
         /** Whether the native library was built with shielded (Orchard) support. */
         fun hasShielded(): Boolean {

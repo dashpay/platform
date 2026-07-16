@@ -452,9 +452,14 @@ struct ReclaimInvitationSheet: View {
     /// never occur in the real Display and would only widen false-positive risk
     /// (misclassifying an unrelated failure as a benign "already claimed", which
     /// would wrongly flip the row to Claimed). A typed FFI result code is the
-    /// robust long-term fix.
+    /// primary signal, with the consensus wording retained as a compatibility
+    /// fallback for errors originating below the typed wallet boundary.
     nonisolated static func isAlreadyConsumed(_ error: Error) -> Bool {
-        isAlreadyConsumed(message: error.localizedDescription)
+        if let walletError = error as? PlatformWalletError,
+           case .assetLockAlreadyConsumed = walletError {
+            return true
+        }
+        return isAlreadyConsumed(message: error.localizedDescription)
     }
 
     /// Pure classifier over the surfaced error message — the testable seam for

@@ -73,9 +73,9 @@ class GroupActionTest {
     fun maxSupplyRendersDecimalStringPayload() {
         assertEquals(
             "{\"newMaxSupply\":\"1000000\"}",
-            TokenConfigChange.MaxSupply(1_000_000L).payloadJson,
+            TokenConfigChange.MaxSupply(1_000_000uL).payloadJson,
         )
-        assertEquals(0, TokenConfigChange.MaxSupply(1L).tag)
+        assertEquals(0, TokenConfigChange.MaxSupply(1uL).tag)
     }
 
     @Test
@@ -88,12 +88,20 @@ class GroupActionTest {
 
     @Test
     fun maxSupplyEncodesFullU64RangeAsUnsigned() {
-        // -1L is u64::MAX (18446744073709551615) — the payload must carry the
-        // unsigned rendering so the full range survives the signed Long param.
+        // The decimal JSON representation must preserve u64::MAX.
         assertEquals(
             "{\"newMaxSupply\":\"18446744073709551615\"}",
-            TokenConfigChange.MaxSupply(-1L).payloadJson,
+            TokenConfigChange.MaxSupply(ULong.MAX_VALUE).payloadJson,
         )
+    }
+
+    @Test
+    fun nativeLongCarrierPreservesUnsignedBoundaryBits() {
+        listOf(0uL, Long.MAX_VALUE.toULong(), 1uL shl 63, ULong.MAX_VALUE).forEach { value ->
+            assertEquals(value, value.toNativeLongBits().fromNativeLongBits())
+        }
+        assertEquals(Long.MIN_VALUE, (1uL shl 63).toNativeLongBits())
+        assertEquals(-1L, ULong.MAX_VALUE.toNativeLongBits())
     }
 
     @Test

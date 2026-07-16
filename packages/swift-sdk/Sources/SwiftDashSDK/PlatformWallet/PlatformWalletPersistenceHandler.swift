@@ -16,6 +16,17 @@ import DashSDKFFI
 // persister vtable slot, so it is NOT durable on this host — a restart
 // before a signer-backed drain relies on the recurring sweep to re-enqueue.
 public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
+    static func shouldRestoreProviderSpecialTransaction(
+        walletId: Data,
+        involvedAccounts: [(walletId: Data, accountType: UInt32)]
+    ) -> Bool {
+        involvedAccounts.contains { account in
+            account.walletId == walletId
+                && account.accountType >= 8
+                && account.accountType <= 11
+        }
+    }
+
     let modelContainer: ModelContainer
 
     /// Network this handler's owning `PlatformWalletManager` is bound
@@ -1903,7 +1914,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     tokenIdData: entry.tokenId
                 )
             }
-            row.updateBalance(Int64(bitPattern: entry.balance))
+            row.updateBalance(entry.balance)
             row.markAsSynced()
             // Re-link on every upsert too so a balance row that
             // pre-existed before its parent identity / token row
@@ -5082,10 +5093,28 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             return (nil, 0)
         }
 
-        // Scope to this wallet via payload-only involvement — provider txs
-        // create no TXOs, so `involvedAccounts` is the only link.
+        // Scope through an explicitly involved provider-key account. Merely
+        // sharing a wallet is insufficient: a provider-kind record observed
+        // on a Standard account must not leak into unrelated provider state.
+        // AccountTypeTagFFI 8...11 are Voting / Owner / Operator / Platform.
         let scoped = providerTxs.filter { tx in
-            tx.involvedAccounts.contains { $0.wallet.walletId == walletId }
+            Self.shouldRestoreProviderSpecialTransaction(
+                walletId: walletId,
+                involvedAccounts: tx.involvedAccounts.map {
+                    (walletId: $0.wallet.walletId, accountType: $0.accountType)
+                }
+            )
+        }.sorted { lhs, rhs in
+            if lhs.blockHeight != rhs.blockHeight {
+                return lhs.blockHeight < rhs.blockHeight
+            }
+            if lhs.hasBlockPosition != rhs.hasBlockPosition {
+                return lhs.hasBlockPosition && !rhs.hasBlockPosition
+            }
+            if lhs.blockPosition != rhs.blockPosition {
+                return lhs.blockPosition < rhs.blockPosition
+            }
+            return lhs.firstSeen < rhs.firstSeen
         }
         guard !scoped.isEmpty else { return (nil, 0) }
 

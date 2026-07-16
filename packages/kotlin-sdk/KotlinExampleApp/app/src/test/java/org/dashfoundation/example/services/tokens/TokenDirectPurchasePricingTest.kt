@@ -90,7 +90,7 @@ class TokenDirectPurchasePricingTest {
     @Test
     fun `single price cost is price times amount`() {
         val pricing = TokenDirectPurchasePricing.parse(single(250), tokenId)!!
-        assertEquals(1_000L, pricing.costFor(4))
+        assertEquals(1_000uL, pricing.costFor(4u))
     }
 
     @Test
@@ -100,38 +100,60 @@ class TokenDirectPurchasePricingTest {
             tokenId,
         )!!
         // Buying 50 matches tier 10 (price 80) => 80 * 50.
-        assertEquals(4_000L, pricing.costFor(50))
+        assertEquals(4_000uL, pricing.costFor(50u))
         // Exact boundary hits its own tier.
-        assertEquals(800L, pricing.costFor(10))
+        assertEquals(800uL, pricing.costFor(10u))
         // Above the top tier uses the top tier.
-        assertEquals(50_000L, pricing.costFor(1_000))
+        assertEquals(50_000uL, pricing.costFor(1_000u))
     }
 
     @Test
     fun `amount below minimum tier is not purchasable`() {
         val pricing = TokenDirectPurchasePricing.parse(setPrices(5L to 200L, 10L to 150L), tokenId)!!
-        assertNull(pricing.costFor(2))
+        assertNull(pricing.costFor(2u))
         assertEquals(BigInteger.valueOf(5), pricing.minimumPurchaseAmount)
     }
 
     @Test
-    fun `free tier is not purchasable`() {
-        // A resolved cost of 0 is rejected — the purchase FFI needs a positive cost.
-        assertNull(TokenDirectPurchasePricing.parse(single(0), tokenId)!!.costFor(10))
+    fun `free tier produces zero expected cost`() {
+        assertEquals(0uL, TokenDirectPurchasePricing.parse(single(0), tokenId)!!.costFor(10u))
     }
 
     @Test
-    fun `zero or negative amount is not purchasable`() {
+    fun `zero amount is not purchasable`() {
         val pricing = TokenDirectPurchasePricing.parse(single(100), tokenId)!!
-        assertNull(pricing.costFor(0))
-        assertNull(pricing.costFor(-1))
+        assertNull(pricing.costFor(0u))
     }
 
     @Test
-    fun `total beyond long range is not purchasable`() {
-        // price 2^62, amount 4 => 2^64, well beyond signed Long.
+    fun `amount above protocol u48 maximum is not purchasable`() {
+        val pricing = TokenDirectPurchasePricing.parse(single(1), tokenId)!!
+        assertEquals(281_474_976_710_655uL, pricing.costFor(281_474_976_710_655uL))
+        assertNull(pricing.costFor(281_474_976_710_656uL))
+    }
+
+    @Test
+    fun `single price total beyond u64 saturates like Drive`() {
+        // price 2^62, amount 4 => 2^64.
         val pricing = TokenDirectPurchasePricing.parse(single(1L shl 62), tokenId)!!
-        assertNull(pricing.costFor(4))
+        assertEquals(ULong.MAX_VALUE, pricing.costFor(4u))
+    }
+
+    @Test
+    fun `set prices total beyond u64 is not purchasable like Drive`() {
+        val overflowPrice = (BigInteger.ONE shl 62).toString()
+        val pricing = TokenDirectPurchasePricing.parse(
+            """{"$tokenId":{"type":"set_prices","prices":[{"amount":1,"price":$overflowPrice}]}}""",
+            tokenId,
+        )!!
+
+        assertNull(pricing.costFor(4u))
+    }
+
+    @Test
+    fun `cost may use the high half of u64`() {
+        val pricing = TokenDirectPurchasePricing.parse(single(1L shl 62), tokenId)!!
+        assertEquals(1uL shl 63, pricing.costFor(2u))
     }
 
     @Test

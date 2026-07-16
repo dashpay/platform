@@ -33,6 +33,10 @@
 //! - Wallet handle + signer handle cross as `jlong` (the wallet handle is a
 //!   `platform_wallet_ffi::handle::Handle` = `u64`; the signer handle is a
 //!   `SignerHandle` pointer from `SignerNative.createSigner`).
+//! - Full-domain token amounts/prices cross as raw-bit `jlong` carriers and
+//!   are reinterpreted as `u64`; operation-specific zero rules are applied
+//!   after reinterpretation. Non-token duff amounts retain their signed input
+//!   validation.
 //! - 32-byte ids cross as `byte[]` and are read into `[u8; 32]`.
 //! - Group-action authorization is a flattened
 //!   `(kind: u8, position: u16, actionId: byte[]?, actionIsProposer: bool)`
@@ -43,8 +47,8 @@
 #![allow(clippy::missing_safety_doc)]
 
 use crate::support::{guard, take_pwffi_error, throw_sdk_exception};
-use jni::objects::{JByteArray, JClass, JString};
-use jni::sys::{jboolean, jbyteArray, jint, jlong, jstring, JNI_TRUE};
+use jni::objects::{JByteArray, JClass, JObject, JString, JValue};
+use jni::sys::{jboolean, jbyteArray, jint, jlong, jobject, jstring, JNI_TRUE};
 use jni::JNIEnv;
 use platform_wallet_ffi::dashpay_profile::DashPayProfileFFI;
 use platform_wallet_ffi::error::{platform_wallet_ffi_result_free, PlatformWalletFFIResultCode};
@@ -54,6 +58,20 @@ use std::os::raw::c_char;
 use std::ptr;
 
 use rs_sdk_ffi::{MnemonicResolverHandle, SignerHandle};
+
+struct DpnsNameArrayGuard {
+    array: platform_wallet_ffi::dpns::DpnsNameArray,
+}
+
+impl Drop for DpnsNameArrayGuard {
+    fn drop(&mut self) {
+        unsafe {
+            platform_wallet_ffi::dpns_name_array_free(
+                &mut self.array as *mut platform_wallet_ffi::dpns::DpnsNameArray,
+            )
+        }
+    }
+}
 
 // ── Argument marshalling helpers ──────────────────────────────────────
 
@@ -139,6 +157,24 @@ fn read_cstring_opt(env: &mut JNIEnv, s: &JString) -> Result<Option<CString>, ()
 /// A null `*const c_char` pointer for an absent optional CString.
 fn opt_c_ptr(opt: &Option<CString>) -> *const c_char {
     opt.as_ref().map_or(ptr::null(), |s| s.as_ptr())
+}
+
+/// Reinterpret a JVM `long` as the raw bits of a consensus-domain token
+/// `u64`. Kotlin/JVM has no unsigned primitive descriptor, so public `ULong`
+/// values deliberately cross the unchanged `J` descriptor as `Long` and the
+/// sign bit is data, not a validation error.
+#[inline]
+fn token_u64_from_jlong(value: jlong) -> u64 {
+    value as u64
+}
+
+/// Decode a token amount whose operation requires a positive value. Perform
+/// the semantic zero check *after* raw-bit reinterpretation so upper-half
+/// `u64` values (`Long.MIN_VALUE...-1` as signed JVM carriers) remain valid.
+#[inline]
+fn positive_token_u64_from_jlong(value: jlong) -> Option<u64> {
+    let value = token_u64_from_jlong(value);
+    (value != 0).then_some(value)
 }
 
 /// Bounds-check a `jint` token / group contract position into the `u16`
@@ -241,12 +277,10 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TokensNative_tokenMin
     signer_handle: jlong,
 ) -> jstring {
     guard(&mut env, ptr::null_mut(), |env| {
-        // Reject a non-positive amount at the boundary — a negative jlong
-        // would otherwise bit-cast to a huge u64.
-        if amount <= 0 {
+        let Some(amount) = positive_token_u64_from_jlong(amount) else {
             throw_sdk_exception(env, 1, "amount must be positive");
             return ptr::null_mut();
-        }
+        };
         let Some(id) = read_id32(env, &identity_id, "identityId") else {
             return ptr::null_mut();
         };
@@ -286,7 +320,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TokensNative_tokenMin
                 contract.as_ptr(),
                 token_position,
                 recipient.as_ref().map_or(ptr::null(), |r| r.as_ptr()),
-                amount as u64,
+                amount,
                 opt_c_ptr(&note),
                 group_info_kind,
                 group_info_position,
@@ -326,12 +360,10 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TokensNative_tokenBur
     signer_handle: jlong,
 ) -> jstring {
     guard(&mut env, ptr::null_mut(), |env| {
-        // Reject a non-positive amount at the boundary — a negative jlong
-        // would otherwise bit-cast to a huge u64.
-        if amount <= 0 {
+        let Some(amount) = positive_token_u64_from_jlong(amount) else {
             throw_sdk_exception(env, 1, "amount must be positive");
             return ptr::null_mut();
-        }
+        };
         let Some(id) = read_id32(env, &identity_id, "identityId") else {
             return ptr::null_mut();
         };
@@ -366,7 +398,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TokensNative_tokenBur
                 id.as_ptr(),
                 contract.as_ptr(),
                 token_position,
-                amount as u64,
+                amount,
                 opt_c_ptr(&note),
                 group_info_kind,
                 group_info_position,
@@ -403,12 +435,10 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TokensNative_tokenTra
     signer_handle: jlong,
 ) -> jstring {
     guard(&mut env, ptr::null_mut(), |env| {
-        // Reject a non-positive amount at the boundary — a negative jlong
-        // would otherwise bit-cast to a huge u64.
-        if amount <= 0 {
+        let Some(amount) = positive_token_u64_from_jlong(amount) else {
             throw_sdk_exception(env, 1, "amount must be positive");
             return ptr::null_mut();
-        }
+        };
         let Some(id) = read_id32(env, &identity_id, "identityId") else {
             return ptr::null_mut();
         };
@@ -435,7 +465,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TokensNative_tokenTra
                 contract.as_ptr(),
                 token_position,
                 recipient.as_ptr(),
-                amount as u64,
+                amount,
                 opt_c_ptr(&note),
                 signing_key_id,
                 signer_handle as *mut SignerHandle,
@@ -810,12 +840,9 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TokensNative_tokenSet
     signer_handle: jlong,
 ) {
     guard(&mut env, (), |env| {
-        // Zero is legal (clears the schedule) but a negative price would
-        // bit-cast to a huge u64 — reject it at the boundary.
-        if price_per_token < 0 {
-            throw_sdk_exception(env, 1, "pricePerToken must be non-negative");
-            return;
-        }
+        // Zero is legal and clears the schedule. Every other raw bit pattern,
+        // including signed-negative JVM carriers, is a valid token `u64`.
+        let price_per_token = token_u64_from_jlong(price_per_token);
         let Some(id) = read_id32(env, &identity_id, "identityId") else {
             return;
         };
@@ -849,7 +876,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TokensNative_tokenSet
                 id.as_ptr(),
                 contract.as_ptr(),
                 token_position,
-                price_per_token as u64,
+                price_per_token,
                 opt_c_ptr(&note),
                 group_info_kind,
                 group_info_position,
@@ -880,17 +907,13 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TokensNative_tokenPur
     signer_handle: jlong,
 ) {
     guard(&mut env, (), |env| {
-        // Reject sign errors at the boundary — negatives would bit-cast to
-        // huge u64s. The expected total cost may legitimately be quoted as
-        // zero, so only its sign is checked.
-        if amount <= 0 {
+        let Some(amount) = positive_token_u64_from_jlong(amount) else {
             throw_sdk_exception(env, 1, "amount must be positive");
             return;
-        }
-        if expected_total_cost < 0 {
-            throw_sdk_exception(env, 1, "expectedTotalCost must be non-negative");
-            return;
-        }
+        };
+        // Expected cost may legitimately be zero. As with every token value,
+        // the `jlong` is a raw carrier for the complete `u64` domain.
+        let expected_total_cost = token_u64_from_jlong(expected_total_cost);
         let Some(id) = read_id32(env, &identity_id, "identityId") else {
             return;
         };
@@ -909,8 +932,8 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TokensNative_tokenPur
                 id.as_ptr(),
                 contract.as_ptr(),
                 token_position,
-                amount as u64,
-                expected_total_cost as u64,
+                amount,
+                expected_total_cost,
                 signing_key_id,
                 signer_handle as *mut SignerHandle,
             )
@@ -1717,6 +1740,91 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TokensNative_managedI
     })
 }
 
+/// Copy the cached contested-DPNS snapshot from a managed identity handle.
+/// The native array and every nested C string are freed on all paths by
+/// [`DpnsNameArrayGuard`]. This query is intentionally an in-memory view on
+/// Android until the persistence schema gains a non-conflicting field.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TokensNative_managedIdentityContestedDpnsNames(
+    mut env: JNIEnv,
+    _class: JClass,
+    identity_handle: jlong,
+) -> jobject {
+    guard(&mut env, ptr::null_mut(), |env| {
+        let mut array = platform_wallet_ffi::dpns::DpnsNameArray::empty();
+        let result = unsafe {
+            platform_wallet_ffi::managed_identity_get_contested_dpns_names(
+                identity_handle as Handle,
+                &mut array,
+            )
+        };
+        let array = DpnsNameArrayGuard { array };
+        if take_pwffi_error(env, result) {
+            return ptr::null_mut();
+        }
+        if array.array.count > i32::MAX as usize {
+            throw_sdk_exception(env, 99, "contested DPNS snapshot is too large");
+            return ptr::null_mut();
+        }
+        if array.array.count > 0 && array.array.labels.is_null() {
+            throw_sdk_exception(env, 99, "contested DPNS snapshot had a null label array");
+            return ptr::null_mut();
+        }
+
+        let string_class = match env.find_class("java/lang/String") {
+            Ok(class) => class,
+            Err(_) => {
+                let _ = env.exception_clear();
+                throw_sdk_exception(env, 99, "java.lang.String class was not found");
+                return ptr::null_mut();
+            }
+        };
+        let labels =
+            match env.new_object_array(array.array.count as i32, &string_class, JObject::null()) {
+                Ok(labels) => labels,
+                Err(_) => {
+                    let _ = env.exception_clear();
+                    throw_sdk_exception(env, 99, "contested DPNS String[] allocation failed");
+                    return ptr::null_mut();
+                }
+            };
+        let native_labels = if array.array.count == 0 {
+            &[][..]
+        } else {
+            unsafe { std::slice::from_raw_parts(array.array.labels, array.array.count) }
+        };
+        for (index, label) in native_labels.iter().enumerate() {
+            if label.is_null() {
+                throw_sdk_exception(env, 99, "contested DPNS snapshot contained a null label");
+                return ptr::null_mut();
+            }
+            let built = env.with_local_frame(4, |env| -> Result<(), jni::errors::Error> {
+                let label = unsafe { CStr::from_ptr(*label) }.to_string_lossy();
+                let string = env.new_string(label.as_ref())?;
+                env.set_object_array_element(&labels, index as i32, string)
+            });
+            if built.is_err() {
+                let _ = env.exception_clear();
+                throw_sdk_exception(env, 99, "contested DPNS label allocation failed");
+                return ptr::null_mut();
+            }
+        }
+
+        match env.new_object(
+            "org/dashfoundation/dashsdk/ffi/ContestedDpnsNamesNativeResult",
+            "([Ljava/lang/String;)V",
+            &[JValue::Object(labels.as_ref())],
+        ) {
+            Ok(result) => result.into_raw(),
+            Err(_) => {
+                let _ = env.exception_clear();
+                throw_sdk_exception(env, 99, "contested DPNS result allocation failed");
+                ptr::null_mut()
+            }
+        }
+    })
+}
+
 /// The 32-byte sender ids of the managed identity's incoming contact
 /// requests, as a flat `byte[]` blob (`u32 count` + `count × 32`), freeing
 /// the Rust-owned array (bridges
@@ -1858,6 +1966,31 @@ mod tests {
 
     // profile_to_json is pure marshalling logic (no JNIEnv), so it is unit
     // testable on the JVM-free host. The natives above need a device.
+
+    #[test]
+    fn token_jlong_raw_bits_cover_the_full_u64_domain() {
+        let cases = [
+            (0_i64, 0_u64),
+            (i64::MAX, i64::MAX as u64),
+            (i64::MIN, 1_u64 << 63),
+            (-1_i64, u64::MAX),
+        ];
+
+        for (carrier, expected) in cases {
+            assert_eq!(token_u64_from_jlong(carrier), expected);
+        }
+    }
+
+    #[test]
+    fn positive_token_amount_rejects_only_zero_after_raw_bit_decode() {
+        assert_eq!(positive_token_u64_from_jlong(0), None);
+        assert_eq!(
+            positive_token_u64_from_jlong(i64::MAX),
+            Some(i64::MAX as u64)
+        );
+        assert_eq!(positive_token_u64_from_jlong(i64::MIN), Some(1_u64 << 63));
+        assert_eq!(positive_token_u64_from_jlong(-1), Some(u64::MAX));
+    }
 
     #[test]
     fn profile_json_omits_absent_fields() {

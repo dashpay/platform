@@ -6447,6 +6447,7 @@ version = "4.0.0"
 dependencies = [
  "android_logger",
  "dash-network",
+ "dashcore",
  "jni 0.21.1",
  "key-wallet-ffi",
  "log",

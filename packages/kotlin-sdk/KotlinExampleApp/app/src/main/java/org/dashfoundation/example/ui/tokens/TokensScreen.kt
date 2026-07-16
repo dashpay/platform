@@ -187,7 +187,7 @@ fun TokensScreen(navController: NavHostController) {
                                     Column {
                                         Text(
                                             "Balance: " + TokenAmounts.format(
-                                                balance.balance,
+                                                balance.balance.value,
                                                 balance.tokenDecimals ?: token?.decimals ?: 8,
                                             ) + if (balance.frozen) " (frozen)" else "",
                                             style = MaterialTheme.typography.bodySmall,

@@ -20,6 +20,7 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -56,6 +57,24 @@ import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.LabeledContent
 import org.dashfoundation.example.util.Base58
 import org.dashfoundation.example.util.hexToBytes
+import org.dashfoundation.dashsdk.persistence.entities.IdentityEntity
+
+internal sealed interface ContestedNamesOwnership {
+    data class WalletOwned(val walletId: ByteArray) : ContestedNamesOwnership
+    data object External : ContestedNamesOwnership
+}
+
+/** Durable ownership comes from the wallet FK; `isLocal` is presentation metadata only. */
+internal fun contestedNamesOwnership(identity: IdentityEntity): ContestedNamesOwnership =
+    identity.walletId?.let { ContestedNamesOwnership.WalletOwned(it.copyOf()) }
+        ?: ContestedNamesOwnership.External
+
+private sealed interface ContestedNamesState {
+    data object Loading : ContestedNamesState
+    data class Data(val labels: List<String>) : ContestedNamesState
+    data class Error(val message: String) : ContestedNamesState
+    data class Unavailable(val message: String) : ContestedNamesState
+}
 
 /**
  * One identity's detail — port of `IdentityDetailView.swift`: identity info,
@@ -64,13 +83,10 @@ import org.dashfoundation.example.util.hexToBytes
  * entries), DashPay (opens the DashPay tab), and the keys summary
  * (View All Keys).
  *
- * Contested-name rows probe each locally-known label with the bridged
- * `Voting.contestedResourceVoteState` read and surface the labels whose
- * contest is still unresolved and lists this identity as a contender —
- * the iOS view's `fetchContestedDPNSNames` semantics over the bridged
- * query surface (the network-wide by-identity discovery
- * `dash_sdk_dpns_get_contested_usernames_by_identity` is not bridged, so
- * discovery is scoped to labels this device knows about).
+ * Contested-name rows come from one shared Rust by-identity sync followed by
+ * its full-replacement managed-identity cache. There is no local-label probe
+ * limit, so locally unknown names and identities with more than eight active
+ * contests are complete.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -98,7 +114,9 @@ fun IdentityDetailScreen(identityIdHex: String, navController: NavHostController
     val keys = if (keysBase58.isNotEmpty()) keysBase58 else keysHex
 
     val sdk by appState.sdk.collectAsStateWithLifecycle()
-    var contestedNames by remember { mutableStateOf<List<String>>(emptyList()) }
+    val manager by container.walletManagerStore.activeManager.collectAsStateWithLifecycle()
+    var contestedNamesState by remember { mutableStateOf<ContestedNamesState>(ContestedNamesState.Loading) }
+    var contestedNamesRetry by remember { mutableStateOf(0) }
 
     // Pull the identity's on-chain balance (and revision) and persist it —
     // port of `IdentityDetailView`'s toolbar refresh button. A credit
@@ -110,36 +128,47 @@ fun IdentityDetailScreen(identityIdHex: String, navController: NavHostController
     var isRefreshing by remember { mutableStateOf(false) }
     var refreshError by remember { mutableStateOf<String?>(null) }
 
-    // Probe the locally-known labels for live contests this identity is
-    // contending (capped — each probe is one network round-trip).
-    LaunchedEffect(sdk, dpnsNames, identity?.dpnsName, identity?.mainDpnsName) {
-        val currentSdk = sdk ?: return@LaunchedEffect
-        val viewerBase58 = Base58.encode(idBytes)
-        val candidates = buildSet {
-            dpnsNames.forEach { add(it.label.lowercase()) }
-            identity?.dpnsName?.let { add(it.lowercase()) }
-            identity?.mainDpnsName?.let { add(it.lowercase()) }
-        }.take(MAX_CONTEST_PROBES)
-        val contested = mutableListOf<String>()
-        for (label in candidates) {
-            val state = try {
-                currentSdk.voting.contestedResourceVoteState(
-                    contractId = DPNS_CONTRACT_ID_BASE58,
-                    documentTypeName = DPNS_DOCUMENT_TYPE,
-                    indexName = DPNS_INDEX_NAME,
-                    indexValuesJson = dpnsIndexValuesJson(label),
-                    resultType = RESULT_TYPE_DOCUMENTS_AND_VOTE_TALLY,
-                )?.let(::parseContestVoteState)
-            } catch (_: Exception) {
-                null // probe failures degrade to "not contested"
-            }
-            if (state != null && state.winner == null &&
-                state.contenders.any { it.identityIdBase58 == viewerBase58 }
-            ) {
-                contested.add(label)
+    LaunchedEffect(manager, identity, idBytes, contestedNamesRetry) {
+        val currentManager = manager
+        val currentIdentity = identity
+        if (currentIdentity == null) {
+            contestedNamesState = ContestedNamesState.Loading
+            return@LaunchedEffect
+        }
+        if (currentManager == null) {
+            contestedNamesState = ContestedNamesState.Unavailable(
+                "The wallet manager is unavailable on the selected network.",
+            )
+            return@LaunchedEffect
+        }
+        val ownership = contestedNamesOwnership(currentIdentity)
+        val walletId = when (ownership) {
+            is ContestedNamesOwnership.WalletOwned -> ownership.walletId
+            ContestedNamesOwnership.External -> {
+                contestedNamesState = ContestedNamesState.Unavailable(
+                    "Contested names are unavailable for an identity not owned by a local wallet.",
+                )
+                return@LaunchedEffect
             }
         }
-        contestedNames = contested
+        val wallet = currentManager.wallet(forWalletId = walletId)
+        if (wallet == null) {
+            contestedNamesState = ContestedNamesState.Unavailable(
+                "This identity's wallet is not active on the selected network.",
+            )
+            return@LaunchedEffect
+        }
+        contestedNamesState = ContestedNamesState.Loading
+        contestedNamesState = try {
+            ContestedNamesState.Data(
+                currentManager.identityRegistration.contestedDpnsNames(
+                    walletHandle = wallet.handle,
+                    identityId = idBytes,
+                ).labels,
+            )
+        } catch (e: Exception) {
+            ContestedNamesState.Error(e.message ?: "Failed to load contested names")
+        }
     }
 
     Scaffold(
@@ -258,40 +287,69 @@ fun IdentityDetailScreen(identityIdHex: String, navController: NavHostController
             }
 
             FormSection(title = "DPNS Names") {
-                if (dpnsNames.isEmpty() && contestedNames.isEmpty()) {
-                    Text(
-                        "No names registered.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                dpnsNames.forEach { name ->
+                    val isMain = identity?.mainDpnsName == name.label
+                    LabeledContent(
+                        label = if (isMain) "${name.label} ★" else name.label,
+                        value = name.parentDomainName,
                     )
-                } else {
-                    dpnsNames.forEach { name ->
-                        val isMain = identity?.mainDpnsName == name.label
-                        LabeledContent(
-                            label = if (isMain) "${name.label} ★" else name.label,
-                            value = name.parentDomainName,
+                }
+                when (val contested = contestedNamesState) {
+                    ContestedNamesState.Loading -> {
+                        CircularProgressIndicator(
+                            modifier = Modifier.padding(8.dp).testTag("identityDetail.contested.loading"),
                         )
                     }
-                    // Contested labels — ⚑ rows drilling into the live
-                    // contest (← IdentityDetailView's Contested rows).
-                    contestedNames.forEach { label ->
-                        ListItem(
-                            headlineContent = { Text(label) },
-                            supportingContent = {
-                                Text(
-                                    "Contested — voting in progress",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.tertiary,
-                                )
-                            },
-                            modifier = Modifier
-                                .clickable {
-                                    navController.navigate(
-                                        ContestDetail(label, identityIdHex),
+                    is ContestedNamesState.Data -> {
+                        if (dpnsNames.isEmpty() && contested.labels.isEmpty()) {
+                            Text(
+                                "No names registered.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        // Contested labels — ⚑ rows drilling into the live
+                        // contest (← IdentityDetailView's Contested rows).
+                        contested.labels.forEach { label ->
+                            ListItem(
+                                headlineContent = { Text(label) },
+                                supportingContent = {
+                                    Text(
+                                        "Contested — voting in progress",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.tertiary,
                                     )
-                                }
-                                .testTag("identityDetail.contested.$label"),
+                                },
+                                modifier = Modifier
+                                    .clickable {
+                                        navController.navigate(
+                                            ContestDetail(label, identityIdHex),
+                                        )
+                                    }
+                                    .testTag("identityDetail.contested.$label"),
+                            )
+                        }
+                    }
+                    is ContestedNamesState.Error,
+                    is ContestedNamesState.Unavailable,
+                    -> {
+                        val message = when (contested) {
+                            is ContestedNamesState.Error -> contested.message
+                            is ContestedNamesState.Unavailable -> contested.message
+                            else -> error("unreachable contested-name state")
+                        }
+                        Text(
+                            message,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.testTag("identityDetail.contested.error"),
                         )
+                        TextButton(
+                            onClick = { contestedNamesRetry += 1 },
+                            modifier = Modifier.testTag("identityDetail.contested.retry"),
+                        ) {
+                            Text("Retry")
+                        }
                     }
                 }
                 HorizontalDivider(Modifier.padding(vertical = 8.dp))
@@ -332,6 +390,3 @@ fun IdentityDetailScreen(identityIdHex: String, navController: NavHostController
 
     ErrorAlertDialog(message = refreshError, onDismiss = { refreshError = null })
 }
-
-/** Cap on per-label contest probes (each is a network round-trip). */
-private const val MAX_CONTEST_PROBES = 8

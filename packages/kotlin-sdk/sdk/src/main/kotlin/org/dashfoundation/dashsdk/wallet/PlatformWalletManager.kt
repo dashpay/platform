@@ -340,6 +340,23 @@ class PlatformWalletManager(
         org.dashfoundation.dashsdk.credits.IdentityCredits(teardownGate)
 
     /**
+     * Rust-authoritative tracked locks eligible for generic identity
+     * registration/top-up recovery. The JNI call copies and frees the native
+     * list as one snapshot; Kotlin filters to funding types 0/1/2 and statuses
+     * 0…3. Invitations, address/shielded locks, consumed rows, and malformed
+     * rows are never offered by this generic surface.
+     */
+    suspend fun trackedIdentityRecoveryAssetLocks(
+        walletId: ByteArray,
+    ): List<TrackedAssetLock> = teardownGate.op {
+        require(walletId.size == 32) { "walletId must be exactly 32 bytes" }
+        val native = mapNativeErrors {
+            WalletManagerNative.trackedAssetLocks(managerHandle, walletId)
+        }
+        TrackedAssetLock.eligibleFromNative(native)
+    }
+
+    /**
      * Identity add/disable-keys bridge — the identity-update slice of
      * `ManagedPlatformWallet.swift` (`updateIdentity(addPublicKeys:...)`,
      * driven by Swift `AddIdentityKeyView`). Stateless; callers thread the
@@ -395,20 +412,6 @@ class PlatformWalletManager(
      * wallets concurrently; look up a specific wallet by its hex id.
      */
     val wallets: StateFlow<Map<String, ManagedPlatformWallet>> = _wallets.asStateFlow()
-
-    // Per-wallet-id Core-send locks. Every ManagedPlatformWallet this manager
-    // builds is handed the SAME Mutex for its wallet id, so all wrappers for
-    // one wallet id serialize their split setFunding/buildSigned sequence
-    // together — closing the double-select window even when loadPersistedWallets
-    // hands out a fresh wrapper for a wallet id whose earlier wrapper is still
-    // held (see ManagedPlatformWallet.sendToAddresses). computeIfAbsent (NOT
-    // getOrPut, which is non-atomic on ConcurrentHashMap) guarantees a single
-    // shared instance. Lives on the manager and dies with it.
-    private val coreSendMutexes =
-        java.util.concurrent.ConcurrentHashMap<String, kotlinx.coroutines.sync.Mutex>()
-
-    private fun coreSendMutex(walletIdHex: String): kotlinx.coroutines.sync.Mutex =
-        coreSendMutexes.computeIfAbsent(walletIdHex) { kotlinx.coroutines.sync.Mutex() }
 
     // ── Wallet creation ───────────────────────────────────────────────
 
@@ -469,7 +472,6 @@ class PlatformWalletManager(
         val managed = ManagedPlatformWallet(
             handle = outHandle[0],
             walletId = walletId,
-            coreSendMutex = coreSendMutex(walletId.toHex()),
             gate = teardownGate,
         )
         var mnemonicStored = false
@@ -727,7 +729,6 @@ class PlatformWalletManager(
             val managed = ManagedPlatformWallet(
                 handle = handle,
                 walletId = walletId,
-                coreSendMutex = coreSendMutex(walletId.toHex()),
                 gate = teardownGate,
             )
             restored.add(managed)
@@ -1426,6 +1427,24 @@ class PlatformWalletManager(
     suspend fun clearSpvStorage() = withContext(Dispatchers.IO) {
         mapNativeErrors { WalletManagerNative.spvClearStorage(managerHandle) }
     }
+
+    /**
+     * Arm a compact-filter rescan by rewinding [walletId]'s in-memory SPV
+     * checkpoint to [fromHeight]. This call does not scan and is not a
+     * cancellable/durable rescan job: a running filter loop observes it on
+     * its next tick; a stopped loop observes it on next start. Equal/forward
+     * heights are harmless no-ops for scan purposes. If the process dies
+     * before the loop consumes and persists progress, the user must reissue
+     * the request. Unknown wallets surface as typed [DashSdkError.NotFound].
+     */
+    suspend fun rescanSpvFilters(walletId: ByteArray, fromHeight: Int) =
+        withContext(Dispatchers.IO) {
+            require(walletId.size == 32) { "walletId must be exactly 32 bytes" }
+            require(fromHeight >= 0) { "fromHeight must be non-negative" }
+            mapNativeErrors {
+                WalletManagerNative.spvRescanFilters(managerHandle, walletId, fromHeight)
+            }
+        }
 
     /** One-shot SPV progress poll (the same call [spvProgress] loops on). */
     suspend fun spvSyncProgress(): SpvSyncProgressData = withContext(Dispatchers.IO) {

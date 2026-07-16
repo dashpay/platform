@@ -49,10 +49,12 @@ import org.dashfoundation.dashsdk.persistence.entities.ShieldedActivityEntity
 import org.dashfoundation.dashsdk.persistence.entities.ShieldedNoteEntity
 import org.dashfoundation.dashsdk.persistence.entities.ShieldedOutgoingNoteEntity
 import org.dashfoundation.dashsdk.persistence.entities.ShieldedSyncStateEntity
+import org.dashfoundation.dashsdk.persistence.entities.ShieldedViewingKeyEntity
 import org.dashfoundation.dashsdk.persistence.entities.TokenBalanceEntity
 import org.dashfoundation.dashsdk.persistence.entities.TokenEntity
 import org.dashfoundation.dashsdk.persistence.entities.TokenHistoryEventEntity
 import org.dashfoundation.dashsdk.persistence.entities.TransactionEntity
+import org.dashfoundation.dashsdk.persistence.entities.TransactionAccountInvolvementEntity
 import org.dashfoundation.dashsdk.persistence.entities.TxoEntity
 import org.dashfoundation.dashsdk.persistence.entities.WalletEntity
 import org.dashfoundation.dashsdk.persistence.entities.WalletManagerMetadataEntity
@@ -86,14 +88,26 @@ import org.dashfoundation.dashsdk.persistence.entities.WalletManagerMetadataEnti
  * `address` PK / global `addressHash` unique index that let one wallet's
  * pool-emit steal another wallet's row (same seed imported twice derives
  * identical addresses).
+ *
+ * Version 5 (unsigned token balances): rebuilds `token_balances.balance`
+ * from a signed SQLite INTEGER raw-bit carrier to an order-preserving
+ * fixed-width big-endian BLOB. Every legacy signed bit pattern is retained.
+ *
+ * Version 6 (seedless Orchard rebind): adds one raw 96-byte full viewing
+ * key per `(walletId, accountIndex)`.
+ *
+ * Version 7 (provider restore): adds transaction block position and an
+ * explicit transaction↔typed-account involvement table for payload-only
+ * provider transactions.
  */
 @Database(
-    version = 4,
+    version = 7,
     exportSchema = true,
     entities = [
         WalletEntity::class,
         AccountEntity::class,
         TransactionEntity::class,
+        TransactionAccountInvolvementEntity::class,
         TxoEntity::class,
         CoreAddressEntity::class,
         AssetLockEntity::class,
@@ -121,6 +135,7 @@ import org.dashfoundation.dashsdk.persistence.entities.WalletManagerMetadataEnti
         ShieldedOutgoingNoteEntity::class,
         ShieldedActivityEntity::class,
         ShieldedSyncStateEntity::class,
+        ShieldedViewingKeyEntity::class,
         WalletManagerMetadataEntity::class,
     ],
 )
@@ -314,6 +329,127 @@ abstract class DashDatabase : RoomDatabase() {
         }
 
         /**
+         * v4 → v5: make token balance storage unsigned-safe. The initial
+         * INSERT preserves all non-balance columns; a prepared statement then
+         * rewrites each legacy INTEGER's raw bits into the canonical 8-byte
+         * big-endian representation before the old table is removed.
+         */
+        val MIGRATION_4_5: Migration = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `_new_token_balances` (" +
+                        "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`tokenId` TEXT NOT NULL, `identityId` BLOB NOT NULL, " +
+                        "`balance` BLOB NOT NULL, `frozen` INTEGER NOT NULL, " +
+                        "`createdAt` INTEGER NOT NULL, `lastUpdated` INTEGER NOT NULL, " +
+                        "`lastSyncedAt` INTEGER, `tokenName` TEXT, `tokenSymbol` TEXT, " +
+                        "`tokenDecimals` INTEGER, `networkRaw` INTEGER NOT NULL, " +
+                        "`identityRef` BLOB, `tokenRef` BLOB, " +
+                        "FOREIGN KEY(`identityRef`) REFERENCES `identities`(`identityId`) " +
+                        "ON UPDATE NO ACTION ON DELETE SET NULL , " +
+                        "FOREIGN KEY(`tokenRef`) REFERENCES `tokens`(`id`) " +
+                        "ON UPDATE NO ACTION ON DELETE CASCADE )",
+                )
+                db.execSQL(
+                    "INSERT INTO `_new_token_balances` (`id`, `tokenId`, `identityId`, " +
+                        "`balance`, `frozen`, `createdAt`, `lastUpdated`, `lastSyncedAt`, " +
+                        "`tokenName`, `tokenSymbol`, `tokenDecimals`, `networkRaw`, " +
+                        "`identityRef`, `tokenRef`) SELECT `id`, `tokenId`, `identityId`, " +
+                        "zeroblob(8), `frozen`, `createdAt`, `lastUpdated`, `lastSyncedAt`, " +
+                        "`tokenName`, `tokenSymbol`, `tokenDecimals`, `networkRaw`, " +
+                        "`identityRef`, `tokenRef` FROM `token_balances`",
+                )
+                val update = db.compileStatement(
+                    "UPDATE `_new_token_balances` SET `balance` = ? WHERE `id` = ?",
+                )
+                db.query("SELECT `id`, `balance` FROM `token_balances`").use { cursor ->
+                    while (cursor.moveToNext()) {
+                        update.clearBindings()
+                        update.bindBlob(
+                            1,
+                            UInt64Value.fromRawLongBits(cursor.getLong(1)).toBigEndianBytes(),
+                        )
+                        update.bindLong(2, cursor.getLong(0))
+                        update.executeUpdateDelete()
+                    }
+                }
+                db.execSQL("DROP TABLE `token_balances`")
+                db.execSQL("ALTER TABLE `_new_token_balances` RENAME TO `token_balances`")
+                listOf(
+                    "networkRaw",
+                    "tokenId_identityId",
+                    "identityId",
+                    "identityRef",
+                    "tokenRef",
+                ).forEach { suffix ->
+                    val columns = when (suffix) {
+                        "tokenId_identityId" -> "`tokenId`, `identityId`"
+                        else -> "`$suffix`"
+                    }
+                    db.execSQL(
+                        "CREATE INDEX IF NOT EXISTS `index_token_balances_$suffix` " +
+                            "ON `token_balances` ($columns)",
+                    )
+                }
+            }
+        }
+
+        /** v5 → v6: add the per-subwallet Orchard full-viewing-key table. */
+        val MIGRATION_5_6: Migration = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `shielded_viewing_keys` (" +
+                        "`walletId` BLOB NOT NULL, `accountIndex` INTEGER NOT NULL, " +
+                        "`fvkBytes` BLOB NOT NULL, `lastUpdated` INTEGER NOT NULL, " +
+                        "PRIMARY KEY(`walletId`, `accountIndex`))",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_shielded_viewing_keys_walletId` " +
+                        "ON `shielded_viewing_keys` (`walletId`)",
+                )
+            }
+        }
+
+        /**
+         * v6 → v7: provider-special transaction restore foundation.
+         *
+         * The involvement table intentionally starts empty. Payload-only
+         * account ownership cannot be inferred from SQL without duplicating
+         * Rust consensus decoding, and TXO membership is not a safe proxy for
+         * provider-key ownership. The intermediate v5/v6 schemas were created
+         * during this unreleased SDK work and were never shipped. Developer
+         * databases upgraded from them must replay/resync Core transactions so
+         * Rust emits the typed account tuple and v7 records exact involvement;
+         * migration never fabricates ownership for legacy provider rows.
+         */
+        val MIGRATION_6_7: Migration = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE `transactions` ADD COLUMN `blockPosition` " +
+                        "INTEGER NOT NULL DEFAULT 0",
+                )
+                db.execSQL(
+                    "ALTER TABLE `transactions` ADD COLUMN `hasBlockPosition` " +
+                        "INTEGER NOT NULL DEFAULT 0",
+                )
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `transaction_account_involvements` (" +
+                        "`transactionTxid` BLOB NOT NULL, `accountId` INTEGER NOT NULL, " +
+                        "PRIMARY KEY(`transactionTxid`, `accountId`), " +
+                        "FOREIGN KEY(`transactionTxid`) REFERENCES `transactions`(`txid`) " +
+                        "ON UPDATE NO ACTION ON DELETE CASCADE , " +
+                        "FOREIGN KEY(`accountId`) REFERENCES `accounts`(`id`) " +
+                        "ON UPDATE NO ACTION ON DELETE CASCADE )",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS " +
+                        "`index_transaction_account_involvements_accountId` " +
+                        "ON `transaction_account_involvements` (`accountId`)",
+                )
+            }
+        }
+
+        /**
          * Build the on-disk database. WAL is Room's default journal mode on
          * API 16+; writes go through the persistence handler inside
          * `withTransaction`, mirroring the changeset bracketing contract of
@@ -321,7 +457,14 @@ abstract class DashDatabase : RoomDatabase() {
          */
         fun create(context: Context): DashDatabase =
             Room.databaseBuilder(context, DashDatabase::class.java, DATABASE_NAME)
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                .addMigrations(
+                    MIGRATION_1_2,
+                    MIGRATION_2_3,
+                    MIGRATION_3_4,
+                    MIGRATION_4_5,
+                    MIGRATION_5_6,
+                    MIGRATION_6_7,
+                )
                 .build()
 
         /** In-memory variant for tests. */

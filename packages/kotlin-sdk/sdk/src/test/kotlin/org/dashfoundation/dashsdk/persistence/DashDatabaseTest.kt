@@ -5,6 +5,8 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.dashfoundation.dashsdk.persistence.entities.AccountEntity
 import org.dashfoundation.dashsdk.persistence.entities.IdentityEntity
+import org.dashfoundation.dashsdk.persistence.entities.ShieldedViewingKeyEntity
+import org.dashfoundation.dashsdk.persistence.entities.TokenBalanceEntity
 import org.dashfoundation.dashsdk.persistence.entities.TokenEntity
 import org.dashfoundation.dashsdk.persistence.entities.WalletEntity
 import org.dashfoundation.dashsdk.persistence.entities.WalletManagerMetadataEntity
@@ -12,6 +14,7 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -115,6 +118,65 @@ class DashDatabaseTest {
     }
 
     @Test
+    fun tokenBalancesRoundTripAndSortAcrossFullUnsignedRange() = runTest {
+        val values = listOf(ULong.MAX_VALUE, 0uL, 1uL shl 63, Long.MAX_VALUE.toULong())
+        values.forEachIndexed { index, value ->
+            db.tokenDao().insertBalance(
+                TokenBalanceEntity(
+                    tokenId = "token-$index",
+                    identityId = byteArrayOf(index.toByte()),
+                    balance = UInt64Value(value),
+                    networkRaw = 1,
+                ),
+            )
+        }
+
+        assertEquals(
+            listOf(0uL, Long.MAX_VALUE.toULong(), 1uL shl 63, ULong.MAX_VALUE),
+            db.tokenDao().getBalancesOrderedByAmount().map { it.balance.value },
+        )
+        assertEquals(
+            setOf(ULong.MAX_VALUE, 1uL shl 63, Long.MAX_VALUE.toULong()),
+            db.tokenDao().observeNonZeroBalances().first().map { it.balance.value }.toSet(),
+        )
+    }
+
+    @Test
+    fun orchardViewingKeysUpsertByWalletAndAccountWithoutCrossWalletCollisions() = runTest {
+        val walletA = ByteArray(32) { 0x11 }
+        val walletB = ByteArray(32) { 0x22 }
+        fun key(walletId: ByteArray, account: Int, marker: Byte) =
+            ShieldedViewingKeyEntity(walletId, account, ByteArray(96) { marker })
+
+        db.shieldedDao().upsertViewingKey(key(walletA, 0, 1))
+        db.shieldedDao().upsertViewingKey(key(walletA, 1, 2))
+        db.shieldedDao().upsertViewingKey(key(walletB, 0, 3))
+        // Same composite key replaces its row rather than creating a duplicate.
+        db.shieldedDao().upsertViewingKey(key(walletA, 0, 4))
+
+        val a = db.shieldedDao().observeViewingKeysByWallet(walletA).first()
+        val b = db.shieldedDao().observeViewingKeysByWallet(walletB).first()
+        assertEquals(listOf(0, 1), a.map { it.accountIndex })
+        assertEquals(4.toByte(), a.first().fvkBytes.first())
+        assertEquals(1, b.size)
+        assertEquals(3.toByte(), b.single().fvkBytes.first())
+        assertEquals(3, db.shieldedDao().getAllViewingKeys().size)
+    }
+
+    @Test
+    fun orchardViewingKeyEntityRejectsMalformedFixedFields() {
+        assertThrows(IllegalArgumentException::class.java) {
+            ShieldedViewingKeyEntity(ByteArray(31), 0, ByteArray(96))
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            ShieldedViewingKeyEntity(ByteArray(32), 0, ByteArray(95))
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            ShieldedViewingKeyEntity(ByteArray(32), 0, ByteArray(97))
+        }
+    }
+
+    @Test
     fun identityRoundTripsAndIsNetworkScoped() = runTest {
         val identityId = ByteArray(32) { 9 }
         db.identityDao().upsert(
@@ -176,6 +238,7 @@ class DashDatabaseTest {
         assertEquals(0L, counts.countWallets().first())
         assertEquals(0L, counts.countTokens().first())
         assertEquals(0L, counts.countShieldedNotes().first())
+        assertEquals(0L, counts.countShieldedViewingKeys().first())
 
         db.walletDao().upsert(WalletEntity(walletId = walletId, networkRaw = 1))
         assertEquals(1L, counts.countWallets().first())

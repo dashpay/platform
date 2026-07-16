@@ -17,6 +17,26 @@ package org.dashfoundation.dashsdk.ffi
 internal object CreditsNative {
 
     /**
+     * Resume an identity top-up from the exact tracked Core outpoint.
+     *
+     * JNI symbol:
+     * `Java_org_dashfoundation_dashsdk_ffi_CreditsNative_topUpIdentityWithExistingAssetLock`
+     * Descriptor: `(J[BI[BJZ)J`.
+     *
+     * Thinly marshals
+     * `platform_wallet_topup_identity_with_existing_asset_lock_signer`.
+     * Generic recovery always supplies `consumeInvitationVoucher=false`.
+     */
+    external fun topUpIdentityWithExistingAssetLock(
+        walletHandle: Long,
+        outpointTxid: ByteArray,
+        outpointVout: Int,
+        identityId: ByteArray,
+        coreSignerHandle: Long,
+        consumeInvitationVoucher: Boolean,
+    ): Long
+
+    /**
      * Transfer [amount] credits from [fromIdentityId] to [toIdentityId]
      * (both 32 bytes), signed via [signerHandle] (the identity's
      * transfer-purpose key). No balance is returned — the sender's row

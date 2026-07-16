@@ -33,7 +33,6 @@ import androidx.navigation.NavHostController
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import kotlinx.serialization.json.longOrNull
 import org.dashfoundation.dashsdk.persistence.entities.DataContractEntity
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.di.LocalAppState
@@ -106,7 +105,7 @@ fun TokenActionPermissionsScreen(
     // null balance = not yet fetched / unavailable; livePaused overrides the
     // persisted `isPaused` column when the status query succeeds. Mirrors
     // TokenActionPermissionsView.swift's `refreshLiveState`.
-    var liveBalance by remember { mutableStateOf<Long?>(null) }
+    var liveBalance by remember { mutableStateOf<ULong?>(null) }
     var livePaused by remember { mutableStateOf<Boolean?>(null) }
     LaunchedEffect(sdk, resolvedIdentity?.identityId?.toHex(), token?.contractId?.toHex(),
         token?.position) {
@@ -127,7 +126,7 @@ fun TokenActionPermissionsScreen(
         }.getOrNull()?.let { json ->
             liveBalance = runCatching {
                 LenientJson.parseToJsonElement(json).jsonObject[canonicalId]
-                    ?.jsonPrimitive?.longOrNull
+                    ?.jsonPrimitive?.content?.toULongOrNull()
             }.getOrNull()
         }
         // Statuses: {"<canonicalId>": {"paused": bool}}

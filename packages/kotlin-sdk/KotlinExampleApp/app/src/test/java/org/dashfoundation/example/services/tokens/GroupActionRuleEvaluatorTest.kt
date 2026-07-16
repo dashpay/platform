@@ -138,6 +138,7 @@ class GroupActionRuleEvaluatorTest {
         manualBurningRules: String? = null,
         freezeRules: String? = null,
         emergencyActionRules: String? = null,
+        maxSupplyChangeRules: String? = null,
         distributionChangeRules: String? = null,
         mainControlGroupPosition: Int? = null,
     ) = TokenEntity(
@@ -150,6 +151,7 @@ class GroupActionRuleEvaluatorTest {
         manualBurningRules = manualBurningRules,
         freezeRules = freezeRules,
         emergencyActionRules = emergencyActionRules,
+        maxSupplyChangeRules = maxSupplyChangeRules,
         distributionChangeRules = distributionChangeRules,
         mainControlGroupPosition = mainControlGroupPosition,
     )
@@ -186,6 +188,16 @@ class GroupActionRuleEvaluatorTest {
             listOf(6),
             GroupActionRuleEvaluator.relevantGroupPositions(
                 token(distributionChangeRules = bundle),
+            ),
+        )
+    }
+
+    @Test
+    fun `max-supply change group is included in pending proposal positions`() {
+        assertEquals(
+            listOf(11),
+            GroupActionRuleEvaluator.relevantGroupPositions(
+                token(maxSupplyChangeRules = rules("Group:11")),
             ),
         )
     }

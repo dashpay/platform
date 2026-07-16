@@ -232,7 +232,7 @@ fun TokenDetailsScreen(tokenIdHex: String, navController: NavHostController) {
                         LabeledContent(
                             truncateMiddle(Base58.encode(balance.identityId), 8, 6),
                             TokenAmounts.format(
-                                balance.balance,
+                                balance.balance.value,
                                 balance.tokenDecimals ?: current.decimals,
                             ) + if (balance.frozen) " (frozen)" else "",
                         )

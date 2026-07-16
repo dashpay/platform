@@ -4,14 +4,18 @@ import androidx.test.core.app.ApplicationProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
+import org.dashfoundation.dashsdk.Network
 import org.dashfoundation.dashsdk.persistence.entities.CoreAddressEntity
+import org.dashfoundation.dashsdk.persistence.entities.IdentityEntity
 import org.dashfoundation.dashsdk.persistence.entities.PlatformAddressEntity
+import org.dashfoundation.dashsdk.persistence.entities.WalletEntity
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertThrows
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -89,6 +93,262 @@ class PlatformWalletPersistenceHandlerTest {
         assertEquals(0, accounts[0].accountType)
         assertEquals("standardBip44", accounts[0].accountTypeName)
         assertTrue(xpub.contentEquals(accounts[0].accountExtendedPubKeyBytes!!))
+    }
+
+    @Test
+    fun tokenBalanceCallbackDecodesSignedCarrierAsUnsignedBits() = runTest {
+        val identityId = ByteArray(32) { 3 }
+        val tokenId = ByteArray(32) { 4 }
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+        db.identityDao().upsert(
+            IdentityEntity(identityId = identityId, networkRaw = testnet, walletId = walletId),
+        )
+
+        assertEquals(
+            0,
+            handler.onPersistTokenBalanceUpsert(
+                walletId = walletId,
+                identityId = identityId,
+                tokenId = tokenId,
+                balance = Long.MIN_VALUE,
+            ),
+        )
+
+        val stored = db.tokenDao().getBalance(tokenId.toBase58String(), identityId)
+        assertEquals(1uL shl 63, stored!!.balance.value)
+    }
+
+    @Test
+    fun orchardViewingKeyCallbackUpsertsAndLoadRestoresExactBytes() = runTest {
+        val fvk1 = ByteArray(96) { 0x31 }
+        val fvk2 = ByteArray(96) { 0x32 }
+        assertEquals(0, handler.onPersistShieldedViewingKey(walletId, walletId, 7, fvk1))
+        assertEquals(0, handler.onPersistShieldedViewingKey(walletId, walletId, 7, fvk2))
+
+        val rows = handler.onLoadShieldedViewingKeys()
+        assertEquals(1, rows.size)
+        assertTrue(walletId.contentEquals(rows.single().walletId))
+        assertEquals(7, rows.single().accountIndex)
+        assertTrue(fvk2.contentEquals(rows.single().fvkBytes))
+    }
+
+    @Test
+    fun orchardViewingKeyPersistAndLoadFailClosedOnMalformedLength() = runTest {
+        assertEquals(
+            1,
+            handler.onPersistShieldedViewingKey(walletId, walletId, 0, ByteArray(95)),
+        )
+        assertTrue(db.shieldedDao().getAllViewingKeys().isEmpty())
+
+        // Bypass the validated entity/DAO write path to model an externally
+        // corrupted database. Restore must throw into JNI, not return an
+        // empty array that would trigger mnemonic fallback.
+        db.openHelper.writableDatabase.execSQL(
+            "INSERT INTO shielded_viewing_keys " +
+                "(walletId, accountIndex, fvkBytes, lastUpdated) VALUES (?, 0, ?, 0)",
+            arrayOf(walletId, ByteArray(95)),
+        )
+        assertThrows(IllegalArgumentException::class.java) {
+            handler.onLoadShieldedViewingKeys()
+        }
+    }
+
+    @Test
+    fun orchardViewingKeyLoadExcludesOtherNetworksAndPersistRejectsCrossWalletEntry() = runTest {
+        val testnetWallet = ByteArray(32) { 0x51 }
+        val mainnetWallet = ByteArray(32) { 0x52 }
+        db.walletDao().upsert(WalletEntity(testnetWallet, networkRaw = Network.TESTNET.ffiValue))
+        db.walletDao().upsert(WalletEntity(mainnetWallet, networkRaw = Network.MAINNET.ffiValue))
+        db.shieldedDao().upsertViewingKey(
+            org.dashfoundation.dashsdk.persistence.entities.ShieldedViewingKeyEntity(
+                testnetWallet, 0, ByteArray(96) { 1 },
+            ),
+        )
+        db.shieldedDao().upsertViewingKey(
+            org.dashfoundation.dashsdk.persistence.entities.ShieldedViewingKeyEntity(
+                mainnetWallet, 0, ByteArray(96) { 2 },
+            ),
+        )
+        // A malformed foreign-network row must be excluded in SQL before
+        // entity validation, so it cannot poison the locked-network load.
+        db.openHelper.writableDatabase.execSQL(
+            "INSERT INTO shielded_viewing_keys " +
+                "(walletId, accountIndex, fvkBytes, lastUpdated) VALUES (?, 1, ?, 0)",
+            arrayOf(mainnetWallet, ByteArray(95)),
+        )
+        val scoped = PlatformWalletPersistenceHandler(
+            database = db,
+            dispatcher = Dispatchers.Unconfined,
+            network = Network.TESTNET,
+        )
+
+        val restored = scoped.onLoadShieldedViewingKeys()
+        assertEquals(1, restored.size)
+        assertTrue(testnetWallet.contentEquals(restored.single().walletId))
+        assertEquals(
+            1,
+            scoped.onPersistShieldedViewingKey(
+                testnetWallet, mainnetWallet, 2, ByteArray(96),
+            ),
+        )
+        assertNull(db.shieldedDao().getViewingKey(mainnetWallet, 2))
+        scoped.close()
+    }
+
+    @Test
+    fun providerRestoreStagingIsPayloadOnlyWalletScopedAndOrderedByBlockPosition() = runTest {
+        val siblingWalletId = ByteArray(32) { 0x22 }
+        val siblingGroupId = ByteArray(32) { 0x23 }
+        registerRestorableProviderAccount(walletId, groupId, accountIndex = 7)
+        registerRestorableProviderAccount(siblingWalletId, siblingGroupId, accountIndex = 8)
+
+        // Kotlin-only staging markers: native restore tests must use valid
+        // ProReg/ProUp consensus fixtures because Rust authoritatively decodes
+        // and will reject these one-byte bodies. Both wallet-A records share a block. Persist them in reverse order
+        // to prove restore uses Core's explicit block position, not callback
+        // or insertion order. No TXO is created for either payload-only tx.
+        persistProviderTransaction(
+            walletId, accountIndex = 7, marker = 2, kind = 2,
+            blockHeight = 500, blockPosition = 2,
+        )
+        persistProviderTransaction(
+            walletId, accountIndex = 7, marker = 1, kind = 5,
+            blockHeight = 500, blockPosition = 1,
+        )
+        persistProviderTransaction(
+            siblingWalletId, accountIndex = 8, marker = 9, kind = 3,
+            blockHeight = 499, blockPosition = 0,
+        )
+
+        assertTrue(db.txoDao().observeUnspentByWallet(walletId).first().isEmpty())
+        val restores = handler.onLoadWalletList().associateBy { it.walletId.first() }
+        assertEquals(listOf(1.toByte(), 2.toByte()), restores[1]!!.providerSpecialTxs.map { it.txBytes[0] })
+        assertEquals(listOf(9.toByte()), restores[0x22]!!.providerSpecialTxs.map { it.txBytes[0] })
+        val first = restores[1]!!.providerSpecialTxs.first()
+        assertEquals(500, first.blockHeight)
+        assertEquals(1, first.blockPosition)
+        assertTrue(first.hasBlockPosition)
+        assertEquals(32, first.blockHash.size)
+    }
+
+    @Test
+    fun providerKindOnStandardAccountDoesNotStageIntoUnrelatedProviderAccount() = runTest {
+        registerRestorableProviderAccount(walletId, groupId, accountIndex = 7)
+        assertEquals(
+            0,
+            handler.onPersistAccountRegistration(
+                walletId = walletId,
+                typeTag = 0,
+                standardTag = 0,
+                index = 0,
+                registrationIndex = 0,
+                keyClass = 0,
+                userIdentityId = ByteArray(0),
+                friendIdentityId = ByteArray(0),
+                accountXpubBytes = ByteArray(78) { 0x33 },
+            ),
+        )
+
+        persistProviderTransaction(
+            walletId, accountIndex = 0, marker = 7, kind = 2,
+            blockHeight = 600, blockPosition = 0, accountTypeTag = 0,
+        )
+
+        val txid = ByteArray(32) { 7 }
+        assertEquals(0, db.transactionDao().countInvolvements(txid))
+        assertTrue(handler.onLoadWalletList().single().providerSpecialTxs.isEmpty())
+    }
+
+    @Test
+    fun providerRestoreStagingSkipsOnlyHostStructuralCorruptionBeforeRustDecode() = runTest {
+        registerRestorableProviderAccount(walletId, groupId, accountIndex = 7)
+        persistProviderTransaction(
+            walletId, accountIndex = 7, marker = 4, kind = 4,
+            blockHeight = 12, blockPosition = 0,
+        )
+        // The one-byte body is deliberately only a non-empty staging marker,
+        // not a valid provider transaction. Empty consensus bytes and a bad
+        // fixed hash are host-structural corruption and are skipped here;
+        // Rust must reject this non-empty undecodable marker in its native
+        // restore test without crashing.
+        persistProviderTransaction(
+            walletId, accountIndex = 7, marker = null, kind = 2,
+            blockHeight = 13, blockPosition = 0,
+        )
+        persistProviderTransaction(
+            walletId, accountIndex = 7, marker = 6, kind = 3,
+            blockHeight = 14, blockPosition = 0, blockHash = ByteArray(31) { 6 },
+        )
+
+        val restored = handler.onLoadWalletList().single().providerSpecialTxs
+        assertEquals(1, restored.size)
+        assertEquals(4.toByte(), restored.single().txBytes.single())
+    }
+
+    private fun registerRestorableProviderAccount(
+        id: ByteArray,
+        group: ByteArray,
+        accountIndex: Int,
+    ) {
+        assertEquals(0, handler.onPersistWalletMetadata(id, testnet, group, 0))
+        assertEquals(
+            0,
+            handler.onPersistAccountRegistration(
+                walletId = id,
+                typeTag = 9, // ProviderOwnerKeys
+                standardTag = 0,
+                index = accountIndex,
+                registrationIndex = 0,
+                keyClass = 0,
+                userIdentityId = ByteArray(0),
+                friendIdentityId = ByteArray(0),
+                accountXpubBytes = ByteArray(78) { accountIndex.toByte() },
+            ),
+        )
+    }
+
+    private fun persistProviderTransaction(
+        id: ByteArray,
+        accountIndex: Int,
+        marker: Int?,
+        kind: Int,
+        blockHeight: Int,
+        blockPosition: Int,
+        blockHash: ByteArray = ByteArray(32) { marker?.toByte() ?: 1 },
+        accountTypeTag: Byte = 9,
+    ) {
+        val txid = ByteArray(32) { (marker ?: 0).toByte() }
+        assertEquals(
+            0,
+            handler.onWalletChangesetTransaction(
+                walletId = id,
+                txid = txid,
+                txData = marker?.let { byteArrayOf(it.toByte()) } ?: ByteArray(0),
+                context = 2,
+                blockHeight = blockHeight,
+                blockHash = blockHash,
+                blockTimestamp = 1_700_000_000,
+                direction = 0,
+                transactionType = "Provider",
+                transactionTypeKind = kind,
+                netAmount = 0,
+                fee = 0,
+                hasFee = false,
+                label = "",
+                firstSeen = blockHeight.toLong(),
+                inputOutpoints = ByteArray(0),
+                inputOutpointCount = 0,
+                accountTypeTag = accountTypeTag,
+                accountStandardTag = 0,
+                accountIndex = accountIndex,
+                accountRegistrationIndex = 0,
+                accountKeyClass = 0,
+                accountUserIdentityId = ByteArray(0),
+                accountFriendIdentityId = ByteArray(0),
+                blockPosition = blockPosition,
+                hasBlockPosition = true,
+            ),
+        )
     }
 
     // ── Transactional bracketing ──────────────────────────────────────
@@ -307,6 +567,79 @@ class PlatformWalletPersistenceHandlerTest {
         assertEquals(3, row.nonce)
         assertEquals(777, row.lastSeenHeight)
         assertTrue(row.isUsed)
+    }
+
+    @Test
+    fun addressBalanceConflictPreservesDerivationIndicesAcrossRestart() = runTest {
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+        handler.onPersistAccountRegistration(
+            walletId, 0, 0, 0, 0, 0, ByteArray(0), ByteArray(0), ByteArray(78) { 30 },
+        )
+
+        // The pool emit owns this immutable address/index mapping.
+        val hash = ByteArray(20) { 18 }
+        val canonicalPath = "m/9'/5'/17'/2'/0'/7"
+        db.platformAddressDao().upsert(
+            PlatformAddressEntity(
+                address = "dash1conflict",
+                addressType = 0,
+                addressHash = hash,
+                accountIndex = 2,
+                addressIndex = 7,
+                derivationPath = canonicalPath,
+                walletId = walletId,
+            ),
+        )
+
+        // Conflict-removal can report address A with the competing address
+        // B's tuple. The callback updates A's balance snapshot only; B's
+        // tuple must never replace A's authoritative derivation identity.
+        handler.onChangesetBegin(walletId)
+        handler.onPersistAddressBalance(
+            walletId = walletId,
+            addressType = 0,
+            addressHash = hash,
+            balance = 0,
+            nonce = 0,
+            accountIndex = 9,
+            addressIndex = 13,
+            asOfHeight = 800,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        val stored = db.platformAddressDao().getByWalletAndAddressHash(walletId, hash)
+        assertNotNull(stored)
+        assertEquals(2, stored!!.accountIndex)
+        assertEquals(7, stored.addressIndex)
+        assertEquals(canonicalPath, stored.derivationPath)
+
+        // A fresh handler models process restart. Its restore payload must
+        // carry the canonical tuple, not the conflicting callback tuple.
+        val restarted = PlatformWalletPersistenceHandler(db, Dispatchers.Unconfined)
+        val restored = restarted.onLoadWalletList().single().platformAddressBalances.single()
+        assertEquals(2, restored.accountIndex)
+        assertEquals(7, restored.addressIndex)
+        assertTrue(hash.contentEquals(restored.addressHash))
+
+        // A later valid credit remains attached to the same canonical row.
+        restarted.onChangesetBegin(walletId)
+        restarted.onPersistAddressBalance(
+            walletId = walletId,
+            addressType = 0,
+            addressHash = hash,
+            balance = 25_000,
+            nonce = 1,
+            accountIndex = 2,
+            addressIndex = 7,
+            asOfHeight = 801,
+        )
+        restarted.onChangesetEnd(walletId, success = true)
+        val credited = db.platformAddressDao().getByWalletAndAddressHash(walletId, hash)
+        assertNotNull(credited)
+        assertEquals(25_000L, credited!!.balance)
+        assertEquals(2, credited.accountIndex)
+        assertEquals(7, credited.addressIndex)
+        assertEquals(canonicalPath, credited.derivationPath)
     }
 
     @Test

@@ -1,5 +1,10 @@
 # SwiftExampleApp → KotlinExampleApp Parity Checklist
 
+> Executable capability status and authoritative totals live in
+> [`PARITY_SUMMARY.md`](PARITY_SUMMARY.md), generated from
+> [`docs/sdk/sdk-parity-manifest.json`](../../docs/sdk/sdk-parity-manifest.json).
+> This checklist remains the detailed view-by-view mapping.
+
 One row per Swift view in
 `packages/swift-sdk/SwiftExampleApp/SwiftExampleApp/Views/**` and
 `.../Core/Views/`. Android paths are relative to
@@ -26,14 +31,14 @@ Status legend:
 | ContestDetailView.swift | ui/identity/ContestDetailScreen.kt · `ContestDetail` | ported — live contenders/tallies/winner via the bridged `Voting.contestedResourceVoteState` (`dash_sdk_contested_resource_get_vote_state`, DocumentsAndVoteTally); masternode vote casting (TowardsIdentity / Abstain / Lock + pro_tx_hash / voting-key form) via `VoteCasting.castVote` (`dash_sdk_contested_resource_cast_vote`). The bridged read carries no poll end time (iOS's wallet path does), so the status row derives from winner presence and the countdown bar is omitted |
 | ContractsTabView.swift | ui/contracts/ContractsHomeScreen.kt · `ContractsHome` | ported |
 | CountDocumentsView.swift | ui/contracts/CountDocumentsScreen.kt · `CountDocuments` | ported |
-| CreateIdentityView.swift | ui/identity/CreateIdentityScreen.kt · `CreateIdentity` | ported |
+| CreateIdentityView.swift | ui/identity/CreateIdentityScreen.kt · `CreateIdentity` | partial — fresh Core, Platform-address, and shielded funding are wired. Existing-lock registration recovery selects the exact Rust-tracked outpoint, guards its identity/key index, and reaches compiled JNI tracked-lock list/free and registration/top-up resume bridges. Remaining gates are external-function/device execution across process death, resolver teardown, and foreign-wallet error mapping |
 | DPNSTestView.swift | ui/identity/DpnsTestScreen.kt · `DpnsTest` | ported |
 | DataContractDetailsView.swift | ui/contracts/DataContractDetailsScreen.kt · `ContractDetail` | ported (incl. group drill-in) |
 | DiagnosticsView.swift | ui/diagnostics/DiagnosticsScreen.kt · `Diagnostics` | ported — "Run All Queries" executes every bridged registry query against the shared testnet fixtures (the registry now covers the iOS catalog); adds environment / sync-state / DB-count sections |
 | DocumentFieldsView.swift | ui/contracts/DocumentFieldsScreen.kt · `DocumentFields` | ported |
 | DocumentTypeDetailsView.swift | ui/contracts/DocumentTypeDetailsScreen.kt · `DocumentTypeDetail` | ported |
 | DocumentWithPriceView.swift | ui/contracts/DocumentWithPriceScreen.kt · `DocumentWithPrice` | ported — debounced document-id probe (price / owner / ownership badging via `Documents.fetch`), plus the purchase (`DocumentTransactions.purchase` → `platform_wallet_document_purchase`) and owner set-price (`DocumentTransactions.setPrice` → `platform_wallet_document_set_price`) submit flows that live in `PurchaseDocumentView` / the set-price sheet on iOS, hosted as one screen; entries from DocumentsScreen rows ("Price…") and the transition catalog |
-| DocumentsView.swift | ui/contracts/DocumentsScreen.kt · `Documents` | ported (query role; viewer role in DocumentFieldsScreen; the row-level Purchase… / Set Price… actions drill into DocumentWithPriceScreen; create / replace / delete / transfer stay unbridged — see TransitionDetailView) |
+| DocumentsView.swift | ui/contracts/DocumentsScreen.kt · `Documents` | ported (query role; viewer role in DocumentFieldsScreen; row-level Purchase… / Set Price… actions drill into DocumentWithPriceScreen; create routes to CreateDocumentScreen and replace / delete / transfer route to DocumentActionsScreen through the transition catalog) |
 | ~~FriendsView.swift~~ (deleted upstream) | — (retired) | retired — deleted by PR #3841 and superseded by the first-class DashPay tab; `FriendsScreen.kt` and its `Friends` route were removed in milestone K3. See the **Views/DashPay/** section below |
 | FundFromAssetLockPlatformAddressView.swift | ui/funding/FundFromAssetLockScreen.kt · `FundFromAssetLock` | ported — submit picks a fresh unused Platform address and funds via the now-bridged `platform_address_wallet_fund_from_asset_lock_signer` (+ resume variant on `ManagedPlatformWallet`); coordinator/progress/pending list drive the flow |
 | TransferPlatformAddressView.swift (ADDR-02, #3923) | ui/credits/TransferPlatformAddressScreen.kt · `TransferPlatformAddress` | ported — wallet-signed DIP-17 credit transfer via the now-bridged `platform_address_wallet_transfer` (`ManagedPlatformWallet.transferCredits`, AUTO selection, null inputs/fee-strategy); source account + destination (own-wallet / external P2PKH hash) + amount only; gate reads version-locked `minInput`/`minOutput` via `walletPlatformAddressMinAmounts`. Launched from WalletDetailScreen's Platform Credits section |
@@ -41,7 +46,7 @@ Status legend:
 | GroupDetailView.swift | ui/contracts/GroupDetailScreen.kt · `GroupDetail` | ported — members resolved against local identities; adds live open-proposals via bridged `Groups.pendingActions` |
 | GroveDBPathElementsView.swift | ui/contracts/GroveDBPathElementsScreen.kt · `GroveDbPathElements` | ported — path/keys JSON form + DPNS-contract preset over the bridged `SystemQueries.groveDbPathElements` (`dash_sdk_system_get_path_elements`); entry from the Platform Queries list, mirroring the iOS placement |
 | IdentitiesView.swift | ui/identity/IdentitiesHomeScreen.kt · `IdentitiesHome` | ported |
-| IdentityDetailView.swift | ui/identity/IdentityDetailScreen.kt · `IdentityDetail` | ported — contested-name rows now render in the DPNS section and drill into ContestDetail (adapted: contests are discovered by probing locally-known labels with `Voting.contestedResourceVoteState` and filtering to unresolved contests listing this identity as a contender; the network-wide by-identity discovery `dash_sdk_dpns_get_contested_usernames_by_identity` remains unbridged) |
+| IdentityDetailView.swift | ui/identity/IdentityDetailScreen.kt · `IdentityDetail` | partial — Android reaches the compiled shared one-fetch `platform_wallet_sync_contested_dpns_names` + full cached `managed_identity_get_contested_dpns_names` JNI path, removes the eight-label probe cap, preserves loading/error/unavailable state with retry, and frees cached arrays through an RAII guard. Android identity persistence still drops contested snapshots on restore with no schema slot before reserved v8 invitations; allocation-failure/device and restart gates remain |
 | IdentityKeyAddition.swift | services/IdentityKeyAdditionFlow.kt | ported — derive → Keystore-persist → `IdentityPubkey` flow with the real keypair deriver injected (`PlatformWalletManager.deriveIdentityKeyPair`); slot assignment, Drive-combination validation, scalar scrubbing |
 | KeyDetailView.swift | ui/identity/KeyDetailScreen.kt · `KeyDetail` | ported — incl. the Key Status section: `KeyDisableGate`-guarded destructive Disable Key with confirm dialog, submitting through the bridged `IdentityUpdates.disableKeys` (`platform_wallet_update_identity_with_signer`) |
 | KeychainExplorerView.swift | ui/diagnostics/KeystoreExplorerScreen.kt · `KeystoreExplorer` | ported (adapted: WalletStorage entries masked + AndroidKeyStore aliases; adds biometric-gated mnemonic reveal) |
@@ -76,7 +81,7 @@ Status legend:
 | TopUpIdentityView.swift | ui/credits/TopUpIdentityScreen.kt · `TopUpIdentity` | ported — funding-input enumeration now bridged (`walletAddressesWithBalances` → `platform_address_wallet_addresses_with_balances`); submit greedily packs balance-carrying addresses and credits via the top-up FFI |
 | TransferCreditsView.swift | ui/credits/TransferCreditsScreen.kt · `TransferCredits` | ported |
 | TransitionCategoryView.swift | ui/transitions/TransitionCategoryScreen.kt · `TransitionCategoryRoute` | ported |
-| TransitionDetailView.swift | ui/transitions/TransitionDetailScreen.kt · `TransitionDetailRoute` | partial — dynamic forms with live Room-backed identity / token / contract / document-type pickers; 18 of the 23 catalog definitions execute: inline `identityUpdate` (disable path via `IdentityUpdates`) and `masternodeVote` (via `VoteCasting.castVote`), plus dedicated routes for the credit ops, identity create, contract register, document price / purchase (`DocumentWithPrice`), the eight token action forms, and the DPNS contest drill-in. Named dialogs remain for dataContractUpdate, documentCreate, documentReplace, documentDelete, documentTransfer (platform-wallet FFIs not bridged) and `identityUpdate`'s add-keys sub-path (scalar-only slot-derive; see AddIdentityKeyView) |
+| TransitionDetailView.swift | ui/transitions/TransitionDetailScreen.kt · `TransitionDetailRoute` | partial — all 23 catalog definitions now execute through inline actions or dedicated routes, including data-contract update and document create / replace / delete / transfer. The remaining adaptation is `identityUpdate`'s add-keys sub-path, which stays on the dedicated AddIdentityKey flow because the catalog form only exposes the disable-key path |
 | TransitionInputView.swift | ui/transitions/TransitionDetailScreen.kt (input rows) | ported (component folded into the detail screen) |
 | WalletMemoryExplorerView.swift | ui/diagnostics/WalletMemoryExplorerScreen.kt · `WalletMemoryExplorer` | partial — wallets map, balances, SPV progress/tip, `is*SyncRunning` liveness live; per-wallet drill-downs deferred on `platform_wallet_manager_*` snapshot exports |
 | WithdrawCreditsView.swift | ui/credits/WithdrawCreditsScreen.kt · `WithdrawCredits` | ported |
@@ -143,13 +148,13 @@ verbatim. Documented deviations from iOS are listed after the table.
 | --- | --- | --- |
 | AccountDetailView.swift | ui/wallet/AccountDetailScreen.kt · `AccountDetail` | ported |
 | AccountListView.swift | ui/wallet/AccountList.kt | ported |
-| CoreContentView.swift | ui/sync/SyncStatusScreen.kt · `SyncHome` (+ ui/MainScreen.kt tabs) | partial — Platform Sync "Clear" clears synced data (#3959): fail-closed native reset (`platform_wallet_manager_platform_address_sync_reset` → `PlatformWalletManager.resetPlatformAddressSyncState`) then Room clear (in-place zero of `platform_addresses` scoped by wallet-id-on-network + delete `platform_addresses_sync_states` by network) via `PlatformBalanceSyncService.clearLocalState`. GAP (deferred): the compact-filter **Rescan** button + height picker Swift added in #4103 (over the #4099 `platform_wallet` SPV filter-rescan-via-synced-height-rewind FFI) has no Android wrapper or control yet — needs a JNI export for the rescan entry point, a `PlatformWalletManager` wrapper, and the SyncStatusScreen control |
+| CoreContentView.swift | ui/sync/SyncStatusScreen.kt · `SyncHome` (+ ui/MainScreen.kt tabs) | partial — Platform Sync "Clear" is live. Android includes the compact-filter height picker, per-wallet result state, and `PlatformWalletManager.rescanSpvFilters` over the compiled JNI rewind bridge, accurately presented as an in-memory request consumed on the next SPV tick/start. A device smoke must still prove typed-error mapping and running/stopped consumption semantics |
 | CreateWalletView.swift | ui/wallet/CreateWalletScreen.kt · `CreateWallet` | ported |
 | IdentitiesContentView.swift | ui/identity/IdentitiesHomeScreen.kt · `IdentitiesHome` | ported |
 | QRScannerView.swift | ui/scanner/QrScannerScreen.kt · `QrScanner` | ported |
 | ReceiveAddressView.swift | ui/wallet/ReceiveAddressSheet.kt | ported |
 | SeedBackupView.swift | ui/wallet/SeedBackupScreen.kt · `SeedBackup` | ported |
-| SendTransactionView.swift | ui/wallet/SendTransactionScreen.kt · `SendTransaction` | ported — broadcast wired via `ManagedPlatformWallet.sendToAddresses`, which drives the `CoreTransactionBuilder` (`core_wallet_tx_builder_*` + `core_wallet_broadcast_transaction`) |
+| SendTransactionView.swift | ui/wallet/SendTransactionScreen.kt · `SendTransaction` | ported — `ManagedPlatformWallet.sendToAddresses` drives the atomic V2 path (`CoreTransactionBuilder.finalizeAtomic` → `core_wallet_tx_builder_finalize` → `core_wallet_broadcast_signed_transaction_v2`); shared Rust owns selection, reservation, signing, and broadcast classification |
 | ShieldedActivityView.swift | ui/shielded/ShieldedActivityScreen.kt · `ShieldedActivity` | ported |
 | TransactionDetailView.swift | ui/wallet/TransactionDetailScreen.kt · `WalletTransactionDetail` | ported |
 | TransactionListView.swift | ui/wallet/TransactionListScreen.kt · `WalletTransactions` | ported |
@@ -159,12 +164,12 @@ verbatim. Documented deviations from iOS are listed after the table.
 
 ## Totals
 
-- **ported**: 97 (87 pre-#3841 views + the 10 `Views/DashPay/` views, ported
-  in milestone K3; the retired FriendsView row does not count — its Swift
-  source is deleted)
-- **partial**: 2 (TransitionDetailView — 5 of 23 catalog entries lack backing FFIs: dataContractUpdate, documentCreate/Replace/Delete/Transfer; WalletMemoryExplorerView — asset-lock drill-down summary only)
+- **ported**: 94
+- **partial**: 5 (CreateIdentityView, IdentityDetailView,
+  TransitionDetailView, WalletMemoryExplorerView, and CoreContentView)
 - **deferred**: 0
 
-Every partial/deferred row names the missing FFI export; the app
-surfaces the same name in a dialog at the point of use (grep for
-`notBridged` under `ui/`).
+The generated [`PARITY_SUMMARY.md`](PARITY_SUMMARY.md) remains authoritative
+for capability totals. Partial view rows above name their concrete remaining
+FFI, persistence, device, or restart gate; deliberately unavailable catalog
+operations surface the missing bridge at the point of use.

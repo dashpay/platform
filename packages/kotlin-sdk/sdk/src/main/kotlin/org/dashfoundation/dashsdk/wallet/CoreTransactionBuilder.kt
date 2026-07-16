@@ -9,29 +9,19 @@ import java.util.concurrent.atomic.AtomicLong
  * key-wallet transaction builder over FFI — Android port of Swift's
  * `CoreTransactionBuilder` (packages/swift-sdk/.../CoreWallet/CoreTransactionBuilder.swift).
  *
- * Build step by step, [buildSigned], then broadcast separately via
- * [ManagedCoreWallet.broadcastTransaction]. Per `packages/kotlin-sdk/CLAUDE.md`
- * each native step is a thin `WalletManagerNative` extern (one call = one FFI
- * fn); THIS class does the orchestration, exactly as the Swift builder does.
+ * Configure outputs step by step, then call [finalizeAtomic]. Rust performs
+ * funding selection and ReservationSet insertion in one indivisible operation,
+ * drops the wallet-manager lock, and only then invokes the mnemonic resolver.
  *
  * Owns the native `FFITransactionBuilder` pointer. Like the Swift type it is
- * freed on [close] / [buildSigned] (which consumes it) or a [NativeCleaner]
+ * freed on [close] / [finalizeAtomic] (which consumes it) or a [NativeCleaner]
  * backstop; the class is NOT thread-safe (the FFI builder must be used from
  * one thread at a time).
  *
  * ## Not a public API — drive only through [ManagedPlatformWallet.sendToAddresses]
  *
- * The constructor and the funding/signing steps are `internal`. [setFunding]
- * performs native coin selection, but the selected UTXOs are only *reserved*
- * later, inside [buildSigned] — and the wallet-manager lock cannot be held
- * across the two separate FFI calls (see the `core_wallet_tx_builder_set_funding`
- * doc-comment in `rs-platform-wallet-ffi`). So two concurrent same-account
- * builds could both select the same UTXO and sign competing transactions.
- * [ManagedPlatformWallet.sendToAddresses] is the only driver and serializes the
- * whole `new → setFunding → buildSigned → broadcast` sequence under a per-wallet
- * mutex; keeping the split API `internal` guarantees no external caller can
- * reopen that race. (Swift leaves the builder `public` and relies only on
- * incidental `@MainActor` single-threading between `setFunding` and `buildSigned`.)
+ * The old [setFunding] + [buildSigned] sequence remains only as a deprecated ABI
+ * compatibility path and is not used by SDK convenience sends.
  *
  * @param network the wallet network — output and change addresses are
  *   validated against it Rust-side.
@@ -92,6 +82,7 @@ class CoreTransactionBuilder internal constructor(network: Network) : AutoClosea
     }
 
     /** Fund from the account's UTXOs and set its change address. */
+    @Deprecated("Use finalizeAtomic; split funding/signing is not concurrency-safe")
     internal fun setFunding(
         wallet: ManagedPlatformWallet,
         accountType: AccountType,
@@ -113,6 +104,7 @@ class CoreTransactionBuilder internal constructor(network: Network) : AutoClosea
      * @param coreSignerHandle a `MnemonicResolverHandle` (the manager's
      *   resolver) used for the Core ECDSA signatures.
      */
+    @Deprecated("Use finalizeAtomic; split funding/signing is not concurrency-safe")
     internal fun buildSigned(
         wallet: ManagedPlatformWallet,
         accountType: AccountType,
@@ -134,6 +126,39 @@ class CoreTransactionBuilder internal constructor(network: Network) : AutoClosea
         return CoreTransaction(txPtr, accountType, accountIndex)
     }
 
+    /**
+     * Consume this configured builder, atomically select and reserve inputs,
+     * then sign after Rust has released its wallet-manager lock.
+     */
+    internal fun finalizeAtomic(
+        wallet: ManagedPlatformWallet,
+        accountType: AccountType,
+        accountIndex: Int,
+        coreSignerHandle: Long,
+    ): FinalizedCoreTransaction {
+        require(accountIndex >= 0) { "accountIndex must be non-negative" }
+        require(coreSignerHandle != 0L) { "coreSignerHandle must be non-zero" }
+        // Validate every borrowed dependency before transferring builder
+        // ownership. Once getAndSet(0) runs, JNI consumes the native builder.
+        val walletHandle = wallet.handle
+        val builderPtr = handleRef.getAndSet(0)
+        check(builderPtr != 0L) { "CoreTransactionBuilder has been consumed or closed" }
+        val transaction = WalletManagerNative.coreTxBuilderFinalize(
+            builderPtr,
+            walletHandle,
+            accountType.ffiValue,
+            accountIndex,
+            coreSignerHandle,
+        )
+        val fee = try {
+            WalletManagerNative.coreSignedTransactionV2Fee(transaction)
+        } catch (error: Throwable) {
+            WalletManagerNative.coreSignedTransactionV2Free(transaction)
+            throw error
+        }
+        return FinalizedCoreTransaction(transaction, fee)
+    }
+
     override fun close() {
         cleanable.clean()
     }
@@ -145,6 +170,27 @@ class CoreTransactionBuilder internal constructor(network: Network) : AutoClosea
             if (handle != 0L) {
                 WalletManagerNative.coreTxBuilderDestroy(handle)
             }
+        }
+    }
+}
+
+/** Ownership token for an atomically finalized Core transaction. */
+class FinalizedCoreTransaction internal constructor(handle: Long, val fee: Long) : AutoCloseable {
+    private val handleRef = AtomicLong(handle)
+    private val cleanable = NativeCleaner.register(this, Cleanup(handleRef))
+
+    internal fun takeForBroadcast(): Long = handleRef.getAndSet(0).also {
+        check(it != 0L) { "FinalizedCoreTransaction has already been consumed" }
+    }
+
+    internal fun takeForAbandon(): Long = takeForBroadcast()
+
+    override fun close() = cleanable.clean()
+
+    private class Cleanup(private val handleRef: AtomicLong) : Runnable {
+        override fun run() {
+            val handle = handleRef.getAndSet(0)
+            if (handle != 0L) WalletManagerNative.coreSignedTransactionV2Free(handle)
         }
     }
 }

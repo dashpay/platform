@@ -7,6 +7,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
 import org.dashfoundation.dashsdk.Network
 import org.dashfoundation.dashsdk.persistence.DashDatabase
+import org.dashfoundation.dashsdk.persistence.UInt64Value
 import org.dashfoundation.dashsdk.persistence.dao.StorageCountsDao
 import org.dashfoundation.example.util.Base58
 import org.dashfoundation.example.util.formatDate
@@ -134,7 +135,12 @@ val STORAGE_MODELS: List<StorageModel> = listOf(
         orderBy = "lastUpdated DESC", networkColumn = "networkRaw",
         countFlow = { it.countTokenBalances() },
         headline = { row -> row.text("tokenName") ?: row.text("tokenId") ?: "(balance)" },
-        subtitle = { row -> "${row.long("balance") ?: 0}" },
+        subtitle = { row ->
+            row.blob("balance")
+                ?.let(UInt64Value::fromBigEndianBytes)
+                ?.value
+                ?.toString() ?: "?"
+        },
     ),
     StorageModel(
         name = "tokenHistory", displayName = "Token History",
@@ -241,6 +247,17 @@ val STORAGE_MODELS: List<StorageModel> = listOf(
         },
     ),
     StorageModel(
+        name = "transactionAccountInvolvements",
+        displayName = "Transaction Account Involvements",
+        tableName = "transaction_account_involvements",
+        orderBy = "accountId",
+        countFlow = { it.countTransactionAccountInvolvements() },
+        headline = { row ->
+            row.blob("transactionTxid")?.let { truncateMiddle(it.toHex(), 10, 8) } ?: "(tx)"
+        },
+        subtitle = { row -> "account ${row.long("accountId") ?: 0}" },
+    ),
+    StorageModel(
         name = "txos", displayName = "TXOs", tableName = "txos",
         orderBy = "height DESC",
         countFlow = { it.countTxos() },
@@ -318,6 +335,16 @@ val STORAGE_MODELS: List<StorageModel> = listOf(
         subtitle = { row ->
             "acct ${row.long("accountIndex") ?: 0} · " +
                 "synced index ${row.long("lastSyncedIndex") ?: 0}"
+        },
+    ),
+    StorageModel(
+        name = "shieldedViewingKeys", displayName = "Shielded Viewing Keys",
+        tableName = "shielded_viewing_keys", orderBy = "accountIndex",
+        countFlow = { it.countShieldedViewingKeys() },
+        headline = { row -> "Wallet ${row.blob("walletId")?.shortHex(4) ?: "?"}" },
+        subtitle = { row ->
+            "acct ${row.long("accountIndex") ?: 0} · " +
+                "${row.blob("fvkBytes")?.size ?: 0}-byte FVK"
         },
     ),
     StorageModel(

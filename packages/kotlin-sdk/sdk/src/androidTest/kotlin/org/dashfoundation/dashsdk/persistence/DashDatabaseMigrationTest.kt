@@ -140,17 +140,158 @@ class DashDatabaseMigrationTest {
         db.close()
     }
 
-    /** The full chain from v1 must also land on a valid v4 schema. */
+    /**
+     * v4 → v5 converts every signed INTEGER raw-bit pattern into a fixed
+     * big-endian BLOB. The conversion must be lossless and BLOB ordering must
+     * match unsigned numeric ordering across the sign-bit boundary.
+     */
+    @Test
+    fun migrate4To5PreservesFullUnsignedTokenBalances() {
+        helper.createDatabase(dbName, 4).apply {
+            listOf(
+                "zero" to 0L,
+                "signed-max" to Long.MAX_VALUE,
+                "high-half" to Long.MIN_VALUE,
+                "unsigned-max" to -1L,
+            ).forEachIndexed { index, (tokenId, rawBits) ->
+                execSQL(
+                    "INSERT INTO token_balances (tokenId, identityId, balance, frozen, " +
+                        "createdAt, lastUpdated, networkRaw) VALUES (?, ?, ?, 0, 0, 0, 1)",
+                    arrayOf(tokenId, byteArrayOf(index.toByte()), rawBits),
+                )
+            }
+            close()
+        }
+
+        val db = helper.runMigrationsAndValidate(dbName, 5, true, DashDatabase.MIGRATION_4_5)
+        val expected = listOf(
+            "zero" to 0uL,
+            "signed-max" to Long.MAX_VALUE.toULong(),
+            "high-half" to (1uL shl 63),
+            "unsigned-max" to ULong.MAX_VALUE,
+        )
+        db.query("SELECT tokenId, balance, typeof(balance) FROM token_balances ORDER BY balance").use { c ->
+            var index = 0
+            while (c.moveToNext()) {
+                assertEquals(expected[index].first, c.getString(0))
+                assertEquals(expected[index].second, UInt64Value.fromBigEndianBytes(c.getBlob(1)).value)
+                assertEquals("blob", c.getString(2))
+                index += 1
+            }
+            assertEquals(expected.size, index)
+        }
+        db.query(
+            "SELECT COUNT(*) FROM token_balances " +
+                "WHERE balance != X'0000000000000000'",
+        ).use { c ->
+            assertTrue(c.moveToFirst())
+            assertEquals(3, c.getInt(0))
+        }
+        db.close()
+    }
+
+    @Test
+    fun migrate5To6AddsOrchardViewingKeys() {
+        helper.createDatabase(dbName, 5).close()
+
+        val db = helper.runMigrationsAndValidate(dbName, 6, true, DashDatabase.MIGRATION_5_6)
+        db.execSQL(
+            "INSERT INTO shielded_viewing_keys " +
+                "(walletId, accountIndex, fvkBytes, lastUpdated) VALUES (?, 7, ?, 123)",
+            arrayOf(ByteArray(32) { 1 }, ByteArray(96) { 2 }),
+        )
+        db.query(
+            "SELECT accountIndex, length(fvkBytes), lastUpdated " +
+                "FROM shielded_viewing_keys",
+        ).use { c ->
+            assertTrue(c.moveToFirst())
+            assertEquals(7, c.getInt(0))
+            assertEquals(96, c.getInt(1))
+            assertEquals(123L, c.getLong(2))
+        }
+        db.close()
+    }
+
+    @Test
+    fun migrate6To7AddsProviderTransactionMembershipAndBlockPosition() {
+        helper.createDatabase(dbName, 6).apply {
+            execSQL(
+                "INSERT INTO transactions (txid, transactionData, context, blockHeight, " +
+                    "blockHash, blockTimestamp, direction, transactionType, " +
+                    "transactionTypeKind, netAmount, fee, label, firstSeen, createdAt, " +
+                    "lastUpdated) VALUES (x'11', x'22', 2, 10, x'33', 20, 0, " +
+                    "'Provider', 2, 0, NULL, '', 30, 0, 0)",
+            )
+            close()
+        }
+
+        val db = helper.runMigrationsAndValidate(dbName, 7, true, DashDatabase.MIGRATION_6_7)
+        db.query(
+            "SELECT blockPosition, hasBlockPosition FROM transactions WHERE txid = x'11'",
+        ).use { c ->
+            assertTrue(c.moveToFirst())
+            assertEquals(0, c.getInt(0))
+            assertEquals(0, c.getInt(1))
+        }
+        // Safe upgrade policy: v6 has no typed account involvement. Do not
+        // guess from raw payload bytes or TXOs in SQL. v5/v6 were unreleased;
+        // developer databases acquire exact rows when Core resync replays the
+        // callback with Rust's enclosing typed account tuple.
+        db.query("SELECT COUNT(*) FROM transaction_account_involvements").use { c ->
+            assertTrue(c.moveToFirst())
+            assertEquals(0, c.getInt(0))
+        }
+        db.execSQL(
+            "INSERT INTO wallets (walletId, walletGroupId, networkRaw, name, birthHeight, " +
+                "syncedHeight, lastSynced, isImported, createdAt, lastUpdated) " +
+                "VALUES (x'01', x'02', 1, 'w', 0, 0, 0, 0, 0, 0)",
+        )
+        db.execSQL(
+            "INSERT INTO accounts (walletId, accountType, accountIndex, accountTypeName, " +
+                "balanceConfirmed, balanceUnconfirmed, externalHighestUsed, internalHighestUsed, " +
+                "standardTag, registrationIndex, keyClass, userIdentityId, friendIdentityId, " +
+                "createdAt, lastUpdated) VALUES (x'01', 9, 7, 'providerOwnerKeys', " +
+                "0, 0, -1, -1, 0, 0, 0, x'', x'', 0, 0)",
+        )
+        db.execSQL(
+            "INSERT INTO transaction_account_involvements (transactionTxid, accountId) " +
+                "SELECT x'11', id FROM accounts WHERE walletId = x'01'",
+        )
+        db.query("SELECT COUNT(*) FROM transaction_account_involvements").use { c ->
+            assertTrue(c.moveToFirst())
+            assertEquals(1, c.getInt(0))
+        }
+        db.close()
+    }
+
+    /** The requested contiguous path from the pre-u64 v4 schema to latest. */
+    @Test
+    fun migrate4ToLatest() {
+        helper.createDatabase(dbName, 4).close()
+        helper.runMigrationsAndValidate(
+            dbName,
+            7,
+            true,
+            DashDatabase.MIGRATION_4_5,
+            DashDatabase.MIGRATION_5_6,
+            DashDatabase.MIGRATION_6_7,
+        ).close()
+    }
+
+    /** The full chain from v1 must also land on a valid v7 schema. */
     @Test
     fun migrateAllTheWayFrom1() {
         helper.createDatabase(dbName, 1).close()
         helper.runMigrationsAndValidate(
             dbName,
-            4,
+            7,
             true,
             DashDatabase.MIGRATION_1_2,
             DashDatabase.MIGRATION_2_3,
             DashDatabase.MIGRATION_3_4,
+            DashDatabase.MIGRATION_4_5,
+            DashDatabase.MIGRATION_5_6,
+            DashDatabase.MIGRATION_6_7,
         ).close()
     }
 }
