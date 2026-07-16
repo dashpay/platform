@@ -4127,6 +4127,14 @@ mod tests {
         );
     }
 
+    #[test]
+    fn vtable_layout_remains_independent_of_capability_declaration() {
+        let callbacks = build_vtable(ptr::null_mut());
+        assert!(callbacks.on_changeset_begin_fn.is_some());
+        assert!(callbacks.on_changeset_end_fn.is_some());
+        assert!(callbacks.on_persist_invitations_fn.is_none());
+    }
+
     #[cfg(feature = "shielded")]
     #[test]
     fn viewing_key_callbacks_are_wired_as_a_paired_fixed_size_contract() {

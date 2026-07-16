@@ -260,10 +260,18 @@ class Sdk private constructor(
          * `status == ENABLED && versionCheck == success` to match the Rust
          * trusted-context provider's active-node policy. Returns null on
          * any failure (timeout, JSON shape mismatch, no active nodes).
+         *
+         * Compatibility overload retaining the original public JVM descriptor
+         * `(Ljava/lang/String;)Ljava/util/List;`. Mainnet's standard HTTPS
+         * port remains the legacy default; network-aware callers use the
+         * explicit two-argument overload below.
          */
+        fun discoverActiveMasternodes(quorumBase: String): List<ActiveMasternode>? =
+            discoverActiveMasternodes(quorumBase, 443)
+
         fun discoverActiveMasternodes(
             quorumBase: String,
-            defaultDapiPort: Int = 443,
+            defaultDapiPort: Int,
         ): List<ActiveMasternode>? {
             val base = quorumBase.trimEnd('/')
             val url = try {

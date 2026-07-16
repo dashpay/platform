@@ -114,6 +114,25 @@ class SdkParityManifestTest(unittest.TestCase):
         with self.assertRaisesRegex(checker.ManifestError, "tested requires covers_restart"):
             checker.validate_manifest(manifest, self.repo_root)
 
+    def test_manual_verification_rejects_executable_command(self) -> None:
+        manifest = copy.deepcopy(self.manifest)
+        verification = manifest["capabilities"][0]["verification"][0]
+        verification["kind"] = "manual"
+
+        with self.assertRaisesRegex(
+            checker.ManifestError,
+            "manual verification must not declare a command",
+        ):
+            checker.validate_manifest(manifest, self.repo_root)
+
+    def test_manual_verification_without_command_remains_valid(self) -> None:
+        manifest = copy.deepcopy(self.manifest)
+        verification = manifest["capabilities"][0]["verification"][0]
+        verification["kind"] = "manual"
+        verification.pop("command")
+
+        checker.validate_manifest(manifest, self.repo_root)
+
     def test_stale_generated_summary_is_rejected(self) -> None:
         summary_path = self.repo_root / "summary.md"
         summary_path.write_text("stale\n", encoding="utf-8")

@@ -40,6 +40,26 @@ import org.dashfoundation.dashsdk.security.MnemonicResolverAndPersister
 import org.dashfoundation.dashsdk.security.WalletStorage
 import java.util.concurrent.atomic.AtomicLong
 
+/** Effective native persistence contract exposed for initialization diagnostics. */
+data class PlatformWalletPersistenceCapabilities(
+    val version: Int,
+    val bits: Long,
+) {
+    fun contains(capability: Long): Boolean = bits and capability == capability
+
+    companion object {
+        const val VERSION_1: Int = 1
+        const val ATOMIC_CHANGESETS: Long = 1L shl 0
+        const val INVITATIONS: Long = 1L shl 1
+        const val ASSET_LOCK_FUNDING_INDICES: Long = 1L shl 2
+        const val SHIELDED_VIEWING_KEYS: Long = 1L shl 3
+        const val PROVIDER_TRANSACTIONS: Long = 1L shl 4
+        const val UNSIGNED_TOKEN_STORAGE: Long = 1L shl 5
+        const val PENDING_CONTACT_CRYPTO: Long = 1L shl 6
+        const val WALLET_RESTORE: Long = 1L shl 7
+    }
+}
+
 /**
  * The one type SwiftUI's Android counterpart needs for all wallet
  * operations — port of `PlatformWalletManager.swift`.
@@ -401,6 +421,20 @@ class PlatformWalletManager(
     /** Raw native manager `Handle` (for the sync / wallet-accessor calls). */
     private val managerHandle: Long =
         WalletManagerNative.nativeManagerHandle(bundleRef.get())
+
+    /** Effective persistence contract captured during native initialization. */
+    val persistenceCapabilities: PlatformWalletPersistenceCapabilities =
+        try {
+            PlatformWalletPersistenceCapabilities(
+                version = WalletManagerNative.nativePersistenceCapabilitiesVersion(bundleRef.get()),
+                bits = WalletManagerNative.nativePersistenceCapabilitiesBits(bundleRef.get()),
+            )
+        } catch (t: Throwable) {
+            bundleRef.getAndSet(0).takeIf { it != 0L }?.let(WalletManagerNative::nativeDestroy)
+            runCatching { mnemonicResolver.close() }
+            runCatching { signer.close() }
+            throw t
+        }
 
     // ── Published wallet map ──────────────────────────────────────────
 

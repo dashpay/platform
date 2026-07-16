@@ -48,7 +48,7 @@ public final class PersistentTokenBalance {
     public init(
         tokenId: String,
         identityId: Data,
-        balance: UInt64 = 0,
+        balance: Int64 = 0,
         frozen: Bool = false,
         tokenName: String? = nil,
         tokenSymbol: String? = nil,
@@ -57,7 +57,7 @@ public final class PersistentTokenBalance {
     ) {
         self.tokenId = tokenId
         self.identityId = identityId
-        self.balance = Int64(bitPattern: balance)
+        self.balance = balance
         self.frozen = frozen
         self.tokenName = tokenName
         self.tokenSymbol = tokenSymbol
@@ -66,6 +66,31 @@ public final class PersistentTokenBalance {
         self.lastUpdated = Date()
         self.lastSyncedAt = nil
         self.networkRaw = network.rawValue
+    }
+
+    /// Full-domain unsigned initializer. The distinct argument label preserves
+    /// the original public `balance: Int64` source API without making integer
+    /// literals ambiguous between signed and unsigned overloads.
+    public convenience init(
+        tokenId: String,
+        identityId: Data,
+        unsignedBalance: UInt64,
+        frozen: Bool = false,
+        tokenName: String? = nil,
+        tokenSymbol: String? = nil,
+        tokenDecimals: Int32? = nil,
+        network: Network
+    ) {
+        self.init(
+            tokenId: tokenId,
+            identityId: identityId,
+            balance: Int64(bitPattern: unsignedBalance),
+            frozen: frozen,
+            tokenName: tokenName,
+            tokenSymbol: tokenSymbol,
+            tokenDecimals: tokenDecimals,
+            network: network
+        )
     }
 
     // MARK: - Computed Properties
@@ -106,7 +131,14 @@ public final class PersistentTokenBalance {
     }
 
     // MARK: - Methods
-    public func updateBalance(_ newBalance: UInt64) {
+    /// Original signed-carrier API retained for source compatibility.
+    public func updateBalance(_ newBalance: Int64) {
+        self.balance = newBalance
+        self.lastUpdated = Date()
+    }
+
+    /// Full-domain unsigned update API.
+    public func updateUnsignedBalance(_ newBalance: UInt64) {
         self.unsignedBalance = newBalance
         self.lastUpdated = Date()
     }

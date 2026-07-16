@@ -28,6 +28,7 @@
     "platform_wallet_create_document_with_signer": "packages/rs-platform-wallet-ffi/src/document.rs",
     "platform_wallet_create_invitation": "packages/rs-platform-wallet-ffi/src/invitation.rs",
     "platform_wallet_drain_pending_contact_crypto": "packages/rs-platform-wallet-ffi/src/dashpay.rs",
+    "platform_wallet_manager_create_with_persistence_capabilities": "packages/rs-platform-wallet-ffi/src/manager.rs",
     "platform_wallet_manager_persistence_capabilities": "packages/rs-platform-wallet-ffi/src/manager.rs",
     "platform_wallet_manager_spv_rescan_filters": "packages/rs-platform-wallet-ffi/src/spv.rs",
     "platform_wallet_resume_identity_with_existing_asset_lock_signer": "packages/rs-platform-wallet-ffi/src/identity_registration_funded_with_signer.rs",
@@ -77,7 +78,7 @@
         },
         {
           "host": "kotlin",
-          "kind": "manual",
+          "kind": "unit",
           "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/persistence/PlatformWalletPersistenceHandlerTest.kt",
           "id": "addressBalanceConflictPreservesDerivationIndicesAcrossRestart",
           "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest",
@@ -97,16 +98,16 @@
       "required_persistence_capabilities": [],
       "hosts": {
         "swift": {
-          "sdk": "partial",
-          "example_app": "partial",
+          "sdk": "supported",
+          "example_app": "supported",
           "restart": "not_applicable",
-          "reason": "The Swift app discovers max-supply proposal positions, but its rule list is explicitly a temporary host-side policy copy pending shared S3a authorization/proposal evaluation. The update transition itself is bridged; discovery is not yet a shared Rust decision."
+          "reason": null
         },
         "kotlin": {
-          "sdk": "partial",
-          "example_app": "partial",
+          "sdk": "supported",
+          "example_app": "supported",
           "restart": "not_applicable",
-          "reason": "The Kotlin app discovers max-supply proposal positions, but GroupActionRuleEvaluator duplicates the host-side rule policy pending shared S3a authorization/proposal evaluation. The update transition itself is bridged; discovery is not yet a shared Rust decision."
+          "reason": null
         }
       },
       "verification": [
@@ -283,12 +284,12 @@
         "on_persist_shielded_viewing_keys_fn",
         "on_load_shielded_viewing_keys_fn",
         "on_load_shielded_viewing_keys_free_fn",
+        "platform_wallet_manager_create_with_persistence_capabilities",
         "platform_wallet_manager_persistence_capabilities"
       ],
       "required_persistence_capabilities": [
         "atomic_changesets",
-        "shielded_viewing_keys",
-        "wallet_restore"
+        "shielded_viewing_keys"
       ],
       "hosts": {
         "swift": {
@@ -310,8 +311,16 @@
           "kind": "integration",
           "file": "packages/rs-platform-wallet/src/wallet/shielded/viewing_key_bind_tests.rs",
           "id": "bind_persists_viewing_keys_and_restart_rebinds_seedlessly",
-          "command": "cargo test -p platform-wallet bind_persists_viewing_keys_and_restart_rebinds_seedlessly",
+          "command": "cargo test -p platform-wallet --features shielded bind_persists_viewing_keys_and_restart_rebinds_seedlessly",
           "covers_restart": true
+        },
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKTests/InvitationPersistenceTests.swift",
+          "id": "testPersistenceCapabilitiesAreExplicitAndMatchSwiftDataSemantics",
+          "command": "cd packages/swift-sdk && xcodebuild test -scheme SwiftDashSDK -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:SwiftDashSDKTests/InvitationPersistenceTests/testPersistenceCapabilitiesAreExplicitAndMatchSwiftDataSemantics",
+          "covers_restart": false
         },
         {
           "host": "swift",
@@ -319,6 +328,14 @@
           "file": "packages/swift-sdk/SwiftExampleApp/SwiftExampleAppTests/ShieldedEngineBindPlanTests.swift",
           "id": "testBindsEveryWalletExceptMirror",
           "command": "xcodebuild test -project packages/swift-sdk/SwiftExampleApp/SwiftExampleApp.xcodeproj -scheme SwiftExampleApp",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/persistence/PlatformWalletPersistenceHandlerTest.kt",
+          "id": "persistenceCapabilitiesAreExplicitAndFailClosedByDefault",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest",
           "covers_restart": false
         },
         {
@@ -370,6 +387,7 @@
       "shared_apis": [
         "platform_wallet_create_invitation",
         "platform_wallet_claim_invitation",
+        "platform_wallet_manager_create_with_persistence_capabilities",
         "platform_wallet_resume_identity_with_existing_asset_lock_signer",
         "platform_wallet_topup_identity_with_existing_asset_lock_signer"
       ],
@@ -439,7 +457,7 @@
       "verification": [
         {
           "host": "shared",
-          "kind": "manual",
+          "kind": "unit",
           "file": "packages/rs-platform-wallet-ffi/src/persistence.rs",
           "id": "provider_special_tx_restore_round_trips_block_position",
           "command": "cargo test -p platform-wallet-ffi provider_special_tx_restore_round_trips_block_position",
@@ -818,7 +836,7 @@
           "sdk": "partial",
           "example_app": "partial",
           "restart": "not_applicable",
-          "reason": "Create/top-up screens duplicate greedy packing and can scan addresses across multiple accounts."
+          "reason": "The shared addresses-with-balances query is fixed to the first Platform Payment account, while Android pre-enumerates those results and greedily packs inputs. There is no caller-selected account parameter or shared account-scoped composite."
         }
       },
       "verification": [
@@ -1015,16 +1033,16 @@
       "required_persistence_capabilities": [],
       "hosts": {
         "swift": {
-          "sdk": "supported",
-          "example_app": "supported",
+          "sdk": "partial",
+          "example_app": "partial",
           "restart": "not_applicable",
-          "reason": null
+          "reason": "The Swift app discovers max-supply proposal positions, but its rule list is explicitly a temporary host-side policy copy pending shared S3a authorization/proposal evaluation. The update transition itself is bridged; discovery is not yet a shared Rust decision."
         },
         "kotlin": {
-          "sdk": "supported",
-          "example_app": "supported",
+          "sdk": "partial",
+          "example_app": "partial",
           "restart": "not_applicable",
-          "reason": null
+          "reason": "The Kotlin app discovers max-supply proposal positions, but GroupActionRuleEvaluator duplicates the host-side rule policy pending shared S3a authorization/proposal evaluation. The update transition itself is bridged; discovery is not yet a shared Rust decision."
         }
       },
       "verification": [

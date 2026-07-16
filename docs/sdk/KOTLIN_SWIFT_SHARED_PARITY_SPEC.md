@@ -218,6 +218,11 @@ overloads would preserve an invalid negative-value domain and, because `Long` an
 Implement Room storage and JNI callbacks for persist/load/free of shielded viewing
 keys, matching the existing Swift persistence contract.
 
+The exact shared preflight is `atomic_changesets + shielded_viewing_keys`. The
+`shielded_viewing_keys` bit is backend-attested and then intersected with the
+complete persist/load/free callback triplet; generic wallet-list `wallet_restore`
+is not part of this contract because seedless rebind loads FVK rows directly.
+
 - Key rows uniquely by `(walletId, accountIndex)`; wallet IDs are already
   network-specific, so do not add a redundant network key.
 - Store exactly 96 FVK bytes. A present malformed row fails closed instead of
@@ -247,10 +252,12 @@ Implement Android:
 - Test-plan cases `DP-12...DP-19`, including interrupted create/reclaim and
   already-consumed ambiguity.
 
-Creation must remain gated by Rust's `persists_durably()` check. A no-op callback is
-not an acceptable compatibility mode. A callback failure returns nonzero inside the
-changeset begin/end round and rolls it back. Persist `reclaimInFlight`
-transactionally before consume; write `Reclaimed`
+Creation must remain gated by Rust's exact invitation capability set:
+`atomic_changesets + asset_lock_funding_indices + invitations + wallet_restore`.
+The narrower `persists_durably()` compatibility wrapper is not sufficient for new
+feature code. A no-op callback is not an acceptable compatibility mode. A callback
+failure returns nonzero inside the changeset begin/end round and rolls it back.
+Persist `reclaimInFlight` transactionally before consume; write `Reclaimed`
 only after observed success and use the canonical conservative `Claimed` ambiguity
 classification. Room is v8 in the serialized migration chain. Purge by wallet and
 never log URI/WIF secrets.
@@ -437,7 +444,9 @@ shared_apis:
   - platform_wallet_resume_identity_with_existing_asset_lock_signer
 required_persistence_capabilities:
   - atomic_changesets
+  - asset_lock_funding_indices
   - invitations
+  - wallet_restore
 hosts:
   swift:
     sdk: supported
@@ -512,14 +521,21 @@ These are separate PRs/rollback units.
   presence alone cannot attest semantic sub-capabilities: for example,
   `provider_transactions` shares the broad wallet-list restore callback but is valid
   only when the backend actually populates and frees its provider restore payload.
-  Initial capabilities include `atomic_changesets`,
+  Canonical v1 capabilities are `atomic_changesets`,
   `asset_lock_funding_indices`, `invitations`, `shielded_viewing_keys`,
-  `provider_transactions`, and `pending_contact_crypto`. Expose initialization
-  diagnostics and add missing-capability preflight tests per feature, including a
-  wallet-list callback present while provider capability remains absent.
+  `provider_transactions`, `unsigned_token_storage`, `pending_contact_crypto`, and
+  `wallet_restore`. `asset_lock_funding_indices` covers account registration and
+  address-pool watermark persistence; `pending_contact_crypto` covers both durable
+  queue additions and removals. These names are the public manifest/diagnostic
+  namespace; source-level compatibility aliases do not create additional bits.
+  Expose initialization diagnostics and add missing-capability preflight tests per
+  feature, including a wallet-list callback present while provider capability
+  remains absent.
 - Retain `persists_durably()` only as a compatibility wrapper derived from
   `atomic_changesets + asset_lock_funding_indices + invitations`; new feature code
-  checks its exact required capability set.
+  checks its exact required capability set. Invitation creation additionally
+  requires `wallet_restore`, because a committed voucher is not restart-safe unless
+  its originating wallet and funding-index state can both be reconstructed.
 
 ### Slice 2b — Android viewing-key callbacks
 

@@ -1,6 +1,7 @@
 package org.dashfoundation.dashsdk
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Test
 
@@ -10,6 +11,17 @@ import org.junit.Test
  * DAPI port 443, lenient optional fields.
  */
 class MasternodeDiscoveryTest {
+
+    @Test
+    fun oneArgumentDiscoveryOverloadRemainsCallableAtItsOriginalJvmSignature() {
+        assertNull(Sdk.discoverActiveMasternodes("://not-a-valid-url"))
+        assertNotNull(
+            Sdk.Companion::class.java.getDeclaredMethod(
+                "discoverActiveMasternodes",
+                String::class.java,
+            ),
+        )
+    }
 
     @Test
     fun filtersToEnabledAndVersionCheckedNodes() {

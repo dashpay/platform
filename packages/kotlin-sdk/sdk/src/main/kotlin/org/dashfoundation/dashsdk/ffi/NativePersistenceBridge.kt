@@ -50,6 +50,16 @@ package org.dashfoundation.dashsdk.ffi
  */
 abstract class NativePersistenceBridge {
 
+    /**
+     * Versioned semantic capability declaration consumed when JNI builds the
+     * native callback vtable. Defaults are deliberately zero: a no-op subclass
+     * must never gain capabilities merely because JNI supplies trampolines for
+     * every virtual method.
+     */
+    open fun persistenceCapabilitiesVersion(): Int = 0
+
+    open fun persistenceCapabilitiesBits(): Long = 0L
+
     // ── Transactional bracketing ──────────────────────────────────────
 
     /** `on_changeset_begin_fn` — descriptor `([B)I`. */

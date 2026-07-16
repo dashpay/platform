@@ -124,13 +124,13 @@ extension SDK {
                 row = PersistentTokenBalance(
                     tokenId: canonicalTokenId,
                     identityId: identityId,
-                    balance: 0,
+                    unsignedBalance: 0,
                     network: network
                 )
                 context.insert(row)
             }
 
-            row.updateBalance(balance)
+            row.updateUnsignedBalance(balance)
             row.markAsSynced()
 
             // Re-link on every upsert (cheap) so a row inserted before

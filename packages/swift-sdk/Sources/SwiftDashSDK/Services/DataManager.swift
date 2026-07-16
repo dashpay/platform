@@ -34,7 +34,7 @@ public final class DataManager: ObservableObject {
 
         if let existingBalance = try modelContext.fetch(descriptor).first {
             // Update existing balance
-            existingBalance.updateBalance(balance)
+            existingBalance.updateUnsignedBalance(balance)
             if frozen != existingBalance.frozen {
                 if frozen {
                     existingBalance.freeze()
@@ -50,7 +50,7 @@ public final class DataManager: ObservableObject {
             let persistentBalance = PersistentTokenBalance(
                 tokenId: tokenId,
                 identityId: identityId,
-                balance: balance,
+                unsignedBalance: balance,
                 frozen: frozen,
                 tokenName: tokenInfo?.name,
                 tokenSymbol: tokenInfo?.symbol,

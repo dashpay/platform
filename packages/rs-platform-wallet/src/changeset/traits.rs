@@ -199,17 +199,17 @@ pub trait PlatformWalletPersistence: Send + Sync {
         PersistenceCapabilities::NONE
     }
 
-    /// Whether stored state survives a process restart once `store` + `flush`
-    /// return `Ok`.
-    ///
-    /// Compatibility summary for older callers. It is true exactly when the
-    /// backend attests [`PersistenceCapabilities::ATOMIC_CHANGESETS`]. New
-    /// feature code must use [`Self::persistence_capabilities`] and require its
-    /// complete feature-specific bit set; atomicity alone says nothing about
-    /// which records are written or restored.
+    /// Compatibility summary for older invitation callers. It is true when the
+    /// backend attests atomic changesets plus durably persisted invitation rows
+    /// and asset-lock funding indices. This does not attest restart hydration;
+    /// new feature preflights must use [`Self::persistence_capabilities`] and
+    /// require their complete feature-specific set (including `WALLET_RESTORE`
+    /// where the operation needs it).
     fn persists_durably(&self) -> bool {
-        self.persistence_capabilities()
-            .contains(PersistenceCapabilities::ATOMIC_CHANGESETS)
+        let required = PersistenceCapabilities::ATOMIC_CHANGESETS
+            .union(PersistenceCapabilities::ASSET_LOCK_FUNDING_INDICES)
+            .union(PersistenceCapabilities::INVITATIONS);
+        self.persistence_capabilities().contains(required)
     }
 
     /// Buffer a changeset for later persistence.

@@ -826,9 +826,9 @@ impl PlatformWalletPersistence for SqlitePersister {
         // `LOAD_UNIMPLEMENTED`. Shielded state lives in a separate store.
         PersistenceCapabilities::ATOMIC_CHANGESETS
             .union(PersistenceCapabilities::INVITATIONS)
-            .union(PersistenceCapabilities::ACCOUNT_ADDRESS_POOLS)
+            .union(PersistenceCapabilities::ASSET_LOCK_FUNDING_INDICES)
             .union(PersistenceCapabilities::UNSIGNED_TOKEN_STORAGE)
-            .union(PersistenceCapabilities::DEFERRED_CONTACT_CRYPTO)
+            .union(PersistenceCapabilities::PENDING_CONTACT_CRYPTO)
     }
 
     /// Merge `changeset` into the per-wallet buffer.

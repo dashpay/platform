@@ -25,7 +25,7 @@ Capabilities tracked: **18**
 | Capability | Swift SDK / app / restart | Kotlin SDK / app / restart |
 | --- | --- | --- |
 | `persistence.platform_address_identity` | partial / not-applicable / required | supported / not-applicable / tested |
-| `core.atomic_send` | partial / partial / not_applicable | partial / partial / not_applicable |
+| `core.atomic_send` | supported / supported / not_applicable | supported / supported / not_applicable |
 | `tokens.full_u64_domain` | partial / partial / required | supported / supported / tested |
 | `shielded.seedless_restart` | supported / partial / required | partial / partial / required |
 | `dashpay.invitations` | supported / partial / required | unsupported / unsupported / required |
@@ -40,7 +40,7 @@ Capabilities tracked: **18**
 | `tokens.direct_purchase_quote` | partial / partial / not_applicable | partial / partial / not_applicable |
 | `protocol.address_validation` | supported / supported / not_applicable | partial / partial / not_applicable |
 | `documents.create_catalog` | supported / supported / not_applicable | supported / supported / not_applicable |
-| `tokens.max_supply_proposal_discovery` | supported / supported / not_applicable | supported / supported / not_applicable |
+| `tokens.max_supply_proposal_discovery` | partial / partial / not_applicable | partial / partial / not_applicable |
 | `core.immature_balance_display` | supported / supported / not_applicable | supported / supported / not_applicable |
 
 Source: [`docs/sdk/sdk-parity-manifest.json`](../../docs/sdk/sdk-parity-manifest.json).

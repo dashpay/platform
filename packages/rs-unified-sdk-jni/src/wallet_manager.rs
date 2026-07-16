@@ -7,7 +7,7 @@
 //!
 //! ## What the manager takes at construction
 //!
-//! `platform_wallet_manager_create(sdk_ptr, persistence, event_handler)`.
+//! `platform_wallet_manager_create_with_persistence_capabilities(...)`.
 //! The mnemonic resolver and signer are **SDK-level, per-call** handles
 //! (see `mnemonic.rs` / `signer.rs`) — they are NOT wired into the
 //! manager, matching `PlatformWalletManager.swift`, which holds only a
@@ -53,7 +53,7 @@ use platform_wallet_ffi::error::{
 };
 use platform_wallet_ffi::event_handler::EventHandlerCallbacks;
 use platform_wallet_ffi::handle::Handle;
-use platform_wallet_ffi::persistence::PersistenceCallbacks;
+use platform_wallet_ffi::persistence::{PersistenceCallbacks, PersistenceCapabilitiesFFI};
 use platform_wallet_ffi::types::IdentifierArray;
 use std::ffi::{c_void, CStr};
 use std::os::raw::c_char;
@@ -107,6 +107,43 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_n
             return 0;
         }
 
+        // Read the backend's explicit semantic attestation before installing
+        // any trampolines. NativePersistenceBridge defaults both methods to
+        // zero, so a no-op subclass remains fail-closed even though JNI wires a
+        // structurally complete callback table.
+        let declared_capabilities_version = match env
+            .call_method(
+                &persistence_bridge,
+                "persistenceCapabilitiesVersion",
+                "()I",
+                &[],
+            )
+            .and_then(|value| value.i())
+        {
+            Ok(value) => value as u32,
+            Err(_) => {
+                let _ = env.exception_clear();
+                throw_sdk_exception(env, 99, "reading persistence capability version failed");
+                return 0;
+            }
+        };
+        let declared_capabilities_bits = match env
+            .call_method(
+                &persistence_bridge,
+                "persistenceCapabilitiesBits",
+                "()J",
+                &[],
+            )
+            .and_then(|value| value.j())
+        {
+            Ok(value) => value as u64,
+            Err(_) => {
+                let _ = env.exception_clear();
+                throw_sdk_exception(env, 99, "reading persistence capability mask failed");
+                return 0;
+            }
+        };
+
         // Box the persistence context (GlobalRef → boxed KotlinPersistenceCtx).
         let persistence_global = match env.new_global_ref(&persistence_bridge) {
             Ok(g) => g,
@@ -118,6 +155,11 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_n
         let persistence_ctx =
             Box::into_raw(Box::new(KotlinPersistenceCtx::new(persistence_global)));
         let persistence: PersistenceCallbacks = build_vtable(persistence_ctx as *mut c_void);
+        let persistence_capabilities = PersistenceCapabilitiesFFI {
+            version: declared_capabilities_version,
+            reserved: 0,
+            bits: declared_capabilities_bits,
+        };
 
         // Box the event context.
         let event_global = match env.new_global_ref(&event_bridge) {
@@ -137,10 +179,11 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_n
         // SAFETY: `inner` is a live Sdk pointer for the duration of this
         // call; the manager clones the Sdk and reads both vtables by value.
         let result = unsafe {
-            platform_wallet_ffi::platform_wallet_manager_create(
+            platform_wallet_ffi::platform_wallet_manager_create_with_persistence_capabilities(
                 inner,
                 &persistence as *const PersistenceCallbacks,
                 &mut event_callbacks as *const EventHandlerCallbacks,
+                &persistence_capabilities as *const PersistenceCapabilitiesFFI,
                 &mut manager_handle as *mut Handle,
             )
         };
@@ -177,6 +220,69 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_n
         // SAFETY: bundle is a live ManagerBundle pointer from nativeCreate.
         let b = unsafe { &*(bundle as *const ManagerBundle) };
         b.manager_handle as jlong
+    })
+}
+
+/// Effective persistence capability contract exposed for managed-language
+/// initialization diagnostics. Unknown/invalid bundles return zero after the
+/// standard JNI error mapping.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_nativePersistenceCapabilitiesVersion(
+    mut env: JNIEnv,
+    _class: JClass,
+    bundle: jlong,
+) -> jint {
+    guard(&mut env, 0, |env| {
+        if bundle == 0 {
+            throw_sdk_exception(env, 1, "manager bundle is 0");
+            return 0;
+        }
+        let b = unsafe { &*(bundle as *const ManagerBundle) };
+        let mut capabilities = PersistenceCapabilitiesFFI {
+            version: 0,
+            reserved: 0,
+            bits: 0,
+        };
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_manager_persistence_capabilities(
+                b.manager_handle,
+                &mut capabilities,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return 0;
+        }
+        capabilities.version as jint
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_nativePersistenceCapabilitiesBits(
+    mut env: JNIEnv,
+    _class: JClass,
+    bundle: jlong,
+) -> jlong {
+    guard(&mut env, 0, |env| {
+        if bundle == 0 {
+            throw_sdk_exception(env, 1, "manager bundle is 0");
+            return 0;
+        }
+        let b = unsafe { &*(bundle as *const ManagerBundle) };
+        let mut capabilities = PersistenceCapabilitiesFFI {
+            version: 0,
+            reserved: 0,
+            bits: 0,
+        };
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_manager_persistence_capabilities(
+                b.manager_handle,
+                &mut capabilities,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return 0;
+        }
+        capabilities.bits as jlong
     })
 }
 

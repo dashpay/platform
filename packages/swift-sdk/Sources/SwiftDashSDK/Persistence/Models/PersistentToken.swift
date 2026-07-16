@@ -203,18 +203,47 @@ extension PersistentToken {
 
     public var totalSupply: String {
         guard let balances = balances, !balances.isEmpty else { return baseSupply }
-        let total = balances.reduce(0) { $0 + $1.balance }
-        return String(total)
+        return Self.sumUnsignedBalances(balances.map(\.unsignedBalance))
     }
 
     public var totalFrozenBalance: String {
         guard let balances = balances else { return "0" }
-        let frozen = balances.filter { $0.frozen }.reduce(0) { $0 + $1.balance }
-        return String(frozen)
+        return Self.sumUnsignedBalances(
+            balances.lazy.filter(\.frozen).map(\.unsignedBalance)
+        )
     }
 
     public var activeHolders: Int {
-        balances?.filter { $0.balance > 0 }.count ?? 0
+        balances?.filter { $0.unsignedBalance > 0 }.count ?? 0
+    }
+
+    /// Sums protocol amounts without narrowing either individual balances or
+    /// the aggregate to a signed/fixed-width integer. Several valid UInt64
+    /// balances can exceed UInt64.max when combined.
+    private static func sumUnsignedBalances<S: Sequence>(_ values: S) -> String
+    where S.Element == UInt64 {
+        var digits: [UInt8] = [0] // little-endian decimal digits
+
+        for value in values {
+            var carry = 0
+            let addend = String(value).utf8.reversed().map { Int($0 - 48) }
+            let width = max(digits.count, addend.count)
+            if digits.count < width {
+                digits.append(contentsOf: repeatElement(0, count: width - digits.count))
+            }
+
+            for index in 0..<width {
+                let sum = Int(digits[index]) + (index < addend.count ? addend[index] : 0) + carry
+                digits[index] = UInt8(sum % 10)
+                carry = sum / 10
+            }
+            while carry > 0 {
+                digits.append(UInt8(carry % 10))
+                carry /= 10
+            }
+        }
+
+        return String(digits.reversed().map { Character(String($0)) })
     }
 
     public var hasMaxSupply: Bool {

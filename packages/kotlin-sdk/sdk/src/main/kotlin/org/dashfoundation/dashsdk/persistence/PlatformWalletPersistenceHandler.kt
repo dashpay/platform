@@ -118,6 +118,16 @@ class PlatformWalletPersistenceHandler(
     private val network: org.dashfoundation.dashsdk.Network? = null,
 ) : NativePersistenceBridge(), AutoCloseable {
 
+    override fun persistenceCapabilitiesVersion(): Int = PERSISTENCE_CAPABILITIES_VERSION
+
+    override fun persistenceCapabilitiesBits(): Long =
+        CAPABILITY_ATOMIC_CHANGESETS or
+            CAPABILITY_ASSET_LOCK_FUNDING_INDICES or
+            CAPABILITY_SHIELDED_VIEWING_KEYS or
+            CAPABILITY_PROVIDER_TRANSACTIONS or
+            CAPABILITY_UNSIGNED_TOKEN_STORAGE or
+            CAPABILITY_WALLET_RESTORE
+
     /**
      * The single-thread executor created when no [dispatcher] is injected.
      * Owned by this handler and released by [close] — its "dash-persistence"
@@ -2448,6 +2458,14 @@ class PlatformWalletPersistenceHandler(
         runBlocking(dispatcher) { block() }
 
     companion object {
+        internal const val PERSISTENCE_CAPABILITIES_VERSION: Int = 1
+        internal const val CAPABILITY_ATOMIC_CHANGESETS: Long = 0x01
+        internal const val CAPABILITY_ASSET_LOCK_FUNDING_INDICES: Long = 0x04
+        internal const val CAPABILITY_SHIELDED_VIEWING_KEYS: Long = 0x08
+        internal const val CAPABILITY_PROVIDER_TRANSACTIONS: Long = 0x10
+        internal const val CAPABILITY_UNSIGNED_TOKEN_STORAGE: Long = 0x20
+        internal const val CAPABILITY_WALLET_RESTORE: Long = 0x80
+
         private const val TAG = "DashPersistence"
 
         /** `TransactionContext::InBlock` — spends only count once in-block. */

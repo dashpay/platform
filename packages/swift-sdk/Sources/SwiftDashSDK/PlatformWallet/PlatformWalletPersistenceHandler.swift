@@ -1186,6 +1186,22 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
 
     // MARK: - Callbacks
 
+    /// Explicit semantic capability declaration passed alongside (not inside)
+    /// the established callback vtable by the additive manager-create API.
+    func makePersistenceCapabilities() -> PersistenceCapabilitiesFFI {
+        PersistenceCapabilitiesFFI(
+            version: PlatformWalletPersistenceCapabilities.version1,
+            reserved: 0,
+            bits: PlatformWalletPersistenceCapabilities.atomicChangesets
+                | PlatformWalletPersistenceCapabilities.invitations
+                | PlatformWalletPersistenceCapabilities.assetLockFundingIndices
+                | PlatformWalletPersistenceCapabilities.shieldedViewingKeys
+                | PlatformWalletPersistenceCapabilities.providerTransactions
+                | PlatformWalletPersistenceCapabilities.unsignedTokenStorage
+                | PlatformWalletPersistenceCapabilities.walletRestore
+        )
+    }
+
     /// Build `PersistenceCallbacks` that point to this handler.
     ///
     /// The returned struct must not outlive `self`.
@@ -1904,7 +1920,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 row = PersistentTokenBalance(
                     tokenId: tokenIdBase58,
                     identityId: entry.identityId,
-                    balance: 0,
+                    unsignedBalance: 0,
                     network: network
                 )
                 backgroundContext.insert(row)
@@ -1914,7 +1930,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     tokenIdData: entry.tokenId
                 )
             }
-            row.updateBalance(entry.balance)
+            row.updateUnsignedBalance(entry.balance)
             row.markAsSynced()
             // Re-link on every upsert too so a balance row that
             // pre-existed before its parent identity / token row

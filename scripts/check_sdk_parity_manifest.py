@@ -279,6 +279,11 @@ def validate_manifest(manifest: dict[str, Any], repo_root: Path) -> None:
             command = entry.get("command")
             if kind in AUTOMATED_KINDS and (not isinstance(command, str) or not command.strip()):
                 errors.append(f"{v_prefix}.command: automated verification requires a command")
+            if kind == "manual" and command is not None:
+                errors.append(
+                    f"{v_prefix}.command: manual verification must not declare a command; "
+                    "use unit, integration, or device for executable verification"
+                )
             if command is not None and not isinstance(command, str):
                 errors.append(f"{v_prefix}.command: expected a string")
             _validate_command_target(

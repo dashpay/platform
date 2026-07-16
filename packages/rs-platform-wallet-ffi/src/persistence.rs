@@ -95,11 +95,17 @@ impl From<PersistenceCapabilities> for PersistenceCapabilitiesFFI {
 pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITIES_VERSION: u32 = 1;
 pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_ATOMIC_CHANGESETS: u64 = 1 << 0;
 pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_INVITATIONS: u64 = 1 << 1;
-pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_ACCOUNT_ADDRESS_POOLS: u64 = 1 << 2;
+pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_ASSET_LOCK_FUNDING_INDICES: u64 = 1 << 2;
+/// Source-compatible alias for the original capability name.
+pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_ACCOUNT_ADDRESS_POOLS: u64 =
+    PLATFORM_WALLET_PERSISTENCE_CAPABILITY_ASSET_LOCK_FUNDING_INDICES;
 pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_SHIELDED_VIEWING_KEYS: u64 = 1 << 3;
 pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_PROVIDER_TRANSACTIONS: u64 = 1 << 4;
 pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_UNSIGNED_TOKEN_STORAGE: u64 = 1 << 5;
-pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_DEFERRED_CONTACT_CRYPTO: u64 = 1 << 6;
+pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_PENDING_CONTACT_CRYPTO: u64 = 1 << 6;
+/// Source-compatible alias for the original capability name.
+pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_DEFERRED_CONTACT_CRYPTO: u64 =
+    PLATFORM_WALLET_PERSISTENCE_CAPABILITY_PENDING_CONTACT_CRYPTO;
 pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_WALLET_RESTORE: u64 = 1 << 7;
 
 /// C callback vtable for wallet persistence.
@@ -749,6 +755,10 @@ impl RoundGuardState {
 /// In-memory persister that accumulates changesets and notifies via callbacks.
 pub struct FFIPersister {
     callbacks: PersistenceCallbacks,
+    /// Semantic capability declaration supplied separately from the callback
+    /// vtable by the additive manager-create API. Keeping this out of
+    /// `PersistenceCallbacks` preserves that established C struct's size.
+    declared_capabilities: PersistenceCapabilities,
     pending: RwLock<BTreeMap<WalletId, PlatformWalletChangeSet>>,
     /// Serializes the ENTIRE begin→per-kind→end callback round of
     /// [`Self::store`]. Every round producer (the core-changeset bridge,
@@ -767,16 +777,24 @@ pub struct FFIPersister {
 
 impl FFIPersister {
     pub fn new(callbacks: PersistenceCallbacks) -> Self {
+        Self::new_with_persistence_capabilities(callbacks, PersistenceCapabilities::NONE)
+    }
+
+    pub fn new_with_persistence_capabilities(
+        callbacks: PersistenceCallbacks,
+        declared_capabilities: PersistenceCapabilities,
+    ) -> Self {
         Self {
             callbacks,
+            declared_capabilities,
             pending: RwLock::new(BTreeMap::new()),
             round_lock: Mutex::new(RoundGuardState::default()),
         }
     }
 
-    /// Compute capabilities solely from the callback contracts present in this
-    /// vtable. No feature bit is inferred from a context pointer or a generic
-    /// store/flush callback.
+    /// Compute the callback contracts that are structurally complete in this
+    /// vtable. This mask is only an upper bound: the host must separately attest
+    /// the semantics it actually implements.
     fn callback_capabilities(&self) -> PersistenceCapabilities {
         let mut capabilities = PersistenceCapabilities::NONE;
 
@@ -788,19 +806,19 @@ impl FFIPersister {
         if self.callbacks.on_persist_invitations_fn.is_some() {
             capabilities = capabilities.union(PersistenceCapabilities::INVITATIONS);
         }
+        let wallet_restore = self.callbacks.on_load_wallet_list_fn.is_some()
+            && self.callbacks.on_load_wallet_list_free_fn.is_some();
         if self.callbacks.on_persist_account_registrations_fn.is_some()
             && self.callbacks.on_persist_account_address_pools_fn.is_some()
         {
-            capabilities = capabilities.union(PersistenceCapabilities::ACCOUNT_ADDRESS_POOLS);
+            capabilities = capabilities.union(PersistenceCapabilities::ASSET_LOCK_FUNDING_INDICES);
         }
-        let wallet_restore = self.callbacks.on_load_wallet_list_fn.is_some()
-            && self.callbacks.on_load_wallet_list_free_fn.is_some();
         if wallet_restore {
             capabilities = capabilities.union(PersistenceCapabilities::WALLET_RESTORE);
         }
         if self.callbacks.on_persist_wallet_changeset_fn.is_some()
             && wallet_restore
-            && capabilities.contains(PersistenceCapabilities::ACCOUNT_ADDRESS_POOLS)
+            && capabilities.contains(PersistenceCapabilities::ASSET_LOCK_FUNDING_INDICES)
         {
             capabilities = capabilities.union(PersistenceCapabilities::PROVIDER_TRANSACTIONS);
         }
@@ -833,7 +851,8 @@ impl PlatformWalletPersistence for FFIPersister {
     // restart-immediate drains.
 
     fn persistence_capabilities(&self) -> PersistenceCapabilities {
-        self.callback_capabilities()
+        self.declared_capabilities
+            .intersection(self.callback_capabilities())
     }
 
     fn store(
@@ -5481,6 +5500,13 @@ mod tests {
     ) -> i32 {
         0
     }
+
+    fn declared_persister(
+        cb: PersistenceCallbacks,
+        capabilities: PersistenceCapabilities,
+    ) -> FFIPersister {
+        FFIPersister::new_with_persistence_capabilities(cb, capabilities)
+    }
     #[cfg(feature = "shielded")]
     unsafe extern "C" fn noop_persist_viewing_keys(
         _ctx: *mut c_void,
@@ -5531,22 +5557,38 @@ mod tests {
         let mut cb = PersistenceCallbacks::default();
         cb.on_changeset_begin_fn = Some(noop_begin);
         assert_eq!(
-            FFIPersister::new(cb).persistence_capabilities(),
+            declared_persister(cb, PersistenceCapabilities::ATOMIC_CHANGESETS)
+                .persistence_capabilities(),
             PersistenceCapabilities::NONE
         );
 
         let mut cb = PersistenceCallbacks::default();
         cb.on_changeset_begin_fn = Some(noop_begin);
         cb.on_changeset_end_fn = Some(noop_end);
-        let capabilities = FFIPersister::new(cb).persistence_capabilities();
+        let capabilities = declared_persister(cb, PersistenceCapabilities::ATOMIC_CHANGESETS)
+            .persistence_capabilities();
         assert_eq!(capabilities, PersistenceCapabilities::ATOMIC_CHANGESETS);
         assert!(!capabilities.contains(PersistenceCapabilities::INVITATION_CREATION));
 
         let mut cb = PersistenceCallbacks::default();
+        let declaration = PersistenceCapabilities::INVITATIONS
+            .union(PersistenceCapabilities::ASSET_LOCK_FUNDING_INDICES);
         cb.on_persist_invitations_fn = Some(noop_invitations);
         cb.on_persist_account_address_pools_fn = Some(noop_pools);
-        let capabilities = FFIPersister::new(cb).persistence_capabilities();
+        let capabilities = declared_persister(cb, declaration).persistence_capabilities();
         assert_eq!(capabilities, PersistenceCapabilities::INVITATIONS);
+
+        let mut cb = PersistenceCallbacks::default();
+        cb.on_persist_account_registrations_fn = Some(noop_registrations);
+        cb.on_persist_account_address_pools_fn = Some(noop_pools);
+        let capabilities =
+            declared_persister(cb, PersistenceCapabilities::ASSET_LOCK_FUNDING_INDICES)
+                .persistence_capabilities();
+        assert_eq!(
+            capabilities,
+            PersistenceCapabilities::ASSET_LOCK_FUNDING_INDICES
+        );
+        assert!(!capabilities.contains(PersistenceCapabilities::WALLET_RESTORE));
     }
 
     /// A complete non-shielded vtable exposes every capability representable
@@ -5555,6 +5597,12 @@ mod tests {
     #[test]
     fn fully_wired_persister_attests_feature_specific_capabilities() {
         let mut cb = PersistenceCallbacks::default();
+        let expected = PersistenceCapabilities::ATOMIC_CHANGESETS
+            .union(PersistenceCapabilities::INVITATIONS)
+            .union(PersistenceCapabilities::ASSET_LOCK_FUNDING_INDICES)
+            .union(PersistenceCapabilities::PROVIDER_TRANSACTIONS)
+            .union(PersistenceCapabilities::UNSIGNED_TOKEN_STORAGE)
+            .union(PersistenceCapabilities::WALLET_RESTORE);
         cb.on_changeset_begin_fn = Some(noop_begin);
         cb.on_changeset_end_fn = Some(noop_end);
         cb.on_persist_account_registrations_fn = Some(noop_registrations);
@@ -5564,17 +5612,39 @@ mod tests {
         cb.on_load_wallet_list_free_fn = Some(noop_free_wallets);
         cb.on_persist_wallet_changeset_fn = Some(noop_wallet_changeset);
         cb.on_persist_token_balances_fn = Some(noop_token_balances);
-        let capabilities = FFIPersister::new(cb).persistence_capabilities();
+        let capabilities = declared_persister(cb, expected).persistence_capabilities();
 
-        let expected = PersistenceCapabilities::ATOMIC_CHANGESETS
-            .union(PersistenceCapabilities::INVITATIONS)
-            .union(PersistenceCapabilities::ACCOUNT_ADDRESS_POOLS)
-            .union(PersistenceCapabilities::PROVIDER_TRANSACTIONS)
-            .union(PersistenceCapabilities::UNSIGNED_TOKEN_STORAGE)
-            .union(PersistenceCapabilities::WALLET_RESTORE);
         assert_eq!(capabilities, expected);
         assert!(capabilities.contains(PersistenceCapabilities::INVITATION_CREATION));
-        assert!(!capabilities.contains(PersistenceCapabilities::DEFERRED_CONTACT_CRYPTO));
+        assert!(!capabilities.contains(PersistenceCapabilities::PENDING_CONTACT_CRYPTO));
+    }
+
+    #[test]
+    fn complete_callbacks_without_declaration_attest_nothing() {
+        let mut cb = PersistenceCallbacks::default();
+        cb.on_changeset_begin_fn = Some(noop_begin);
+        cb.on_changeset_end_fn = Some(noop_end);
+        cb.on_persist_invitations_fn = Some(noop_invitations);
+        cb.on_persist_account_registrations_fn = Some(noop_registrations);
+        cb.on_persist_account_address_pools_fn = Some(noop_pools);
+        cb.on_load_wallet_list_fn = Some(noop_load_wallets);
+        cb.on_load_wallet_list_free_fn = Some(noop_free_wallets);
+        assert_eq!(
+            FFIPersister::new(cb).persistence_capabilities(),
+            PersistenceCapabilities::NONE
+        );
+    }
+
+    #[test]
+    fn declaration_is_intersected_with_callback_structure() {
+        let mut cb = PersistenceCallbacks::default();
+        cb.on_changeset_begin_fn = Some(noop_begin);
+        cb.on_changeset_end_fn = Some(noop_end);
+        assert_eq!(
+            declared_persister(cb, PersistenceCapabilities::INVITATION_CREATION)
+                .persistence_capabilities(),
+            PersistenceCapabilities::ATOMIC_CHANGESETS
+        );
     }
 
     #[test]
@@ -5587,6 +5657,24 @@ mod tests {
         assert_eq!(ffi.reserved, 0);
         assert_eq!(ffi.bits, 0x81);
         assert_eq!(std::mem::size_of::<PersistenceCapabilitiesFFI>(), 16);
+        // Capability negotiation is deliberately NOT appended to the legacy
+        // callback vtable. Pin its historical size and prove invitations remain
+        // the terminal field so old clients are never over-read.
+        #[cfg(not(feature = "shielded"))]
+        assert_eq!(
+            std::mem::size_of::<PersistenceCallbacks>(),
+            21 * std::mem::size_of::<usize>()
+        );
+        #[cfg(feature = "shielded")]
+        assert_eq!(
+            std::mem::size_of::<PersistenceCallbacks>(),
+            37 * std::mem::size_of::<usize>()
+        );
+        assert_eq!(
+            std::mem::offset_of!(PersistenceCallbacks, on_persist_invitations_fn)
+                + std::mem::size_of::<usize>(),
+            std::mem::size_of::<PersistenceCallbacks>()
+        );
         assert_eq!(
             PLATFORM_WALLET_PERSISTENCE_CAPABILITIES_VERSION,
             PERSISTENCE_CAPABILITIES_VERSION
@@ -5600,8 +5688,8 @@ mod tests {
             PersistenceCapabilities::INVITATIONS.bits()
         );
         assert_eq!(
-            PLATFORM_WALLET_PERSISTENCE_CAPABILITY_ACCOUNT_ADDRESS_POOLS,
-            PersistenceCapabilities::ACCOUNT_ADDRESS_POOLS.bits()
+            PLATFORM_WALLET_PERSISTENCE_CAPABILITY_ASSET_LOCK_FUNDING_INDICES,
+            PersistenceCapabilities::ASSET_LOCK_FUNDING_INDICES.bits()
         );
         assert_eq!(
             PLATFORM_WALLET_PERSISTENCE_CAPABILITY_SHIELDED_VIEWING_KEYS,
@@ -5616,12 +5704,20 @@ mod tests {
             PersistenceCapabilities::UNSIGNED_TOKEN_STORAGE.bits()
         );
         assert_eq!(
-            PLATFORM_WALLET_PERSISTENCE_CAPABILITY_DEFERRED_CONTACT_CRYPTO,
-            PersistenceCapabilities::DEFERRED_CONTACT_CRYPTO.bits()
+            PLATFORM_WALLET_PERSISTENCE_CAPABILITY_PENDING_CONTACT_CRYPTO,
+            PersistenceCapabilities::PENDING_CONTACT_CRYPTO.bits()
         );
         assert_eq!(
             PLATFORM_WALLET_PERSISTENCE_CAPABILITY_WALLET_RESTORE,
             PersistenceCapabilities::WALLET_RESTORE.bits()
+        );
+        assert_eq!(
+            PLATFORM_WALLET_PERSISTENCE_CAPABILITY_ACCOUNT_ADDRESS_POOLS,
+            PLATFORM_WALLET_PERSISTENCE_CAPABILITY_ASSET_LOCK_FUNDING_INDICES
+        );
+        assert_eq!(
+            PLATFORM_WALLET_PERSISTENCE_CAPABILITY_DEFERRED_CONTACT_CRYPTO,
+            PLATFORM_WALLET_PERSISTENCE_CAPABILITY_PENDING_CONTACT_CRYPTO
         );
     }
 
@@ -5631,17 +5727,21 @@ mod tests {
         let mut cb = PersistenceCallbacks::default();
         cb.on_persist_shielded_viewing_keys_fn = Some(noop_persist_viewing_keys);
         cb.on_load_shielded_viewing_keys_fn = Some(noop_load_viewing_keys);
-        assert!(!FFIPersister::new(cb)
-            .persistence_capabilities()
-            .contains(PersistenceCapabilities::SHIELDED_VIEWING_KEYS));
+        assert!(
+            !declared_persister(cb, PersistenceCapabilities::SHIELDED_VIEWING_KEYS)
+                .persistence_capabilities()
+                .contains(PersistenceCapabilities::SHIELDED_VIEWING_KEYS)
+        );
 
         let mut cb = PersistenceCallbacks::default();
         cb.on_persist_shielded_viewing_keys_fn = Some(noop_persist_viewing_keys);
         cb.on_load_shielded_viewing_keys_fn = Some(noop_load_viewing_keys);
         cb.on_load_shielded_viewing_keys_free_fn = Some(noop_free_viewing_keys);
-        assert!(FFIPersister::new(cb)
-            .persistence_capabilities()
-            .contains(PersistenceCapabilities::SHIELDED_VIEWING_KEYS));
+        assert!(
+            declared_persister(cb, PersistenceCapabilities::SHIELDED_VIEWING_KEYS)
+                .persistence_capabilities()
+                .contains(PersistenceCapabilities::SHIELDED_VIEWING_KEYS)
+        );
     }
 
     use dashcore::blockdata::transaction::txin::TxIn;

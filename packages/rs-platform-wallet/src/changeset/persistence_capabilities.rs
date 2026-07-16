@@ -16,7 +16,7 @@ pub const PERSISTENCE_CAPABILITIES_VERSION: u32 = 1;
 /// This is a transparent `u64` wrapper rather than a Rust enum so unknown bits
 /// survive additive upgrades. Bits describe persistence contracts, not product
 /// feature flags: hosts must not set a bit merely because a schema/table exists
-/// when the corresponding write and restore paths are not both reachable.
+/// when the corresponding contract's required paths are not all reachable.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
 #[repr(transparent)]
 pub struct PersistenceCapabilities(u64);
@@ -28,16 +28,22 @@ impl PersistenceCapabilities {
     pub const ATOMIC_CHANGESETS: Self = Self(1 << 0);
     /// Invitation records can be persisted.
     pub const INVITATIONS: Self = Self(1 << 1);
-    /// Account registrations and their address-pool watermarks can be persisted.
-    pub const ACCOUNT_ADDRESS_POOLS: Self = Self(1 << 2);
+    /// Asset-lock funding indices and their owning account/address-pool state
+    /// can be persisted. Restart hydration is the separate `WALLET_RESTORE`
+    /// contract and operation composites require it where needed.
+    pub const ASSET_LOCK_FUNDING_INDICES: Self = Self(1 << 2);
+    /// Source-compatible alias for the original capability name.
+    pub const ACCOUNT_ADDRESS_POOLS: Self = Self::ASSET_LOCK_FUNDING_INDICES;
     /// Orchard FVKs have paired persist, load, and load-allocation-free paths.
     pub const SHIELDED_VIEWING_KEYS: Self = Self(1 << 3);
     /// Provider special transactions have persist and wallet-restore paths.
     pub const PROVIDER_TRANSACTIONS: Self = Self(1 << 4);
     /// Token balances are stored through a lossless unsigned-`u64` contract.
     pub const UNSIGNED_TOKEN_STORAGE: Self = Self(1 << 5);
-    /// Deferred contact-crypto queue additions and removals survive restart.
-    pub const DEFERRED_CONTACT_CRYPTO: Self = Self(1 << 6);
+    /// Pending contact-crypto queue additions and removals survive restart.
+    pub const PENDING_CONTACT_CRYPTO: Self = Self(1 << 6);
+    /// Source-compatible alias for the original capability name.
+    pub const DEFERRED_CONTACT_CRYPTO: Self = Self::PENDING_CONTACT_CRYPTO;
     /// A persisted core wallet snapshot can be loaded after process restart.
     pub const WALLET_RESTORE: Self = Self(1 << 7);
 
@@ -45,7 +51,7 @@ impl PersistenceCapabilities {
     pub const INVITATION_CREATION: Self = Self(
         Self::ATOMIC_CHANGESETS.0
             | Self::INVITATIONS.0
-            | Self::ACCOUNT_ADDRESS_POOLS.0
+            | Self::ASSET_LOCK_FUNDING_INDICES.0
             | Self::WALLET_RESTORE.0,
     );
 
@@ -63,6 +69,10 @@ impl PersistenceCapabilities {
 
     pub const fn union(self, other: Self) -> Self {
         Self(self.0 | other.0)
+    }
+
+    pub const fn intersection(self, other: Self) -> Self {
+        Self(self.0 & other.0)
     }
 
     pub const fn contains(self, required: Self) -> bool {
@@ -83,8 +93,8 @@ impl PersistenceCapabilities {
             ),
             (PersistenceCapabilities::INVITATIONS, "invitations"),
             (
-                PersistenceCapabilities::ACCOUNT_ADDRESS_POOLS,
-                "account_address_pools",
+                PersistenceCapabilities::ASSET_LOCK_FUNDING_INDICES,
+                "asset_lock_funding_indices",
             ),
             (
                 PersistenceCapabilities::SHIELDED_VIEWING_KEYS,
@@ -99,8 +109,8 @@ impl PersistenceCapabilities {
                 "unsigned_token_storage",
             ),
             (
-                PersistenceCapabilities::DEFERRED_CONTACT_CRYPTO,
-                "deferred_contact_crypto",
+                PersistenceCapabilities::PENDING_CONTACT_CRYPTO,
+                "pending_contact_crypto",
             ),
             (PersistenceCapabilities::WALLET_RESTORE, "wallet_restore"),
         ];
@@ -121,14 +131,14 @@ mod tests {
         assert_eq!(PERSISTENCE_CAPABILITIES_VERSION, 1);
         assert_eq!(PersistenceCapabilities::ATOMIC_CHANGESETS.bits(), 0x01);
         assert_eq!(PersistenceCapabilities::INVITATIONS.bits(), 0x02);
-        assert_eq!(PersistenceCapabilities::ACCOUNT_ADDRESS_POOLS.bits(), 0x04);
+        assert_eq!(
+            PersistenceCapabilities::ASSET_LOCK_FUNDING_INDICES.bits(),
+            0x04
+        );
         assert_eq!(PersistenceCapabilities::SHIELDED_VIEWING_KEYS.bits(), 0x08);
         assert_eq!(PersistenceCapabilities::PROVIDER_TRANSACTIONS.bits(), 0x10);
         assert_eq!(PersistenceCapabilities::UNSIGNED_TOKEN_STORAGE.bits(), 0x20);
-        assert_eq!(
-            PersistenceCapabilities::DEFERRED_CONTACT_CRYPTO.bits(),
-            0x40
-        );
+        assert_eq!(PersistenceCapabilities::PENDING_CONTACT_CRYPTO.bits(), 0x40);
         assert_eq!(PersistenceCapabilities::WALLET_RESTORE.bits(), 0x80);
     }
 
@@ -139,7 +149,7 @@ mod tests {
         let missing = actual.missing(PersistenceCapabilities::INVITATION_CREATION);
         assert_eq!(
             missing.names(),
-            vec!["account_address_pools", "wallet_restore"]
+            vec!["asset_lock_funding_indices", "wallet_restore"]
         );
     }
 }

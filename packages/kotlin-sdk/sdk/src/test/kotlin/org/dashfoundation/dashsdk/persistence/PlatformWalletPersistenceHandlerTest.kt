@@ -5,6 +5,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.dashfoundation.dashsdk.Network
+import org.dashfoundation.dashsdk.ffi.NativePersistenceBridge
+import org.dashfoundation.dashsdk.wallet.PlatformWalletPersistenceCapabilities
 import org.dashfoundation.dashsdk.persistence.entities.CoreAddressEntity
 import org.dashfoundation.dashsdk.persistence.entities.IdentityEntity
 import org.dashfoundation.dashsdk.persistence.entities.PlatformAddressEntity
@@ -53,6 +55,27 @@ class PlatformWalletPersistenceHandlerTest {
     @After
     fun tearDown() {
         db.close()
+    }
+
+    @Test
+    fun persistenceCapabilitiesAreExplicitAndFailClosedByDefault() {
+        val noOpBridge = object : NativePersistenceBridge() {}
+        assertEquals(0, noOpBridge.persistenceCapabilitiesVersion())
+        assertEquals(0L, noOpBridge.persistenceCapabilitiesBits())
+
+        assertEquals(1, handler.persistenceCapabilitiesVersion())
+        assertEquals(0xbdL, handler.persistenceCapabilitiesBits())
+        // Android has no invitation or pending-contact-crypto callback, so it
+        // must not attest either semantic contract.
+        assertEquals(0L, handler.persistenceCapabilitiesBits() and 0x02L)
+        assertEquals(0L, handler.persistenceCapabilitiesBits() and 0x40L)
+
+        val diagnostic = PlatformWalletPersistenceCapabilities(
+            handler.persistenceCapabilitiesVersion(),
+            handler.persistenceCapabilitiesBits(),
+        )
+        assertTrue(diagnostic.contains(PlatformWalletPersistenceCapabilities.ATOMIC_CHANGESETS))
+        assertFalse(diagnostic.contains(PlatformWalletPersistenceCapabilities.INVITATIONS))
     }
 
     // ── Standalone (non-bracketed) writes ─────────────────────────────

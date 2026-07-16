@@ -57,7 +57,7 @@ final class TokenBalanceUInt64PersistenceTests: XCTestCase {
         let row = PersistentTokenBalance(
             tokenId: "raw-bits",
             identityId: identityId,
-            balance: UInt64(1) << 63,
+            unsignedBalance: UInt64(1) << 63,
             network: .testnet
         )
         context.insert(row)
@@ -76,7 +76,7 @@ final class TokenBalanceUInt64PersistenceTests: XCTestCase {
         let maximum = PersistentTokenBalance(
             tokenId: "max",
             identityId: identityId,
-            balance: UInt64.max,
+            unsignedBalance: UInt64.max,
             tokenDecimals: 8,
             network: .testnet
         )
@@ -85,7 +85,7 @@ final class TokenBalanceUInt64PersistenceTests: XCTestCase {
         let signBit = PersistentTokenBalance(
             tokenId: "sign-bit",
             identityId: identityId,
-            balance: UInt64(1) << 63,
+            unsignedBalance: UInt64(1) << 63,
             network: .testnet
         )
         XCTAssertEqual(signBit.formattedBalance, "9223372036854775808")
@@ -111,12 +111,70 @@ final class TokenBalanceUInt64PersistenceTests: XCTestCase {
         let balance = PersistentTokenBalance(
             tokenId: "token",
             identityId: identityId,
-            balance: UInt64.max,
+            unsignedBalance: UInt64.max,
             network: .testnet
         )
         balance.token = token
         XCTAssertNil(balance.tokenDecimals)
         XCTAssertNil(balance.tokenSymbol)
         XCTAssertEqual(balance.displayBalance, "184467440737.09551615 TKN")
+    }
+
+    func testSignedAPIRemainsSourceCompatibleAndUnsignedAPIIsUnambiguous() {
+        let signed = PersistentTokenBalance(
+            tokenId: "signed",
+            identityId: identityId,
+            balance: Int64.min,
+            network: .testnet
+        )
+        XCTAssertEqual(signed.balance, Int64.min)
+
+        signed.updateBalance(-1)
+        XCTAssertEqual(signed.balance, -1)
+
+        let unsigned = PersistentTokenBalance(
+            tokenId: "unsigned",
+            identityId: identityId,
+            unsignedBalance: UInt64.max,
+            network: .testnet
+        )
+        XCTAssertEqual(unsigned.unsignedBalance, UInt64.max)
+
+        unsigned.updateUnsignedBalance(UInt64(1) << 63)
+        XCTAssertEqual(unsigned.unsignedBalance, UInt64(1) << 63)
+    }
+
+    func testTokenAggregatesAreUnsignedAndWiderThanUInt64() {
+        let token = PersistentToken(
+            contractId: Data(repeating: 0x42, count: 32),
+            position: 0,
+            name: "Wide",
+            baseSupply: "7"
+        )
+        let maximum = PersistentTokenBalance(
+            tokenId: "wide",
+            identityId: identityId,
+            unsignedBalance: UInt64.max,
+            frozen: true,
+            network: .testnet
+        )
+        let secondMaximum = PersistentTokenBalance(
+            tokenId: "wide",
+            identityId: Data(repeating: 0xD4, count: 32),
+            unsignedBalance: UInt64.max,
+            frozen: true,
+            network: .testnet
+        )
+        let zero = PersistentTokenBalance(
+            tokenId: "wide",
+            identityId: Data(repeating: 0xE5, count: 32),
+            unsignedBalance: 0,
+            network: .testnet
+        )
+        token.balances = [maximum, secondMaximum, zero]
+
+        XCTAssertEqual(token.totalSupply, "36893488147419103230")
+        XCTAssertEqual(token.totalFrozenBalance, "36893488147419103230")
+        XCTAssertEqual(token.activeHolders, 2)
     }
 }
