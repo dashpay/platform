@@ -144,7 +144,11 @@ export default function getPlatformScopeFactory(
         }
 
         info.version = version;
-        info.protocolVersion = parseInt(tenderdashStatus.node_info.protocol_version.app, 10);
+        // node_info.protocol_version.app is snapshotted at Tenderdash process start and
+        // stays stale across in-process protocol upgrades. application_info.version is
+        // the live active/current app protocol version.
+        info.protocolVersion = parseInt(tenderdashStatus.application_info.version, 10);
+        // abci_info app_version reflects the installed software's desired/supported version.
         info.desiredProtocolVersion = tenderdashAbciInfo.response.app_version;
         info.listening = listening;
         info.latestBlockHeight = latestBlockHeight;
