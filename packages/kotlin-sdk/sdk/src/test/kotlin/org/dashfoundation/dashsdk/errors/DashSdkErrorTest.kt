@@ -58,11 +58,21 @@ class DashSdkErrorTest {
         // Distinct from the rs-sdk-ffi CryptoError that shares raw code 6.
         assertFalse(walletOp is DashSdkError.CryptoError)
 
-        listOf(7, 8, 98).forEach { code ->
+        listOf(7, 8).forEach { code ->
             val notFound = DashSdkError.fromNative(DashSDKException(offset + code, "missing"))
             assertTrue("platform-wallet code $code must be typed NotFound", notFound is DashSdkError.NotFound)
             assertEquals("missing", notFound.message)
         }
+        // 98 (PlatformWalletFFIResultCode::NotFound, the blanket Option → result
+        // miss) intentionally stays in the PlatformWallet subtree as Generic
+        // carrying its native code — parity with Swift's PlatformWalletError
+        // .notFound (also in the wallet-error family) — so local reads recognize
+        // it at the raw code via translateManagedIdentityNotFoundToZero (#4051)
+        // instead of collapsing into the typed top-level NotFound that 7/8 map to.
+        val optionMiss = DashSdkError.fromNative(DashSDKException(offset + 98, "missing"))
+        assertTrue(optionMiss is DashSdkError.PlatformWallet.Generic)
+        assertEquals(98, (optionMiss as DashSdkError.PlatformWallet.Generic).nativeCode)
+        assertEquals("missing", optionMiss.message)
 
         val noAnchor = DashSdkError.fromNative(DashSDKException(offset + 19, "mid-block tree"))
         assertTrue(noAnchor is DashSdkError.PlatformWallet.ShieldedNoRecordedAnchor)
@@ -195,7 +205,12 @@ class DashSdkErrorTest {
             }
         }.exceptionOrNull()
 
-        assertTrue(error is DashSdkError.NotFound)
-        assertEquals("wallet not found", error?.message)
+        // Code 98 surfaces (through the public mapNativeErrors boundary) as
+        // PlatformWallet.Generic carrying its native code — not the typed
+        // top-level NotFound — so #4051's raw-code translation stays the single
+        // place that turns an unmanaged-identity miss into an absence.
+        assertTrue(error is DashSdkError.PlatformWallet.Generic)
+        assertEquals(98, (error as DashSdkError.PlatformWallet.Generic).nativeCode)
+        assertEquals("wallet not found", error.message)
     }
 }

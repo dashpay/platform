@@ -281,8 +281,12 @@ sealed class DashSdkError(
                 }
             7, // ErrorIdentityNotFound
             8, // ErrorContactNotFound
-            98, // NotFound (Option returned as an error)
             -> NotFound(message, cause)
+            // 98 (PlatformWalletFFIResultCode::NotFound, the blanket Option →
+            // result miss) intentionally falls through to PlatformWallet.Generic
+            // carrying nativeCode 98: local reads recognize it at the raw code
+            // via translateManagedIdentityNotFoundToZero (#4051) and return an
+            // absence, so it must NOT collapse into the typed top-level NotFound.
             16 -> PlatformWallet.ShieldedBroadcastFailed(message, cause) // ErrorShieldedBroadcastFailed
             18 -> PlatformWallet.ShieldedSpendUnconfirmed(message, cause) // ErrorShieldedSpendUnconfirmed
             19 -> PlatformWallet.ShieldedNoRecordedAnchor(message, cause) // ErrorShieldedNoRecordedAnchor
