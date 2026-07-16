@@ -281,10 +281,6 @@ pub unsafe extern "C" fn established_contact_hide(
 /// wallet manager's contact state — the change is never persisted and is
 /// lost when the handle is freed. Real writes go through
 /// `platform_wallet_set_dashpay_contact_info_with_signer`.
-/// **Handle-local only**: mutates the clone held by this handle, NOT the
-/// wallet manager's contact state — the change is never persisted and is
-/// lost when the handle is freed. Real writes go through
-/// `platform_wallet_set_dashpay_contact_info_with_signer`.
 #[no_mangle]
 pub unsafe extern "C" fn established_contact_unhide(
     contact_handle: Handle,
