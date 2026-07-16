@@ -60,6 +60,76 @@ data class PlatformWalletPersistenceCapabilities(
     }
 }
 
+/** Fully validated native state adopted by [PlatformWalletManager]. */
+internal data class PlatformWalletNativeInitialization(
+    val bundle: Long,
+    val managerHandle: Long,
+    val persistenceCapabilities: PlatformWalletPersistenceCapabilities,
+)
+
+/**
+ * Construct the native manager as one transaction.
+ *
+ * No partially-constructed [PlatformWalletManager] exists for callers to
+ * close, so every failure path must release the resources created by property
+ * initializers above the native bundle. Cleanup mirrors the successful close
+ * order: stop Kotlin work, destroy the callback-owning native bundle, then
+ * release its resolver/signer dependencies and the persistence executor.
+ * Cleanup failures are suppressed onto the initialization failure so all
+ * resources still receive one close attempt.
+ */
+internal fun initializePlatformWalletNativeManager(
+    nativeCreate: () -> Long,
+    nativeManagerHandle: (Long) -> Long,
+    nativePersistenceCapabilitiesVersion: (Long) -> Int,
+    nativePersistenceCapabilitiesBits: (Long) -> Long,
+    nativeDestroy: (Long) -> Unit,
+    cancelScope: () -> Unit,
+    closeMnemonicResolver: () -> Unit,
+    closeSigner: () -> Unit,
+    closePersistenceHandler: () -> Unit,
+): PlatformWalletNativeInitialization {
+    var bundle = 0L
+    try {
+        bundle = nativeCreate()
+        check(bundle != 0L) { "nativeCreate returned a zero bundle handle" }
+
+        val managerHandle = nativeManagerHandle(bundle)
+        check(managerHandle != 0L) { "nativeManagerHandle returned a zero manager handle" }
+
+        return PlatformWalletNativeInitialization(
+            bundle = bundle,
+            managerHandle = managerHandle,
+            persistenceCapabilities = PlatformWalletPersistenceCapabilities(
+                version = nativePersistenceCapabilitiesVersion(bundle),
+                bits = nativePersistenceCapabilitiesBits(bundle),
+            ),
+        )
+    } catch (initializationFailure: Throwable) {
+        fun cleanup(action: () -> Unit) {
+            try {
+                action()
+            } catch (cleanupFailure: Throwable) {
+                if (cleanupFailure !== initializationFailure) {
+                    initializationFailure.addSuppressed(cleanupFailure)
+                }
+            }
+        }
+
+        cleanup(cancelScope)
+        if (bundle != 0L) {
+            // The local owns the bundle until this function returns, so this
+            // is the sole destroy attempt on failed initialization.
+            cleanup { nativeDestroy(bundle) }
+            bundle = 0L
+        }
+        cleanup(closeMnemonicResolver)
+        cleanup(closeSigner)
+        cleanup(closePersistenceHandler)
+        throw initializationFailure
+    }
+}
+
 /**
  * The one type SwiftUI's Android counterpart needs for all wallet
  * operations — port of `PlatformWalletManager.swift`.
@@ -404,37 +474,29 @@ class PlatformWalletManager(
 
     // ── Native manager bundle ─────────────────────────────────────────
 
-    private val bundleRef: AtomicLong = AtomicLong(
-        try {
+    private val nativeInitialization = initializePlatformWalletNativeManager(
+        nativeCreate = {
             WalletManagerNative.nativeCreate(sdk.handle, persistenceHandler, eventBridge)
-        } catch (t: Throwable) {
-            // The resolver/signer fields above already hold native
-            // handles; without this, a failed manager construction
-            // (closed SDK, GlobalRef failure) leaks them for the
-            // process lifetime — no user code ever gets to call close().
-            runCatching { mnemonicResolver.close() }
-            runCatching { signer.close() }
-            throw t
         },
+        nativeManagerHandle = WalletManagerNative::nativeManagerHandle,
+        nativePersistenceCapabilitiesVersion =
+            WalletManagerNative::nativePersistenceCapabilitiesVersion,
+        nativePersistenceCapabilitiesBits = WalletManagerNative::nativePersistenceCapabilitiesBits,
+        nativeDestroy = WalletManagerNative::nativeDestroy,
+        cancelScope = scope::cancel,
+        closeMnemonicResolver = mnemonicResolver::close,
+        closeSigner = signer::close,
+        closePersistenceHandler = persistenceHandler::close,
     )
 
+    private val bundleRef: AtomicLong = AtomicLong(nativeInitialization.bundle)
+
     /** Raw native manager `Handle` (for the sync / wallet-accessor calls). */
-    private val managerHandle: Long =
-        WalletManagerNative.nativeManagerHandle(bundleRef.get())
+    private val managerHandle: Long = nativeInitialization.managerHandle
 
     /** Effective persistence contract captured during native initialization. */
     val persistenceCapabilities: PlatformWalletPersistenceCapabilities =
-        try {
-            PlatformWalletPersistenceCapabilities(
-                version = WalletManagerNative.nativePersistenceCapabilitiesVersion(bundleRef.get()),
-                bits = WalletManagerNative.nativePersistenceCapabilitiesBits(bundleRef.get()),
-            )
-        } catch (t: Throwable) {
-            bundleRef.getAndSet(0).takeIf { it != 0L }?.let(WalletManagerNative::nativeDestroy)
-            runCatching { mnemonicResolver.close() }
-            runCatching { signer.close() }
-            throw t
-        }
+        nativeInitialization.persistenceCapabilities
 
     // ── Published wallet map ──────────────────────────────────────────
 
