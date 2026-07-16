@@ -103,7 +103,12 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
     ///
     /// `account_type`/`account_index` identify the funding account handed to
     /// `set_funding` when the transaction was built.
-    pub async fn release_transaction_reservation(
+    ///
+    /// Named distinctly from the `AccountTypePreference`-typed
+    /// [`release_transaction_reservation`](Self::release_transaction_reservation)
+    /// (the finalized-transaction abandon path); this `StandardAccountType`
+    /// form serves the deferred [`SignedPaymentRegistry`](crate::SignedPaymentRegistry).
+    pub async fn release_payment_reservation(
         &self,
         account_type: StandardAccountType,
         account_index: u32,
