@@ -305,7 +305,7 @@ impl<B: TransactionBroadcaster + ?Sized> SignedPaymentRegistry<B> {
         if let Some(account_type) = entry.account_type {
             entry
                 .core
-                .release_transaction_reservation(account_type, entry.account_index, &entry.tx)
+                .release_payment_reservation(account_type, entry.account_index, &entry.tx)
                 .await;
         }
     }
