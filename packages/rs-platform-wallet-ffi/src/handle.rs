@@ -71,6 +71,17 @@ impl<T> HandleStorage<T> {
         guard.get(&handle).map(f)
     }
 
+    /// Whether any currently-stored item satisfies `predicate`. Used to detect
+    /// whether a logical resource still has a live handle after one of its
+    /// aliases is removed (e.g. the final-alias check in
+    /// `platform_wallet_destroy`).
+    pub fn any<F>(&self, predicate: F) -> bool
+    where
+        F: Fn(&T) -> bool,
+    {
+        self.items.read().values().any(predicate)
+    }
+
     pub fn with_item_mut<F, R>(&self, handle: Handle, f: F) -> Option<R>
     where
         F: FnOnce(&mut T) -> R,
