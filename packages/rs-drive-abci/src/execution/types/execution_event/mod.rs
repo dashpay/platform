@@ -805,6 +805,50 @@ mod tests {
         }
     }
 
+    /// The IdentityCreateFromShieldedPool duplicate-key fallback surfaces as a `chargeable_failure`
+    /// `UnshieldAction` that still credits the fallback address the net amount. The event must carry
+    /// that credit AND set `chargeable_failure`, so the executor records it on the applied path even
+    /// though the transition is paid-invalid. (The `chargeable_failure` flag is independent of the
+    /// output-credit computation — this pins the exact shape the paid-invalid seam relies on.)
+    #[test]
+    fn unshield_chargeable_failure_still_populates_net_output_credit() {
+        let output_address = PlatformAddress::P2pkh([0xCD; 20]);
+        let action = StateTransitionAction::UnshieldAction(UnshieldTransitionAction::V0(
+            UnshieldTransitionActionV0 {
+                output_address,
+                amount: 3000,
+                notes: vec![note()],
+                anchor: [0xAA; 32],
+                fee_amount: 500,
+                current_total_balance: 10_000,
+                chargeable_failure: true,
+            },
+        ));
+
+        let event = ExecutionEvent::create_from_state_transition_action(
+            action,
+            None,
+            &Epoch::new(0).unwrap(),
+            ctx(),
+            PlatformVersion::latest(),
+        )
+        .expect("create event");
+
+        match event {
+            ExecutionEvent::PaidFromShieldedPool {
+                added_to_balance_outputs,
+                chargeable_failure,
+                ..
+            } => {
+                assert!(chargeable_failure, "the fallback must be chargeable");
+                let outputs = added_to_balance_outputs
+                    .expect("fallback must carry the fallback-address credit");
+                assert_eq!(outputs.get(&output_address).copied(), Some(2500));
+            }
+            _ => panic!("expected PaidFromShieldedPool"),
+        }
+    }
+
     /// A `ShieldFromAssetLock` routing a surplus to a `surplus_output` address must carry that credit
     /// in `PaidFromAssetLockToPool::added_to_balance_outputs`.
     #[test]
