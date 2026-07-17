@@ -94,11 +94,12 @@ pub(in crate::execution) enum ExecutionEvent<'a> {
         fees_to_add_to_pool: Credits,
         /// Transparent platform-address credits produced by this shielded spend, to be folded into
         /// the recent-address-balance-changes tree (`store_address_balances_for_block`) so
-        /// incremental client sync sees them. `Some` only for `Unshield`, which credits its output
-        /// address the NET amount (`amount - fee`) and only when that net is positive — mirroring the
-        /// `AddBalanceToAddress` op the converter emits. `None` for every other shielded spend
-        /// (ShieldedTransfer / ShieldedWithdrawal / IdentityCreateFromShieldedPool): they credit no
-        /// transparent address, so there is nothing for incremental sync to observe.
+        /// incremental client sync sees them. `Some` only for an `UnshieldAction` whose NET amount
+        /// (`amount - fee`) is positive — mirroring the `AddBalanceToAddress` op the converter
+        /// emits — which includes the `IdentityCreateFromShieldedPool` duplicate-key fallback,
+        /// since that fallback surfaces as an `UnshieldAction` crediting the fallback address.
+        /// `None` for ShieldedTransfer and ShieldedWithdrawal: they credit no transparent
+        /// address, so there is nothing for incremental sync to observe.
         added_to_balance_outputs: Option<BTreeMap<PlatformAddress, Credits>>,
         /// `true` ONLY for the `IdentityCreateFromShieldedPool` chargeable-failure fallback. It
         /// authorizes the executor to apply `operations` even when consensus errors are attached
@@ -614,10 +615,9 @@ impl ExecutionEvent<'_> {
                 // here so it is recorded in the recent-address-balance-changes tree for incremental
                 // sync. When there is no surplus output the surplus folds into the fee pools instead,
                 // crediting no address, so this stays `None`.
-                let added_to_balance_outputs = match shield_from_asset_lock_action.surplus_output() {
-                    Some(surplus_address)
-                        if shield_from_asset_lock_action.surplus_amount() > 0 =>
-                    {
+                let added_to_balance_outputs = match shield_from_asset_lock_action.surplus_output()
+                {
+                    Some(surplus_address) if shield_from_asset_lock_action.surplus_amount() > 0 => {
                         Some(BTreeMap::from([(
                             *surplus_address,
                             shield_from_asset_lock_action.surplus_amount(),

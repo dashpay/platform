@@ -434,32 +434,7 @@ where
                 )?;
 
                 // Track address outputs if provided (e.g., for IdentityCreditTransferToAddresses)
-                if let Some(outputs) = added_to_balance_outputs {
-                    if let Some(balance_updates) = address_balances_in_update {
-                        for (address, credits) in outputs {
-                            let new_op = CreditOperation::AddToCredits(credits);
-                            balance_updates
-                                .entry(address)
-                                .and_modify(|existing| {
-                                    *existing = match existing {
-                                        // Set + Add = Set to combined value
-                                        CreditOperation::SetCredits(set_val) => {
-                                            CreditOperation::SetCredits(
-                                                set_val.saturating_add(credits),
-                                            )
-                                        }
-                                        // Add + Add = saturating add
-                                        CreditOperation::AddToCredits(add_val) => {
-                                            CreditOperation::AddToCredits(
-                                                add_val.saturating_add(credits),
-                                            )
-                                        }
-                                    };
-                                })
-                                .or_insert(new_op);
-                        }
-                    }
-                }
+                record_added_balance_outputs(address_balances_in_update, added_to_balance_outputs);
 
                 Ok(result)
             }
@@ -591,34 +566,9 @@ where
                 // The ops just applied credited any transparent output address (an Unshield's
                 // recipient, including the chargeable-failure fallback address). Record that credit
                 // into the recent-address-balance-changes tree so incremental client sync sees it —
-                // same entry/merge idiom as the `Paid` arm's `added_to_balance_outputs`. Reached only
-                // on the applied path (the early return above skips this), mirroring the `Paid` arm.
-                if let Some(outputs) = added_to_balance_outputs {
-                    if let Some(balance_updates) = address_balances_in_update {
-                        for (address, credits) in outputs {
-                            let new_op = CreditOperation::AddToCredits(credits);
-                            balance_updates
-                                .entry(address)
-                                .and_modify(|existing| {
-                                    *existing = match existing {
-                                        // Set + Add = Set to combined value
-                                        CreditOperation::SetCredits(set_val) => {
-                                            CreditOperation::SetCredits(
-                                                set_val.saturating_add(credits),
-                                            )
-                                        }
-                                        // Add + Add = saturating add
-                                        CreditOperation::AddToCredits(add_val) => {
-                                            CreditOperation::AddToCredits(
-                                                add_val.saturating_add(credits),
-                                            )
-                                        }
-                                    };
-                                })
-                                .or_insert(new_op);
-                        }
-                    }
-                }
+                // same merge as the `Paid` arm's `added_to_balance_outputs`. Reached only on the
+                // applied path (the early return above skips this), mirroring the `Paid` arm.
+                record_added_balance_outputs(address_balances_in_update, added_to_balance_outputs);
 
                 // Split the carved fee like every other transition: the real storage
                 // cost of the (permanent) shielded writes goes to the storage pool, so it
@@ -669,34 +619,12 @@ where
 
                     // The ops just applied credited the shield's transparent surplus-output address
                     // (when set). Record that credit into the recent-address-balance-changes tree so
-                    // incremental client sync sees it — same entry/merge idiom as the `Paid` arm's
+                    // incremental client sync sees it — same merge as the `Paid` arm's
                     // `added_to_balance_outputs`. Reached only on the applied (no-errors) path.
-                    if let Some(outputs) = added_to_balance_outputs {
-                        if let Some(balance_updates) = address_balances_in_update {
-                            for (address, credits) in outputs {
-                                let new_op = CreditOperation::AddToCredits(credits);
-                                balance_updates
-                                    .entry(address)
-                                    .and_modify(|existing| {
-                                        *existing = match existing {
-                                            // Set + Add = Set to combined value
-                                            CreditOperation::SetCredits(set_val) => {
-                                                CreditOperation::SetCredits(
-                                                    set_val.saturating_add(credits),
-                                                )
-                                            }
-                                            // Add + Add = saturating add
-                                            CreditOperation::AddToCredits(add_val) => {
-                                                CreditOperation::AddToCredits(
-                                                    add_val.saturating_add(credits),
-                                                )
-                                            }
-                                        };
-                                    })
-                                    .or_insert(new_op);
-                            }
-                        }
-                    }
+                    record_added_balance_outputs(
+                        address_balances_in_update,
+                        added_to_balance_outputs,
+                    );
 
                     // Route the real storage cost of the shielded writes to the storage pool
                     // (amortised over time, epoch fee multiplier applied at payout); the
@@ -764,6 +692,40 @@ where
                 Ok(SuccessfulFreeExecution)
             }
         }
+    }
+}
+
+/// Fold transparent-address credit outputs into the per-block address-balance
+/// map — the sole feed for `store_address_balances_for_block`, i.e. the
+/// recent-address-balance-changes tree incremental client sync reads. One
+/// definition so every event path (`Paid`, `PaidFromShieldedPool`,
+/// `PaidFromAssetLockToPool`) shares identical merge semantics:
+/// Set + Add = Set(sum), Add + Add = Add(sum), both saturating.
+fn record_added_balance_outputs(
+    address_balances_in_update: Option<&mut BTreeMap<PlatformAddress, CreditOperation>>,
+    added_to_balance_outputs: Option<BTreeMap<PlatformAddress, Credits>>,
+) {
+    let (Some(balance_updates), Some(outputs)) =
+        (address_balances_in_update, added_to_balance_outputs)
+    else {
+        return;
+    };
+    for (address, credits) in outputs {
+        balance_updates
+            .entry(address)
+            .and_modify(|existing| {
+                *existing = match existing {
+                    // Set + Add = Set to combined value
+                    CreditOperation::SetCredits(set_val) => {
+                        CreditOperation::SetCredits(set_val.saturating_add(credits))
+                    }
+                    // Add + Add = saturating add
+                    CreditOperation::AddToCredits(add_val) => {
+                        CreditOperation::AddToCredits(add_val.saturating_add(credits))
+                    }
+                };
+            })
+            .or_insert(CreditOperation::AddToCredits(credits));
     }
 }
 
