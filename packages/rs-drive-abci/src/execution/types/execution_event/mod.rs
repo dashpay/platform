@@ -571,10 +571,16 @@ impl ExecutionEvent<'_> {
                 let chargeable_failure = unshield_action.chargeable_failure();
                 // The converter credits the output address the NET amount (`amount - fee`) via an
                 // `AddBalanceToAddress` op, and only when that net is positive (see
-                // `unshield_transition.rs`). Thread the identical value here so the credit is also
+                // `unshield_transition.rs`). Thread the identical value here so the credit can be
                 // recorded in the recent-address-balance-changes tree for incremental sync.
                 // `checked_sub` returning `None` on underflow yields no output here — the converter
                 // call below then errors on the same underflow, so no event is constructed.
+                //
+                // This is populated UNCONDITIONALLY (the event is in-memory only). The rolling-upgrade
+                // versioning lives entirely in the executor's `record_added_balance_outputs` method:
+                // its v0 (protocol < v13) DROPS these shielded-spend-origin outputs, so pre-v13 blocks
+                // byte-match the earlier behavior; its v1 (v13+) records them. Keeping construction
+                // version-independent means there is exactly one versioned site.
                 let added_to_balance_outputs = unshield_action
                     .amount()
                     .checked_sub(fee_amount)
@@ -612,9 +618,14 @@ impl ExecutionEvent<'_> {
                 // The converter routes `surplus_amount` to the `surplus_output` platform address via
                 // an `AddBalanceToAddress` op, but only when the output is set AND the surplus is
                 // positive (see `shield_from_asset_lock_transition.rs`). Thread the identical credit
-                // here so it is recorded in the recent-address-balance-changes tree for incremental
-                // sync. When there is no surplus output the surplus folds into the fee pools instead,
-                // crediting no address, so this stays `None`.
+                // here so it can be recorded in the recent-address-balance-changes tree for
+                // incremental sync. When there is no surplus output the surplus folds into the fee
+                // pools instead, crediting no address, so this stays `None`.
+                //
+                // Populated UNCONDITIONALLY, like the `UnshieldAction` arm above: the rolling-upgrade
+                // versioning lives in the executor's `record_added_balance_outputs` method (v0 drops
+                // these shielded-spend-origin outputs, v1 records them), so construction stays
+                // version-independent and there is exactly one versioned site.
                 let added_to_balance_outputs = match shield_from_asset_lock_action.surplus_output()
                 {
                     Some(surplus_address) if shield_from_asset_lock_action.surplus_amount() > 0 => {
@@ -924,6 +935,99 @@ mod tests {
                 ..
             } => assert!(added_to_balance_outputs.is_none()),
             _ => panic!("expected PaidFromAssetLockToPool"),
+        }
+    }
+
+    /// Construction is now VERSION-INDEPENDENT: an `Unshield` with a positive net always carries the
+    /// output credit in the event, at BOTH v12 and v13. The rolling-upgrade gate moved to the
+    /// executor's `record_added_balance_outputs` (v0 drops shielded-spend outputs, v1 records them),
+    /// so the event carries the credit either way — only whether it is recorded differs.
+    #[test]
+    fn unshield_credit_populated_at_construction_regardless_of_version() {
+        let output_address = PlatformAddress::P2pkh([0xBB; 20]);
+        let make_action = || {
+            StateTransitionAction::UnshieldAction(UnshieldTransitionAction::V0(
+                UnshieldTransitionActionV0 {
+                    output_address,
+                    amount: 3000,
+                    notes: vec![note()],
+                    anchor: [0xAA; 32],
+                    fee_amount: 500,
+                    current_total_balance: 10_000,
+                    chargeable_failure: false,
+                },
+            ))
+        };
+
+        for platform_version in [
+            PlatformVersion::get(12).expect("v12 must exist"),
+            PlatformVersion::get(13).expect("v13 must exist"),
+        ] {
+            let event = ExecutionEvent::create_from_state_transition_action(
+                make_action(),
+                None,
+                &Epoch::new(0).unwrap(),
+                ctx(),
+                platform_version,
+            )
+            .expect("create event");
+            match event {
+                ExecutionEvent::PaidFromShieldedPool {
+                    added_to_balance_outputs,
+                    ..
+                } => {
+                    let outputs = added_to_balance_outputs
+                        .expect("construction always carries the unshield credit (net > 0)");
+                    assert_eq!(outputs.get(&output_address).copied(), Some(2500));
+                }
+                _ => panic!("expected PaidFromShieldedPool"),
+            }
+        }
+    }
+
+    /// Construction is version-independent for the `ShieldFromAssetLock` surplus too: the surplus
+    /// credit is carried in the event at BOTH v12 and v13 (the recording gate lives in the executor).
+    #[test]
+    fn shield_surplus_populated_at_construction_regardless_of_version() {
+        let surplus_address = PlatformAddress::P2pkh([0x42; 20]);
+        let make_action = || {
+            StateTransitionAction::ShieldFromAssetLockAction(
+                ShieldFromAssetLockTransitionAction::V0(ShieldFromAssetLockTransitionActionV0 {
+                    asset_lock_outpoint: [0xDD; 36],
+                    asset_lock_value_to_be_consumed: 10_000,
+                    signable_bytes_hasher: [0xEE; 32],
+                    shield_amount: 5_000,
+                    notes: vec![note()],
+                    current_total_balance: 10_000,
+                    surplus_output: Some(surplus_address),
+                    surplus_amount: 2_000,
+                }),
+            )
+        };
+
+        for platform_version in [
+            PlatformVersion::get(12).expect("v12 must exist"),
+            PlatformVersion::get(13).expect("v13 must exist"),
+        ] {
+            let event = ExecutionEvent::create_from_state_transition_action(
+                make_action(),
+                None,
+                &Epoch::new(0).unwrap(),
+                ctx(),
+                platform_version,
+            )
+            .expect("create event");
+            match event {
+                ExecutionEvent::PaidFromAssetLockToPool {
+                    added_to_balance_outputs,
+                    ..
+                } => {
+                    let outputs = added_to_balance_outputs
+                        .expect("construction always carries the shield surplus credit");
+                    assert_eq!(outputs.get(&surplus_address).copied(), Some(2_000));
+                }
+                _ => panic!("expected PaidFromAssetLockToPool"),
+            }
         }
     }
 }

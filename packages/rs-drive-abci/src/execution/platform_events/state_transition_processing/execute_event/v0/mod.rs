@@ -1,5 +1,6 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
+use crate::execution::platform_events::state_transition_processing::record_added_balance_outputs::AddedBalanceOutputsOrigin;
 use crate::execution::types::execution_event::ExecutionEvent;
 use crate::execution::types::execution_operation::ValidationOperation;
 use crate::platform_types::event_execution_result::EventExecutionResult;
@@ -433,8 +434,15 @@ where
                     previous_fee_versions,
                 )?;
 
-                // Track address outputs if provided (e.g., for IdentityCreditTransferToAddresses)
-                record_added_balance_outputs(address_balances_in_update, added_to_balance_outputs);
+                // Track address outputs if provided (e.g., for IdentityCreditTransferToAddresses).
+                // Transparent origin: this long-standing recording is preserved by every version
+                // (v0 and v1 both fold Transparent-origin outputs).
+                self.record_added_balance_outputs(
+                    address_balances_in_update,
+                    added_to_balance_outputs,
+                    AddedBalanceOutputsOrigin::Transparent,
+                    platform_version,
+                )?;
 
                 Ok(result)
             }
@@ -565,10 +573,15 @@ where
 
                 // The ops just applied credited any transparent output address (an Unshield's
                 // recipient, including the chargeable-failure fallback address). Record that credit
-                // into the recent-address-balance-changes tree so incremental client sync sees it —
-                // same merge as the `Paid` arm's `added_to_balance_outputs`. Reached only on the
-                // applied path (the early return above skips this), mirroring the `Paid` arm.
-                record_added_balance_outputs(address_balances_in_update, added_to_balance_outputs);
+                // so incremental client sync sees it. ShieldedSpend origin: recorded only from v1
+                // (protocol v13); v0 drops it so pre-v13 blocks byte-match. Reached only on the
+                // applied path (the early return above skips this).
+                self.record_added_balance_outputs(
+                    address_balances_in_update,
+                    added_to_balance_outputs,
+                    AddedBalanceOutputsOrigin::ShieldedSpend,
+                    platform_version,
+                )?;
 
                 // Split the carved fee like every other transition: the real storage
                 // cost of the (permanent) shielded writes goes to the storage pool, so it
@@ -618,13 +631,15 @@ where
                         .map_err(Error::Drive)?;
 
                     // The ops just applied credited the shield's transparent surplus-output address
-                    // (when set). Record that credit into the recent-address-balance-changes tree so
-                    // incremental client sync sees it — same merge as the `Paid` arm's
-                    // `added_to_balance_outputs`. Reached only on the applied (no-errors) path.
-                    record_added_balance_outputs(
+                    // (when set). Record that credit so incremental client sync sees it. ShieldedSpend
+                    // origin: recorded only from v1 (protocol v13); v0 drops it so pre-v13 blocks
+                    // byte-match. Reached only on the applied (no-errors) path.
+                    self.record_added_balance_outputs(
                         address_balances_in_update,
                         added_to_balance_outputs,
-                    );
+                        AddedBalanceOutputsOrigin::ShieldedSpend,
+                        platform_version,
+                    )?;
 
                     // Route the real storage cost of the shielded writes to the storage pool
                     // (amortised over time, epoch fee multiplier applied at payout); the
@@ -695,40 +710,6 @@ where
     }
 }
 
-/// Fold transparent-address credit outputs into the per-block address-balance
-/// map — the sole feed for `store_address_balances_for_block`, i.e. the
-/// recent-address-balance-changes tree incremental client sync reads. One
-/// definition so every event path (`Paid`, `PaidFromShieldedPool`,
-/// `PaidFromAssetLockToPool`) shares identical merge semantics:
-/// Set + Add = Set(sum), Add + Add = Add(sum), both saturating.
-fn record_added_balance_outputs(
-    address_balances_in_update: Option<&mut BTreeMap<PlatformAddress, CreditOperation>>,
-    added_to_balance_outputs: Option<BTreeMap<PlatformAddress, Credits>>,
-) {
-    let (Some(balance_updates), Some(outputs)) =
-        (address_balances_in_update, added_to_balance_outputs)
-    else {
-        return;
-    };
-    for (address, credits) in outputs {
-        balance_updates
-            .entry(address)
-            .and_modify(|existing| {
-                *existing = match existing {
-                    // Set + Add = Set to combined value
-                    CreditOperation::SetCredits(set_val) => {
-                        CreditOperation::SetCredits(set_val.saturating_add(credits))
-                    }
-                    // Add + Add = saturating add
-                    CreditOperation::AddToCredits(add_val) => {
-                        CreditOperation::AddToCredits(add_val.saturating_add(credits))
-                    }
-                };
-            })
-            .or_insert(CreditOperation::AddToCredits(credits));
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -743,7 +724,9 @@ mod tests {
     /// credit invisible to incremental sync.
     #[test]
     fn paid_from_shielded_pool_folds_output_credit_into_address_balances() {
-        let platform_version = PlatformVersion::latest();
+        // Pin v13: the executor's record_added_balance_outputs is v1 here, which folds
+        // shielded-spend-origin outputs (v0 would drop them).
+        let platform_version = PlatformVersion::get(13).expect("v13 must exist");
         let platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
             .set_genesis_state();
@@ -787,7 +770,9 @@ mod tests {
     /// unshield) must leave the address-balances map untouched.
     #[test]
     fn paid_from_shielded_pool_without_output_records_nothing() {
-        let platform_version = PlatformVersion::latest();
+        // Pin v13: the executor's record_added_balance_outputs is v1 here, which folds
+        // shielded-spend-origin outputs (v0 would drop them).
+        let platform_version = PlatformVersion::get(13).expect("v13 must exist");
         let platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
             .set_genesis_state();
@@ -825,7 +810,9 @@ mod tests {
     /// folded into the address-balances map on the applied (no-errors) path.
     #[test]
     fn paid_from_asset_lock_to_pool_folds_surplus_credit_into_address_balances() {
-        let platform_version = PlatformVersion::latest();
+        // Pin v13: the executor's record_added_balance_outputs is v1 here, which folds
+        // shielded-spend-origin outputs (v0 would drop them).
+        let platform_version = PlatformVersion::get(13).expect("v13 must exist");
         let platform = TestPlatformBuilder::new()
             .with_latest_protocol_version()
             .build_with_mock_rpc()
