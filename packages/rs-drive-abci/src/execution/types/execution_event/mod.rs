@@ -92,6 +92,14 @@ pub(in crate::execution) enum ExecutionEvent<'a> {
         operations: Vec<DriveOperation<'a>>,
         /// fees derived from value_balance to add to the fee pool
         fees_to_add_to_pool: Credits,
+        /// Transparent platform-address credits produced by this shielded spend, to be folded into
+        /// the recent-address-balance-changes tree (`store_address_balances_for_block`) so
+        /// incremental client sync sees them. `Some` only for `Unshield`, which credits its output
+        /// address the NET amount (`amount - fee`) and only when that net is positive — mirroring the
+        /// `AddBalanceToAddress` op the converter emits. `None` for every other shielded spend
+        /// (ShieldedTransfer / ShieldedWithdrawal / IdentityCreateFromShieldedPool): they credit no
+        /// transparent address, so there is nothing for incremental sync to observe.
+        added_to_balance_outputs: Option<BTreeMap<PlatformAddress, Credits>>,
         /// `true` ONLY for the `IdentityCreateFromShieldedPool` chargeable-failure fallback. It
         /// authorizes the executor to apply `operations` even when consensus errors are attached
         /// (the spend is finalized to the fallback address minus the penalty). For every ordinary
@@ -124,6 +132,12 @@ pub(in crate::execution) enum ExecutionEvent<'a> {
     PaidFromAssetLockToPool {
         /// Fee (asset_lock_value - shield_amount) to add to the fee pool
         fees_to_add_to_pool: Credits,
+        /// Transparent platform-address credit produced by this shield, to be folded into the
+        /// recent-address-balance-changes tree (`store_address_balances_for_block`) so incremental
+        /// client sync sees it. `Some` only when `ShieldFromAssetLock` routes an asset-lock surplus
+        /// to a `surplus_output` address (mirroring the converter's `AddBalanceToAddress` op); `None`
+        /// when there is no surplus output (the surplus folds into the fee pools instead).
+        added_to_balance_outputs: Option<BTreeMap<PlatformAddress, Credits>>,
         /// the operations that should be performed
         operations: Vec<DriveOperation<'a>>,
         /// the execution operations that we must also pay for
@@ -544,6 +558,8 @@ impl ExecutionEvent<'_> {
                 Ok(ExecutionEvent::PaidFromShieldedPool {
                     operations,
                     fees_to_add_to_pool: fee_amount,
+                    // A shielded-to-shielded transfer credits no transparent address.
+                    added_to_balance_outputs: None,
                     chargeable_failure: false,
                 })
             }
@@ -552,11 +568,25 @@ impl ExecutionEvent<'_> {
                 // An ordinary Unshield is always `false`; only the IdentityCreateFromShieldedPool
                 // duplicate-key fallback (which also surfaces as an UnshieldAction) sets it `true`.
                 let chargeable_failure = unshield_action.chargeable_failure();
+                // The converter credits the output address the NET amount (`amount - fee`) via an
+                // `AddBalanceToAddress` op, and only when that net is positive (see
+                // `unshield_transition.rs`). Thread the identical value here so the credit is also
+                // recorded in the recent-address-balance-changes tree for incremental sync.
+                // `checked_sub` returning `None` on underflow yields no output here — the converter
+                // call below then errors on the same underflow, so no event is constructed.
+                let added_to_balance_outputs = unshield_action
+                    .amount()
+                    .checked_sub(fee_amount)
+                    .filter(|net_recipient_amount| *net_recipient_amount > 0)
+                    .map(|net_recipient_amount| {
+                        BTreeMap::from([(*unshield_action.output_address(), net_recipient_amount)])
+                    });
                 let operations =
                     action.into_high_level_drive_operations(epoch, platform_version)?;
                 Ok(ExecutionEvent::PaidFromShieldedPool {
                     operations,
                     fees_to_add_to_pool: fee_amount,
+                    added_to_balance_outputs,
                     chargeable_failure,
                 })
             }
@@ -578,10 +608,28 @@ impl ExecutionEvent<'_> {
                             "shield amount + surplus exceeds asset lock value to be consumed in ShieldFromAssetLock fee computation",
                         ),
                     ))?;
+                // The converter routes `surplus_amount` to the `surplus_output` platform address via
+                // an `AddBalanceToAddress` op, but only when the output is set AND the surplus is
+                // positive (see `shield_from_asset_lock_transition.rs`). Thread the identical credit
+                // here so it is recorded in the recent-address-balance-changes tree for incremental
+                // sync. When there is no surplus output the surplus folds into the fee pools instead,
+                // crediting no address, so this stays `None`.
+                let added_to_balance_outputs = match shield_from_asset_lock_action.surplus_output() {
+                    Some(surplus_address)
+                        if shield_from_asset_lock_action.surplus_amount() > 0 =>
+                    {
+                        Some(BTreeMap::from([(
+                            *surplus_address,
+                            shield_from_asset_lock_action.surplus_amount(),
+                        )]))
+                    }
+                    _ => None,
+                };
                 let operations =
                     action.into_high_level_drive_operations(epoch, platform_version)?;
                 Ok(ExecutionEvent::PaidFromAssetLockToPool {
                     fees_to_add_to_pool: fee_amount,
+                    added_to_balance_outputs,
                     operations,
                     execution_operations: execution_context.operations_consume(),
                 })
@@ -593,6 +641,9 @@ impl ExecutionEvent<'_> {
                 Ok(ExecutionEvent::PaidFromShieldedPool {
                     operations,
                     fees_to_add_to_pool: fee_amount,
+                    // A shielded withdrawal leaves Platform for a Core-chain output; it credits no
+                    // transparent platform address, so there is nothing to record here.
+                    added_to_balance_outputs: None,
                     chargeable_failure: false,
                 })
             }
@@ -647,6 +698,188 @@ impl ExecutionEvent<'_> {
                     )))
                 }
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dpp::version::DefaultForPlatformVersion;
+    use drive::state_transition_action::shielded::shield_from_asset_lock::v0::ShieldFromAssetLockTransitionActionV0;
+    use drive::state_transition_action::shielded::shield_from_asset_lock::ShieldFromAssetLockTransitionAction;
+    use drive::state_transition_action::shielded::unshield::v0::UnshieldTransitionActionV0;
+    use drive::state_transition_action::shielded::unshield::UnshieldTransitionAction;
+    use drive::state_transition_action::shielded::ShieldedActionNote;
+
+    fn note() -> ShieldedActionNote {
+        ShieldedActionNote {
+            nullifier: [0x11; 32],
+            cmx: [0x22; 32],
+            cv_net: [0x33; 32],
+            encrypted_note: vec![1, 2, 3],
+        }
+    }
+
+    fn ctx() -> StateTransitionExecutionContext {
+        StateTransitionExecutionContext::default_for_platform_version(PlatformVersion::latest())
+            .expect("execution context")
+    }
+
+    /// An `Unshield` crediting its output address a positive NET (`amount - fee`) must carry that
+    /// credit in `PaidFromShieldedPool::added_to_balance_outputs`, so the executor can record it in
+    /// the recent-address-balance-changes tree that incremental client sync reads.
+    #[test]
+    fn unshield_populates_net_output_credit() {
+        let output_address = PlatformAddress::P2pkh([0xBB; 20]);
+        let action = StateTransitionAction::UnshieldAction(UnshieldTransitionAction::V0(
+            UnshieldTransitionActionV0 {
+                output_address,
+                amount: 3000,
+                notes: vec![note()],
+                anchor: [0xAA; 32],
+                fee_amount: 500,
+                current_total_balance: 10_000,
+                chargeable_failure: false,
+            },
+        ));
+
+        let event = ExecutionEvent::create_from_state_transition_action(
+            action,
+            None,
+            &Epoch::new(0).unwrap(),
+            ctx(),
+            PlatformVersion::latest(),
+        )
+        .expect("create event");
+
+        match event {
+            ExecutionEvent::PaidFromShieldedPool {
+                added_to_balance_outputs,
+                ..
+            } => {
+                let outputs =
+                    added_to_balance_outputs.expect("net > 0 must carry an output credit");
+                assert_eq!(outputs.len(), 1);
+                // 3000 amount - 500 fee = 2500 net to the output address.
+                assert_eq!(outputs.get(&output_address).copied(), Some(2500));
+            }
+            _ => panic!("expected PaidFromShieldedPool"),
+        }
+    }
+
+    /// A net-zero `Unshield` (the whole unshielding amount consumed by the fee) credits no address —
+    /// the converter emits no `AddBalanceToAddress`, so the event must carry no output either.
+    #[test]
+    fn unshield_net_zero_records_no_output_credit() {
+        let action = StateTransitionAction::UnshieldAction(UnshieldTransitionAction::V0(
+            UnshieldTransitionActionV0 {
+                output_address: PlatformAddress::P2pkh([0xBB; 20]),
+                amount: 500,
+                notes: vec![note()],
+                anchor: [0xAA; 32],
+                fee_amount: 500, // net = 0
+                current_total_balance: 10_000,
+                chargeable_failure: false,
+            },
+        ));
+
+        let event = ExecutionEvent::create_from_state_transition_action(
+            action,
+            None,
+            &Epoch::new(0).unwrap(),
+            ctx(),
+            PlatformVersion::latest(),
+        )
+        .expect("create event");
+
+        match event {
+            ExecutionEvent::PaidFromShieldedPool {
+                added_to_balance_outputs,
+                ..
+            } => assert!(
+                added_to_balance_outputs.is_none(),
+                "net-zero unshield must credit no address"
+            ),
+            _ => panic!("expected PaidFromShieldedPool"),
+        }
+    }
+
+    /// A `ShieldFromAssetLock` routing a surplus to a `surplus_output` address must carry that credit
+    /// in `PaidFromAssetLockToPool::added_to_balance_outputs`.
+    #[test]
+    fn shield_from_asset_lock_populates_surplus_credit() {
+        let surplus_address = PlatformAddress::P2pkh([0x42; 20]);
+        let action = StateTransitionAction::ShieldFromAssetLockAction(
+            ShieldFromAssetLockTransitionAction::V0(ShieldFromAssetLockTransitionActionV0 {
+                asset_lock_outpoint: [0xDD; 36],
+                asset_lock_value_to_be_consumed: 10_000,
+                signable_bytes_hasher: [0xEE; 32],
+                shield_amount: 5_000,
+                notes: vec![note()],
+                current_total_balance: 10_000,
+                surplus_output: Some(surplus_address),
+                surplus_amount: 2_000,
+            }),
+        );
+
+        let event = ExecutionEvent::create_from_state_transition_action(
+            action,
+            None,
+            &Epoch::new(0).unwrap(),
+            ctx(),
+            PlatformVersion::latest(),
+        )
+        .expect("create event");
+
+        match event {
+            ExecutionEvent::PaidFromAssetLockToPool {
+                added_to_balance_outputs,
+                fees_to_add_to_pool,
+                ..
+            } => {
+                let outputs =
+                    added_to_balance_outputs.expect("surplus must carry an output credit");
+                assert_eq!(outputs.get(&surplus_address).copied(), Some(2_000));
+                // fee = consumed - shield - surplus = 10000 - 5000 - 2000.
+                assert_eq!(fees_to_add_to_pool, 3_000);
+            }
+            _ => panic!("expected PaidFromAssetLockToPool"),
+        }
+    }
+
+    /// A `ShieldFromAssetLock` with no `surplus_output` credits no address (the surplus folds into
+    /// the fee pools), so the event must carry no output.
+    #[test]
+    fn shield_from_asset_lock_without_surplus_output_records_nothing() {
+        let action = StateTransitionAction::ShieldFromAssetLockAction(
+            ShieldFromAssetLockTransitionAction::V0(ShieldFromAssetLockTransitionActionV0 {
+                asset_lock_outpoint: [0xDD; 36],
+                asset_lock_value_to_be_consumed: 10_000,
+                signable_bytes_hasher: [0xEE; 32],
+                shield_amount: 5_000,
+                notes: vec![note()],
+                current_total_balance: 10_000,
+                surplus_output: None,
+                surplus_amount: 0,
+            }),
+        );
+
+        let event = ExecutionEvent::create_from_state_transition_action(
+            action,
+            None,
+            &Epoch::new(0).unwrap(),
+            ctx(),
+            PlatformVersion::latest(),
+        )
+        .expect("create event");
+
+        match event {
+            ExecutionEvent::PaidFromAssetLockToPool {
+                added_to_balance_outputs,
+                ..
+            } => assert!(added_to_balance_outputs.is_none()),
+            _ => panic!("expected PaidFromAssetLockToPool"),
         }
     }
 }

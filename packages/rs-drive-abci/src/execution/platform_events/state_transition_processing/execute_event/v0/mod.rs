@@ -548,6 +548,7 @@ where
             ExecutionEvent::PaidFromShieldedPool {
                 operations,
                 fees_to_add_to_pool,
+                added_to_balance_outputs,
                 chargeable_failure,
             } => {
                 // An error-bearing `PaidFromShieldedPool` is legitimate ONLY for the
@@ -587,6 +588,38 @@ where
                     )
                     .map_err(Error::Drive)?;
 
+                // The ops just applied credited any transparent output address (an Unshield's
+                // recipient, including the chargeable-failure fallback address). Record that credit
+                // into the recent-address-balance-changes tree so incremental client sync sees it —
+                // same entry/merge idiom as the `Paid` arm's `added_to_balance_outputs`. Reached only
+                // on the applied path (the early return above skips this), mirroring the `Paid` arm.
+                if let Some(outputs) = added_to_balance_outputs {
+                    if let Some(balance_updates) = address_balances_in_update {
+                        for (address, credits) in outputs {
+                            let new_op = CreditOperation::AddToCredits(credits);
+                            balance_updates
+                                .entry(address)
+                                .and_modify(|existing| {
+                                    *existing = match existing {
+                                        // Set + Add = Set to combined value
+                                        CreditOperation::SetCredits(set_val) => {
+                                            CreditOperation::SetCredits(
+                                                set_val.saturating_add(credits),
+                                            )
+                                        }
+                                        // Add + Add = saturating add
+                                        CreditOperation::AddToCredits(add_val) => {
+                                            CreditOperation::AddToCredits(
+                                                add_val.saturating_add(credits),
+                                            )
+                                        }
+                                    };
+                                })
+                                .or_insert(new_op);
+                        }
+                    }
+                }
+
                 // Split the carved fee like every other transition: the real storage
                 // cost of the (permanent) shielded writes goes to the storage pool, so it
                 // is amortised to the validators that store it over time and picks up the
@@ -612,6 +645,7 @@ where
             }
             ExecutionEvent::PaidFromAssetLockToPool {
                 fees_to_add_to_pool,
+                added_to_balance_outputs,
                 operations,
                 ..
             } => {
@@ -632,6 +666,37 @@ where
                             Some(previous_fee_versions),
                         )
                         .map_err(Error::Drive)?;
+
+                    // The ops just applied credited the shield's transparent surplus-output address
+                    // (when set). Record that credit into the recent-address-balance-changes tree so
+                    // incremental client sync sees it — same entry/merge idiom as the `Paid` arm's
+                    // `added_to_balance_outputs`. Reached only on the applied (no-errors) path.
+                    if let Some(outputs) = added_to_balance_outputs {
+                        if let Some(balance_updates) = address_balances_in_update {
+                            for (address, credits) in outputs {
+                                let new_op = CreditOperation::AddToCredits(credits);
+                                balance_updates
+                                    .entry(address)
+                                    .and_modify(|existing| {
+                                        *existing = match existing {
+                                            // Set + Add = Set to combined value
+                                            CreditOperation::SetCredits(set_val) => {
+                                                CreditOperation::SetCredits(
+                                                    set_val.saturating_add(credits),
+                                                )
+                                            }
+                                            // Add + Add = saturating add
+                                            CreditOperation::AddToCredits(add_val) => {
+                                                CreditOperation::AddToCredits(
+                                                    add_val.saturating_add(credits),
+                                                )
+                                            }
+                                        };
+                                    })
+                                    .or_insert(new_op);
+                            }
+                        }
+                    }
 
                     // Route the real storage cost of the shielded writes to the storage pool
                     // (amortised over time, epoch fee multiplier applied at payout); the
@@ -699,5 +764,143 @@ where
                 Ok(SuccessfulFreeExecution)
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::platform_types::event_execution_result::EventExecutionResult;
+    use crate::test::helpers::setup::TestPlatformBuilder;
+    use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
+
+    /// Regression for the recent-address-balance-changes gap: a `PaidFromShieldedPool` carrying an
+    /// Unshield's output credit must fold that credit into the `address_balances_in_update` map (the
+    /// sole feed for `store_address_balances_for_block`), so incremental client sync can see the
+    /// unshield. Before the fix the arm applied the drive ops but never touched the map, leaving the
+    /// credit invisible to incremental sync.
+    #[test]
+    fn paid_from_shielded_pool_folds_output_credit_into_address_balances() {
+        let platform_version = PlatformVersion::latest();
+        let platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+        let transaction = platform.drive.grove.start_transaction();
+        let fee_versions = CachedEpochIndexFeeVersions::new();
+
+        let output_address = PlatformAddress::P2pkh([0xBB; 20]);
+        let event = ExecutionEvent::PaidFromShieldedPool {
+            operations: vec![],
+            fees_to_add_to_pool: 0,
+            added_to_balance_outputs: Some(BTreeMap::from([(output_address, 2500)])),
+            chargeable_failure: false,
+        };
+
+        let mut address_balances: BTreeMap<PlatformAddress, CreditOperation> = BTreeMap::new();
+        let result = platform
+            .platform
+            .execute_event_v0(
+                event,
+                vec![],
+                &BlockInfo::default(),
+                &transaction,
+                Some(&mut address_balances),
+                platform_version,
+                &fee_versions,
+            )
+            .expect("execute_event_v0 should not error");
+
+        assert!(
+            matches!(result, EventExecutionResult::SuccessfulPaidExecution(..)),
+            "an ordinary unshield must execute successfully"
+        );
+        assert_eq!(
+            address_balances.get(&output_address),
+            Some(&CreditOperation::AddToCredits(2500)),
+            "the unshield output credit must be recorded for incremental sync"
+        );
+    }
+
+    /// A `PaidFromShieldedPool` with no output (ShieldedTransfer / ShieldedWithdrawal, or a net-zero
+    /// unshield) must leave the address-balances map untouched.
+    #[test]
+    fn paid_from_shielded_pool_without_output_records_nothing() {
+        let platform_version = PlatformVersion::latest();
+        let platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+        let transaction = platform.drive.grove.start_transaction();
+        let fee_versions = CachedEpochIndexFeeVersions::new();
+
+        let event = ExecutionEvent::PaidFromShieldedPool {
+            operations: vec![],
+            fees_to_add_to_pool: 0,
+            added_to_balance_outputs: None,
+            chargeable_failure: false,
+        };
+
+        let mut address_balances: BTreeMap<PlatformAddress, CreditOperation> = BTreeMap::new();
+        platform
+            .platform
+            .execute_event_v0(
+                event,
+                vec![],
+                &BlockInfo::default(),
+                &transaction,
+                Some(&mut address_balances),
+                platform_version,
+                &fee_versions,
+            )
+            .expect("execute_event_v0 should not error");
+
+        assert!(
+            address_balances.is_empty(),
+            "a shielded spend crediting no transparent address must record nothing"
+        );
+    }
+
+    /// The `PaidFromAssetLockToPool` counterpart: a `ShieldFromAssetLock` surplus credit must be
+    /// folded into the address-balances map on the applied (no-errors) path.
+    #[test]
+    fn paid_from_asset_lock_to_pool_folds_surplus_credit_into_address_balances() {
+        let platform_version = PlatformVersion::latest();
+        let platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_initial_state_structure();
+        let transaction = platform.drive.grove.start_transaction();
+        let fee_versions = CachedEpochIndexFeeVersions::new();
+
+        let surplus_address = PlatformAddress::P2pkh([0x42; 20]);
+        let event = ExecutionEvent::PaidFromAssetLockToPool {
+            fees_to_add_to_pool: 1_000_000,
+            added_to_balance_outputs: Some(BTreeMap::from([(surplus_address, 2000)])),
+            operations: vec![],
+            execution_operations: vec![],
+        };
+
+        let mut address_balances: BTreeMap<PlatformAddress, CreditOperation> = BTreeMap::new();
+        let result = platform
+            .platform
+            .execute_event_v0(
+                event,
+                vec![],
+                &BlockInfo::default(),
+                &transaction,
+                Some(&mut address_balances),
+                platform_version,
+                &fee_versions,
+            )
+            .expect("execute_event_v0 should not error");
+
+        assert!(
+            matches!(result, EventExecutionResult::SuccessfulPaidExecution(..)),
+            "a sufficiently-funded shield-from-asset-lock must execute successfully"
+        );
+        assert_eq!(
+            address_balances.get(&surplus_address),
+            Some(&CreditOperation::AddToCredits(2000)),
+            "the shield surplus credit must be recorded for incremental sync"
+        );
     }
 }
