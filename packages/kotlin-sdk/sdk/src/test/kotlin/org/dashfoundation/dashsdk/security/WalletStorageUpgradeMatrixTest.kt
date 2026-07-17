@@ -264,6 +264,45 @@ class WalletStorageUpgradeMatrixTest {
     }
 
     /**
+     * Regression (dashpay/platform#4060, finding 1049be675782): the legacy
+     * migration must not resurrect a private key a concurrent wallet deletion
+     * just removed. [WalletStorage.retrievePrivateKey] reads and recovers the
+     * former-RSA blob WITHOUT holding the private-key mutex; a removeWallet
+     * sweep can win `withPrivateKeyExclusion` between that read and
+     * `migrateToPolicyAlias`'s rewrite, delete the alias plus its owner-index
+     * entry, and cascade the Room rows. The rewrite must then be SKIPPED — an
+     * unconditional edit recreated `privkey.<pubkeyHex>` as undiscoverable
+     * ciphertext (no owner index, no database row) behind a "successful" wipe.
+     */
+    @Test
+    fun migrationDoesNotResurrectAKeyDeletedMidRecovery() = runBlocking {
+        fake.keysAliasKind = FakeKeystoreManager.KeysAliasKind.RSA
+        fake.scheme = FakeKeystoreManager.Scheme.FORMER_RSA
+        val owner = ByteArray(32) { 4 }
+        storage.storePrivateKey(pub, secret, ownerWalletId = owner)
+
+        // The migration's policy-alias re-encrypt is the window between the
+        // caller's read and the conditional rewrite: model the concurrent
+        // deletion sweep winning it.
+        fake.scheme = FakeKeystoreManager.Scheme.CURRENT
+        fake.onNextPolicyEncrypt = {
+            runBlocking {
+                storage.withPrivateKeyExclusion {
+                    deletePrivateKeys(listOf(pub))
+                    deleteOwnerIndex(owner)
+                }
+            }
+        }
+
+        // The caller still gets the value it legitimately recovered…
+        assertArrayEquals(secret, storage.retrievePrivateKey(pub))
+        // …but the swept entry and owner index must NOT be re-created.
+        assertFalse(storage.hasPrivateKey(pub))
+        assertTrue(storage.ownedPrivateKeyAliases(owner).isEmpty())
+        assertNull(storage.retrievePrivateKey(pub))
+    }
+
+    /**
      * A closed auth window must NOT be mistaken for a wrong key: the
      * UserNotAuthenticatedException propagates so KeystoreSigner can prompt,
      * instead of being swallowed into the former-RSA fallback.
@@ -306,6 +345,14 @@ private class FakeKeystoreManager :
     var legacyRsaFallbackCalls: Int = 0
 
     /**
+     * One-shot hook fired at the next policy-alias encrypt — the exact
+     * window between a legacy recovery's read/decrypt and
+     * `migrateToPolicyAlias`'s rewrite, where a concurrent wallet deletion
+     * can interleave (finding 1049be675782).
+     */
+    var onNextPolicyEncrypt: (() -> Unit)? = null
+
+    /**
      * A present, non-auth-gated DEVICE_BOUND sibling key. Modelling the JCE
      * invariant, it opens ONLY the sibling-written blob (TAG_SIBLING) — the one
      * alias that produced it — prompt-free.
@@ -319,6 +366,10 @@ private class FakeKeystoreManager :
 
     override fun encrypt(plaintext: ByteArray, alias: String): EncryptedBlob = when (scheme) {
         Scheme.CURRENT -> {
+            onNextPolicyEncrypt?.let { hook ->
+                onNextPolicyEncrypt = null
+                hook()
+            }
             policyKeyProvisioned = true // public-key encrypt provisions the alias
             rsaBlob(TAG_POLICY, plaintext)
         }

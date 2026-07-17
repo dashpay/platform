@@ -237,7 +237,7 @@ class WalletStorage(
             // was auth-gated — which the signer handles exactly as the RSA
             // path), or null if that key is already gone (unrecoverable).
             val plain = keystore.decryptLegacyKeysBlob(blob) ?: return null
-            migrateToPolicyAlias(pubkeyHex, plain)
+            migrateToPolicyAlias(pubkeyHex, plain, encoded)
             return plain
         }
         // Empty-IV RSA blob: encrypted under the current policy alias (steady
@@ -262,7 +262,7 @@ class WalletStorage(
         // alias), the blob is unrecoverable here → null.
         if (!keystore.hasIdentityKeysKey(keystore.keysAlias)) {
             val recovered = tryFormerRsaRecovery(blob) ?: return null
-            migrateToPolicyAlias(pubkeyHex, recovered)
+            migrateToPolicyAlias(pubkeyHex, recovered, encoded)
             return recovered
         }
         // Steady state: try the current policy alias first; on a wrong-key crypto
@@ -275,7 +275,7 @@ class WalletStorage(
             throw e
         } catch (e: GeneralSecurityException) {
             val recovered = tryFormerRsaRecovery(blob) ?: return null
-            migrateToPolicyAlias(pubkeyHex, recovered)
+            migrateToPolicyAlias(pubkeyHex, recovered, encoded)
             recovered
         }
     }
@@ -306,11 +306,32 @@ class WalletStorage(
      * rewrite the stored blob, migrating a recovered legacy value forward. A
      * rewrite failure must not lose the value the caller just recovered, so this
      * stays best-effort (migration retries on the next read).
+     *
+     * The rewrite is CONDITIONAL on the entry still holding [sourceEncoded] —
+     * the exact encoded blob the caller read and recovered. [retrievePrivateKey]
+     * runs without [privateKeyMutex], so between its read and this rewrite a
+     * wallet deletion can win [withPrivateKeyExclusion], sweep the alias plus
+     * its owner-index entry, and cascade the Room rows; an unconditional edit
+     * would then RESURRECT `privkey.<pubkeyHex>` as undiscoverable ciphertext
+     * with no owner-index or database reference, violating removeWallet's
+     * no-surviving-ciphertext guarantee (dashpay/platform#4060, finding
+     * 1049be675782). DataStore serializes edits, so the still-present check and
+     * the write commit atomically against the deletion's edit: if the deletion
+     * (or any concurrent overwrite — e.g. a [storePrivateKey] racing in a newer
+     * value) got there first, the migration is skipped; the caller still
+     * returns the plaintext it legitimately recovered.
      */
-    private suspend fun migrateToPolicyAlias(pubkeyHex: String, plain: ByteArray) {
+    private suspend fun migrateToPolicyAlias(
+        pubkeyHex: String,
+        plain: ByteArray,
+        sourceEncoded: String,
+    ) {
         runCatching {
             val migrated = keystore.encrypt(plain, alias = keystore.keysAlias)
-            store.edit { it[privateKeyKey(pubkeyHex)] = encode(migrated) }
+            store.edit {
+                val key = privateKeyKey(pubkeyHex)
+                if (it[key] == sourceEncoded) it[key] = encode(migrated)
+            }
         }
     }
 
