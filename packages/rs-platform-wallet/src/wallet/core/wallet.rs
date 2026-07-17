@@ -288,19 +288,23 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
         self.sdk.network
     }
 
-    /// Current synced block height for this wallet, or `None` if the wallet is no
-    /// longer present in the manager.
+    /// Current last-processed block height for this wallet, or `None` if the
+    /// wallet is no longer present in the manager.
     ///
-    /// Used by the deferred-payment
+    /// This is the clock the funding reservation is actually stamped with:
+    /// `finalize_transaction` / `build_signed` reserve the selected inputs at
+    /// `set_current_height(last_processed_height())`, and key-wallet's
+    /// `ReservationSet` TTL sweeps entries relative to a later build's
+    /// `last_processed_height`. It is therefore the correct — and monotonic —
+    /// clock for the deferred-payment
     /// [`SignedPaymentRegistry`](crate::SignedPaymentRegistry) to bound a token's
-    /// lifetime against key-wallet's UTXO reservation TTL: a `build_signed`
-    /// reservation is stamped at this height, so the elapsed span since
-    /// registration tells the registry whether the reservation could have been
-    /// swept and re-selected out from under the token.
-    pub(crate) async fn synced_height(&self) -> Option<u32> {
+    /// lifetime against that TTL. `synced_height` is a different clock that can
+    /// regress during a rescan, so measuring the reservation's age against it
+    /// could let a token outlive its reservation.
+    pub(crate) async fn last_processed_height(&self) -> Option<u32> {
         let wm = self.wallet_manager.read().await;
         wm.get_wallet_and_info(&self.wallet_id)
-            .map(|(_, info)| info.core_wallet.synced_height())
+            .map(|(_, info)| info.core_wallet.last_processed_height())
     }
 }
 

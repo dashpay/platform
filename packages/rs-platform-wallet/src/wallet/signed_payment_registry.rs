@@ -28,9 +28,10 @@
 //!   [`SignedPaymentError::WalletMismatch`] rather than a spend against stale
 //!   state.
 //! * A token has a bounded lifetime ([`RESERVATION_MAX_AGE_BLOCKS`]). Once the
-//!   wallet has synced far enough past the height at which `build_signed`
-//!   stamped the reservation that key-wallet's own `ReservationSet` TTL could
-//!   have swept and re-selected the funding UTXO for an unrelated build,
+//!   wallet's `last_processed_height` has advanced far enough past the height at
+//!   which `build_signed` / `finalize_transaction` stamped the reservation that
+//!   key-wallet's own `ReservationSet` TTL could have swept and re-selected the
+//!   funding UTXO for an unrelated build,
 //!   broadcasting or releasing the token would act on state that may no longer
 //!   be its own — so both are refused with
 //!   [`SignedPaymentError::StaleReservationToken`] and the caller must rebuild.
@@ -67,20 +68,22 @@ use crate::PlatformWalletError;
 /// lifetime and never reused, so a stale token can always be recognised.
 pub type ReservationToken = u64;
 
-/// Maximum age, in synced blocks, of a registered token before its broadcast or
-/// release is refused.
+/// Maximum age, in `last_processed_height` blocks, of a registered token before
+/// its broadcast or release is refused.
 ///
 /// Kept strictly below key-wallet's `RESERVATION_TTL_BLOCKS` (24, ~1h at the
-/// mainnet block target): a `build_signed` reservation is stamped at the wallet's
-/// synced height and swept by a later `reserve`/`reserved` call once it is
-/// `RESERVATION_TTL_BLOCKS` old, silently returning the outpoint to the
-/// selectable pool where an unrelated build can re-select and re-reserve it.
+/// mainnet block target): a `build_signed` / `finalize_transaction` reservation
+/// is stamped at the wallet's `last_processed_height` (via `set_current_height`)
+/// and swept by a later `reserve`/`reserved` call — itself stamped with the same
+/// `last_processed_height` clock — once it is `RESERVATION_TTL_BLOCKS` old,
+/// silently returning the outpoint to the selectable pool where an unrelated
+/// build can re-select and re-reserve it.
 /// `ReservationSet::release` removes an outpoint unconditionally, with no
 /// ownership/generation check, so acting on a token whose reservation was
 /// already swept could free (or broadcast against) a newer, unrelated
 /// reservation. Refusing at this lower bound guarantees the guard always trips
 /// **before** the underlying reservation could have been swept, leaving a margin
-/// for the wallet's synced height to lag a few blocks behind the true tip.
+/// for `last_processed_height` to lag a few blocks behind the true tip.
 const RESERVATION_MAX_AGE_BLOCKS: u32 = 20;
 
 /// Whether a token registered at `registered_height` is too old to act on at
@@ -143,12 +146,13 @@ struct RegisteredPayment<B: TransactionBroadcaster + ?Sized> {
     /// TTL backstop), mirroring `CoreAccountTypeFFI::as_standard_account_type`.
     account_type: Option<StandardAccountType>,
     account_index: u32,
-    /// Wallet synced height captured at registration — a proxy for the height at
-    /// which `build_signed` stamped the funding reservation. Compared against the
-    /// wallet's current synced height to refuse a broadcast/release once the
-    /// reservation could plausibly have been swept (see
-    /// [`RESERVATION_MAX_AGE_BLOCKS`]). `None` when the wallet was not resolvable
-    /// at registration, which disables the age guard for this entry.
+    /// Wallet `last_processed_height` captured at registration — the exact clock
+    /// `build_signed` / `finalize_transaction` stamps the funding reservation
+    /// with. Compared against the wallet's current `last_processed_height` to
+    /// refuse a broadcast/release once the reservation could plausibly have been
+    /// swept by key-wallet's TTL (see [`RESERVATION_MAX_AGE_BLOCKS`]). `None` when
+    /// the wallet was not resolvable at registration, which disables the age
+    /// guard for this entry.
     registered_height: Option<u32>,
 }
 
@@ -197,8 +201,8 @@ impl<B: TransactionBroadcaster + ?Sized> SignedPaymentRegistry<B> {
     ///
     /// `core` is the wallet the payment was built against; it is captured so the
     /// later operation acts on the exact reservation state that holds the inputs.
-    /// The wallet's current synced height is captured too, to bound the token's
-    /// lifetime against key-wallet's reservation TTL (see
+    /// The wallet's current `last_processed_height` is captured too, to bound the
+    /// token's lifetime against key-wallet's reservation TTL (see
     /// [`RESERVATION_MAX_AGE_BLOCKS`]).
     pub async fn register(
         &self,
@@ -207,7 +211,7 @@ impl<B: TransactionBroadcaster + ?Sized> SignedPaymentRegistry<B> {
         account_type: Option<StandardAccountType>,
         account_index: u32,
     ) -> ReservationToken {
-        let registered_height = core.synced_height().await;
+        let registered_height = core.last_processed_height().await;
         let token = self.next_token.fetch_add(1, Ordering::SeqCst);
         self.lock().insert(
             token,
@@ -261,7 +265,7 @@ impl<B: TransactionBroadcaster + ?Sized> SignedPaymentRegistry<B> {
         // simply drop it — deliberately WITHOUT releasing, since a release by
         // outpoint here could free a newer build's reservation. The stale
         // reservation is reclaimed by key-wallet's own TTL sweep.
-        if reservation_expired(entry.registered_height, current.synced_height().await) {
+        if reservation_expired(entry.registered_height, current.last_processed_height().await) {
             return Err(SignedPaymentError::StaleReservationToken(token));
         }
 
@@ -299,7 +303,7 @@ impl<B: TransactionBroadcaster + ?Sized> SignedPaymentRegistry<B> {
         // build; releasing it by outpoint could free that newer reservation.
         // Drop the token without touching the `ReservationSet` — the original
         // reservation is reclaimed by key-wallet's own TTL sweep.
-        if reservation_expired(entry.registered_height, entry.core.synced_height().await) {
+        if reservation_expired(entry.registered_height, entry.core.last_processed_height().await) {
             return;
         }
         if let Some(account_type) = entry.account_type {
@@ -337,8 +341,10 @@ impl<B: TransactionBroadcaster + ?Sized> SignedPaymentRegistry<B> {
     }
 
     /// Number of outstanding (registered but not yet broadcast/released) tokens.
-    #[cfg(test)]
-    pub(crate) fn outstanding(&self) -> usize {
+    /// Exposed under `test-utils` so downstream FFI-layer tests (e.g. the
+    /// `platform_wallet_destroy` final-alias sweep) can observe registry state.
+    #[cfg(any(test, feature = "test-utils"))]
+    pub fn outstanding(&self) -> usize {
         self.lock().len()
     }
 }
@@ -442,7 +448,11 @@ mod tests {
         let (wallet, info) = wm
             .get_wallet_and_info_mut(&core.wallet_id())
             .expect("wallet present in manager");
-        let current_height = info.core_wallet.synced_height();
+        // Stamp the reservation with `last_processed_height` exactly as the
+        // production `build_signed` / `finalize_transaction` paths do, so the
+        // registry's age guard (which now reads the same clock) is exercised
+        // against a faithfully-stamped reservation.
+        let current_height = info.core_wallet.last_processed_height();
         let (managed_account, account) = match account_type {
             StandardAccountType::BIP44Account => (
                 info.core_wallet
@@ -865,15 +875,16 @@ mod tests {
         assert_eq!(registry.outstanding(), 16);
     }
 
-    /// Force the wallet's synced height forward, simulating chain progress
-    /// between build/register and a later broadcast/release — the window in
-    /// which key-wallet's `ReservationSet` TTL can sweep the funding reservation.
-    async fn advance_synced_height<B: TransactionBroadcaster>(core: &CoreWallet<B>, height: u32) {
+    /// Force the wallet's `last_processed_height` forward, simulating chain
+    /// progress between build/register and a later broadcast/release — the window
+    /// in which key-wallet's `ReservationSet` TTL can sweep the funding
+    /// reservation. This is the same clock the registry's age guard reads.
+    async fn advance_processed_height<B: TransactionBroadcaster>(core: &CoreWallet<B>, height: u32) {
         let mut wm = core.wallet_manager.write().await;
         let (_, info) = wm
             .get_wallet_and_info_mut(&core.wallet_id())
             .expect("wallet present in manager");
-        info.core_wallet.update_synced_height(height);
+        info.core_wallet.update_last_processed_height(height);
     }
 
     /// Once the wallet has synced past `RESERVATION_MAX_AGE_BLOCKS` beyond the
@@ -888,7 +899,7 @@ mod tests {
             funded_core_wallet(StandardAccountType::BIP44Account, Arc::clone(&broadcaster)).await;
         let registry = SignedPaymentRegistry::new();
 
-        let registered_height = core.synced_height().await.expect("synced height");
+        let registered_height = core.last_processed_height().await.expect("last processed height");
         let tx = build_signed_tx(
             &core,
             StandardAccountType::BIP44Account,
@@ -904,7 +915,7 @@ mod tests {
 
         // Advance past the age bound but stay below key-wallet's 24-block TTL, so
         // the reservation is provably still held (only our guard has tripped).
-        advance_synced_height(&core, registered_height + RESERVATION_MAX_AGE_BLOCKS + 2).await;
+        advance_processed_height(&core, registered_height + RESERVATION_MAX_AGE_BLOCKS + 2).await;
 
         let sent = registry.broadcast(token, &core).await;
         assert!(
@@ -944,7 +955,7 @@ mod tests {
             funded_core_wallet(StandardAccountType::BIP44Account, broadcaster).await;
         let registry = SignedPaymentRegistry::new();
 
-        let registered_height = core.synced_height().await.expect("synced height");
+        let registered_height = core.last_processed_height().await.expect("last processed height");
         let tx = build_signed_tx(
             &core,
             StandardAccountType::BIP44Account,
@@ -958,7 +969,7 @@ mod tests {
             .register(core.clone(), tx, Some(StandardAccountType::BIP44Account), 0)
             .await;
 
-        advance_synced_height(&core, registered_height + RESERVATION_MAX_AGE_BLOCKS + 2).await;
+        advance_processed_height(&core, registered_height + RESERVATION_MAX_AGE_BLOCKS + 2).await;
 
         registry.release(token).await;
         assert_eq!(registry.outstanding(), 0, "the expired token is dropped");
