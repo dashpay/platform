@@ -212,6 +212,32 @@ class ManagedPlatformWallet internal constructor(
         override fun toString(): String =
             "SignedCoreTransaction(txidHex=$txidHex, feeDuffs=$feeDuffs, " +
                 "reservationToken=$reservationToken, rawTxBytes=${rawTxBytes.size} bytes)"
+
+        internal companion object {
+            /**
+             * Decode the big-endian native BLOB the deferred build/register FFI
+             * returns: `u64 token, u64 feeDuffs, u32 txidLen, txid utf8,
+             * u32 txBytesLen, txBytes`. Shared by the atomic
+             * finalize-and-register path and the deprecated register path.
+             */
+            internal fun fromRegisterBlob(blob: ByteArray): SignedCoreTransaction {
+                val buffer = java.nio.ByteBuffer.wrap(blob) // big-endian by default
+                val token = buffer.long
+                val feeDuffs = buffer.long
+                val txidLen = buffer.int
+                val txidBytes = ByteArray(txidLen)
+                buffer.get(txidBytes)
+                val txBytesLen = buffer.int
+                val rawTxBytes = ByteArray(txBytesLen)
+                buffer.get(rawTxBytes)
+                return SignedCoreTransaction(
+                    txidHex = String(txidBytes, Charsets.UTF_8),
+                    rawTxBytes = rawTxBytes,
+                    feeDuffs = feeDuffs,
+                    reservationToken = token,
+                )
+            }
+        }
     }
 
     /**
@@ -255,25 +281,24 @@ class ManagedPlatformWallet internal constructor(
             AccountType.BIP32 -> CoreTransactionBuilder.AccountType.BIP32
         }
         mapNativeErrors {
-            coreWallet().use { core ->
-                val builder = CoreTransactionBuilder(network)
-                // `buildSigned` consumes the builder; `use` still safely
-                // destroys it on the pre-build failure paths.
-                val signedTx = builder.use {
-                    for ((address, amount) in recipients) {
-                        it.addOutput(address, amount)
-                    }
-                    it.setFunding(this@ManagedPlatformWallet, builderAccountType, accountIndex)
-                    it.buildSigned(
-                        this@ManagedPlatformWallet,
-                        builderAccountType,
-                        accountIndex,
-                        coreSignerHandle,
-                    )
+            // One atomic native operation: select + reserve + sign + register.
+            // `finalizeSignedPayment` consumes the builder on every path, so
+            // `use` only needs to destroy it on the pre-finalize failure paths
+            // (adding outputs). Selection and reservation commit as a single unit
+            // under the wallet-manager lock, so a concurrent deferred build — or a
+            // deferred build racing an immediate send — can no longer double-
+            // select the same input, restoring the atomicity the removed Kotlin
+            // per-wallet send mutex used to provide.
+            CoreTransactionBuilder(network).use { builder ->
+                for ((address, amount) in recipients) {
+                    builder.addOutput(address, amount)
                 }
-                // Register the signed tx (holding its reservation) before the
-                // native transaction is freed; `use` frees it afterward.
-                signedTx.use { tx -> core.registerSignedPayment(tx) }
+                builder.finalizeSignedPayment(
+                    this@ManagedPlatformWallet,
+                    builderAccountType,
+                    accountIndex,
+                    coreSignerHandle,
+                )
             }
         }
     }

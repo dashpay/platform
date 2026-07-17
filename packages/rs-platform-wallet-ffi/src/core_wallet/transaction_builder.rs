@@ -17,6 +17,7 @@ use key_wallet::wallet::managed_wallet_info::transaction_builder::TransactionBui
 use key_wallet::wallet::managed_wallet_info::transaction_building::AccountTypePreference;
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 use rs_sdk_ffi::{MnemonicResolverCoreSigner, MnemonicResolverHandle};
+use std::ffi::CString;
 use std::os::raw::{c_char, c_void};
 use std::str::FromStr;
 
@@ -136,6 +137,134 @@ pub unsafe extern "C" fn core_wallet_tx_builder_finalize(
             wallet: wallet.core().clone(),
             transaction: finalized,
         });
+    PlatformWalletFFIResult::ok()
+}
+
+/// Atomically fund, reserve, and sign a configured builder for DEFERRED
+/// (BIP70/BIP270) submission, then register the built transaction — holding its
+/// UTXO reservation — in one native operation.
+///
+/// This is the deferred counterpart to `core_wallet_tx_builder_finalize`: it
+/// runs the same atomic `finalize_transaction`, where selection and insertion
+/// into the account `ReservationSet` commit as a single unit under the
+/// wallet-manager lock (signing happens after the lock is dropped). Routing the
+/// deferred build through it closes the double-selection window that the
+/// deprecated `set_funding` + `build_signed` + `register` sequence reopened once
+/// the Kotlin per-wallet send mutex was removed: two concurrent deferred builds,
+/// or a deferred build racing an immediate send, can no longer select the same
+/// UTXO. Consumes `builder` on every path after its pointer is accepted.
+///
+/// Writes `out_token` (the reservation token for a later
+/// `core_wallet_signed_payment_broadcast` / `core_wallet_signed_payment_release`),
+/// `out_fee` (the build's fee in duffs), `out_txid` (a heap C string freed with
+/// `core_wallet_free_address`), and `out_tx` (an owned `FFICoreTransaction`
+/// carrying the consensus-serialized bytes, freed with
+/// `core_wallet_transaction_free`). `out_bytes_ptr`/`out_bytes_len` borrow
+/// `out_tx`'s buffer — copy them out before freeing `out_tx`.
+///
+/// # Safety
+/// `builder` must be a valid, non-destroyed pointer; `wallet` a valid
+/// platform-wallet handle; `core_signer_handle` a valid resolver handle; every
+/// out-pointer must be writable. `out_tx` must point at writable storage for one
+/// `FFICoreTransaction` (typically zeroed).
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn core_wallet_signed_payment_finalize(
+    builder: *mut FFITransactionBuilder,
+    wallet: Handle,
+    account_type: CoreAccountTypeFFI,
+    account_index: u32,
+    core_signer_handle: *mut MnemonicResolverHandle,
+    out_token: *mut u64,
+    out_fee: *mut u64,
+    out_txid: *mut *mut c_char,
+    out_tx: *mut FFICoreTransaction,
+    out_bytes_ptr: *mut *const u8,
+    out_bytes_len: *mut usize,
+) -> PlatformWalletFFIResult {
+    check_ptr!(builder);
+    check_ptr!(core_signer_handle);
+    check_ptr!(out_token);
+    check_ptr!(out_fee);
+    check_ptr!(out_txid);
+    check_ptr!(out_tx);
+    check_ptr!(out_bytes_ptr);
+    check_ptr!(out_bytes_len);
+    *out_token = 0;
+
+    // `finalize_transaction` consumes the builder: reclaim both heap boxes up
+    // front so they are freed on every return path below.
+    let ffi = Box::from_raw(builder);
+    let inner = *Box::from_raw(ffi.inner as *mut TransactionBuilder);
+
+    let wallet = unwrap_option_or_return!(PLATFORM_WALLET_STORAGE.with_item(wallet, |w| w.clone()));
+
+    let builder_network: Network = ffi.network.into();
+    if builder_network != wallet.network() {
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
+            "builder network does not match wallet network".to_string(),
+        );
+    }
+
+    let signer =
+        MnemonicResolverCoreSigner::new(core_signer_handle, wallet.wallet_id(), wallet.network());
+
+    // Atomic select + reserve + sign in one wallet-manager critical section.
+    let finalized = runtime().block_on(wallet.core().finalize_transaction(
+        inner,
+        account_type.into(),
+        account_index,
+        &signer,
+    ));
+    let finalized = unwrap_result_or_return!(finalized);
+
+    let txid = finalized.transaction().txid();
+    let fee = finalized.fee();
+
+    // Do the one fallible marshalling step BEFORE the registry insert: that
+    // insert mints a token and keeps the funding reservation held, so a later
+    // failure would orphan the reservation with no token to release it. txid hex
+    // never contains a NUL, but handle the impossible case anyway.
+    let c_txid = match CString::new(txid.to_string()) {
+        Ok(s) => s,
+        Err(_) => {
+            // Nothing registered yet — release the reservation finalize took.
+            runtime().block_on(wallet.core().abandon_transaction(&finalized));
+            return PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorUtf8Conversion,
+                "txid string contained an interior NUL".to_string(),
+            );
+        }
+    };
+
+    let serialized = dashcore::consensus::serialize(finalized.transaction());
+    let len = serialized.len();
+
+    // Register the reserved+signed tx for deferred submission. `finalize` already
+    // committed the reservation; register just takes ownership of the built tx so
+    // a later broadcast/release can reconcile it, capturing the wallet instance
+    // whose `ReservationSet` holds the inputs.
+    let token =
+        runtime().block_on(crate::core_wallet::signed_payment::SIGNED_PAYMENT_REGISTRY.register(
+            wallet.core().clone(),
+            finalized.transaction().clone(),
+            account_type.as_standard_account_type(),
+            account_index,
+        ));
+
+    *out_tx = FFICoreTransaction {
+        tx_bytes: Box::into_raw(serialized.into_boxed_slice()) as *mut u8,
+        tx_len: len,
+        fee,
+    };
+    *out_token = token;
+    *out_fee = fee;
+    *out_txid = c_txid.into_raw();
+    // Borrowed view into the just-written `out_tx` buffer; the caller copies the
+    // bytes out before freeing `out_tx` with `core_wallet_transaction_free`.
+    *out_bytes_ptr = (*out_tx).tx_bytes as *const u8;
+    *out_bytes_len = len;
     PlatformWalletFFIResult::ok()
 }
 
