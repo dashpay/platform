@@ -269,6 +269,29 @@ internal object WalletManagerNative {
     ): ByteArray
 
     /**
+     * `core_wallet_signed_payment_finalize` — atomically fund, reserve, sign,
+     * AND register a builder for deferred (BIP70/BIP270) submission in one
+     * native call. The concurrency-safe replacement for
+     * [coreTxBuilderSetFunding] + [coreTxBuilderBuildSigned] +
+     * [coreWalletRegisterSignedPayment]: selection and reservation commit as a
+     * single unit under the wallet-manager lock, closing the double-selection
+     * window. CONSUMES [builder]. [accountType]/[accountIndex] identify the
+     * funding account (0 BIP44, 1 BIP32, 2 CoinJoin); [coreSignerHandle] is a
+     * `MnemonicResolverHandle`.
+     *
+     * Returns the same big-endian BLOB [coreWalletRegisterSignedPayment]
+     * returns, decoded into a `SignedCoreTransaction`:
+     * `u64 token, u64 feeDuffs, u32 txidLen, txid utf8, u32 txBytesLen, txBytes`.
+     */
+    external fun coreWalletFinalizeSignedPayment(
+        builder: Long,
+        walletHandle: Long,
+        accountType: Int,
+        accountIndex: Int,
+        coreSignerHandle: Long,
+    ): ByteArray
+
+    /**
      * `core_wallet_signed_payment_broadcast` — broadcast the payment behind
      * [token], reconciling its reservation on failure and consuming the token.
      * A repeated/stale/wrong-wallet token throws

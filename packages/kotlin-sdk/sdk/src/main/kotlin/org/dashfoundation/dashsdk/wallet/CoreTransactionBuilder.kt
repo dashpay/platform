@@ -159,6 +159,38 @@ class CoreTransactionBuilder internal constructor(network: Network) : AutoClosea
         return FinalizedCoreTransaction(transaction, fee)
     }
 
+    /**
+     * Consume this configured builder and, in ONE atomic native operation,
+     * select + reserve + sign the inputs and register the built transaction for
+     * deferred (BIP70/BIP270) submission. The concurrency-safe replacement for
+     * the deprecated [setFunding] + [buildSigned] + register split: selection
+     * and reservation commit as a single unit under the wallet-manager lock, so
+     * concurrent deferred builds cannot double-select an input. Returns the
+     * decoded [ManagedPlatformWallet.SignedCoreTransaction].
+     */
+    internal fun finalizeSignedPayment(
+        wallet: ManagedPlatformWallet,
+        accountType: AccountType,
+        accountIndex: Int,
+        coreSignerHandle: Long,
+    ): ManagedPlatformWallet.SignedCoreTransaction {
+        require(accountIndex >= 0) { "accountIndex must be non-negative" }
+        require(coreSignerHandle != 0L) { "coreSignerHandle must be non-zero" }
+        // Validate every borrowed dependency before transferring builder
+        // ownership. Once getAndSet(0) runs, JNI consumes the native builder.
+        val walletHandle = wallet.handle
+        val builderPtr = handleRef.getAndSet(0)
+        check(builderPtr != 0L) { "CoreTransactionBuilder has been consumed or closed" }
+        val blob = WalletManagerNative.coreWalletFinalizeSignedPayment(
+            builderPtr,
+            walletHandle,
+            accountType.ffiValue,
+            accountIndex,
+            coreSignerHandle,
+        )
+        return ManagedPlatformWallet.SignedCoreTransaction.fromRegisterBlob(blob)
+    }
+
     override fun close() {
         cleanable.clean()
     }

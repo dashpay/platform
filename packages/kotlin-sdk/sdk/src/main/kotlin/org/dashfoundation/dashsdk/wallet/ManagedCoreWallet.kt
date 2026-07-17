@@ -71,21 +71,7 @@ class ManagedCoreWallet internal constructor(handle: Long) : AutoCloseable {
             tx.accountType.ffiValue,
             tx.accountIndex,
         )
-        val buffer = java.nio.ByteBuffer.wrap(blob) // big-endian by default
-        val token = buffer.long
-        val feeDuffs = buffer.long
-        val txidLen = buffer.int
-        val txidBytes = ByteArray(txidLen)
-        buffer.get(txidBytes)
-        val txBytesLen = buffer.int
-        val rawTxBytes = ByteArray(txBytesLen)
-        buffer.get(rawTxBytes)
-        return ManagedPlatformWallet.SignedCoreTransaction(
-            txidHex = String(txidBytes, Charsets.UTF_8),
-            rawTxBytes = rawTxBytes,
-            feeDuffs = feeDuffs,
-            reservationToken = token,
-        )
+        return ManagedPlatformWallet.SignedCoreTransaction.fromRegisterBlob(blob)
     }
 
     /**
