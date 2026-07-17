@@ -13,7 +13,7 @@ import org.junit.Test
  * conversion), which [translateManagedIdentityNotFoundToZero] turns into a
  * zero handle so [Dashpay.syncState] / [Dashpay.payments] /
  * [Dashpay.contacts] return null / empty instead of throwing
- * `DashSdkError.PlatformWallet.Generic("…ManagedIdentity not found")`.
+ * `DashSdkError.PlatformWallet.NotFound("…ManagedIdentity not found")`.
  */
 class ManagedIdentityNotFoundTranslationTest {
 

@@ -1552,7 +1552,8 @@ class PlatformWalletManager(
      * its next tick; a stopped loop observes it on next start. Equal/forward
      * heights are harmless no-ops for scan purposes. If the process dies
      * before the loop consumes and persists progress, the user must reissue
-     * the request. Unknown wallets surface as typed [DashSdkError.NotFound].
+     * the request. Unknown wallets surface as typed
+     * [DashSdkError.PlatformWallet.NotFound] (native code 98).
      */
     suspend fun rescanSpvFilters(walletId: ByteArray, fromHeight: Int) =
         withContext(Dispatchers.IO) {
