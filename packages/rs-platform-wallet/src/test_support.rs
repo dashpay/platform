@@ -259,3 +259,70 @@ pub async fn funded_spv_core_wallet(
         signer,
     )
 }
+
+/// No-op persister satisfying [`PlatformWalletManager`] construction for tests
+/// that need a full [`PlatformWallet`] but no real persistence pipeline.
+pub struct NoopTestPersister;
+
+impl crate::changeset::PlatformWalletPersistence for NoopTestPersister {
+    fn store(
+        &self,
+        _wallet_id: WalletId,
+        _changeset: crate::changeset::PlatformWalletChangeSet,
+    ) -> Result<(), crate::changeset::PersistenceError> {
+        Ok(())
+    }
+
+    fn flush(&self, _wallet_id: WalletId) -> Result<(), crate::changeset::PersistenceError> {
+        Ok(())
+    }
+
+    fn load(&self) -> Result<crate::changeset::ClientStartState, crate::changeset::PersistenceError> {
+        Ok(crate::changeset::ClientStartState::default())
+    }
+}
+
+struct NoopTestEventHandler;
+impl crate::events::EventHandler for NoopTestEventHandler {}
+impl crate::events::PlatformEventHandler for NoopTestEventHandler {}
+
+/// Build a full [`PlatformWallet`] over a mock SDK and a no-op persister, wired
+/// through a real [`PlatformWalletManager`] so its `wallet_manager` `Arc` and
+/// `wallet_id` are production-shaped. Returns the manager (which the caller must
+/// keep alive — it owns the wallet-event adapter task and the registered
+/// `Arc<PlatformWallet>`) alongside the wallet id.
+///
+/// Used by FFI-layer tests that need genuine `PlatformWallet` aliases, e.g. the
+/// `platform_wallet_destroy` final-alias registry-sweep gating.
+pub async fn test_platform_wallet_manager(
+) -> (Arc<crate::PlatformWalletManager<NoopTestPersister>>, WalletId) {
+    use key_wallet::mnemonic::{Language, Mnemonic};
+    use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+
+    // Canonical all-`abandon` BIP-39 test vector.
+    const TEST_MNEMONIC: &str = "abandon abandon abandon abandon abandon abandon \
+         abandon abandon abandon abandon abandon about";
+
+    let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+    let persister = Arc::new(NoopTestPersister);
+    let event_handler: Arc<dyn crate::events::PlatformEventHandler> =
+        Arc::new(NoopTestEventHandler);
+    let manager = Arc::new(crate::PlatformWalletManager::new(sdk, persister, event_handler));
+
+    let mnemonic =
+        Mnemonic::from_phrase(TEST_MNEMONIC, Language::English).expect("valid test mnemonic");
+    let seed_bytes = mnemonic.to_seed("");
+    // `Some(0)` skips the SPV birth-height lookup so the create never hits the
+    // network.
+    let wallet = manager
+        .create_wallet_from_seed_bytes(
+            Network::Testnet,
+            &seed_bytes,
+            WalletAccountCreationOptions::Default,
+            Some(0),
+        )
+        .await
+        .expect("create test wallet");
+    let wallet_id = wallet.wallet_id();
+    (manager, wallet_id)
+}
