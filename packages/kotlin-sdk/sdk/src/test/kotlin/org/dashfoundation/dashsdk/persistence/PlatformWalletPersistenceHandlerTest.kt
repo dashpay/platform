@@ -1126,6 +1126,99 @@ class PlatformWalletPersistenceHandlerTest {
         assertTrue(handler.pendingIdentityKeys.value.isEmpty())
     }
 
+    /**
+     * Regression (dashpay/platform#4060, finding de3cf44a71fc): the pending
+     * record is staged with the round, not published mid-round — the
+     * watch-only row it describes is only buffered until [onChangesetEnd],
+     * so an aborted round (which discards that row) must leave no phantom
+     * pending entry behind.
+     */
+    @Test
+    fun abortedRoundLeavesNoPhantomPendingKeyState() = runTest {
+        handler = PlatformWalletPersistenceHandler(db, Dispatchers.Unconfined, ThrowingDeriver())
+
+        val identityId = ByteArray(32) { 19 }
+        seedIdentity(identityId)
+        val pubkey = ByteArray(33) { 14 }
+
+        handler.onChangesetBegin(walletId)
+        handler.onPersistIdentityKeyUpsert(
+            walletId, identityId, 0, 0, 0, 0, false, false, 0,
+            pubkey, ByteArray(20), true, walletId,
+            true, 3, 5, 0, ByteArray(32), null,
+        )
+        // Mid-round the record is only STAGED: the watch-only row it
+        // describes has not committed yet.
+        assertTrue(handler.pendingIdentityKeys.value.isEmpty())
+
+        handler.onChangesetEnd(walletId, success = false)
+
+        // The aborted round discarded the watch-only row — its staged
+        // pending entry must vanish with it, not survive as a phantom.
+        assertTrue(handler.pendingIdentityKeys.value.isEmpty())
+        assertNull(db.publicKeyDao().getByIdentityAndKeyId(identityId.toBase58String(), 0))
+
+        // The same failure in a round that COMMITS still publishes.
+        upsertIdentityKey(pubkey, identityId)
+        assertNotNull(handler.pendingIdentityKeys.value[pubkey.toHex()])
+    }
+
+    /**
+     * Regression (dashpay/platform#4060, finding de3cf44a71fc), the converse
+     * flow: an earlier watch-only key is pending; a retry round derives
+     * successfully (staging the clear) but then ABORTS. Rollback's alias
+     * cleanup deletes the newly stored scalar, so the old watch-only row —
+     * still the persisted truth — must keep its repair signal instead of
+     * losing it to a mid-round clear.
+     */
+    @Test
+    fun abortedRetryRoundPreservesThePendingRepairSignal() = runTest {
+        var boom = true
+        val flaky = object : PrivateKeyDeriver {
+            val deletedAliases = mutableListOf<String>()
+
+            override fun deriveAndStore(
+                walletId: ByteArray,
+                publicKeyData: ByteArray,
+                identityIndex: Int,
+                keyIndex: Int,
+            ): String =
+                if (boom) throw IllegalStateException("transient") else "privkey.cafebabe"
+
+            override fun deleteStored(pubkeyHexes: Collection<String>) {
+                deletedAliases.addAll(pubkeyHexes)
+            }
+
+            override fun hasStored(pubkeyHex: String): Boolean = false
+        }
+        handler = PlatformWalletPersistenceHandler(db, Dispatchers.Unconfined, flaky)
+
+        val identityId = ByteArray(32) { 20 }
+        seedIdentity(identityId)
+        val pubkey = ByteArray(33) { 15 }
+
+        // A committed failing round records the watch-only key as pending.
+        upsertIdentityKey(pubkey, identityId)
+        assertNotNull(handler.pendingIdentityKeys.value[pubkey.toHex()])
+
+        // The retry round derives + stores successfully (the clear is
+        // staged)… and then the round rolls back.
+        boom = false
+        handler.onChangesetBegin(walletId)
+        handler.onPersistIdentityKeyUpsert(
+            walletId, identityId, 0, 0, 0, 0, false, false, 0,
+            pubkey, ByteArray(20), true, walletId,
+            true, 3, 5, 0, ByteArray(32), null,
+        )
+        handler.onChangesetEnd(walletId, success = false)
+
+        // Rollback scrubbed the round's newly stored scalar; the old
+        // watch-only row is still the persisted truth, so the repair signal
+        // must survive the aborted round's staged clear.
+        assertEquals(listOf(pubkey.toHex()), flaky.deletedAliases)
+        assertNotNull(handler.pendingIdentityKeys.value[pubkey.toHex()])
+    }
+
     // ── Shielded load round-trip ──────────────────────────────────────
 
     @Test
