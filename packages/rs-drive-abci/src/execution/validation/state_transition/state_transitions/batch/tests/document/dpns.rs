@@ -956,3 +956,627 @@ mod dpns_tests {
         assert_eq!(documents.len(), 2);
     }
 }
+
+mod dpns_username_transfer_tests {
+    use super::*;
+    use dpp::consensus::state::data_trigger::DataTriggerError;
+    use dpp::data_contract::DataContract;
+    use dpp::document::Document;
+    use dpp::identity::{Identity, IdentityPublicKey};
+    use dpp::util::hash::hash_double;
+    use dpp::util::strings::convert_to_homograph_safe_chars;
+    use drive::query::{InternalClauses, WhereClause, WhereOperator};
+    use simple_signer::signer::SimpleSigner;
+    use std::collections::BTreeMap;
+    use std::sync::Arc;
+
+    use crate::rpc::core::MockCoreRPCLike;
+    use crate::test::helpers::setup::TempPlatform;
+    use dpp::prelude::Identifier;
+    use dpp::version::ProtocolVersion;
+
+    /// Registers `<label>.dash` (preorder + domain) for the given identity and
+    /// returns the domain document as submitted along with the DPNS contract.
+    ///
+    /// The label must not match the contested-name regex (it should contain at
+    /// least one digit in 2-9) so the domain document is inserted immediately
+    /// instead of starting a masternode vote contest.
+    async fn register_dpns_username(
+        platform: &mut TempPlatform<MockCoreRPCLike>,
+        identity: &(Identity, SimpleSigner, IdentityPublicKey),
+        rng: &mut StdRng,
+        label: &str,
+        platform_version: &PlatformVersion,
+    ) -> (Document, Arc<DataContract>) {
+        let (identity, signer, key) = identity;
+
+        let platform_state = platform.state.load();
+
+        let dpns = platform.drive.cache.system_data_contracts.load_dpns();
+        let dpns_contract = dpns.clone();
+
+        let preorder = dpns_contract
+            .document_type_for_name("preorder")
+            .expect("expected the preorder document type");
+
+        let domain = dpns_contract
+            .document_type_for_name("domain")
+            .expect("expected the domain document type");
+
+        let entropy = Bytes32::random_with_rng(rng);
+
+        let mut preorder_document = preorder
+            .random_document_with_identifier_and_entropy(
+                rng,
+                identity.id(),
+                entropy,
+                DocumentFieldFillType::FillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+                platform_version,
+            )
+            .expect("expected a random preorder document");
+
+        let mut document = domain
+            .random_document_with_identifier_and_entropy(
+                rng,
+                identity.id(),
+                entropy,
+                DocumentFieldFillType::FillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+                platform_version,
+            )
+            .expect("expected a random domain document");
+
+        let normalized_label = convert_to_homograph_safe_chars(label);
+
+        document.set("parentDomainName", "dash".into());
+        document.set("normalizedParentDomainName", "dash".into());
+        document.set("label", label.into());
+        document.set("normalizedLabel", normalized_label.clone().into());
+        document.set("records.identity", document.owner_id().into());
+        document.set("subdomainRules.allowSubdomains", false.into());
+
+        let salt: [u8; 32] = rng.gen();
+
+        let mut salted_domain_buffer: Vec<u8> = vec![];
+        salted_domain_buffer.extend(salt);
+        salted_domain_buffer.extend((normalized_label + ".dash").as_bytes());
+
+        let salted_domain_hash = hash_double(salted_domain_buffer);
+
+        preorder_document.set("saltedDomainHash", salted_domain_hash.into());
+        document.set("preorderSalt", salt.into());
+
+        let documents_batch_create_preorder_transition =
+            BatchTransition::new_document_creation_transition_from_document(
+                preorder_document,
+                preorder,
+                entropy.0,
+                key,
+                2,
+                0,
+                None,
+                signer,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expect to create preorder batch transition");
+
+        let documents_batch_create_serialized_preorder_transition =
+            documents_batch_create_preorder_transition
+                .serialize_to_bytes()
+                .expect("expected preorder batch serialized state transition");
+
+        let documents_batch_create_transition =
+            BatchTransition::new_document_creation_transition_from_document(
+                document.clone(),
+                domain,
+                entropy.0,
+                key,
+                3,
+                0,
+                None,
+                signer,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expect to create domain batch transition");
+
+        let documents_batch_create_serialized_transition = documents_batch_create_transition
+            .serialize_to_bytes()
+            .expect("expected domain batch serialized state transition");
+
+        for serialized_transition in [
+            documents_batch_create_serialized_preorder_transition,
+            documents_batch_create_serialized_transition,
+        ] {
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[serialized_transition],
+                    &platform_state,
+                    &BlockInfo::default_with_time(
+                        platform_state
+                            .last_committed_block_time_ms()
+                            .unwrap_or_default()
+                            + 3000,
+                    ),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+            );
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+        }
+
+        (document, dpns_contract)
+    }
+
+    /// Queries domain documents whose `records.identity` name record points to
+    /// the given identity.
+    fn query_domain_documents_by_record_identity(
+        platform: &TempPlatform<MockCoreRPCLike>,
+        dpns_contract: &DataContract,
+        identity_id: Identifier,
+    ) -> Vec<Document> {
+        let domain = dpns_contract
+            .document_type_for_name("domain")
+            .expect("expected the domain document type");
+
+        let drive_query = DriveDocumentQuery {
+            contract: dpns_contract,
+            document_type: domain,
+            internal_clauses: InternalClauses {
+                primary_key_in_clause: None,
+                primary_key_equal_clause: None,
+                in_clause: None,
+                range_clause: None,
+                equal_clauses: BTreeMap::from([(
+                    "records.identity".to_string(),
+                    WhereClause {
+                        field: "records.identity".to_string(),
+                        operator: WhereOperator::Equal,
+                        value: Value::Identifier(identity_id.to_buffer()),
+                    },
+                )]),
+            },
+            offset: None,
+            limit: None,
+            order_by: Default::default(),
+            start_at: None,
+            start_at_included: false,
+            block_time_ms: None,
+        };
+
+        platform
+            .drive
+            .query_documents(drive_query, None, false, None, None)
+            .expect("expected to query domain documents")
+            .documents_owned()
+    }
+
+    fn assert_identity_record(document: &Document, expected_identity_id: Identifier) {
+        let records = document
+            .properties()
+            .get("records")
+            .expect("expected the domain document to have records");
+
+        let record_identity = records
+            .get_optional_identifier("identity")
+            .expect("expected a valid identity record")
+            .expect("expected an identity record to be set");
+
+        assert_eq!(record_identity, expected_identity_id);
+    }
+
+    #[tokio::test]
+    async fn test_dpns_username_transfer() {
+        run_dpns_username_transfer_at_protocol_version(
+            PlatformVersion::latest().protocol_version,
+            true,
+        )
+        .await;
+    }
+
+    /// PROTOCOL_VERSION_12: domain transfers are still rejected by the
+    /// `reject_data_trigger` binding. Pinned so v12 chain history stays
+    /// bit-for-bit reproducible.
+    #[tokio::test]
+    async fn test_dpns_username_transfer_protocol_version_12_rejected() {
+        run_dpns_username_transfer_at_protocol_version(12, false).await;
+    }
+
+    async fn run_dpns_username_transfer_at_protocol_version(
+        protocol_version: ProtocolVersion,
+        expect_allowed: bool,
+    ) {
+        let mut platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(protocol_version)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let platform_state = platform.state.load();
+        let platform_version = platform_state
+            .current_platform_version()
+            .expect("expected to get current platform version");
+
+        let mut rng = StdRng::seed_from_u64(437);
+
+        let alice = setup_identity(&mut platform, 958, dash_to_credits!(0.5));
+
+        let (bob, _, _) = setup_identity(&mut platform, 450, dash_to_credits!(0.5));
+
+        // "quantum7" contains a digit outside 0/1 so the name is not contested
+        let (mut document, dpns_contract) = register_dpns_username(
+            &mut platform,
+            &alice,
+            &mut rng,
+            "quantum7",
+            platform_version,
+        )
+        .await;
+
+        let (alice, signer, key) = &alice;
+
+        let domain = dpns_contract
+            .document_type_for_name("domain")
+            .expect("expected the domain document type");
+
+        document.set_revision(Some(2));
+
+        let documents_batch_transfer_transition =
+            BatchTransition::new_document_transfer_transition_from_document(
+                document,
+                domain,
+                bob.id(),
+                key,
+                4,
+                0,
+                None,
+                signer,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expect to create documents batch transition for transfer");
+
+        let documents_batch_transfer_serialized_transition = documents_batch_transfer_transition
+            .serialize_to_bytes()
+            .expect("expected documents batch serialized state transition");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &[documents_batch_transfer_serialized_transition],
+                &platform_state,
+                &BlockInfo::default_with_time(
+                    platform_state
+                        .last_committed_block_time_ms()
+                        .unwrap_or_default()
+                        + 3000,
+                ),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process state transition");
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
+
+        if expect_allowed {
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+            );
+
+            // The username must now belong to and resolve to Bob
+            let bob_documents =
+                query_domain_documents_by_record_identity(&platform, &dpns_contract, bob.id());
+
+            assert_eq!(bob_documents.len(), 1);
+
+            let transferred_document = bob_documents.first().expect("expected a document");
+
+            assert_eq!(transferred_document.owner_id(), bob.id());
+
+            assert_identity_record(transferred_document, bob.id());
+
+            // Alice must no longer have a name record pointing to her
+            let alice_documents =
+                query_domain_documents_by_record_identity(&platform, &dpns_contract, alice.id());
+
+            assert_eq!(alice_documents.len(), 0);
+        } else {
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(StateError::DataTriggerError(
+                        DataTriggerError::DataTriggerConditionError(_)
+                    )),
+                    ..
+                }]
+            );
+
+            // The username must still belong to and resolve to Alice
+            let alice_documents =
+                query_domain_documents_by_record_identity(&platform, &dpns_contract, alice.id());
+
+            assert_eq!(alice_documents.len(), 1);
+
+            let kept_document = alice_documents.first().expect("expected a document");
+
+            assert_eq!(kept_document.owner_id(), alice.id());
+        }
+
+        let issues = platform
+            .drive
+            .grove
+            .visualize_verify_grovedb(None, true, false, &platform_version.drive.grove_version)
+            .expect("expected to have no issues");
+
+        assert_eq!(
+            issues.len(),
+            0,
+            "issues are {}",
+            issues
+                .iter()
+                .map(|(hash, (a, b, c))| format!("{}: {} {} {}", hash, a, b, c))
+                .collect::<Vec<_>>()
+                .join(" | ")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_dpns_username_sale() {
+        run_dpns_username_sale_at_protocol_version(
+            PlatformVersion::latest().protocol_version,
+            true,
+        )
+        .await;
+    }
+
+    /// PROTOCOL_VERSION_12: setting a price on a domain document is still
+    /// rejected by the `reject_data_trigger` binding, so a sale can not even
+    /// be started. Pinned so v12 chain history stays bit-for-bit reproducible.
+    #[tokio::test]
+    async fn test_dpns_username_sale_protocol_version_12_rejected() {
+        run_dpns_username_sale_at_protocol_version(12, false).await;
+    }
+
+    async fn run_dpns_username_sale_at_protocol_version(
+        protocol_version: ProtocolVersion,
+        expect_allowed: bool,
+    ) {
+        let mut platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(protocol_version)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let platform_state = platform.state.load();
+        let platform_version = platform_state
+            .current_platform_version()
+            .expect("expected to get current platform version");
+
+        let mut rng = StdRng::seed_from_u64(438);
+
+        let alice = setup_identity(&mut platform, 959, dash_to_credits!(0.5));
+
+        let (bob, bob_signer, bob_key) = setup_identity(&mut platform, 451, dash_to_credits!(0.5));
+
+        let (mut document, dpns_contract) = register_dpns_username(
+            &mut platform,
+            &alice,
+            &mut rng,
+            "quantum9",
+            platform_version,
+        )
+        .await;
+
+        let (alice, signer, key) = &alice;
+
+        let domain = dpns_contract
+            .document_type_for_name("domain")
+            .expect("expected the domain document type");
+
+        document.set_revision(Some(2));
+
+        let documents_batch_update_price_transition =
+            BatchTransition::new_document_update_price_transition_from_document(
+                document,
+                domain,
+                dash_to_credits!(0.1),
+                key,
+                4,
+                0,
+                None,
+                signer,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expect to create documents batch transition for the price update");
+
+        let documents_batch_update_price_serialized_transition =
+            documents_batch_update_price_transition
+                .serialize_to_bytes()
+                .expect("expected documents batch serialized state transition");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &[documents_batch_update_price_serialized_transition],
+                &platform_state,
+                &BlockInfo::default_with_time(
+                    platform_state
+                        .last_committed_block_time_ms()
+                        .unwrap_or_default()
+                        + 3000,
+                ),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process state transition");
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
+
+        if !expect_allowed {
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(StateError::DataTriggerError(
+                        DataTriggerError::DataTriggerConditionError(_)
+                    )),
+                    ..
+                }]
+            );
+
+            return;
+        }
+
+        assert_matches!(
+            processing_result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+        );
+
+        // Read the listed document back so the purchase is built on the
+        // priced revision
+        let mut listed_documents =
+            query_domain_documents_by_record_identity(&platform, &dpns_contract, alice.id());
+
+        assert_eq!(listed_documents.len(), 1);
+
+        let mut document = listed_documents.remove(0);
+
+        let price: Credits = document
+            .properties()
+            .get_integer("$price")
+            .expect("expected to get back the price");
+
+        assert_eq!(price, dash_to_credits!(0.1));
+
+        document.set_revision(Some(3));
+
+        let documents_batch_purchase_transition =
+            BatchTransition::new_document_purchase_transition_from_document(
+                document,
+                domain,
+                bob.id(),
+                dash_to_credits!(0.1),
+                &bob_key,
+                1,
+                0,
+                None,
+                &bob_signer,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expect to create documents batch transition for the purchase");
+
+        let documents_batch_purchase_serialized_transition = documents_batch_purchase_transition
+            .serialize_to_bytes()
+            .expect("expected documents batch serialized state transition");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &[documents_batch_purchase_serialized_transition],
+                &platform_state,
+                &BlockInfo::default_with_time(
+                    platform_state
+                        .last_committed_block_time_ms()
+                        .unwrap_or_default()
+                        + 3000,
+                ),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process state transition");
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
+
+        assert_matches!(
+            processing_result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+        );
+
+        // The username must now belong to and resolve to Bob, and it must no
+        // longer be for sale
+        let bob_documents =
+            query_domain_documents_by_record_identity(&platform, &dpns_contract, bob.id());
+
+        assert_eq!(bob_documents.len(), 1);
+
+        let purchased_document = bob_documents.first().expect("expected a document");
+
+        assert_eq!(purchased_document.owner_id(), bob.id());
+
+        assert_identity_record(purchased_document, bob.id());
+
+        assert!(purchased_document.properties().get("$price").is_none());
+
+        let alice_documents =
+            query_domain_documents_by_record_identity(&platform, &dpns_contract, alice.id());
+
+        assert_eq!(alice_documents.len(), 0);
+
+        let issues = platform
+            .drive
+            .grove
+            .visualize_verify_grovedb(None, true, false, &platform_version.drive.grove_version)
+            .expect("expected to have no issues");
+
+        assert_eq!(
+            issues.len(),
+            0,
+            "issues are {}",
+            issues
+                .iter()
+                .map(|(hash, (a, b, c))| format!("{}: {} {} {}", hash, a, b, c))
+                .collect::<Vec<_>>()
+                .join(" | ")
+        );
+    }
+}
