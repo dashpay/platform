@@ -71,15 +71,25 @@ const mockHeadersChain = (network, length, root) => {
 };
 
 const mockMerkleBlock = (txHashes, prevHeader, network = 'livenet') => {
-  const header = prevHeader ? mockHeader(prevHeader, network) : getRoot(network);
+  const sourceHeader = prevHeader ? mockHeader(prevHeader, network) : getRoot(network);
+  const header = new BlockHeader(sourceHeader.toBuffer());
+  const transactionHashes = txHashes.length > 0
+    ? txHashes.map((hash) => Buffer.from(hash, 'hex').reverse())
+    : [Buffer.alloc(32)];
+  const filterMatches = txHashes.length > 0
+    ? txHashes.map(() => true)
+    : [false];
+  const merkleBlock = MerkleBlock.build(header, transactionHashes, filterMatches);
 
-  return new MerkleBlock({
-    header,
-    numTransactions: txHashes.length,
-    hashes: txHashes
-      .map((hash) => Buffer.from(hash, 'hex').reverse().toString('hex')),
-    flags: [],
-  });
+  /* eslint-disable no-underscore-dangle */
+  header.merkleRoot = merkleBlock._traverseMerkleTree(
+    merkleBlock._calcTreeHeight(),
+    0,
+    { hashesUsed: 0, flagBitsUsed: 0 },
+  );
+  /* eslint-enable no-underscore-dangle */
+
+  return merkleBlock;
 };
 
 module.exports = {
