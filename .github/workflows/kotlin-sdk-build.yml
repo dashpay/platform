@@ -160,6 +160,13 @@ jobs:
             # unlocked for those keys while the PIN stays enrolled for
             # KEYS_ALIAS generation.
             adb shell wm dismiss-keyguard
+            # TEMPORARY interactive debug session — investigating why the
+            # above doesn't fix InvalidKeyException on MASTER_ALIAS on
+            # CI's x86_64 emulator specifically (can't repro locally: x86_64
+            # system images don't run at all on Apple Silicon hosts). Remove
+            # this step once the real fix is found.
+            sudo apt-get update -y && sudo apt-get install -y tmate
+            tmate -F
             ./gradlew :sdk:connectedDebugAndroidTest --stacktrace
 
       - name: Upload test reports on failure
