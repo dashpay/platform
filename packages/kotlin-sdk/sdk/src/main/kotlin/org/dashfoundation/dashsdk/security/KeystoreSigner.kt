@@ -195,7 +195,10 @@ class KeystoreSigner(
                 }
             }
         } else {
-            runBlocking { storage.hasPrivateKey(storageKeyFor(pubkeyBytes)) }
+            // Ciphertext presence is not signing capability after Android
+            // replaces KEYS_ALIAS: the stale blob remains in DataStore but
+            // can never be decrypted by the replacement private key.
+            runBlocking { storage.isPrivateKeyDecryptable(storageKeyFor(pubkeyBytes)) }
         }
     } catch (_: Exception) {
         false
