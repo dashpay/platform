@@ -1,3 +1,4 @@
+use crate::drive::saved_block_transactions::CompactedAddressBalanceProof;
 use crate::drive::Drive;
 use crate::drive::RootTree;
 use crate::error::proof::ProofError;
@@ -7,154 +8,126 @@ use dpp::address_funds::PlatformAddress;
 
 /// The subtree key for compacted address balances storage as u8
 const COMPACTED_ADDRESS_BALANCES_KEY_U8: u8 = b'c';
+/// Matches the largest response accepted by the Rust DAPI transport.
+const MAX_COMPACTED_PROOF_DECODE_BYTES: usize = 16 * 1024 * 1024;
+/// A compacted row contains at most one configured address chunk. Keep a
+/// separate semantic-object budget after the GroveDB envelope is decoded.
+const MAX_COMPACTED_BALANCE_ROW_DECODE_BYTES: usize = 1024 * 1024;
 use dpp::balances::credits::BlockAwareCreditOperation;
-use grovedb::operations::proof::{GroveDBProof, ProofBytes};
-use grovedb::{
-    GroveDb, MerkProofDecoder, MerkProofNode, MerkProofOp, PathQuery, Query, SizedQuery,
-};
+use grovedb::{GroveDb, PathQuery, Query, SizedQuery};
 use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
 
 use super::VerifiedCompactedAddressBalanceChanges;
 
-/// Extract KV entries from merk proof bytes using the proper decoder.
-#[allow(clippy::type_complexity)]
-fn extract_kv_entries_from_merk_proof(merk_proof: &[u8]) -> Result<Vec<(Vec<u8>, Vec<u8>)>, Error> {
-    let mut entries = Vec::new();
-
-    let decoder = MerkProofDecoder::new(merk_proof);
-
-    for op in decoder {
-        match op {
-            Ok(MerkProofOp::Push(MerkProofNode::KV(key, value)))
-            | Ok(MerkProofOp::PushInverted(MerkProofNode::KV(key, value))) => {
-                entries.push((key, value));
-            }
-            Err(e) => {
-                tracing::error!(%e, "merk proof decode error");
-                return Err(Error::Proof(ProofError::CorruptedProof(format!(
-                    "failed to decode merk proof op: {}",
-                    e
-                ))));
-            }
-            _ => {}
-        }
-    }
-
-    Ok(entries)
-}
-
 impl Drive {
     /// Verifies compacted address balance changes proof.
     ///
-    /// This verification works by:
-    /// 1. Decoding the GroveDBProof structure
-    /// 2. Navigating to the compacted address balances layer ('c')
-    /// 3. Extracting KV entries from the merk proof
-    /// 4. Filtering entries where the key range contains start_block_height
-    /// 5. Verifying the root hash using a subset query
+    /// The request-derived predecessor query is verified first. Its
+    /// authenticated result selects the start key for a separately verified
+    /// forward query, and both proofs must commit to the same root.
     pub(super) fn verify_compacted_address_balance_changes_v0(
         proof: &[u8],
         start_block_height: u64,
         limit: Option<u16>,
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, VerifiedCompactedAddressBalanceChanges), Error> {
-        let bincode_config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
+        if proof.len() > MAX_COMPACTED_PROOF_DECODE_BYTES {
+            return Err(Error::Proof(ProofError::CorruptedProof(
+                "compacted address balance proof exceeds the decoding limit".to_string(),
+            )));
+        }
 
-        // Decode the GroveDBProof to navigate its structure
-        let grovedb_proof: GroveDBProof = bincode::decode_from_slice(proof, bincode_config)
-            .map(|(p, _)| p)
-            .map_err(|e| {
+        let proof_decode_config = bincode::config::standard()
+            .with_big_endian()
+            .with_limit::<MAX_COMPACTED_PROOF_DECODE_BYTES>();
+
+        let (proof_envelope, consumed): (CompactedAddressBalanceProof, usize) =
+            bincode::decode_from_slice(proof, proof_decode_config).map_err(|e| {
                 Error::Proof(ProofError::CorruptedProof(format!(
-                    "cannot decode GroveDBProof: {}",
+                    "cannot decode compacted address balance proof: {}",
                     e
                 )))
             })?;
+        if consumed != proof.len() {
+            return Err(Error::Proof(ProofError::CorruptedProof(
+                "compacted address balance proof contains trailing bytes".to_string(),
+            )));
+        }
 
-        // Navigate to the compacted address balances layer
-        // Path: SavedBlockTransactions ('$' = 0x24) -> CompactedAddressBalances ('c' = 0x63)
-        let saved_block_key = vec![RootTree::SavedBlockTransactions as u8];
-        let compacted_key = vec![COMPACTED_ADDRESS_BALANCES_KEY_U8];
-
-        // Extract KV entries from the compacted layer's merk proof to find
-        // if there's a containing range for start_block_height.
-        // V0 and V1 proofs have different layer types (MerkOnlyLayerProof vs LayerProof),
-        // so we handle them separately.
-        let kv_entries = match &grovedb_proof {
-            GroveDBProof::V0(v0) => {
-                let compacted_layer = v0
-                    .root_layer
-                    .lower_layers
-                    .get(&saved_block_key)
-                    .and_then(|layer| layer.lower_layers.get(&compacted_key));
-                compacted_layer
-                    .map(|layer| extract_kv_entries_from_merk_proof(&layer.merk_proof))
-                    .transpose()?
-                    .unwrap_or_default()
-            }
-            GroveDBProof::V1(v1) => {
-                let compacted_layer = v1
-                    .root_layer
-                    .lower_layers
-                    .get(&saved_block_key)
-                    .and_then(|layer| layer.lower_layers.get(&compacted_key));
-                compacted_layer
-                    .map(|layer| match &layer.merk_proof {
-                        ProofBytes::Merk(bytes) => extract_kv_entries_from_merk_proof(bytes),
-                        other => Err(Error::Proof(ProofError::CorruptedProof(format!(
-                            "unsupported V1 proof bytes variant for compacted address balances: {:?}",
-                            std::mem::discriminant(other)
-                        )))),
-                    })
-                    .transpose()?
-                    .unwrap_or_default()
-            }
-        };
-
-        // Look for a KV entry where the range contains start_block_height
-        // Keys are 16 bytes: (start_block, end_block), both big-endian
-        let containing_key = kv_entries.iter().find_map(|(key, _)| {
-            if key.len() != 16 {
-                return None;
-            }
-            let range_start = u64::from_be_bytes(key[0..8].try_into().unwrap());
-            let range_end = u64::from_be_bytes(key[8..16].try_into().unwrap());
-
-            // Check if this range contains start_block_height
-            if range_start <= start_block_height && start_block_height <= range_end {
-                Some(key.clone())
-            } else {
-                None
-            }
-        });
-
-        // Determine the start_key for the query
-        // Use the containing range's key if found, otherwise (start_block_height, start_block_height)
-        let start_key = containing_key.unwrap_or_else(|| {
-            let mut key = Vec::with_capacity(16);
-            key.extend_from_slice(&start_block_height.to_be_bytes());
-            key.extend_from_slice(&start_block_height.to_be_bytes());
-            key
-        });
-
-        // Verify the proof and get results using subset query
         let path = vec![
             vec![RootTree::SavedBlockTransactions as u8],
             vec![COMPACTED_ADDRESS_BALANCES_KEY_U8],
         ];
+
+        let mut predecessor_end_key = Vec::with_capacity(16);
+        predecessor_end_key.extend_from_slice(&start_block_height.to_be_bytes());
+        predecessor_end_key.extend_from_slice(&u64::MAX.to_be_bytes());
+        let mut predecessor_query = Query::new_with_direction(false);
+        predecessor_query.insert_range_to_inclusive(..=predecessor_end_key);
+        let predecessor_path_query = PathQuery::new(
+            path.clone(),
+            SizedQuery::new(predecessor_query, Some(1), None),
+        );
+        let (predecessor_root_hash, predecessor_results) = GroveDb::verify_query(
+            &proof_envelope.predecessor_proof,
+            &predecessor_path_query,
+            &platform_version.drive.grove_version,
+        )?;
+
+        let mut authenticated_predecessors = predecessor_results
+            .into_iter()
+            .filter_map(|(_path, key, element)| element.map(|element| (key, element)));
+        let authenticated_predecessor = authenticated_predecessors.next();
+        if authenticated_predecessors.next().is_some() {
+            return Err(Error::Proof(ProofError::CorruptedProof(
+                "predecessor proof returned more than one compacted range".to_string(),
+            )));
+        }
+
+        let start_key = if let Some((key, _element)) = authenticated_predecessor {
+            let key_bytes: [u8; 16] = key.as_slice().try_into().map_err(|_| {
+                Error::Proof(ProofError::CorruptedProof(
+                    "invalid compacted predecessor key length".to_string(),
+                ))
+            })?;
+            let range_start = u64::from_be_bytes(key_bytes[..8].try_into().expect("key length"));
+            let range_end = u64::from_be_bytes(key_bytes[8..].try_into().expect("key length"));
+            if range_start > range_end {
+                return Err(Error::Proof(ProofError::CorruptedProof(
+                    "compacted predecessor has an invalid block range".to_string(),
+                )));
+            }
+            if range_end >= start_block_height {
+                key
+            } else {
+                let mut fallback = Vec::with_capacity(16);
+                fallback.extend_from_slice(&start_block_height.to_be_bytes());
+                fallback.extend_from_slice(&start_block_height.to_be_bytes());
+                fallback
+            }
+        } else {
+            let mut key = Vec::with_capacity(16);
+            key.extend_from_slice(&start_block_height.to_be_bytes());
+            key.extend_from_slice(&start_block_height.to_be_bytes());
+            key
+        };
 
         let mut query = Query::new();
         query.insert_range_from(start_key..);
 
         let path_query = PathQuery::new(path, SizedQuery::new(query, limit, None));
 
-        let (root_hash, proved_key_values) = GroveDb::verify_subset_query(
-            proof,
+        let (root_hash, proved_key_values) = GroveDb::verify_query(
+            &proof_envelope.forward_proof,
             &path_query,
             &platform_version.drive.grove_version,
         )?;
+        if root_hash != predecessor_root_hash {
+            return Err(Error::Proof(ProofError::CorruptedProof(
+                "compacted address balance proofs commit to different roots".to_string(),
+            )));
+        }
 
         // Process the verified results
         let mut compacted_changes = Vec::new();
@@ -181,15 +154,28 @@ impl Drive {
             };
 
             // Deserialize the address balance map
-            let (address_balances, _): (
+            if serialized_data.len() > MAX_COMPACTED_BALANCE_ROW_DECODE_BYTES {
+                return Err(Error::Proof(ProofError::CorruptedProof(
+                    "compacted address balance row exceeds the decoding limit".to_string(),
+                )));
+            }
+            let row_decode_config = bincode::config::standard()
+                .with_big_endian()
+                .with_limit::<MAX_COMPACTED_BALANCE_ROW_DECODE_BYTES>();
+            let (address_balances, consumed): (
                 BTreeMap<PlatformAddress, BlockAwareCreditOperation>,
                 usize,
-            ) = bincode::decode_from_slice(&serialized_data, bincode_config).map_err(|e| {
+            ) = bincode::decode_from_slice(&serialized_data, row_decode_config).map_err(|e| {
                 Error::Proof(ProofError::CorruptedProof(format!(
                     "cannot decode compacted address balances: {}",
                     e
                 )))
             })?;
+            if consumed != serialized_data.len() {
+                return Err(Error::Proof(ProofError::CorruptedProof(
+                    "compacted address balance row contains trailing bytes".to_string(),
+                )));
+            }
 
             compacted_changes.push((range_start, range_end, address_balances));
         }
@@ -270,6 +256,26 @@ mod tests {
             assert!(*start <= *end, "start should be <= end");
             assert!(!changes.is_empty(), "each entry should have changes");
         }
+
+        // A query beginning inside a compacted range must include that range.
+        // This exercises the independently authenticated predecessor witness.
+        let interior_height = max_blocks / 2;
+        let interior_proof = drive
+            .prove_compacted_address_balance_changes(interior_height, None, None, platform_version)
+            .expect("should prove changes from inside a compacted range");
+        let (_, interior_changes) = Drive::verify_compacted_address_balance_changes(
+            &interior_proof,
+            interior_height,
+            None,
+            platform_version,
+        )
+        .expect("should verify the authenticated predecessor proof");
+        assert!(
+            interior_changes
+                .iter()
+                .any(|(start, end, _)| *start <= interior_height && interior_height <= *end),
+            "the compacted range containing the requested height must be returned"
+        );
     }
 
     #[test]
@@ -299,7 +305,7 @@ mod tests {
     }
 
     #[test]
-    fn test_verify_compacted_address_balance_changes_proof() {
+    fn rejects_legacy_single_compacted_address_balance_proof() {
         // This proof was generated with start_block_height = 329
         // Path: [[36], [99]] = [['$'], ['c']] = SavedBlockTransactions -> CompactedAddressBalances
         // Query: RangeTo(..[0, 0, 0, 0, 0, 0, 1, 73, 0, 0, 0, 0, 0, 0, 1, 73]) = RangeTo(..(329, 329))
@@ -350,34 +356,8 @@ mod tests {
         );
 
         assert!(
-            result.is_ok(),
-            "proof verification failed: {:?}",
-            result.err()
+            result.is_err(),
+            "a single adaptive proof must fail closed without an authenticated predecessor"
         );
-
-        let (root_hash, compacted_changes) = result.unwrap();
-
-        // Verify we got a valid root hash
-        assert!(!root_hash.is_empty(), "root hash should not be empty");
-
-        // The proof shows entry (288, 292) is the rightmost in the tree.
-        // Since 292 < 329 (our start_block_height), there are no results.
-        // The KVDigest at the boundary proves nothing exists >= (329, 329).
-        assert!(
-            compacted_changes.is_empty(),
-            "expected empty results since start_block_height 329 > last entry end_block 292"
-        );
-
-        // Log what we found for debugging
-        eprintln!("Root hash: {:?}", root_hash);
-        eprintln!("Number of compacted entries: {}", compacted_changes.len());
-        for (start, end, changes) in &compacted_changes {
-            eprintln!(
-                "  Blocks {}-{}: {} address changes",
-                start,
-                end,
-                changes.len()
-            );
-        }
     }
 }

@@ -7,7 +7,7 @@ use crate::error::Error;
 use crate::verify::contract::retry_contract_verification_with_history;
 use crate::verify::RootHash;
 use dpp::prelude::DataContract;
-use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
+use dpp::serialization::PlatformLimitDeserializableFromVersionedStructure;
 use platform_version::version::PlatformVersion;
 
 use crate::error::query::QuerySyntaxError;
@@ -137,9 +137,9 @@ impl Drive {
                         .into_item_bytes()
                         .map_err(Error::from)
                         .and_then(|bytes| {
-                            // we don't need to validate the contract locally because it was proved to be in platform
-                            // and hence it is valid
-                            DataContract::versioned_deserialize(&bytes, false, platform_version)
+                            // The computed proof root is authenticated by the caller. Keep
+                            // proof-derived object construction bounded until that happens.
+                            DataContract::versioned_limit_deserialize(&bytes, platform_version)
                                 .map_err(Error::from)
                         })
                 })
