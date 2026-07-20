@@ -13,9 +13,9 @@ use async_trait::async_trait;
 use dashcore::hashes::Hash;
 use dashcore::secp256k1::{ecdsa, Message, PublicKey, Secp256k1};
 use dashcore::BlockHash;
-use dashcore::{Network, Transaction};
 #[cfg(test)]
 use dashcore::Txid;
+use dashcore::{Network, Transaction};
 use key_wallet::account::account_type::StandardAccountType;
 use key_wallet::bip32::ExtendedPubKey;
 use key_wallet::signer::{ExtendedPubKeySigner, Signer, SignerMethod};
