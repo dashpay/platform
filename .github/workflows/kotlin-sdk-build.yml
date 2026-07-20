@@ -160,13 +160,15 @@ jobs:
             # unlocked for those keys while the PIN stays enrolled for
             # KEYS_ALIAS generation.
             adb shell wm dismiss-keyguard
-            # TEMPORARY interactive debug session — investigating why the
-            # above doesn't fix InvalidKeyException on MASTER_ALIAS on
-            # CI's x86_64 emulator specifically (can't repro locally: x86_64
-            # system images don't run at all on Apple Silicon hosts). Remove
-            # this step once the real fix is found.
-            sudo apt-get update -y && sudo apt-get install -y tmate
-            tmate -F
+            # dismiss-keyguard returns before LockSettingsService/Keystore
+            # fully propagate the unlocked state to the keystore daemon —
+            # confirmed via an interactive tmate session on this exact CI
+            # runner: every manual re-run of the full suite passed (23/23),
+            # but every one of those manual runs had multi-second gaps
+            # between commands (SSH round-trips) that this script's
+            # back-to-back execution doesn't have. Give it a moment to
+            # settle before the first Keystore operation.
+            sleep 5
             ./gradlew :sdk:connectedDebugAndroidTest --stacktrace
 
       - name: Upload test reports on failure
