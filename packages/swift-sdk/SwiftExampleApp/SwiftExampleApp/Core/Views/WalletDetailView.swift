@@ -959,7 +959,7 @@ struct WalletInfoView: View {
         // identities the @Relationship rule doesn't reach), and the
         // Keychain mnemonic + metadata blobs.
         do {
-            try walletManager.deleteWallet(walletId: walletId)
+            try await walletManager.deleteWallet(walletId: walletId)
         } catch {
             SDKLogger.error(
                 "Failed to fully delete wallet: \(error.localizedDescription)"

@@ -85,6 +85,34 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         try serialQueue.sync(execute: body)
     }
 
+    /// Asynchronously run app-facing work on the same queue that owns
+    /// `backgroundContext`. FFI callbacks keep using synchronous `onQueue`,
+    /// while UI-driven operations can await long SwiftData sweeps without
+    /// blocking MainActor or parking a cooperative task thread in `sync`.
+    private func onQueueAsync<T: Sendable>(
+        _ body: @escaping @Sendable () throws -> T
+    ) async throws -> T {
+        try await withCheckedThrowingContinuation { continuation in
+            serialQueue.async {
+                do {
+                    continuation.resume(returning: try body())
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
+    }
+
+#if DEBUG
+    /// Test seam for proving that async app-facing persistence calls suspend
+    /// MainActor while waiting behind already-enqueued persistence work.
+    func enqueuePersistenceOperationForTesting(
+        _ operation: @escaping @Sendable () -> Void
+    ) {
+        serialQueue.async(execute: operation)
+    }
+#endif
+
     // MARK: - Platform Address Balances
 
     /// Apply an incremental BLAST balance changeset to SwiftData.
@@ -3828,275 +3856,288 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// metadata in the Keychain are shared by every network's row, so
     /// `deleteWallet` consults this after wiping its own network's row
     /// to decide whether the shared Keychain material can be purged.
-    public func walletRowCountAcrossNetworks(walletId: Data) throws -> Int {
-        try onQueue {
-            let descriptor = FetchDescriptor<PersistentWallet>(
-                predicate: PersistentWallet.predicate(walletId: walletId)
-            )
-            return try backgroundContext.fetchCount(descriptor)
+    public func walletRowCountAcrossNetworks(walletId: Data) async throws -> Int {
+        try await onQueueAsync {
+            try self.walletRowCountAcrossNetworksOnQueue(walletId: walletId)
         }
     }
 
-    public func identityIdsForWallet(walletId: Data) throws -> [Data] {
-        try onQueue {
-            let descriptor = FetchDescriptor<PersistentWallet>(
+    private func walletRowCountAcrossNetworksOnQueue(walletId: Data) throws -> Int {
+        let descriptor = FetchDescriptor<PersistentWallet>(
+            predicate: PersistentWallet.predicate(walletId: walletId)
+        )
+        return try backgroundContext.fetchCount(descriptor)
+    }
+
+    public func identityIdsForWallet(walletId: Data) async throws -> [Data] {
+        try await onQueueAsync {
+            try self.identityIdsForWalletOnQueue(walletId: walletId)
+        }
+    }
+
+    private func identityIdsForWalletOnQueue(walletId: Data) throws -> [Data] {
+        let descriptor = FetchDescriptor<PersistentWallet>(
+            predicate: walletRecordPredicate(walletId: walletId)
+        )
+        guard let walletRow = try backgroundContext.fetch(descriptor).first else {
+            return []
+        }
+        return walletRow.identities.map { $0.identityId }
+    }
+
+    /// Wipe a wallet's SwiftData footprint on the handler's native serial
+    /// queue without blocking MainActor.
+    public func deleteWalletData(walletId: Data) async throws {
+        try await onQueueAsync {
+            try self.deleteWalletDataOnQueue(walletId: walletId)
+        }
+    }
+
+    private func deleteWalletDataOnQueue(walletId: Data) throws {
+        do {
+            let walletDescriptor = FetchDescriptor<PersistentWallet>(
                 predicate: walletRecordPredicate(walletId: walletId)
             )
-            guard let walletRow = try backgroundContext.fetch(descriptor).first else {
-                return []
-            }
-            return walletRow.identities.map { $0.identityId }
-        }
-    }
+            let walletRow = try backgroundContext.fetch(walletDescriptor).first
+            let walletNetwork = walletRow?.network
 
-    /// Wipe a wallet's SwiftData footprint.
-    public func deleteWalletData(walletId: Data) throws {
-        try onQueue {
-            do {
-                let walletDescriptor = FetchDescriptor<PersistentWallet>(
-                    predicate: walletRecordPredicate(walletId: walletId)
-                )
-                let walletRow = try backgroundContext.fetch(walletDescriptor).first
-                let walletNetwork = walletRow?.network
+            if let walletRow = walletRow {
+                // Wallet → identities is `.nullify`; this delete
+                // path cascades them explicitly.
+                let identitiesToDelete = Array(walletRow.identities)
+                let identityIds = identitiesToDelete.map { $0.identityId }
 
-                if let walletRow = walletRow {
-                    // Wallet → identities is `.nullify`; this delete
-                    // path cascades them explicitly.
-                    let identitiesToDelete = Array(walletRow.identities)
-                    let identityIds = identitiesToDelete.map { $0.identityId }
-
-                    for identityId in identityIds {
-                        let balanceDescriptor = FetchDescriptor<PersistentTokenBalance>(
-                            predicate: PersistentTokenBalance.predicate(identityId: identityId)
-                        )
-                        for row in try backgroundContext.fetch(balanceDescriptor) {
-                            backgroundContext.delete(row)
-                        }
-                    }
-
-                    // SwiftData fatals during save() whenever it has
-                    // to null out a non-optional inverse on a child
-                    // being processed in the same save batch (the
-                    // canonical wording is
-                    //   `Cannot remove PersistentX from relationship
-                    //    Y on PersistentZ because an appropriate
-                    //    default value is not configured`).
-                    // Marking children for delete in the SAME batch
-                    // doesn't help — SwiftData still walks their
-                    // inverses during the merge phase.
-                    //
-                    // The workaround is to delete each layer in its
-                    // own `save()`, parent last, so by the time the
-                    // parent's delete runs its relationship
-                    // collections are empty and SwiftData has no
-                    // inverse to clean up. Costs us atomicity (four
-                    // saves) — acceptable for a user-initiated wipe.
-                    //
-                    // PHASE 1: delete every identity's cascade-children
-                    // whose inverse to identity is non-optional (DPNS
-                    // names, DashPay profile, DashPay contact profiles,
-                    // DashPay contact requests, DashPay payments, DashPay
-                    // ignored senders). PublicKey, Document, and
-                    // TokenBalance inverses to identity are already
-                    // Optional and don't need pre-deletion.
-                    //
-                    // Every one of these rows has a non-optional
-                    // `owner: PersistentIdentity`, so omitting any of them
-                    // makes PHASE 2's identity delete hit the SwiftData
-                    // fatal PHASE 1 exists to avoid — aborting the wipe and
-                    // leaving sender-controlled DashPay strings (contact
-                    // profile display name / public message / avatar URL),
-                    // plaintext counterparty/memo/amount/txid (payments),
-                    // and privacy-relevant ignored-sender ids on disk after
-                    // a user-initiated wallet wipe.
-                    for identity in identitiesToDelete {
-                        for name in Array(identity.dpnsNames) {
-                            backgroundContext.delete(name)
-                        }
-                        if let profile = identity.dashpayProfile {
-                            backgroundContext.delete(profile)
-                        }
-                        for contactProfile in Array(identity.contactProfiles) {
-                            backgroundContext.delete(contactProfile)
-                        }
-                        for cr in Array(identity.contactRequests) {
-                            backgroundContext.delete(cr)
-                        }
-                        for payment in Array(identity.dashpayPayments) {
-                            backgroundContext.delete(payment)
-                        }
-                        for ignored in Array(identity.dashpayIgnoredSenders) {
-                            backgroundContext.delete(ignored)
-                        }
-                    }
-                    try backgroundContext.save()
-
-                    // PHASE 2: delete the identities themselves now
-                    // that their problematic cascade children are
-                    // gone from the store.
-                    for identity in identitiesToDelete {
-                        backgroundContext.delete(identity)
-                    }
-                    try backgroundContext.save()
-
-                    // PHASE 3: delete the wallet's accounts. Same
-                    // reasoning — `PersistentAccount.wallet` is
-                    // non-optional; deleting accounts in their own
-                    // save() pass leaves the wallet's `accounts`
-                    // collection empty when the wallet itself is
-                    // deleted.
-                    let accountsToDelete = Array(walletRow.accounts)
-                    for account in accountsToDelete {
-                        backgroundContext.delete(account)
-                    }
-                    try backgroundContext.save()
-                }
-
-                // The txo / pending-input / asset-lock tables are keyed
-                // by raw `walletId` with no relationship to
-                // `PersistentWallet`, so the wallet-row delete below
-                // does not cascade them — purge them explicitly.
-                // `walletId` is network-scoped (key-wallet folds a
-                // domain tag + network discriminant into the digest),
-                // so every row under this id belongs to this wallet on
-                // this network alone and the purge can't touch a
-                // sibling network's cached state; a mnemonic's rows on
-                // other networks live under different walletIds, tied
-                // together only by `walletGroupId`.
-                let txoDescriptor = FetchDescriptor<PersistentTxo>(
-                    predicate: #Predicate<PersistentTxo> { $0.walletId == walletId }
-                )
-                for row in try backgroundContext.fetch(txoDescriptor) {
-                    backgroundContext.delete(row)
-                }
-
-                let pendingDescriptor = FetchDescriptor<PersistentPendingInput>(
-                    predicate: #Predicate<PersistentPendingInput> { $0.walletId == walletId }
-                )
-                for row in try backgroundContext.fetch(pendingDescriptor) {
-                    backgroundContext.delete(row)
-                }
-
-                // `loadCachedAssetLocksOnQueue` rehydrates these rows on
-                // the wallet-load path back into the Rust-side
-                // `unused_asset_locks` map so an in-flight registration
-                // can resume across an app kill. Without this cleanup,
-                // delete-then-reimport of the same wallet would
-                // resurrect stale Pending / Resumable asset-lock state
-                // that the user thought they had wiped.
-                let assetLockDescriptor = FetchDescriptor<PersistentAssetLock>(
-                    predicate: #Predicate<PersistentAssetLock> { $0.walletId == walletId }
-                )
-                for row in try backgroundContext.fetch(assetLockDescriptor) {
-                    backgroundContext.delete(row)
-                }
-
-                // Shielded (Orchard) per-wallet state. These four
-                // tables are keyed by raw `walletId` (no relationship
-                // to `PersistentWallet`), so the wallet-row delete
-                // below does not cascade them — purge them explicitly
-                // or they leak after a wipe and could resurface /
-                // mis-attribute if the same `walletId` is reimported
-                // (activity rows rehydrate into Rust via the
-                // `on_load_shielded_activity_fn` callback as ghost
-                // history and suppress fresh scan-derived entries).
-                let shieldedNoteDescriptor = FetchDescriptor<PersistentShieldedNote>(
-                    predicate: #Predicate<PersistentShieldedNote> { $0.walletId == walletId }
-                )
-                for row in try backgroundContext.fetch(shieldedNoteDescriptor) {
-                    backgroundContext.delete(row)
-                }
-
-                let shieldedOutgoingNoteDescriptor = FetchDescriptor<PersistentShieldedOutgoingNote>(
-                    predicate: #Predicate<PersistentShieldedOutgoingNote> { $0.walletId == walletId }
-                )
-                for row in try backgroundContext.fetch(shieldedOutgoingNoteDescriptor) {
-                    backgroundContext.delete(row)
-                }
-
-                let shieldedSyncStateDescriptor = FetchDescriptor<PersistentShieldedSyncState>(
-                    predicate: #Predicate<PersistentShieldedSyncState> { $0.walletId == walletId }
-                )
-                for row in try backgroundContext.fetch(shieldedSyncStateDescriptor) {
-                    backgroundContext.delete(row)
-                }
-
-                let shieldedActivityDescriptor = FetchDescriptor<PersistentShieldedActivity>(
-                    predicate: #Predicate<PersistentShieldedActivity> { $0.walletId == walletId }
-                )
-                for row in try backgroundContext.fetch(shieldedActivityDescriptor) {
-                    backgroundContext.delete(row)
-                }
-
-                let shieldedViewingKeyDescriptor = FetchDescriptor<PersistentShieldedViewingKey>(
-                    predicate: #Predicate<PersistentShieldedViewingKey> { $0.walletId == walletId }
-                )
-                for row in try backgroundContext.fetch(shieldedViewingKeyDescriptor) {
-                    backgroundContext.delete(row)
-                }
-
-                // Masternode aggregation rows, keyed by raw `walletId` (no
-                // relationship to `PersistentWallet`), so the wallet-row
-                // delete below does not cascade them. `MasternodeSync` never
-                // prunes on an empty aggregation (its no-prune-on-empty
-                // rule), so without an explicit purge a delete-then-reimport
-                // of the same wallet resurrects stale masternode rows
-                // indefinitely.
-                let masternodeDescriptor = FetchDescriptor<PersistentMasternode>(
-                    predicate: #Predicate<PersistentMasternode> { $0.walletId == walletId }
-                )
-                for row in try backgroundContext.fetch(masternodeDescriptor) {
-                    backgroundContext.delete(row)
-                }
-
-                if let walletRow = walletRow {
-                    backgroundContext.delete(walletRow)
-                }
-
-                try backgroundContext.save()
-
-                // Orphan sweep: drop tx rows no longer referenced by any
-                // wallet. A row is referenced through the TXO graph
-                // (outputs / inputs / pendingInputs) OR through the
-                // `involvedAccounts` join — payload-only special txs
-                // (e.g. a ProRegTx matching a provider owner key) have
-                // no TXOs anywhere yet legitimately belong to a live
-                // account, so sweeping on the TXO relations alone would
-                // erase another wallet's payload-only history. The
-                // deleted wallet's own payload-only rows still qualify:
-                // its accounts were deleted (and their join links
-                // nullified) in the earlier save above.
-                let txRows = try backgroundContext.fetch(FetchDescriptor<PersistentTransaction>())
-                for tx in txRows where tx.outputs.isEmpty &&
-                    tx.inputs.isEmpty &&
-                    tx.pendingInputs.isEmpty &&
-                    tx.involvedAccounts.isEmpty {
-                    backgroundContext.delete(tx)
-                }
-
-                if let walletNetwork = walletNetwork {
-                    let networkRaw = walletNetwork.rawValue
-                    let siblingDescriptor = FetchDescriptor<PersistentWallet>(
-                        predicate: #Predicate<PersistentWallet> { $0.networkRaw == networkRaw }
+                for identityId in identityIds {
+                    let balanceDescriptor = FetchDescriptor<PersistentTokenBalance>(
+                        predicate: PersistentTokenBalance.predicate(identityId: identityId)
                     )
-                    let remaining = try backgroundContext.fetch(siblingDescriptor)
-                        .filter { $0.walletId != walletId }
-                    if remaining.isEmpty {
-                        let scopeId = syncStateScopeId(for: walletNetwork)
-                        let syncDescriptor = FetchDescriptor<PersistentPlatformAddressesSyncState>(
-                            predicate: #Predicate { $0.walletId == scopeId }
-                        )
-                        if let syncRow = try backgroundContext.fetch(syncDescriptor).first {
-                            backgroundContext.delete(syncRow)
-                        }
+                    for row in try backgroundContext.fetch(balanceDescriptor) {
+                        backgroundContext.delete(row)
                     }
                 }
 
+                // SwiftData fatals during save() whenever it has
+                // to null out a non-optional inverse on a child
+                // being processed in the same save batch (the
+                // canonical wording is
+                //   `Cannot remove PersistentX from relationship
+                //    Y on PersistentZ because an appropriate
+                //    default value is not configured`).
+                // Marking children for delete in the SAME batch
+                // doesn't help — SwiftData still walks their
+                // inverses during the merge phase.
+                //
+                // The workaround is to delete each layer in its
+                // own `save()`, parent last, so by the time the
+                // parent's delete runs its relationship
+                // collections are empty and SwiftData has no
+                // inverse to clean up. Costs us atomicity (four
+                // saves) — acceptable for a user-initiated wipe.
+                //
+                // PHASE 1: delete every identity's cascade-children
+                // whose inverse to identity is non-optional (DPNS
+                // names, DashPay profile, DashPay contact profiles,
+                // DashPay contact requests, DashPay payments, DashPay
+                // ignored senders). PublicKey, Document, and
+                // TokenBalance inverses to identity are already
+                // Optional and don't need pre-deletion.
+                //
+                // Every one of these rows has a non-optional
+                // `owner: PersistentIdentity`, so omitting any of them
+                // makes PHASE 2's identity delete hit the SwiftData
+                // fatal PHASE 1 exists to avoid — aborting the wipe and
+                // leaving sender-controlled DashPay strings (contact
+                // profile display name / public message / avatar URL),
+                // plaintext counterparty/memo/amount/txid (payments),
+                // and privacy-relevant ignored-sender ids on disk after
+                // a user-initiated wallet wipe.
+                for identity in identitiesToDelete {
+                    for name in Array(identity.dpnsNames) {
+                        backgroundContext.delete(name)
+                    }
+                    if let profile = identity.dashpayProfile {
+                        backgroundContext.delete(profile)
+                    }
+                    for contactProfile in Array(identity.contactProfiles) {
+                        backgroundContext.delete(contactProfile)
+                    }
+                    for cr in Array(identity.contactRequests) {
+                        backgroundContext.delete(cr)
+                    }
+                    for payment in Array(identity.dashpayPayments) {
+                        backgroundContext.delete(payment)
+                    }
+                    for ignored in Array(identity.dashpayIgnoredSenders) {
+                        backgroundContext.delete(ignored)
+                    }
+                }
                 try backgroundContext.save()
-            } catch {
-                backgroundContext.rollback()
-                throw error
+
+                // PHASE 2: delete the identities themselves now
+                // that their problematic cascade children are
+                // gone from the store.
+                for identity in identitiesToDelete {
+                    backgroundContext.delete(identity)
+                }
+                try backgroundContext.save()
+
+                // PHASE 3: delete the wallet's accounts. Same
+                // reasoning — `PersistentAccount.wallet` is
+                // non-optional; deleting accounts in their own
+                // save() pass leaves the wallet's `accounts`
+                // collection empty when the wallet itself is
+                // deleted.
+                let accountsToDelete = Array(walletRow.accounts)
+                for account in accountsToDelete {
+                    backgroundContext.delete(account)
+                }
+                try backgroundContext.save()
             }
+
+            // The txo / pending-input / asset-lock tables are keyed
+            // by raw `walletId` with no relationship to
+            // `PersistentWallet`, so the wallet-row delete below
+            // does not cascade them — purge them explicitly.
+            // `walletId` is network-scoped (key-wallet folds a
+            // domain tag + network discriminant into the digest),
+            // so every row under this id belongs to this wallet on
+            // this network alone and the purge can't touch a
+            // sibling network's cached state; a mnemonic's rows on
+            // other networks live under different walletIds, tied
+            // together only by `walletGroupId`.
+            let txoDescriptor = FetchDescriptor<PersistentTxo>(
+                predicate: #Predicate<PersistentTxo> { $0.walletId == walletId }
+            )
+            for row in try backgroundContext.fetch(txoDescriptor) {
+                backgroundContext.delete(row)
+            }
+
+            let pendingDescriptor = FetchDescriptor<PersistentPendingInput>(
+                predicate: #Predicate<PersistentPendingInput> { $0.walletId == walletId }
+            )
+            for row in try backgroundContext.fetch(pendingDescriptor) {
+                backgroundContext.delete(row)
+            }
+
+            // `loadCachedAssetLocksOnQueue` rehydrates these rows on
+            // the wallet-load path back into the Rust-side
+            // `unused_asset_locks` map so an in-flight registration
+            // can resume across an app kill. Without this cleanup,
+            // delete-then-reimport of the same wallet would
+            // resurrect stale Pending / Resumable asset-lock state
+            // that the user thought they had wiped.
+            let assetLockDescriptor = FetchDescriptor<PersistentAssetLock>(
+                predicate: #Predicate<PersistentAssetLock> { $0.walletId == walletId }
+            )
+            for row in try backgroundContext.fetch(assetLockDescriptor) {
+                backgroundContext.delete(row)
+            }
+
+            // Shielded (Orchard) per-wallet state. These four
+            // tables are keyed by raw `walletId` (no relationship
+            // to `PersistentWallet`), so the wallet-row delete
+            // below does not cascade them — purge them explicitly
+            // or they leak after a wipe and could resurface /
+            // mis-attribute if the same `walletId` is reimported
+            // (activity rows rehydrate into Rust via the
+            // `on_load_shielded_activity_fn` callback as ghost
+            // history and suppress fresh scan-derived entries).
+            let shieldedNoteDescriptor = FetchDescriptor<PersistentShieldedNote>(
+                predicate: #Predicate<PersistentShieldedNote> { $0.walletId == walletId }
+            )
+            for row in try backgroundContext.fetch(shieldedNoteDescriptor) {
+                backgroundContext.delete(row)
+            }
+
+            let shieldedOutgoingNoteDescriptor = FetchDescriptor<PersistentShieldedOutgoingNote>(
+                predicate: #Predicate<PersistentShieldedOutgoingNote> { $0.walletId == walletId }
+            )
+            for row in try backgroundContext.fetch(shieldedOutgoingNoteDescriptor) {
+                backgroundContext.delete(row)
+            }
+
+            let shieldedSyncStateDescriptor = FetchDescriptor<PersistentShieldedSyncState>(
+                predicate: #Predicate<PersistentShieldedSyncState> { $0.walletId == walletId }
+            )
+            for row in try backgroundContext.fetch(shieldedSyncStateDescriptor) {
+                backgroundContext.delete(row)
+            }
+
+            let shieldedActivityDescriptor = FetchDescriptor<PersistentShieldedActivity>(
+                predicate: #Predicate<PersistentShieldedActivity> { $0.walletId == walletId }
+            )
+            for row in try backgroundContext.fetch(shieldedActivityDescriptor) {
+                backgroundContext.delete(row)
+            }
+
+            let shieldedViewingKeyDescriptor = FetchDescriptor<PersistentShieldedViewingKey>(
+                predicate: #Predicate<PersistentShieldedViewingKey> { $0.walletId == walletId }
+            )
+            for row in try backgroundContext.fetch(shieldedViewingKeyDescriptor) {
+                backgroundContext.delete(row)
+            }
+
+            // Masternode aggregation rows, keyed by raw `walletId` (no
+            // relationship to `PersistentWallet`), so the wallet-row
+            // delete below does not cascade them. `MasternodeSync` never
+            // prunes on an empty aggregation (its no-prune-on-empty
+            // rule), so without an explicit purge a delete-then-reimport
+            // of the same wallet resurrects stale masternode rows
+            // indefinitely.
+            let masternodeDescriptor = FetchDescriptor<PersistentMasternode>(
+                predicate: #Predicate<PersistentMasternode> { $0.walletId == walletId }
+            )
+            for row in try backgroundContext.fetch(masternodeDescriptor) {
+                backgroundContext.delete(row)
+            }
+
+            if let walletRow = walletRow {
+                backgroundContext.delete(walletRow)
+            }
+
+            try backgroundContext.save()
+
+            // Orphan sweep: drop tx rows no longer referenced by any
+            // wallet. A row is referenced through the TXO graph
+            // (outputs / inputs / pendingInputs) OR through the
+            // `involvedAccounts` join — payload-only special txs
+            // (e.g. a ProRegTx matching a provider owner key) have
+            // no TXOs anywhere yet legitimately belong to a live
+            // account, so sweeping on the TXO relations alone would
+            // erase another wallet's payload-only history. The
+            // deleted wallet's own payload-only rows still qualify:
+            // its accounts were deleted (and their join links
+            // nullified) in the earlier save above.
+            let txRows = try backgroundContext.fetch(FetchDescriptor<PersistentTransaction>())
+            for tx in txRows where tx.outputs.isEmpty &&
+                tx.inputs.isEmpty &&
+                tx.pendingInputs.isEmpty &&
+                tx.involvedAccounts.isEmpty {
+                backgroundContext.delete(tx)
+            }
+
+            if let walletNetwork = walletNetwork {
+                let networkRaw = walletNetwork.rawValue
+                let siblingDescriptor = FetchDescriptor<PersistentWallet>(
+                    predicate: #Predicate<PersistentWallet> { $0.networkRaw == networkRaw }
+                )
+                let remaining = try backgroundContext.fetch(siblingDescriptor)
+                    .filter { $0.walletId != walletId }
+                if remaining.isEmpty {
+                    let scopeId = syncStateScopeId(for: walletNetwork)
+                    let syncDescriptor = FetchDescriptor<PersistentPlatformAddressesSyncState>(
+                        predicate: #Predicate { $0.walletId == scopeId }
+                    )
+                    if let syncRow = try backgroundContext.fetch(syncDescriptor).first {
+                        backgroundContext.delete(syncRow)
+                    }
+                }
+            }
+
+            try backgroundContext.save()
+        } catch {
+            backgroundContext.rollback()
+            throw error
         }
     }
 

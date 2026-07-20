@@ -207,6 +207,12 @@ public class PlatformWalletManager: ObservableObject {
     private var modelContainer: ModelContainer?
     private var signerNetwork: Network?
 
+    /// Async deletion yields while the persistence handler sweeps SwiftData.
+    /// Reject create/load/another delete during that window so actor
+    /// reentrancy cannot recreate a deterministic wallet id that the in-flight
+    /// deletion is about to remove from persistence.
+    private var walletDeletionInProgress = false
+
     /// Retained for the lifetime of the FFI handle so the event-handler
     /// context pointer remains valid.
     private var eventHandler: PlatformWalletEventHandler?
@@ -337,6 +343,7 @@ public class PlatformWalletManager: ObservableObject {
         birthHeight: UInt32? = nil
     ) throws -> ManagedPlatformWallet {
         try ensureConfigured()
+        try ensureNoWalletDeletionInProgress()
         var walletHandle: Handle = NULL_HANDLE
         var walletId: FFIByteTuple32 =
             (0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0)
@@ -379,6 +386,7 @@ public class PlatformWalletManager: ObservableObject {
         birthHeight: UInt32? = nil
     ) throws -> ManagedPlatformWallet {
         try ensureConfigured()
+        try ensureNoWalletDeletionInProgress()
         guard seed.count == 64 else {
             throw PlatformWalletError.invalidParameter(
                 "seed must be 64 bytes, got \(seed.count)"
@@ -441,6 +449,7 @@ public class PlatformWalletManager: ObservableObject {
     @discardableResult
     public func loadFromPersistor() throws -> [ManagedPlatformWallet] {
         try ensureConfigured()
+        try ensureNoWalletDeletionInProgress()
 
         try platform_wallet_manager_load_from_persistor(handle).check()
 
@@ -970,18 +979,25 @@ public class PlatformWalletManager: ObservableObject {
 
     // MARK: - Wallet deletion
 
-    /// Fully wipe a wallet's Rust, SwiftData, and Keychain footprint.
+    /// Fully wipe a wallet's Rust, SwiftData, and Keychain footprint without
+    /// blocking the main actor while SwiftData and Keychain perform their
+    /// potentially expensive database sweeps.
     ///
-    /// Requires the manager to have been `configure`d with a
-    /// `ModelContainer` — the per-identity Keychain sweep needs the
-    /// wallet's identity ids, which only the persistence handler can
-    /// resolve. The no-persistence configuration mode is rejected
-    /// here rather than silently leaving identity key material behind.
-    ///
-    /// Deleting an already-removed wallet succeeds unless an
-    /// operation fails.
-    public func deleteWallet(walletId: Data) throws {
+    /// `PlatformWalletManager` is main-actor isolated because its published
+    /// state and Rust handle are UI-facing. The persistence handler, however,
+    /// owns a dedicated serial queue with awaitable app-facing APIs, so its
+    /// database sweep does not freeze the UI. Rust/in-memory mutations remain
+    /// on the main actor. Deleting an already-removed wallet succeeds unless
+    /// an operation fails.
+    public func deleteWallet(walletId: Data) async throws {
+        let startedAt = ContinuousClock.now
+        let walletLabel = walletId.prefix(4)
+            .map { String(format: "%02x", $0) }
+            .joined()
+
         try ensureConfigured()
+        try beginWalletDeletion()
+        defer { walletDeletionInProgress = false }
         guard walletId.count == 32 else {
             throw PlatformWalletError.invalidParameter(
                 "walletId must be 32 bytes, got \(walletId.count)"
@@ -993,24 +1009,22 @@ public class PlatformWalletManager: ObservableObject {
             )
         }
 
-        let identityIds = try persistenceHandler.identityIdsForWallet(walletId: walletId)
+        var phaseStartedAt = ContinuousClock.now
+        let identityIds = try await persistenceHandler.identityIdsForWallet(
+            walletId: walletId)
 
-        // Wipe Keychain BEFORE the SwiftData identity deletion runs.
-        // Order matters for retry-safety: if `deleteWalletData`
-        // commits identity rows and then throws partway, a retry
-        // would see `identityIdsForWallet == []` and the
-        // `deleteAllKeychainItems(forIdentityId:)` sweep below
-        // could no longer find the keys to purge. Doing the
-        // keychain side first leaves at worst stale SwiftData
-        // rows on a retry — repeating the wipe is harmless, and
-        // every keychain call here is idempotent (no-op on "not
-        // found"). Mnemonic / metadata stay in `WalletStorage`
-        // for now so a retry can still derive any missed key.
-        for identityId in identityIds {
-            try KeychainManager.shared.deleteAllKeychainItems(forIdentityId: identityId)
-        }
-        try KeychainManager.shared.deleteAllIdentityPrivateKeys(forWalletId: walletId)
+        try await Task.detached(priority: .userInitiated) {
+            for identityId in identityIds {
+                try KeychainManager.shared.deleteAllKeychainItems(forIdentityId: identityId)
+            }
+            try KeychainManager.shared.deleteAllIdentityPrivateKeys(forWalletId: walletId)
+        }.value
+        SDKLogger.log(
+            "🗑️ wallet \(walletLabel)… delete keychain phase: "
+                + String(describing: phaseStartedAt.duration(to: .now)),
+            minimumLevel: .low)
 
+        phaseStartedAt = .now
         try walletId.withUnsafeBytes { raw in
             guard let base = raw.baseAddress?.assumingMemoryBound(to: FFIByteTuple32.self) else {
                 throw PlatformWalletError.nullPointer(
@@ -1021,31 +1035,32 @@ public class PlatformWalletManager: ObservableObject {
         }
 
         wallets.removeValue(forKey: walletId)
-        // Drop the needs-unlock banner state immediately so a re-created wallet
-        // with the same deterministic id doesn't inherit a stale banner (the
-        // poller would also prune it, but not until the next tick).
         dashPayUnlockStatus.removeValue(forKey: walletId)
+        SDKLogger.log(
+            "🗑️ wallet \(walletLabel)… delete Rust/in-memory phase: "
+                + String(describing: phaseStartedAt.duration(to: .now)),
+            minimumLevel: .low)
 
-        try persistenceHandler.deleteWalletData(walletId: walletId)
+        phaseStartedAt = .now
+        try await persistenceHandler.deleteWalletData(walletId: walletId)
+        SDKLogger.log(
+            "🗑️ wallet \(walletLabel)… delete SwiftData phase: "
+                + String(describing: phaseStartedAt.duration(to: .now)),
+            minimumLevel: .low)
 
-        // The mnemonic + metadata blobs in the Keychain are keyed by
-        // `walletId`. With network-scoped wallet ids the same mnemonic
-        // maps to a DIFFERENT id per network, so a given id is owned by
-        // exactly one network's wallet and carries its own mnemonic
-        // copy — purging it can't orphan a sibling network (those live
-        // under their own distinct ids). The `walletRowCountAcrossNetworks
-        // == 0` check is therefore expected to be true right after
-        // `deleteWalletData` removes this id's lone row; it is retained
-        // as a defensive guard (and to stay correct should the id model
-        // ever change) so we never delete the phrase while any row for
-        // this exact id still exists.
-        let remaining = try persistenceHandler.walletRowCountAcrossNetworks(walletId: walletId)
+        let remaining = try await persistenceHandler.walletRowCountAcrossNetworks(
+            walletId: walletId)
         if remaining == 0 {
-            let storage = WalletStorage()
-            // Delete metadata first so the mnemonic remains available for retry.
-            try storage.deleteMetadata(for: walletId)
-            try storage.deleteMnemonic(for: walletId)
+            try await Task.detached(priority: .userInitiated) {
+                let storage = WalletStorage()
+                try storage.deleteMetadata(for: walletId)
+                try storage.deleteMnemonic(for: walletId)
+            }.value
         }
+        SDKLogger.log(
+            "🗑️ wallet \(walletLabel)… delete total: "
+                + String(describing: startedAt.duration(to: .now)),
+            minimumLevel: .low)
     }
 
     // MARK: - Per-wallet lookup
@@ -1236,6 +1251,19 @@ public class PlatformWalletManager: ObservableObject {
                 "PlatformWalletManager not configured"
             )
         }
+    }
+
+    private func ensureNoWalletDeletionInProgress() throws {
+        guard !walletDeletionInProgress else {
+            throw PlatformWalletError.walletOperation(
+                "wallet deletion is already in progress"
+            )
+        }
+    }
+
+    private func beginWalletDeletion() throws {
+        try ensureNoWalletDeletionInProgress()
+        walletDeletionInProgress = true
     }
 
     /// Starts the SPV progress polling loop. Cancelled on deinit.
