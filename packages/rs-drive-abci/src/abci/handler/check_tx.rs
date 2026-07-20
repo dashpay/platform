@@ -148,6 +148,13 @@ where
             })
         })
         .or_else(|error| {
+            if matches!(
+                error,
+                Error::Execution(ExecutionError::CheckTxProofVerificationBusy)
+            ) {
+                return Err(error);
+            }
+
             let handler_error = HandlerError::Internal(error.to_string());
 
             if tracing::enabled!(tracing::Level::ERROR) {

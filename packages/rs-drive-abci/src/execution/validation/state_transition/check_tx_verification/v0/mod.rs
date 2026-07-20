@@ -2,6 +2,7 @@ use crate::error::Error;
 use crate::execution::types::execution_event::ExecutionEvent;
 use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformer;
 use crate::platform_types::platform::PlatformRef;
+use crate::platform_types::check_tx_proof_verifier::CheckTxProofVerifier;
 use crate::platform_types::platform_state::PlatformStateV0Methods;
 use crate::rpc::core::CoreRPCLike;
 use dpp::identity::state_transition::OptionallyAssetLockProved;
@@ -35,6 +36,7 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
     platform: &'a PlatformRef<C>,
     state_transition: StateTransition,
     check_tx_level: CheckTxLevel,
+    proof_verifier: &CheckTxProofVerifier,
     platform_version: &PlatformVersion,
 ) -> Result<ConsensusValidationResult<Option<ExecutionEvent<'a>>>, Error> {
     // we need to validate the structure, the fees, and the signature
@@ -139,19 +141,6 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
             // address inputs and ShieldFromAssetLock pays from the asset lock.
             if state_transition.has_shielded_minimum_fee_validation() {
                 let result = state_transition.validate_minimum_shielded_fee(platform_version)?;
-                if !result.is_valid() {
-                    return Ok(
-                        ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
-                            result.errors,
-                        ),
-                    );
-                }
-            }
-
-            // Verify ZK proof for shielded transitions (stateless, like signature verification).
-            // This happens before any state reads to reject invalid proofs cheaply.
-            if state_transition.has_shielded_proof_validation() {
-                let result = state_transition.validate_shielded_proof(platform_version)?;
                 if !result.is_valid() {
                     return Ok(
                         ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
@@ -336,6 +325,25 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                 state_transition_action_result.into_data()?
             };
 
+            // Run proof verification only after cheap current-state admission has
+            // accepted the transition. CheckTx uses a node-local, fail-fast budget;
+            // proposal and block execution do not share it and retain capacity.
+            if state_transition.has_shielded_proof_validation() {
+                let _permit = proof_verifier
+                    .try_acquire(state_transition.shielded_proof_action_count())
+                    .ok_or(Error::Execution(
+                        ExecutionError::CheckTxProofVerificationBusy,
+                    ))?;
+                let result = state_transition.validate_shielded_proof(platform_version)?;
+                if !result.is_valid() {
+                    return Ok(
+                        ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
+                            result.errors,
+                        ),
+                    );
+                }
+            }
+
             let execution_event = ExecutionEvent::create_from_state_transition_action(
                 action,
                 maybe_identity,
@@ -475,6 +483,10 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
 mod tests {
     use super::*;
     use crate::execution::check_tx::CheckTxLevel;
+    use crate::execution::validation::state_transition::state_transitions::test_helpers::{
+        create_dummy_serialized_action, insert_anchor_into_state, set_pool_total_balance,
+        setup_platform,
+    };
     use crate::execution::validation::state_transition::state_transitions::tests::setup_identity;
     use crate::platform_types::platform::PlatformRef;
     use crate::platform_types::platform_state::PlatformStateV0Methods;
@@ -491,6 +503,8 @@ mod tests {
     use dpp::serialization::PlatformSerializable;
     use dpp::state_transition::data_contract_create_transition::methods::DataContractCreateTransitionMethodsV0;
     use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
+    use dpp::state_transition::shielded_transfer_transition::v0::ShieldedTransferTransitionV0;
+    use dpp::state_transition::shielded_transfer_transition::ShieldedTransferTransition;
     use dpp::tests::json_document::json_document_to_contract_with_ids;
     use dpp::version::DefaultForPlatformVersion;
     use platform_version::version::PlatformVersion;
@@ -543,6 +557,71 @@ mod tests {
     mod first_time_check {
         use super::*;
 
+        fn shielded_transfer_with_dummy_proof(anchor: [u8; 32]) -> StateTransition {
+            let fee = dpp::shielded::compute_minimum_shielded_fee(1, PlatformVersion::latest())
+                .expect("minimum shielded fee");
+
+            StateTransition::ShieldedTransfer(ShieldedTransferTransition::V0(
+                ShieldedTransferTransitionV0 {
+                    actions: vec![create_dummy_serialized_action()],
+                    value_balance: fee,
+                    anchor,
+                    proof: vec![0; 100],
+                    binding_signature: [0; 64],
+                },
+            ))
+        }
+
+        #[test]
+        fn shielded_state_admission_precedes_proof_capacity() {
+            let platform_version = PlatformVersion::latest();
+            let platform = setup_platform();
+            set_pool_total_balance(&platform, 1_000_000_000);
+
+            let verifier = CheckTxProofVerifier::new(1);
+            let _held_permit = verifier.try_acquire(1).expect("held test permit");
+
+            let platform_state = platform.state.load();
+            let platform_ref = PlatformRef {
+                drive: &platform.drive,
+                state: &platform_state,
+                config: &platform.config,
+                core_rpc: &platform.core_rpc,
+            };
+
+            let missing_anchor = [42; 32];
+            let result = state_transition_to_execution_event_for_check_tx_v0(
+                &platform_ref,
+                shielded_transfer_with_dummy_proof(missing_anchor),
+                CheckTxLevel::FirstTimeCheck,
+                &verifier,
+                platform_version,
+            )
+            .expect("state rejection must occur before proof admission");
+
+            assert!(result.errors.iter().any(|error| matches!(
+                error,
+                ConsensusError::StateError(StateError::InvalidAnchorError(_))
+            )));
+
+            insert_anchor_into_state(&platform, &missing_anchor);
+            let error = match state_transition_to_execution_event_for_check_tx_v0(
+                &platform_ref,
+                shielded_transfer_with_dummy_proof(missing_anchor),
+                CheckTxLevel::FirstTimeCheck,
+                &verifier,
+                platform_version,
+            ) {
+                Err(error) => error,
+                Ok(_) => panic!("admissible proof work must fail fast when capacity is occupied"),
+            };
+
+            assert!(matches!(
+                error,
+                Error::Execution(ExecutionError::CheckTxProofVerificationBusy)
+            ));
+        }
+
         #[tokio::test]
         async fn should_return_valid_result_for_data_contract_create() {
             let platform_version = PlatformVersion::latest();
@@ -561,6 +640,7 @@ mod tests {
                 &platform_ref,
                 state_transition,
                 CheckTxLevel::FirstTimeCheck,
+                &platform.check_tx_proof_verifier,
                 platform_version,
             );
 
@@ -595,6 +675,7 @@ mod tests {
                 &platform_ref,
                 state_transition,
                 CheckTxLevel::FirstTimeCheck,
+                &platform.check_tx_proof_verifier,
                 platform_version,
             );
 
@@ -661,6 +742,7 @@ mod tests {
                 &platform_ref,
                 state_transition,
                 CheckTxLevel::FirstTimeCheck,
+                &platform.check_tx_proof_verifier,
                 platform_version,
             );
 
@@ -728,6 +810,7 @@ mod tests {
                 &platform_ref,
                 state_transition,
                 CheckTxLevel::FirstTimeCheck,
+                &platform.check_tx_proof_verifier,
                 platform_version,
             );
 
@@ -796,6 +879,7 @@ mod tests {
                 &platform_ref,
                 state_transition,
                 CheckTxLevel::FirstTimeCheck,
+                &platform.check_tx_proof_verifier,
                 platform_version,
             );
 
@@ -839,6 +923,7 @@ mod tests {
                 &platform_ref,
                 state_transition,
                 CheckTxLevel::Recheck,
+                &platform.check_tx_proof_verifier,
                 platform_version,
             );
 
@@ -901,6 +986,7 @@ mod tests {
                 &platform_ref,
                 state_transition,
                 CheckTxLevel::Recheck,
+                &platform.check_tx_proof_verifier,
                 platform_version,
             );
 
