@@ -102,6 +102,10 @@ impl WorkerStatus {
     pub fn is_clean(&self) -> bool {
         matches!(self, Self::Ok | Self::NotRunning)
     }
+
+    fn is_non_transient_failure(&self) -> bool {
+        matches!(self, Self::Stopped(_) | Self::Panicked(_) | Self::Error(_))
+    }
 }
 
 /// Aggregate result of [`ThreadRegistry::shutdown`].
@@ -127,6 +131,20 @@ impl<K: RegistryKey> ShutdownReport<K> {
         self.detached == 0
             && self.orphan_status.is_clean()
             && self.per_worker.values().all(WorkerStatus::is_clean)
+    }
+
+    /// Merges a retry while retaining terminal failures observed on the first pass.
+    /// Timeout and detached statuses remain retryable and use the retry's classification.
+    pub fn merged_with_retry(self, mut retry: Self) -> Self {
+        for (key, status) in self.per_worker {
+            if status.is_non_transient_failure() {
+                retry.per_worker.insert(key, status);
+            }
+        }
+        if self.orphan_status.is_non_transient_failure() {
+            retry.orphan_status = self.orphan_status;
+        }
+        retry
     }
 }
 
@@ -1322,6 +1340,73 @@ mod tests {
     use tokio::sync::Barrier;
 
     type Reg = Arc<ThreadRegistry<&'static str>>;
+
+    #[test]
+    fn shutdown_report_merge_preserves_first_pass_worker_panic() {
+        let first_pass = ShutdownReport {
+            per_worker: BTreeMap::from([("alpha", WorkerStatus::Panicked("boom".to_owned()))]),
+            detached: 0,
+            orphan_status: WorkerStatus::Ok,
+        };
+        let retry = ShutdownReport {
+            per_worker: BTreeMap::from([("alpha", WorkerStatus::NotRunning)]),
+            detached: 0,
+            orphan_status: WorkerStatus::Ok,
+        };
+
+        let merged = first_pass.merged_with_retry(retry);
+
+        assert_eq!(
+            merged.per_worker.get("alpha"),
+            Some(&WorkerStatus::Panicked("boom".to_owned()))
+        );
+        assert!(!merged.all_clean());
+    }
+
+    #[test]
+    fn shutdown_report_merge_preserves_first_pass_orphan_error() {
+        let first_pass = ShutdownReport::<&str> {
+            per_worker: BTreeMap::new(),
+            detached: 0,
+            orphan_status: WorkerStatus::Error("join failed".to_owned()),
+        };
+        let retry = ShutdownReport {
+            per_worker: BTreeMap::new(),
+            detached: 0,
+            orphan_status: WorkerStatus::Ok,
+        };
+
+        let merged = first_pass.merged_with_retry(retry);
+
+        assert_eq!(
+            merged.orphan_status,
+            WorkerStatus::Error("join failed".to_owned())
+        );
+        assert!(!merged.all_clean());
+    }
+
+    #[test]
+    fn shutdown_report_merge_allows_timeout_to_resolve_on_retry() {
+        let first_pass = ShutdownReport {
+            per_worker: BTreeMap::from([("alpha", WorkerStatus::Timeout)]),
+            detached: 1,
+            orphan_status: WorkerStatus::Detached,
+        };
+        let retry = ShutdownReport {
+            per_worker: BTreeMap::from([("alpha", WorkerStatus::NotRunning)]),
+            detached: 0,
+            orphan_status: WorkerStatus::Ok,
+        };
+
+        let merged = first_pass.merged_with_retry(retry);
+
+        assert_eq!(
+            merged.per_worker.get("alpha"),
+            Some(&WorkerStatus::NotRunning)
+        );
+        assert_eq!(merged.orphan_status, WorkerStatus::Ok);
+        assert!(merged.all_clean());
+    }
 
     /// Start an OS-thread worker that exits cleanly when cancelled. The
     /// runtime handle is captured from the caller's context (the worker

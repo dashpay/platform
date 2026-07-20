@@ -377,9 +377,10 @@ pub unsafe extern "C" fn platform_wallet_manager_destroy(
                  thread cleanly on the first pass; retrying"
             );
             let retry = runtime().block_on(manager.shutdown());
-            if !retry.all_clean() {
+            let merged = report.merged_with_retry(retry);
+            if !merged.all_clean() {
                 tracing::error!(
-                    ?retry,
+                    ?merged,
                     "platform wallet manager shutdown still could not join every \
                      coordinator thread after a retry; a worker may outlive destroy"
                 );
@@ -387,7 +388,7 @@ pub unsafe extern "C" fn platform_wallet_manager_destroy(
                     PlatformWalletFFIResultCode::ErrorShutdownIncomplete,
                     format!(
                         "shutdown could not cleanly join all coordinator threads after \
-                         a retry: {retry:?}"
+                         a retry: {merged:?}"
                     ),
                 );
             }

@@ -2,6 +2,7 @@ import Foundation
 import SwiftData
 import Combine
 import DashSDKFFI
+import os.log
 
 /// Lock-guarded monotonic generation counter, safe to read and bump from
 /// any thread. Used to drop sync completion events that belong to a
@@ -59,6 +60,11 @@ public struct DashPayUnlockStatus: Equatable {
 /// class in the middle.
 @MainActor
 public class PlatformWalletManager: ObservableObject {
+    fileprivate nonisolated static let log = Logger(
+        subsystem: "dashpay.SwiftDashSDK",
+        category: "PlatformWallet"
+    )
+
     // MARK: - Published observables
 
     /// Whether [`configure`] has been called successfully.
@@ -232,7 +238,12 @@ public class PlatformWalletManager: ObservableObject {
             platform_wallet_manager_platform_address_sync_stop(handle).discard()
             platform_wallet_manager_shielded_sync_stop(handle).discard()
             platform_wallet_manager_dashpay_sync_stop(handle).discard()
-            platform_wallet_manager_destroy(handle).discard()
+            let destroyResult = PlatformWalletResult(platform_wallet_manager_destroy(handle))
+            if !destroyResult.isSuccess {
+                Self.log.error(
+                    "Platform wallet manager teardown failed with \(String(describing: destroyResult.code), privacy: .public): \(destroyResult.message ?? "<no detail from Rust>", privacy: .public)"
+                )
+            }
         }
     }
 

@@ -3,7 +3,7 @@
 //! Provides [`block_on`] -- a function that bridges async futures into sync code,
 //! handling multiple tokio runtime flavors (no runtime, current-thread, multi-thread).
 //!
-//! Also provides [`ThreadRegistry`] — a shared lifecycle engine for background
+//! Also provides `ThreadRegistry` — a shared lifecycle engine for background
 //! OS-thread / tokio-task workers (start, cancel, weight-ordered quiesce +
 //! join, orphan reap).
 
