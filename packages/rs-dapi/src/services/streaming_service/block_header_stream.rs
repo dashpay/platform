@@ -10,7 +10,8 @@ use dashcore_rpc::dashcore::consensus::encode::{
     deserialize as deserialize_consensus, serialize as serialize_consensus,
 };
 use dashcore_rpc::dashcore::hashes::Hash;
-use tokio::sync::{Mutex as AsyncMutex, mpsc, watch};
+use tokio::sync::{Mutex as AsyncMutex, OwnedSemaphorePermit, mpsc, watch};
+use tokio::time::{Duration, sleep};
 use tokio_stream::wrappers::ReceiverStream;
 use tracing::{debug, trace, warn};
 
@@ -18,8 +19,14 @@ use crate::DapiError;
 use crate::services::streaming_service::{
     FilterType, StreamingEvent, StreamingServiceImpl, SubscriptionHandle,
 };
+use crate::sync::WorkerTaskHandle;
 
 const BLOCK_HEADER_STREAM_BUFFER: usize = 512;
+const MAX_HISTORICAL_HEADERS_PER_STREAM: usize = 10_000;
+const MAX_HEADER_PENDING_EVENTS: usize = 256;
+const MAX_HEADER_PENDING_BYTES: usize = 8 * 1024 * 1024;
+const HEADER_GATE_MAX_TIMEOUT: Duration = Duration::from_secs(180);
+const MAX_LIVE_DELIVERED_HASHES: usize = 2_048;
 
 type BlockHeaderResponseResult = Result<BlockHeadersWithChainLocksResponse, Status>;
 type BlockHeaderResponseSender = mpsc::Sender<BlockHeaderResponseResult>;
@@ -51,9 +58,11 @@ impl StreamingServiceImpl {
                 }
                 FromBlock::FromBlockHeight(height)
             }
-            Some(FromBlock::FromBlockHash(ref hash)) if hash.is_empty() => {
-                debug!("block_headers=empty_from_block_hash");
-                return Err(Status::invalid_argument("fromBlockHash cannot be empty"));
+            Some(FromBlock::FromBlockHash(ref hash)) if hash.len() != 32 => {
+                debug!("block_headers=invalid_from_block_hash_length");
+                return Err(Status::invalid_argument(
+                    "fromBlockHash must be exactly 32 bytes",
+                ));
             }
             Some(from_block) => from_block,
             None => {
@@ -64,10 +73,20 @@ impl StreamingServiceImpl {
 
         trace!(count, "block_headers=request_parsed");
 
+        let stream_permit = self
+            .block_header_stream_permits
+            .clone()
+            .try_acquire_owned()
+            .map_err(|_| Status::resource_exhausted("too many active block-header streams"))?;
+
+        self.resolve_header_history_range(&from_block, (count > 0).then_some(count as usize))
+            .await?;
+
         let response = if count > 0 {
-            self.handle_historical_mode(from_block, count).await?
+            self.handle_historical_mode(from_block, count, stream_permit)
+                .await?
         } else {
-            self.handle_combined_mode(from_block).await?
+            self.handle_combined_mode(from_block, stream_permit).await?
         };
 
         Ok(response)
@@ -77,13 +96,21 @@ impl StreamingServiceImpl {
         &self,
         from_block: FromBlock,
         count: u32,
+        stream_permit: OwnedSemaphorePermit,
     ) -> Result<BlockHeaderResponse, Status> {
         let (tx, rx) = mpsc::channel(BLOCK_HEADER_STREAM_BUFFER);
 
         self.send_initial_chainlock(tx.clone()).await?;
 
-        self.spawn_fetch_historical_headers(from_block, Some(count as usize), None, tx, None, None)
-            .await?;
+        self.spawn_fetch_historical_headers(
+            from_block,
+            Some(count as usize),
+            None,
+            tx,
+            None,
+            Some(stream_permit),
+        )
+        .await?;
 
         let stream: BlockHeaderResponseStream = ReceiverStream::new(rx);
         debug!("block_headers=historical_stream_ready");
@@ -93,28 +120,38 @@ impl StreamingServiceImpl {
     async fn handle_combined_mode(
         &self,
         from_block: FromBlock,
+        stream_permit: OwnedSemaphorePermit,
     ) -> Result<BlockHeaderResponse, Status> {
         let (tx, rx) = mpsc::channel(BLOCK_HEADER_STREAM_BUFFER);
         let delivered_hashes: DeliveredHashSet = Arc::new(AsyncMutex::new(HashSet::new()));
         let (delivery_gate_tx, delivery_gate_rx) = watch::channel(false);
 
-        let subscriber_id = self
+        let (subscriber_id, live_worker) = self
             .start_live_stream(
                 tx.clone(),
                 delivered_hashes.clone(),
                 delivery_gate_rx.clone(),
+                stream_permit,
             )
             .await;
-        self.send_initial_chainlock(tx.clone()).await?;
-        self.spawn_fetch_historical_headers(
-            from_block,
-            None,
-            Some(delivered_hashes),
-            tx,
-            Some(delivery_gate_tx),
-            Some(subscriber_id.clone()),
-        )
-        .await?;
+        if let Err(status) = self.send_initial_chainlock(tx.clone()).await {
+            live_worker.abort().await;
+            return Err(status);
+        }
+        if let Err(status) = self
+            .spawn_fetch_historical_headers(
+                from_block,
+                None,
+                Some(delivered_hashes),
+                tx,
+                Some(delivery_gate_tx),
+                None,
+            )
+            .await
+        {
+            live_worker.abort().await;
+            return Err(status);
+        }
         let stream: BlockHeaderResponseStream = ReceiverStream::new(rx);
         debug!(
             subscriber_id = subscriber_id.as_str(),
@@ -130,18 +167,14 @@ impl StreamingServiceImpl {
         delivered_hashes: Option<DeliveredHashSet>,
         tx: BlockHeaderResponseSender,
         gate: Option<DeliveryGateSender>,
-        subscriber_id: Option<String>,
+        stream_permit: Option<OwnedSemaphorePermit>,
     ) -> Result<(), Status> {
         let service = self.clone();
 
         self.workers.spawn(async move {
+            let _stream_permit = stream_permit;
             let result = service
-                .fetch_historical_blocks(
-                    from_block,
-                    limit,
-                    delivered_hashes,
-                    tx.clone(),
-                )
+                .fetch_historical_blocks(from_block, limit, delivered_hashes, tx.clone())
                 .await;
 
             if let Some(gate) = gate {
@@ -151,19 +184,11 @@ impl StreamingServiceImpl {
 
             match result {
                 Ok(()) => {
-                    if let Some(ref id) = subscriber_id {
-                        debug!(subscriber_id = id.as_str(), "block_headers=historical_fetch_completed");
-                    } else {
-                        debug!("block_headers=historical_fetch_completed");
-                    }
+                    debug!("block_headers=historical_fetch_completed");
                     Ok(())
                 }
                 Err(status) => {
-                    if let Some(ref id) = subscriber_id {
-                        debug!(subscriber_id = id.as_str(), error = %status, "block_headers=historical_fetch_failed");
-                    } else {
-                        debug!(error = %status, "block_headers=historical_fetch_failed");
-                    }
+                    debug!(error = %status, "block_headers=historical_fetch_failed");
                     let _ = tx.send(Err(status.clone())).await;
                     Err(DapiError::from(status))
                 }
@@ -178,7 +203,8 @@ impl StreamingServiceImpl {
         tx: BlockHeaderResponseSender,
         delivered_hashes: DeliveredHashSet,
         delivery_gate: DeliveryGateReceiver,
-    ) -> String {
+        stream_permit: OwnedSemaphorePermit,
+    ) -> (String, WorkerTaskHandle) {
         let filter = FilterType::CoreAllBlocks;
         let block_handle = self.subscriber_manager.add_subscription(filter).await;
         let subscriber_id = block_handle.id().to_string();
@@ -196,7 +222,8 @@ impl StreamingServiceImpl {
             "block_headers=chainlock_subscription_created"
         );
 
-        self.workers.spawn(async move {
+        let worker = self.workers.spawn(async move {
+            let _stream_permit = stream_permit;
             Self::block_header_worker(
                 block_handle,
                 chainlock_handle,
@@ -208,7 +235,7 @@ impl StreamingServiceImpl {
             Ok::<(), DapiError>(())
         });
 
-        subscriber_id
+        (subscriber_id, worker)
     }
 
     async fn send_initial_chainlock(&self, tx: BlockHeaderResponseSender) -> Result<(), Status> {
@@ -246,10 +273,21 @@ impl StreamingServiceImpl {
     ) {
         let subscriber_id = block_handle.id().to_string();
         let mut pending: Vec<StreamingEvent> = Vec::new();
+        let mut pending_bytes = 0usize;
         let mut gated = !*delivery_gate.borrow();
+        let gate_deadline = sleep(HEADER_GATE_MAX_TIMEOUT);
+        tokio::pin!(gate_deadline);
 
         loop {
             tokio::select! {
+                biased;
+                _ = tx.closed() => break,
+                _ = &mut gate_deadline, if gated => {
+                    let _ = tx.try_send(Err(Status::resource_exhausted(
+                        "block-header history handoff exceeded its time budget",
+                    )));
+                    break;
+                }
                 gate_change = delivery_gate.changed(), if gated => {
                     if gate_change.is_err() {
                         break;
@@ -259,11 +297,26 @@ impl StreamingServiceImpl {
                         && !Self::flush_pending(&subscriber_id, &tx, &delivered_hashes, &mut pending).await {
                             break;
                         }
+                    if !gated {
+                        pending_bytes = 0;
+                        delivered_hashes.lock().await.clear();
+                    }
                 }
                 message = block_handle.recv() => {
                     match message {
                         Some(event) => {
                             if gated {
+                                let event_bytes = event.retained_bytes();
+                                let next_bytes = pending_bytes.saturating_add(event_bytes);
+                                if pending.len() >= MAX_HEADER_PENDING_EVENTS
+                                    || next_bytes > MAX_HEADER_PENDING_BYTES
+                                {
+                                    let _ = tx.try_send(Err(Status::resource_exhausted(
+                                        "live events exceeded the history handoff budget",
+                                    )));
+                                    break;
+                                }
+                                pending_bytes = next_bytes;
                                 pending.push(event);
                                 continue;
                             }
@@ -278,6 +331,17 @@ impl StreamingServiceImpl {
                     match message {
                         Some(event) => {
                             if gated {
+                                let event_bytes = event.retained_bytes();
+                                let next_bytes = pending_bytes.saturating_add(event_bytes);
+                                if pending.len() >= MAX_HEADER_PENDING_EVENTS
+                                    || next_bytes > MAX_HEADER_PENDING_BYTES
+                                {
+                                    let _ = tx.try_send(Err(Status::resource_exhausted(
+                                        "live events exceeded the history handoff budget",
+                                    )));
+                                    break;
+                                }
+                                pending_bytes = next_bytes;
                                 pending.push(event);
                                 continue;
                             }
@@ -349,6 +413,9 @@ impl StreamingServiceImpl {
                         );
                         allow_forward = false;
                     } else {
+                        if hashes.len() >= MAX_LIVE_DELIVERED_HASHES {
+                            hashes.clear();
+                        }
                         hashes.insert(hash_bytes.into());
                     }
                 }
@@ -441,90 +508,30 @@ impl StreamingServiceImpl {
         delivered_hashes: Option<DeliveredHashSet>,
         tx: BlockHeaderResponseSender,
     ) -> Result<(), Status> {
-        use std::str::FromStr;
-
-        let best_height = self
-            .core_client
-            .get_block_count()
-            .await
-            .map_err(Status::from)? as usize;
-
-        let (start_height, available, desired) = match from_block {
-            FromBlock::FromBlockHash(hash) => {
-                let hash_hex = hex::encode(&hash);
-                let block_hash = dashcore_rpc::dashcore::BlockHash::from_str(&hash_hex)
-                    .map_err(|e| Status::invalid_argument(format!("Invalid block hash: {}", e)))?;
-                let header = self
-                    .core_client
-                    .get_block_header_info(&block_hash)
-                    .await
-                    .map_err(Status::from)?;
-                let start = header.height as usize;
-                let available = best_height
-                    .checked_sub(start)
-                    .and_then(|diff| diff.checked_add(1))
-                    .unwrap_or(0);
-                let desired = limit.unwrap_or(available);
-                debug!(start, desired, "block_headers=historical_from_hash_request");
-                (start, available, desired)
-            }
-            FromBlock::FromBlockHeight(height) => {
-                let start = height as usize;
-                if start == 0 {
-                    return Err(Status::invalid_argument(
-                        "Minimum value for `fromBlockHeight` is 1",
-                    ));
-                }
-                let available = best_height
-                    .checked_sub(start)
-                    .and_then(|diff| diff.checked_add(1))
-                    .unwrap_or(0);
-                let desired = limit.unwrap_or(available);
-                debug!(
-                    start,
-                    desired, "block_headers=historical_from_height_request"
-                );
-                (start, available, desired)
-            }
-        };
-
-        if available == 0 {
-            // historical mode but no available headers
-            if limit.is_some() {
-                debug!(start_height, best_height, "block_headers=start_beyond_tip");
-                return Err(Status::not_found(format!(
-                    "Block {} not found",
-                    start_height
-                )));
-            }
-            // Combined mode: no historical data yet; proceed with live stream.
-            return Ok(());
-        }
+        let (start_height, desired) = self
+            .resolve_header_history_range(&from_block, limit)
+            .await?;
 
         if desired == 0 {
             return Ok(());
-        }
-
-        if desired > available {
-            debug!(
-                start_height,
-                requested = desired,
-                max_available = available,
-                "block_headers=count_exceeds_tip"
-            );
-            return Err(Status::invalid_argument("count exceeds chain tip"));
         }
 
         let mut remaining = desired;
         let mut current_height = start_height;
 
         while remaining > 0 {
+            if tx.is_closed() {
+                return Ok(());
+            }
             let batch_size = remaining.min(MAX_HEADERS_PER_BATCH);
 
             let mut response_headers = Vec::with_capacity(batch_size);
             let mut hashes_to_store: Vec<Vec<u8>> = Vec::with_capacity(batch_size);
 
             for offset in 0..batch_size {
+                if tx.is_closed() {
+                    return Ok(());
+                }
                 let height = (current_height + offset) as u32;
                 let hash = self
                     .core_client
@@ -592,5 +599,89 @@ impl StreamingServiceImpl {
         }
 
         Ok(())
+    }
+
+    async fn resolve_header_history_range(
+        &self,
+        from_block: &FromBlock,
+        limit: Option<usize>,
+    ) -> Result<(usize, usize), Status> {
+        use std::str::FromStr;
+
+        let best_height = self
+            .core_client
+            .get_block_count()
+            .await
+            .map_err(Status::from)? as usize;
+
+        let (start_height, available, desired) = match from_block {
+            FromBlock::FromBlockHash(hash) => {
+                let hash_hex = hex::encode(hash);
+                let block_hash = dashcore_rpc::dashcore::BlockHash::from_str(&hash_hex)
+                    .map_err(|e| Status::invalid_argument(format!("Invalid block hash: {}", e)))?;
+                let header = self
+                    .core_client
+                    .get_block_header_info(&block_hash)
+                    .await
+                    .map_err(Status::from)?;
+                let start = header.height as usize;
+                let available = best_height
+                    .checked_sub(start)
+                    .and_then(|diff| diff.checked_add(1))
+                    .unwrap_or(0);
+                let desired = limit.unwrap_or(available);
+                debug!(start, desired, "block_headers=historical_from_hash_request");
+                (start, available, desired)
+            }
+            FromBlock::FromBlockHeight(height) => {
+                let start = *height as usize;
+                if start == 0 {
+                    return Err(Status::invalid_argument(
+                        "Minimum value for `fromBlockHeight` is 1",
+                    ));
+                }
+                let available = best_height
+                    .checked_sub(start)
+                    .and_then(|diff| diff.checked_add(1))
+                    .unwrap_or(0);
+                let desired = limit.unwrap_or(available);
+                debug!(
+                    start,
+                    desired, "block_headers=historical_from_height_request"
+                );
+                (start, available, desired)
+            }
+        };
+
+        if available == 0 {
+            // historical mode but no available headers
+            if limit.is_some() {
+                debug!(start_height, best_height, "block_headers=start_beyond_tip");
+                return Err(Status::not_found(format!(
+                    "Block {} not found",
+                    start_height
+                )));
+            }
+            // Combined mode: no historical data yet; proceed with live stream.
+            return Ok((start_height, 0));
+        }
+
+        if desired > available {
+            debug!(
+                start_height,
+                requested = desired,
+                max_available = available,
+                "block_headers=count_exceeds_tip"
+            );
+            return Err(Status::invalid_argument("count exceeds chain tip"));
+        }
+
+        if desired > MAX_HISTORICAL_HEADERS_PER_STREAM {
+            return Err(Status::resource_exhausted(format!(
+                "historical range {desired} exceeds maximum of {MAX_HISTORICAL_HEADERS_PER_STREAM}"
+            )));
+        }
+
+        Ok((start_height, desired))
     }
 }

@@ -15,8 +15,8 @@ use crate::config::Config;
 use crate::sync::Workers;
 use dash_spv::Hash;
 use std::sync::Arc;
-use tokio::sync::broadcast;
 use tokio::sync::broadcast::error::RecvError;
+use tokio::sync::{Semaphore, broadcast};
 use tokio::time::{Duration, sleep};
 use tracing::{debug, trace};
 
@@ -25,6 +25,10 @@ pub(crate) use subscriber_manager::{
     FilterType, StreamingEvent, SubscriberManager, SubscriptionHandle,
 };
 pub(crate) use zmq_listener::{ZmqEvent, ZmqListener};
+
+const MAX_ACTIVE_TRANSACTION_STREAMS: usize = 64;
+const MAX_ACTIVE_BLOCK_HEADER_STREAMS: usize = 64;
+const MAX_ACTIVE_MASTERNODE_STREAMS: usize = 64;
 
 /// Streaming service implementation with ZMQ integration.
 ///
@@ -39,6 +43,9 @@ pub struct StreamingServiceImpl {
     pub zmq_listener: Arc<ZmqListener>,
     pub subscriber_manager: Arc<SubscriberManager>,
     pub masternode_list_sync: Arc<MasternodeListSync>,
+    pub transaction_stream_permits: Arc<Semaphore>,
+    pub block_header_stream_permits: Arc<Semaphore>,
+    pub masternode_stream_permits: Arc<Semaphore>,
     /// Background workers; aborted when the last reference is dropped
     pub workers: Workers,
 }
@@ -127,6 +134,9 @@ impl StreamingServiceImpl {
             zmq_listener,
             subscriber_manager,
             masternode_list_sync,
+            transaction_stream_permits: Arc::new(Semaphore::new(MAX_ACTIVE_TRANSACTION_STREAMS)),
+            block_header_stream_permits: Arc::new(Semaphore::new(MAX_ACTIVE_BLOCK_HEADER_STREAMS)),
+            masternode_stream_permits: Arc::new(Semaphore::new(MAX_ACTIVE_MASTERNODE_STREAMS)),
             workers,
         })
     }

@@ -38,6 +38,16 @@ impl PlatformServiceImpl {
             ));
         }
 
+        let _wait_permit = self
+            .state_transition_wait_permits
+            .clone()
+            .try_acquire_owned()
+            .map_err(|_| {
+                DapiError::ResourceExhausted(
+                    "too many pending state transition result waits".to_string(),
+                )
+            })?;
+
         // Convert hash to commonly used representations
         let hash_hex = hex::encode(&state_transition_hash).to_uppercase();
         let hash_base64 = base64::prelude::BASE64_STANDARD.encode(&state_transition_hash);
