@@ -62,7 +62,6 @@ use dapi_grpc::platform::v0::{
 };
 use dapi_grpc::tonic::{Code, Request, Response, Status};
 use dpp::version::PlatformVersion;
-use std::fmt::Debug;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::thread::sleep;
@@ -99,13 +98,11 @@ impl QueryService {
     ) -> Result<Response<RS>, Status>
     where
         RS: Clone + Send + 'static,
-        RQ: Debug + Send + Clone + 'static,
+        RQ: Send + Clone + 'static,
     {
         let mut response_duration_metric = query_duration_metric(endpoint_name);
 
         let platform = Arc::clone(&self.platform);
-
-        let request_debug = format!("{:?}", &request);
 
         let result = spawn_blocking_task_with_name_if_supported("query", move || {
             let mut result;
@@ -234,7 +231,6 @@ impl QueryService {
                 let elapsed_time = response_duration_metric.elapsed().as_secs_f64();
 
                 tracing::trace!(
-                    request = request_debug,
                     elapsed_time,
                     endpoint_name,
                     code = code_label,
@@ -247,7 +243,6 @@ impl QueryService {
             // System errors
             Code::Unknown | Code::Unimplemented | Code::Internal | Code::DataLoss => {
                 tracing::error!(
-                    request = request_debug,
                     endpoint_name,
                     code = code_label,
                     "query '{}' execution failed with code {:?}",
