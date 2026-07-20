@@ -112,26 +112,6 @@ class IdentityAssetLockRecoveryTest {
     }
 
     @Test
-    fun `registration rejects keys for another identity index before JNI`() = runTest {
-        var called = false
-        val registration = IdentityRegistration(
-            resumeNative = ResumeIdentityNativeCall { _, _, _, _, _, _, _, _ ->
-                called = true
-                IdentityRegistrationNativeResult(ByteArray(32), 1)
-            },
-        )
-
-        val failure = runCatching {
-            registration.resumeWithExistingAssetLock(
-                1, lock(TrackedAssetLock.FundingType.IDENTITY_REGISTRATION),
-                7, listOf(key(identityIndex = 8)), 2, 3,
-            )
-        }
-        assertTrue(failure.exceptionOrNull() is IllegalArgumentException)
-        assertFalse(called)
-    }
-
-    @Test
     fun `manager teardown waits for registration resolver borrow`() = runBlocking {
         val gate = TeardownGate()
         val entered = CountDownLatch(1)
@@ -165,8 +145,16 @@ class IdentityAssetLockRecoveryTest {
         assertTrue(closed)
     }
 
-    private fun key(identityIndex: Int = 7) =
-        IdentityKeyPreview(identityIndex, "m/9'/$identityIndex'", ByteArray(33) { 2 }, ByteArray(32))
+    // Resume carries the rich base MASTER row; the resume path only checks the
+    // list is non-empty (the key set is fixed by the tracked lock, not
+    // re-validated per key here).
+    private fun key() = IdentityPubkey(
+        keyId = 0,
+        keyType = KeyType.ECDSA_SECP256K1,
+        purpose = KeyPurpose.AUTHENTICATION,
+        securityLevel = SecurityLevel.MASTER,
+        pubkeyBytes = ByteArray(33) { 2 },
+    )
 
     private fun lock(type: TrackedAssetLock.FundingType) = TrackedAssetLock(
         outpointTxid = ByteArray(32) { 4 },

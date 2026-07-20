@@ -75,26 +75,5 @@ data class IdentityKeyPreview(
             blob.fill(0)
             return rows
         }
-
-        /**
-         * Encode the registration-key rows for
-         * `IdentityNative.registerIdentityWithFunding`. Only the public
-         * keys cross (the private material is already persisted to the
-         * Keystore). Layout (big-endian): `u32 rowCount` then per row
-         * `u32 keyId, u16 pubkeyLen, pubkey`; [keys] is taken positionally
-         * so `keyId == index` (row 0 = MASTER).
-         */
-        fun encodeForRegistration(keys: List<IdentityKeyPreview>): ByteArray {
-            var size = 4
-            keys.forEach { size += 4 + 2 + it.publicKey.size }
-            val buf = ByteBuffer.allocate(size)
-            buf.putInt(keys.size)
-            keys.forEachIndexed { index, key ->
-                buf.putInt(index)
-                buf.putShort(key.publicKey.size.toShort())
-                buf.put(key.publicKey)
-            }
-            return buf.array()
-        }
     }
 }
