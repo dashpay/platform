@@ -21,8 +21,9 @@ import org.dashfoundation.dashsdk.identity.RegistrationKeys
  *   whereas registration derives the whole key set in a **single**
  *   `previewRegistrationKeySet` pass — the secret-lifecycle mandate is one
  *   derivation, not N overlapping ones;
- * - its lifecycle assumes post-registration persistence (an existing
- *   identity id), not the pre-broadcast persistence registration needs.
+ * - its policy depends on the existing identity's current key IDs and builds
+ *   an update batch, while registration needs a fixed 0..N role table before
+ *   the identity exists.
  *
  * Forcing registration through it would fork its semantics; this helper reuses
  * the shared pieces instead — the SDK's [RegistrationKeys] role table for the

@@ -4,6 +4,7 @@ import kotlinx.coroutines.test.runTest
 import org.dashfoundation.dashsdk.identity.ContractBounds
 import org.dashfoundation.dashsdk.identity.IdentityKeyPreview
 import org.dashfoundation.dashsdk.identity.KeyPurpose
+import org.dashfoundation.dashsdk.identity.KeyType
 import org.dashfoundation.dashsdk.identity.RegistrationKeys
 import org.dashfoundation.dashsdk.identity.SecurityLevel
 import org.dashfoundation.example.ui.identity.CreateIdentityFundingSource
@@ -32,12 +33,16 @@ class DashpayKeyProvisioningTest {
     @Test
     fun `fresh funding provisions all six keys with DashPay bounds`() = runTest {
         val previews = (0 until 6).map(::preview)
-        val stored = mutableListOf<String>()
+        val walletId = ByteArray(32) { 9 }
+        data class StoredKey(val hex: String, val scalar: ByteArray, val owner: ByteArray)
+        val stored = mutableListOf<StoredKey>()
         val rows = DashpayKeyProvisioning.provision(
             previews = previews,
             includeDashPayKeys = true,
-            walletId = ByteArray(32) { 9 },
-            persister = { hex, _, _ -> stored += hex },
+            walletId = walletId,
+            persister = { hex, privateKey, owner ->
+                stored += StoredKey(hex, privateKey.copyOf(), owner.copyOf())
+            },
         )
 
         assertEquals(6, rows.size)
@@ -45,14 +50,26 @@ class DashpayKeyProvisioningTest {
         assertEquals(KeyPurpose.ENCRYPTION, rows[4].purpose)
         assertEquals(KeyPurpose.DECRYPTION, rows[5].purpose)
         assertEquals(SecurityLevel.MEDIUM, rows[4].securityLevel)
+        assertEquals(SecurityLevel.MEDIUM, rows[5].securityLevel)
+        assertEquals(KeyType.ECDSA_SECP256K1, rows[4].keyType)
+        assertEquals(KeyType.ECDSA_SECP256K1, rows[5].keyType)
+        assertFalse(rows[4].readOnly)
+        assertFalse(rows[5].readOnly)
         val bounds = rows[4].contractBounds
         assertTrue(bounds is ContractBounds.SingleContractDocumentType)
         bounds as ContractBounds.SingleContractDocumentType
         assertArrayEquals(RegistrationKeys.DASHPAY_CONTRACT_ID, bounds.contractId)
+        assertEquals(RegistrationKeys.DASHPAY_CONTACT_REQUEST_DOCUMENT_TYPE, bounds.documentTypeName)
+        assertEquals(bounds, rows[5].contractBounds)
 
-        // Every private scalar was persisted then scrubbed.
+        // Every slot is persisted under its matching public bytes while the
+        // scalar is still non-zero, owner-scoped to this wallet, then scrubbed.
         assertEquals(6, stored.size)
-        for (p in previews) {
+        for ((keyId, p) in previews.withIndex()) {
+            assertEquals(p.publicKeyHex, stored[keyId].hex)
+            assertArrayEquals(ByteArray(32) { (keyId + 1).toByte() }, stored[keyId].scalar)
+            assertArrayEquals(walletId, stored[keyId].owner)
+            assertArrayEquals(p.publicKey, rows[keyId].pubkeyBytes)
             assertArrayEquals(ByteArray(32), p.privateKey)
         }
     }

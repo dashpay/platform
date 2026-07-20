@@ -1,6 +1,7 @@
 package org.dashfoundation.dashsdk.identity
 
 import org.dashfoundation.dashsdk.wallet.op
+import org.dashfoundation.dashsdk.wallet.opWithCleanupOnCancellation
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -184,7 +185,9 @@ class IdentityRegistration internal constructor(
         mnemonicResolverHandle: Long,
         startIndex: Int,
         count: Int = -1,
-    ): List<IdentityKeyPreview> = gate.op {
+    ): List<IdentityKeyPreview> = gate.opWithCleanupOnCancellation(
+        cleanup = { previews -> previews.forEach { it.privateKey.fill(0) } },
+    ) {
         val blob = mapNativeErrors {
             IdentityNative.previewRegistrationKeys(
                 walletHandle,
@@ -224,7 +227,9 @@ class IdentityRegistration internal constructor(
         mnemonicResolverHandle: Long,
         identityIndex: Int,
         count: Int = -1,
-    ): List<IdentityKeyPreview> = gate.op {
+    ): List<IdentityKeyPreview> = gate.opWithCleanupOnCancellation(
+        cleanup = { previews -> previews.forEach { it.privateKey.fill(0) } },
+    ) {
         val blob = mapNativeErrors {
             IdentityNative.previewRegistrationKeySet(
                 walletHandle,

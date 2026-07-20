@@ -48,32 +48,53 @@ data class IdentityKeyPreview(
          */
         fun decodeAll(blob: ByteArray): List<IdentityKeyPreview> {
             val buf = ByteBuffer.wrap(blob) // big-endian by default
-            val count = buf.int
-            val rows = ArrayList<IdentityKeyPreview>(count)
-            repeat(count) {
-                val identityIndex = buf.int
-                val pathLen = buf.short.toInt() and 0xFFFF
-                val pathBytes = ByteArray(pathLen)
-                buf.get(pathBytes)
-                val pubkey = ByteArray(33)
-                buf.get(pubkey)
-                val privkey = ByteArray(32)
-                buf.get(privkey)
-                rows.add(
-                    IdentityKeyPreview(
-                        identityIndex = identityIndex,
-                        derivationPath = String(pathBytes, Charsets.UTF_8),
-                        publicKey = pubkey,
-                        privateKey = privkey,
-                    ),
-                )
+            val rows = ArrayList<IdentityKeyPreview>()
+            try {
+                val count = buf.int
+                require(count >= 0) { "preview row count must be non-negative, got $count" }
+                repeat(count) {
+                    val identityIndex = buf.int
+                    val pathLen = buf.short.toInt() and 0xFFFF
+                    val pathBytes = ByteArray(pathLen)
+                    buf.get(pathBytes)
+                    val pubkey = ByteArray(33)
+                    buf.get(pubkey)
+                    val privkey = ByteArray(32)
+                    var rowOwnsPrivateKey = false
+                    try {
+                        buf.get(privkey)
+                        rows.add(
+                            IdentityKeyPreview(
+                                identityIndex = identityIndex,
+                                derivationPath = String(pathBytes, Charsets.UTF_8),
+                                publicKey = pubkey,
+                                privateKey = privkey,
+                            ),
+                        )
+                        rowOwnsPrivateKey = true
+                    } finally {
+                        // If construction/list insertion fails after the scalar
+                        // copy, it never reaches the outer rows cleanup.
+                        if (!rowOwnsPrivateKey) privkey.fill(0)
+                    }
+                }
+                require(!buf.hasRemaining()) {
+                    "preview blob has ${buf.remaining()} trailing byte(s)"
+                }
+                return rows
+            } catch (e: Throwable) {
+                // Some rows may already have been copied out of the interleaved
+                // blob when a later row fails. They will never reach the caller,
+                // so scrub those discarded scalar arrays here.
+                rows.forEach { it.privateKey.fill(0) }
+                throw e
+            } finally {
+                // The source blob interleaves every row's raw private scalar.
+                // Wipe it on success and on every malformed/truncated failure;
+                // otherwise an exception before the old tail-only fill left all
+                // native-returned scalars resident in a JVM byte array.
+                blob.fill(0)
             }
-            // The source blob interleaves every row's raw private scalar —
-            // consume-and-wipe it so the only remaining plaintext copies
-            // are the per-row arrays the caller owns (and must zero after
-            // use, per this class's contract).
-            blob.fill(0)
-            return rows
         }
     }
 }

@@ -32,6 +32,7 @@ import androidx.navigation.NavHostController
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import org.dashfoundation.dashsdk.credits.FundingInput
+import org.dashfoundation.dashsdk.identity.RegistrationKeys
 import org.dashfoundation.dashsdk.wallet.ManagedPlatformWallet
 import org.dashfoundation.dashsdk.wallet.TrackedAssetLock
 import org.dashfoundation.example.di.LocalAppContainer
@@ -178,8 +179,10 @@ fun CreateIdentityScreen(navController: NavHostController) {
                 text = "Create Identity",
                 isLoading = isSubmitting,
                 enabled = selectedWallet != null &&
-                    (fundingSource == CreateIdentityFundingSource.AssetLockResume ||
-                        amountText.toLongOrNull() != null) &&
+                    isCreateIdentityFundingAmountValid(
+                        fundingSource,
+                        amountText.toLongOrNull(),
+                    ) &&
                     (fundingSource != CreateIdentityFundingSource.AssetLockResume ||
                         selectedRecoveryLock != null) &&
                     identityIndexText.toIntOrNull() != null,
@@ -190,6 +193,18 @@ fun CreateIdentityScreen(navController: NavHostController) {
                     null
                 } else {
                     amountText.toLongOrNull() ?: return@SubmitButton
+                }
+                if (!isCreateIdentityFundingAmountValid(fundingSource, amount)) {
+                    error = if (fundingSource == CreateIdentityFundingSource.CoreBalance) {
+                        val minimum = minimumCoreFundingDuffsForKeyCount(
+                            RegistrationKeys.keyCount(fundingSource.includesDashPayKeys),
+                        )
+                        "Core-funded registration with DashPay keys requires at least " +
+                            "$minimum duffs."
+                    } else {
+                        "Funding amount must be positive."
+                    }
+                    return@SubmitButton
                 }
                 val identityIndex = if (fundingSource == CreateIdentityFundingSource.AssetLockResume) {
                     selectedRecoveryLock?.registrationIndex ?: return@SubmitButton
@@ -216,8 +231,7 @@ fun CreateIdentityScreen(navController: NavHostController) {
                             walletHandle = wallet.handle,
                             mnemonicResolverHandle = mgr.mnemonicResolverHandle,
                             identityIndex = identityIndex,
-                            count = org.dashfoundation.dashsdk.identity.RegistrationKeys
-                                .keyCount(registerDashPayKeys),
+                            count = RegistrationKeys.keyCount(registerDashPayKeys),
                         )
                         val keys = DashpayKeyProvisioning.provision(
                             previews = previews,
@@ -398,6 +412,46 @@ enum class CreateIdentityFundingSource(
      */
     val includesDashPayKeys: Boolean
         get() = this != AssetLockResume
+}
+
+/** Credits charged by the active fee schedule before the per-key surcharge. */
+private const val IDENTITY_CREATE_BASE_COST_CREDITS = 2_000_000L
+
+/** Credits charged for each public key in an identity-create transition. */
+private const val IDENTITY_KEY_CREATION_COST_CREDITS = 6_500_000L
+
+/** Core asset-lock floor required before identity-create processing starts. */
+private const val IDENTITY_ASSET_LOCK_BASE_DUFFS = 200_000L
+
+private const val CREDITS_PER_DUFF = 1_000L
+
+/**
+ * Protocol minimum for a Core-funded identity create with [keyCount] keys.
+ * Mirrors `IdentityCreateTransition::calculate_min_required_fee_v1` and the
+ * iOS `CreateIdentityView.minFundingDuffs(forKeyCount:)` parity reference.
+ */
+internal fun minimumCoreFundingDuffsForKeyCount(keyCount: Int): Long {
+    require(keyCount > 0) { "keyCount must be positive, got $keyCount" }
+    return IDENTITY_ASSET_LOCK_BASE_DUFFS +
+        (IDENTITY_CREATE_BASE_COST_CREDITS +
+            IDENTITY_KEY_CREATION_COST_CREDITS * keyCount) / CREDITS_PER_DUFF
+}
+
+/** Single submit/UI gate for the active funding source's amount semantics. */
+internal fun isCreateIdentityFundingAmountValid(
+    source: CreateIdentityFundingSource,
+    amount: Long?,
+): Boolean = when (source) {
+    CreateIdentityFundingSource.CoreBalance -> {
+        val minimum = minimumCoreFundingDuffsForKeyCount(
+            RegistrationKeys.keyCount(source.includesDashPayKeys),
+        )
+        amount != null && amount >= minimum
+    }
+    CreateIdentityFundingSource.PlatformAddress,
+    CreateIdentityFundingSource.ShieldedBalance,
+    -> amount != null && amount > 0
+    CreateIdentityFundingSource.AssetLockResume -> true
 }
 
 /**

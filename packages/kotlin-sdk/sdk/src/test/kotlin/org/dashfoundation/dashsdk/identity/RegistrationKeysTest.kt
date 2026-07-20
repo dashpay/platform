@@ -30,7 +30,10 @@ class RegistrationKeysTest {
             ),
             rows.map { Triple(it.purpose, it.securityLevel, it.contractBounds) },
         )
-        rows.forEach { assertEquals(KeyType.ECDSA_SECP256K1, it.keyType) }
+        rows.forEach {
+            assertEquals(KeyType.ECDSA_SECP256K1, it.keyType)
+            assertEquals(false, it.readOnly)
+        }
     }
 
     @Test
@@ -43,7 +46,9 @@ class RegistrationKeysTest {
         assertEquals(KeyPurpose.ENCRYPTION, enc.purpose)
         assertEquals(KeyPurpose.DECRYPTION, dec.purpose)
         for (row in listOf(enc, dec)) {
+            assertEquals(KeyType.ECDSA_SECP256K1, row.keyType)
             assertEquals(SecurityLevel.MEDIUM, row.securityLevel)
+            assertEquals(false, row.readOnly)
             val bounds = row.contractBounds
             assertTrue(bounds is ContractBounds.SingleContractDocumentType)
             bounds as ContractBounds.SingleContractDocumentType

@@ -27,9 +27,10 @@
 //!
 //! ## Strictness (wire-skew detection)
 //!
-//! The parser rejects truncated input, **trailing bytes**, invalid DPP-role /
-//! bounds-kind / boolean discriminants, interior-NUL document types, and
-//! negative key IDs. The opaque payload shape is not self-describing, so an
+//! The parser rejects truncated input, **trailing bytes**, invalid bounds-kind /
+//! boolean discriminants, interior-NUL document types, and negative key IDs.
+//! DPP-role discriminants are validated by the downstream FFI conversion. The
+//! opaque payload shape is not self-describing, so an
 //! old Kotlin artifact paired with a newer native library (or the reverse)
 //! would otherwise be silently misparsed rather than rejected. Failing loud on
 //! any structural surprise turns that skew into a clean error instead of a key
@@ -629,6 +630,15 @@ mod tests {
     fn registration_rejects_non_master_key_zero() {
         let mut policy = six_key_policy();
         policy[0].security_level = SEC_HIGH; // key 0 no longer MASTER
+        let rows = parse_pubkey_rows(&encode(&policy)).unwrap();
+        let err = check_registration_invariants(&rows).unwrap_err();
+        assert!(err.contains("MASTER + AUTHENTICATION"), "{err}");
+    }
+
+    #[test]
+    fn registration_rejects_non_authentication_key_zero() {
+        let mut policy = six_key_policy();
+        policy[0].purpose = PURPOSE_TRANSFER;
         let rows = parse_pubkey_rows(&encode(&policy)).unwrap();
         let err = check_registration_invariants(&rows).unwrap_err();
         assert!(err.contains("MASTER + AUTHENTICATION"), "{err}");

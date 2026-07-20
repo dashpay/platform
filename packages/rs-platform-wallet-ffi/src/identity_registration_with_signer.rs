@@ -897,4 +897,36 @@ mod tests {
         assert_eq!(err.code, PlatformWalletFFIResultCode::ErrorInvalidParameter);
         unsafe { platform_wallet_ffi_result_free(&mut err) };
     }
+
+    #[test]
+    fn decode_identity_pubkeys_rejects_invalid_role_discriminants() {
+        let pk = [0x02u8; 33];
+
+        for (field, row) in [
+            ("key_type", {
+                let mut row = ffi_row(0, &pk);
+                row.key_type = u8::MAX;
+                row
+            }),
+            ("purpose", {
+                let mut row = ffi_row(0, &pk);
+                row.purpose = u8::MAX;
+                row
+            }),
+            ("security_level", {
+                let mut row = ffi_row(0, &pk);
+                row.security_level = u8::MAX;
+                row
+            }),
+        ] {
+            let mut err = unsafe { decode_identity_pubkeys(&row, 1) }
+                .expect_err("invalid role byte must be rejected");
+            assert_eq!(err.code, PlatformWalletFFIResultCode::ErrorInvalidParameter);
+            let message = unsafe { CStr::from_ptr(err.message) }
+                .to_str()
+                .expect("error message is UTF-8");
+            assert!(message.contains(field), "{message}");
+            unsafe { platform_wallet_ffi_result_free(&mut err) };
+        }
+    }
 }
