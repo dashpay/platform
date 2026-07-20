@@ -1,5 +1,11 @@
 # Kotlin DashPay Migration — Follow-up Fixes Spec
 
+**Historical status:** Items A, B, and C are resolved in the consolidated
+migration; the completed work is recorded in
+[`KOTLIN_MIGRATION_LEFTOVERS.md`](KOTLIN_MIGRATION_LEFTOVERS.md). Item D remains
+deferred. The problem/approach sections below preserve the reviewed rationale
+and pre-implementation baseline rather than describing current open work.
+
 Scope: three DashPay follow-ups folded into the consolidated migration PR
 (`feat/kotlin-sdk-dashpay-migration`, stacked on the base Kotlin SDK PR
 `feat/kotlin-sdk-and-example-app`). A fourth item (durable contact-crypto

@@ -19,6 +19,11 @@ when the four stacked PRs collapse into one.
 - **`DataContractRef` GC backstop** — now registers a `NativeCleaner` like every
   other owned handle, so a leaked (never-closed) ref no longer leaks the native
   contract handle.
+- **`signWithMnemonicAndPathInto` instrumented sign smoke** —
+  `FfiSmokeTest.mnemonicAndPathSignerSymbolLoadsAndSigns` loads the exact JNI
+  symbol on-device, derives from a valid BIP-39 vector, and returns a compact
+  recoverable signature. The direct test caller scrubs its JVM-owned mnemonic
+  array in `finally`; JNI scrubs only its Rust-owned copy.
 
 ## Deferred to dedicated follow-up PRs
 
@@ -38,18 +43,14 @@ when the four stacked PRs collapse into one.
   restore exists. Full data-path map + add-a-persisted-field recipe recorded during
   the follow-ups research.
 
-- **`signWithMnemonicAndPathInto` instrumented sign smoke.** The JVM test pins the
-  seed-scrub invariant but NOT the JNI symbol binding: a Rust↔Kotlin symbol-name
-  mismatch is a runtime `UnsatisfiedLinkError`, not a compile error, and the JVM
-  helper test never loads the native symbol. `cargo check` + an emulator/on-device
-  platform-address signature are what pin the actual native call.
-
-- **PARITY: 97 ported / 2 partial / 0 deferred views** (`packages/kotlin-sdk/PARITY.md`).
-  Neither partial is DashPay — all 10 DashPay screens are fully ported. The two are
-  `TransitionDetailView` (5 of 23 transition-catalog forms lack backing FFIs:
-  dataContractUpdate, documentCreate/Replace/Delete/Transfer) and
-  `WalletMemoryExplorerView` (asset-lock drill-down summary only). Each partial row
-  names the exact missing FFI export; they land as those exports are added.
+- **PARITY: 94 ported / 5 partial / 0 deferred views**
+  (`packages/kotlin-sdk/PARITY.md`). All 10 DashPay screens remain fully ported.
+  The five partials are `CreateIdentityView`, `IdentityDetailView`,
+  `TransitionDetailView`, `WalletMemoryExplorerView`, and `CoreContentView`.
+  All 23 transition-catalog definitions now execute; `TransitionDetailView` is
+  partial only because `identityUpdate`'s add-keys sub-path remains on the
+  dedicated AddIdentityKey flow rather than the catalog form. Each partial row
+  names its concrete remaining FFI, persistence, device, or restart gate.
 
 ## Environment-bound (cannot be code-fixed here)
 

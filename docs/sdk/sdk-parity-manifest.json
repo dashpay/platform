@@ -796,7 +796,7 @@
           "sdk": "partial",
           "example_app": "not-applicable",
           "restart": "not_applicable",
-          "reason": "Kotlin duplicates filtering/default-port/host parsing and uses the wrong missing testnet port."
+          "reason": "Kotlin duplicates filtering/default-port/host parsing instead of consuming one shared typed result. Its live network-aware path uses 1443 for non-mainnet; 443 remains only in the deprecated single-argument compatibility overload."
         }
       },
       "verification": [

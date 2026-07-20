@@ -1,5 +1,13 @@
 # DashPay — Kotlin/Android Migration Spec
 
+**Historical baseline:** This document preserves the reviewed pre-migration plan
+and its then-current 88/90 inventory. It is not the current open-work tracker:
+subsequent implementation changed the contact-crypto persistence boundary,
+shipped invitation support on iOS, and closed the cited transition FFI gaps. See
+[`docs/sdk/PARITY_SUMMARY.md`](../sdk/PARITY_SUMMARY.md) and
+[`docs/sdk/sdk-parity-manifest.json`](../sdk/sdk-parity-manifest.json) for current
+capability status.
+
 Port the complete DashPay feature (as shipped for iOS in PR #3841, merged to
 `v4.1-dev` 2026-07-06) to the Kotlin/Android SDK and KotlinExampleApp
 (PR #3999, branch `feat/kotlin-sdk-and-example-app`).
