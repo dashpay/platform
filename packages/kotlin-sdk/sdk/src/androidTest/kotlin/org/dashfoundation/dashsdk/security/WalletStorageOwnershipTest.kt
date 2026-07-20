@@ -131,12 +131,19 @@ class WalletStorageOwnershipTest {
     }
 
     @Test
-    fun storeIfAbsentRejectsATombstonedWallet() = runBlocking {
-        storage.withPrivateKeyExclusion { tombstoneWallet(walletB) }
+    fun storeIfAbsentRejectsATombstonedWallet() {
+        // Block body, not `= runBlocking { ... }`: assertThrows returns the
+        // caught exception (not Unit), so an expression-body function ending
+        // in it infers a non-Unit return type — JUnit's runtime validator
+        // rejects @Test methods that aren't void (caught this the hard way:
+        // it compiles fine but fails at connectedDebugAndroidTest time).
+        runBlocking {
+            storage.withPrivateKeyExclusion { tombstoneWallet(walletB) }
 
-        assertThrows(WalletTombstonedException::class.java) {
-            runBlocking {
-                storage.storeIfAbsent("11223344", ownerWalletId = walletB) { ByteArray(32) { 2 } }
+            assertThrows(WalletTombstonedException::class.java) {
+                runBlocking {
+                    storage.storeIfAbsent("11223344", ownerWalletId = walletB) { ByteArray(32) { 2 } }
+                }
             }
         }
     }
