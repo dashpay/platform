@@ -37,6 +37,7 @@ import org.dashfoundation.dashsdk.wallet.TrackedAssetLock
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.di.LocalAppState
 import org.dashfoundation.example.navigation.RegistrationProgress
+import org.dashfoundation.example.services.DashpayKeyProvisioning
 import org.dashfoundation.example.services.IdentityRegistrationController
 import org.dashfoundation.example.services.assetlock.IdentityAssetLockRecovery
 import org.dashfoundation.example.ui.components.AccessiblePicker
@@ -196,43 +197,39 @@ fun CreateIdentityScreen(navController: NavHostController) {
                     identityIndexText.toIntOrNull() ?: return@SubmitButton
                 }
                 val mgr = manager ?: return@SubmitButton
+                val registerDashPayKeys = fundingSource.includesDashPayKeys
                 isSubmitting = true
                 scope.launch {
                     try {
-                        // Step 1 (`.preparingKeys`): derive + persist the full
-                        // canonical identity key SET — the single allowed Kotlin
-                        // persist step. Rust derives keyId 0..3 (MASTER auth,
-                        // CRITICAL auth, HIGH auth, TRANSFER/CRITICAL) at this
-                        // identity index and stamps each key's role by keyId at
-                        // registration; we store each private key under its
-                        // pubkey hex. Deriving only the MASTER key here (the old
-                        // `count = 1` bug) left the identity unable to sign any
-                        // document / token / transfer / withdrawal write.
-                        val keys = mgr.identityRegistration.previewRegistrationKeySet(
+                        // Step 1 (`.preparingKeys`): derive the full registration
+                        // key set in ONE pass, persist each private key to the
+                        // Keystore, and build the rich on-chain rows. Rust derives
+                        // keyId 0..N (base: MASTER auth, CRITICAL auth, HIGH auth,
+                        // TRANSFER/CRITICAL; plus the DashPay ENCRYPTION/DECRYPTION
+                        // pair on fresh funding), and the DPP role for each keyId
+                        // is stamped Kotlin-side by RegistrationKeys and shipped
+                        // over the wire. Fresh funding registers all 6 keys so the
+                        // new identity can send contact requests immediately;
+                        // asset-lock resume keeps the base 4 it originally
+                        // committed to on-chain (§ DashPay resume exclusion).
+                        val previews = mgr.identityRegistration.previewRegistrationKeySet(
                             walletHandle = wallet.handle,
                             mnemonicResolverHandle = mgr.mnemonicResolverHandle,
                             identityIndex = identityIndex,
-                            count = -1,
+                            count = org.dashfoundation.dashsdk.identity.RegistrationKeys
+                                .keyCount(registerDashPayKeys),
                         )
-                        keys.forEach { key ->
-                            try {
-                                container.walletStorage.storePrivateKey(
-                                    key.publicKeyHex,
-                                    key.privateKey,
-                                    // Prestored BEFORE the registration
-                                    // broadcasts: only the owner index makes
-                                    // it reachable by wallet deletion until
-                                    // the public_keys row commits.
-                                    ownerWalletId = wallet.walletId,
-                                )
-                            } finally {
-                                // Keystore is authoritative from here; the JVM
-                                // copy must not outlive the store (the
-                                // IdentityKeyPreview retention rule — the
-                                // registration blob reads only publicKey).
-                                key.privateKey.fill(0)
-                            }
-                        }
+                        val keys = DashpayKeyProvisioning.provision(
+                            previews = previews,
+                            includeDashPayKeys = registerDashPayKeys,
+                            walletId = wallet.walletId,
+                            // Prestored BEFORE the registration broadcasts: only
+                            // the owner index makes it reachable by wallet deletion
+                            // until the public_keys row commits.
+                            persister = { hex, priv, owner ->
+                                container.walletStorage.storePrivateKey(hex, priv, ownerWalletId = owner)
+                            },
+                        )
                         // Step 2: hand the single registration FFI entry point to
                         // the coordinator as the body — no orchestration here. The
                         // funding source picks which registration FFI runs (ID-01
@@ -388,7 +385,19 @@ enum class CreateIdentityFundingSource(
     CoreBalance("Core balance", amountInCredits = false),
     PlatformAddress("Platform address", amountInCredits = true),
     ShieldedBalance("Shielded balance", amountInCredits = true),
-    AssetLockResume("Resume from asset lock", amountInCredits = false),
+    AssetLockResume("Resume from asset lock", amountInCredits = false);
+
+    /**
+     * Whether this funding path provisions the DashPay ENCRYPTION/DECRYPTION
+     * pair alongside the base four keys. Every fresh-funding path does;
+     * [AssetLockResume] does NOT — a resumed asset lock funds the fixed key
+     * count it was originally built for, so growing the transition it funds
+     * risks a resume that fails after the DASH is already locked. Matches iOS,
+     * which excludes DashPay provisioning from the resume path. A resumed
+     * identity gets DashPay capability afterward via the Add Identity Key flow.
+     */
+    val includesDashPayKeys: Boolean
+        get() = this != AssetLockResume
 }
 
 /**
