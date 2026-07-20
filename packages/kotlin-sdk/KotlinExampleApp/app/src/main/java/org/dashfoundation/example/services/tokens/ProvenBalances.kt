@@ -1,5 +1,6 @@
 package org.dashfoundation.example.services.tokens
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.first
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
@@ -83,7 +84,7 @@ object ProvenBalances {
             // u64 decimal string → unsigned Room value.
             val balance = (amountElement as? JsonPrimitive)?.content
                 ?.toULongOrNull()?.let(::UInt64Value) ?: continue
-            runCatching {
+            try {
                 val existing = dao.observeBalancesByIdentity(identityId).first()
                     .firstOrNull { it.tokenRef?.contentEquals(token.id) == true }
                 if (existing != null) {
@@ -108,6 +109,10 @@ object ProvenBalances {
                         ),
                     )
                 }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                // Best-effort: see the "Per-entry DAO failures" note above.
             }
         }
     }
