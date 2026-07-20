@@ -937,6 +937,56 @@ mod tests {
 
     #[cfg(feature = "eddsa")]
     #[test]
+    fn insert_used_platform_node_pool_entry_restores_used_bookkeeping() {
+        use dashcore::hashes::Hash;
+        use key_wallet::managed_account::address_pool::AddressPoolType;
+        use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+        use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
+
+        let wallet = seed_bearing_wallet(Network::Mainnet);
+        let key = derive_platform_node_public_keys(&wallet, Network::Mainnet, 8)
+            .expect("platform-node derivation")
+            .pop()
+            .expect("derived key");
+        let payload = dashcore::address::Payload::PubkeyHash(
+            dashcore::PubkeyHash::from_byte_array(key.node_id),
+        );
+        let address = dashcore::Address::new(Network::Mainnet, payload);
+        let script_pubkey = address.script_pubkey();
+        let mut wallet_info = ManagedWalletInfo::from_wallet(&wallet, 0);
+
+        insert_platform_node_pool_entry(
+            &mut wallet_info,
+            Network::Mainnet,
+            key.index,
+            address,
+            script_pubkey,
+            key.public_key,
+            true,
+        )
+        .expect("restore used platform-node row");
+
+        let account = wallet_info
+            .accounts
+            .provider_platform_keys
+            .as_ref()
+            .expect("managed platform-node account");
+        let pool = account
+            .managed_account_type()
+            .address_pools()
+            .into_iter()
+            .find(|pool| pool.pool_type == AddressPoolType::AbsentHardened)
+            .cloned()
+            .expect("AbsentHardened pool");
+        let restored = pool.addresses.get(&key.index).expect("restored entry");
+        assert!(restored.used);
+        assert_eq!(restored.used_at, Some(0));
+        assert!(pool.used_indices.contains(&key.index));
+        assert_eq!(pool.highest_used, Some(key.index));
+    }
+
+    #[cfg(feature = "eddsa")]
+    #[test]
     fn populate_platform_node_pool_rejects_missing_hardened_pool() {
         use key_wallet::managed_account::address_pool::AddressPoolType;
         use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
