@@ -9,75 +9,51 @@ use drive::query::contested_resource_votes_given_by_identity_query::ContestedRes
 use drive::query::ContractLookupFn;
 use drive::verify::RootHash;
 use js_sys::{Array, Object, Reflect, Uint8Array};
+use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use wasm_bindgen::prelude::*;
 
-fn deserialize_contested_resource_votes_query(
-    query_cbor: &Uint8Array,
-) -> Result<ContestedResourceVotesGivenByIdentityQuery, JsValue> {
-    // Deserialize the query components from CBOR
-    let query_value: serde_json::Value = ciborium::de::from_reader(&query_cbor.to_vec()[..])
-        .map_err(|e| JsValue::from_str(&format!("Failed to deserialize query: {:?}", e)))?;
+#[derive(Deserialize)]
+struct ContestedResourceVotesGivenByIdentityWireQuery {
+    identity_id: Vec<u8>,
+    #[serde(default)]
+    offset: Option<u16>,
+    #[serde(default)]
+    limit: Option<u16>,
+    #[serde(default)]
+    start_at: Option<([u8; 32], bool)>,
+    #[serde(default = "default_order_ascending")]
+    order_ascending: bool,
+}
 
-    // Extract fields from the deserialized value
-    let query_obj = query_value
-        .as_object()
-        .ok_or_else(|| JsValue::from_str("Query must be an object"))?;
+fn default_order_ascending() -> bool {
+    true
+}
 
-    let identity_id_bytes: Vec<u8> = query_obj
-        .get("identity_id")
-        .and_then(|v| v.as_array())
-        .and_then(|arr| {
-            arr.iter()
-                .map(|v| v.as_u64().map(|n| n as u8))
-                .collect::<Option<Vec<_>>>()
-        })
-        .ok_or_else(|| JsValue::from_str("Invalid identity_id in query"))?;
-
-    let identity_id = Identifier::from_bytes(&identity_id_bytes)
-        .map_err(|e| JsValue::from_str(&format!("Invalid identity_id: {:?}", e)))?;
-
-    let offset = query_obj
-        .get("offset")
-        .and_then(|v| v.as_u64())
-        .map(|n| n as u16);
-
-    let limit = query_obj
-        .get("limit")
-        .and_then(|v| v.as_u64())
-        .map(|n| n as u16);
-
-    let start_at = query_obj
-        .get("start_at")
-        .and_then(|v| v.as_array())
-        .and_then(|arr| {
-            if arr.len() == 2 {
-                let bytes_arr = arr[0].as_array()?;
-                let bytes: Vec<u8> = bytes_arr
-                    .iter()
-                    .map(|v| v.as_u64().map(|n| n as u8))
-                    .collect::<Option<Vec<_>>>()?;
-                let bytes_32: [u8; 32] = bytes.try_into().ok()?;
-                let included = arr[1].as_bool()?;
-                Some((bytes_32, included))
-            } else {
-                None
-            }
-        });
-
-    let order_ascending = query_obj
-        .get("order_ascending")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(true);
+fn deserialize_contested_resource_votes_query_bytes(
+    query_cbor: &[u8],
+) -> Result<ContestedResourceVotesGivenByIdentityQuery, String> {
+    let query: ContestedResourceVotesGivenByIdentityWireQuery =
+        ciborium::de::from_reader(query_cbor)
+            .map_err(|e| format!("Failed to deserialize query: {e:?}"))?;
+    let identity_id = Identifier::from_bytes(&query.identity_id)
+        .map_err(|e| format!("Invalid identity_id: {e:?}"))?;
 
     Ok(ContestedResourceVotesGivenByIdentityQuery {
         identity_id,
-        offset,
-        limit,
-        start_at,
-        order_ascending,
+        offset: query.offset,
+        limit: query.limit,
+        start_at: query.start_at,
+        order_ascending: query.order_ascending,
     })
+}
+
+fn deserialize_contested_resource_votes_query(
+    query_cbor: &Uint8Array,
+) -> Result<ContestedResourceVotesGivenByIdentityQuery, JsValue> {
+    deserialize_contested_resource_votes_query_bytes(&query_cbor.to_vec())
+        .map_err(|e| JsValue::from_str(&e))
 }
 
 #[wasm_bindgen]
@@ -234,4 +210,110 @@ fn create_contract_lookup_fn<'a>(
         Box::new(move |id: &Identifier| Ok(contracts_map.get(id).cloned()));
 
     Ok(lookup_fn)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::{json, Value};
+
+    fn encode_query(value: &Value) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        ciborium::into_writer(value, &mut bytes).expect("encode query");
+        bytes
+    }
+
+    fn valid_query() -> Value {
+        json!({
+            "identity_id": vec![1u8; 32],
+            "offset": 7,
+            "limit": 11,
+            "start_at": [vec![2u8; 32], true],
+            "order_ascending": false
+        })
+    }
+
+    #[test]
+    fn query_decoder_preserves_all_proof_critical_fields() {
+        let query = deserialize_contested_resource_votes_query_bytes(&encode_query(&valid_query()))
+            .expect("valid query");
+
+        assert_eq!(query.identity_id, Identifier::from([1u8; 32]));
+        assert_eq!(query.offset, Some(7));
+        assert_eq!(query.limit, Some(11));
+        assert_eq!(query.start_at, Some(([2u8; 32], true)));
+        assert!(!query.order_ascending);
+    }
+
+    #[test]
+    fn query_decoder_rejects_out_of_range_identity_bytes() {
+        let mut query = valid_query();
+        query["identity_id"][0] = json!(256);
+
+        assert!(deserialize_contested_resource_votes_query_bytes(&encode_query(&query)).is_err());
+    }
+
+    #[test]
+    fn query_decoder_rejects_out_of_range_pagination_values() {
+        for field in ["offset", "limit"] {
+            let mut query = valid_query();
+            query[field] = json!(u16::MAX as u32 + 1);
+
+            assert!(
+                deserialize_contested_resource_votes_query_bytes(&encode_query(&query)).is_err(),
+                "{field} should be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn query_decoder_accepts_pagination_boundaries() {
+        for value in [0, 1, u16::MAX] {
+            let mut query = valid_query();
+            query["offset"] = json!(value);
+            query["limit"] = json!(value);
+
+            let decoded = deserialize_contested_resource_votes_query_bytes(&encode_query(&query))
+                .expect("pagination value should fit");
+            assert_eq!(decoded.offset, Some(value));
+            assert_eq!(decoded.limit, Some(value));
+        }
+    }
+
+    #[test]
+    fn query_decoder_rejects_out_of_range_start_at_bytes() {
+        let mut query = valid_query();
+        query["start_at"][0][31] = json!(256);
+
+        assert!(deserialize_contested_resource_votes_query_bytes(&encode_query(&query)).is_err());
+    }
+
+    #[test]
+    fn query_decoder_rejects_malformed_present_optional_fields() {
+        for (field, malformed) in [
+            ("offset", json!("1")),
+            ("limit", json!(-1)),
+            ("start_at", json!([vec![0u8; 31], true])),
+        ] {
+            let mut query = valid_query();
+            query[field] = malformed;
+
+            assert!(
+                deserialize_contested_resource_votes_query_bytes(&encode_query(&query)).is_err(),
+                "{field} should be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn query_decoder_defaults_only_absent_optional_fields() {
+        let query = json!({ "identity_id": vec![1u8; 32] });
+        let decoded = deserialize_contested_resource_votes_query_bytes(&encode_query(&query))
+            .expect("minimal query");
+
+        assert_eq!(decoded.offset, None);
+        assert_eq!(decoded.limit, None);
+        assert_eq!(decoded.start_at, None);
+        assert!(decoded.order_ascending);
+    }
 }
