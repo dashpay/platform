@@ -5,6 +5,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -165,6 +166,32 @@ class WalletStorageOwnershipTest {
         }
         assertTrue("the stale blob must be treated as absent and re-derived", stored)
         assertEquals(1, deriveCalls)
+    }
+
+    @Test
+    fun retrievePrivateKeyRejectsBlobFromReplacedKeysAlias() = runBlocking {
+        storage.storePrivateKey("57a1eb10", ByteArray(32) { 5 }, ownerWalletId = walletA)
+
+        // The ciphertext remains RSA-shaped after alias replacement, but it
+        // belongs to the deleted keypair. A stable mismatch is a re-derive
+        // signal, not an invitation to attempt OAEP with the replacement
+        // private key and surface a provider-specific decryption failure.
+        val keyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+        keyStore.deleteEntry(KeystoreManager.KEYS_ALIAS)
+
+        assertNull(storage.retrievePrivateKey("57a1eb10"))
+    }
+
+    @Test
+    fun keysAliasEncryptionCarriesTheFingerprintOfItsEncryptionKey() {
+        val keystore = KeystoreManager()
+
+        val encrypted = keystore.encrypt(
+            ByteArray(32) { 6 },
+            alias = KeystoreManager.KEYS_ALIAS,
+        )
+
+        assertEquals(keystore.keysAliasFingerprint(), encrypted.keyFingerprint)
     }
 
     @Test

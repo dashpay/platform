@@ -365,9 +365,12 @@ class WalletStorage(
         ownerWalletId: ByteArray?,
     ) {
         val blob = keystore.encrypt(privateKey, alias = KeystoreManager.KEYS_ALIAS)
+        val fingerprint = checkNotNull(blob.keyFingerprint) {
+            "KEYS_ALIAS encryption must identify the public key that produced its ciphertext"
+        }
         store.edit {
             it[privateKeyKey(pubkeyHex)] = encode(blob)
-            it[privateKeyFingerprintKey(pubkeyHex)] = keystore.keysAliasFingerprint()
+            it[privateKeyFingerprintKey(pubkeyHex)] = fingerprint
             if (ownerWalletId != null) {
                 val indexKey = ownerIndexKey(ownerWalletId.toHex())
                 it[indexKey] = (it[indexKey] ?: emptySet()) + pubkeyHex.lowercase()
@@ -381,7 +384,10 @@ class WalletStorage(
      * currently in the Keystore — see [KeystoreManager.keysAliasFingerprint].
      * A missing fingerprint (written before this check existed) is treated
      * as unusable rather than trusted, since a stale RSA-shaped blob is
-     * indistinguishable from a current one by shape alone.
+     * indistinguishable from a current one by shape alone. Computing the
+     * current fingerprint may generate a missing alias and can therefore
+     * fail until a secure lock screen is configured; this is a capability
+     * check, not a promise of side-effect-free Keystore access.
      */
     private fun isCurrentKeysBlob(
         pubkeyHex: String,
@@ -403,13 +409,22 @@ class WalletStorage(
         store.data.first()[ownerIndexKey(walletId.toHex())] ?: emptySet()
 
     /**
-     * Decrypt the private key for [pubkeyHex]. Throws
+     * Decrypt the private key for [pubkeyHex]. A stable blob whose stored
+     * key fingerprint no longer matches the current [KeystoreManager.KEYS_ALIAS]
+     * returns `null`, allowing the caller to re-derive it instead of trying
+     * OAEP with an unrelated replacement key. Rotation can still occur
+     * between this check and decrypt; that race deliberately remains a
+     * fail-closed crypto exception rather than returning stale plaintext.
+     *
+     * Throws
      * `UserNotAuthenticatedException` when the auth window expired — the
      * caller (KeystoreSigner) routes through [BiometricGate] and retries.
      * Callers must zero the returned array after use.
      */
     suspend fun retrievePrivateKey(pubkeyHex: String): ByteArray? {
-        val encoded = store.data.first()[privateKeyKey(pubkeyHex)] ?: return null
+        val prefs = store.data.first()
+        val encoded = prefs[privateKeyKey(pubkeyHex)] ?: return null
+        if (!isCurrentKeysBlob(pubkeyHex, encoded, prefs)) return null
         return keystore.decrypt(decode(encoded), alias = KeystoreManager.KEYS_ALIAS)
     }
 
@@ -465,8 +480,9 @@ class WalletStorage(
      * current [KeystoreManager.KEYS_ALIAS] RSA scheme. Blobs written by the
      * pre-RSA AES-GCM scheme survive in the DataStore but lost their key
      * when the RSA pair replaced it, so signing with them can only fail —
-     * key-health treats them as missing and offers a re-derive. Structural
-     * check only: never decrypts, never prompts.
+     * key-health treats them as missing and offers a re-derive. This never
+     * decrypts or prompts, but fingerprint lookup may generate a
+     * missing alias and can fail while no secure lock screen is configured.
      */
     suspend fun isPrivateKeyDecryptable(pubkeyHex: String): Boolean {
         val prefs = store.data.first()

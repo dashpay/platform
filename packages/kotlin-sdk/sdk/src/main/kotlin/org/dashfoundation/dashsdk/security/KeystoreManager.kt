@@ -2,6 +2,7 @@ package org.dashfoundation.dashsdk.security
 
 import android.os.Build
 import android.security.keystore.KeyGenParameterSpec
+import android.security.keystore.KeyPermanentlyInvalidatedException
 import android.security.keystore.KeyProperties
 import android.security.keystore.StrongBoxUnavailableException
 import java.security.KeyPair
@@ -47,16 +48,26 @@ import javax.crypto.spec.PSource
 class KeystoreManager {
 
     /**
-     * Encrypt [plaintext] under [alias]; returns (iv, ciphertext).
+     * Encrypt [plaintext] under [alias]; returns the encrypted bytes plus
+     * metadata tied to the exact key object used.
+     *
      * [MASTER_ALIAS] uses AES-256-GCM (iv is the GCM nonce). [KEYS_ALIAS]
      * uses the RSA public key (no iv — the blob's iv is empty) and never
-     * requires authentication, so identity-key writes never prompt.
+     * requires authentication, so identity-key writes never prompt. Its
+     * result also carries that public key's fingerprint: looking the alias
+     * up again after encryption could observe a concurrent rotation and
+     * label old-key ciphertext as though the replacement key encrypted it.
      */
     fun encrypt(plaintext: ByteArray, alias: String = MASTER_ALIAS): EncryptedBlob {
         if (alias == KEYS_ALIAS) {
+            val publicKey = keysPublicKey()
             val cipher = Cipher.getInstance(RSA_TRANSFORMATION)
-            cipher.init(Cipher.ENCRYPT_MODE, keysPublicKey(), oaepSpec())
-            return EncryptedBlob(iv = ByteArray(0), ciphertext = cipher.doFinal(plaintext))
+            cipher.init(Cipher.ENCRYPT_MODE, publicKey, oaepSpec())
+            return EncryptedBlob(
+                iv = ByteArray(0),
+                ciphertext = cipher.doFinal(plaintext),
+                keyFingerprint = fingerprint(publicKey),
+            )
         }
         val cipher = Cipher.getInstance(AES_TRANSFORMATION)
         cipher.init(Cipher.ENCRYPT_MODE, secretKey(alias))
@@ -73,7 +84,25 @@ class KeystoreManager {
     fun decrypt(blob: EncryptedBlob, alias: String = MASTER_ALIAS): ByteArray {
         if (alias == KEYS_ALIAS) {
             val cipher = Cipher.getInstance(RSA_TRANSFORMATION)
-            cipher.init(Cipher.DECRYPT_MODE, keysPrivateKey(), oaepSpec())
+            try {
+                cipher.init(Cipher.DECRYPT_MODE, keysPrivateKey(), oaepSpec())
+            } catch (e: KeyPermanentlyInvalidatedException) {
+                // An invalidated private-key handle remains present in
+                // AndroidKeyStore, so ensureKeysKeyPair would otherwise keep
+                // returning it forever. Deletion is the re-derive boundary:
+                // the original exception still escapes, while a later use
+                // can create a replacement after secure lock is re-enabled.
+                try {
+                    synchronized(KEYS_ALIAS_LOCK) {
+                        androidKeyStore().deleteEntry(KEYS_ALIAS)
+                    }
+                } catch (deleteError: Exception) {
+                    // Preserve the typed signal that suppresses the biometric
+                    // retry; deletion failure remains available for diagnosis.
+                    e.addSuppressed(deleteError)
+                }
+                throw e
+            }
             return cipher.doFinal(blob.ciphertext)
         }
         val cipher = Cipher.getInstance(AES_TRANSFORMATION)
@@ -107,11 +136,22 @@ class KeystoreManager {
      * fingerprint mismatch means the blob needs to be re-derived, not read.
      */
     fun keysAliasFingerprint(): String =
-        MessageDigest.getInstance("SHA-256").digest(keysPublicKey().encoded)
+        fingerprint(keysPublicKey())
+
+    private fun fingerprint(publicKey: PublicKey): String =
+        MessageDigest.getInstance("SHA-256").digest(publicKey.encoded)
             .joinToString("") { "%02x".format(it) }
 
-    /** IV + ciphertext pair, serialized as `iv.size || iv || ciphertext`. */
-    data class EncryptedBlob(val iv: ByteArray, val ciphertext: ByteArray) {
+    /**
+     * IV + ciphertext pair, serialized as `iv.size || iv || ciphertext`.
+     * [keyFingerprint] is write-time metadata for the caller and is stored
+     * separately; decoding persisted ciphertext therefore leaves it `null`.
+     */
+    data class EncryptedBlob(
+        val iv: ByteArray,
+        val ciphertext: ByteArray,
+        val keyFingerprint: String? = null,
+    ) {
         fun encode(): ByteArray =
             byteArrayOf(iv.size.toByte()) + iv + ciphertext
 
