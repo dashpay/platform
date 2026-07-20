@@ -229,6 +229,11 @@ public class PlatformWalletManager: ObservableObject {
     deinit {
         progressPollTask?.cancel()
         if handle != NULL_HANDLE {
+            // Stop the network event source before releasing the manager's
+            // unretained callback contexts. Rust's destroy path provides the
+            // authoritative join barrier; this explicit stop is defense in
+            // depth for the Swift wrapper's teardown order.
+            platform_wallet_manager_spv_stop(handle).discard()
             platform_wallet_manager_platform_address_sync_stop(handle).discard()
             platform_wallet_manager_shielded_sync_stop(handle).discard()
             platform_wallet_manager_dashpay_sync_stop(handle).discard()
