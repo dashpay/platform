@@ -27,6 +27,12 @@ private val Context.secretsStore: DataStore<Preferences> by preferencesDataStore
  * - `mnemonic.<walletIdHex>` — wallet mnemonics (master alias, AES-GCM)
  * - `privkey.<pubkeyHex>` — identity private keys (keys alias: RSA
  *   public-key encrypt / auth-gated private-key decrypt)
+ *
+ * Consuming apps should exclude this DataStore from Android's default app-data
+ * backup — Keystore keys are device-bound and never restored, so a backed-up
+ * blob can never be decrypted on the new device. See
+ * `res/xml/dash_sdk_backup_rules.xml` and `res/xml/dash_sdk_data_extraction_rules.xml`
+ * for ready-made exclusion rules and the manifest snippet to reference them.
  */
 class WalletStorage(
     context: Context,
@@ -248,6 +254,15 @@ class WalletStorage(
      * to this delete anyway. Returns the hexes actually deleted (a subset
      * of [pubkeyHexes] — the rest are retained because another wallet
      * owns them, not because anything failed).
+     *
+     * A retained alias (owned elsewhere) still gets [excludingWalletId]
+     * removed from ITS OWN owner-index entry for that alias — this is a
+     * rollback: [excludingWalletId]'s round that created the alias failed,
+     * so it never legitimately owned it, only the OTHER wallet that
+     * adopted it via [storeIfAbsent] does. Leaving [excludingWalletId]'s
+     * claim in place would strand a phantom owner: a later delete of the
+     * real owner would see [excludingWalletId] still listed, wrongly
+     * retain the ciphertext, and never clean up either index.
      */
     suspend fun deleteUnownedPrivateKeys(
         pubkeyHexes: Collection<String>,
@@ -259,7 +274,27 @@ class WalletStorage(
                 !privateKeyExclusionScope.isOwnedByAnotherWallet(hex, excludingWalletId)
             }
             if (toDelete.isNotEmpty()) deletePrivateKeysLocked(toDelete)
+            val retained = pubkeyHexes.toSet() - toDelete
+            if (retained.isNotEmpty()) removeFromOwnerIndexLocked(excludingWalletId, retained)
             toDelete
+        }
+    }
+
+    /**
+     * Drop just [pubkeyHexes] from [walletId]'s owner-index entry, leaving
+     * any other aliases it owns intact (unlike [deleteOwnerIndex], which
+     * drops the whole entry). Lock must already be held.
+     */
+    private suspend fun removeFromOwnerIndexLocked(walletId: ByteArray, pubkeyHexes: Collection<String>) {
+        if (pubkeyHexes.isEmpty()) return
+        val normalized = pubkeyHexes.map { it.lowercase() }.toSet()
+        val indexKey = ownerIndexKey(walletId.toHex())
+        store.edit { prefs ->
+            val current = prefs[indexKey] ?: return@edit
+            val next = current - normalized
+            if (next.size != current.size) {
+                if (next.isEmpty()) prefs.remove(indexKey) else prefs[indexKey] = next
+            }
         }
     }
 
