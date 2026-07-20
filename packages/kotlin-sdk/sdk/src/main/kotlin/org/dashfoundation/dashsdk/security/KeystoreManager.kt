@@ -7,6 +7,7 @@ import android.security.keystore.StrongBoxUnavailableException
 import java.security.KeyPair
 import java.security.KeyPairGenerator
 import java.security.KeyStore
+import java.security.MessageDigest
 import java.security.PrivateKey
 import java.security.PublicKey
 import java.security.spec.MGF1ParameterSpec
@@ -94,6 +95,20 @@ class KeystoreManager {
      */
     fun isKeysBlobDecryptable(blob: EncryptedBlob): Boolean =
         blob.iv.isEmpty() && blob.ciphertext.size == RSA_KEY_SIZE / 8
+
+    /**
+     * SHA-256 of the current [KEYS_ALIAS] public key, hex-encoded. Callers
+     * persist this alongside each RSA-encrypted blob and compare it back on
+     * read: [isKeysBlobDecryptable]'s shape check alone cannot tell a blob
+     * encrypted under the current keypair from one encrypted under a prior
+     * keypair of the same size (e.g. after Keystore data is lost and
+     * [ensureKeysKeyPair] regenerates KEYS_ALIAS, or a DataStore-only backup
+     * restore reintroduces an old blob onto a device with a fresh key) — a
+     * fingerprint mismatch means the blob needs to be re-derived, not read.
+     */
+    fun keysAliasFingerprint(): String =
+        MessageDigest.getInstance("SHA-256").digest(keysPublicKey().encoded)
+            .joinToString("") { "%02x".format(it) }
 
     /** IV + ciphertext pair, serialized as `iv.size || iv || ciphertext`. */
     data class EncryptedBlob(val iv: ByteArray, val ciphertext: ByteArray) {

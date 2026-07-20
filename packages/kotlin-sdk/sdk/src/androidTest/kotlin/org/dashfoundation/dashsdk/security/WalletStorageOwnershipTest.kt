@@ -10,6 +10,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.security.KeyStore
 
 /**
  * Instrumented coverage for the [WalletStorage] cross-wallet ownership /
@@ -137,6 +138,33 @@ class WalletStorageOwnershipTest {
         // Re-import of the same (deterministic) wallet id must work again.
         storage.storePrivateKey("aa11bb22", ByteArray(32) { 5 }, ownerWalletId = walletA)
         assertTrue(storage.hasPrivateKey("aa11bb22"))
+    }
+
+    @Test
+    fun storeIfAbsentRederivesWhenTheKeysAliasKeypairWasReplaced() = runBlocking {
+        storage.storePrivateKey("d15ca4d3", ByteArray(32) { 4 }, ownerWalletId = walletA)
+        assertTrue(storage.isPrivateKeyDecryptable("d15ca4d3"))
+
+        // Simulate KEYS_ALIAS being replaced (Keystore data loss + a fresh
+        // key generated on next use, or a DataStore-only backup restore
+        // reintroducing this exact blob onto a device with its own key) —
+        // delete the entry directly so the old RSA-shaped blob now sits
+        // under a keypair that never encrypted it.
+        val keyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+        keyStore.deleteEntry(KeystoreManager.KEYS_ALIAS)
+
+        assertFalse(
+            "an RSA-shaped blob encrypted under a replaced keypair must not be trusted by shape alone",
+            storage.isPrivateKeyDecryptable("d15ca4d3"),
+        )
+
+        var deriveCalls = 0
+        val stored = storage.storeIfAbsent("d15ca4d3", ownerWalletId = walletA) {
+            deriveCalls++
+            ByteArray(32) { 6 }
+        }
+        assertTrue("the stale blob must be treated as absent and re-derived", stored)
+        assertEquals(1, deriveCalls)
     }
 
     @Test

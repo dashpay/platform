@@ -350,8 +350,9 @@ class WalletStorage(
      */
     private suspend fun addOwnerIfUsableLocked(pubkeyHex: String, ownerWalletId: ByteArray): Boolean {
         rejectIfTombstonedLocked(ownerWalletId)
-        val encoded = store.data.first()[privateKeyKey(pubkeyHex)] ?: return false
-        if (!keystore.isKeysBlobDecryptable(decode(encoded))) return false
+        val prefs = store.data.first()
+        val encoded = prefs[privateKeyKey(pubkeyHex)] ?: return false
+        if (!isCurrentKeysBlob(pubkeyHex, encoded, prefs)) return false
         val indexKey = ownerIndexKey(ownerWalletId.toHex())
         store.edit { it[indexKey] = (it[indexKey] ?: emptySet()) + pubkeyHex.lowercase() }
         return true
@@ -366,11 +367,30 @@ class WalletStorage(
         val blob = keystore.encrypt(privateKey, alias = KeystoreManager.KEYS_ALIAS)
         store.edit {
             it[privateKeyKey(pubkeyHex)] = encode(blob)
+            it[privateKeyFingerprintKey(pubkeyHex)] = keystore.keysAliasFingerprint()
             if (ownerWalletId != null) {
                 val indexKey = ownerIndexKey(ownerWalletId.toHex())
                 it[indexKey] = (it[indexKey] ?: emptySet()) + pubkeyHex.lowercase()
             }
         }
+    }
+
+    /**
+     * Whether the stored blob for [pubkeyHex] is both structurally an RSA
+     * blob and was encrypted under the [KeystoreManager.KEYS_ALIAS] keypair
+     * currently in the Keystore — see [KeystoreManager.keysAliasFingerprint].
+     * A missing fingerprint (written before this check existed) is treated
+     * as unusable rather than trusted, since a stale RSA-shaped blob is
+     * indistinguishable from a current one by shape alone.
+     */
+    private fun isCurrentKeysBlob(
+        pubkeyHex: String,
+        encoded: String,
+        prefs: Preferences,
+    ): Boolean {
+        if (!keystore.isKeysBlobDecryptable(decode(encoded))) return false
+        val fingerprint = prefs[privateKeyFingerprintKey(pubkeyHex)] ?: return false
+        return fingerprint == keystore.keysAliasFingerprint()
     }
 
     /**
@@ -395,7 +415,10 @@ class WalletStorage(
 
     suspend fun deletePrivateKey(pubkeyHex: String) {
         privateKeyMutex.withLock {
-            store.edit { it.remove(privateKeyKey(pubkeyHex)) }
+            store.edit {
+                it.remove(privateKeyKey(pubkeyHex))
+                it.remove(privateKeyFingerprintKey(pubkeyHex))
+            }
         }
     }
 
@@ -414,7 +437,10 @@ class WalletStorage(
         if (pubkeyHexes.isEmpty()) return
         val normalized = pubkeyHexes.map { it.lowercase() }.toSet()
         store.edit { prefs ->
-            for (pubkeyHex in normalized) prefs.remove(privateKeyKey(pubkeyHex))
+            for (pubkeyHex in normalized) {
+                prefs.remove(privateKeyKey(pubkeyHex))
+                prefs.remove(privateKeyFingerprintKey(pubkeyHex))
+            }
             // Keep every owner index accurate in the same atomic commit:
             // a deleted alias must leave all wallets' index sets, or a
             // later wallet deletion would "discover" a ghost.
@@ -443,8 +469,9 @@ class WalletStorage(
      * check only: never decrypts, never prompts.
      */
     suspend fun isPrivateKeyDecryptable(pubkeyHex: String): Boolean {
-        val encoded = store.data.first()[privateKeyKey(pubkeyHex)] ?: return false
-        return keystore.isKeysBlobDecryptable(decode(encoded))
+        val prefs = store.data.first()
+        val encoded = prefs[privateKeyKey(pubkeyHex)] ?: return false
+        return isCurrentKeysBlob(pubkeyHex, encoded, prefs)
     }
 
     /** All entry names (masked listing for the Keystore Explorer screen). */
@@ -465,6 +492,9 @@ class WalletStorage(
     private fun privateKeyKey(pubkeyHex: String) =
         stringPreferencesKey(PRIVKEY_PREFIX + pubkeyHex.lowercase())
 
+    private fun privateKeyFingerprintKey(pubkeyHex: String) =
+        stringPreferencesKey(PRIVKEY_FINGERPRINT_PREFIX + pubkeyHex.lowercase())
+
     private fun ownerIndexKey(walletIdHex: String) =
         stringSetPreferencesKey(PRIVKEY_OWNERS_PREFIX + walletIdHex.lowercase())
 
@@ -477,6 +507,9 @@ class WalletStorage(
     private companion object {
         const val MNEMONIC_PREFIX = "mnemonic."
         const val PRIVKEY_PREFIX = "privkey."
+
+        /** Per-alias [KeystoreManager.keysAliasFingerprint] snapshot, taken at write time. */
+        const val PRIVKEY_FINGERPRINT_PREFIX = "privkeyfp."
 
         /** Durable wallet → alias-hex-set owner index (string-set entries). */
         const val PRIVKEY_OWNERS_PREFIX = "privkeyowners."
