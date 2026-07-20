@@ -37,7 +37,8 @@ impl DapiServer {
         let platform_service = self.platform_service.clone();
         let core_service = self.core_service.clone();
 
-        const MAX_DECODING_BYTES: usize = 64 * 1024 * 1024; // 64 MiB
+        const MAX_PLATFORM_DECODING_BYTES: usize = 64 * 1024; // 64 KiB
+        const MAX_CORE_DECODING_BYTES: usize = 64 * 1024 * 1024; // 64 MiB
         const MAX_ENCODING_BYTES: usize = 32 * 1024 * 1024; // 32 MiB
 
         let builder = dapi_grpc::tonic::transport::Server::builder()
@@ -66,12 +67,12 @@ impl DapiServer {
         builder
             .add_service(
                 PlatformServer::new(platform_service)
-                    .max_decoding_message_size(MAX_DECODING_BYTES)
+                    .max_decoding_message_size(MAX_PLATFORM_DECODING_BYTES)
                     .max_encoding_message_size(MAX_ENCODING_BYTES),
             )
             .add_service(
                 CoreServer::new(core_service)
-                    .max_decoding_message_size(MAX_DECODING_BYTES)
+                    .max_decoding_message_size(MAX_CORE_DECODING_BYTES)
                     .max_encoding_message_size(MAX_ENCODING_BYTES),
             )
             .serve(addr)
