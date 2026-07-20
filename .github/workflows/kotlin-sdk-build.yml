@@ -150,6 +150,16 @@ jobs:
             # enrolled, even though nothing here ever prompts for it
             # (private-key ENCRYPT is never auth-gated; only DECRYPT is).
             adb shell locksettings set-pin 1234
+            # Enrolling that credential puts the device in a "locked"
+            # security state until first unlock, which breaks every OTHER
+            # Keystore key generated with setUnlockedDeviceRequired(true)
+            # (e.g. the mnemonic MASTER_ALIAS AES key every existing test
+            # already relies on — confirmed the hard way: it started
+            # throwing InvalidKeyException the moment set-pin ran alone).
+            # Explicitly dismiss the keyguard so the device counts as
+            # unlocked for those keys while the PIN stays enrolled for
+            # KEYS_ALIAS generation.
+            adb shell wm dismiss-keyguard
             ./gradlew :sdk:connectedDebugAndroidTest --stacktrace
 
       - name: Upload test reports on failure
