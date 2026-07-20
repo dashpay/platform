@@ -364,10 +364,9 @@ class WalletStorage(
         privateKey: ByteArray,
         ownerWalletId: ByteArray?,
     ) {
-        val blob = keystore.encrypt(privateKey, alias = KeystoreManager.KEYS_ALIAS)
-        val fingerprint = checkNotNull(blob.keyFingerprint) {
-            "KEYS_ALIAS encryption must identify the public key that produced its ciphertext"
-        }
+        val encrypted = keystore.encryptForKeysAlias(privateKey)
+        val blob = encrypted.blob
+        val fingerprint = encrypted.keyFingerprint
         store.edit {
             it[privateKeyKey(pubkeyHex)] = encode(blob)
             it[privateKeyFingerprintKey(pubkeyHex)] = fingerprint

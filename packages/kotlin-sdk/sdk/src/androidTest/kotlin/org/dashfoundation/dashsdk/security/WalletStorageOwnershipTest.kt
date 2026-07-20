@@ -187,10 +187,7 @@ class WalletStorageOwnershipTest {
     fun keysAliasEncryptionCarriesTheFingerprintOfItsEncryptionKey() {
         val keystore = KeystoreManager()
 
-        val encrypted = keystore.encrypt(
-            ByteArray(32) { 6 },
-            alias = KeystoreManager.KEYS_ALIAS,
-        )
+        val encrypted = keystore.encryptForKeysAlias(ByteArray(32) { 6 })
 
         // The returned fingerprint is a snapshot of the exact key the
         // ciphertext was produced with, not a live re-read of the alias.
@@ -205,6 +202,26 @@ class WalletStorageOwnershipTest {
         keyStore.deleteEntry(KeystoreManager.KEYS_ALIAS)
 
         assertNotEquals(keystore.keysAliasFingerprint(), encrypted.keyFingerprint)
+    }
+
+    @Test
+    fun staleInvalidationCleanupDoesNotDeleteAReplacementKeysAlias() {
+        val keystore = KeystoreManager()
+        val invalidatedGeneration = keystore.keysAliasFingerprint()
+
+        // Model another invalidated decryptor winning the cleanup race, then
+        // a writer regenerating KEYS_ALIAS before this stale decryptor gets
+        // the lock. Its cleanup must not orphan ciphertext written under the
+        // replacement generation.
+        val keyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+        keyStore.deleteEntry(KeystoreManager.KEYS_ALIAS)
+        val replacementGeneration = keystore.keysAliasFingerprint()
+        assertNotEquals(invalidatedGeneration, replacementGeneration)
+
+        assertFalse(
+            keystore.deleteKeysAliasIfCurrentGeneration(invalidatedGeneration),
+        )
+        assertEquals(replacementGeneration, keystore.keysAliasFingerprint())
     }
 
     @Test
