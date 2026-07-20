@@ -22,6 +22,29 @@ use dpp::platform_value::Value;
 use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 
+fn effective_no_proof_distinct_limit(
+    requested_limit: Option<u32>,
+    drive_config: &crate::config::DriveConfig,
+) -> Result<u16, Error> {
+    let effective_limit = requested_limit
+        .unwrap_or(drive_config.default_query_limit as u32)
+        .min(drive_config.max_query_limit as u32);
+
+    if effective_limit == 0 {
+        return Err(Error::Query(
+            crate::error::query::QuerySyntaxError::InvalidLimit(
+                "effective distinct SUM limit must be greater than zero".to_string(),
+            ),
+        ));
+    }
+
+    u16::try_from(effective_limit).map_err(|_| {
+        Error::Query(crate::error::query::QuerySyntaxError::InvalidLimit(
+            "effective distinct SUM limit does not fit u16".to_string(),
+        ))
+    })
+}
+
 #[cfg(feature = "server")]
 impl Drive {
     /// Server-side entry point for the sum surface. Routes a
@@ -66,6 +89,7 @@ impl Drive {
             DocumentSumMode::PerInValue => {
                 let options = RangeSumOptions {
                     return_distinct_sums_in_range: false,
+                    distinct_limit: None,
                     carrier_outer_limit: None,
                     left_to_right: order_by_ascending,
                 };
@@ -87,8 +111,12 @@ impl Drive {
                     request.mode,
                     SumMode::GroupByRange | SumMode::GroupByCompound
                 );
+                let distinct_limit = return_distinct
+                    .then(|| effective_no_proof_distinct_limit(request.limit, request.drive_config))
+                    .transpose()?;
                 let options = RangeSumOptions {
                     return_distinct_sums_in_range: return_distinct,
+                    distinct_limit,
                     carrier_outer_limit: None,
                     left_to_right: order_by_ascending,
                 };
@@ -251,4 +279,38 @@ pub fn where_clauses_from_value(value: &Value) -> Result<Vec<WhereClause>, Error
 /// `Vec<OrderClause>`. Delegates to count's parser.
 pub fn order_clauses_from_value(value: &Value) -> Result<Vec<OrderClause>, Error> {
     crate::query::drive_document_count_query::drive_dispatcher::order_clauses_from_value(value)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::effective_no_proof_distinct_limit;
+    use crate::config::DriveConfig;
+
+    #[test]
+    fn no_proof_distinct_limit_uses_the_default_and_clamps_to_the_maximum() {
+        let config = DriveConfig {
+            default_query_limit: 25,
+            max_query_limit: 100,
+            ..DriveConfig::default()
+        };
+
+        assert_eq!(
+            effective_no_proof_distinct_limit(None, &config).unwrap(),
+            25
+        );
+        assert_eq!(
+            effective_no_proof_distinct_limit(Some(7), &config).unwrap(),
+            7
+        );
+        assert_eq!(
+            effective_no_proof_distinct_limit(Some(10_000), &config).unwrap(),
+            100
+        );
+
+        let disabled = DriveConfig {
+            max_query_limit: 0,
+            ..config
+        };
+        assert!(effective_no_proof_distinct_limit(None, &disabled).is_err());
+    }
 }

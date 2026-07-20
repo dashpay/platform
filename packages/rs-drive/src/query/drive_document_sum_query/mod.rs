@@ -269,6 +269,9 @@ pub struct RangeSumOptions {
     /// When `true`, emit one `SumEntry` per distinct in-range value
     /// rather than a single `Aggregate(i64)`.
     pub return_distinct_sums_in_range: bool,
+    /// `Some(n)` caps the distinct range walk before GroveDB materializes
+    /// matching entries. `None` is valid only for non-distinct execution.
+    pub distinct_limit: Option<u16>,
     /// `Some(n)` caps the carrier walk for compound `(In, range)`
     /// shapes at n entries. `None` accepts the platform-wide
     /// `MAX_CARRIER_AGGREGATE_OUTER_RANGE_LIMIT`.

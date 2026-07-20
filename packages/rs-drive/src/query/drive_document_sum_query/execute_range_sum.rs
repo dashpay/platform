@@ -148,13 +148,17 @@ impl DriveDocumentSumQuery<'_> {
             }]);
         }
 
-        // Distinct mode. Mirror count's analog; currently relies on
-        // `distinct_sum_path_query` which is stubbed (pending port).
-        // Defer to the same builder so the error surfaces cleanly when
-        // distinct mode is requested before the builder body lands.
-        let (path_query_limit, left_to_right) = (None::<u16>, options.left_to_right);
-        let path_query =
-            self.distinct_sum_path_query(path_query_limit, left_to_right, platform_version)?;
+        // Distinct mode must always be bounded before the storage walk.
+        let distinct_limit = options.distinct_limit.ok_or_else(|| {
+            Error::Query(QuerySyntaxError::InvalidLimit(
+                "distinct range SUM execution requires an effective limit".to_string(),
+            ))
+        })?;
+        let path_query = self.distinct_sum_path_query(
+            Some(distinct_limit),
+            options.left_to_right,
+            platform_version,
+        )?;
         let base_path_len = path_query.path.len();
 
         let mut drive_operations = vec![];
