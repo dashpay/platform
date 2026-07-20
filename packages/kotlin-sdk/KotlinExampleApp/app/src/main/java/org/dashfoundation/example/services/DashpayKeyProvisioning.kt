@@ -26,19 +26,10 @@ import org.dashfoundation.dashsdk.identity.RegistrationKeys
  *
  * Forcing registration through it would fork its semantics; this helper reuses
  * the shared pieces instead — the SDK's [RegistrationKeys] role table for the
- * on-chain rows and the same store-then-zero discipline for the secrets.
+ * on-chain rows and [IdentityKeyPersistence] for the store-then-zero secret
+ * discipline (shared with [IdentityKeyAdditionFlow]).
  */
 object DashpayKeyProvisioning {
-
-    /**
-     * Persists one derived identity private key (public-key hex → scalar),
-     * owner-scoped so wallet deletion can reach it before the identity's
-     * `public_keys` row commits. Injected so the provisioning logic is
-     * unit-testable without an Android Keystore.
-     */
-    fun interface PrivateKeyPersister {
-        suspend fun persist(publicKeyHex: String, privateKey: ByteArray, ownerWalletId: ByteArray)
-    }
 
     /**
      * Persist each derived private key, scrub the JVM copy, and return the
@@ -62,7 +53,7 @@ object DashpayKeyProvisioning {
         previews: List<IdentityKeyPreview>,
         includeDashPayKeys: Boolean,
         walletId: ByteArray,
-        persister: PrivateKeyPersister,
+        persister: IdentityKeyPersistence.PrivateKeyPersister,
     ): List<IdentityPubkey> {
         val expected = RegistrationKeys.keyCount(includeDashPayKeys)
         try {
@@ -73,21 +64,17 @@ object DashpayKeyProvisioning {
                 "expected $expected derived registration keys, got ${previews.size}"
             }
             for (preview in previews) {
-                try {
-                    // The one allowed Kotlin persist step (kotlin-sdk/CLAUDE.md):
-                    // Rust derived the scalar, we only encrypt it into the
-                    // Keystore keyed by the public bytes the signer looks up.
-                    persister.persist(preview.publicKeyHex, preview.privateKey, walletId)
-                } finally {
-                    // Keystore is authoritative from here; the JVM copy must not
-                    // outlive the store (IdentityKeyPreview's retention rule).
-                    preview.privateKey.fill(0)
-                }
+                IdentityKeyPersistence.storeAndScrub(
+                    publicKeyHex = preview.publicKeyHex,
+                    privateKey = preview.privateKey,
+                    walletId = walletId,
+                    persister = persister,
+                )
             }
         } catch (e: Throwable) {
-            // A persist threw after its own key was zeroed by the finally
-            // above; scrub every remaining preview's private half too so no
-            // plaintext scalar survives a partial failure.
+            // The whole set was derived up front, so on any failure scrub every
+            // preview's private half — including keys `storeAndScrub` never
+            // reached — so no plaintext scalar survives a partial failure.
             previews.forEach { it.privateKey.fill(0) }
             throw e
         }
