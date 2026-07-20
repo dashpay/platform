@@ -47,6 +47,18 @@ class WalletStorage(
      */
     private val privateKeyMutex = Mutex()
 
+    /**
+     * Deleted-wallet ids rejected by [storePrivateKey] / [storeIfAbsent]
+     * until [clearTombstone] un-marks them — guarded by [privateKeyMutex]
+     * like every other mutation here. Process-lifetime only: NOT persisted
+     * across process restart, and deliberately cleared on (re-)creation
+     * rather than kept forever, because wallet ids are deterministic
+     * functions of seed+network — deleting a wallet and re-importing the
+     * same recovery phrase later in the same process reuses the same id,
+     * and that is a real, supported recovery flow, not a resurrection bug.
+     */
+    private val tombstonedWalletIds = mutableSetOf<String>()
+
     /** Operations available while the private-key exclusion is held. */
     interface PrivateKeyExclusion {
         /** [WalletStorage.deletePrivateKeys], lock already held. */
@@ -58,6 +70,26 @@ class WalletStorage(
          * discoverable through the OTHER wallet's index / Room rows.
          */
         suspend fun deleteOwnerIndex(walletId: ByteArray)
+
+        /**
+         * True if any wallet OTHER than [excludingWalletId] still claims
+         * [pubkeyHex] in its durable owner index — i.e. a sibling wallet
+         * pre-stored this alias but hasn't (yet) committed a `public_keys`
+         * row for it, so a committed-row-only reference check would miss
+         * it and delete a sibling's key out from under it.
+         */
+        suspend fun isOwnedByAnotherWallet(pubkeyHex: String, excludingWalletId: ByteArray): Boolean
+
+        /**
+         * Mark [walletId] as deleted. Subsequent [storePrivateKey] /
+         * [storeIfAbsent] calls for it are rejected (thrown as
+         * [WalletTombstonedException]) until [clearTombstone] un-marks it —
+         * closes the window where an app-level coroutine that started
+         * before deletion (e.g. an in-flight identity-key preview/derive)
+         * completes its store AFTER deletion finished, resurrecting the
+         * wallet's owner-index entry with fresh ciphertext.
+         */
+        suspend fun tombstoneWallet(walletId: ByteArray)
     }
 
     private val privateKeyExclusionScope = object : PrivateKeyExclusion {
@@ -66,6 +98,23 @@ class WalletStorage(
 
         override suspend fun deleteOwnerIndex(walletId: ByteArray) {
             store.edit { it.remove(ownerIndexKey(walletId.toHex())) }
+        }
+
+        override suspend fun isOwnedByAnotherWallet(
+            pubkeyHex: String,
+            excludingWalletId: ByteArray,
+        ): Boolean {
+            val excludingHex = excludingWalletId.toHex()
+            val normalized = pubkeyHex.lowercase()
+            return store.data.first().asMap().any { (key, value) ->
+                key.name.startsWith(PRIVKEY_OWNERS_PREFIX) &&
+                    key.name.removePrefix(PRIVKEY_OWNERS_PREFIX) != excludingHex &&
+                    (value as? Set<*>)?.contains(normalized) == true
+            }
+        }
+
+        override suspend fun tombstoneWallet(walletId: ByteArray) {
+            tombstonedWalletIds += walletId.toHex()
         }
     }
 
@@ -80,6 +129,22 @@ class WalletStorage(
     suspend fun <T> withPrivateKeyExclusion(
         block: suspend PrivateKeyExclusion.() -> T,
     ): T = privateKeyMutex.withLock { privateKeyExclusionScope.block() }
+
+    /**
+     * Clear a deletion tombstone for [walletId] — called when a wallet with
+     * that (deterministic, seed-derived) id is (re-)created, so a prior
+     * delete-then-reimport doesn't permanently reject its stores. A no-op
+     * if [walletId] was never tombstoned.
+     */
+    suspend fun clearTombstone(walletId: ByteArray) {
+        privateKeyMutex.withLock { tombstonedWalletIds -= walletId.toHex() }
+    }
+
+    private fun rejectIfTombstonedLocked(ownerWalletId: ByteArray) {
+        if (ownerWalletId.toHex() in tombstonedWalletIds) {
+            throw WalletTombstonedException(ownerWalletId)
+        }
+    }
 
     // ── Mnemonics ─────────────────────────────────────────────────────
 
@@ -162,13 +227,80 @@ class WalletStorage(
         ownerWalletId: ByteArray? = null,
     ) {
         privateKeyMutex.withLock {
-            val blob = keystore.encrypt(privateKey, alias = KeystoreManager.KEYS_ALIAS)
-            store.edit {
-                it[privateKeyKey(pubkeyHex)] = encode(blob)
-                if (ownerWalletId != null) {
-                    val indexKey = ownerIndexKey(ownerWalletId.toHex())
-                    it[indexKey] = (it[indexKey] ?: emptySet()) + pubkeyHex.lowercase()
-                }
+            // No tombstone check when ownerWalletId is null: a null owner
+            // was never recorded in any owner index either, so it can't be
+            // resurrecting a deleted wallet's discoverable state the way a
+            // durable-owner write could. No caller on the derive/register
+            // path passes null today.
+            if (ownerWalletId != null) rejectIfTombstonedLocked(ownerWalletId)
+            storePrivateKeyEntryLocked(pubkeyHex, privateKey, ownerWalletId)
+        }
+    }
+
+    /**
+     * If [pubkeyHex] has no *usable* stored ciphertext — absent, or present
+     * but not [isPrivateKeyDecryptable] (a legacy pre-RSA blob) — derive it
+     * via [derive] and store it; either way record [ownerWalletId] in the
+     * owner index. Returns whether a derive+store actually happened (the
+     * "existed before" complement the identity-key persist callback needs).
+     *
+     * [derive] runs OUTSIDE the private-key lock (it's a native FFI call —
+     * [withPrivateKeyExclusion]'s own contract forbids native calls while
+     * holding it, since a callback parked on this lock can be holding
+     * native locks), so this isn't one atomic transaction: a concurrent
+     * caller can derive the same alias in parallel. The lock is retaken
+     * before the write and the existence check re-run — the loser's
+     * derived bytes are discarded and only its ownership is recorded, so
+     * two racing derivations settle on one stored copy either way.
+     *
+     * Throws [WalletTombstonedException] if [ownerWalletId] was deleted.
+     */
+    suspend fun storeIfAbsent(
+        pubkeyHex: String,
+        ownerWalletId: ByteArray,
+        derive: suspend () -> ByteArray,
+    ): Boolean {
+        if (privateKeyMutex.withLock { addOwnerIfUsableLocked(pubkeyHex, ownerWalletId) }) {
+            return false
+        }
+        val derived = derive()
+        return privateKeyMutex.withLock {
+            if (addOwnerIfUsableLocked(pubkeyHex, ownerWalletId)) {
+                false // another writer won the race while this derived
+            } else {
+                storePrivateKeyEntryLocked(pubkeyHex, derived, ownerWalletId)
+                true
+            }
+        }
+    }
+
+    /**
+     * If [pubkeyHex] already has a decryptable ciphertext entry (under any
+     * owner), record [ownerWalletId]'s ownership and return `true`;
+     * otherwise leave everything untouched and return `false`. Lock must
+     * already be held.
+     */
+    private suspend fun addOwnerIfUsableLocked(pubkeyHex: String, ownerWalletId: ByteArray): Boolean {
+        rejectIfTombstonedLocked(ownerWalletId)
+        val encoded = store.data.first()[privateKeyKey(pubkeyHex)] ?: return false
+        if (!keystore.isKeysBlobDecryptable(decode(encoded))) return false
+        val indexKey = ownerIndexKey(ownerWalletId.toHex())
+        store.edit { it[indexKey] = (it[indexKey] ?: emptySet()) + pubkeyHex.lowercase() }
+        return true
+    }
+
+    /** Encrypt-and-write [privateKey] for [pubkeyHex]; lock must already be held. */
+    private suspend fun storePrivateKeyEntryLocked(
+        pubkeyHex: String,
+        privateKey: ByteArray,
+        ownerWalletId: ByteArray?,
+    ) {
+        val blob = keystore.encrypt(privateKey, alias = KeystoreManager.KEYS_ALIAS)
+        store.edit {
+            it[privateKeyKey(pubkeyHex)] = encode(blob)
+            if (ownerWalletId != null) {
+                val indexKey = ownerIndexKey(ownerWalletId.toHex())
+                it[indexKey] = (it[indexKey] ?: emptySet()) + pubkeyHex.lowercase()
             }
         }
     }

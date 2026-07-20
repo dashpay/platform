@@ -25,7 +25,6 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -34,7 +33,9 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import kotlinx.coroutines.launch
 import org.dashfoundation.dashsdk.keywallet.Mnemonic
@@ -48,6 +49,34 @@ import org.dashfoundation.example.ui.components.ErrorAlertDialog
 import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.LabeledContent
 import org.dashfoundation.example.ui.components.SubmitButton
+
+/**
+ * Holds the last-resort recovery phrase [WalletCreateRollbackException]
+ * carries when wallet creation fails AND every durable store/rollback
+ * attempt also failed — the ONLY surviving copy of the phrase. ViewModel
+ * retention (not `remember`/`rememberSaveable`) is deliberate: it survives
+ * activity recreation from a configuration change (rotation, locale,
+ * theme) without ever serializing the plaintext into `SavedStateHandle` /
+ * the saved-state Bundle, which a `rememberSaveable`-based fix would.
+ */
+class CreateWalletViewModel : ViewModel() {
+    var unrecoverablePhrase by mutableStateOf<String?>(null)
+        private set
+
+    fun recordUnrecoverablePhrase(phrase: String) {
+        unrecoverablePhrase = phrase
+    }
+
+    /** Explicit scrub once the user has acknowledged the backup dialog. */
+    fun clearUnrecoverablePhrase() {
+        unrecoverablePhrase = null
+    }
+
+    override fun onCleared() {
+        unrecoverablePhrase = null
+        super.onCleared()
+    }
+}
 
 /**
  * Wallet creation form — port of `CreateWalletView.swift` (name + network
@@ -65,7 +94,10 @@ import org.dashfoundation.example.ui.components.SubmitButton
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun CreateWalletScreen(navController: NavHostController) {
+fun CreateWalletScreen(
+    navController: NavHostController,
+    walletViewModel: CreateWalletViewModel = viewModel(),
+) {
     val appState = LocalAppState.current
     val network by appState.currentNetwork.collectAsStateWithLifecycle()
 
@@ -80,9 +112,13 @@ fun CreateWalletScreen(navController: NavHostController) {
     // Last-resort phrase surface: when creation fails AND the SDK could not
     // store the generated phrase durably, WalletCreateRollbackException
     // carries the only remaining copy — it must be shown for manual backup
-    // before it is discarded. Plain remember (NOT rememberSaveable): the
-    // plaintext must never be written into the saved-state Bundle.
-    var unrecoverablePhrase by remember { mutableStateOf<String?>(null) }
+    // before it is discarded. Held in [walletViewModel], NOT `remember`/
+    // `rememberSaveable`: a `remember` copy is lost on the config-change
+    // recreation that can happen while this emergency dialog is still on
+    // screen, and `rememberSaveable` would serialize the plaintext into the
+    // saved-state Bundle — ViewModel retention survives the former without
+    // doing the latter.
+    val unrecoverablePhrase = walletViewModel.unrecoverablePhrase
 
     Scaffold(
         topBar = {
@@ -223,7 +259,7 @@ fun CreateWalletScreen(navController: NavHostController) {
                         // behind a plain error message.
                         val phrase = e.mnemonic
                         if (phrase != null) {
-                            unrecoverablePhrase = phrase
+                            walletViewModel.recordUnrecoverablePhrase(phrase)
                         } else {
                             error = e.message ?: "Wallet creation failed"
                         }
@@ -263,7 +299,7 @@ fun CreateWalletScreen(navController: NavHostController) {
             },
             confirmButton = {
                 TextButton(
-                    onClick = { unrecoverablePhrase = null },
+                    onClick = { walletViewModel.clearUnrecoverablePhrase() },
                     modifier = Modifier.testTag("createWallet.unrecoverablePhrase.ack"),
                 ) {
                     Text("I wrote it down")

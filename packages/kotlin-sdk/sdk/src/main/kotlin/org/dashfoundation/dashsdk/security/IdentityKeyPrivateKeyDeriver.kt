@@ -3,6 +3,7 @@ package org.dashfoundation.dashsdk.security
 import kotlinx.coroutines.runBlocking
 import org.dashfoundation.dashsdk.Network
 import org.dashfoundation.dashsdk.ffi.IdentityNative
+import org.dashfoundation.dashsdk.persistence.DerivedKeyStoreResult
 import org.dashfoundation.dashsdk.persistence.PrivateKeyDeriver
 import org.dashfoundation.dashsdk.persistence.toHex
 
@@ -49,37 +50,42 @@ class IdentityKeyPrivateKeyDeriver(
         publicKeyData: ByteArray,
         identityIndex: Int,
         keyIndex: Int,
-    ): String? {
-        // Single Rust FFI call — the whole derivation, deadlock-safe.
-        val scalar: ByteArray = IdentityNative.deriveIdentityPrivateKeyWithResolver(
-            networkOrd = network.ffiValue,
-            walletId = walletId,
-            resolverHandle = mnemonicResolverHandle,
-            identityIndex = identityIndex,
-            keyIndex = keyIndex,
-        )
-        return try {
-            val pubkeyHex = publicKeyData.toHex()
-            // WalletStorage.storePrivateKey is suspend; the callback thread
-            // already runs everything under runBlocking on the persistence
-            // dispatcher, so a nested runBlocking here is consistent with
-            // the handler's own pattern (Room DAOs, resolver reads).
-            // ownerWalletId writes the durable owner index in the same
-            // atomic edit — the alias stays discoverable by wallet
-            // deletion even if the process dies before the row commits
-            // (the in-memory pending-alias fence does not survive that).
+    ): DerivedKeyStoreResult {
+        val pubkeyHex = publicKeyData.toHex()
+        var scalar: ByteArray? = null
+        // WalletStorage.storeIfAbsent is suspend; the callback thread
+        // already runs everything under runBlocking on the persistence
+        // dispatcher, so a nested runBlocking here is consistent with the
+        // handler's own pattern (Room DAOs, resolver reads). It checks for
+        // an existing (decryptable) entry and records ownerWalletId's
+        // ownership atomically with the store, so it derives via Rust
+        // (the single FFI call below) ONLY when the alias doesn't already
+        // have a usable stored scalar under ANY owner — a re-derive of an
+        // existing key would just reproduce the same deterministic bytes.
+        val wasNewlyCreated = try {
             runBlocking {
-                walletStorage.storePrivateKey(pubkeyHex, scalar, ownerWalletId = walletId)
+                walletStorage.storeIfAbsent(pubkeyHex, ownerWalletId = walletId) {
+                    // Single Rust FFI call — the whole derivation,
+                    // deadlock-safe — runs OUTSIDE WalletStorage's
+                    // private-key lock (storeIfAbsent's own contract).
+                    IdentityNative.deriveIdentityPrivateKeyWithResolver(
+                        networkOrd = network.ffiValue,
+                        walletId = walletId,
+                        resolverHandle = mnemonicResolverHandle,
+                        identityIndex = identityIndex,
+                        keyIndex = keyIndex,
+                    ).also { scalar = it }
+                }
             }
-            // Recorded identifier on the persisted row — mirrors the
-            // `WalletStorage` privkey storage-key prefix (`"privkey."`) and
-            // Swift's keychain account string, so the explorer/signer can
-            // reason about it uniformly.
-            PRIVKEY_IDENTIFIER_PREFIX + pubkeyHex
         } finally {
-            // Scrub the only copy that escaped Rust.
-            scalar.fill(0)
+            // Scrub the only copy that escaped Rust, if a derive happened.
+            scalar?.fill(0)
         }
+        // Recorded identifier on the persisted row — mirrors the
+        // `WalletStorage` privkey storage-key prefix (`"privkey."`) and
+        // Swift's keychain account string, so the explorer/signer can
+        // reason about it uniformly.
+        return DerivedKeyStoreResult(PRIVKEY_IDENTIFIER_PREFIX + pubkeyHex, wasNewlyCreated)
     }
 
     override fun deleteStored(pubkeyHexes: Collection<String>) {
@@ -91,9 +97,6 @@ class IdentityKeyPrivateKeyDeriver(
         // alive until a deletion succeeds).
         runBlocking { walletStorage.deletePrivateKeys(pubkeyHexes) }
     }
-
-    override fun hasStored(pubkeyHex: String): Boolean =
-        runBlocking { walletStorage.hasPrivateKey(pubkeyHex) }
 
     private companion object {
         /** Matches `WalletStorage`'s private `PRIVKEY_PREFIX`. */

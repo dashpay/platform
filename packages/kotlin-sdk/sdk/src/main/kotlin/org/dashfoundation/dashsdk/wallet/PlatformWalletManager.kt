@@ -317,34 +317,78 @@ class PlatformWalletManager(
     }
 
     /**
-     * Mnemonic resolver + signer, backed by [walletStorage]. Exposed so
-     * callers can pass [mnemonicResolverHandle] / [signerHandle] into the
-     * per-call FFI entry points that derive-from-mnemonic or sign. They
-     * attach to the SDK per-call, NOT to the manager.
+     * Holder for the four children below, built together so a fallible
+     * constructor partway through the group can't strand the ones built
+     * before it — see [CoreChildren] and the `run { }` block that builds it.
      */
-    private val mnemonicResolver = MnemonicResolverAndPersister(walletStorage)
-    private val signer =
-        KeystoreSigner(walletStorage, network, biometricGate, database.platformAddressDao())
+    private class CoreChildren(
+        val mnemonicResolver: MnemonicResolverAndPersister,
+        val signer: KeystoreSigner,
+        val identityKeyDeriver: IdentityKeyPrivateKeyDeriver,
+        val persistenceHandler: PlatformWalletPersistenceHandler,
+    )
 
     /**
-     * Persistence handler (Room writer). Constructed here — after
-     * [mnemonicResolver] — so it can be handed an
-     * [IdentityKeyPrivateKeyDeriver] backed by the resolver handle: the
-     * identity-key persist callback derives the private half via a single
-     * (deadlock-safe, resolver-keyed) Rust FFI call and encrypts it into
-     * [walletStorage] (item 1 — the CLAUDE.md "one allowed exception").
+     * Mnemonic resolver + signer, backed by [walletStorage]; persistence
+     * handler (Room writer), constructed after the resolver so it can be
+     * handed an [IdentityKeyPrivateKeyDeriver] backed by the resolver
+     * handle — the identity-key persist callback derives the private half
+     * via a single (deadlock-safe, resolver-keyed) Rust FFI call and
+     * encrypts it into [walletStorage] (item 1 — the CLAUDE.md "one allowed
+     * exception").
+     *
+     * [mnemonicResolver] and [signer] each own a JNI handle (freed by their
+     * own [AutoCloseable.close]); [persistenceHandler] owns a single-thread
+     * `Executor` when constructed without an injected dispatcher, as here.
+     * Building all four as locals inside one guarded block — rather than as
+     * four independent property initializers — means a throw partway
+     * through (e.g. [KeystoreSigner]'s native `createSigner` failing) closes
+     * whatever was already built instead of leaking it: with independent
+     * initializers, a later one throwing aborts the whole constructor with
+     * no [PlatformWalletManager] instance left to call `close()` on the
+     * earlier ones.
      */
-    private val identityKeyDeriver = IdentityKeyPrivateKeyDeriver(
-        network = network,
-        mnemonicResolverHandle = mnemonicResolver.nativeHandle,
-        walletStorage = walletStorage,
-    )
+    private val coreChildren: CoreChildren = run {
+        var mnemonicResolver: MnemonicResolverAndPersister? = null
+        var signer: KeystoreSigner? = null
+        try {
+            val resolver = MnemonicResolverAndPersister(walletStorage)
+                .also { mnemonicResolver = it }
+            val keySigner = KeystoreSigner(
+                walletStorage, network, biometricGate, database.platformAddressDao(),
+            ).also { signer = it }
+            val deriver = IdentityKeyPrivateKeyDeriver(
+                network = network,
+                mnemonicResolverHandle = resolver.nativeHandle,
+                walletStorage = walletStorage,
+            )
+            val handler = PlatformWalletPersistenceHandler(
+                database = database,
+                privateKeyDeriver = deriver,
+                network = network,
+            )
+            CoreChildren(resolver, keySigner, deriver, handler)
+        } catch (constructionFailure: Throwable) {
+            fun cleanup(action: () -> Unit) {
+                try {
+                    action()
+                } catch (cleanupFailure: Throwable) {
+                    if (cleanupFailure !== constructionFailure) {
+                        constructionFailure.addSuppressed(cleanupFailure)
+                    }
+                }
+            }
 
-    private val persistenceHandler = PlatformWalletPersistenceHandler(
-        database = database,
-        privateKeyDeriver = identityKeyDeriver,
-        network = network,
-    )
+            cleanup { signer?.close() }
+            cleanup { mnemonicResolver?.close() }
+            cleanup { scope.cancel() }
+            throw constructionFailure
+        }
+    }
+    private val mnemonicResolver get() = coreChildren.mnemonicResolver
+    private val signer get() = coreChildren.signer
+    private val identityKeyDeriver get() = coreChildren.identityKeyDeriver
+    private val persistenceHandler get() = coreChildren.persistenceHandler
 
     /** `MnemonicResolverHandle` for FFI calls that derive from a stored mnemonic. */
     val mnemonicResolverHandle: Long get() = mnemonicResolver.nativeHandle
@@ -376,13 +420,16 @@ class PlatformWalletManager(
         require(keyIndex >= 0) { "keyIndex must be non-negative, got $keyIndex" }
         // deriveAndStore is a synchronous JNI call keyed on the manager's
         // resolver handle — the gate keeps teardown from freeing it
-        // mid-derive (callers run on their own Compose scopes).
+        // mid-derive (callers run on their own Compose scopes). It only
+        // skips the actual re-derive when the stored scalar is already
+        // decryptable — exactly the case a health-sheet repair is invoked
+        // for (an undecryptable legacy blob) is NOT skipped.
         identityKeyDeriver.deriveAndStore(
             walletId = walletId,
             publicKeyData = publicKeyData,
             identityIndex = identityIndex,
             keyIndex = keyIndex,
-        )
+        )?.identifier
     }
 
     /**
@@ -572,6 +619,12 @@ class PlatformWalletManager(
         )
         var mnemonicStored = false
         try {
+            // Un-tombstone first: wallet ids are deterministic (seed +
+            // network), so a delete-then-reimport of the same phrase reuses
+            // this id — clear any stale rejection from a prior removeWallet
+            // before anything below can race a private-key store for it.
+            walletStorage.clearTombstone(walletId)
+
             // Store the mnemonic keyed by the id the FFI just derived.
             walletStorage.storeMnemonic(walletId, mnemonic)
             mnemonicStored = true
@@ -765,7 +818,15 @@ class PlatformWalletManager(
                     for ((pubkeyHex, publicKeyData) in keysByPubkeyHex) {
                         val referencedElsewhere = database.publicKeyDao()
                             .countReferencesOutsideIdentities(publicKeyData, ownedIdentityIds) > 0
-                        if (!referencedElsewhere) add(pubkeyHex)
+                        // A sibling wallet (same mnemonic, non-mainnet DIP-9
+                        // path shared across Testnet/Devnet/Regtest) can
+                        // already own this alias through ITS durable owner
+                        // index while its own registration/add-key row is
+                        // still uncommitted — a committed-`public_keys`-row
+                        // check alone would miss that and delete the
+                        // sibling's key out from under it.
+                        val ownedElsewhere = isOwnedByAnotherWallet(pubkeyHex, walletId)
+                        if (!referencedElsewhere && !ownedElsewhere) add(pubkeyHex)
                     }
                 }
                 // ONE atomic DataStore commit; propagates on failure with
@@ -776,6 +837,13 @@ class PlatformWalletManager(
                 // the surviving wallet's own index / Room rows).
                 deletePrivateKeys(aliasesToDelete)
                 deleteOwnerIndex(walletId)
+                // Reject any store that was already in flight (e.g. an
+                // app-level identity-key preview/derive started before this
+                // deletion) and would otherwise complete AFTER this atomic
+                // commit, resurrecting this wallet's owner-index entry with
+                // fresh ciphertext. Cleared on the next createWallet for the
+                // same (deterministic, seed-derived) id — see there.
+                tombstoneWallet(walletId)
 
                 // Room cascade (explicit, matching Swift — the native
                 // remove fires no wallet-level persistence callback).

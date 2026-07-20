@@ -778,18 +778,17 @@ class PlatformWalletPersistenceHandlerTest {
             publicKeyData: ByteArray,
             identityIndex: Int,
             keyIndex: Int,
-        ): String? {
+        ): DerivedKeyStoreResult? {
             calls.add(Triple(walletId, identityIndex, keyIndex))
             lastPublicKey = publicKeyData
-            return id
+            val pubkeyHex = publicKeyData.toHex()
+            return id?.let { DerivedKeyStoreResult(it, wasNewlyCreated = pubkeyHex !in preExisting) }
         }
 
         override fun deleteStored(pubkeyHexes: Collection<String>) {
             if (failDeletions) throw IllegalStateException("simulated DataStore edit failure")
             deletedAliases.addAll(pubkeyHexes)
         }
-
-        override fun hasStored(pubkeyHex: String): Boolean = pubkeyHex in preExisting
     }
 
     /** Seed the wallet + identity rows a public-key row FKs onto. */

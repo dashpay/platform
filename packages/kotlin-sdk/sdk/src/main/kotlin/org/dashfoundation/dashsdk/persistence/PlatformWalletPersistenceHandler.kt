@@ -1011,17 +1011,18 @@ class PlatformWalletPersistenceHandler(
         val walletStillPersisted = buffers.containsKey(roundKey) ||
             runBlockingResult { database.walletDao().getByWalletId(walletId) != null }
         val deriver = privateKeyDeriver
-        // Whether the alias already exists BEFORE this (re-)derive: add-key
+        // deriveAndStore's own "did this alias already exist" check runs
+        // ATOMICALLY with the store (see DerivedKeyStoreResult) — no
+        // separate up-front hasStored() call, and so no window for a
+        // sibling wallet's concurrent store of the same alias to land
+        // between a check and this store and be mis-classified. add-key
         // flows store the scalar before Rust persistence begins, and
         // existing-key operations (disable_keys) re-emit breadcrumbs — an
         // overwrite of an already-valid scalar must never become a
-        // rollback-deletion candidate. On a failed check, assume it
-        // existed (never wrongly delete; at worst the wallet-deletion
-        // sweep still reaches it through the committed row).
-        val pubkeyHex = publicKeyData.toHex()
-        val existedBefore = deriver == null ||
-            runCatching { deriver.hasStored(pubkeyHex) }.getOrDefault(true)
-        val derivedKeychainId: String? =
+        // rollback-deletion candidate; a failed derive/store is treated as
+        // "not newly created" (never wrongly delete; at worst the
+        // wallet-deletion sweep still reaches it through the committed row).
+        val deriveResult: DerivedKeyStoreResult? =
             if (derivationIndicesIsSome && deriver != null && !readOnly && walletStillPersisted) {
                 runCatching {
                     deriver.deriveAndStore(
@@ -1037,12 +1038,13 @@ class PlatformWalletPersistenceHandler(
             } else {
                 null
             }
+        val derivedKeychainId = deriveResult?.identifier
         // While a round is open the row carrying this identifier is only
         // BUFFERED — record a NEWLY-CREATED alias so a rolled-back round
         // (or a wallet wipe racing the round) can still find and delete it.
-        if (derivedKeychainId != null && !existedBefore && buffers.containsKey(roundKey)) {
+        if (deriveResult != null && deriveResult.wasNewlyCreated && buffers.containsKey(roundKey)) {
             pendingRoundAliases.getOrPut(roundKey) { mutableSetOf() }
-                .add(pubkeyHex)
+                .add(publicKeyData.toHex())
         }
 
         stage(walletId) { db ->
@@ -2498,10 +2500,13 @@ class PlatformWalletPersistenceHandler(
 interface PrivateKeyDeriver {
     /**
      * Derive the 32-byte scalar for the identity key at
-     * ([identityIndex], [keyIndex]) on the wallet named by [walletId],
-     * store it under the key's public-key hex, and return the stored
-     * identifier (to record on the persisted row), or `null` if the key
-     * could not be derived/stored (leaving it watch-only).
+     * ([identityIndex], [keyIndex]) on the wallet named by [walletId] and
+     * store it under the key's public-key hex — ATOMICALLY with the
+     * "did this already exist" check ([DerivedKeyStoreResult.wasNewlyCreated]),
+     * so a sibling wallet's concurrent store of the same alias can't land
+     * between a separate check and this store and be mis-classified.
+     * Returns `null` if the key could not be derived/stored (leaving it
+     * watch-only).
      *
      * @param publicKeyData the compressed public-key bytes — used as the
      *   storage key so the signer can locate the scalar.
@@ -2511,7 +2516,7 @@ interface PrivateKeyDeriver {
         publicKeyData: ByteArray,
         identityIndex: Int,
         keyIndex: Int,
-    ): String?
+    ): DerivedKeyStoreResult?
 
     /**
      * Delete previously stored scalars by their public-key hex storage
@@ -2522,15 +2527,19 @@ interface PrivateKeyDeriver {
      * caller keeps the cleanup record alive until a deletion succeeds.
      */
     fun deleteStored(pubkeyHexes: Collection<String>)
-
-    /**
-     * Whether a scalar is already stored under [pubkeyHex]. Used to
-     * distinguish a round that CREATES an alias (rollback must delete it)
-     * from one that overwrites an already-valid scalar (rollback must
-     * leave it alone).
-     */
-    fun hasStored(pubkeyHex: String): Boolean
 }
+
+/**
+ * Outcome of [PrivateKeyDeriver.deriveAndStore].
+ *
+ * @param identifier the stored identifier (to record on the persisted row).
+ * @param wasNewlyCreated false if a scalar already existed under
+ *   [identifier]'s alias (under any owner) at the time of the atomic
+ *   check-and-store — distinguishes a round that CREATES an alias
+ *   (rollback must delete it) from one that confirms/overwrites an
+ *   already-valid scalar (rollback must leave it alone).
+ */
+data class DerivedKeyStoreResult(val identifier: String, val wasNewlyCreated: Boolean)
 
 // ── Free functions (unit-testable, no `this`) ─────────────────────────
 
