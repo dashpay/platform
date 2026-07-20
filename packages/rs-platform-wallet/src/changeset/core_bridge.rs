@@ -30,7 +30,7 @@ use std::sync::Arc;
 use dashcore::blockdata::transaction::{txout::TxOut, OutPoint};
 use dashcore::ScriptBuf;
 use key_wallet::account::AccountType;
-use key_wallet::managed_account::address_pool::{AddressPool, AddressPoolType};
+use key_wallet::managed_account::address_pool::{AddressPool, AddressPoolType, AddressState};
 use key_wallet::managed_account::transaction_record::{OutputRole, TransactionRecord};
 use key_wallet::transaction_checking::transaction_router::AccountTypeToCheck;
 use key_wallet::transaction_checking::{DerivedAddressInfo, TransactionContext};
@@ -393,7 +393,7 @@ fn collect_usage_deltas_from_accounts(
                     touched.insert(*owner_type);
                     if seen.insert((*owner_type, pool.pool_type, pool_info.index)) {
                         let mut info = pool_info.clone();
-                        info.used = true;
+                        info.state = AddressState::Used;
                         marked_used.push(DerivedAddressInfo {
                             account_type: *owner_type,
                             pool_type: pool.pool_type,
@@ -664,7 +664,7 @@ mod usage_delta_tests {
         assert_eq!(entry.account_type, bip44_account_0());
         assert_eq!(entry.pool_type, AddressPoolType::External);
         assert_eq!(entry.info.index, 0);
-        assert!(entry.info.used);
+        assert!(entry.info.is_used());
 
         let watermarks = highest
             .get(&bip44_account_0())
@@ -730,7 +730,7 @@ mod usage_delta_tests {
             .find(|d| d.info.address == receive_address)
             .expect("spent-input address must be in the marked-used delta");
         assert_eq!(entry.pool_type, AddressPoolType::External);
-        assert!(entry.info.used);
+        assert!(entry.info.is_used());
         // The foreign output must NOT resolve to any pool.
         assert!(
             marked.iter().all(|d| d.info.address != {

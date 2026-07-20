@@ -392,8 +392,11 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                     .address_pools()
                     .iter()
                     .fold((0u32, 0u32), |(used, total), pool| {
-                        let pool_used =
-                            pool.addresses.values().filter(|info| info.used).count() as u32;
+                        let pool_used = pool
+                            .addresses
+                            .values()
+                            .filter(|info| info.is_used())
+                            .count() as u32;
                         let pool_total = pool.addresses.len() as u32;
                         (used + pool_used, total + pool_total)
                     });
@@ -1117,7 +1120,7 @@ fn addr_info_snapshot(info: &AddressInfo) -> AccountAddressInfoSnapshot {
     AccountAddressInfoSnapshot {
         pubkey_hash,
         address_index: info.index,
-        is_used: info.used,
+        is_used: info.is_used(),
         address,
         public_key_bytes,
     }

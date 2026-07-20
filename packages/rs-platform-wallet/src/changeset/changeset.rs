@@ -2081,7 +2081,7 @@ mod tests {
         index: u32,
     ) -> key_wallet::transaction_checking::DerivedAddressInfo {
         use key_wallet::bip32::{ChildNumber, DerivationPath};
-        use key_wallet::managed_account::address_pool::{AddressInfo, PublicKeyType};
+        use key_wallet::managed_account::address_pool::{AddressInfo, AddressState, PublicKeyType};
 
         let pubkey =
             dashcore::PublicKey::from_slice(&TEST_PUBKEY_G).expect("generator point is valid");
@@ -2100,9 +2100,7 @@ mod tests {
                 public_key: Some(PublicKeyType::ECDSA(TEST_PUBKEY_G.to_vec())),
                 index,
                 path,
-                used: true,
-                generated_at: 0,
-                used_at: None,
+                state: AddressState::Used,
                 tx_count: 0,
                 total_received: 0,
                 total_sent: 0,

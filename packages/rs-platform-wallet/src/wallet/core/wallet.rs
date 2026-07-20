@@ -3,7 +3,6 @@
 use std::sync::Arc;
 
 use super::balance::WalletBalance;
-use super::reservations::OutpointReservations;
 
 use dashcore::Address as DashAddress;
 use tokio::sync::RwLock;
@@ -35,10 +34,6 @@ pub struct CoreWallet<B: TransactionBroadcaster + ?Sized> {
     pub(crate) broadcaster: Arc<B>,
     /// Lock-free balance for UI reads.
     balance: Arc<WalletBalance>,
-    /// Outpoints currently reserved by an in-flight `send_to_addresses`
-    /// call on this handle. Closes the same-UTXO concurrent-selection
-    /// race — see [`super::reservations`].
-    pub(crate) reservations: OutpointReservations,
 }
 
 impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
@@ -55,7 +50,6 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
             wallet_id,
             broadcaster,
             balance,
-            reservations: OutpointReservations::new(),
         }
     }
 
@@ -313,7 +307,6 @@ impl<B: TransactionBroadcaster + ?Sized> Clone for CoreWallet<B> {
             wallet_id: self.wallet_id,
             broadcaster: Arc::clone(&self.broadcaster),
             balance: Arc::clone(&self.balance),
-            reservations: self.reservations.clone(),
         }
     }
 }

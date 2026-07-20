@@ -23,7 +23,12 @@ use dpp::util::hash::ripemd160_sha256;
 use dpp::version::PlatformVersion;
 use key_wallet::account::account_type::StandardAccountType;
 use key_wallet::gap_limit::DIP17_GAP_LIMIT;
+use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+use key_wallet::signer::Signer;
 use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+use key_wallet::wallet::managed_wallet_info::coin_selection::SelectionStrategy;
+use key_wallet::wallet::managed_wallet_info::transaction_builder::TransactionBuilder;
+use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 use key_wallet::wallet::Wallet;
 use key_wallet::{AccountType, ChildNumber, Network};
 use parking_lot::Mutex as SyncMutex;
@@ -988,9 +993,8 @@ pub const CORE_TX_FEE_RESERVE: u64 = 10_000;
 /// actual broadcast path. Callers are responsible for their own
 /// pre-flight checks (under-funded balance, lock serialisation) and
 /// for selecting the appropriate `duffs` amount — this helper does
-/// nothing more than translate the inputs into a
-/// [`CoreWallet::send_to_addresses`] call and surface the resulting
-/// `Txid`.
+/// nothing more than translate the inputs into the split
+/// build/sign/broadcast path and surface the resulting `Txid`.
 pub(super) async fn core_send(
     wallet: &Arc<PlatformWallet>,
     seed: &[u8; 64],
@@ -999,12 +1003,108 @@ pub(super) async fn core_send(
 ) -> FrameworkResult<dashcore::Txid> {
     let outputs = vec![(target.clone(), duffs)];
     let signer = super::signer::SeedBackedCoreSigner::new(*seed, wallet.core().network());
-    let tx = wallet
-        .core()
-        .send_to_addresses(StandardAccountType::BIP44Account, 0, outputs, &signer)
-        .await
-        .map_err(wallet_err)?;
+    let tx = core_send_from_account(
+        wallet,
+        StandardAccountType::BIP44Account,
+        0,
+        outputs,
+        &signer,
+    )
+    .await
+    .map_err(wallet_err)?;
     Ok(tx.txid())
+}
+
+/// Build, sign, and broadcast a Core transaction from a standard account.
+pub(crate) async fn core_send_from_account<S: Signer>(
+    wallet: &Arc<PlatformWallet>,
+    account_type: StandardAccountType,
+    account_index: u32,
+    outputs: Vec<(dashcore::Address, u64)>,
+    signer: &S,
+) -> Result<dashcore::Transaction, PlatformWalletError> {
+    if outputs.is_empty() {
+        return Err(PlatformWalletError::TransactionBuild(
+            "No outputs specified".to_string(),
+        ));
+    }
+
+    let tx = {
+        let mut wm = wallet.wallet_manager().write().await;
+        let wallet_id = wallet.wallet_id();
+        let (key_wallet, info) = wm.get_wallet_and_info_mut(&wallet_id).ok_or_else(|| {
+            PlatformWalletError::WalletNotFound(format!(
+                "wallet {} missing from manager during Core transaction build",
+                hex::encode(wallet_id)
+            ))
+        })?;
+        let current_height = info.core_wallet.synced_height();
+        let (managed_account, account) = match account_type {
+            StandardAccountType::BIP44Account => (
+                info.core_wallet
+                    .accounts
+                    .standard_bip44_accounts
+                    .get_mut(&account_index),
+                key_wallet
+                    .accounts
+                    .standard_bip44_accounts
+                    .get(&account_index),
+            ),
+            StandardAccountType::BIP32Account => (
+                info.core_wallet
+                    .accounts
+                    .standard_bip32_accounts
+                    .get_mut(&account_index),
+                key_wallet
+                    .accounts
+                    .standard_bip32_accounts
+                    .get(&account_index),
+            ),
+        };
+        let managed_account = managed_account.ok_or_else(|| {
+            PlatformWalletError::TransactionBuild(format!(
+                "{account_type:?} managed account {account_index} not found"
+            ))
+        })?;
+        let account = account.ok_or_else(|| {
+            PlatformWalletError::TransactionBuild(format!(
+                "{account_type:?} account {account_index} not found in wallet"
+            ))
+        })?;
+
+        let mut builder = TransactionBuilder::new()
+            .set_current_height(current_height)
+            .set_selection_strategy(SelectionStrategy::LargestFirst)
+            .set_funding(managed_account, account);
+        for (address, amount) in &outputs {
+            builder = builder.add_output(address, *amount);
+        }
+        let (tx, _fee) = builder
+            .build_signed(signer, |address| {
+                managed_account.address_derivation_path(&address)
+            })
+            .await
+            .map_err(|error| {
+                let context = error.to_string();
+                if context.contains("Insufficient funds") || context.contains("No UTXOs available")
+                {
+                    PlatformWalletError::NoSpendableInputs {
+                        account_type,
+                        account_index,
+                        context,
+                    }
+                } else {
+                    PlatformWalletError::TransactionBuild(context)
+                }
+            })?;
+        tx
+    };
+
+    wallet
+        .core()
+        .broadcast_transaction_releasing_reservation(account_type, account_index, &tx)
+        .await?;
+    Ok(tx)
 }
 
 /// Rebuild a fresh, **signable** [`key_wallet::Wallet`] from the bank's

@@ -50,14 +50,15 @@ members = [
 ]
 
 [workspace.dependencies]
-dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "19690d31b37ba12adc00f6bf2f8413d97e2b669d" }
-dash-network-seeds = { git = "https://github.com/dashpay/rust-dashcore", rev = "19690d31b37ba12adc00f6bf2f8413d97e2b669d" }
-dash-spv = { git = "https://github.com/dashpay/rust-dashcore", rev = "19690d31b37ba12adc00f6bf2f8413d97e2b669d" }
-key-wallet = { git = "https://github.com/dashpay/rust-dashcore", rev = "19690d31b37ba12adc00f6bf2f8413d97e2b669d" }
-key-wallet-ffi = { git = "https://github.com/dashpay/rust-dashcore", rev = "19690d31b37ba12adc00f6bf2f8413d97e2b669d" }
-key-wallet-manager = { git = "https://github.com/dashpay/rust-dashcore", rev = "19690d31b37ba12adc00f6bf2f8413d97e2b669d" }
-dash-network = { git = "https://github.com/dashpay/rust-dashcore", rev = "19690d31b37ba12adc00f6bf2f8413d97e2b669d" }
-dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", rev = "19690d31b37ba12adc00f6bf2f8413d97e2b669d" }
+# TODO(pin): tracks dashpay/rust-dashcore#818 (open) - key-wallet address-reservation
+dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "6bb0c5f24175fb8f9c1a4b9919836de7fb8a8f8e" }
+dash-network-seeds = { git = "https://github.com/dashpay/rust-dashcore", rev = "6bb0c5f24175fb8f9c1a4b9919836de7fb8a8f8e" }
+dash-spv = { git = "https://github.com/dashpay/rust-dashcore", rev = "6bb0c5f24175fb8f9c1a4b9919836de7fb8a8f8e" }
+key-wallet = { git = "https://github.com/dashpay/rust-dashcore", rev = "6bb0c5f24175fb8f9c1a4b9919836de7fb8a8f8e" }
+key-wallet-ffi = { git = "https://github.com/dashpay/rust-dashcore", rev = "6bb0c5f24175fb8f9c1a4b9919836de7fb8a8f8e" }
+key-wallet-manager = { git = "https://github.com/dashpay/rust-dashcore", rev = "6bb0c5f24175fb8f9c1a4b9919836de7fb8a8f8e" }
+dash-network = { git = "https://github.com/dashpay/rust-dashcore", rev = "6bb0c5f24175fb8f9c1a4b9919836de7fb8a8f8e" }
+dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", rev = "6bb0c5f24175fb8f9c1a4b9919836de7fb8a8f8e" }
 
 tokio-metrics = "0.5"
 

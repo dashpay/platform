@@ -39,9 +39,9 @@
 //!   an empty registry; this pins that no half-finalised lock survives.
 //! - Pairwise-distinct asset-lock txids and pairwise-disjoint funding
 //!   inputs (no manager collision, no UTXO double-spend) are enforced
-//!   upstream by `OutpointReservations`; a violation fails a build at
-//!   coin-selection/broadcast, so it surfaces as a task `Err` in Step 4
-//!   (the consumed entries can't be re-inspected post-success).
+//!   by key-wallet's funding-account reservation set; a violation fails
+//!   a build at coin-selection/broadcast, so it surfaces as a task `Err`
+//!   in Step 4 (the consumed entries can't be re-inspected post-success).
 //!
 //! Critical-path interactions this guard also covers:
 //! - Found-008 (`LockNotifyHandler` / `wait_for_proof` missed-wakeup) is
@@ -83,8 +83,8 @@
 //!
 //! QA-011: AL-001 requires N+1 pre-split UTXOs on the test wallet's
 //! BIP-44 account 0 before the concurrent fan-out in step 3. Without
-//! the split, all N tasks compete for a single UTXO; with PR #3585's
-//! `OutpointReservations` in place, N-1 tasks fail fast with
+//! the split, all N tasks compete for a single UTXO; with key-wallet's
+//! UTXO reservations, N-1 tasks fail fast with
 //! `NoSpendableInputs` (formerly `Coin selection error: No UTXOs available
 //! for selection` before the variant split). Step 1b self-sends the
 //! entire Core balance to N+1 fresh receive addresses so coin selection
@@ -104,6 +104,7 @@ use platform_wallet::wallet::asset_lock::tracked::AssetLockStatus;
 use platform_wallet::AssetLockFunding;
 use platform_wallet::PlatformWalletError;
 
+use crate::framework::bank::core_send_from_account;
 use crate::framework::prelude::*;
 use crate::framework::signer::SeedBackedCoreSigner;
 use crate::framework::wait::{
@@ -195,18 +196,15 @@ async fn al_001_concurrent_asset_lock_builds() {
         s.test_wallet.seed_bytes(),
         s.test_wallet.platform_wallet().core().network(),
     );
-    let split_tx = s
-        .test_wallet
-        .platform_wallet()
-        .core()
-        .send_to_addresses(
-            StandardAccountType::BIP44Account,
-            0,
-            split_outputs,
-            &split_signer,
-        )
-        .await
-        .expect("UTXO pre-split self-send failed");
+    let split_tx = core_send_from_account(
+        s.test_wallet.platform_wallet(),
+        StandardAccountType::BIP44Account,
+        0,
+        split_outputs,
+        &split_signer,
+    )
+    .await
+    .expect("UTXO pre-split self-send failed");
     tracing::info!(
         target: "platform_wallet::e2e::cases::al_001",
         txid = %split_tx.txid(),
@@ -453,9 +451,9 @@ async fn al_001_concurrent_asset_lock_builds() {
     // The concurrency invariants AL-001 guards — pairwise-distinct
     // asset-lock txids and pairwise-disjoint funding inputs (no manager
     // collision, no UTXO double-spend) — are enforced upstream by
-    // `OutpointReservations`: a violation makes a build fail at
-    // coin-selection/broadcast, surfacing as a task `Err` that Step 4
-    // fails on. `top_up_identity_with_funding` returns only the new
+    // key-wallet's funding-account reservation set: a violation makes a
+    // build fail at coin-selection/broadcast, surfacing as a task `Err`
+    // that Step 4 fails on. `top_up_identity_with_funding` returns only the new
     // balance (no txid) and the consumed entries are gone, so those
     // properties can't be re-derived from the registry post-success;
     // they are proven transitively by every task returning `Ok`

@@ -28,6 +28,7 @@ use dashcore::Address as DashAddress;
 use key_wallet::account::account_type::StandardAccountType;
 use platform_wallet::PlatformWalletError;
 
+use crate::framework::bank::core_send_from_account;
 use crate::framework::prelude::*;
 use crate::framework::signer::SeedBackedCoreSigner;
 use crate::framework::wait::wait_for_core_balance;
@@ -159,7 +160,7 @@ async fn cr_004_legacy_bip32_utxo_update_after_spend() {
     );
 
     // Step 5: spend most of the BIP-32 balance via
-    // `CoreWallet::send_to_addresses(StandardAccountType::BIP32Account, 0, ...)`,
+    // `core_send_from_account(StandardAccountType::BIP32Account, 0, ...)`,
     // leaving `SEND_ALL_HEADROOM` unspent so a real, above-dust change
     // UTXO survives. The upstream gate `if change_amount > 546`
     // (`rust-dashcore/.../managed_wallet_info/transaction_builder.rs:294`)
@@ -180,20 +181,15 @@ async fn cr_004_legacy_bip32_utxo_update_after_spend() {
         s.test_wallet.seed_bytes(),
         s.test_wallet.platform_wallet().core().network(),
     );
-    let tx = s
-        .test_wallet
-        .platform_wallet()
-        .core()
-        .send_to_addresses(
-            StandardAccountType::BIP32Account,
-            0,
-            vec![(sink.clone(), send_amount)],
-            &core_signer,
-        )
-        .await
-        .expect(
-            "send_to_addresses(BIP32Account, 0, send_amount) failed — broadcast path is broken",
-        );
+    let tx = core_send_from_account(
+        s.test_wallet.platform_wallet(),
+        StandardAccountType::BIP32Account,
+        0,
+        vec![(sink.clone(), send_amount)],
+        &core_signer,
+    )
+    .await
+    .expect("Core BIP32 build/sign/broadcast failed — broadcast path is broken");
     tracing::info!(
         target: "platform_wallet::e2e::cases::cr_004",
         txid = %tx.txid(),
@@ -205,7 +201,7 @@ async fn cr_004_legacy_bip32_utxo_update_after_spend() {
     // happened on `standard_bip32_accounts[0]`. The #845 contract:
     //
     // - The mempool-context `check_core_transaction` call inside
-    //   `send_to_addresses` (see `wallet/core/broadcast.rs:252`) marks
+    //   the broadcast helper marks
     //   both consumed BIP-32 inputs spent AND registers the above-dust
     //   change output as a fresh spendable UTXO on the BIP-32 account.
     // - The two funding UTXOs are spent and exactly one change UTXO is
@@ -238,17 +234,14 @@ async fn cr_004_legacy_bip32_utxo_update_after_spend() {
     // change was orphaned (the #845 regression: change not routed back);
     // a wrong-input selection would mean a consumed input was not marked
     // spent.
-    let respend = s
-        .test_wallet
-        .platform_wallet()
-        .core()
-        .send_to_addresses(
-            StandardAccountType::BIP32Account,
-            0,
-            vec![(sink.clone(), CHANGE_RESPEND_AMOUNT)],
-            &core_signer,
-        )
-        .await;
+    let respend = core_send_from_account(
+        s.test_wallet.platform_wallet(),
+        StandardAccountType::BIP32Account,
+        0,
+        vec![(sink.clone(), CHANGE_RESPEND_AMOUNT)],
+        &core_signer,
+    )
+    .await;
     match respend {
         Ok(tx) => {
             tracing::info!(
@@ -348,7 +341,7 @@ async fn next_two_receive_addresses_for_bip32_account(
 /// post-broadcast assertion target (BIP-32 must drop to 0 after a
 /// "send all"). Reads through the wallet manager write lock so the
 /// snapshot is consistent with the synced height used inside
-/// `send_to_addresses`.
+/// the split Core transaction builder/broadcast path.
 async fn utxo_counts(
     test_wallet: &crate::framework::wallet_factory::TestWallet,
     account_index: u32,

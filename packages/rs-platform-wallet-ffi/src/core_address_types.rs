@@ -76,7 +76,7 @@ pub struct CoreAddressEntryFFI {
     pub pool_type_tag: u8,
     /// Derivation index within this pool.
     pub address_index: u32,
-    /// `AddressInfo.used` at emit time.
+    /// Whether `AddressInfo.state` was `Used` at emit time.
     pub is_used: bool,
     /// Cached balance in duffs from `AddressInfo.balance`.
     pub balance: u64,
