@@ -218,17 +218,23 @@ class PlatformWalletPersistenceHandler(
      * pubkey persisted concurrently — its identifier points at the same
      * `privkey.*` entry) are RETAINED and leave tracking: they are
      * legitimately discoverable through that committed row, and deleting
-     * them would break its signing. The batch delete is one atomic
+     * them would break its signing. Aliases a SIBLING wallet's durable
+     * owner index already claims (via [WalletStorage.storeIfAbsent], no
+     * committed row needed) are retained for the same reason — mirrors
+     * the cross-wallet check `PlatformWalletManager.removeWallet` runs
+     * before its own alias delete. The batch delete is one atomic
      * DataStore edit, so a failure deletes nothing. Caller must hold
      * [callbackExclusion].
      */
-    private fun scrubAliases(hexes: Set<String>): MutableSet<String> {
+    private fun scrubAliases(hexes: Set<String>, walletId: ByteArray): MutableSet<String> {
         if (hexes.isEmpty()) return mutableSetOf()
         val toDelete = hexes.filterTo(mutableSetOf()) { hex ->
-            runBlockingResult {
+            val referencedElsewhere = runBlockingResult {
                 database.publicKeyDao().getByPublicKeyData(hex.hexToByteArray())
-                    .none { it.privateKeyKeychainIdentifier != null }
+                    .any { it.privateKeyKeychainIdentifier != null }
             }
+            val ownedElsewhere = privateKeyDeriver?.isOwnedByAnotherWallet(hex, walletId) == true
+            !referencedElsewhere && !ownedElsewhere
         }
         if (toDelete.isEmpty()) return mutableSetOf()
         return try {
@@ -247,7 +253,7 @@ class PlatformWalletPersistenceHandler(
     /** Scrub the wallet's round-created aliases; keep failures as orphans. */
     private fun scrubPendingAliases(walletIdHex: String) {
         val pending = pendingRoundAliases.remove(walletIdHex) ?: return
-        val remaining = scrubAliases(pending)
+        val remaining = scrubAliases(pending, walletIdHex.hexToByteArray())
         if (remaining.isNotEmpty()) {
             orphanedAliases.getOrPut(walletIdHex) { mutableSetOf() }.addAll(remaining)
         }
@@ -256,7 +262,7 @@ class PlatformWalletPersistenceHandler(
     /** Retry any earlier failed cleanup for this wallet. */
     private fun retryOrphanedAliases(walletIdHex: String) {
         val orphans = orphanedAliases.remove(walletIdHex) ?: return
-        val remaining = scrubAliases(orphans)
+        val remaining = scrubAliases(orphans, walletIdHex.hexToByteArray())
         if (remaining.isNotEmpty()) {
             orphanedAliases[walletIdHex] = remaining
         }
@@ -2526,6 +2532,17 @@ interface PrivateKeyDeriver {
      * caller keeps the cleanup record alive until a deletion succeeds.
      */
     fun deleteStored(pubkeyHexes: Collection<String>)
+
+    /**
+     * True if any wallet OTHER than [excludingWalletId] durably claims
+     * [pubkeyHex] in its owner index — used before [deleteStored] deletes
+     * a round-created alias with no committed `public_keys` row: a
+     * sibling wallet can have already called [WalletStorage.storeIfAbsent]
+     * and adopted the same (shared, deterministic) alias while its own
+     * row is still uncommitted, and [deleteStored] would otherwise delete
+     * the ciphertext out from under it.
+     */
+    fun isOwnedByAnotherWallet(pubkeyHex: String, excludingWalletId: ByteArray): Boolean
 }
 
 /**

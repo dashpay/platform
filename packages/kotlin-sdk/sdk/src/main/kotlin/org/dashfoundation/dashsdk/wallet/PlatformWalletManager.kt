@@ -646,6 +646,19 @@ class PlatformWalletManager(
                 database.walletDao().updateName(walletId, label, System.currentTimeMillis())
             }
         } catch (t: Throwable) {
+            // Re-arm the tombstone this try block cleared up front: every
+            // path below either fully rolls back this wallet (native
+            // unregister + Room cascade) or leaves it in an ambiguous
+            // half-created state, so by the time this catch block returns
+            // the wallet is gone or unusable either way. Without this, a
+            // stale in-flight identity-key store (started against a PRIOR
+            // instance of this same deterministic walletId, suspended
+            // before its own storePrivateKey call) could resume after this
+            // failed re-create and resurrect the walletId's owner-index
+            // entry with fresh ciphertext for a wallet that once again
+            // doesn't exist. Best-effort: must not shadow the real failure.
+            runCatching { walletStorage.withPrivateKeyExclusion { tombstoneWallet(walletId) } }
+
             // Full rollback, not just the wrapper's Arc clone: the wallet is
             // already REGISTERED in the native manager and its persistence
             // callbacks may have written Room rows. The native remove only

@@ -789,6 +789,12 @@ class PlatformWalletPersistenceHandlerTest {
             if (failDeletions) throw IllegalStateException("simulated DataStore edit failure")
             deletedAliases.addAll(pubkeyHexes)
         }
+
+        /** Aliases a SIBLING wallet's durable owner index claims. */
+        val ownedByAnotherWallet = mutableSetOf<String>()
+
+        override fun isOwnedByAnotherWallet(pubkeyHex: String, excludingWalletId: ByteArray): Boolean =
+            pubkeyHex in ownedByAnotherWallet
     }
 
     /** Seed the wallet + identity rows a public-key row FKs onto. */

@@ -98,6 +98,13 @@ class IdentityKeyPrivateKeyDeriver(
         runBlocking { walletStorage.deletePrivateKeys(pubkeyHexes) }
     }
 
+    override fun isOwnedByAnotherWallet(pubkeyHex: String, excludingWalletId: ByteArray): Boolean =
+        runBlocking {
+            walletStorage.withPrivateKeyExclusion {
+                isOwnedByAnotherWallet(pubkeyHex, excludingWalletId)
+            }
+        }
+
     private companion object {
         /** Matches `WalletStorage`'s private `PRIVKEY_PREFIX`. */
         const val PRIVKEY_IDENTIFIER_PREFIX = "privkey."
