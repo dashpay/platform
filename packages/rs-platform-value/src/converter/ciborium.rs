@@ -90,8 +90,12 @@ impl TryInto<CborValue> for Value {
 
     fn try_into(self) -> Result<CborValue, Self::Error> {
         Ok(match self {
-            Value::U128(i) => CborValue::Integer((i as u64).into()),
-            Value::I128(i) => CborValue::Integer((i as i64).into()),
+            Value::U128(i) => {
+                CborValue::Integer(Integer::try_from(i).map_err(|_| Error::IntegerSizeError)?)
+            }
+            Value::I128(i) => {
+                CborValue::Integer(Integer::try_from(i).map_err(|_| Error::IntegerSizeError)?)
+            }
             Value::U64(i) => CborValue::Integer(i.into()),
             Value::I64(i) => CborValue::Integer(i.into()),
             Value::U32(i) => CborValue::Integer(i.into()),
@@ -362,23 +366,77 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
-    // U128 / I128 narrowing in TryInto<CborValue>
+    // U128 / I128 conversion in TryInto<CborValue>
     // -----------------------------------------------------------------------
 
     #[test]
-    fn u128_narrowed_to_u64_in_cbor() {
-        // U128 is cast to u64 when converting to CborValue::Integer
+    fn u128_in_native_range_converts_to_cbor() {
         let val = Value::U128(42);
         let cbor: CborValue = val.try_into().unwrap();
         assert_eq!(cbor, CborValue::Integer(42u64.into()));
     }
 
     #[test]
-    fn i128_narrowed_to_i64_in_cbor() {
-        // I128 is cast to i64 when converting to CborValue::Integer
+    fn i128_in_native_range_converts_to_cbor() {
         let val = Value::I128(-99);
         let cbor: CborValue = val.try_into().unwrap();
         assert_eq!(cbor, CborValue::Integer((-99i64).into()));
+    }
+
+    #[test]
+    fn u128_rejects_values_outside_the_native_cbor_integer_range() {
+        let max_native = Value::U128(u64::MAX as u128);
+        let cbor: CborValue = max_native.try_into().unwrap();
+        assert_eq!(cbor, CborValue::Integer(u64::MAX.into()));
+
+        for value in [u64::MAX as u128 + 1, u128::MAX] {
+            let result: Result<CborValue, Error> = Value::U128(value).try_into();
+            assert_eq!(result.unwrap_err(), Error::IntegerSizeError);
+        }
+    }
+
+    #[test]
+    fn i128_preserves_the_full_native_cbor_integer_range() {
+        const MIN_NATIVE_CBOR_INTEGER: i128 = -(u64::MAX as i128) - 1;
+
+        for value in [
+            MIN_NATIVE_CBOR_INTEGER,
+            i64::MIN as i128,
+            i64::MAX as i128,
+            u64::MAX as i128,
+        ] {
+            let cbor: CborValue = Value::I128(value).try_into().unwrap();
+            let CborValue::Integer(integer) = cbor else {
+                panic!("expected CBOR integer");
+            };
+            assert_eq!(i128::from(integer), value);
+        }
+    }
+
+    #[test]
+    fn i128_rejects_values_outside_the_native_cbor_integer_range() {
+        const MIN_NATIVE_CBOR_INTEGER: i128 = -(u64::MAX as i128) - 1;
+
+        for value in [
+            MIN_NATIVE_CBOR_INTEGER - 1,
+            u64::MAX as i128 + 1,
+            i128::MIN,
+            i128::MAX,
+        ] {
+            let result: Result<CborValue, Error> = Value::I128(value).try_into();
+            assert_eq!(result.unwrap_err(), Error::IntegerSizeError);
+        }
+    }
+
+    #[test]
+    fn nested_out_of_range_integer_fails_the_entire_conversion() {
+        let value = Value::Array(vec![Value::Map(vec![(
+            Value::Text("amount".to_string()),
+            Value::U128(u64::MAX as u128 + 1),
+        )])]);
+
+        let result: Result<CborValue, Error> = value.try_into();
+        assert_eq!(result.unwrap_err(), Error::IntegerSizeError);
     }
 
     // -----------------------------------------------------------------------
