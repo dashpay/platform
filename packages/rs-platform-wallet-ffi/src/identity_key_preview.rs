@@ -89,8 +89,10 @@ use crate::handle::*;
 /// Without the CRITICAL auth key (keyId 1) the identity cannot mint /
 /// burn / freeze tokens; without the TRANSFER key (keyId 3) credit
 /// transfers and withdrawals are rejected on-chain with "no transfer
-/// public key". The role→keyId mapping lives with the registration
-/// path (`role_for_registration_key_id`), not on the derived row.
+/// public key". This preview row carries only the derived keypair — the
+/// DPP role→keyId mapping lives with each host's registration policy (the
+/// Kotlin `RegistrationKeys` table / the Swift create-identity flow), which
+/// stamps the role onto the registration wire rows.
 pub const IDENTITY_REGISTRATION_KEY_SET_COUNT: u32 = 4;
 use crate::identity_keys_from_mnemonic::{resolve_master_from_resolver, zeroize_and_free_row};
 use crate::types::Network;
@@ -267,12 +269,11 @@ pub unsafe extern "C" fn platform_wallet_preview_identity_registration_keys(
 /// keypair a freshly-created identity is built from.
 ///
 /// The rows come back in keyId order. The **per-key DPP role** (purpose
-/// / security level) is NOT encoded on the row — it is a deterministic,
-/// positional function of the keyId that the registration path applies
-/// (see `role_for_registration_key_id` in the JNI / the canonical table
-/// in `identity_derive_and_persist.rs`). Every row derives an
-/// ECDSA_SECP256K1 keypair; the caller stamps the purpose / security
-/// level by keyId at registration time.
+/// / security level) is NOT encoded on the row — every row derives an
+/// ECDSA_SECP256K1 keypair, and the host's registration policy stamps the
+/// purpose / security level (and any contract bounds) by keyId when it builds
+/// the registration wire rows (the Kotlin `RegistrationKeys` table / the Swift
+/// create-identity flow).
 ///
 /// `count_or_neg1 < 0` derives the canonical default set
 /// ([`IDENTITY_REGISTRATION_KEY_SET_COUNT`] = 4: MASTER auth, CRITICAL
