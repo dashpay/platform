@@ -16,6 +16,15 @@ mod property_names {
 }
 
 #[derive(Debug, Clone, Default, Encode, Decode, PartialEq, Display)]
+// `json_safe_fields` auto-injects:
+// - `json_safe_u64` on `amount: u64` (JS-safe stringification when large)
+// - `json_safe_option_encrypted_note` on `shared_encrypted_note` and
+//   `private_encrypted_note` — both are `Option<(u32, u32, Vec<u8>)>` via
+//   the `SharedEncryptedNote` / `PrivateEncryptedNote` aliases registered
+//   in the macro's `ENCRYPTED_NOTE_ALIASES` list. Wire shape: 3-element
+//   array `[u32, u32, "<base64>"]` in JSON HR; raw bytes for the third
+//   element in non-HR.
+#[cfg_attr(feature = "json-conversion", crate::serialization::json_safe_fields)]
 #[cfg_attr(
     feature = "serde-conversion",
     derive(Serialize, Deserialize),

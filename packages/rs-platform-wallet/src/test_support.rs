@@ -9,12 +9,14 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use dashcore::hashes::Hash;
 use dashcore::secp256k1::{ecdsa, Message, PublicKey, Secp256k1};
+use dashcore::BlockHash;
 use dashcore::{Network, Transaction, Txid};
 use key_wallet::account::account_type::StandardAccountType;
 use key_wallet::signer::{Signer, SignerMethod};
 use key_wallet::test_utils::TestWalletContext;
-use key_wallet::transaction_checking::TransactionContext;
+use key_wallet::transaction_checking::{BlockInfo, TransactionContext};
 use key_wallet::{DerivationPath, Wallet};
 use key_wallet_manager::WalletManager;
 use tokio::sync::RwLock;
@@ -52,6 +54,17 @@ impl TransactionBroadcaster for RejectFirstBroadcaster {
     }
 }
 
+/// Broadcaster that always succeeds, for flows that must run past the
+/// broadcast step (e.g. the broadcast half of the funded asset-lock flow).
+pub(crate) struct AlwaysOkBroadcaster;
+
+#[async_trait]
+impl TransactionBroadcaster for AlwaysOkBroadcaster {
+    async fn broadcast(&self, transaction: &Transaction) -> Result<Txid, BroadcastError> {
+        Ok(transaction.txid())
+    }
+}
+
 /// Broadcaster that always fails with a definitive pre-send rejection.
 pub(crate) struct AlwaysRejectedBroadcaster;
 
@@ -80,6 +93,7 @@ impl TransactionBroadcaster for AlwaysMaybeSentBroadcaster {
 
 /// Soft signer that derives keys straight from a test wallet's seed. Stands
 /// in for the FFI keychain-backed signer used in production.
+#[derive(Clone)]
 pub(crate) struct WalletSigner {
     wallet: Wallet,
 }
@@ -132,6 +146,21 @@ pub(crate) async fn funded_wallet_manager(
     Arc<WalletBalance>,
     WalletSigner,
 ) {
+    funded_wallet_manager_with_outputs(account_type, &[10_000_000]).await
+}
+
+/// Like [`funded_wallet_manager`] but with caller-chosen funding outputs —
+/// multiple outputs yield multiple spendable UTXOs, letting tests run
+/// concurrent asset-lock builds that each need their own input.
+pub(crate) async fn funded_wallet_manager_with_outputs(
+    account_type: StandardAccountType,
+    outputs: &[u64],
+) -> (
+    Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+    WalletId,
+    Arc<WalletBalance>,
+    WalletSigner,
+) {
     let mut ctx = TestWalletContext::new_random();
 
     // `new_random()` already derives a BIP44 receive address; only the
@@ -154,9 +183,20 @@ pub(crate) async fn funded_wallet_manager(
         }
     };
 
-    let funding_tx = Transaction::dummy(&receive_address, 0..1, &[10_000_000]);
+    let funding_tx = Transaction::dummy(&receive_address, 0..1, outputs);
+    // Chain-locked funding, not `Mempool`: asset-lock builders only
+    // select final (confirmed / InstantSend-locked) inputs since
+    // rust-dashcore#836, so a mempool-funded fixture leaves the
+    // asset-lock tests with no eligible UTXO.
     let result = ctx
-        .check_transaction(&funding_tx, TransactionContext::Mempool)
+        .check_transaction(
+            &funding_tx,
+            TransactionContext::InChainLockedBlock(BlockInfo::new(
+                1,
+                BlockHash::all_zeros(),
+                1_700_000_000,
+            )),
+        )
         .await;
     assert!(
         result.is_relevant,

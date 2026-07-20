@@ -1,5 +1,6 @@
 use crate::data_contract::conversion::cbor::DataContractCborConversionMethodsV0;
 use crate::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
+use crate::data_contract::serialized_version::DataContractInSerializationFormat;
 use crate::util::cbor_value::CborCanonicalMap;
 
 use crate::data_contract::DataContractV1;
@@ -7,6 +8,7 @@ use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use ciborium::Value as CborValue;
 use platform_value::{Identifier, Value};
+use platform_version::TryFromPlatformVersioned;
 use std::convert::TryFrom;
 
 impl DataContractCborConversionMethodsV0 for DataContractV1 {
@@ -37,11 +39,17 @@ impl DataContractCborConversionMethodsV0 for DataContractV1 {
         let data_contract_value: Value =
             Value::try_from(data_contract_cbor_value).map_err(ProtocolError::ValueError)?;
 
-        Self::from_value(data_contract_value, full_validation, platform_version)
+        if full_validation {
+            Self::from_value(data_contract_value, true, platform_version)
+        } else {
+            platform_value::from_value(data_contract_value).map_err(ProtocolError::ValueError)
+        }
     }
 
     fn to_cbor(&self, platform_version: &PlatformVersion) -> Result<Vec<u8>, ProtocolError> {
-        let value = self.to_value(platform_version)?;
+        let format =
+            DataContractInSerializationFormat::try_from_platform_versioned(self, platform_version)?;
+        let value = platform_value::to_value(format).map_err(ProtocolError::ValueError)?;
 
         let mut buf: Vec<u8> = Vec::new();
 

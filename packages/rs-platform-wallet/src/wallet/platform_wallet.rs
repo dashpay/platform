@@ -92,16 +92,19 @@ pub struct PlatformWallet {
     /// Sync / spend operations source the shared
     /// commitment-tree store from
     /// [`NetworkShieldedCoordinator`] (one SQLite handle per
-    /// network) rather than per-wallet, so all this slot needs
-    /// to hold is the spend-authority keysets — the
-    /// `SpendAuthorizingKey` lives here, the viewing-key half
-    /// is mirrored on the coordinator's account registry.
+    /// network) rather than per-wallet, so all this slot holds
+    /// is the per-account viewing-grade material (FVK / IVK /
+    /// OVK / default address), mirrored on the coordinator's
+    /// account registry. No `SpendAuthorizingKey` is resident:
+    /// spend operations re-derive the full `OrchardKeySet` from
+    /// the caller-supplied wallet seed for the duration of the
+    /// spend call only, then drop it.
     ///
     /// [`bind_shielded`]: Self::bind_shielded
     /// [`NetworkShieldedCoordinator`]: crate::wallet::shielded::NetworkShieldedCoordinator
     #[cfg(feature = "shielded")]
     pub(crate) shielded_keys:
-        Arc<RwLock<Option<std::collections::BTreeMap<u32, super::shielded::OrchardKeySet>>>>,
+        Arc<RwLock<Option<std::collections::BTreeMap<u32, super::shielded::AccountViewingKeys>>>>,
     /// Per-wallet single-flight guard for shield-class operations
     /// (Type 15). Two concurrent `shield` calls on one wallet would
     /// each fetch the same address nonce and build with `nonce + 1`, so
@@ -472,14 +475,19 @@ impl PlatformWallet {
     ///
     /// Derives ZIP-32 Orchard keys for every entry of `accounts`
     /// from `seed` (a 32-252 byte BIP-39 seed; see
-    /// [`SpendingKey::from_zip32_seed`]), opens or creates the
-    /// per-network commitment tree at `db_path`, and stores the
-    /// resulting multi-account [`ShieldedWallet`] on this handle.
-    /// The caller is responsible for sourcing the seed (e.g. via
-    /// the host `MnemonicResolverHandle`) and for zeroizing it
-    /// once this call returns. The seed is not retained — only
-    /// the per-account FVK / IVK / OVK / default address derived
-    /// from it survive on the wallet.
+    /// [`SpendingKey::from_zip32_seed`]) and installs the
+    /// viewing-grade half (FVK / IVK / OVK / default address) on
+    /// this handle and the coordinator's registry. The caller is
+    /// responsible for sourcing the seed (e.g. via the host
+    /// `MnemonicResolverHandle`) and for zeroizing it once this
+    /// call returns. The seed is not retained, and neither is any
+    /// `SpendAuthorizingKey` — spend operations re-derive it from
+    /// a caller-supplied seed per call.
+    ///
+    /// The derived per-account viewing keys are queued to the host
+    /// persister (as raw 96-byte FVK encodings) so later launches
+    /// can rebind via [`bind_shielded_from_persisted`] without
+    /// resolving the mnemonic at all.
     ///
     /// Idempotent: a second call replaces the previously-bound
     /// shielded wallet (e.g. after a network switch).
@@ -487,6 +495,7 @@ impl PlatformWallet {
     /// `accounts` must be non-empty; pass `&[0]` for the
     /// single-account default.
     ///
+    /// [`bind_shielded_from_persisted`]: Self::bind_shielded_from_persisted
     /// [`SpendingKey::from_zip32_seed`]: grovedb_commitment_tree::SpendingKey::from_zip32_seed
     #[cfg(feature = "shielded")]
     pub async fn bind_shielded(
@@ -495,41 +504,121 @@ impl PlatformWallet {
         accounts: &[u32],
         coordinator: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
     ) -> Result<(), PlatformWalletError> {
-        // Phase 4d.3: derive the per-account `OrchardKeySet` map
-        // directly — no more `ShieldedWallet` wrapper. The shared
-        // commitment-tree store lives on the coordinator (one
-        // SQLite handle per network); the spend methods source it
-        // there at call time. The per-wallet side just needs the
-        // keysets (with the `SpendAuthorizingKey`) for spend
-        // authorization.
-        use super::shielded::{AccountViewingKeys, OrchardKeySet};
+        use super::shielded::{AccountViewingKeys, OrchardKeySet, SubwalletId};
         if accounts.is_empty() {
             return Err(PlatformWalletError::ShieldedKeyDerivation(
                 "shielded wallet requires at least one account".to_string(),
             ));
         }
         let network = self.sdk.network;
-        let mut keys: std::collections::BTreeMap<u32, OrchardKeySet> =
+        let mut account_views: std::collections::BTreeMap<u32, AccountViewingKeys> =
             std::collections::BTreeMap::new();
         for &account in accounts {
             // `accounts` may contain duplicates; the BTreeMap
-            // dedups by definition.
+            // dedups by definition. The full keyset (with its
+            // `SpendAuthorizingKey`) is dropped at the end of
+            // this iteration — only the viewing half survives.
             let ks = OrchardKeySet::from_seed(seed, network, account)?;
-            keys.insert(account, ks);
+            account_views.insert(account, ks.viewing_keys());
         }
 
-        // Snapshot the viewing-key subset for coordinator
-        // registration. Privilege separation: only FVK / IVK /
-        // OVK / default address cross to the coordinator; the
-        // `SpendAuthorizingKey` stays here on the per-wallet
-        // side inside `OrchardKeySet`.
-        let account_views: std::collections::BTreeMap<u32, AccountViewingKeys> = keys
-            .iter()
-            .map(|(account, ks)| (*account, ks.viewing_keys()))
-            .collect();
+        // Persist the viewing keys while the seed is legitimately
+        // present, so every later launch can rebind seedlessly. A
+        // queue failure is logged inside the persister wrapper and
+        // does not fail the bind — the next seed-backed bind
+        // re-emits the same bytes.
+        let mut cs = crate::changeset::ShieldedChangeSet::default();
+        for (account, views) in &account_views {
+            cs.record_viewing_key(
+                SubwalletId::new(self.wallet_id, *account),
+                views.to_fvk_bytes(),
+            );
+        }
+        if let Err(e) = self
+            .persister
+            .store(crate::changeset::PlatformWalletChangeSet {
+                shielded: Some(cs),
+                ..Default::default()
+            })
+        {
+            tracing::warn!(
+                wallet_id = %hex::encode(self.wallet_id),
+                error = %e,
+                "Failed to queue shielded viewing keys for persistence; \
+                 the next seed-backed bind will retry"
+            );
+        }
 
+        self.install_shielded_views(account_views, coordinator, None)
+            .await
+    }
+
+    /// Bind the shielded sub-wallet from viewing keys persisted by a
+    /// prior seed-backed [`bind_shielded`](Self::bind_shielded),
+    /// without touching the wallet seed.
+    ///
+    /// Reads the persister's start-state snapshot for this wallet's
+    /// per-account FVK rows and installs the reconstructed
+    /// viewing-grade material exactly like a seed bind. Returns
+    /// `Ok(false)` — with no state change — when the persister has no
+    /// viewing key for at least one entry of `accounts` (first bind
+    /// after create/import, or legacy persistence predating viewing-key
+    /// rows); the caller then falls back to the seed path. A persisted
+    /// row that fails to decode is an error, not a fallback — silent
+    /// re-resolution would mask persistence corruption.
+    #[cfg(feature = "shielded")]
+    pub async fn bind_shielded_from_persisted(
+        &self,
+        accounts: &[u32],
+        coordinator: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
+    ) -> Result<bool, PlatformWalletError> {
+        use super::shielded::{AccountViewingKeys, SubwalletId};
+        if accounts.is_empty() {
+            return Err(PlatformWalletError::ShieldedKeyDerivation(
+                "shielded wallet requires at least one account".to_string(),
+            ));
+        }
+        let start = self.persister.load().map_err(|e| {
+            PlatformWalletError::ShieldedBuildError(format!(
+                "persister load failed while rebinding shielded viewing keys: {e}"
+            ))
+        })?;
+        let mut account_views: std::collections::BTreeMap<u32, AccountViewingKeys> =
+            std::collections::BTreeMap::new();
+        for &account in accounts {
+            let id = SubwalletId::new(self.wallet_id, account);
+            let Some(fvk_bytes) = start.shielded.viewing_keys.get(&id) else {
+                return Ok(false);
+            };
+            let fvk_bytes: &[u8; 96] = fvk_bytes.as_slice().try_into().map_err(|_| {
+                PlatformWalletError::ShieldedKeyDerivation(format!(
+                    "persisted viewing key for account {account} is {} bytes, expected 96",
+                    fvk_bytes.len()
+                ))
+            })?;
+            account_views.insert(account, AccountViewingKeys::from_fvk_bytes(fvk_bytes)?);
+        }
+        // Hand the already-loaded snapshot to the install step so the
+        // restore doesn't pay a second full persister load.
+        self.install_shielded_views(account_views, coordinator, Some(start))
+            .await?;
+        Ok(true)
+    }
+
+    /// Shared tail of the two bind paths: store the viewing-grade
+    /// map on this handle, replace this wallet's registration on
+    /// the coordinator, and rehydrate persisted notes / watermarks.
+    /// `preloaded` reuses a start-state snapshot the caller already
+    /// fetched (the persisted-keys path); `None` loads one here.
+    #[cfg(feature = "shielded")]
+    async fn install_shielded_views(
+        &self,
+        account_views: std::collections::BTreeMap<u32, super::shielded::AccountViewingKeys>,
+        coordinator: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
+        preloaded: Option<crate::changeset::ClientStartState>,
+    ) -> Result<(), PlatformWalletError> {
         let mut slot = self.shielded_keys.write().await;
-        *slot = Some(keys);
+        *slot = Some(account_views.clone());
         drop(slot);
 
         // Rebind is replace-not-merge (the doc contract above).
@@ -556,7 +645,7 @@ impl PlatformWallet {
         // boot-time snapshot, indexed by SubwalletId. Errors are
         // logged but not fatal — first-launch wallets simply
         // see no persisted state.
-        match self.persister.load() {
+        match preloaded.map(Ok).unwrap_or_else(|| self.persister.load()) {
             Ok(start) => {
                 if let Err(e) = coordinator
                     .restore_for_wallet(self.wallet_id, &start.shielded)
@@ -596,14 +685,36 @@ impl PlatformWallet {
         seed: &[u8],
         account: u32,
     ) -> Result<(), PlatformWalletError> {
-        use super::shielded::OrchardKeySet;
+        use super::shielded::{OrchardKeySet, SubwalletId};
         let mut slot = self.shielded_keys.write().await;
         let keys = slot.as_mut().ok_or(PlatformWalletError::ShieldedNotBound)?;
         if keys.contains_key(&account) {
             return Ok(());
         }
-        let ks = OrchardKeySet::from_seed(seed, self.sdk.network, account)?;
-        keys.insert(account, ks);
+        let views = OrchardKeySet::from_seed(seed, self.sdk.network, account)?.viewing_keys();
+        // Persist the new account's viewing key alongside the
+        // in-memory insert, mirroring `bind_shielded`, so the
+        // seedless rebind path covers it on the next launch.
+        let mut cs = crate::changeset::ShieldedChangeSet::default();
+        cs.record_viewing_key(
+            SubwalletId::new(self.wallet_id, account),
+            views.to_fvk_bytes(),
+        );
+        if let Err(e) = self
+            .persister
+            .store(crate::changeset::PlatformWalletChangeSet {
+                shielded: Some(cs),
+                ..Default::default()
+            })
+        {
+            tracing::warn!(
+                wallet_id = %hex::encode(self.wallet_id),
+                account,
+                error = %e,
+                "Failed to queue shielded viewing key for persistence"
+            );
+        }
+        keys.insert(account, views);
         // NOTE: this only updates the per-wallet keys slot — the
         // coordinator's `accounts` registry isn't refreshed here.
         // Hosts that add accounts after bind should re-call
@@ -677,12 +788,7 @@ impl PlatformWallet {
         };
         let subwallets: Vec<(SubwalletId, AccountViewingKeys)> = keys
             .iter()
-            .map(|(account, ks)| {
-                (
-                    SubwalletId::new(self.wallet_id, *account),
-                    ks.viewing_keys(),
-                )
-            })
+            .map(|(account, views)| (SubwalletId::new(self.wallet_id, *account), views.clone()))
             .collect();
         let per_sub =
             super::shielded::sync::balances_across(coordinator.store(), &subwallets).await?;
@@ -693,16 +799,59 @@ impl PlatformWallet {
             .collect())
     }
 
+    /// Transiently re-derive `account`'s full `OrchardKeySet` (ASK
+    /// included) from the caller-supplied wallet seed, for the
+    /// duration of one spend operation. The derived spend authority
+    /// is dropped when the returned value goes out of scope — no
+    /// `SpendAuthorizingKey` is ever resident on the wallet.
+    ///
+    /// Guards two invariants before handing the keyset back:
+    /// - `account` must be bound (viewing keys installed), so spend
+    ///   errors match the pre-split `ShieldedNotBound` /
+    ///   "account not bound" contract.
+    /// - the seed-derived FVK must equal the bound viewing key —
+    ///   a wrong seed (or a persisted-key / seed mismatch) fails
+    ///   loudly here instead of burning a ~30 s Halo 2 proof on a
+    ///   spend the chain would reject.
+    #[cfg(feature = "shielded")]
+    async fn derive_spend_keyset(
+        &self,
+        seed: &[u8],
+        account: u32,
+    ) -> Result<super::shielded::OrchardKeySet, PlatformWalletError> {
+        use super::shielded::OrchardKeySet;
+        let bound_fvk = {
+            let guard = self.shielded_keys.read().await;
+            let keys = guard
+                .as_ref()
+                .ok_or(PlatformWalletError::ShieldedNotBound)?;
+            let views = keys.get(&account).ok_or_else(|| {
+                PlatformWalletError::ShieldedKeyDerivation(format!(
+                    "shielded account {account} not bound"
+                ))
+            })?;
+            views.full_viewing_key.to_bytes()
+        };
+        let keyset = OrchardKeySet::from_seed(seed, self.sdk.network, account)?;
+        if keyset.full_viewing_key.to_bytes() != bound_fvk {
+            return Err(PlatformWalletError::ShieldedKeyDerivation(format!(
+                "seed does not derive the bound viewing key for shielded account {account}"
+            )));
+        }
+        Ok(keyset)
+    }
+
     /// Send a private shielded → shielded transfer from `account`'s
     /// notes to `recipient_raw_43` (the recipient's Orchard payment
     /// address as the 43 raw bytes).
     ///
     /// `coordinator` supplies the shared, network-scoped
-    /// commitment-tree store; the wallet supplies the
-    /// `OrchardKeySet` (with the `SpendAuthorizingKey`) by
-    /// account. Privilege separation: the ASK never crosses to
-    /// the coordinator — the spend free function takes the
-    /// keyset by reference at call time.
+    /// commitment-tree store; `seed` supplies the spend authority —
+    /// the full `OrchardKeySet` (with the `SpendAuthorizingKey`) is
+    /// re-derived from it for this call only and dropped on return.
+    /// Privilege separation: the ASK never crosses to the
+    /// coordinator — the spend free function takes the keyset by
+    /// reference at call time.
     ///
     /// The prover is consumed by value rather than borrowed
     /// because `OrchardProver` is impl'd on
@@ -711,24 +860,18 @@ impl PlatformWallet {
     /// and we forward it down to the spend free function's
     /// `&P` parameter.
     #[cfg(feature = "shielded")]
+    #[allow(clippy::too_many_arguments)]
     pub async fn shielded_transfer_to<P: dpp::shielded::builder::OrchardProver>(
         &self,
         coordinator: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
+        seed: &[u8],
         account: u32,
         recipient_raw_43: &[u8; 43],
         amount: u64,
         memo: [u8; 36],
         prover: P,
     ) -> Result<(), PlatformWalletError> {
-        let guard = self.shielded_keys.read().await;
-        let keys = guard
-            .as_ref()
-            .ok_or(PlatformWalletError::ShieldedNotBound)?;
-        let keyset = keys.get(&account).ok_or_else(|| {
-            PlatformWalletError::ShieldedKeyDerivation(format!(
-                "shielded account {account} not bound"
-            ))
-        })?;
+        let keyset = self.derive_spend_keyset(seed, account).await?;
         let recipient = Option::<grovedb_commitment_tree::PaymentAddress>::from(
             grovedb_commitment_tree::PaymentAddress::from_raw_address_bytes(recipient_raw_43),
         )
@@ -742,7 +885,7 @@ impl PlatformWallet {
             coordinator.store(),
             Some(&self.persister),
             self.wallet_id,
-            keyset,
+            &keyset,
             account,
             &recipient,
             amount,
@@ -756,25 +899,20 @@ impl PlatformWallet {
     /// address (`"dash1…"` / `"tdash1…"`). Parsed via
     /// `PlatformAddress::from_bech32m_string`; the recipient's HRP is
     /// verified against the wallet's network HRP class here, since the
-    /// network-agnostic decoder no longer enforces it.
+    /// network-agnostic decoder no longer enforces it. `seed` supplies
+    /// the transient spend authority (see
+    /// [`shielded_transfer_to`](Self::shielded_transfer_to)).
     #[cfg(feature = "shielded")]
     pub async fn shielded_unshield_to<P: dpp::shielded::builder::OrchardProver>(
         &self,
         coordinator: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
+        seed: &[u8],
         account: u32,
         to_platform_addr_bech32m: &str,
         amount: u64,
         prover: P,
     ) -> Result<(), PlatformWalletError> {
-        let guard = self.shielded_keys.read().await;
-        let keys = guard
-            .as_ref()
-            .ok_or(PlatformWalletError::ShieldedNotBound)?;
-        let keyset = keys.get(&account).ok_or_else(|| {
-            PlatformWalletError::ShieldedKeyDerivation(format!(
-                "shielded account {account} not bound"
-            ))
-        })?;
+        let keyset = self.derive_spend_keyset(seed, account).await?;
         // The decoder is network-agnostic, so guard the recipient's HRP class
         // against the wallet's network before decoding.
         check_recipient_hrp(to_platform_addr_bech32m, self.sdk.network)?;
@@ -787,7 +925,7 @@ impl PlatformWallet {
             coordinator.store(),
             Some(&self.persister),
             self.wallet_id,
-            keyset,
+            &keyset,
             account,
             &to,
             amount,
@@ -798,26 +936,22 @@ impl PlatformWallet {
 
     /// Withdraw from `account`'s notes to a Core L1 address
     /// (Base58Check string). `core_fee_per_byte` is the L1 fee
-    /// rate (duffs/byte).
+    /// rate (duffs/byte). `seed` supplies the transient spend
+    /// authority (see
+    /// [`shielded_transfer_to`](Self::shielded_transfer_to)).
     #[cfg(feature = "shielded")]
+    #[allow(clippy::too_many_arguments)]
     pub async fn shielded_withdraw_to<P: dpp::shielded::builder::OrchardProver>(
         &self,
         coordinator: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
+        seed: &[u8],
         account: u32,
         to_core_address: &str,
         amount: u64,
         core_fee_per_byte: u32,
         prover: P,
     ) -> Result<(), PlatformWalletError> {
-        let guard = self.shielded_keys.read().await;
-        let keys = guard
-            .as_ref()
-            .ok_or(PlatformWalletError::ShieldedNotBound)?;
-        let keyset = keys.get(&account).ok_or_else(|| {
-            PlatformWalletError::ShieldedKeyDerivation(format!(
-                "shielded account {account} not bound"
-            ))
-        })?;
+        let keyset = self.derive_spend_keyset(seed, account).await?;
         let network = self.sdk.network;
         let parsed = to_core_address
             .parse::<dashcore::Address<dashcore::address::NetworkUnchecked>>()
@@ -835,7 +969,7 @@ impl PlatformWallet {
             coordinator.store(),
             Some(&self.persister),
             self.wallet_id,
-            keyset,
+            &keyset,
             account,
             &parsed,
             amount,
@@ -854,8 +988,8 @@ impl PlatformWallet {
     ///
     /// `public_keys` is the new identity's key set (each entry pairs the `IdentityPublicKey` with
     /// its `IdentityPublicKeyInCreation` form); `identity_signer` produces each key's
-    /// proof-of-possession signature. The Orchard spend authority comes from the wallet's own
-    /// `OrchardKeySet` (the ASK never crosses to the coordinator).
+    /// proof-of-possession signature. The Orchard spend authority is re-derived from `seed` for
+    /// this call only (the ASK never crosses to the coordinator and is not retained).
     ///
     /// `identity_index` is the DIP-9 identity-registration slot the new identity occupies in the
     /// local `IdentityManager`; on a successful broadcast the proof-verified identity is registered
@@ -868,6 +1002,7 @@ impl PlatformWallet {
     pub async fn shielded_identity_create_from_pool<P, IS>(
         &self,
         coordinator: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
+        seed: &[u8],
         account: u32,
         identity_index: u32,
         public_keys: Vec<(
@@ -884,23 +1019,16 @@ impl PlatformWallet {
         IS: dpp::identity::signer::Signer<dpp::identity::IdentityPublicKey> + Send + Sync,
     {
         let (identity_id, identity) = {
-            // Scope the read guard so it's released before we take the wallet-manager write lock
-            // below — the keyset is only needed for the spend, not for the registration step.
-            let guard = self.shielded_keys.read().await;
-            let keys = guard
-                .as_ref()
-                .ok_or(PlatformWalletError::ShieldedNotBound)?;
-            let keyset = keys.get(&account).ok_or_else(|| {
-                PlatformWalletError::ShieldedKeyDerivation(format!(
-                    "shielded account {account} not bound"
-                ))
-            })?;
+            // Scope the transient keyset so its spend authority is dropped before we take the
+            // wallet-manager write lock below — it's only needed for the spend, not for the
+            // registration step.
+            let keyset = self.derive_spend_keyset(seed, account).await?;
             super::shielded::operations::identity_create_from_shielded_pool(
                 &self.sdk,
                 coordinator.store(),
                 Some(&self.persister),
                 self.wallet_id,
-                keyset,
+                &keyset,
                 account,
                 public_keys,
                 denomination,

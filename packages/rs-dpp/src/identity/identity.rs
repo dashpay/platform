@@ -4,6 +4,8 @@ use crate::identity::{IdentityPublicKey, KeyID};
 use crate::prelude::{AddressNonce, Revision};
 #[cfg(feature = "json-conversion")]
 use crate::serialization::json_safe_fields;
+#[cfg(feature = "json-conversion")]
+use crate::serialization::JsonConvertible;
 #[cfg(feature = "value-conversion")]
 use crate::serialization::ValueConvertible;
 
@@ -29,7 +31,7 @@ use std::collections::{BTreeMap, BTreeSet};
 /// untagged is needed here
 #[derive(Debug, Clone, PartialEq, From)]
 #[cfg_attr(
-   any( feature = "serde-conversion" ,feature = "serde-conversion",),
+   feature = "serde-conversion",
     derive(serde::Serialize, serde::Deserialize),
     serde(tag = "$formatVersion"),
     // platform_version_path("dpp.identity_versions.identity_structure_version")
@@ -41,18 +43,167 @@ use std::collections::{BTreeMap, BTreeSet};
 )]
 #[cfg_attr(feature = "value-conversion", derive(ValueConvertible))]
 pub enum Identity {
-    #[cfg_attr(
-        any(feature = "serde-conversion", feature = "serde-conversion"),
-        serde(rename = "0")
-    )]
+    #[cfg_attr(feature = "serde-conversion", serde(rename = "0"))]
     V0(IdentityV0),
+}
+
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+impl JsonConvertible for Identity {}
+
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+impl JsonConvertible for PartialIdentity {}
+
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+impl ValueConvertible for PartialIdentity {}
+
+#[cfg(all(
+    test,
+    feature = "json-conversion",
+    feature = "value-conversion",
+    feature = "serde-conversion"
+))]
+mod json_convertible_tests {
+    use super::*;
+    use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
+    use crate::identity::{KeyType, Purpose, SecurityLevel};
+    use platform_value::{platform_value, BinaryData, Value};
+    use serde_json::json;
+
+    fn fixture_pubkey(id: u32, byte: u8) -> IdentityPublicKey {
+        IdentityPublicKey::V0(IdentityPublicKeyV0 {
+            id,
+            key_type: KeyType::ECDSA_SECP256K1,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::MASTER,
+            contract_bounds: None,
+            read_only: false,
+            data: BinaryData::new(vec![byte; 33]),
+            disabled_at: None,
+        })
+    }
+
+    fn fixture() -> Identity {
+        let mut public_keys = BTreeMap::new();
+        public_keys.insert(0, fixture_pubkey(0, 0xa0));
+        public_keys.insert(1, fixture_pubkey(1, 0xb1));
+        Identity::V0(IdentityV0 {
+            id: Identifier::new([0x42; 32]),
+            public_keys,
+            balance: 1_000_000,
+            revision: 7,
+        })
+    }
+
+    #[test]
+    fn json_round_trip_with_full_wire_shape() {
+        use crate::serialization::JsonConvertible;
+        let original = fixture();
+        let json = original.to_json().expect("to_json");
+        // Internally-tagged enum (`tag = "$formatVersion"`); inner V0 has
+        // `rename_all = "camelCase"`. `public_keys` uses a custom serde wrapper
+        // that emits a `Vec` of `IdentityPublicKey` values (keys dropped, then
+        // reconstructed on deserialize from each key's `id`). Each
+        // `IdentityPublicKey` is itself an internally-tagged enum, so the inner
+        // wire shape mirrors the per-key test in
+        // `identity_public_key::mod::json_convertible_tests`.
+        // Sized-int fields with JSON loss:
+        // - `balance`: u64 (Credits)
+        // - `revision`: u64 (Revision)
+        // - inner `id`: u32, `purpose`/`securityLevel`/`type`: u8 reprs.
+        // `Identifier` serializes as base58 in JSON; `BinaryData` as base64.
+        // Purpose::AUTHENTICATION = 0, KeyType::ECDSA_SECP256K1 = 0,
+        // SecurityLevel::MASTER = 0.
+        assert_eq!(
+            json,
+            json!({
+                "$formatVersion": "0",
+                "id": "5TeWSsjg2gbxCyWVniXeCmwM7UtHTCK7svzJr5xYJzHf",
+                // After Phase D step 4, `disabled_at` carries
+                // `#[serde(skip_serializing_if = "Option::is_none")]`, so
+                // non-disabled keys no longer emit `disabledAt: null`.
+                "publicKeys": [
+                    {
+                        "$formatVersion": "0",
+                        "id": 0,
+                        "purpose": 0,
+                        "securityLevel": 0,
+                        "contractBounds": serde_json::Value::Null,
+                        "type": 0,
+                        "readOnly": false,
+                        "data": "oKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCg",
+                    },
+                    {
+                        "$formatVersion": "0",
+                        "id": 1,
+                        "purpose": 0,
+                        "securityLevel": 0,
+                        "contractBounds": serde_json::Value::Null,
+                        "type": 0,
+                        "readOnly": false,
+                        "data": "sbGxsbGxsbGxsbGxsbGxsbGxsbGxsbGxsbGxsbGxsbGx",
+                    },
+                ],
+                "balance": 1_000_000u64,
+                "revision": 7,
+            })
+        );
+        let recovered = Identity::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn value_round_trip_with_full_wire_shape() {
+        use crate::serialization::ValueConvertible;
+        let original = fixture();
+        let value = original.to_object().expect("to_object");
+        // Explicit `u32` / `u8` / `u64` suffixes lock typed-int variants.
+        // `Identifier` interpolates as `Value::Identifier`; `BinaryData` of
+        // length 33 lacks a fixed-sized variant, so it stays as
+        // `Value::Bytes(Vec<u8>)`.
+        let id = Identifier::new([0x42; 32]);
+        assert_eq!(
+            value,
+            platform_value!({
+                "$formatVersion": "0",
+                "id": id,
+                // `disabledAt: None` is now stripped per the
+                // `skip_serializing_if` attribute (Phase D step 4).
+                "publicKeys": [
+                    {
+                        "$formatVersion": "0",
+                        "id": 0u32,
+                        "purpose": 0u8,
+                        "securityLevel": 0u8,
+                        "contractBounds": Value::Null,
+                        "type": 0u8,
+                        "readOnly": false,
+                        "data": Value::Bytes(vec![0xa0; 33]),
+                    },
+                    {
+                        "$formatVersion": "0",
+                        "id": 1u32,
+                        "purpose": 0u8,
+                        "securityLevel": 0u8,
+                        "contractBounds": Value::Null,
+                        "type": 0u8,
+                        "readOnly": false,
+                        "data": Value::Bytes(vec![0xb1; 33]),
+                    },
+                ],
+                "balance": 1_000_000u64,
+                "revision": 7u64,
+            })
+        );
+        let recovered = Identity::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
+    }
 }
 
 /// An identity struct that represent partially set/loaded identity data.
 #[cfg_attr(feature = "json-conversion", json_safe_fields)]
 #[derive(Debug, Clone, Eq, PartialEq)]
 #[cfg_attr(
-    any(feature = "serde-conversion", feature = "serde-conversion",),
+    feature = "serde-conversion",
     derive(serde::Serialize, serde::Deserialize),
     serde(rename_all = "camelCase")
 )]

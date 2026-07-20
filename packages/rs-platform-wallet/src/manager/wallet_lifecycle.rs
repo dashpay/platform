@@ -2,6 +2,7 @@
 
 use std::sync::Arc;
 
+use dash_spv::chain::CheckpointManager;
 use key_wallet::bip32::ExtendedPrivKey;
 use key_wallet::mnemonic::{Language, Mnemonic};
 use key_wallet::wallet::initialization::WalletAccountCreationOptions;
@@ -9,9 +10,11 @@ use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::{Wallet, WalletType};
 use key_wallet::Network;
 
+#[cfg(any(feature = "bls", feature = "eddsa"))]
+use crate::changeset::ProviderKeyExtendedPubKey;
 use crate::changeset::{
     AccountAddressPoolEntry, AccountRegistrationEntry, PlatformWalletChangeSet,
-    PlatformWalletPersistence, WalletMetadataEntry,
+    PlatformWalletPersistence, ProviderKeyAccountEntry, WalletMetadataEntry,
 };
 use crate::error::PlatformWalletError;
 use crate::wallet::core::WalletBalance;
@@ -90,7 +93,8 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// anything funded before init is invisible — **but** when SPV is
     /// not running yet or header state is unavailable (e.g. wallet
     /// created before the SPV client is started), it falls back to
-    /// `0`, i.e. a full historical scan from genesis. `Some(0)`
+    /// the latest network checkpoint height, keeping the scan near
+    /// the chain head instead of rescanning from genesis. `Some(0)`
     /// always requests a full historical scan from genesis (use
     /// sparingly — expensive on long-lived chains, but required when
     /// an address may have received funds before the wallet was first
@@ -120,7 +124,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// See [`Self::create_wallet_from_mnemonic`] for the
     /// `birth_height_override` semantics. `None` scans from the
     /// current SPV tip forward when SPV is running, otherwise from
-    /// genesis; `Some(h)` is for callers that need to see funding
+    /// the latest network checkpoint; `Some(h)` is for callers that need to see funding
     /// deposited before the wallet was registered (e.g. a long-lived
     /// bank address pre-funded with testnet duffs).
     pub async fn create_wallet_from_seed_bytes(
@@ -175,21 +179,35 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // persisted id verbatim, so it stays self-consistent across
         // launches.
 
-        // Birth height resolution: explicit override wins; otherwise
-        // fall back to SPV's confirmed header tip (default for fresh
-        // wallets — they only need to see funding from now on); 0 if
-        // SPV isn't running yet.
+        // Birth height resolution: explicit override wins; otherwise fall back
+        // to SPV's confirmed header tip (default for fresh wallets — they only
+        // need to see funding from now on). Before SPV has synced any headers
+        // the tip is 0, so a brand-new wallet created at startup would otherwise
+        // anchor at genesis and rescan the whole chain. Fall back to the latest
+        // hardcoded checkpoint instead, keeping the scan near the chain head.
         let birth_height: u32 = match birth_height_override {
             Some(h) => h,
-            None => self
-                .spv_manager
-                .sync_progress()
-                .await
-                .and_then(|p| p.headers().ok().map(|h| h.tip_height()))
-                .unwrap_or(0),
+            None => {
+                let tip = self
+                    .spv_manager
+                    .sync_progress()
+                    .await
+                    .and_then(|p| p.headers().ok().map(|h| h.tip_height()))
+                    .unwrap_or(0);
+                if tip > 0 {
+                    tip
+                } else {
+                    CheckpointManager::for_network(self.sdk.network)
+                        .last_checkpoint()
+                        .map(|checkpoint| checkpoint.height)
+                        .unwrap_or(0)
+                }
+            }
         };
 
-        let wallet_info = ManagedWalletInfo::from_wallet(&wallet, birth_height);
+        // `mut` so the platform-node (Ed25519) pool can be populated in
+        // place below, BEFORE the address-pool snapshot is taken.
+        let mut wallet_info = ManagedWalletInfo::from_wallet(&wallet, birth_height);
 
         let balance = Arc::new(WalletBalance::new());
 
@@ -207,6 +225,78 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             .iter()
             .map(|a| (a.account_type, a.account_xpub))
             .collect();
+        // Provider key-material accounts (BLS operator keys / EdDSA
+        // platform-node keys) live in dedicated `Option` fields on the
+        // `AccountCollection` that `all_accounts()` deliberately
+        // excludes, so snapshot them separately. They carry a
+        // non-secp256k1 extended public key; the persister bincode-
+        // encodes it and the restore path rebuilds them watch-only.
+        #[allow(unused_mut)]
+        let mut provider_key_account_registrations: Vec<ProviderKeyAccountEntry> = Vec::new();
+        #[cfg(feature = "bls")]
+        if let Some(bls) = wallet
+            .accounts
+            .bls_account_of_type(key_wallet::account::AccountType::ProviderOperatorKeys)
+        {
+            provider_key_account_registrations.push(ProviderKeyAccountEntry {
+                account_type: key_wallet::account::AccountType::ProviderOperatorKeys,
+                extended_public_key: ProviderKeyExtendedPubKey::Bls(bls.bls_public_key.clone()),
+            });
+        }
+        #[cfg(feature = "eddsa")]
+        if let Some(eddsa) = wallet
+            .accounts
+            .eddsa_account_of_type(key_wallet::account::AccountType::ProviderPlatformKeys)
+        {
+            // Pre-derive a fixed batch of platform-node public keys while
+            // the wallet is still seed-bearing (`downgrade_to_external_signable`
+            // hasn't run yet). Ed25519/SLIP-10 is hardened-only, so this
+            // pool can never be extended later from the watch-only restore —
+            // populating the managed pool now lets those keys ride the
+            // normal typed-address persistence pipeline (persisted as
+            // `PublicKeyType::EdDSA` core-address rows, rehydrated on load
+            // by `restore_core_address_pools`) so the Node Keys screen lists
+            // them from persistence with no keychain prompt. A derivation
+            // failure here is non-fatal: fall back to an empty batch (the UI
+            // then uses its resolver-based "Load Keys" path) rather than
+            // aborting the whole wallet registration.
+            let derived_platform_node_keys =
+                crate::wallet::provider_key_at_index::derive_platform_node_public_keys(
+                    &wallet,
+                    wallet.network,
+                    crate::wallet::provider_key_at_index::PLATFORM_NODE_KEY_PREDERIVE_COUNT,
+                )
+                .unwrap_or_else(|e| {
+                    tracing::warn!(
+                        error = %e,
+                        "failed to pre-derive platform-node keys at registration; \
+                         the Node Keys screen will fall back to the resolver path"
+                    );
+                    Vec::new()
+                });
+            // Populate the managed platform-node pool in place, BEFORE the
+            // address-pool snapshot below reads `all_managed_accounts()`, so
+            // the EdDSA keys are captured as typed core-address rows. A
+            // population failure is non-fatal for the same reason the
+            // derivation failure above is.
+            if let Err(e) = crate::wallet::provider_key_at_index::populate_platform_node_pool(
+                &mut wallet_info,
+                &derived_platform_node_keys,
+                wallet.network,
+            ) {
+                tracing::warn!(
+                    error = %e,
+                    "failed to populate the managed platform-node pool at registration; \
+                     the Node Keys screen will fall back to the resolver path"
+                );
+            }
+            provider_key_account_registrations.push(ProviderKeyAccountEntry {
+                account_type: key_wallet::account::AccountType::ProviderPlatformKeys,
+                extended_public_key: ProviderKeyExtendedPubKey::EdDSA(
+                    eddsa.ed25519_public_key.clone(),
+                ),
+            });
+        }
         // Snapshot core (BIP44/CoinJoin/identity/provider/DashPay)
         // address pools. PlatformPayment accounts live in a separate
         // collection on `ManagedWalletInfo` and are handled below.
@@ -332,6 +422,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                     account_xpub: *account_xpub,
                 })
                 .collect(),
+            provider_key_account_registrations,
             ..Default::default()
         };
 
@@ -455,6 +546,34 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         {
             let mut wallets = self.wallets.write().await;
             wallets.insert(wallet_id, Arc::clone(&platform_wallet));
+        }
+
+        // Re-seed the lock-free balance atomic from the wallet's inner
+        // balance now that the wallet is in `self.wallets`.
+        //
+        // A wallet added while SPV is already synced (e.g. importing an
+        // existing mnemonic with `birth_height = 0`) has its historical
+        // funds backfilled by the SPV rescan that `insert_wallet` above
+        // triggers. That rescan can complete — emitting the
+        // `BlockProcessed` event that carries the post-backfill balance —
+        // *before* this wallet lands in `self.wallets`, so
+        // `BalanceUpdateHandler` drops those events (the wallet isn't in
+        // the map yet) and the atomic stays at zero even though the inner
+        // `ManagedWalletInfo` balance is correct. Mirror the inner balance
+        // into the atomic here (as `manager::load` does for restored
+        // wallets); any later block events are applied normally now that
+        // the wallet is mapped.
+        {
+            let wm = self.wallet_manager.read().await;
+            if let Some(info) = wm.get_wallet_info(&wallet_id) {
+                let b = &info.core_wallet.balance;
+                platform_wallet.balance().set(
+                    b.confirmed(),
+                    b.unconfirmed(),
+                    b.immature(),
+                    b.locked(),
+                );
+            }
         }
 
         // Best-effort identity discovery via the captured master xpriv —

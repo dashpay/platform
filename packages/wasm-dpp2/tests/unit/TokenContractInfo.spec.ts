@@ -9,9 +9,13 @@ before(async () => {
 describe('TokenContractInfo', () => {
   const contractIdHex = '1111111111111111111111111111111111111111111111111111111111111111';
 
+  // TokenContractInfo is a versioned enum tagged with `$formatVersion`.
+  // V0 -> "0". Inner V0 fields (contractId, tokenContractPosition) flatten
+  // at the top level via internal tagging.
   function createJsonFixture() {
     const contractId = wasm.Identifier.fromHex(contractIdHex);
     return {
+      $formatVersion: '0',
       contractId: contractId.toBase58(),
       tokenContractPosition: 3,
     };
@@ -19,6 +23,7 @@ describe('TokenContractInfo', () => {
 
   function createObjectFixture() {
     return {
+      $formatVersion: '0',
       contractId: new Uint8Array(Buffer.from(contractIdHex, 'hex')),
       tokenContractPosition: 3,
     };

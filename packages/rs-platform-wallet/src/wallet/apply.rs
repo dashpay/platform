@@ -99,6 +99,12 @@ impl PlatformWalletInfo {
             token_balances,
             dashpay_profiles,
             dashpay_payments_overlay,
+            // DashPay invitations (DIP-13) are persistence-only here: the
+            // "Sent invitations" list is the Swift SwiftData mirror, and the
+            // Rust manager holds no in-memory invitation state in v1 (reclaim
+            // is future). Drop explicitly so future readers don't expect a
+            // replay hook.
+            invitations: _,
             // Registration-round metadata / per-account specs /
             // per-pool snapshots are persistence-only — the
             // canonical in-memory wallet state is built up at
@@ -107,6 +113,7 @@ impl PlatformWalletInfo {
             // a replay hook here.
             wallet_metadata: _,
             account_registrations: _,
+            provider_key_account_registrations: _,
             account_address_pools: _,
             // The deferred contact-crypto queue is persistence-only here too:
             // the in-memory queue is mutated directly at the enqueue (sweep)

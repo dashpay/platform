@@ -65,6 +65,31 @@ pub trait ContactCryptoProvider {
         path: &key_wallet::bip32::DerivationPath,
     ) -> Result<dashcore::secp256k1::SecretKey, PlatformWalletError>;
 
+    /// Export the raw **invitation-funding private key** at `path` (DIP-13
+    /// sub-feature `3'`) — the second deliberate raw-key export (alongside
+    /// [`Self::export_auto_accept_private_key`]). The invitation hands this
+    /// one-time voucher key to the invitee so they can register their own
+    /// identity from the funded asset lock, so it must leave the signer. `path`
+    /// MUST be an invitation path (`m/9'/coin'/5'/3'/funding_index'`); the signer
+    /// gates on the full shape (feature `5'` is shared with the user's own
+    /// identity keys — see `export_invitation_private_key` on the resolver
+    /// signer). The only caller is [`IdentityWallet::create_invitation`].
+    ///
+    /// Defaulted to an "unsupported" error so adding this method is not a
+    /// source-breaking change for existing provider implementations:
+    /// providers that never create invitations need no override, and a
+    /// create attempted through one fails loudly (the invitation cannot be
+    /// packaged without the exported key) rather than at compile time.
+    /// Invitation-capable providers override with the path-gated export.
+    async fn export_invitation_private_key(
+        &self,
+        _path: &key_wallet::bip32::DerivationPath,
+    ) -> Result<dashcore::secp256k1::SecretKey, PlatformWalletError> {
+        Err(PlatformWalletError::InvalidIdentityData(
+            "invitation private-key export is not supported by this crypto provider".to_string(),
+        ))
+    }
+
     /// DIP-15 `accountReference` for a send: the scalar at `path` (the sender's
     /// encryption key) keys the HMAC+mask over `compact_xpub`. Computed in the
     /// signer so the raw scalar never returns to platform-wallet.
@@ -191,6 +216,16 @@ impl ContactCryptoProvider for SeedCryptoProvider {
     ) -> Result<dashcore::secp256k1::SecretKey, PlatformWalletError> {
         let xprv = self.wallet.derive_extended_private_key(path).map_err(|e| {
             PlatformWalletError::InvalidIdentityData(format!("test export auto-accept: {e}"))
+        })?;
+        Ok(xprv.private_key)
+    }
+
+    async fn export_invitation_private_key(
+        &self,
+        path: &key_wallet::bip32::DerivationPath,
+    ) -> Result<dashcore::secp256k1::SecretKey, PlatformWalletError> {
+        let xprv = self.wallet.derive_extended_private_key(path).map_err(|e| {
+            PlatformWalletError::InvalidIdentityData(format!("test export invitation: {e}"))
         })?;
         Ok(xprv.private_key)
     }
@@ -1777,6 +1812,26 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 info.identity_manager
                     .managed_identities()
                     .map(|m| count_account_build_ops(&m.dashpay().pending_contact_crypto))
+                    .sum::<usize>()
+            })
+            .unwrap_or(0)
+    }
+
+    /// Total number of queued contact-crypto entries for this wallet — every
+    /// op kind, **including** the `ContactInfoDecrypt` refreshes that
+    /// [`Self::pending_contact_crypto_count`] deliberately excludes. This is
+    /// the "does a signer-present drain have any work at all" probe: unlike
+    /// the banner count (which reports an actionable *backlog* to a user),
+    /// a scheduler should run the drain whenever anything is queued, or
+    /// ContactInfoDecrypt-only queues would never be applied. Signerless /
+    /// public read; no persistence.
+    pub async fn drainable_contact_crypto_count(&self) -> usize {
+        let wm = self.wallet_manager.read().await;
+        wm.get_wallet_info(&self.wallet_id)
+            .map(|info| {
+                info.identity_manager
+                    .managed_identities()
+                    .map(|m| m.dashpay().pending_contact_crypto.len())
                     .sum::<usize>()
             })
             .unwrap_or(0)

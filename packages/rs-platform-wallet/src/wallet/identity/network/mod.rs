@@ -40,6 +40,8 @@ mod contact_info;
 mod contact_requests;
 mod contacts;
 mod dashpay_view;
+mod invitation;
+pub use invitation::{Invitation, MAX_INVITATION_DUFFS, MAX_INVITATION_TTL_SECS};
 mod payment_handler;
 pub(crate) use payment_handler::DashPayPaymentHandler;
 // Re-exported for the payments unit tests, which drive the hooks
@@ -54,6 +56,7 @@ pub(crate) use payments::{
 mod profile;
 pub(crate) mod sdk_writer;
 mod seed_binding;
+pub use seed_binding::SeedBindingVerification;
 
 // Token state-transition operations (same `IdentityWallet` impl blocks).
 // Bookkeeping (watch / sync / balance) lives on

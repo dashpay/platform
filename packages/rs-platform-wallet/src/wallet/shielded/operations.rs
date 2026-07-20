@@ -23,7 +23,7 @@ use super::activity::{ShieldedActivityKind, ShieldedActivityStatus, ShieldedDire
 use super::activity_recorder::{
     build_pending_entry, changeset_for_entry, non_zero_memo, with_status, LiveEntryParams,
 };
-use super::keys::OrchardKeySet;
+use super::keys::{AccountViewingKeys, OrchardKeySet};
 use super::note_selection::{
     select_notes_for_denomination, select_notes_with_fee, ShieldedFeeKind,
 };
@@ -242,7 +242,7 @@ async fn record_pending_activity<S: ShieldedStore>(
     persister: Option<&WalletPersister>,
     wallet_id: WalletId,
     id: SubwalletId,
-    keys: &OrchardKeySet,
+    keys: &AccountViewingKeys,
     params: LiveEntryParams<'_>,
 ) -> Option<super::activity::ShieldedActivityEntry> {
     let kind = params.kind.clone();
@@ -401,7 +401,7 @@ pub async fn shield<S: ShieldedStore, Sig: Signer<PlatformAddress>, P: OrchardPr
     store: &Arc<RwLock<S>>,
     persister: Option<&WalletPersister>,
     wallet_id: WalletId,
-    keys: &OrchardKeySet,
+    keys: &AccountViewingKeys,
     account: u32,
     inputs: BTreeMap<PlatformAddress, Credits>,
     amount: u64,
@@ -556,7 +556,8 @@ pub async fn shield<S: ShieldedStore, Sig: Signer<PlatformAddress>, P: OrchardPr
                 format_addresses_with_info(rich.addresses_with_info(), network),
             ))
         } else {
-            PlatformWalletError::ShieldedBroadcastFailed(e.to_string())
+            crate::error::promote_address_nonce_error(e)
+                .unwrap_or_else(|| PlatformWalletError::ShieldedBroadcastFailed(e.to_string()))
         }
     };
 
@@ -735,7 +736,8 @@ pub async fn unshield<S: ShieldedStore, P: OrchardProver>(
     amount: u64,
     prover: &P,
 ) -> Result<(), PlatformWalletError> {
-    let change_addr = default_orchard_address(keys)?;
+    let views = keys.viewing_keys();
+    let change_addr = default_orchard_address(&views)?;
     let id = SubwalletId::new(wallet_id, account);
 
     // Reserve against the 2-action floor: Orchard's BundleType::DEFAULT pads single-spend
@@ -805,7 +807,7 @@ pub async fn unshield<S: ShieldedStore, P: OrchardProver>(
             persister,
             wallet_id,
             id,
-            keys,
+            &views,
             LiveEntryParams {
                 kind: ShieldedActivityKind::Unshield,
                 direction: ShieldedDirection::Out,
@@ -971,7 +973,8 @@ pub async fn transfer<S: ShieldedStore, P: OrchardProver>(
     prover: &P,
 ) -> Result<(), PlatformWalletError> {
     let recipient_addr = payment_address_to_orchard(to_address)?;
-    let change_addr = default_orchard_address(keys)?;
+    let views = keys.viewing_keys();
+    let change_addr = default_orchard_address(&views)?;
     let id = SubwalletId::new(wallet_id, account);
 
     // ShieldedTransfer is carved with the base `compute_minimum_shielded_fee`, so reserve
@@ -1026,7 +1029,7 @@ pub async fn transfer<S: ShieldedStore, P: OrchardProver>(
             persister,
             wallet_id,
             id,
-            keys,
+            &views,
             LiveEntryParams {
                 kind: ShieldedActivityKind::Sent,
                 direction: ShieldedDirection::Out,
@@ -1124,7 +1127,8 @@ pub async fn withdraw<S: ShieldedStore, P: OrchardProver>(
     core_fee_per_byte: u32,
     prover: &P,
 ) -> Result<(), PlatformWalletError> {
-    let change_addr = default_orchard_address(keys)?;
+    let views = keys.viewing_keys();
+    let change_addr = default_orchard_address(&views)?;
     let id = SubwalletId::new(wallet_id, account);
     let output_script = CoreScript::from_bytes(to_address.script_pubkey().to_bytes());
 
@@ -1193,7 +1197,7 @@ pub async fn withdraw<S: ShieldedStore, P: OrchardProver>(
             persister,
             wallet_id,
             id,
-            keys,
+            &views,
             LiveEntryParams {
                 kind: ShieldedActivityKind::Withdrawal,
                 direction: ShieldedDirection::Out,
@@ -1319,7 +1323,8 @@ where
             "identity-create-from-shielded-pool requires at least one public key".to_string(),
         ));
     }
-    let change_addr = default_orchard_address(keys)?;
+    let views = keys.viewing_keys();
+    let change_addr = default_orchard_address(&views)?;
     let id = SubwalletId::new(wallet_id, account);
     let num_keys = public_keys.len();
 
@@ -1395,7 +1400,7 @@ where
             persister,
             wallet_id,
             id,
-            keys,
+            &views,
             LiveEntryParams {
                 kind: ShieldedActivityKind::IdentityCreate {
                     identity_id: identity_id.to_buffer(),
@@ -1720,7 +1725,9 @@ async fn fetch_identity_with_retries(
 // -------------------------------------------------------------------------
 
 /// Convert `keys`'s default `PaymentAddress` to an `OrchardAddress`.
-fn default_orchard_address(keys: &OrchardKeySet) -> Result<OrchardAddress, PlatformWalletError> {
+fn default_orchard_address(
+    keys: &AccountViewingKeys,
+) -> Result<OrchardAddress, PlatformWalletError> {
     payment_address_to_orchard(&keys.default_address)
 }
 
@@ -2409,6 +2416,9 @@ pub(super) async fn redrive_pending_spends<S: ShieldedStore>(
 ///   non-empty consensus `data` — the wait-stream error envelope for a
 ///   transition Platform executed and rejected on its merits.
 ///
+/// Recurses through a `NoAvailableAddressesToRetry` envelope, mirroring
+/// [`crate::error::as_address_invalid_nonce`].
+///
 /// Only these prove the transition was evaluated and REJECTED. Everything
 /// else — transport errors, timeouts, `AlreadyExists` (which proves the
 /// opposite: the transition is already in the mempool or on chain),
@@ -2418,6 +2428,7 @@ fn carries_consensus_rejection(err: &dash_sdk::Error) -> bool {
     match err {
         dash_sdk::Error::Protocol(dpp::ProtocolError::ConsensusError(_)) => true,
         dash_sdk::Error::StateTransitionBroadcastError(e) => e.cause.is_some(),
+        dash_sdk::Error::NoAvailableAddressesToRetry(inner) => carries_consensus_rejection(inner),
         _ => false,
     }
 }
@@ -2458,7 +2469,8 @@ async fn broadcast_shielded_spend(
     match state_transition.broadcast(sdk, None).await {
         Ok(()) => {}
         Err(e) if broadcast_definitely_failed(&e) => {
-            return Err(PlatformWalletError::ShieldedBroadcastFailed(e.to_string()));
+            return Err(crate::error::promote_address_nonce_error(&e)
+                .unwrap_or_else(|| PlatformWalletError::ShieldedBroadcastFailed(e.to_string())));
         }
         Err(e) => {
             warn!(
@@ -2566,7 +2578,8 @@ fn classify_spend_wait_failure(
     wait_err: &dash_sdk::Error,
 ) -> PlatformWalletError {
     if carries_consensus_rejection(wait_err) {
-        PlatformWalletError::ShieldedBroadcastFailed(wait_err.to_string())
+        crate::error::promote_address_nonce_error(wait_err)
+            .unwrap_or_else(|| PlatformWalletError::ShieldedBroadcastFailed(wait_err.to_string()))
     } else {
         warn!(
             operation,
@@ -2932,6 +2945,57 @@ mod classify_spend_wait_failure_tests {
         assert!(!broadcast_definitely_failed(
             &dash_sdk::Error::AlreadyExists("state transition already in mempool".to_string())
         ));
+    }
+
+    /// A consensus verdict wrapped in the dapi-client's `NoAvailableAddressesToRetry`
+    /// retry envelope must still count as a rejection — `carries_consensus_rejection`
+    /// recurses through the envelope, in lockstep with `as_address_invalid_nonce`.
+    #[test]
+    fn wrapped_consensus_rejection_is_a_rejection() {
+        let wrapped =
+            dash_sdk::Error::NoAvailableAddressesToRetry(Box::new(consensus_metadata_rejection()));
+        assert!(carries_consensus_rejection(&wrapped));
+    }
+
+    /// A transport error wrapped in the retry envelope carries no consensus
+    /// verdict, so it remains ambiguous — the recursion must not misread it.
+    #[test]
+    fn wrapped_transport_error_is_not_a_rejection() {
+        use dash_sdk::dapi_grpc::tonic::Code;
+        let wrapped = dash_sdk::Error::NoAvailableAddressesToRetry(Box::new(grpc_err(
+            Code::DeadlineExceeded,
+        )));
+        assert!(!carries_consensus_rejection(&wrapped));
+    }
+
+    /// A nonce rejection wrapped in the retry envelope must reach
+    /// `promote_address_nonce_error` and surface as the typed
+    /// `AddressNonceMismatch`, not fall through to `ShieldedSpendUnconfirmed`.
+    #[test]
+    fn wrapped_nonce_rejection_promotes_to_typed_mismatch() {
+        use dpp::address_funds::PlatformAddress;
+        use dpp::consensus::state::address_funds::AddressInvalidNonceError;
+        use dpp::consensus::state::state_error::StateError;
+
+        let address = PlatformAddress::P2pkh([9u8; 20]);
+        let cause = ConsensusError::StateError(StateError::AddressInvalidNonceError(
+            AddressInvalidNonceError::new(address, 7, 8),
+        ));
+        let inner = dash_sdk::Error::Protocol(dpp::ProtocolError::ConsensusError(Box::new(cause)));
+        let wrapped = dash_sdk::Error::NoAvailableAddressesToRetry(Box::new(inner));
+
+        match classify_spend_wait_failure("withdraw", &wrapped) {
+            PlatformWalletError::AddressNonceMismatch {
+                address: got,
+                provided_nonce,
+                expected_nonce,
+            } => {
+                assert_eq!(got, address);
+                assert_eq!(provided_nonce, 7);
+                assert_eq!(expected_nonce, 8);
+            }
+            other => panic!("expected AddressNonceMismatch, got {other:?}"),
+        }
     }
 }
 

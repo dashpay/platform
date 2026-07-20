@@ -44,6 +44,22 @@ struct IdentitiesContentView: View {
     /// presentation of a pre-configured `CreateIdentityView`. Cleared
     /// when the sheet dismisses (SwiftUI nils the binding for us).
     @State private var resumingAssetLock: PersistentAssetLock?
+    /// Identities vs. Masternodes segment. The segmented control is only
+    /// shown when the active network has at least one aggregated
+    /// masternode; otherwise the screen is unchanged (Identities only).
+    @State private var identitiesSegment: IdentitiesSegment = .identities
+    /// Whether Retired (not-in-DML) masternodes are shown. Default off —
+    /// only Active / Inactive / Unknown appear until the user opts in.
+    @State private var showRetired = false
+    /// All persisted masternodes, filtered to the active network via
+    /// `walletIdsOnNetwork` (masternodes carry no `networkRaw` column —
+    /// the wallet-id pivot the platform-address / shielded views use).
+    @Query private var allMasternodes: [PersistentMasternode]
+
+    enum IdentitiesSegment: Hashable {
+        case identities
+        case masternodes
+    }
 
     init(network: Network) {
         self.network = network
@@ -56,6 +72,20 @@ struct IdentitiesContentView: View {
 
     var body: some View {
         List {
+            if showMasternodeSegments {
+                Section {
+                    Picker("View", selection: $identitiesSegment) {
+                        Text("Identities").tag(IdentitiesSegment.identities)
+                        Text("Masternodes").tag(IdentitiesSegment.masternodes)
+                    }
+                    .pickerStyle(.segmented)
+                    .accessibilityIdentifier("identities.segment")
+                }
+            }
+
+            if showMasternodeSegments, identitiesSegment == .masternodes {
+                masternodesSection
+            } else {
             pendingRegistrationsSection
             resumableRegistrationsSection
             if identities.isEmpty {
@@ -124,6 +154,7 @@ struct IdentitiesContentView: View {
                     }
                 }
             }
+            }
         }
         .confirmationDialog(
             removalDialogTitle,
@@ -149,6 +180,9 @@ struct IdentitiesContentView: View {
             )
         }
         .navigationTitle("Identities")
+        .navigationDestination(for: PersistentMasternode.self) { masternode in
+            MasternodeDetailView(masternode: masternode)
+        }
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
                 Menu {
@@ -198,6 +232,78 @@ struct IdentitiesContentView: View {
         }
         .refreshable {
             await platformBalanceSyncService.performSync()
+        }
+        // Refresh the persisted masternode aggregation from Rust when the
+        // tab appears. Pure persist step — Rust owns the aggregation
+        // (`MasternodeSync.refresh`).
+        .onAppear {
+            MasternodeSync.refresh(
+                walletManager: walletManager,
+                walletIds: walletIdsOnNetwork,
+                modelContext: modelContext
+            )
+        }
+    }
+
+    /// Wallet ids on the active network — the scoping pivot for
+    /// `allMasternodes` (which has no `networkRaw` column of its own).
+    private var walletIdsOnNetwork: Set<Data> {
+        let raw = network.rawValue
+        return Set(allWallets.lazy
+            .filter { $0.networkRaw == raw }
+            .map(\.walletId))
+    }
+
+    /// Active-network masternodes in stable registration order.
+    private var masternodesOnNetwork: [PersistentMasternode] {
+        let ids = walletIdsOnNetwork
+        return allMasternodes
+            .filter { ids.contains($0.walletId) }
+            .sorted { $0.orderIndex < $1.orderIndex }
+    }
+
+    /// Show the Identities/Masternodes toggle only when this network has
+    /// at least one masternode; otherwise the screen stays Identities-only.
+    private var showMasternodeSegments: Bool {
+        !masternodesOnNetwork.isEmpty
+    }
+
+    /// Active-network masternodes after the "Show retired" filter. Retired
+    /// (status == .retired) rows are hidden unless `showRetired`; every
+    /// other status — including Unknown — stays visible.
+    private var visibleMasternodes: [PersistentMasternode] {
+        masternodesOnNetwork.filter { showRetired || $0.status != .retired }
+    }
+
+    /// Count of retired masternodes currently hidden by the filter.
+    private var hiddenRetiredCount: Int {
+        showRetired ? 0 : masternodesOnNetwork.filter { $0.status == .retired }.count
+    }
+
+    /// One row per aggregated masternode, in registration order, with the
+    /// "Show retired" toggle.
+    @ViewBuilder
+    private var masternodesSection: some View {
+        Section("Masternodes") {
+            Toggle("Show retired", isOn: $showRetired)
+                .accessibilityIdentifier("masternodes.showRetiredToggle")
+
+            ForEach(visibleMasternodes) { masternode in
+                // Value-based navigation (destination hoisted onto the
+                // List below) so a `@Query` re-render can't dismiss an
+                // open detail page mid-scroll — see the nav-churn note.
+                NavigationLink(value: masternode) {
+                    MasternodeRow(masternode: masternode)
+                }
+            }
+
+            // Guard against a blank-looking list when every masternode is
+            // retired and the toggle is off.
+            if visibleMasternodes.isEmpty && hiddenRetiredCount > 0 {
+                Text("\(hiddenRetiredCount) retired hidden")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
         }
     }
 
@@ -329,6 +435,15 @@ struct IdentitiesContentView: View {
     ) -> [R] {
         locks.filter { lock in
             guard lock.statusRaw >= 1 && lock.statusRaw <= 3 else { return false }
+            // Invitation vouchers (fundingTypeRaw 3, IdentityInvitation) are
+            // bearer locks whose key is shared in the invitation link — they
+            // are reclaimed via the Invitations screen, never resumed as a
+            // local registration (which would consume the voucher into an
+            // unrelated identity and kill the invitee's claim). Their nominal
+            // identity slot is 0, so without this exclusion an unclaimed
+            // voucher surfaces here whenever slot 0 is free. The Rust funding
+            // resolver refuses them too; this keeps the row from rendering.
+            guard lock.fundingTypeRaw != 3 else { return false }
             let slot = UInt32(bitPattern: lock.identityIndexRaw)
             return !usedSlots.contains(
                 UsedSlot(walletId: lock.walletId, slot: slot)
@@ -606,5 +721,66 @@ private struct ResumableRegistrationRow: View {
     private func formatDuffs(_ amountDuffs: Int64) -> String {
         let dash = Double(amountDuffs) / 1e8
         return String(format: "%g DASH", dash)
+    }
+}
+
+/// One masternode row: type badge (Evonode / Masternode), service IP,
+/// short proTxHash, and Active / Revoked status. All fields come
+/// pre-aggregated from Rust via `PersistentMasternode`.
+private struct MasternodeRow: View {
+    let masternode: PersistentMasternode
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text(masternode.displayTitle)
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                Spacer()
+                Text(masternode.typeName)
+                    .font(.caption2)
+                    .fontWeight(.medium)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(
+                        (masternode.isEvonode ? Color.purple : Color.blue).opacity(0.15)
+                    )
+                    .foregroundColor(masternode.isEvonode ? .purple : .blue)
+                    .cornerRadius(4)
+            }
+
+            HStack(spacing: 6) {
+                Image(systemName: "network")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                Text(masternode.serviceAddress ?? "—")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+
+            HStack(spacing: 6) {
+                Text(masternode.proTxHashShort)
+                    .font(.system(.caption2, design: .monospaced))
+                    .foregroundColor(.secondary)
+                Spacer()
+                Text(masternode.statusName)
+                    .font(.caption2)
+                    .fontWeight(.medium)
+                    .foregroundColor(statusColor)
+            }
+        }
+        .padding(.vertical, 2)
+        .accessibilityIdentifier("masternodes.row.\(masternode.proTxHashShort)")
+    }
+
+    /// Active = green, Inactive (PoSe-banned) = orange, Retired = red,
+    /// Unknown (DML not synced) = secondary.
+    private var statusColor: Color {
+        switch masternode.status {
+        case .active: return .green
+        case .inactive: return .orange
+        case .retired: return .red
+        case .unknown: return .secondary
+        }
     }
 }

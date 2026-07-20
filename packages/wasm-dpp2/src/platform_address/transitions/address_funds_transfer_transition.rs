@@ -1,5 +1,5 @@
 use crate::error::{WasmDppError, WasmDppResult};
-use crate::impl_wasm_conversions_serde;
+use crate::impl_wasm_conversions_inner;
 use crate::impl_wasm_type_info;
 use crate::platform_address::{
     PlatformAddressInputWasm, PlatformAddressOutputWasm, fee_strategy_from_js_options,
@@ -217,8 +217,9 @@ impl AddressFundsTransferTransitionWasm {
     }
 }
 
-impl_wasm_conversions_serde!(
+impl_wasm_conversions_inner!(
     AddressFundsTransferTransitionWasm,
+    AddressFundsTransferTransition,
     AddressFundsTransferTransition,
     AddressFundsTransferTransitionObjectJs,
     AddressFundsTransferTransitionJSONJs

@@ -167,3 +167,123 @@ impl IdentityWallet {
             .await
     }
 }
+
+/// Select the OWNER-purpose `IdentityPublicKey` on a masternode identity
+/// whose key material matches `owner_key_hash160` — the hash160 of the
+/// wallet-derived provider owner key.
+///
+/// Match rule: purpose `OWNER`, key type `ECDSA_HASH160`, and 20-byte data
+/// equal to `owner_key_hash160` (a masternode's owner key is registered as
+/// the hash160 in the ProRegTx). Returns `None` when no such key exists —
+/// the caller **must not broadcast** in that case: signing an
+/// identity-credit-withdrawal with a key the identity doesn't recognise
+/// produces an invalid transition (rejected, but still a wasted attempt),
+/// so a distinct error is surfaced instead.
+///
+/// Pure — no derivation or network. Unit-tested below; the derive-and-sign
+/// orchestration feeds it the wallet-derived owner key's hash160.
+// `allow(dead_code)`: currently exercised only by the unit tests — the
+// masternode-withdraw FFI orchestration that calls it in production is
+// gated pending the verified owner-key signer (see
+// `platform_wallet_manager_masternode_withdraw`). Remove the allow when
+// that path is wired.
+#[allow(dead_code)]
+pub fn select_owner_withdrawal_key<'a, I>(
+    identity_keys: I,
+    owner_key_hash160: &[u8; 20],
+) -> Option<&'a IdentityPublicKey>
+where
+    I: IntoIterator<Item = &'a IdentityPublicKey>,
+{
+    use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+    use dpp::identity::{KeyType, Purpose};
+    identity_keys.into_iter().find(|key| {
+        key.purpose() == Purpose::OWNER
+            && key.key_type() == KeyType::ECDSA_HASH160
+            && key.data().as_slice() == owner_key_hash160.as_slice()
+    })
+}
+
+#[cfg(test)]
+mod masternode_withdrawal_tests {
+    use super::select_owner_withdrawal_key;
+    use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+    use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+    use dpp::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel};
+
+    fn make_key(id: u32, purpose: Purpose, key_type: KeyType, data: Vec<u8>) -> IdentityPublicKey {
+        IdentityPublicKey::V0(IdentityPublicKeyV0 {
+            id,
+            purpose,
+            security_level: SecurityLevel::CRITICAL,
+            contract_bounds: None,
+            key_type,
+            read_only: false,
+            data: dpp::platform_value::BinaryData::new(data),
+            disabled_at: None,
+        })
+    }
+
+    #[test]
+    fn selects_the_matching_owner_hash160_key_over_decoys() {
+        let owner_hash = [0x11u8; 20];
+        let other_hash = [0x22u8; 20];
+        let keys = vec![
+            // Right hash, wrong purpose.
+            make_key(
+                0,
+                Purpose::TRANSFER,
+                KeyType::ECDSA_HASH160,
+                owner_hash.to_vec(),
+            ),
+            // OWNER but wrong key type.
+            make_key(
+                1,
+                Purpose::OWNER,
+                KeyType::ECDSA_SECP256K1,
+                owner_hash.to_vec(),
+            ),
+            // OWNER hash160 but a different hash.
+            make_key(
+                2,
+                Purpose::OWNER,
+                KeyType::ECDSA_HASH160,
+                other_hash.to_vec(),
+            ),
+            // The one and only match.
+            make_key(
+                3,
+                Purpose::OWNER,
+                KeyType::ECDSA_HASH160,
+                owner_hash.to_vec(),
+            ),
+        ];
+
+        let selected = select_owner_withdrawal_key(keys.iter(), &owner_hash);
+        assert!(selected.is_some(), "must find the matching OWNER key");
+        assert_eq!(selected.unwrap().id(), 3);
+    }
+
+    #[test]
+    fn returns_none_when_no_owner_key_matches() {
+        let owner_hash = [0x11u8; 20];
+        let keys = vec![
+            make_key(
+                0,
+                Purpose::TRANSFER,
+                KeyType::ECDSA_HASH160,
+                owner_hash.to_vec(),
+            ),
+            make_key(
+                1,
+                Purpose::OWNER,
+                KeyType::ECDSA_HASH160,
+                [0x22u8; 20].to_vec(),
+            ),
+        ];
+        assert!(
+            select_owner_withdrawal_key(keys.iter(), &owner_hash).is_none(),
+            "no OWNER key with this hash ⇒ None (caller must not broadcast)"
+        );
+    }
+}

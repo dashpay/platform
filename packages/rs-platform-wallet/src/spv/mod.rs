@@ -1,7 +1,9 @@
 mod genesis;
+mod peers;
 mod runtime;
 
 pub use genesis::{resolve_devnet_genesis_header, DevnetGenesisOverride};
+pub use peers::{SpvPeerInfo, SpvPeerNodeType};
 pub use runtime::SpvRuntime;
 
 // Re-exports so the FFI layer can build sync configs and read progress

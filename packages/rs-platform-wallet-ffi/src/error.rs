@@ -145,6 +145,20 @@ pub enum PlatformWalletFFIResultCode {
     /// observing the transaction reconciles the outcome. The host must NOT
     /// auto-retry. Shielded sibling: [`Self::ErrorShieldedSpendUnconfirmed`].
     ErrorTransactionBroadcastUnconfirmed = 20,
+    /// Maps `PlatformWalletError::AddressNonceMismatch`. Platform rejected an
+    /// address-funds transition (shield, or identity top-up-from-addresses)
+    /// because the submitted address nonce raced Platform's expected next
+    /// value (a lagging DAPI replica stale read; consensus code 40603). Same
+    /// definitively-failed / notes-released / safe-to-retry contract as
+    /// [`Self::ErrorShieldedBroadcastFailed`] — the transition did NOT execute
+    /// and any note reservations were released (a shield reserves none) — but
+    /// as its OWN code so hosts can recognize this specific, self-healing
+    /// failure and retry: the retry re-fetches the address nonce, resolving
+    /// the mismatch without host intervention. The submitted and Platform-
+    /// expected nonce values travel in the result `message` (the typed
+    /// `Display`); they are not exposed as structured out-fields (that would
+    /// require an ABI-breaking change to `PlatformWalletFFIResult`).
+    ErrorAddressNonceMismatch = 21,
 
     NotFound = 98, // Used exclusively for all the Option that are retuned as errors
     ErrorUnknown = 99,
@@ -284,6 +298,15 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             // so hosts can distinguish it from a definitive rejection.
             PlatformWalletError::TransactionBroadcastUnconfirmed(..) => {
                 PlatformWalletFFIResultCode::ErrorTransactionBroadcastUnconfirmed
+            }
+            // A definitively-failed address-nonce race (reaches the blanket impl
+            // via identity `top_up_from_addresses` → `?`/`.into()`). Exposing
+            // provided/expected nonce as structured out-fields is INTENTIONALLY
+            // out of scope: `PlatformWalletFFIResult` is by-value / ABI-frozen, so
+            // the values travel in the message string and an FFI retry re-fetches
+            // the nonce.
+            PlatformWalletError::AddressNonceMismatch { .. } => {
+                PlatformWalletFFIResultCode::ErrorAddressNonceMismatch
             }
             _ => PlatformWalletFFIResultCode::ErrorUnknown,
         };
@@ -662,6 +685,44 @@ mod tests {
             .to_string_lossy()
             .into_owned();
         assert_eq!(msg, rendered, "Display payload must survive verbatim");
+    }
+
+    /// `AddressNonceMismatch` maps to the dedicated `ErrorAddressNonceMismatch`
+    /// FFI code through the blanket `From` impl (the path identity
+    /// `top_up_from_addresses` takes via `?`/`.into()`) rather than flattening
+    /// to `ErrorUnknown`. The typed Display rendering — carrying the submitted
+    /// and expected nonce values — survives across the boundary as the message.
+    #[test]
+    fn address_nonce_mismatch_maps_to_dedicated_code() {
+        let err = PlatformWalletError::AddressNonceMismatch {
+            address: dpp::address_funds::PlatformAddress::P2pkh([7u8; 20]),
+            provided_nonce: 1,
+            expected_nonce: 2,
+        };
+        let rendered = err.to_string();
+        let result: PlatformWalletFFIResult = err.into();
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorAddressNonceMismatch,
+            "AddressNonceMismatch should map to ErrorAddressNonceMismatch (rendered: {rendered})"
+        );
+        let msg = unsafe { std::ffi::CStr::from_ptr(result.message) }
+            .to_string_lossy()
+            .into_owned();
+        assert_eq!(
+            msg, rendered,
+            "Display payload must survive the FFI boundary verbatim"
+        );
+        // Pin the EXACT rendered substrings, not bare digits, so a
+        // provided/expected transposition would fail the test.
+        assert!(
+            msg.contains("submitted nonce 1"),
+            "submitted (provided) nonce must render exactly: {msg}"
+        );
+        assert!(
+            msg.contains("Platform expected 2"),
+            "expected nonce must render exactly: {msg}"
+        );
     }
 
     /// Other wallet-error variants without a dedicated FFI arm still

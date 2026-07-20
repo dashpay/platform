@@ -104,6 +104,35 @@ pub(crate) unsafe fn resolve_master_from_resolver(
     wallet_id: &[u8; 32],
     network: Network,
 ) -> Result<ExtendedPrivKey, PlatformWalletFFIResult> {
+    let seed = resolve_seed_from_resolver(mnemonic_resolver_handle, wallet_id)?;
+    ExtendedPrivKey::new_master(network, seed.as_ref()).map_err(|e| {
+        PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorWalletOperation,
+            format!("failed to build master xpriv from resolved mnemonic: {e}"),
+        )
+    })
+}
+
+/// Resolve a wallet's BIP-39 mnemonic via a Swift-owned
+/// [`MnemonicResolverHandle`] and return the **raw 64-byte BIP39 seed**
+/// (empty passphrase).
+///
+/// This is the seed the BLS operator / Ed25519 platform-node HD masters
+/// consume directly (rust-dashcore #879); unlike
+/// [`resolve_master_from_resolver`] it does **not** reduce the seed to a
+/// secp256k1 `ExtendedPrivKey` — doing so would discard the raw seed the
+/// provider-key derivation needs. The mnemonic and the returned seed are
+/// held in [`Zeroizing`] buffers; the seed is scrubbed when the returned
+/// value drops.
+///
+/// # Safety
+/// `mnemonic_resolver_handle` must be non-null, come from
+/// [`rs_sdk_ffi::dash_sdk_mnemonic_resolver_create`], and remain valid
+/// for the duration of the call.
+pub(crate) unsafe fn resolve_seed_from_resolver(
+    mnemonic_resolver_handle: *mut rs_sdk_ffi::MnemonicResolverHandle,
+    wallet_id: &[u8; 32],
+) -> Result<Zeroizing<[u8; 64]>, PlatformWalletFFIResult> {
     use rs_sdk_ffi::{mnemonic_resolver_result, MNEMONIC_RESOLVER_BUFFER_CAPACITY};
     use std::ffi::c_void;
 
@@ -165,13 +194,7 @@ pub(crate) unsafe fn resolve_master_from_resolver(
 
     let seed: Zeroizing<[u8; 64]> = Zeroizing::new(mnemonic.to_seed(""));
     drop(mnemonic);
-
-    ExtendedPrivKey::new_master(network, seed.as_ref()).map_err(|e| {
-        PlatformWalletFFIResult::err(
-            PlatformWalletFFIResultCode::ErrorWalletOperation,
-            format!("failed to build master xpriv from resolved mnemonic: {e}"),
-        )
-    })
+    Ok(seed)
 }
 
 /// Build the DIP-9 identity-authentication derivation path
