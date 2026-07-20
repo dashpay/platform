@@ -219,26 +219,26 @@ class PlatformWalletPersistenceHandler(
      * `privkey.*` entry) are RETAINED and leave tracking: they are
      * legitimately discoverable through that committed row, and deleting
      * them would break its signing. Aliases a SIBLING wallet's durable
-     * owner index already claims (via [WalletStorage.storeIfAbsent], no
-     * committed row needed) are retained for the same reason — mirrors
+     * owner index claims (via [WalletStorage.storeIfAbsent], no committed
+     * row needed) are retained for the same reason, checked ATOMICALLY
+     * with the delete by [PrivateKeyDeriver.deleteUnownedStored] — mirrors
      * the cross-wallet check `PlatformWalletManager.removeWallet` runs
-     * before its own alias delete. The batch delete is one atomic
-     * DataStore edit, so a failure deletes nothing. Caller must hold
-     * [callbackExclusion].
+     * (there, in the SAME lock hold as its own alias delete; a plain
+     * check-then-delete pair here would leave a window for a sibling's
+     * [WalletStorage.storeIfAbsent] to adopt an alias between them and
+     * lose it to this delete anyway). Caller must hold [callbackExclusion].
      */
     private fun scrubAliases(hexes: Set<String>, walletId: ByteArray): MutableSet<String> {
         if (hexes.isEmpty()) return mutableSetOf()
         val toDelete = hexes.filterTo(mutableSetOf()) { hex ->
-            val referencedElsewhere = runBlockingResult {
+            runBlockingResult {
                 database.publicKeyDao().getByPublicKeyData(hex.hexToByteArray())
-                    .any { it.privateKeyKeychainIdentifier != null }
+                    .none { it.privateKeyKeychainIdentifier != null }
             }
-            val ownedElsewhere = privateKeyDeriver?.isOwnedByAnotherWallet(hex, walletId) == true
-            !referencedElsewhere && !ownedElsewhere
         }
         if (toDelete.isEmpty()) return mutableSetOf()
         return try {
-            privateKeyDeriver?.deleteStored(toDelete)
+            privateKeyDeriver?.deleteUnownedStored(toDelete, walletId)
             mutableSetOf()
         } catch (t: Throwable) {
             Log.w(
@@ -2524,25 +2524,20 @@ interface PrivateKeyDeriver {
     ): DerivedKeyStoreResult?
 
     /**
-     * Delete previously stored scalars by their public-key hex storage
-     * keys — the rollback counterpart of [deriveAndStore], used when a
+     * Delete each of [pubkeyHexes] that no wallet OTHER than
+     * [excludingWalletId] durably owns, ATOMICALLY with that ownership
+     * check — the rollback counterpart of [deriveAndStore], used when a
      * changeset round that wrote aliases fails (their rows never commit,
-     * so the ciphertext would otherwise be stranded undiscoverably).
-     * Must be atomic (all-or-nothing) and must THROW on failure — the
-     * caller keeps the cleanup record alive until a deletion succeeds.
-     */
-    fun deleteStored(pubkeyHexes: Collection<String>)
-
-    /**
-     * True if any wallet OTHER than [excludingWalletId] durably claims
-     * [pubkeyHex] in its owner index — used before [deleteStored] deletes
-     * a round-created alias with no committed `public_keys` row: a
+     * so the ciphertext would otherwise be stranded undiscoverably). A
      * sibling wallet can have already called [WalletStorage.storeIfAbsent]
-     * and adopted the same (shared, deterministic) alias while its own
-     * row is still uncommitted, and [deleteStored] would otherwise delete
-     * the ciphertext out from under it.
+     * and adopted one of these (shared, deterministic) aliases while its
+     * own row is still uncommitted — checking ownership and deleting in
+     * one atomic step (not two separate calls) is what stops that
+     * sibling's adopted key from being deleted anyway in the window
+     * between them. Must THROW on an atomicity failure — the caller keeps
+     * the cleanup record alive until a deletion succeeds.
      */
-    fun isOwnedByAnotherWallet(pubkeyHex: String, excludingWalletId: ByteArray): Boolean
+    fun deleteUnownedStored(pubkeyHexes: Collection<String>, excludingWalletId: ByteArray): Set<String>
 }
 
 /**

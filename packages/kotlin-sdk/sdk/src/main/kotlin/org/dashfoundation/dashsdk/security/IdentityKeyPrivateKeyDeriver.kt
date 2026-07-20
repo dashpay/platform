@@ -88,22 +88,21 @@ class IdentityKeyPrivateKeyDeriver(
         return DerivedKeyStoreResult(PRIVKEY_IDENTIFIER_PREFIX + pubkeyHex, wasNewlyCreated)
     }
 
-    override fun deleteStored(pubkeyHexes: Collection<String>) {
+    override fun deleteUnownedStored(
+        pubkeyHexes: Collection<String>,
+        excludingWalletId: ByteArray,
+    ): Set<String> =
         // Rollback counterpart of the store above — a failed changeset
         // round deletes the aliases it CREATED (their rows never commit).
-        // Same nested-runBlocking rationale as deriveAndStore; the batch
-        // delete is one atomic DataStore edit and throws on failure, per
-        // the interface contract (the handler keeps the cleanup record
-        // alive until a deletion succeeds).
-        runBlocking { walletStorage.deletePrivateKeys(pubkeyHexes) }
-    }
-
-    override fun isOwnedByAnotherWallet(pubkeyHex: String, excludingWalletId: ByteArray): Boolean =
-        runBlocking {
-            walletStorage.withPrivateKeyExclusion {
-                isOwnedByAnotherWallet(pubkeyHex, excludingWalletId)
-            }
-        }
+        // Same nested-runBlocking rationale as deriveAndStore; the
+        // ownership check and the delete run under WalletStorage's own
+        // single lock hold (see deleteUnownedPrivateKeys), so a sibling
+        // wallet's concurrent storeIfAbsent can't adopt one of these
+        // aliases in a window between a separate check and this delete.
+        // Throws on an atomicity failure, per the interface contract (the
+        // handler keeps the cleanup record alive until a deletion
+        // succeeds).
+        runBlocking { walletStorage.deleteUnownedPrivateKeys(pubkeyHexes, excludingWalletId) }
 
     private companion object {
         /** Matches `WalletStorage`'s private `PRIVKEY_PREFIX`. */

@@ -238,6 +238,32 @@ class WalletStorage(
     }
 
     /**
+     * Delete each of [pubkeyHexes] that no wallet OTHER than
+     * [excludingWalletId] durably owns, ATOMICALLY with that ownership
+     * check — a rolled-back changeset round's cleanup needs this, not two
+     * separate calls (a check via [PrivateKeyExclusion.isOwnedByAnotherWallet]
+     * then a delete via [deletePrivateKeys]): a sibling wallet's
+     * [storeIfAbsent] could adopt one of these aliases in the window
+     * between two separately-locked calls and lose its just-adopted key
+     * to this delete anyway. Returns the hexes actually deleted (a subset
+     * of [pubkeyHexes] — the rest are retained because another wallet
+     * owns them, not because anything failed).
+     */
+    suspend fun deleteUnownedPrivateKeys(
+        pubkeyHexes: Collection<String>,
+        excludingWalletId: ByteArray,
+    ): Set<String> {
+        if (pubkeyHexes.isEmpty()) return emptySet()
+        return privateKeyMutex.withLock {
+            val toDelete = pubkeyHexes.filterTo(mutableSetOf()) { hex ->
+                !privateKeyExclusionScope.isOwnedByAnotherWallet(hex, excludingWalletId)
+            }
+            if (toDelete.isNotEmpty()) deletePrivateKeysLocked(toDelete)
+            toDelete
+        }
+    }
+
+    /**
      * If [pubkeyHex] has no *usable* stored ciphertext — absent, or present
      * but not [isPrivateKeyDecryptable] (a legacy pre-RSA blob) — derive it
      * via [derive] and store it; either way record [ownerWalletId] in the

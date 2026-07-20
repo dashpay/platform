@@ -629,12 +629,6 @@ class PlatformWalletManager(
         )
         var mnemonicStored = false
         try {
-            // Un-tombstone first: wallet ids are deterministic (seed +
-            // network), so a delete-then-reimport of the same phrase reuses
-            // this id — clear any stale rejection from a prior removeWallet
-            // before anything below can race a private-key store for it.
-            walletStorage.clearTombstone(walletId)
-
             // Store the mnemonic keyed by the id the FFI just derived.
             walletStorage.storeMnemonic(walletId, mnemonic)
             mnemonicStored = true
@@ -645,18 +639,29 @@ class PlatformWalletManager(
             name?.trim()?.takeIf { it.isNotEmpty() }?.let { label ->
                 database.walletDao().updateName(walletId, label, System.currentTimeMillis())
             }
+
+            // Un-tombstone LAST, once every fallible step above has
+            // succeeded: wallet ids are deterministic (seed + network), so
+            // a delete-then-reimport of the same phrase reuses this id and
+            // needs any stale rejection from a prior removeWallet cleared —
+            // but clearing it any earlier would open a window (this
+            // function's own remaining fallible steps) where a stale
+            // in-flight identity-key store from that PRIOR wallet instance
+            // could slip through and resurrect owner-index state for a
+            // wallet this call might still go on to fail.
+            walletStorage.clearTombstone(walletId)
         } catch (t: Throwable) {
-            // Re-arm the tombstone this try block cleared up front: every
-            // path below either fully rolls back this wallet (native
-            // unregister + Room cascade) or leaves it in an ambiguous
-            // half-created state, so by the time this catch block returns
-            // the wallet is gone or unusable either way. Without this, a
-            // stale in-flight identity-key store (started against a PRIOR
-            // instance of this same deterministic walletId, suspended
-            // before its own storePrivateKey call) could resume after this
-            // failed re-create and resurrect the walletId's owner-index
-            // entry with fresh ciphertext for a wallet that once again
-            // doesn't exist. Best-effort: must not shadow the real failure.
+            // Default to (re-)arming the tombstone: most paths below fully
+            // roll this wallet back (native unregister + Room cascade) or
+            // leave it seedless/unusable, so a stale in-flight identity-key
+            // store (from a PRIOR instance of this deterministic walletId)
+            // resuming after this failure must not be allowed to write.
+            // The ONE exception — the wallet actually SURVIVES as a valid,
+            // loadable entity (Room rollback itself failed, so the rows
+            // the original native create already wrote are still intact,
+            // and the mnemonic is durable) — is un-armed again below once
+            // that disposition is known. Best-effort: must not shadow the
+            // real failure.
             runCatching { walletStorage.withPrivateKeyExclusion { tombstoneWallet(walletId) } }
 
             // Full rollback, not just the wrapper's Arc clone: the wallet is
@@ -695,6 +700,16 @@ class PlatformWalletManager(
                 }
                 managed.close()
                 val disposition = if (mnemonicStored) {
+                    // The rows the ORIGINAL native create wrote are still
+                    // intact (only this rollback's delete failed, not the
+                    // create itself) and the mnemonic is durable — this
+                    // wallet is a fully valid, loadable entity per
+                    // loadPersistedWallets' contract (it restores whatever
+                    // Room says exists, with no tombstone awareness of its
+                    // own). Un-arm the tombstone the catch block's default
+                    // just set, or every identity-key store against this
+                    // wallet fails until process restart or a re-import.
+                    runCatching { walletStorage.clearTombstone(walletId) }
                     "the mnemonic is stored, so the wallet stays recoverable — " +
                         "retry cleanup via removeWallet"
                 } else {
