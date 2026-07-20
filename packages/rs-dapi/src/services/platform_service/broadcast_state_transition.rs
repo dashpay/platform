@@ -13,6 +13,7 @@ use crate::services::platform_service::error_mapping::decode_consensus_error;
 use crate::services::platform_service::error_mapping::map_tenderdash_message;
 use base64::prelude::*;
 use dapi_grpc::platform::v0::{BroadcastStateTransitionRequest, BroadcastStateTransitionResponse};
+use dpp::version::PlatformVersion;
 use sha2::{Digest, Sha256};
 use tonic::Request;
 use tracing::{Instrument, debug, trace};
@@ -37,15 +38,11 @@ impl PlatformServiceImpl {
         &self,
         request: Request<BroadcastStateTransitionRequest>,
     ) -> Result<BroadcastStateTransitionResponse, DapiError> {
-        let tx = request.get_ref().state_transition.clone();
+        let BroadcastStateTransitionRequest {
+            state_transition: tx,
+        } = request.into_inner();
 
-        // Validate that state transition is provided
-        if tx.is_empty() {
-            debug!("State transition is empty");
-            return Err(DapiError::InvalidArgument(
-                "State Transition is not specified".to_string(),
-            ));
-        }
+        validate_state_transition_bytes(&tx)?;
 
         let txid = Sha256::digest(&tx).to_vec();
         let txid_hex = hex::encode(&txid);
@@ -210,6 +207,27 @@ impl PlatformServiceImpl {
     }
 }
 
+fn validate_state_transition_bytes(tx: &[u8]) -> Result<(), DapiError> {
+    if tx.is_empty() {
+        debug!("State transition is empty");
+        return Err(DapiError::InvalidArgument(
+            "State Transition is not specified".to_string(),
+        ));
+    }
+
+    let max_size = PlatformVersion::latest()
+        .system_limits
+        .max_state_transition_size as usize;
+    if tx.len() > max_size {
+        debug!(actual = tx.len(), max_size, "State transition is too large");
+        return Err(DapiError::InvalidArgument(format!(
+            "State Transition exceeds maximum size of {max_size} bytes"
+        )));
+    }
+
+    Ok(())
+}
+
 /// Convert Tenderdash broadcast error details into a structured `DapiError`.
 fn map_broadcast_error(code: u32, error_message: &str, info: Option<&str>) -> DapiError {
     // TODO: prefer code over message when possible
@@ -234,4 +252,26 @@ fn map_broadcast_error(code: u32, error_message: &str, info: Option<&str>) -> Da
         message,
         consensus_error,
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn state_transition_size_is_checked_before_broadcast_work() {
+        let max_size = PlatformVersion::latest()
+            .system_limits
+            .max_state_transition_size as usize;
+
+        assert!(validate_state_transition_bytes(&vec![1; max_size]).is_ok());
+        assert!(matches!(
+            validate_state_transition_bytes(&vec![1; max_size + 1]),
+            Err(DapiError::InvalidArgument(message)) if message.contains("maximum size")
+        ));
+        assert!(matches!(
+            validate_state_transition_bytes(&[]),
+            Err(DapiError::InvalidArgument(message)) if message.contains("not specified")
+        ));
+    }
 }
