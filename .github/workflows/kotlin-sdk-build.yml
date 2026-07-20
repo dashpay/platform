@@ -142,7 +142,15 @@ jobs:
           disable-animations: true
           emulator-options: -no-snapshot -no-window -no-audio -no-boot-anim -camera-back none -dns-server 8.8.8.8,1.1.1.1
           working-directory: packages/kotlin-sdk
-          script: ./gradlew :sdk:connectedDebugAndroidTest --stacktrace
+          script: |
+            # Enroll a device-wide secure lock screen (PIN) — Android
+            # Keystore refuses to generate an auth-required key
+            # (KeyGenParameterSpec.setUserAuthenticationRequired(true),
+            # used for the identity-key KEYS_ALIAS RSA pair) without one
+            # enrolled, even though nothing here ever prompts for it
+            # (private-key ENCRYPT is never auth-gated; only DECRYPT is).
+            adb shell locksettings set-pin 1234
+            ./gradlew :sdk:connectedDebugAndroidTest --stacktrace
 
       - name: Upload test reports on failure
         if: failure()

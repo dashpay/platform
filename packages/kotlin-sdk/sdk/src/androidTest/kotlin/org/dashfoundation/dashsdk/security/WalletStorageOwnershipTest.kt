@@ -19,6 +19,15 @@ import org.junit.runner.RunWith
  * in the JVM unit suite; `AndroidKeyStore` has no JVM/Robolectric provider
  * (confirmed empirically: `KeyStore.getInstance("AndroidKeyStore")` throws
  * `NoSuchAlgorithmException` there).
+ *
+ * Any test here that reaches [WalletStorage.storePrivateKey] generates the
+ * `KEYS_ALIAS` RSA keypair via [KeystoreManager.ensureKeysKeyPair], which
+ * requires `setUserAuthenticationRequired(true)` — Android Keystore
+ * refuses to create that key without a secure lock screen enrolled on the
+ * device. This is the first androidTest in this module to exercise that
+ * code path (every existing androidTest avoids identity-key storage), so
+ * CI's emulator setup now enrolls one (`adb shell locksettings set-pin`
+ * in `.github/workflows/kotlin-sdk-build.yml`) before running this suite.
  */
 @RunWith(AndroidJUnit4::class)
 class WalletStorageOwnershipTest {
