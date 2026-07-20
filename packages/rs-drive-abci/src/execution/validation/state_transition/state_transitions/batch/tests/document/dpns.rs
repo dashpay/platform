@@ -959,6 +959,7 @@ mod dpns_tests {
 
 mod dpns_username_transfer_tests {
     use super::*;
+    use dpp::consensus::basic::BasicError;
     use dpp::consensus::state::data_trigger::DataTriggerError;
     use dpp::data_contract::DataContract;
     use dpp::document::Document;
@@ -1463,6 +1464,21 @@ mod dpns_username_transfer_tests {
                 }]
             );
 
+            // The domain must still belong to Alice, keep its records.identity
+            // pointing at her, and have no $price set
+            let alice_documents =
+                query_domain_documents_by_record_identity(&platform, &dpns_contract, alice.id());
+
+            assert_eq!(alice_documents.len(), 1);
+
+            let kept_document = alice_documents.first().expect("expected a document");
+
+            assert_eq!(kept_document.owner_id(), alice.id());
+
+            assert_identity_record(kept_document, alice.id());
+
+            assert!(kept_document.properties().get("$price").is_none());
+
             return;
         }
 
@@ -1486,6 +1502,18 @@ mod dpns_username_transfer_tests {
             .expect("expected to get back the price");
 
         assert_eq!(price, dash_to_credits!(0.1));
+
+        let alice_balance_before_sale = platform
+            .drive
+            .fetch_identity_balance(alice.id().to_buffer(), None, platform_version)
+            .expect("expected to get alice's balance")
+            .expect("expected alice's identity to exist");
+
+        let bob_balance_before_purchase = platform
+            .drive
+            .fetch_identity_balance(bob.id().to_buffer(), None, platform_version)
+            .expect("expected to get bob's balance")
+            .expect("expected bob's identity to exist");
 
         document.set_revision(Some(3));
 
@@ -1561,6 +1589,192 @@ mod dpns_username_transfer_tests {
             query_domain_documents_by_record_identity(&platform, &dpns_contract, alice.id());
 
         assert_eq!(alice_documents.len(), 0);
+
+        // Alice pays no fees on Bob's purchase transition, so her balance must
+        // grow by exactly the sale price plus the refund of the document
+        // storage she originally paid for: the purchased revision is stored
+        // under Bob's storage flags, releasing the bytes Alice had prepaid
+        let alice_storage_refund: Credits = 7711268;
+
+        let alice_balance_after_sale = platform
+            .drive
+            .fetch_identity_balance(alice.id().to_buffer(), None, platform_version)
+            .expect("expected to get alice's balance")
+            .expect("expected alice's identity to exist");
+
+        assert_eq!(
+            alice_balance_after_sale,
+            alice_balance_before_sale + dash_to_credits!(0.1) + alice_storage_refund
+        );
+
+        // Bob pays the sale price plus processing and storage fees
+        let bob_balance_after_purchase = platform
+            .drive
+            .fetch_identity_balance(bob.id().to_buffer(), None, platform_version)
+            .expect("expected to get bob's balance")
+            .expect("expected bob's identity to exist");
+
+        assert!(bob_balance_after_purchase < bob_balance_before_purchase - dash_to_credits!(0.1));
+
+        let issues = platform
+            .drive
+            .grove
+            .visualize_verify_grovedb(None, true, false, &platform_version.drive.grove_version)
+            .expect("expected to have no issues");
+
+        assert_eq!(
+            issues.len(),
+            0,
+            "issues are {}",
+            issues
+                .iter()
+                .map(|(hash, (a, b, c))| format!("{}: {} {} {}", hash, a, b, c))
+                .collect::<Vec<_>>()
+                .join(" | ")
+        );
+    }
+
+    /// The v1 data-trigger bindings list drops the rejects for `Transfer`,
+    /// `Purchase` and `UpdatePrice`, but `Replace` and `Delete` must stay
+    /// rejected: name records are immutable and permanent even though they can
+    /// now change hands.
+    ///
+    /// `Replace` is stopped before data triggers run because the domain
+    /// document type is not mutable, but `Delete` is stopped only by the
+    /// reject data trigger (the domain document type sets `canBeDeleted:
+    /// true`), so this pins the single guard protecting names from deletion.
+    #[tokio::test]
+    async fn test_dpns_username_replace_and_delete_still_rejected() {
+        let mut platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(PlatformVersion::latest().protocol_version)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let platform_state = platform.state.load();
+        let platform_version = platform_state
+            .current_platform_version()
+            .expect("expected to get current platform version");
+
+        let mut rng = StdRng::seed_from_u64(439);
+
+        let alice = setup_identity(&mut platform, 960, dash_to_credits!(0.5));
+
+        let (mut document, dpns_contract) = register_dpns_username(
+            &mut platform,
+            &alice,
+            &mut rng,
+            "quantum8",
+            platform_version,
+        )
+        .await;
+
+        let (alice, signer, key) = &alice;
+
+        let domain = dpns_contract
+            .document_type_for_name("domain")
+            .expect("expected the domain document type");
+
+        document.set_revision(Some(2));
+
+        let documents_batch_replace_transition =
+            BatchTransition::new_document_replacement_transition_from_document(
+                document.clone(),
+                domain,
+                key,
+                4,
+                0,
+                None,
+                signer,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expect to create documents batch transition for the replacement");
+
+        let documents_batch_delete_transition =
+            BatchTransition::new_document_deletion_transition_from_document(
+                document,
+                domain,
+                key,
+                5,
+                0,
+                None,
+                signer,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expect to create documents batch transition for the deletion");
+
+        for (transition, expect_data_trigger_reject) in [
+            (documents_batch_replace_transition, false),
+            (documents_batch_delete_transition, true),
+        ] {
+            let serialized_transition = transition
+                .serialize_to_bytes()
+                .expect("expected documents batch serialized state transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[serialized_transition],
+                    &platform_state,
+                    &BlockInfo::default_with_time(
+                        platform_state
+                            .last_committed_block_time_ms()
+                            .unwrap_or_default()
+                            + 3000,
+                    ),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+
+            if expect_data_trigger_reject {
+                assert_matches!(
+                    processing_result.execution_results().as_slice(),
+                    [StateTransitionExecutionResult::PaidConsensusError {
+                        error: ConsensusError::StateError(StateError::DataTriggerError(
+                            DataTriggerError::DataTriggerConditionError(_)
+                        )),
+                        ..
+                    }]
+                );
+            } else {
+                assert_matches!(
+                    processing_result.execution_results().as_slice(),
+                    [StateTransitionExecutionResult::PaidConsensusError {
+                        error: ConsensusError::BasicError(
+                            BasicError::InvalidDocumentTransitionActionError(_)
+                        ),
+                        ..
+                    }]
+                );
+            }
+
+            // The username must still belong to and resolve to Alice
+            let alice_documents =
+                query_domain_documents_by_record_identity(&platform, &dpns_contract, alice.id());
+
+            assert_eq!(alice_documents.len(), 1);
+
+            let kept_document = alice_documents.first().expect("expected a document");
+
+            assert_eq!(kept_document.owner_id(), alice.id());
+
+            assert_identity_record(kept_document, alice.id());
+        }
 
         let issues = platform
             .drive
