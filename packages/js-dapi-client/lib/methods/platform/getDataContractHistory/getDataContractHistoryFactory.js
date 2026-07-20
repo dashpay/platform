@@ -64,7 +64,16 @@ function getDataContractHistoryFactory(grpcTransport) {
           options,
         );
 
-        return GetDataContractHistoryResponse.createFromProto(getDataContractHistoryResponse);
+        const parsedResponse = GetDataContractHistoryResponse.createFromProto(
+          getDataContractHistoryResponse,
+        );
+        if (options.prove && !parsedResponse.getProof()) {
+          throw new InvalidResponseError(
+            'Proved data contract history response is missing proof',
+          );
+        }
+
+        return parsedResponse;
       } catch (e) {
         if (e instanceof InvalidResponseError) {
           lastError = e;
