@@ -156,7 +156,7 @@ impl StreamingServiceImpl {
         let count = req.count;
         let filter = match req.bloom_filter {
             Some(bloom_filter) => {
-                let (core_filter, flags) = parse_bloom_filter(&bloom_filter)?;
+                let (core_filter, flags) = parse_bloom_filter(bloom_filter)?;
                 FilterType::CoreBloomFilter(
                     std::sync::Arc::new(std::sync::RwLock::new(core_filter)),
                     flags,
@@ -1048,7 +1048,7 @@ fn build_merkle_block_bytes(block: &Block, match_flags: &[bool]) -> Result<Vec<u
     Ok(serialize(&mb))
 }
 fn parse_bloom_filter(
-    bloom_filter: &dapi_grpc::core::v0::BloomFilter,
+    bloom_filter: dapi_grpc::core::v0::BloomFilter,
 ) -> Result<
     (
         dashcore_rpc::dashcore::bloom::BloomFilter,
@@ -1056,6 +1056,8 @@ fn parse_bloom_filter(
     ),
     Status,
 > {
+    use dashcore_rpc::dashcore::bloom::{MAX_BLOOM_FILTER_SIZE, MAX_HASH_FUNCS};
+
     trace!(
         n_hash_funcs = bloom_filter.n_hash_funcs,
         n_tweak = bloom_filter.n_tweak,
@@ -1072,6 +1074,13 @@ fn parse_bloom_filter(
         ));
     }
 
+    if bloom_filter.v_data.len() > MAX_BLOOM_FILTER_SIZE {
+        debug!("transactions_with_proofs=bloom_filter_too_large");
+        return Err(Status::invalid_argument(format!(
+            "bloom filter data exceeds {MAX_BLOOM_FILTER_SIZE} bytes"
+        )));
+    }
+
     if bloom_filter.n_hash_funcs == 0 {
         debug!("transactions_with_proofs=bloom_filter_no_hash_funcs");
         return Err(Status::invalid_argument(
@@ -1079,13 +1088,20 @@ fn parse_bloom_filter(
         ));
     }
 
-    // Create filter from bloom filter parameters
-    let bloom_filter_clone = bloom_filter.clone();
-    let flags = bloom_flags_from_int(bloom_filter_clone.n_flags);
+    if bloom_filter.n_hash_funcs > MAX_HASH_FUNCS {
+        debug!("transactions_with_proofs=bloom_filter_too_many_hash_funcs");
+        return Err(Status::invalid_argument(format!(
+            "number of hash functions exceeds {MAX_HASH_FUNCS}"
+        )));
+    }
+
+    // Move the already-decoded data into the Core filter after validating the
+    // narrow BIP37 limits, avoiding attacker-sized intermediate copies.
+    let flags = bloom_flags_from_int(bloom_filter.n_flags);
     let core_filter = dashcore_rpc::dashcore::bloom::BloomFilter::from_bytes(
-        bloom_filter_clone.v_data.clone(),
-        bloom_filter_clone.n_hash_funcs,
-        bloom_filter_clone.n_tweak,
+        bloom_filter.v_data,
+        bloom_filter.n_hash_funcs,
+        bloom_filter.n_tweak,
         flags,
     )
     .map_err(|e| Status::invalid_argument(format!("invalid bloom filter data: {}", e)))?;
@@ -1153,6 +1169,25 @@ mod tests {
             .expect("expected at least one transaction");
         block.header.merkle_root = merkle_root;
         block
+    }
+
+    fn proto_bloom_filter(bytes: usize, n_hash_funcs: u32) -> dapi_grpc::core::v0::BloomFilter {
+        dapi_grpc::core::v0::BloomFilter {
+            v_data: vec![0; bytes],
+            n_hash_funcs,
+            n_tweak: 0,
+            n_flags: 0,
+        }
+    }
+
+    #[test]
+    fn should_enforce_bip37_bloom_filter_bounds_before_construction() {
+        use dashcore_rpc::dashcore::bloom::{MAX_BLOOM_FILTER_SIZE, MAX_HASH_FUNCS};
+
+        assert!(parse_bloom_filter(proto_bloom_filter(MAX_BLOOM_FILTER_SIZE, 1)).is_ok());
+        assert!(parse_bloom_filter(proto_bloom_filter(MAX_BLOOM_FILTER_SIZE + 1, 1)).is_err());
+        assert!(parse_bloom_filter(proto_bloom_filter(1, MAX_HASH_FUNCS)).is_ok());
+        assert!(parse_bloom_filter(proto_bloom_filter(1, MAX_HASH_FUNCS + 1)).is_err());
     }
 
     #[tokio::test]
