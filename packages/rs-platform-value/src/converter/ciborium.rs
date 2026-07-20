@@ -155,6 +155,8 @@ mod tests {
     use ciborium::value::Integer;
     use ciborium::Value as CborValue;
 
+    const MIN_NATIVE_CBOR_INTEGER: i128 = -(u64::MAX as i128) - 1;
+
     // -----------------------------------------------------------------------
     // Round-trip: Value -> CborValue -> Value for basic types
     // -----------------------------------------------------------------------
@@ -397,8 +399,6 @@ mod tests {
 
     #[test]
     fn i128_preserves_the_full_native_cbor_integer_range() {
-        const MIN_NATIVE_CBOR_INTEGER: i128 = -(u64::MAX as i128) - 1;
-
         for value in [
             MIN_NATIVE_CBOR_INTEGER,
             i64::MIN as i128,
@@ -415,8 +415,6 @@ mod tests {
 
     #[test]
     fn i128_rejects_values_outside_the_native_cbor_integer_range() {
-        const MIN_NATIVE_CBOR_INTEGER: i128 = -(u64::MAX as i128) - 1;
-
         for value in [
             MIN_NATIVE_CBOR_INTEGER - 1,
             u64::MAX as i128 + 1,
@@ -595,8 +593,6 @@ mod tests {
 
     #[test]
     fn to_cbor_buffer_roundtrips_native_cbor_integer_boundaries() {
-        const MIN_NATIVE_CBOR_INTEGER: i128 = -(u64::MAX as i128) - 1;
-
         for value in [
             MIN_NATIVE_CBOR_INTEGER,
             i64::MIN as i128 - 1,
