@@ -5,6 +5,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
@@ -191,7 +192,19 @@ class WalletStorageOwnershipTest {
             alias = KeystoreManager.KEYS_ALIAS,
         )
 
+        // The returned fingerprint is a snapshot of the exact key the
+        // ciphertext was produced with, not a live re-read of the alias.
         assertEquals(keystore.keysAliasFingerprint(), encrypted.keyFingerprint)
+
+        // Rotating KEYS_ALIAS afterward must not retroactively change what the
+        // blob claims: were the fingerprint re-derived from the current alias
+        // instead of captured at encrypt time, this would still match the new
+        // key and the mislabel race (old-key ciphertext, new-key fingerprint)
+        // would be reachable. It must stay bound to the retired key.
+        val keyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+        keyStore.deleteEntry(KeystoreManager.KEYS_ALIAS)
+
+        assertNotEquals(keystore.keysAliasFingerprint(), encrypted.keyFingerprint)
     }
 
     @Test

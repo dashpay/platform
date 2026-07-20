@@ -4,7 +4,6 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.dashfoundation.dashsdk.ffi.NativeLoader
 import org.dashfoundation.dashsdk.ffi.SdkNative
 import org.dashfoundation.dashsdk.ffi.SignerNative
-import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
@@ -70,8 +69,12 @@ class FfiSmokeTest {
             mnemonicUtf8.fill(0)
         }
 
+        // Assert only what this smoke test can prove: the native symbol binds
+        // and derive-and-sign returns a compact recoverable signature. The
+        // array is zeroed by the test's own `finally` above, so asserting it
+        // is now zero would only re-check that `fill(0)` works — it would say
+        // nothing about JNI, which by contract never scrubs the caller's array.
         assertNotNull("native derive-and-sign should return a signature", signature)
         assertEquals("compact recoverable ECDSA signature", 65, signature!!.size)
-        assertArrayEquals(ByteArray(mnemonicUtf8.size), mnemonicUtf8)
     }
 }

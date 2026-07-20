@@ -4,7 +4,7 @@
 and its then-current 88/90 inventory. It is not the current open-work tracker:
 subsequent implementation changed the contact-crypto persistence boundary,
 shipped invitation support on iOS, and closed the cited transition FFI gaps. See
-[`docs/sdk/PARITY_SUMMARY.md`](../sdk/PARITY_SUMMARY.md) and
+[`packages/kotlin-sdk/PARITY_SUMMARY.md`](../../packages/kotlin-sdk/PARITY_SUMMARY.md) and
 [`docs/sdk/sdk-parity-manifest.json`](../sdk/sdk-parity-manifest.json) for current
 capability status.
 
