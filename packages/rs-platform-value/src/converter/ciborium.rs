@@ -374,6 +374,10 @@ mod tests {
         let val = Value::U128(42);
         let cbor: CborValue = val.try_into().unwrap();
         assert_eq!(cbor, CborValue::Integer(42u64.into()));
+
+        let max_native = Value::U128(u64::MAX as u128);
+        let cbor: CborValue = max_native.try_into().unwrap();
+        assert_eq!(cbor, CborValue::Integer(u64::MAX.into()));
     }
 
     #[test]
@@ -385,10 +389,6 @@ mod tests {
 
     #[test]
     fn u128_rejects_values_outside_the_native_cbor_integer_range() {
-        let max_native = Value::U128(u64::MAX as u128);
-        let cbor: CborValue = max_native.try_into().unwrap();
-        assert_eq!(cbor, CborValue::Integer(u64::MAX.into()));
-
         for value in [u64::MAX as u128 + 1, u128::MAX] {
             let result: Result<CborValue, Error> = Value::U128(value).try_into();
             assert_eq!(result.unwrap_err(), Error::IntegerSizeError);
@@ -591,6 +591,23 @@ mod tests {
         let val = Value::Text("cbor buffer test".into());
         let buf = val.to_cbor_buffer().unwrap();
         assert!(!buf.is_empty());
+    }
+
+    #[test]
+    fn to_cbor_buffer_roundtrips_native_cbor_integer_boundaries() {
+        const MIN_NATIVE_CBOR_INTEGER: i128 = -(u64::MAX as i128) - 1;
+
+        for value in [
+            MIN_NATIVE_CBOR_INTEGER,
+            i64::MIN as i128 - 1,
+            i64::MAX as i128 + 1,
+            u64::MAX as i128,
+        ] {
+            let buf = Value::I128(value).to_cbor_buffer().unwrap();
+            let cbor: CborValue = ciborium::de::from_reader(buf.as_slice()).unwrap();
+            let decoded: Value = cbor.try_into().unwrap();
+            assert_eq!(decoded, Value::I128(value));
+        }
     }
 
     // -----------------------------------------------------------------------
