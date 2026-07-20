@@ -1,5 +1,6 @@
 use crate::utils::getters::VecU8ToUint8Array;
 use dpp::block::block_info::BlockInfo;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::DataContract;
 use dpp::identifier::Identifier;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
@@ -126,10 +127,46 @@ fn parse_known_contracts(
         let contract: DataContract = from_value(contract_js)
             .map_err(|e| JsValue::from_str(&format!("Failed to parse contract: {:?}", e)))?;
 
-        contracts.insert(identifier, Arc::new(contract));
+        let (embedded_id, contract) =
+            bind_known_contract(identifier, contract).map_err(|error| JsValue::from_str(&error))?;
+        contracts.insert(embedded_id, contract);
     }
 
     Ok(contracts)
+}
+
+fn bind_known_contract(
+    identifier: Identifier,
+    contract: DataContract,
+) -> Result<(Identifier, Arc<DataContract>), String> {
+    let embedded_id = contract.id();
+    if identifier != embedded_id {
+        return Err(format!(
+            "Contract key {} does not match embedded contract ID {}",
+            identifier, embedded_id
+        ));
+    }
+
+    Ok((embedded_id, Arc::new(contract)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dpp::tests::fixtures::get_data_contract_fixture;
+
+    #[test]
+    fn rejects_known_contract_under_an_alias_identifier() {
+        let platform_version = PlatformVersion::latest();
+        let contract = get_data_contract_fixture(None, 0, platform_version.protocol_version)
+            .data_contract_owned();
+        let alias = Identifier::new([0x5a; 32]);
+        assert_ne!(alias, contract.id());
+
+        let error = bind_known_contract(alias, contract).expect_err("alias must be rejected");
+
+        assert!(error.contains("does not match embedded contract ID"));
+    }
 }
 
 fn convert_proof_result_to_js(
