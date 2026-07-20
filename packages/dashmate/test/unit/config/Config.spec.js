@@ -2,6 +2,14 @@ import { expect } from 'chai';
 import Config from '../../../src/config/Config.js';
 
 describe('Config', () => {
+  describe('constructor', () => {
+    it('rejects path-like config names even when option validation is skipped', () => {
+      for (const name of ['..', '../mainnet', 'slot/../mainnet', 'a/b', 'a\\b']) {
+        expect(() => new Config(name, {}, true), name).to.throw('path-safe segment');
+      }
+    });
+  });
+
   describe('.isSchemaPathAllowed', () => {
     // The bug that triggered this method: `dashmate config set
     // platform.drive.abci.docker.build.buildArgs.SDK_TEST_DATA true`

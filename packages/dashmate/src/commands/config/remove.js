@@ -1,6 +1,7 @@
 import fs from 'fs';
 import { Args } from '@oclif/core';
 import BaseCommand from '../../oclif/command/BaseCommand.js';
+import resolveConfigDirectory from '../../config/resolveConfigDirectory.js';
 
 export default class ConfigRemoveCommand extends BaseCommand {
   static description = 'Remove config';
@@ -36,9 +37,9 @@ export default class ConfigRemoveCommand extends BaseCommand {
       throw new Error(`system config ${configName} can't be removed.\nPlease use 'dashmate reset --hard --config=${configName}' command to reset the configuration`);
     }
 
-    configFile.removeConfig(configName);
+    const serviceConfigsPath = resolveConfigDirectory(homeDir, configName);
 
-    const serviceConfigsPath = homeDir.joinPath(configName);
+    configFile.removeConfig(configName);
 
     fs.rmSync(serviceConfigsPath, {
       recursive: true,

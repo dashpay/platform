@@ -2,6 +2,7 @@ import { Listr } from 'listr2';
 import fs from 'fs';
 import path from 'path';
 import wait from '../../util/wait.js';
+import resolveConfigDirectory from '../../config/resolveConfigDirectory.js';
 
 /**
  * @param {DockerCompose} dockerCompose
@@ -169,9 +170,9 @@ export default function resetNodeTaskFactory(
         title: `Remove config ${config.getName()}`,
         enabled: (ctx) => ctx.removeConfig,
         task: (_, task) => {
-          configFile.removeConfig(config.getName());
+          const serviceConfigsPath = resolveConfigDirectory(homeDir, config.getName());
 
-          const serviceConfigsPath = homeDir.joinPath(config.getName());
+          configFile.removeConfig(config.getName());
 
           removePathSafely(serviceConfigsPath, task);
         },
@@ -197,7 +198,7 @@ export default function resetNodeTaskFactory(
             config.set('group', groupName);
 
             // Remove service configs
-            let serviceConfigsPath = homeDir.joinPath(defaultConfigName);
+            let serviceConfigsPath = resolveConfigDirectory(homeDir, defaultConfigName);
 
             if (ctx.isPlatformOnlyReset) {
               serviceConfigsPath = path.join(serviceConfigsPath, 'platform');
@@ -206,11 +207,11 @@ export default function resetNodeTaskFactory(
             removePathSafely(serviceConfigsPath, task);
           } else {
             // Delete config if no base config
+            const serviceConfigsPath = resolveConfigDirectory(homeDir, defaultConfigName);
+
             configFile.removeConfig(config.getName());
 
             // Remove service configs
-            const serviceConfigsPath = homeDir.joinPath(defaultConfigName);
-
             removePathSafely(serviceConfigsPath, task);
           }
         },
