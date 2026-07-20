@@ -191,10 +191,17 @@ impl SystemDataContracts {
     }
 
     /// Returns the cached system contract whose deterministic identifier matches `id`,
-    /// if any. Returns `None` for user contracts and for any system contract whose
+    /// if any. Returns `None` for user contracts, for any system contract whose
     /// definition isn't held in this in-memory cache (e.g. `WalletUtils`, which lives
-    /// only in grovedb).
-    pub fn find_by_id(&self, id: Identifier) -> Option<Arc<DataContract>> {
+    /// only in grovedb), and for system contracts that are not yet active at the
+    /// given protocol version: before activation the contract does not exist in the
+    /// state, so pre-activation lookups must fall through to the billed grovedb
+    /// fetch and report it absent exactly like a non-upgraded node would.
+    pub fn find_by_id(
+        &self,
+        id: Identifier,
+        protocol_version: ProtocolVersion,
+    ) -> Option<Arc<DataContract>> {
         // Compare against each cached system contract's static `id_bytes`. The match
         // is `O(n)` over a small fixed set of variants — cheaper than building a map.
         let active = if id == SystemDataContract::Withdrawals.id() {
@@ -214,6 +221,9 @@ impl SystemDataContracts {
         } else {
             return None;
         };
+        if active.active_since_protocol_version > protocol_version {
+            return None;
+        }
         Some(Arc::clone(&active.load()))
     }
 }

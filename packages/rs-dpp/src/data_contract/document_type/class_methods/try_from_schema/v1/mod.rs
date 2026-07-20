@@ -70,7 +70,9 @@ use crate::tokens::token_amount_on_contract_token::{
     DocumentActionTokenCost, DocumentActionTokenEffect,
 };
 #[cfg(feature = "validation")]
-use crate::validation::meta_validators::{DOCUMENT_META_SCHEMA_V0, DOCUMENT_META_SCHEMA_V1};
+use crate::validation::meta_validators::{
+    DOCUMENT_META_SCHEMA_V0, DOCUMENT_META_SCHEMA_V1, DOCUMENT_META_SCHEMA_V2,
+};
 use crate::validation::operations::ProtocolValidationOperation;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
@@ -162,11 +164,12 @@ impl DocumentTypeV1 {
             {
                 0 => &*DOCUMENT_META_SCHEMA_V0,
                 1 => &*DOCUMENT_META_SCHEMA_V1,
+                2 => &*DOCUMENT_META_SCHEMA_V2,
                 version => {
                     return Err(ProtocolError::UnknownVersionMismatch {
                         method: "DocumentTypeV1::try_from_schema (document_type_schema)"
                             .to_string(),
-                        known_versions: vec![0, 1],
+                        known_versions: vec![0, 1, 2],
                         received: version,
                     })
                 }

@@ -1186,6 +1186,32 @@ mod dpns_username_transfer_tests {
         assert_eq!(record_identity, expected_identity_id);
     }
 
+    /// Asserts the document history system contract does not exist in the
+    /// state: before protocol version 13 it must be entirely absent, exactly
+    /// as on a non-upgraded node.
+    fn assert_document_history_contract_absent(
+        platform: &TempPlatform<MockCoreRPCLike>,
+        platform_version: &PlatformVersion,
+    ) {
+        let (_fee_result, maybe_contract) = platform
+            .drive
+            .get_contract_with_fetch_info_and_fee(
+                dpp::system_data_contracts::SystemDataContract::DocumentHistory
+                    .id()
+                    .to_buffer(),
+                None,
+                false,
+                None,
+                platform_version,
+            )
+            .expect("expected to fetch contract");
+
+        assert!(
+            maybe_contract.is_none(),
+            "the document history contract must not exist before protocol version 13"
+        );
+    }
+
     /// Queries the document history system contract for history documents of
     /// the given history document type recorded for a source document.
     fn query_history_documents(
@@ -1421,15 +1447,8 @@ mod dpns_username_transfer_tests {
 
             assert_eq!(kept_document.owner_id(), alice.id());
 
-            // Nothing may have been recorded in the document history contract
-            let history_documents = query_history_documents(
-                &platform,
-                "transfer",
-                dpns_contract.id(),
-                kept_document.id(),
-            );
-
-            assert_eq!(history_documents.len(), 0);
+            // The document history contract itself must not even exist yet
+            assert_document_history_contract_absent(&platform, platform_version);
         }
 
         let issues = platform
@@ -1578,15 +1597,8 @@ mod dpns_username_transfer_tests {
 
             assert!(kept_document.properties().get("$price").is_none());
 
-            // Nothing may have been recorded in the document history contract
-            let pricing_history = query_history_documents(
-                &platform,
-                "priceUpdate",
-                dpns_contract.id(),
-                kept_document.id(),
-            );
-
-            assert_eq!(pricing_history.len(), 0);
+            // The document history contract itself must not even exist yet
+            assert_document_history_contract_absent(&platform, platform_version);
 
             return;
         }

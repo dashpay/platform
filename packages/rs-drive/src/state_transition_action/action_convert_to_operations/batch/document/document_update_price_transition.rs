@@ -107,31 +107,32 @@ impl DriveHighLevelBatchOperationConverter for DocumentUpdatePriceTransitionActi
 
                 let document = self.document_owned();
 
-                // The transformer stamped the new asking price onto the
-                // document's $price field
-                let price: Credits = document
-                    .properties()
-                    .get_optional_integer(PRICE)
-                    .ok()
-                    .flatten()
-                    .unwrap_or_default();
-
                 // The history document is owned and paid for by the seller
-                let document_history_operation = fetch_info
+                let document_history_operation = if fetch_info
                     .contract
                     .document_type_for_name(document_type_name.as_str())
-                    .ok()
-                    .filter(|document_type| document_type.documents_keep_pricing_history())
-                    .map(|_| {
-                        DocumentOperation(DocumentOperationType::DocumentHistory {
-                            source_data_contract_id: data_contract_id,
-                            source_document_type_name: document_type_name.clone(),
-                            source_document_id: document.id(),
-                            owner_id,
-                            nonce: identity_contract_nonce,
-                            event: DocumentEvent::PriceUpdate { price },
-                        })
-                    });
+                    .map(|document_type| document_type.documents_keep_pricing_history())
+                    .unwrap_or(false)
+                {
+                    // The transformer stamped the new asking price onto the
+                    // document's $price field; a price update without a price
+                    // must never be recorded as a free listing
+                    let price: Credits = document
+                        .properties()
+                        .get_integer(PRICE)
+                        .map_err(Error::Value)?;
+
+                    Some(DocumentOperation(DocumentOperationType::DocumentHistory {
+                        source_data_contract_id: data_contract_id,
+                        source_document_type_name: document_type_name.clone(),
+                        source_document_id: document.id(),
+                        owner_id,
+                        nonce: identity_contract_nonce,
+                        event: DocumentEvent::PriceUpdate { price },
+                    }))
+                } else {
+                    None
+                };
 
                 let storage_flags =
                     StorageFlags::new_single_epoch(epoch.index, Some(owner_id.to_buffer()));

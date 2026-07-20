@@ -36,6 +36,7 @@ all-system-contracts = [
     "wallet-utils-contract",
     "token-history-contract",
     "keywords-contract",
+    "document-history-contract",
 ]
 
 # Individual contract features - these enable specific contracts in DPP
@@ -45,6 +46,7 @@ dashpay-contract = ["dpp/dashpay-contract"]
 wallet-utils-contract = ["dpp/wallet-utils-contract"]
 token-history-contract = ["dpp/token-history-contract"]
 keywords-contract = ["dpp/keywords-contract"]
+document-history-contract = ["dpp/document-history-contract"]
 
 [dev-dependencies]
 tokio = { version = "1.40", features = ["macros", "rt-multi-thread"] }

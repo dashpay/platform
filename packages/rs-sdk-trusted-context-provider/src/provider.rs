@@ -745,6 +745,24 @@ impl ContextProvider for TrustedHttpContextProvider {
                     ))
                 });
             }
+
+            #[cfg(any(
+                feature = "document-history-contract",
+                feature = "all-system-contracts"
+            ))]
+            if *id == SystemDataContract::DocumentHistory.id() {
+                return load_system_data_contract(
+                    SystemDataContract::DocumentHistory,
+                    platform_version,
+                )
+                .map(|contract| Some(Arc::new(contract)))
+                .map_err(|e| {
+                    ContextProviderError::Generic(format!(
+                        "Failed to load DocumentHistory contract: {}",
+                        e
+                    ))
+                });
+            }
         }
 
         // If not found in known contracts or system contracts, delegate to fallback provider if available

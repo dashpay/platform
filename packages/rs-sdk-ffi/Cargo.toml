@@ -23,6 +23,7 @@ rs-sdk-trusted-context-provider = { path = "../rs-sdk-trusted-context-provider",
     "wallet-utils-contract",
     "token-history-contract",
     "keywords-contract",
+    "document-history-contract",
 ] }
 simple-signer = { path = "../simple-signer" }
 async-trait = { version = "0.1.83" }

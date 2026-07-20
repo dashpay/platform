@@ -946,6 +946,25 @@ mod tests {
             epoch: Epoch::new(1).expect("expected epoch"),
         };
 
+        // The PV12 genesis must NOT contain the document history contract:
+        // it only comes into existence through this transition
+        let (_fee_result, pre_upgrade_fetch_info) = platform
+            .drive
+            .get_contract_with_fetch_info_and_fee(
+                *dpp::data_contracts::SystemDataContract::DocumentHistory
+                    .id()
+                    .as_bytes(),
+                None,
+                false,
+                Some(&transaction),
+                platform_version,
+            )
+            .expect("expected to fetch contract");
+        assert!(
+            pre_upgrade_fetch_info.is_none(),
+            "DocumentHistory contract must not exist before transition_to_version_13"
+        );
+
         let result = platform.transition_to_version_13(&block_info, &transaction, platform_version);
 
         assert!(result.is_ok(), "transition failed: {:?}", result.err());
