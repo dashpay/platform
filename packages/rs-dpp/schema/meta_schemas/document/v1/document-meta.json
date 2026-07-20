@@ -494,6 +494,18 @@
       "type": "boolean",
       "description": "True if the documents keep all their history, default is false"
     },
+    "keepsTransferHistory": {
+      "type": "boolean",
+      "description": "True if transfers of these documents are recorded in the document history system contract, default is false"
+    },
+    "keepsPurchaseHistory": {
+      "type": "boolean",
+      "description": "True if purchases of these documents are recorded in the document history system contract, default is false"
+    },
+    "keepsPricingHistory": {
+      "type": "boolean",
+      "description": "True if price updates on these documents are recorded in the document history system contract, default is false"
+    },
     "documentsMutable": {
       "type": "boolean",
       "description": "True if the documents are mutable, default is true"

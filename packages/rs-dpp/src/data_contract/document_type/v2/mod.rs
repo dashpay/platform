@@ -45,6 +45,15 @@ pub struct DocumentTypeV2 {
     pub(in crate::data_contract) transient_fields: BTreeSet<String>,
     /// Should documents keep history?
     pub(in crate::data_contract) documents_keep_history: bool,
+    /// Should transfers of documents of this type be recorded in the document
+    /// history system contract?
+    pub(in crate::data_contract) documents_keep_transfer_history: bool,
+    /// Should purchases of documents of this type be recorded in the document
+    /// history system contract?
+    pub(in crate::data_contract) documents_keep_purchase_history: bool,
+    /// Should price updates on documents of this type be recorded in the
+    /// document history system contract?
+    pub(in crate::data_contract) documents_keep_pricing_history: bool,
     /// Are documents mutable?
     pub(in crate::data_contract) documents_mutable: bool,
     /// Can documents of this type be deleted?
@@ -136,6 +145,9 @@ impl From<DocumentTypeV0> for DocumentTypeV2 {
             required_fields: value.required_fields,
             transient_fields: value.transient_fields,
             documents_keep_history: value.documents_keep_history,
+            documents_keep_transfer_history: value.documents_keep_transfer_history,
+            documents_keep_purchase_history: value.documents_keep_purchase_history,
+            documents_keep_pricing_history: value.documents_keep_pricing_history,
             documents_mutable: value.documents_mutable,
             documents_can_be_deleted: value.documents_can_be_deleted,
             documents_transferable: value.documents_transferable,
@@ -172,6 +184,9 @@ impl From<DocumentTypeV1> for DocumentTypeV2 {
             required_fields: value.required_fields,
             transient_fields: value.transient_fields,
             documents_keep_history: value.documents_keep_history,
+            documents_keep_transfer_history: value.documents_keep_transfer_history,
+            documents_keep_purchase_history: value.documents_keep_purchase_history,
+            documents_keep_pricing_history: value.documents_keep_pricing_history,
             documents_mutable: value.documents_mutable,
             documents_can_be_deleted: value.documents_can_be_deleted,
             documents_transferable: value.documents_transferable,
@@ -221,6 +236,9 @@ mod tests {
             required_fields: BTreeSet::new(),
             transient_fields: BTreeSet::new(),
             documents_keep_history: false,
+            documents_keep_transfer_history: false,
+            documents_keep_purchase_history: false,
+            documents_keep_pricing_history: false,
             documents_mutable: true,
             documents_can_be_deleted: true,
             documents_transferable: Transferable::Never,

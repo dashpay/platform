@@ -55,7 +55,8 @@ use crate::data_contract::document_type::class_methods::{
 };
 use crate::data_contract::document_type::property_names::{
     CAN_BE_DELETED, CREATION_RESTRICTION_MODE, DOCUMENTS_KEEP_HISTORY, DOCUMENTS_MUTABLE,
-    TRADE_MODE, TRANSFERABLE,
+    KEEPS_PRICING_HISTORY, KEEPS_PURCHASE_HISTORY, KEEPS_TRANSFER_HISTORY, TRADE_MODE,
+    TRANSFERABLE,
 };
 use crate::data_contract::document_type::token_costs::v0::TokenCostsV0;
 use crate::data_contract::document_type::v1::DocumentTypeV1;
@@ -191,6 +192,27 @@ impl DocumentTypeV1 {
             Value::inner_optional_bool_value(schema_map, DOCUMENTS_KEEP_HISTORY)
                 .map_err(consensus_or_protocol_value_error)?
                 .unwrap_or(data_contact_config.documents_keep_history_contract_default());
+
+        // Are transfers of documents of this type recorded in the document
+        // history system contract?
+        let documents_keep_transfer_history: bool =
+            Value::inner_optional_bool_value(schema_map, KEEPS_TRANSFER_HISTORY)
+                .map_err(consensus_or_protocol_value_error)?
+                .unwrap_or_default();
+
+        // Are purchases of documents of this type recorded in the document
+        // history system contract?
+        let documents_keep_purchase_history: bool =
+            Value::inner_optional_bool_value(schema_map, KEEPS_PURCHASE_HISTORY)
+                .map_err(consensus_or_protocol_value_error)?
+                .unwrap_or_default();
+
+        // Are price updates on documents of this type recorded in the
+        // document history system contract?
+        let documents_keep_pricing_history: bool =
+            Value::inner_optional_bool_value(schema_map, KEEPS_PRICING_HISTORY)
+                .map_err(consensus_or_protocol_value_error)?
+                .unwrap_or_default();
 
         // Are documents of this type mutable? (Overrides contract value)
         let documents_mutable: bool =
@@ -733,6 +755,9 @@ impl DocumentTypeV1 {
             required_fields,
             transient_fields,
             documents_keep_history,
+            documents_keep_transfer_history,
+            documents_keep_purchase_history,
+            documents_keep_pricing_history,
             documents_mutable,
             documents_can_be_deleted,
             documents_transferable,

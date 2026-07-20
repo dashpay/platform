@@ -139,6 +139,30 @@ impl DocumentTypeV0Getters for DocumentType {
         }
     }
 
+    fn documents_keep_transfer_history(&self) -> bool {
+        match self {
+            DocumentType::V0(v0) => v0.documents_keep_transfer_history(),
+            DocumentType::V1(v1) => v1.documents_keep_transfer_history(),
+            DocumentType::V2(v2) => v2.documents_keep_transfer_history(),
+        }
+    }
+
+    fn documents_keep_purchase_history(&self) -> bool {
+        match self {
+            DocumentType::V0(v0) => v0.documents_keep_purchase_history(),
+            DocumentType::V1(v1) => v1.documents_keep_purchase_history(),
+            DocumentType::V2(v2) => v2.documents_keep_purchase_history(),
+        }
+    }
+
+    fn documents_keep_pricing_history(&self) -> bool {
+        match self {
+            DocumentType::V0(v0) => v0.documents_keep_pricing_history(),
+            DocumentType::V1(v1) => v1.documents_keep_pricing_history(),
+            DocumentType::V2(v2) => v2.documents_keep_pricing_history(),
+        }
+    }
+
     fn documents_mutable(&self) -> bool {
         match self {
             DocumentType::V0(v0) => v0.documents_mutable(),
@@ -386,6 +410,30 @@ impl DocumentTypeV0Getters for DocumentTypeRef<'_> {
         }
     }
 
+    fn documents_keep_transfer_history(&self) -> bool {
+        match self {
+            DocumentTypeRef::V0(v0) => v0.documents_keep_transfer_history(),
+            DocumentTypeRef::V1(v1) => v1.documents_keep_transfer_history(),
+            DocumentTypeRef::V2(v2) => v2.documents_keep_transfer_history(),
+        }
+    }
+
+    fn documents_keep_purchase_history(&self) -> bool {
+        match self {
+            DocumentTypeRef::V0(v0) => v0.documents_keep_purchase_history(),
+            DocumentTypeRef::V1(v1) => v1.documents_keep_purchase_history(),
+            DocumentTypeRef::V2(v2) => v2.documents_keep_purchase_history(),
+        }
+    }
+
+    fn documents_keep_pricing_history(&self) -> bool {
+        match self {
+            DocumentTypeRef::V0(v0) => v0.documents_keep_pricing_history(),
+            DocumentTypeRef::V1(v1) => v1.documents_keep_pricing_history(),
+            DocumentTypeRef::V2(v2) => v2.documents_keep_pricing_history(),
+        }
+    }
+
     fn documents_mutable(&self) -> bool {
         match self {
             DocumentTypeRef::V0(v0) => v0.documents_mutable(),
@@ -569,6 +617,30 @@ impl DocumentTypeV0Getters for DocumentTypeMutRef<'_> {
             DocumentTypeMutRef::V0(v0) => v0.documents_keep_history(),
             DocumentTypeMutRef::V1(v1) => v1.documents_keep_history(),
             DocumentTypeMutRef::V2(v2) => v2.documents_keep_history(),
+        }
+    }
+
+    fn documents_keep_transfer_history(&self) -> bool {
+        match self {
+            DocumentTypeMutRef::V0(v0) => v0.documents_keep_transfer_history(),
+            DocumentTypeMutRef::V1(v1) => v1.documents_keep_transfer_history(),
+            DocumentTypeMutRef::V2(v2) => v2.documents_keep_transfer_history(),
+        }
+    }
+
+    fn documents_keep_purchase_history(&self) -> bool {
+        match self {
+            DocumentTypeMutRef::V0(v0) => v0.documents_keep_purchase_history(),
+            DocumentTypeMutRef::V1(v1) => v1.documents_keep_purchase_history(),
+            DocumentTypeMutRef::V2(v2) => v2.documents_keep_purchase_history(),
+        }
+    }
+
+    fn documents_keep_pricing_history(&self) -> bool {
+        match self {
+            DocumentTypeMutRef::V0(v0) => v0.documents_keep_pricing_history(),
+            DocumentTypeMutRef::V1(v1) => v1.documents_keep_pricing_history(),
+            DocumentTypeMutRef::V2(v2) => v2.documents_keep_pricing_history(),
         }
     }
 

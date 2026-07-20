@@ -56,6 +56,10 @@ impl<C> Platform<C> {
                 SystemDataContract::KeywordSearch,
                 system_data_contracts.load_keyword_search(),
             ),
+            (
+                SystemDataContract::DocumentHistory,
+                system_data_contracts.load_document_history(),
+            ),
         ]);
 
         for data_contract in system_data_contract_types.values() {

@@ -1186,6 +1186,68 @@ mod dpns_username_transfer_tests {
         assert_eq!(record_identity, expected_identity_id);
     }
 
+    /// Queries the document history system contract for history documents of
+    /// the given history document type recorded for a source document.
+    fn query_history_documents(
+        platform: &TempPlatform<MockCoreRPCLike>,
+        history_document_type_name: &str,
+        source_data_contract_id: Identifier,
+        source_document_id: Identifier,
+    ) -> Vec<Document> {
+        let history_contract = Arc::clone(
+            &platform
+                .drive
+                .cache
+                .system_data_contracts
+                .load_document_history(),
+        );
+
+        let history_document_type = history_contract
+            .document_type_for_name(history_document_type_name)
+            .expect("expected the history document type");
+
+        let drive_query = DriveDocumentQuery {
+            contract: &history_contract,
+            document_type: history_document_type,
+            internal_clauses: InternalClauses {
+                primary_key_in_clause: None,
+                primary_key_equal_clause: None,
+                in_clause: None,
+                range_clause: None,
+                equal_clauses: BTreeMap::from([
+                    (
+                        "dataContractId".to_string(),
+                        WhereClause {
+                            field: "dataContractId".to_string(),
+                            operator: WhereOperator::Equal,
+                            value: Value::Identifier(source_data_contract_id.to_buffer()),
+                        },
+                    ),
+                    (
+                        "documentId".to_string(),
+                        WhereClause {
+                            field: "documentId".to_string(),
+                            operator: WhereOperator::Equal,
+                            value: Value::Identifier(source_document_id.to_buffer()),
+                        },
+                    ),
+                ]),
+            },
+            offset: None,
+            limit: None,
+            order_by: Default::default(),
+            start_at: None,
+            start_at_included: false,
+            block_time_ms: None,
+        };
+
+        platform
+            .drive
+            .query_documents(drive_query, None, false, None, None)
+            .expect("expected to query history documents")
+            .documents_owned()
+    }
+
     #[tokio::test]
     async fn test_dpns_username_transfer() {
         run_dpns_username_transfer_at_protocol_version(
@@ -1311,6 +1373,33 @@ mod dpns_username_transfer_tests {
                 query_domain_documents_by_record_identity(&platform, &dpns_contract, alice.id());
 
             assert_eq!(alice_documents.len(), 0);
+
+            // The transfer must be recorded in the document history contract,
+            // owned by the sender and pointing at the recipient
+            let history_documents = query_history_documents(
+                &platform,
+                "transfer",
+                dpns_contract.id(),
+                transferred_document.id(),
+            );
+
+            assert_eq!(history_documents.len(), 1);
+
+            let history_document = history_documents
+                .first()
+                .expect("expected a history document");
+
+            assert_eq!(history_document.owner_id(), alice.id());
+
+            assert_eq!(
+                history_document
+                    .properties()
+                    .get_identifier("toIdentityId")
+                    .expect("expected the recipient on the transfer record"),
+                bob.id()
+            );
+
+            assert!(history_document.created_at().is_some());
         } else {
             assert_matches!(
                 processing_result.execution_results().as_slice(),
@@ -1331,6 +1420,16 @@ mod dpns_username_transfer_tests {
             let kept_document = alice_documents.first().expect("expected a document");
 
             assert_eq!(kept_document.owner_id(), alice.id());
+
+            // Nothing may have been recorded in the document history contract
+            let history_documents = query_history_documents(
+                &platform,
+                "transfer",
+                dpns_contract.id(),
+                kept_document.id(),
+            );
+
+            assert_eq!(history_documents.len(), 0);
         }
 
         let issues = platform
@@ -1479,6 +1578,16 @@ mod dpns_username_transfer_tests {
 
             assert!(kept_document.properties().get("$price").is_none());
 
+            // Nothing may have been recorded in the document history contract
+            let pricing_history = query_history_documents(
+                &platform,
+                "priceUpdate",
+                dpns_contract.id(),
+                kept_document.id(),
+            );
+
+            assert_eq!(pricing_history.len(), 0);
+
             return;
         }
 
@@ -1502,6 +1611,24 @@ mod dpns_username_transfer_tests {
             .expect("expected to get back the price");
 
         assert_eq!(price, dash_to_credits!(0.1));
+
+        // The listing must be recorded in the document history contract
+        let pricing_history =
+            query_history_documents(&platform, "priceUpdate", dpns_contract.id(), document.id());
+
+        assert_eq!(pricing_history.len(), 1);
+
+        let pricing_document = pricing_history.first().expect("expected a pricing record");
+
+        assert_eq!(pricing_document.owner_id(), alice.id());
+
+        assert_eq!(
+            pricing_document
+                .properties()
+                .get_integer::<Credits>("price")
+                .expect("expected the price on the pricing record"),
+            dash_to_credits!(0.1)
+        );
 
         let alice_balance_before_sale = platform
             .drive
@@ -1615,6 +1742,51 @@ mod dpns_username_transfer_tests {
             .expect("expected bob's identity to exist");
 
         assert!(bob_balance_after_purchase < bob_balance_before_purchase - dash_to_credits!(0.1));
+
+        // The sale must be recorded in the document history contract, owned
+        // by the buyer, naming the seller and the price paid
+        let purchase_history = query_history_documents(
+            &platform,
+            "purchase",
+            dpns_contract.id(),
+            purchased_document.id(),
+        );
+
+        assert_eq!(purchase_history.len(), 1);
+
+        let purchase_document = purchase_history
+            .first()
+            .expect("expected a purchase record");
+
+        assert_eq!(purchase_document.owner_id(), bob.id());
+
+        assert_eq!(
+            purchase_document
+                .properties()
+                .get_identifier("sellerId")
+                .expect("expected the seller on the purchase record"),
+            alice.id()
+        );
+
+        assert_eq!(
+            purchase_document
+                .properties()
+                .get_integer::<Credits>("price")
+                .expect("expected the price on the purchase record"),
+            dash_to_credits!(0.1)
+        );
+
+        assert!(purchase_document.created_at().is_some());
+
+        // A sale is not a plain transfer: no transfer record may exist
+        let transfer_history = query_history_documents(
+            &platform,
+            "transfer",
+            dpns_contract.id(),
+            purchased_document.id(),
+        );
+
+        assert_eq!(transfer_history.len(), 0);
 
         let issues = platform
             .drive
@@ -1791,6 +1963,247 @@ mod dpns_username_transfer_tests {
                 .map(|(hash, (a, b, c))| format!("{}: {} {} {}", hash, a, b, c))
                 .collect::<Vec<_>>()
                 .join(" | ")
+        );
+    }
+
+    /// Transfers of a document type that did NOT subscribe to history must
+    /// not write anything into the document history contract, even at
+    /// PROTOCOL_VERSION_13.
+    #[tokio::test]
+    async fn test_document_transfer_without_history_subscription_records_nothing() {
+        let platform_version = PlatformVersion::latest();
+        let (mut platform, contract) = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_initial_state_structure()
+            .with_crypto_card_game_transfer_only(Transferable::Always);
+
+        let mut rng = StdRng::seed_from_u64(441);
+
+        let platform_state = platform.state.load();
+
+        let (identity, signer, key) = setup_identity(&mut platform, 962, dash_to_credits!(0.5));
+
+        let (receiver, _, _) = setup_identity(&mut platform, 452, dash_to_credits!(0.5));
+
+        let card_document_type = contract
+            .document_type_for_name("card")
+            .expect("expected a card document type");
+
+        assert!(!card_document_type.documents_keep_transfer_history());
+
+        let entropy = Bytes32::random_with_rng(&mut rng);
+
+        let mut document = card_document_type
+            .random_document_with_identifier_and_entropy(
+                &mut rng,
+                identity.id(),
+                entropy,
+                DocumentFieldFillType::DoNotFillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+                platform_version,
+            )
+            .expect("expected a random document");
+
+        document.set("attack", 4.into());
+        document.set("defense", 7.into());
+
+        let documents_batch_create_transition =
+            BatchTransition::new_document_creation_transition_from_document(
+                document.clone(),
+                card_document_type,
+                entropy.0,
+                &key,
+                2,
+                0,
+                None,
+                &signer,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expect to create documents batch transition");
+
+        let documents_batch_create_serialized_transition = documents_batch_create_transition
+            .serialize_to_bytes()
+            .expect("expected documents batch serialized state transition");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &[documents_batch_create_serialized_transition],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process state transition");
+
+        assert_eq!(processing_result.valid_count(), 1);
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
+
+        document.set_revision(Some(2));
+
+        let documents_batch_transfer_transition =
+            BatchTransition::new_document_transfer_transition_from_document(
+                document.clone(),
+                card_document_type,
+                receiver.id(),
+                &key,
+                3,
+                0,
+                None,
+                &signer,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expect to create documents batch transition for transfer");
+
+        let documents_batch_transfer_serialized_transition = documents_batch_transfer_transition
+            .serialize_to_bytes()
+            .expect("expected documents batch serialized state transition");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &[documents_batch_transfer_serialized_transition],
+                &platform_state,
+                &BlockInfo::default_with_time(50000000),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process state transition");
+
+        assert_matches!(
+            processing_result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+        );
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
+
+        // The card document type did not subscribe to history, so nothing may
+        // have been recorded
+        let history_documents =
+            query_history_documents(&platform, "transfer", contract.id(), document.id());
+
+        assert_eq!(history_documents.len(), 0);
+    }
+
+    /// Documents in the document history contract can only ever be created by
+    /// the protocol itself: user creation is blocked by
+    /// `creationRestrictionMode: 2`.
+    #[tokio::test]
+    async fn test_document_history_contract_direct_writes_rejected() {
+        let mut platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let platform_state = platform.state.load();
+        let platform_version = platform_state
+            .current_platform_version()
+            .expect("expected to get current platform version");
+
+        let mut rng = StdRng::seed_from_u64(442);
+
+        let (identity, signer, key) = setup_identity(&mut platform, 963, dash_to_credits!(0.5));
+
+        let history_contract = Arc::clone(
+            &platform
+                .drive
+                .cache
+                .system_data_contracts
+                .load_document_history(),
+        );
+
+        let transfer_document_type = history_contract
+            .document_type_for_name("transfer")
+            .expect("expected the transfer document type");
+
+        let entropy = Bytes32::random_with_rng(&mut rng);
+
+        let document = transfer_document_type
+            .random_document_with_identifier_and_entropy(
+                &mut rng,
+                identity.id(),
+                entropy,
+                DocumentFieldFillType::FillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+                platform_version,
+            )
+            .expect("expected a random document");
+
+        let documents_batch_create_transition =
+            BatchTransition::new_document_creation_transition_from_document(
+                document,
+                transfer_document_type,
+                entropy.0,
+                &key,
+                2,
+                0,
+                None,
+                &signer,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expect to create documents batch transition");
+
+        let documents_batch_create_serialized_transition = documents_batch_create_transition
+            .serialize_to_bytes()
+            .expect("expected documents batch serialized state transition");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &[documents_batch_create_serialized_transition],
+                &platform_state,
+                &BlockInfo::default_with_time(
+                    platform_state
+                        .last_committed_block_time_ms()
+                        .unwrap_or_default()
+                        + 3000,
+                ),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process state transition");
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
+
+        assert_matches!(
+            processing_result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::PaidConsensusError {
+                error: ConsensusError::BasicError(BasicError::DocumentCreationNotAllowedError(_)),
+                ..
+            }]
         );
     }
 }

@@ -66,6 +66,8 @@ pub struct SystemDataContracts {
     token_history: ActiveSystemDataContract,
     /// Search contract
     keyword_search: ActiveSystemDataContract,
+    /// Document history contract
+    document_history: ActiveSystemDataContract,
 }
 
 impl SystemDataContracts {
@@ -88,6 +90,7 @@ impl SystemDataContracts {
             load_system_data_contract(MasternodeRewards, platform_version)?;
         let token_history = load_system_data_contract(TokenHistory, platform_version)?;
         let keyword_search = load_system_data_contract(KeywordSearch, platform_version)?;
+        let document_history = load_system_data_contract(DocumentHistory, platform_version)?;
 
         // 2. Swap the cached Arcs — each swap is lock-free & O(1).
         self.withdrawals.store(withdrawals);
@@ -97,6 +100,7 @@ impl SystemDataContracts {
             .store(masternode_reward_shares);
         self.token_history.store(token_history);
         self.keyword_search.store(keyword_search);
+        self.document_history.store(document_history);
 
         Ok(())
     }
@@ -141,6 +145,13 @@ impl SystemDataContracts {
                 )?,
                 9,
             ),
+            document_history: ActiveSystemDataContract::new(
+                load_system_data_contract(
+                    SystemDataContract::DocumentHistory,
+                    PlatformVersion::first(),
+                )?,
+                13,
+            ),
         })
     }
 
@@ -174,6 +185,11 @@ impl SystemDataContracts {
         self.keyword_search.load()
     }
 
+    /// Returns the document history contract
+    pub fn load_document_history(&self) -> Guard<Arc<DataContract>> {
+        self.document_history.load()
+    }
+
     /// Returns the cached system contract whose deterministic identifier matches `id`,
     /// if any. Returns `None` for user contracts and for any system contract whose
     /// definition isn't held in this in-memory cache (e.g. `WalletUtils`, which lives
@@ -193,6 +209,8 @@ impl SystemDataContracts {
             &self.token_history
         } else if id == SystemDataContract::KeywordSearch.id() {
             &self.keyword_search
+        } else if id == SystemDataContract::DocumentHistory.id() {
+            &self.document_history
         } else {
             return None;
         };
