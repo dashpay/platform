@@ -120,6 +120,7 @@ async fn sh_032_exact_change_boundary() {
     let addr_dst_bech32m = addr_dst.to_bech32m_string(s.ctx.bank().network());
     pw.shielded_unshield_to(
         &handle.coordinator,
+        &s.test_wallet.seed_bytes(),
         0,
         &addr_dst_bech32m,
         UNSHIELD_AMOUNT,
@@ -214,6 +215,7 @@ async fn sh_032_exact_change_boundary() {
     let off_by_one = pw2
         .shielded_unshield_to(
             &handle2.coordinator,
+            &s2.test_wallet.seed_bytes(),
             0,
             &addr_dst2_bech32m,
             UNSHIELD_AMOUNT,

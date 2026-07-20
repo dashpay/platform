@@ -108,10 +108,25 @@ async fn sh_010_double_spend_reservation() {
     let dst_a_b32 = dst_a.to_bech32m_string(s.ctx.bank().network());
     let dst_b_b32 = dst_b.to_bech32m_string(s.ctx.bank().network());
     let pw = s.test_wallet.platform_wallet();
+    let seed = s.test_wallet.seed_bytes();
 
     let (ra, rb) = tokio::join!(
-        pw.shielded_unshield_to(&handle.coordinator, 0, &dst_a_b32, UNSHIELD_EACH, prover),
-        pw.shielded_unshield_to(&handle.coordinator, 0, &dst_b_b32, UNSHIELD_EACH, prover),
+        pw.shielded_unshield_to(
+            &handle.coordinator,
+            &seed,
+            0,
+            &dst_a_b32,
+            UNSHIELD_EACH,
+            prover,
+        ),
+        pw.shielded_unshield_to(
+            &handle.coordinator,
+            &seed,
+            0,
+            &dst_b_b32,
+            UNSHIELD_EACH,
+            prover,
+        ),
     );
 
     // At most one may fail (if only one note were spendable); if both

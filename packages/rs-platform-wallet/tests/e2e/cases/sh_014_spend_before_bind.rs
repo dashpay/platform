@@ -41,7 +41,14 @@ async fn sh_014_spend_before_bind() {
     let before_bind = s
         .test_wallet
         .platform_wallet()
-        .shielded_unshield_to(&coordinator, 0, &addr_dst_bech32m, 1_000_000, prover)
+        .shielded_unshield_to(
+            &coordinator,
+            &s.test_wallet.seed_bytes(),
+            0,
+            &addr_dst_bech32m,
+            1_000_000,
+            prover,
+        )
         .await;
     assert!(
         matches!(before_bind, Err(PlatformWalletError::ShieldedNotBound)),
@@ -58,6 +65,7 @@ async fn sh_014_spend_before_bind() {
         .platform_wallet()
         .shielded_unshield_to(
             &handle.coordinator,
+            &s.test_wallet.seed_bytes(),
             UNBOUND_ACCOUNT,
             &addr_dst_bech32m,
             1_000_000,

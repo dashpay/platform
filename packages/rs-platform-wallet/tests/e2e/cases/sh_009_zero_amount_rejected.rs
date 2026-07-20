@@ -66,7 +66,15 @@ async fn sh_009_zero_amount_rejected() {
         .expect("account 1 default Orchard address");
     let t1 = Instant::now();
     let transfer = pw
-        .shielded_transfer_to(&handle.coordinator, 0, &acct1_addr, 0, [0u8; 36], prover)
+        .shielded_transfer_to(
+            &handle.coordinator,
+            &s.test_wallet.seed_bytes(),
+            0,
+            &acct1_addr,
+            0,
+            [0u8; 36],
+            prover,
+        )
         .await;
     assert!(
         transfer.is_err(),
@@ -88,7 +96,14 @@ async fn sh_009_zero_amount_rejected() {
     let addr_dst_bech32m = addr_dst.to_bech32m_string(s.ctx.bank().network());
     let t2 = Instant::now();
     let unshield = pw
-        .shielded_unshield_to(&handle.coordinator, 0, &addr_dst_bech32m, 0, prover)
+        .shielded_unshield_to(
+            &handle.coordinator,
+            &s.test_wallet.seed_bytes(),
+            0,
+            &addr_dst_bech32m,
+            0,
+            prover,
+        )
         .await;
     assert!(
         unshield.is_err(),

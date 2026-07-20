@@ -110,6 +110,7 @@ async fn sh_019_shielded_withdraw_l1() {
         .platform_wallet()
         .shielded_withdraw_to(
             &handle.coordinator,
+            &s.test_wallet.seed_bytes(),
             0,
             &to_core,
             WITHDRAW_AMOUNT,
@@ -147,6 +148,7 @@ async fn sh_019_shielded_withdraw_l1() {
         .platform_wallet()
         .shielded_withdraw_to(
             &handle.coordinator,
+            &s.test_wallet.seed_bytes(),
             0,
             &to_core,
             WITHDRAW_AMOUNT,

@@ -428,6 +428,7 @@ pub async fn teardown_sweep_shielded(
             .platform_wallet()
             .shielded_unshield_to(
                 &handle.coordinator,
+                &wallet.seed_bytes(),
                 account,
                 bank_addr_bech32m,
                 sweep_amount,

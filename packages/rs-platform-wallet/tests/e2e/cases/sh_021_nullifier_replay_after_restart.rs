@@ -113,7 +113,14 @@ async fn sh_021_nullifier_replay_after_restart() {
     let dst_b32 = dst.to_bech32m_string(s.ctx.bank().network());
     s.test_wallet
         .platform_wallet()
-        .shielded_unshield_to(&handle.coordinator, 0, &dst_b32, UNSHIELD_AMOUNT, prover)
+        .shielded_unshield_to(
+            &handle.coordinator,
+            &s.test_wallet.seed_bytes(),
+            0,
+            &dst_b32,
+            UNSHIELD_AMOUNT,
+            prover,
+        )
         .await
         .expect("first unshield must succeed");
     wait_for_address_balance_chain_confirmed_n(

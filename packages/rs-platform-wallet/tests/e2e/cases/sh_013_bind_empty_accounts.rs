@@ -56,7 +56,14 @@ async fn sh_013_bind_empty_accounts() {
     let spend = s
         .test_wallet
         .platform_wallet()
-        .shielded_unshield_to(&coordinator, 0, &addr_dst_bech32m, 1_000_000, prover)
+        .shielded_unshield_to(
+            &coordinator,
+            &s.test_wallet.seed_bytes(),
+            0,
+            &addr_dst_bech32m,
+            1_000_000,
+            prover,
+        )
         .await;
     assert!(
         matches!(spend, Err(PlatformWalletError::ShieldedNotBound)),

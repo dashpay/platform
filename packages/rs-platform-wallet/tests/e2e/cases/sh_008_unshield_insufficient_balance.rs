@@ -101,6 +101,7 @@ async fn sh_008_unshield_insufficient_balance() {
         .platform_wallet()
         .shielded_unshield_to(
             &handle.coordinator,
+            &s.test_wallet.seed_bytes(),
             0,
             &addr_dst_bech32m,
             OVERDRAW_AMOUNT,
@@ -133,6 +134,7 @@ async fn sh_008_unshield_insufficient_balance() {
         .platform_wallet()
         .shielded_unshield_to(
             &handle.coordinator,
+            &s.test_wallet.seed_bytes(),
             0,
             &addr_dst_bech32m,
             SATISFIABLE_AMOUNT,

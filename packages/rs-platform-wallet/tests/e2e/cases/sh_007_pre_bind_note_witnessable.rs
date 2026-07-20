@@ -127,7 +127,15 @@ async fn sh_007_pre_bind_note_witnessable() {
     // mark-every-position policy.
     a.test_wallet
         .platform_wallet()
-        .shielded_transfer_to(&coordinator, 0, &b_addr_43, NOTE_TO_B, [0u8; 36], prover)
+        .shielded_transfer_to(
+            &coordinator,
+            &a.test_wallet.seed_bytes(),
+            0,
+            &b_addr_43,
+            NOTE_TO_B,
+            [0u8; 36],
+            prover,
+        )
         .await
         .expect("A → B private transfer");
     let _ = coordinator.sync(true).await;
@@ -163,7 +171,14 @@ async fn sh_007_pre_bind_note_witnessable() {
     let b_dst_bech32m = b_dst.to_bech32m_string(b.ctx.bank().network());
     b.test_wallet
         .platform_wallet()
-        .shielded_unshield_to(&coordinator, 0, &b_dst_bech32m, B_UNSHIELD, prover)
+        .shielded_unshield_to(
+            &coordinator,
+            &b.test_wallet.seed_bytes(),
+            0,
+            &b_dst_bech32m,
+            B_UNSHIELD,
+            prover,
+        )
         .await
         .unwrap_or_else(|e| {
             panic!(

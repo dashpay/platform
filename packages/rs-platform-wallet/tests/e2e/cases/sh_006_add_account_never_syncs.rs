@@ -114,6 +114,7 @@ async fn sh_006_add_account_never_syncs() {
         .platform_wallet()
         .shielded_transfer_to(
             &handle.coordinator,
+            &s.test_wallet.seed_bytes(),
             0,
             &acct1_addr,
             TRANSFER_AMOUNT,

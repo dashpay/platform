@@ -56,7 +56,14 @@ async fn sh_030_cross_network_recipient() {
     // parse error BEFORE any proof build.
     let mainnet_hrp = "dash1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq";
     let wrong_net = pw
-        .shielded_unshield_to(&handle.coordinator, 0, mainnet_hrp, 1_000_000, prover)
+        .shielded_unshield_to(
+            &handle.coordinator,
+            &s.test_wallet.seed_bytes(),
+            0,
+            mainnet_hrp,
+            1_000_000,
+            prover,
+        )
         .await;
     assert!(
         matches!(wrong_net, Err(PlatformWalletError::ShieldedBuildError(_))),
@@ -67,7 +74,14 @@ async fn sh_030_cross_network_recipient() {
     // (b) Malformed bech32m: garbage must not parse.
     let malformed = "tdash1notavalidaddressxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx";
     let bad = pw
-        .shielded_unshield_to(&handle.coordinator, 0, malformed, 1_000_000, prover)
+        .shielded_unshield_to(
+            &handle.coordinator,
+            &s.test_wallet.seed_bytes(),
+            0,
+            malformed,
+            1_000_000,
+            prover,
+        )
         .await;
     assert!(
         matches!(bad, Err(PlatformWalletError::ShieldedBuildError(_))),
@@ -79,7 +93,14 @@ async fn sh_030_cross_network_recipient() {
     // bech32m is expected) must also fail to parse as a platform address.
     let core_typed = "yXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX";
     let wrong_type = pw
-        .shielded_unshield_to(&handle.coordinator, 0, core_typed, 1_000_000, prover)
+        .shielded_unshield_to(
+            &handle.coordinator,
+            &s.test_wallet.seed_bytes(),
+            0,
+            core_typed,
+            1_000_000,
+            prover,
+        )
         .await;
     assert!(
         matches!(wrong_type, Err(PlatformWalletError::ShieldedBuildError(_))),

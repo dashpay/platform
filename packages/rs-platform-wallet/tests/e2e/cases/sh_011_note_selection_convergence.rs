@@ -127,7 +127,14 @@ async fn sh_011_note_selection_convergence() {
     // Overflow arm: a degenerate u64::MAX request must hit the
     // `checked_add` guard rather than wrapping.
     let overflow = pw
-        .shielded_unshield_to(&handle.coordinator, 0, &addr_dst_bech32m, u64::MAX, prover)
+        .shielded_unshield_to(
+            &handle.coordinator,
+            &s.test_wallet.seed_bytes(),
+            0,
+            &addr_dst_bech32m,
+            u64::MAX,
+            prover,
+        )
         .await;
     match overflow {
         Err(PlatformWalletError::ShieldedBuildError(msg)) => assert!(
@@ -153,6 +160,7 @@ async fn sh_011_note_selection_convergence() {
         .unwrap_or(0);
     pw.shielded_unshield_to(
         &handle.coordinator,
+        &s.test_wallet.seed_bytes(),
         0,
         &addr_dst_bech32m,
         MULTI_NOTE_UNSHIELD,

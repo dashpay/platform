@@ -169,6 +169,7 @@ async fn sh_005_inmemory_witness_split() {
         .platform_wallet()
         .shielded_unshield_to(
             &handle.coordinator,
+            &s.test_wallet.seed_bytes(),
             0,
             &addr_dst_bech32m,
             UNSHIELD_AMOUNT,

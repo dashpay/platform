@@ -651,7 +651,7 @@ pub async fn shield<S: ShieldedStore, Sig: Signer<PlatformAddress>, P: OrchardPr
 #[allow(clippy::too_many_arguments)]
 pub async fn shield_from_asset_lock<P: OrchardProver>(
     sdk: &Arc<dash_sdk::Sdk>,
-    keys: &OrchardKeySet,
+    keys: &AccountViewingKeys,
     account: u32,
     asset_lock_proof: AssetLockProof,
     private_key: &[u8],
@@ -688,7 +688,7 @@ pub async fn shield_from_asset_lock<P: OrchardProver>(
 #[allow(clippy::too_many_arguments)]
 pub fn build_shield_from_asset_lock_st<P: OrchardProver>(
     sdk: &Arc<dash_sdk::Sdk>,
-    keys: &OrchardKeySet,
+    keys: &AccountViewingKeys,
     account: u32,
     asset_lock_proof: AssetLockProof,
     private_key: &[u8],
@@ -928,7 +928,8 @@ pub async fn build_unshield_st<S: ShieldedStore, P: OrchardProver>(
     selected_notes: &[ShieldedNote],
     prover: &P,
 ) -> Result<StateTransition, PlatformWalletError> {
-    let change_addr = default_orchard_address(keys)?;
+    let views = keys.viewing_keys();
+    let change_addr = default_orchard_address(&views)?;
     let (spends, anchor) = extract_spends_and_anchor(sdk, store, selected_notes).await?;
     let (state_transition, fee_used) = build_unshield_transition(
         spends,

@@ -186,6 +186,7 @@ async fn sh_036_identity_create_from_shielded_pool() {
         .platform_wallet()
         .shielded_identity_create_from_pool(
             &handle.coordinator,
+            &seed,
             0,
             IDENTITY_INDEX,
             public_keys,
@@ -320,6 +321,7 @@ async fn sh_036_identity_create_from_shielded_pool() {
         .platform_wallet()
         .shielded_identity_create_from_pool(
             &handle.coordinator,
+            &seed,
             0,
             IDENTITY_INDEX + 1,
             replay_keys,

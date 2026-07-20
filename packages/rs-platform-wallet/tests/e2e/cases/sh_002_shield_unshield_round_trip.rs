@@ -94,6 +94,7 @@ async fn sh_002_shield_unshield_round_trip() {
         .platform_wallet()
         .shielded_unshield_to(
             &handle.coordinator,
+            &s.test_wallet.seed_bytes(),
             0,
             &addr_dst_bech32m,
             UNSHIELD_AMOUNT,
