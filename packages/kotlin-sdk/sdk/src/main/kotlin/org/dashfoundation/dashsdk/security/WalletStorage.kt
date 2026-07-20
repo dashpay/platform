@@ -253,6 +253,13 @@ class WalletStorage(
      * derived bytes are discarded and only its ownership is recorded, so
      * two racing derivations settle on one stored copy either way.
      *
+     * This function does NOT scrub the bytes [derive] returns — on every
+     * path (stored, discarded as the race loser, or a
+     * [WalletTombstonedException] thrown before either) the caller still
+     * holds the array `derive` returned and owns zeroing it.
+     * [IdentityKeyPrivateKeyDeriver.deriveAndStore], the only caller today,
+     * does this in a `finally`; a future second caller must too.
+     *
      * Throws [WalletTombstonedException] if [ownerWalletId] was deleted.
      */
     suspend fun storeIfAbsent(

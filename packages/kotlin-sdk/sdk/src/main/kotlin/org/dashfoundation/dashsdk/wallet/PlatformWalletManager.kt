@@ -369,6 +369,16 @@ class PlatformWalletManager(
             )
             CoreChildren(resolver, keySigner, deriver, handler)
         } catch (constructionFailure: Throwable) {
+            // No `handler`-close branch: PlatformWalletPersistenceHandler is
+            // built LAST, so it either finishes constructing (assigned to
+            // `handler`, adopted by CoreChildren, this catch never runs for
+            // it) or its own constructor throws before returning — nothing
+            // is ever captured here to close. This assumes that
+            // constructor's own resource acquisition (its owned Executor,
+            // when no dispatcher is injected, as here) either fully
+            // succeeds or fully fails atomically; if it ever grows a
+            // fallible step of its own AFTER allocating that executor,
+            // this block would need a matching local + cleanup branch.
             fun cleanup(action: () -> Unit) {
                 try {
                     action()

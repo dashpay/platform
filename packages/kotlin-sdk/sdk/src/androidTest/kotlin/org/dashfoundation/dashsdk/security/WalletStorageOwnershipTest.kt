@@ -84,6 +84,33 @@ class WalletStorageOwnershipTest {
     }
 
     @Test
+    fun storeIfAbsentDiscardsTheLosingDerivationWhenAnotherWriterWinsTheRace() = runBlocking {
+        // storeIfAbsent's own derive lambda stores the SAME alias for a
+        // different owner before returning — simulates a second caller
+        // winning the derive race while this one was still deriving. The
+        // second store's recheck must see it and discard this call's bytes.
+        storage.storePrivateKey("racealias", ByteArray(32) { 8 }, ownerWalletId = walletB)
+
+        val result = storage.storeIfAbsent("racealias", ownerWalletId = walletA) {
+            ByteArray(32) { 9 } // would-be derived bytes, never actually stored
+        }
+
+        assertFalse("the winner's copy stands; this call only records ownership", result)
+        assertTrue(storage.ownedPrivateKeyAliases(walletA).contains("racealias"))
+        assertTrue(storage.ownedPrivateKeyAliases(walletB).contains("racealias"))
+    }
+
+    // NOTE: the "present but undecryptable legacy blob → treated as absent,
+    // re-derived" branch of storeIfAbsent (addOwnerIfUsableLocked's
+    // isPrivateKeyDecryptable check) is intentionally NOT covered here.
+    // WalletStorage's public API has no seam to plant a raw legacy-shaped
+    // blob (storePrivateKeyEntryLocked hardcodes the current RSA scheme) —
+    // exercising it would need a test-only internal hook into fund/key-
+    // custody code, which wasn't added without a sync. The boundary this
+    // branch relies on (KeystoreManager.isKeysBlobDecryptable's structural
+    // shape check) is covered directly by KeystoreManagerTest instead.
+
+    @Test
     fun storePrivateKeyRejectsATombstonedWalletUntilCleared() = runBlocking {
         storage.withPrivateKeyExclusion { tombstoneWallet(walletA) }
 

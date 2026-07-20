@@ -170,12 +170,11 @@ class PlatformWalletPersistenceHandler(
     /**
      * `privkey.*` alias hexes NEWLY CREATED by
      * [PrivateKeyDeriver.deriveAndStore] during the currently-OPEN round,
-     * per walletId hex. Only aliases that did NOT exist before the write
-     * are recorded ([PrivateKeyDeriver.hasStored] checked first) —
-     * re-derives that overwrite an already-valid scalar (add-key flows
-     * that store before Rust persistence begins, `disable_keys`
-     * re-emitting breadcrumbs on existing keys) must never become
-     * rollback-deletion candidates.
+     * per walletId hex. Only aliases [DerivedKeyStoreResult.wasNewlyCreated]
+     * marks true are recorded — re-derives that overwrite an already-valid
+     * scalar (add-key flows that store before Rust persistence begins,
+     * `disable_keys` re-emitting breadcrumbs on existing keys) must never
+     * become rollback-deletion candidates.
      *
      * The alias write happens immediately (the identifier must be baked
      * into the staged row) while the row itself is buffered until
