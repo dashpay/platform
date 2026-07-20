@@ -245,6 +245,7 @@ fun CoSignProposalScreen(route: CoSignProposal, navController: NavHostController
                             // immediately (← persistCoSignedBurnBalances).
                             ProvenBalances.persist(
                                 balances, context.token, container.database.tokenDao(),
+                                identityDao = container.database.identityDao(),
                             )
                         },
                     )

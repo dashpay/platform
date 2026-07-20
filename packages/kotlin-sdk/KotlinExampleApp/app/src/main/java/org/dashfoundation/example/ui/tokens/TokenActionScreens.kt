@@ -198,6 +198,7 @@ private fun TransferForm(
                 )
                 ProvenBalances.persist(
                     balances, context.token, container.database.tokenDao(), sdk, networkRaw,
+                    identityDao = container.database.identityDao(),
                 )
             }
         },
@@ -291,6 +292,7 @@ private fun MintForm(
                 ProvenBalances.persist(
                     balances, token, container.database.tokenDao(),
                     sdk, context.identity.networkRaw,
+                    identityDao = container.database.identityDao(),
                 )
             }
         },
@@ -401,6 +403,7 @@ private fun BurnForm(
                 ProvenBalances.persist(
                     balances, token, container.database.tokenDao(),
                     sdk, context.identity.networkRaw,
+                    identityDao = container.database.identityDao(),
                 )
             }
         },

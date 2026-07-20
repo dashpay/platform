@@ -4,6 +4,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import org.dashfoundation.dashsdk.Sdk
+import org.dashfoundation.dashsdk.persistence.dao.IdentityDao
 import org.dashfoundation.dashsdk.persistence.dao.TokenDao
 import org.dashfoundation.dashsdk.persistence.UInt64Value
 import org.dashfoundation.dashsdk.persistence.entities.TokenBalanceEntity
@@ -29,6 +30,21 @@ import java.util.Date
  * rows by that same canonical id). If [sdk]/[networkRaw] are not supplied,
  * or the token-id calculation fails, row *creation* is skipped and the
  * Rust-driven periodic balance sync remains the backstop.
+ *
+ * The row's `identityRef` is only populated when [identityDao] confirms a
+ * local `identities` row for that id — recipients picked via DPNS search or
+ * typed in by hand need not exist locally, and `identityRef` is a Room
+ * foreign key, so setting it unconditionally would throw a constraint
+ * violation *after* the transfer/mint already broadcast. `identityId` is
+ * always kept as the denormalized scalar so the balance stays queryable
+ * regardless.
+ *
+ * Per-entry DAO failures are swallowed rather than thrown: this call always
+ * runs after the on-chain action has already broadcast, so surfacing a
+ * cache-write error to the caller would mark an already-executed transfer /
+ * mint / burn as failed-and-retryable, risking a duplicate submission. The
+ * periodic Rust-driven balance sync remains the backstop for any row this
+ * skips.
  */
 object ProvenBalances {
 
@@ -38,6 +54,7 @@ object ProvenBalances {
         dao: TokenDao,
         sdk: Sdk? = null,
         networkRaw: Int? = null,
+        identityDao: IdentityDao? = null,
     ) {
         if (balancesJson.isNullOrBlank()) return
         val entries = try {
@@ -66,28 +83,31 @@ object ProvenBalances {
             // u64 decimal string → unsigned Room value.
             val balance = (amountElement as? JsonPrimitive)?.content
                 ?.toULongOrNull()?.let(::UInt64Value) ?: continue
-            val existing = dao.observeBalancesByIdentity(identityId).first()
-                .firstOrNull { it.tokenRef?.contentEquals(token.id) == true }
-            if (existing != null) {
-                dao.updateBalance(
-                    existing.copy(balance = balance, lastUpdated = now, lastSyncedAt = now),
-                )
-            } else if (canonicalTokenId != null && networkRaw != null) {
-                dao.insertBalance(
-                    TokenBalanceEntity(
-                        tokenId = canonicalTokenId,
-                        identityId = identityId,
-                        balance = balance,
-                        createdAt = now,
-                        lastUpdated = now,
-                        lastSyncedAt = now,
-                        tokenName = token.name,
-                        tokenDecimals = token.decimals,
-                        networkRaw = networkRaw,
-                        identityRef = identityId,
-                        tokenRef = token.id,
-                    ),
-                )
+            runCatching {
+                val existing = dao.observeBalancesByIdentity(identityId).first()
+                    .firstOrNull { it.tokenRef?.contentEquals(token.id) == true }
+                if (existing != null) {
+                    dao.updateBalance(
+                        existing.copy(balance = balance, lastUpdated = now, lastSyncedAt = now),
+                    )
+                } else if (canonicalTokenId != null && networkRaw != null) {
+                    val identityRef = identityDao?.getByIdentityId(identityId)?.let { identityId }
+                    dao.insertBalance(
+                        TokenBalanceEntity(
+                            tokenId = canonicalTokenId,
+                            identityId = identityId,
+                            balance = balance,
+                            createdAt = now,
+                            lastUpdated = now,
+                            lastSyncedAt = now,
+                            tokenName = token.name,
+                            tokenDecimals = token.decimals,
+                            networkRaw = networkRaw,
+                            identityRef = identityRef,
+                            tokenRef = token.id,
+                        ),
+                    )
+                }
             }
         }
     }
