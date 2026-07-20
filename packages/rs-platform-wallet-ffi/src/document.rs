@@ -5,10 +5,9 @@ use std::os::raw::c_char;
 use std::ptr;
 use std::slice;
 
-use dpp::document::serialization_traits::DocumentJsonMethodsV0;
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::prelude::Identifier;
-use dpp::version::PlatformVersion;
+use dpp::serialization::ValueConvertible;
 use platform_wallet::PlatformWalletError;
 use rs_sdk_ffi::{SignerHandle, VTableSigner};
 
@@ -34,12 +33,12 @@ use crate::{unwrap_option_or_return, unwrap_result_or_return};
 /// On success the confirmed document's 32-byte id is written to
 /// `out_document_id`, and a NUL-terminated, owned UTF-8 JSON string of
 /// the confirmed document is written to `*out_document_json`. The JSON
-/// is the canonical query-side representation — produced via DPP's
-/// `Document::to_json_with_identifiers_using_bytes`, so it carries the
-/// system fields (`$id`/`$ownerId`, set timestamps, `$revision`) with
-/// identifiers rendered as base58 strings and only the document's
-/// populated fields present (DPP-normalized + default-filled). Swift
-/// persists this body verbatim so the local cache matches what a
+/// is the canonical query-side representation — the same bytes a DOC-01
+/// list query (`dash_sdk_document_search`) returns, produced by
+/// re-serializing DPP's canonical value form (`to_object()`) through
+/// `serde_json`: `$id`/`$ownerId`/`$creatorId` as base58 strings, binary
+/// properties as base64, `$formatVersion` and unset system fields present.
+/// Swift persists this body verbatim so the local cache matches what a
 /// DOC-01 query would return, rather than the user's form input.
 /// Ownership of the JSON transfers to the caller, who MUST release it
 /// with `platform_wallet_string_free`. On any error `*out_document_json`
@@ -102,27 +101,10 @@ pub unsafe extern "C" fn platform_wallet_create_document_with_signer(
                         signer,
                     )
                     .await?;
-                // Serialize the confirmed document to its canonical
-                // query-side JSON. `to_json_with_identifiers_using_bytes`
-                // renders `$id`/`$ownerId` (and `$creatorId`) as base58
-                // strings and emits only the populated system fields — the
-                // shape a DOC-01 query display expects. The trait's
-                // `platform_version` argument is unused by the V0 impl, so
-                // `latest()` (the same convention the other FFI entry points
-                // in this crate use) is safe here.
-                let platform_version = PlatformVersion::latest();
-                let json_value = confirmed
-                    .to_json_with_identifiers_using_bytes(platform_version)
-                    .map_err(|e| {
-                        PlatformWalletError::InvalidIdentityData(format!(
-                            "Failed to convert confirmed document to JSON: {e}"
-                        ))
-                    })?;
-                let json_string = serde_json::to_string(&json_value).map_err(|e| {
-                    PlatformWalletError::InvalidIdentityData(format!(
-                        "Failed to serialize confirmed document JSON: {e}"
-                    ))
-                })?;
+                // Serialize the confirmed document to its canonical query-side
+                // JSON — the same representation a DOC-01 list query returns —
+                // so the persisted body matches what a later query yields.
+                let json_string = confirmed_document_to_json(&confirmed)?;
                 Ok::<_, PlatformWalletError>((confirmed.id(), json_string))
             });
         result
@@ -145,25 +127,27 @@ pub unsafe extern "C" fn platform_wallet_create_document_with_signer(
     PlatformWalletFFIResult::ok()
 }
 
-/// Serialize a confirmed `Document` to its canonical query-side JSON
-/// string, the same representation the create path returns.
+/// Serialize a confirmed `Document` to its canonical query-side JSON string —
+/// byte-for-byte the representation `dash_sdk_document_search` (the DOC-01 list
+/// query) returns. It re-serializes the canonical value form (`to_object()`)
+/// through `serde_json`, so `$id`/`$ownerId`/`$creatorId` render as base58
+/// strings, binary properties as base64, and `$formatVersion` plus unset system
+/// fields (as `null`) are present. Swift persists this verbatim so the local
+/// cache matches what a subsequent query returns.
 ///
-/// `to_json_with_identifiers_using_bytes` renders `$id`/`$ownerId`
-/// (and `$creatorId`) as base58 strings and emits only the populated
-/// system fields — the shape a DOC-01 query display expects. Swift
-/// persists this verbatim so the local cache matches the on-chain
-/// document. The trait's `platform_version` argument is unused by the
-/// V0 impl, so `latest()` (the convention the other entry points in
-/// this crate use) is safe here.
+/// Note: `dash_sdk_document_get_info` (single-document fetch) emits a different,
+/// per-field shape (bytes as hex); this parity is with the list-query path only.
 fn confirmed_document_to_json(document: &Document) -> Result<String, PlatformWalletError> {
-    let platform_version = PlatformVersion::latest();
-    let json_value = document
-        .to_json_with_identifiers_using_bytes(platform_version)
-        .map_err(|e| {
-            PlatformWalletError::InvalidIdentityData(format!(
-                "Failed to convert confirmed document to JSON: {e}"
-            ))
-        })?;
+    let document_value = document.to_object().map_err(|e| {
+        PlatformWalletError::InvalidIdentityData(format!(
+            "Failed to convert confirmed document to a value: {e}"
+        ))
+    })?;
+    let json_value = serde_json::to_value(&document_value).map_err(|e| {
+        PlatformWalletError::InvalidIdentityData(format!(
+            "Failed to convert confirmed document to JSON: {e}"
+        ))
+    })?;
     serde_json::to_string(&json_value).map_err(|e| {
         PlatformWalletError::InvalidIdentityData(format!(
             "Failed to serialize confirmed document JSON: {e}"
@@ -525,4 +509,65 @@ pub unsafe extern "C" fn platform_wallet_document_purchase(
     dst.copy_from_slice(&bytes);
     *out_document_json = json_cstring.into_raw();
     PlatformWalletFFIResult::ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dpp::document::DocumentV0;
+    use dpp::platform_value::Value;
+    use std::collections::BTreeMap;
+
+    // The confirmed-document JSON handed to Swift must be the same canonical
+    // shape the DOC-01 list query (`dash_sdk_document_search`) returns:
+    // `$formatVersion` present, identifiers as base58 strings, and binary
+    // properties as base64 strings (not u8-arrays). Guards against reverting to
+    // the legacy `to_json_with_identifiers_using_bytes` representation.
+    #[test]
+    fn confirmed_document_json_matches_canonical_query_shape() {
+        let mut properties = BTreeMap::new();
+        properties.insert(
+            "blob".to_string(),
+            Value::Bytes(vec![0xde, 0xad, 0xbe, 0xef]),
+        );
+
+        let document = Document::V0(DocumentV0 {
+            id: Identifier::from([1u8; 32]),
+            owner_id: Identifier::from([2u8; 32]),
+            properties,
+            revision: Some(1),
+            created_at: None,
+            updated_at: None,
+            transferred_at: None,
+            created_at_block_height: None,
+            updated_at_block_height: None,
+            transferred_at_block_height: None,
+            created_at_core_block_height: None,
+            updated_at_core_block_height: None,
+            transferred_at_core_block_height: None,
+            creator_id: None,
+        });
+
+        let json: serde_json::Value =
+            serde_json::from_str(&confirmed_document_to_json(&document).unwrap()).unwrap();
+
+        // `$formatVersion` present (the legacy shape omitted it).
+        assert_eq!(json["$formatVersion"], serde_json::json!("0"));
+        // Identifiers as base58 strings.
+        assert!(
+            json["$id"].is_string(),
+            "$id must be a base58 string, got {:?}",
+            json["$id"]
+        );
+        // The key differentiator from the legacy shape: binary property as a
+        // base64 string (not a u8-array). 0xdeadbeef -> "3q2+7w==".
+        assert_eq!(json["blob"], serde_json::json!("3q2+7w=="));
+        // Unset system fields are present as null (the legacy shape omitted them).
+        assert!(
+            json.get("$createdAt")
+                .is_some_and(serde_json::Value::is_null),
+            "unset $createdAt must be present and null, got {:?}",
+            json.get("$createdAt")
+        );
+    }
 }

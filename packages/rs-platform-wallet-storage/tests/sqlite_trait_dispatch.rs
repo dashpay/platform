@@ -132,3 +132,35 @@ fn inherent_commit_writes_flushes_dirty() {
     assert_eq!(count_for(&a), 1);
     assert_eq!(count_for(&b), 1);
 }
+
+/// SQLite attests durability in BOTH flush modes, so the fail-closed
+/// `persists_durably` gate on invitation creation
+/// (`create_invitation` refuses non-durable backends) accepts a
+/// SQLite-backed wallet. Immediate mode is durable at `store`; Manual
+/// mode at the explicit `flush` the gated flow performs before
+/// anything irreversible. Checked through the trait object exactly as
+/// the gate reads it. A trait-default stub stays `false` (fail-closed
+/// baseline the gate relies on).
+#[test]
+fn sqlite_attests_durability_for_invitation_gate() {
+    let (immediate, _tmp_a, _path_a) = fresh_persister();
+    let (manual, _tmp_b, _path_b) = fresh_persister_with_mode(FlushMode::Manual);
+
+    let immediate: Arc<dyn PlatformWalletPersistence> = Arc::new(immediate);
+    let manual: Arc<dyn PlatformWalletPersistence> = Arc::new(manual);
+    assert!(
+        immediate.persists_durably(),
+        "Immediate-mode SQLite must pass the invitation durability gate"
+    );
+    assert!(
+        manual.persists_durably(),
+        "Manual-mode SQLite must pass the invitation durability gate \
+         (flush writes through in one transaction)"
+    );
+
+    let stub: Arc<dyn PlatformWalletPersistence> = Arc::new(StoreOnlyPersister);
+    assert!(
+        !stub.persists_durably(),
+        "a backend that does not attest durability must stay fail-closed"
+    );
+}

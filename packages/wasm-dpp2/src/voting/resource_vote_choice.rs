@@ -10,19 +10,23 @@ use wasm_bindgen::prelude::wasm_bindgen;
 const TS_TYPES: &str = r#"
 /**
  * ResourceVoteChoice serialized as a plain object.
+ *
+ * Custom Serialize emits a flat `{type, identity?}` shape — `identity`
+ * (synthesized name) carries the inner Identifier for the TowardsIdentity
+ * variant.
  */
 export type ResourceVoteChoiceObject =
-    | { type: "towardsIdentity"; data: Uint8Array }
-    | { type: "abstain" }
-    | { type: "lock" };
+    | { $type: "towardsIdentity"; identity: Uint8Array }
+    | { $type: "abstain" }
+    | { $type: "lock" };
 
 /**
  * ResourceVoteChoice serialized as JSON.
  */
 export type ResourceVoteChoiceJSON =
-    | { type: "towardsIdentity"; data: string }
-    | { type: "abstain" }
-    | { type: "lock" };
+    | { $type: "towardsIdentity"; identity: string }
+    | { $type: "abstain" }
+    | { $type: "lock" };
 "#;
 
 #[wasm_bindgen]

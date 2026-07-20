@@ -13,6 +13,7 @@ struct DashPayTabView: View {
     @Binding var selectedTab: RootTab
 
     @EnvironmentObject var walletManager: PlatformWalletManager
+    @EnvironmentObject private var appUIState: AppUIState
     @EnvironmentObject var appState: AppState
     @Environment(\.modelContext) private var modelContext
     @Environment(\.scenePhase) private var scenePhase
@@ -33,6 +34,19 @@ struct DashPayTabView: View {
     @State private var segment: DashPaySegment = .contacts
     @State private var showAddContact = false
     @State private var showAddViaQR = false
+
+    /// Drives the claim sheet via `.sheet(item:)`. A fresh value (new `id`)
+    /// re-presents the sheet — so a second `dashpay://invite` link arriving while
+    /// the sheet is already open re-seeds it with the new URI instead of being
+    /// dropped (`.sheet(isPresented:)` can't re-seed an already-presented sheet
+    /// whose `uri` is seeded once at init).
+    private struct ClaimInvite: Identifiable {
+        let id = UUID()
+        let walletId: Data
+        let initialURI: String
+    }
+
+    @State private var claimInvite: ClaimInvite?
 
     /// Optimistic overlay for *send*: contact ids whose request
     /// was just broadcast but whose outgoing row hasn't landed via
@@ -111,6 +125,38 @@ struct DashPayTabView: View {
         return eligibleIdentities.first
     }
 
+    /// Wallet the "Claim invitation" flow registers the new identity under.
+    /// Prefers the active identity's wallet, else the first loaded wallet on
+    /// this network — so a fresh invitee with no identity yet can still claim.
+    private var claimWalletId: Data? {
+        activeIdentity?.wallet?.walletId
+            ?? walletManager.wallets.keys.sorted { $0.lexicographicallyPrecedes($1) }.first
+    }
+
+    /// Present the claim sheet pre-filled for a pending `dashpay://invite` link
+    /// (captured by the app's `.onOpenURL` into `AppUIState.pendingInviteURL`)
+    /// and clear it so it isn't re-triggered. Invoked on both the warm path
+    /// (`.onChange`) and the cold-launch path (`.onAppear`); the nil guard makes
+    /// the second call after the first clears it a no-op (no double-present).
+    private func consumePendingInviteURL() {
+        guard appUIState.pendingInviteURL != nil else { return }
+        // NEVER replace the sheet mid-claim: re-seeding recreates the view,
+        // orphaning the in-flight claim task, and a second claim would race
+        // the first for the same unused identity index. Leave the URL pending;
+        // the `.onChange(of: invitationClaimInFlight)` below re-consumes it
+        // once the claim reaches a terminal state.
+        guard !appUIState.invitationClaimInFlight else { return }
+        guard let urlString = appUIState.pendingInviteURL else { return }
+        // Clear the bearer URL immediately so it can't linger in @Published; the
+        // nil-write re-fires this via .onChange, where the guard above no-ops.
+        appUIState.pendingInviteURL = nil
+        guard let walletId = claimWalletId else { return }
+        // A fresh ClaimInvite (new id) presents the sheet — and RE-presents it
+        // if one is already open IDLE, so a second invite link re-seeds it with
+        // the new URI instead of being dropped (mid-claim it defers above).
+        claimInvite = ClaimInvite(walletId: walletId, initialURI: urlString)
+    }
+
     var body: some View {
         NavigationStack {
             content
@@ -148,6 +194,18 @@ struct DashPayTabView: View {
                         .disabled(activeIdentity == nil)
                         .accessibilityIdentifier("dashpay.addViaQR")
                     }
+                    ToolbarItem(placement: .navigationBarTrailing) {
+                        Button {
+                            if let walletId = claimWalletId {
+                                claimInvite = ClaimInvite(walletId: walletId, initialURI: "")
+                            }
+                        } label: {
+                            Image(systemName: "gift")
+                        }
+                        .disabled(claimWalletId == nil)
+                        .accessibilityLabel("Claim invitation")
+                        .accessibilityIdentifier("dashpay.claimInvitation")
+                    }
                     ToolbarItem(placement: .navigationBarLeading) {
                         if let identity = activeIdentity {
                             NavigationLink {
@@ -159,12 +217,66 @@ struct DashPayTabView: View {
                             .accessibilityIdentifier("dashpay.openIgnored")
                         }
                     }
+                    ToolbarItem(placement: .navigationBarLeading) {
+                        // Gate on a loaded wallet, not the active identity:
+                        // reclaiming needs no identity, so deleting the last identity
+                        // must not hide the reclaim UI while funded (reclaimable)
+                        // invitations remain. The list itself spans all wallets and
+                        // reclaims each by its own walletId.
+                        if claimWalletId != nil {
+                            NavigationLink {
+                                InvitationsView(
+                                    network: network,
+                                    identity: activeIdentity
+                                )
+                                // Re-inject explicitly: toolbar-hosted destinations
+                                // don't reliably inherit environment objects (see
+                                // IgnoredContactsView above), and InvitationsView
+                                // requires the manager for its loaded-wallet filter.
+                                .environmentObject(walletManager)
+                            } label: {
+                                Image(systemName: "paperplane")
+                            }
+                            .accessibilityLabel("Sent invitations")
+                            .accessibilityIdentifier("dashpay.openSentInvitations")
+                        }
+                    }
                 }
                 .sheet(isPresented: $showAddViaQR) {
                     if let identity = activeIdentity {
                         AddViaQRSheet(identity: identity)
                             .environmentObject(walletManager)
                     }
+                }
+                .sheet(item: $claimInvite) { invite in
+                    ClaimInvitationSheet(
+                        walletId: invite.walletId,
+                        network: network,
+                        initialURI: invite.initialURI
+                    )
+                    .environmentObject(walletManager)
+                    .environmentObject(appUIState)
+                }
+                .onChange(of: appUIState.invitationClaimInFlight) { _, inFlight in
+                    // A link that arrived mid-claim was deferred (left in
+                    // pendingInviteURL); consume it now that the claim ended.
+                    if !inFlight {
+                        consumePendingInviteURL()
+                    }
+                }
+                .onChange(of: appUIState.pendingInviteURL) { _, _ in
+                    // Warm path: the app is already running, so the tab observes
+                    // the nil→url transition set by .onOpenURL.
+                    consumePendingInviteURL()
+                }
+                .onAppear {
+                    // Cold-launch path: .onOpenURL fires during scene connection,
+                    // before this tab exists (ContentView shows "Initializing…"
+                    // until bootstrap finishes), so .onChange never sees the
+                    // transition. Consume any already-set pending URL when the tab
+                    // first appears (.onOpenURL forces selectedTab = .dashpay, so
+                    // this tab does appear).
+                    consumePendingInviteURL()
                 }
                 .sheet(isPresented: $showAddContact) {
                     if let identity = activeIdentity {

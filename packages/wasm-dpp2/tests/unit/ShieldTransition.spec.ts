@@ -89,7 +89,7 @@ describe('ShieldTransition', () => {
       const obj = t.toObject();
       expect(obj.feeStrategy).to.be.an('array');
       if (obj.feeStrategy.length > 0) {
-        expect(obj.feeStrategy[0].type).to.be.oneOf(['deductFromInput', 'reduceOutput']);
+        expect(obj.feeStrategy[0].$type).to.be.oneOf(['deductFromInput', 'reduceOutput']);
         expect(obj.feeStrategy[0].index).to.be.a('number');
       }
     });

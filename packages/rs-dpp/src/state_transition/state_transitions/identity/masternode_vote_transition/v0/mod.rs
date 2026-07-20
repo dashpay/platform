@@ -1,11 +1,7 @@
 mod identity_signed;
-#[cfg(feature = "json-conversion")]
-mod json_conversion;
 mod state_transition_like;
 mod types;
 pub(super) mod v0_methods;
-#[cfg(feature = "value-conversion")]
-mod value_conversion;
 mod version;
 
 use crate::identity::KeyID;
@@ -197,43 +193,9 @@ mod test {
         }
     }
 
-    #[test]
-    fn test_value_conversion_roundtrip_v0() {
-        use crate::state_transition::StateTransitionValueConvert;
-        use crate::version::LATEST_PLATFORM_VERSION;
-        let t = make_vote_v0();
-        let obj = t.to_object(false).expect("to_object should work");
-        let restored = MasternodeVoteTransitionV0::from_object(obj, LATEST_PLATFORM_VERSION)
-            .expect("from_object should work");
-        assert_eq!(t, restored);
-    }
-
-    #[test]
-    fn test_from_value_map_v0() {
-        use crate::state_transition::StateTransitionValueConvert;
-        use crate::version::LATEST_PLATFORM_VERSION;
-        let t = make_vote_v0();
-        let obj = t.to_object(false).expect("should work");
-        let map = obj.into_btree_string_map().expect("should be map");
-        let restored = MasternodeVoteTransitionV0::from_value_map(map, LATEST_PLATFORM_VERSION)
-            .expect("should work");
-        assert_eq!(t, restored);
-    }
-
-    #[test]
-    fn test_to_cleaned_object_v0() {
-        use crate::state_transition::StateTransitionValueConvert;
-        let t = make_vote_v0();
-        let obj = t.to_cleaned_object(false).expect("should work");
-        assert!(obj.is_map());
-    }
-
-    #[test]
-    fn test_to_object_skip_signature_v0() {
-        use crate::state_transition::StateTransitionValueConvert;
-        let t = make_vote_v0();
-        let obj = t.to_object(true).expect("should work");
-        let map = obj.into_btree_string_map().expect("should be map");
-        assert!(!map.contains_key("signature"));
-    }
+    // Legacy `StateTransitionValueConvert` round-trip / cleaned-object /
+    // skip-signature tests on the V0 inner struct deleted in Phase D
+    // step 9. The canonical `JsonConvertible` / `ValueConvertible`
+    // round-trip is exercised on the outer enum derive — these tested
+    // methods that no longer exist.
 }

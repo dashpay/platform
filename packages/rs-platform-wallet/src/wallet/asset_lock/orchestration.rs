@@ -151,6 +151,15 @@ pub enum AssetLockFunding {
     FromExistingAssetLock {
         /// The outpoint identifying the tracked asset lock (txid + output index).
         out_point: OutPoint,
+        /// Explicit authorization to consume an
+        /// [`AssetLockFundingType::IdentityInvitation`]-typed lock — a
+        /// DashPay invitation **bearer voucher** whose key was exported
+        /// into a shared link. Only the invitation reclaim flow sets this;
+        /// every generic resume/top-up path leaves it `false` and is
+        /// refused invitation locks by the resolver, so a voucher can
+        /// never be silently consumed into an unrelated local identity
+        /// (which would invalidate the invitee's already-shared claim).
+        consume_invitation_voucher: bool,
     },
 }
 
@@ -419,7 +428,28 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                     Err(e) => Err(e),
                 }
             }
-            AssetLockFunding::FromExistingAssetLock { out_point } => {
+            AssetLockFunding::FromExistingAssetLock {
+                out_point,
+                consume_invitation_voucher,
+            } => {
+                // Invitation vouchers are bearer instruments: the credit
+                // output's private key was exported into a shared link, so
+                // consuming the lock through a generic resume/top-up would
+                // both misdirect the funds into a local identity and kill
+                // the invitee's claim. Refuse unless the caller carries the
+                // reclaim flow's explicit authorization.
+                if !consume_invitation_voucher
+                    && self.tracked_funding_type(&out_point).await
+                        == Some(AssetLockFundingType::IdentityInvitation)
+                {
+                    return Err(PlatformWalletError::AssetLockTransaction(format!(
+                        "asset lock {out_point} is a DashPay invitation voucher; \
+                         generic resume/top-up refuses to consume it (its key is \
+                         shared in the invitation link, and consuming it would \
+                         invalidate the invitee's claim) — use the invitation \
+                         reclaim flow, which passes explicit authorization"
+                    )));
+                }
                 // 300s is an InstantSend-preference window, not a finality
                 // timeout: on expiry the caller falls back to an unbounded
                 // ChainLock wait, so a resumed broadcast lock never fails

@@ -183,7 +183,7 @@ describe('AddressFundsTransferTransition', () => {
       const obj = transition.toObject();
 
       expect(obj.feeStrategy).to.be.an('array');
-      expect(obj.feeStrategy[0].type).to.be.oneOf(['deductFromInput', 'reduceOutput']);
+      expect(obj.feeStrategy[0].$type).to.be.oneOf(['deductFromInput', 'reduceOutput']);
       expect(obj.feeStrategy[0].index).to.be.a('number');
     });
 
@@ -198,7 +198,7 @@ describe('AddressFundsTransferTransition', () => {
       expect(json.outputs[0].address).to.be.a('string').with.lengthOf(42);
       expect(json.outputs[0].amount).to.satisfy((v: unknown) => typeof v === 'number' || typeof v === 'string');
 
-      expect(json.feeStrategy[0].type).to.be.oneOf(['deductFromInput', 'reduceOutput']);
+      expect(json.feeStrategy[0].$type).to.be.oneOf(['deductFromInput', 'reduceOutput']);
       expect(json.feeStrategy[0].index).to.be.a('number');
     });
 

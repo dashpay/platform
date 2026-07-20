@@ -1,11 +1,11 @@
 //! FFI bindings for PlatformWalletManager's SPV runtime.
 
-use std::ffi::CStr;
+use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 
 use dashcore::sml::llmq_type::LlmqDevnetParams;
 use platform_wallet::spv::{
-    ClientConfig, DevnetConfig, ProgressPercentage, SyncProgress, SyncState,
+    ClientConfig, DevnetConfig, ProgressPercentage, SpvPeerNodeType, SyncProgress, SyncState,
 };
 
 use crate::error::*;
@@ -150,6 +150,98 @@ pub unsafe extern "C" fn platform_wallet_manager_sync_progress(
         None => FFISpvSyncProgress::default(),
     };
     PlatformWalletFFIResult::ok()
+}
+
+pub const SPV_PEER_NODE_TYPE_UNKNOWN: u32 = 0;
+pub const SPV_PEER_NODE_TYPE_NORMAL: u32 = 1;
+pub const SPV_PEER_NODE_TYPE_MASTERNODE: u32 = 2;
+pub const SPV_PEER_NODE_TYPE_EVONODE: u32 = 3;
+
+/// One connected SPV peer, classified against the masternode list.
+///
+/// `address` is a heap-owned NUL-terminated `ip:port` string, freed by
+/// the paired [`platform_wallet_manager_spv_connected_peers_free`].
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct FFISpvPeerInfo {
+    /// Heap-owned `ip:port` string. Always non-null on a successful row.
+    pub address: *mut c_char,
+    /// One of the `SPV_PEER_NODE_TYPE_*` constants.
+    pub node_type: u32,
+}
+
+fn peer_node_type_to_u32(node_type: SpvPeerNodeType) -> u32 {
+    match node_type {
+        SpvPeerNodeType::Unknown => SPV_PEER_NODE_TYPE_UNKNOWN,
+        SpvPeerNodeType::Normal => SPV_PEER_NODE_TYPE_NORMAL,
+        SpvPeerNodeType::Masternode => SPV_PEER_NODE_TYPE_MASTERNODE,
+        SpvPeerNodeType::Evonode => SPV_PEER_NODE_TYPE_EVONODE,
+    }
+}
+
+/// Snapshot of the peers the SPV client is currently connected to, each
+/// classified against the masternode list (`SPV_PEER_NODE_TYPE_UNKNOWN`
+/// while the masternode list hasn't synced yet).
+///
+/// On success `*out_entries` points at a heap-owned `[FFISpvPeerInfo]`
+/// of length `*out_count`; the caller must release it via
+/// [`platform_wallet_manager_spv_connected_peers_free`]. No connected
+/// peers (or a stopped client) returns `ok()` with
+/// `*out_entries = null`, `*out_count = 0`.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_manager_spv_connected_peers(
+    handle: Handle,
+    out_entries: *mut *const FFISpvPeerInfo,
+    out_count: *mut usize,
+) -> PlatformWalletFFIResult {
+    check_ptr!(out_entries);
+    check_ptr!(out_count);
+    *out_entries = std::ptr::null();
+    *out_count = 0;
+
+    let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
+        runtime().block_on(manager.spv().connected_peers())
+    });
+    let peers = unwrap_option_or_return!(option);
+    if peers.is_empty() {
+        return PlatformWalletFFIResult::ok();
+    }
+
+    let entries: Vec<FFISpvPeerInfo> = peers
+        .into_iter()
+        .filter_map(|peer| {
+            let address = CString::new(peer.address.to_string()).ok()?;
+            Some(FFISpvPeerInfo {
+                address: address.into_raw(),
+                node_type: peer_node_type_to_u32(peer.node_type),
+            })
+        })
+        .collect();
+    let count = entries.len();
+    *out_entries = Box::into_raw(entries.into_boxed_slice()) as *const _;
+    *out_count = count;
+    PlatformWalletFFIResult::ok()
+}
+
+/// Release a peer list returned by
+/// [`platform_wallet_manager_spv_connected_peers`].
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_manager_spv_connected_peers_free(
+    entries: *mut FFISpvPeerInfo,
+    count: usize,
+) {
+    if entries.is_null() || count == 0 {
+        return;
+    }
+    // Walk every row first to release its heap-owned `address` string
+    // before reclaiming the parent slice.
+    let slice = std::slice::from_raw_parts(entries, count);
+    for entry in slice {
+        if !entry.address.is_null() {
+            let _ = CString::from_raw(entry.address);
+        }
+    }
+    let _ = Box::from_raw(std::ptr::slice_from_raw_parts_mut(entries, count));
 }
 
 /// Whether the SPV client is currently running.
@@ -389,6 +481,58 @@ pub unsafe extern "C" fn platform_wallet_manager_spv_stop(
         });
     });
     unwrap_option_or_return!(option);
+    PlatformWalletFFIResult::ok()
+}
+
+/// Arm an organic compact-filter rescan for one wallet by rewinding its
+/// SPV filter-scan checkpoint (`synced_height`) to `from_height`.
+///
+/// This does not itself scan; it rewinds the checkpoint on the *shared*
+/// wallet state the running `DashSpvClient` reads. On the filter-sync
+/// loop's next tick, `dash-spv`'s `FiltersManager` observes this wallet
+/// in `wallets_behind(committed_height)`, calls `reset_for_rescan()`,
+/// rewinds its committed height to this wallet's `synced_height`, and
+/// re-downloads / re-matches compact filters from there — matching any
+/// scripts (e.g. newly watched addresses) that weren't in the watch set
+/// when those blocks were first scanned.
+///
+/// `from_height` at or above the wallet's current checkpoint is written
+/// verbatim but arms no rescan (the loop only rescans wallets strictly
+/// behind the committed height), so a forward/equal set is a harmless
+/// no-op for rescan purposes.
+///
+/// Requires SPV running for an immediate effect; otherwise the rewound
+/// checkpoint takes effect when SPV next starts and its filter loop
+/// first ticks. The rewound checkpoint is in-memory only (not persisted
+/// by this call); if the process dies mid-rescan the wallet is simply
+/// still behind and the next start re-arms the backfill.
+///
+/// # Safety
+/// - `wallet_id` must point to 32 readable bytes.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_manager_spv_rescan_filters(
+    handle: Handle,
+    wallet_id: *const u8,
+    from_height: u32,
+) -> PlatformWalletFFIResult {
+    check_ptr!(wallet_id);
+    let wid: [u8; 32] = std::ptr::read(wallet_id as *const [u8; 32]);
+
+    let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
+        manager.spv_rescan_filters_blocking(&wid, from_height)
+    });
+    let found = unwrap_option_or_return!(option);
+    if !found {
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::NotFound,
+            "Wallet not found".to_string(),
+        );
+    }
+    tracing::info!(
+        wallet_id = %hex::encode(wid),
+        from_height,
+        "platform_wallet_manager_spv_rescan_filters: armed filter rescan"
+    );
     PlatformWalletFFIResult::ok()
 }
 

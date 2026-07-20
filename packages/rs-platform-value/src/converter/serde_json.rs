@@ -41,7 +41,12 @@ impl Value {
             Value::I16(i) => JsonValue::Number(i.into()),
             Value::U8(i) => JsonValue::Number(i.into()),
             Value::I8(i) => JsonValue::Number(i.into()),
-            Value::Float(float) => JsonValue::Number(Number::from_f64(float).unwrap_or(0.into())),
+            // JSON cannot represent NaN/±∞ (`from_f64` returns None) — fail
+            // loudly instead of silently substituting 0, which would be
+            // indistinguishable from a real zero to JSON consumers.
+            Value::Float(float) => JsonValue::Number(Number::from_f64(float).ok_or_else(|| {
+                Error::Unsupported("non-finite float (NaN/±∞) is not representable in JSON".into())
+            })?),
             Value::Text(string) => JsonValue::String(string),
             Value::Bool(value) => JsonValue::Bool(value),
             Value::Null => JsonValue::Null,
@@ -137,7 +142,14 @@ impl Value {
             Value::I16(i) => JsonValue::Number((*i).into()),
             Value::U8(i) => JsonValue::Number((*i).into()),
             Value::I8(i) => JsonValue::Number((*i).into()),
-            Value::Float(float) => JsonValue::Number(Number::from_f64(*float).unwrap_or(0.into())),
+            // JSON cannot represent NaN/±∞ — fail loudly (see owned path above).
+            Value::Float(float) => {
+                JsonValue::Number(Number::from_f64(*float).ok_or_else(|| {
+                    Error::Unsupported(
+                        "non-finite float (NaN/±∞) is not representable in JSON".into(),
+                    )
+                })?)
+            }
             Value::Text(string) => JsonValue::String(string.clone()),
             Value::Bool(value) => JsonValue::Bool(*value),
             Value::Null => JsonValue::Null,
@@ -219,27 +231,16 @@ impl From<JsonValue> for Value {
             }
             JsonValue::String(string) => Self::Text(string),
             JsonValue::Array(array) => {
-                let u8_max = u8::MAX as u64;
-                //todo: hacky solution, to fix
-                let len = array.len();
-                if len >= 10
-                    && array.iter().all(|v| {
-                        let Some(int) = v.as_u64() else {
-                            return false;
-                        };
-                        int.le(&u8_max)
-                    })
-                {
-                    //this is an array of bytes
-                    Self::Bytes(
-                        array
-                            .into_iter()
-                            .map(|v| v.as_u64().unwrap() as u8)
-                            .collect(),
-                    )
-                } else {
-                    Self::Array(array.into_iter().map(|v| v.into()).collect())
-                }
+                // Critical-2 fix: faithful array → array conversion. The previous
+                // heuristic ("if len >= 10 and all elements ≤ 255 then call it
+                // bytes") was a JS-DPP-era workaround for clients that sent
+                // binary as JSON arrays of u8. With the canonical-trait
+                // unification (HR = base64 strings, non-HR = Value::Bytes;
+                // BinaryData/Identifier/Bytes* deserializers handle both),
+                // the heuristic is no longer needed and was actively corrupting
+                // genuine arrays of small integers (e.g., a document property
+                // typed as "list of small ints" of length 10+).
+                Self::Array(array.into_iter().map(|v| v.into()).collect())
             }
             JsonValue::Object(map) => {
                 Self::Map(map.into_iter().map(|(k, v)| (k.into(), v.into())).collect())
@@ -265,22 +266,8 @@ impl From<&JsonValue> for Value {
             }
             JsonValue::String(string) => Self::Text(string.clone()),
             JsonValue::Array(array) => {
-                let u8_max = u8::MAX as u64;
-                //todo: hacky solution, to fix
-                let len = array.len();
-                if len >= 10
-                    && array.iter().all(|v| {
-                        let Some(int) = v.as_u64() else {
-                            return false;
-                        };
-                        int.le(&u8_max)
-                    })
-                {
-                    //this is an array of bytes
-                    Self::Bytes(array.iter().map(|v| v.as_u64().unwrap() as u8).collect())
-                } else {
-                    Self::Array(array.iter().map(|v| v.into()).collect())
-                }
+                // Critical-2 fix: see owned-form comment above.
+                Self::Array(array.iter().map(|v| v.into()).collect())
             }
             JsonValue::Object(map) => Self::Map(
                 map.into_iter()
@@ -311,7 +298,10 @@ impl TryInto<JsonValue> for Value {
             Value::Bytes20(bytes) => JsonValue::String(BASE64_STANDARD.encode(bytes.as_slice())),
             Value::Bytes32(bytes) => JsonValue::String(BASE64_STANDARD.encode(bytes.as_slice())),
             Value::Bytes36(bytes) => JsonValue::String(BASE64_STANDARD.encode(bytes.as_slice())),
-            Value::Float(float) => JsonValue::Number(Number::from_f64(float).unwrap_or(0.into())),
+            // JSON cannot represent NaN/±∞ — fail loudly (see validating path above).
+            Value::Float(float) => JsonValue::Number(Number::from_f64(float).ok_or_else(|| {
+                Error::Unsupported("non-finite float (NaN/±∞) is not representable in JSON".into())
+            })?),
             Value::Text(string) => JsonValue::String(string),
             Value::Bool(value) => JsonValue::Bool(value),
             Value::Null => JsonValue::Null,
@@ -720,19 +710,41 @@ mod tests {
         assert!(val.is_map());
     }
 
-    // --- byte-array heuristic tests ---
+    // -----------------------------------------------------------------------
+    // From<JsonValue> for Value — array conversion is faithful
+    //
+    // The previous `len >= 10 && all u8-range` heuristic that silently
+    // reclassified JSON arrays as `Value::Bytes` was removed. JSON arrays now
+    // always become `Value::Array(...)` regardless of length / content
+    // shape. Binary fields should flow through canonical encodings
+    // (base64 strings in JSON, decoded by the receiver's Deserialize impl).
+    // -----------------------------------------------------------------------
 
     #[test]
-    fn from_json_array_10_u8_range_becomes_bytes() {
-        // Exactly 10 elements, all in u8 range -> Bytes
+    fn from_json_array_10_u8_range_stays_array_not_bytes() {
+        // Previously: heuristic silently coerced this to Value::Bytes.
+        // Now: faithful array → array conversion.
         let arr: Vec<JsonValue> = (0u64..10).map(|i| json!(i)).collect();
         let val: Value = JsonValue::Array(arr).into();
-        assert_eq!(val, Value::Bytes(vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9]));
+        assert_eq!(
+            val,
+            Value::Array(vec![
+                Value::U64(0),
+                Value::U64(1),
+                Value::U64(2),
+                Value::U64(3),
+                Value::U64(4),
+                Value::U64(5),
+                Value::U64(6),
+                Value::U64(7),
+                Value::U64(8),
+                Value::U64(9),
+            ])
+        );
     }
 
     #[test]
     fn from_json_array_9_u8_range_stays_array() {
-        // Only 9 elements -> stays as Array even though all are u8-range
         let arr: Vec<JsonValue> = (0u64..9).map(|i| json!(i)).collect();
         let val: Value = JsonValue::Array(arr).into();
         assert!(matches!(val, Value::Array(_)));
@@ -740,7 +752,6 @@ mod tests {
 
     #[test]
     fn from_json_array_mixed_types_stays_array() {
-        // 10+ elements but mixed types -> stays as Array
         let mut arr: Vec<JsonValue> = (0u64..10).map(|i| json!(i)).collect();
         arr.push(json!("not_a_number"));
         let val: Value = JsonValue::Array(arr).into();
@@ -749,28 +760,45 @@ mod tests {
 
     #[test]
     fn from_json_array_large_values_stays_array() {
-        // 10+ elements but values exceed u8 range -> stays as Array
         let arr: Vec<JsonValue> = (0u64..12).map(|i| json!(i * 100)).collect();
         let val: Value = JsonValue::Array(arr).into();
-        // Some values like 1100 exceed u8::MAX (255), so not all u8-range
         assert!(matches!(val, Value::Array(_)));
     }
 
     #[test]
-    fn from_json_array_all_255_becomes_bytes() {
-        // 10 elements all at u8::MAX
+    fn from_json_array_all_255_stays_array_not_bytes() {
+        // Previously: heuristic coerced this to Value::Bytes.
+        // Now: faithful array → array.
         let arr: Vec<JsonValue> = vec![json!(255); 10];
         let val: Value = JsonValue::Array(arr).into();
-        assert_eq!(val, Value::Bytes(vec![255; 10]));
+        assert_eq!(val, Value::Array(vec![Value::U64(255); 10]));
     }
 
     #[test]
     fn from_json_array_with_negative_stays_array() {
-        // Negative numbers are not in u8 range
         let mut arr: Vec<JsonValue> = (0u64..9).map(|i| json!(i)).collect();
         arr.push(json!(-1));
         let val: Value = JsonValue::Array(arr).into();
         assert!(matches!(val, Value::Array(_)));
+    }
+
+    #[test]
+    fn from_json_long_byte_like_array_stays_array_not_bytes() {
+        // Round-trip pin: a 1000-element JSON array of small ints (e.g., a
+        // document property typed as `array of integers`) previously got
+        // silently corrupted into Value::Bytes(1000 bytes). The roundtrip
+        // back via `try_into::<JsonValue>` would then emit a base64 string
+        // instead of the original array. After the Critical-2 fix, the
+        // conversion is faithful in both directions.
+        let original: JsonValue = JsonValue::Array(vec![json!(7u64); 1000]);
+        let value: Value = original.clone().into();
+        assert!(
+            matches!(value, Value::Array(_)),
+            "1000-element u8-range JSON array must stay an array, not silently \
+             become bytes"
+        );
+        let recovered: JsonValue = value.try_into().unwrap();
+        assert_eq!(original, recovered, "round-trip JSON array → Value → JSON");
     }
 
     // -----------------------------------------------------------------------
@@ -785,11 +813,14 @@ mod tests {
     }
 
     #[test]
-    fn from_json_ref_array_becomes_bytes() {
+    fn from_json_ref_array_stays_array_not_bytes() {
+        // Mirrors `from_json_array_10_u8_range_stays_array_not_bytes`
+        // for the borrowed `From<&JsonValue>` variant — same Critical-2
+        // fix applies to both impls.
         let arr: Vec<JsonValue> = (0u64..15).map(|i| json!(i)).collect();
         let jv = JsonValue::Array(arr);
         let val: Value = (&jv).into();
-        assert!(matches!(val, Value::Bytes(_)));
+        assert!(matches!(val, Value::Array(_)));
     }
 
     #[test]
@@ -1116,9 +1147,32 @@ mod tests {
     }
 
     #[test]
-    fn validating_json_float_nan_becomes_zero() {
-        // NaN cannot be represented in JSON Number, falls back to 0
-        let result = Value::Float(f64::NAN).try_into_validating_json().unwrap();
-        assert_eq!(result, json!(0));
+    fn non_finite_floats_error_in_all_three_json_converters() {
+        // JSON (RFC 8259) cannot represent NaN/±∞. The converters used to
+        // silently substitute 0 (`Number::from_f64(..).unwrap_or(0)`), which
+        // made `Value::Float(f64::NAN)` indistinguishable from a real zero to
+        // every JSON consumer. All three Value→JSON paths now fail loudly
+        // instead — consistent with the loud IntegerSizeError the same
+        // functions return for out-of-range integers.
+        for bad in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            // owned validating path
+            assert!(matches!(
+                Value::Float(bad).try_into_validating_json(),
+                Err(Error::Unsupported(_))
+            ));
+            // by-ref validating path
+            assert!(matches!(
+                Value::Float(bad).try_to_validating_json(),
+                Err(Error::Unsupported(_))
+            ));
+            // plain TryInto path
+            let plain: Result<JsonValue, Error> = Value::Float(bad).try_into();
+            assert!(matches!(plain, Err(Error::Unsupported(_))));
+        }
+        // Finite floats still convert.
+        assert_eq!(
+            Value::Float(1.5).try_into_validating_json().unwrap(),
+            json!(1.5)
+        );
     }
 }

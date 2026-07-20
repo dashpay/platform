@@ -3,10 +3,10 @@ import DashSDKFFI
 
 /// Swift wrapper for a wallet account
 public class Account {
-    private let handle: UnsafeMutablePointer<FFIAccount>
+    private let handle: OpaquePointer
     private weak var wallet: Wallet?
 
-    internal init(handle: UnsafeMutablePointer<FFIAccount>, wallet: Wallet) {
+    internal init(handle: OpaquePointer, wallet: Wallet) {
         self.handle = handle
         self.wallet = wallet
     }

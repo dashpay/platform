@@ -4,6 +4,10 @@ import SwiftData
 
 struct CoreContentView: View {
     @EnvironmentObject var walletManager: PlatformWalletManager
+    /// Used only to revalidate that the Start we kicked off is still for
+    /// the active per-network manager after the async peer resolution —
+    /// see `startSync`.
+    @EnvironmentObject var walletManagerStore: WalletManagerStore
     @EnvironmentObject var platformState: AppState
     @EnvironmentObject var appUIState: AppUIState
     @EnvironmentObject var platformBalanceSyncService: PlatformBalanceSyncService
@@ -20,6 +24,13 @@ struct CoreContentView: View {
     /// `dashPaySyncIsSyncing` falling edge) or Sync Now completes.
     @State private var dashPayLastSync: Date?
     // Progress values come from PlatformWalletManager (polled from FFI each second)
+
+    /// Rescan controls: the height-choice dialog and the follow-up
+    /// custom-height alert + its numeric field. The arm outcome is
+    /// logged to the console, matching Start/Clear — no UI surface.
+    @State private var showRescanDialog = false
+    @State private var showCustomHeightAlert = false
+    @State private var customHeightText = ""
 
     /// All persisted platform addresses across every wallet. Summed
     /// directly here so the global Sync Status view survives app
@@ -172,6 +183,17 @@ var body: some View {
                         .tint(isSpvRunning ? .orange : .blue)
                         .controlSize(.mini)
 
+                        Button(action: { showRescanDialog = true }) {
+                            Text("Rescan")
+                                .font(.caption)
+                                .fontWeight(.medium)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.indigo)
+                        .controlSize(.mini)
+                        .disabled(walletIdsOnNetwork.isEmpty)
+                        .accessibilityIdentifier("coreSync.rescanFiltersButton")
+
                         Button(action: clearSyncData) {
                             Text("Clear")
                                 .font(.caption)
@@ -185,6 +207,34 @@ var body: some View {
                     }
                 }
                 .padding(.vertical, 4)
+                .confirmationDialog(
+                    "Rescan Compact Filters",
+                    isPresented: $showRescanDialog,
+                    titleVisibility: .visible
+                ) {
+                    Button("Last 1,000 blocks") { armRescan(lastBlocks: 1_000) }
+                    Button("Last 10,000 blocks") { armRescan(lastBlocks: 10_000) }
+                    Button("Everything (from height 0)") { armRescan(fromHeight: 0) }
+                    Button("Custom height…") { showCustomHeightAlert = true }
+                    Button("Cancel", role: .cancel) {}
+                } message: {
+                    Text("Rewind the filter scan to re-download and re-match "
+                        + "compact filters for every wallet on this network.")
+                }
+                .alert("Rescan From Height", isPresented: $showCustomHeightAlert) {
+                    TextField("Block height", text: $customHeightText)
+                        .keyboardType(.numberPad)
+                    Button("Rescan") {
+                        if let height = customHeightValue {
+                            armRescan(fromHeight: height)
+                        }
+                        customHeightText = ""
+                    }
+                    .disabled(customHeightValue == nil)
+                    Button("Cancel", role: .cancel) { customHeightText = "" }
+                } message: {
+                    Text("Enter the core block height to rescan compact filters from.")
+                }
             } header: {
                 Text("Core Sync Status")
             }
@@ -753,92 +803,50 @@ var body: some View {
     }
 
     private func startSync() {
-        do {
-            let dataDirURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)
-                .first!
-                .appendingPathComponent("SPV")
-                .appendingPathComponent(platformState.currentNetwork.networkName)
-            try? FileManager.default.createDirectory(at: dataDirURL, withIntermediateDirectories: true)
-
-            let peers = spvPeerOverride()
-            let restrictToConfiguredPeers = !peers.isEmpty
-
-            // Devnet requires a name so `DevnetConfig` can embed
-            // `devnet.devnet-<name>` in the SPV user agent (Dash
-            // Core devnet peers drop inbound handshakes without it).
-            // Read from the same UserDefaults key OptionsView writes.
-            let devnetName: String? = platformState.currentNetwork == .devnet
-                ? UserDefaults.standard.string(forKey: "platformDevnetName").flatMap {
-                    let trimmed = $0.trimmingCharacters(in: .whitespaces)
-                    return trimmed.isEmpty ? nil : trimmed
-                }
-                : nil
-
-            let config = PlatformSpvStartConfig(
-                dataDir: dataDirURL.path,
-                network: platformState.currentNetwork,
-                peers: peers,
-                restrictToConfiguredPeers: restrictToConfiguredPeers,
-                devnetName: devnetName
-            )
-            try walletManager.startSpv(config: config)
-        } catch {
-            print("❌ Sync failed: \(error)")
+        // `CoreSpvLauncher.start` resolves peers off the main actor (the
+        // devnet branch can block for seconds), so it's async — drive it
+        // from a main-actor `Task` so the button tap stays non-blocking.
+        //
+        // Capture the target manager/network/store + generation token up
+        // front. If a network switch / SDK rebuild supersedes this start
+        // during the peer lookup, `stillCurrent` reports a generation
+        // mismatch (or a swapped-out manager) and the start bails rather
+        // than reviving sync on the abandoned network.
+        //
+        // Bump the generation FIRST so rapid Start taps (before the 1 Hz
+        // poll flips `spvIsRunning`) collapse to "latest wins": each tap
+        // supersedes any prior still-pending start. Capture our own fresh
+        // generation immediately after — synchronously, before any await —
+        // so we don't cancel ourselves.
+        let network = platformState.currentNetwork
+        let manager = walletManager
+        let store = walletManagerStore
+        store.invalidatePendingSpvStarts()
+        let generation = store.spvStartGeneration
+        Task {
+            do {
+                try await CoreSpvLauncher.start(
+                    network: network,
+                    on: manager,
+                    stillCurrent: {
+                        store.spvStartGeneration == generation
+                            && store.activeManager === manager
+                    }
+                )
+            } catch is CancellationError {
+                // Superseded by a network switch during peer resolution —
+                // the now-active manager owns its own sync.
+            } catch {
+                print("❌ Sync failed: \(error)")
+            }
         }
-    }
-
-    /// Resolve the SPV peer override for the current network /
-    /// docker combo.
-    ///
-    /// Three modes coexist on top of the same `useLocalhostCore` /
-    /// `localCorePeers` `UserDefaults` keys, which used to bleed into
-    /// each other when the user reconfigured between sessions:
-    ///
-    ///   1. **regtest + docker** — connect to dashmate's `local_seed`
-    ///      Core P2P port. The default 3-node setup maps the seed to
-    ///      `127.0.0.1:20301` (`getLocalConfigFactory.js` base 20001
-    ///      + `setupLocalPresetTaskFactory.js` `+ i*100` with seed
-    ///      at index = `nodeCount`, typically 3). Anything sitting
-    ///      in `localCorePeers` from a previous testnet / mainnet
-    ///      "custom peers" session is ignored — the UI doesn't show
-    ///      that knob on regtest+docker so a stale value is always
-    ///      bleed-through, never user intent.
-    ///   2. **non-regtest + custom peers** — honor `localCorePeers`
-    ///      verbatim. The OptionsView "Use Custom SPV Peers" toggle
-    ///      seeds and edits this string.
-    ///   3. **everything else** — empty list, FFI uses the network's
-    ///      built-in seed nodes.
-    private func spvPeerOverride() -> [String] {
-        let useDocker = UserDefaults.standard.bool(forKey: "useDockerSetup")
-        if platformState.currentNetwork == .regtest && useDocker {
-            return ["127.0.0.1:20301"]
-        }
-        // Devnet: auto-discover SPV peers from the quorum-list
-        // service's `/masternodes` endpoint. Each masternode reports
-        // its own `address` field (`ip:CoreP2PPort`) — use the
-        // verbatim values rather than guessing the canonical 29999
-        // port (paloma reports 20001 per masternode, for example).
-        // No manual SPV input on devnet — the quorum URL is the
-        // single source of truth (see `OptionsView`'s devnet branch).
-        if platformState.currentNetwork == .devnet {
-            guard
-                let quorum = UserDefaults.standard.string(forKey: "platformQuorumURL"),
-                !quorum.isEmpty,
-                let active = SDK.discoverActiveMasternodes(quorumBase: quorum)
-            else { return [] }
-            return active.map(\.spvPeer)
-        }
-        let useLocalCore = UserDefaults.standard.bool(forKey: "useLocalhostCore")
-        guard useLocalCore else { return [] }
-        let raw = UserDefaults.standard.string(forKey: "localCorePeers") ?? ""
-        return raw
-            .split(separator: ",")
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-            .filter { !$0.isEmpty }
     }
 
     private func pauseSync() {
-        try? walletManager.stopSpv()
+        // Cancel any in-flight start (so a fast Start→Pause can't resume
+        // and revive sync after the pause) then stop, via the blessed
+        // helper.
+        walletManagerStore.stopSpvCancellingPendingStarts(walletManager)
     }
 
     private func clearSyncData() {
@@ -852,6 +860,62 @@ var body: some View {
         } catch {
             print("❌ Failed to clear SPV storage: \(error)")
         }
+    }
+
+    // MARK: - Rescan
+
+    /// Height the "last N blocks" rescan choices count back from:
+    /// filter-scan tip, falling back to filter-headers then headers
+    /// when the earlier stages haven't produced a height yet.
+    private var rescanReferenceTip: UInt32 {
+        let filters = walletManager.spvProgress.filters?.currentHeight ?? 0
+        if filters > 0 { return filters }
+        let filterHeaders = walletManager.spvProgress.filterHeaders?.currentHeight ?? 0
+        if filterHeaders > 0 { return filterHeaders }
+        return walletManager.spvProgress.headers?.currentHeight ?? 0
+    }
+
+    private func armRescan(lastBlocks: UInt32) {
+        let tip = rescanReferenceTip
+        armRescan(fromHeight: tip > lastBlocks ? tip - lastBlocks : 0)
+    }
+
+    /// The custom-height field parsed as a block height, or `nil` when
+    /// blank / non-numeric. Shared by the alert's disabled check and
+    /// its action so the two can't drift out of sync.
+    private var customHeightValue: UInt32? {
+        UInt32(customHeightText.trimmingCharacters(in: .whitespaces))
+    }
+
+    /// Rewind the filter-scan checkpoint to `fromHeight` for every
+    /// wallet on the active network. Collects per-wallet failures
+    /// instead of aborting on the first, then logs the outcome to the
+    /// console (matching Start/Clear — no UI surface).
+    private func armRescan(fromHeight: UInt32) {
+        let ids = walletIdsOnNetwork
+        guard !ids.isEmpty else { return }
+
+        var failures: [String] = []
+        for walletId in ids {
+            do {
+                try walletManager.spvRescanFilters(walletId: walletId, fromHeight: fromHeight)
+            } catch {
+                failures.append("\(rescanShortId(walletId)): \(error.localizedDescription)")
+            }
+        }
+
+        let armed = ids.count - failures.count
+        let applied = isSpvRunning ? "" : " (applies on next SPV start)"
+        print("🔁 Rescan armed from height \(fromHeight.formatted()) "
+            + "for \(armed) wallet\(armed == 1 ? "" : "s")\(applied)")
+        if !failures.isEmpty {
+            print("❌ Rescan failed for: \(failures.joined(separator: ", "))")
+        }
+    }
+
+    /// First 4 bytes of a wallet id as hex, for compact failure lines.
+    private func rescanShortId(_ walletId: Data) -> String {
+        walletId.prefix(4).map { String(format: "%02x", $0) }.joined()
     }
 
     @MainActor
