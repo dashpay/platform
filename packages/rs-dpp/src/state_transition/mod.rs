@@ -5,8 +5,6 @@ use state_transitions::document::batch_transition::batched_transition::document_
 use std::collections::BTreeMap;
 use std::ops::RangeInclusive;
 
-pub use abstract_state_transition::state_transition_helpers;
-
 use platform_value::{BinaryData, Identifier};
 pub use state_transition_types::*;
 
@@ -21,7 +19,6 @@ use dashcore::signer::double_sha;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
 use platform_version::version::{PlatformVersion, ProtocolVersion, ALL_VERSIONS, LATEST_VERSION};
 
-mod abstract_state_transition;
 #[cfg(any(
     feature = "state-transition-signing",
     feature = "state-transition-validation"
@@ -436,10 +433,29 @@ macro_rules! call_errorable_method_identity_signed {
     From,
     PartialEq,
 )]
+// `tag = "$type"` matches the system-field convention: every serde-injected
+// discriminator key in this crate carries a `$` prefix so it never collides
+// with user-data field names. Discriminates between **semantically
+// different variants** of the same kind (rather than **versions** of one
+// logical type, which use `tag = "$formatVersion"`).
+//
+// `$type` here is at the OUTERMOST level — there's no flatten path that
+// would put it next to a base's `document_type_name` (renamed to `$type`
+// in the wire). Inner umbrellas (`DocumentTransition`, `TokenTransition`)
+// use `$action` instead because they DO flatten the document base.
+//
+// Was previously `serde(untagged)`, which made deserialize ambiguous (each
+// variant tried in order until one matched structurally). The new
+// self-describing wire shape is `{"$type": "dataContractCreate", ...inner
+// fields...}`.
+//
+// The binary wire path (`PlatformSerialize`) is unchanged — only JSON/Value
+// consumers see the new shape, and there are no rs-drive / rs-drive-abci /
+// rs-sdk callers that route the umbrella through to_json/to_object today.
 #[cfg_attr(
     feature = "serde-conversion",
     derive(Serialize, Deserialize),
-    serde(untagged)
+    serde(tag = "$type", rename_all = "camelCase")
 )]
 #[platform_serialize(unversioned)] //versioned directly, no need to use platform_version
 #[platform_serialize(limit = 100000)]
@@ -465,6 +481,294 @@ pub enum StateTransition {
     ShieldFromAssetLock(ShieldFromAssetLockTransition),
     ShieldedWithdrawal(ShieldedWithdrawalTransition),
     IdentityCreateFromShieldedPool(IdentityCreateFromShieldedPoolTransition),
+}
+
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+impl crate::serialization::JsonConvertible for StateTransition {}
+
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+impl crate::serialization::ValueConvertible for StateTransition {}
+
+#[cfg(all(
+    test,
+    feature = "json-conversion",
+    feature = "value-conversion",
+    feature = "serde-conversion"
+))]
+mod json_convertible_tests {
+    use super::*;
+
+    /// Round-trip a StateTransition through both JSON and Value, asserting:
+    /// 1. The wire emits `{"$type": "<expected_tag>", ...}` (umbrella's
+    ///    `tag = "$type", rename_all = "camelCase"` is correctly applied).
+    /// 2. Round-trip preserves the variant.
+    /// 3. Round-trip preserves structural equality (PartialEq on the inner).
+    ///
+    /// Inner field shapes are covered by each inner type's dedicated
+    /// `*_with_full_wire_shape` test — this helper only exercises the
+    /// umbrella's tag-dispatch boundary. The risk it catches: an inner
+    /// variant whose serde body conflicts with the umbrella's `"$type"` key,
+    /// or a serde rename that resolves to something other than the
+    /// expected camelCase form.
+    ///
+    /// `lossy_json_int_variants`: when true, the JSON-side equality assertion
+    /// runs after `normalize_integer_variants_for_json_round_trip` on both
+    /// sides. Required for variants that embed a `DataContract` —
+    /// `document_schemas` carry sized integer variants (`U32`/`I32`) that
+    /// JSON's single Number type cannot preserve. See commit 7397c73f31.
+    fn assert_umbrella_round_trip_inner(
+        original: StateTransition,
+        expected_type_tag: &str,
+        lossy_json_int_variants: bool,
+    ) {
+        use crate::serialization::{JsonConvertible, ValueConvertible};
+
+        // JSON
+        let json = original.to_json().expect("to_json");
+        assert_eq!(
+            json["$type"], expected_type_tag,
+            "json type tag for {expected_type_tag}",
+        );
+        let recovered = StateTransition::from_json(json).expect("from_json round-trip");
+        assert_eq!(
+            std::mem::discriminant(&original),
+            std::mem::discriminant(&recovered),
+            "json round-trip variant for {expected_type_tag}",
+        );
+        if lossy_json_int_variants {
+            use crate::tests::utils::normalize_integer_variants_for_json_round_trip;
+            let mut original_canon = original.to_object().expect("to_object");
+            let mut recovered_canon = recovered.to_object().expect("to_object");
+            normalize_integer_variants_for_json_round_trip(&mut original_canon);
+            normalize_integer_variants_for_json_round_trip(&mut recovered_canon);
+            assert_eq!(
+                original_canon, recovered_canon,
+                "json round-trip equality (modulo int-variant) for {expected_type_tag}",
+            );
+        } else {
+            assert_eq!(
+                original, recovered,
+                "json round-trip equality for {expected_type_tag}"
+            );
+        }
+
+        // Value
+        let value = original.to_object().expect("to_object");
+        let map = value.as_map().expect("Value::Map");
+        let tag = map
+            .iter()
+            .find(|(k, _)| k.as_text() == Some("$type"))
+            .map(|(_, v)| v)
+            .unwrap_or_else(|| panic!("type tag missing for {expected_type_tag}"));
+        assert_eq!(
+            *tag,
+            platform_value::Value::Text(expected_type_tag.to_string()),
+            "value type tag for {expected_type_tag}",
+        );
+        let recovered = StateTransition::from_object(value).expect("from_object round-trip");
+        assert_eq!(
+            std::mem::discriminant(&original),
+            std::mem::discriminant(&recovered),
+            "value round-trip variant for {expected_type_tag}",
+        );
+        assert_eq!(
+            original, recovered,
+            "value round-trip equality for {expected_type_tag}"
+        );
+    }
+
+    fn assert_umbrella_round_trip(original: StateTransition, expected_type_tag: &str) {
+        assert_umbrella_round_trip_inner(original, expected_type_tag, false);
+    }
+
+    /// Variant of `assert_umbrella_round_trip` for transitions that embed a
+    /// `DataContract` (`DataContractCreate`, `DataContractUpdate`). JSON's
+    /// single Number type collapses sized-int variants in the embedded
+    /// `document_schemas` tree, so the JSON-side equality assertion is
+    /// run modulo integer-variant normalization. The Value path keeps its
+    /// strict bit-exact assertion (platform_value preserves sized ints).
+    fn assert_umbrella_round_trip_lossy_json_int_variants(
+        original: StateTransition,
+        expected_type_tag: &str,
+    ) {
+        assert_umbrella_round_trip_inner(original, expected_type_tag, true);
+    }
+
+    // Per-variant umbrella round-trip tests. Inner fixtures are reused from
+    // each transition's own `json_convertible_tests::fixture()` (made
+    // `pub(crate)` for this purpose) — keeps the umbrella tests in sync
+    // with the inner-type tests automatically.
+
+    #[test]
+    fn umbrella_data_contract_create() {
+        let inner = crate::state_transition::data_contract_create_transition::json_convertible_tests::fixture();
+        assert_umbrella_round_trip_lossy_json_int_variants(
+            StateTransition::DataContractCreate(inner),
+            "dataContractCreate",
+        );
+    }
+
+    #[test]
+    fn umbrella_data_contract_update() {
+        let inner = crate::state_transition::data_contract_update_transition::json_convertible_tests::fixture();
+        assert_umbrella_round_trip_lossy_json_int_variants(
+            StateTransition::DataContractUpdate(inner),
+            "dataContractUpdate",
+        );
+    }
+
+    #[test]
+    fn umbrella_batch() {
+        let inner = crate::state_transition::batch_transition::json_convertible_tests::fixture();
+        assert_umbrella_round_trip(StateTransition::Batch(inner), "batch");
+    }
+
+    #[test]
+    fn umbrella_identity_create() {
+        let inner =
+            crate::state_transition::identity_create_transition::json_convertible_tests::fixture();
+        assert_umbrella_round_trip(StateTransition::IdentityCreate(inner), "identityCreate");
+    }
+
+    #[test]
+    fn umbrella_identity_top_up() {
+        let inner =
+            crate::state_transition::identity_topup_transition::json_convertible_tests::fixture();
+        assert_umbrella_round_trip(StateTransition::IdentityTopUp(inner), "identityTopUp");
+    }
+
+    #[test]
+    fn umbrella_identity_credit_withdrawal() {
+        let inner = crate::state_transition::identity_credit_withdrawal_transition::json_convertible_tests::fixture();
+        assert_umbrella_round_trip(
+            StateTransition::IdentityCreditWithdrawal(inner),
+            "identityCreditWithdrawal",
+        );
+    }
+
+    #[test]
+    fn umbrella_identity_update() {
+        let inner =
+            crate::state_transition::identity_update_transition::json_convertible_tests::fixture();
+        assert_umbrella_round_trip(StateTransition::IdentityUpdate(inner), "identityUpdate");
+    }
+
+    #[test]
+    fn umbrella_identity_credit_transfer() {
+        let inner = crate::state_transition::identity_credit_transfer_transition::json_convertible_tests::fixture();
+        assert_umbrella_round_trip(
+            StateTransition::IdentityCreditTransfer(inner),
+            "identityCreditTransfer",
+        );
+    }
+
+    #[test]
+    fn umbrella_masternode_vote() {
+        let inner =
+            crate::state_transition::masternode_vote_transition::json_convertible_tests::fixture();
+        assert_umbrella_round_trip(StateTransition::MasternodeVote(inner), "masternodeVote");
+    }
+
+    #[test]
+    fn umbrella_identity_credit_transfer_to_addresses() {
+        let inner = crate::state_transition::identity_credit_transfer_to_addresses_transition::json_convertible_tests::fixture();
+        assert_umbrella_round_trip(
+            StateTransition::IdentityCreditTransferToAddresses(inner),
+            "identityCreditTransferToAddresses",
+        );
+    }
+
+    #[test]
+    fn umbrella_identity_create_from_addresses() {
+        let inner = crate::state_transition::identity_create_from_addresses_transition::json_convertible_tests::fixture();
+        assert_umbrella_round_trip(
+            StateTransition::IdentityCreateFromAddresses(inner),
+            "identityCreateFromAddresses",
+        );
+    }
+
+    #[test]
+    fn umbrella_identity_top_up_from_addresses() {
+        let inner = crate::state_transition::identity_topup_from_addresses_transition::json_convertible_tests::fixture();
+        assert_umbrella_round_trip(
+            StateTransition::IdentityTopUpFromAddresses(inner),
+            "identityTopUpFromAddresses",
+        );
+    }
+
+    #[test]
+    fn umbrella_address_funds_transfer() {
+        let inner = crate::state_transition::address_funds_transfer_transition::json_convertible_tests::fixture();
+        assert_umbrella_round_trip(
+            StateTransition::AddressFundsTransfer(inner),
+            "addressFundsTransfer",
+        );
+    }
+
+    #[test]
+    fn umbrella_address_funding_from_asset_lock() {
+        let inner = crate::state_transition::address_funding_from_asset_lock_transition::json_convertible_tests::fixture();
+        assert_umbrella_round_trip(
+            StateTransition::AddressFundingFromAssetLock(inner),
+            "addressFundingFromAssetLock",
+        );
+    }
+
+    #[test]
+    fn umbrella_address_credit_withdrawal() {
+        let inner = crate::state_transition::address_credit_withdrawal_transition::json_convertible_tests::fixture();
+        assert_umbrella_round_trip(
+            StateTransition::AddressCreditWithdrawal(inner),
+            "addressCreditWithdrawal",
+        );
+    }
+
+    #[test]
+    fn umbrella_shield() {
+        let inner = crate::state_transition::shield_transition::json_convertible_tests::fixture();
+        assert_umbrella_round_trip(StateTransition::Shield(inner), "shield");
+    }
+
+    #[test]
+    fn umbrella_shielded_transfer() {
+        let inner =
+            crate::state_transition::shielded_transfer_transition::json_convertible_tests::fixture(
+            );
+        assert_umbrella_round_trip(StateTransition::ShieldedTransfer(inner), "shieldedTransfer");
+    }
+
+    #[test]
+    fn umbrella_unshield() {
+        let inner = crate::state_transition::unshield_transition::json_convertible_tests::fixture();
+        assert_umbrella_round_trip(StateTransition::Unshield(inner), "unshield");
+    }
+
+    #[test]
+    fn umbrella_shield_from_asset_lock() {
+        let inner = crate::state_transition::shield_from_asset_lock_transition::json_convertible_tests::fixture();
+        assert_umbrella_round_trip(
+            StateTransition::ShieldFromAssetLock(inner),
+            "shieldFromAssetLock",
+        );
+    }
+
+    #[test]
+    fn umbrella_shielded_withdrawal() {
+        let inner = crate::state_transition::shielded_withdrawal_transition::json_convertible_tests::fixture();
+        assert_umbrella_round_trip(
+            StateTransition::ShieldedWithdrawal(inner),
+            "shieldedWithdrawal",
+        );
+    }
+
+    #[test]
+    fn umbrella_identity_create_from_shielded_pool() {
+        let inner = crate::state_transition::identity_create_from_shielded_pool_transition::json_convertible_tests::fixture();
+        assert_umbrella_round_trip(
+            StateTransition::IdentityCreateFromShieldedPool(inner),
+            "identityCreateFromShieldedPool",
+        );
+    }
 }
 
 impl OptionallyAssetLockProved for StateTransition {
@@ -3335,8 +3639,8 @@ mod tests {
         use dashcore::secp256k1::{
             ecdsa, rand::rngs::OsRng, Message, PublicKey, Secp256k1, SecretKey,
         };
-        use key_wallet::bip32::DerivationPath;
-        use key_wallet::signer::{Signer as KwSigner, SignerMethod};
+        use key_wallet::bip32::{DerivationPath, ExtendedPubKey};
+        use key_wallet::signer::{ExtendedPubKeySigner, Signer as KwSigner, SignerMethod};
 
         /// Fixed-key in-memory signer used only by this test. Mirrors how a
         /// real KeychainSigner would behave: derive once, sign atomically,
@@ -3369,6 +3673,16 @@ mod tests {
 
             async fn public_key(&self, _path: &DerivationPath) -> Result<PublicKey, Self::Error> {
                 Ok(self.public)
+            }
+        }
+
+        #[async_trait]
+        impl ExtendedPubKeySigner for FixedKeySigner {
+            async fn extended_public_key(
+                &self,
+                _path: &DerivationPath,
+            ) -> Result<ExtendedPubKey, Self::Error> {
+                Err("FixedKeySigner does not derive extended public keys".to_string())
             }
         }
 

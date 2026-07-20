@@ -9,14 +9,16 @@ use dashcore::sml::llmq_type::LLMQType;
 use dashcore::{QuorumHash, Transaction};
 
 use dash_spv::network::PeerNetworkManager;
-use dash_spv::storage::DiskStorageManager;
+use dash_spv::storage::{DiskStorageManager, StorageManager};
 use dash_spv::sync::SyncProgress;
 use dash_spv::{ClientConfig, DashSpvClient, EventHandler, Hash};
 
 use key_wallet_manager::WalletManager;
 
+use crate::broadcaster::BroadcastError;
 use crate::error::PlatformWalletError;
 use crate::events::PlatformEventManager;
+use crate::spv::peers::{classify_peers, PeerTracker, SpvPeerInfo};
 use crate::wallet::platform_wallet::PlatformWalletInfo;
 
 type SpvClient =
@@ -30,8 +32,35 @@ pub struct SpvRuntime {
     event_manager: Arc<PlatformEventManager>,
     wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
     client: RwLock<Option<SpvClient>>,
+    last_config: RwLock<Option<ClientConfig>>,
     task: Mutex<Option<JoinHandle<()>>>,
+    peer_tracker: Arc<PeerTracker>,
 }
+/// Classify a dash-spv broadcast failure per the
+/// [`TransactionBroadcaster::broadcast`] contract.
+///
+/// dash-spv's `broadcast_transaction` raises
+/// `NetworkError::NotConnected` from its zero-connected-peers check
+/// *before* handing the transaction to any peer, so it is the only
+/// error safe to classify [`BroadcastError::Rejected`]; anything else
+/// may follow a partial peer send and must stay
+/// [`BroadcastError::MaybeSent`]. Pinned by the tests below so a
+/// dash-spv semantic change is caught at this crate's boundary.
+///
+/// [`TransactionBroadcaster::broadcast`]: crate::broadcaster::TransactionBroadcaster::broadcast
+fn classify_spv_broadcast_error(error: dash_spv::error::SpvError) -> BroadcastError {
+    use dash_spv::error::{NetworkError, SpvError};
+
+    match error {
+        SpvError::Network(NetworkError::NotConnected) => BroadcastError::Rejected {
+            reason: "SPV broadcast failed: no connected peers".to_string(),
+        },
+        other => BroadcastError::MaybeSent {
+            reason: format!("SPV broadcast failed: {}", other),
+        },
+    }
+}
+
 // TODO: We want it better
 impl SpvRuntime {
     /// Create a new SPV runtime.
@@ -43,7 +72,9 @@ impl SpvRuntime {
             event_manager,
             wallet_manager,
             client: RwLock::new(None),
+            last_config: RwLock::new(None),
             task: Mutex::new(None),
+            peer_tracker: Arc::new(PeerTracker::default()),
         }
     }
 
@@ -63,13 +94,16 @@ impl SpvRuntime {
             .await
             .map_err(|e| PlatformWalletError::SpvError(e.to_string()))?;
 
-        // PlatformEventManager implements `EventHandler`; pass it as the
-        // sole entry in the SPV client's handler vec. Additional dyn
-        // handlers can be added here if other components need to observe
-        // raw SPV events directly (today everything routes through the
-        // platform event manager's own handler list).
-        let event_handlers: Vec<Arc<dyn EventHandler>> =
-            vec![Arc::clone(&self.event_manager) as Arc<dyn EventHandler>];
+        // PlatformEventManager implements `EventHandler`; the peer tracker
+        // rides alongside it so `connected_peers` can answer from the latest
+        // `PeersUpdated` snapshot without a dash-spv query API.
+        let event_handlers: Vec<Arc<dyn EventHandler>> = vec![
+            Arc::clone(&self.event_manager) as Arc<dyn EventHandler>,
+            Arc::clone(&self.peer_tracker) as Arc<dyn EventHandler>,
+        ];
+
+        let retained_config = config.clone();
+
         let spv_client = DashSpvClient::new(
             config,
             network_manager,
@@ -82,6 +116,7 @@ impl SpvRuntime {
 
         let mut client = self.client.write().await;
         *client = Some(spv_client);
+        *self.last_config.write().await = Some(retained_config);
 
         Ok(())
     }
@@ -92,19 +127,27 @@ impl SpvRuntime {
     }
 
     /// Broadcast a transaction to all connected SPV peers.
+    ///
+    /// Failures are classified per the [`TransactionBroadcaster::broadcast`]
+    /// contract: an unstarted client and dash-spv's zero-peer
+    /// `NetworkError::NotConnected` both fire before any bytes leave the
+    /// process, so they are [`BroadcastError::Rejected`]; any later failure
+    /// may follow a partial peer send and is [`BroadcastError::MaybeSent`].
+    ///
+    /// [`TransactionBroadcaster::broadcast`]: crate::broadcaster::TransactionBroadcaster::broadcast
     pub(crate) async fn broadcast_transaction(
         &self,
         tx: &Transaction,
-    ) -> Result<(), PlatformWalletError> {
+    ) -> Result<(), BroadcastError> {
         let client_guard = self.client.read().await;
-        let client = client_guard.as_ref().ok_or(PlatformWalletError::SpvError(
-            "SPV Client not started".to_string(),
-        ))?;
+        let client = client_guard.as_ref().ok_or(BroadcastError::Rejected {
+            reason: "SPV client not started".to_string(),
+        })?;
 
         client
             .broadcast_transaction(tx)
             .await
-            .map_err(|e| PlatformWalletError::SpvError(e.to_string()))?;
+            .map_err(classify_spv_broadcast_error)?;
 
         Ok(())
     }
@@ -151,6 +194,7 @@ impl SpvRuntime {
 
         let mut client = self.client.write().await;
         let _ = client.take();
+        self.peer_tracker.clear();
 
         result
     }
@@ -169,6 +213,7 @@ impl SpvRuntime {
                 .map_err(|e| PlatformWalletError::SpvError(e.to_string())),
             None => Ok(()),
         };
+        self.peer_tracker.clear();
 
         let handle = self.task.lock().expect("spv task mutex poisoned").take();
         if let Some(handle) = handle {
@@ -214,6 +259,78 @@ impl SpvRuntime {
         *self.task.lock().expect("spv task mutex poisoned") = Some(handle);
     }
 
+    /// The peers the SPV client is currently connected to, each classified
+    /// against the masternode list (Evonode / Masternode / Normal, or
+    /// Unknown while the masternode list hasn't synced yet).
+    ///
+    /// Returns an empty vec when the client isn't running or no peers are
+    /// connected.
+    pub async fn connected_peers(&self) -> Vec<SpvPeerInfo> {
+        // Resolve the client before copying the snapshot: a concurrent
+        // `stop()` removes the client under the write lock and clears the
+        // tracker afterwards, so snapshotting first could return peers
+        // that no longer exist.
+        let client_guard = self.client.read().await;
+        let Some(client) = client_guard.as_ref() else {
+            return Vec::new();
+        };
+
+        let addresses = self.peer_tracker.snapshot();
+        if addresses.is_empty() {
+            return Vec::new();
+        }
+
+        let engine = client.masternode_list_engine().ok();
+        drop(client_guard);
+
+        match engine {
+            Some(engine) => {
+                let engine_guard = engine.read().await;
+                classify_peers(&addresses, engine_guard.latest_masternode_list())
+            }
+            None => classify_peers(&addresses, None),
+        }
+    }
+
+    /// Snapshot of the current deterministic masternode list (DML) keyed
+    /// by proTxHash in internal/wire byte order (matching a registration
+    /// txid), mapping to each entry's `is_valid` flag — the authoritative
+    /// input for masternode status (Active / Inactive / Retired).
+    ///
+    /// Returns `None` when the DML isn't available (the SPV client isn't
+    /// running, its masternode-list engine isn't initialized, or the list
+    /// hasn't synced yet), so the caller renders "Unknown" and keeps any
+    /// previously persisted status. Blocking: acquires the client + engine
+    /// `tokio::RwLock`s via `blocking_read`, so it must run off the async
+    /// runtime (FFI blocking thread), mirroring the other `*_blocking`
+    /// accessors.
+    pub fn masternode_validity_snapshot_blocking(
+        &self,
+    ) -> Option<std::collections::HashMap<[u8; 32], bool>> {
+        // Clone the engine `Arc` out while holding the client lock, then
+        // drop it before reading the engine — same ordering as
+        // `connected_peers`.
+        let engine = {
+            let client_guard = self.client.blocking_read();
+            let client = client_guard.as_ref()?;
+            client.masternode_list_engine().ok()?
+        };
+
+        let engine_guard = engine.blocking_read();
+        let list = engine_guard.latest_masternode_list()?;
+
+        let mut map = std::collections::HashMap::with_capacity(list.masternodes.len());
+        for qualified in list.masternodes.values() {
+            let entry = &qualified.masternode_list_entry;
+            // `pro_reg_tx_hash` is internal order (the DML map itself keys
+            // by the reversed/display form, so read it off the entry).
+            let mut pro_tx = [0u8; 32];
+            pro_tx.copy_from_slice(entry.pro_reg_tx_hash.as_ref());
+            map.insert(pro_tx, entry.is_valid);
+        }
+        Some(map)
+    }
+
     /// Get the current sync progress.
     ///
     /// Returns `None` if the SPV client is not running.
@@ -249,17 +366,37 @@ impl SpvRuntime {
 
     /// Clear all persisted SPV storage (headers, filters, state).
     ///
-    /// The SPV client must be running to perform this operation.
+    /// If the SPVClient is running it will be stopped and the
+    /// storage will be cleaned. If it is not running a tmp
+    /// Storage Manager built from the cached config will be used.
     pub async fn clear_storage(&self) -> Result<(), PlatformWalletError> {
-        let client_guard = self.client.read().await;
-        let client = client_guard.as_ref().ok_or(PlatformWalletError::SpvError(
-            "SPV Client not started".to_string(),
-        ))?;
+        // Fast path: a live client holds the storage lock; clear through it.
+        {
+            let client_guard = self.client.read().await;
+            if let Some(client) = client_guard.as_ref() {
+                return client
+                    .clear_storage()
+                    .await
+                    .map_err(|e| PlatformWalletError::SpvError(e.to_string()));
+            }
+        }
 
-        client
-            .clear_storage()
+        let config = self.last_config.read().await.clone().ok_or_else(|| {
+            PlatformWalletError::SpvError(
+                "SPV storage location unknown; start the client at least once before clearing"
+                    .to_string(),
+            )
+        })?;
+
+        let mut storage = DiskStorageManager::new(&config)
             .await
-            .map_err(|e| PlatformWalletError::SpvError(e.to_string()))
+            .map_err(|e| PlatformWalletError::SpvError(e.to_string()))?;
+        StorageManager::clear(&mut storage)
+            .await
+            .map_err(|e| PlatformWalletError::SpvError(e.to_string()))?;
+        StorageManager::shutdown(&mut storage).await;
+
+        Ok(())
     }
 
     /// Update the running SPV client's configuration.
@@ -283,5 +420,83 @@ impl std::fmt::Debug for SpvRuntime {
         f.debug_struct("SpvRuntime")
             .field("is_started", &self.is_started())
             .finish()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use dash_spv::error::{NetworkError, SpvError};
+    use dashcore::Network;
+    use key_wallet_manager::WalletManager;
+    use tokio::sync::RwLock;
+
+    use super::{classify_spv_broadcast_error, SpvRuntime};
+    use crate::broadcaster::BroadcastError;
+    use crate::events::PlatformEventManager;
+    use crate::wallet::platform_wallet::PlatformWalletInfo;
+
+    /// A minimal valid transaction — the unstarted-client arm never
+    /// inspects it.
+    fn dummy_tx() -> dashcore::Transaction {
+        dashcore::Transaction {
+            version: 2,
+            lock_time: 0,
+            input: vec![],
+            output: vec![],
+            special_transaction_payload: None,
+        }
+    }
+
+    /// An unstarted SPV client fails before any bytes leave the process,
+    /// so the failure must classify `Rejected` (safe to release the
+    /// transaction's input reservation).
+    #[tokio::test]
+    async fn broadcast_on_unstarted_client_is_rejected() {
+        let wallet_manager = Arc::new(RwLock::new(WalletManager::<PlatformWalletInfo>::new(
+            Network::Testnet,
+        )));
+        let runtime = SpvRuntime::new(wallet_manager, Arc::new(PlatformEventManager::new(vec![])));
+
+        let result = runtime.broadcast_transaction(&dummy_tx()).await;
+        assert!(
+            matches!(result, Err(BroadcastError::Rejected { .. })),
+            "unstarted client must classify Rejected, got {result:?}"
+        );
+    }
+
+    /// dash-spv raises `NetworkError::NotConnected` from its
+    /// zero-connected-peers check before handing the transaction to any
+    /// peer, so it is the one client error safe to classify `Rejected`.
+    /// If dash-spv ever starts raising `NotConnected` after a partial
+    /// send, this pin must be revisited — releasing on a post-send
+    /// failure reopens the double-spend-on-retry window.
+    #[test]
+    fn not_connected_classifies_rejected() {
+        let result = classify_spv_broadcast_error(SpvError::Network(NetworkError::NotConnected));
+        assert!(
+            matches!(result, BroadcastError::Rejected { .. }),
+            "NotConnected must classify Rejected, got {result:?}"
+        );
+    }
+
+    /// Every other dash-spv error may follow a partial peer send and must
+    /// stay `MaybeSent`, keeping the reservation for the TTL backstop.
+    #[test]
+    fn any_other_spv_error_classifies_maybe_sent() {
+        for error in [
+            SpvError::Network(NetworkError::Timeout),
+            SpvError::Network(NetworkError::PeerDisconnected),
+            SpvError::Network(NetworkError::ConnectionFailed("reset by peer".to_string())),
+            SpvError::Config("bad config".to_string()),
+        ] {
+            let rendered = error.to_string();
+            let result = classify_spv_broadcast_error(error);
+            assert!(
+                matches!(result, BroadcastError::MaybeSent { .. }),
+                "{rendered} must classify MaybeSent, got {result:?}"
+            );
+        }
     }
 }

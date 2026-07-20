@@ -29,6 +29,8 @@ struct WalletDetailView: View {
     @State private var showSendTransaction = false
     @State private var showWalletInfo = false
     @State private var showFundPlatformAddress = false
+    @State private var showTransferPlatformAddress = false
+    @State private var showWithdrawPlatformAddress = false
     @State private var showShieldFromAssetLock = false
     /// Devnet/testnet-only shielded pool seeding sheet (Seed Pool Notes).
     @State private var showSeedShieldedPool = false
@@ -42,18 +44,36 @@ struct WalletDetailView: View {
     // multiple accounts / wallets), so we can't filter
     // `PersistentTransaction` by walletId directly. We query the
     // wallet's TXOs instead and count the distinct creating-or-
-    // spending transactions in the body — same union the list view
+    // spending transactions in the body, then union in each account's
+    // payload-only `involvedTransactions` — same union the list view
     // uses.
     @Query private var walletTxos: [PersistentTxo]
+    /// This wallet's accounts, for the payload-only
+    /// `involvedTransactions` contribution to `transactionCount` —
+    /// special txs that matched an account by payload with no TXO,
+    /// which the `walletTxos` join can't see. Scoped to this wallet
+    /// row's network as well as its walletId: the same 32-byte
+    /// walletId legitimately exists once per network (same mnemonic
+    /// imported on mainnet and testnet), and matching on walletId
+    /// alone would fold the sibling network's payload-only txs into
+    /// this wallet's badge.
+    @Query private var walletAccounts: [PersistentAccount]
 
     init(wallet: PersistentWallet) {
         self.wallet = wallet
         let walletId = wallet.walletId
+        let networkRaw = wallet.networkRaw
         var descriptor = FetchDescriptor<PersistentTxo>(
             predicate: #Predicate { $0.walletId == walletId }
         )
         descriptor.propertiesToFetch = [\.walletId]
         _walletTxos = Query(descriptor)
+        _walletAccounts = Query(
+            filter: #Predicate<PersistentAccount> {
+                $0.wallet.walletId == walletId
+                    && $0.wallet.networkRaw == networkRaw
+            }
+        )
         _walletAssetLocks = Query(
             filter: PersistentAssetLock.predicate(walletId: walletId),
             sort: [SortDescriptor(\PersistentAssetLock.updatedAt, order: .reverse)]
@@ -65,6 +85,11 @@ struct WalletDetailView: View {
         for txo in walletTxos {
             if let tx = txo.transaction { seen.insert(tx.txid) }
             if let spending = txo.spendingTransaction { seen.insert(spending.txid) }
+        }
+        // Payload-only involvement: special txs matched by payload with
+        // no TXO in the wallet, invisible to the `walletTxos` join.
+        for account in walletAccounts {
+            for tx in account.involvedTransactions { seen.insert(tx.txid) }
         }
         return seen.count
     }
@@ -89,6 +114,8 @@ struct WalletDetailView: View {
             BalanceCardView(
                 wallet: wallet,
                 onFundPlatform: { showFundPlatformAddress = true },
+                onTransferPlatform: { showTransferPlatformAddress = true },
+                onWithdrawPlatform: { showWithdrawPlatformAddress = true },
                 onFundShielded: { showShieldFromAssetLock = true }
             )
                 .padding()
@@ -243,6 +270,12 @@ struct WalletDetailView: View {
         }
         .sheet(isPresented: $showFundPlatformAddress) {
             FundFromAssetLockPlatformAddressView(wallet: wallet)
+        }
+        .sheet(isPresented: $showTransferPlatformAddress) {
+            TransferPlatformAddressView(wallet: wallet)
+        }
+        .sheet(isPresented: $showWithdrawPlatformAddress) {
+            WithdrawPlatformAddressView(wallet: wallet)
         }
         .sheet(item: $resumingAssetLock) { lock in
             FundFromAssetLockPlatformAddressView(wallet: wallet, resumeFromLock: lock)
@@ -828,10 +861,14 @@ struct WalletInfoView: View {
 
         do {
             let mgr = try walletManagerStore.backgroundManager(for: network)
+            // Enabling an existing wallet on another network: the mnemonic is
+            // pre-existing and may already have on-chain history there — scan
+            // from genesis (birthHeight 0) so prior funds/payments are seen.
             let created = try mgr.createWallet(
                 mnemonic: mnemonic,
                 network: network,
-                name: wallet.name ?? wallet.label
+                name: wallet.name ?? wallet.label,
+                birthHeight: 0
             )
             // Persist the mnemonic AND the per-wallet metadata under the
             // newly-enabled network's scoped walletId so that wallet is
@@ -951,6 +988,12 @@ struct BalanceCardView: View {
     /// `nil` hides the affordance entirely (e.g. for read-only
     /// surfaces).
     var onFundPlatform: (() -> Void)?
+    /// Opens the wallet-signed Platform→Platform credit transfer sheet
+    /// (`TransferPlatformAddressView`, ADDR-02).
+    var onTransferPlatform: (() -> Void)?
+    /// Opens the wallet-signed Platform→Core L1 withdrawal sheet
+    /// (`WithdrawPlatformAddressView`, ADDR-04).
+    var onWithdrawPlatform: (() -> Void)?
     /// Same shape as `onFundPlatform`, for the Shielded Balance row.
     /// Opens the Core L1 → shielded-pool funding sheet
     /// (`ShieldedFundFromAssetLockView`, Type 18).
@@ -962,14 +1005,19 @@ struct BalanceCardView: View {
 
     @Query private var addressBalances: [PersistentPlatformAddress]
     @Query private var syncStates: [PersistentPlatformAddressesSyncState]
+    @Query private var shieldedNotes: [PersistentShieldedNote]
 
     init(
         wallet: PersistentWallet,
         onFundPlatform: (() -> Void)? = nil,
+        onTransferPlatform: (() -> Void)? = nil,
+        onWithdrawPlatform: (() -> Void)? = nil,
         onFundShielded: (() -> Void)? = nil
     ) {
         self.wallet = wallet
         self.onFundPlatform = onFundPlatform
+        self.onTransferPlatform = onTransferPlatform
+        self.onWithdrawPlatform = onWithdrawPlatform
         self.onFundShielded = onFundShielded
         let walletId = wallet.walletId
         let walletNetworkRaw = (wallet.network ?? .testnet).rawValue
@@ -979,6 +1027,19 @@ struct BalanceCardView: View {
         _syncStates = Query(
             filter: #Predicate<PersistentPlatformAddressesSyncState> { $0.networkRaw == walletNetworkRaw }
         )
+        _shieldedNotes = Query(
+            filter: PersistentShieldedNote.unspentPredicate(walletId: walletId)
+        )
+    }
+
+    /// Per-wallet shielded balance: sum of this wallet's unspent
+    /// `PersistentShieldedNote` values. Reads SwiftData (Rust pushes
+    /// note rows via the shielded persister) rather than the single-mirror
+    /// `shieldedService.shieldedBalance`, so the card is correct for a
+    /// non-`firstWallet` wallet whose engine binding is live but whose UI
+    /// mirror is pointed elsewhere.
+    private var shieldedBalance: UInt64 {
+        shieldedNotes.reduce(0) { $0 + $1.value }
     }
 
     /// Confirmed core-chain balance summed from Rust's in-memory
@@ -1021,9 +1082,50 @@ struct BalanceCardView: View {
             }
     }
 
+    /// Trailing-menu items for the Platform Balance row. Built only
+    /// when at least one of Transfer/Withdraw is wired (the editable
+    /// Wallet Detail surface); empty otherwise so read-only surfaces and
+    /// the legacy single-action `+` path stay intact. Top Up is included
+    /// in the menu whenever it's present so all three live in one place.
+    private var platformMenuItems: [WalletBalanceRow.TrailingMenuItem] {
+        guard onTransferPlatform != nil || onWithdrawPlatform != nil else { return [] }
+        var items: [WalletBalanceRow.TrailingMenuItem] = []
+        if let fund = onFundPlatform {
+            items.append(
+                WalletBalanceRow.TrailingMenuItem(
+                    title: "Top Up from Core",
+                    systemImage: "plus.circle",
+                    accessibilityIdentifier: "balanceCard.platform.topUp",
+                    action: fund
+                )
+            )
+        }
+        if let transfer = onTransferPlatform {
+            items.append(
+                WalletBalanceRow.TrailingMenuItem(
+                    title: "Transfer Credits",
+                    systemImage: "arrow.left.arrow.right",
+                    accessibilityIdentifier: "balanceCard.platform.transfer",
+                    action: transfer
+                )
+            )
+        }
+        if let withdraw = onWithdrawPlatform {
+            items.append(
+                WalletBalanceRow.TrailingMenuItem(
+                    title: "Withdraw to Core",
+                    systemImage: "arrow.up.circle",
+                    accessibilityIdentifier: "balanceCard.platform.withdraw",
+                    action: withdraw
+                )
+            )
+        }
+        return items
+    }
+
     var body: some View {
         let totalCore = confirmedBalance + unconfirmedBalance
-        let allZero = totalCore == 0 && platformBalance == 0 && shieldedService.shieldedBalance == 0
+        let allZero = totalCore == 0 && platformBalance == 0 && shieldedBalance == 0
 
         VStack(spacing: 12) {
             if allZero {
@@ -1040,24 +1142,34 @@ struct BalanceCardView: View {
                     unit: .duffs
                 )
 
-                // Platform Balance row — when `onFundPlatform` is
-                // wired (i.e. on the editable Wallet Detail surface),
-                // a trailing `+` button opens the Core→Platform
-                // funding sheet. Read-only call sites pass `nil` and
-                // the affordance disappears.
+                // Platform Balance row — on the editable Wallet Detail
+                // surface this exposes a trailing menu with Top Up
+                // (Core→Platform), Transfer (Platform→Platform,
+                // ADDR-02), and Withdraw (Platform→Core L1, ADDR-04).
+                // Read-only call sites pass `nil` for all three and the
+                // affordance disappears. A single Top Up closure with no
+                // transfer/withdraw still renders the legacy `+` button.
                 WalletBalanceRow(
                     label: "Platform Balance",
                     amount: platformBalance,
                     color: .blue,
                     unit: .credits,
                     showSyncIndicator: platformBalanceSyncService.isSyncing,
-                    trailingAction: onFundPlatform.map { fund in
-                        WalletBalanceRow.TrailingAction(
-                            systemImage: "plus.circle.fill",
-                            accessibilityLabel: "Top Up Platform Balance from Core",
-                            action: fund
+                    trailingAction: platformMenuItems.isEmpty
+                        ? onFundPlatform.map { fund in
+                            WalletBalanceRow.TrailingAction(
+                                systemImage: "plus.circle.fill",
+                                accessibilityLabel: "Top Up Platform Balance from Core",
+                                action: fund
+                            )
+                        }
+                        : nil,
+                    trailingMenu: platformMenuItems.isEmpty
+                        ? nil
+                        : (
+                            accessibilityLabel: "Platform Balance Actions",
+                            items: platformMenuItems
                         )
-                    }
                 )
 
                 // Shielded Balance row — mirrors the Platform
@@ -1069,7 +1181,7 @@ struct BalanceCardView: View {
                 // → pool (Type 15, `shieldedShield`).
                 WalletBalanceRow(
                     label: "Shielded Balance",
-                    amount: shieldedService.shieldedBalance,
+                    amount: shieldedBalance,
                     color: .purple,
                     unit: .credits,
                     showSyncIndicator: shieldedService.isSyncing,
@@ -1106,6 +1218,17 @@ private struct WalletBalanceRow: View {
         let action: () -> Void
     }
 
+    /// One entry in a trailing `Menu`. Used by the Platform Balance
+    /// row to offer Top Up / Transfer / Withdraw without crowding the
+    /// row with three separate glyph buttons.
+    struct TrailingMenuItem: Identifiable {
+        let id = UUID()
+        let title: String
+        let systemImage: String
+        let accessibilityIdentifier: String
+        let action: () -> Void
+    }
+
     let label: String
     var amount: UInt64
     var incoming: UInt64 = 0
@@ -1113,6 +1236,11 @@ private struct WalletBalanceRow: View {
     var unit: WalletBalanceUnit = .duffs
     var showSyncIndicator: Bool = false
     var trailingAction: TrailingAction? = nil
+    /// When set, the trailing affordance is a `Menu` (ellipsis glyph)
+    /// listing these items instead of a single `trailingAction` button.
+    /// `trailingMenu` takes precedence over `trailingAction` if both
+    /// are supplied.
+    var trailingMenu: (accessibilityLabel: String, items: [TrailingMenuItem])? = nil
 
     var body: some View {
         HStack {
@@ -1145,7 +1273,21 @@ private struct WalletBalanceRow: View {
                         .foregroundColor(.orange)
                 }
             }
-            if let trailing = trailingAction {
+            if let menu = trailingMenu {
+                Menu {
+                    ForEach(menu.items) { item in
+                        Button(action: item.action) {
+                            Label(item.title, systemImage: item.systemImage)
+                        }
+                        .accessibilityIdentifier(item.accessibilityIdentifier)
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle.fill")
+                        .font(.title3)
+                        .foregroundColor(color)
+                }
+                .accessibilityLabel(menu.accessibilityLabel)
+            } else if let trailing = trailingAction {
                 Button(action: trailing.action) {
                     Image(systemName: trailing.systemImage)
                         .font(.title3)

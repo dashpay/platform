@@ -248,6 +248,13 @@ fn encode_memo_text(memo_text: Option<&str>) -> Result<[u8; 36], PlatformWalletF
 /// shielded sub-wallet, no spendable notes, or insufficient
 /// shielded balance to cover `amount + estimated_fee`.
 ///
+/// `mnemonic_resolver_handle` supplies the Orchard spend authority:
+/// the resolver fires exactly once, the seed is derived in a
+/// `Zeroizing` buffer, the account's `SpendAuthorizingKey` is
+/// re-derived for this call only, and everything is dropped before
+/// this function returns. No spend key is resident between spends
+/// (mirror of the transparent `MnemonicResolverCoreSigner` flow).
+///
 /// `memo_text` is an optional NUL-terminated UTF-8 string attached
 /// to the recipient's note. `null` or an empty string means no memo
 /// (the all-zero 36-byte memo). A non-empty memo's UTF-8 byte length
@@ -257,6 +264,9 @@ fn encode_memo_text(memo_text: Option<&str>) -> Result<[u8; 36], PlatformWalletF
 ///
 /// # Safety
 /// - `wallet_id_bytes` must point to 32 readable bytes.
+/// - `mnemonic_resolver_handle` must come from
+///   `dash_sdk_mnemonic_resolver_create` and outlive this call; the
+///   caller retains ownership.
 /// - `recipient_raw_43` must point to 43 readable bytes (the
 ///   recipient's raw Orchard payment address — same shape
 ///   `platform_wallet_manager_shielded_default_address` returns).
@@ -266,12 +276,14 @@ fn encode_memo_text(memo_text: Option<&str>) -> Result<[u8; 36], PlatformWalletF
 pub unsafe extern "C" fn platform_wallet_manager_shielded_transfer(
     handle: Handle,
     wallet_id_bytes: *const u8,
+    mnemonic_resolver_handle: *mut MnemonicResolverHandle,
     account: u32,
     recipient_raw_43: *const u8,
     amount: u64,
     memo_text: *const c_char,
 ) -> PlatformWalletFFIResult {
     check_ptr!(wallet_id_bytes);
+    check_ptr!(mnemonic_resolver_handle);
     check_ptr!(recipient_raw_43);
 
     let mut wallet_id = [0u8; 32];
@@ -304,6 +316,16 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_transfer(
         Err(result) => return result,
     };
 
+    // Resolve the spend authority per-operation: mnemonic → seed in
+    // `Zeroizing` buffers, scrubbed when the worker task drops them.
+    let seed = match crate::identity_keys_from_mnemonic::resolve_seed_from_resolver(
+        mnemonic_resolver_handle,
+        &wallet_id,
+    ) {
+        Ok(seed) => seed,
+        Err(result) => return result,
+    };
+
     // Run the proof on a worker thread (8 MB stack). Halo 2 circuit
     // synthesis recurses past the ~512 KB iOS dispatch-thread stack
     // and crashes with EXC_BAD_ACCESS at the first
@@ -311,9 +333,19 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_transfer(
     // calling thread.
     let result = block_on_worker(async move {
         let prover = CachedOrchardProver::new();
-        wallet
-            .shielded_transfer_to(&coordinator, account, &recipient, amount, memo, &prover)
-            .await
+        let r = wallet
+            .shielded_transfer_to(
+                &coordinator,
+                seed.as_ref(),
+                account,
+                &recipient,
+                amount,
+                memo,
+                &prover,
+            )
+            .await;
+        poke_sync_on_unconfirmed(&r, handle);
+        r
     });
     map_spend_result(result, "shielded transfer")
 }
@@ -329,19 +361,27 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_transfer(
 /// which differs from the bech32m payload's type byte
 /// (`0xb0`/`0x80`).
 ///
+/// `mnemonic_resolver_handle` supplies the per-operation Orchard
+/// spend authority (see `platform_wallet_manager_shielded_transfer`).
+///
 /// # Safety
 /// - `wallet_id_bytes` must point to 32 readable bytes.
+/// - `mnemonic_resolver_handle` must come from
+///   `dash_sdk_mnemonic_resolver_create` and outlive this call; the
+///   caller retains ownership.
 /// - `to_platform_addr_cstr` must be a valid NUL-terminated UTF-8
 ///   C string for the duration of the call.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_manager_shielded_unshield(
     handle: Handle,
     wallet_id_bytes: *const u8,
+    mnemonic_resolver_handle: *mut MnemonicResolverHandle,
     account: u32,
     to_platform_addr_cstr: *const c_char,
     amount: u64,
 ) -> PlatformWalletFFIResult {
     check_ptr!(wallet_id_bytes);
+    check_ptr!(mnemonic_resolver_handle);
     check_ptr!(to_platform_addr_cstr);
 
     let mut wallet_id = [0u8; 32];
@@ -361,11 +401,28 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_unshield(
         Err(result) => return result,
     };
 
+    let seed = match crate::identity_keys_from_mnemonic::resolve_seed_from_resolver(
+        mnemonic_resolver_handle,
+        &wallet_id,
+    ) {
+        Ok(seed) => seed,
+        Err(result) => return result,
+    };
+
     let result = block_on_worker(async move {
         let prover = CachedOrchardProver::new();
-        wallet
-            .shielded_unshield_to(&coordinator, account, &to_addr_str, amount, &prover)
-            .await
+        let r = wallet
+            .shielded_unshield_to(
+                &coordinator,
+                seed.as_ref(),
+                account,
+                &to_addr_str,
+                amount,
+                &prover,
+            )
+            .await;
+        poke_sync_on_unconfirmed(&r, handle);
+        r
     });
     map_spend_result(result, "shielded unshield")
 }
@@ -377,20 +434,28 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_unshield(
 /// the network matches the wallet's. `core_fee_per_byte` is the
 /// L1 fee rate in duffs/byte (`1` is the dashmate default).
 ///
+/// `mnemonic_resolver_handle` supplies the per-operation Orchard
+/// spend authority (see `platform_wallet_manager_shielded_transfer`).
+///
 /// # Safety
 /// - `wallet_id_bytes` must point to 32 readable bytes.
+/// - `mnemonic_resolver_handle` must come from
+///   `dash_sdk_mnemonic_resolver_create` and outlive this call; the
+///   caller retains ownership.
 /// - `to_core_address_cstr` must be a valid NUL-terminated UTF-8
 ///   C string for the duration of the call.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_manager_shielded_withdraw(
     handle: Handle,
     wallet_id_bytes: *const u8,
+    mnemonic_resolver_handle: *mut MnemonicResolverHandle,
     account: u32,
     to_core_address_cstr: *const c_char,
     amount: u64,
     core_fee_per_byte: u32,
 ) -> PlatformWalletFFIResult {
     check_ptr!(wallet_id_bytes);
+    check_ptr!(mnemonic_resolver_handle);
     check_ptr!(to_core_address_cstr);
 
     let mut wallet_id = [0u8; 32];
@@ -410,20 +475,79 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_withdraw(
         Err(result) => return result,
     };
 
+    let seed = match crate::identity_keys_from_mnemonic::resolve_seed_from_resolver(
+        mnemonic_resolver_handle,
+        &wallet_id,
+    ) {
+        Ok(seed) => seed,
+        Err(result) => return result,
+    };
+
     let result = block_on_worker(async move {
         let prover = CachedOrchardProver::new();
-        wallet
+        let r = wallet
             .shielded_withdraw_to(
                 &coordinator,
+                seed.as_ref(),
                 account,
                 &to_core,
                 amount,
                 core_fee_per_byte,
                 &prover,
             )
-            .await
+            .await;
+        poke_sync_on_unconfirmed(&r, handle);
+        r
     });
     map_spend_result(result, "shielded withdraw")
+}
+
+/// On the AMBIGUOUS outcome (broadcast accepted, result unconfirmed),
+/// kick an immediate forced shielded sync so the first re-drive check —
+/// nullifier re-check, then re-broadcast of the persisted transition —
+/// happens now instead of at the next background tick.
+///
+/// Routed through the manager's [`ShieldedSyncManager::sync_now`] so the
+/// pass respects the same `is_syncing` CAS + `quiescing` drain barrier as
+/// the periodic loop and the host's Sync Now button — a raw
+/// `coordinator.sync(...)` here would race both. `force = true` bypasses
+/// only the caught-up cooldown, never the serialization gate. If a pass
+/// is already in flight the poke no-ops (empty summary) and the next
+/// tick's pass picks the redrive up — that pass's pre-scan snapshot may
+/// predate this arm, which is fine.
+///
+/// Fire-and-forget: the spend's own result is already decided and the
+/// sync pass owns resolution from here (`redrive_pending_spends` + the
+/// prune backstop); the pass outcome is logged, not surfaced.
+///
+/// [`ShieldedSyncManager::sync_now`]: platform_wallet::manager::shielded_sync::ShieldedSyncManager::sync_now
+fn poke_sync_on_unconfirmed<T>(result: &Result<T, PlatformWalletError>, handle: Handle) {
+    let ambiguous = matches!(
+        result,
+        Err(PlatformWalletError::ShieldedSpendUnconfirmed { .. })
+            | Err(PlatformWalletError::ShieldedBroadcastUnconfirmed { .. })
+    );
+    if !ambiguous {
+        return;
+    }
+    let Some(sync_manager) =
+        PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| manager.shielded_sync_arc())
+    else {
+        return;
+    };
+    runtime().spawn(async move {
+        let summary = sync_manager.sync_now(true).await;
+        if summary.sync_unix_seconds == 0 {
+            tracing::debug!(
+                "post-unconfirmed shielded sync poke skipped (a pass was already in flight                  or shielded is unconfigured); the next pass owns the re-drive"
+            );
+        } else {
+            tracing::debug!(
+                wallets = summary.wallet_results.len(),
+                "post-unconfirmed shielded sync pass completed"
+            );
+        }
+    });
 }
 
 /// Map a shielded operation outcome (shield / unshield / transfer /
@@ -448,10 +572,27 @@ fn map_spend_result(
                 e.to_string(),
             )
         }
+        // Retryable: the wallet couldn't build the spend against any
+        // Platform-recorded anchor yet (its commitment tree is mid-block after
+        // an index-chunk sync). Nothing was broadcast and the notes were
+        // released, so the host may retry after the next shielded sync.
+        Err(e @ PlatformWalletError::ShieldedNoRecordedAnchor(_)) => PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorShieldedNoRecordedAnchor,
+            format!("Wallet is still syncing to a confirmed state — try again shortly. ({e})"),
+        ),
         // Definitive failure: the transition was not executed and the notes
         // were released; the host may retry.
         Err(e @ PlatformWalletError::ShieldedBroadcastFailed(_)) => PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorShieldedBroadcastFailed,
+            format!("{operation} failed: {e}"),
+        ),
+        // Definitively failed on an address-nonce race (a shield spends platform
+        // address funds; a shield reserves no notes). Its own code carries the
+        // safe-to-retry contract AND lets the host recognize the self-healing
+        // nonce mismatch — a plain retry re-fetches the nonce. Without this arm
+        // it would regress to the generic `ErrorWalletOperation` below.
+        Err(e @ PlatformWalletError::AddressNonceMismatch { .. }) => PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorAddressNonceMismatch,
             format!("{operation} failed: {e}"),
         ),
         Err(e) => PlatformWalletFFIResult::err(
@@ -500,8 +641,13 @@ fn map_spend_result(
 /// penalty, exactly like the asset-lock / address-funded identity-create penalties. It is bound into
 /// the transition sighash, so it cannot be redirected after signing.
 ///
+/// `mnemonic_resolver_handle` supplies the per-operation Orchard spend authority (see
+/// `platform_wallet_manager_shielded_transfer`).
+///
 /// # Safety
 /// - `wallet_id_bytes` must point to 32 readable bytes.
+/// - `mnemonic_resolver_handle` must come from `dash_sdk_mnemonic_resolver_create` and outlive
+///   this call; the caller retains ownership.
 /// - `identity_pubkeys` must point to `identity_pubkeys_count` contiguous [`IdentityPubkeyFFI`]
 ///   rows that outlive this call (each row's pointers per the [`IdentityPubkeyFFI`] contract).
 /// - `send_to_address_on_creation_failure_bytes` must point to exactly 21 readable bytes for the
@@ -517,6 +663,7 @@ fn map_spend_result(
 pub unsafe extern "C" fn platform_wallet_manager_shielded_identity_create_from_pool(
     handle: Handle,
     wallet_id_bytes: *const u8,
+    mnemonic_resolver_handle: *mut MnemonicResolverHandle,
     account: u32,
     identity_index: u32,
     identity_pubkeys: *const IdentityPubkeyFFI,
@@ -527,6 +674,7 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_identity_create_from_p
     out_identity_id: *mut [u8; 32],
 ) -> PlatformWalletFFIResult {
     check_ptr!(wallet_id_bytes);
+    check_ptr!(mnemonic_resolver_handle);
     check_ptr!(identity_pubkeys);
     check_ptr!(send_to_address_on_creation_failure_bytes);
     check_ptr!(signer_identity_handle);
@@ -576,6 +724,16 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_identity_create_from_p
         Err(result) => return result,
     };
 
+    // Resolve the per-operation Orchard spend authority before entering the worker; the seed
+    // rides into the task in its `Zeroizing` buffer and is scrubbed when the task drops it.
+    let seed = match crate::identity_keys_from_mnemonic::resolve_seed_from_resolver(
+        mnemonic_resolver_handle,
+        &wallet_id,
+    ) {
+        Ok(seed) => seed,
+        Err(result) => return result,
+    };
+
     // Round-trip the signer pointer through `usize` so the worker future captures only plain
     // `Send + 'static` data and re-materializes the borrow INSIDE the task — never a fabricated
     // `&'static` borrow of a host-owned vtable across the FFI boundary. The caller's contract is
@@ -592,9 +750,10 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_identity_create_from_p
         // `Signer<IdentityPublicKey>`.
         let identity_signer: &VTableSigner = &*(signer_identity_addr as *const VTableSigner);
         let prover = CachedOrchardProver::new();
-        wallet
+        let r = wallet
             .shielded_identity_create_from_pool(
                 &coordinator,
+                seed.as_ref(),
                 account,
                 identity_index,
                 public_keys,
@@ -603,7 +762,9 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_identity_create_from_p
                 identity_signer,
                 &prover,
             )
-            .await
+            .await;
+        poke_sync_on_unconfirmed(&r, handle);
+        r
     });
 
     match result {
@@ -628,6 +789,14 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_identity_create_from_p
                 ),
             )
         }
+        // Retryable: no Platform-recorded anchor covered the selected notes yet
+        // (the commitment tree is mid-block after an index-chunk sync). Nothing
+        // was broadcast and the notes were released, so the host may retry after
+        // the next shielded sync.
+        Err(e @ PlatformWalletError::ShieldedNoRecordedAnchor(_)) => PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorShieldedNoRecordedAnchor,
+            format!("Wallet is still syncing to a confirmed state — try again shortly. ({e})"),
+        ),
         // Definitive failure: the transition was not executed and the spent notes were released.
         Err(e @ PlatformWalletError::ShieldedBroadcastFailed(_)) => PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorShieldedBroadcastFailed,
@@ -846,6 +1015,9 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_fund_from_asset_lock(
                 // pool-seeding path uses its own dedicated FFI entry point).
                 0,
                 None,
+                // User-facing funding: wait for the ChainLock indefinitely —
+                // a broadcast asset lock is pending finality, never failed.
+                None,
             )
             .await
     });
@@ -981,6 +1153,7 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_resume_fund_from_asset
                 &coordinator,
                 AssetLockFunding::FromExistingAssetLock {
                     out_point: resume_outpoint,
+                    consume_invitation_voucher: false,
                 },
                 vec![(recipient, None)],
                 &asset_lock_signer,
@@ -988,6 +1161,9 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_resume_fund_from_asset
                 surplus_output,
                 // Resuming a single-note fund (not a seeding batch).
                 0,
+                None,
+                // User-facing funding: wait for the ChainLock indefinitely —
+                // a broadcast asset lock is pending finality, never failed.
                 None,
             )
             .await
@@ -1332,6 +1508,21 @@ mod tests {
             "broadcast-failed message must carry the wallet Display payload"
         );
 
+        // No Platform-recorded anchor yet → its own retryable code, distinct
+        // from the "was broadcast, do NOT retry" unconfirmed code above.
+        let no_anchor: Result<(), PlatformWalletError> = Err(
+            PlatformWalletError::ShieldedNoRecordedAnchor("mid-block".to_string()),
+        );
+        let result = map_spend_result(no_anchor, "shielded withdraw");
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorShieldedNoRecordedAnchor
+        );
+        assert!(
+            message_of(&result).contains("try again shortly"),
+            "no-recorded-anchor message must be the retryable guidance"
+        );
+
         let other: Result<(), PlatformWalletError> =
             Err(PlatformWalletError::ShieldedNoUnspentNotes);
         let result = map_spend_result(other, "shielded withdraw");
@@ -1343,6 +1534,37 @@ mod tests {
         assert_eq!(
             map_spend_result(Ok(()), "shielded transfer").code,
             PlatformWalletFFIResultCode::Success
+        );
+    }
+
+    /// A shield (Type 15) definitively rejected on an address-nonce race must
+    /// map to the dedicated `ErrorAddressNonceMismatch` — NOT regress to the
+    /// generic `ErrorWalletOperation` — so hosts keep the safe-to-retry signal.
+    /// The submitted/expected nonce values must survive in the message.
+    #[test]
+    fn map_spend_result_maps_address_nonce_mismatch_to_dedicated_code() {
+        let mismatch: Result<(), PlatformWalletError> =
+            Err(PlatformWalletError::AddressNonceMismatch {
+                address: PlatformAddress::P2pkh([7u8; 20]),
+                provided_nonce: 1,
+                expected_nonce: 2,
+            });
+        let result = map_spend_result(mismatch, "shielded shield");
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorAddressNonceMismatch,
+            "shield nonce rejection must not regress to ErrorWalletOperation"
+        );
+        let msg = message_of(&result);
+        // Pin the EXACT rendered substrings, not bare digits, so a
+        // provided/expected transposition would fail the test.
+        assert!(
+            msg.contains("submitted nonce 1"),
+            "submitted (provided) nonce must render exactly: {msg}"
+        );
+        assert!(
+            msg.contains("Platform expected 2"),
+            "expected nonce must render exactly: {msg}"
         );
     }
 }

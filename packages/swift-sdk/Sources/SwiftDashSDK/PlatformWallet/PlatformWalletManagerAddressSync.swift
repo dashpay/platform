@@ -80,8 +80,13 @@ private func platformAddressSyncCompletedCallback(
         walletResults: results
     )
 
+    // Snapshot the generation now, on the FFI callback thread, BEFORE the
+    // main-actor hop, so a stop/reset that bumps the counter after this
+    // point invalidates the trailing event (mirrors the shielded path).
+    let generation = handler.manager?.platformAddressSyncGeneration.current() ?? 0
+
     Task { @MainActor [weak manager = handler.manager] in
-        manager?.handlePlatformAddressSyncCompleted(event)
+        manager?.handlePlatformAddressSyncCompleted(event, generation: generation)
     }
 }
 
@@ -100,7 +105,14 @@ private extension AddressSyncMetrics {
 }
 
 extension PlatformWalletManager {
-    func handlePlatformAddressSyncCompleted(_ event: PlatformAddressSyncEvent) {
+    func handlePlatformAddressSyncCompleted(_ event: PlatformAddressSyncEvent, generation: UInt64) {
+        // Drop a trailing event the Rust drain already dispatched but the
+        // main actor only delivers after a stop/reset bumped the counter —
+        // its snapshot predates the bump. Without this, a completion from a
+        // pass drained by `resetPlatformAddressSyncState` (Clear) repaints
+        // chain-tip height, last-sync time, and metrics over the freshly
+        // cleared UI. Mirrors the shielded guard.
+        guard generation == platformAddressSyncGeneration.current() else { return }
         lastPlatformAddressSyncEvent = event
     }
 
@@ -132,6 +144,10 @@ extension PlatformWalletManager {
         }
 
         try platform_wallet_manager_platform_address_sync_stop(handle).check()
+        // The Rust drain returned; bump the generation so any trailing
+        // completion the main actor delivers after this point is dropped
+        // (its snapshot predates this bump). Mirrors the shielded stop.
+        platformAddressSyncGeneration.bump()
     }
 
     public func isPlatformAddressSyncRunning() throws -> Bool {
@@ -218,5 +234,38 @@ extension PlatformWalletManager {
         try await Task.detached(priority: .userInitiated) {
             try platform_wallet_manager_platform_address_sync_sync_now(handle).check()
         }.value
+    }
+
+    /// Reset the platform-address (BLAST/DIP-17) incremental-sync
+    /// watermark and drop every cached balance across all registered
+    /// wallets, forcing a full rescan on the next sync. Backs the
+    /// SwiftExampleApp Platform Sync "Clear" button.
+    ///
+    /// Quiesces the background sync loop before resetting (so no
+    /// in-flight pass re-writes the watermark) and leaves it stopped —
+    /// callers re-arm via `startPlatformAddressSync` or one-shot
+    /// `syncPlatformAddressNow`. Runs off the main actor because the
+    /// quiesce drains any in-flight pass.
+    public func resetPlatformAddressSyncState() async throws {
+        guard isConfigured, handle != NULL_HANDLE else {
+            throw PlatformWalletError.invalidHandle(
+                "PlatformWalletManager not configured"
+            )
+        }
+
+        let handle = self.handle
+        try await Task.detached(priority: .userInitiated) {
+            try platform_wallet_manager_platform_address_sync_reset(handle).check()
+        }.value
+        // The Rust reset quiesced + drained the in-flight pass; bump the
+        // generation so a trailing completion captured before this point
+        // (and delivered onto the main actor after Clear) is dropped
+        // instead of repainting the just-cleared sync-status UI.
+        platformAddressSyncGeneration.bump()
+        // Drop the retained published mirror too: the generation guard only
+        // blocks future stale callbacks, but a later `configure()` would
+        // replay the current `@Published` value to its fresh subscriber and
+        // repaint the cleared UI.
+        resetPlatformAddressPublishedMirror()
     }
 }

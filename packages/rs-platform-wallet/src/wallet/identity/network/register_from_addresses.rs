@@ -37,6 +37,19 @@ impl IdentityWallet {
     /// DIP-9 auth pubkeys) and both signers; the wallet struct
     /// carries no key material.
     ///
+    /// Returns the registered identity alongside the proof-attested
+    /// post-spend `AddressInfos` for the funding addresses. Prefer the
+    /// composite [`PlatformWallet::register_from_addresses`], which feeds
+    /// the returned `AddressInfos` through
+    /// [`PlatformAddressWallet::reconcile_address_infos`] so the spent
+    /// balances and advanced nonces are reflected locally without waiting
+    /// for the next BLAST sync round.
+    ///
+    /// [`PlatformWallet::register_from_addresses`]:
+    /// crate::wallet::PlatformWallet::register_from_addresses
+    /// [`PlatformAddressWallet::reconcile_address_infos`]:
+    /// crate::wallet::PlatformAddressWallet::reconcile_address_infos
+    ///
     /// # Arguments
     ///
     /// * `identity` — fully-constructed placeholder identity (with
@@ -74,7 +87,7 @@ impl IdentityWallet {
         identity_signer: &IS,
         input_address_signer: &AS,
         settings: Option<PutSettings>,
-    ) -> Result<Identity, PlatformWalletError> {
+    ) -> Result<(Identity, dash_sdk::query_types::AddressInfos, u64), PlatformWalletError> {
         if inputs.is_empty() {
             return Err(PlatformWalletError::InvalidIdentityData(
                 "At least one input address is required".to_string(),
@@ -84,7 +97,7 @@ impl IdentityWallet {
         // Route through the auto-fetching SDK variant so the caller
         // doesn't need to maintain its own nonce cache — Platform is
         // always the source of truth at submit time.
-        let (mut registered_identity, _address_infos) = identity
+        let (mut registered_identity, address_infos, proof_height) = identity
             .put_with_address_funding_fetching_nonces(
                 &self.sdk,
                 inputs,
@@ -95,10 +108,12 @@ impl IdentityWallet {
             )
             .await
             .map_err(|e| {
-                PlatformWalletError::InvalidIdentityData(format!(
-                    "Failed to register identity from addresses: {}",
-                    e
-                ))
+                crate::error::promote_address_nonce_error(&e).unwrap_or_else(|| {
+                    PlatformWalletError::InvalidIdentityData(format!(
+                        "Failed to register identity from addresses: {}",
+                        e
+                    ))
+                })
             })?;
 
         // The SDK return path for `put_with_address_funding_fetching_nonces`
@@ -119,29 +134,51 @@ impl IdentityWallet {
         }
         let identity = registered_identity;
 
-        // Step 3: Add the identity to the local manager (with its HD
-        // index) so subsequent operations route through it.
+        // Step 3 (best-effort): add the identity to the local manager
+        // (with its HD index) so subsequent operations route through it.
+        //
+        // Platform has ALREADY accepted the registration, so a local
+        // persistence failure must NOT propagate as `Err` — that would
+        // suppress the `(identity, address_infos)` return the caller
+        // needs to reconcile the spent funding-address balances, leaving
+        // them stale even though the identity exists on chain. A missed
+        // local add self-heals on the next identity re-sync. This mirrors
+        // the sibling `transfer_credits_to_addresses` / top-up flows,
+        // which likewise treat post-acceptance local bookkeeping as
+        // best-effort.
         {
             let mut wm = self.wallet_manager.write().await;
-            let info = wm.get_wallet_info_mut(&self.wallet_id).ok_or_else(|| {
-                crate::error::PlatformWalletError::WalletNotFound(
-                    "Wallet info not found in wallet manager".to_string(),
-                )
-            })?;
-            info.identity_manager.add_identity(
-                identity.clone(),
-                identity_index,
-                self.wallet_id,
-                &self.persister,
-            )?;
+            match wm.get_wallet_info_mut(&self.wallet_id) {
+                Some(info) => {
+                    if let Err(e) = info.identity_manager.add_identity(
+                        identity.clone(),
+                        identity_index,
+                        self.wallet_id,
+                        &self.persister,
+                    ) {
+                        tracing::warn!(
+                            error = %e,
+                            identity_id = %identity.id(),
+                            "register_from_addresses: identity registered on Platform but \
+                             local add_identity failed; returning the registered identity \
+                             anyway so address balances can reconcile"
+                        );
+                    }
+                }
+                None => {
+                    tracing::warn!(
+                        identity_id = %identity.id(),
+                        "register_from_addresses: identity registered on Platform but wallet \
+                         info was not found locally; skipping local persistence"
+                    );
+                }
+            }
         }
 
-        // TODO(platform-wallet): mirror `transfer()` and push the
-        // returned `address_infos` through the platform-address
-        // balance cache so SwiftData reflects the spent balances +
-        // advanced nonces immediately. For now the next BLAST sync
-        // round refreshes them.
-
-        Ok(identity)
+        // The spent platform-address balances are reconciled by the
+        // composite `PlatformWallet::register_from_addresses`, which routes
+        // the returned `AddressInfos` (pinned at `proof_height`) through
+        // the platform-address wallet's shared reconciliation seam.
+        Ok((identity, address_infos, proof_height))
     }
 }

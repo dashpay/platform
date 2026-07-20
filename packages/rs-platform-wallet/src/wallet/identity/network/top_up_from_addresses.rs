@@ -12,6 +12,8 @@ use dash_sdk::platform::transition::top_up_identity_from_addresses::TopUpIdentit
 use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
 
+use dash_sdk::query_types::AddressInfos;
+
 use crate::error::PlatformWalletError;
 
 use super::*;
@@ -25,6 +27,21 @@ impl IdentityWallet {
     ///
     /// Uses the `TopUpIdentityFromAddresses` SDK trait. Address nonces are
     /// looked up automatically.
+    ///
+    /// This method owns only the identity-side balance update and returns
+    /// the proof-attested post-spend `AddressInfos` alongside the new
+    /// identity balance. Prefer the composite
+    /// [`PlatformWallet::top_up_from_addresses`], which feeds the returned
+    /// `AddressInfos` through
+    /// [`PlatformAddressWallet::reconcile_address_infos`] — the
+    /// platform-address wallet holds the address provider needed to map a
+    /// spent address back to its derivation index (including addresses
+    /// restored from disk that are no longer in a live derived pool).
+    ///
+    /// [`PlatformWallet::top_up_from_addresses`]:
+    /// crate::wallet::PlatformWallet::top_up_from_addresses
+    /// [`PlatformAddressWallet::reconcile_address_infos`]:
+    /// crate::wallet::PlatformAddressWallet::reconcile_address_infos
     ///
     /// # Arguments
     ///
@@ -40,7 +57,7 @@ impl IdentityWallet {
         inputs: BTreeMap<PlatformAddress, Credits>,
         address_signer: &S,
         settings: Option<PutSettings>,
-    ) -> Result<Credits, PlatformWalletError> {
+    ) -> Result<(AddressInfos, Credits, u64), PlatformWalletError> {
         let identity = {
             let wm = self.wallet_manager.read().await;
             let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
@@ -55,14 +72,16 @@ impl IdentityWallet {
                 .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?
         };
 
-        let (_address_infos, new_balance) = identity
+        let (address_infos, new_balance, proof_height) = identity
             .top_up_from_addresses(&self.sdk, inputs, address_signer, settings)
             .await
             .map_err(|e| {
-                PlatformWalletError::InvalidIdentityData(format!(
-                    "Failed to top up identity from addresses: {}",
-                    e
-                ))
+                crate::error::promote_address_nonce_error(&e).unwrap_or_else(|| {
+                    PlatformWalletError::InvalidIdentityData(format!(
+                        "Failed to top up identity from addresses: {}",
+                        e
+                    ))
+                })
             })?;
 
         // Update the identity's balance in the local manager and
@@ -89,6 +108,10 @@ impl IdentityWallet {
             }
         }
 
-        Ok(new_balance)
+        // The spent platform-address balances are reconciled by the
+        // composite `PlatformWallet::top_up_from_addresses`, which routes
+        // the returned `AddressInfos` through the platform-address wallet's
+        // shared reconciliation seam.
+        Ok((address_infos, new_balance, proof_height))
     }
 }

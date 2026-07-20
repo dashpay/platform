@@ -230,9 +230,15 @@ pub mod scenarios {
         let req2 = create_contact_request(alice_id, carol_id, 0, 1, 1, 1_700_000_050);
         let req3 = create_contact_request(alice_id, dave_id, 0, 1, 2, 1_700_000_100);
 
-        alice.add_sent_contact_request(req1.clone(), &noop_persister());
-        alice.add_sent_contact_request(req2.clone(), &noop_persister());
-        alice.add_sent_contact_request(req3.clone(), &noop_persister());
+        alice
+            .add_sent_contact_request(req1.clone(), &noop_persister())
+            .expect("test setup persists");
+        alice
+            .add_sent_contact_request(req2.clone(), &noop_persister())
+            .expect("test setup persists");
+        alice
+            .add_sent_contact_request(req3.clone(), &noop_persister())
+            .expect("test setup persists");
 
         (alice, vec![req1, req2, req3])
     }
@@ -250,9 +256,15 @@ pub mod scenarios {
         let req2 = create_contact_request(carol_id, alice_id, 1, 0, 0, 1_700_000_050);
         let req3 = create_contact_request(dave_id, alice_id, 1, 0, 0, 1_700_000_100);
 
-        alice.add_incoming_contact_request(req1.clone(), &noop_persister());
-        alice.add_incoming_contact_request(req2.clone(), &noop_persister());
-        alice.add_incoming_contact_request(req3.clone(), &noop_persister());
+        alice
+            .add_incoming_contact_request(req1.clone(), &noop_persister())
+            .expect("test setup persists");
+        alice
+            .add_incoming_contact_request(req2.clone(), &noop_persister())
+            .expect("test setup persists");
+        alice
+            .add_incoming_contact_request(req3.clone(), &noop_persister())
+            .expect("test setup persists");
 
         (alice, vec![req1, req2, req3])
     }
@@ -268,10 +280,8 @@ pub mod scenarios {
         let contact1 = create_established_contact(bob_id, alice_id, 1_700_000_000, 1_700_000_100);
         let contact2 = create_established_contact(carol_id, alice_id, 1_700_000_200, 1_700_000_300);
 
-        alice.established_contacts.insert(bob_id, contact1.clone());
-        alice
-            .established_contacts
-            .insert(carol_id, contact2.clone());
+        alice.apply_established_contact(contact1.clone());
+        alice.apply_established_contact(contact2.clone());
 
         (alice, vec![contact1, contact2])
     }
@@ -289,19 +299,25 @@ pub mod scenarios {
         // Established contact with Bob
         let bob_contact =
             create_established_contact(bob_id, alice_id, 1_700_000_000, 1_700_000_100);
-        alice.established_contacts.insert(bob_id, bob_contact);
+        alice.apply_established_contact(bob_contact);
 
         // Pending sent request to Carol (not reciprocated yet)
         let carol_request = create_contact_request(alice_id, carol_id, 0, 1, 0, 1_700_000_200);
-        alice.add_sent_contact_request(carol_request, &noop_persister());
+        alice
+            .add_sent_contact_request(carol_request, &noop_persister())
+            .expect("test setup persists");
 
         // Pending incoming request from Dave (we haven't sent back yet)
         let dave_request = create_contact_request(dave_id, alice_id, 1, 0, 0, 1_700_000_300);
-        alice.add_incoming_contact_request(dave_request, &noop_persister());
+        alice
+            .add_incoming_contact_request(dave_request, &noop_persister())
+            .expect("test setup persists");
 
         // Pending incoming request from Eve
         let eve_request = create_contact_request(eve_id, alice_id, 1, 0, 0, 1_700_000_400);
-        alice.add_incoming_contact_request(eve_request, &noop_persister());
+        alice
+            .add_incoming_contact_request(eve_request, &noop_persister())
+            .expect("test setup persists");
 
         alice
     }
@@ -361,13 +377,14 @@ mod tests {
     fn test_alice_with_pending_sent_requests() {
         let (alice, requests) = scenarios::alice_with_pending_sent_requests();
 
-        assert_eq!(alice.sent_contact_requests.len(), 3);
+        assert_eq!(alice.dashpay().sent_contact_requests().len(), 3);
         assert_eq!(requests.len(), 3);
 
         // Verify requests are in the managed identity
         for request in &requests {
             assert!(alice
-                .sent_contact_requests
+                .dashpay()
+                .sent_contact_requests()
                 .contains_key(&request.recipient_id));
         }
     }
@@ -376,8 +393,8 @@ mod tests {
     fn test_alice_with_mixed_contacts() {
         let alice = scenarios::alice_with_mixed_contacts();
 
-        assert_eq!(alice.established_contacts.len(), 1); // Bob
-        assert_eq!(alice.sent_contact_requests.len(), 1); // Carol
-        assert_eq!(alice.incoming_contact_requests.len(), 2); // Dave, Eve
+        assert_eq!(alice.dashpay().established_contacts().len(), 1); // Bob
+        assert_eq!(alice.dashpay().sent_contact_requests().len(), 1); // Carol
+        assert_eq!(alice.dashpay().incoming_contact_requests().len(), 2); // Dave, Eve
     }
 }

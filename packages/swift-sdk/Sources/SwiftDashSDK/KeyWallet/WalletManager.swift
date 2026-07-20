@@ -3,7 +3,7 @@ import DashSDKFFI
 
 /// Swift wrapper for wallet manager that manages multiple wallets
 public class WalletManager {
-    private let handle: UnsafeMutablePointer<FFIWalletManager>
+    private let handle: OpaquePointer
     internal let network: Network
     private let ownsHandle: Bool
 
@@ -27,7 +27,7 @@ public class WalletManager {
 
     /// Create a wallet manager wrapper from an existing handle (does not own the handle)
     /// - Parameter handle: The FFI wallet manager handle
-    internal init(handle: UnsafeMutablePointer<FFIWalletManager>) throws {
+    internal init(handle: OpaquePointer) throws {
         var error = FFIError()
         let network = wallet_manager_network(handle, &error)
 
@@ -578,7 +578,7 @@ public class WalletManager {
         }
     }
 
-    internal var ffiHandle: UnsafeMutablePointer<FFIWalletManager> { handle }
+    internal var ffiHandle: OpaquePointer { handle }
 
     // MARK: - Serialization
 
@@ -652,7 +652,7 @@ public class WalletManager {
     /// - Parameters:
     ///   - walletBytes: The serialized wallet data
     /// - Returns: The wallet ID of the imported wallet
-    public func importWallet(from walletBytes: Data) throws -> Data {
+    public func importWallet(from walletBytes: Data, birthHeight: UInt32 = 0) throws -> Data {
         guard !walletBytes.isEmpty else {
             throw KeyWalletError.invalidInput("Wallet bytes cannot be empty")
         }
@@ -665,6 +665,7 @@ public class WalletManager {
                 handle,
                 bytes.bindMemory(to: UInt8.self).baseAddress,
                 size_t(walletBytes.count),
+                birthHeight,
                 &walletId,
                 &error
             )

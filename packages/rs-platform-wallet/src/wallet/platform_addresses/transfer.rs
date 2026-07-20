@@ -5,10 +5,9 @@ use dpp::fee::Credits;
 use dpp::identity::signer::Signer;
 use dpp::state_transition::address_funds_transfer_transition::AddressFundsTransferTransition;
 use dpp::version::PlatformVersion;
-use dpp::version::LATEST_PLATFORM_VERSION;
 use key_wallet::PlatformP2PKHAddress;
 
-use crate::changeset::Merge;
+use crate::error::promote_address_nonce_error_or_sdk;
 use crate::wallet::PlatformAddressWallet;
 use crate::{PlatformAddressChangeSet, PlatformWalletError};
 use dash_sdk::platform::transition::transfer_address_funds::TransferAddressFunds;
@@ -138,7 +137,11 @@ impl PlatformAddressWallet {
     ///
     /// Input addresses can be specified explicitly or selected automatically
     /// from the account via [`InputSelection::Auto`]. When `platform_version`
-    /// is `None`, [`LATEST_PLATFORM_VERSION`] drives fee estimation.
+    /// is `None`, the wallet's SDK version (`self.sdk.version()`) drives fee
+    /// estimation and every version-keyed limit (`min_input_amount`,
+    /// `max_address_inputs`) during auto-selection — the same source the UI
+    /// preflight reads, so the submit gate and the spend path never diverge on
+    /// a non-latest-pinned SDK. An explicit `Some(v)` is honored as given.
     ///
     /// `address_signer` produces ECDSA signatures for the input
     /// [`PlatformAddress`]es; the wallet itself holds no key material —
@@ -198,9 +201,25 @@ impl PlatformAddressWallet {
             ));
         }
 
-        let version = platform_version.unwrap_or(LATEST_PLATFORM_VERSION);
+        // Single source of truth for the planning version: when the caller
+        // pins an explicit `Some(v)` we honor it, but the default is the
+        // wallet's SDK version (`self.sdk.version()`) — NOT
+        // `LATEST_PLATFORM_VERSION`. This is the same network-floored,
+        // protocol-version-tracking accessor that the UI preflight and the
+        // `min_input_amount` / `min_output_amount` getters read, so the submit
+        // gate and this spend path size every version-keyed value
+        // (`min_input_amount`, `max_address_inputs`, and `estimate_min_fee`)
+        // against the SAME version. Defaulting to LATEST here would let the
+        // gate and the spend path diverge on a non-latest-pinned SDK.
+        let version = platform_version.unwrap_or_else(|| self.sdk.version());
 
-        let address_infos = match input_selection {
+        // `proof_height` is the broadcast proof's committed block — the
+        // height pin for the reconciled absolutes below. Transfer outputs
+        // are recorded on-chain as `AddBalanceToAddress` DELTAS at that
+        // height (a same-wallet output — e.g. a change address — is the
+        // ADDR-09 double-count shape); the pin is what stops the sync from
+        // re-applying them. See `reconcile_address_infos`.
+        let (address_infos, proof_height) = match input_selection {
             InputSelection::Explicit(inputs) => {
                 if inputs.is_empty() {
                     return Err(PlatformWalletError::AddressOperation(
@@ -209,7 +228,8 @@ impl PlatformAddressWallet {
                 }
                 self.sdk
                     .transfer_address_funds(inputs, outputs, fee_strategy, address_signer, None)
-                    .await?
+                    .await
+                    .map_err(promote_address_nonce_error_or_sdk)?
             }
             InputSelection::ExplicitWithNonces(inputs) => {
                 if inputs.is_empty() {
@@ -225,7 +245,8 @@ impl PlatformAddressWallet {
                         address_signer,
                         None,
                     )
-                    .await?
+                    .await
+                    .map_err(promote_address_nonce_error_or_sdk)?
             }
             InputSelection::Auto => {
                 // Auto-select supports `[DeductFromInput(0)]` and `[ReduceOutput(0)]`;
@@ -246,77 +267,21 @@ impl PlatformAddressWallet {
                     .await?;
                 self.sdk
                     .transfer_address_funds(inputs, outputs, fee_strategy, address_signer, None)
-                    .await?
+                    .await
+                    .map_err(promote_address_nonce_error_or_sdk)?
             }
         };
 
-        let key_source = {
-            let guard = self.provider.read().await;
-            guard
-                .as_ref()
-                .and_then(|p| p.key_source(&self.wallet_id, account_index))
-        };
-
-        let mut wm = self.wallet_manager.write().await;
-        let mut cs = PlatformAddressChangeSet::default();
-        if let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) {
-            if let Some(account) = info
-                .core_wallet
-                .platform_payment_managed_account_at_index_mut(account_index)
-            {
-                // `transfer_address_funds` returns address info for the full
-                // `inputs ∪ outputs` set, including external recipients the
-                // wallet does not own. Build a lookup of derived addresses
-                // up-front so we can skip non-owned entries — persisting a
-                // recipient under a fake derivation index would poison the
-                // account's address map on restore.
-                let owned: std::collections::BTreeMap<PlatformP2PKHAddress, u32> = account
-                    .addresses
-                    .addresses
-                    .iter()
-                    .filter_map(|(&idx, info)| {
-                        match PlatformP2PKHAddress::from_address(&info.address) {
-                            Ok(p) => Some((p, idx)),
-                            Err(e) => {
-                                tracing::warn!(
-                                    address = %info.address,
-                                    index = idx,
-                                    error = %e,
-                                    "skipping account address that failed P2PKH conversion",
-                                );
-                                None
-                            }
-                        }
-                    })
-                    .collect();
-
-                for entry in build_transfer_persistence_entries(
-                    self.wallet_id,
-                    account_index,
-                    &owned,
-                    address_infos.iter().map(|(a, i)| (a, i.as_ref())),
-                ) {
-                    account.set_address_credit_balance(
-                        entry.address,
-                        entry.funds.balance,
-                        key_source.as_ref(),
-                    );
-                    cs.addresses.push(entry);
-                }
-            }
-        }
-        drop(wm);
-
-        // Mirror `sync.rs`: persist post-broadcast balances so a restart
-        // doesn't reseed `auto_select_inputs` from stale rows. Log-on-error
-        // because the on-chain transition already succeeded.
-        if !cs.is_empty() {
-            if let Err(e) = self.persister.store(cs.clone().into()) {
-                tracing::error!("Failed to persist transfer changeset: {}", e);
-            }
-        }
-
-        Ok(cs)
+        // `transfer_address_funds` returns address info for the full
+        // `inputs ∪ outputs` set, including external recipients the wallet
+        // does not own — the shared seam filters those out, applies the
+        // proof-attested balances pinned at `proof_height`, updates the
+        // sync seed, and persists. The pin lets the next BLAST pass drop
+        // the on-chain credit delta instead of re-applying it on top of
+        // the absolute seed (ADDR-09).
+        Ok(self
+            .reconcile_address_infos(&address_infos, proof_height, "address transfer")
+            .await)
     }
 
     /// Transfer credits with an address-keyed fee strategy and an optional
@@ -405,7 +370,18 @@ impl PlatformAddressWallet {
             }
         };
 
-        let version = platform_version.unwrap_or(LATEST_PLATFORM_VERSION);
+        // Default to the wallet's SDK version (`self.sdk.version()`) — the
+        // same network-floored, protocol-version-tracking accessor that
+        // `transfer()` uses — rather than `LATEST_PLATFORM_VERSION`. This
+        // wrapper rejects `InputSelection::Auto`, so the production Auto UI
+        // never reaches it, but defaulting to LATEST here would still let the
+        // change-augmentation / fee-headroom math size version-keyed values
+        // (`min_output_amount`, `estimate_min_fee`) against a different
+        // version than the submit gate on a non-latest-pinned SDK. Defending
+        // in depth keeps both `transfer` entry points sizing every
+        // version-keyed value against the SAME version. An explicit `Some(v)`
+        // is honored as given.
+        let version = platform_version.unwrap_or_else(|| self.sdk.version());
 
         let final_outputs = match output_change_address {
             Some(change_addr) => {
@@ -547,27 +523,38 @@ impl PlatformAddressWallet {
             }
         }
 
-        match fee_strategy {
+        let selected = match fee_strategy {
             [AddressFundsFeeStrategyStep::DeductFromInput(0)] => select_inputs_deduct_from_input(
                 candidates,
                 outputs,
                 total_output,
                 fee_strategy,
                 platform_version,
-            ),
+            )?,
             [AddressFundsFeeStrategyStep::ReduceOutput(0)] => select_inputs_reduce_output(
                 candidates,
                 outputs,
                 total_output,
                 fee_strategy,
                 platform_version,
-            ),
-            _ => Err(PlatformWalletError::AddressOperation(
-                "auto_select_inputs supports fee_strategy = [DeductFromInput(0)] \
-                 or [ReduceOutput(0)]; other shapes must use InputSelection::Explicit"
-                    .to_string(),
-            )),
-        }
+            )?,
+            _ => {
+                return Err(PlatformWalletError::AddressOperation(
+                    "auto_select_inputs supports fee_strategy = [DeductFromInput(0)] \
+                     or [ReduceOutput(0)]; other shapes must use InputSelection::Explicit"
+                        .to_string(),
+                ))
+            }
+        };
+
+        // Gate the FINAL selected set against the DPP per-transition input cap.
+        // This is the single chokepoint reached after BOTH the
+        // `[DeductFromInput(0)]` and `[ReduceOutput(0)]` selectors, where
+        // `selected.len()` equals the input count `transfer` will sign — so the
+        // cap is enforced for every Auto fee-strategy shape.
+        enforce_max_address_inputs(&selected, platform_version)?;
+
+        Ok(selected)
     }
 
     /// Simulate the fee strategy to determine how much additional balance
@@ -610,56 +597,6 @@ impl PlatformAddressWallet {
     }
 }
 
-/// Translate `transfer_address_funds`'s `inputs ∪ outputs` address infos into
-/// the persistence-changeset entries for this wallet. Non-P2PKH addresses and
-/// addresses outside `owned` (i.e. external recipients) are filtered out — the
-/// caller persists only entries that belong to the wallet's derived address
-/// pool. Missing per-address info defaults to zero balance / zero nonce, which
-/// matches the on-chain post-transition state for a fully consumed input.
-fn build_transfer_persistence_entries<'a, I>(
-    wallet_id: [u8; 32],
-    account_index: u32,
-    owned: &BTreeMap<PlatformP2PKHAddress, u32>,
-    address_infos: I,
-) -> Vec<crate::PlatformAddressBalanceEntry>
-where
-    I: IntoIterator<
-        Item = (
-            &'a PlatformAddress,
-            Option<&'a dash_sdk::query_types::AddressInfo>,
-        ),
-    >,
-{
-    let mut entries = Vec::new();
-    for (addr, maybe_info) in address_infos {
-        let PlatformAddress::P2pkh(hash) = addr else {
-            continue;
-        };
-        let p2pkh = PlatformP2PKHAddress::new(*hash);
-        let Some(&address_index) = owned.get(&p2pkh) else {
-            continue;
-        };
-        let funds = match maybe_info {
-            Some(ai) => dash_sdk::platform::address_sync::AddressFunds {
-                balance: ai.balance,
-                nonce: ai.nonce,
-            },
-            None => dash_sdk::platform::address_sync::AddressFunds {
-                balance: 0,
-                nonce: 0,
-            },
-        };
-        entries.push(crate::PlatformAddressBalanceEntry {
-            wallet_id,
-            account_index,
-            address_index,
-            address: p2pkh,
-            funds,
-        });
-    }
-    entries
-}
-
 /// Build the auto-selection candidate list: keep only addresses whose balance
 /// reaches `min_input_amount`, drop any address that is also a destination
 /// output (the protocol forbids the same address being both input and output),
@@ -679,6 +616,39 @@ where
         .collect();
     candidates.sort_by(|a, b| b.1.cmp(&a.1));
     candidates
+}
+
+/// Enforce DPP's per-transition input cap on the FINAL Auto-selected input set.
+///
+/// DPP's `AddressFundsTransferTransition` v0 validator rejects the whole
+/// transition when `inputs.len() > max_address_inputs` (16 on v2/v3) with
+/// `TransitionOverMaxInputsError` — see `validate_structure` in
+/// `address_funds/address_funds_transfer_transition/v0/state_transition_validation.rs`.
+/// The Auto path produces exactly one input per selected address (the same map
+/// `transfer` then signs), so an account whose covering prefix exceeds
+/// `max_address_inputs` funded (≥ min_input) addresses would otherwise pass the
+/// submit gate, sign, then deterministically fail structure validation.
+///
+/// We ERROR rather than auto-cap: capping would change the "cover the requested
+/// output" contract (it would silently fund less than the caller asked for) and
+/// is a product decision out of scope. The typed `AddressOperation` carries
+/// consolidate/smaller-amount guidance, mirroring the withdrawal planner's
+/// `reserve_withdrawal_fee_on_largest_input` input-count cap.
+fn enforce_max_address_inputs(
+    selected: &BTreeMap<PlatformAddress, Credits>,
+    platform_version: &PlatformVersion,
+) -> Result<(), PlatformWalletError> {
+    let max_address_inputs = platform_version.dpp.state_transitions.max_address_inputs as usize;
+    if selected.len() > max_address_inputs {
+        return Err(PlatformWalletError::AddressOperation(format!(
+            "Too many funded addresses to cover this transfer at once: {} addresses are \
+             needed but the protocol allows at most {} inputs per transfer. Consolidate \
+             funds onto fewer addresses, or send a smaller amount.",
+            selected.len(),
+            max_address_inputs
+        )));
+    }
+    Ok(())
 }
 
 /// Classify why no candidate survived the filter. Returns `None` when no
@@ -1208,6 +1178,7 @@ mod auto_select_tests {
     use dpp::address_funds::AddressWitness;
     use dpp::state_transition::address_funds_transfer_transition::v0::AddressFundsTransferTransitionV0;
     use dpp::state_transition::StateTransitionStructureValidation;
+    use dpp::version::LATEST_PLATFORM_VERSION;
     fn p2pkh(byte: u8) -> PlatformAddress {
         PlatformAddress::P2pkh([byte; 20])
     }
@@ -1530,6 +1501,53 @@ mod auto_select_tests {
             select_inputs_deduct_from_input(Vec::new(), &outputs, 1_000_000, &fee_strategy, pv)
                 .expect_err("expected error for empty candidates");
         assert!(matches!(err, PlatformWalletError::AddressOperation(_)));
+    }
+
+    /// A covering input set larger than `max_address_inputs` must NOT be
+    /// shippable: DPP's v0 validator rejects the whole transition with
+    /// `TransitionOverMaxInputsError` once `inputs.len()` exceeds the cap. The
+    /// Auto path uses one input per selected address, so the
+    /// `enforce_max_address_inputs` gate (called in `auto_select_inputs` after
+    /// the selector returns) must surface this as a typed "too many inputs"
+    /// error rather than letting `transfer` sign a guaranteed-rejected
+    /// transition. Mirrors withdrawal's `plan_more_than_max_inputs_cant_fund`.
+    /// We build the final selected map directly (one input per address, one
+    /// more than the cap) since the gate operates on the post-selection set.
+    #[test]
+    fn auto_select_more_than_max_inputs_cant_fund() {
+        let pv = LATEST_PLATFORM_VERSION;
+        let max_inputs = pv.dpp.state_transitions.max_address_inputs as usize;
+
+        // One input per address, one more than the cap. The amounts are
+        // irrelevant to the count cap — only `selected.len()` matters.
+        let mut selected: BTreeMap<PlatformAddress, Credits> = BTreeMap::new();
+        for i in 0..=max_inputs {
+            selected.insert(p2pkh(i as u8), 1_000_000u64);
+        }
+        assert_eq!(
+            selected.len(),
+            max_inputs + 1,
+            "test setup: must hold one more input than the cap"
+        );
+
+        let err = enforce_max_address_inputs(&selected, pv)
+            .expect_err("more than max_address_inputs selected inputs must not be fundable");
+        match err {
+            PlatformWalletError::AddressOperation(msg) => assert!(
+                msg.contains("at most") && msg.contains("inputs"),
+                "expected a too-many-inputs message, got: {msg}"
+            ),
+            other => panic!("expected AddressOperation too-many-inputs, got {other:?}"),
+        }
+
+        // Exactly at the cap must pass the gate (boundary check).
+        let mut at_cap: BTreeMap<PlatformAddress, Credits> = BTreeMap::new();
+        for i in 0..max_inputs {
+            at_cap.insert(p2pkh(i as u8), 1_000_000u64);
+        }
+        assert_eq!(at_cap.len(), max_inputs);
+        enforce_max_address_inputs(&at_cap, pv)
+            .expect("an input set exactly at the cap must be allowed");
     }
 
     /// `total_output < min_input_amount` is unsatisfiable. The selector must
@@ -1991,101 +2009,10 @@ mod auto_select_tests {
         assert!(matches!(err, PlatformWalletError::AddressOperation(_)));
     }
 
-    /// CMT-002: `transfer_address_funds` returns address info for the full
-    /// `inputs ∪ outputs` set, including external recipients. The persistence
-    /// builder must keep entries for wallet-owned addresses only — persisting
-    /// a recipient under a fabricated derivation index would poison the
-    /// account's address map on restore.
-    #[test]
-    fn persistence_filter_drops_external_recipients() {
-        use dash_sdk::query_types::AddressInfo;
-
-        let wallet_id = [0xAAu8; 32];
-        let account_index = 0u32;
-
-        let owned_input = PlatformP2PKHAddress::new([0x01; 20]);
-        // External recipient — not in `owned`.
-        let external_recipient_hash = [0xEE; 20];
-        let external_recipient = PlatformAddress::P2pkh(external_recipient_hash);
-        let owned_input_addr = PlatformAddress::P2pkh([0x01; 20]);
-
-        // Wallet's derived pool: only the input address.
-        let mut owned: BTreeMap<PlatformP2PKHAddress, u32> = BTreeMap::new();
-        owned.insert(owned_input, 7);
-
-        // The proved address-info set drive returns spans inputs ∪ outputs.
-        // We model the input fully consumed (balance = 0, nonce bumped) and
-        // the external recipient receiving credits.
-        let input_info = AddressInfo {
-            address: owned_input_addr,
-            nonce: 1,
-            balance: 0,
-        };
-        let recipient_info = AddressInfo {
-            address: external_recipient,
-            nonce: 0,
-            balance: 5_000_000,
-        };
-        let address_infos: BTreeMap<PlatformAddress, Option<AddressInfo>> = [
-            (owned_input_addr, Some(input_info)),
-            (external_recipient, Some(recipient_info)),
-        ]
-        .into_iter()
-        .collect();
-
-        let entries = build_transfer_persistence_entries(
-            wallet_id,
-            account_index,
-            &owned,
-            address_infos.iter().map(|(a, i)| (a, i.as_ref())),
-        );
-
-        assert_eq!(entries.len(), 1, "external recipient must be filtered out");
-        let entry = &entries[0];
-        assert_eq!(entry.wallet_id, wallet_id);
-        assert_eq!(entry.account_index, account_index);
-        assert_eq!(entry.address, owned_input);
-        assert_eq!(
-            entry.address_index, 7,
-            "owned address must keep its real derivation index"
-        );
-        assert_eq!(entry.funds.balance, 0);
-        assert_eq!(entry.funds.nonce, 1);
-        assert!(
-            !entries
-                .iter()
-                .any(|e| e.address == PlatformP2PKHAddress::new(external_recipient_hash)),
-            "external recipient must not appear in any entry",
-        );
-    }
-
-    /// Missing per-address info defaults to zero balance / zero nonce — this
-    /// is the on-chain post-transition state for a fully consumed input that
-    /// drive elided from the proved set.
-    #[test]
-    fn persistence_filter_treats_missing_info_as_zero() {
-        let wallet_id = [0xBBu8; 32];
-        let account_index = 3u32;
-        let owned_addr = PlatformP2PKHAddress::new([0x42; 20]);
-        let owned_platform = PlatformAddress::P2pkh([0x42; 20]);
-
-        let mut owned: BTreeMap<PlatformP2PKHAddress, u32> = BTreeMap::new();
-        owned.insert(owned_addr, 11);
-
-        let address_infos: BTreeMap<PlatformAddress, Option<dash_sdk::query_types::AddressInfo>> =
-            [(owned_platform, None)].into_iter().collect();
-
-        let entries = build_transfer_persistence_entries(
-            wallet_id,
-            account_index,
-            &owned,
-            address_infos.iter().map(|(a, i)| (a, i.as_ref())),
-        );
-        assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].funds.balance, 0);
-        assert_eq!(entries[0].funds.nonce, 0);
-        assert_eq!(entries[0].address_index, 11);
-    }
+    // The `inputs ∪ outputs` translation (external-recipient filtering,
+    // missing-info-as-zero) now lives in the shared reconciliation seam —
+    // see `build_entries_drops_unresolved_and_zeroes_missing_info` in
+    // `provider.rs`.
 
     /// Signer used only by tests that exercise paths which short-circuit
     /// before any signing happens. Never produces a signature.

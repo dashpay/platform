@@ -816,6 +816,21 @@ impl Drop for SqlitePersister {
 }
 
 impl PlatformWalletPersistence for SqlitePersister {
+    /// Durability attestation for the security-sensitive flows gated on
+    /// [`PlatformWalletPersistence::persists_durably`] (e.g. DashPay
+    /// invitation creation, which must never re-export a bearer voucher key
+    /// after a restart).
+    ///
+    /// `true` in both flush modes: the trait contract is "state survives a
+    /// process restart once `store` + `flush` return `Ok`", and `flush`
+    /// always writes through in one SQLite transaction —
+    /// [`FlushMode::Immediate`] is durable at `store`, [`FlushMode::Manual`]
+    /// at the explicit `flush` the gated flows already perform before
+    /// anything irreversible.
+    fn persists_durably(&self) -> bool {
+        true
+    }
+
     /// Merge `changeset` into the per-wallet buffer.
     ///
     /// Durability matrix:
@@ -1060,6 +1075,15 @@ fn apply_changeset_to_tx(
     if !cs.account_address_pools.is_empty() {
         schema::accounts::apply_pools(tx, wallet_id, &cs.account_address_pools)?;
     }
+    if !cs.pending_contact_crypto_added.is_empty() || !cs.pending_contact_crypto_cleared.is_empty()
+    {
+        schema::pending_contact_crypto::apply_pending_contact_crypto(
+            tx,
+            wallet_id,
+            &cs.pending_contact_crypto_added,
+            &cs.pending_contact_crypto_cleared,
+        )?;
+    }
     if let Some(core) = cs.core.as_ref() {
         schema::core_state::apply(tx, wallet_id, core)?;
     }
@@ -1077,6 +1101,9 @@ fn apply_changeset_to_tx(
     }
     if let Some(locks) = cs.asset_locks.as_ref() {
         schema::asset_locks::apply(tx, wallet_id, locks)?;
+    }
+    if let Some(invitations) = cs.invitations.as_ref() {
+        schema::invitations::apply(tx, wallet_id, invitations)?;
     }
     if let Some(balances) = cs.token_balances.as_ref() {
         schema::token_balances::apply(tx, wallet_id, balances)?;

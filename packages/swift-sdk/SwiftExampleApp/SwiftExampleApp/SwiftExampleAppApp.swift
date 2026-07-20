@@ -17,6 +17,26 @@ import SwiftDashSDK
 final class AppUIState: ObservableObject {
     /// Whether the detailed sync banner should be shown on the Wallets tab.
     @Published var showWalletsSyncDetails: Bool = true
+
+    /// Root tab selection. Lives here (not as ContentView @State) so views
+    /// deep inside other tabs' navigation stacks can deep-link — e.g.
+    /// IdentityDetailView's "Contacts" row jumps to the DashPay tab with
+    /// that identity pre-selected.
+    @Published var selectedTab: RootTab = .sync
+
+    /// A `dashpay://invite?data=…` link opened via `.onOpenURL`, awaiting the
+    /// DashPay tab to pick it up and present the claim sheet pre-filled. Cleared
+    /// by the tab once consumed. (The URL embeds a one-time voucher key — treat
+    /// it as a secret; never log it.)
+    @Published var pendingInviteURL: String?
+
+    /// Whether an invitation claim is currently in flight. Set by
+    /// `ClaimInvitationSheet` around its claim task; observed by
+    /// `DashPayTabView` so a second invite link arriving mid-claim DEFERS
+    /// (stays in `pendingInviteURL`) instead of re-presenting the sheet —
+    /// replacing the sheet would orphan the running claim task and let a
+    /// second claim race the first for the same unused identity index.
+    @Published var invitationClaimInFlight = false
 }
 
 @main
@@ -52,6 +72,11 @@ struct SwiftExampleAppApp: App {
     @State private var isInitialized = false
     @State private var bootstrapError: Error?
     @State private var bootstrapTask: Task<Void, Never>?
+
+    /// Guards the launch-time Core SPV auto-start so it fires at most
+    /// once per process, even if `bootstrap()` re-runs via
+    /// `retryBootstrap`.
+    @State private var didAutoStartCoreSpv = false
 
     /// Resolver that backs the platform-wallet-ffi `MnemonicResolverHandle`
     /// for shielded wallet binding. Reuses the default `WalletStorage`
@@ -120,6 +145,15 @@ struct SwiftExampleAppApp: App {
                 .environmentObject(transitionState)
                 .environmentObject(appUIState)
                 .environment(\.modelContext, modelContainer.mainContext)
+                .onOpenURL { url in
+                    // DashPay invitation deep link: route to the DashPay tab and
+                    // hand the URL to the claim sheet. The URL carries a bearer
+                    // voucher key, so it is NOT logged here.
+                    guard url.scheme?.lowercased() == "dashpay",
+                          url.host?.lowercased() == "invite" else { return }
+                    appUIState.selectedTab = .dashpay
+                    appUIState.pendingInviteURL = url.absoluteString
+                }
                 .task {
                     SDKLogger.log("🚀 SwiftExampleApp: Starting initialization...", minimumLevel: .medium)
                     await bootstrap()
@@ -208,6 +242,7 @@ struct SwiftExampleAppApp: App {
             do {
                 try walletManager.stopPlatformAddressSync()
                 try walletManager.stopShieldedSync()
+                try walletManager.stopDashPaySync()
             } catch {
                 SDKLogger.error(
                     "Failed to stop sync coordinators: \(error.localizedDescription)"
@@ -244,12 +279,125 @@ struct SwiftExampleAppApp: App {
                 network: platformState.currentNetwork,
                 resolver: shieldedResolver
             )
+
+            // Engine-bind every OTHER loaded wallet into the shared
+            // network-scoped shielded coordinator. `firstWallet` above
+            // already drives the UI mirror AND its own engine
+            // registration via `bind(...)`; this loop registers the
+            // remaining wallets so a single shielded sync pass
+            // trial-decrypts against the union of every wallet's viewing
+            // keys (SH-14/15/16 cross-wallet flows). Each bind is
+            // best-effort + independent — one wallet's missing mnemonic
+            // must not block the others. Reading each mnemonic is a
+            // device-unlock-only keychain read (no biometric prompt), so
+            // eager binding at startup is safe. The iteration seam is a
+            // pure free function (`engineBindOtherWallets`) so its
+            // "visit every non-mirror wallet" contract can be
+            // unit-tested without a configured manager.
+            //
+            // Runs BEFORE the shielded/DashPay start calls below:
+            // engine-binding must not depend on those fallible calls — a
+            // throw there (e.g. `startShieldedSync` failing) must not
+            // leave the non-mirror wallets unbound for the rest of the
+            // session.
+            engineBindOtherWallets(
+                allWalletIds: walletManager.wallets.keys,
+                mirrorWalletId: wallet.walletId
+            ) { otherWalletId in
+                shieldedService.bindEngine(
+                    walletManager: walletManager,
+                    walletId: otherWalletId,
+                    network: platformState.currentNetwork,
+                    resolver: shieldedResolver
+                )
+            }
+
             if try !walletManager.isShieldedSyncRunning() {
                 try walletManager.startShieldedSync()
+            }
+
+            // DashPay contact-request + profile sweep (background
+            // loop). Wallet-driven — every registered wallet is swept
+            // each pass — so manager scope is the right place to start
+            // it, same as the address / shielded loops above.
+            // Idempotent: starting while running is a no-op.
+            if try !walletManager.isDashPaySyncRunning() {
+                try walletManager.startDashPaySync()
             }
         } catch {
             SDKLogger.error(
                 "Failed to bind wallet-scoped services: \(error.localizedDescription)"
+            )
+        }
+    }
+
+    /// Auto-start Core SPV sync for the launch network. The gate matrix
+    /// (once-per-launch latch / wallet-gated / no-double-start) lives in
+    /// the pure `CoreSpvAutoStart.decision` so it can be unit-tested; see
+    /// its doc for why a no-wallets launch doesn't latch but an
+    /// already-running client does.
+    ///
+    /// `CoreSpvLauncher.start` is `async` (it resolves peers off the main
+    /// actor), so we **latch before the first `await`**: the latch write
+    /// happens synchronously on the main actor, closing the window where
+    /// a concurrent `bootstrap` (e.g. `retryBootstrap` overlapping the
+    /// original `.task`) could pass the gate during the off-main peer
+    /// resolution and double-start.
+    ///
+    /// Best-effort: a start failure is logged, never fatal — it must not
+    /// propagate into `bootstrap`'s catch and trip the error UI.
+    @MainActor
+    private func autoStartCoreSpvIfNeeded() async {
+        let network = platformState.currentNetwork
+        let manager = walletManager
+        let store = walletManagerStore
+        let decision = CoreSpvAutoStart.decision(
+            alreadyLatched: didAutoStartCoreSpv,
+            hasWallets: !manager.wallets.isEmpty,
+            spvRunning: manager.spvIsRunning
+        )
+        if decision.shouldLatch { didAutoStartCoreSpv = true }
+        guard decision.shouldStart else { return }
+
+        // Symmetry with the Start button's "latest wins": supersede any
+        // prior in-flight start, then capture our own fresh generation
+        // synchronously before the await. The latch above already prevents
+        // auto-start from arming twice, so this is belt-and-suspenders —
+        // done only on the shouldStart path so a bail (e.g. already
+        // running) never bumps the generation and cancels a legitimate
+        // pending start.
+        store.invalidatePendingSpvStarts()
+        let generation = store.spvStartGeneration
+
+        do {
+            try await CoreSpvLauncher.start(
+                network: network,
+                on: manager,
+                stillCurrent: {
+                    store.spvStartGeneration == generation
+                        && store.activeManager === manager
+                }
+            )
+            SDKLogger.log(
+                "🟢 Auto-started Core SPV sync for " + network.displayName,
+                minimumLevel: .medium
+            )
+        } catch is CancellationError {
+            // A network switch / SDK rebuild superseded this start during
+            // the peer lookup. The latch stays set (set before the await);
+            // we deliberately do NOT unlatch. Auto-start is a
+            // once-per-launch bootstrap step, so it does NOT re-fire for
+            // the newly-selected network — the user starts that network's
+            // Core SPV from the Sync tab's Start button. (The
+            // platform/shielded/DashPay loops for the new network are
+            // handled separately by `rebindWalletScopedServices`.)
+            SDKLogger.log(
+                "ℹ️ Core SPV auto-start superseded by a network switch",
+                minimumLevel: .medium
+            )
+        } catch {
+            SDKLogger.error(
+                "Auto-start Core SPV sync failed: \(error.localizedDescription)"
             )
         }
     }
@@ -309,7 +457,19 @@ struct SwiftExampleAppApp: App {
                 rebindWalletScopedServices()
             }
 
+            // Unlock the UI first, then kick off Core SPV sync for the
+            // launch network so the user doesn't have to tap Start on the
+            // Sync tab. Auto-start runs AFTER the unlock because it's
+            // best-effort (all errors handled internally, so it can't trip
+            // `bootstrapError`) and its devnet peer discovery can block
+            // ~6 s off the main actor — no reason to make the first render
+            // wait on it. It self-gates on wallet presence, so it no-ops
+            // when the SDK path above didn't activate a manager. A user who
+            // races a manual Start the instant the UI unlocks is safe: both
+            // starts bump-then-capture the generation token, so whichever
+            // bumps last wins and the other bails (never a double-start).
             isInitialized = true
+            await autoStartCoreSpvIfNeeded()
         } catch {
             bootstrapError = error
         }

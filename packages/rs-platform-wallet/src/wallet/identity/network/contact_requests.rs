@@ -1,7 +1,5 @@
 //! DashPay contact request lifecycle: send, sync, accept, reject.
 
-use async_trait::async_trait;
-use dpp::address_funds::AddressWitness;
 use dpp::document::DocumentV0Getters;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
@@ -11,50 +9,338 @@ use dpp::identity::Identity;
 use dpp::identity::IdentityPublicKey;
 use dpp::identity::KeyType;
 use dpp::identity::SecurityLevel;
-use dpp::platform_value::BinaryData;
 use dpp::platform_value::Value;
 use dpp::prelude::Identifier;
-use dpp::ProtocolError;
-use key_wallet::account::AccountType;
 
-use dash_sdk::platform::dashpay::EcdhProvider;
-
+use super::contacts::{ExternalAccountRegistration, RegisterExternalError};
+use super::sdk_writer::SendContactRequestParams;
 use super::*;
 use crate::broadcaster::TransactionBroadcaster;
 use crate::error::PlatformWalletError;
 use crate::wallet::identity::types::dashpay::contact_request::ContactRequest;
 use crate::wallet::identity::types::dashpay::established_contact::EstablishedContact;
-use dash_sdk::platform::dashpay::SendContactRequestInput;
 
-// Borrowed-signer adapter — see `dpns.rs` for the pattern.
-struct SignerRef<'a, S: ?Sized>(&'a S);
+// ---------------------------------------------------------------------------
+// Deferred-crypto drain provider
+// ---------------------------------------------------------------------------
 
-impl<'a, S: ?Sized> std::fmt::Debug for SignerRef<'a, S> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("SignerRef")
+/// Supplies the wallet-HD key material the seedless contact-crypto paths need
+/// (the deferred-crypto drain AND the live send/accept flow), without
+/// platform-wallet naming the concrete Keychain signer (`MnemonicResolverCoreSigner`
+/// lives in `rs-sdk-ffi`, which platform-wallet does not depend on). The glue
+/// crate implements this over the resolver-backed signer; tests implement it
+/// with canned values. All methods take a **Rust-built** derivation path —
+/// path provenance stays in Rust (the host derives at exactly the path it is
+/// handed), and no private scalar ever crosses back into platform-wallet.
+#[async_trait::async_trait]
+pub trait ContactCryptoProvider {
+    /// Extended public key at `path` (a generic derive-at-path): the DashPay
+    /// receiving (friendship) xpub, and also the seed-binding self-check's
+    /// BIP44 account-0 xpub ([`crate::PlatformWallet::verify_seed_binds`]).
+    async fn receiving_xpub(
+        &self,
+        path: &key_wallet::bip32::DerivationPath,
+    ) -> Result<key_wallet::bip32::ExtendedPubKey, PlatformWalletError>;
+
+    /// ECDH shared secret between our key at `path` and the contact's `peer`
+    /// pubkey. Returned in [`zeroize::Zeroizing`] so the DIP-15 friendship AES
+    /// key is scrubbed on drop — it stays wrapped through the send / accept /
+    /// drain flows and is only dereferenced at the final crypto boundary.
+    async fn ecdh_shared_secret(
+        &self,
+        path: &key_wallet::bip32::DerivationPath,
+        peer: &dashcore::secp256k1::PublicKey,
+    ) -> Result<zeroize::Zeroizing<[u8; 32]>, PlatformWalletError>;
+
+    /// Export the raw **auto-accept private key** at `path` (DIP-15 QR
+    /// auto-accept) — the **one deliberate exception** to "the signer never
+    /// returns a raw scalar." The auto-accept key is a shareable, expiry-bounded
+    /// bearer credential the owner embeds in a QR (`dapk`), so it must leave the
+    /// signer. `path` MUST be an auto-accept path (`m/9'/coin'/16'/expiry'`); the
+    /// only caller is [`IdentityWallet::build_auto_accept_qr`], which builds it
+    /// via `auto_accept_derivation_path`. The key authorizes only contact
+    /// auto-acceptance — never payments or identity control.
+    async fn export_auto_accept_private_key(
+        &self,
+        path: &key_wallet::bip32::DerivationPath,
+    ) -> Result<dashcore::secp256k1::SecretKey, PlatformWalletError>;
+
+    /// Export the raw **invitation-funding private key** at `path` (DIP-13
+    /// sub-feature `3'`) — the second deliberate raw-key export (alongside
+    /// [`Self::export_auto_accept_private_key`]). The invitation hands this
+    /// one-time voucher key to the invitee so they can register their own
+    /// identity from the funded asset lock, so it must leave the signer. `path`
+    /// MUST be an invitation path (`m/9'/coin'/5'/3'/funding_index'`); the signer
+    /// gates on the full shape (feature `5'` is shared with the user's own
+    /// identity keys — see `export_invitation_private_key` on the resolver
+    /// signer). The only caller is [`IdentityWallet::create_invitation`].
+    ///
+    /// Defaulted to an "unsupported" error so adding this method is not a
+    /// source-breaking change for existing provider implementations:
+    /// providers that never create invitations need no override, and a
+    /// create attempted through one fails loudly (the invitation cannot be
+    /// packaged without the exported key) rather than at compile time.
+    /// Invitation-capable providers override with the path-gated export.
+    async fn export_invitation_private_key(
+        &self,
+        _path: &key_wallet::bip32::DerivationPath,
+    ) -> Result<dashcore::secp256k1::SecretKey, PlatformWalletError> {
+        Err(PlatformWalletError::InvalidIdentityData(
+            "invitation private-key export is not supported by this crypto provider".to_string(),
+        ))
+    }
+
+    /// DIP-15 `accountReference` for a send: the scalar at `path` (the sender's
+    /// encryption key) keys the HMAC+mask over `compact_xpub`. Computed in the
+    /// signer so the raw scalar never returns to platform-wallet.
+    async fn account_reference(
+        &self,
+        path: &key_wallet::bip32::DerivationPath,
+        compact_xpub: &[u8],
+        account_index: u32,
+        version: u32,
+    ) -> Result<u32, PlatformWalletError>;
+
+    /// Inverse of [`Self::account_reference`] — recover `(version, account_index)`
+    /// from a masked reference using the same in-signer scalar at `path`. Used
+    /// on re-send to read the previous rotation version.
+    async fn unmask_account_reference(
+        &self,
+        path: &key_wallet::bip32::DerivationPath,
+        compact_xpub: &[u8],
+        account_reference: u32,
+    ) -> Result<(u32, u32), PlatformWalletError>;
+
+    /// DIP-15 contactInfo **seal** — encrypt the contact id (`encToUserId`,
+    /// AES-256-ECB) and the private-data plaintext (`privateData`, AES-256-CBC
+    /// with `private_data_iv`) under the two hardened-child keys derived from
+    /// `root_path` (the identity-auth path; the signer extends it internally with
+    /// the DIP-15 `65536'`/`65537'` feature children + `derivation_index'`). The
+    /// AES keys + scalars stay in the signer; only ciphertext returns.
+    ///
+    /// `root_path` MUST be built in Rust via `identity_auth_derivation_path_for_type`
+    /// (never assembled by the host) — a wrong root silently produces contactInfo
+    /// no client can decrypt.
+    async fn contact_info_seal(
+        &self,
+        root_path: &key_wallet::bip32::DerivationPath,
+        derivation_index: u32,
+        contact_id: &[u8; 32],
+        private_data_plaintext: &[u8],
+        private_data_iv: &[u8; 16],
+    ) -> Result<ContactInfoSealed, PlatformWalletError>;
+
+    /// Inverse of [`Self::contact_info_seal`] — recover the contact id +
+    /// private-data plaintext from the on-chain ciphertexts at `root_path` /
+    /// `derivation_index`.
+    async fn contact_info_open(
+        &self,
+        root_path: &key_wallet::bip32::DerivationPath,
+        derivation_index: u32,
+        enc_to_user_id: &[u8; 32],
+        private_data_blob: &[u8],
+    ) -> Result<ContactInfoOpened, PlatformWalletError>;
+}
+
+/// Result of [`ContactCryptoProvider::contact_info_seal`] — the two DIP-15
+/// contactInfo ciphertexts to publish on chain.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ContactInfoSealed {
+    /// `encToUserId` ciphertext (AES-256-ECB of the 32-byte contact id).
+    pub enc_to_user_id: [u8; 32],
+    /// `privateData` ciphertext (`iv ‖ AES-256-CBC`).
+    pub private_data: Vec<u8>,
+}
+
+/// Result of [`ContactCryptoProvider::contact_info_open`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ContactInfoOpened {
+    /// The recovered 32-byte contact id (the `toUserId` this doc is about).
+    pub contact_id: [u8; 32],
+    /// The recovered `privateData` plaintext (DIP-15 codec applied by the caller).
+    pub private_data: Vec<u8>,
+}
+
+/// Test [`ContactCryptoProvider`] that derives from a resident test seed via
+/// `key_wallet` — the seedless-test stand-in for the production Keychain signer.
+/// It derives at exactly the Rust-built paths the production glue feeds, so a
+/// test wired through this provider exercises the same key material the resident
+/// seed would have produced, with no resident seed on the wallet under test —
+/// faithful, unlike the canned/stub providers used by the queue-mechanics
+/// drain tests.
+#[cfg(test)]
+pub(crate) struct SeedCryptoProvider {
+    wallet: key_wallet::wallet::Wallet,
+}
+
+#[cfg(test)]
+impl SeedCryptoProvider {
+    pub(crate) fn from_seed(seed: [u8; 64], network: key_wallet::Network) -> Self {
+        use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+        use key_wallet::wallet::Wallet;
+        Self {
+            wallet: Wallet::from_seed_bytes(seed, network, WalletAccountCreationOptions::None)
+                .expect("test seed wallet"),
+        }
     }
 }
 
-#[async_trait]
-impl<'a, K, S> Signer<K> for SignerRef<'a, S>
-where
-    K: Send + Sync,
-    S: Signer<K> + ?Sized + Send + Sync,
-{
-    async fn sign(&self, key: &K, data: &[u8]) -> Result<BinaryData, ProtocolError> {
-        self.0.sign(key, data).await
-    }
-
-    async fn sign_create_witness(
+#[cfg(test)]
+#[async_trait::async_trait]
+impl ContactCryptoProvider for SeedCryptoProvider {
+    async fn receiving_xpub(
         &self,
-        key: &K,
-        data: &[u8],
-    ) -> Result<AddressWitness, ProtocolError> {
-        self.0.sign_create_witness(key, data).await
+        path: &key_wallet::bip32::DerivationPath,
+    ) -> Result<key_wallet::bip32::ExtendedPubKey, PlatformWalletError> {
+        self.wallet.derive_extended_public_key(path).map_err(|e| {
+            PlatformWalletError::InvalidIdentityData(format!("test receiving_xpub: {e}"))
+        })
     }
 
-    fn can_sign_with(&self, key: &K) -> bool {
-        self.0.can_sign_with(key)
+    async fn ecdh_shared_secret(
+        &self,
+        path: &key_wallet::bip32::DerivationPath,
+        peer: &dashcore::secp256k1::PublicKey,
+    ) -> Result<zeroize::Zeroizing<[u8; 32]>, PlatformWalletError> {
+        let xprv = self.wallet.derive_extended_private_key(path).map_err(|e| {
+            PlatformWalletError::InvalidIdentityData(format!("test ecdh derive: {e}"))
+        })?;
+        Ok(zeroize::Zeroizing::new(
+            platform_encryption::derive_shared_key_ecdh(&xprv.private_key, peer),
+        ))
+    }
+
+    async fn export_auto_accept_private_key(
+        &self,
+        path: &key_wallet::bip32::DerivationPath,
+    ) -> Result<dashcore::secp256k1::SecretKey, PlatformWalletError> {
+        let xprv = self.wallet.derive_extended_private_key(path).map_err(|e| {
+            PlatformWalletError::InvalidIdentityData(format!("test export auto-accept: {e}"))
+        })?;
+        Ok(xprv.private_key)
+    }
+
+    async fn export_invitation_private_key(
+        &self,
+        path: &key_wallet::bip32::DerivationPath,
+    ) -> Result<dashcore::secp256k1::SecretKey, PlatformWalletError> {
+        let xprv = self.wallet.derive_extended_private_key(path).map_err(|e| {
+            PlatformWalletError::InvalidIdentityData(format!("test export invitation: {e}"))
+        })?;
+        Ok(xprv.private_key)
+    }
+
+    async fn account_reference(
+        &self,
+        path: &key_wallet::bip32::DerivationPath,
+        compact_xpub: &[u8],
+        account_index: u32,
+        version: u32,
+    ) -> Result<u32, PlatformWalletError> {
+        let xprv = self.wallet.derive_extended_private_key(path).map_err(|e| {
+            PlatformWalletError::InvalidIdentityData(format!("test accountRef derive: {e}"))
+        })?;
+        Ok(platform_encryption::calculate_account_reference(
+            &xprv.private_key.secret_bytes(),
+            compact_xpub,
+            account_index,
+            version,
+        ))
+    }
+
+    async fn unmask_account_reference(
+        &self,
+        path: &key_wallet::bip32::DerivationPath,
+        compact_xpub: &[u8],
+        account_reference: u32,
+    ) -> Result<(u32, u32), PlatformWalletError> {
+        let xprv = self.wallet.derive_extended_private_key(path).map_err(|e| {
+            PlatformWalletError::InvalidIdentityData(format!("test unmask derive: {e}"))
+        })?;
+        Ok(platform_encryption::unmask_account_reference(
+            account_reference,
+            &xprv.private_key.secret_bytes(),
+            compact_xpub,
+        ))
+    }
+
+    async fn contact_info_seal(
+        &self,
+        root_path: &key_wallet::bip32::DerivationPath,
+        derivation_index: u32,
+        contact_id: &[u8; 32],
+        private_data_plaintext: &[u8],
+        private_data_iv: &[u8; 16],
+    ) -> Result<ContactInfoSealed, PlatformWalletError> {
+        let enc_key = self.contact_info_child(root_path, derivation_index, true)?;
+        let priv_key = self.contact_info_child(root_path, derivation_index, false)?;
+        Ok(ContactInfoSealed {
+            enc_to_user_id: platform_encryption::encrypt_enc_to_user_id(&enc_key, contact_id),
+            private_data: platform_encryption::encrypt_private_data(
+                &priv_key,
+                private_data_iv,
+                private_data_plaintext,
+            ),
+        })
+    }
+
+    async fn contact_info_open(
+        &self,
+        root_path: &key_wallet::bip32::DerivationPath,
+        derivation_index: u32,
+        enc_to_user_id: &[u8; 32],
+        private_data_blob: &[u8],
+    ) -> Result<ContactInfoOpened, PlatformWalletError> {
+        let enc_key = self.contact_info_child(root_path, derivation_index, true)?;
+        let priv_key = self.contact_info_child(root_path, derivation_index, false)?;
+        let private_data = platform_encryption::decrypt_private_data(&priv_key, private_data_blob)
+            .map_err(|e| {
+                PlatformWalletError::InvalidIdentityData(format!("test contactInfo decrypt: {e}"))
+            })?;
+        Ok(ContactInfoOpened {
+            contact_id: platform_encryption::decrypt_enc_to_user_id(&enc_key, enc_to_user_id),
+            private_data,
+        })
+    }
+}
+
+#[cfg(test)]
+impl SeedCryptoProvider {
+    /// Derive one DIP-15 contactInfo hardened-child AES key (`encToUserId` =
+    /// `enc=true`, `privateData` = `enc=false`) at
+    /// `root_path / feature' / derivation_index'` — mirrors the resident
+    /// `derive_contact_info_keys` so the test provider produces byte-identical
+    /// keys to the production wallet derivation.
+    fn contact_info_child(
+        &self,
+        root_path: &key_wallet::bip32::DerivationPath,
+        derivation_index: u32,
+        enc: bool,
+    ) -> Result<[u8; 32], PlatformWalletError> {
+        use crate::wallet::identity::crypto::contact_info::{
+            ENC_TO_USER_ID_CHILD, PRIVATE_DATA_CHILD,
+        };
+        use key_wallet::bip32::ChildNumber;
+        let feature = if enc {
+            ENC_TO_USER_ID_CHILD
+        } else {
+            PRIVATE_DATA_CHILD
+        };
+        let path = root_path.clone().extend([
+            ChildNumber::from_hardened_idx(feature).map_err(|e| {
+                PlatformWalletError::InvalidIdentityData(format!("test contactInfo feature: {e}"))
+            })?,
+            ChildNumber::from_hardened_idx(derivation_index).map_err(|e| {
+                PlatformWalletError::InvalidIdentityData(format!("test contactInfo index: {e}"))
+            })?,
+        ]);
+        let xprv = self
+            .wallet
+            .derive_extended_private_key(&path)
+            .map_err(|e| {
+                PlatformWalletError::InvalidIdentityData(format!("test contactInfo derive: {e}"))
+            })?;
+        Ok(xprv.private_key.secret_bytes())
     }
 }
 
@@ -62,15 +348,49 @@ where
 // Send contact request
 // ---------------------------------------------------------------------------
 
-impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
+/// How the optional DIP-15 `autoAcceptProof` is supplied to a contact-request
+/// send. The proof signs over `(sender, recipient, accountReference)`, and
+/// `accountReference` is computed **inside** the send — so the QR-scanner
+/// variant carries the handed key and is signed there, once the reference is
+/// known (binding the proof to the exact reference the document carries).
+pub enum AutoAcceptProofSource {
+    /// No proof (the normal manual flow).
+    None,
+    /// A pre-built proof blob.
+    Provided(Vec<u8>),
+    /// Sign the proof in-send with the auto-accept key decoded from a scanned
+    /// QR (`dapk`), binding it to the accountReference this send computes.
+    SignWithKey {
+        /// The auto-accept private key handed out in the QR.
+        secret_key: dashcore::secp256k1::SecretKey,
+        /// The proof's expiry (the key blob's timestamp / derivation index).
+        expiry: u32,
+    },
+}
+
+impl AutoAcceptProofSource {
+    /// Map a pre-built optional proof (the FFI / legacy shape) into a source.
+    pub fn from_option(proof: Option<Vec<u8>>) -> Self {
+        match proof {
+            Some(p) => Self::Provided(p),
+            None => Self::None,
+        }
+    }
+}
+
+impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// Send a contact request to another identity using an
     /// externally-supplied signer for the document state-transition.
     ///
     /// All parameters that can be resolved internally are resolved
     /// automatically:
     /// - **identity_index**: looked up from the local `ManagedIdentity`
-    /// - **sender_key_index**: first key with `Purpose::ENCRYPTION` on the sender
-    /// - **recipient_key_index**: first key with `Purpose::DECRYPTION` on the recipient
+    /// - **sender_key_index**: first `ECDSA_SECP256K1` `Purpose::ENCRYPTION`
+    ///   key on the sender
+    /// - **recipient_key_index**: first `ECDSA_SECP256K1` `Purpose::DECRYPTION`
+    ///   key on the recipient, falling back to the first ENCRYPTION key when
+    ///   the recipient has no DECRYPTION key (mobile cohort) — see
+    ///   [`select_recipient_key_index`]
     /// - **account_index**: defaults to `0`
     /// - **ECDH**: performed SDK-side using the sender's derived
     ///   encryption private key.
@@ -78,26 +398,26 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     /// Document signing is routed through `signer` — the
     /// architecturally correct path per `swift-sdk/CLAUDE.md`.
     ///
-    /// CAVEAT — ECDH derivation: this method still derives the
-    /// sender's ECDH private key from the wallet seed via
-    /// `derive_encryption_private_key`. Watch-only wallets (no seed
-    /// Rust-side) WILL fail at this step. A follow-up FFI is needed
-    /// to push ECDH derivation across the FFI (it's a one-shot raw
-    /// scalar derivation, not a `Signer<K>::sign` call, so it
-    /// doesn't fit the existing signer trampoline). For wallets
-    /// where the seed is in-process (the common case during this
-    /// migration sweep) this variant works end-to-end.
+    /// All wallet-HD key material — the friendship receiving xpub, the ECDH
+    /// shared secret, and the DIP-15 `accountReference` — is sourced through
+    /// `crypto` (a [`ContactCryptoProvider`], the Keychain signer in production,
+    /// canned values in tests). No resident seed is touched, so this path works
+    /// for seedless / external-signable wallets: the raw ECDH scalar stays in
+    /// the signer and only the (public) xpub, the shared secret, and the masked
+    /// reference cross back.
     #[allow(clippy::type_complexity)]
-    pub async fn send_contact_request_with_external_signer<S>(
+    pub async fn send_contact_request_with_external_signer<S, C>(
         &self,
         sender_identity_id: &Identifier,
         recipient_identity_id: &Identifier,
         account_label: Option<String>,
-        auto_accept_proof: Option<Vec<u8>>,
+        auto_accept_proof: AutoAcceptProofSource,
         signer: &S,
+        crypto: &C,
     ) -> Result<ContactRequest, PlatformWalletError>
     where
         S: Signer<IdentityPublicKey> + Send + Sync,
+        C: ContactCryptoProvider + Sync,
     {
         // 1. Retrieve the sender identity and its HD index from the
         //    local manager.
@@ -132,69 +452,157 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 .ok_or_else(|| PlatformWalletError::IdentityNotFound(*recipient_identity_id))?
         };
 
-        // 3. Resolve key indices.
-        let sender_encryption_key = sender_identity
-            .public_keys()
-            .iter()
-            .find(|(_, k)| k.purpose() == Purpose::ENCRYPTION)
-            .map(|(_, k)| k.clone())
-            .ok_or_else(|| {
-                PlatformWalletError::InvalidIdentityData(
-                    "Sender identity has no encryption key".to_string(),
-                )
-            })?;
+        // 3. Resolve key indices. The sender selects its own ENCRYPTION key
+        //    (the live convention for both cohorts); ECDSA_SECP256K1 is
+        //    required for ECDH. Shared selector — same enabled-only policy
+        //    as the contactInfo publish path, so both DashPay surfaces
+        //    agree on the ECDH root and a disabled (rotated-away) first
+        //    key can't hard-fail the pre-send validator below while an
+        //    enabled replacement exists.
+        let sender_encryption_key = select_own_encryption_key(&sender_identity)?.clone();
         let sender_key_index = sender_encryption_key.id();
 
-        let recipient_key_index = recipient_identity
-            .public_keys()
-            .iter()
-            .find(|(_, k)| k.purpose() == Purpose::DECRYPTION)
-            .map(|(id, _)| *id)
-            .ok_or_else(|| {
-                PlatformWalletError::InvalidIdentityData(
-                    "Recipient identity has no decryption key".to_string(),
-                )
-            })?;
+        let recipient_key_index = select_recipient_key_index(&recipient_identity)?;
 
-        // 4. Derive the DashPay receiving xpub + ECDH private key from
-        //    the wallet seed. NOTE: this step still requires the seed
-        //    in-process (see CAVEAT in the docstring).
+        // 3b. Gate the selected key pair through the same validator
+        //     the receive/accept paths use, BEFORE any ECDH or
+        //     broadcast. The selectors above pick plausible indices;
+        //     the validator pins the full contract (key types, not
+        //     disabled, purpose policy) so a malformed identity can't
+        //     reach the encrypt-and-broadcast stage with a key that
+        //     would poison the channel.
+        let validation = crate::wallet::identity::crypto::validation::validate_contact_request(
+            &sender_identity,
+            sender_key_index,
+            &recipient_identity,
+            recipient_key_index,
+        );
+        if !validation.is_valid {
+            return Err(PlatformWalletError::InvalidIdentityData(format!(
+                "Contact request failed pre-send validation: {}",
+                validation.errors.join("; ")
+            )));
+        }
+        for warning in &validation.warnings {
+            tracing::warn!(
+                sender = %sender_identity_id,
+                recipient = %recipient_identity_id,
+                warning,
+                "Contact request pre-send validation warning"
+            );
+        }
+
+        // 4. Derive the DashPay receiving (friendship) xpub via the signer —
+        //    no resident seed. The signer derives at exactly the Rust-built
+        //    path and returns only the (public) xpub.
+        //
+        // CONSISTENCY INVARIANT (do not break without re-checking
+        // `account_reference`): the friendship xpub path
+        // (`DashpayReceivingFunds`) is pinned to account 0, but the
+        // accountReference masks THIS `account_index` into its low 28 bits. A
+        // same-seed cross-wallet recovery un-masks the reference to learn which
+        // of our accounts the xpub belongs to — so if a future change threads a
+        // non-zero index here while the path stays at account 0, the recipient
+        // would look for the wrong account (silent, no oracle). Make the path
+        // account-aware AND add a round-trip test before relaxing this.
         let account_index: u32 = 0;
-        let (xpub_bytes, ecdh_private_key) = {
-            let wm = self.wallet_manager.read().await;
-            let wallet = wm
-                .get_wallet(&self.wallet_id)
-                .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
+        let contact_xpub_ext = self
+            .receiving_xpub_for(
+                sender_identity_id,
+                recipient_identity_id,
+                account_index,
+                crypto,
+            )
+            .await?;
+        // DIP-15 *compact* 69-byte plaintext (parentFingerprint ‖ chainCode ‖
+        // pubKey) — NOT `ExtendedPubKey::encode()`. The DashPay receiving path
+        // ends in a Normal256 child, so `encode()` is the 107-byte DIP-14
+        // serialization → 128-byte ciphertext → fails the contract's
+        // `maxItems: 96` and both reference clients' hard `len == 69` checks.
+        let xpub_bytes = platform_encryption::CompactXpub {
+            parent_fingerprint: contact_xpub_ext.parent_fingerprint.to_bytes(),
+            chain_code: contact_xpub_ext.chain_code.to_bytes(),
+            public_key: contact_xpub_ext.public_key.serialize(),
+        }
+        .to_bytes()
+        .to_vec();
 
-            let account_type = AccountType::DashpayReceivingFunds {
-                index: account_index,
-                user_identity_id: sender_identity_id.to_buffer(),
-                friend_identity_id: recipient_identity_id.to_buffer(),
+        // The sender's encryption-key derivation path. The scalar at this path
+        // keys BOTH the ECDH shared secret (step 6) and the accountReference
+        // mask (step 4b); the signer derives at exactly this path and the raw
+        // scalar never returns here.
+        let sender_enc_path = IdentityWallet::<B>::identity_auth_derivation_path(
+            self.sdk.network,
+            key_wallet::bip32::KeyDerivationType::ECDSA,
+            identity_index,
+            sender_encryption_key.id(),
+        )?;
+
+        // 4b. Mask the accountReference per DIP-15: the low 28
+        //     bits are the account index XOR'd with a PRF of the
+        //     compact xpub keyed by our ECDH private key; the top 4
+        //     bits carry the rotation version. The version starts at 0
+        //     and bumps past the previous sent request's version when
+        //     re-sending to the same recipient — the contract's unique
+        //     index `($ownerId, toUserId, accountReference)` rejects an
+        //     identical resend, so the bump is what makes a superseding
+        //     (rotation) request broadcastable. The HMAC+mask runs in the
+        //     signer (keyed by the raw scalar at `sender_enc_path`).
+        let account_reference = {
+            let prior_reference = {
+                let wm = self.wallet_manager.read().await;
+                wm.get_wallet_info(&self.wallet_id)
+                    .and_then(|info| info.identity_manager.managed_identity(sender_identity_id))
+                    // Checks both the pending sent map AND the established
+                    // contact's outgoing request — see the method doc for
+                    // why consulting only the pending map breaks rotation
+                    // on established contacts.
+                    .and_then(|managed| managed.prior_sent_account_reference(recipient_identity_id))
             };
-            let account_path = account_type
-                .derivation_path(self.sdk.network)
-                .map_err(|err| {
-                    PlatformWalletError::InvalidIdentityData(format!(
-                        "Failed to derive DashPay receiving account path: {err}"
-                    ))
-                })?;
-            let account_xpub = wallet
-                .derive_extended_public_key(&account_path)
-                .map_err(|err| {
-                    PlatformWalletError::InvalidIdentityData(format!(
-                        "Failed to derive DashPay receiving account xpub: {err}"
-                    ))
-                })?;
-            let xpub = account_xpub.encode();
+            let previous_version = match prior_reference {
+                Some(prior) => Some(
+                    crypto
+                        .unmask_account_reference(&sender_enc_path, &xpub_bytes, prior)
+                        .await?
+                        .0,
+                ),
+                None => None,
+            };
+            let version = match previous_version {
+                // 4-bit field; saturate rather than wrap so a 16th
+                // rotation fails loudly at the unique index instead of
+                // silently colliding with version 0.
+                Some(v) if v >= 15 => {
+                    tracing::warn!(
+                        recipient = %recipient_identity_id,
+                        "accountReference rotation version saturated at 15"
+                    );
+                    15
+                }
+                Some(v) => v + 1,
+                None => 0,
+            };
+            crypto
+                .account_reference(&sender_enc_path, &xpub_bytes, account_index, version)
+                .await?
+        };
 
-            let ecdh_key = Self::derive_encryption_private_key(
-                wallet,
-                self.sdk.network,
-                identity_index,
-                &sender_encryption_key,
-            )?;
-
-            (xpub, ecdh_key)
+        // 4c. Resolve the auto-accept proof now that `account_reference` is
+        //     known. The QR-scanner variant signs `(sender, recipient,
+        //     account_reference)` here with the handed key, binding the proof to
+        //     the exact reference this document carries.
+        let auto_accept_proof: Option<Vec<u8>> = match auto_accept_proof {
+            AutoAcceptProofSource::None => None,
+            AutoAcceptProofSource::Provided(p) => Some(p),
+            AutoAcceptProofSource::SignWithKey { secret_key, expiry } => Some(
+                crate::wallet::identity::crypto::auto_accept::sign_auto_accept_proof(
+                    &secret_key,
+                    sender_identity_id,
+                    recipient_identity_id,
+                    account_reference,
+                    expiry,
+                ),
+            ),
         };
 
         // 5. Build the signing key reference for document signing.
@@ -217,73 +625,101 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 )
             })?;
 
-        // 6. Build SDK input. Wrap the borrowed signer in `SignerRef`
-        //    so it satisfies the owned-by-bound `Signer<IdentityPublicKey>`
-        //    requirement on `SendContactRequestInput`.
-        let contact_request_input = dash_sdk::platform::dashpay::ContactRequestInput {
-            sender_identity: sender_identity.clone(),
-            recipient: dash_sdk::platform::dashpay::RecipientIdentity::Identity(recipient_identity),
-            sender_key_index,
-            recipient_key_index,
-            account_reference: account_index,
-            account_label,
-            auto_accept_proof,
-        };
-
-        let send_input = SendContactRequestInput {
-            contact_request: contact_request_input,
-            identity_public_key,
-            signer: SignerRef(signer),
-        };
-
-        let expected_key_id = sender_key_index;
-        let ecdh_provider: EcdhProvider<
-            _,
-            _,
-            fn(
-                &dashcore::secp256k1::PublicKey,
-            ) -> std::future::Ready<Result<[u8; 32], dash_sdk::Error>>,
-            _,
-        > = EcdhProvider::SdkSide {
-            get_private_key: move |key: &IdentityPublicKey, _index: u32| {
-                let pk = ecdh_private_key;
-                let actual_key_id = key.id();
-                async move {
-                    if actual_key_id != expected_key_id {
-                        return Err(dash_sdk::Error::Generic(format!(
-                            "ECDH key mismatch: expected key {}, got {}",
-                            expected_key_id, actual_key_id
-                        )));
-                    }
-                    Ok(pk)
-                }
-            },
-        };
-
-        let xpub_bytes_clone = xpub_bytes.clone();
-        let result = self
-            .sdk
-            .send_contact_request(send_input, ecdh_provider, |_account_ref: u32| async move {
-                Ok::<Vec<u8>, dash_sdk::Error>(xpub_bytes_clone)
-            })
-            .await
-            .map_err(|e| {
+        // 6. Client-side ECDH via the signer: the shared secret is derived in
+        //    the signer (scalar at `sender_enc_path`) against the recipient's
+        //    encryption key, so the SDK write helper receives the finished secret
+        //    (`EcdhProvider::ClientSide`) and no private key is ever materialized
+        //    here. The recipient key is resolved exactly as the SDK would
+        //    (`recipientKeyIndex` on the recipient identity); the helper re-checks
+        //    the SDK asks for this same key before using the secret.
+        let recipient_enc_pubkey = {
+            use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+            let key = recipient_identity
+                .public_keys()
+                .get(&recipient_key_index)
+                .ok_or_else(|| {
+                    PlatformWalletError::InvalidIdentityData(format!(
+                        "Recipient identity has no key at index {recipient_key_index}"
+                    ))
+                })?;
+            dashcore::secp256k1::PublicKey::from_slice(key.data().as_slice()).map_err(|e| {
                 PlatformWalletError::InvalidIdentityData(format!(
-                    "Failed to send contact request: {e}"
+                    "Recipient encryption public key is invalid: {e}"
                 ))
-            })?;
+            })?
+        };
+        let shared_secret = crypto
+            .ecdh_shared_secret(&sender_enc_path, &recipient_enc_pubkey)
+            .await?;
 
-        // 7. Mirror the local-state bookkeeping in `send_contact_request`.
-        let contact_request = ContactRequest::new(
+        // 7. Broadcast through the write helper. All inputs are resolved
+        //    above; the helper assembles the SDK `EcdhProvider` + xpub
+        //    closure and dispatches `Sdk::send_contact_request`, keeping
+        //    the seven-generic SDK signature out of this call site — see
+        //    `sdk_writer.rs`.
+        let result = self
+            .sdk_writer
+            .send_contact_request(SendContactRequestParams {
+                sender_identity: sender_identity.clone(),
+                recipient_identity,
+                sender_key_index,
+                recipient_key_index,
+                account_reference,
+                account_label,
+                auto_accept_proof,
+                shared_secret,
+                expected_recipient_pubkey: recipient_enc_pubkey,
+                xpub_bytes,
+                signing_public_key: identity_public_key,
+                signer: signer as &(dyn Signer<IdentityPublicKey> + Send + Sync),
+            })
+            .await?;
+
+        // 8. Mirror the local-state bookkeeping in `send_contact_request`.
+        //
+        // Store the REAL 96-byte ciphertext off the broadcast
+        // document (not a zero placeholder) so the persisted /
+        // SwiftData row matches what landed on Platform — a restored
+        // device comparing local rows against chain sees identity,
+        // and the sent-side re-ingest doesn't "upgrade" the row.
+        // Hard error rather than a zero-fill fallback: persisting a 96-byte
+        // all-zero "valid-looking" ciphertext would poison the local row
+        // (a restored device compares it to chain and mismatches; anything
+        // treating it as the contact's xpub source decrypts garbage). The
+        // broadcast already landed on-chain, so the sweep re-ingests
+        // the real document on the next pass — returning an error here is
+        // strictly safer than silently storing poison in release builds.
+        let encrypted_public_key = result
+            .document
+            .properties()
+            .get("encryptedPublicKey")
+            .and_then(|v: &Value| v.to_binary_bytes().ok())
+            .ok_or_else(|| {
+                PlatformWalletError::InvalidIdentityData(
+                    "broadcast contactRequest lacks a readable encryptedPublicKey; \
+                     the on-chain doc will reconcile on the next sync"
+                        .to_string(),
+                )
+            })?;
+        let mut contact_request = ContactRequest::new(
             *sender_identity_id,
             result.recipient_id,
             sender_key_index,
             recipient_key_index,
             result.account_reference,
-            vec![0u8; 96],
+            encrypted_public_key,
             result.document.created_at_core_block_height().unwrap_or(0),
             result.document.created_at().unwrap_or(0),
         );
+        // Mirror the broadcast doc's optional `encryptedAccountLabel` onto the
+        // local outgoing row so it matches what landed on Platform (same reason
+        // the 96-byte ciphertext is read off the doc above). Without this the
+        // sender's own row never reflects the label it just sent.
+        contact_request.encrypted_account_label = result
+            .document
+            .properties()
+            .get("encryptedAccountLabel")
+            .and_then(|v: &Value| v.to_binary_bytes().ok());
 
         {
             let mut wm = self.wallet_manager.write().await;
@@ -294,33 +730,353 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 .identity_manager
                 .managed_identity_mut(sender_identity_id)
                 .ok_or(PlatformWalletError::IdentityNotFound(*sender_identity_id))?;
-            managed.add_sent_contact_request(contact_request.clone(), &self.persister);
+            managed
+                .add_sent_contact_request(contact_request.clone(), &self.persister)
+                .map_err(|e| {
+                    PlatformWalletError::Persistence(format!(
+                        "sent contact request not persisted: {e}"
+                    ))
+                })?;
         }
 
-        self.register_contact_account(sender_identity_id, recipient_identity_id, account_index)
-            .await?;
+        // Register our receiving (friendship) account from the xpub the signer
+        // already derived above — same friendship key, no second derivation and
+        // no resident seed.
+        self.register_contact_account(
+            sender_identity_id,
+            recipient_identity_id,
+            account_index,
+            contact_xpub_ext,
+        )
+        .await?;
 
         Ok(contact_request)
     }
+}
+
+/// QR-scan send lives in a non-generic `impl` block because it resolves a DPNS
+/// name via [`IdentityWallet::resolve_name`] (reached through the view's
+/// `Deref`), which is defined on the non-generic `impl IdentityWallet`.
+impl DashPayView<'_> {
+    /// Send a contact request from a scanned DIP-15 auto-accept QR
+    /// (`dash:?du=<username>&dapk=<key_blob>`).
+    ///
+    /// Resolves the QR's `du` username to the owner's identity, decodes the
+    /// handed auto-accept key from `dapk`, and sends a contact request carrying a
+    /// proof signed (in-send) over this send's `accountReference` — so the
+    /// owner's client can verify it and auto-accept without a manual tap.
+    pub async fn send_contact_request_from_qr<S, C>(
+        &self,
+        sender_identity_id: &Identifier,
+        uri: &str,
+        signer: &S,
+        crypto: &C,
+    ) -> Result<ContactRequest, PlatformWalletError>
+    where
+        S: Signer<IdentityPublicKey> + Send + Sync,
+        C: ContactCryptoProvider + Sync,
+    {
+        use crate::wallet::identity::crypto::auto_accept::{
+            decode_auto_accept_key_blob, parse_dashpay_contact_uri,
+        };
+
+        let (username, key_blob) = parse_dashpay_contact_uri(uri)?;
+        let recipient_id = self.resolve_name(&username).await?.ok_or_else(|| {
+            PlatformWalletError::InvalidIdentityData(format!(
+                "auto-accept QR username '{username}' did not resolve to an identity"
+            ))
+        })?;
+        let (secret_key, expiry) = decode_auto_accept_key_blob(&key_blob)?;
+
+        self.send_contact_request_with_external_signer(
+            sender_identity_id,
+            &recipient_id,
+            None,
+            AutoAcceptProofSource::SignWithKey { secret_key, expiry },
+            signer,
+            crypto,
+        )
+        .await
+    }
+}
+
+/// Collapse a stream of parsed received contact requests to the single
+/// newest request per sender, keyed by `sender_id`.
+///
+/// "Newest" is the lexicographic max of `(created_at, account_reference)`
+/// — created_at is the primary signal (a rotation request is broadcast
+/// later), with account_reference as a deterministic tiebreak for the
+/// degenerate same-timestamp case.
+///
+/// This is the idempotency keystone of the recurring sync: on-chain
+/// `contactRequest` docs are immutable and never deleted, so a sender who
+/// rotated leaves both their old and bumped-reference docs returning on
+/// every sweep. Feeding both into the ingest loop makes the stale one look
+/// like a "rotation" away from the tracked state, thrashing it back and
+/// forth each pass. Collapsing to the newest first makes the sweep a
+/// fixpoint.
+/// High-water rewind window applied to the incremental contact-request query.
+/// Re-fetching the last 10 minutes each sweep covers clock skew **and**
+/// equal-`$createdAt` documents straddling a page boundary, so it is
+/// correctness-load-bearing — NOT a tunable; `0` is invalid.
+const SYNC_OVERLAP_MS: u64 = 10 * 60_000;
+
+/// Lower bound for the incremental `$createdAt >` query: the high-water minus
+/// the overlap window. `None` (no cursor yet) ⇒ full fetch.
+fn query_lower_bound(high_water: Option<u64>) -> Option<u64> {
+    high_water.map(|hw| hw.saturating_sub(SYNC_OVERLAP_MS))
+}
+
+fn newest_received_per_sender(
+    requests: impl IntoIterator<Item = ContactRequest>,
+) -> std::collections::BTreeMap<Identifier, ContactRequest> {
+    let mut newest: std::collections::BTreeMap<Identifier, ContactRequest> =
+        std::collections::BTreeMap::new();
+    for req in requests {
+        let sender = req.sender_id;
+        let replace = newest
+            .get(&sender)
+            .map(|cur| {
+                (req.created_at, req.account_reference) > (cur.created_at, cur.account_reference)
+            })
+            .unwrap_or(true);
+        if replace {
+            newest.insert(sender, req);
+        }
+    }
+    newest
+}
+
+/// Sent-side analog of [`newest_received_per_sender`], keyed by
+/// **recipient**. Immutable `contactRequest` docs are never deleted
+/// on-chain, so a rotation (re-key) re-send leaves MULTIPLE of our own sent
+/// docs to the same recipient — the old reference plus the bumped one — and
+/// the sweep re-fetches them all. `fetch_sent_contact_requests` orders them
+/// `$createdAt`-ASC, so a restore-from-seed ingesting them raw would
+/// auto-establish against the OLDEST doc (frozen at the first send) and drop
+/// the newer ones on the same-reference / already-established guard. Collapse
+/// to the single newest doc per recipient (newest by `$createdAt`, tiebreak
+/// on `account_reference`) so the sent-side establishes / rotation-supersedes
+/// with the freshest outgoing reference — otherwise the next rotation
+/// collides on the contract's `($ownerId, toUserId, accountReference)` unique
+/// index.
+fn newest_sent_per_recipient(
+    requests: impl IntoIterator<Item = ContactRequest>,
+) -> std::collections::BTreeMap<Identifier, ContactRequest> {
+    let mut newest: std::collections::BTreeMap<Identifier, ContactRequest> =
+        std::collections::BTreeMap::new();
+    for req in requests {
+        let recipient = req.recipient_id;
+        let replace = newest
+            .get(&recipient)
+            .map(|cur| {
+                (req.created_at, req.account_reference) > (cur.created_at, cur.account_reference)
+            })
+            .unwrap_or(true);
+        if replace {
+            newest.insert(recipient, req);
+        }
+    }
+    newest
+}
+
+/// Snapshot-aware removal of drained queue entries. Removes from `queue`
+/// only those entries still **value-equal** to a snapshot in `drained` —
+/// the full entries snapshotted before the lock-free drain. An entry a
+/// concurrent `upsert_pending_contact_crypto` refreshed mid-drain is LEFT
+/// queued (its live value no longer equals the stale snapshot's), so a
+/// payload changed under the drain survives to the next drain instead of
+/// being clobbered by a key-only removal. Whole-value equality rather than
+/// an `enqueued_at_ms` freshness token: the timestamp is wall-clock
+/// milliseconds (documented as observability/ordering only), so a same-ms
+/// upsert or a clock rollback could alias a token that a changed payload
+/// can never alias. A refresh that reproduces the identical payload
+/// compares equal and is removed — fine, since the drain just processed
+/// exactly those bytes. Returns the keys actually removed, so the caller
+/// emits exactly those to the persisted `pending_contact_crypto_cleared`
+/// delta (never a key whose fresher entry is still queued).
+fn retain_drained_by_snapshot(
+    queue: &mut Vec<crate::changeset::PendingContactCrypto>,
+    drained: &[crate::changeset::PendingContactCrypto],
+) -> Vec<crate::changeset::PendingContactCryptoKey> {
+    let mut removed = Vec::new();
+    queue.retain(|e| {
+        let stale_match = drained.contains(e);
+        if stale_match {
+            removed.push(e.key());
+        }
+        !stale_match
+    });
+    removed
+}
+
+/// Whether a registered outbound `DashpayExternalAccount` for `contact`
+/// must be torn down + rebuilt because it was NOT built from the contact's
+/// current `incoming_request.account_reference`.
+///
+/// Only a **registered** account (`has_external == true`) can be stale — a
+/// missing account is handled by the ordinary build-candidate collection.
+/// A permanently-broken channel is left alone (the sweep never rebuilds
+/// broken contacts; they heal on a superseding request). The staleness test
+/// is `external_account_reference != Some(incoming_request.account_reference)`:
+/// a mismatch (or a `None` marker from a cold restart that did not carry it)
+/// means the persisted, tombstone-less account row rebuilt the rotated-away
+/// xpub while the contact already tracks the new reference — so `send_payment`
+/// would derive addresses the contact no longer watches until it is rebuilt.
+fn external_account_needs_rebuild(contact: &EstablishedContact, has_external: bool) -> bool {
+    has_external
+        && !contact.payment_channel_broken
+        && contact.external_account_reference != Some(contact.incoming_request.account_reference)
+}
+
+/// Select the recipient identity's key id to reference in
+/// `recipientKeyIndex` for an outgoing contact request.
+///
+/// Verified testnet reality: the newest cohort uses a
+/// recipient **DECRYPTION** key (our original convention), but the dominant
+/// 126-owner mobile population has **no DECRYPTION key at all** and references
+/// its **ENCRYPTION** key for `recipientKeyIndex`. To send to either cohort:
+///
+/// 1. Prefer the recipient's first `ECDSA_SECP256K1` **DECRYPTION** key.
+/// 2. Fall back to the recipient's first `ECDSA_SECP256K1` **ENCRYPTION** key.
+/// 3. Error only if the recipient has neither.
+///
+/// No AUTHENTICATION fallback: no live client population needs it, and reusing
+/// signing keys for ECDH is poor key separation. `ECDSA_SECP256K1` is required
+/// either way (every observed key is that type, and ECDH needs the full key).
+///
+/// The accepted cohort (DECRYPTION or ENCRYPTION) is the shared
+/// [`dash_sdk::platform::dashpay::recipient_key_purpose_is_valid`] membership
+/// policy; only the preference ORDER below (DECRYPTION first, ENCRYPTION
+/// second) is local to the selector.
+fn select_recipient_key_index(recipient_identity: &Identity) -> Result<u32, PlatformWalletError> {
+    // Skip disabled (revoked) keys: encrypting the DIP-15 compact xpub to a
+    // key whose private half may be compromised would hand the contact's
+    // payment xpub to whoever holds the revoked key. `disabled_at().is_none()`
+    // mirrors the validator's disabled-key gate.
+    // Prefer a DECRYPTION key.
+    if let Some((id, _)) = recipient_identity.public_keys().iter().find(|(_, k)| {
+        k.purpose() == Purpose::DECRYPTION
+            && k.key_type() == KeyType::ECDSA_SECP256K1
+            && k.disabled_at().is_none()
+    }) {
+        return Ok(*id);
+    }
+    // Fall back to an ENCRYPTION key (mobile cohort).
+    if let Some((id, _)) = recipient_identity.public_keys().iter().find(|(_, k)| {
+        k.purpose() == Purpose::ENCRYPTION
+            && k.key_type() == KeyType::ECDSA_SECP256K1
+            && k.disabled_at().is_none()
+    }) {
+        return Ok(*id);
+    }
+    Err(PlatformWalletError::InvalidIdentityData(
+        "Recipient identity has no enabled ECDSA_SECP256K1 DECRYPTION or ENCRYPTION key"
+            .to_string(),
+    ))
+}
+
+/// Select our OWN ECDH root key: the first **enabled** `ECDSA_SECP256K1`
+/// ENCRYPTION key on the identity (`BTreeMap` order → lowest key id).
+///
+/// The single selection policy shared by the contact-request send path and
+/// the contactInfo publish path, so the two DashPay surfaces always agree
+/// on which key is the ECDH root. Skipping disabled keys mirrors
+/// [`select_recipient_key_index`] and the validator's disabled-key gate:
+/// after a disable-and-replace key rotation, selecting the disabled
+/// lowest-id key would hard-fail pre-send validation on every new outgoing
+/// request even though an enabled replacement exists.
+pub(crate) fn select_own_encryption_key(
+    identity: &Identity,
+) -> Result<&IdentityPublicKey, PlatformWalletError> {
+    identity
+        .public_keys()
+        .iter()
+        .find(|(_, k)| {
+            k.purpose() == Purpose::ENCRYPTION
+                && k.key_type() == KeyType::ECDSA_SECP256K1
+                && k.disabled_at().is_none()
+        })
+        .map(|(_, k)| k)
+        .ok_or_else(|| {
+            PlatformWalletError::InvalidIdentityData(
+                "Identity has no enabled ECDSA_SECP256K1 encryption key".to_string(),
+            )
+        })
 }
 
 // ---------------------------------------------------------------------------
 // Sync contact requests from platform
 // ---------------------------------------------------------------------------
 
-impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
+/// Max `AutoAccept` ops queued per owner. Bounds the work a flood of
+/// junk-`autoAcceptProof` contact requests can create for the owner's next
+/// signer-present drain; over the cap, requests stay manually acceptable.
+const MAX_AUTO_ACCEPT_QUEUED_PER_OWNER: usize = 64;
+
+/// Count the ops that represent a contact **waiting for an unlock to finish
+/// setup** — the needs-unlock banner's source.
+///
+/// `RegisterReceiving` / `RegisterExternal` build a contact's payment account
+/// and converge to 0 once drained (candidate selection skips contacts whose
+/// external account already exists). `AutoAccept` is an inbound request with a
+/// valid-looking proof awaiting auto-acceptance at the next signer-present drain
+/// — also "waiting to finish setup," and it clears on accept/permanent-reject,
+/// so it converges too.
+///
+/// `ContactInfoDecrypt` is intentionally excluded: it is re-enqueued on every
+/// signerless sweep (there is no already-decrypted gate), so it is structurally
+/// always present and would make the signal a permanent `> 0` — re-tripping the
+/// banner shortly after every unlock on a healthy wallet.
+fn count_account_build_ops(queue: &[crate::changeset::PendingContactCrypto]) -> usize {
+    use crate::changeset::PendingContactCryptoOp;
+    queue
+        .iter()
+        .filter(|e| {
+            matches!(
+                e.op,
+                PendingContactCryptoOp::RegisterReceiving
+                    | PendingContactCryptoOp::RegisterExternal { .. }
+                    | PendingContactCryptoOp::AutoAccept
+            )
+        })
+        .count()
+}
+
+impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// Fetch and process contact requests from the platform for all local identities.
     ///
-    /// For every identity in the local manager this method:
-    /// 1. Fetches received contact-request documents from Platform.
-    /// 2. Converts them into [`ContactRequest`] structs.
-    /// 3. Adds each as an incoming request to the corresponding
-    ///    `ManagedIdentity` (which may auto-establish a contact when a
-    ///    matching outgoing request already exists).
+    /// For every identity in the local manager this method, per sweep:
+    /// 1. Fetches both **received** and **own sent** contact-request
+    ///    documents from Platform.
+    /// 2. Ingests received requests via `add_incoming_contact_request` —
+    ///    including reciprocal requests from senders we already sent to (so
+    ///    contacts establish via sync). Dedup is preserved for requests
+    ///    already tracked as incoming or established, and every request from
+    ///    an ignored sender is suppressed (per-sender — all of their requests,
+    ///    rotations included).
+    /// 3. Ingests own sent requests via `add_sent_contact_request`, which
+    ///    carries its own sent-side guard so a recurring re-ingest
+    ///    creates no phantom pending rows and preserves contact metadata.
+    /// 4. For **every** established contact missing a sending account
+    ///    (not only newly-established ones — this also repairs
+    ///    restore-from-seed and best-effort-accept gaps), rebuilds both
+    ///    the `DashpayReceivingFunds` and `DashpayExternalAccount`
+    ///    accounts, with the transient/permanent failure policy.
+    ///
+    /// **Lock ordering (critical).** The account-building registrations
+    /// (`register_contact_account`, `register_external_contact_account`)
+    /// re-acquire the wallet-manager lock, which is a **non-reentrant**
+    /// tokio `RwLock`. Candidates are therefore collected while the write
+    /// guard is held, the guard is **dropped**, and only then are the
+    /// register functions called — mirroring the accept path. Calling
+    /// them inline under the guard would deadlock on first execution.
     ///
     /// Returns all newly discovered incoming contact requests.
     pub async fn sync_contact_requests(&self) -> Result<Vec<ContactRequest>, PlatformWalletError> {
-        let identity_ids: Vec<Identifier> = {
+        // Snapshot each identity's high-water cursors up front so the
+        // incremental query bound is read before any mutation this sweep.
+        let identities: Vec<(Identifier, Option<u64>, Option<u64>)> = {
             let wm = self.wallet_manager.read().await;
             let info = wm
                 .get_wallet_info(&self.wallet_id)
@@ -328,134 +1084,1650 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             info.identity_manager
                 .all_identities()
                 .into_iter()
-                .map(|i| i.id())
+                .map(|i| {
+                    let id = i.id();
+                    let (hwr, hws) = info
+                        .identity_manager
+                        .managed_identity(&id)
+                        .map(|m| {
+                            (
+                                m.dashpay().high_water_received_ms(),
+                                m.dashpay().high_water_sent_ms(),
+                            )
+                        })
+                        .unwrap_or((None, None));
+                    (id, hwr, hws)
+                })
                 .collect()
         };
 
         let mut all_requests = Vec::new();
 
-        for identity_id in identity_ids {
-            let received_docs = self
+        for (identity_id, hw_received, hw_sent) in identities {
+            // --- Fetch (no guard held during the awaits). ---
+            //
+            // Log-and-continue per identity: a fetch failure for one
+            // identity must NOT abort the sweep across the others. This
+            // is load-bearing for the recurring loop — a single
+            // identity's transient DAPI error shouldn't stall DashPay
+            // sync for every other identity on the wallet.
+            let received_docs = match self
                 .sdk
-                .fetch_received_contact_requests(identity_id, None)
+                .fetch_received_contact_requests(identity_id, query_lower_bound(hw_received))
                 .await
-                .map_err(|e| {
-                    PlatformWalletError::InvalidIdentityData(format!(
-                        "Failed to fetch received contact requests: {e}"
-                    ))
-                })?;
-
-            let mut wm = self.wallet_manager.write().await;
-            let info = match wm.get_wallet_info_mut(&self.wallet_id) {
-                Some(i) => i,
-                None => continue,
-            };
-            let managed = match info.identity_manager.managed_identity_mut(&identity_id) {
-                Some(m) => m,
-                None => continue,
-            };
-
-            for (_doc_id, maybe_doc) in received_docs.iter() {
-                let doc = match maybe_doc {
-                    Some(d) => d,
-                    None => continue,
-                };
-
-                let sender_id = doc.owner_id();
-
-                // Skip if already tracked (sent, incoming, or established).
-                if managed.sent_contact_requests.contains_key(&sender_id)
-                    || managed.incoming_contact_requests.contains_key(&sender_id)
-                    || managed.established_contacts.contains_key(&sender_id)
-                {
+            {
+                Ok(docs) => docs,
+                Err(e) => {
+                    tracing::warn!(
+                        identity = %identity_id,
+                        error = %e,
+                        "Failed to fetch received contact requests; skipping this identity"
+                    );
                     continue;
                 }
+            };
+            // Also fetch our own sent requests so a restored / second
+            // device reconciles established contacts instead of rendering
+            // them as bare incoming requests. A failure here is logged but
+            // does not skip the received-side ingest already fetched above —
+            // and the sent cursor is NOT advanced when this fails.
+            let mut sent_ok = true;
+            let sent_docs = match self
+                .sdk
+                .fetch_sent_contact_requests(identity_id, query_lower_bound(hw_sent))
+                .await
+            {
+                Ok(docs) => docs,
+                Err(e) => {
+                    tracing::warn!(
+                        identity = %identity_id,
+                        error = %e,
+                        "Failed to fetch sent contact requests; reconciling received side only"
+                    );
+                    sent_ok = false;
+                    Default::default()
+                }
+            };
 
-                let props = doc.properties();
+            // Max `$createdAt` over docs FETCHED this sweep (not over docs that
+            // survive ingest's collapse/dedup) — the cursor records how far this
+            // sweep got. The fetch returned without error, so the received
+            // cursor may advance to that max; the sent cursor advances only if
+            // `sent_ok`. The fetch is `$createdAt`-ascending and may stop at a
+            // per-sweep page budget, so this may be a partial — advancing to the
+            // max fetched is exactly what lets the next sweep resume the rest.
+            let max_received = received_docs
+                .values()
+                .filter_map(|d| d.as_ref())
+                .filter_map(|d| d.created_at())
+                .max();
+            let max_sent = sent_docs
+                .values()
+                .filter_map(|d| d.as_ref())
+                .filter_map(|d| d.created_at())
+                .max();
 
-                let sender_key_index = match props
-                    .get("senderKeyIndex")
-                    .and_then(|v: &Value| v.to_integer::<u32>().ok())
-                {
-                    Some(v) => v,
-                    None => {
-                        tracing::warn!(
+            // --- Ingest under the write guard; collect account-building
+            //     candidates; then DROP the guard before registering. ---
+            let candidates = {
+                let mut wm = self.wallet_manager.write().await;
+                let Some((wallet, info)) = wm.get_wallet_mut_and_info_mut(&self.wallet_id) else {
+                    continue;
+                };
+                let managed = match info.identity_manager.managed_identity_mut(&identity_id) {
+                    Some(m) => m,
+                    None => continue,
+                };
+                // Established contacts re-keyed by a rotation request in
+                // this pass — their stale external accounts are torn down
+                // below so the build sweep re-registers from the new xpub.
+                let mut rotated_contacts: Vec<Identifier> = Vec::new();
+                // Track whether every ingest reached disk. A swallowed persist
+                // failure would let the cursor advance past a request that
+                // never persisted, so the next `$createdAt >` sweep would skip
+                // it. On failure we stop ingesting that direction and leave its
+                // cursor unadvanced so the next sweep re-fetches and retries.
+                let mut received_persist_ok = true;
+                let mut sent_persist_ok = true;
+
+                // (1) Ingest received requests.
+                //
+                // Immutable contactRequest docs are never deleted on-chain,
+                // so a sender who rotated leaves MULTIPLE docs — the old
+                // reference plus the bumped one — that ALL return on every
+                // sweep. Collapse to the single newest doc per sender BEFORE
+                // ingest (see `newest_received_per_sender`). Without this, a
+                // stale older doc is mis-read as a "rotation" away from the
+                // tracked state on every sweep, flipping the stored reference
+                // back and forth, tearing down + rebuilding the external
+                // account, and writing a changeset each pass forever.
+                let parsed_received = received_docs.iter().filter_map(|(_doc_id, maybe_doc)| {
+                    let doc = maybe_doc.as_ref()?;
+                    Self::parse_contact_request_doc(doc, doc.owner_id(), identity_id)
+                });
+                let newest_by_sender = newest_received_per_sender(parsed_received);
+
+                for (sender_id, contact_request) in newest_by_sender {
+                    // Ignore (per-sender mute, local-only): an ignored
+                    // sender's requests are ALL suppressed from the main
+                    // pending list — including rotated (bumped
+                    // accountReference) ones. Checked FIRST and per-sender,
+                    // unlike the old per-(sender, accountReference) reject:
+                    // if you ignored the person you ignored them.
+                    // `unignore_sender` rewinds the cursor so this skip stops
+                    // firing on the next sweep.
+                    if managed.is_sender_ignored(&sender_id) {
+                        tracing::debug!(
                             sender = %sender_id,
                             recipient = %identity_id,
-                            "Skipping contact request document: missing senderKeyIndex"
+                            account_reference = contact_request.account_reference,
+                            "Skipping ignored sender's contact request"
                         );
                         continue;
                     }
-                };
-                let recipient_key_index = match props
-                    .get("recipientKeyIndex")
-                    .and_then(|v: &Value| v.to_integer::<u32>().ok())
-                {
-                    Some(v) => v,
-                    None => {
-                        tracing::warn!(
-                            sender = %sender_id,
-                            recipient = %identity_id,
-                            "Skipping contact request document: missing recipientKeyIndex"
-                        );
+                    // Do NOT skip just because the sender is in
+                    // `sent_contact_requests` — that is the reciprocal we
+                    // need to let through to auto-establish. True dedup is
+                    // (sender, accountReference): the SAME reference as the
+                    // tracked incoming/established state is a re-ingest of a
+                    // known doc; a DIFFERENT reference from a known sender
+                    // is a rotation request (receive side) and must get
+                    // through.
+                    let tracked_reference = managed
+                        .dashpay()
+                        .incoming_contact_requests()
+                        .get(&sender_id)
+                        .map(|r| r.account_reference)
+                        .or_else(|| {
+                            managed
+                                .dashpay()
+                                .established_contacts()
+                                .get(&sender_id)
+                                .map(|c| c.incoming_request.account_reference)
+                        });
+                    if tracked_reference == Some(contact_request.account_reference) {
                         continue;
                     }
-                };
-                let account_reference = match props
-                    .get("accountReference")
-                    .and_then(|v: &Value| v.to_integer::<u32>().ok())
-                {
-                    Some(v) => v,
-                    None => {
-                        tracing::warn!(
-                            sender = %sender_id,
-                            recipient = %identity_id,
-                            "Skipping contact request document: missing accountReference"
-                        );
-                        continue;
-                    }
-                };
-                let encrypted_public_key = match props
-                    .get("encryptedPublicKey")
-                    .and_then(|v: &Value| v.as_bytes())
-                    .cloned()
-                {
-                    Some(v) => v,
-                    None => {
-                        tracing::warn!(
-                            sender = %sender_id,
-                            recipient = %identity_id,
-                            "Skipping contact request document: missing encryptedPublicKey"
-                        );
-                        continue;
-                    }
-                };
 
-                let contact_request = ContactRequest::new(
-                    sender_id,
-                    identity_id,
-                    sender_key_index,
-                    recipient_key_index,
-                    account_reference,
-                    encrypted_public_key,
-                    doc.created_at_core_block_height().unwrap_or(0),
-                    doc.created_at().unwrap_or(0),
-                );
+                    if tracked_reference.is_some() {
+                        // Rotation: supersede the tracked request. When an
+                        // established contact was re-keyed, queue the stale
+                        // external account for teardown so the build sweep
+                        // below re-registers it from the new xpub.
+                        match managed.apply_rotated_incoming_request(
+                            contact_request.clone(),
+                            &self.persister,
+                        ) {
+                            Ok(true) => rotated_contacts.push(sender_id),
+                            Ok(false) => {}
+                            Err(e) => {
+                                tracing::error!(
+                                    recipient = %identity_id, error = %e,
+                                    "received-request rotation persist failed; leaving received cursor for retry"
+                                );
+                                received_persist_ok = false;
+                                break;
+                            }
+                        }
+                        all_requests.push(contact_request);
+                        continue;
+                    }
 
-                managed.add_incoming_contact_request(contact_request.clone(), &self.persister);
-                all_requests.push(contact_request);
+                    if let Err(e) = managed
+                        .add_incoming_contact_request(contact_request.clone(), &self.persister)
+                    {
+                        tracing::error!(
+                            recipient = %identity_id, error = %e,
+                            "received-request ingest persist failed; leaving received cursor for retry"
+                        );
+                        received_persist_ok = false;
+                        break;
+                    }
+                    all_requests.push(contact_request);
+                }
+
+                // (2) Ingest our own sent requests. `add_sent_contact_request`
+                //     guards itself against duplicates / metadata loss.
+                //     Collapse to the single newest doc per recipient FIRST
+                //     (see `newest_sent_per_recipient`): a rotation re-send
+                //     leaves the old + bumped docs on-chain and the fetch is
+                //     `$createdAt`-ASC, so ingesting raw would establish
+                //     against the stale OLDEST reference on a restore-from-seed
+                //     and collide on the next rotation.
+                let parsed_sent = sent_docs.iter().filter_map(|(_doc_id, maybe_doc)| {
+                    let doc = maybe_doc.as_ref()?;
+                    // For a sent request the recipient is `toUserId`.
+                    let recipient_id = doc
+                        .properties()
+                        .get("toUserId")
+                        .and_then(|v: &Value| v.to_identifier().ok())?;
+                    Self::parse_sent_contact_request_doc(doc, identity_id, recipient_id)
+                });
+                let newest_by_recipient = newest_sent_per_recipient(parsed_sent);
+                for (_recipient_id, contact_request) in newest_by_recipient {
+                    if let Err(e) =
+                        managed.add_sent_contact_request(contact_request, &self.persister)
+                    {
+                        tracing::error!(
+                            owner = %identity_id, error = %e,
+                            "sent-request ingest persist failed; leaving sent cursor for retry"
+                        );
+                        sent_persist_ok = false;
+                        break;
+                    }
+                }
+
+                // (2a') Rotation self-heal across restart: an external account
+                //       rebuilt from the persisted (tombstone-less) registration
+                //       row after a restart can carry the STALE xpub while the
+                //       established contact already tracks the new incoming
+                //       reference (the deferred rebuild was lost with the
+                //       in-memory queue at load). Such an account exists but was
+                //       NOT built from the current reference, so the plain
+                //       `has_external` gate would skip it forever. Detect a
+                //       registered external account whose recorded
+                //       `external_account_reference` does not match the contact's
+                //       current `incoming_request.account_reference` (including a
+                //       `None` marker from a cold restore that didn't carry it),
+                //       and enqueue it for teardown + rebuild alongside the
+                //       in-pass rotations. Idempotent: once rebuilt the marker is
+                //       stamped, so the next sweep sees a match and skips it.
+                //       Accesses the managed identity's established contacts and
+                //       `info.core_wallet` as DISJOINT fields of `info` via a
+                //       plain `for` loop (the same split the teardown loop below
+                //       relies on) — a closure capturing whole `info` would
+                //       collide with the mutable `managed` reborrow.
+                {
+                    use key_wallet::account::account_collection::DashpayAccountKey;
+                    for (contact_id, contact) in managed.dashpay().established_contacts().iter() {
+                        let key = DashpayAccountKey {
+                            index: 0,
+                            user_identity_id: identity_id.to_buffer(),
+                            friend_identity_id: contact_id.to_buffer(),
+                        };
+                        let has_external = info
+                            .core_wallet
+                            .accounts
+                            .dashpay_external_accounts
+                            .contains_key(&key);
+                        if external_account_needs_rebuild(contact, has_external)
+                            && !rotated_contacts.contains(contact_id)
+                        {
+                            rotated_contacts.push(*contact_id);
+                        }
+                    }
+                }
+
+                // (2b) Tear down stale external accounts for contacts that
+                //      rotated in this pass: both the immutable Account
+                //      (old xpub — `send_payment`'s derivation source) and
+                //      the managed wrapper (old address pool). The
+                //      candidate collection below then re-queues them and
+                //      the build step re-registers from the NEW encrypted
+                //      xpub. The persisted account row is upserted (same
+                //      unique key) when the re-registration round lands.
+                for contact_id in &rotated_contacts {
+                    use key_wallet::account::account_collection::DashpayAccountKey;
+                    let key = DashpayAccountKey {
+                        index: 0,
+                        user_identity_id: identity_id.to_buffer(),
+                        friend_identity_id: contact_id.to_buffer(),
+                    };
+                    wallet.accounts.dashpay_external_accounts.remove(&key);
+                    info.core_wallet
+                        .accounts
+                        .dashpay_external_accounts
+                        .remove(&key);
+                }
+
+                // Advance the high-water cursors to the max `$createdAt`
+                // fetched this sweep, never below the current value. Advance a
+                // direction's cursor only when BOTH its fetch succeeded AND
+                // every ingest reached disk — a mid-sweep fetch error or a
+                // persist failure leaves that cursor intact so the next sweep
+                // re-fetches and retries (no burying, no skip past an
+                // unpersisted request). The compare-and-advance itself (a
+                // concurrent `unignore_sender` rewind must not be clobbered by
+                // this sweep's stale max) lives in the state layer.
+                if received_persist_ok {
+                    managed.advance_high_water_received(hw_received, max_received);
+                }
+                if sent_ok && sent_persist_ok {
+                    managed.advance_high_water_sent(hw_sent, max_sent);
+                }
+
+                // (3) Collect account-building candidates: every established
+                //     contact missing a sending (external) account, skipping
+                //     contacts whose payment channel is already marked
+                //     permanently broken (no unbounded retry).
+                Self::collect_account_build_candidates(info, &identity_id)
+            };
+
+            // --- Build accounts AFTER dropping the write guard. ---
+            for candidate in candidates {
+                self.build_contact_accounts(&identity_id, candidate).await;
             }
+
+            // (4) Enqueue DIP-15 auto-accept for inbound requests carrying a
+            //     proof. Signerless: verify + accept happen later in
+            //     `drain_auto_accepts` at a signer-present moment.
+            self.enqueue_pending_auto_accepts(&identity_id).await;
         }
 
         Ok(all_requests)
     }
+
+    /// Parse a received `contactRequest` document into a [`ContactRequest`],
+    /// logging + returning `None` on any missing required field.
+    fn parse_contact_request_doc(
+        doc: &dpp::document::Document,
+        sender_id: Identifier,
+        recipient_id: Identifier,
+    ) -> Option<ContactRequest> {
+        let props = doc.properties();
+        let sender_key_index = props
+            .get("senderKeyIndex")
+            .and_then(|v: &Value| v.to_integer::<u32>().ok());
+        let recipient_key_index = props
+            .get("recipientKeyIndex")
+            .and_then(|v: &Value| v.to_integer::<u32>().ok());
+        let account_reference = props
+            .get("accountReference")
+            .and_then(|v: &Value| v.to_integer::<u32>().ok());
+        // `to_binary_bytes()` (not `as_bytes()`, which matches only
+        // `Value::Bytes`) so the parse is robust to whatever byte-ish variant
+        // the document query yields (`Bytes`/`Bytes32`/`Array<U8>`/base64
+        // `Text`) — and stays symmetric with the send-side bookkeeping, which
+        // also uses `to_binary_bytes()`. A variant mismatch here would silently
+        // drop a field (the bug class this path already shipped once).
+        let encrypted_public_key = props
+            .get("encryptedPublicKey")
+            .and_then(|v: &Value| v.to_binary_bytes().ok());
+        // Optional DIP-15 auto-accept proof — read so the sweep can enqueue an
+        // `AutoAccept` drain. Without this it would be dropped (the proof can't
+        // be acted on if it never reaches the request), so the contact would only
+        // ever be addable manually.
+        let auto_accept_proof = props
+            .get("autoAcceptProof")
+            .and_then(|v: &Value| v.to_binary_bytes().ok());
+        // Optional DIP-15 `encryptedAccountLabel` — the contact's label for the
+        // account they shared. Read so the receive-side surfacing (decrypt +
+        // "Their account" row) has something to decrypt; without this the sweep
+        // silently drops the label and it never reaches the recipient.
+        let encrypted_account_label = props
+            .get("encryptedAccountLabel")
+            .and_then(|v: &Value| v.to_binary_bytes().ok());
+
+        match (
+            sender_key_index,
+            recipient_key_index,
+            account_reference,
+            encrypted_public_key,
+        ) {
+            (Some(ski), Some(rki), Some(ar), Some(epk)) => {
+                let mut request = ContactRequest::new(
+                    sender_id,
+                    recipient_id,
+                    ski,
+                    rki,
+                    ar,
+                    epk,
+                    doc.created_at_core_block_height().unwrap_or(0),
+                    doc.created_at().unwrap_or(0),
+                );
+                request.auto_accept_proof = auto_accept_proof;
+                request.encrypted_account_label = encrypted_account_label;
+                Some(request)
+            }
+            _ => {
+                tracing::warn!(
+                    sender = %sender_id,
+                    recipient = %recipient_id,
+                    "Skipping contact request document: missing required field"
+                );
+                None
+            }
+        }
+    }
+
+    /// Parse our own sent `contactRequest` document into a [`ContactRequest`]
+    /// (owner is us, recipient is `toUserId`).
+    fn parse_sent_contact_request_doc(
+        doc: &dpp::document::Document,
+        owner_id: Identifier,
+        recipient_id: Identifier,
+    ) -> Option<ContactRequest> {
+        // Same field set as the received side; the only difference is which
+        // identity is owner vs recipient.
+        Self::parse_contact_request_doc(doc, owner_id, recipient_id)
+    }
+
+    /// Enqueue a DIP-15 `AutoAccept` op for each inbound contact request to
+    /// `identity_id` that carries a structurally-valid `autoAcceptProof` and is
+    /// not yet established — so the next signer-present [`drain_auto_accepts`]
+    /// verifies + auto-accepts it. Signerless (the sweep has no signer): only a
+    /// cheap structural pre-check (length + ECDSA key-type byte) runs here; the
+    /// cryptographic verify happens in the drain.
+    ///
+    /// Bounded to [`MAX_AUTO_ACCEPT_QUEUED_PER_OWNER`] entries per owner so a
+    /// flood of junk-proof requests can't grow the queue without limit — over
+    /// the cap the request is simply left manually acceptable. Dedup by
+    /// `(owner, sender, AutoAccept)` means re-runs are idempotent.
+    async fn enqueue_pending_auto_accepts(&self, identity_id: &Identifier) {
+        use crate::changeset::{
+            upsert_pending_contact_crypto, PendingContactCrypto, PendingContactCryptoOp,
+            PlatformWalletChangeSet,
+        };
+
+        // Collect candidate senders + the current AutoAccept count under a read
+        // guard (no awaits held).
+        let to_enqueue: Vec<Identifier> = {
+            let wm = self.wallet_manager.read().await;
+            let Some(info) = wm.get_wallet_info(&self.wallet_id) else {
+                return;
+            };
+            let Some(managed) = info.identity_manager.managed_identity(identity_id) else {
+                return;
+            };
+            let mut already = managed
+                .dashpay()
+                .pending_contact_crypto
+                .iter()
+                .filter(|e| matches!(e.op, PendingContactCryptoOp::AutoAccept))
+                .count();
+            let mut picked = Vec::new();
+            for (sender, request) in managed.dashpay().incoming_contact_requests() {
+                if already >= MAX_AUTO_ACCEPT_QUEUED_PER_OWNER {
+                    tracing::warn!(
+                        owner = %identity_id,
+                        "auto-accept enqueue cap reached; leaving further requests manually acceptable"
+                    );
+                    break;
+                }
+                // Signerless pre-check only (established? structurally valid
+                // proof? not a proof a prior drain already rejected this
+                // launch?) — the real ECDSA verify is in the drain.
+                if managed.should_enqueue_auto_accept(sender, request) {
+                    picked.push(*sender);
+                    already += 1;
+                }
+            }
+            picked
+        };
+        if to_enqueue.is_empty() {
+            return;
+        }
+
+        let enqueued_at_ms = crate::util::now_ms();
+        let entries: Vec<PendingContactCrypto> = to_enqueue
+            .into_iter()
+            .map(|sender| PendingContactCrypto {
+                owner_identity_id: *identity_id,
+                contact_id: sender,
+                op: PendingContactCryptoOp::AutoAccept,
+                enqueued_at_ms,
+            })
+            .collect();
+
+        {
+            let mut wm = self.wallet_manager.write().await;
+            let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) else {
+                return;
+            };
+            let Some(managed) = info.identity_manager.managed_identity_mut(identity_id) else {
+                tracing::warn!(
+                    owner = %identity_id,
+                    "auto-accept enqueue for a non-resident identity; dropping"
+                );
+                return;
+            };
+            for entry in &entries {
+                upsert_pending_contact_crypto(
+                    managed.dashpay_pending_contact_crypto_mut(),
+                    entry.clone(),
+                );
+            }
+        }
+        let changeset = PlatformWalletChangeSet {
+            pending_contact_crypto_added: entries,
+            ..Default::default()
+        };
+        if let Err(e) = self.persister.store(changeset) {
+            tracing::warn!(
+                owner = %identity_id, error = %e,
+                "failed to persist auto-accept enqueue; will re-enqueue next sweep"
+            );
+        }
+    }
+
+    /// Collect every established contact (for `identity_id`) that is
+    /// missing its `DashpayExternalAccount` and is NOT already marked
+    /// permanently broken — the account-building candidates for this
+    /// sweep. Runs under the caller's write guard; performs no
+    /// awaits and no lock re-acquisition.
+    fn collect_account_build_candidates(
+        info: &crate::wallet::platform_wallet::PlatformWalletInfo,
+        identity_id: &Identifier,
+    ) -> Vec<AccountBuildCandidate> {
+        use key_wallet::account::account_collection::DashpayAccountKey;
+
+        let Some(managed) = info.identity_manager.managed_identity(identity_id) else {
+            return Vec::new();
+        };
+
+        let mut out = Vec::new();
+        for (contact_id, contact) in managed.dashpay().established_contacts() {
+            // Never retry a permanently-broken channel — wait for a
+            // superseding request (which clears the flag on re-establish).
+            if contact.payment_channel_broken {
+                continue;
+            }
+            let key = DashpayAccountKey {
+                index: 0,
+                user_identity_id: identity_id.to_buffer(),
+                friend_identity_id: contact_id.to_buffer(),
+            };
+            let has_external = info
+                .core_wallet
+                .accounts
+                .dashpay_external_accounts
+                .contains_key(&key);
+            if has_external {
+                continue;
+            }
+            // The incoming request carries the counterparty's encrypted
+            // xpub + the key indices needed for ECDH.
+            let incoming = &contact.incoming_request;
+            out.push(AccountBuildCandidate {
+                contact_id: *contact_id,
+                encrypted_public_key: incoming.encrypted_public_key.clone(),
+                our_decryption_key_index: incoming.recipient_key_index,
+                contact_encryption_key_index: incoming.sender_key_index,
+            });
+        }
+        out
+    }
+
+    /// Build the two DashPay accounts for one established contact,
+    /// applying the transient/permanent failure policy.
+    ///
+    /// Order:
+    /// 1. Register the `DashpayReceivingFunds` account — derivable from our
+    ///    own seed, no decryption needed. This is what makes *incoming*
+    ///    contact payments visible to SPV; restore-from-seed leaves it
+    ///    unbuilt, so the sweep rebuilds it for every established contact.
+    /// 2. Fetch the counterparty identity and **validate** the request's
+    ///    key indices via [`validate_contact_request`] BEFORE any ECDH —
+    ///    an attacker-crafted index pointing at an AUTHENTICATION key would
+    ///    otherwise derive a wrong shared secret and poison the account.
+    /// 3. Register the `DashpayExternalAccount` (decrypt + ECDH).
+    ///
+    /// Failure policy:
+    /// - **Transient** (identity fetch / network): logged, left for the
+    ///   next sweep to retry. The broken flag stays clear.
+    /// - **Permanent** (validation failure, decrypt/decode failure): the
+    ///   contact is marked `payment_channel_broken` so subsequent sweeps
+    ///   skip it until a superseding request arrives.
+    ///
+    /// Watch-only / seedless wallets (no `identity_index`) are skipped and
+    /// logged — the watch-only ECDH path (host-side signing hook) lands
+    /// later.
+    ///
+    /// Called **after** the sync write guard is dropped: the register
+    /// functions re-acquire the non-reentrant wallet-manager lock.
+    async fn build_contact_accounts(
+        &self,
+        identity_id: &Identifier,
+        candidate: AccountBuildCandidate,
+    ) {
+        let contact_id = candidate.contact_id;
+
+        // The recurring sweep has NO signer (it runs unattended in the
+        // background), so it can derive NO private-key material — neither the
+        // receiving (friendship) xpub nor the ECDH shared secret. Every
+        // account-build op is therefore DEFERRED: enqueue it for the
+        // signer-backed drain to complete when a signer becomes available
+        // (Keychain unlock / signer-present action). The drain fetches the
+        // contact, validates the key indices, and performs the derivation.
+        //
+        // We only SKIP identities that aren't ours to build (unmanaged /
+        // out-of-wallet — no HD slot); there is nothing to enqueue for those.
+        let is_ours = {
+            let wm = self.wallet_manager.read().await;
+            wm.get_wallet_info(&self.wallet_id)
+                .and_then(|info| info.identity_manager.managed_identity(identity_id))
+                .map(|managed| managed.identity_index.is_some())
+                .unwrap_or(false)
+        };
+        if !is_ours {
+            tracing::info!(
+                identity = %identity_id,
+                contact = %contact_id,
+                "Skipping DashPay account build for unmanaged/out-of-wallet identity"
+            );
+            return;
+        }
+
+        // Enqueue the deferred crypto ops (receiving xpub + external decrypt).
+        // Idempotent per (owner, contact, kind), so re-enqueuing every sweep is
+        // a no-op until the drain clears them.
+        self.enqueue_deferred_contact_crypto(identity_id, &candidate)
+            .await;
+        tracing::info!(
+            identity = %identity_id,
+            contact = %contact_id,
+            "Deferred DashPay account build: enqueued for the signer-backed drain"
+        );
+    }
+
+    /// Enqueue the deferred contact-crypto ops for a contact discovered by the
+    /// signerless sweep. The sweep never derives, so this is its only
+    /// account-build action; the signer-backed drain completes the ops when a
+    /// signer is available. Idempotent per `(owner, contact, kind)` —
+    /// re-enqueuing each sweep updates the entry in place. Stores only the
+    /// on-chain ciphertext + public key indices, never a secret.
+    async fn enqueue_deferred_contact_crypto(
+        &self,
+        identity_id: &Identifier,
+        candidate: &AccountBuildCandidate,
+    ) {
+        use crate::changeset::{
+            upsert_pending_contact_crypto, PendingContactCrypto, PendingContactCryptoOp,
+            PlatformWalletChangeSet,
+        };
+        let enqueued_at_ms = crate::util::now_ms();
+
+        let entries = vec![
+            // (1) Our receiving xpub (no payload — derived from the identity ids).
+            PendingContactCrypto {
+                owner_identity_id: *identity_id,
+                contact_id: candidate.contact_id,
+                op: PendingContactCryptoOp::RegisterReceiving,
+                enqueued_at_ms,
+            },
+            // (2) The external account — ECDH decrypt of the contact's xpub.
+            PendingContactCrypto {
+                owner_identity_id: *identity_id,
+                contact_id: candidate.contact_id,
+                op: PendingContactCryptoOp::RegisterExternal {
+                    encrypted_public_key: candidate.encrypted_public_key.clone(),
+                    our_decryption_key_index: candidate.our_decryption_key_index,
+                    contact_encryption_key_index: candidate.contact_encryption_key_index,
+                },
+                enqueued_at_ms,
+            },
+        ];
+
+        // In-memory upsert onto the owner identity's queue, under the write
+        // lock (released before persisting). All entries share this owner.
+        {
+            let mut wm = self.wallet_manager.write().await;
+            let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) else {
+                return;
+            };
+            let Some(managed) = info.identity_manager.managed_identity_mut(identity_id) else {
+                tracing::warn!(
+                    identity = %identity_id, contact = %candidate.contact_id,
+                    "deferred contact-crypto enqueue for a non-resident identity; dropping"
+                );
+                return;
+            };
+            for entry in &entries {
+                upsert_pending_contact_crypto(
+                    managed.dashpay_pending_contact_crypto_mut(),
+                    entry.clone(),
+                );
+            }
+        }
+
+        // Persist the add-delta so the queue survives a restart. Best-effort:
+        // the recurring sweep re-discovers + re-enqueues if this fails (the
+        // in-memory queue above already covers the current session).
+        let changeset = PlatformWalletChangeSet {
+            pending_contact_crypto_added: entries,
+            ..Default::default()
+        };
+        if let Err(e) = self.persister.store(changeset) {
+            tracing::warn!(
+                identity = %identity_id, contact = %candidate.contact_id, error = %e,
+                "failed to persist deferred contact-crypto enqueue; will re-enqueue next sweep"
+            );
+        }
+    }
+
+    /// Number of deferred **account-build** contact-crypto ops queued for this
+    /// wallet (in-memory): the `RegisterReceiving` / `RegisterExternal` ops that
+    /// build a contact's payment account and need a signer unlock to complete.
+    ///
+    /// A `> 0` count means some contacts are waiting for an unlock to finish
+    /// setup. It is a wallet-scoped upper bound — it aggregates across the
+    /// wallet's identities and includes ops that may resolve to channel-broken
+    /// on the next drain — so a caller should phrase it as "waiting," not
+    /// "will succeed." `ContactInfoDecrypt` is excluded (see
+    /// [`count_account_build_ops`]). Signerless / public read; no persistence.
+    pub async fn pending_contact_crypto_count(&self) -> usize {
+        let wm = self.wallet_manager.read().await;
+        wm.get_wallet_info(&self.wallet_id)
+            .map(|info| {
+                info.identity_manager
+                    .managed_identities()
+                    .map(|m| count_account_build_ops(&m.dashpay().pending_contact_crypto))
+                    .sum::<usize>()
+            })
+            .unwrap_or(0)
+    }
+
+    /// Total number of queued contact-crypto entries for this wallet — every
+    /// op kind, **including** the `ContactInfoDecrypt` refreshes that
+    /// [`Self::pending_contact_crypto_count`] deliberately excludes. This is
+    /// the "does a signer-present drain have any work at all" probe: unlike
+    /// the banner count (which reports an actionable *backlog* to a user),
+    /// a scheduler should run the drain whenever anything is queued, or
+    /// ContactInfoDecrypt-only queues would never be applied. Signerless /
+    /// public read; no persistence.
+    pub async fn drainable_contact_crypto_count(&self) -> usize {
+        let wm = self.wallet_manager.read().await;
+        wm.get_wallet_info(&self.wallet_id)
+            .map(|info| {
+                info.identity_manager
+                    .managed_identities()
+                    .map(|m| m.dashpay().pending_contact_crypto.len())
+                    .sum::<usize>()
+            })
+            .unwrap_or(0)
+    }
+
+    /// Drain the persisted deferred-crypto queue using `provider` for the
+    /// Keychain-derived key material. Call when a signer is available (Keychain
+    /// unlock, or any signer-present DashPay action). Returns the number of
+    /// entries completed (removed from the queue).
+    ///
+    /// Per entry: run the op; on success remove it and persist the removal; on
+    /// unavailable/transient failure leave it for the next drain. The
+    /// `RegisterExternal` + `ContactInfoDecrypt` ops (which need a contact
+    /// fetch + ECDH/contactInfo derivation) drain in a follow-up and are left
+    /// queued here — so calling this is always safe, it just completes what it
+    /// can.
+    pub async fn drain_pending_contact_crypto<P: ContactCryptoProvider + Sync>(
+        &self,
+        provider: &P,
+    ) -> usize {
+        use crate::changeset::{PendingContactCryptoKey, PendingContactCryptoOp};
+
+        // Snapshot every resident identity's queue into one flat owned Vec
+        // (each entry self-identifies by `owner_identity_id`), then run the
+        // async ops without holding the lock.
+        let entries: Vec<crate::changeset::PendingContactCrypto> = {
+            let wm = self.wallet_manager.read().await;
+            wm.get_wallet_info(&self.wallet_id)
+                .map(|info| {
+                    info.identity_manager
+                        .managed_identities()
+                        .flat_map(|m| m.dashpay().pending_contact_crypto.iter().cloned())
+                        .collect()
+                })
+                .unwrap_or_default()
+        };
+        if entries.is_empty() {
+            return 0;
+        }
+
+        let mut cleared: Vec<PendingContactCryptoKey> = Vec::new();
+        for entry in &entries {
+            match &entry.op {
+                PendingContactCryptoOp::RegisterReceiving => {
+                    // Build the friendship path in Rust; the provider derives
+                    // our receiving xpub at it via the Keychain signer.
+                    let account_type = key_wallet::account::AccountType::DashpayReceivingFunds {
+                        index: 0,
+                        user_identity_id: entry.owner_identity_id.to_buffer(),
+                        friend_identity_id: entry.contact_id.to_buffer(),
+                    };
+                    let path = match account_type.derivation_path(self.sdk.network) {
+                        Ok(p) => p,
+                        Err(e) => {
+                            tracing::warn!(
+                                owner = %entry.owner_identity_id, contact = %entry.contact_id,
+                                error = %e, "drain: receiving path build failed; leaving queued"
+                            );
+                            continue;
+                        }
+                    };
+                    match provider.receiving_xpub(&path).await {
+                        Ok(xpub) => match self
+                            .register_contact_account(
+                                &entry.owner_identity_id,
+                                &entry.contact_id,
+                                0,
+                                xpub,
+                            )
+                            .await
+                        {
+                            Ok(()) => cleared.push(entry.key()),
+                            Err(e) => tracing::warn!(
+                                owner = %entry.owner_identity_id, contact = %entry.contact_id,
+                                error = %e, "drain: register receiving account failed; leaving queued"
+                            ),
+                        },
+                        Err(e) => tracing::warn!(
+                            owner = %entry.owner_identity_id, contact = %entry.contact_id,
+                            error = %e, "drain: receiving-xpub provider failed; leaving queued"
+                        ),
+                    }
+                }
+                PendingContactCryptoOp::RegisterExternal {
+                    encrypted_public_key,
+                    our_decryption_key_index,
+                    contact_encryption_key_index,
+                } => {
+                    // Our HD index, for the ECDH derivation path. If the owner
+                    // isn't wallet-owned, this op can't be ours — leave queued.
+                    let identity_index = {
+                        let wm = self.wallet_manager.read().await;
+                        wm.get_wallet_info(&self.wallet_id)
+                            .and_then(|info| {
+                                info.identity_manager
+                                    .managed_identity(&entry.owner_identity_id)
+                            })
+                            .and_then(|m| m.identity_index)
+                    };
+                    let Some(identity_index) = identity_index else {
+                        tracing::warn!(
+                            owner = %entry.owner_identity_id, contact = %entry.contact_id,
+                            "drain: owner not wallet-owned; leaving queued"
+                        );
+                        continue;
+                    };
+
+                    // ECDH path, built in Rust (path provenance stays here).
+                    let path = match IdentityWallet::<B>::identity_auth_derivation_path(
+                        self.sdk.network,
+                        key_wallet::bip32::KeyDerivationType::ECDSA,
+                        identity_index,
+                        *our_decryption_key_index,
+                    ) {
+                        Ok(p) => p,
+                        Err(e) => {
+                            tracing::warn!(
+                                owner = %entry.owner_identity_id, contact = %entry.contact_id,
+                                error = %e, "drain: ECDH path build failed; leaving queued"
+                            );
+                            continue;
+                        }
+                    };
+
+                    // Fetch the contact identity (transient on failure → leave).
+                    let contact_identity = {
+                        use dash_sdk::platform::Fetch;
+                        match Identity::fetch(&self.sdk, entry.contact_id).await {
+                            Ok(Some(id)) => id,
+                            Ok(None) => {
+                                tracing::warn!(
+                                    owner = %entry.owner_identity_id, contact = %entry.contact_id,
+                                    "drain: contact identity not on Platform; leaving queued"
+                                );
+                                continue;
+                            }
+                            Err(e) => {
+                                tracing::warn!(
+                                    owner = %entry.owner_identity_id, contact = %entry.contact_id,
+                                    error = %e, "drain: contact fetch failed; leaving queued"
+                                );
+                                continue;
+                            }
+                        }
+                    };
+
+                    // Validate key indices (purpose + type) BEFORE ECDH — the
+                    // same gate the resident sweep path applies, so the deferred
+                    // path enforces the identical contract. A purpose-only
+                    // mismatch (e.g. a legacy doc referencing an AUTH key) is left
+                    // queued for a future acceptance-policy change; a hard failure
+                    // (key type / missing / disabled) marks the channel broken and
+                    // clears the entry.
+                    let our_identity = {
+                        let wm = self.wallet_manager.read().await;
+                        wm.get_wallet_info(&self.wallet_id)
+                            .and_then(|info| {
+                                info.identity_manager
+                                    .managed_identity(&entry.owner_identity_id)
+                            })
+                            .map(|m| m.identity.clone())
+                    };
+                    let Some(our_identity) = our_identity else {
+                        tracing::warn!(
+                            owner = %entry.owner_identity_id, contact = %entry.contact_id,
+                            "drain: our identity vanished mid-drain; leaving queued"
+                        );
+                        continue;
+                    };
+                    let validation =
+                        crate::wallet::identity::crypto::validation::validate_contact_request(
+                            &contact_identity,
+                            *contact_encryption_key_index,
+                            &our_identity,
+                            *our_decryption_key_index,
+                        );
+                    if !validation.is_valid {
+                        if validation.is_purpose_only() {
+                            tracing::warn!(
+                                owner = %entry.owner_identity_id, contact = %entry.contact_id,
+                                errors = ?validation.errors,
+                                "drain: contact request key-purpose mismatch; leaving queued (not marking broken)"
+                            );
+                            continue;
+                        }
+                        tracing::warn!(
+                            owner = %entry.owner_identity_id, contact = %entry.contact_id,
+                            errors = ?validation.errors,
+                            "drain: contact request failed key-index validation; marking channel broken"
+                        );
+                        self.mark_contact_channel_broken(
+                            &entry.owner_identity_id,
+                            &entry.contact_id,
+                        )
+                        .await;
+                        cleared.push(entry.key());
+                        continue;
+                    }
+
+                    // The contact's encryption pubkey (peer). A malformed/missing
+                    // key is a permanent fault — re-deriving won't help.
+                    let peer = match contact_identity
+                        .public_keys()
+                        .get(contact_encryption_key_index)
+                    {
+                        Some(k) => {
+                            match dashcore::secp256k1::PublicKey::from_slice(k.data().as_slice()) {
+                                Ok(pk) => pk,
+                                Err(e) => {
+                                    tracing::warn!(
+                                        owner = %entry.owner_identity_id, contact = %entry.contact_id,
+                                        error = %e,
+                                        "drain: contact encryption key invalid; marking channel broken"
+                                    );
+                                    self.mark_contact_channel_broken(
+                                        &entry.owner_identity_id,
+                                        &entry.contact_id,
+                                    )
+                                    .await;
+                                    cleared.push(entry.key());
+                                    continue;
+                                }
+                            }
+                        }
+                        None => {
+                            tracing::warn!(
+                                owner = %entry.owner_identity_id, contact = %entry.contact_id,
+                                "drain: contact encryption key missing; marking channel broken"
+                            );
+                            self.mark_contact_channel_broken(
+                                &entry.owner_identity_id,
+                                &entry.contact_id,
+                            )
+                            .await;
+                            cleared.push(entry.key());
+                            continue;
+                        }
+                    };
+
+                    // ECDH via the Keychain-backed provider (scalar stays in the
+                    // signer; we only get the shared secret).
+                    let shared = match provider.ecdh_shared_secret(&path, &peer).await {
+                        Ok(s) => s,
+                        Err(e) => {
+                            tracing::warn!(
+                                owner = %entry.owner_identity_id, contact = %entry.contact_id,
+                                error = %e, "drain: ECDH provider failed; leaving queued"
+                            );
+                            continue;
+                        }
+                    };
+
+                    match self
+                        .register_external_contact_account(
+                            &entry.owner_identity_id,
+                            &contact_identity,
+                            encrypted_public_key,
+                            shared.clone(),
+                        )
+                        .await
+                    {
+                        Ok(registration) => {
+                            // Stamp the rotation self-heal marker and clear
+                            // any stale broken-channel flag — only when the
+                            // account was actually (re)built from this
+                            // entry's payload. An `AlreadyExisted` no-op may
+                            // have hit a pre-rotation row (the account key
+                            // ignores `account_reference`); stamping it as
+                            // current would suppress the sweep's teardown +
+                            // rebuild forever (same reasoning as the accept
+                            // path).
+                            if registration == ExternalAccountRegistration::Built {
+                                self.note_external_account_registered(
+                                    &entry.owner_identity_id,
+                                    &entry.contact_id,
+                                    encrypted_public_key,
+                                )
+                                .await;
+                            }
+                            // Surface the contact's account label from the same
+                            // ECDH shared key (best-effort, cosmetic — never
+                            // fails the drain).
+                            self.store_contact_account_label(
+                                &entry.owner_identity_id,
+                                &entry.contact_id,
+                                &shared,
+                            )
+                            .await;
+                            cleared.push(entry.key());
+                        }
+                        Err(e) if e.is_permanent() => {
+                            tracing::warn!(
+                                owner = %entry.owner_identity_id, contact = %entry.contact_id,
+                                error = %e.into_inner(),
+                                "drain: external register permanent fault; marking channel broken"
+                            );
+                            self.mark_contact_channel_broken(
+                                &entry.owner_identity_id,
+                                &entry.contact_id,
+                            )
+                            .await;
+                            cleared.push(entry.key());
+                        }
+                        Err(e) => tracing::warn!(
+                            owner = %entry.owner_identity_id, contact = %entry.contact_id,
+                            error = %e.into_inner(),
+                            "drain: external register transient/unavailable; leaving queued"
+                        ),
+                    }
+                }
+                PendingContactCryptoOp::ContactInfoDecrypt => {
+                    // Re-fetch the owner's contactInfo docs + decrypt + apply via
+                    // the signer (the op carries no payload, so the latest
+                    // published version always wins). The owner-ownership /
+                    // confused-deputy guard lives in `drain_contact_info_decrypt`.
+                    match self
+                        .drain_contact_info_decrypt(&entry.owner_identity_id, provider)
+                        .await
+                    {
+                        Ok(applied) => {
+                            tracing::debug!(
+                                owner = %entry.owner_identity_id, applied,
+                                "drain: contactInfo decrypted + applied"
+                            );
+                            cleared.push(entry.key());
+                        }
+                        // Provider/fetch failure (signer unavailable, network blip,
+                        // or a non-owned entry) → leave queued for the next drain.
+                        Err(e) => tracing::warn!(
+                            owner = %entry.owner_identity_id, error = %e,
+                            "drain: contactInfo decrypt failed; leaving queued"
+                        ),
+                    }
+                }
+                PendingContactCryptoOp::AutoAccept => {
+                    // Verifying the proof and sending the reciprocal both need the
+                    // identity signer, which this provider-only drain doesn't
+                    // carry. Handled by `drain_auto_accepts` at a signer-present
+                    // moment; skip here so the entry stays queued (the inbound
+                    // request remains manually acceptable meanwhile).
+                }
+            }
+        }
+
+        if cleared.is_empty() {
+            return 0;
+        }
+
+        // The drain ran over a lock-free SNAPSHOT: a concurrent rotation sweep
+        // may have `upsert`ed a fresh payload for one of these keys mid-drain.
+        // Removal must be value-aware — collect the full snapshot entries the
+        // drain actually processed so a payload changed under us survives to
+        // the next drain (the queue holds at most one entry per key, so the
+        // lookup is unambiguous).
+        let cleared_snapshots: Vec<crate::changeset::PendingContactCrypto> = cleared
+            .iter()
+            .filter_map(|k| entries.iter().find(|e| e.key() == *k).cloned())
+            .collect();
+
+        // Remove the completed entries from the in-memory queue + persist the
+        // removal so they don't replay after a restart. Only remove a live
+        // entry still value-equal to the snapshot's — a mid-drain upsert
+        // (changed payload) is left queued for the next drain rather than
+        // clobbered by this stale snapshot.
+        let removed: Vec<PendingContactCryptoKey> = {
+            let mut wm = self.wallet_manager.write().await;
+            match wm.get_wallet_info_mut(&self.wallet_id) {
+                Some(info) => {
+                    // Route each drained snapshot entry back to its owner's queue
+                    // and apply the value-aware retain there. Owner is on every
+                    // entry (and in the equality key), so this preserves the
+                    // concurrent-upsert safety per identity. An identity removed
+                    // between the snapshot and here is skipped: its queue died
+                    // with it, and `apply` ignores the cleared delta anyway.
+                    let mut removed = Vec::new();
+                    for snap in &cleared_snapshots {
+                        if let Some(managed) = info
+                            .identity_manager
+                            .managed_identity_mut(&snap.owner_identity_id)
+                        {
+                            removed.extend(retain_drained_by_snapshot(
+                                managed.dashpay_pending_contact_crypto_mut(),
+                                std::slice::from_ref(snap),
+                            ));
+                        }
+                    }
+                    removed
+                }
+                None => Vec::new(),
+            }
+        };
+        if removed.is_empty() {
+            return 0;
+        }
+        let removed_count = removed.len();
+        let changeset = crate::changeset::PlatformWalletChangeSet {
+            pending_contact_crypto_cleared: removed,
+            ..Default::default()
+        };
+        if let Err(e) = self.persister.store(changeset) {
+            tracing::warn!(
+                error = %e,
+                "drain: failed to persist cleared queue entries (in-memory already updated)"
+            );
+        }
+
+        removed_count
+    }
+
+    /// Drain queued `AutoAccept` ops (DIP-15 QR auto-accept) — verify each
+    /// inbound request's `autoAcceptProof` and, if valid + unexpired, auto-accept
+    /// it (send the reciprocal). Requires the identity `signer` (the reciprocal is
+    /// a signed state transition) as well as the crypto `provider` (to derive our
+    /// auto-accept public key); the provider-only [`drain_pending_contact_crypto`]
+    /// deliberately skips these. Returns the number auto-accepted.
+    ///
+    /// Anti-DoS: the cheap local checks (proof present, expiry, ECDSA verify
+    /// against our own re-derived key) run **before** any network/accept, so a
+    /// flood of junk proofs is cleared without per-entry round-trips. Verdict
+    /// mapping: invalid / expired / malformed / bad-index ⇒ permanent (clear);
+    /// provider-unavailable / accept-send failure ⇒ transient (leave queued).
+    pub async fn drain_auto_accepts<S, P>(&self, signer: &S, provider: &P) -> usize
+    where
+        S: Signer<IdentityPublicKey> + Send + Sync,
+        P: ContactCryptoProvider + Sync,
+    {
+        use crate::changeset::{PendingContactCryptoKey, PendingContactCryptoOp};
+        use crate::wallet::identity::crypto::auto_accept::{
+            auto_accept_derivation_path, auto_accept_proof_expiry,
+            verify_auto_accept_proof_with_pubkey,
+        };
+
+        // Snapshot just the AutoAccept entries, across every resident identity
+        // (both buckets — an AutoAccept op can legitimately sit on an
+        // out-of-wallet identity, since the enqueue gate isn't wallet-scoped).
+        let entries: Vec<crate::changeset::PendingContactCrypto> = {
+            let wm = self.wallet_manager.read().await;
+            wm.get_wallet_info(&self.wallet_id)
+                .map(|info| {
+                    info.identity_manager
+                        .managed_identities()
+                        .flat_map(|m| m.dashpay().pending_contact_crypto.iter())
+                        .filter(|e| matches!(e.op, PendingContactCryptoOp::AutoAccept))
+                        .cloned()
+                        .collect()
+                })
+                .unwrap_or_default()
+        };
+        if entries.is_empty() {
+            return 0;
+        }
+
+        let now_secs = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+
+        let mut cleared: Vec<PendingContactCryptoKey> = Vec::new();
+        // Permanent verify failures to mark so the sync sweep's enqueue gate
+        // does not re-queue the same bad proof every pass. `(owner, sender,
+        // proof)` — transient failures (provider unavailable / reciprocal-send
+        // failure) are NOT pushed here so they stay retryable.
+        let mut verify_failed: Vec<(Identifier, Identifier, Vec<u8>)> = Vec::new();
+        let mut accepted: usize = 0;
+
+        for entry in &entries {
+            let owner = entry.owner_identity_id; // us (the QR owner / recipient)
+            let sender = entry.contact_id; // the scanner (request $ownerId)
+
+            // Re-load the inbound request (carrying the proof) from local state.
+            let request = {
+                let wm = self.wallet_manager.read().await;
+                wm.get_wallet_info(&self.wallet_id)
+                    .and_then(|info| info.identity_manager.managed_identity(&owner))
+                    .and_then(|mi| {
+                        mi.dashpay()
+                            .incoming_contact_requests()
+                            .get(&sender)
+                            .cloned()
+                    })
+            };
+            let Some(request) = request else {
+                // Gone (already established / removed) — nothing to do.
+                cleared.push(entry.key());
+                continue;
+            };
+            let Some(proof) = request.auto_accept_proof.as_deref() else {
+                cleared.push(entry.key()); // no proof (shouldn't happen) — permanent
+                continue;
+            };
+
+            // Expiry is the proof's embedded index — the same value that keys
+            // verification, so it can't be lied about independently of the sig.
+            let Some(expiry) = auto_accept_proof_expiry(proof) else {
+                cleared.push(entry.key()); // malformed — permanent
+                verify_failed.push((owner, sender, proof.to_vec()));
+                continue;
+            };
+            if now_secs > expiry as u64 {
+                tracing::info!(
+                    owner = %owner, sender = %sender, expiry,
+                    "auto-accept: proof expired; clearing (request stays manually acceptable)"
+                );
+                cleared.push(entry.key()); // expired — permanent
+                verify_failed.push((owner, sender, proof.to_vec()));
+                continue;
+            }
+
+            // Derive OUR auto-accept public key at the proof's expiry, via the
+            // provider (seedless — no resident wallet). Local ECDSA verify runs
+            // before any network/accept (anti-DoS). Bind the sender to the
+            // consensus-authenticated request `$ownerId` (request.sender_id).
+            let path = match auto_accept_derivation_path(self.sdk.network, expiry) {
+                Ok(p) => p,
+                Err(e) => {
+                    tracing::warn!(owner = %owner, sender = %sender, error = %e,
+                        "auto-accept: bad expiry index; clearing");
+                    cleared.push(entry.key()); // bad index — permanent
+                    verify_failed.push((owner, sender, proof.to_vec()));
+                    continue;
+                }
+            };
+            let pubkey = match provider.receiving_xpub(&path).await {
+                Ok(xpub) => xpub.public_key,
+                Err(e) => {
+                    tracing::warn!(owner = %owner, sender = %sender, error = %e,
+                        "auto-accept: provider unavailable; leaving queued");
+                    continue; // transient — leave queued
+                }
+            };
+            let valid = verify_auto_accept_proof_with_pubkey(
+                &pubkey,
+                proof,
+                &request.sender_id,
+                &owner,
+                request.account_reference,
+            );
+            if !valid {
+                tracing::warn!(owner = %owner, sender = %sender,
+                    "auto-accept: proof did not verify; clearing");
+                cleared.push(entry.key()); // invalid — permanent
+                verify_failed.push((owner, sender, proof.to_vec()));
+                continue;
+            }
+
+            // Valid + unexpired → accept (send the reciprocal). Idempotent.
+            match self
+                .accept_contact_request_with_external_signer(&request, signer, provider)
+                .await
+            {
+                Ok(_) => {
+                    tracing::info!(owner = %owner, sender = %sender,
+                        "auto-accept: proof verified; contact auto-accepted");
+                    accepted += 1;
+                    cleared.push(entry.key());
+                }
+                Err(e) => tracing::warn!(owner = %owner, sender = %sender, error = %e,
+                    "auto-accept: reciprocal send failed; leaving queued"),
+            }
+        }
+
+        if !cleared.is_empty() {
+            {
+                let mut wm = self.wallet_manager.write().await;
+                if let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) {
+                    // Remove the cleared entries from their owners' queues. Each
+                    // cleared key names its owner, and only that owner's queue can
+                    // hold it, so retain each affected owner's queue against the
+                    // full cleared set. A plain key-`retain` is sufficient here
+                    // (unlike the value-aware `retain_drained_by_snapshot` the main
+                    // drain uses): `AutoAccept` is a payload-less unit variant, so a
+                    // concurrent mid-drain upsert can't change an entry's value —
+                    // key-equality is total.
+                    let mut cleared_owners: Vec<Identifier> =
+                        cleared.iter().map(|k| k.owner_identity_id).collect();
+                    cleared_owners.sort();
+                    cleared_owners.dedup();
+                    for owner in &cleared_owners {
+                        if let Some(managed) = info.identity_manager.managed_identity_mut(owner) {
+                            managed
+                                .dashpay_pending_contact_crypto_mut()
+                                .retain(|e| !cleared.iter().any(|k| *k == e.key()));
+                        }
+                    }
+                    // Record permanent verify failures so the next sweep's
+                    // enqueue gate skips the same bad proof (in-memory only —
+                    // retried once per launch; the request stays manually
+                    // acceptable).
+                    for (owner, sender, proof) in &verify_failed {
+                        if let Some(managed) = info.identity_manager.managed_identity_mut(owner) {
+                            managed.mark_auto_accept_verify_failed(sender, proof);
+                        }
+                    }
+                }
+            }
+            let changeset = crate::changeset::PlatformWalletChangeSet {
+                pending_contact_crypto_cleared: cleared,
+                ..Default::default()
+            };
+            if let Err(e) = self.persister.store(changeset) {
+                tracing::warn!(error = %e,
+                    "auto-accept: failed to persist cleared entries (in-memory already updated)");
+            }
+        }
+
+        accepted
+    }
+
+    /// Build a DIP-15 auto-accept QR URI (`dash:?du=<username>&dapk=<key_blob>`),
+    /// valid for [`AUTO_ACCEPT_TTL_SECS`](crate::wallet::identity::crypto::auto_accept::AUTO_ACCEPT_TTL_SECS).
+    ///
+    /// Derives the wallet's auto-accept key at `m/9'/coin'/16'/expiry'` via
+    /// `provider` — the deliberate raw-key export (the key is a bearer credential
+    /// the QR shares) — encodes the 38-byte `dapk` blob, and assembles the URI.
+    ///
+    /// The QR's `du` is `owner_identity_id`'s DPNS name (a scanner resolves it
+    /// back to the owner's identity). `username` is the locally-cached name when
+    /// available; pass an empty string to resolve it on-chain instead — imported
+    /// or restored identities carry the name on-chain but not in the local cache,
+    /// which is exactly when this matters. Errors if no name can be found.
+    pub async fn build_auto_accept_qr<P: ContactCryptoProvider + Sync>(
+        &self,
+        owner_identity_id: &Identifier,
+        username: &str,
+        provider: &P,
+    ) -> Result<String, PlatformWalletError> {
+        use crate::wallet::identity::crypto::auto_accept::{
+            auto_accept_derivation_path, encode_auto_accept_key_blob, encode_dashpay_contact_uri,
+            AUTO_ACCEPT_TTL_SECS,
+        };
+        // Prefer the caller-supplied (cached) name; fall back to an on-chain
+        // lookup when it is empty so the QR works regardless of local caching.
+        let resolved_name;
+        let username = if username.is_empty() {
+            let names = self
+                .sdk
+                .get_dpns_usernames_by_identity(*owner_identity_id, None)
+                .await
+                .map_err(|e| {
+                    PlatformWalletError::InvalidIdentityData(format!(
+                        "auto-accept QR: failed to resolve a DPNS name on-chain for \
+                         {owner_identity_id}: {e}"
+                    ))
+                })?;
+            // Any of the identity's names resolves back to it, so the choice is
+            // cosmetic; pick the lexicographically smallest for a deterministic
+            // QR that stays stable across rebuilds. The app's "main name"
+            // preference isn't visible on this on-chain path — the cached-name
+            // branch above honors it whenever a local name is present.
+            resolved_name = names.into_iter().map(|n| n.label).min().ok_or_else(|| {
+                PlatformWalletError::InvalidIdentityData(
+                    "auto-accept QR requires a DPNS username; none is registered for this identity"
+                        .to_string(),
+                )
+            })?;
+            resolved_name.as_str()
+        } else {
+            username
+        };
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as u32)
+            .unwrap_or(0);
+        let expiry = now.saturating_add(AUTO_ACCEPT_TTL_SECS);
+        let path = auto_accept_derivation_path(self.sdk.network, expiry)?;
+        let secret_key = provider.export_auto_accept_private_key(&path).await?;
+        let blob = encode_auto_accept_key_blob(&secret_key, expiry);
+        Ok(encode_dashpay_contact_uri(username, &blob))
+    }
+
+    /// Mark an established contact's payment channel as permanently broken
+    /// and persist the transition through the changeset pipeline so
+    /// it survives restarts and is FFI/UI-visible. Idempotent.
+    async fn mark_contact_channel_broken(&self, identity_id: &Identifier, contact_id: &Identifier) {
+        let mut wm = self.wallet_manager.write().await;
+        let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) else {
+            return;
+        };
+        let Some(managed) = info.identity_manager.managed_identity_mut(identity_id) else {
+            return;
+        };
+        let Some(contact) = managed.established_contact_mut(contact_id) else {
+            return;
+        };
+        if contact.payment_channel_broken {
+            return;
+        }
+        contact.payment_channel_broken = true;
+        let snapshot = contact.clone();
+
+        // Persist the broken flag via an `established` changeset entry
+        // (the established upsert carries the flag column).
+        let mut cs = crate::changeset::ContactChangeSet::default();
+        cs.established.insert(
+            crate::changeset::SentContactRequestKey {
+                owner_id: *identity_id,
+                recipient_id: *contact_id,
+            },
+            snapshot,
+        );
+        if let Err(e) = self.persister.store(cs.into()) {
+            tracing::error!("Failed to persist broken-channel changeset: {}", e);
+        }
+    }
+
+    /// Record that the contact's outbound `DashpayExternalAccount` is now
+    /// built from the contact's current `incoming_request.account_reference`,
+    /// and clear any stale `payment_channel_broken` flag — the two success
+    /// side-effects of a completed [`register_external_contact_account`].
+    ///
+    /// - Stamping `external_account_reference` lets the sweep's rotation
+    ///   self-heal skip a healthy account (marker matches the tracked
+    ///   reference) and detect a stale one after a restart (F2).
+    /// - Clearing `payment_channel_broken` heals a channel that a prior
+    ///   permanent-fault marked broken but that a successful re-register (via
+    ///   the drain or a user re-accept) proves is usable again — otherwise the
+    ///   UI reports "broken" and blocks sending forever, since the sweep skips
+    ///   broken contacts and never re-registers them (F12).
+    ///
+    /// Idempotent (skips the persist when nothing changed). Takes its own
+    /// write guard; the caller must hold no wallet-manager guard.
+    ///
+    /// `built_from_ciphertext` is the `encryptedPublicKey` blob the account
+    /// was actually registered from. Registration and this stamp run under
+    /// SEPARATE guards (the drain awaits the ECDH provider lock-free in
+    /// between), so a rotation sweep can advance `incoming_request` after
+    /// the payload was snapshotted but before this stamp. Stamping the LIVE
+    /// reference in that window would mark an account built from the
+    /// rotated-away xpub as current — `external_account_needs_rebuild` then
+    /// never fires and `send_payment` silently derives addresses the
+    /// contact no longer watches. Comparing the live ciphertext against the
+    /// one we built from detects the race; on mismatch the marker is left
+    /// stale (or `None`) so the sweep's teardown + rebuild picks up the
+    /// fresh request.
+    pub(crate) async fn note_external_account_registered(
+        &self,
+        identity_id: &Identifier,
+        contact_id: &Identifier,
+        built_from_ciphertext: &[u8],
+    ) {
+        let mut wm = self.wallet_manager.write().await;
+        let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) else {
+            return;
+        };
+        let Some(managed) = info.identity_manager.managed_identity_mut(identity_id) else {
+            return;
+        };
+        let Some(contact) = managed.established_contact_mut(contact_id) else {
+            return;
+        };
+        if contact.incoming_request.encrypted_public_key != built_from_ciphertext {
+            tracing::warn!(
+                owner = %identity_id, contact = %contact_id,
+                "external account registered from a superseded payload (rotation raced \
+                 the registration); leaving the self-heal marker stale so the sweep rebuilds"
+            );
+            return;
+        }
+        let current_reference = contact.incoming_request.account_reference;
+        let already_current = contact.external_account_reference == Some(current_reference);
+        if already_current && !contact.payment_channel_broken {
+            return;
+        }
+        // Persist BEFORE committing to memory: if the store fails, the
+        // in-memory marker must stay stale so the `already_current` guard
+        // above and the sweep's `external_account_needs_rebuild` predicate
+        // keep retriggering until a persist succeeds — otherwise memory runs
+        // ahead of disk and nothing in-process ever retries (only a restart
+        // reloading the stale marker would heal it).
+        let mut updated = contact.clone();
+        updated.external_account_reference = Some(current_reference);
+        updated.payment_channel_broken = false;
+
+        let mut cs = crate::changeset::ContactChangeSet::default();
+        cs.established.insert(
+            crate::changeset::SentContactRequestKey {
+                owner_id: *identity_id,
+                recipient_id: *contact_id,
+            },
+            updated.clone(),
+        );
+        if let Err(e) = self.persister.store(cs.into()) {
+            tracing::error!(
+                "Failed to persist external-account-registered changeset: {}",
+                e
+            );
+            return;
+        }
+        *contact = updated;
+    }
+
+    /// Decrypt the contact's incoming `encryptedAccountLabel` with the ECDH
+    /// shared key and store the printable plaintext on the established
+    /// contact's `contact_account_label`. Best-effort and cosmetic: a missing
+    /// label, a decrypt/UTF-8 failure, or non-printable garbage leaves or sets
+    /// `None` — it never breaks the payment channel or fails the caller.
+    ///
+    /// The label is derived strictly from the **incoming** request (the label
+    /// the contact chose for the account they shared); the outgoing request
+    /// carries a label *we* sent and is never a source. AES-CBC has no
+    /// integrity, so a corrupt or non-conforming-sender ciphertext can unpad
+    /// into valid-UTF-8 garbage — empty / whitespace-only / control-char
+    /// results are coerced to `None` so the UI shows nothing rather than
+    /// garbage.
+    ///
+    /// Written to the in-memory `established` contact and flushed through an
+    /// `established` changeset entry. Unlike the broken-channel flag, the label
+    /// is **not** durably persisted by the SQLite backend: it is intentionally
+    /// re-derived from the incoming request on the next contact-info sweep so it
+    /// never goes stale against rotated key material (the field resets to `None`
+    /// on every (re-)establish/rotation) — a cold restart restores it empty and
+    /// the next sweep repopulates it. Self-contained locking: takes its own
+    /// write guard, and the decrypt is synchronous, so nothing awaits or
+    /// re-locks under it. The caller must hold no wallet-manager guard.
+    pub(crate) async fn store_contact_account_label(
+        &self,
+        identity_id: &Identifier,
+        contact_id: &Identifier,
+        shared_key: &[u8; 32],
+    ) {
+        let mut wm = self.wallet_manager.write().await;
+        let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) else {
+            return;
+        };
+        let Some(managed) = info.identity_manager.managed_identity_mut(identity_id) else {
+            return;
+        };
+        let Some(contact) = managed.established_contact_mut(contact_id) else {
+            return;
+        };
+
+        // The contact's label rides their incoming request only.
+        let ciphertext = match &contact.incoming_request.encrypted_account_label {
+            Some(ct) => ct.clone(),
+            None => return,
+        };
+
+        let decrypted = match platform_encryption::decrypt_account_label(shared_key, &ciphertext) {
+            Ok(s) => {
+                let trimmed = s.trim();
+                if trimmed.is_empty() || trimmed.chars().any(char::is_control) {
+                    None
+                } else {
+                    Some(trimmed.to_string())
+                }
+            }
+            Err(e) => {
+                tracing::debug!(
+                    owner = %identity_id, contact = %contact_id, error = %e,
+                    "Could not decrypt the contact's account label; leaving it unset"
+                );
+                return;
+            }
+        };
+
+        // Idempotent — skip the changeset write when nothing changed.
+        if contact.contact_account_label == decrypted {
+            return;
+        }
+        contact.contact_account_label = decrypted;
+        let snapshot = contact.clone();
+
+        let mut cs = crate::changeset::ContactChangeSet::default();
+        cs.established.insert(
+            crate::changeset::SentContactRequestKey {
+                owner_id: *identity_id,
+                recipient_id: *contact_id,
+            },
+            snapshot,
+        );
+        if let Err(e) = self.persister.store(cs.into()) {
+            tracing::error!("Failed to persist account-label changeset: {}", e);
+        }
+    }
+}
+
+/// One established contact that needs its DashPay accounts (re)built
+/// during a sync sweep. Collected under the write guard, consumed
+/// after it is dropped.
+struct AccountBuildCandidate {
+    /// The counterparty identity.
+    contact_id: Identifier,
+    /// The counterparty's 96-byte encrypted xpub (from their incoming
+    /// request to us) to decrypt + register as a `DashpayExternalAccount`.
+    encrypted_public_key: Vec<u8>,
+    /// Our DECRYPTION key id used for ECDH.
+    our_decryption_key_index: u32,
+    /// The counterparty's ENCRYPTION key id used for ECDH.
+    contact_encryption_key_index: u32,
 }
 
 // ---------------------------------------------------------------------------
 // Accept an incoming contact request
 // ---------------------------------------------------------------------------
 
-impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
+impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// Accept an incoming contact request using an externally-supplied
     /// signer.
     ///
@@ -463,19 +2735,22 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     /// [`Self::send_contact_request_with_external_signer`] so signing
     /// crosses the FFI via the supplied `&S: Signer<IdentityPublicKey>`.
     /// Same ECDH caveat applies — see that method's docstring.
-    pub async fn accept_contact_request_with_external_signer<S>(
+    pub async fn accept_contact_request_with_external_signer<S, C>(
         &self,
         request: &ContactRequest,
         signer: &S,
+        crypto: &C,
     ) -> Result<EstablishedContact, PlatformWalletError>
     where
         S: Signer<IdentityPublicKey> + Send + Sync,
+        C: ContactCryptoProvider + Sync,
     {
         let our_identity_id = request.recipient_id;
         let sender_id = request.sender_id;
 
-        // 1. Verify the incoming request is known.
-        {
+        // 1. Verify the incoming request is known, and detect whether an
+        //    on-platform reciprocal already exists for this pair.
+        let (already_established, already_reciprocated) = {
             let wm = self.wallet_manager.read().await;
             let info = wm
                 .get_wallet_info(&self.wallet_id)
@@ -484,10 +2759,30 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 .identity_manager
                 .managed_identity(&our_identity_id)
                 .ok_or(PlatformWalletError::IdentityNotFound(our_identity_id))?;
-            if !managed.incoming_contact_requests.contains_key(&sender_id) {
+            // The contact is already established (sync reconciled both
+            // sides), or our own sent request to this contact already
+            // exists — in either case the reciprocal is already on
+            // Platform and re-broadcasting it would be rejected by the
+            // `(ownerId, toUserId, accountReference)` unique index.
+            let established = managed
+                .dashpay()
+                .established_contacts()
+                .contains_key(&sender_id);
+            let sent_exists = managed
+                .dashpay()
+                .sent_contact_requests()
+                .contains_key(&sender_id);
+            if !established
+                && !sent_exists
+                && !managed
+                    .dashpay()
+                    .incoming_contact_requests()
+                    .contains_key(&sender_id)
+            {
                 return Err(PlatformWalletError::ContactRequestNotFound(sender_id));
             }
-        }
+            (established, established || sent_exists)
+        };
 
         // 2. Capture the encrypted xpub + key indices BEFORE sending
         //    the reciprocal request (same ordering as the legacy
@@ -496,25 +2791,96 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         let our_decryption_key_index = request.recipient_key_index;
         let contact_encryption_key_index = request.sender_key_index;
 
-        // 3. Send reciprocal request via the external-signer path.
-        self.send_contact_request_with_external_signer(
-            &our_identity_id,
-            &sender_id,
-            None,
-            None,
-            signer,
-        )
-        .await?;
+        // 3. Send the reciprocal request — UNLESS one already exists on
+        //    Platform (accept-adopt): re-broadcasting the same
+        //    `(ownerId, toUserId, accountReference)` triple is rejected by
+        //    the unique index forever. When adopting, we still perform the
+        //    fresh-send local registrations below (receiving account +
+        //    validate→decrypt→register external), so the contact becomes
+        //    payable without a duplicate broadcast.
+        if already_reciprocated {
+            tracing::info!(
+                our_identity = %our_identity_id,
+                contact = %sender_id,
+                "Accept: reciprocal already on Platform — adopting instead of re-broadcasting"
+            );
+            // Establish the contact locally from the accepted incoming request
+            // when it is not yet established. In the `sent_exists && !established`
+            // adopt path (our own reciprocal already sent, the counterparty's
+            // request not yet swept into `incoming_contact_requests`) nothing
+            // else inserts an `EstablishedContact` — `register_contact_account`
+            // and `register_external_contact_account` only touch account
+            // collections — so the step-5 `established_contacts.get` would return
+            // `None` and the accept would spuriously fail with
+            // `ContactRequestNotFound` despite the account registrations
+            // succeeding. Ingesting the request here collapses the pending sent
+            // entry + the incoming request into an established contact (the same
+            // path the normal flow and the sync sweep use), so the final lookup
+            // is guaranteed non-`None`. Idempotent: `add_incoming_contact_request`
+            // preserves metadata on an already-established pair.
+            if !already_established {
+                let mut wm = self.wallet_manager.write().await;
+                let managed = wm
+                    .get_wallet_info_mut(&self.wallet_id)
+                    .and_then(|info| info.identity_manager.managed_identity_mut(&our_identity_id))
+                    .ok_or(PlatformWalletError::IdentityNotFound(our_identity_id))?;
+                managed
+                    .add_incoming_contact_request(request.clone(), &self.persister)
+                    .map_err(|e| {
+                        PlatformWalletError::Persistence(format!(
+                            "accept-adopt: incoming request not persisted: {e}"
+                        ))
+                    })?;
+            }
+            // Adopt: register the receiving (friendship) account, derived via
+            // the signer (no resident seed), matching the fresh-send path.
+            match self
+                .receiving_xpub_for(&our_identity_id, &sender_id, 0, crypto)
+                .await
+            {
+                Ok(xpub) => {
+                    if let Err(e) = self
+                        .register_contact_account(&our_identity_id, &sender_id, 0, xpub)
+                        .await
+                    {
+                        tracing::warn!(
+                            our_identity = %our_identity_id,
+                            contact = %sender_id,
+                            error = %e,
+                            "Accept-adopt: failed to register receiving account; will retry on next sweep"
+                        );
+                    }
+                }
+                Err(e) => tracing::warn!(
+                    our_identity = %our_identity_id,
+                    contact = %sender_id,
+                    error = %e,
+                    "Accept-adopt: failed to derive receiving xpub via signer; will retry on next sweep"
+                ),
+            }
+        } else {
+            self.send_contact_request_with_external_signer(
+                &our_identity_id,
+                &sender_id,
+                None,
+                AutoAcceptProofSource::None,
+                signer,
+                crypto,
+            )
+            .await?;
+        }
 
-        // 4. Best-effort external-account registration. Failures are
-        //    logged but do not abort.
+        // 4. Validate key indices (same gate as the sync sweep and the
+        //    fresh send — applies to ALL three accept paths) BEFORE any
+        //    ECDH, then register the external (sending) account.
         if let Err(e) = self
-            .register_external_contact_account(
+            .accept_register_external_validated(
                 &our_identity_id,
                 &sender_id,
                 &contact_encrypted_xpub,
                 our_decryption_key_index,
                 contact_encryption_key_index,
+                crypto,
             )
             .await
         {
@@ -523,7 +2889,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 contact = %sender_id,
                 error = %e,
                 "Failed to register external contact account after accept (external signer) — \
-                 re-run register_external_contact_account to retry"
+                 re-run sync to retry"
             );
         }
 
@@ -538,10 +2904,165 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             .ok_or(PlatformWalletError::IdentityNotFound(our_identity_id))?;
 
         managed
-            .established_contacts
+            .dashpay()
+            .established_contacts()
             .get(&sender_id)
             .cloned()
             .ok_or(PlatformWalletError::ContactRequestNotFound(sender_id))
+    }
+
+    /// Validate the contact request's key indices (purpose
+    /// ENCRYPTION/DECRYPTION + ECDSA type) BEFORE any ECDH, then register
+    /// the external sending account. Shared by the accept and accept-adopt
+    /// paths so the validation gate is applied uniformly (it also runs in
+    /// the sync sweep).
+    ///
+    /// A validation failure is returned as an error so the caller can log
+    /// it; the channel is not silently registered against an unvalidated
+    /// index. On the network/decrypt side this simply forwards to
+    /// [`register_external_contact_account`].
+    async fn accept_register_external_validated<C: ContactCryptoProvider + Sync>(
+        &self,
+        our_identity_id: &Identifier,
+        contact_id: &Identifier,
+        contact_encrypted_xpub: &[u8],
+        our_decryption_key_index: u32,
+        contact_encryption_key_index: u32,
+        crypto: &C,
+    ) -> Result<(), PlatformWalletError> {
+        use dash_sdk::platform::Fetch;
+
+        // Fetch counterparty + our identity for validation.
+        let contact_identity = Identity::fetch(&self.sdk, *contact_id)
+            .await
+            .map_err(|e| {
+                PlatformWalletError::InvalidIdentityData(format!(
+                    "Failed to fetch contact identity {contact_id} for validation: {e}"
+                ))
+            })?
+            .ok_or(PlatformWalletError::IdentityNotFound(*contact_id))?;
+
+        let (our_identity, identity_index) = {
+            let wm = self.wallet_manager.read().await;
+            let managed = wm
+                .get_wallet_info(&self.wallet_id)
+                .and_then(|info| info.identity_manager.managed_identity(our_identity_id))
+                .ok_or(PlatformWalletError::IdentityNotFound(*our_identity_id))?;
+            let index = managed
+                .identity_index
+                .ok_or(PlatformWalletError::IdentityIndexNotSet(*our_identity_id))?;
+            (managed.identity.clone(), index)
+        };
+
+        let validation = crate::wallet::identity::crypto::validation::validate_contact_request(
+            &contact_identity,
+            contact_encryption_key_index,
+            &our_identity,
+            our_decryption_key_index,
+        );
+        if !validation.is_valid {
+            return Err(PlatformWalletError::InvalidIdentityData(format!(
+                "Contact request failed key-index validation: {:?}",
+                validation.errors
+            )));
+        }
+
+        // Seedless ECDH: our decryption-key scalar (at the Rust-built path)
+        // against the contact's encryption pubkey, computed in the signer. The
+        // resolved shared secret is handed to the register call so its resident
+        // derivation path is never taken.
+        let our_dec_path = IdentityWallet::<B>::identity_auth_derivation_path(
+            self.sdk.network,
+            key_wallet::bip32::KeyDerivationType::ECDSA,
+            identity_index,
+            our_decryption_key_index,
+        )?;
+        let contact_pubkey = {
+            use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+            let key = contact_identity
+                .public_keys()
+                .get(&contact_encryption_key_index)
+                .ok_or_else(|| {
+                    PlatformWalletError::InvalidIdentityData(format!(
+                        "Contact identity has no key at index {contact_encryption_key_index}"
+                    ))
+                })?;
+            dashcore::secp256k1::PublicKey::from_slice(key.data().as_slice()).map_err(|e| {
+                PlatformWalletError::InvalidIdentityData(format!(
+                    "Contact encryption public key is invalid: {e}"
+                ))
+            })?
+        };
+        let shared = crypto
+            .ecdh_shared_secret(&our_dec_path, &contact_pubkey)
+            .await?;
+
+        // Reuse the identity we just fetched for validation (no second
+        // network round). The accept path surfaces any failure to the
+        // caller as a plain error — the transient/permanent split only
+        // matters to the unattended sync sweep's broken-channel policy.
+        let registration = self
+            .register_external_contact_account(
+                our_identity_id,
+                &contact_identity,
+                contact_encrypted_xpub,
+                shared.clone(),
+            )
+            .await
+            .map_err(RegisterExternalError::into_inner)?;
+
+        // Stamp the rotation self-heal marker and clear any stale
+        // broken-channel flag (a user re-accept of a healed channel must stop
+        // reporting broken — the sweep never re-registers broken contacts).
+        // ONLY when the account was actually (re)built from this request's
+        // payload: an `AlreadyExisted` no-op may have hit a row built from a
+        // PRE-rotation xpub (the account key ignores `account_reference`), and
+        // stamping it as current would make `external_account_needs_rebuild`
+        // skip the teardown + rebuild forever — `send_payment` would keep
+        // deriving from an xpub the contact no longer watches. Left unstamped,
+        // the sweep detects the stale marker and rebuilds; its build path
+        // stamps + clears broken then.
+        if registration == ExternalAccountRegistration::Built {
+            self.note_external_account_registered(
+                our_identity_id,
+                contact_id,
+                contact_encrypted_xpub,
+            )
+            .await;
+        }
+
+        // Surface the contact's account label from the same ECDH shared key
+        // (best-effort, cosmetic — a label failure never fails the accept).
+        self.store_contact_account_label(our_identity_id, contact_id, &shared)
+            .await;
+
+        Ok(())
+    }
+
+    /// Derive our DashPay receiving (friendship) xpub for `(our_identity,
+    /// contact)` at `account_index` via the signer — the seedless equivalent of
+    /// deriving it from the wallet. Path is `AccountType::DashpayReceivingFunds`
+    /// built in Rust; only the public xpub crosses back.
+    async fn receiving_xpub_for<C: ContactCryptoProvider + Sync>(
+        &self,
+        our_identity_id: &Identifier,
+        contact_id: &Identifier,
+        account_index: u32,
+        crypto: &C,
+    ) -> Result<key_wallet::bip32::ExtendedPubKey, PlatformWalletError> {
+        let account_type = key_wallet::account::AccountType::DashpayReceivingFunds {
+            index: account_index,
+            user_identity_id: our_identity_id.to_buffer(),
+            friend_identity_id: contact_id.to_buffer(),
+        };
+        let path = account_type
+            .derivation_path(self.sdk.network)
+            .map_err(|e| {
+                PlatformWalletError::InvalidIdentityData(format!(
+                    "Failed to build DashPay derivation path: {e}"
+                ))
+            })?;
+        crypto.receiving_xpub(&path).await
     }
 }
 
@@ -549,7 +3070,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
 // Sent contact requests query
 // ---------------------------------------------------------------------------
 
-impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
+impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// Fetch sent contact requests for a specific identity from Platform.
     ///
     /// Queries the DashPay contract for `contactRequest` documents where
@@ -659,23 +3180,34 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
 }
 
 // ---------------------------------------------------------------------------
-// Reject contact request
+// Ignore / un-ignore a contact sender (per-sender mute, local-only)
 // ---------------------------------------------------------------------------
 
-impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
-    /// Reject a contact request by hiding the contact.
+impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
+    /// Ignore a contact sender (per-sender mute, = block, reversible).
     ///
-    /// This marks the contact as hidden in the local identity manager so that
-    /// the UI no longer surfaces it. A full DashPay implementation would also
-    /// create or update a `contactInfo` document on Platform with
-    /// `display_hidden: true`; that part requires SDK support for document
-    /// creation on arbitrary contracts which is not yet available here.
+    /// Drops the sender's pending incoming request from local state AND
+    /// records the sender in `ignored_senders` so the recurring sync ingest
+    /// path won't resurrect *any* of that sender's still-on-platform
+    /// immutable `contactRequest` documents — including rotated, bumped-
+    /// `accountReference` ones. Suppression is per-sender by design: if you
+    /// ignored the person you ignored them; [`Self::unignore_contact_sender`]
+    /// is the "changed my mind" affordance.
+    ///
+    /// Ignore is **local-only** — there is no on-chain artifact (syncing it
+    /// would leak who you ignored via the public contact-request indices).
+    /// The ignore is persisted through the existing
+    /// changeset → apply → SQLite pipeline so it survives a relaunch.
+    ///
+    /// Unlike the old reject, this does NOT require a pending incoming
+    /// request to exist: you can ignore a sender whose request the sweep
+    /// hasn't surfaced yet (the per-sender set still suppresses it).
     ///
     /// # Arguments
     ///
     /// * `identity_id`         - Our identity.
-    /// * `contact_identity_id` - The identity whose request we reject.
-    pub async fn reject_contact_request(
+    /// * `contact_identity_id` - The sender to ignore.
+    pub async fn ignore_contact_sender(
         &self,
         identity_id: &Identifier,
         contact_identity_id: &Identifier,
@@ -689,27 +3221,1231 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             .managed_identity_mut(identity_id)
             .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
 
-        // Remove from incoming requests (if present).
-        if managed
-            .incoming_contact_requests
-            .remove(contact_identity_id)
-            .is_none()
-        {
-            return Err(PlatformWalletError::ContactRequestNotFound(
-                *contact_identity_id,
-            ));
-        }
-
-        // TODO: When the SDK supports creating/updating arbitrary DashPay
-        // documents (contactInfo), submit a `display_hidden: true` document to
-        // Platform here so the rejection is persisted across devices.
+        // Record the ignore (drops the pending incoming entry if present,
+        // adds the sender to `ignored_senders`) and persist it.
+        //
+        // PROPAGATE the store error rather than swallow it. Ignore is
+        // local-only (there's no on-chain artifact), so if it doesn't reach
+        // disk the still-immutable on-chain requests re-ingest on the next
+        // launch and the ignored sender RESURFACES — with no signal.
+        // Returning the error surfaces the failure to the UI so the user
+        // retries, instead of a silent success that didn't take.
+        let cs = managed.ignore_sender(contact_identity_id);
+        self.persister
+            .store(cs.into())
+            .map_err(|e| PlatformWalletError::Persistence(format!("ignore not persisted: {e}")))?;
 
         tracing::info!(
             identity = %identity_id,
-            rejected_contact = %contact_identity_id,
-            "Contact request rejected (hidden locally)"
+            ignored_sender = %contact_identity_id,
+            "Contact sender ignored (local-only; suppressed from the main pending list, won't resurrect on sync)"
         );
 
         Ok(())
+    }
+
+    /// Un-ignore a contact sender (reverse [`Self::ignore_contact_sender`]).
+    ///
+    /// Removes the sender from `ignored_senders`, **rewinds the received
+    /// high-water cursor to `None`** (so the next sweep re-fetches the
+    /// sender's on-chain requests — otherwise the cursor has already passed
+    /// them and they'd never reappear), and persists the un-ignore through
+    /// the changeset pipeline.
+    ///
+    /// A no-op (returns `Ok(())`) when the sender wasn't ignored.
+    ///
+    /// # Arguments
+    ///
+    /// * `identity_id`         - Our identity.
+    /// * `contact_identity_id` - The sender to un-ignore.
+    pub async fn unignore_contact_sender(
+        &self,
+        identity_id: &Identifier,
+        contact_identity_id: &Identifier,
+    ) -> Result<(), PlatformWalletError> {
+        let mut wm = self.wallet_manager.write().await;
+        let info = wm
+            .get_wallet_info_mut(&self.wallet_id)
+            .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
+        let managed = info
+            .identity_manager
+            .managed_identity_mut(identity_id)
+            .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
+
+        // `unignore_sender` removes the sender + rewinds the cursor and
+        // returns the removal changeset (empty if the sender wasn't
+        // ignored). Persist it so the ignored-sender row is deleted.
+        let cs = managed.unignore_sender(contact_identity_id);
+        if <crate::changeset::ContactChangeSet as crate::changeset::Merge>::is_empty(&cs) {
+            // Not ignored — nothing to persist, but not an error.
+            return Ok(());
+        }
+        self.persister.store(cs.into()).map_err(|e| {
+            PlatformWalletError::Persistence(format!("un-ignore not persisted: {e}"))
+        })?;
+
+        tracing::info!(
+            identity = %identity_id,
+            unignored_sender = %contact_identity_id,
+            "Contact sender un-ignored (cursor rewound; requests will re-fetch on next sweep)"
+        );
+
+        Ok(())
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Network-layer tests for the sync sweep decision logic.
+//
+// These exercise the *orchestration* helpers that don't require a live
+// network or real ECDH keys: account-build candidate collection
+// and the rejected-tombstone / broken-flag persistence round-trip. The
+// pure state-machine behaviors (guard relaxation, sent-side dedup,
+// metadata-preserving re-establish, tombstone-by-accountReference) are
+// pinned in `state/managed_identity/contact_requests.rs`.
+// ---------------------------------------------------------------------------
+#[cfg(test)]
+mod cursor_tests {
+    use super::{query_lower_bound, SYNC_OVERLAP_MS};
+
+    /// No cursor ⇒ full fetch (no lower bound).
+    #[test]
+    fn lower_bound_none_is_full_fetch() {
+        assert_eq!(query_lower_bound(None), None);
+    }
+
+    /// The query bound is the high-water minus the (mandatory) overlap window,
+    /// saturating at 0 — the overlap is what re-includes equal-`$createdAt`
+    /// docs at a page boundary, so it must always be subtracted.
+    #[test]
+    fn lower_bound_subtracts_overlap() {
+        assert_eq!(
+            query_lower_bound(Some(20 * 60_000)),
+            Some(20 * 60_000 - SYNC_OVERLAP_MS)
+        );
+        // Saturates rather than underflowing for a high-water below the window.
+        assert_eq!(query_lower_bound(Some(5 * 60_000)), Some(0));
+        const { assert!(SYNC_OVERLAP_MS > 0, "overlap must be > 0 for correctness") };
+
+        // `0` is a real cursor value distinct from `None` — pin that a
+        // future "treat 0 as unset" refactor would regress.
+        assert_eq!(query_lower_bound(Some(0)), Some(0));
+    }
+}
+
+#[cfg(test)]
+mod sweep_tests {
+    use super::*;
+    use crate::broadcaster::SpvBroadcaster;
+    use crate::changeset::{ContactChangeSet, PlatformWalletChangeSet, SentContactRequestKey};
+    use crate::wallet::core::WalletBalance;
+    use crate::wallet::identity::IdentityManager;
+    use crate::wallet::persister::{NoPlatformPersistence, WalletPersister};
+    use crate::wallet::platform_wallet::PlatformWalletInfo;
+    use dpp::identity::v0::IdentityV0;
+    use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+    use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
+    use key_wallet::wallet::Wallet;
+    use key_wallet::Network;
+    use std::collections::BTreeMap;
+    use std::sync::Arc;
+
+    fn noop_persister() -> WalletPersister {
+        WalletPersister::new([0u8; 32], Arc::new(NoPlatformPersistence))
+    }
+
+    fn build_test_wallet() -> Wallet {
+        Wallet::new_random(Network::Testnet, WalletAccountCreationOptions::None)
+            .expect("test wallet")
+    }
+
+    fn empty_info(wallet: &Wallet) -> PlatformWalletInfo {
+        PlatformWalletInfo {
+            core_wallet: ManagedWalletInfo::from_wallet(wallet, 0),
+            balance: Arc::new(WalletBalance::new()),
+            identity_manager: IdentityManager::new(),
+            tracked_asset_locks: BTreeMap::new(),
+        }
+    }
+
+    fn test_identity(id_byte: u8) -> Identity {
+        Identity::V0(IdentityV0 {
+            id: Identifier::from([id_byte; 32]),
+            public_keys: BTreeMap::new(),
+            balance: 0,
+            revision: 0,
+        })
+    }
+
+    fn test_request(sender: u8, recipient: u8, account_reference: u32) -> ContactRequest {
+        ContactRequest::new(
+            Identifier::from([sender; 32]),
+            Identifier::from([recipient; 32]),
+            1,
+            2,
+            account_reference,
+            vec![7u8; 96],
+            100_000,
+            0,
+        )
+    }
+
+    /// Seed a wallet-owned identity that has an established contact (no
+    /// external account yet) into a fresh `PlatformWalletInfo`.
+    fn info_with_established_contact(our: u8, contact: u8) -> (Wallet, PlatformWalletInfo) {
+        let wallet = build_test_wallet();
+        let mut info = empty_info(&wallet);
+        let our_id = Identifier::from([our; 32]);
+        let p = noop_persister();
+        info.identity_manager
+            .add_identity(test_identity(our), 0, [0u8; 32], &p)
+            .expect("add identity");
+        let managed = info
+            .identity_manager
+            .managed_identity_mut(&our_id)
+            .expect("managed identity");
+        // Establish a contact via the state machine.
+        managed
+            .add_incoming_contact_request(test_request(contact, our, 0), &p)
+            .expect("setup persists");
+        managed
+            .add_sent_contact_request(test_request(our, contact, 0), &p)
+            .expect("setup persists");
+        assert_eq!(managed.dashpay().established_contacts().len(), 1);
+        (wallet, info)
+    }
+
+    /// **Test 3 (restore-from-seed shape):** an established contact with
+    /// zero DashPay accounts must surface as an account-build candidate so
+    /// the sweep rebuilds BOTH the receiving and external accounts. Before
+    /// the account-building sweep only the fresh-send path created them, so
+    /// restore-from-seed left the contact unpayable and incoming payments
+    /// invisible.
+    #[test]
+    fn established_contact_missing_external_account_is_a_build_candidate() {
+        let our = 1u8;
+        let contact = 2u8;
+        let our_id = Identifier::from([our; 32]);
+        let (_wallet, info) = info_with_established_contact(our, contact);
+
+        let candidates =
+            DashPayView::<SpvBroadcaster>::collect_account_build_candidates(&info, &our_id);
+
+        assert_eq!(
+            candidates.len(),
+            1,
+            "an established contact with no external account must be a build candidate"
+        );
+        let c = &candidates[0];
+        assert_eq!(c.contact_id, Identifier::from([contact; 32]));
+        // The candidate carries the counterparty's encrypted xpub + the
+        // ECDH key indices taken from the INCOMING request.
+        assert_eq!(c.encrypted_public_key, vec![7u8; 96]);
+        // incoming request: sender=contact key_index 1, recipient(us) key_index 2
+        assert_eq!(c.contact_encryption_key_index, 1);
+        assert_eq!(c.our_decryption_key_index, 2);
+    }
+
+    /// **Test 4 (permanent failure → no retry):** once a contact's payment
+    /// channel is marked broken, the sweep must NOT re-list it as a
+    /// candidate — no unbounded retry until a superseding request clears
+    /// the flag.
+    #[test]
+    fn broken_payment_channel_is_skipped_by_the_sweep() {
+        let our = 1u8;
+        let contact = 2u8;
+        let our_id = Identifier::from([our; 32]);
+        let contact_id = Identifier::from([contact; 32]);
+        let (_wallet, mut info) = info_with_established_contact(our, contact);
+
+        // Mark the channel broken (as the permanent-failure path would).
+        info.identity_manager
+            .managed_identity_mut(&our_id)
+            .unwrap()
+            .established_contact_mut(&contact_id)
+            .unwrap()
+            .payment_channel_broken = true;
+
+        let candidates =
+            DashPayView::<SpvBroadcaster>::collect_account_build_candidates(&info, &our_id);
+        assert!(
+            candidates.is_empty(),
+            "a permanently-broken contact must not be retried by the sweep"
+        );
+    }
+
+    /// **F2 rotation self-heal predicate.** After a restart the persisted,
+    /// tombstone-less account-registration row rebuilds the contact's OLD
+    /// (rotated-away) external xpub while the established contact already
+    /// tracks the NEW incoming reference. `external_account_needs_rebuild`
+    /// must flag such a registered-but-stale account for teardown + rebuild —
+    /// including the `None` marker case (a cold restore that did not carry the
+    /// marker), which conservatively forces one rebuild. A registered account
+    /// whose marker MATCHES the tracked reference is healthy (no churn), a
+    /// missing account is not this predicate's job, and a broken channel is
+    /// left alone.
+    #[test]
+    fn external_account_needs_rebuild_detects_stale_registered_account() {
+        let contact_id = Identifier::from([2u8; 32]);
+        let outgoing = test_request(1, 2, 0);
+        let mut incoming = test_request(2, 1, 0);
+        incoming.account_reference = 200; // the CURRENT (post-rotation) reference
+        let mut contact = EstablishedContact::new(contact_id, outgoing, incoming);
+
+        // Registered account still built from the OLD reference (100) — stale.
+        contact.external_account_reference = Some(100);
+        assert!(
+            external_account_needs_rebuild(&contact, true),
+            "a registered account whose marker != the tracked reference is stale"
+        );
+
+        // Cold restore that did not carry the marker (`None`) — force a rebuild.
+        contact.external_account_reference = None;
+        assert!(
+            external_account_needs_rebuild(&contact, true),
+            "a None marker after restart must force one rebuild"
+        );
+
+        // Healthy: marker matches the tracked reference — no rebuild (no churn).
+        contact.external_account_reference = Some(200);
+        assert!(
+            !external_account_needs_rebuild(&contact, true),
+            "a registered account built from the current reference is healthy"
+        );
+
+        // No registered account: not this predicate's job (ordinary candidate).
+        contact.external_account_reference = None;
+        assert!(
+            !external_account_needs_rebuild(&contact, false),
+            "a missing external account is not a stale-rebuild case"
+        );
+
+        // Broken channel is left alone even if the marker mismatches.
+        contact.external_account_reference = Some(100);
+        contact.payment_channel_broken = true;
+        assert!(
+            !external_account_needs_rebuild(&contact, true),
+            "a broken channel is never re-registered by the sweep"
+        );
+    }
+
+    /// **Test 4 (persistence):** the broken-channel flag round-trips through
+    /// the changeset → apply pipeline so it survives a restart and is
+    /// FFI/UI-visible — and a transient (cleared) flag round-trips too.
+    #[test]
+    fn broken_channel_flag_round_trips_through_apply() {
+        let our = 1u8;
+        let contact = 2u8;
+        let our_id = Identifier::from([our; 32]);
+        let contact_id = Identifier::from([contact; 32]);
+        let (mut wallet, mut info) = info_with_established_contact(our, contact);
+
+        // Build an `established` changeset carrying the broken flag.
+        let mut contact_obj = info
+            .identity_manager
+            .managed_identity(&our_id)
+            .unwrap()
+            .dashpay()
+            .established_contacts()
+            .get(&contact_id)
+            .unwrap()
+            .clone();
+        contact_obj.payment_channel_broken = true;
+        let mut cs = ContactChangeSet::default();
+        cs.established.insert(
+            SentContactRequestKey {
+                owner_id: our_id,
+                recipient_id: contact_id,
+            },
+            contact_obj,
+        );
+        let pcs = PlatformWalletChangeSet {
+            contacts: Some(cs),
+            ..Default::default()
+        };
+
+        info.apply_changeset(&mut wallet, pcs).expect("apply");
+
+        assert!(
+            info.identity_manager
+                .managed_identity(&our_id)
+                .unwrap()
+                .dashpay()
+                .established_contacts()
+                .get(&contact_id)
+                .unwrap()
+                .payment_channel_broken,
+            "broken flag must survive the changeset apply round-trip"
+        );
+    }
+
+    /// **Ignore persistence:** an ignored sender round-trips through the
+    /// changeset → apply pipeline so a recurring re-sync after a restart
+    /// still suppresses them — including a rotated (bumped-`accountReference`)
+    /// request from the same sender (per-sender suppression).
+    #[test]
+    fn ignored_sender_round_trips_through_changeset_apply() {
+        let our = 1u8;
+        let sender = 9u8;
+        let our_id = Identifier::from([our; 32]);
+        let sender_id = Identifier::from([sender; 32]);
+        let wallet = build_test_wallet();
+        let mut info = empty_info(&wallet);
+        let p = noop_persister();
+        info.identity_manager
+            .add_identity(test_identity(our), 0, [0u8; 32], &p)
+            .expect("add identity");
+
+        // Ignore the sender and capture the resulting changeset.
+        let managed = info.identity_manager.managed_identity_mut(&our_id).unwrap();
+        managed
+            .add_incoming_contact_request(test_request(sender, our, 0), &p)
+            .expect("setup persists");
+        let cs = managed.ignore_sender(&sender_id);
+        let pcs = PlatformWalletChangeSet {
+            contacts: Some(cs),
+            ..Default::default()
+        };
+
+        // Wipe the in-memory ignore set, then re-apply the changeset (the
+        // restore-from-persistence path).
+        let managed = info.identity_manager.managed_identity_mut(&our_id).unwrap();
+        let wiped: Vec<_> = managed
+            .dashpay()
+            .ignored_senders()
+            .iter()
+            .copied()
+            .collect();
+        for sender in &wiped {
+            managed.apply_unignored_sender(sender);
+        }
+        let mut wallet = wallet;
+        info.apply_changeset(&mut wallet, pcs).expect("apply");
+
+        let managed = info.identity_manager.managed_identity(&our_id).unwrap();
+        assert!(
+            managed.is_sender_ignored(&sender_id),
+            "ignored sender must be restored from the changeset"
+        );
+    }
+
+    /// **Ignore suppresses original AND rotated (full sweep):** an ignored
+    /// sender's ORIGINAL request and a later ROTATED (bumped-`accountReference`)
+    /// request are BOTH suppressed by `sync_contact_requests`' per-sender
+    /// ingest guard — neither reaches `incoming_contact_requests`. This is
+    /// the key per-sender semantic difference from the old per-(sender,ref)
+    /// reject (which would have let the rotation through).
+    ///
+    /// Drives the ingest decision logic directly against the state machine
+    /// (the full network fetch is exercised by the mock-SDK integration
+    /// tests): collapse-newest → is_sender_ignored → skip.
+    #[test]
+    fn ignored_sender_suppresses_both_original_and_rotated_requests() {
+        let our = 1u8;
+        let sender = 9u8;
+        let our_id = Identifier::from([our; 32]);
+        let sender_id = Identifier::from([sender; 32]);
+        let wallet = build_test_wallet();
+        let mut info = empty_info(&wallet);
+        let p = noop_persister();
+        info.identity_manager
+            .add_identity(test_identity(our), 0, [0u8; 32], &p)
+            .expect("add identity");
+        let managed = info.identity_manager.managed_identity_mut(&our_id).unwrap();
+
+        // Ignore the sender first.
+        managed.ignore_sender(&sender_id);
+        assert!(managed.is_sender_ignored(&sender_id));
+
+        // Simulate the sweep seeing BOTH the original (ref=0) and a rotated
+        // (ref=7) on-chain doc for this sender. The collapse keeps the
+        // newest; the ignore check then suppresses it regardless of ref.
+        let original = test_request_at(sender, our, 0, 100);
+        let rotated = test_request_at(sender, our, 7, 200);
+        let collapsed = newest_received_per_sender([original, rotated]);
+        let newest = collapsed.get(&sender_id).expect("collapsed entry");
+
+        // The per-sender ignore suppresses the rotated (newest) doc.
+        assert_eq!(
+            newest.account_reference, 7,
+            "collapse keeps the newest (rotated) doc"
+        );
+        assert!(
+            managed.is_sender_ignored(&sender_id),
+            "an ignored sender suppresses ALL their requests, including the rotation"
+        );
+
+        // And the original ref (0) is suppressed too — per-sender, not
+        // per-(sender, accountReference).
+        assert!(managed.is_sender_ignored(&sender_id));
+    }
+
+    /// Build a received request with an explicit `created_at` so the
+    /// dedup tiebreak can be exercised.
+    fn test_request_at(
+        sender: u8,
+        recipient: u8,
+        account_reference: u32,
+        created_at: u64,
+    ) -> ContactRequest {
+        ContactRequest::new(
+            Identifier::from([sender; 32]),
+            Identifier::from([recipient; 32]),
+            1,
+            2,
+            account_reference,
+            vec![7u8; 96],
+            100_000,
+            created_at,
+        )
+    }
+
+    /// **Sweep idempotency (the multi-doc thrash fix).**
+    /// `contactRequest` docs are immutable and never deleted, so a sender
+    /// who rotated leaves BOTH their old (ref=0) and bumped (ref=7) docs
+    /// returning on every sweep. `newest_received_per_sender` must collapse
+    /// them to the single newest by (created_at, accountReference) so the
+    /// stale doc can't be re-ingested as a phantom rotation each pass.
+    ///
+    /// Without the collapse, the ingest loop processes every doc and compares
+    /// each against the single tracked reference, so the non-matching doc
+    /// flips the stored state every sweep; with it, only the newest survives.
+    #[test]
+    fn newest_received_per_sender_collapses_rotated_sender_to_latest_doc() {
+        let sender = 2u8;
+        let our = 1u8;
+        // Same sender, two on-chain docs: old ref=0 @t=100, rotated ref=7 @t=200.
+        let old_doc = test_request_at(sender, our, 0, 100);
+        let rotated_doc = test_request_at(sender, our, 7, 200);
+        // A second, unrelated sender to prove per-sender keying.
+        let other = test_request_at(3, our, 0, 150);
+
+        // Feed in doc-id order (old before new — the order a BTreeMap-keyed
+        // fetch yields, NOT createdAt order) to prove ordering independence.
+        let collapsed =
+            newest_received_per_sender([old_doc.clone(), other.clone(), rotated_doc.clone()]);
+
+        assert_eq!(collapsed.len(), 2, "one entry per distinct sender");
+        let sender_id = Identifier::from([sender; 32]);
+        assert_eq!(
+            collapsed.get(&sender_id).map(|r| r.account_reference),
+            Some(7),
+            "the newest (rotated) doc must win, regardless of input order"
+        );
+        assert_eq!(
+            collapsed
+                .get(&Identifier::from([3u8; 32]))
+                .map(|r| r.account_reference),
+            Some(0),
+            "the unrelated sender is unaffected"
+        );
+
+        // And the collapse is itself a fixpoint: re-collapsing yields the same.
+        let again = newest_received_per_sender(collapsed.values().cloned());
+        assert_eq!(again.get(&sender_id).map(|r| r.account_reference), Some(7));
+    }
+
+    /// **Sent-side restore-from-seed rotation (the frozen-outgoing bug).**
+    /// A rotation re-send leaves our OWN old + bumped sent docs on-chain;
+    /// `fetch_sent_contact_requests` returns them `$createdAt`-ASC. Ingesting
+    /// raw would establish/track against the OLDEST (stale) outgoing
+    /// reference, so the next rotation re-derives the same reference and
+    /// collides on the unique index. `newest_sent_per_recipient` must
+    /// collapse to the single newest doc per recipient so restore tracks the
+    /// freshest outgoing reference.
+    #[test]
+    fn newest_sent_per_recipient_collapses_rotated_recipient_to_latest_doc() {
+        let our = 1u8;
+        let recipient = 2u8;
+        // Our own sent docs to one recipient: old ref=100 @t=100, rotated
+        // ref=101 @t=200. `test_request_at(sender, recipient, ..)` — here we
+        // are the sender.
+        let old_doc = test_request_at(our, recipient, 100, 100);
+        let rotated_doc = test_request_at(our, recipient, 101, 200);
+        // A second recipient to prove per-recipient keying.
+        let other = test_request_at(our, 3, 100, 150);
+
+        // Feed old-before-new (the $createdAt-ASC order the fetch yields).
+        let collapsed =
+            newest_sent_per_recipient([old_doc.clone(), other.clone(), rotated_doc.clone()]);
+
+        assert_eq!(collapsed.len(), 2, "one entry per distinct recipient");
+        let recipient_id = Identifier::from([recipient; 32]);
+        assert_eq!(
+            collapsed.get(&recipient_id).map(|r| r.account_reference),
+            Some(101),
+            "the newest (rotated) sent doc must win, not the stale oldest"
+        );
+        assert_eq!(
+            collapsed
+                .get(&Identifier::from([3u8; 32]))
+                .map(|r| r.account_reference),
+            Some(100),
+            "the unrelated recipient is unaffected"
+        );
+
+        // Fixpoint: re-collapsing yields the same.
+        let again = newest_sent_per_recipient(collapsed.values().cloned());
+        assert_eq!(
+            again.get(&recipient_id).map(|r| r.account_reference),
+            Some(101)
+        );
+    }
+
+    /// **Receive-side label ingest (the sweep-parser drop bug).**
+    /// The recurring sweep parses received `contactRequest` docs via
+    /// `parse_contact_request_doc`. It must carry the optional DIP-15
+    /// `encryptedAccountLabel` onto the `ContactRequest` — otherwise the
+    /// label the sender attached (and which lands on-chain) is silently
+    /// dropped on ingest, so the receive-side surfacing has nothing to
+    /// decrypt. Pins that the field survives the parse (red before the
+    /// parser read it, green after).
+    #[test]
+    fn parse_contact_request_doc_carries_encrypted_account_label() {
+        use dpp::document::{Document, DocumentV0};
+        use dpp::platform_value::Value;
+        use std::collections::BTreeMap;
+
+        let sender = Identifier::from([2u8; 32]);
+        let recipient = Identifier::from([1u8; 32]);
+
+        let label_ct = vec![0x2au8; 48];
+        let mut properties = BTreeMap::new();
+        properties.insert("senderKeyIndex".to_string(), Value::U32(0));
+        properties.insert("recipientKeyIndex".to_string(), Value::U32(0));
+        properties.insert("accountReference".to_string(), Value::U32(5));
+        properties.insert(
+            "encryptedPublicKey".to_string(),
+            Value::Bytes(vec![1u8; 96]),
+        );
+        properties.insert(
+            "encryptedAccountLabel".to_string(),
+            Value::Bytes(label_ct.clone()),
+        );
+
+        let doc = Document::V0(DocumentV0 {
+            id: Identifier::from([9u8; 32]),
+            owner_id: sender,
+            properties,
+            revision: None,
+            created_at: Some(123),
+            updated_at: None,
+            transferred_at: None,
+            created_at_block_height: None,
+            updated_at_block_height: None,
+            transferred_at_block_height: None,
+            created_at_core_block_height: Some(456),
+            updated_at_core_block_height: None,
+            transferred_at_core_block_height: None,
+            creator_id: None,
+        });
+
+        let parsed =
+            DashPayView::<SpvBroadcaster>::parse_contact_request_doc(&doc, sender, recipient)
+                .expect("a complete contactRequest doc must parse");
+        assert_eq!(
+            parsed.encrypted_account_label,
+            Some(label_ct),
+            "the sweep parser must carry encryptedAccountLabel onto the request, \
+             else the receive-side label surfacing has nothing to decrypt"
+        );
+    }
+
+    /// **Rotation version bump must read established contacts.**
+    /// The next request's rotation version is derived by un-masking the
+    /// PRIOR sent reference. Once a contact establishes, that prior request
+    /// moves out of `sent_contact_requests` into
+    /// `established_contacts[..].outgoing_request`, so a lookup that only
+    /// consults the pending map returns `None` → version resets to 0 →
+    /// reproduces the original accountReference → unique-index rejection.
+    ///
+    /// The hazard: if `prior_sent_account_reference` consulted only
+    /// `sent_contact_requests` it would return `None` for an established
+    /// contact; it must fall back to the established outgoing request.
+    #[test]
+    fn prior_sent_account_reference_falls_back_to_established_outgoing() {
+        let our = 1u8;
+        let contact = 2u8;
+        let our_id = Identifier::from([our; 32]);
+        let contact_id = Identifier::from([contact; 32]);
+        let (_wallet, mut info) = info_with_established_contact(our, contact);
+
+        let managed = info.identity_manager.managed_identity_mut(&our_id).unwrap();
+        // Precondition: the outgoing request is NOT in the pending map.
+        assert!(
+            !managed.dashpay().sent_contact_requests().contains_key(&contact_id),
+            "an established contact's outgoing request lives in established_contacts, not the pending map"
+        );
+        // The fix: the lookup still finds the prior reference via the
+        // established contact's outgoing_request (reference 0 here).
+        assert_eq!(
+            managed.prior_sent_account_reference(&contact_id),
+            Some(0),
+            "must read the established contact's outgoing accountReference, not None"
+        );
+
+        // And a pending (not-yet-established) recipient still resolves via
+        // the pending map; an unknown recipient is None.
+        let pending = Identifier::from([9u8; 32]);
+        managed
+            .add_sent_contact_request(test_request(our, 9, 4), &noop_persister())
+            .expect("setup persists");
+        assert_eq!(managed.prior_sent_account_reference(&pending), Some(4));
+        assert_eq!(
+            managed.prior_sent_account_reference(&Identifier::from([42u8; 32])),
+            None
+        );
+    }
+
+    /// **Defense-in-depth — `apply_rotated_incoming_request` is
+    /// idempotent.** Even if the dedup ever let a duplicate through, a
+    /// re-apply of the byte-identical request must be a no-op: no second
+    /// changeset, no re-reported re-key (which would re-tear-down the
+    /// external account).
+    #[test]
+    fn apply_rotated_incoming_request_is_idempotent() {
+        let our = 1u8;
+        let contact = 2u8;
+        let our_id = Identifier::from([our; 32]);
+        let (_wallet, mut info) = info_with_established_contact(our, contact);
+        let p = noop_persister();
+
+        let managed = info.identity_manager.managed_identity_mut(&our_id).unwrap();
+        let rotated = test_request(contact, our, 7);
+
+        // First apply: real re-key (returns true — caller tears down the account).
+        assert!(
+            managed
+                .apply_rotated_incoming_request(rotated.clone(), &p)
+                .expect("rotation persists in test"),
+            "first rotation must re-key the established contact"
+        );
+        // Second apply of the SAME request: no-op (returns false).
+        assert!(
+            !managed
+                .apply_rotated_incoming_request(rotated.clone(), &p)
+                .expect("rotation persists in test"),
+            "re-applying an identical request must be a no-op (no re-key, no churn)"
+        );
+        let stored = info
+            .identity_manager
+            .managed_identity(&our_id)
+            .unwrap()
+            .dashpay()
+            .established_contacts()
+            .get(&Identifier::from([contact; 32]))
+            .unwrap();
+        assert_eq!(stored.incoming_request.account_reference, 7);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Send-side recipient key selection.
+//
+// Verified testnet reality: the dominant mobile cohort has
+// an ENCRYPTION key but NO DECRYPTION key, and references its ENCRYPTION key
+// for recipientKeyIndex. Sending to such a recipient must succeed by falling
+// back to the ENCRYPTION key — without that fallback the send errors with
+// "no decryption key" for the dominant mobile cohort.
+// ---------------------------------------------------------------------------
+#[cfg(test)]
+mod recipient_key_selection_tests {
+    use super::*;
+    use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+    use dpp::identity::v0::IdentityV0;
+    use dpp::identity::SecurityLevel;
+    use std::collections::BTreeMap;
+
+    fn key(id: u32, key_type: KeyType, purpose: Purpose) -> IdentityPublicKey {
+        IdentityPublicKey::V0(IdentityPublicKeyV0 {
+            id,
+            key_type,
+            purpose,
+            security_level: SecurityLevel::MEDIUM,
+            contract_bounds: None,
+            read_only: false,
+            data: dpp::platform_value::BinaryData::new(vec![0x02; 33]),
+            disabled_at: None,
+        })
+    }
+
+    fn identity_with_keys(keys: Vec<IdentityPublicKey>) -> Identity {
+        let mut map = BTreeMap::new();
+        for k in keys {
+            map.insert(k.id(), k);
+        }
+        Identity::V0(IdentityV0 {
+            id: Identifier::from([0xBB; 32]),
+            public_keys: map,
+            balance: 0,
+            revision: 0,
+        })
+    }
+
+    /// Mobile-shaped recipient: AUTHENTICATION + ENCRYPTION keys, NO
+    /// DECRYPTION key. Selection must fall back to the ENCRYPTION key (id 2)
+    /// rather than erroring "no decryption key".
+    #[test]
+    fn falls_back_to_encryption_key_when_recipient_has_no_decryption_key() {
+        let recipient = identity_with_keys(vec![
+            key(0, KeyType::ECDSA_SECP256K1, Purpose::AUTHENTICATION),
+            key(1, KeyType::ECDSA_SECP256K1, Purpose::AUTHENTICATION),
+            key(2, KeyType::ECDSA_SECP256K1, Purpose::ENCRYPTION),
+        ]);
+
+        let idx = select_recipient_key_index(&recipient)
+            .expect("must select the ENCRYPTION key for a mobile-shaped recipient");
+        assert_eq!(idx, 2, "should reference the recipient's ENCRYPTION key");
+    }
+
+    /// Newest cohort / our convention: a DECRYPTION key is present and
+    /// preferred over any ENCRYPTION key.
+    #[test]
+    fn prefers_decryption_key_when_present() {
+        let recipient = identity_with_keys(vec![
+            key(4, KeyType::ECDSA_SECP256K1, Purpose::ENCRYPTION),
+            key(5, KeyType::ECDSA_SECP256K1, Purpose::DECRYPTION),
+        ]);
+
+        let idx = select_recipient_key_index(&recipient).expect("decryption key present");
+        assert_eq!(idx, 5, "must prefer DECRYPTION over ENCRYPTION");
+    }
+
+    /// Neither DECRYPTION nor ENCRYPTION (only AUTHENTICATION): error. No
+    /// AUTHENTICATION fallback — reusing signing keys for ECDH is poor key
+    /// separation and no live population needs it.
+    #[test]
+    fn errors_when_recipient_has_neither_encryption_nor_decryption() {
+        let recipient = identity_with_keys(vec![key(
+            0,
+            KeyType::ECDSA_SECP256K1,
+            Purpose::AUTHENTICATION,
+        )]);
+
+        let err = select_recipient_key_index(&recipient).unwrap_err();
+        assert!(
+            matches!(err, PlatformWalletError::InvalidIdentityData(_)),
+            "expected InvalidIdentityData, got {err:?}"
+        );
+    }
+
+    /// A DECRYPTION key of the wrong key TYPE is not selectable; selection
+    /// falls through to a valid ECDSA ENCRYPTION key.
+    #[test]
+    fn skips_non_ecdsa_decryption_key_and_uses_ecdsa_encryption() {
+        let recipient = identity_with_keys(vec![
+            key(0, KeyType::BLS12_381, Purpose::DECRYPTION),
+            key(1, KeyType::ECDSA_SECP256K1, Purpose::ENCRYPTION),
+        ]);
+
+        let idx = select_recipient_key_index(&recipient)
+            .expect("ECDSA encryption key must be selectable");
+        assert_eq!(idx, 1);
+    }
+
+    fn disabled_key(id: u32, key_type: KeyType, purpose: Purpose) -> IdentityPublicKey {
+        IdentityPublicKey::V0(IdentityPublicKeyV0 {
+            id,
+            key_type,
+            purpose,
+            security_level: SecurityLevel::MEDIUM,
+            contract_bounds: None,
+            read_only: false,
+            data: dpp::platform_value::BinaryData::new(vec![0x02; 33]),
+            disabled_at: Some(1_700_000_000_000),
+        })
+    }
+
+    /// **#6 — a disabled (revoked) recipient key must not be selected.** The
+    /// chosen key receives the contact's DIP-15 compact xpub encrypted via
+    /// ECDH; picking a revoked key would hand that payment xpub to whoever
+    /// holds the compromised private half. A disabled DECRYPTION key must be
+    /// skipped in favour of an enabled ENCRYPTION key.
+    #[test]
+    fn skips_disabled_decryption_key_and_falls_back_to_enabled_encryption() {
+        let recipient = identity_with_keys(vec![
+            disabled_key(0, KeyType::ECDSA_SECP256K1, Purpose::DECRYPTION),
+            key(1, KeyType::ECDSA_SECP256K1, Purpose::ENCRYPTION),
+        ]);
+
+        let idx = select_recipient_key_index(&recipient)
+            .expect("must skip the disabled DECRYPTION key and use the enabled ENCRYPTION key");
+        assert_eq!(idx, 1, "the disabled key (id 0) must not be selected");
+    }
+
+    /// When the ONLY candidate is disabled, selection errors rather than
+    /// silently encrypting to a revoked key.
+    #[test]
+    fn errors_when_only_candidate_key_is_disabled() {
+        let recipient = identity_with_keys(vec![disabled_key(
+            0,
+            KeyType::ECDSA_SECP256K1,
+            Purpose::ENCRYPTION,
+        )]);
+
+        let err = select_recipient_key_index(&recipient).unwrap_err();
+        assert!(
+            matches!(err, PlatformWalletError::InvalidIdentityData(_)),
+            "a sole disabled key must error, got {err:?}"
+        );
+    }
+
+    /// **Own-key selector: a disabled first ENCRYPTION key is skipped in
+    /// favour of the enabled replacement.** After a disable-and-replace key
+    /// rotation the lowest-id ENCRYPTION key is disabled; selecting it
+    /// would hard-fail the pre-send validator on every new outgoing contact
+    /// request ("Sender key N is disabled") even though an enabled
+    /// replacement exists — while the contactInfo path (which already
+    /// filtered disabled keys) would use the replacement, splitting the two
+    /// surfaces' notion of the ECDH root. Was red against the send path's
+    /// unfiltered inline selection.
+    #[test]
+    fn own_key_selector_skips_disabled_first_encryption_key() {
+        let identity = identity_with_keys(vec![
+            key(0, KeyType::ECDSA_SECP256K1, Purpose::AUTHENTICATION),
+            disabled_key(1, KeyType::ECDSA_SECP256K1, Purpose::ENCRYPTION),
+            key(2, KeyType::ECDSA_SECP256K1, Purpose::ENCRYPTION),
+        ]);
+
+        let selected = select_own_encryption_key(&identity)
+            .expect("must skip the disabled key and select the enabled replacement");
+        assert_eq!(
+            selected.id(),
+            2,
+            "the disabled lowest-id ENCRYPTION key (id 1) must not be the ECDH root"
+        );
+    }
+
+    /// Own-key selector: enabled-only, so an identity whose ONLY
+    /// ENCRYPTION key is disabled errors instead of deriving ECDH from a
+    /// revoked key.
+    #[test]
+    fn own_key_selector_errors_when_only_encryption_key_is_disabled() {
+        let identity = identity_with_keys(vec![
+            key(0, KeyType::ECDSA_SECP256K1, Purpose::AUTHENTICATION),
+            disabled_key(1, KeyType::ECDSA_SECP256K1, Purpose::ENCRYPTION),
+        ]);
+
+        let err = select_own_encryption_key(&identity).unwrap_err();
+        assert!(
+            matches!(err, PlatformWalletError::InvalidIdentityData(_)),
+            "a sole disabled ENCRYPTION key must error, got {err:?}"
+        );
+    }
+}
+
+#[cfg(test)]
+mod contact_info_provider_tests {
+    use super::*;
+    use crate::wallet::identity::crypto::contact_info::derive_contact_info_keys;
+    use crate::wallet::identity::network::identity_auth_derivation_path_for_type;
+    use key_wallet::bip32::KeyDerivationType;
+    use key_wallet::mnemonic::{Language, Mnemonic};
+    use key_wallet::Network;
+
+    // Canonical BIP-39 test mnemonic.
+    const PHRASE: &str =
+        "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+
+    /// MUST-FIX (security review): the contactInfo seal/open the signer produces
+    /// must be byte-identical to the resident `derive_contact_info_keys` AT THE
+    /// REAL identity-auth root path — not an arbitrary path. contactInfo is
+    /// self-encrypted (no counterparty round-trip), so a wrong root silently
+    /// writes data no client can decrypt, with no on-chain oracle. This pins the
+    /// provider's seal to the production derivation at the real path and confirms
+    /// open round-trips.
+    #[tokio::test]
+    async fn contact_info_seal_open_matches_resident_derivation_at_real_auth_path() {
+        let seed = Mnemonic::from_phrase(PHRASE, Language::English)
+            .expect("valid mnemonic")
+            .to_seed("");
+        let network = Network::Testnet;
+        let identity_index = 0u32;
+        let root_key_id = 2u32;
+        let derivation_index = 0u32;
+        let contact_id = [0x33u8; 32];
+        let plaintext = b"hello private data".to_vec();
+        let iv = [0x11u8; 16];
+
+        // The REAL identity-auth root the production publish path builds.
+        let root_path = identity_auth_derivation_path_for_type(
+            network,
+            KeyDerivationType::ECDSA,
+            identity_index,
+            root_key_id,
+        )
+        .expect("auth path");
+
+        let provider = SeedCryptoProvider::from_seed(seed, network);
+        let sealed = provider
+            .contact_info_seal(&root_path, derivation_index, &contact_id, &plaintext, &iv)
+            .await
+            .expect("seal");
+
+        // Resident twin at the same real path → byte-identical ciphertext.
+        let wallet = key_wallet::wallet::Wallet::from_seed_bytes(
+            seed,
+            network,
+            key_wallet::wallet::initialization::WalletAccountCreationOptions::None,
+        )
+        .expect("wallet");
+        let keys = derive_contact_info_keys(
+            &wallet,
+            network,
+            identity_index,
+            root_key_id,
+            derivation_index,
+        )
+        .expect("resident keys");
+        let enc_k: [u8; 32] = *keys.enc_to_user_id_key;
+        let priv_k: [u8; 32] = *keys.private_data_key;
+        let expected_enc = platform_encryption::encrypt_enc_to_user_id(&enc_k, &contact_id);
+        let expected_priv = platform_encryption::encrypt_private_data(&priv_k, &iv, &plaintext);
+        assert_eq!(
+            sealed.enc_to_user_id, expected_enc,
+            "encToUserId must equal the resident derivation at the REAL auth path"
+        );
+        assert_eq!(
+            sealed.private_data, expected_priv,
+            "privateData must equal the resident derivation at the REAL auth path"
+        );
+
+        // open round-trips the inputs.
+        let opened = provider
+            .contact_info_open(
+                &root_path,
+                derivation_index,
+                &sealed.enc_to_user_id,
+                &sealed.private_data,
+            )
+            .await
+            .expect("open");
+        assert_eq!(
+            opened.contact_id, contact_id,
+            "open recovers the contact id"
+        );
+        assert_eq!(
+            opened.private_data, plaintext,
+            "open recovers the private data"
+        );
+    }
+
+    /// The DIP-15 friendship ECDH key must stay inside `Zeroizing` all the way
+    /// back to platform-wallet so it is scrubbed on drop rather than left in a
+    /// bare `[u8; 32]`. Binding the result to `Zeroizing<[u8; 32]>` fails to
+    /// compile against a plain-array trait return; the value must still match
+    /// the resident `derive_shared_key_ecdh` at the same path.
+    #[tokio::test]
+    async fn ecdh_shared_secret_returns_zeroizing_matching_resident_derivation() {
+        use dashcore::secp256k1::{PublicKey, Secp256k1, SecretKey};
+
+        let seed = Mnemonic::from_phrase(PHRASE, Language::English)
+            .expect("valid mnemonic")
+            .to_seed("");
+        let network = Network::Testnet;
+
+        let path =
+            identity_auth_derivation_path_for_type(network, KeyDerivationType::ECDSA, 0u32, 2u32)
+                .expect("auth path");
+
+        let peer = PublicKey::from_secret_key(
+            &Secp256k1::new(),
+            &SecretKey::from_slice(&[0x42u8; 32]).expect("peer secret"),
+        );
+
+        let provider = SeedCryptoProvider::from_seed(seed, network);
+        let shared: zeroize::Zeroizing<[u8; 32]> = provider
+            .ecdh_shared_secret(&path, &peer)
+            .await
+            .expect("ecdh shared secret");
+
+        let wallet = key_wallet::wallet::Wallet::from_seed_bytes(
+            seed,
+            network,
+            key_wallet::wallet::initialization::WalletAccountCreationOptions::None,
+        )
+        .expect("wallet");
+        let xprv = wallet
+            .derive_extended_private_key(&path)
+            .expect("resident xprv");
+        let expected = platform_encryption::derive_shared_key_ecdh(&xprv.private_key, &peer);
+
+        assert_eq!(
+            *shared, expected,
+            "the Zeroizing ECDH key must equal the resident derivation at the same path"
+        );
+    }
+
+    /// The "needs unlock" count must track only the account-build ops
+    /// (`RegisterReceiving` / `RegisterExternal`) and exclude
+    /// `ContactInfoDecrypt`. `ContactInfoDecrypt` is re-enqueued on every
+    /// signerless sweep, so counting it would make the count a permanent
+    /// `> 0` and re-trip the UI banner ~15s after every unlock on a healthy
+    /// wallet. This fails against a naive `pending_contact_crypto.len()`.
+    #[test]
+    fn account_build_count_excludes_contact_info_decrypt() {
+        use crate::changeset::{PendingContactCrypto, PendingContactCryptoOp};
+
+        let owner = Identifier::from([1u8; 32]);
+        let mk = |contact: u8, op| PendingContactCrypto {
+            owner_identity_id: owner,
+            contact_id: Identifier::from([contact; 32]),
+            op,
+            enqueued_at_ms: 0,
+        };
+
+        let queue = vec![
+            mk(2, PendingContactCryptoOp::RegisterReceiving),
+            mk(
+                2,
+                PendingContactCryptoOp::RegisterExternal {
+                    encrypted_public_key: vec![0u8; 96],
+                    our_decryption_key_index: 0,
+                    contact_encryption_key_index: 0,
+                },
+            ),
+            mk(3, PendingContactCryptoOp::ContactInfoDecrypt),
+            mk(5, PendingContactCryptoOp::AutoAccept),
+        ];
+        // Two account-build ops + one auto-accept = 3 "waiting to finish setup";
+        // the ContactInfoDecrypt is not counted.
+        assert_eq!(count_account_build_ops(&queue), 3);
+
+        // A queue of only ContactInfoDecrypt is zero actionable backlog.
+        assert_eq!(
+            count_account_build_ops(&[mk(4, PendingContactCryptoOp::ContactInfoDecrypt)]),
+            0
+        );
+        // AutoAccept alone counts (a contact waiting to be auto-accepted).
+        assert_eq!(
+            count_account_build_ops(&[mk(6, PendingContactCryptoOp::AutoAccept)]),
+            1
+        );
+
+        // Empty queue is zero.
+        assert_eq!(count_account_build_ops(&[]), 0);
+    }
+}
+
+#[cfg(test)]
+mod stamp_race_tests {
+    //! The rotation self-heal stamp must be payload-bound, not live-state
+    //! bound: registration (drain / accept) and the stamp run under separate
+    //! guards, so a rotation sweep can advance `incoming_request` in between.
+    //! Stamping the live reference onto an account built from the superseded
+    //! payload would silence `external_account_needs_rebuild` forever.
+
+    use super::*;
+    use crate::events::{EventHandler, PlatformEventHandler};
+    use crate::wallet::identity::EstablishedContact;
+    use crate::wallet::persister::{NoPlatformPersistence, WalletPersister};
+    use dpp::identity::v0::IdentityV0;
+    use dpp::identity::Identity;
+    use key_wallet::mnemonic::{Language, Mnemonic};
+    use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+    use key_wallet::Network;
+    use std::collections::BTreeMap;
+    use std::sync::Arc;
+
+    const TEST_MNEMONIC: &str = "abandon abandon abandon abandon abandon abandon \
+         abandon abandon abandon abandon abandon about";
+
+    struct NoopEventHandler;
+    impl EventHandler for NoopEventHandler {}
+    impl PlatformEventHandler for NoopEventHandler {}
+
+    fn bare_identity(id: [u8; 32]) -> Identity {
+        Identity::V0(IdentityV0 {
+            id: Identifier::from(id),
+            public_keys: BTreeMap::new(),
+            balance: 0,
+            revision: 0,
+        })
+    }
+
+    /// The stamp must be a no-op when the live incoming request's ciphertext
+    /// no longer matches the payload the account was registered from (a
+    /// rotation raced the registration), and must stamp normally when they
+    /// match. Was red against the live-reference stamp.
+    #[tokio::test]
+    async fn stamp_skips_when_registration_raced_a_rotation() {
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let persister = Arc::new(NoPlatformPersistence);
+        let handler: Arc<dyn PlatformEventHandler> = Arc::new(NoopEventHandler);
+        let manager = Arc::new(crate::PlatformWalletManager::new(
+            sdk,
+            Arc::clone(&persister),
+            handler,
+        ));
+        let mnemonic =
+            Mnemonic::from_phrase(TEST_MNEMONIC, Language::English).expect("valid mnemonic");
+        let seed = mnemonic.to_seed("");
+        let wallet = manager
+            .create_wallet_from_seed_bytes(
+                Network::Testnet,
+                &seed,
+                WalletAccountCreationOptions::None,
+                Some(0),
+            )
+            .await
+            .expect("wallet creation");
+        let wallet_id = wallet.wallet_id();
+        let iw = wallet.identity();
+        let p = WalletPersister::new(wallet_id, Arc::clone(&persister) as _);
+
+        let owner = Identifier::from([0xAA; 32]);
+        let contact = Identifier::from([0xBB; 32]);
+        // Live state: the contact ROTATED — incoming_request now carries the
+        // fresh ciphertext (7s) under reference 7; no marker yet.
+        let fresh_cipher = vec![7u8; 96];
+        let stale_cipher = vec![9u8; 96];
+        {
+            let mut wm = iw.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("info");
+            info.identity_manager
+                .add_identity(bare_identity([0xAA; 32]), 0, wallet_id, &p)
+                .expect("add owner");
+            let outgoing = ContactRequest::new(owner, contact, 0, 0, 0, vec![0u8; 96], 100, 0);
+            let incoming =
+                ContactRequest::new(contact, owner, 0, 0, 7, fresh_cipher.clone(), 100, 0);
+            info.identity_manager
+                .managed_identity_mut(&owner)
+                .expect("managed")
+                .apply_established_contact(EstablishedContact::new(contact, outgoing, incoming));
+        }
+
+        let marker = |iw: &IdentityWallet<crate::broadcaster::SpvBroadcaster>| {
+            let iw = iw.clone();
+            async move {
+                let wm = iw.wallet_manager.read().await;
+                wm.get_wallet_info(&wallet_id)
+                    .and_then(|info| info.identity_manager.managed_identity(&owner))
+                    .and_then(|m| m.dashpay().established_contacts().get(&contact).cloned())
+                    .expect("established contact")
+                    .external_account_reference
+            }
+        };
+
+        // Drain finished registering from the STALE (pre-rotation) payload:
+        // the stamp must detect the mismatch and leave the marker unset so
+        // the sweep's teardown + rebuild path picks up the fresh request.
+        iw.dashpay()
+            .note_external_account_registered(&owner, &contact, &stale_cipher)
+            .await;
+        assert_eq!(
+            marker(iw).await,
+            None,
+            "a stamp from a superseded payload must NOT mark the account current"
+        );
+
+        // Registration from the LIVE payload stamps the tracked reference.
+        iw.dashpay()
+            .note_external_account_registered(&owner, &contact, &fresh_cipher)
+            .await;
+        assert_eq!(
+            marker(iw).await,
+            Some(7),
+            "a stamp from the live payload records the tracked reference"
+        );
     }
 }

@@ -23,6 +23,7 @@ describe('TokenSetPriceResult', () => {
   };
 
   const documentJSON = {
+    $formatVersion: "0",
     $id: '9tSsCqKHTZ8ro16MydChSxgHBukFW36eMLJKKRtebJEn',
     $ownerId: 'CXH2kZCATjvDTnQAPVg28EgPg9WySUvwvnR5ZkmNqY5i',
     $dataContractId: 'GnXgMaiqAwTxh44ccQe8AoCgFvcseHK5CncH3sUorW4X',
@@ -140,7 +141,9 @@ describe('TokenSetPriceResult', () => {
     it('should include pricingSchedule in toJSON when present', () => {
       const data = {
         ownerId: testIdentifier,
-        pricingSchedule: { SinglePrice: 5000 },
+        // TokenPricingSchedule is internally `$type`-tagged (camelCase variant,
+        // JS-safe `price`); externally-tagged `{ SinglePrice: N }` is no longer valid.
+        pricingSchedule: { $type: 'singlePrice', price: 5000 },
         groupPower: 70,
       };
 
@@ -149,13 +152,14 @@ describe('TokenSetPriceResult', () => {
 
       const json = result.toJSON();
       expect(json.pricingSchedule).to.exist();
-      expect(json.pricingSchedule.SinglePrice).to.equal(5000);
+      expect(json.pricingSchedule.$type).to.equal('singlePrice');
+      expect(json.pricingSchedule.price).to.equal(5000);
     });
 
     it('should round-trip pricingSchedule through toJSON/fromJSON', () => {
       const data = {
         ownerId: testIdentifier,
-        pricingSchedule: { SinglePrice: 5000 },
+        pricingSchedule: { $type: 'singlePrice', price: 5000 },
         groupPower: 70,
       };
 
@@ -170,7 +174,7 @@ describe('TokenSetPriceResult', () => {
     it('should round-trip pricingSchedule through toObject/fromObject', () => {
       const data = {
         ownerId: testIdentifier,
-        pricingSchedule: { SinglePrice: 5000n },
+        pricingSchedule: { $type: 'singlePrice', price: 5000n },
         groupPower: 70,
       };
 

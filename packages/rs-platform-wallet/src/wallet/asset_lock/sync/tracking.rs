@@ -10,6 +10,24 @@ use super::super::manager::AssetLockManager;
 use super::super::tracked::{AssetLockStatus, TrackedAssetLock};
 
 impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
+    /// The recorded [`AssetLockFundingType`] of a tracked lock, or `None`
+    /// when the outpoint is not tracked. Used by the funding resolver to
+    /// refuse consuming `IdentityInvitation` (bearer voucher) locks through
+    /// generic resume/top-up paths.
+    ///
+    /// [`AssetLockFundingType`]:
+    /// key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType
+    pub(crate) async fn tracked_funding_type(
+        &self,
+        out_point: &OutPoint,
+    ) -> Option<key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType>
+    {
+        let wm = self.wallet_manager.read().await;
+        wm.get_wallet_info(&self.wallet_id)
+            .and_then(|info| info.tracked_asset_locks.get(out_point))
+            .map(|lock| lock.funding_type)
+    }
+
     /// Track a new asset lock in memory, returning a changeset describing
     /// the inserted entry.
     ///
@@ -21,6 +39,44 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             let out_point = lock.out_point;
             cs.asset_locks.insert(out_point, (&lock).into());
             info.tracked_asset_locks.insert(out_point, lock);
+        }
+        cs
+    }
+
+    /// Remove a tracked asset lock whose funding transaction was
+    /// definitively rejected at broadcast (never reached the network).
+    ///
+    /// Unlike [`consume_asset_lock`](Self::consume_asset_lock), the
+    /// persisted row is deleted too (via the changeset's `removed` set):
+    /// a rejected lock's funding transaction never existed on the
+    /// network, so the row has no historical value — and because the
+    /// rejection released the funding UTXO reservation, leaving the
+    /// `Built` row resumable would let a later `resume_asset_lock`
+    /// re-broadcast a transaction whose inputs may have been re-spent.
+    ///
+    /// Idempotent: returns an empty changeset if the outpoint is not
+    /// tracked. Guarded on the row still being
+    /// [`Built`](AssetLockStatus::Built): if a concurrent flow advanced it
+    /// (e.g. a `resume_asset_lock` that re-broadcast in the window between
+    /// the rejected broadcast and this cleanup), the progress is kept
+    /// rather than clobbered. The caller queues the changeset (call sites
+    /// live in `asset_lock/build.rs`, inside the module).
+    pub(crate) async fn untrack_asset_lock(&self, out_point: &OutPoint) -> AssetLockChangeSet {
+        let mut wm = self.wallet_manager.write().await;
+        let mut cs = AssetLockChangeSet::default();
+        if let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) {
+            match info.tracked_asset_locks.get(out_point) {
+                Some(entry) if entry.status == AssetLockStatus::Built => {
+                    info.tracked_asset_locks.remove(out_point);
+                    cs.removed.insert(*out_point);
+                }
+                Some(entry) => tracing::warn!(
+                    outpoint = %out_point,
+                    status = ?entry.status,
+                    "untrack_asset_lock: lock advanced past Built concurrently — leaving it tracked"
+                ),
+                None => {}
+            }
         }
         cs
     }

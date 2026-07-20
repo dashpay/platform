@@ -8,7 +8,7 @@ use dash_sdk::platform::address_sync::AddressSyncMetrics;
 use crate::error::*;
 use crate::handle::*;
 use crate::platform_address_types::AddressSyncConfigFFI;
-use crate::runtime::runtime;
+use crate::runtime::{run_on_big_stack_thread, runtime};
 use crate::{check_ptr, unwrap_option_or_return};
 
 /// Flattened sync metrics for one wallet result in a platform-address sync pass.
@@ -190,8 +190,50 @@ pub unsafe extern "C" fn platform_wallet_manager_platform_address_sync_sync_now(
     handle: Handle,
 ) -> PlatformWalletFFIResult {
     let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
-        runtime().block_on(manager.platform_address_sync().sync_now());
+        // Big-stack polling, NOT bare `runtime().block_on`: the pass
+        // verifies GroveDB proofs whose recursion blows the ~512 KB
+        // stack of the host's dispatch/concurrency calling thread
+        // (same SIGBUS as the shielded/dashpay Sync Now buttons).
+        // `run_on_big_stack_thread` rather than `block_on_worker`
+        // because this future trips rustc's implied-lifetime-bound
+        // limitation (rust-lang/rust issue #100013) against
+        // `block_on_worker`'s `Send + 'static` bounds.
+        run_on_big_stack_thread(|| {
+            runtime().block_on(manager.platform_address_sync().sync_now());
+        })
     });
-    unwrap_option_or_return!(option);
+    let spawn_result = unwrap_option_or_return!(option);
+    if let Err(e) = spawn_result {
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorWalletOperation,
+            format!("failed to spawn big-stack thread for address sync: {e}"),
+        );
+    }
+    PlatformWalletFFIResult::ok()
+}
+
+/// Reset the platform-address (BLAST/DIP-17) incremental-sync watermark
+/// and drop every cached balance across all registered wallets, forcing
+/// a full rescan on the next sync. Backs the SwiftExampleApp "Clear"
+/// button.
+///
+/// `reset_platform_address_sync_state` quiesces the background sync loop
+/// before resetting so no in-flight pass can re-write the watermark. The
+/// loop is left stopped (not restarted) — the host re-arms it via
+/// `..._start`, or uses one-shot `..._sync_now`, afterward.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_manager_platform_address_sync_reset(
+    handle: Handle,
+) -> PlatformWalletFFIResult {
+    let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
+        runtime().block_on(manager.reset_platform_address_sync_state())
+    });
+    let result = unwrap_option_or_return!(option);
+    if let Err(e) = result {
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorWalletOperation,
+            format!("reset_platform_address_sync_state failed: {e}"),
+        );
+    }
     PlatformWalletFFIResult::ok()
 }

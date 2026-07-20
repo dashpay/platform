@@ -21,6 +21,8 @@ pub mod core_state;
 pub mod dashpay;
 pub mod identities;
 pub mod identity_keys;
+pub mod invitations;
+pub mod pending_contact_crypto;
 pub mod platform_addrs;
 pub mod token_balances;
 pub mod wallet_meta;

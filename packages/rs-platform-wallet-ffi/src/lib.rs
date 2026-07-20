@@ -9,16 +9,20 @@
 #![allow(clippy::result_large_err)]
 #![allow(clippy::large_enum_variant)]
 
+pub mod address_private_key;
 pub mod asset_lock;
 pub mod asset_lock_persistence;
 pub mod contact;
+pub mod contact_info;
 pub mod contact_persistence;
 pub mod contact_request;
 pub mod core_address_types;
 pub mod core_wallet;
 pub mod core_wallet_types;
 pub mod dashpay;
+pub mod dashpay_payment;
 pub mod dashpay_profile;
+pub mod dashpay_sync;
 pub mod data_contract;
 pub mod derivation;
 pub mod derive_and_persist_callbacks;
@@ -44,6 +48,8 @@ pub mod identity_top_up;
 pub mod identity_transfer;
 pub mod identity_update;
 pub mod identity_withdrawal;
+pub mod invitation;
+pub mod invitation_persistence;
 pub mod logging;
 pub mod managed_identity;
 pub mod manager;
@@ -55,6 +61,7 @@ pub mod platform_address_sync;
 pub mod platform_address_types;
 pub mod platform_addresses;
 pub mod platform_wallet_info;
+pub mod provider_key_at_index;
 mod runtime;
 #[cfg(feature = "shielded")]
 pub mod shielded_persistence;
@@ -75,6 +82,7 @@ pub mod wallet_restore_types;
 pub mod xpub_render;
 
 // Re-exports
+pub use address_private_key::*;
 pub use asset_lock::*;
 pub use asset_lock_persistence::*;
 pub use contact::*;
@@ -84,7 +92,9 @@ pub use core_address_types::*;
 pub use core_wallet::*;
 pub use core_wallet_types::*;
 pub use dashpay::*;
+pub use dashpay_payment::*;
 pub use dashpay_profile::*;
+pub use dashpay_sync::*;
 pub use data_contract::*;
 pub use derivation::*;
 pub use derive_and_persist_callbacks::*;
@@ -110,6 +120,8 @@ pub use identity_top_up::*;
 pub use identity_transfer::*;
 pub use identity_update::*;
 pub use identity_withdrawal::*;
+pub use invitation::*;
+pub use invitation_persistence::*;
 pub use logging::*;
 pub use managed_identity::*;
 pub use manager::*;
@@ -121,6 +133,7 @@ pub use platform_address_sync::*;
 pub use platform_address_types::*;
 pub use platform_addresses::*;
 pub use platform_wallet_info::*;
+pub use provider_key_at_index::*;
 #[cfg(feature = "shielded")]
 pub use shielded_send::*;
 #[cfg(feature = "shielded")]

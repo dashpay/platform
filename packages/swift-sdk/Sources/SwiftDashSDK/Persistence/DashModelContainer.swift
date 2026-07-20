@@ -9,7 +9,10 @@ public enum DashModelContainer {
             PersistentIdentity.self,
             PersistentDPNSName.self,
             PersistentDashpayProfile.self,
+            PersistentDashpayContactProfile.self,
             PersistentDashpayContactRequest.self,
+            PersistentDashpayPayment.self,
+            PersistentDashpayIgnoredSender.self,
             PersistentDocument.self,
             PersistentDataContract.self,
             PersistentPublicKey.self,
@@ -33,7 +36,10 @@ public enum DashModelContainer {
             PersistentShieldedOutgoingNote.self,
             PersistentShieldedSyncState.self,
             PersistentShieldedActivity.self,
-            PersistentAssetLock.self
+            PersistentShieldedViewingKey.self,
+            PersistentAssetLock.self,
+            PersistentInvitation.self,
+            PersistentMasternode.self
         ]
     }
 
@@ -156,6 +162,38 @@ public enum DashMigrationPlan: SchemaMigrationPlan {
 ///     `(network, owner, contact, isOutgoing)` quad. Existing dev
 ///     stores predate the row collection and rebuild on next
 ///     DashPay contact sync.
+///   - `PersistentDashpayContactRequest` gained the additive
+///     `paymentChannelBroken` column (defaulted `false`) so the G1c
+///     broken-channel flag projected by the persister survives
+///     restarts. Additive-with-default ⇒ lightweight migration.
+///   - `PersistentDashpayPayment` was added (cascade-owned by
+///     `PersistentIdentity` via the new `dashpayPayments`
+///     collection). Mirrors the per-identity `dashpay_payments` map
+///     read through `managed_identity_get_dashpay_payments`; rows are
+///     refreshed by `PlatformWalletManager.refreshDashPayPayments`
+///     (the persister doesn't project payment history). Additive
+///     model + additive relationship ⇒ lightweight migration.
+///   - `PersistentDashpayIgnoredSender` was added (cascade-owned by
+///     `PersistentIdentity` via the new `dashpayIgnoredSenders`
+///     collection). Persists per-sender ignores (local-only mute, =
+///     block, reversible) the persister projects in the `ignored`
+///     changeset array so the Rust `ignored_senders` set can be restored
+///     at load — without it an ignored sender resurfaces on relaunch.
+///     Keyed per-sender (no `accountReference`), so an ignored sender's
+///     rotated requests are suppressed too. Additive model + additive
+///     relationship ⇒ lightweight migration. (Replaces the earlier
+///     per-`(sender, accountReference)` `PersistentDashpayRejectedRequest`
+///     — the model decision collapsed reject into ignore.)
+///   - `PersistentDashpayContactProfile` was added (cascade-owned by
+///     `PersistentIdentity` via the new `contactProfiles` collection).
+///     Mirrors one entry of the per-identity `contact_profiles` map
+///     (cached contacts' public profiles, keyed by the contact's
+///     identity id) projected by the persister as
+///     `IdentityEntryFFI.contact_profiles` rows, and read back at load to
+///     rebuild the Rust cache so contacts don't refetch on every
+///     relaunch. Distinct from `PersistentDashpayProfile` (the owner's
+///     own profile). Additive model + additive relationship ⇒
+///     lightweight migration.
 ///   - `PersistentAccount` gained `#Unique<…>([\.wallet, \.accountType,
 ///     \.accountIndex, \.userIdentityId, \.friendIdentityId])` plus
 ///     `@Attribute(.unique)` on `accountExtendedPubKeyBytes`. The

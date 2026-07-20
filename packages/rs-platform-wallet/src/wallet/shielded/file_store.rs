@@ -20,7 +20,8 @@ use std::sync::Mutex;
 use grovedb_commitment_tree::{ClientPersistentCommitmentTree, Position, Retention};
 
 use super::store::{
-    ShieldedNote, ShieldedOutgoingNote, ShieldedStore, SubwalletId, SubwalletState,
+    PendingRedrive, ShieldedNote, ShieldedOutgoingNote, ShieldedStore, StalePendingSpend,
+    SubwalletId, SubwalletState,
 };
 use crate::wallet::platform_wallet::WalletId;
 
@@ -65,6 +66,13 @@ pub struct FileBackedShieldedStore {
     /// Per-subwallet notes + sync state, keyed by `(wallet_id,
     /// account_index)`. Lazily populated on first use of an id.
     subwallets: BTreeMap<SubwalletId, SubwalletState>,
+    /// Second connection on the same SQLite file, owning the
+    /// `shielded_pending_spends` table (armed [`PendingRedrive`]
+    /// records). Separate from `tree` because the commitment-tree
+    /// wrapper takes its `Connection` by value; WAL mode makes the
+    /// two-connection setup safe. `Mutex` for the same `Sync`-shim
+    /// reason as `tree`.
+    pending_conn: Mutex<rusqlite::Connection>,
 }
 
 impl FileBackedShieldedStore {
@@ -94,12 +102,94 @@ impl FileBackedShieldedStore {
         let conn = Self::open_tuned_connection(&path)?;
         let tree = ClientPersistentCommitmentTree::open(conn, max_checkpoints)
             .map_err(|e| FileShieldedStoreError(format!("open commitment tree: {e}")))?;
-        Ok(Self {
+        let pending_conn = Self::open_tuned_connection(&path)?;
+        pending_conn
+            .execute(
+                "CREATE TABLE IF NOT EXISTS shielded_pending_spends (
+                    wallet_id     BLOB    NOT NULL,
+                    account_index INTEGER NOT NULL,
+                    activity_id   BLOB    NOT NULL,
+                    anchor        BLOB    NOT NULL,
+                    nullifiers    BLOB    NOT NULL,
+                    st_bytes      BLOB    NOT NULL,
+                    attempts      INTEGER NOT NULL DEFAULT 0,
+                    PRIMARY KEY (wallet_id, account_index, activity_id)
+                )",
+                [],
+            )
+            .map_err(|e| FileShieldedStoreError(format!("create pending_spends table: {e}")))?;
+        let mut store = Self {
             tree: Mutex::new(tree),
             path,
             max_checkpoints,
             subwallets: BTreeMap::new(),
-        })
+            pending_conn: Mutex::new(pending_conn),
+        };
+        store.rehydrate_pending_spends()?;
+        Ok(store)
+    }
+
+    /// Reload every persisted [`PendingRedrive`] into the in-memory
+    /// per-subwallet state, re-arming both the redrive record and the
+    /// note reservations its nullifiers carry — an unconfirmed
+    /// broadcast therefore keeps its notes reserved (and its re-drive
+    /// alive) across restarts. Corrupt rows are dropped with a warning
+    /// rather than failing the open.
+    fn rehydrate_pending_spends(&mut self) -> Result<(), FileShieldedStoreError> {
+        let conn = self.pending_conn.lock().expect("pending_conn mutex");
+        let mut stmt = conn
+            .prepare(
+                "SELECT wallet_id, account_index, activity_id, anchor, nullifiers, st_bytes, \
+                 attempts FROM shielded_pending_spends",
+            )
+            .map_err(|e| FileShieldedStoreError(format!("prepare rehydrate: {e}")))?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, Vec<u8>>(0)?,
+                    row.get::<_, u32>(1)?,
+                    row.get::<_, Vec<u8>>(2)?,
+                    row.get::<_, Vec<u8>>(3)?,
+                    row.get::<_, Vec<u8>>(4)?,
+                    row.get::<_, Vec<u8>>(5)?,
+                    row.get::<_, u32>(6)?,
+                ))
+            })
+            .map_err(|e| FileShieldedStoreError(format!("query rehydrate: {e}")))?;
+        for row in rows {
+            let (wallet_id, account_index, activity_id, anchor, nullifiers, st_bytes, attempts) =
+                row.map_err(|e| FileShieldedStoreError(format!("read rehydrate row: {e}")))?;
+            let (Ok(wallet_id), Ok(activity_id), Ok(anchor)) = (
+                <[u8; 32]>::try_from(wallet_id.as_slice()),
+                <[u8; 32]>::try_from(activity_id.as_slice()),
+                <[u8; 32]>::try_from(anchor.as_slice()),
+            ) else {
+                tracing::warn!("dropping corrupt shielded_pending_spends row (bad key widths)");
+                continue;
+            };
+            if nullifiers.is_empty() || nullifiers.len() % 32 != 0 {
+                tracing::warn!("dropping corrupt shielded_pending_spends row (bad nullifiers)");
+                continue;
+            }
+            let nullifiers: Vec<[u8; 32]> = nullifiers
+                .chunks_exact(32)
+                .map(|c| <[u8; 32]>::try_from(c).expect("chunks_exact(32)"))
+                .collect();
+            let id = SubwalletId::new(wallet_id, account_index);
+            let sw = self.subwallets.entry(id).or_default();
+            for n in &nullifiers {
+                sw.mark_pending(n);
+                sw.set_pending_spend(n, anchor, activity_id);
+            }
+            sw.arm_redrive(PendingRedrive {
+                activity_id,
+                anchor,
+                nullifiers,
+                st_bytes,
+                attempts,
+            });
+        }
+        Ok(())
     }
 
     /// Open a `rusqlite::Connection` on `path` with the same WAL /
@@ -126,7 +216,78 @@ impl FileBackedShieldedStore {
             conn.pragma_update(None, k, v)
                 .map_err(|e| FileShieldedStoreError(format!("PRAGMA {k}={v}: {e}")))?;
         }
+        // Two writer connections share this file (the commitment tree's and
+        // `pending_conn`). WAL allows one writer at a time; without a busy
+        // timeout a write colliding with the other connection's write txn
+        // fails immediately with SQLITE_BUSY instead of briefly waiting.
+        conn.busy_timeout(std::time::Duration::from_secs(5))
+            .map_err(|e| FileShieldedStoreError(format!("busy_timeout: {e}")))?;
         Ok(conn)
+    }
+
+    /// Delete the single persisted redrive row for `id` keyed by
+    /// `activity_id`. Used to mirror the exact in-memory drops
+    /// [`SubwalletState::mark_spent`] reports, avoiding the
+    /// scan-every-row cost of [`Self::delete_redrive_rows_containing`]
+    /// on the common path where the resolved note had no armed redrive.
+    fn delete_redrive_row(
+        &self,
+        id: SubwalletId,
+        activity_id: &[u8; 32],
+    ) -> Result<(), FileShieldedStoreError> {
+        let conn = self.pending_conn.lock().expect("pending_conn mutex");
+        conn.execute(
+            "DELETE FROM shielded_pending_spends \
+             WHERE wallet_id = ?1 AND account_index = ?2 AND activity_id = ?3",
+            rusqlite::params![
+                id.wallet_id.as_slice(),
+                id.account_index,
+                activity_id.as_slice(),
+            ],
+        )
+        .map_err(|e| FileShieldedStoreError(format!("delete redrive row by activity: {e}")))?;
+        Ok(())
+    }
+
+    /// Mirror to SQLite the redrive deletions [`SubwalletState`] performs
+    /// in memory when a nullifier resolves via `clear_pending`: delete
+    /// every persisted row for `id` whose nullifier blob contains
+    /// `nullifier`.
+    fn delete_redrive_rows_containing(
+        &self,
+        id: SubwalletId,
+        nullifier: &[u8; 32],
+    ) -> Result<(), FileShieldedStoreError> {
+        let conn = self.pending_conn.lock().expect("pending_conn mutex");
+        let mut stmt = conn
+            .prepare(
+                "SELECT activity_id, nullifiers FROM shielded_pending_spends \
+                 WHERE wallet_id = ?1 AND account_index = ?2",
+            )
+            .map_err(|e| FileShieldedStoreError(format!("prepare redrive lookup: {e}")))?;
+        let rows: Vec<(Vec<u8>, Vec<u8>)> = stmt
+            .query_map(
+                rusqlite::params![id.wallet_id.as_slice(), id.account_index],
+                |row| Ok((row.get::<_, Vec<u8>>(0)?, row.get::<_, Vec<u8>>(1)?)),
+            )
+            .map_err(|e| FileShieldedStoreError(format!("query redrive lookup: {e}")))?
+            .collect::<Result<_, _>>()
+            .map_err(|e| FileShieldedStoreError(format!("read redrive lookup: {e}")))?;
+        drop(stmt);
+        for (activity_id, nullifiers) in rows {
+            if nullifiers
+                .chunks_exact(32)
+                .any(|c| c == nullifier.as_slice())
+            {
+                conn.execute(
+                    "DELETE FROM shielded_pending_spends \
+                     WHERE wallet_id = ?1 AND account_index = ?2 AND activity_id = ?3",
+                    rusqlite::params![id.wallet_id.as_slice(), id.account_index, activity_id],
+                )
+                .map_err(|e| FileShieldedStoreError(format!("delete redrive row: {e}")))?;
+            }
+        }
+        Ok(())
     }
 }
 
@@ -155,11 +316,30 @@ impl ShieldedStore for FileBackedShieldedStore {
     }
 
     fn mark_spent(&mut self, id: SubwalletId, nullifier: &[u8; 32]) -> Result<bool, Self::Error> {
-        Ok(self
-            .subwallets
-            .get_mut(&id)
-            .map(|sw| sw.mark_spent(nullifier))
-            .unwrap_or(false))
+        let Some(sw) = self.subwallets.get_mut(&id) else {
+            return Ok(false);
+        };
+        let outcome = sw.mark_spent(nullifier);
+        // Mirror the durable deletion whenever the in-memory drop
+        // happened — keyed on the returned activity ids, NOT on
+        // `newly_spent`. A note restored already-spent still resolves a
+        // rehydrated redrive here (`newly_spent == false`), and leaving
+        // the SQLite row would resurrect the reservation on the next
+        // open. Targeting the exact activity ids means the common case
+        // (no armed redrive for this note) issues zero SQLite work. The
+        // in-memory transition already happened, so a SQLite failure
+        // only warns — a surviving row rehydrates and self-heals via the
+        // reconcile / prune passes.
+        for activity_id in &outcome.dropped_redrives {
+            if let Err(e) = self.delete_redrive_row(id, activity_id) {
+                tracing::warn!(
+                    error = %e,
+                    "redrive row deletion failed after mark_spent; a stale row may \
+                     rehydrate on the next open (self-heals via reconcile/prune)"
+                );
+            }
+        }
+        Ok(outcome.newly_spent)
     }
 
     fn mark_pending(&mut self, id: SubwalletId, nullifier: &[u8; 32]) -> Result<bool, Self::Error> {
@@ -175,11 +355,123 @@ impl ShieldedStore for FileBackedShieldedStore {
         id: SubwalletId,
         nullifier: &[u8; 32],
     ) -> Result<bool, Self::Error> {
+        let Some(sw) = self.subwallets.get_mut(&id) else {
+            return Ok(false);
+        };
+        let removed = sw.clear_pending(nullifier);
+        if removed {
+            // Same log-don't-abort rationale as `mark_spent` above.
+            if let Err(e) = self.delete_redrive_rows_containing(id, nullifier) {
+                tracing::warn!(
+                    error = %e,
+                    "redrive row deletion failed after clear_pending; a stale row may \
+                     rehydrate on the next open (self-heals via reconcile/prune)"
+                );
+            }
+        }
+        Ok(removed)
+    }
+
+    fn set_pending_spend(
+        &mut self,
+        id: SubwalletId,
+        nullifier: &[u8; 32],
+        anchor: [u8; 32],
+        activity_id: [u8; 32],
+    ) -> Result<(), Self::Error> {
+        if let Some(sw) = self.subwallets.get_mut(&id) {
+            sw.set_pending_spend(nullifier, anchor, activity_id);
+        }
+        Ok(())
+    }
+
+    fn stale_pending_spends(&self, id: SubwalletId) -> Result<Vec<StalePendingSpend>, Self::Error> {
         Ok(self
             .subwallets
+            .get(&id)
+            .map(SubwalletState::stale_pending_spends)
+            .unwrap_or_default())
+    }
+
+    fn arm_redrive(&mut self, id: SubwalletId, redrive: PendingRedrive) -> Result<(), Self::Error> {
+        {
+            let conn = self.pending_conn.lock().expect("pending_conn mutex");
+            let nullifier_blob: Vec<u8> = redrive.nullifiers.iter().flatten().copied().collect();
+            conn.execute(
+                "INSERT OR REPLACE INTO shielded_pending_spends \
+                 (wallet_id, account_index, activity_id, anchor, nullifiers, st_bytes, attempts) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                rusqlite::params![
+                    id.wallet_id.as_slice(),
+                    id.account_index,
+                    redrive.activity_id.as_slice(),
+                    redrive.anchor.as_slice(),
+                    nullifier_blob,
+                    redrive.st_bytes,
+                    redrive.attempts,
+                ],
+            )
+            .map_err(|e| FileShieldedStoreError(format!("persist redrive: {e}")))?;
+        }
+        self.subwallets.entry(id).or_default().arm_redrive(redrive);
+        Ok(())
+    }
+
+    fn pending_redrives(&self, id: SubwalletId) -> Result<Vec<PendingRedrive>, Self::Error> {
+        Ok(self
+            .subwallets
+            .get(&id)
+            .map(SubwalletState::pending_redrives)
+            .unwrap_or_default())
+    }
+
+    fn bump_redrive_attempts(
+        &mut self,
+        id: SubwalletId,
+        activity_id: &[u8; 32],
+    ) -> Result<u32, Self::Error> {
+        // Persist FIRST, mutate memory only on success: the reverse order
+        // would leave the in-memory counter ahead of the durable row on a
+        // SQLite failure, and a restart would rewind the attempt budget.
+        let Some(next) = self
+            .subwallets
+            .get(&id)
+            .and_then(|sw| sw.redrive_attempts(activity_id))
+            .map(|attempts| attempts + 1)
+        else {
+            return Ok(0);
+        };
+        {
+            let conn = self.pending_conn.lock().expect("pending_conn mutex");
+            conn.execute(
+                "UPDATE shielded_pending_spends SET attempts = ?4 \
+                 WHERE wallet_id = ?1 AND account_index = ?2 AND activity_id = ?3",
+                rusqlite::params![
+                    id.wallet_id.as_slice(),
+                    id.account_index,
+                    activity_id.as_slice(),
+                    next,
+                ],
+            )
+            .map_err(|e| FileShieldedStoreError(format!("bump redrive attempts: {e}")))?;
+        }
+        let attempts = self
+            .subwallets
             .get_mut(&id)
-            .map(|sw| sw.clear_pending(nullifier))
-            .unwrap_or(false))
+            .map(|sw| sw.bump_redrive_attempts(activity_id))
+            .unwrap_or(0);
+        Ok(attempts)
+    }
+
+    fn clear_redrive(
+        &mut self,
+        id: SubwalletId,
+        activity_id: &[u8; 32],
+    ) -> Result<(), Self::Error> {
+        if let Some(sw) = self.subwallets.get_mut(&id) {
+            sw.clear_redrive(activity_id);
+        }
+        self.delete_redrive_row(id, activity_id)
     }
 
     fn record_outgoing_note(
@@ -283,19 +575,23 @@ impl ShieldedStore for FileBackedShieldedStore {
             .map_err(|e| FileShieldedStoreError(format!("read tree anchor: {e}")))
     }
 
-    fn witness(
+    fn witness_at_depth(
         &self,
         position: u64,
+        depth: usize,
     ) -> Result<Option<grovedb_commitment_tree::MerklePath>, Self::Error> {
         let tree = self
             .tree
             .lock()
             .map_err(|e| FileShieldedStoreError(format!("tree mutex poisoned: {e}")))?;
-        // `checkpoint_depth = 0` = current tree state. The Halo 2
-        // proof we're about to build uses `tree_anchor()` — also
-        // depth 0 — so the witness root must agree.
-        tree.witness(Position::from(position), 0)
-            .map_err(|e| FileShieldedStoreError(format!("witness({position}): {e}")))
+        // `checkpoint_depth = 0` is the current tree state; deeper values
+        // reach older checkpoints so a spend can be built against a root
+        // Platform actually recorded (it records one anchor per block, while
+        // an index-chunk sync routinely leaves the tree mid-block). The proof
+        // uses whichever anchor this witness produces via `MerklePath::root`,
+        // so the anchor and the authentication path always agree.
+        tree.witness(Position::from(position), depth)
+            .map_err(|e| FileShieldedStoreError(format!("witness({position}, depth {depth}): {e}")))
     }
 
     fn tree_size(&self) -> Result<u64, Self::Error> {
@@ -329,6 +625,21 @@ impl ShieldedStore for FileBackedShieldedStore {
     }
 
     fn purge_wallet(&mut self, wallet_id: WalletId) -> Result<(), Self::Error> {
+        // The redrive table IS durable (unlike the rest of subwallet
+        // state), so purging the in-memory map alone would leave this
+        // wallet's rows to rehydrate stale reservations / rebroadcast
+        // state on the next open. Delete them first, scoped by
+        // wallet_id — SQL before memory, so an Err return means neither
+        // store was touched (fail-atomic) rather than a memory purge
+        // the caller can't distinguish from a no-op.
+        {
+            let conn = self.pending_conn.lock().expect("pending_conn mutex");
+            conn.execute(
+                "DELETE FROM shielded_pending_spends WHERE wallet_id = ?1",
+                rusqlite::params![wallet_id.as_slice()],
+            )
+            .map_err(|e| FileShieldedStoreError(format!("purge pending spends for wallet: {e}")))?;
+        }
         // Per-subwallet note / watermark / checkpoint state is
         // in-memory only (`subwallets`); the commitment tree in
         // SQLite is chain-wide and intentionally left intact.
@@ -337,6 +648,14 @@ impl ShieldedStore for FileBackedShieldedStore {
     }
 
     fn purge_all_subwallets(&mut self) -> Result<(), Self::Error> {
+        // Durable redrive rows for every wallet go with the in-memory
+        // purge; SQL first for the same fail-atomic reason as
+        // `purge_wallet`.
+        {
+            let conn = self.pending_conn.lock().expect("pending_conn mutex");
+            conn.execute("DELETE FROM shielded_pending_spends", [])
+                .map_err(|e| FileShieldedStoreError(format!("purge all pending spends: {e}")))?;
+        }
         self.subwallets.clear();
         Ok(())
     }
@@ -389,6 +708,178 @@ mod tests {
             .unwrap()
             .as_nanos();
         std::env::temp_dir().join(format!("shielded_tree_test_{tag}_{nanos}.sqlite"))
+    }
+
+    /// A [`PendingRedrive`] survives a store reopen — record, attempt
+    /// counter, AND the note reservations its nullifiers carry — and is
+    /// deleted (durably) when one of its nullifiers resolves.
+    #[test]
+    fn redrive_roundtrip_rehydration_and_resolution() {
+        let path = temp_tree_path("redrive_roundtrip");
+        let id = SubwalletId::new([7u8; 32], 0);
+        let redrive = PendingRedrive {
+            activity_id: [1u8; 32],
+            anchor: [2u8; 32],
+            nullifiers: vec![[3u8; 32], [4u8; 32]],
+            st_bytes: vec![0xAB; 96],
+            attempts: 0,
+        };
+        {
+            let mut store = FileBackedShieldedStore::open_path(&path, 100).expect("open");
+            store.arm_redrive(id, redrive.clone()).expect("arm");
+            assert_eq!(
+                store
+                    .bump_redrive_attempts(id, &redrive.activity_id)
+                    .expect("bump"),
+                1
+            );
+        }
+        {
+            // Reopen: record + attempts + reservations all rehydrated.
+            let store = FileBackedShieldedStore::open_path(&path, 100).expect("reopen");
+            let got = store.pending_redrives(id).expect("pending_redrives");
+            assert_eq!(got.len(), 1, "record survives reopen");
+            assert_eq!(got[0].attempts, 1, "attempt counter persists");
+            assert_eq!(got[0].st_bytes, redrive.st_bytes, "transition bytes intact");
+            assert_eq!(
+                store.stale_pending_spends(id).expect("stale").len(),
+                2,
+                "both nullifier reservations rehydrated from the record"
+            );
+        }
+        {
+            // Resolving one nullifier (release path) durably drops the row.
+            let mut store = FileBackedShieldedStore::open_path(&path, 100).expect("reopen 2");
+            assert!(store.clear_pending(id, &[3u8; 32]).expect("clear"));
+            assert!(store.pending_redrives(id).expect("redrives").is_empty());
+        }
+        {
+            let store = FileBackedShieldedStore::open_path(&path, 100).expect("reopen 3");
+            assert!(
+                store.pending_redrives(id).expect("redrives").is_empty(),
+                "deletion persisted across reopen"
+            );
+            assert!(
+                store.stale_pending_spends(id).expect("stale").is_empty(),
+                "no reservations rehydrate once the record is gone"
+            );
+        }
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// Purging a wallet (or all subwallets) must also delete its durable
+    /// redrive rows — otherwise a Clear / unregister leaves stale rows
+    /// that rehydrate ghost reservations on the next open. And
+    /// `reset_commitment_tree` must NOT touch them: a redrive is
+    /// broadcast state, not tree state, and a tree resync doesn't
+    /// invalidate an in-flight transition.
+    #[test]
+    fn purge_clears_durable_redrive_rows_but_tree_reset_does_not() {
+        let path = temp_tree_path("purge_redrive");
+        let id_a = SubwalletId::new([0xA1; 32], 0);
+        let id_b = SubwalletId::new([0xB2; 32], 0);
+        let redrive = |activity: u8, nf: u8| PendingRedrive {
+            activity_id: [activity; 32],
+            anchor: [0x22; 32],
+            nullifiers: vec![[nf; 32]],
+            st_bytes: vec![0xCD; 32],
+            attempts: 0,
+        };
+
+        // purge_wallet is scoped: it drops A's rows, keeps B's.
+        {
+            let mut store = FileBackedShieldedStore::open_path(&path, 100).expect("open");
+            store.arm_redrive(id_a, redrive(0x01, 0x0A)).expect("arm a");
+            store.arm_redrive(id_b, redrive(0x02, 0x0B)).expect("arm b");
+
+            // reset_commitment_tree leaves BOTH redrives intact.
+            store.reset_commitment_tree().expect("reset tree");
+            assert_eq!(store.pending_redrives(id_a).expect("a").len(), 1);
+            assert_eq!(store.pending_redrives(id_b).expect("b").len(), 1);
+
+            store.purge_wallet(id_a.wallet_id).expect("purge a");
+            assert!(
+                store.pending_redrives(id_a).expect("a").is_empty(),
+                "purge_wallet dropped A's durable redrive rows"
+            );
+            assert_eq!(
+                store.pending_redrives(id_b).expect("b").len(),
+                1,
+                "purge_wallet is scoped — B's rows survive"
+            );
+        }
+        // The deletion is durable across reopen; B still rehydrates.
+        {
+            let store = FileBackedShieldedStore::open_path(&path, 100).expect("reopen");
+            assert!(store.pending_redrives(id_a).expect("a").is_empty());
+            assert_eq!(store.pending_redrives(id_b).expect("b").len(), 1);
+        }
+        // purge_all_subwallets drops everything, durably.
+        {
+            let mut store = FileBackedShieldedStore::open_path(&path, 100).expect("reopen 2");
+            store.purge_all_subwallets().expect("purge all");
+            assert!(store.pending_redrives(id_b).expect("b").is_empty());
+        }
+        {
+            let store = FileBackedShieldedStore::open_path(&path, 100).expect("reopen 3");
+            assert!(store.pending_redrives(id_b).expect("b").is_empty());
+        }
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// `mark_spent` must resolve a rehydrated redrive even for a note
+    /// that is restored ALREADY spent (its transition landed in a prior
+    /// session) — the durable SQLite row must be deleted too, not just
+    /// the in-memory record, or it resurrects the reservation on the
+    /// next open.
+    #[test]
+    fn mark_spent_on_restored_spent_note_clears_durable_redrive() {
+        let path = temp_tree_path("mark_spent_idempotent");
+        let id = SubwalletId::new([0x9; 32], 0);
+        let nf = [0x3A; 32];
+        let note = ShieldedNote {
+            position: 0,
+            cmx: [0x1; 32],
+            nullifier: nf,
+            block_height: 10,
+            // Restored from disk ALREADY spent.
+            is_spent: true,
+            value: 500,
+            note_data: vec![0u8; 115],
+        };
+        {
+            let mut store = FileBackedShieldedStore::open_path(&path, 100).expect("open");
+            store.save_note(id, &note).expect("save");
+            store
+                .arm_redrive(
+                    id,
+                    PendingRedrive {
+                        activity_id: [0x7; 32],
+                        anchor: [0x22; 32],
+                        nullifiers: vec![nf],
+                        st_bytes: vec![0xEF; 32],
+                        attempts: 0,
+                    },
+                )
+                .expect("arm");
+
+            // Already-spent → returns false, but STILL resolves the redrive.
+            let newly = store.mark_spent(id, &nf).expect("mark_spent");
+            assert!(!newly, "note was already spent, so not newly spent");
+            assert!(
+                store.pending_redrives(id).expect("redrives").is_empty(),
+                "the redrive must be dropped from memory even on the already-spent path"
+            );
+        }
+        {
+            // And the durable row was deleted — nothing rehydrates.
+            let store = FileBackedShieldedStore::open_path(&path, 100).expect("reopen");
+            assert!(
+                store.pending_redrives(id).expect("redrives").is_empty(),
+                "the SQLite redrive row was mirrored-deleted, not left to rehydrate"
+            );
+        }
+        let _ = std::fs::remove_file(&path);
     }
 
     /// Regression test for the "Shielded Merkle witness
@@ -553,6 +1044,99 @@ mod tests {
             size, 1,
             "post-reset tree state (1 leaf) must survive persist + reload, \
              confirming reset cleared the SQLite tree tables"
+        );
+    }
+
+    /// Reproduces the shielded **withdrawal-never-lands** root cause (TestFlight
+    /// report B): the wallet builds a spend against its depth-0 (current) tree
+    /// root, but that root is a *Platform-recorded* anchor only when the tree
+    /// sits exactly on a block boundary.
+    ///
+    /// - The spend anchor is `witness(pos, 0).root(cmx)`, which equals
+    ///   `tree_anchor()` (both depth-0; see the comment on `witness`). This test
+    ///   asserts that equality directly.
+    /// - The wallet syncs commitments by index-chunk (`CHUNK_SIZE = 2048` in
+    ///   `sync.rs`), **not** by block, so its tree routinely stops mid-block.
+    /// - drive records **one anchor per block** (`record_anchor_if_changed` at
+    ///   block-processing-end) and `validate_anchor_exists` rejects any anchor
+    ///   it never recorded (`InvalidAnchorError`).
+    ///
+    /// So a mid-block depth-0 anchor is rejected every attempt — repeatable,
+    /// never lands, funds untouched. The team already names this failure at the
+    /// `tree_size` test above ("Anchor not found in the recorded anchors").
+    #[test]
+    fn depth0_spend_anchor_mid_block_is_not_a_recorded_block_boundary_anchor() {
+        use grovedb_commitment_tree::ExtractedNoteCommitment;
+
+        let path = temp_tree_path("anchor_midblock");
+        let mut store = FileBackedShieldedStore::open_path(&path, 100).unwrap();
+
+        let cmx = |b: u8| {
+            let mut c = [0u8; 32];
+            c[0] = b;
+            c
+        };
+
+        // Two blocks of commitments. drive records ONE anchor per block, at
+        // block-processing-end (after ALL of that block's commitments):
+        //   block 1 = commitments 1..=3  -> recorded anchor at tree size 3
+        //   block 2 = commitments 4..=6  -> recorded anchor at tree size 6
+        for b in 1..=3u8 {
+            store.append_commitment(&cmx(b), true).unwrap();
+        }
+        store.checkpoint_tree(3).unwrap();
+        let recorded_after_block1 = store.tree_anchor().unwrap();
+
+        // The index-chunk sync appends block 2's commitments incrementally; a
+        // chunk/stream boundary that lands mid-block (the common case — a
+        // 2048-leaf chunk rarely ends on a block boundary) leaves the wallet at
+        // tree size 4, and it checkpoints there (sync.rs checkpoints at the
+        // post-append leaf count). Its depth-0 anchor is now the root at size 4
+        // — a state drive never recorded.
+        store.append_commitment(&cmx(4), true).unwrap();
+        store.checkpoint_tree(4).unwrap();
+        let wallet_depth0_mid_block = store.tree_anchor().unwrap();
+
+        // The spend path uses exactly this anchor: `extract_spends_and_anchor`
+        // builds it as `witness(pos, 0).root(cmx)`. Pin that it equals the
+        // mid-block `tree_anchor()`.
+        let cmx0 = ExtractedNoteCommitment::from_bytes(&cmx(1))
+            .into_option()
+            .expect("valid cmx");
+        let spend_anchor = store
+            .witness(0)
+            .unwrap()
+            .expect("witness for marked position 0")
+            .root(cmx0)
+            .to_bytes();
+        assert_eq!(
+            spend_anchor, wallet_depth0_mid_block,
+            "the spend anchor (depth-0 witness root) must equal the mid-block tree_anchor"
+        );
+
+        // Finish block 2. drive records the anchor at tree size 6.
+        store.append_commitment(&cmx(5), true).unwrap();
+        store.append_commitment(&cmx(6), true).unwrap();
+        store.checkpoint_tree(6).unwrap();
+        let recorded_after_block2 = store.tree_anchor().unwrap();
+
+        let _ = std::fs::remove_file(&path);
+
+        // drive's recorded anchor set is {block1, block2}. The wallet's mid-block
+        // spend anchor is neither -> `validate_anchor_exists` rejects it with
+        // InvalidAnchorError, and the withdrawal never lands.
+        assert_ne!(
+            wallet_depth0_mid_block, recorded_after_block1,
+            "mid-block spend anchor must differ from block 1's recorded anchor"
+        );
+        assert_ne!(
+            wallet_depth0_mid_block, recorded_after_block2,
+            "mid-block spend anchor must differ from block 2's recorded anchor"
+        );
+        assert_ne!(
+            recorded_after_block1, recorded_after_block2,
+            "the two block-boundary anchors differ (the tree grew), so drive's \
+             recorded set is exactly these two and the mid-block anchor is outside it"
         );
     }
 }

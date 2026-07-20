@@ -9,6 +9,7 @@ public enum KeyManagerError: LocalizedError, Sendable {
   case privateKeyNotFound(KeyID)
   case invalidKeyFormat(String)
   case signerCreationFailed(String)
+  case signingFailed(String)
   case keychainError(String)
   case noSuitableKey(String)
 
@@ -22,11 +23,99 @@ public enum KeyManagerError: LocalizedError, Sendable {
       return "Invalid key format: \(message)"
     case .signerCreationFailed(let message):
       return "Failed to create signer: \(message)"
+    case .signingFailed(let message):
+      return "Failed to sign: \(message)"
     case .keychainError(let message):
       return "Keychain error: \(message)"
     case .noSuitableKey(let message):
       return "No suitable key found: \(message)"
     }
+  }
+}
+
+// MARK: - Raw-key one-shot signing
+
+/// One-shot ECDSA signing with a raw 32-byte private key.
+///
+/// The `dash_sdk_signer_create_from_private_key` → `dash_sdk_signer_sign`
+/// → `dash_sdk_signer_destroy` FFI round-trip, extracted from
+/// `KeychainSigner` so callers that already hold key material (e.g. a
+/// derivation-path lookup) can sign without constructing a
+/// `KeychainSigner`/`KeyManager` stack. `KeychainSigner.ffiSign`
+/// delegates here — keep the two in sync by keeping this the only
+/// implementation.
+///
+/// The FFI double-SHA256es `data` before signing
+/// (`dashcore::signer::sign`) and returns the 65-byte compact
+/// recoverable signature — recovery header byte first, compressed-key
+/// range 31–34 — i.e. the Dash Core `signmessage` wire format.
+public enum RawKeySigner {
+  /// - Parameters:
+  ///   - data: Raw bytes to sign. Hashed (SHA256d) inside the FFI —
+  ///     pass the full message, never a pre-computed digest.
+  ///   - privateKey: 32-byte ECDSA scalar. A local copy is zeroed
+  ///     before returning.
+  ///   - network: Affects WIF/address metadata inside the signer only,
+  ///     not the signature bytes.
+  public static func sign(data: Data, privateKey: Data, network: Network) throws -> Data {
+    guard privateKey.count == 32 else {
+      throw KeyManagerError.invalidKeyFormat(
+        "Private key must be 32 bytes, got \(privateKey.count)")
+    }
+
+    // Defensive copy into a mutable buffer we can zero on exit.
+    var keyCopy = [UInt8](privateKey)
+    defer {
+      keyCopy.withUnsafeMutableBufferPointer { buf in
+        if let base = buf.baseAddress {
+          memset_s(UnsafeMutableRawPointer(base), buf.count, 0, buf.count)
+        }
+      }
+    }
+
+    let signerResult = keyCopy.withUnsafeBufferPointer { keyBuf -> DashSDKResult in
+      dash_sdk_signer_create_from_private_key(
+        keyBuf.baseAddress!,
+        UInt(keyBuf.count),
+        network.ffiValue
+      )
+    }
+
+    if let errPtr = signerResult.error {
+      let message = errPtr.pointee.message.map { String(cString: $0) } ?? "unknown"
+      dash_sdk_error_free(errPtr)
+      throw KeyManagerError.signerCreationFailed(message)
+    }
+    guard let rawSigner = signerResult.data else {
+      throw KeyManagerError.signerCreationFailed("null handle")
+    }
+    let signerHandle = OpaquePointer(rawSigner)
+    defer { dash_sdk_signer_destroy(signerHandle) }
+
+    let signResult = data.withUnsafeBytes { dataBuf -> DashSDKResult in
+      dash_sdk_signer_sign(
+        signerHandle,
+        dataBuf.bindMemory(to: UInt8.self).baseAddress,
+        UInt(dataBuf.count)
+      )
+    }
+
+    if let errPtr = signResult.error {
+      let message = errPtr.pointee.message.map { String(cString: $0) } ?? "unknown"
+      dash_sdk_error_free(errPtr)
+      throw KeyManagerError.signingFailed(message)
+    }
+    guard let sigPtr = signResult.data else {
+      throw KeyManagerError.signingFailed("null signature")
+    }
+
+    let sigStruct = sigPtr.assumingMemoryBound(to: DashSDKSignature.self)
+    defer { dash_sdk_signature_free(sigStruct) }
+
+    guard let bytes = sigStruct.pointee.signature else {
+      throw KeyManagerError.signingFailed("empty signature")
+    }
+    return Data(bytes: bytes, count: Int(sigStruct.pointee.signature_len))
   }
 }
 
@@ -348,8 +437,7 @@ public final class KeyManager: Sendable {
   /// Destroy a signer handle
   /// - Parameter signer: The signer handle to destroy
   public func destroySigner(_ signer: OpaquePointer) {
-    let signerPtr = UnsafeMutablePointer<SignerHandle>(signer)
-    dash_sdk_signer_destroy(signerPtr)
+    dash_sdk_signer_destroy(signer)
   }
 
   // MARK: - Key Validation

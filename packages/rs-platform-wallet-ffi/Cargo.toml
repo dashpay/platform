@@ -30,6 +30,10 @@ dashcore = { workspace = true }
 key-wallet = { workspace = true, features = ["bincode"] }
 dash-network = { workspace = true, features = ["ffi"] }
 
+# For the glue impl of platform-wallet's async `DrainCryptoProvider` trait over
+# the resolver-backed signer (deferred-crypto drain FFI).
+async-trait = "0.1"
+
 # Bincode used to serialize RootExtendedPubKey / ExtendedPubKey across
 # FFI for watch-only restore. Same version pinned elsewhere in workspace.
 bincode = { version = "=2.0.1" }

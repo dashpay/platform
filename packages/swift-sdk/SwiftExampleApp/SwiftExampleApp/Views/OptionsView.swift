@@ -9,8 +9,10 @@ struct OptionsView: View {
     @EnvironmentObject var shieldedService: ShieldedService
     @State private var showingDataManagement = false
     @State private var showingAbout = false
-    @State private var showingContracts = false
     @State private var isSwitchingNetwork = false
+    @State private var isExportingLogs = false
+    @State private var exportedLogs: ExportedLogsArchive?
+    @State private var logExportError: String?
     @State private var sdkStatus: SDKStatus?
     @State private var isLoadingStatus = false
 
@@ -128,6 +130,12 @@ struct OptionsView: View {
                         get: { appState.currentNetwork },
                         set: { newNetwork in
                             if newNetwork != appState.currentNetwork {
+                                // Earliest synchronous point of the switch:
+                                // cancel any in-flight SPV start before the
+                                // async body stops the old manager, so a
+                                // start resuming in the stop→activate gap
+                                // can't revive it.
+                                walletManagerStore.invalidatePendingSpvStarts()
                                 isSwitchingNetwork = true
                                 Task {
                                     // Auto-disable Docker when leaving Local
@@ -138,7 +146,7 @@ struct OptionsView: View {
                                     // Devnet's SPV peers come from
                                     // `{platformQuorumURL}/masternodes`
                                     // — no UserDefaults state to seed
-                                    // here. See `CoreContentView.spvPeerOverride`
+                                    // here. See `CoreSpvLauncher.peerOverride`
                                     // for the devnet branch.
 
                                     // Update platform state (which will trigger SDK switch)
@@ -184,6 +192,11 @@ struct OptionsView: View {
                     if appState.currentNetwork == .regtest {
                         Toggle("Use Docker Setup", isOn: $appState.useDockerSetup)
                             .onChange(of: appState.useDockerSetup) { _, _ in
+                                // Toggling Docker rebuilds the SDK and flips
+                                // the peer override; cancel any in-flight
+                                // start so it can't proceed with stale peer
+                                // config against the rebuilt SDK.
+                                walletManagerStore.invalidatePendingSpvStarts()
                                 isSwitchingNetwork = true
                                 Task {
                                     await appState.switchNetwork(to: appState.currentNetwork)
@@ -292,6 +305,10 @@ struct OptionsView: View {
                             devnetNameSnapshot = nil
                             guard quorumChanged || nameChanged else { return }
                             guard appState.currentNetwork == .devnet else { return }
+                            // Widest supersession gap (stop → await SDK
+                            // rebuild → activate). Invalidate first so a
+                            // start resuming anywhere in it bails.
+                            walletManagerStore.invalidatePendingSpvStarts()
                             try? walletManager.stopSpv()
                             Task {
                                 await appState.switchNetwork(to: .devnet)
@@ -334,6 +351,10 @@ struct OptionsView: View {
                                 if isOn && (customSpvPeers.isEmpty || !customSpvPeers.contains(":")) {
                                     customSpvPeers = defaultSpvPeers(for: appState.currentNetwork)
                                 }
+                                // Cancel any in-flight start (it captured the
+                                // pre-toggle peer config) before stopping, so
+                                // the next start picks up the new peers.
+                                walletManagerStore.invalidatePendingSpvStarts()
                                 // Stop SPV so the next start picks up the
                                 // new peer config in CoreContentView.
                                 try? walletManager.stopSpv()
@@ -427,7 +448,38 @@ struct OptionsView: View {
                     }
                 }
 
+                Section("Diagnostics") {
+                    Button(action: exportLogs) {
+                        HStack {
+                            Label("Export Logs", systemImage: "square.and.arrow.up")
+                            Spacer()
+                            if isExportingLogs {
+                                ProgressView()
+                                    .scaleEffect(0.8)
+                            }
+                        }
+                    }
+                    .disabled(isExportingLogs)
+
+                    Text("Bundles the SDK logs from this launch and the two before it (a crashed run is usually the previous session) into a zip you can AirDrop, mail, or save to Files.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+
                 Section(header: Text("Platform")) {
+                    // Contracts moved here from its own root tab. Pushed
+                    // without its own NavigationStack so it attaches to
+                    // this Settings stack (native back button), matching
+                    // the other rows in this screen.
+                    NavigationLink(
+                        destination: ContractsTabView(
+                            network: appState.currentNetwork,
+                            embedsOwnNavigationStack: false
+                        )
+                    ) {
+                        Label("Contracts", systemImage: "doc.text")
+                    }
+
                     NavigationLink(destination: PlatformQueriesView()) {
                         Label("Queries", systemImage: "magnifyingglass")
                     }
@@ -523,6 +575,56 @@ struct OptionsView: View {
             }
             .sheet(isPresented: $showingAbout) {
                 AboutView()
+            }
+            .sheet(item: $exportedLogs) { archive in
+                ShareSheet(items: [archive.url])
+            }
+            .alert(
+                "Log Export Failed",
+                isPresented: Binding(
+                    get: { logExportError != nil },
+                    set: { if !$0 { logExportError = nil } }
+                )
+            ) {
+                Button("OK", role: .cancel) { logExportError = nil }
+            } message: {
+                Text(logExportError ?? "")
+            }
+        }
+    }
+
+    /// Zip the most recent SDK log sessions and hand the archive to a
+    /// share sheet. The staging + compression is file I/O, so it runs
+    /// detached; only the resulting URL (or error) comes back to the
+    /// main actor.
+    private func exportLogs() {
+        isExportingLogs = true
+        let network = appState.currentNetwork.displayName
+        let bundle = Bundle.main
+        let short = bundle.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
+        let build = bundle.infoDictionary?["CFBundleVersion"] as? String ?? "?"
+        let appVersion = "\(short) (\(build))"
+        // Authoritative record of which directory this run is
+        // writing to — timestamp sorting alone can be fooled by a
+        // clock rollback or a stale future-dated directory.
+        let currentSession = LoggingPreferences.currentSessionDirectory
+
+        Task.detached(priority: .userInitiated) {
+            let result: Result<URL, Error> = Result {
+                try LogExporter.export(
+                    network: network,
+                    appVersion: appVersion,
+                    currentSession: currentSession
+                )
+            }
+            await MainActor.run {
+                isExportingLogs = false
+                switch result {
+                case .success(let url):
+                    exportedLogs = ExportedLogsArchive(url: url)
+                case .failure(let error):
+                    logExportError = error.localizedDescription
+                }
             }
         }
     }
@@ -639,6 +741,14 @@ struct OptionsView: View {
             }
         }
     }
+}
+
+/// `Identifiable` wrapper so the exported zip can drive
+/// `.sheet(item:)` — presenting keyed on the value (not a separate
+/// bool) means the sheet can never race ahead of the URL being set.
+private struct ExportedLogsArchive: Identifiable {
+    let url: URL
+    var id: URL { url }
 }
 
 struct DataManagementView: View {

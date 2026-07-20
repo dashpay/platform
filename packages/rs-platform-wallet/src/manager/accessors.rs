@@ -11,6 +11,7 @@ use key_wallet::utxo::Utxo;
 use key_wallet::WalletCoreBalance;
 
 use crate::changeset::PlatformWalletPersistence;
+use crate::manager::dashpay_sync::DashPaySyncManager;
 use crate::manager::identity_sync::IdentitySyncManager;
 use crate::manager::platform_address_sync::PlatformAddressSyncManager;
 #[cfg(feature = "shielded")]
@@ -18,6 +19,38 @@ use crate::manager::shielded_sync::ShieldedSyncManager;
 use crate::spv::SpvRuntime;
 use crate::wallet::platform_wallet::WalletId;
 use crate::wallet::PlatformWallet;
+
+/// Result of [`PlatformWalletManager::provider_masternode_txs_blocking`]:
+/// the wallet's network (for base58 address encoding on the FFI side),
+/// its retained provider special transactions with their confirmation
+/// height and in-block position (for same-block ordering), a DML snapshot
+/// (`proTxHash -> is_valid`, `None` when the
+/// deterministic masternode list isn't available yet), and two
+/// derive-and-compare ownership maps for the key kinds that live ONLY in
+/// payloads (never as on-chain addresses):
+///
+///   * operator BLS public key (48 bytes) ⇒ derivation index, and
+///   * platform node id (SHA256[..20] Tenderdash, 20 bytes) ⇒ derivation index.
+///
+/// Owner / voting keys ARE on-chain addresses, so their ownership is
+/// resolved app-side against the persisted `PersistentCoreAddress` rows;
+/// operator / platform keys can't be, so they're derived here from the
+/// wallet's provider accounts and matched against each masternode's
+/// payload key. Operator keys derive from the account xpub with no seed;
+/// platform-node keys need the seed (resident wallets only — watch-only
+/// yields an empty map, a documented follow-up).
+pub type ProviderMasternodeTxs = (
+    dashcore::Network,
+    // Each tuple is `(block_height, in_block_position, tx)`. The position
+    // orders same-block provider updates for the aggregation's latest-wins
+    // (Core applies them in `block.vtx` order). Stamped during block
+    // processing (rust-dashcore#891); 0 for legacy rows persisted before
+    // the field existed.
+    Vec<(u32, u32, dashcore::Transaction)>,
+    Option<std::collections::HashMap<[u8; 32], bool>>,
+    std::collections::HashMap<[u8; 48], u32>,
+    std::collections::HashMap<[u8; 20], u32>,
+);
 
 use super::PlatformWalletManager;
 
@@ -285,6 +318,18 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         Arc::clone(&self.identity_sync_manager)
     }
 
+    /// Access the recurring DashPay (contact-request + profile) sync
+    /// coordinator.
+    pub fn dashpay_sync(&self) -> &DashPaySyncManager {
+        &self.dashpay_sync_manager
+    }
+
+    /// Clone the `Arc<DashPaySyncManager>` so callers (e.g. FFI) can
+    /// invoke [`DashPaySyncManager::start`] which takes `&Arc<Self>`.
+    pub fn dashpay_sync_arc(&self) -> Arc<DashPaySyncManager> {
+        Arc::clone(&self.dashpay_sync_manager)
+    }
+
     /// Access the shielded sync coordinator.
     #[cfg(feature = "shielded")]
     pub fn shielded_sync(&self) -> &ShieldedSyncManager {
@@ -443,6 +488,58 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             last_processed_height: info.core_wallet.metadata.last_processed_height,
             monitor_revision,
         })
+    }
+
+    /// Rewind a single wallet's SPV filter-scan checkpoint
+    /// (`synced_height`) to `from_height`, arming an organic filter
+    /// rescan.
+    ///
+    /// This is the write half of the same mechanism `reconcile_dashpay_rescan`
+    /// uses for historical-contact backfill. It mutates the *shared*
+    /// `wallet_manager` (`Arc<RwLock<..>>`) that the running `DashSpvClient`
+    /// holds a clone of — so the change is observed by the live filter-sync
+    /// loop: on its next tick `FiltersManager` sees this wallet in
+    /// `wallets_behind(committed_height)`, calls `reset_for_rescan()`, rewinds
+    /// its committed height to this wallet's `synced_height`, and re-downloads /
+    /// re-matches compact filters from there.
+    ///
+    /// Unlike the `WalletInterface::update_wallet_synced_height` trait method
+    /// (which is forward-only and silently ignores a lower value), this writes
+    /// `core_wallet.update_synced_height` directly, which is an unconditional
+    /// set — so a **rewind** actually takes effect. A `from_height` at or above
+    /// the current checkpoint is written verbatim but arms no rescan: the
+    /// filter loop only rescans wallets strictly *behind* the committed height,
+    /// so a forward/equal set is a harmless no-op for the rescan purpose.
+    ///
+    /// `synced_height` may regress here: that is safe because it is the
+    /// filter-scan checkpoint, decoupled from the monotonic
+    /// `last_processed_height`, and every persisted sync cursor is
+    /// monotonic-max guarded (see `reconcile_dashpay_rescan`'s note), so a
+    /// transient rewind cannot corrupt state or persist a lower cursor.
+    ///
+    /// The rewound checkpoint lives in the in-memory `WalletManager`; it is not
+    /// itself persisted by this call, and that is fine for the feature: a
+    /// rescan completes in-session, and if the process dies mid-rescan the
+    /// wallet is simply still behind, so the next `start` re-arms the same
+    /// backfill from the persisted high-water. Requires SPV running for an
+    /// immediate effect; otherwise it takes effect when SPV next starts and its
+    /// filter loop first ticks.
+    ///
+    /// Returns `false` when no wallet matches `wallet_id`.
+    pub fn spv_rescan_filters_blocking(&self, wallet_id: &WalletId, from_height: u32) -> bool {
+        use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
+
+        let mut wm = self.wallet_manager.blocking_write();
+        let Some(info) = wm.get_wallet_info_mut(wallet_id) else {
+            return false;
+        };
+        info.core_wallet.update_synced_height(from_height);
+        tracing::info!(
+            wallet_id = %hex::encode(wallet_id),
+            from_height,
+            "SPV rescan: rewound wallet synced_height to arm a filter rescan"
+        );
+        true
     }
 
     /// Snapshot of identity-wallet scan state for a single wallet.
@@ -716,6 +813,173 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             page_limit
         };
         iter.take(take).map(tx_record_snapshot).collect()
+    }
+
+    /// Provider special transactions (ProRegTx / ProUpServTx / ProUpRegTx
+    /// / ProUpRevTx) across all of a wallet's accounts, deduplicated by
+    /// txid, each paired with its confirmation height (0 when
+    /// unconfirmed). The source for masternode aggregation.
+    ///
+    /// rust-dashcore #876 retains provider-payload records on the
+    /// provider-key accounts (owner / voting / operator / platform) past
+    /// chainlock finalization even with `keep-finalized-transactions` off
+    /// (the mobile default), so — unlike `account_transactions_blocking`
+    /// above — this is populated in every feature configuration. Deduped
+    /// by txid because one ProRegTx matches both the owner- and
+    /// voting-key accounts, so its record is retained on each.
+    ///
+    /// Caveat: records evicted *before* the #876 bump aren't resident
+    /// until a filter rescan re-matches them, so on an existing install
+    /// the set fills in after a Rescan.
+    ///
+    /// Returns `None` only when the wallet id isn't managed (an empty vec
+    /// means "no provider txs yet"). The wallet's `Network` rides along so
+    /// the FFI can encode owner / voting key hashes to base58 addresses,
+    /// plus a DML snapshot (`proTxHash -> is_valid`, `None` when the list
+    /// isn't available yet) so the FFI can derive Active / Inactive /
+    /// Retired / Unknown status.
+    pub fn provider_masternode_txs_blocking(
+        &self,
+        wallet_id: &WalletId,
+    ) -> Option<ProviderMasternodeTxs> {
+        use key_wallet::managed_account::address_pool::PublicKeyType;
+        use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+        // Default provider-key pre-derivation / scan window.
+        const PROVIDER_KEY_WINDOW: u32 = 20;
+
+        // Scope the wallet-manager read lock so it's released before we
+        // acquire the SPV client / engine locks for the DML snapshot — the
+        // two never nest. Inside this scope we also read the managed
+        // provider pools (`info.core_wallet` is a `ManagedWalletInfo`).
+        let (network, txs, operator_scan_max, platform_index) = {
+            let wm = self.wallet_manager.blocking_read();
+            let info = wm.get_wallet_info(wallet_id)?;
+            let network = info.core_wallet.network();
+
+            let mut by_txid: std::collections::BTreeMap<
+                dashcore::Txid,
+                (u32, u32, dashcore::Transaction),
+            > = std::collections::BTreeMap::new();
+
+            for account in info.core_wallet.accounts.all_accounts().iter() {
+                for record in account.transactions().values() {
+                    if record.transaction.special_transaction_payload.is_none() {
+                        continue;
+                    }
+                    let height = record.context.block_info().map(|b| b.height()).unwrap_or(0);
+                    // In-block position for same-height tie-breaking in the
+                    // aggregation (Core resolves same-block provider updates in
+                    // `block.vtx` order). Stamped by block processing since
+                    // rust-dashcore#891 and round-tripped through persistence;
+                    // `None` only for legacy rows persisted before the field
+                    // existed, which fall back to 0 (feed order).
+                    let position = record
+                        .context
+                        .block_info()
+                        .and_then(|b| b.position())
+                        .unwrap_or(0);
+                    by_txid
+                        .entry(record.txid)
+                        .or_insert_with(|| (height, position, record.transaction.clone()));
+                }
+            }
+
+            // How far the operator (BLS) pool extends — its
+            // `highest_generated` watermark, which #882 gap-extension and
+            // the pool restore can push past the default window — so the
+            // seedless derive-and-compare scan below covers beyond-window
+            // keys, not a hardcoded 20. Floored at the default window.
+            let operator_scan_max = info
+                .core_wallet
+                .accounts
+                .provider_operator_keys
+                .as_ref()
+                .and_then(|acct| {
+                    acct.managed_account_type()
+                        .address_pools()
+                        .iter()
+                        .filter_map(|p| p.highest_generated)
+                        .max()
+                })
+                .map(|h| h.saturating_add(1))
+                .unwrap_or(PROVIDER_KEY_WINDOW)
+                .max(PROVIDER_KEY_WINDOW);
+
+            // Platform-node ownership: Ed25519/SLIP-10 is hardened-only, so
+            // these keys can't be re-derived seedlessly. Read the wallet's
+            // own platform-node public keys straight from the managed
+            // pool's typed entries (populated at registration and rehydrated
+            // from the persisted batch on restore) and recompute the
+            // Tenderdash node id (SHA256[..20], rust-dashcore #884) — never
+            // trusting a persisted hash160-era id.
+            let mut platform_index: std::collections::HashMap<[u8; 20], u32> =
+                std::collections::HashMap::new();
+            if let Some(acct) = info.core_wallet.accounts.provider_platform_keys.as_ref() {
+                for pool in acct.managed_account_type().address_pools() {
+                    for entry in pool.addresses.values() {
+                        if let Some(PublicKeyType::EdDSA(pk)) = &entry.public_key {
+                            if let Ok(pk32) = <[u8; 32]>::try_from(pk.as_slice()) {
+                                let node_id =
+                                    dashcore::PlatformNodeId::from_ed25519_public_key(&pk32)
+                                        .to_byte_array();
+                                platform_index.insert(node_id, entry.index);
+                            }
+                        }
+                    }
+                }
+            }
+
+            (
+                network,
+                by_txid.into_values().collect::<Vec<_>>(),
+                operator_scan_max,
+                platform_index,
+            )
+        };
+
+        let dml = self.spv().masternode_validity_snapshot_blocking();
+
+        // Operator (BLS) ownership: derive both serializations for every
+        // index the pool covers (`0..operator_scan_max`). Operator public
+        // keys derive from the account xpub with no seed, so this works for
+        // resident and restored external-signable wallets alike. A v1
+        // ProRegTx carries the key in LEGACY serialization and a v2 in
+        // MODERN, so both forms are indexed under the same index (distinct
+        // byte strings for the same G1 point — no collision).
+        let mut operator_index: std::collections::HashMap<[u8; 48], u32> =
+            std::collections::HashMap::new();
+        // Clone the `Arc<PlatformWallet>` out and drop the `wallets` read
+        // guard before deriving (the derive calls take the wallet's own
+        // state lock — don't hold `wallets` across them).
+        let platform_wallet = self.wallets.blocking_read().get(wallet_id).cloned();
+        if let Some(platform_wallet) = platform_wallet {
+            use crate::wallet::provider_key_at_index::ProviderKeyKind;
+            for index in 0..operator_scan_max {
+                match platform_wallet.derive_provider_key_at_index(
+                    ProviderKeyKind::Operator,
+                    index,
+                    None,
+                    false,
+                ) {
+                    Ok(key) => {
+                        if let Ok(bytes) = <[u8; 48]>::try_from(key.public_key_bytes.as_slice()) {
+                            operator_index.insert(bytes, index);
+                        }
+                        if let Some(legacy) = key
+                            .legacy_public_key_bytes
+                            .as_deref()
+                            .and_then(|b| <[u8; 48]>::try_from(b).ok())
+                        {
+                            operator_index.insert(legacy, index);
+                        }
+                    }
+                    // First failure ⇒ no operator account (or unavailable) ⇒ stop.
+                    Err(_) => break,
+                }
+            }
+        }
+
+        Some((network, txs, dml, operator_index, platform_index))
     }
 
     // -----------------------------------------------------------------

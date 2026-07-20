@@ -89,6 +89,10 @@ enum SignWithMnemonicResolverError: UInt8 {
     case unsupportedKeyType = 8
     case resolverNotFound = 9
     case resolverFailed = 10
+    /// The key derived at the path did not reproduce the caller-supplied
+    /// expected key — the signature was withheld (mirrors the Rust
+    /// `SIGN_WITH_RESOLVER_ERR_PUBKEY_MISMATCH`).
+    case pubkeyMismatch = 11
 }
 
 // MARK: - 32-byte tuple helpers
