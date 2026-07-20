@@ -20,6 +20,7 @@ use platform_wallet::changeset::{
     WalletMetadataEntry,
 };
 use platform_wallet::wallet::platform_wallet::WalletId;
+use platform_wallet_storage::sqlite::schema::core_pool;
 use platform_wallet_storage::{SqlitePersister, SqlitePersisterConfig, WalletStorageError};
 
 /// Real external-pool `AddressInfo`s for a wallet's Standard BIP44 account 0,
@@ -840,6 +841,153 @@ fn conflicting_typed_pool_key_is_rejected_and_original_survives_load() {
         restored[0].public_key, first.public_key,
         "the original typed key must remain intact"
     );
+}
+
+#[test]
+fn untyped_pool_key_cannot_overwrite_persisted_typed_key() {
+    let wallet = Wallet::from_seed_bytes(
+        [0xA3; 64],
+        Network::Testnet,
+        WalletAccountCreationOptions::Default,
+    )
+    .expect("seed wallet");
+    let (persister, _tmp, _path) = fresh_persister();
+    let w: WalletId = wid(0x9D);
+    let original = typed_platform_node_info(0xA4, 0, 0x71);
+    let mut untyped = original.clone();
+    untyped.public_key = None;
+    persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                wallet_metadata: Some(WalletMetadataEntry {
+                    network: Network::Testnet,
+                    wallet_group_id: [0; 32],
+                    birth_height: 1,
+                }),
+                provider_key_account_registrations: vec![provider_platform_registration(&wallet)],
+                account_address_pools: vec![provider_platform_pool_entry(vec![untyped.clone()])],
+                ..Default::default()
+            },
+        )
+        .expect("store initial untyped pool row");
+    persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                account_address_pools: vec![provider_platform_pool_entry(vec![original.clone()])],
+                ..Default::default()
+            },
+        )
+        .expect("upgrade untyped pool row with typed key material");
+
+    let err = persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                account_address_pools: vec![provider_platform_pool_entry(vec![untyped])],
+                ..Default::default()
+            },
+        )
+        .expect_err("an untyped row must not erase a persisted typed key");
+    assert_eq!(
+        wallet_storage_error(err).error_kind_str(),
+        "typed_pool_key_conflict"
+    );
+
+    let restored = loaded_provider_platform_infos(&persister, &w);
+    assert_eq!(restored.len(), 1, "the rejected flush must be atomic");
+    assert_eq!(restored[0].public_key, original.public_key);
+}
+
+#[test]
+fn malformed_typed_pool_key_widths_are_rejected_before_insert() {
+    let malformed_keys = [
+        PublicKeyType::ECDSA(vec![0x11; 32]),
+        PublicKeyType::EdDSA(vec![0x22; 31]),
+        PublicKeyType::BLS(vec![0x33; 47]),
+    ];
+
+    for (case, malformed_key) in malformed_keys.into_iter().enumerate() {
+        let (persister, _tmp, _path) = fresh_persister();
+        let w: WalletId = wid(0xA0 + case as u8);
+        ensure_wallet_meta(&persister, &w);
+        let mut info = external_infos(0xA5 + case as u8)
+            .into_iter()
+            .next()
+            .expect("derived address");
+        info.public_key = Some(malformed_key);
+
+        let err = persister
+            .store(
+                w,
+                PlatformWalletChangeSet {
+                    account_address_pools: vec![pool_entry(
+                        AccountType::Standard {
+                            index: 0,
+                            standard_account_type: StandardAccountType::BIP44Account,
+                        },
+                        AddressPoolType::External,
+                        vec![info],
+                    )],
+                    ..Default::default()
+                },
+            )
+            .expect_err("a malformed typed key must be rejected before commit");
+        assert_eq!(wallet_storage_error(err).error_kind_str(), "blob_decode");
+
+        let conn = persister.lock_conn_for_test();
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM core_address_pool WHERE wallet_id = ?1",
+                rusqlite::params![w.as_slice()],
+                |row| row.get(0),
+            )
+            .expect("count pool rows");
+        assert_eq!(count, 0, "malformed key case {case} reached the database");
+    }
+}
+
+#[test]
+fn typed_pool_loader_rejects_mismatched_key_nullability() {
+    for (case, clear_column) in ["key_type", "public_key"].into_iter().enumerate() {
+        let (persister, _tmp, _path) = fresh_persister();
+        let w: WalletId = wid(0xB0 + case as u8);
+        ensure_wallet_meta(&persister, &w);
+        let account_type = AccountType::Standard {
+            index: 0,
+            standard_account_type: StandardAccountType::BIP44Account,
+        };
+        let mut info = external_infos(0xB5 + case as u8)
+            .into_iter()
+            .next()
+            .expect("derived address");
+        info.public_key = Some(PublicKeyType::ECDSA(vec![0x44; 33]));
+        persister
+            .store(
+                w,
+                PlatformWalletChangeSet {
+                    account_address_pools: vec![pool_entry(
+                        account_type.clone(),
+                        AddressPoolType::External,
+                        vec![info],
+                    )],
+                    ..Default::default()
+                },
+            )
+            .expect("store valid typed pool row");
+
+        let conn = persister.lock_conn_for_test();
+        conn.execute(
+            &format!("UPDATE core_address_pool SET {clear_column} = NULL WHERE wallet_id = ?1"),
+            rusqlite::params![w.as_slice()],
+        )
+        .expect("corrupt paired nullable columns");
+        let err =
+            core_pool::load_typed_pool_entries(&conn, &w, &account_type, AddressPoolType::External)
+                .expect_err("mismatched typed-key nullability must fail hard");
+        assert_eq!(err.error_kind_str(), "blob_decode", "case {clear_column}");
+    }
 }
 
 #[test]

@@ -59,14 +59,14 @@ const TYPED_POOL_CONFLICT_SQL: &str = "SELECT EXISTS( \
           AND key_class = ?4 AND user_identity_id = ?5 AND friend_identity_id = ?6 \
           AND pool_type = ?7 AND address_index = ?8 \
           AND key_type IS NOT NULL AND public_key IS NOT NULL \
-          AND (public_key <> ?9 OR key_type <> ?10) \
+          AND (?10 IS NULL OR public_key <> ?9 OR key_type <> ?10) \
     )";
 
 /// Expand `account_address_pools` snapshots into per-index
 /// `core_address_pool` rows. Idempotent: `script` is derivation-stable and
 /// `used` is monotonic (`MAX`), so re-applying the same snapshot is a no-op
 /// and a used address can never revert to unused (the reuse-guard invariant).
-/// Typed rows reject conflicting key material already stored at the same key.
+/// Writes reject any change or erasure of typed key material already stored.
 pub fn apply_pools(
     tx: &Transaction<'_>,
     wallet_id: &WalletId,
@@ -95,37 +95,55 @@ pub fn apply_pools(
             accounts::account_dashpay_ids(&entry.account_type);
         let pool_type = pool_type_to_i64(entry.pool_type);
         for info in &entry.addresses {
-            let (public_key, key_type): (Option<&[u8]>, Option<i64>) = match info
-                .public_key
-                .as_ref()
-            {
-                None => (None, None),
-                Some(PublicKeyType::ECDSA(bytes)) => (Some(bytes.as_slice()), Some(KEY_TYPE_ECDSA)),
-                Some(PublicKeyType::EdDSA(bytes)) => (Some(bytes.as_slice()), Some(KEY_TYPE_EDDSA)),
-                Some(PublicKeyType::BLS(bytes)) => (Some(bytes.as_slice()), Some(KEY_TYPE_BLS)),
+            let (public_key, key_type, expected_key_len): (
+                Option<&[u8]>,
+                Option<i64>,
+                Option<usize>,
+            ) = match info.public_key.as_ref() {
+                None => (None, None, None),
+                Some(PublicKeyType::ECDSA(bytes)) => (
+                    Some(bytes.as_slice()),
+                    Some(KEY_TYPE_ECDSA),
+                    Some(ECDSA_PUBLIC_KEY_LEN),
+                ),
+                Some(PublicKeyType::EdDSA(bytes)) => (
+                    Some(bytes.as_slice()),
+                    Some(KEY_TYPE_EDDSA),
+                    Some(EDDSA_PUBLIC_KEY_LEN),
+                ),
+                Some(PublicKeyType::BLS(bytes)) => (
+                    Some(bytes.as_slice()),
+                    Some(KEY_TYPE_BLS),
+                    Some(BLS_PUBLIC_KEY_LEN),
+                ),
             };
-            if key_type.is_some() {
-                let conflicts = conflict_stmt.query_row(
-                    params![
-                        wallet_id.as_slice(),
-                        account_type,
-                        account_index,
-                        key_class,
-                        user_identity_id.as_slice(),
-                        friend_identity_id.as_slice(),
-                        pool_type,
-                        i64::from(info.index),
-                        public_key,
-                        key_type,
-                    ],
-                    |row| row.get::<_, bool>(0),
+            if let (Some(public_key), Some(expected_key_len)) = (public_key, expected_key_len) {
+                blob::check_fixed_width(
+                    i64::try_from(public_key.len()).unwrap_or(i64::MAX),
+                    expected_key_len,
+                    "core_address_pool.public_key has the wrong length for key_type",
                 )?;
-                if conflicts {
-                    return Err(WalletStorageError::TypedPoolKeyConflict {
-                        account_type,
-                        address_index: info.index,
-                    });
-                }
+            }
+            let conflicts = conflict_stmt.query_row(
+                params![
+                    wallet_id.as_slice(),
+                    account_type,
+                    account_index,
+                    key_class,
+                    user_identity_id.as_slice(),
+                    friend_identity_id.as_slice(),
+                    pool_type,
+                    i64::from(info.index),
+                    public_key,
+                    key_type,
+                ],
+                |row| row.get::<_, bool>(0),
+            )?;
+            if conflicts {
+                return Err(WalletStorageError::TypedPoolKeyConflict {
+                    account_type,
+                    address_index: info.index,
+                });
             }
             upsert_stmt.execute(params![
                 wallet_id.as_slice(),
@@ -165,7 +183,7 @@ pub fn load_typed_pool_entries(
     let (max_script_len, max_public_key_len): (Option<i64>, Option<i64>) = conn.query_row(
         "SELECT MAX(length(script)), MAX(length(public_key)) FROM core_address_pool \
          WHERE wallet_id = ?1 AND account_type = ?2 AND pool_type = ?3 \
-           AND key_type IS NOT NULL",
+           AND (public_key IS NOT NULL OR key_type IS NOT NULL)",
         params![wallet_id.as_slice(), account_type, pool_type],
         |row| Ok((row.get(0)?, row.get(1)?)),
     )?;
@@ -180,7 +198,7 @@ pub fn load_typed_pool_entries(
         "SELECT address_index, length(script), script, length(public_key), public_key, \
                 key_type, used FROM core_address_pool \
          WHERE wallet_id = ?1 AND account_type = ?2 AND pool_type = ?3 \
-           AND key_type IS NOT NULL \
+           AND (public_key IS NOT NULL OR key_type IS NOT NULL) \
          ORDER BY address_index",
     )?;
     let mut rows = stmt.query(params![wallet_id.as_slice(), account_type, pool_type,])?;
@@ -193,7 +211,15 @@ pub fn load_typed_pool_entries(
         blob::check_size(row.get::<_, i64>(1)?)?;
         let script = row.get::<_, Vec<u8>>(2)?;
         let public_key_len = row.get::<_, Option<i64>>(3)?;
-        let key_type = row.get::<_, i64>(5)?;
+        let key_type = row.get::<_, Option<i64>>(5)?;
+        let (public_key_len, key_type) = match (public_key_len, key_type) {
+            (Some(public_key_len), Some(key_type)) => (public_key_len, key_type),
+            _ => {
+                return Err(WalletStorageError::blob_decode(
+                    "core_address_pool.public_key and key_type nullability differ",
+                ));
+            }
+        };
         let expected_key_len = match key_type {
             KEY_TYPE_ECDSA => ECDSA_PUBLIC_KEY_LEN,
             KEY_TYPE_EDDSA => EDDSA_PUBLIC_KEY_LEN,
@@ -203,11 +229,6 @@ pub fn load_typed_pool_entries(
                     "core_address_pool.key_type is outside 0..=2",
                 ));
             }
-        };
-        let Some(public_key_len) = public_key_len else {
-            return Err(WalletStorageError::blob_decode(
-                "core_address_pool.public_key is NULL for a typed row",
-            ));
         };
         blob::check_fixed_width(
             public_key_len,
