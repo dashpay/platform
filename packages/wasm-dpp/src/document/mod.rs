@@ -11,7 +11,9 @@ use crate::data_contract::DataContractWasm;
 use crate::identifier::IdentifierWrapper;
 
 use crate::utils::WithJsError;
-use crate::utils::{with_serde_to_json_value, ToSerdeJSONExt};
+use crate::utils::{
+    json_value_to_platform_value_lenient, with_serde_to_json_value, ToSerdeJSONExt,
+};
 
 use dpp::document::document_methods::DocumentMethodsV0;
 use dpp::document::DocumentV0Getters;
@@ -39,7 +41,6 @@ use dpp::{platform_value, ProtocolError};
 
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use dpp::document::serialization_traits::DocumentPlatformValueMethodsV0;
 use dpp::version::PlatformVersion;
 use serde_json::Value as JsonValue;
 
@@ -71,7 +72,8 @@ impl DocumentWasm {
         js_data_contract: &DataContractWasm,
         js_document_type_name: JsValue,
     ) -> Result<DocumentWasm, JsValue> {
-        let mut raw_document: Value = with_serde_to_json_value(&js_raw_document)?.into();
+        let mut raw_document: Value =
+            json_value_to_platform_value_lenient(with_serde_to_json_value(&js_raw_document)?);
 
         let document_type_name = js_document_type_name
             .as_string()
@@ -99,8 +101,23 @@ impl DocumentWasm {
             .with_js_error()?;
         // The binary paths are not being converted, because they always should be a `Buffer`. `Buffer` is always an Array
 
-        let document = Document::from_platform_value(raw_document, PlatformVersion::first())
-            .with_js_error()?;
+        // Phase D step 8 slice B replaced legacy `Document::from_platform_value`
+        // with canonical `ValueConvertible::from_object`, which requires a
+        // `$formatVersion` tag. Insert it for un-tagged JS-supplied input
+        // before delegating.
+        if let Value::Map(ref mut entries) = raw_document {
+            let has_tag = entries
+                .iter()
+                .any(|(k, _)| matches!(k, Value::Text(s) if s == "$formatVersion"));
+            if !has_tag {
+                entries.push((
+                    Value::Text("$formatVersion".to_string()),
+                    Value::Text("0".to_string()),
+                ));
+            }
+        }
+        use dpp::serialization::ValueConvertible;
+        let document = Document::from_object(raw_document).with_js_error()?;
 
         Ok(document.into())
     }

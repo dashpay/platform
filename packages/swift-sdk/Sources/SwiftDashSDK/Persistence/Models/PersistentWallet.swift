@@ -93,6 +93,18 @@ public final class PersistentWallet {
     /// drives the "📥 Imported" badge; defaulted to `false` for
     /// rows that predate the column.
     public var isImported: Bool = false
+    /// Verified seed-binding marker: the BIP44 account-0 xpub that the
+    /// Keychain-resolved seed was proven to derive, bound to the mnemonic
+    /// Keychain item's identity stamp, written after one successful
+    /// `platform_wallet_verify_seed_binds_to_wallet_cached` run. On later
+    /// launches the unlock path hands this back to Rust (with the item's
+    /// current stamp), which skips the mnemonic-resolving derivation when
+    /// it still matches — and re-verifies when the xpub OR the Keychain
+    /// item changed. Opaque to Swift — Rust decides match-vs-verify; this
+    /// column only stores and returns it. `nil` (rows predating the
+    /// column, or never verified) means the full check runs at the next
+    /// unlock.
+    public var seedBindingVerifiedMarker: String?
     /// Record timestamps.
     public var createdAt: Date
     public var lastUpdated: Date

@@ -56,10 +56,7 @@ use platform_value::btreemap_extensions::BTreeValueMapHelper;
 #[cfg(feature = "value-conversion")]
 use platform_value::Error;
 use platform_value::{Identifier, Value};
-#[cfg(any(
-    feature = "serde-conversion",
-    all(feature = "serde-conversion", feature = "serde-conversion"),
-))]
+#[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -79,10 +76,7 @@ pub mod v0;
     From,
 )]
 #[cfg_attr(
-    any(
-        feature = "serde-conversion",
-        all(feature = "serde-conversion", feature = "serde-conversion"),
-    ),
+    feature = "serde-conversion",
     derive(Serialize, Deserialize),
     serde(tag = "$formatVersion")
 )]
@@ -97,15 +91,15 @@ pub mod v0;
 /// See [`v0::TokenPaymentInfoV0`] for the current set of fields and semantics.
 pub enum TokenPaymentInfo {
     #[display("V0({})", "_0")]
-    #[cfg_attr(
-        any(
-            feature = "serde-conversion",
-            all(feature = "serde-conversion", feature = "serde-conversion"),
-        ),
-        serde(rename = "0")
-    )]
+    #[cfg_attr(feature = "serde-conversion", serde(rename = "0"))]
     V0(TokenPaymentInfoV0),
 }
+
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+impl crate::serialization::JsonConvertible for TokenPaymentInfo {}
+
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+impl crate::serialization::ValueConvertible for TokenPaymentInfo {}
 
 impl TokenPaymentInfoMethodsV0 for TokenPaymentInfo {}
 
@@ -213,5 +207,77 @@ impl TryFrom<TokenPaymentInfo> for Value {
     /// including the `$formatVersion` discriminator.
     fn try_from(value: TokenPaymentInfo) -> Result<Self, Self::Error> {
         platform_value::to_value(value)
+    }
+}
+
+#[cfg(all(
+    test,
+    feature = "json-conversion",
+    feature = "value-conversion",
+    feature = "serde-conversion"
+))]
+mod json_convertible_tests {
+    use super::*;
+    use platform_value::platform_value;
+    use serde_json::json;
+
+    fn fixture() -> TokenPaymentInfo {
+        TokenPaymentInfo::V0(TokenPaymentInfoV0 {
+            payment_token_contract_id: Some(Identifier::new([0x99; 32])),
+            token_contract_position: 3,
+            minimum_token_cost: Some(100),
+            maximum_token_cost: Some(1_000),
+            gas_fees_paid_by: GasFeesPaidBy::ContractOwner,
+        })
+    }
+
+    #[test]
+    fn json_round_trip_with_full_wire_shape() {
+        use crate::serialization::JsonConvertible;
+        let original = fixture();
+        let json = original.to_json().expect("to_json");
+        // Internally-tagged enum (`tag = "$formatVersion"`); inner V0 has
+        // `rename_all = "camelCase"`. `Identifier` -> base58 in JSON.
+        // `token_contract_position` is `TokenContractPosition` (= u16) and
+        // `minimum_token_cost` / `maximum_token_cost` are `TokenAmount` (= u64);
+        // JSON erases the size — see the value-path assertion for typed locks.
+        // `gas_fees_paid_by` is the unit enum `GasFeesPaidBy` and serializes
+        // as `"ContractOwner"` (no `rename_all`).
+        assert_eq!(
+            json,
+            json!({
+                "$formatVersion": "0",
+                "paymentTokenContractId": "BLbDu5FZUdSfLrGejhuaWw5iMJBo3j3TVRyPv9rfJyMA",
+                "tokenContractPosition": 3,
+                "minimumTokenCost": 100,
+                "maximumTokenCost": 1_000,
+                "gasFeesPaidBy": "ContractOwner",
+            })
+        );
+        let recovered = TokenPaymentInfo::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn value_round_trip_with_full_wire_shape() {
+        use crate::serialization::ValueConvertible;
+        let original = fixture();
+        let value = original.to_object().expect("to_object");
+        // `Identifier` flows as `Value::Identifier` when interpolated.
+        // `3u16` locks `Value::U16`; `100u64` / `1_000u64` lock `Value::U64`.
+        let payment_token_contract_id = Identifier::new([0x99; 32]);
+        assert_eq!(
+            value,
+            platform_value!({
+                "$formatVersion": "0",
+                "paymentTokenContractId": payment_token_contract_id,
+                "tokenContractPosition": 3u16,
+                "minimumTokenCost": 100u64,
+                "maximumTokenCost": 1_000u64,
+                "gasFeesPaidBy": "ContractOwner",
+            })
+        );
+        let recovered = TokenPaymentInfo::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
     }
 }

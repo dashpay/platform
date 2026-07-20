@@ -5,6 +5,7 @@ use dpp::dashcore::{
 
 use dpp::dashcore::consensus::Encodable;
 use dpp::identity::state_transition::asset_lock_proof::AssetLockProofType;
+use dpp::serialization::ValueConvertible;
 use serde::{Deserialize, Serialize};
 use std::convert::TryInto;
 use wasm_bindgen::prelude::*;
@@ -117,7 +118,10 @@ impl InstantAssetLockProofWasm {
 
     #[wasm_bindgen(js_name=toObject)]
     pub fn to_object(&self) -> Result<JsValue, JsValue> {
-        let asset_lock_value = self.0.to_cleaned_object().with_js_error()?;
+        // `to_cleaned_object` was a pure delegation to `to_object` in
+        // rs-dpp; the canonical `ValueConvertible::to_object` produces the
+        // same Value (no `disabledAt` field on InstantAssetLockProof to clean).
+        let asset_lock_value = self.0.to_object().with_js_error()?;
 
         let serializer = serde_wasm_bindgen::Serializer::json_compatible();
         let js_object = with_js_error!(asset_lock_value.serialize(&serializer))?;

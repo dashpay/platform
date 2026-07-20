@@ -44,18 +44,36 @@ struct WalletDetailView: View {
     // multiple accounts / wallets), so we can't filter
     // `PersistentTransaction` by walletId directly. We query the
     // wallet's TXOs instead and count the distinct creating-or-
-    // spending transactions in the body — same union the list view
+    // spending transactions in the body, then union in each account's
+    // payload-only `involvedTransactions` — same union the list view
     // uses.
     @Query private var walletTxos: [PersistentTxo]
+    /// This wallet's accounts, for the payload-only
+    /// `involvedTransactions` contribution to `transactionCount` —
+    /// special txs that matched an account by payload with no TXO,
+    /// which the `walletTxos` join can't see. Scoped to this wallet
+    /// row's network as well as its walletId: the same 32-byte
+    /// walletId legitimately exists once per network (same mnemonic
+    /// imported on mainnet and testnet), and matching on walletId
+    /// alone would fold the sibling network's payload-only txs into
+    /// this wallet's badge.
+    @Query private var walletAccounts: [PersistentAccount]
 
     init(wallet: PersistentWallet) {
         self.wallet = wallet
         let walletId = wallet.walletId
+        let networkRaw = wallet.networkRaw
         var descriptor = FetchDescriptor<PersistentTxo>(
             predicate: #Predicate { $0.walletId == walletId }
         )
         descriptor.propertiesToFetch = [\.walletId]
         _walletTxos = Query(descriptor)
+        _walletAccounts = Query(
+            filter: #Predicate<PersistentAccount> {
+                $0.wallet.walletId == walletId
+                    && $0.wallet.networkRaw == networkRaw
+            }
+        )
         _walletAssetLocks = Query(
             filter: PersistentAssetLock.predicate(walletId: walletId),
             sort: [SortDescriptor(\PersistentAssetLock.updatedAt, order: .reverse)]
@@ -67,6 +85,11 @@ struct WalletDetailView: View {
         for txo in walletTxos {
             if let tx = txo.transaction { seen.insert(tx.txid) }
             if let spending = txo.spendingTransaction { seen.insert(spending.txid) }
+        }
+        // Payload-only involvement: special txs matched by payload with
+        // no TXO in the wallet, invisible to the `walletTxos` join.
+        for account in walletAccounts {
+            for tx in account.involvedTransactions { seen.insert(tx.txid) }
         }
         return seen.count
     }

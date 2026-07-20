@@ -2088,6 +2088,57 @@ impl DocumentPropertyType {
                 // If decoding fails, leave the value as is (validation will catch it later)
             }
 
+            // Normalize an array of integers to bytes for ByteArray fields. A
+            // binary property re-hydrated through a schemaless JSON layer (e.g. an
+            // edited-and-replaced cached document) arrives as a plain array of
+            // numbers rather than Value::Bytes; convert it here, on the client
+            // build path, so the strict binary serializer receives Value::Bytes.
+            // (The block-processing serialize path never sanitizes, so this does
+            // not change which state transitions are accepted.)
+            (DocumentPropertyType::ByteArray(property_sizes), Value::Array(array)) => {
+                let decoded: Result<Vec<u8>, _> =
+                    array.iter().map(|byte| byte.to_integer::<u8>()).collect();
+
+                if let Ok(bytes) = decoded {
+                    let byte_len = bytes.len();
+
+                    let size_ok = match (property_sizes.min_size, property_sizes.max_size) {
+                        (Some(min), Some(max)) => {
+                            byte_len >= min as usize && byte_len <= max as usize
+                        }
+                        (Some(min), None) => byte_len >= min as usize,
+                        (None, Some(max)) => byte_len <= max as usize,
+                        (None, None) => true,
+                    };
+
+                    if size_ok {
+                        match bytes.len() {
+                            20 => {
+                                if let Ok(arr) = bytes.try_into() {
+                                    *value = Value::Bytes20(arr);
+                                }
+                            }
+                            32 => {
+                                if let Ok(arr) = bytes.try_into() {
+                                    *value = Value::Bytes32(arr);
+                                }
+                            }
+                            36 => {
+                                if let Ok(arr) = bytes.try_into() {
+                                    *value = Value::Bytes36(arr);
+                                }
+                            }
+                            _ => {
+                                *value = Value::Bytes(bytes);
+                            }
+                        }
+                    }
+                    // If size constraints are not met, leave the value as is.
+                }
+                // If any element is not a 0..=255 integer, leave the value as is
+                // (validation will reject it later).
+            }
+
             // Convert hex or base58 strings to identifiers for Identifier fields
             (DocumentPropertyType::Identifier, Value::Text(str_value)) => {
                 // First try base58 decoding (most common for identifiers)

@@ -19,19 +19,22 @@ describe('Vote', () => {
   }
 
   describe('toJSON()', () => {
-    it('should serialize with resourceVote type tag', () => {
+    it('should serialize with $type tag and flat ResourceVote fields', () => {
+      // Vote is internally tagged with `$type` (`$`-prefix because the level
+      // also carries the inner ResourceVote's `$formatVersion`). The single
+      // ResourceVote variant flattens its V0 body at the same level — no
+      // `data` wrapper. VotePoll inside is also flat-tagged.
       const poll = createPoll();
       const choice = wasm.ResourceVoteChoice.TowardsIdentity(testIdentityId);
       const vote = new wasm.Vote(poll, choice);
 
       const json = vote.toJSON();
 
-      expect(json.type).to.equal('resourceVote');
-      expect(json.data).to.exist();
-      expect(json.data.$formatVersion).to.equal('0');
-      expect(json.data.votePoll.type).to.equal('contestedDocumentResourceVotePoll');
-      expect(json.data.votePoll.data.contractId).to.equal(testContractId);
-      expect(json.data.resourceVoteChoice).to.exist();
+      expect(json.$type).to.equal('resourceVote');
+      expect(json.$formatVersion).to.equal('0');
+      expect(json.votePoll.$type).to.equal('contestedDocumentResourceVotePoll');
+      expect(json.votePoll.contractId).to.equal(testContractId);
+      expect(json.resourceVoteChoice).to.exist();
 
       vote.free();
     });
@@ -62,11 +65,10 @@ describe('Vote', () => {
 
       const obj = vote.toObject();
 
-      expect(obj.type).to.equal('resourceVote');
-      expect(obj.data).to.exist();
-      expect(obj.data.$formatVersion).to.equal('0');
-      expect(obj.data.votePoll.type).to.equal('contestedDocumentResourceVotePoll');
-      expect(obj.data.votePoll.data.contractId).to.be.instanceOf(Uint8Array);
+      expect(obj.$type).to.equal('resourceVote');
+      expect(obj.$formatVersion).to.equal('0');
+      expect(obj.votePoll.$type).to.equal('contestedDocumentResourceVotePoll');
+      expect(obj.votePoll.contractId).to.be.instanceOf(Uint8Array);
 
       vote.free();
     });
