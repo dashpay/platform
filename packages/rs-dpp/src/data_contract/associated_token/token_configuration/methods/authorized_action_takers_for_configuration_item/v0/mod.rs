@@ -4,6 +4,22 @@ use crate::data_contract::associated_token::token_distribution_rules::accessors:
 use crate::data_contract::associated_token::token_marketplace_rules::accessors::v0::TokenMarketplaceRulesV0Getters;
 use crate::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
 impl TokenConfigurationV0 {
+    /// Returns the current authority that controls a configuration item.
+    ///
+    /// Unlike `authorized_action_takers_for_configuration_item`, this includes
+    /// the rule controlling changes to the main control group itself.
+    pub fn controlling_action_takers_for_configuration_item(
+        &self,
+        change_item: &TokenConfigurationChangeItem,
+    ) -> AuthorizedActionTakers {
+        match change_item {
+            TokenConfigurationChangeItem::MainControlGroup(_) => {
+                self.main_control_group_can_be_modified
+            }
+            _ => self.authorized_action_takers_for_configuration_item(change_item),
+        }
+    }
+
     /// Returns the authorized action takers for a specific `TokenConfigurationChangeItem`.
     ///
     /// # Parameters
@@ -277,6 +293,18 @@ mod tests {
             &TokenConfigurationChangeItem::MainControlGroup(Some(3)),
         );
         assert_eq!(result, AuthorizedActionTakers::NoOne);
+    }
+
+    #[test]
+    fn controlling_main_group_change_uses_its_current_rule() {
+        let mut c = config_with_all_owner_rules();
+        c.set_main_control_group_can_be_modified(AuthorizedActionTakers::Group(5));
+
+        let result = c.controlling_action_takers_for_configuration_item(
+            &TokenConfigurationChangeItem::MainControlGroup(Some(3)),
+        );
+
+        assert_eq!(result, AuthorizedActionTakers::Group(5));
     }
 
     #[test]

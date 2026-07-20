@@ -7,6 +7,7 @@ use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
 
 mod v0;
+mod v1;
 
 impl TokenConfiguration {
     /// Validates that all group positions referenced in the token configuration exist in the provided groups map.
@@ -40,9 +41,10 @@ impl TokenConfiguration {
             .validate_token_config_groups_exist
         {
             0 => Ok(self.validate_token_config_groups_exist_v0(groups)),
+            1 => Ok(self.validate_token_config_groups_exist_v1(groups)),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "validate_token_config_groups_exist".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             }),
         }

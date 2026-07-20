@@ -11,14 +11,14 @@ use crate::version::dpp_versions::dpp_state_transition_method_versions::v1::STAT
 use crate::version::dpp_versions::dpp_state_transition_serialization_versions::v2::STATE_TRANSITION_SERIALIZATION_VERSIONS_V2;
 use crate::version::dpp_versions::dpp_state_transition_versions::v3::STATE_TRANSITION_VERSIONS_V3;
 use crate::version::dpp_versions::dpp_token_versions::v2::TOKEN_VERSIONS_V2;
-use crate::version::dpp_versions::dpp_validation_versions::v3::DPP_VALIDATION_VERSIONS_V3;
+use crate::version::dpp_versions::dpp_validation_versions::v4::DPP_VALIDATION_VERSIONS_V4;
 use crate::version::dpp_versions::dpp_voting_versions::v2::VOTING_VERSION_V2;
 use crate::version::dpp_versions::DPPVersion;
 use crate::version::drive_abci_versions::drive_abci_checkpoint_parameters::v1::DRIVE_ABCI_CHECKPOINT_PARAMETERS_V1;
 use crate::version::drive_abci_versions::drive_abci_method_versions::v8::DRIVE_ABCI_METHOD_VERSIONS_V8;
 use crate::version::drive_abci_versions::drive_abci_query_versions::v1::DRIVE_ABCI_QUERY_VERSIONS_V1;
 use crate::version::drive_abci_versions::drive_abci_structure_versions::v1::DRIVE_ABCI_STRUCTURE_VERSIONS_V1;
-use crate::version::drive_abci_versions::drive_abci_validation_versions::v8::DRIVE_ABCI_VALIDATION_VERSIONS_V8;
+use crate::version::drive_abci_versions::drive_abci_validation_versions::v9::DRIVE_ABCI_VALIDATION_VERSIONS_V9;
 use crate::version::drive_abci_versions::drive_abci_withdrawal_constants::v2::DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V2;
 use crate::version::drive_abci_versions::DriveAbciVersion;
 use crate::version::drive_versions::v7::DRIVE_VERSION_V7;
@@ -30,27 +30,23 @@ use crate::version::ProtocolVersion;
 
 pub const PROTOCOL_VERSION_13: ProtocolVersion = 13;
 
-/// Introduced as the activation gate for recording shielded-spend transparent
-/// credits (Unshield / shield surplus / identity-create fallback) into the
-/// recent-address-balance-changes tree. Functionally identical to v12 at
-/// introduction — the same component version structs, no behavior change. The
-/// consensus change that consumes this gate (a bumped drive-abci methods
-/// struct) lands in a follow-up; keeping v13 == v12 here lets mixed-version
-/// validators agree until that change activates.
+/// Introduced as the activation gate for consensus changes landing after v12.
+/// Token authorization and configuration validation use their v1 behavior at
+/// this version; other v13-gated changes can bump their own component versions.
 pub const PLATFORM_V13: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_13,
     drive: DRIVE_VERSION_V7,
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V1,
         methods: DRIVE_ABCI_METHOD_VERSIONS_V8,
-        validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V8,
+        validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V9,
         withdrawal_constants: DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V2,
         query: DRIVE_ABCI_QUERY_VERSIONS_V1,
         checkpoints: DRIVE_ABCI_CHECKPOINT_PARAMETERS_V1,
     },
     dpp: DPPVersion {
         costs: DPP_COSTS_VERSIONS_V1,
-        validation: DPP_VALIDATION_VERSIONS_V3,
+        validation: DPP_VALIDATION_VERSIONS_V4,
         state_transition_serialization_versions: STATE_TRANSITION_SERIALIZATION_VERSIONS_V2,
         state_transition_conversion_versions: STATE_TRANSITION_CONVERSION_VERSIONS_V2,
         state_transition_method_versions: STATE_TRANSITION_METHOD_VERSIONS_V1,
@@ -71,3 +67,46 @@ pub const PLATFORM_V13: PlatformVersion = PlatformVersion {
         tenderdash_consensus_version: 1,
     },
 };
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::version::v12::PLATFORM_V12;
+
+    #[test]
+    fn token_authorization_hardening_activates_only_at_v13() {
+        let v12_batch = &PLATFORM_V12
+            .drive_abci
+            .validation_and_processing
+            .state_transitions
+            .batch_state_transition;
+        let v13_batch = &PLATFORM_V13
+            .drive_abci
+            .validation_and_processing
+            .state_transitions
+            .batch_state_transition;
+
+        assert_eq!(v12_batch.token_base_transition_state_validation, 0);
+        assert_eq!(v13_batch.token_base_transition_state_validation, 1);
+        assert_eq!(v12_batch.token_base_transition_group_action_validation, 0);
+        assert_eq!(v13_batch.token_base_transition_group_action_validation, 1);
+        assert_eq!(v12_batch.token_config_update_transition_state_validation, 0);
+        assert_eq!(v13_batch.token_config_update_transition_state_validation, 1);
+        assert_eq!(
+            PLATFORM_V12
+                .dpp
+                .validation
+                .data_contract
+                .validate_token_config_groups_exist,
+            0
+        );
+        assert_eq!(
+            PLATFORM_V13
+                .dpp
+                .validation
+                .data_contract
+                .validate_token_config_groups_exist,
+            1
+        );
+    }
+}
