@@ -5,6 +5,7 @@
 //! and `wallet::asset_lock::build`.
 
 use std::collections::BTreeMap;
+#[cfg(test)]
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -12,7 +13,9 @@ use async_trait::async_trait;
 use dashcore::hashes::Hash;
 use dashcore::secp256k1::{ecdsa, Message, PublicKey, Secp256k1};
 use dashcore::BlockHash;
-use dashcore::{Network, Transaction, Txid};
+use dashcore::{Network, Transaction};
+#[cfg(test)]
+use dashcore::Txid;
 use key_wallet::account::account_type::StandardAccountType;
 use key_wallet::bip32::ExtendedPubKey;
 use key_wallet::signer::{ExtendedPubKeySigner, Signer, SignerMethod};
@@ -22,6 +25,7 @@ use key_wallet::{DerivationPath, Wallet};
 use key_wallet_manager::WalletManager;
 use tokio::sync::RwLock;
 
+#[cfg(test)]
 use crate::broadcaster::{BroadcastError, TransactionBroadcaster};
 use crate::wallet::core::WalletBalance;
 use crate::wallet::identity::IdentityManager;
@@ -30,10 +34,17 @@ use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 /// Broadcaster whose first call fails with a definitive pre-send rejection
 /// and which succeeds afterwards, to model a transient broadcast error
 /// followed by a user retry.
+///
+/// Only consumed by this crate's own `#[cfg(test)]` unit tests (never via
+/// the `test-utils` feature alone), so it's gated on `cfg(test)` directly —
+/// otherwise `--all-features` builds without `--tests` compile this with no
+/// consumer and clippy flags it as dead code.
+#[cfg(test)]
 pub(crate) struct RejectFirstBroadcaster {
     failed_once: AtomicBool,
 }
 
+#[cfg(test)]
 impl RejectFirstBroadcaster {
     pub(crate) fn new() -> Self {
         Self {
@@ -42,6 +53,7 @@ impl RejectFirstBroadcaster {
     }
 }
 
+#[cfg(test)]
 #[async_trait]
 impl TransactionBroadcaster for RejectFirstBroadcaster {
     async fn broadcast(&self, transaction: &Transaction) -> Result<Txid, BroadcastError> {
@@ -57,8 +69,10 @@ impl TransactionBroadcaster for RejectFirstBroadcaster {
 
 /// Broadcaster that always succeeds, for flows that must run past the
 /// broadcast step (e.g. the broadcast half of the funded asset-lock flow).
+#[cfg(test)]
 pub(crate) struct AlwaysOkBroadcaster;
 
+#[cfg(test)]
 #[async_trait]
 impl TransactionBroadcaster for AlwaysOkBroadcaster {
     async fn broadcast(&self, transaction: &Transaction) -> Result<Txid, BroadcastError> {
@@ -67,8 +81,10 @@ impl TransactionBroadcaster for AlwaysOkBroadcaster {
 }
 
 /// Broadcaster that always fails with a definitive pre-send rejection.
+#[cfg(test)]
 pub(crate) struct AlwaysRejectedBroadcaster;
 
+#[cfg(test)]
 #[async_trait]
 impl TransactionBroadcaster for AlwaysRejectedBroadcaster {
     async fn broadcast(&self, _transaction: &Transaction) -> Result<Txid, BroadcastError> {
@@ -81,8 +97,10 @@ impl TransactionBroadcaster for AlwaysRejectedBroadcaster {
 /// Broadcaster that always fails with an *ambiguous* result — the network
 /// may already have accepted the transaction — so its inputs must NOT be
 /// released on failure.
+#[cfg(test)]
 pub(crate) struct AlwaysMaybeSentBroadcaster;
 
+#[cfg(test)]
 #[async_trait]
 impl TransactionBroadcaster for AlwaysMaybeSentBroadcaster {
     async fn broadcast(&self, _transaction: &Transaction) -> Result<Txid, BroadcastError> {
