@@ -69,12 +69,12 @@ outright; no String seed path remains. The derived key still never crosses JNI �
 Rust derives, signs, and scrubs internally, unchanged.
 
 ### Failure modes
-- Interior NUL in the phrase bytes → `CString::new` fails → scrub the reclaimed
-  `Vec`, throw (unchanged behavior).
-- Empty byte array → `CString` of just NUL → the inner FFI's mnemonic parse fails →
-  invalid-mnemonic throw. There is **no size cap** (a large array just allocates and
-  then fails the parse); the caller's `retrieveMnemonicUtf8` only ever returns real
-  phrase bytes or null, so this is a defense-in-depth path.
+- Interior NUL in the phrase bytes → reject before the FFI call; dropping the
+  `Zeroizing<Vec<u8>>` scrubs the phrase copy.
+- Empty byte array → a NUL-only buffer reaches the inner FFI, whose mnemonic parse
+  fails with an invalid-mnemonic error. There is **no size cap** (a large array just
+  allocates and then fails the parse); the caller's `retrieveMnemonicUtf8` only ever
+  returns real phrase bytes or null, so this is a defense-in-depth path.
 - Caller forgetting to scrub → mitigated by the `finally` block; the array is
   caller-owned per `retrieveMnemonicUtf8`'s contract. The Kotlin `null`-check must
   precede the `try` (nothing fallible between the retrieve and entering the `try`).

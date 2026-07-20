@@ -8,9 +8,10 @@ when the four stacked PRs collapse into one.
 
 - **Seed hygiene on the platform-address signing path** — the mnemonic now crosses
   JNI as a scrubbable UTF-8 `byte[]` (`signWithMnemonicAndPathInto`) that the caller
-  zeroes after use, never an un-scrubbable `java.lang.String`. Rust reads it into a
-  pre-sized buffer so the `CString` conversion cannot orphan an unscrubbed plaintext
-  copy. Pins: `SignerMnemonicScrubTest` (JVM, red→green).
+  zeroes after use, never an un-scrubbable `java.lang.String`. Rust copies it
+  directly into a pre-sized `Zeroizing<Vec<u8>>`, NUL-terminates that buffer in
+  place, and never routes the phrase through `CString`. Pins:
+  `SignerMnemonicScrubTest` (JVM, red→green).
 - **Payment dispose-mid-send double-send guard** — the send flow was extracted to
   `performDashPaySend` + a `PaymentSender` seam so the `withContext(NonCancellable)`
   guard (broadcast + durability bookkeeping stay atomic against a mid-send teardown)
@@ -50,7 +51,8 @@ when the four stacked PRs collapse into one.
   All 23 transition-catalog definitions now execute; `TransitionDetailView` is
   partial only because `identityUpdate`'s add-keys sub-path remains on the
   dedicated AddIdentityKey flow rather than the catalog form. Each partial row
-  names its concrete remaining FFI, persistence, device, or restart gate.
+  names its concrete remaining FFI, persistence, UI/catalog-adaptation, device,
+  or restart gate.
 
 ## Environment-bound (cannot be code-fixed here)
 

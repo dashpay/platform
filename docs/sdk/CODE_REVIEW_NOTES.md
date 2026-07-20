@@ -100,14 +100,13 @@ crypto logic, so no red→green production test was required.
    only in the legacy single-argument compatibility overload. Checker still
    green.
 
-## Left for human judgment (deliberately NOT changed unilaterally)
+## Follow-up disposition
 
-These are genuine findings, but each is a judgment call — an accepted-tradeoff
-robustness nit in safety-critical crypto, or a coverage gap that cannot be
-red→green tested without new plumbing. Per the repo pipeline, judgment calls are
-surfaced here rather than fixed unilaterally.
+The first review pass left the following findings for human judgment. A later
+implementation pass was explicitly authorized to fix the actionable items and
+added the test plumbing needed to do so red→green.
 
-### J1 — Unconditional `deleteEntry(KEYS_ALIAS)` in the invalidation catch (LOW, self-healing)
+### J1 — Unconditional `deleteEntry(KEYS_ALIAS)` in the invalidation catch (RESOLVED)
 
 `KeystoreManager.kt:95-98` deletes the alias unconditionally under the lock,
 without the double-check that `ensureKeysKeyPair` (`:235-243`) deliberately
@@ -117,39 +116,23 @@ catch; the first deletes; a concurrent `encrypt()` regenerates a fresh valid
 pair and stores a blob under it; the second thread then deletes that
 **fresh, valid** alias, orphaning the just-stored ciphertext.
 
-- **Impact:** one extra forced re-derivation. Fail-closed, no secret exposure,
-  identity keys are re-derivable from the surviving mnemonic. The window is
-  tiny (regenerate+encrypt must land between two deletes) and additionally
-  requires a secure lock screen to have been re-enabled so regeneration can
-  even succeed.
-- **Both security and correctness reviewers explicitly called this an
-  acceptable tradeoff under the re-derive recovery model and said not to block
-  on it.** The spec's "the invalidation catch is one-shot" framing (§4 failure
-  modes) understates it, but does not mislead about the outcome.
-- **Why not fixed here:** it cannot be exercised without a concurrency seam
-  (real permanent invalidation is device-bound and not reliably scriptable), so
-  a fix would land in safety-critical deletion logic with no red→green test to
-  prove it correct — higher regression risk than the self-healing nit it
-  removes.
-- **Proposed hardening if a maintainer wants it:** make the delete conditional —
-  inside `KEYS_ALIAS_LOCK`, re-init a decrypt cipher against the *currently
-  present* private key and delete only if it *still* throws
-  `KeyPermanentlyInvalidatedException` (a valid replacement inits cleanly and is
-  kept; an auth-expired replacement throws `UserNotAuthenticatedException` and
-  is likewise kept). This mirrors `ensureKeysKeyPair`'s existing
-  reuse-don't-delete discipline.
+Cleanup now captures the invalidated private key's public-key fingerprint with
+the handle and, inside `KEYS_ALIAS_LOCK`, deletes only when the current
+certificate still has that fingerprint. A stale decryptor therefore leaves a
+replacement generation intact. The instrumented
+`staleInvalidationCleanupDoesNotDeleteAReplacementKeysAlias` test deterministically
+models the interleaving; it fails on-device when the seam is wired to the old
+unconditional deletion and passes with generation matching.
 
 ### J2 — Concurrent rotation/write atomicity is untested and not disclosed as deferred (LOW)
 
 The atomic-fingerprint property is now guarded for the *sequential* case (fix #2
 above), but the true *concurrent* interleaving — a rotation landing inside
-`encrypt()` between key capture and the DataStore write — is structurally
-guaranteed by the single-method capture, not by a test. The spec's device-bound
-section discloses only the biometric-enrollment path as untestable; it does not
-list this concurrent-rotation property. Recommend a one-line honest disclosure
-in the spec's verification/deferred list (Rule 11 "fail loud"), or accepting the
-structural guarantee as sufficient. No code change proposed — the property holds
-by construction.
+`encryptForKeysAlias()` between key capture and the DataStore write — is
+structurally guaranteed by the single-method capture, not by a test. The spec's
+device-bound section discloses only the biometric-enrollment path as untestable;
+it does not list this concurrent-rotation property. The limitation is recorded
+here rather than hidden; the property itself holds by construction.
 
 ### J3 — `canSignWith` conflates "no key" with "device not ready" (INFORMATIONAL)
 
@@ -159,10 +142,19 @@ configured. For a boolean capability probe this is the correct (safe) direction,
 and the actionable error still surfaces on the real sign attempt. Noted only as
 a UX-messaging consideration; no code change warranted.
 
+### J4 — `EncryptedBlob` Java/JVM compatibility (RESOLVED)
+
+Adding `keyFingerprint` as a third data-class property removed the public
+two-argument Java constructor and changed generated `copy`/component methods.
+Write-time fingerprint metadata now travels in the internal
+`KeysAliasEncryptedBlob` result while the public `EncryptedBlob` remains the
+original two-property value type. `KeystoreManagerJavaInteropTest` is a
+Java-source compile guard that was red against the three-property class and is
+green after the compatibility restoration.
+
 ## Bottom line
 
 The implementation faithfully delivers the reviewed spec, the hard part (the
-atomic encrypt/fingerprint race fix) is correct, the security posture is sound,
-and the build + all instrumented tests pass on-device. After the four fixes
-above, the only open items are the three documented judgment calls, none of
-which block. **Ready for a human to push and open the PR.**
+atomic encrypt/fingerprint race fix) is correct, and the security posture is
+sound. J1 and J4 are hardened by the subsequent red→green guards; J2 remains a
+documented structural coverage limitation and J3 remains informational.
