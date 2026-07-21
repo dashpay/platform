@@ -172,6 +172,8 @@ jobs:
             # stays unlocked for the whole run instead of re-locking.
             adb shell input keyevent KEYCODE_WAKEUP
             adb shell wm dismiss-keyguard
+            adb shell input text 1234
+            adb shell input keyevent KEYCODE_ENTER
             sleep 5
 
             # Fail loudly if the device is still locked, so a spurious
