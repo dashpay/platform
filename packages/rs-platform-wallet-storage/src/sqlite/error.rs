@@ -227,6 +227,39 @@ pub enum WalletStorageError {
     )]
     AccountRegistrationEntryMismatch,
 
+    /// A provider key-material entry uses an incompatible account-registration
+    /// path, pairs an account type with the wrong key curve, or has persisted
+    /// typed columns that contradict its decoded `ProviderKeyAccountEntry`.
+    /// The guards reject it on write or decode so cross-curve-confused data
+    /// never enters a wallet.
+    #[error(
+        "provider key-material account was submitted through an incompatible \
+         account-registration path, paired with the wrong key curve, or has \
+         corrupted persisted data"
+    )]
+    ProviderKeyAccountEntryMismatch,
+
+    /// An incoming provider key-material entry conflicts with another entry in
+    /// the flush or with the account already persisted under the same label.
+    /// The store cannot tell which extended public key is correct, so it fails
+    /// closed instead of letting write order pick a winner.
+    #[error(
+        "conflicting provider key account for {account_type} \
+         (extended public keys differ)"
+    )]
+    ProviderKeyAccountConflict { account_type: &'static str },
+
+    /// An incoming typed address-pool row conflicts with key material already
+    /// persisted at the same account, pool, and address index.
+    #[error(
+        "conflicting typed pool key for {account_type} at address index {address_index} \
+         (public key or key type differs)"
+    )]
+    TypedPoolKeyConflict {
+        account_type: &'static str,
+        address_index: u32,
+    },
+
     /// Account was rejected by the wallet manager (e.g. `account_type` is unknown, or
     /// `account_index` is out of range). The `cause` is a static string describing the reason.
     #[error("account rejected by wallet manager: {cause}")]
@@ -435,6 +468,9 @@ impl WalletStorageError {
             | Self::IdentityEntryIdMismatch
             | Self::OrphanedIdentityEntry { .. }
             | Self::AccountRegistrationEntryMismatch
+            | Self::ProviderKeyAccountEntryMismatch
+            | Self::ProviderKeyAccountConflict { .. }
+            | Self::TypedPoolKeyConflict { .. }
             | Self::AccountRecordInvalid { .. }
             | Self::MissingAccount { .. }
             | Self::AccountRejected { .. }
@@ -522,6 +558,9 @@ impl WalletStorageError {
             Self::MissingAccount { .. } => "missing_account_registration_entry",
             Self::AccountRejected { .. } => "account_rejected",
             Self::AccountRegistrationEntryMismatch => "account_registration_entry_mismatch",
+            Self::ProviderKeyAccountEntryMismatch => "provider_key_account_entry_mismatch",
+            Self::ProviderKeyAccountConflict { .. } => "provider_key_account_conflict",
+            Self::TypedPoolKeyConflict { .. } => "typed_pool_key_conflict",
             Self::AssetLockEntryMismatch { .. } => "asset_lock_entry_mismatch",
             Self::BlobTooLarge { .. } => "blob_too_large",
             Self::IntegerOverflow { .. } => "integer_overflow",

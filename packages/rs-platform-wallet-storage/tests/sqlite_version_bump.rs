@@ -22,7 +22,8 @@ use platform_wallet::changeset::{
     ContactRequestEntry, CoreChangeSet, IdentityChangeSet, IdentityEntry, IdentityKeyEntry,
     IdentityKeysChangeSet, PendingContactCrypto, PendingContactCryptoOp,
     PlatformAddressBalanceEntry, PlatformAddressChangeSet, PlatformWalletChangeSet,
-    PlatformWalletPersistence, SentContactRequestKey, TokenBalanceChangeSet, WalletMetadataEntry,
+    PlatformWalletPersistence, ProviderKeyAccountEntry, ProviderKeyExtendedPubKey,
+    SentContactRequestKey, TokenBalanceChangeSet, WalletMetadataEntry,
 };
 use platform_wallet::wallet::identity::{ContactRequest, IdentityStatus};
 use platform_wallet::wallet::platform_wallet::WalletId;
@@ -63,6 +64,28 @@ fn test_xpub() -> key_wallet::bip32::ExtendedPubKey {
     key_wallet::bip32::ExtendedPubKey::decode(&hex::decode(
         "0488B21E000000000000000000873DFF81C02F525623FD1FE5167EAC3A55A049DE3D314BB42EE227FFED37D5080339A36013301597DAEF41FBE593A02CC513D0B55527EC2DF1050E2E8FF49C85C2",
     ).unwrap()).unwrap()
+}
+
+/// A BLS operator-key account entry — the provider half of the
+/// account-registrations domain.
+fn provider_operator_entry() -> ProviderKeyAccountEntry {
+    let wallet = Wallet::from_seed_bytes(
+        [0x2A; 64],
+        Network::Testnet,
+        WalletAccountCreationOptions::Default,
+    )
+    .unwrap();
+    ProviderKeyAccountEntry {
+        account_type: AccountType::ProviderOperatorKeys,
+        extended_public_key: ProviderKeyExtendedPubKey::Bls(
+            wallet
+                .accounts
+                .bls_account_of_type(AccountType::ProviderOperatorKeys)
+                .expect("BLS operator account")
+                .bls_public_key
+                .clone(),
+        ),
+    }
 }
 
 /// A changeset that touches exactly one domain, with minimal non-empty data.
@@ -168,6 +191,9 @@ fn single_domain_changeset(domain: Domain) -> PlatformWalletChangeSet {
                 account_type: std_account(),
                 account_xpub: test_xpub(),
             }];
+            // Provider key-material accounts share this domain — both halves
+            // land in `account_registrations` rows (dashpay/platform#4113).
+            cs.provider_key_account_registrations = vec![provider_operator_entry()];
         }
         Domain::AccountAddressPools => {
             cs.account_address_pools = vec![AccountAddressPoolEntry {
@@ -315,6 +341,11 @@ fn asset_lock_changeset() -> AssetLockChangeSet {
 #[test]
 fn tc_b_013_every_domain_maps_and_isolates() {
     use std::collections::BTreeSet;
+    assert_eq!(
+        Domain::ALL.len(),
+        14,
+        "provider-key registrations ride the account-registrations domain — no new domain"
+    );
     let mut covered = BTreeSet::new();
     for domain in Domain::ALL {
         let cs = single_domain_changeset(domain);

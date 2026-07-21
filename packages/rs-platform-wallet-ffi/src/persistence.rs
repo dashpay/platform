@@ -7,7 +7,7 @@
 
 use bincode::config;
 use key_wallet::account::account_collection::AccountCollection;
-use key_wallet::account::{Account, AccountType, BLSAccount, EdDSAAccount, StandardAccountType};
+use key_wallet::account::{Account, AccountType, StandardAccountType};
 use key_wallet::bip32::DerivationPath;
 use key_wallet::bip32::ExtendedPubKey;
 use key_wallet::derivation_bls_bip32::ExtendedBLSPubKey;
@@ -22,9 +22,9 @@ use std::str::FromStr;
 
 use crate::types::{FFINetwork, Network};
 use platform_wallet::changeset::{
-    AccountAddressPoolEntry, AccountRegistrationEntry, ClientStartState, ClientWalletStartState,
-    Merge, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
-    ProviderKeyAccountEntry, ProviderKeyExtendedPubKey,
+    rebuild_provider_key_account, AccountAddressPoolEntry, AccountRegistrationEntry,
+    ClientStartState, ClientWalletStartState, Merge, PersistenceError, PlatformWalletChangeSet,
+    PlatformWalletPersistence, ProviderKeyAccountEntry, ProviderKeyExtendedPubKey,
 };
 use platform_wallet::wallet::platform_wallet::WalletId;
 use platform_wallet::wallet::{PerAccountPlatformAddressState, PerWalletPlatformAddressState};
@@ -3559,20 +3559,18 @@ fn build_wallet_start_state(
             unsafe { slice_from_raw(spec.account_xpub_bytes, spec.account_xpub_bytes_len) };
 
         // Provider key-material accounts (BLS operator keys / EdDSA
-        // platform node keys) live in dedicated `Option` fields on the
-        // collection and carry a non-secp256k1 extended public key in
-        // the same `account_xpub_bytes` slot. Rebuild them watch-only
-        // via the type-specific `new` + insert methods rather than the
-        // ECDSA `Account::from_xpub` / `insert` path (which would fail
-        // to decode the bytes and reject the provider `AccountType`).
-        // Provider xpubs are stored raw (`bincode(xpub)`), exactly like the
-        // ECDSA accounts. The derivation scheme is NOT versioned here: this
-        // app is pre-release and the pre-#879 (secp256k1-hybrid) derivation
-        // never shipped to production. A wallet whose provider accounts were
+        // platform node keys) carry a non-secp256k1 extended public key in
+        // the same `account_xpub_bytes` slot; `account_type` discriminates
+        // the decode. The rebuild itself is the shared helper every backend's
+        // restore path uses (the SQLite backend calls it too). Provider
+        // xpubs are stored raw (`bincode(xpub)`), exactly like the ECDSA
+        // accounts. The derivation scheme is NOT versioned here: this app is
+        // pre-release and the pre-#879 (secp256k1-hybrid) derivation never
+        // shipped to production. A wallet whose provider accounts were
         // persisted by a pre-#879 dev build will restore those (stale) xpubs
         // and show stale operator / platform-node keys until it's deleted
         // and re-imported — an accepted, transient dev-only state.
-        match account_type {
+        let provider_key = match account_type {
             AccountType::ProviderOperatorKeys => {
                 let (bls_pubkey, _): (ExtendedBLSPubKey, usize) =
                     bincode::decode_from_slice(xpub_bytes, config::standard()).map_err(|e| {
@@ -3581,22 +3579,7 @@ fn build_wallet_start_state(
                             e
                         ))
                     })?;
-                let bls_account = BLSAccount::new(
-                    Some(entry.wallet_id.to_vec()),
-                    account_type,
-                    bls_pubkey,
-                    network,
-                )
-                .map_err(|e| {
-                    PersistenceError::backend(format!("BLSAccount::new failed: {:?}", e))
-                })?;
-                accounts.insert_bls_account(bls_account).map_err(|e| {
-                    PersistenceError::backend(format!(
-                        "AccountCollection::insert_bls_account failed: {}",
-                        e
-                    ))
-                })?;
-                continue;
+                Some(ProviderKeyExtendedPubKey::Bls(bls_pubkey))
             }
             AccountType::ProviderPlatformKeys => {
                 let (ed_pubkey, _): (ExtendedEd25519PubKey, usize) =
@@ -3606,29 +3589,22 @@ fn build_wallet_start_state(
                             e
                         ))
                     })?;
-                let eddsa_account = EdDSAAccount::new(
-                    Some(entry.wallet_id.to_vec()),
-                    account_type,
-                    ed_pubkey,
-                    network,
-                )
-                .map_err(|e| {
-                    PersistenceError::backend(format!("EdDSAAccount::new failed: {:?}", e))
-                })?;
-                accounts.insert_eddsa_account(eddsa_account).map_err(|e| {
-                    PersistenceError::backend(format!(
-                        "AccountCollection::insert_eddsa_account failed: {}",
-                        e
-                    ))
-                })?;
-                // The platform-node (Ed25519) pool is rehydrated from the
-                // persisted core-address rows like every other pool — see
-                // `restore_core_address_pools`. Those rows now carry the
-                // typed EdDSA key + `KeyTypeTagFFI::EdDSA`, so no dedicated
-                // batch side-channel is needed here.
-                continue;
+                Some(ProviderKeyExtendedPubKey::EdDSA(ed_pubkey))
             }
-            _ => {}
+            _ => None,
+        };
+        if let Some(key) = provider_key {
+            rebuild_provider_key_account(
+                &mut accounts,
+                entry.wallet_id,
+                network,
+                account_type,
+                &key,
+            )
+            .map_err(|e| {
+                PersistenceError::backend(format!("provider key account rebuild failed: {e}"))
+            })?;
+            continue;
         }
 
         let (account_xpub, _): (ExtendedPubKey, usize) =
@@ -5308,14 +5284,18 @@ mod tests {
     /// callbacks absent — or vice versa) stays non-durable.
     #[test]
     fn partially_wired_persister_is_not_durable() {
-        let mut cb = PersistenceCallbacks::default();
-        cb.on_changeset_begin_fn = Some(noop_begin);
-        cb.on_changeset_end_fn = Some(noop_end);
+        let cb = PersistenceCallbacks {
+            on_changeset_begin_fn: Some(noop_begin),
+            on_changeset_end_fn: Some(noop_end),
+            ..Default::default()
+        };
         assert!(!FFIPersister::new(cb).persists_durably());
 
-        let mut cb = PersistenceCallbacks::default();
-        cb.on_persist_invitations_fn = Some(noop_invitations);
-        cb.on_persist_account_address_pools_fn = Some(noop_pools);
+        let cb = PersistenceCallbacks {
+            on_persist_invitations_fn: Some(noop_invitations),
+            on_persist_account_address_pools_fn: Some(noop_pools),
+            ..Default::default()
+        };
         assert!(!FFIPersister::new(cb).persists_durably());
     }
 
@@ -5324,11 +5304,13 @@ mod tests {
     /// attests durability.
     #[test]
     fn fully_wired_persister_attests_durability() {
-        let mut cb = PersistenceCallbacks::default();
-        cb.on_changeset_begin_fn = Some(noop_begin);
-        cb.on_changeset_end_fn = Some(noop_end);
-        cb.on_persist_account_address_pools_fn = Some(noop_pools);
-        cb.on_persist_invitations_fn = Some(noop_invitations);
+        let cb = PersistenceCallbacks {
+            on_changeset_begin_fn: Some(noop_begin),
+            on_changeset_end_fn: Some(noop_end),
+            on_persist_account_address_pools_fn: Some(noop_pools),
+            on_persist_invitations_fn: Some(noop_invitations),
+            ..Default::default()
+        };
         assert!(FFIPersister::new(cb).persists_durably());
     }
 
@@ -5385,10 +5367,12 @@ mod tests {
             overlap: std::sync::atomic::AtomicBool::new(false),
         }));
 
-        let mut cb = PersistenceCallbacks::default();
-        cb.context = probe as *const RoundProbe as *mut c_void;
-        cb.on_changeset_begin_fn = Some(probing_begin);
-        cb.on_changeset_end_fn = Some(probing_end);
+        let cb = PersistenceCallbacks {
+            context: probe as *const RoundProbe as *mut c_void,
+            on_changeset_begin_fn: Some(probing_begin),
+            on_changeset_end_fn: Some(probing_end),
+            ..Default::default()
+        };
         let persister = std::sync::Arc::new(FFIPersister::new(cb));
 
         let wallet_id: WalletId = [0x42u8; 32];
@@ -5713,7 +5697,7 @@ mod tests {
         assert!(
             restored
                 .highest_generated
-                .map_or(false, |h| h >= RESTORED_INDEX),
+                .is_some_and(|h| h >= RESTORED_INDEX),
             "highest_generated must advance past the pre-derived gap window"
         );
 
@@ -5892,7 +5876,7 @@ mod tests {
         const ECDSA_IDX: u32 = 502;
         for idx in [BLS_IDX, EDDSA_IDX, ECDSA_IDX] {
             assert!(
-                pool.addresses.get(&idx).is_none(),
+                !pool.addresses.contains_key(&idx),
                 "index {idx} must start with no pre-seeded entry"
             );
         }

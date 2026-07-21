@@ -64,6 +64,12 @@ const READ_ONLY_PREPARE_ALLOWED: &[(&str, &str)] = &[
         "accounts.rs",
         "SELECT wallet_id, account_index, key_class, length(account_xpub_bytes), account_xpub_bytes",
     ),
+    // Provider platform-node-key reader: pre-read length() gates on both
+    // fixed-width key columns.
+    (
+        "accounts.rs",
+        "SELECT key_index, length(public_key), public_key, length(node_id), node_id",
+    ),
     // list_unspent_utxos (test-helper reader, ungated — global SQLITE_LIMIT_LENGTH covers it).
     ("core_state.rs", "SELECT outpoint, value, script, height"),
     // load_state unspent-UTXO reader: pre-read length() gates on outpoint and script.
@@ -77,6 +83,12 @@ const READ_ONLY_PREPARE_ALLOWED: &[(&str, &str)] = &[
     (
         "core_pool.rs",
         "SELECT script, account_type, account_index, user_identity_id, friend_identity_id",
+    ),
+    // Typed-pool reader: one-shot read-only scan of pre-derived platform-node
+    // keys per wallet, during `load()` rehydration.
+    (
+        "core_pool.rs",
+        "SELECT address_index, length(script), script, length(public_key), public_key",
     ),
     // Full-rehydration readers — one-shot SELECTs in `load_state`.
     (

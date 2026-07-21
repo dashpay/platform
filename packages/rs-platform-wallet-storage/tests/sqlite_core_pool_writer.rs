@@ -9,15 +9,19 @@ mod common;
 
 use common::{ensure_wallet_meta, fresh_persister, wid};
 use key_wallet::account::{AccountType, StandardAccountType};
-use key_wallet::managed_account::address_pool::AddressPoolType;
+use key_wallet::managed_account::address_pool::{AddressPoolType, PublicKeyType};
 use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::Wallet;
 use key_wallet::{AddressInfo, Network, Utxo};
 use platform_wallet::changeset::{
-    AccountAddressPoolEntry, CoreChangeSet, PlatformWalletChangeSet, PlatformWalletPersistence,
+    AccountAddressPoolEntry, CoreChangeSet, PersistenceError, PlatformWalletChangeSet,
+    PlatformWalletPersistence, ProviderKeyAccountEntry, ProviderKeyExtendedPubKey,
+    WalletMetadataEntry,
 };
 use platform_wallet::wallet::platform_wallet::WalletId;
+use platform_wallet_storage::sqlite::schema::core_pool;
+use platform_wallet_storage::{SqlitePersister, SqlitePersisterConfig, WalletStorageError};
 
 /// Real external-pool `AddressInfo`s for a wallet's Standard BIP44 account 0,
 /// sorted by derivation index — genuine scripts that round-trip.
@@ -79,6 +83,76 @@ fn pool_entry(
         pool_type,
         addresses,
     }
+}
+
+fn wallet_storage_error(err: PersistenceError) -> Box<WalletStorageError> {
+    let source = match err {
+        PersistenceError::Backend { source, .. } => source,
+        other => panic!("expected Backend {{ .. }}, got {other:?}"),
+    };
+    source
+        .downcast::<WalletStorageError>()
+        .unwrap_or_else(|source| panic!("expected WalletStorageError, got {source}"))
+}
+
+fn provider_platform_registration(wallet: &Wallet) -> ProviderKeyAccountEntry {
+    ProviderKeyAccountEntry {
+        account_type: AccountType::ProviderPlatformKeys,
+        extended_public_key: ProviderKeyExtendedPubKey::EdDSA(
+            wallet
+                .accounts
+                .eddsa_account_of_type(AccountType::ProviderPlatformKeys)
+                .expect("EdDSA platform account")
+                .ed25519_public_key
+                .clone(),
+        ),
+    }
+}
+
+fn typed_platform_node_info(seed_byte: u8, index: u32, key_byte: u8) -> AddressInfo {
+    let mut info = external_infos(seed_byte)
+        .into_iter()
+        .nth(index as usize)
+        .expect("derived address at requested index");
+    info.public_key = Some(PublicKeyType::EdDSA(vec![key_byte; 32]));
+    info
+}
+
+fn provider_platform_pool_entry(addresses: Vec<AddressInfo>) -> AccountAddressPoolEntry {
+    pool_entry(
+        AccountType::ProviderPlatformKeys,
+        AddressPoolType::AbsentHardened,
+        addresses,
+    )
+}
+
+fn loaded_provider_platform_infos(
+    persister: &SqlitePersister,
+    wallet_id: &WalletId,
+) -> Vec<AddressInfo> {
+    let state = persister.load().expect("load wallet state");
+    let wallet_info = &state
+        .wallets
+        .get(wallet_id)
+        .expect("wallet rehydrated")
+        .wallet_info;
+    let account = wallet_info
+        .all_managed_accounts()
+        .into_iter()
+        .find(|managed| {
+            managed.managed_account_type().to_account_type() == AccountType::ProviderPlatformKeys
+        })
+        .expect("restored platform-node managed account");
+    account
+        .managed_account_type()
+        .address_pools()
+        .into_iter()
+        .find(|pool| pool.pool_type == AddressPoolType::AbsentHardened)
+        .expect("restored platform-node hardened pool")
+        .addresses
+        .values()
+        .cloned()
+        .collect()
 }
 
 /// TC-B-001 — six pool rows with `used` set on indices {0,2,4}; the pool
@@ -582,4 +656,426 @@ fn distinct_dashpay_friends_do_not_collide_in_pool() {
         )
         .unwrap();
     assert_eq!(total, 2, "both contacts must persist as separate rows");
+}
+
+/// Repro for a real gap found while merging PR #4117 with upstream PR #4127.
+/// PR #4127 replaced the removed `derived_platform_node_keys` persistence with
+/// generic `account_address_pools` snapshots, but SQLite's `core_pool.rs` and
+/// `persister.rs` do not carry or restore the raw platform-node public key.
+/// Reference: dashpay/platform#4113.
+#[test]
+fn platform_node_key_public_keys_survive_sqlite_store_and_load() {
+    let wallet = Wallet::from_seed_bytes(
+        [0x33u8; 64],
+        Network::Testnet,
+        WalletAccountCreationOptions::Default,
+    )
+    .unwrap();
+    let keys = platform_wallet::wallet::provider_key_at_index::derive_platform_node_public_keys(
+        &wallet,
+        Network::Testnet,
+        3,
+    )
+    .expect("derive");
+    let mut wallet_info = ManagedWalletInfo::from_wallet(&wallet, 0);
+    platform_wallet::wallet::provider_key_at_index::populate_platform_node_pool(
+        &mut wallet_info,
+        &keys,
+        Network::Testnet,
+    )
+    .expect("populate");
+
+    let platform_node_account = wallet_info
+        .all_managed_accounts()
+        .into_iter()
+        .find(|managed| {
+            managed.managed_account_type().to_account_type() == AccountType::ProviderPlatformKeys
+        })
+        .expect("platform-node managed account");
+    let platform_node_pool = platform_node_account
+        .managed_account_type()
+        .address_pools()
+        .into_iter()
+        .find(|pool| pool.pool_type == AddressPoolType::AbsentHardened)
+        .expect("platform-node hardened pool");
+    let addresses = platform_node_pool
+        .addresses
+        .values()
+        .cloned()
+        .collect::<Vec<AddressInfo>>();
+    assert_eq!(
+        addresses.len(),
+        3,
+        "the in-memory platform-node pool must contain all three derived keys"
+    );
+    assert!(
+        addresses.iter().all(|info| info.public_key.is_some()),
+        "the in-memory platform-node pool must carry every derived public key"
+    );
+    let pool_entry = AccountAddressPoolEntry {
+        account_type: AccountType::ProviderPlatformKeys,
+        pool_type: AddressPoolType::AbsentHardened,
+        addresses,
+    };
+    let provider_registration = ProviderKeyAccountEntry {
+        account_type: AccountType::ProviderPlatformKeys,
+        extended_public_key: ProviderKeyExtendedPubKey::EdDSA(
+            wallet
+                .accounts
+                .eddsa_account_of_type(AccountType::ProviderPlatformKeys)
+                .expect("eddsa account")
+                .ed25519_public_key
+                .clone(),
+        ),
+    };
+
+    let (persister, _tmp, path) = fresh_persister();
+    let w: WalletId = wid(0x99);
+    persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                wallet_metadata: Some(WalletMetadataEntry {
+                    network: Network::Testnet,
+                    wallet_group_id: [0; 32],
+                    birth_height: 1,
+                }),
+                provider_key_account_registrations: vec![provider_registration],
+                account_address_pools: vec![pool_entry],
+                ..Default::default()
+            },
+        )
+        .expect("store");
+    drop(persister);
+
+    let persister =
+        SqlitePersister::open(SqlitePersisterConfig::new(&path)).expect("reopen persister");
+    let state = persister.load().expect("load");
+    let restored = &state
+        .wallets
+        .get(&w)
+        .expect("wallet rehydrated")
+        .wallet_info;
+    let restored_platform_node_account = restored
+        .all_managed_accounts()
+        .into_iter()
+        .find(|managed| {
+            managed.managed_account_type().to_account_type() == AccountType::ProviderPlatformKeys
+        })
+        .expect("restored platform-node managed account");
+    let restored_platform_node_pool = restored_platform_node_account
+        .managed_account_type()
+        .address_pools()
+        .into_iter()
+        .find(|pool| pool.pool_type == AddressPoolType::AbsentHardened)
+        .expect("restored platform-node hardened pool");
+
+    assert_eq!(
+        restored_platform_node_pool.addresses.len(),
+        3,
+        "all three platform-node indices must survive SQLite store()->load()"
+    );
+    for key in &keys {
+        let restored_info = restored_platform_node_pool
+            .addresses
+            .get(&key.index)
+            .unwrap_or_else(|| panic!("platform-node index {} did not survive SQLite", key.index));
+        let expected = Some(PublicKeyType::EdDSA(key.public_key.to_vec()));
+        assert_eq!(
+            restored_info.public_key, expected,
+            "platform-node public key at index {} did not survive SQLite store()->load() \
+             — see doc comment: core_pool.rs never persists AddressInfo.public_key",
+            key.index
+        );
+    }
+}
+
+#[test]
+fn conflicting_typed_pool_key_is_rejected_and_original_survives_load() {
+    let wallet = Wallet::from_seed_bytes(
+        [0xA1; 64],
+        Network::Testnet,
+        WalletAccountCreationOptions::Default,
+    )
+    .expect("seed wallet");
+    let (persister, _tmp, _path) = fresh_persister();
+    let w: WalletId = wid(0x9A);
+    let first = typed_platform_node_info(0xA2, 0, 0x11);
+    persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                wallet_metadata: Some(WalletMetadataEntry {
+                    network: Network::Testnet,
+                    wallet_group_id: [0; 32],
+                    birth_height: 1,
+                }),
+                provider_key_account_registrations: vec![provider_platform_registration(&wallet)],
+                account_address_pools: vec![provider_platform_pool_entry(vec![first.clone()])],
+                ..Default::default()
+            },
+        )
+        .expect("store original typed pool key");
+
+    let fresh_sibling = typed_platform_node_info(0xA2, 1, 0x22);
+    let mut conflicting = first.clone();
+    conflicting.public_key = Some(PublicKeyType::EdDSA(vec![0x33; 32]));
+    let err = persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                account_address_pools: vec![provider_platform_pool_entry(vec![
+                    fresh_sibling,
+                    conflicting,
+                ])],
+                ..Default::default()
+            },
+        )
+        .expect_err("a different typed key at the same pool index must be rejected");
+    let storage_error = wallet_storage_error(err);
+    assert_eq!(storage_error.error_kind_str(), "typed_pool_key_conflict");
+
+    let restored = loaded_provider_platform_infos(&persister, &w);
+    assert_eq!(restored.len(), 1, "the rejected flush must be atomic");
+    assert_eq!(
+        restored[0].public_key, first.public_key,
+        "the original typed key must remain intact"
+    );
+}
+
+#[test]
+fn untyped_pool_key_cannot_overwrite_persisted_typed_key() {
+    let wallet = Wallet::from_seed_bytes(
+        [0xA3; 64],
+        Network::Testnet,
+        WalletAccountCreationOptions::Default,
+    )
+    .expect("seed wallet");
+    let (persister, _tmp, _path) = fresh_persister();
+    let w: WalletId = wid(0x9D);
+    let original = typed_platform_node_info(0xA4, 0, 0x71);
+    let mut untyped = original.clone();
+    untyped.public_key = None;
+    persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                wallet_metadata: Some(WalletMetadataEntry {
+                    network: Network::Testnet,
+                    wallet_group_id: [0; 32],
+                    birth_height: 1,
+                }),
+                provider_key_account_registrations: vec![provider_platform_registration(&wallet)],
+                account_address_pools: vec![provider_platform_pool_entry(vec![untyped.clone()])],
+                ..Default::default()
+            },
+        )
+        .expect("store initial untyped pool row");
+    persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                account_address_pools: vec![provider_platform_pool_entry(vec![original.clone()])],
+                ..Default::default()
+            },
+        )
+        .expect("upgrade untyped pool row with typed key material");
+
+    let err = persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                account_address_pools: vec![provider_platform_pool_entry(vec![untyped])],
+                ..Default::default()
+            },
+        )
+        .expect_err("an untyped row must not erase a persisted typed key");
+    assert_eq!(
+        wallet_storage_error(err).error_kind_str(),
+        "typed_pool_key_conflict"
+    );
+
+    let restored = loaded_provider_platform_infos(&persister, &w);
+    assert_eq!(restored.len(), 1, "the rejected flush must be atomic");
+    assert_eq!(restored[0].public_key, original.public_key);
+}
+
+#[test]
+fn malformed_typed_pool_key_widths_are_rejected_before_insert() {
+    let malformed_keys = [
+        PublicKeyType::ECDSA(vec![0x11; 32]),
+        PublicKeyType::EdDSA(vec![0x22; 31]),
+        PublicKeyType::BLS(vec![0x33; 47]),
+    ];
+
+    for (case, malformed_key) in malformed_keys.into_iter().enumerate() {
+        let (persister, _tmp, _path) = fresh_persister();
+        let w: WalletId = wid(0xA0 + case as u8);
+        ensure_wallet_meta(&persister, &w);
+        let mut info = external_infos(0xA5 + case as u8)
+            .into_iter()
+            .next()
+            .expect("derived address");
+        info.public_key = Some(malformed_key);
+
+        let err = persister
+            .store(
+                w,
+                PlatformWalletChangeSet {
+                    account_address_pools: vec![pool_entry(
+                        AccountType::Standard {
+                            index: 0,
+                            standard_account_type: StandardAccountType::BIP44Account,
+                        },
+                        AddressPoolType::External,
+                        vec![info],
+                    )],
+                    ..Default::default()
+                },
+            )
+            .expect_err("a malformed typed key must be rejected before commit");
+        assert_eq!(wallet_storage_error(err).error_kind_str(), "blob_decode");
+
+        let conn = persister.lock_conn_for_test();
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM core_address_pool WHERE wallet_id = ?1",
+                rusqlite::params![w.as_slice()],
+                |row| row.get(0),
+            )
+            .expect("count pool rows");
+        assert_eq!(count, 0, "malformed key case {case} reached the database");
+    }
+}
+
+#[test]
+fn typed_pool_loader_rejects_mismatched_key_nullability() {
+    for (case, clear_column) in ["key_type", "public_key"].into_iter().enumerate() {
+        let (persister, _tmp, _path) = fresh_persister();
+        let w: WalletId = wid(0xB0 + case as u8);
+        ensure_wallet_meta(&persister, &w);
+        let account_type = AccountType::Standard {
+            index: 0,
+            standard_account_type: StandardAccountType::BIP44Account,
+        };
+        let mut info = external_infos(0xB5 + case as u8)
+            .into_iter()
+            .next()
+            .expect("derived address");
+        info.public_key = Some(PublicKeyType::ECDSA(vec![0x44; 33]));
+        persister
+            .store(
+                w,
+                PlatformWalletChangeSet {
+                    account_address_pools: vec![pool_entry(
+                        account_type.clone(),
+                        AddressPoolType::External,
+                        vec![info],
+                    )],
+                    ..Default::default()
+                },
+            )
+            .expect("store valid typed pool row");
+
+        let conn = persister.lock_conn_for_test();
+        conn.execute(
+            &format!("UPDATE core_address_pool SET {clear_column} = NULL WHERE wallet_id = ?1"),
+            rusqlite::params![w.as_slice()],
+        )
+        .expect("corrupt paired nullable columns");
+        let err =
+            core_pool::load_typed_pool_entries(&conn, &w, &account_type, AddressPoolType::External)
+                .expect_err("mismatched typed-key nullability must fail hard");
+        assert_eq!(err.error_kind_str(), "blob_decode", "case {clear_column}");
+    }
+}
+
+#[test]
+fn identical_typed_pool_key_is_idempotent() {
+    let wallet = Wallet::from_seed_bytes(
+        [0xB1; 64],
+        Network::Testnet,
+        WalletAccountCreationOptions::Default,
+    )
+    .expect("seed wallet");
+    let (persister, _tmp, _path) = fresh_persister();
+    let w: WalletId = wid(0x9B);
+    let info = typed_platform_node_info(0xB2, 0, 0x44);
+    persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                wallet_metadata: Some(WalletMetadataEntry {
+                    network: Network::Testnet,
+                    wallet_group_id: [0; 32],
+                    birth_height: 1,
+                }),
+                provider_key_account_registrations: vec![provider_platform_registration(&wallet)],
+                account_address_pools: vec![provider_platform_pool_entry(vec![info.clone()])],
+                ..Default::default()
+            },
+        )
+        .expect("store original typed pool key");
+    persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                account_address_pools: vec![provider_platform_pool_entry(vec![info.clone()])],
+                ..Default::default()
+            },
+        )
+        .expect("re-store identical typed pool key");
+
+    let restored = loaded_provider_platform_infos(&persister, &w);
+    assert_eq!(restored.len(), 1);
+    assert_eq!(restored[0].public_key, info.public_key);
+}
+
+#[test]
+fn typed_pool_key_at_fresh_index_succeeds() {
+    let wallet = Wallet::from_seed_bytes(
+        [0xC1; 64],
+        Network::Testnet,
+        WalletAccountCreationOptions::Default,
+    )
+    .expect("seed wallet");
+    let (persister, _tmp, _path) = fresh_persister();
+    let w: WalletId = wid(0x9C);
+    let first = typed_platform_node_info(0xC2, 0, 0x55);
+    let fresh = typed_platform_node_info(0xC2, 1, 0x66);
+    persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                wallet_metadata: Some(WalletMetadataEntry {
+                    network: Network::Testnet,
+                    wallet_group_id: [0; 32],
+                    birth_height: 1,
+                }),
+                provider_key_account_registrations: vec![provider_platform_registration(&wallet)],
+                account_address_pools: vec![provider_platform_pool_entry(vec![first])],
+                ..Default::default()
+            },
+        )
+        .expect("store initial typed pool key");
+    persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                account_address_pools: vec![provider_platform_pool_entry(vec![fresh.clone()])],
+                ..Default::default()
+            },
+        )
+        .expect("store typed pool key at a fresh index");
+
+    let restored = loaded_provider_platform_infos(&persister, &w);
+    assert_eq!(restored.len(), 2);
+    assert_eq!(
+        restored
+            .iter()
+            .find(|info| info.index == fresh.index)
+            .expect("fresh index restored")
+            .public_key,
+        fresh.public_key
+    );
 }
