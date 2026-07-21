@@ -1287,7 +1287,9 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_c
         // the FFI crate, so allocate it zeroed and let the FFI fill it in place.
         let mut boxed: Box<std::mem::MaybeUninit<platform_wallet_ffi::FFICoreTransaction>> =
             Box::new(std::mem::MaybeUninit::zeroed());
-        let out_tx = boxed.as_mut_ptr().cast::<platform_wallet_ffi::FFICoreTransaction>();
+        let out_tx = boxed
+            .as_mut_ptr()
+            .cast::<platform_wallet_ffi::FFICoreTransaction>();
 
         let mut token: u64 = 0;
         let mut fee: u64 = 0;
@@ -1348,8 +1350,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_c
                 // The registration already committed and is holding the funding
                 // reservation; release the token so it isn't orphaned to the TTL
                 // backstop when Kotlin never receives it.
-                let _ =
-                    unsafe { platform_wallet_ffi::core_wallet_signed_payment_release(token) };
+                let _ = unsafe { platform_wallet_ffi::core_wallet_signed_payment_release(token) };
                 ptr::null_mut()
             }
         };
