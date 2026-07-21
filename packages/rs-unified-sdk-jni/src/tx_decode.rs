@@ -80,9 +80,13 @@ unsafe fn encode_decoded_transaction(decoded: &DecodedTransactionFFI) -> Vec<u8>
     let mut blob = Vec::with_capacity(256);
     blob.extend_from_slice(&decoded.txid);
 
-    blob.extend_from_slice(&(decoded.inputs_count as u32).to_be_bytes());
-    if !decoded.inputs.is_null() {
-        let inputs = std::slice::from_raw_parts(decoded.inputs, decoded.inputs_count);
+    // Same count-and-records-together rule as the script encoding below: a
+    // null array pointer encodes as count 0, never as a lying nonzero count
+    // with no records — that would desync every field parseBlob reads after.
+    let inputs_count = if decoded.inputs.is_null() { 0 } else { decoded.inputs_count };
+    blob.extend_from_slice(&(inputs_count as u32).to_be_bytes());
+    if inputs_count > 0 {
+        let inputs = std::slice::from_raw_parts(decoded.inputs, inputs_count);
         for input in inputs {
             blob.extend_from_slice(&input.prev_txid);
             blob.extend_from_slice(&input.prev_vout.to_be_bytes());
@@ -90,9 +94,10 @@ unsafe fn encode_decoded_transaction(decoded: &DecodedTransactionFFI) -> Vec<u8>
         }
     }
 
-    blob.extend_from_slice(&(decoded.outputs_count as u32).to_be_bytes());
-    if !decoded.outputs.is_null() {
-        let outputs = std::slice::from_raw_parts(decoded.outputs, decoded.outputs_count);
+    let outputs_count = if decoded.outputs.is_null() { 0 } else { decoded.outputs_count };
+    blob.extend_from_slice(&(outputs_count as u32).to_be_bytes());
+    if outputs_count > 0 {
+        let outputs = std::slice::from_raw_parts(decoded.outputs, outputs_count);
         for output in outputs {
             blob.extend_from_slice(&output.value_duffs.to_be_bytes());
             push_cstr_opt(&mut blob, output.address);
@@ -379,6 +384,30 @@ mod tests {
         assert_eq!(r.u64(), 42);
         assert_eq!(r.str_opt(), None, "no address");
         assert_eq!(r.u32(), 0, "null script pointer must encode length 0");
+        assert_eq!(r.pos, blob.len(), "no trailing bytes");
+    }
+
+    #[test]
+    fn null_array_pointers_encode_as_count_zero() {
+        // Same hazard one level up: null inputs/outputs arrays whose count
+        // fields LIE (nonzero). The encoder must write count 0 — a nonzero
+        // count with no records would desync everything parseBlob reads
+        // after it.
+        let decoded = DecodedTransactionFFI {
+            txid: [0xCDu8; 32],
+            inputs: std::ptr::null_mut(),
+            inputs_count: 3,
+            outputs: std::ptr::null_mut(),
+            outputs_count: 2,
+        };
+        // SAFETY: stack-built graph; the null arrays are the case under test
+        // and never dereferenced. Not passed to decoded_transaction_free.
+        let blob = unsafe { encode_decoded_transaction(&decoded) };
+
+        let mut r = Reader { blob: &blob, pos: 0 };
+        assert_eq!(r.take(32), [0xCDu8; 32]);
+        assert_eq!(r.u32(), 0, "null inputs array must encode count 0");
+        assert_eq!(r.u32(), 0, "null outputs array must encode count 0");
         assert_eq!(r.pos, blob.len(), "no trailing bytes");
     }
 }
