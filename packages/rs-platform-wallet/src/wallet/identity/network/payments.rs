@@ -635,6 +635,54 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 .next_address(Some(&contact_xpub), true)
                 .map_err(|e| PlatformWalletError::TransactionBuild(e.to_string()))?;
 
+            // `next_address`/`next_unused` only *selects* (and, when the
+            // gap-window is exhausted, generates) the next unused address —
+            // it does NOT flip its `used` flag (that lives solely on
+            // `AddressPool::mark_used`). DIP-15 per-payment rotation requires
+            // that once we commit this address to a payment it never be
+            // handed out again, so mark it used now, on the resident external
+            // account, before the snapshot below captures the pool. A
+            // `false` return would mean the address vanished from the pool
+            // between derivation and this call — a real invariant break, so
+            // fail loud rather than silently ship an un-rotated address.
+            if !external_account.mark_address_used(&payment_address) {
+                return Err(PlatformWalletError::TransactionBuild(format!(
+                    "derived payment address {payment_address} is not in the external \
+                     account pool — cannot mark it used"
+                )));
+            }
+
+            // Persist the used-flag flip (and any gap-window extension)
+            // `next_address` + `mark_address_used` just applied to the
+            // external account's pool.
+            // This must be durable BEFORE the broadcast below: once the
+            // transaction is on the network the address is publicly
+            // spent-to, and a relaunch that rehydrates the pool from a
+            // stale snapshot would hand the SAME address to the next
+            // payment — breaking DIP-15 per-payment rotation and linking
+            // the payments on-chain. A store failure aborts the send
+            // pre-broadcast (nothing has hit the network); the consumed
+            // in-memory address only leaves a one-address gap that the
+            // pool's gap window absorbs on retry.
+            let external_account_type = key_wallet::account::AccountType::DashpayExternalAccount {
+                index: account_index,
+                user_identity_id: from_identity_id.to_buffer(),
+                friend_identity_id: to_contact_id.to_buffer(),
+            };
+            self.persister
+                .store(crate::changeset::PlatformWalletChangeSet {
+                    account_address_pools: crate::changeset::account_address_pool_entries(
+                        external_account_type,
+                        external_account.managed_account_type().address_pools(),
+                    ),
+                    ..Default::default()
+                })
+                .map_err(|e| {
+                    PlatformWalletError::Persistence(format!(
+                        "failed to persist payment-address used flip: {e}"
+                    ))
+                })?;
+
             let current_height = info.core_wallet.synced_height();
 
             let managed_account = info
@@ -3415,6 +3463,153 @@ mod tests {
                  the account is built, got: {msg}"
             );
         }
+    }
+
+    /// `send_payment` must persist the used-flag flip `next_address`
+    /// applies to the contact's external-account pool. The flip is
+    /// otherwise in-memory only: after a relaunch the pool rehydrates
+    /// from the last persisted snapshot with the address unused, and the
+    /// next payment to the same contact reuses the SAME address —
+    /// breaking DIP-15 per-payment rotation and linking the payments
+    /// on-chain. Pins the `AccountAddressPoolEntry` contract (snapshots
+    /// at register / pool-extend / used-flip): a whole-pool snapshot
+    /// carrying the used flag is emitted once the payment address is
+    /// consumed, before anything reaches the network.
+    #[tokio::test]
+    async fn send_payment_persists_external_pool_used_flip() {
+        use crate::wallet::identity::network::contact_requests::SeedCryptoProvider;
+        use key_wallet::account::AccountType;
+        use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+
+        let (manager, persister, wallet_id) = make_wallet().await;
+        let wallet_arc = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet_arc.identity();
+
+        let owner_id = Identifier::from([0x11; 32]);
+        let contact_id = Identifier::from([0x22; 32]);
+        {
+            let mut wm = iw.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("info");
+            info.identity_manager
+                .add_identity(
+                    bare_identity([0x11; 32]),
+                    0,
+                    wallet_id,
+                    &WalletPersister::new(wallet_id, Arc::clone(&persister) as _),
+                )
+                .expect("add owner");
+        }
+
+        // Build the external account (same faithful precomputed-shared-key
+        // path as `send_payment_passes_external_lookup_once_account_built`).
+        let shared_key = [0x55u8; 32];
+        let iv = [0x11u8; 16];
+        let compact = {
+            let seed = Mnemonic::from_phrase(TEST_MNEMONIC, Language::English)
+                .expect("mnemonic")
+                .to_seed("");
+            let w = key_wallet::wallet::Wallet::from_seed_bytes(
+                seed,
+                Network::Testnet,
+                WalletAccountCreationOptions::None,
+            )
+            .expect("seed wallet");
+            crate::wallet::identity::crypto::dip14::derive_contact_xpub(
+                &w,
+                Network::Testnet,
+                0,
+                &owner_id,
+                &contact_id,
+            )
+            .expect("derive a valid compact xpub")
+            .compact
+            .to_bytes()
+        };
+        let encrypted =
+            platform_encryption::encrypt_extended_public_key(&shared_key, &iv, &compact);
+        let contact = bare_identity([0x22; 32]);
+        iw.dashpay()
+            .register_external_contact_account(
+                &owner_id,
+                &contact,
+                &encrypted,
+                zeroize::Zeroizing::new(shared_key),
+            )
+            .await
+            .expect("register external account");
+
+        // Drop the registration round's (all-unused) snapshot so the
+        // assertions below only see what the send path emits.
+        persister.stores.lock().unwrap().clear();
+
+        let seed = Mnemonic::from_phrase(TEST_MNEMONIC, Language::English)
+            .expect("valid mnemonic")
+            .to_seed("");
+        let provider = SeedCryptoProvider::from_seed(seed, Network::Testnet);
+        let signer = SeedSigner::new(seed, Network::Testnet);
+
+        // The seedless test wallet has no UTXOs, so the send fails at
+        // funding — AFTER the payment address was consumed and its
+        // used-flip persisted, which is exactly the window under test.
+        let _err = iw
+            .dashpay()
+            .send_payment(&owner_id, &contact_id, 10_000, None, &signer, &provider)
+            .await
+            .expect_err("no spendable UTXOs — the funding build must fail");
+
+        // In-memory: the pool consumed exactly one payment address.
+        let key = DashpayAccountKey {
+            index: 0,
+            user_identity_id: owner_id.to_buffer(),
+            friend_identity_id: contact_id.to_buffer(),
+        };
+        let used_address = {
+            let wm = iw.wallet_manager.read().await;
+            let info = wm.get_wallet_info(&wallet_id).expect("info");
+            let account = info
+                .core_wallet
+                .accounts
+                .dashpay_external_accounts
+                .get(&key)
+                .expect("external account resident");
+            let used: Vec<dashcore::Address> = account
+                .managed_account_type()
+                .address_pools()
+                .iter()
+                .flat_map(|p| p.addresses.values())
+                .filter(|a| a.used)
+                .map(|a| a.address.clone())
+                .collect();
+            assert_eq!(
+                used.len(),
+                1,
+                "exactly one payment address must be marked used in memory"
+            );
+            used.into_iter().next().expect("one used address")
+        };
+
+        // Persisted: a whole-pool snapshot for THIS contact's external
+        // account was emitted with the consumed address flagged used.
+        let expected_account_type = AccountType::DashpayExternalAccount {
+            index: 0,
+            user_identity_id: owner_id.to_buffer(),
+            friend_identity_id: contact_id.to_buffer(),
+        };
+        let stores = persister.stores.lock().unwrap();
+        let flip_persisted = stores.iter().any(|(_, cs)| {
+            cs.account_address_pools.iter().any(|entry| {
+                entry.account_type == expected_account_type
+                    && entry
+                        .addresses
+                        .iter()
+                        .any(|a| a.used && a.address == used_address)
+            })
+        });
+        assert!(
+            flip_persisted,
+            "send_payment must persist the external-account pool snapshot \
+             with the consumed address marked used"
+        );
     }
 
     /// Broadcaster stub that accepts every transaction, so a send-path test

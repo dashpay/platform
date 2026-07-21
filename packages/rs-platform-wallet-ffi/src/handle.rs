@@ -106,6 +106,13 @@ pub static CORE_WALLET_STORAGE: Lazy<
     HandleStorage<platform_wallet::CoreWallet<platform_wallet::broadcaster::SpvBroadcaster>>,
 > = Lazy::new(HandleStorage::new);
 
+/// Atomically funded/signed Core transactions. Handles are removed exactly
+/// once by broadcast or abandon; repeating either operation is a safe
+/// invalid-handle error instead of dereferencing a freed pointer.
+pub static CORE_SIGNED_TRANSACTION_V2_STORAGE: Lazy<
+    HandleStorage<crate::core_wallet::FFICoreSignedTransactionV2>,
+> = Lazy::new(HandleStorage::new);
+
 /// Storage for AssetLockManager handles (pinned to `SpvBroadcaster`).
 pub static ASSET_LOCK_MANAGER_STORAGE: Lazy<
     HandleStorage<

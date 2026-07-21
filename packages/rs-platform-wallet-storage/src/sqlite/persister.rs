@@ -7,7 +7,8 @@ use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 use rusqlite::{Connection, OptionalExtension};
 
 use platform_wallet::changeset::{
-    ClientStartState, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
+    ClientStartState, Merge, PersistenceCapabilities, PersistenceError, PlatformWalletChangeSet,
+    PlatformWalletPersistence,
 };
 use platform_wallet::wallet::platform_wallet::WalletId;
 
@@ -834,19 +835,18 @@ impl Drop for SqlitePersister {
 }
 
 impl PlatformWalletPersistence for SqlitePersister {
-    /// Durability attestation for the security-sensitive flows gated on
-    /// [`PlatformWalletPersistence::persists_durably`] (e.g. DashPay
-    /// invitation creation, which must never re-export a bearer voucher key
-    /// after a restart).
-    ///
-    /// `true` in both flush modes: the trait contract is "state survives a
-    /// process restart once `store` + `flush` return `Ok`", and `flush`
-    /// always writes through in one SQLite transaction —
-    /// [`FlushMode::Immediate`] is durable at `store`, [`FlushMode::Manual`]
-    /// at the explicit `flush` the gated flows already perform before
-    /// anything irreversible.
-    fn persists_durably(&self) -> bool {
-        true
+    fn persistence_capabilities(&self) -> PersistenceCapabilities {
+        // Every `flush_inner` applies the complete changeset in one SQLite
+        // transaction. The current schema also has lossless token balances,
+        // invitations, account pools, and deferred-contact-crypto queue rows.
+        // Do NOT attest WALLET_RESTORE (and therefore not provider restore):
+        // `load()` still reports `ClientStartState::wallets` in
+        // `LOAD_UNIMPLEMENTED`. Shielded state lives in a separate store.
+        PersistenceCapabilities::ATOMIC_CHANGESETS
+            .union(PersistenceCapabilities::INVITATIONS)
+            .union(PersistenceCapabilities::ASSET_LOCK_FUNDING_INDICES)
+            .union(PersistenceCapabilities::UNSIGNED_TOKEN_STORAGE)
+            .union(PersistenceCapabilities::PENDING_CONTACT_CRYPTO)
     }
 
     /// Merge `changeset` into the per-wallet buffer.

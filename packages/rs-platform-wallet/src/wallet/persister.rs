@@ -10,7 +10,8 @@ use dashcore::Txid;
 use key_wallet::managed_account::transaction_record::TransactionRecord;
 
 use crate::changeset::{
-    ClientStartState, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
+    ClientStartState, PersistenceCapabilities, PersistenceError, PlatformWalletChangeSet,
+    PlatformWalletPersistence,
 };
 use crate::wallet::platform_wallet::WalletId;
 
@@ -38,9 +39,9 @@ impl WalletPersister {
         self.inner.flush(self.wallet_id)
     }
 
-    /// See [`PlatformWalletPersistence::persists_durably`].
-    pub(crate) fn persists_durably(&self) -> bool {
-        self.inner.persists_durably()
+    /// Feature-specific persistence contracts exposed by the backend.
+    pub(crate) fn persistence_capabilities(&self) -> PersistenceCapabilities {
+        self.inner.persistence_capabilities()
     }
 
     pub(crate) fn load(&self) -> Result<ClientStartState, PersistenceError> {

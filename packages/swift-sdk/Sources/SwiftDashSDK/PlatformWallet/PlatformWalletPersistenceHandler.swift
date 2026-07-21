@@ -10,7 +10,23 @@ import DashSDKFFI
 // All mutable state (`backgroundContext`, caches) is confined to `serialQueue`
 // — the handler's de-facto actor — so it is safe to hand to a `@Sendable`
 // closure (e.g. the off-main `serialQueue.async` backfill dispatch).
+//
+// Known coverage deviation: the deferred contact-crypto queue
+// (`PlatformWalletChangeSet.pending_contact_crypto_added/_cleared`) has no
+// persister vtable slot, so it is NOT durable on this host — a restart
+// before a signer-backed drain relies on the recurring sweep to re-enqueue.
 public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
+    static func shouldRestoreProviderSpecialTransaction(
+        walletId: Data,
+        involvedAccounts: [(walletId: Data, accountType: UInt32)]
+    ) -> Bool {
+        involvedAccounts.contains { account in
+            account.walletId == walletId
+                && account.accountType >= 8
+                && account.accountType <= 11
+        }
+    }
+
     let modelContainer: ModelContainer
 
     /// Network this handler's owning `PlatformWalletManager` is bound
@@ -1170,6 +1186,22 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
 
     // MARK: - Callbacks
 
+    /// Explicit semantic capability declaration passed alongside (not inside)
+    /// the established callback vtable by the additive manager-create API.
+    func makePersistenceCapabilities() -> PersistenceCapabilitiesFFI {
+        PersistenceCapabilitiesFFI(
+            version: PlatformWalletPersistenceCapabilities.version1,
+            reserved: 0,
+            bits: PlatformWalletPersistenceCapabilities.atomicChangesets
+                | PlatformWalletPersistenceCapabilities.invitations
+                | PlatformWalletPersistenceCapabilities.assetLockFundingIndices
+                | PlatformWalletPersistenceCapabilities.shieldedViewingKeys
+                | PlatformWalletPersistenceCapabilities.providerTransactions
+                | PlatformWalletPersistenceCapabilities.unsignedTokenStorage
+                | PlatformWalletPersistenceCapabilities.walletRestore
+        )
+    }
+
     /// Build `PersistenceCallbacks` that point to this handler.
     ///
     /// The returned struct must not outlive `self`.
@@ -1888,7 +1920,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 row = PersistentTokenBalance(
                     tokenId: tokenIdBase58,
                     identityId: entry.identityId,
-                    balance: 0,
+                    unsignedBalance: 0,
                     network: network
                 )
                 backgroundContext.insert(row)
@@ -1898,7 +1930,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     tokenIdData: entry.tokenId
                 )
             }
-            row.updateBalance(Int64(bitPattern: entry.balance))
+            row.updateUnsignedBalance(entry.balance)
             row.markAsSynced()
             // Re-link on every upsert too so a balance row that
             // pre-existed before its parent identity / token row
@@ -5077,10 +5109,28 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             return (nil, 0)
         }
 
-        // Scope to this wallet via payload-only involvement — provider txs
-        // create no TXOs, so `involvedAccounts` is the only link.
+        // Scope through an explicitly involved provider-key account. Merely
+        // sharing a wallet is insufficient: a provider-kind record observed
+        // on a Standard account must not leak into unrelated provider state.
+        // AccountTypeTagFFI 8...11 are Voting / Owner / Operator / Platform.
         let scoped = providerTxs.filter { tx in
-            tx.involvedAccounts.contains { $0.wallet.walletId == walletId }
+            Self.shouldRestoreProviderSpecialTransaction(
+                walletId: walletId,
+                involvedAccounts: tx.involvedAccounts.map {
+                    (walletId: $0.wallet.walletId, accountType: $0.accountType)
+                }
+            )
+        }.sorted { lhs, rhs in
+            if lhs.blockHeight != rhs.blockHeight {
+                return lhs.blockHeight < rhs.blockHeight
+            }
+            if lhs.hasBlockPosition != rhs.hasBlockPosition {
+                return lhs.hasBlockPosition && !rhs.hasBlockPosition
+            }
+            if lhs.blockPosition != rhs.blockPosition {
+                return lhs.blockPosition < rhs.blockPosition
+            }
+            return lhs.firstSeen < rhs.firstSeen
         }
         guard !scoped.isEmpty else { return (nil, 0) }
 

@@ -1,4 +1,5 @@
 import XCTest
+import SwiftDashSDK
 @testable import SwiftExampleApp
 
 /// Pins `ReclaimInvitationSheet.isAlreadyConsumed(message:)` — the classifier
@@ -16,6 +17,16 @@ import XCTest
 /// must NOT be misclassified as already-consumed, or the UI would wrongly flip a
 /// still-live invitation to Claimed.
 final class ReclaimInvitationClassifierTests: XCTestCase {
+
+    func test_typedAlreadyConsumed_classifiedTrue() {
+        let error = PlatformWalletError.assetLockAlreadyConsumed("deadbeef:0")
+        XCTAssertTrue(ReclaimInvitationSheet.isAlreadyConsumed(error))
+    }
+
+    func test_typedNotTracked_classifiedFalse() {
+        let error = PlatformWalletError.assetLockNotTracked("deadbeef:0")
+        XCTAssertFalse(ReclaimInvitationSheet.isAlreadyConsumed(error))
+    }
 
     /// The real already-consumed rejection, as surfaced to Swift.
     func test_alreadyConsumedDisplay_classifiedTrue() {
